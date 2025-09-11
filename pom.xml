@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.llm4j</groupId>
+    <artifactId>llm4j-parent</artifactId>
+    <version>${llm4j.version}</version>
+    <packaging>pom</packaging>
+    <name>llm4j parent</name>
+
+    <modules>
+        <module>api</module>
+        <module>gguf</module>
+        <module>jota</module>
+        <module>tokenizers</module>
+        <module>huggingface</module>
+
+        <!-- deprecated -->
+        <module>scratch</module>
+        <module>span</module>
+    </modules>
+
+    <properties>
+        <llm4j.version>0.1-SNAPSHOT</llm4j.version>
+
+        <junit.version>6.0.0-RC2</junit.version>
+        <slf4j.version>2.0.13</slf4j.version>
+
+        <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
+        <maven-surefire-plugin.version>3.5.3</maven-surefire-plugin.version>
+        <maven-assembly-plugin.version>3.6.0</maven-assembly-plugin.version>
+        <maven-assembly-plugin.version>3.6.0</maven-assembly-plugin.version>
+
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>${slf4j.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.llm4j</groupId>
+                <artifactId>api</artifactId>
+                <version>${llm4j.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.llm4j</groupId>
+                <artifactId>gguf</artifactId>
+                <version>${llm4j.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.llm4j</groupId>
+                <artifactId>huggingface</artifactId>
+                <version>${llm4j.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.llm4j</groupId>
+                <artifactId>jota</artifactId>
+                <version>${llm4j.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.llm4j</groupId>
+                <artifactId>tokenizers</artifactId>
+                <version>${llm4j.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.llm4j</groupId>
+                <artifactId>span</artifactId>
+                <version>${llm4j.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter</artifactId>
+                <version>${junit.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${maven-compiler-plugin.version}</version>
+                </plugin>
+
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven-surefire-plugin.version}</version>
+                </plugin>
+
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-assembly-plugin</artifactId>
+                    <version>${maven-assembly-plugin.version}</version>
+                    <executions>
+                        <execution>
+                            <id>fat-jar</id>
+                            <phase>package</phase>
+                            <goals><goal>single</goal></goals>
+                        </execution>
+                    </executions>
+                </plugin>
+
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>
