@@ -73,3 +73,6 @@ Rank-based include `.isScalar()`, `.isVector()` and is `.isMatrix()`.
 Element-based include `.hasZeroElements()` and `.hasOneElement()`.
 
 There's no `.isEmpty()` method to avoid confusion to which category it applies: rank or elements ... e.g. `[]` or `[0]`.
+
+# Layout (nested shape/stride)
+For Jota I'll borrow the layout concept from CuTe (Cutlass). The nested shape/stride is very powerful and makes reasoning about indexing and data access a breeze.
