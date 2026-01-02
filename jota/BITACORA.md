@@ -76,3 +76,6 @@ There's no `.isEmpty()` method to avoid confusion to which category it applies: 
 
 # Layout (nested shape/stride)
 For Jota I'll borrow the layout concept from CuTe (Cutlass). The nested shape/stride is very powerful and makes reasoning about indexing and data access a breeze.
+
+# Tracing
+I'll use tracing to compile kernels, until I can use Babylon or some form of introspection of Java code.
