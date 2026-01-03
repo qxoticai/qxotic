@@ -79,3 +79,5 @@ For Jota I'll borrow the layout concept from CuTe (Cutlass). The nested shape/st
 
 # Tracing
 I'll use tracing to compile kernels, until I can use Babylon or some form of introspection of Java code.
+
+# Beep beep
