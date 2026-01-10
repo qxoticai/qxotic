@@ -1,5 +1,8 @@
 package com.llm4j.jota.memory;
 
+import com.qxotic.jota.memory.MemoryAccess;
+import com.qxotic.jota.memory.MemoryView;
+
 public interface FloatValueIterator {
 
     boolean hasNext();
@@ -14,7 +17,7 @@ public interface FloatValueIterator {
 }
 
 class FloatValueIteratorImpl implements FloatValueIterator {
-    private final MemoryAccess<?>  memoryAccess;
+    private final MemoryAccess<?> memoryAccess;
     private final OffsetIterator iterator;
     private final MemoryView<?> memoryView;
 

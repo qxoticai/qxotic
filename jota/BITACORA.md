@@ -11,7 +11,7 @@ Let's start with a basic Shape interface:
 interface Shape {
     int rank();
     long dimension(int _axis);
-    long totalNumberOfElements();
+    long size();
 }
 ```
 

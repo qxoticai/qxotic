@@ -2,6 +2,7 @@ package com.llm4j.jota.memory;
 
 import com.llm4j.jota.memory.impl.ContiguousMemoryOffsetIterator;
 import com.llm4j.jota.memory.impl.StridedOffsetIteratorImpl;
+import com.qxotic.jota.memory.MemoryView;
 
 public interface OffsetIterator {
 

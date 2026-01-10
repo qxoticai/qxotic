@@ -1,7 +1,7 @@
 package com.llm4j.jota.cuda;
 
-import com.llm4j.jota.Device;
-import com.llm4j.jota.memory.*;
+import com.qxotic.jota.Device;
+import com.qxotic.jota.memory.*;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.JCudaDriver;
 import jcuda.jcublas.JCublas2;
@@ -10,7 +10,7 @@ import jcuda.runtime.JCuda;
 
 public class CUDAContext implements Context<CUdeviceptr> {
 
-    public static final Device CUDA = Device.child(Device.GPU, "cuda");
+    public static final Device CUDA = Device.GPU.child("cuda");
 
     private final cublasHandle cublasHandle;
 
@@ -43,7 +43,7 @@ public class CUDAContext implements Context<CUdeviceptr> {
 
     @Override
     public FloatOperations<CUdeviceptr> floatOperations() {
-        return CUDAFloatOperations.instance();
+        throw new UnsupportedOperationException(); // return CUDAFloatOperations.instance();
     }
 
     public cublasHandle getCublasHandle() {

@@ -1,8 +1,8 @@
 package com.llm4j.jota.cuda;
 
 
-import com.llm4j.jota.memory.Memory;
-import com.llm4j.jota.memory.MemoryOperations;
+import com.qxotic.jota.memory.Memory;
+import com.qxotic.jota.memory.MemoryOperations;
 import jcuda.Pointer;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUresult;
