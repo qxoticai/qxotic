@@ -1,7 +1,7 @@
 package com.llm4j.jota.cuda;
 
-import com.llm4j.jota.Device;
-import com.llm4j.jota.memory.ScopedMemory;
+import com.qxotic.jota.Device;
+import com.qxotic.jota.memory.ScopedMemory;
 import jcuda.driver.CUdeviceptr;
 import jcuda.runtime.JCuda;
 

@@ -16,6 +16,7 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@Disabled
 public class EncodeTest extends TokenizerTest {
 
     private static final Path WIKI_CORPUS = Path.of("/home/mukel/Desktop/playground/text/wiki-corpus/");

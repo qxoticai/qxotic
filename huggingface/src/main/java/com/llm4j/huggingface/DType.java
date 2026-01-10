@@ -31,11 +31,11 @@ public enum DType implements BaseType {
     U64(8, long.class);
 
     private final int size;
-    private final Class<?> backingType;
+    private final Class<?> backingJavaType;
 
-    DType(int size, Class<?> backingType) {
+    DType(int size, Class<?> backingJavaType) {
         this.size = size;
-        this.backingType = backingType;
+        this.backingJavaType = backingJavaType;
     }
 
     public int size() {
@@ -52,7 +52,7 @@ public enum DType implements BaseType {
         return numberOfElements * (long) size;
     }
 
-    public Class<?> backingType() {
-        return backingType;
+    public Class<?> backingJavaType() {
+        return backingJavaType;
     }
 }

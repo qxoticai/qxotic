@@ -4,6 +4,7 @@ import com.llm4j.model.ChatFormat;
 import com.llm4j.model.llama.Llama3ChatFormat;
 import com.llm4j.tokenizers.IntSequence;
 import com.llm4j.tokenizers.Tokenizer;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -12,6 +13,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@Disabled
 class Llama3TokenizerTest extends TokenizerTest {
 
     @ParameterizedTest

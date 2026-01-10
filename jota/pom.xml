@@ -13,6 +13,11 @@
     <artifactId>jota</artifactId>
     <name>llm4j Java Open Tensor API (JOTA)</name>
 
+    <properties>
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.jcuda</groupId>

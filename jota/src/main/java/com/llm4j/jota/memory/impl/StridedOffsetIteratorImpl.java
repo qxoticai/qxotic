@@ -1,12 +1,13 @@
 package com.llm4j.jota.memory.impl;
 
-import com.llm4j.jota.Shape;
-import com.llm4j.jota.memory.MemoryView;
 import com.llm4j.jota.memory.OffsetIterator;
+import com.qxotic.jota.Layout;
+import com.qxotic.jota.Stride;
+import com.qxotic.jota.memory.MemoryView;
 
 public final class StridedOffsetIteratorImpl implements OffsetIterator {
-    private final long[] byteStrides;
-    private final Shape shape;
+    private final Stride byteStride;
+    private final Layout layout;
     private final long startOffset;
     private final long totalElements;
     private final long[] currentPos;
@@ -14,11 +15,11 @@ public final class StridedOffsetIteratorImpl implements OffsetIterator {
     private long elementsProcessed;
 
     public StridedOffsetIteratorImpl(MemoryView<?> memoryView) {
-        this.byteStrides = memoryView.byteStrides();
-        this.shape = memoryView.shape();
+        this.byteStride = memoryView.byteStride();
+        this.layout = memoryView.layout();
         this.startOffset = memoryView.byteOffset();
-        this.totalElements = memoryView.shape().totalNumberOfElements();
-        this.currentPos = new long[shape.rank()];
+        this.totalElements = memoryView.shape().size();
+        this.currentPos = new long[layout.shape().rank()];
         this.currentOffset = startOffset;
         this.elementsProcessed = 0;
     }
@@ -37,16 +38,16 @@ public final class StridedOffsetIteratorImpl implements OffsetIterator {
         elementsProcessed++;
 
         // Increment the rightmost dimension
-        int dim = shape.rank() - 1;
+        int dim = layout.shape().rank() - 1;
         currentPos[dim]++;
-        currentOffset += byteStrides[dim];
+        currentOffset += byteStride.flatAt(dim);
 
         // Handle dimension carry-over
-        while (dim > 0 && currentPos[dim] >= shape.dimension(dim)) {
+        while (dim > 0 && currentPos[dim] >= layout.shape().flatAt(dim)) {
             currentPos[dim] = 0;
             dim--;
             currentPos[dim]++;
-            currentOffset += byteStrides[dim] - (shape.dimension(dim + 1) * byteStrides[dim + 1]);
+            currentOffset += byteStride.flatAt(dim) - (layout.shape().flatAt(dim + 1) * byteStride.flatAt(dim + 1));
         }
 
         return offsetToReturn;

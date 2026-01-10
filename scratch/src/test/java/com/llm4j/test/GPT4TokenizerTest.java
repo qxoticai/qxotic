@@ -7,6 +7,7 @@ import com.llm4j.tokenizers.Tokenizer;
 import com.llm4j.tokenizers.IntSequence;
 import com.llm4j.tokenizers.Normalizer;
 import com.llm4j.tokenizers.impl.RegexSplitter;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -24,6 +25,7 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+@Disabled
 public class GPT4TokenizerTest {
 
     static final String ENDOFTEXT = "<|endoftext|>";

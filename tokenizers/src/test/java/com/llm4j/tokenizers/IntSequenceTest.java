@@ -205,8 +205,8 @@ public class IntSequenceTest {
     }
 
     static void assertCompare(int expected, IntSequence first, IntSequence second) {
-        assertEquals(Integer.signum(expected), first.compareTo(second));
-        assertEquals(-Integer.signum(expected), second.compareTo(first));
+        assertEquals(Integer.signum(expected), Integer.signum(first.compareTo(second)));
+        assertEquals(-Integer.signum(expected), Integer.signum(second.compareTo(first)));
     }
 
     @Test
@@ -221,7 +221,7 @@ public class IntSequenceTest {
 
         // Same length.
         assertCompare(-1, IntSequence.of(1, 2), IntSequence.of(2, 1));
-        assertCompare(0, IntSequence.of(2, 1), IntSequence.wrap(List.of(1, 2)));
+        assertCompare(+1, IntSequence.of(2, 1), IntSequence.wrap(List.of(1, 2)));
 
         // Different length.
         assertCompare(-1, IntSequence.of(0), IntSequence.of(1, 2));

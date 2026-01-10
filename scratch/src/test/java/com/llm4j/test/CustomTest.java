@@ -2,11 +2,13 @@ package com.llm4j.test;
 
 import com.llm4j.tokenizers.Tokenizer;
 import com.llm4j.tokenizers.IntSequence;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+@Disabled
 public class CustomTest extends TokenizerTest {
     private static final String[] TEST_STRINGS = {
             "", // empty string

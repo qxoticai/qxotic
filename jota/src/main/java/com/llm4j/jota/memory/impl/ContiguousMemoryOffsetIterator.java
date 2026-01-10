@@ -1,6 +1,6 @@
 package com.llm4j.jota.memory.impl;
 
-import com.llm4j.jota.memory.MemoryView;
+import com.qxotic.jota.memory.MemoryView;
 import com.llm4j.jota.memory.OffsetIterator;
 
 public final class ContiguousMemoryOffsetIterator implements OffsetIterator {
@@ -13,7 +13,7 @@ public final class ContiguousMemoryOffsetIterator implements OffsetIterator {
         if (!memoryView.isContiguous()) {
             throw new IllegalArgumentException("not contiguous view");
         }
-        long totalNumberOfElements = memoryView.shape().totalNumberOfElements();
+        long totalNumberOfElements = memoryView.shape().size();
         this.stepSize = memoryView.dataType().byteSize();
         this.byteOffset = memoryView.byteOffset();
         this.endOffset = this.byteOffset + stepSize * totalNumberOfElements;
