@@ -11,7 +11,7 @@ class NestedTemplateTest {
     @Test
     void testShapeNestedFromShape() {
         // Create a template shape with nested structure
-        Shape template = Shape.pattern("[,[,,[,]]]", 2, 3, 4, 5, 6);
+        Shape template = Shape.pattern("[_,[_,_,[_,_]]]", 2, 3, 4, 5, 6);
 
         // Create new shape with same nesting but different dimensions
         Shape shape = Shape.template(template, 10, 20, 30, 40, 50);
@@ -71,7 +71,7 @@ class NestedTemplateTest {
     void testStrideNestedFromStride() {
         // Create a template stride
         Stride template = Stride.template(
-            Shape.pattern("[,[,,[,]]]", 2, 3, 4, 5, 6),
+            Shape.pattern("[_,[_,_,[_,_]]]", 2, 3, 4, 5, 6),
             10000, 1000, 100, 10, 1
         );
 
@@ -111,7 +111,7 @@ class NestedTemplateTest {
 
     @Test
     void testMismatchedDimensions() {
-        Shape template = Shape.pattern("[,[,]]", 2, 3, 4);
+        Shape template = Shape.pattern("[_,[_,_]]", 2, 3, 4);
 
         // Too few dimensions
         assertThrows(IllegalArgumentException.class, () -> {

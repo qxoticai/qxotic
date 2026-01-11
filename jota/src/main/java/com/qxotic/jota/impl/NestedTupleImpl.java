@@ -14,8 +14,37 @@ abstract class NestedTupleImpl<T extends NestedTuple<T>> implements NestedTuple<
     final int[] parent;
 
     NestedTupleImpl(long[] flat, int[] parent) {
+        assert flat != null : "Flat array cannot be null";
+
+        // Parent can be null (indicates flat structure)
+        // If parent is not null, it must match the flat array length
+        assert parent == null || flat.length == parent.length :
+            "Flat and parent arrays must have the same length: flat.length=" + flat.length + ", parent.length=" + parent.length;
+
+        // Validate parent array structure (if not null)
+        if (parent != null) {
+            assertValidParentArray(parent);
+        }
+
         this.flat = flat;
         this.parent = parent;
+    }
+
+    /**
+     * Assert that the parent array structure is valid.
+     * This is called from the constructor to catch structural errors early.
+     */
+    private static void assertValidParentArray(int[] parent) {
+        for (int i = 0; i < parent.length; i++) {
+            int parentIndex = parent[i];
+
+            assert parentIndex >= -1 :
+                "Invalid parent index at position " + i + ": " + parentIndex + " (must be >= -1)";
+
+            assert parentIndex < i :
+                "Invalid parent index at position " + i + ": " + parentIndex +
+                " (parent must come before child, i.e., parent[i] < i)";
+        }
     }
 
     @Override

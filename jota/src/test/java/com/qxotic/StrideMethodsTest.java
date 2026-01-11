@@ -195,7 +195,7 @@ class StrideMethodsTest {
 
     @Test
     void testTemplateBasedStride() {
-        Shape template = Shape.pattern("[,[,]]", 2, 3, 4);
+        Shape template = Shape.pattern("[_,[_,_]]", 2, 3, 4);
         Stride stride = Stride.template(template, 100, 10, 1);
 
         assertEquals(2, stride.rank());
@@ -275,5 +275,103 @@ class StrideMethodsTest {
         Stride stride = Stride.of(inner);
 
         assertSame(inner, stride);
+    }
+
+    @Test
+    void testStridePattern() {
+        // Test flat pattern [a, b, c]
+        Stride stride = Stride.pattern("[a, b, c]", 12, 4, 1);
+
+        assertEquals(3, stride.rank());
+        assertEquals(3, stride.flatRank());
+        assertTrue(stride.isFlat());
+        assertArrayEquals(new long[]{12, 4, 1}, stride.toArray());
+    }
+
+    @Test
+    void testStrideNestedPattern() {
+        // Test nested pattern [s, [s1, s2]]
+        Stride stride = Stride.pattern("[s, [s1, s2]]", 100, 10, 1);
+
+        assertEquals(2, stride.rank());
+        assertEquals(3, stride.flatRank());
+        assertArrayEquals(new long[]{100, 10, 1}, stride.toArray());
+    }
+
+    @Test
+    void testStrideScalarPattern() {
+        // "[]" means scalar/empty nesting (no strides)
+        Stride stride = Stride.pattern("[]");
+
+        assertEquals(0, stride.rank());
+        assertEquals(0, stride.flatRank());
+        assertArrayEquals(new long[]{}, stride.toArray());
+    }
+
+    @Test
+    void testStrideSingletonPattern() {
+        // "[_]" or "[stride]" means a singleton with one stride value
+        Stride stride1 = Stride.pattern("[_]", 12);
+        Stride stride2 = Stride.pattern("[stride]", 12);
+
+        assertEquals(1, stride1.rank());
+        assertEquals(1, stride1.flatRank());
+        assertArrayEquals(new long[]{12}, stride1.toArray());
+
+        assertEquals(1, stride2.rank());
+        assertEquals(1, stride2.flatRank());
+        assertArrayEquals(new long[]{12}, stride2.toArray());
+    }
+
+    @Test
+    void testStrideEmptyIdentifiersNotAllowed() {
+        // Empty identifiers should throw an exception
+        assertThrows(IllegalArgumentException.class, () -> {
+            Stride.pattern("[,]", 12, 4);
+        }, "Empty identifiers should not be allowed");
+
+        assertThrows(IllegalArgumentException.class, () -> {
+            Stride.pattern("[, [, ]]", 100, 10, 1);
+        }, "Empty identifiers should not be allowed");
+    }
+
+    @Test
+    void testStrideMalformedPatterns() {
+        // Empty nested brackets [[]] are not allowed
+        assertThrows(IllegalArgumentException.class, () -> {
+            Stride.pattern("[[]]");
+        }, "Empty nested brackets should not be allowed");
+
+        // Empty nested brackets as part of a sequence
+        assertThrows(IllegalArgumentException.class, () -> {
+            Stride.pattern("[[], _]", 12);
+        }, "Empty nested brackets in sequence should not be allowed");
+
+        assertThrows(IllegalArgumentException.class, () -> {
+            Stride.pattern("[_, []]", 12);
+        }, "Empty nested brackets in sequence should not be allowed");
+    }
+
+    @Test
+    void testStrideNonNormalizedPatterns() {
+        // Single-element nested brackets [[_]] are not normalized
+        assertThrows(IllegalArgumentException.class, () -> {
+            Stride.pattern("[[_]]", 12);
+        }, "Single-element nested brackets should be rejected as non-normalized");
+
+        // [[s]] should also be rejected
+        assertThrows(IllegalArgumentException.class, () -> {
+            Stride.pattern("[[stride]]", 12);
+        }, "Single-element nested brackets should be rejected as non-normalized");
+
+        // More deeply nested single elements
+        assertThrows(IllegalArgumentException.class, () -> {
+            Stride.pattern("[[[_]]]", 12);
+        }, "Deeply nested single elements should be rejected");
+
+        // Single element nested within a valid structure
+        assertThrows(IllegalArgumentException.class, () -> {
+            Stride.pattern("[s1, [[s2]]]", 12, 4);
+        }, "Single-element nested brackets in sequence should be rejected");
     }
 }

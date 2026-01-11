@@ -61,14 +61,97 @@ class NestedShapePatternTest {
     }
 
     @Test
-    void testPatternWithoutNames() {
-        // Can omit names: [, [, ]]
-        Shape shape = Shape.pattern("[, [, ]]", 2, 3, 4);
+    void testPatternWithPlaceholders() {
+        // Use placeholders like '_' for anonymous dimensions
+        Shape shape = Shape.pattern("[_, [_, _]]", 2, 3, 4);
 
         assertEquals(2, shape.rank());
         assertEquals(3, shape.flatRank());
         assertEquals(2, shape.size(0));
         assertEquals(12, shape.size(1));
+    }
+
+    @Test
+    void testScalarPattern() {
+        // "[]" means scalar/empty nesting (no dimensions)
+        Shape shape = Shape.pattern("[]");
+
+        assertTrue(shape.isScalar());
+        assertEquals(0, shape.rank());
+        assertEquals(0, shape.flatRank());
+        assertEquals(1, shape.size(), "Scalar has size 1");
+        assertArrayEquals(new long[]{}, shape.toArray());
+    }
+
+    @Test
+    void testSingletonPattern() {
+        // "[_]" or "[size]" means a singleton with one dimension
+        Shape shape1 = Shape.pattern("[_]", 5);
+        Shape shape2 = Shape.pattern("[size]", 5);
+
+        assertEquals(1, shape1.rank());
+        assertEquals(1, shape1.flatRank());
+        assertEquals(5, shape1.size(0));
+        assertEquals(5, shape1.size());
+        assertArrayEquals(new long[]{5}, shape1.toArray());
+
+        assertEquals(1, shape2.rank());
+        assertEquals(1, shape2.flatRank());
+        assertEquals(5, shape2.size(0));
+        assertEquals(5, shape2.size());
+        assertArrayEquals(new long[]{5}, shape2.toArray());
+    }
+
+    @Test
+    void testEmptyIdentifiersNotAllowed() {
+        // Empty identifiers should throw an exception
+        assertThrows(IllegalArgumentException.class, () -> {
+            Shape.pattern("[,]", 2, 3);
+        }, "Empty identifiers should not be allowed");
+
+        assertThrows(IllegalArgumentException.class, () -> {
+            Shape.pattern("[, [, ]]", 2, 3, 4);
+        }, "Empty identifiers should not be allowed");
+    }
+
+    @Test
+    void testMalformedPatterns() {
+        // Empty nested brackets [[]] are not allowed
+        assertThrows(IllegalArgumentException.class, () -> {
+            Shape.pattern("[[]]");
+        }, "Empty nested brackets should not be allowed");
+
+        // Empty nested brackets as part of a sequence
+        assertThrows(IllegalArgumentException.class, () -> {
+            Shape.pattern("[[], _]", 5);
+        }, "Empty nested brackets in sequence should not be allowed");
+
+        assertThrows(IllegalArgumentException.class, () -> {
+            Shape.pattern("[_, []]", 5);
+        }, "Empty nested brackets in sequence should not be allowed");
+    }
+
+    @Test
+    void testNonNormalizedPatterns() {
+        // Single-element nested brackets [[_]] are not normalized
+        assertThrows(IllegalArgumentException.class, () -> {
+            Shape.pattern("[[_]]", 5);
+        }, "Single-element nested brackets should be rejected as non-normalized");
+
+        // [[a]] should also be rejected
+        assertThrows(IllegalArgumentException.class, () -> {
+            Shape.pattern("[[dim]]", 5);
+        }, "Single-element nested brackets should be rejected as non-normalized");
+
+        // More deeply nested single elements
+        assertThrows(IllegalArgumentException.class, () -> {
+            Shape.pattern("[[[_]]]", 5);
+        }, "Deeply nested single elements should be rejected");
+
+        // Single element nested within a valid structure
+        assertThrows(IllegalArgumentException.class, () -> {
+            Shape.pattern("[a, [[b]]]", 2, 3);
+        }, "Single-element nested brackets in sequence should be rejected");
     }
 
     @Test
@@ -88,10 +171,10 @@ class NestedShapePatternTest {
 
     @Test
     void testDeeperNesting() {
-        // [,[,,[,]]] with dims 2, 3, 4, 5, 6
+        // [_,[_,_,[_,_]]] with dims 2, 3, 4, 5, 6
         // Should create: [2, [3, 4, [5, 6]]]
         // rank=2: mode0=2, mode1 is nested [3,4,[5,6]]
-        Shape shape = Shape.pattern("[,[,,[,]]]", 2, 3, 4, 5, 6);
+        Shape shape = Shape.pattern("[_,[_,_,[_,_]]]", 2, 3, 4, 5, 6);
 
         System.out.println("Top-level shape: " + shape);
         System.out.println("Top-level rank: " + shape.rank() + ", flatRank: " + shape.flatRank());

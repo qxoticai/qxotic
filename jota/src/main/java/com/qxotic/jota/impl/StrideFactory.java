@@ -36,4 +36,15 @@ public final class StrideFactory {
         return StrideImpl.scalar();
     }
 
+    public static Stride pattern(String pattern, long... strides) {
+        try {
+            int[] parent = PatternParser.parsePattern(pattern, strides.length, "stride");
+            if (strides.length == 0) {
+                return StrideImpl.scalar();
+            }
+            return StrideImpl.of(strides, parent);
+        } catch (ArrayIndexOutOfBoundsException e) {
+            throw new IllegalArgumentException("Pattern has more elements than provided strides", e);
+        }
+    }
 }

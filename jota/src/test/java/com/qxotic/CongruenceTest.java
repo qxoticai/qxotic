@@ -31,12 +31,11 @@ class CongruenceTest {
 
     @Test
     void testNestedCongruenceDifferentStructure() {
-        // Shape: [2, [3, 4]] - pattern "[,[,]]"
-        // Stride: [[12, 4], 1] - pattern "[[,],]"
-        // Note: We can only test different nesting between two shapes since
-        // Stride doesn't support pattern-based creation
-        Shape shape1 = Shape.pattern("[,[,]]", 2, 3, 4);
-        Shape shape2 = Shape.pattern("[[,],]", 2, 3, 4);
+        // Shape: [2, [3, 4]] - pattern "[_,[_,_]]"
+        // Stride: [[12, 4], 1] - pattern "[[_,_],_]"
+        // Different nesting structures
+        Shape shape1 = Shape.pattern("[_,[_,_]]", 2, 3, 4);
+        Shape shape2 = Shape.pattern("[[_,_],_]", 2, 3, 4);
 
         assertFalse(shape1.isCongruentWith(shape2)); // Different nesting structure
     }
@@ -174,7 +173,7 @@ class CongruenceTest {
 
     @Test
     void testTemplateBasedCongruence() {
-        Shape template = Shape.pattern("[,[,]]", 1, 2, 3);
+        Shape template = Shape.pattern("[_,[_,_]]", 1, 2, 3);
         Shape shape = Shape.template(template, 10, 20, 30);
         Stride stride = Stride.template(template, 100, 10, 1);
 
