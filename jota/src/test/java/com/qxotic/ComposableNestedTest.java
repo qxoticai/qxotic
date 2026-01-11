@@ -51,7 +51,7 @@ class ComposableNestedTest {
     @Test
     void testTemplateBased() {
         // Template-based nesting still works
-        Shape template = Shape.pattern("[,[,,[,]]]", 2, 3, 4, 5, 6);
+        Shape template = Shape.pattern("[_,[_,_,[_,_]]]", 2, 3, 4, 5, 6);
         Shape newShape = Shape.template(template, 10, 20, 30, 40, 50);
 
         assertEquals(2, newShape.rank());

@@ -181,7 +181,7 @@ class ShapeMethodsTest {
 
     @Test
     void testTemplateBasedShape() {
-        Shape template = Shape.pattern("[,[,]]", 1, 2, 3);
+        Shape template = Shape.pattern("[_,[_,_]]", 1, 2, 3);
         Shape newShape = Shape.template(template, 10, 20, 30);
 
         assertEquals(template.rank(), newShape.rank());

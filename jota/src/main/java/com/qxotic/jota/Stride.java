@@ -21,6 +21,10 @@ public interface Stride extends NestedTuple<Stride> {
         return StrideFactory.template(template, strides);
     }
 
+    static Stride pattern(String pattern, long... strides) {
+        return StrideFactory.pattern(pattern, strides);
+    }
+
     static Stride rowMajor(Shape shape) {
         return computeStrides(shape, false);
     }
