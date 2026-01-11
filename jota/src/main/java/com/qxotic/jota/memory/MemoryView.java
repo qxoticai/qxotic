@@ -47,6 +47,32 @@ public interface MemoryView<B> {
         return true;
     }
 
+    static boolean isWithinBounds(Layout layout, DataType dataType, long byteOffset, Memory<?> memory) {
+        if (layout.shape().size() == 0) {
+            return true;
+        }
+
+        long minRelativeOffset = 0;
+        long maxRelativeOffset = 0;
+        long[] strides = layout.stride().scale(dataType.byteSize()).toArray();
+        for (int i = 0; i < layout.shape().flatRank(); i++) {
+            long dim = layout.shape().flatAt(i);
+            if (dim <= 1) {
+                continue;
+            }
+            long stride = strides[i];
+            long span = (dim - 1) * stride;
+            if (stride >= 0) {
+                maxRelativeOffset += span;
+            } else {
+                minRelativeOffset += span;
+            }
+        }
+        long minOffset = byteOffset + minRelativeOffset;
+        long maxOffset = byteOffset + maxRelativeOffset;
+        return minOffset >= 0 && maxOffset + dataType.byteSize() <= memory.byteSize();
+    }
+
     MemoryView<B> reshape(Shape newShape);
 
     MemoryView<B> permute(int... permutationIndices);
