@@ -4,6 +4,7 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Stride;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.Util;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryView;
 
@@ -14,9 +15,15 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
 
     private final Layout layout;
     private final DataType dataType;
+    private final Stride byteStride;
     private final Memory<T> memory;
     private final long byteOffset;
     final boolean isContiguous;
+
+    @Override
+    public Stride byteStride() {
+        return this.byteStride;
+    }
 
     private MemoryViewImpl(Layout layout, DataType dataType, long byteOffset, Memory<T> memory) {
         if (byteOffset < 0) {
@@ -24,44 +31,14 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
         }
         this.layout = layout;
         this.dataType = dataType;
+        this.byteStride = this.layout.stride().scale(this.dataType.byteSize());
         this.memory = memory;
         this.byteOffset = byteOffset;
         this.isContiguous = layout.isCongruentWith(Layout.rowMajor(layout.shape()));
 
-        if (this.isContiguous) {
-            if (byteOffset + dataType.byteSizeFor(layout.shape().size()) > memory.byteSize()) {
-                throw new IllegalArgumentException("view spans beyond memory size");
-            }
-        } else {
-            // TODO(peterssen): Check view is within memory bounds, taking strides into account.
+        if (!MemoryView.isWithinBounds(layout, dataType, byteOffset, memory)) {
+            throw new IllegalArgumentException("view spans beyond memory size");
         }
-    }
-
-    // Legacy constructor for backward compatibility
-    private MemoryViewImpl(Shape shape, long[] byteStrides, DataType dataType, long byteOffset, Memory<T> memory) {
-        // Convert byte strides to element strides
-        long elementByteSize = dataType.byteSize();
-        long[] elementStrides = new long[byteStrides.length];
-        for (int i = 0; i < elementStrides.length; i++) {
-            elementStrides[i] = byteStrides[i] / elementByteSize;
-        }
-        this.layout = Layout.of(shape, Stride.flat(elementStrides));
-        this.dataType = dataType;
-        this.byteOffset = byteOffset;
-        this.memory = memory;
-        this.isContiguous = MemoryView.super.isContiguous();
-
-        if (this.isContiguous) {
-            if (byteOffset + dataType.byteSizeFor(shape.size()) > memory.byteSize()) {
-                throw new IllegalArgumentException("view spans beyond memory size");
-            }
-        } else {
-            // TODO(peterssen): Check view is within memory bounds, taking strides into account.
-        }
-    }
-
-    static <B> MemoryView<B> create(Shape shape, long[] byteStrides, DataType dataType, long byteOffset, Memory<B> memory) {
-        return new MemoryViewImpl<>(shape, byteStrides, dataType, byteOffset, memory);
     }
 
     static <B> MemoryView<B> create(Layout layout, DataType dataType, long byteOffset, Memory<B> memory) {
@@ -110,7 +87,49 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
 
     @Override
     public MemoryView<T> slice(int _axis, long fromInclusive, long toExclusive, long indexStride) {
-        throw new UnsupportedOperationException();
+        int axis = Util.wrapAround(_axis, layout.shape().rank());
+        long dimSize = layout.shape().size(axis);
+
+        if (indexStride == 0) {
+            throw new IllegalArgumentException("Step cannot be zero");
+        }
+
+        if (indexStride > 0) {
+            if (fromInclusive < 0 || toExclusive > dimSize || fromInclusive > toExclusive) {
+                throw new IllegalArgumentException(String.format(
+                        "Invalid slice range [%d, %d) with step %d for dimension %d of size %d",
+                        fromInclusive, toExclusive, indexStride, axis, dimSize
+                ));
+            }
+        } else {
+            if (fromInclusive < 0 || fromInclusive >= dimSize || toExclusive < -1
+                    || toExclusive >= dimSize || fromInclusive < toExclusive) {
+                throw new IllegalArgumentException(String.format(
+                        "Invalid slice range [%d, %d) with step %d for dimension %d of size %d",
+                        fromInclusive, toExclusive, indexStride, axis, dimSize
+                ));
+            }
+        }
+
+        long newOffset = byteOffset + fromInclusive * byteStride.modeAt(axis).flatAt(0);
+
+        long length;
+        if (indexStride > 0) {
+            length = (toExclusive - fromInclusive + indexStride - 1) / indexStride;
+        } else {
+            length = (toExclusive - fromInclusive + indexStride + 1) / indexStride;
+        }
+        if (length < 0) {
+            length = 0;
+        }
+
+        Shape newModeShape = Shape.flat(length);
+        Shape newShape = layout.shape().replace(axis, newModeShape);
+        Stride newModeStride = layout.stride().modeAt(axis).scale(indexStride);
+        Stride newStride = layout.stride().replace(axis, newModeStride);
+
+        Layout newLayout = Layout.of(newShape, newStride);
+        return MemoryViewImpl.create(newLayout, dataType, newOffset, memory);
     }
 
 //    @Override
