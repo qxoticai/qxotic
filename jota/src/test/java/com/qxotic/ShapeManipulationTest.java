@@ -32,7 +32,7 @@ class ShapeManipulationTest {
 
     @Test
     void testReplaceNestedShape() {
-        // [2, [3, 4], 5]
+        // (2, (3, 4), 5)
         Shape shape = Shape.of(2, Shape.of(3L, 4L), 5);
 
         // Replace nested mode with flat
@@ -76,7 +76,7 @@ class ShapeManipulationTest {
 
     @Test
     void testInsertNestedShape() {
-        // [2, [3, 4]]
+        // (2, (3, 4))
         Shape shape = Shape.of(2, Shape.of(3L, 4L));
 
         // Insert at beginning
@@ -119,7 +119,7 @@ class ShapeManipulationTest {
 
     @Test
     void testRemoveNestedShape() {
-        // [2, [3, 4], 5]
+        // (2, (3, 4), 5)
         Shape shape = Shape.of(2, Shape.of(3L, 4L), 5);
 
         // Remove nested mode
@@ -170,7 +170,7 @@ class ShapeManipulationTest {
 
     @Test
     void testPermuteNestedShape() {
-        // [2, [3, 4], 5]
+        // (2, (3, 4), 5)
         Shape shape = Shape.of(2, Shape.of(3L, 4L), 5);
 
         // Reverse modes
@@ -203,14 +203,14 @@ class ShapeManipulationTest {
 
     @Test
     void testChainedOperations() {
-        // Start with [2, 3, 4]
+        // Start with (2, 3, 4)
         Shape shape = Shape.flat(2, 3, 4);
 
         // Insert, then replace, then permute
         Shape result = shape
-            .insert(1, Shape.of(10L))          // [2, 10, 3, 4]
-            .replace(2, Shape.of(20L, 30L))    // [2, 10, [20, 30], 4]
-            .permute(3, 0, 1, 2);              // [4, 2, 10, [20, 30]]
+            .insert(1, Shape.of(10L))          // (2, 10, 3, 4)
+            .replace(2, Shape.of(20L, 30L))    // (2, 10, (20, 30), 4)
+            .permute(3, 0, 1, 2);              // (4, 2, 10, (20, 30))
 
         assertEquals(4, result.rank());
         assertEquals(5, result.flatRank());
@@ -219,7 +219,7 @@ class ShapeManipulationTest {
 
     @Test
     void testReplacePreservesNesting() {
-        // [[1, 2], [3, 4]]
+        // ((1, 2), (3, 4))
         Shape shape = Shape.of(Shape.of(1L, 2L), Shape.of(3L, 4L));
 
         // Replace first mode

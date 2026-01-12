@@ -17,7 +17,7 @@ public final class StrideFactory {
             return StrideImpl.scalar();
         }
         if (template instanceof NestedTupleImpl<?> impl) {
-            return StrideImpl.of(strides, impl.parent);
+            return StrideImpl.of(strides, impl.nest);
         } else {
             throw new IllegalArgumentException("Unsupported NestedTuple implementation");
         }
@@ -38,11 +38,11 @@ public final class StrideFactory {
 
     public static Stride pattern(String pattern, long... strides) {
         try {
-            int[] parent = PatternParser.parsePattern(pattern, strides.length, "stride");
+            int[] nest = PatternParser.parsePattern(pattern, strides.length, "stride");
             if (strides.length == 0) {
                 return StrideImpl.scalar();
             }
-            return StrideImpl.of(strides, parent);
+            return StrideImpl.of(strides, nest);
         } catch (ArrayIndexOutOfBoundsException e) {
             throw new IllegalArgumentException("Pattern has more elements than provided strides", e);
         }

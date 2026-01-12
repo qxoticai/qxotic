@@ -14,7 +14,7 @@ public class JotaShapeTest {
         assertEquals(0, scalar.rank());
         assertEquals(0, scalar.flatRank());
         assertArrayEquals(new long[0], scalar.toArray());
-        assertEquals("[]", scalar.toString());
+        assertEquals("()", scalar.toString());
         assertEquals(scalar, scalar.flatten());
     }
 
@@ -26,7 +26,7 @@ public class JotaShapeTest {
         assertEquals(1, shape.rank());
         assertEquals(1, shape.flatRank());
         assertArrayEquals(new long[]{42}, shape.toArray());
-        assertEquals("[42]", shape.toString());
+        assertEquals("(42)", shape.toString());
         assertEquals(shape, shape.flatten());
     }
 }

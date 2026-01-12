@@ -24,7 +24,7 @@ class StrideMethodsTest {
 
     @Test
     void testNestedStrideBasics() {
-        // [12, [4, 1]]
+        // (12, (4, 1))
         Stride stride = Stride.of(12, Stride.of(4L, 1L));
 
         assertEquals(2, stride.rank());
@@ -82,7 +82,7 @@ class StrideMethodsTest {
 
     @Test
     void testModeAtNestedStride() {
-        // [12, [4, 1]]
+        // (12, (4, 1))
         Stride stride = Stride.of(12, Stride.of(4L, 1L));
 
         Stride mode0 = stride.modeAt(0);
@@ -119,7 +119,7 @@ class StrideMethodsTest {
 
     @Test
     void testFlattenNestedStride() {
-        // [12, [4, 1]]
+        // (12, (4, 1))
         Stride stride = Stride.of(12, Stride.of(4L, 1L));
         Stride flattened = stride.flatten();
 
@@ -151,7 +151,7 @@ class StrideMethodsTest {
 
     @Test
     void testRowMajorNested() {
-        // Shape: [2, [3, 4]]
+        // Shape: (2, (3, 4))
         Shape shape = Shape.of(2, Shape.of(3L, 4L));
         Stride stride = Stride.rowMajor(shape);
 
@@ -163,7 +163,7 @@ class StrideMethodsTest {
 
     @Test
     void testColumnMajorNested() {
-        // Shape: [2, [3, 4]]
+        // Shape: (2, (3, 4))
         Shape shape = Shape.of(2, Shape.of(3L, 4L));
         Stride stride = Stride.columnMajor(shape);
 
@@ -195,7 +195,7 @@ class StrideMethodsTest {
 
     @Test
     void testTemplateBasedStride() {
-        Shape template = Shape.pattern("[_,[_,_]]", 2, 3, 4);
+        Shape template = Shape.pattern("(_,(_,_))", 2, 3, 4);
         Stride stride = Stride.template(template, 100, 10, 1);
 
         assertEquals(2, stride.rank());
@@ -205,7 +205,7 @@ class StrideMethodsTest {
 
     @Test
     void testDeeplyNestedStride() {
-        // [100, [10, [2, 1]]]
+        // (100, (10, (2, 1)))
         Stride stride = Stride.of(100, Stride.of(10, Stride.of(2L, 1L)));
 
         assertEquals(2, stride.rank());
@@ -221,7 +221,7 @@ class StrideMethodsTest {
 
     @Test
     void testRowMajorPreservesNesting() {
-        Shape shape = Shape.pattern("[[N, M], K]", 2, 3, 4);
+        Shape shape = Shape.pattern("((N, M), K)", 2, 3, 4);
         Stride stride = Stride.rowMajor(shape);
 
         assertEquals(shape.rank(), stride.rank());
@@ -231,7 +231,7 @@ class StrideMethodsTest {
 
     @Test
     void testColumnMajorPreservesNesting() {
-        Shape shape = Shape.pattern("[[N, M], K]", 2, 3, 4);
+        Shape shape = Shape.pattern("((N, M), K)", 2, 3, 4);
         Stride stride = Stride.columnMajor(shape);
 
         assertEquals(shape.rank(), stride.rank());
@@ -242,15 +242,15 @@ class StrideMethodsTest {
     @Test
     void testToString() {
         Stride flat = Stride.flat(12, 4, 1);
-        assertEquals("[12, 4, 1]", flat.toString());
+        assertEquals("(12, 4, 1)", flat.toString());
 
         Stride nested = Stride.of(12, Stride.of(4L, 1L));
-        assertEquals("[12,[4, 1]]", nested.toString());
+        assertEquals("(12, (4, 1))", nested.toString());
     }
 
     @Test
     void testComposition() {
-        // Stride.of(100, Stride.of(10, 1)) → [100, [10, 1]]
+        // Stride.of(100, Stride.of(10, 1)) → (100, (10, 1))
         Stride stride = Stride.of(100, Stride.of(10L, 1L));
 
         assertEquals(2, stride.rank());
@@ -260,7 +260,7 @@ class StrideMethodsTest {
 
     @Test
     void testSingleElementNormalization() {
-        // Single-element strides get unwrapped: nested(100, Stride.of(10), Stride.of(1)) → [100, 10, 1]
+        // Single-element strides get unwrapped: nested(100, Stride.of(10), Stride.of(1)) → (100, 10, 1)
         Stride stride = Stride.of(100, Stride.of(10L), Stride.of(1L));
 
         assertTrue(stride.isFlat());
@@ -270,7 +270,7 @@ class StrideMethodsTest {
 
     @Test
     void testUnwrapSingle() {
-        // nested(Stride.of(12, 4)) → [12, 4]
+        // nested(Stride.of(12, 4)) → (12, 4)
         Stride inner = Stride.of(12L, 4L);
         Stride stride = Stride.of(inner);
 
@@ -279,8 +279,8 @@ class StrideMethodsTest {
 
     @Test
     void testStridePattern() {
-        // Test flat pattern [a, b, c]
-        Stride stride = Stride.pattern("[a, b, c]", 12, 4, 1);
+        // Test flat pattern (a, b, c)
+        Stride stride = Stride.pattern("(a, b, c)", 12, 4, 1);
 
         assertEquals(3, stride.rank());
         assertEquals(3, stride.flatRank());
@@ -290,8 +290,8 @@ class StrideMethodsTest {
 
     @Test
     void testStrideNestedPattern() {
-        // Test nested pattern [s, [s1, s2]]
-        Stride stride = Stride.pattern("[s, [s1, s2]]", 100, 10, 1);
+        // Test nested pattern (s, (s1, s2))
+        Stride stride = Stride.pattern("(s, (s1, s2))", 100, 10, 1);
 
         assertEquals(2, stride.rank());
         assertEquals(3, stride.flatRank());
@@ -300,8 +300,8 @@ class StrideMethodsTest {
 
     @Test
     void testStrideScalarPattern() {
-        // "[]" means scalar/empty nesting (no strides)
-        Stride stride = Stride.pattern("[]");
+        // "()" means scalar/empty nesting (no strides)
+        Stride stride = Stride.pattern("()");
 
         assertEquals(0, stride.rank());
         assertEquals(0, stride.flatRank());
@@ -310,9 +310,9 @@ class StrideMethodsTest {
 
     @Test
     void testStrideSingletonPattern() {
-        // "[_]" or "[stride]" means a singleton with one stride value
-        Stride stride1 = Stride.pattern("[_]", 12);
-        Stride stride2 = Stride.pattern("[stride]", 12);
+        // "(_)" or "(stride)" means a singleton with one stride value
+        Stride stride1 = Stride.pattern("(_)", 12);
+        Stride stride2 = Stride.pattern("(stride)", 12);
 
         assertEquals(1, stride1.rank());
         assertEquals(1, stride1.flatRank());
@@ -327,51 +327,55 @@ class StrideMethodsTest {
     void testStrideEmptyIdentifiersNotAllowed() {
         // Empty identifiers should throw an exception
         assertThrows(IllegalArgumentException.class, () -> {
-            Stride.pattern("[,]", 12, 4);
+            Stride.pattern("(,)", 12, 4);
         }, "Empty identifiers should not be allowed");
 
         assertThrows(IllegalArgumentException.class, () -> {
-            Stride.pattern("[, [, ]]", 100, 10, 1);
+            Stride.pattern("(, (, ))", 100, 10, 1);
+        }, "Empty identifiers should not be allowed");
+
+        assertThrows(IllegalArgumentException.class, () -> {
+            Stride.pattern("(, (, ))", 100, 10, 1);
         }, "Empty identifiers should not be allowed");
     }
 
     @Test
     void testStrideMalformedPatterns() {
-        // Empty nested brackets [[]] are not allowed
+        // Empty nested brackets (()) are not allowed
         assertThrows(IllegalArgumentException.class, () -> {
-            Stride.pattern("[[]]");
+            Stride.pattern("(())");
         }, "Empty nested brackets should not be allowed");
 
         // Empty nested brackets as part of a sequence
         assertThrows(IllegalArgumentException.class, () -> {
-            Stride.pattern("[[], _]", 12);
+            Stride.pattern("((), _)", 12);
         }, "Empty nested brackets in sequence should not be allowed");
 
         assertThrows(IllegalArgumentException.class, () -> {
-            Stride.pattern("[_, []]", 12);
+            Stride.pattern("(_, ())", 12);
         }, "Empty nested brackets in sequence should not be allowed");
     }
 
     @Test
     void testStrideNonNormalizedPatterns() {
-        // Single-element nested brackets [[_]] are not normalized
+        // Single-element nested brackets (( _ )) are not normalized
         assertThrows(IllegalArgumentException.class, () -> {
-            Stride.pattern("[[_]]", 12);
+            Stride.pattern("((_))", 12);
         }, "Single-element nested brackets should be rejected as non-normalized");
 
-        // [[s]] should also be rejected
+        // ((s)) should also be rejected
         assertThrows(IllegalArgumentException.class, () -> {
-            Stride.pattern("[[stride]]", 12);
+            Stride.pattern("((stride))", 12);
         }, "Single-element nested brackets should be rejected as non-normalized");
 
         // More deeply nested single elements
         assertThrows(IllegalArgumentException.class, () -> {
-            Stride.pattern("[[[_]]]", 12);
+            Stride.pattern("(((_)))", 12);
         }, "Deeply nested single elements should be rejected");
 
         // Single element nested within a valid structure
         assertThrows(IllegalArgumentException.class, () -> {
-            Stride.pattern("[s1, [[s2]]]", 12, 4);
+            Stride.pattern("(s1, ((s2)))", 12, 4);
         }, "Single-element nested brackets in sequence should be rejected");
     }
 }
