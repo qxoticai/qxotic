@@ -68,22 +68,21 @@ abstract class NestedTupleImpl<T extends NestedTuple<T>> implements NestedTuple<
         if (isScalar()) {
             return "()";
         }
-        StringJoiner joiner = new StringJoiner(", ", "(", ")");
-        if (isFlat()) {
-            for (int i = 0; i < flatRank(); ++i) {
-                joiner.add(Long.toString(flatAt(i)));
+        StringBuilder builder = new StringBuilder();
+        builder.append('(');
+        for (int i = 0; i < flatRank(); i++) {
+            if (i > 0) {
+                builder.append(", ");
             }
-        } else {
-            for (int i = 0; i < rank(); ++i) {
-                NestedTuple<?> mode = modeAt(i);
-                if (mode.flatRank() == 1) { // (x) -> x
-                    joiner.add(Long.toString(mode.flatAt(0)));
-                } else {
-                    joiner.add(mode.toString());
-                }
-            }
+            int value = nest == null ? 0 : nest[i];
+            int open = Math.max(value, 0);
+            int close = Math.max(-value, 0);
+            builder.append("(".repeat(open));
+            builder.append(flat[i]);
+            builder.append(")".repeat(close));
         }
-        return joiner.toString();
+        builder.append(')');
+        return builder.toString();
     }
 
     @Override
