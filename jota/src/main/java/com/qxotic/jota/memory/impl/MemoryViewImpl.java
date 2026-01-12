@@ -34,7 +34,7 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
         this.byteStride = this.layout.stride().scale(this.dataType.byteSize());
         this.memory = memory;
         this.byteOffset = byteOffset;
-        this.isContiguous = layout.isCongruentWith(Layout.rowMajor(layout.shape()));
+        this.isContiguous = isContiguous(layout);
 
         if (!MemoryView.isWithinBounds(layout, dataType, byteOffset, memory)) {
             throw new IllegalArgumentException("view spans beyond memory size");
@@ -43,6 +43,21 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
 
     static <B> MemoryView<B> create(Layout layout, DataType dataType, long byteOffset, Memory<B> memory) {
         return new MemoryViewImpl<>(layout, dataType, byteOffset, memory);
+    }
+
+    private static boolean isContiguous(Layout layout) {
+        if (layout.shape().hasZeroElements()) {
+            return true;
+        }
+        long expectedStride = 1;
+        long[] strides = layout.stride().toArray();
+        for (int i = layout.shape().flatRank() - 1; i >= 0; i--) {
+            if (strides[i] != expectedStride) {
+                return false;
+            }
+            expectedStride *= layout.shape().flatAt(i);
+        }
+        return true;
     }
 
     @Override
@@ -71,13 +86,31 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
     }
 
     @Override
-    public MemoryView<T> reshape(Shape newShape) {
-        throw new UnsupportedOperationException();
+    public MemoryView<T> view(Shape newShape) {
+        if (layout.shape().size() != newShape.size()) {
+            throw new IllegalArgumentException("total element count mismatch");
+        }
+
+        if (isContiguous) {
+            return MemoryViewImpl.create(Layout.rowMajor(newShape), dataType, byteOffset, memory);
+        }
+
+        long[] oldStrides = layout.stride().toArray();
+        if (!canReshapeWithoutCopy(layout.shape(), newShape, oldStrides)) {
+            throw new IllegalArgumentException("Cannot view: would require copying data");
+        }
+
+        long[] newStrides = computeReshapeStrides(layout.shape(), newShape, oldStrides);
+        Layout newLayout = Layout.of(newShape, Stride.template(newShape, newStrides));
+        return MemoryViewImpl.create(newLayout, dataType, byteOffset, memory);
     }
 
     @Override
     public MemoryView<T> permute(int... permutationIndices) {
-        throw new UnsupportedOperationException();
+        Shape newShape = layout.shape().permute(permutationIndices);
+        Stride newStride = layout.stride().permute(permutationIndices);
+        Layout newLayout = Layout.of(newShape, newStride);
+        return MemoryViewImpl.create(newLayout, dataType, byteOffset, memory);
     }
 
     @Override
@@ -130,6 +163,160 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
 
         Layout newLayout = Layout.of(newShape, newStride);
         return MemoryViewImpl.create(newLayout, dataType, newOffset, memory);
+    }
+
+    private static boolean canReshapeWithoutCopy(Shape oldShape, Shape newShape, long[] oldStrides) {
+        List<Long> oldDims = new ArrayList<>();
+        List<Long> oldStridesFiltered = new ArrayList<>();
+        for (int i = 0; i < oldShape.flatRank(); i++) {
+            long dim = oldShape.flatAt(i);
+            if (dim != 1) {
+                oldDims.add(dim);
+                oldStridesFiltered.add(oldStrides[i]);
+            }
+        }
+
+        List<Long> newDims = new ArrayList<>();
+        for (int i = 0; i < newShape.flatRank(); i++) {
+            long dim = newShape.flatAt(i);
+            if (dim != 1) {
+                newDims.add(dim);
+            }
+        }
+
+        if (oldDims.equals(newDims)) {
+            return true;
+        }
+
+        return canGroupDimensions(oldDims, newDims, oldStridesFiltered);
+    }
+
+    private static boolean canGroupDimensions(List<Long> oldDims, List<Long> newDims, List<Long> oldStrides) {
+        if (oldDims.isEmpty() && newDims.isEmpty()) {
+            return true;
+        }
+
+        int oldIdx = 0;
+        int newIdx = 0;
+        while (oldIdx < oldDims.size() && newIdx < newDims.size()) {
+            long oldProduct = 1;
+            long newProduct = 1;
+            int oldStart = oldIdx;
+
+            while (oldIdx < oldDims.size() && oldProduct < newDims.get(newIdx)) {
+                oldProduct *= oldDims.get(oldIdx);
+                oldIdx++;
+            }
+
+            while (newIdx < newDims.size() && newProduct < oldProduct) {
+                newProduct *= newDims.get(newIdx);
+                newIdx++;
+            }
+
+            if (oldProduct != newProduct) {
+                return false;
+            }
+
+            if (!areContiguous(oldDims, oldStrides, oldStart, oldIdx)) {
+                return false;
+            }
+        }
+
+        return oldIdx == oldDims.size() && newIdx == newDims.size();
+    }
+
+    private static boolean areContiguous(List<Long> dims, List<Long> strides, int startIdx, int endIdx) {
+        if (endIdx - startIdx <= 1) {
+            return true;
+        }
+
+        long expectedStride = 1;
+        for (int i = endIdx - 1; i >= startIdx; i--) {
+            if (strides.get(i) != expectedStride) {
+                return false;
+            }
+            expectedStride *= dims.get(i);
+        }
+        return true;
+    }
+
+    private static long[] computeReshapeStrides(Shape oldShape, Shape newShape, long[] oldStrides) {
+        List<Long> oldDimsNonSingleton = new ArrayList<>();
+        List<Long> oldStridesNonSingleton = new ArrayList<>();
+        for (int i = 0; i < oldShape.flatRank(); i++) {
+            if (oldShape.flatAt(i) != 1) {
+                oldDimsNonSingleton.add(oldShape.flatAt(i));
+                oldStridesNonSingleton.add(oldStrides[i]);
+            }
+        }
+
+        List<Long> newDimsNonSingleton = new ArrayList<>();
+        List<Integer> newDimIndices = new ArrayList<>();
+        for (int i = 0; i < newShape.flatRank(); i++) {
+            if (newShape.flatAt(i) != 1) {
+                newDimsNonSingleton.add(newShape.flatAt(i));
+                newDimIndices.add(i);
+            }
+        }
+
+        long[] newStrides = new long[newShape.flatRank()];
+
+        if (oldDimsNonSingleton.equals(newDimsNonSingleton)) {
+            int k = 0;
+            for (int i = 0; i < newShape.flatRank(); i++) {
+                if (newShape.flatAt(i) != 1) {
+                    newStrides[i] = oldStridesNonSingleton.get(k++);
+                }
+            }
+            for (int i = newShape.flatRank() - 1; i >= 0; i--) {
+                if (newShape.flatAt(i) == 1) {
+                    newStrides[i] = (i == newShape.flatRank() - 1) ? 1 : newStrides[i + 1];
+                }
+            }
+            return newStrides;
+        }
+
+        int oldIdx = 0;
+        int newIdx = 0;
+        while (oldIdx < oldDimsNonSingleton.size() && newIdx < newDimsNonSingleton.size()) {
+            long oldProduct = 1;
+            long newProduct = 1;
+            int oldStart = oldIdx;
+            int newStart = newIdx;
+
+            while (oldIdx < oldDimsNonSingleton.size() && oldProduct < newDimsNonSingleton.get(newIdx)) {
+                oldProduct *= oldDimsNonSingleton.get(oldIdx++);
+            }
+            while (newIdx < newDimsNonSingleton.size() && newProduct < oldProduct) {
+                newProduct *= newDimsNonSingleton.get(newIdx++);
+            }
+            if (oldProduct != newProduct) {
+                throw new IllegalArgumentException("Cannot reshape: incompatible dimension grouping");
+            }
+
+            long baseStride = oldStridesNonSingleton.get(oldStart);
+            for (int i = newStart; i < newIdx; i++) {
+                int actualNewIdx = newDimIndices.get(i);
+                if (i == newIdx - 1) {
+                    newStrides[actualNewIdx] = baseStride;
+                } else {
+                    long stride = baseStride;
+                    for (int j = i + 1; j < newIdx; j++) {
+                        int laterIdx = newDimIndices.get(j);
+                        stride *= newShape.flatAt(laterIdx);
+                    }
+                    newStrides[actualNewIdx] = stride;
+                }
+            }
+        }
+
+        for (int i = newShape.flatRank() - 1; i >= 0; i--) {
+            if (newStrides[i] == 0) {
+                newStrides[i] = (i == newShape.flatRank() - 1) ? 1 : newStrides[i + 1];
+            }
+        }
+
+        return newStrides;
     }
 
 //    @Override

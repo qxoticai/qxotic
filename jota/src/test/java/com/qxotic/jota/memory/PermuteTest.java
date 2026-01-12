@@ -104,7 +104,7 @@ class PermuteTest {
 //        MemoryView<float[]> permuted = view.permute(1, 0);
 //        assertEquals(Shape.of(4, 3), permuted.shape());
 //
-//        // After permute: strides [16, 0] -> [0, 16]
+//        // After permute: strides (16, 0) -> (0, 16)
 //        assertArrayEquals(new long[]{0, 4 * 4}, permuted.byteStride());
 //    }
 //

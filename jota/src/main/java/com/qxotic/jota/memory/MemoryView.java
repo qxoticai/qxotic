@@ -73,7 +73,7 @@ public interface MemoryView<B> {
         return minOffset >= 0 && maxOffset + dataType.byteSize() <= memory.byteSize();
     }
 
-    MemoryView<B> reshape(Shape newShape);
+    MemoryView<B> view(Shape newShape);
 
     MemoryView<B> permute(int... permutationIndices);
 
@@ -118,7 +118,7 @@ public interface MemoryView<B> {
         );
 
         // Create the reshaped view
-        MemoryView<B> reshaped = this.reshape(Shape.of(newDims));
+        MemoryView<B> reshaped = this.view(Shape.flat(newDims));
 
         // Step 2: Expand singleton dimensions to target sizes
         return reshaped.expand(targetShape);

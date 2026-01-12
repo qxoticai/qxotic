@@ -28,9 +28,9 @@ class ReshapeTest extends AbstractMemoryTest {
 
         // Slice last dimension and reshape (squeeze)
         MemoryView<float[]> sliced = view.slice(-1, 0, 1); // Shape: (2, 3, 1)
-        assertEquals(Shape.of(2, 3, 1), sliced.shape());
+        assertEquals(Shape.flat(2, 3, 1), sliced.shape());
 
-        MemoryView<float[]> reshaped = sliced.reshape(Shape.of(2, 3)); // Remove singleton
+        MemoryView<float[]> reshaped = sliced.view(Shape.of(2, 3)); // Remove singleton
         assertEquals(Shape.of(2, 3), reshaped.shape());
 
         // Verify data integrity using helper method
@@ -51,17 +51,17 @@ class ReshapeTest extends AbstractMemoryTest {
         MemoryView<float[]> view = MemoryViewFactory.of(DataType.F32, MemoryFactory.ofFloats(floats), Layout.rowMajor(Shape.of(2, 3, 4)));
 
         // Reshape to different dimensions with same total elements
-        MemoryView<float[]> reshaped = view.reshape(Shape.of(6, 4));
+        MemoryView<float[]> reshaped = view.view(Shape.of(6, 4));
         assertEquals(Shape.of(6, 4), reshaped.shape());
         assertTrue(reshaped.isContiguous());
 
         // Reshape to 1D
-        MemoryView<float[]> flat = view.reshape(Shape.of(24));
+        MemoryView<float[]> flat = view.view(Shape.of(24));
         assertEquals(Shape.of(24), flat.shape());
         assertTrue(flat.isContiguous());
 
         // Reshape to higher dimensions
-        MemoryView<float[]> higher = view.reshape(Shape.of(2, 2, 3, 2));
+        MemoryView<float[]> higher = view.view(Shape.of(2, 2, 3, 2));
         assertEquals(Shape.of(2, 2, 3, 2), higher.shape());
         assertTrue(higher.isContiguous());
     }
@@ -72,12 +72,12 @@ class ReshapeTest extends AbstractMemoryTest {
         MemoryView<float[]> view = MemoryViewFactory.of(DataType.F32, MemoryFactory.ofFloats(floats), Layout.rowMajor(Shape.of(2, 3, 4)));
 
         // Add singleton dimensions (unsqueeze)
-        MemoryView<float[]> unsqueezed = view.reshape(Shape.of(1, 2, 3, 4, 1));
+        MemoryView<float[]> unsqueezed = view.view(Shape.of(1, 2, 3, 4, 1));
         assertEquals(Shape.of(1, 2, 3, 4, 1), unsqueezed.shape());
 
         // Remove singleton dimensions (squeeze) - start with view that has singletons
         MemoryView<float[]> withSingletons = MemoryViewFactory.of(DataType.F32, MemoryFactory.ofFloats(floats), Layout.rowMajor(Shape.of(1, 2, 3, 4, 1)));
-        MemoryView<float[]> squeezed = withSingletons.reshape(Shape.of(2, 3, 4));
+        MemoryView<float[]> squeezed = withSingletons.view(Shape.of(2, 3, 4));
         assertEquals(Shape.of(2, 3, 4), squeezed.shape());
     }
 
@@ -87,15 +87,15 @@ class ReshapeTest extends AbstractMemoryTest {
         MemoryView<float[]> view = MemoryViewFactory.of(DataType.F32, MemoryFactory.ofFloats(floats), Layout.rowMajor(Shape.of(2, 3, 4)));
 
         // Collapse first two dimensions
-        MemoryView<float[]> collapsed = view.reshape(Shape.of(6, 4));
+        MemoryView<float[]> collapsed = view.view(Shape.of(6, 4));
         assertEquals(Shape.of(6, 4), collapsed.shape());
 
         // Collapse last two dimensions
-        MemoryView<float[]> collapsed2 = view.reshape(Shape.of(2, 12));
+        MemoryView<float[]> collapsed2 = view.view(Shape.of(2, 12));
         assertEquals(Shape.of(2, 12), collapsed2.shape());
 
         // Collapse all dimensions
-        MemoryView<float[]> flat = view.reshape(Shape.of(24));
+        MemoryView<float[]> flat = view.view(Shape.of(24));
         assertEquals(Shape.of(24), flat.shape());
     }
 
@@ -105,15 +105,15 @@ class ReshapeTest extends AbstractMemoryTest {
         MemoryView<float[]> view = MemoryViewFactory.of(DataType.F32, MemoryFactory.ofFloats(floats), Layout.rowMajor(Shape.of(6, 4)));
 
         // Split first dimension
-        MemoryView<float[]> split = view.reshape(Shape.of(2, 3, 4));
+        MemoryView<float[]> split = view.view(Shape.of(2, 3, 4));
         assertEquals(Shape.of(2, 3, 4), split.shape());
 
         // Split second dimension
-        MemoryView<float[]> split2 = view.reshape(Shape.of(6, 2, 2));
+        MemoryView<float[]> split2 = view.view(Shape.of(6, 2, 2));
         assertEquals(Shape.of(6, 2, 2), split2.shape());
 
         // Split into more dimensions
-        MemoryView<float[]> split3 = view.reshape(Shape.of(2, 3, 2, 2));
+        MemoryView<float[]> split3 = view.view(Shape.of(2, 3, 2, 2));
         assertEquals(Shape.of(2, 3, 2, 2), split3.shape());
     }
 
@@ -124,15 +124,15 @@ class ReshapeTest extends AbstractMemoryTest {
 
         // Test element count mismatch
         assertThrows(IllegalArgumentException.class, () -> {
-            view.reshape(Shape.of(2, 3, 5)); // 30 elements vs 24
+            view.view(Shape.of(2, 3, 5)); // 30 elements vs 24
         });
 
         assertThrows(IllegalArgumentException.class, () -> {
-            view.reshape(Shape.of(2, 3)); // 6 elements vs 24
+            view.view(Shape.of(2, 3)); // 6 elements vs 24
         });
 
         assertThrows(IllegalArgumentException.class, () -> {
-            view.reshape(Shape.of(25)); // 25 elements vs 24
+            view.view(Shape.of(25)); // 25 elements vs 24
         });
     }
 
@@ -147,7 +147,7 @@ class ReshapeTest extends AbstractMemoryTest {
 
         // Some reshapes should fail on non-contiguous views
         assertThrows(IllegalArgumentException.class, () -> {
-            permuted.reshape(Shape.of(8, 3)); // This would require copying
+            permuted.view(Shape.of(8, 3)); // This would require copying
         });
     }
 
@@ -156,7 +156,7 @@ class ReshapeTest extends AbstractMemoryTest {
         float[] floats = arange(2 * 3 * 4);
         MemoryView<float[]> view = MemoryViewFactory.of(DataType.F32, MemoryFactory.ofFloats(floats), Layout.rowMajor(Shape.of(2, 3, 4)));
 
-        MemoryView<float[]> reshaped = view.reshape(Shape.of(6, 4));
+        MemoryView<float[]> reshaped = view.view(Shape.of(6, 4));
 
         // Should reference the same memory
         assertSame(view.memory(), reshaped.memory());
@@ -170,11 +170,11 @@ class ReshapeTest extends AbstractMemoryTest {
         MemoryView<float[]> scalar = MemoryViewFactory.of(DataType.F32, MemoryFactory.ofFloats(floats), Layout.scalar());
 
         // Reshape scalar to 1D with single element
-        MemoryView<float[]> vector = scalar.reshape(Shape.of(1));
+        MemoryView<float[]> vector = scalar.view(Shape.of(1));
         assertEquals(Shape.of(1), vector.shape());
 
         // Reshape back to scalar
-        MemoryView<float[]> backToScalar = vector.reshape(Shape.of());
+        MemoryView<float[]> backToScalar = vector.view(Shape.of());
         assertEquals(Shape.of(), backToScalar.shape());
     }
 
@@ -191,7 +191,7 @@ class ReshapeTest extends AbstractMemoryTest {
         assertEquals(11.0f, readFloat(memoryAccess, view, 2, 3));
 
         // Reshape to (2, 6)
-        MemoryView<float[]> reshaped = view.reshape(Shape.of(2, 6));
+        MemoryView<float[]> reshaped = view.view(Shape.of(2, 6));
         // Should be: [[0,1,2,3,4,5], [6,7,8,9,10,11]]
         assertEquals(0.0f, readFloat(memoryAccess, reshaped, 0, 0));
         assertEquals(5.0f, readFloat(memoryAccess, reshaped, 0, 5));
@@ -199,7 +199,7 @@ class ReshapeTest extends AbstractMemoryTest {
         assertEquals(11.0f, readFloat(memoryAccess, reshaped, 1, 5));
 
         // Reshape to (12,) - flat
-        MemoryView<float[]> flat = view.reshape(Shape.of(12));
+        MemoryView<float[]> flat = view.view(Shape.of(12));
         for (int i = 0; i < 12; i++) {
             assertEquals((float) i, readFloat(memoryAccess, flat, i));
         }
@@ -211,10 +211,10 @@ class ReshapeTest extends AbstractMemoryTest {
         MemoryView<float[]> view = MemoryViewFactory.rowMajor(DataType.F32, MemoryFactory.ofFloats(data), Shape.of(3, 4));
 
         // Reshape to different shapes with same total elements (12)
-        assertDoesNotThrow(() -> view.reshape(Shape.of(12)));
-        assertDoesNotThrow(() -> view.reshape(Shape.of(6, 2)));
-        assertDoesNotThrow(() -> view.reshape(Shape.of(2, 3, 2)));
-        assertDoesNotThrow(() -> view.reshape(Shape.of(1, 12, 1)));
+        assertDoesNotThrow(() -> view.view(Shape.of(12)));
+        assertDoesNotThrow(() -> view.view(Shape.of(6, 2)));
+        assertDoesNotThrow(() -> view.view(Shape.of(2, 3, 2)));
+        assertDoesNotThrow(() -> view.view(Shape.of(1, 12, 1)));
     }
 
     @Test
@@ -223,9 +223,9 @@ class ReshapeTest extends AbstractMemoryTest {
         MemoryView<float[]> view = MemoryViewFactory.rowMajor(DataType.F32, MemoryFactory.ofFloats(data), Shape.of(3, 4));
 
         // Attempt to reshape to shapes with different total elements
-        assertThrows(IllegalArgumentException.class, () -> view.reshape(Shape.of(5)));
-        assertThrows(IllegalArgumentException.class, () -> view.reshape(Shape.of(2, 5)));
-        assertThrows(IllegalArgumentException.class, () -> view.reshape(Shape.of(3, 3)));
+        assertThrows(IllegalArgumentException.class, () -> view.view(Shape.of(5)));
+        assertThrows(IllegalArgumentException.class, () -> view.view(Shape.of(2, 5)));
+        assertThrows(IllegalArgumentException.class, () -> view.view(Shape.of(3, 3)));
     }
 
     @Test
@@ -240,14 +240,14 @@ class ReshapeTest extends AbstractMemoryTest {
         assertEquals(11.0f, readFloat(memoryAccess, view, 2, 3));
 
         // Reshape to 2x6
-        MemoryView<float[]> reshaped2x6 = view.reshape(Shape.of(2, 6));
+        MemoryView<float[]> reshaped2x6 = view.view(Shape.of(2, 6));
         assertEquals(0.0f, readFloat(memoryAccess, reshaped2x6, 0, 0));
         assertEquals(5.0f, readFloat(memoryAccess, reshaped2x6, 0, 5));
         assertEquals(6.0f, readFloat(memoryAccess, reshaped2x6, 1, 0));
         assertEquals(11.0f, readFloat(memoryAccess, reshaped2x6, 1, 5));
 
         // Reshape to 4x3
-        MemoryView<float[]> reshaped4x3 = view.reshape(Shape.of(4, 3));
+        MemoryView<float[]> reshaped4x3 = view.view(Shape.of(4, 3));
         assertEquals(0.0f, readFloat(memoryAccess, reshaped4x3, 0, 0));
         assertEquals(5.0f, readFloat(memoryAccess, reshaped4x3, 1, 2));
         assertEquals(6.0f, readFloat(memoryAccess, reshaped4x3, 2, 0));
@@ -260,11 +260,11 @@ class ReshapeTest extends AbstractMemoryTest {
         MemoryView<float[]> emptyView = MemoryViewFactory.rowMajor(DataType.F32, MemoryFactory.ofFloats(emptyData), Shape.of(0));
 
         // Valid reshapes of empty view
-        assertDoesNotThrow(() -> emptyView.reshape(Shape.of(0, 0)));
-        assertDoesNotThrow(() -> emptyView.reshape(Shape.of(0, 1, 0)));
+        assertDoesNotThrow(() -> emptyView.view(Shape.of(0, 0)));
+        assertDoesNotThrow(() -> emptyView.view(Shape.of(0, 1, 0)));
 
         // Invalid reshapes
-        assertThrows(IllegalArgumentException.class, () -> emptyView.reshape(Shape.of(1)));
+        assertThrows(IllegalArgumentException.class, () -> emptyView.view(Shape.of(1)));
     }
 
     @Test
@@ -289,9 +289,9 @@ class ReshapeTest extends AbstractMemoryTest {
         assertTrue(sliced.isContiguous(), "First two rows should be contiguous");
 
         // Should be able to reshape freely since it's contiguous
-        assertDoesNotThrow(() -> sliced.reshape(Shape.of(2, 4)));
-        assertDoesNotThrow(() -> sliced.reshape(Shape.of(8)));
-        assertDoesNotThrow(() -> sliced.reshape(Shape.of(2, 2, 2)));
+        assertDoesNotThrow(() -> sliced.view(Shape.of(2, 4)));
+        assertDoesNotThrow(() -> sliced.view(Shape.of(8)));
+        assertDoesNotThrow(() -> sliced.view(Shape.of(2, 2, 2)));
     }
 
     @Test
@@ -301,12 +301,12 @@ class ReshapeTest extends AbstractMemoryTest {
 
         // Create a non-contiguous view by taking every other element in the last dimension
         MemoryView<float[]> sliced = view.slice(1, 0, 4, 2); // Every other element in dim 1
-        // This creates strides like [16, 8] instead of [16, 4]
+        // This creates strides like (16, 8) instead of (16, 4)
 
         assertFalse(sliced.isContiguous());
 
         // Should throw when trying to reshape non-contiguous data
-        assertThrows(IllegalArgumentException.class, () -> sliced.reshape(Shape.of(6)));
+        assertThrows(IllegalArgumentException.class, () -> sliced.view(Shape.of(6)));
     }
 
     @Test
@@ -319,10 +319,31 @@ class ReshapeTest extends AbstractMemoryTest {
         assertFalse(sliced.isContiguous());
 
         // Should be able to reshape as long as we don't change non-singleton dimensions
-        assertDoesNotThrow(() -> sliced.reshape(Shape.of(2, 4)));
-        assertDoesNotThrow(() -> sliced.reshape(Shape.of(2, 2, 2)));
+        assertDoesNotThrow(() -> sliced.view(Shape.of(2, 4)));
+        assertDoesNotThrow(() -> sliced.view(Shape.of(2, 2, 2)));
 
         // Should throw when trying to change non-singleton dimensions
-        assertThrows(IllegalArgumentException.class, () -> sliced.reshape(Shape.of(8)));
+        assertThrows(IllegalArgumentException.class, () -> sliced.view(Shape.of(8)));
+    }
+
+    @Test
+    void testViewContiguous() {
+        float[] floats = arange(2 * 3 * 4);
+        MemoryView<float[]> view = MemoryViewFactory.rowMajor(DataType.F32, MemoryFactory.ofFloats(floats), Shape.of(2, 3, 4));
+
+        MemoryView<float[]> viewed = view.view(Shape.of(6, 4));
+        assertEquals(Shape.of(6, 4), viewed.shape());
+        assertTrue(viewed.isContiguous());
+        assertSame(view.memory(), viewed.memory());
+        assertEquals(view.byteOffset(), viewed.byteOffset());
+    }
+
+    @Test
+    void testViewNonContiguousRejectsCopy() {
+        float[] floats = arange(2 * 3 * 4);
+        MemoryView<float[]> view = MemoryViewFactory.rowMajor(DataType.F32, MemoryFactory.ofFloats(floats), Shape.of(2, 3, 4));
+        MemoryView<float[]> sliced = view.slice(2, 0, 4, 2);
+
+        assertThrows(IllegalArgumentException.class, () -> sliced.view(Shape.of(6)));
     }
 }

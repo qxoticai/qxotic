@@ -33,7 +33,7 @@ public class IsContiguousTest extends MemoryTest {
     @Test
     void testFlattenIsContiguous() {
         MemoryView<float[]> v = MemoryViewFactory.of(DataType.F32, MemoryFactory.ofFloats(new float[12]), Layout.rowMajor(3, 4));
-        MemoryView<float[]> flat = v.reshape(Shape.of(12));
+        MemoryView<float[]> flat = v.view(Shape.of(12));
         assertTrue(flat.isContiguous(), "Reshape to 1D should remain contiguous");
     }
 
@@ -58,7 +58,7 @@ public class IsContiguousTest extends MemoryTest {
         MemoryView<float[]> row = v.slice(0, 1, 2);
         assertTrue(row.isContiguous(), "Slicing a single full row should be contiguous");
         // Optional: also check after reshape to 1D (length 4)
-        assertTrue(row.reshape(Shape.of(4)).isContiguous(), "Reshaped row should be contiguous");
+        assertTrue(row.view(Shape.of(4)).isContiguous(), "Reshaped row should be contiguous");
     }
 
     @Test
