@@ -27,7 +27,7 @@ class FoldOperationTest {
     public static MemoryView<float[]> full(float value, Shape shape) {
         var floats = new float[Math.toIntExact(shape.size())];
         Arrays.fill(floats, value);
-        return of(floats).reshape(shape);
+        return of(floats).view(shape);
     }
 
     public static MemoryView<float[]> zeros(Shape shape) {
@@ -113,7 +113,7 @@ class FoldOperationTest {
         // Input: [[0, 1, 2],
         //         [3, 4, 5]]
         // Expected output: [0+3, 1+4, 2+5] = [3, 5, 7] (with initial value 0)
-        var input = range(6).reshape(Shape.of(2, 3));
+        var input = range(6).view(Shape.of(2, 3));
         var output = zeros(Shape.of(3));
 
         context.floatOperations().fold(input, Float::sum, 0f, output, 0);
@@ -128,7 +128,7 @@ class FoldOperationTest {
         // Input: [[0, 1, 2],
         //         [3, 4, 5]]
         // Expected output: [0+1+2, 3+4+5] = [3, 12] (with initial value 0)
-        var input = range(6).reshape(Shape.of(2, 3));
+        var input = range(6).view(Shape.of(2, 3));
         var output = zeros(Shape.of(2));
 
         context.floatOperations().fold(input, Float::sum, 0f, output, 1);
@@ -143,7 +143,7 @@ class FoldOperationTest {
         // Input: [[1, 2, 3],
         //         [4, 5, 6]]
         // Expected output: [1*4, 2*5, 3*6] = [4, 10, 18] (with initial value 1)
-        var input = range(1, 7).reshape(Shape.of(2, 3));
+        var input = range(1, 7).view(Shape.of(2, 3));
         var output = zeros(Shape.of(3));
 
         context.floatOperations().fold(input, (a, b) -> a * b, 1f, output, 0);
@@ -156,7 +156,7 @@ class FoldOperationTest {
     void testFold3D_Axis1() {
         // Test 2x3x2 tensor folding along axis 1
         // Input shape: [2, 3, 2], Output shape: [2, 2]
-        var input = range(12).reshape(Shape.of(2, 3, 2));
+        var input = range(12).view(Shape.of(2, 3, 2));
         var output = zeros(Shape.of(2, 2));
 
         context.floatOperations().fold(input, Float::sum, 0f, output, 1);
@@ -174,7 +174,7 @@ class FoldOperationTest {
     void testFold3D_Axis2() {
         // Test 2x3x2 tensor folding along axis 2
         // Input shape: [2, 3, 2], Output shape: [2, 3]
-        var input = range(12).reshape(Shape.of(2, 3, 2));
+        var input = range(12).view(Shape.of(2, 3, 2));
         var output = zeros(Shape.of(2, 3));
 
         context.floatOperations().fold(input, Float::sum, 0f, output, 2);
@@ -193,7 +193,7 @@ class FoldOperationTest {
     @Test
     void testFoldWithTranspose() {
         // Test folding on a transposed view (different strides)
-        var input = range(6).reshape(Shape.of(2, 3));
+        var input = range(6).view(Shape.of(2, 3));
         var transposed = input.permute(1, 0); // Shape becomes [3, 2]
         var output = zeros(Shape.of(3));
 
@@ -210,7 +210,7 @@ class FoldOperationTest {
 //    @Test
 //    void testFoldWithSlice() {
 //        // Test folding on a sliced view
-//        var input = range(12).reshape(Shape.of(3, 4));
+//        var input = range(12).view(Shape.of(3, 4));
 //        var sliced = input.slice(0, 1, 3); // Take rows 1-2, shape becomes [2, 4]
 //        var output = zeros(Shape.of(4));
 //
@@ -249,7 +249,7 @@ class FoldOperationTest {
 
     @Test
     void testFoldErrorCases() {
-        var input = range(6).reshape(Shape.of(2, 3));
+        var input = range(6).view(Shape.of(2, 3));
         var output = zeros(Shape.of(3));
 
         // Test invalid axis
@@ -271,7 +271,7 @@ class FoldOperationTest {
     @Test
     void testFoldLargeAxis() {
         // Test folding along a large axis to check performance and correctness
-        var input = range(1000).reshape(Shape.of(10, 100));
+        var input = range(1000).view(Shape.of(10, 100));
         var output = zeros(Shape.of(10));
 
         context.floatOperations().fold(input, Float::sum, 0f, output, 1);

@@ -21,8 +21,8 @@ class MemoryViewTest {
             floats[i] = i;
         }
         MemoryView<float[]> view = MemoryViewFactory.of(DataType.F32, MemoryFactory.ofFloats(floats), Layout.rowMajor(Shape.of(2, 3, 5)));
-        MemoryView<float[]> view0 = view.slice(0, 0, 1).reshape(Shape.of(3, 5));
-        MemoryView<float[]> view1 = view.slice(0, 1, 2).reshape(Shape.of(3, 5));
+        MemoryView<float[]> view0 = view.slice(0, 0, 1).view(Shape.of(3, 5));
+        MemoryView<float[]> view1 = view.slice(0, 1, 2).view(Shape.of(3, 5));
         MemoryAccess<float[]> memoryAccess = MemoryAccessFactory.ofFloats();
 
         System.out.println(AbstractMemoryTest.toString(memoryAccess, view));
@@ -37,8 +37,8 @@ class MemoryViewTest {
             floats[i] = i;
         }
         MemoryView<float[]> view = MemoryViewFactory.of(DataType.F32, MemoryFactory.ofFloats(floats), Layout.rowMajor(Shape.of(2, 3, 5)));
-        MemoryView<float[]> view0 = view.slice(-1, 0, 1); // .reshape(Shape.of(2, 3));
-        MemoryView<float[]> view1 = view.slice(-1, 1, 2); // .reshape(Shape.of(2, 3));
+        MemoryView<float[]> view0 = view.slice(-1, 0, 1); // .view(Shape.of(2, 3));
+        MemoryView<float[]> view1 = view.slice(-1, 1, 2); // .view(Shape.of(2, 3));
         MemoryAccess<float[]> memoryAccess = MemoryAccessFactory.ofFloats();
 
         System.out.println(AbstractMemoryTest.toString(memoryAccess, view));

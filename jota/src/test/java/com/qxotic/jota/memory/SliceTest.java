@@ -242,7 +242,7 @@ class SliceTest {
 //        assertEquals(Shape.of(2, 3, 3), sliced.shape());
 //
 //        // Reshape to 2D
-//        MemoryView<float[]> reshaped = sliced.reshape(Shape.of(2, 9));
+//        MemoryView<float[]> reshaped = sliced.view(Shape.of(2, 9));
 //        assertEquals(Shape.of(2, 9), reshaped.shape());
 //
 //        // Verify data

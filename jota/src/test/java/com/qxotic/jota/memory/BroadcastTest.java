@@ -42,7 +42,7 @@ class BroadcastTest {
 //                DataType.F32, MemoryFactory.ofFloats(data), Shape.of(3)
 //        );
 //
-//        // Broadcast [3] -> [2, 3]
+//        // Broadcast (3) -> (2, 3)
 //        MemoryView<float[]> result = vec.broadcast(Shape.of(2, 3));
 //
 //        assertEquals(Shape.of(2, 3), result.shape());
@@ -64,7 +64,7 @@ class BroadcastTest {
 //                DataType.F32, MemoryFactory.ofFloats(data), Shape.of(2, 2)
 //        );
 //
-//        // Broadcast [2,2] -> [3,2,2]
+//        // Broadcast (2, 2) -> (3, 2, 2)
 //        MemoryView<float[]> result = mat.broadcast(Shape.of(3, 2, 2));
 //
 //        assertEquals(Shape.of(3, 2, 2), result.shape());
@@ -86,7 +86,7 @@ class BroadcastTest {
 //                DataType.F32, MemoryFactory.ofFloats(data), Shape.of(2, 1)  // Already has singleton dimension
 //        );
 //
-//        // Broadcast [2,1] -> [2,4]
+//        // Broadcast (2, 1) -> (2, 4)
 //        MemoryView<float[]> result = vec.broadcast(Shape.of(2, 4));
 //        MemoryAccess<float[]> memoryAccess = MemoryAccessFactory.ofFloats();
 //
@@ -103,7 +103,7 @@ class BroadcastTest {
 //                DataType.F32, MemoryFactory.ofFloats(data), Shape.scalar()
 //        );
 //
-//        // Broadcast [] -> [2,3,4]
+//        // Broadcast () -> (2, 3, 4)
 //        MemoryView<float[]> result = scalar.broadcast(Shape.of(2, 3, 4));
 //
 //        assertEquals(Shape.of(2, 3, 4), result.shape());
@@ -144,7 +144,7 @@ class BroadcastTest {
 //                // Start at index 1 (4 bytes offset)
 //        );
 //
-//        // Broadcast [5] -> [3,5]
+//        // Broadcast (5) -> (3, 5)
 //        MemoryView<float[]> result = strided.broadcast(Shape.of(3, 5));
 //
 //        assertEquals(Shape.of(3, 5), result.shape());
@@ -165,9 +165,9 @@ class BroadcastTest {
 //
 //        // Chain broadcast with other operations
 //        MemoryView<float[]> result = vec
-//                .broadcast(Shape.of(1, 2))  // [1,2]
-//                .permute(1, 0)              // [2,1]
-//                .broadcast(Shape.of(2, 3));  // [2,3]
+//                .broadcast(Shape.of(1, 2))  // (1, 2)
+//                .permute(1, 0)              // (2, 1)
+//                .broadcast(Shape.of(2, 3));  // (2, 3)
 //
 //        assertEquals(Shape.of(2, 3), result.shape());
 //        MemoryAccess<float[]> memoryAccess = MemoryAccessFactory.ofFloats();
@@ -205,7 +205,7 @@ class BroadcastTest {
 //                // start at last element (offset=12)
 //        );
 //
-//        // Broadcast reversed to shape [3,4]
+//        // Broadcast reversed to shape (3, 4)
 //        MemoryView<float[]> broadcasted = reversed.broadcast(Shape.of(3, 4));
 //        MemoryAccess<float[]> memoryAccess = MemoryAccessFactory.ofFloats();
 //
@@ -217,20 +217,20 @@ class BroadcastTest {
 //
 //    @Test
 //    void testBroadcastEmptyTensor() {
-//        // Empty tensor: shape [0] (but total elements=0)
+//        // Empty tensor: shape (0) (but total elements=0)
 //        float[] data = new float[0];
 //        MemoryView<float[]> empty = MemoryViewFactory.of(
 //                DataType.F32, MemoryFactory.ofFloats(data), Shape.of(0)
 //        );
 //
-//        // Broadcasting to [3,0] (also empty) should be allowed
+//        // Broadcasting to (3, 0) (also empty) should be allowed
 //        MemoryView<float[]> result = empty.broadcast(Shape.of(3, 0));
 //        assertEquals(Shape.of(3, 0), result.shape());
 //        assertEquals(0, result.shape().size());
 //
 //        // But broadcasting to non-empty shape should throw because the original is empty and target isn't?
-//        // Actually, in the example [0] -> [3,0] is okay because the target is empty.
-//        // But if we try to broadcast [0] to [3] (non-empty) that would be invalid because we cannot expand 0 to 3.
+//        // Actually, in the example (0) -> (3, 0) is okay because the target is empty.
+//        // But if we try to broadcast (0) to (3) (non-empty) that would be invalid because we cannot expand 0 to 3.
 //        assertThrows(IllegalArgumentException.class,
 //                () -> empty.broadcast(Shape.of(3)));
 //    }
@@ -350,9 +350,9 @@ class BroadcastTest {
 //    void reshapeAddingSingletonAxisIsNotBroadcasted() {
 //        // Reshape should keep non-zero strides; adding a size-1 axis isn't broadcasting
 //        MemoryView<float[]> v = MemoryViewFactory.of(DataType.F32, MemoryFactory.ofFloats(new float[12]), Shape.of(3, 4));
-//        MemoryView<float[]> reshaped = v.reshape(Shape.of(1, 3, 4));
+//        MemoryView<float[]> reshaped = v.view(Shape.of(1, 3, 4));
 //        assertFalse(reshaped.isBroadcasted(), "Reshape with singleton axis should not introduce zero strides");
-//        assertFalse(v.transpose(0, 1).reshape(Shape.of(1, 4, 3)).isBroadcasted(), "Even after transpose, reshape alone is not broadcasting");
+//        assertFalse(v.transpose(0, 1).view(Shape.of(1, 4, 3)).isBroadcasted(), "Even after transpose, reshape alone is not broadcasting");
 //    }
 //
 //    @Test
