@@ -30,7 +30,7 @@ class ComposableShapeTest {
 
     @Test
     void testSimpleNested() {
-        // Shape.of(2, Shape.of(4, 5), 6) → [2, [4, 5], 6]
+        // Shape.of(2, Shape.of(4, 5), 6) → (2, (4, 5), 6)
         Shape shape = Shape.of(2, Shape.of(4, 5), 6);
 
         assertEquals(3, shape.rank());
@@ -47,7 +47,7 @@ class ComposableShapeTest {
 
     @Test
     void testSingleElementShapesNormalized() {
-        // Shape.of(1, Shape.of(2), Shape.of(3)) → [1, 2, 3]
+        // Shape.of(1, Shape.of(2), Shape.of(3)) → (1, 2, 3)
         // Single-element shapes get unwrapped
         Shape shape = Shape.of(1, Shape.of(2), Shape.of(3));
 
@@ -60,7 +60,7 @@ class ComposableShapeTest {
 
     @Test
     void testSingleShapeArgumentUnwrapped() {
-        // Shape.of(Shape.of(2, 3)) → [2, 3]
+        // Shape.of(Shape.of(2, 3)) → (2, 3)
         Shape inner = Shape.of(2, 3);
         Shape shape = Shape.of(inner);
 
@@ -72,7 +72,7 @@ class ComposableShapeTest {
 
     @Test
     void testSingleShapeArgumentUnwrappedNested() {
-        // Shape.of(Shape.of(1, Shape.of(2, 3))) → [1, [2, 3]]
+        // Shape.of(Shape.of(1, Shape.of(2, 3))) → (1, (2, 3))
         Shape inner = Shape.of(1, Shape.of(2, 3));
         Shape shape = Shape.of(inner);
 
@@ -83,7 +83,7 @@ class ComposableShapeTest {
 
     @Test
     void testMixedComposition() {
-        // Shape.of(Shape.of(2), Shape.of(3, 4)) → [2, [3, 4]]
+        // Shape.of(Shape.of(2), Shape.of(3, 4)) → (2, (3, 4))
         Shape shape = Shape.of(Shape.of(2), Shape.of(3, 4));
 
         assertEquals(2, shape.rank());
@@ -96,7 +96,7 @@ class ComposableShapeTest {
 
     @Test
     void testMultipleNestedGroups() {
-        // Shape.of(Shape.of(1, 2), Shape.of(3, 4)) → [[1, 2], [3, 4]]
+        // Shape.of(Shape.of(1, 2), Shape.of(3, 4)) → ((1, 2), (3, 4))
         Shape shape = Shape.of(Shape.of(1, 2), Shape.of(3, 4));
 
         assertEquals(2, shape.rank());
@@ -111,7 +111,7 @@ class ComposableShapeTest {
 
     @Test
     void testDeepNesting() {
-        // Shape.of(1, Shape.of(2, Shape.of(3, 4))) → [1, [2, [3, 4]]]
+        // Shape.of(1, Shape.of(2, Shape.of(3, 4))) → (1, (2, (3, 4)))
         Shape shape = Shape.of(1, Shape.of(2, Shape.of(3, 4)));
 
         assertEquals(2, shape.rank());
@@ -129,7 +129,7 @@ class ComposableShapeTest {
 
     @Test
     void testComplexComposition() {
-        // [1, 2, [3, 4, 5]]
+        // (1, 2, (3, 4, 5))
         Shape shape = Shape.of(1, 2, Shape.of(3, 4, 5));
 
         assertEquals(3, shape.rank());
@@ -143,7 +143,7 @@ class ComposableShapeTest {
 
     @Test
     void testStrideComposition() {
-        // Stride.of(100, Stride.of(10, 1)) → [100, [10, 1]]
+        // Stride.of(100, Stride.of(10, 1)) → (100, (10, 1))
         Stride stride = Stride.of(100, Stride.of(10, 1));
 
         assertEquals(2, stride.rank());
@@ -155,7 +155,7 @@ class ComposableShapeTest {
 
     @Test
     void testStrideSingleElementNormalized() {
-        // Stride.of(Stride.of(100), Stride.of(10, 1)) → [100, [10, 1]]
+        // Stride.of(Stride.of(100), Stride.of(10, 1)) → (100, (10, 1))
         Stride stride = Stride.of(Stride.of(100), Stride.of(10, 1));
 
         assertEquals(2, stride.rank());
@@ -165,7 +165,7 @@ class ComposableShapeTest {
 
     @Test
     void testStrideUnwrapSingle() {
-        // Stride.of(Stride.of(10, 1)) → [10, 1]
+        // Stride.of(Stride.of(10, 1)) → (10, 1)
         Stride inner = Stride.of(10, 1);
         Stride stride = Stride.of(inner);
 
@@ -175,7 +175,7 @@ class ComposableShapeTest {
 
     @Test
     void testSingleNumber() {
-        // Shape.of(5) → [5]
+        // Shape.of(5) → (5)
         Shape shape = Shape.of(5);
 
         assertEquals(1, shape.rank());
@@ -185,10 +185,10 @@ class ComposableShapeTest {
 
     @Test
     void testNestedPreservesInternalStructure() {
-        // Create a nested shape [2, [3, 4]]
+        // Create a nested shape (2, (3, 4))
         Shape nested = Shape.of(2, Shape.of(3, 4));
 
-        // Compose it: Shape.of(1, nested, 5) → [1, [2, [3, 4]], 5]
+        // Compose it: Shape.of(1, nested, 5) → (1, (2, (3, 4)), 5)
         Shape composed = Shape.of(1, nested, 5);
 
         assertEquals(3, composed.rank());
@@ -197,7 +197,7 @@ class ComposableShapeTest {
 
         System.out.println("Composed with nested: " + composed);
 
-        // Mode 1 should preserve the nested structure [2, [3, 4]]
+        // Mode 1 should preserve the nested structure (2, (3, 4))
         Shape mode1 = composed.modeAt(1);
         assertEquals(2, mode1.rank());
         assertEquals(3, mode1.flatRank());

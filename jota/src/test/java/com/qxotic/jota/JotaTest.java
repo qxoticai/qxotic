@@ -27,7 +27,7 @@ public class JotaTest {
     public static MemoryView<float[]> full(float value, Shape shape) {
         var floats = new float[Math.toIntExact(shape.size())];
         Arrays.fill(floats, value);
-        return ofFloatsVector(floats).reshape(shape);
+        return ofFloatsVector(floats).view(shape);
     }
 
     public static MemoryView<float[]> ones(Shape shape) {
@@ -53,7 +53,7 @@ public class JotaTest {
 
     @Test
     void testOps() {
-        var view2x3 = range(6).reshape(Shape.of(2, 3));
+        var view2x3 = range(6).view(Shape.of(2, 3));
 
         var view2 = zeros(Shape.of(2));
         var view3 = zeros(Shape.of(3));
@@ -78,7 +78,7 @@ public class JotaTest {
 
     @Test
     void testScalar() {
-        MemoryView<float[]> view = ofFloatsVector(1.23f).reshape(Shape.scalar());
+        MemoryView<float[]> view = ofFloatsVector(1.23f).view(Shape.scalar());
         assertTrue(view.shape().isScalar());
     }
 
@@ -86,7 +86,7 @@ public class JotaTest {
     void testCreate() {
         MemoryView<float[]> view = range(2 * 3);
         System.out.println(AbstractMemoryTest.toString(context.memoryAccess(), view));
-        view = view.reshape(Shape.of(2, 3)).permute(1, 0);
+        view = view.view(Shape.of(2, 3)).permute(1, 0);
         System.out.println(AbstractMemoryTest.toString(context.memoryAccess(), view));
     }
 

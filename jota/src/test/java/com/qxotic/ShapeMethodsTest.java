@@ -24,7 +24,7 @@ class ShapeMethodsTest {
 
     @Test
     void testNestedShapeBasics() {
-        // [2, [3, 4]]
+        // (2, (3, 4))
         Shape shape = Shape.of(2, Shape.of(3L, 4L));
 
         assertEquals(2, shape.rank());
@@ -49,7 +49,7 @@ class ShapeMethodsTest {
 
     @Test
     void testSizeByMode() {
-        // [2, [3, 4], 5]
+        // (2, (3, 4), 5)
         Shape shape = Shape.of(2, Shape.of(3L, 4L), 5);
 
         assertEquals(3, shape.rank());
@@ -104,7 +104,7 @@ class ShapeMethodsTest {
 
     @Test
     void testModeAtNestedShape() {
-        // [2, [3, 4]]
+        // (2, (3, 4))
         Shape shape = Shape.of(2, Shape.of(3L, 4L));
 
         Shape mode0 = shape.modeAt(0);
@@ -141,7 +141,7 @@ class ShapeMethodsTest {
 
     @Test
     void testFlattenNestedShape() {
-        // [2, [3, 4]]
+        // (2, (3, 4))
         Shape shape = Shape.of(2, Shape.of(3L, 4L));
         Shape flattened = shape.flatten();
 
@@ -153,7 +153,7 @@ class ShapeMethodsTest {
 
     @Test
     void testDeeplyNestedShape() {
-        // [2, [3, [4, 5]]]
+        // (2, (3, (4, 5)))
         Shape shape = Shape.of(2, Shape.of(3, Shape.of(4L, 5L)));
 
         assertEquals(2, shape.rank());
@@ -170,7 +170,7 @@ class ShapeMethodsTest {
 
     @Test
     void testPatternBasedShape() {
-        Shape shape = Shape.pattern("[batch, [N, M]]", 2, 3, 4);
+        Shape shape = Shape.pattern("(batch, (N, M))", 2, 3, 4);
 
         assertEquals(2, shape.rank());
         assertEquals(3, shape.flatRank());
@@ -181,7 +181,7 @@ class ShapeMethodsTest {
 
     @Test
     void testTemplateBasedShape() {
-        Shape template = Shape.pattern("[_,[_,_]]", 1, 2, 3);
+        Shape template = Shape.pattern("(_,(_,_))", 1, 2, 3);
         Shape newShape = Shape.template(template, 10, 20, 30);
 
         assertEquals(template.rank(), newShape.rank());
@@ -192,7 +192,7 @@ class ShapeMethodsTest {
 
     @Test
     void testMultipleRootsInNestedShape() {
-        // Create [2, [3, 4, 5]] where the nested group has one root with two children
+        // Create (2, (3, 4, 5)) where the nested group has one root with two children
         Shape inner = Shape.flat(3, 4, 5);
         Shape shape = Shape.of(2, inner);
 
@@ -204,9 +204,9 @@ class ShapeMethodsTest {
     @Test
     void testToString() {
         Shape flat = Shape.flat(2, 3, 4);
-        assertEquals("[2, 3, 4]", flat.toString());
+        assertEquals("(2, 3, 4)", flat.toString());
 
         Shape nested = Shape.of(2, Shape.of(3L, 4L));
-        assertEquals("[2,[3, 4]]", nested.toString());
+        assertEquals("(2, (3, 4))", nested.toString());
     }
 }

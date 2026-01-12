@@ -11,40 +11,40 @@ abstract class NestedTupleImpl<T extends NestedTuple<T>> implements NestedTuple<
     protected static final long[] EMPTY = new long[0];
 
     final long[] flat;
-    final int[] parent;
+    final int[] nest;
 
-    NestedTupleImpl(long[] flat, int[] parent) {
+    NestedTupleImpl(long[] flat, int[] nest) {
         assert flat != null : "Flat array cannot be null";
 
-        // Parent can be null (indicates flat structure)
-        // If parent is not null, it must match the flat array length
-        assert parent == null || flat.length == parent.length :
-            "Flat and parent arrays must have the same length: flat.length=" + flat.length + ", parent.length=" + parent.length;
+        // Nest can be null (indicates flat structure)
+        // If nest is not null, it must match the flat array length
+        assert nest == null || flat.length == nest.length :
+            "Flat and nest arrays must have the same length: flat.length=" + flat.length + ", nest.length=" + nest.length;
 
-        // Validate parent array structure (if not null)
-        if (parent != null) {
-            assertValidParentArray(parent);
+        // Validate nest array structure (if not null)
+        if (nest != null) {
+            assertValidNestArray(nest);
         }
 
         this.flat = flat;
-        this.parent = parent;
+        this.nest = nest;
     }
 
     /**
-     * Assert that the parent array structure is valid.
+     * Assert that the nest array structure is valid.
      * This is called from the constructor to catch structural errors early.
      */
-    private static void assertValidParentArray(int[] parent) {
-        for (int i = 0; i < parent.length; i++) {
-            int parentIndex = parent[i];
-
-            assert parentIndex >= -1 :
-                "Invalid parent index at position " + i + ": " + parentIndex + " (must be >= -1)";
-
-            assert parentIndex < i :
-                "Invalid parent index at position " + i + ": " + parentIndex +
-                " (parent must come before child, i.e., parent[i] < i)";
+    private static void assertValidNestArray(int[] nest) {
+        int depth = 0;
+        for (int value : nest) {
+            int open = Math.max(value, 0);
+            int close = Math.max(-value, 0);
+            depth += open;
+            assert depth >= 0 : "Invalid nest array: negative depth after opening";
+            depth -= close;
+            assert depth >= 0 : "Invalid nest array: negative depth after closing";
         }
+        assert depth == 0 : "Invalid nest array: unbalanced nesting";
     }
 
     @Override
@@ -65,20 +65,22 @@ abstract class NestedTupleImpl<T extends NestedTuple<T>> implements NestedTuple<
 
     @Override
     public String toString() {
-        if (isFlat()) {
-            return Arrays.toString(this.flat);
+        if (isScalar()) {
+            return "()";
         }
-        return nestedToString();
-    }
-
-    private String nestedToString() {
-        StringJoiner joiner = new StringJoiner(",", "[", "]");
-        for (int i = 0; i < rank(); ++i) {
-            NestedTuple<?> mode = modeAt(i);
-            if (mode.flatRank() == 1) { // [x] -> x
-                joiner.add("" + mode.flatAt(0));
-            } else {
-                joiner.add(mode.toString());
+        StringJoiner joiner = new StringJoiner(", ", "(", ")");
+        if (isFlat()) {
+            for (int i = 0; i < flatRank(); ++i) {
+                joiner.add(Long.toString(flatAt(i)));
+            }
+        } else {
+            for (int i = 0; i < rank(); ++i) {
+                NestedTuple<?> mode = modeAt(i);
+                if (mode.flatRank() == 1) { // (x) -> x
+                    joiner.add(Long.toString(mode.flatAt(0)));
+                } else {
+                    joiner.add(mode.toString());
+                }
             }
         }
         return joiner.toString();
@@ -103,9 +105,9 @@ abstract class NestedTupleImpl<T extends NestedTuple<T>> implements NestedTuple<
             return false;
         }
 
-        // Both nested -> check parent structure
+        // Both nested -> check nest structure
         if (other instanceof NestedTupleImpl<?> otherImpl) {
-            return Arrays.equals(this.parent, otherImpl.parent);
+            return Arrays.equals(this.nest, otherImpl.nest);
         }
 
         throw new IllegalArgumentException("Unsupported NestedTuple implementation");

@@ -22,7 +22,7 @@ class CongruenceTest {
 
     @Test
     void testNestedCongruenceSameStructure() {
-        // Both: [2, [3, 4]]
+        // Both: (2, (3, 4))
         Shape shape = Shape.of(2, Shape.of(3L, 4L));
         Stride stride = Stride.of(12, Stride.of(4L, 1L));
 
@@ -31,11 +31,11 @@ class CongruenceTest {
 
     @Test
     void testNestedCongruenceDifferentStructure() {
-        // Shape: [2, [3, 4]] - pattern "[_,[_,_]]"
-        // Stride: [[12, 4], 1] - pattern "[[_,_],_]"
+        // Shape: (2, (3, 4)) - pattern "(_,(_,_))"
+        // Stride: ((12, 4), 1) - pattern "((_,_),_)"
         // Different nesting structures
-        Shape shape1 = Shape.pattern("[_,[_,_]]", 2, 3, 4);
-        Shape shape2 = Shape.pattern("[[_,_],_]", 2, 3, 4);
+        Shape shape1 = Shape.pattern("(_,(_,_))", 2, 3, 4);
+        Shape shape2 = Shape.pattern("((_,_),_)", 2, 3, 4);
 
         assertFalse(shape1.isCongruentWith(shape2)); // Different nesting structure
     }
@@ -58,7 +58,7 @@ class CongruenceTest {
 
     @Test
     void testCongruenceDifferentFlatRanks() {
-        // Shape: [2, [3, 4]] (flatRank=3), Stride: [[12, 4], [2, 1]] (flatRank=4)
+        // Shape: (2, (3, 4)) (flatRank=3), Stride: ((12, 4), (2, 1)) (flatRank=4)
         Shape shape = Shape.of(2, Shape.of(3L, 4L));
         Stride stride = Stride.of(Stride.of(12L, 4L), Stride.of(2L, 1L));
 
@@ -75,7 +75,7 @@ class CongruenceTest {
 
     @Test
     void testCongruenceDeeplyNested() {
-        // Both: [2, [3, [4, 5]]]
+        // Both: (2, (3, (4, 5)))
         Shape shape = Shape.of(2, Shape.of(3, Shape.of(4L, 5L)));
         Stride stride = Stride.of(60, Stride.of(20, Stride.of(5L, 1L)));
 
@@ -165,7 +165,7 @@ class CongruenceTest {
 
     @Test
     void testPatternBasedCongruence() {
-        Shape shape = Shape.pattern("[batch, [N, M]]", 2, 3, 4);
+        Shape shape = Shape.pattern("(batch, (N, M))", 2, 3, 4);
         Stride stride = Stride.template(shape, 12, 4, 1);
 
         assertTrue(shape.isCongruentWith(stride));
@@ -173,7 +173,7 @@ class CongruenceTest {
 
     @Test
     void testTemplateBasedCongruence() {
-        Shape template = Shape.pattern("[_,[_,_]]", 1, 2, 3);
+        Shape template = Shape.pattern("(_,(_,_))", 1, 2, 3);
         Shape shape = Shape.template(template, 10, 20, 30);
         Stride stride = Stride.template(template, 100, 10, 1);
 

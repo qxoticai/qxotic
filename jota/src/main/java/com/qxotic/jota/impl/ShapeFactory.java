@@ -10,11 +10,11 @@ public final class ShapeFactory {
 
     public static Shape pattern(String pattern, long... dims) {
         try {
-            int[] parent = PatternParser.parsePattern(pattern, dims.length, "dimension");
+            int[] nest = PatternParser.parsePattern(pattern, dims.length, "dimension");
             if (dims.length == 0) {
                 return ShapeImpl.scalar();
             }
-            return ShapeImpl.of(dims, parent);
+            return ShapeImpl.of(dims, nest);
         } catch (ArrayIndexOutOfBoundsException e) {
             throw new IllegalArgumentException("Pattern has more elements than provided dimensions", e);
         }
@@ -29,7 +29,7 @@ public final class ShapeFactory {
             if (dims.length == 0) {
                 return ShapeImpl.scalar();
             }
-            return ShapeImpl.of(dims, impl.parent);
+            return ShapeImpl.of(dims, impl.nest);
         }
         throw new IllegalArgumentException("Unsupported NestedTuple implementation");
     }

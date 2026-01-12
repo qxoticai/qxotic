@@ -103,7 +103,7 @@ class LayoutCongruenceTest {
         Layout rowMajor = Layout.rowMajor(shape1);
         Layout colMajor = Layout.columnMajor(shape2);
 
-        // Row-major: [12, 4, 1], Column-major: [1, 5, 30]
+        // Row-major: (12, 4, 1), Column-major: (1, 5, 30)
         // Different stride values but both are flat structures
         assertTrue(rowMajor.isCongruentWith(colMajor));
     }
@@ -127,7 +127,7 @@ class LayoutCongruenceTest {
 
     @Test
     void testDeeplyNestedCongruence() {
-        // [2, [3, [4, 5]]]
+        // (2, (3, (4, 5)))
         Layout layout1 = Layout.of(
             Shape.of(2, Shape.of(3, Shape.of(4L, 5L))),
             Stride.of(60, Stride.of(20, Stride.of(5L, 1L)))

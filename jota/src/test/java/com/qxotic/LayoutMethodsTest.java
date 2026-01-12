@@ -79,7 +79,7 @@ class LayoutMethodsTest {
 
     @Test
     void testModeAtNestedLayout() {
-        // Shape: [2, [3, 4]], Stride: [12, [4, 1]]
+        // Shape: (2, (3, 4)), Stride: (12, (4, 1))
         Shape shape = Shape.of(2, Shape.of(3L, 4L));
         Layout layout = Layout.rowMajor(shape);
 
@@ -125,7 +125,7 @@ class LayoutMethodsTest {
 
     @Test
     void testFlattenNestedLayout() {
-        // Shape: [2, [3, 4]], Stride: [12, [4, 1]]
+        // Shape: (2, (3, 4)), Stride: (12, (4, 1))
         Shape shape = Shape.of(2, Shape.of(3L, 4L));
         Layout layout = Layout.rowMajor(shape);
         Layout flattened = layout.flatten();
@@ -143,7 +143,7 @@ class LayoutMethodsTest {
         Shape shape = Shape.flat(2, 3, 4);
         Layout layout = Layout.rowMajor(shape);
 
-        assertEquals("[2, 3, 4]:[12, 4, 1]", layout.toString());
+        assertEquals("(2, 3, 4):(12, 4, 1)", layout.toString());
     }
 
     @Test
@@ -151,13 +151,13 @@ class LayoutMethodsTest {
         Shape shape = Shape.of(2, Shape.of(3L, 4L));
         Layout layout = Layout.rowMajor(shape);
 
-        assertEquals("[2,[3, 4]]:[12,[4, 1]]", layout.toString());
+        assertEquals("(2, (3, 4)):(12, (4, 1))", layout.toString());
     }
 
     @Test
     void testToStringScalar() {
         Layout scalar = Layout.scalar();
-        assertEquals("[]:[]", scalar.toString());
+        assertEquals("():()", scalar.toString());
     }
 
     @Test
@@ -186,7 +186,7 @@ class LayoutMethodsTest {
 
     @Test
     void testDeeplyNestedLayout() {
-        // Shape: [2, [3, [4, 5]]]
+        // Shape: (2, (3, (4, 5)))
         Shape shape = Shape.of(2, Shape.of(3, Shape.of(4L, 5L)));
         Layout layout = Layout.rowMajor(shape);
 
@@ -230,7 +230,7 @@ class LayoutMethodsTest {
 
         assertEquals(shape, layout.shape());
         assertEquals(customStride, layout.stride());
-        assertEquals("[2, 3, 4]:[100, 10, 1]", layout.toString());
+        assertEquals("(2, 3, 4):(100, 10, 1)", layout.toString());
     }
 
     @Test
@@ -247,7 +247,7 @@ class LayoutMethodsTest {
 
     @Test
     void testPatternBasedLayout() {
-        Shape shape = Shape.pattern("[batch, [N, M]]", 2, 3, 4);
+        Shape shape = Shape.pattern("(batch, (N, M))", 2, 3, 4);
         Layout layout = Layout.rowMajor(shape);
 
         assertEquals(2, layout.shape().rank());

@@ -16,35 +16,36 @@ final class ShapeImpl extends NestedTupleImpl<Shape> implements Shape {
     private final long[] modeSize;
     private final long totalSize;
 
-    ShapeImpl(long[] flat, int[] parent) {
-        super(flat, parent);
+    ShapeImpl(long[] flat, int[] nest) {
+        super(flat, nest);
 
         if (Arrays.stream(flat).anyMatch(dim -> dim < 0)) {
             throw new IllegalArgumentException("negative dimension");
         }
 
         this.totalSize = Arrays.stream(this.flat).reduce(1L, Math::multiplyExact);
-        if (this.parent == null) {
+        if (this.nest == null) {
             this.modeSize = this.flat;
             return;
         }
 
-        // Compute rank (count roots)
-        int rank = 0;
-        for (int p : parent) {
-            if (p == -1) rank++;
-        }
+        int rank = countTopLevelModes(this.nest);
         this.modeSize = new long[rank];
-        int modeIdx = 0;
+        int depth = 0;
+        int modeIdx = -1;
+        long product = 1L;
         for (int i = 0; i < flat.length; i++) {
-            if (parent[i] == -1) {
-                // Found a root - compute product of this mode's subtree
-                long product = flat[i];
-                // Scan forward for children (until next root or end)
-                for (int j = i + 1; j < flat.length && parent[j] != -1; j++) {
-                    product *= flat[j];
-                }
-                modeSize[modeIdx++] = product;
+            if (depth == 0) {
+                modeIdx++;
+                product = 1L;
+            }
+            int open = Math.max(nest[i], 0);
+            int close = Math.max(-nest[i], 0);
+            depth += open;
+            product *= flat[i];
+            depth -= close;
+            if (depth == 0) {
+                modeSize[modeIdx] = product;
             }
         }
     }
@@ -62,77 +63,20 @@ final class ShapeImpl extends NestedTupleImpl<Shape> implements Shape {
             return ShapeImpl.of(new long[]{flatAt(modeIndex)});
         }
 
-        // Find the modeIndex-th root in the parent array
-        int rootCount = 0;
-        int rootIndex = -1;
-        for (int i = 0; i < parent.length; i++) {
-            if (parent[i] == -1) {
-                if (rootCount == modeIndex) {
-                    rootIndex = i;
-                    break;
-                }
-                rootCount++;
-            }
+        ModeRange range = findModeRange(modeIndex);
+        long[] modeDimsArray = Arrays.copyOfRange(flat, range.start, range.end);
+        int[] modeNestArray = nest == null ? null : Arrays.copyOfRange(nest, range.start, range.end);
+
+        if (modeNestArray != null && modeNestArray.length > 0 && modeNestArray[0] > 0) {
+            modeNestArray[0] -= 1;
+            int last = modeNestArray.length - 1;
+            modeNestArray[last] += 1;
         }
 
-        if (rootIndex == -1) {
-            throw new IndexOutOfBoundsException("Mode index " + modeIndex + " out of bounds for rank " + rank());
-        }
-
-        // Collect all dimensions that belong to this mode (root and its descendants)
-        ArrayList<Long> modeDims = new ArrayList<>();
-        ArrayList<Integer> modeParents = new ArrayList<>();
-
-        // Add root dimension
-        modeDims.add(flat[rootIndex]);
-
-        // Scan forward for descendants (until we hit the next top-level root)
-        for (int i = rootIndex + 1; i < parent.length && parent[i] != -1; i++) {
-            modeDims.add(flat[i]);
-        }
-
-        // Build the new parent array
-        // Direct children of the root become new roots at this level
-        // Descendants of direct children are remapped accordingly
-        for (int i = 0; i < modeDims.size(); i++) {
-            int absIndex = rootIndex + i;
-            if (i == 0) {
-                // First element is the root
-                modeParents.add(-1);
-            } else {
-                int originalParent = parent[absIndex];
-                if (originalParent == rootIndex) {
-                    // Direct child of root -> becomes a root at this level
-                    modeParents.add(-1);
-                } else {
-                    // Child of some other node -> remap the parent index
-                    int remappedParent = originalParent - rootIndex;
-                    modeParents.add(remappedParent);
-                }
-            }
-        }
-
-        // Convert to arrays
-        long[] modeDimsArray = new long[modeDims.size()];
-        int[] modeParentsArray = new int[modeParents.size()];
-        for (int i = 0; i < modeDims.size(); i++) {
-            modeDimsArray[i] = modeDims.get(i);
-            modeParentsArray[i] = modeParents.get(i);
-        }
-
-        // Check if this mode has nested structure (multiple roots)
-        int nestedRootCount = 0;
-        for (int p : modeParentsArray) {
-            if (p == -1) nestedRootCount++;
-        }
-
-        // If this mode is just a simple list/tree with one root, return it as flat
-        // Otherwise, preserve the nesting structure
-        if (nestedRootCount <= 1) {
+        if (isFlatNest(modeNestArray)) {
             return ShapeImpl.of(modeDimsArray);
-        } else {
-            return new ShapeImpl(modeDimsArray, modeParentsArray);
         }
+        return new ShapeImpl(modeDimsArray, modeNestArray);
     }
 
     @Override
@@ -159,12 +103,12 @@ final class ShapeImpl extends NestedTupleImpl<Shape> implements Shape {
     public boolean equals(Object other) {
         return (other instanceof ShapeImpl that)
                 && Arrays.equals(this.flat, that.flat)
-                && Arrays.equals(this.parent, that.parent);
+                && Arrays.equals(this.nest, that.nest);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(Arrays.hashCode(flat), Arrays.hashCode(parent));
+        return Objects.hash(Arrays.hashCode(flat), Arrays.hashCode(nest));
     }
 
     static Shape scalar() {
@@ -185,60 +129,20 @@ final class ShapeImpl extends NestedTupleImpl<Shape> implements Shape {
 
         // Multiple arguments - build composite structure
         List<Long> flatDims = new ArrayList<>();
-        List<Integer> parents = new ArrayList<>();
+        List<Integer> nests = new ArrayList<>();
 
-        Object[] allArgs = elements;
-
-        for (Object arg : allArgs) {
+        for (Object arg : elements) {
             if (arg instanceof Number num) {
-                // Add as single dimension at current level
                 flatDims.add(num.longValue());
-                parents.add(-1);
+                nests.add(0);
             } else if (arg instanceof Shape shape) {
-                if (shape.flatRank() == 1) {
-                    // Single-element shape - unwrap to single dimension
-                    flatDims.add(shape.flatAt(0));
-                    parents.add(-1);
-                } else {
-                    // Multi-element shape - add as nested group
-                    int groupRoot = flatDims.size();
-                    flatDims.add(shape.flatAt(0));
-                    parents.add(-1); // First element is root at this level
-
-                    // Add remaining elements as children
-                    for (int i = 1; i < shape.flatRank(); i++) {
-                        flatDims.add(shape.flatAt(i));
-
-                        // Determine parent
-                        if (shape instanceof ShapeImpl impl && impl.parent != null) {
-                            int originalParent = impl.parent[i];
-                            if (originalParent == -1) {
-                                // Another root in the nested shape -> child of group root
-                                parents.add(groupRoot);
-                            } else {
-                                // Child of some element -> remap relative to group root
-                                parents.add(groupRoot + originalParent);
-                            }
-                        } else {
-                            // Flat shape - all are children of the first element
-                            parents.add(groupRoot);
-                        }
-                    }
-                }
+                appendMode(flatDims, nests, shape);
             } else {
                 throw new IllegalArgumentException("Arguments must be Numbers or Shapes");
             }
         }
 
-        // Convert to arrays
-        long[] dims = new long[flatDims.size()];
-        int[] parentArray = new int[parents.size()];
-        for (int i = 0; i < flatDims.size(); i++) {
-            dims[i] = flatDims.get(i);
-            parentArray[i] = parents.get(i);
-        }
-
-        return new ShapeImpl(dims, parentArray);
+        return buildShape(flatDims, nests);
     }
 
     static Shape flat(long... dims) {
@@ -252,93 +156,41 @@ final class ShapeImpl extends NestedTupleImpl<Shape> implements Shape {
         return flat(dims);
     }
 
-    static Shape of(long[] dims, int[] parent) {
+    static Shape of(long[] dims, int[] nest) {
         if (dims.length == 0) {
             return scalar();
         }
-        return new ShapeImpl(dims.clone(), parent);
+        int[] nestCopy = nest == null ? null : nest.clone();
+        if (isFlatNest(nestCopy)) {
+            nestCopy = null;
+        }
+        return new ShapeImpl(dims.clone(), nestCopy);
     }
 
     @Override
     public Shape replace(int _modeIndex, Shape newMode) {
         int modeIndex = Util.wrapAround(_modeIndex, rank());
 
-        if (isFlat()) {
-            // For flat shapes, replace a single dimension with newMode's dimensions
-            List<Long> newFlat = new ArrayList<>();
-            List<Integer> newParent = new ArrayList<>();
+        List<Long> newFlat = new ArrayList<>();
+        List<Integer> newNest = new ArrayList<>();
 
+        if (isFlat()) {
             for (int i = 0; i < flat.length; i++) {
                 if (i == modeIndex) {
-                    // Insert the new mode here
-                    if (newMode.flatRank() == 1) {
-                        // Single dimension - keep flat
-                        newFlat.add(newMode.flatAt(0));
-                        newParent.add(-1);
-                    } else {
-                        // Multiple dimensions - add as nested group
-                        int groupRoot = newFlat.size();
-                        for (int j = 0; j < newMode.flatRank(); j++) {
-                            newFlat.add(newMode.flatAt(j));
-                            if (j == 0) {
-                                newParent.add(-1);
-                            } else if (newMode instanceof ShapeImpl impl && impl.parent != null) {
-                                int originalParent = impl.parent[j];
-                                newParent.add(originalParent == -1 ? groupRoot : groupRoot + originalParent);
-                            } else {
-                                newParent.add(groupRoot);
-                            }
-                        }
-                    }
+                    appendMode(newFlat, newNest, newMode);
                 } else {
                     newFlat.add(flat[i]);
-                    newParent.add(-1);
+                    newNest.add(0);
                 }
             }
-
-            return buildShape(newFlat, newParent);
+            return buildShape(newFlat, newNest);
         }
 
-        // For nested shapes, find the mode and replace it
         ModeRange range = findModeRange(modeIndex);
-
-        List<Long> newFlat = new ArrayList<>();
-        List<Integer> newParent = new ArrayList<>();
-
-        // Add dimensions before the mode
-        for (int i = 0; i < range.start; i++) {
-            newFlat.add(flat[i]);
-            newParent.add(parent[i]);
-        }
-
-        // Insert the new mode
-        int insertPoint = newFlat.size();
-        if (newMode.flatRank() == 1) {
-            newFlat.add(newMode.flatAt(0));
-            newParent.add(-1);
-        } else {
-            for (int j = 0; j < newMode.flatRank(); j++) {
-                newFlat.add(newMode.flatAt(j));
-                if (j == 0) {
-                    newParent.add(-1);
-                } else if (newMode instanceof ShapeImpl impl && impl.parent != null) {
-                    int originalParent = impl.parent[j];
-                    newParent.add(originalParent == -1 ? insertPoint : insertPoint + originalParent);
-                } else {
-                    newParent.add(insertPoint);
-                }
-            }
-        }
-
-        // Add dimensions after the mode, adjusting parent indices
-        int offset = newFlat.size() - range.end;
-        for (int i = range.end; i < flat.length; i++) {
-            newFlat.add(flat[i]);
-            int p = parent[i];
-            newParent.add(p == -1 ? -1 : (p < range.start ? p : p + offset));
-        }
-
-        return buildShape(newFlat, newParent);
+        appendRange(newFlat, newNest, 0, range.start);
+        appendMode(newFlat, newNest, newMode);
+        appendRange(newFlat, newNest, range.end, flat.length);
+        return buildShape(newFlat, newNest);
     }
 
     @Override
@@ -349,99 +201,28 @@ final class ShapeImpl extends NestedTupleImpl<Shape> implements Shape {
             return mode;
         }
 
-        if (isFlat()) {
-            List<Long> newFlat = new ArrayList<>();
-            List<Integer> newParent = new ArrayList<>();
+        List<Long> newFlat = new ArrayList<>();
+        List<Integer> newNest = new ArrayList<>();
 
+        if (isFlat()) {
             for (int i = 0; i < flat.length; i++) {
                 if (i == modeIndex) {
-                    // Insert the new mode here
-                    int insertPoint = newFlat.size();
-                    if (mode.flatRank() == 1) {
-                        newFlat.add(mode.flatAt(0));
-                        newParent.add(-1);
-                    } else {
-                        for (int j = 0; j < mode.flatRank(); j++) {
-                            newFlat.add(mode.flatAt(j));
-                            if (j == 0) {
-                                newParent.add(-1);
-                            } else if (mode instanceof ShapeImpl impl && impl.parent != null) {
-                                int originalParent = impl.parent[j];
-                                newParent.add(originalParent == -1 ? insertPoint : insertPoint + originalParent);
-                            } else {
-                                newParent.add(insertPoint);
-                            }
-                        }
-                    }
+                    appendMode(newFlat, newNest, mode);
                 }
                 newFlat.add(flat[i]);
-                newParent.add(-1);
+                newNest.add(0);
             }
-
-            // Handle insertion at the end
             if (modeIndex >= flat.length) {
-                int insertPoint = newFlat.size();
-                if (mode.flatRank() == 1) {
-                    newFlat.add(mode.flatAt(0));
-                    newParent.add(-1);
-                } else {
-                    for (int j = 0; j < mode.flatRank(); j++) {
-                        newFlat.add(mode.flatAt(j));
-                        if (j == 0) {
-                            newParent.add(-1);
-                        } else if (mode instanceof ShapeImpl impl && impl.parent != null) {
-                            int originalParent = impl.parent[j];
-                            newParent.add(originalParent == -1 ? insertPoint : insertPoint + originalParent);
-                        } else {
-                            newParent.add(insertPoint);
-                        }
-                    }
-                }
+                appendMode(newFlat, newNest, mode);
             }
-
-            return buildShape(newFlat, newParent);
+            return buildShape(newFlat, newNest);
         }
 
-        // For nested shapes
-        ModeRange range = modeIndex < rank() ? findModeRange(modeIndex) : new ModeRange(flat.length, flat.length);
-
-        List<Long> newFlat = new ArrayList<>();
-        List<Integer> newParent = new ArrayList<>();
-
-        // Add dimensions before insertion point
-        for (int i = 0; i < range.start; i++) {
-            newFlat.add(flat[i]);
-            newParent.add(parent[i]);
-        }
-
-        // Insert the new mode
-        int insertPoint = newFlat.size();
-        if (mode.flatRank() == 1) {
-            newFlat.add(mode.flatAt(0));
-            newParent.add(-1);
-        } else {
-            for (int j = 0; j < mode.flatRank(); j++) {
-                newFlat.add(mode.flatAt(j));
-                if (j == 0) {
-                    newParent.add(-1);
-                } else if (mode instanceof ShapeImpl impl && impl.parent != null) {
-                    int originalParent = impl.parent[j];
-                    newParent.add(originalParent == -1 ? insertPoint : insertPoint + originalParent);
-                } else {
-                    newParent.add(insertPoint);
-                }
-            }
-        }
-
-        // Add remaining dimensions, adjusting parent indices
-        int offset = newFlat.size() - range.start;
-        for (int i = range.start; i < flat.length; i++) {
-            newFlat.add(flat[i]);
-            int p = parent[i];
-            newParent.add(p == -1 ? -1 : (p < range.start ? p : p + offset));
-        }
-
-        return buildShape(newFlat, newParent);
+        int insertIndex = modeIndex < rank() ? findModeRange(modeIndex).start : flat.length;
+        appendRange(newFlat, newNest, 0, insertIndex);
+        appendMode(newFlat, newNest, mode);
+        appendRange(newFlat, newNest, insertIndex, flat.length);
+        return buildShape(newFlat, newNest);
     }
 
     @Override
@@ -453,39 +234,23 @@ final class ShapeImpl extends NestedTupleImpl<Shape> implements Shape {
         }
 
         if (isFlat()) {
-            // Remove a single dimension
             List<Long> newFlat = new ArrayList<>();
+            List<Integer> newNest = new ArrayList<>();
             for (int i = 0; i < flat.length; i++) {
                 if (i != modeIndex) {
                     newFlat.add(flat[i]);
+                    newNest.add(0);
                 }
             }
-            return ShapeImpl.of(newFlat.stream().mapToLong(Long::longValue).toArray());
+            return buildShape(newFlat, newNest);
         }
 
-        // For nested shapes, find and remove the mode
         ModeRange range = findModeRange(modeIndex);
-
         List<Long> newFlat = new ArrayList<>();
-        List<Integer> newParent = new ArrayList<>();
-
-        // Add dimensions before the removed mode
-        for (int i = 0; i < range.start; i++) {
-            newFlat.add(flat[i]);
-            newParent.add(parent[i]);
-        }
-
-        // Skip the mode (range.start to range.end)
-
-        // Add dimensions after the removed mode, adjusting parent indices
-        int offset = range.start - range.end;
-        for (int i = range.end; i < flat.length; i++) {
-            newFlat.add(flat[i]);
-            int p = parent[i];
-            newParent.add(p == -1 ? -1 : (p < range.start ? p : p + offset));
-        }
-
-        return buildShape(newFlat, newParent);
+        List<Integer> newNest = new ArrayList<>();
+        appendRange(newFlat, newNest, 0, range.start);
+        appendRange(newFlat, newNest, range.end, flat.length);
+        return buildShape(newFlat, newNest);
     }
 
     @Override
@@ -537,59 +302,37 @@ final class ShapeImpl extends NestedTupleImpl<Shape> implements Shape {
         }
 
         List<Long> newFlat = new ArrayList<>();
-        List<Integer> newParent = new ArrayList<>();
+        List<Integer> newNest = new ArrayList<>();
 
         for (int newPos = 0; newPos < axes.length; newPos++) {
             int oldPos = axes[newPos];
             ModeRange range = ranges[oldPos];
-            int modeStart = newFlat.size();
-
-            // Copy dimensions from the old mode
-            for (int i = range.start; i < range.end; i++) {
-                newFlat.add(flat[i]);
-                if (i == range.start) {
-                    newParent.add(-1);
-                } else {
-                    int p = parent[i];
-                    if (p == -1) {
-                        // Another root within the mode - child of mode start
-                        newParent.add(modeStart);
-                    } else {
-                        // Remap parent relative to new mode start
-                        newParent.add(modeStart + (p - range.start));
-                    }
-                }
-            }
+            appendRange(newFlat, newNest, range.start, range.end);
         }
 
-        return buildShape(newFlat, newParent);
+        return buildShape(newFlat, newNest);
     }
 
     // Helper to find the range of flat indices for a mode
     private ModeRange findModeRange(int modeIndex) {
-        int rootCount = 0;
+        int depth = 0;
+        int currentMode = -1;
         int start = -1;
-        for (int i = 0; i < parent.length; i++) {
-            if (parent[i] == -1) {
-                if (rootCount == modeIndex) {
+        for (int i = 0; i < nest.length; i++) {
+            if (depth == 0) {
+                currentMode++;
+                if (currentMode == modeIndex) {
                     start = i;
-                    break;
                 }
-                rootCount++;
+            }
+            depth += Math.max(nest[i], 0);
+            depth -= Math.max(-nest[i], 0);
+            if (currentMode == modeIndex && depth == 0) {
+                return new ModeRange(start, i + 1);
             }
         }
 
-        if (start == -1) {
-            throw new IndexOutOfBoundsException("Mode index out of bounds: " + modeIndex);
-        }
-
-        // Find end: scan until next root or end of array
-        int end = start + 1;
-        while (end < parent.length && parent[end] != -1) {
-            end++;
-        }
-
-        return new ModeRange(start, end);
+        throw new IndexOutOfBoundsException("Mode index out of bounds: " + modeIndex);
     }
 
     private static class ModeRange {
@@ -602,32 +345,94 @@ final class ShapeImpl extends NestedTupleImpl<Shape> implements Shape {
         }
     }
 
+    private static boolean isFlatNest(int[] nest) {
+        if (nest == null) {
+            return true;
+        }
+        for (int value : nest) {
+            if (value != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean isFlatNest(List<Integer> nestList) {
+        for (int value : nestList) {
+            if (value != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static int countTopLevelModes(int[] nest) {
+        int depth = 0;
+        int count = 0;
+        for (int value : nest) {
+            if (depth == 0) {
+                count++;
+            }
+            depth += Math.max(value, 0);
+            depth -= Math.max(-value, 0);
+        }
+        return count;
+    }
+
+    private static int[] extractNest(Shape mode) {
+        if (mode instanceof ShapeImpl impl) {
+            return impl.nest;
+        }
+        if (mode.isFlat()) {
+            return null;
+        }
+        throw new IllegalArgumentException("Unsupported NestedTuple implementation");
+    }
+
+    private static void appendMode(List<Long> flatList, List<Integer> nestList, Shape mode) {
+        int[] modeNest = extractNest(mode);
+        if (mode.flatRank() == 1 && isFlatNest(modeNest)) {
+            flatList.add(mode.flatAt(0));
+            nestList.add(0);
+            return;
+        }
+
+        for (int i = 0; i < mode.flatRank(); i++) {
+            flatList.add(mode.flatAt(i));
+            int nestValue = modeNest == null ? 0 : modeNest[i];
+            if (i == 0) {
+                nestValue += 1;
+            }
+            if (i == mode.flatRank() - 1) {
+                nestValue -= 1;
+            }
+            nestList.add(nestValue);
+        }
+    }
+
+    private void appendRange(List<Long> flatList, List<Integer> nestList, int start, int end) {
+        for (int i = start; i < end; i++) {
+            flatList.add(flat[i]);
+            nestList.add(nest == null ? 0 : nest[i]);
+        }
+    }
+
     // Helper to build shape from lists
-    private Shape buildShape(List<Long> flatList, List<Integer> parentList) {
+    private static Shape buildShape(List<Long> flatList, List<Integer> nestList) {
         if (flatList.isEmpty()) {
             return scalar();
         }
 
         long[] flatArray = new long[flatList.size()];
-        int[] parentArray = new int[parentList.size()];
+        int[] nestArray = new int[nestList.size()];
         for (int i = 0; i < flatList.size(); i++) {
             flatArray[i] = flatList.get(i);
-            parentArray[i] = parentList.get(i);
+            nestArray[i] = nestList.get(i);
         }
 
-        // Check if all parents are -1 (flat structure)
-        boolean allRoots = true;
-        for (int p : parentArray) {
-            if (p != -1) {
-                allRoots = false;
-                break;
-            }
-        }
-
-        if (allRoots) {
+        if (isFlatNest(nestArray)) {
             return ShapeImpl.of(flatArray);
-        } else {
-            return new ShapeImpl(flatArray, parentArray);
         }
+        return new ShapeImpl(flatArray, nestArray);
     }
 }

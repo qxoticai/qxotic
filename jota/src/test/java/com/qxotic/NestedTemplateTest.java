@@ -11,7 +11,7 @@ class NestedTemplateTest {
     @Test
     void testShapeNestedFromShape() {
         // Create a template shape with nested structure
-        Shape template = Shape.pattern("[_,[_,_,[_,_]]]", 2, 3, 4, 5, 6);
+        Shape template = Shape.pattern("(_,(_,_,(_,_)))", 2, 3, 4, 5, 6);
 
         // Create new shape with same nesting but different dimensions
         Shape shape = Shape.template(template, 10, 20, 30, 40, 50);
@@ -35,7 +35,7 @@ class NestedTemplateTest {
     void testShapeNestedFromStride() {
         // Create a template stride with nested structure
         Stride template = Stride.template(
-            Shape.pattern("[batch, [N, M]]", 2, 3, 4),
+            Shape.pattern("(batch, (N, M))", 2, 3, 4),
             100, 10, 1
         );
 
@@ -52,7 +52,7 @@ class NestedTemplateTest {
     @Test
     void testStrideNestedFromShape() {
         // Create a template shape
-        Shape template = Shape.pattern("[batch, [N, M]]", 2, 3, 4);
+        Shape template = Shape.pattern("(batch, (N, M))", 2, 3, 4);
 
         // Create stride with same nesting structure
         Stride stride = Stride.template(template, 1000, 100, 1);
@@ -71,7 +71,7 @@ class NestedTemplateTest {
     void testStrideNestedFromStride() {
         // Create a template stride
         Stride template = Stride.template(
-            Shape.pattern("[_,[_,_,[_,_]]]", 2, 3, 4, 5, 6),
+            Shape.pattern("(_,(_,_,(_,_)))", 2, 3, 4, 5, 6),
             10000, 1000, 100, 10, 1
         );
 
@@ -111,7 +111,7 @@ class NestedTemplateTest {
 
     @Test
     void testMismatchedDimensions() {
-        Shape template = Shape.pattern("[_,[_,_]]", 2, 3, 4);
+        Shape template = Shape.pattern("(_,(_,_))", 2, 3, 4);
 
         // Too few dimensions
         assertThrows(IllegalArgumentException.class, () -> {
@@ -144,13 +144,13 @@ class NestedTemplateTest {
     @Test
     void testStrideRowMajorPreservesNesting() {
         // Row-major strides should preserve shape nesting
-        Shape shape = Shape.pattern("[batch, [N, M]]", 10, 20, 30);
+        Shape shape = Shape.pattern("(batch, (N, M))", 10, 20, 30);
         Stride stride = Stride.rowMajor(shape);
 
         assertEquals(2, stride.rank());
         assertEquals(3, stride.flatRank());
 
-        // Row major for [10, 20, 30]: strides are [600, 30, 1]
+        // Row major for (10, 20, 30): strides are (600, 30, 1)
         assertArrayEquals(new long[]{600, 30, 1}, stride.toArray());
 
         // Verify nesting structure
@@ -162,13 +162,13 @@ class NestedTemplateTest {
     @Test
     void testStrideColumnMajorPreservesNesting() {
         // Column-major strides should preserve shape nesting
-        Shape shape = Shape.pattern("[batch, [N, M]]", 10, 20, 30);
+        Shape shape = Shape.pattern("(batch, (N, M))", 10, 20, 30);
         Stride stride = Stride.columnMajor(shape);
 
         assertEquals(2, stride.rank());
         assertEquals(3, stride.flatRank());
 
-        // Column major for [10, 20, 30]: strides are [1, 10, 200]
+        // Column major for (10, 20, 30): strides are (1, 10, 200)
         assertArrayEquals(new long[]{1, 10, 200}, stride.toArray());
 
         // Verify nesting structure
