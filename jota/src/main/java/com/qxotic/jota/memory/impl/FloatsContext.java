@@ -3,13 +3,13 @@ package com.qxotic.jota.memory.impl;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.*;
 
-class FloatsContext implements Context<float[]> {
+class FloatsContext implements MemoryContext<float[]> {
 
     private static final FloatOperations<float[]> FLOAT_OPERATIONS = new GenericFloatOperations<>(FloatArrayMemoryAccess.instance());
 
     @Override
     public Device device() {
-        return Device.CPU;
+        return Device.JAVA;
     }
 
     @Override

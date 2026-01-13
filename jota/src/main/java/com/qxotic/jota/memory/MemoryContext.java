@@ -2,7 +2,7 @@ package com.qxotic.jota.memory;
 
 import com.qxotic.jota.Device;
 
-public interface Context<B> extends AutoCloseable {
+public interface MemoryContext<B> extends AutoCloseable {
     Device device();
 
     MemoryAllocator<B> memoryAllocator();
@@ -18,5 +18,7 @@ public interface Context<B> extends AutoCloseable {
 
     @Override
     void close();
+
+    String toString();
 }
 

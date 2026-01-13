@@ -5,14 +5,14 @@ import com.qxotic.jota.memory.*;
 
 import java.lang.foreign.MemorySegment;
 
-final class PanamaContext implements Context<MemorySegment> {
+final class PanamaContext implements MemoryContext<MemorySegment> {
 
     private final FloatOperations<MemorySegment> rawOperations = new PanamaFloatOperations(PanamaMemoryAccess.instance());
     private final ScopedMemoryAllocatorArena<MemorySegment> allocatorArena = MemoryAllocatorFactory.newPanamaArena();
 
     @Override
     public Device device() {
-        return Device.CPU;
+        return Device.NATIVE;
     }
 
     @Override

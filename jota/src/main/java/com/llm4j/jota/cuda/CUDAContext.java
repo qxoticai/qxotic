@@ -8,7 +8,7 @@ import jcuda.jcublas.JCublas2;
 import jcuda.jcublas.cublasHandle;
 import jcuda.runtime.JCuda;
 
-public class CUDAContext implements Context<CUdeviceptr> {
+public class CUDAContext implements MemoryContext<CUdeviceptr> {
 
     public static final Device CUDA = Device.GPU.child("cuda");
 
