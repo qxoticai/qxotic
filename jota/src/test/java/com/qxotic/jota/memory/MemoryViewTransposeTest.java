@@ -13,7 +13,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
 
     @ParameterizedTest
     @MethodSource("contextProvider")
-    <B> void testTranspose2D(Context<B> context) {
+    <B> void testTranspose2D(MemoryContext<B> context) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
         MemoryView<B> view = MemoryViewFactory.allocate(context.memoryAllocator(), DataType.F32, shape);
@@ -52,7 +52,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
 
     @ParameterizedTest
     @MethodSource("contextProvider")
-    <B> void testTranspose3D(Context<B> context) {
+    <B> void testTranspose3D(MemoryContext<B> context) {
         // Create a 2x3x4 tensor
         Shape shape = Shape.of(2, 3, 4);
         MemoryView<B> view = MemoryViewFactory.allocate(context.memoryAllocator(), DataType.F32, shape);
@@ -96,7 +96,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
 
     @ParameterizedTest
     @MethodSource("contextProvider")
-    <B> void testTransposeNegativeIndices(Context<B> context) {
+    <B> void testTransposeNegativeIndices(MemoryContext<B> context) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
         MemoryView<B> view = MemoryViewFactory.allocate(context.memoryAllocator(), DataType.F32, shape);
@@ -110,7 +110,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
 
     @ParameterizedTest
     @MethodSource("contextProvider")
-    <B> void testTransposeSameAxis(Context<B> context) {
+    <B> void testTransposeSameAxis(MemoryContext<B> context) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
         MemoryView<B> view = MemoryViewFactory.allocate(context.memoryAllocator(), DataType.F32, shape);
@@ -125,7 +125,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
 
     @ParameterizedTest
     @MethodSource("contextProvider")
-    <B> void testTransposeInvalidAxis(Context<B> context) {
+    <B> void testTransposeInvalidAxis(MemoryContext<B> context) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
         MemoryView<B> view = MemoryViewFactory.allocate(context.memoryAllocator(), DataType.F32, shape);
@@ -137,7 +137,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
 
     @ParameterizedTest
     @MethodSource("contextProvider")
-    <B> void testTransposeStrides(Context<B> context) {
+    <B> void testTransposeStrides(MemoryContext<B> context) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
         MemoryView<B> view = MemoryViewFactory.allocate(context.memoryAllocator(), DataType.F32, shape);
@@ -156,7 +156,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
 
     @ParameterizedTest
     @MethodSource("contextProvider")
-    <B> void testTransposeContiguity(Context<B> context) {
+    <B> void testTransposeContiguity(MemoryContext<B> context) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
         MemoryView<B> view = MemoryViewFactory.allocate(context.memoryAllocator(), DataType.F32, shape);

@@ -22,7 +22,7 @@ class PanamaMemoryTest {
             assertSame(segment, memory.base());
             assertEquals(100, memory.byteSize());
             assertFalse(memory.isReadOnly());
-            assertEquals(Device.CPU, memory.device());
+            assertEquals(Device.NATIVE, memory.device());
         }
     }
 
@@ -61,9 +61,9 @@ class PanamaMemoryTest {
             MemorySegment segment = arena.allocate(40);
             PanamaMemory memory = PanamaMemory.of(segment);
             String str = memory.toString();
-            assertTrue(str.contains("size=40"));
-            assertTrue(str.contains("readOnly=false"));
-            assertTrue(str.contains("device=cpu"));
+            assertTrue(str.contains("byteSize=40"));
+            assertFalse(str.contains("readOnly=true")); // rw
+            assertTrue(str.contains("device=cpu:native"));
         }
     }
 }

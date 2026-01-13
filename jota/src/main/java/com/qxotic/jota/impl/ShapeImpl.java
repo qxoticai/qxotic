@@ -12,17 +12,12 @@ final class ShapeImpl extends NestedTupleImpl<Shape> implements Shape {
 
     private static final Shape SCALAR = new ShapeImpl(EMPTY, null);
 
-    // Derived, pre-computed for performance.
+    // Derived properties, pre-computed for performance.
     private final long[] modeSize;
     private final long totalSize;
 
     ShapeImpl(long[] flat, int[] nest) {
-        super(flat, nest);
-
-        if (Arrays.stream(flat).anyMatch(dim -> dim < 0)) {
-            throw new IllegalArgumentException("negative dimension");
-        }
-
+        super(checkNoNegatives(flat), nest);
         this.totalSize = Arrays.stream(this.flat).reduce(1L, Math::multiplyExact);
         if (this.nest == null) {
             this.modeSize = this.flat;
@@ -50,6 +45,15 @@ final class ShapeImpl extends NestedTupleImpl<Shape> implements Shape {
         }
     }
 
+    private static long[] checkNoNegatives(long[] flat) {
+        for (long dim : flat) {
+            if (dim < 0) {
+                throw new IllegalArgumentException("negative dimension");
+            }
+        }
+        return flat;
+    }
+
     @Override
     public int rank() {
         return modeSize.length;
@@ -58,21 +62,16 @@ final class ShapeImpl extends NestedTupleImpl<Shape> implements Shape {
     @Override
     public Shape modeAt(int _modeIndex) {
         int modeIndex = Util.wrapAround(_modeIndex, rank());
-
         if (isFlat()) {
-            return ShapeImpl.of(new long[]{flatAt(modeIndex)});
+            return ShapeImpl.flat(flatAt(modeIndex));
         }
-
         ModeRange range = findModeRange(modeIndex);
         long[] modeDimsArray = Arrays.copyOfRange(flat, range.start, range.end);
-        int[] modeNestArray = nest == null ? null : Arrays.copyOfRange(nest, range.start, range.end);
-
-        if (modeNestArray != null && modeNestArray.length > 0 && modeNestArray[0] > 0) {
+        int[] modeNestArray = Arrays.copyOfRange(nest, range.start, range.end);
+        if (modeNestArray[0] > 0) {
             modeNestArray[0] -= 1;
-            int last = modeNestArray.length - 1;
-            modeNestArray[last] += 1;
+            modeNestArray[modeNestArray.length - 1] += 1;
         }
-
         if (isFlatNest(modeNestArray)) {
             return ShapeImpl.of(modeDimsArray);
         }
@@ -88,6 +87,11 @@ final class ShapeImpl extends NestedTupleImpl<Shape> implements Shape {
     @Override
     public long size() {
         return totalSize;
+    }
+
+    @Override
+    public Shape flattenModes() {
+        return flat(modeSize);
     }
 
     @Override
@@ -160,10 +164,7 @@ final class ShapeImpl extends NestedTupleImpl<Shape> implements Shape {
         if (dims.length == 0) {
             return scalar();
         }
-        int[] nestCopy = nest == null ? null : nest.clone();
-        if (isFlatNest(nestCopy)) {
-            nestCopy = null;
-        }
+        int[] nestCopy = isFlatNest(nest) ? null : nest.clone();
         return new ShapeImpl(dims.clone(), nestCopy);
     }
 
@@ -431,7 +432,7 @@ final class ShapeImpl extends NestedTupleImpl<Shape> implements Shape {
         }
 
         if (isFlatNest(nestArray)) {
-            return ShapeImpl.of(flatArray);
+            return ShapeImpl.flat(flatArray);
         }
         return new ShapeImpl(flatArray, nestArray);
     }

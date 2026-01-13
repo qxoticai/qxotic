@@ -5,7 +5,7 @@ import java.util.Objects;
 public interface Device {
     String name();
 
-    String localName();
+    String leafName();
 
     Device parent();
 
@@ -13,11 +13,6 @@ public interface Device {
 
     static Device of(String rootName) {
         return new DeviceImpl(null, rootName);
-    }
-
-    static Device child(Device parent, String childName) {
-        Objects.requireNonNull(parent);
-        return new DeviceImpl(parent, childName);
     }
 
     default Device child(String childName) {
@@ -34,21 +29,21 @@ public interface Device {
 
 final class DeviceImpl implements Device {
     final Device parent;
-    final String localName;
+    final String leafName;
     final String fullName;
 
     private static final String SEPARATOR = ":";
 
-    DeviceImpl(Device parent, String localName) {
+    DeviceImpl(Device parent, String leafName) {
         this.parent = parent;
-        if (localName == null || localName.trim().isEmpty()) {
+        if (leafName == null || leafName.trim().isEmpty()) {
             throw new IllegalArgumentException("child name must not be null or empty");
         }
-        if (localName.contains(SEPARATOR)) {
+        if (leafName.contains(SEPARATOR)) {
             throw new IllegalArgumentException("child name cannot contain separator " + SEPARATOR);
         }
-        this.localName = localName.trim().toLowerCase();
-        this.fullName = (parent == null) ? this.localName : parent.name() + ":" + this.localName;
+        this.leafName = leafName.trim().toLowerCase();
+        this.fullName = (parent == null) ? this.leafName : parent.name() + ":" + this.leafName;
     }
 
     @Override
@@ -66,8 +61,8 @@ final class DeviceImpl implements Device {
     }
 
     @Override
-    public String localName() {
-        return localName;
+    public String leafName() {
+        return leafName;
     }
 
     @Override

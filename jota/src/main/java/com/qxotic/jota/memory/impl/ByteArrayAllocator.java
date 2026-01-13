@@ -19,7 +19,7 @@ final class ByteArrayAllocator implements MemoryAllocator<byte[]> {
 
     @Override
     public Device device() {
-        return Device.CPU;
+        return Device.JAVA;
     }
 
     @Override

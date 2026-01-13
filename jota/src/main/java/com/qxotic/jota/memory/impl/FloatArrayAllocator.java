@@ -17,7 +17,7 @@ final class FloatArrayAllocator implements MemoryAllocator<float[]> {
 
     @Override
     public Device device() {
-        return Device.CPU;
+        return Device.JAVA;
     }
 
     @Override

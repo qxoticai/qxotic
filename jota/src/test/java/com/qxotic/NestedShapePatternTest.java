@@ -221,4 +221,11 @@ class NestedShapePatternTest {
 
         System.out.println("Deep nesting: " + shape);
     }
+
+    @Test
+    void testNested() {
+        Shape shape = Shape.pattern("((_, _), _)", 2, 3, 5);
+        assertEquals(6, shape.size(0));
+        assertEquals(5, shape.size(1));
+    }
 }

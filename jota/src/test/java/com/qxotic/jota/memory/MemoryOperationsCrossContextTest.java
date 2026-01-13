@@ -2,7 +2,6 @@ package com.qxotic.jota.memory;
 
 import com.qxotic.jota.memory.impl.ContextFactory;
 import com.qxotic.jota.memory.impl.MemoryAllocatorFactory;
-import com.qxotic.jota.memory.Memory;
 import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.Test;
 
@@ -14,13 +13,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class MemoryOperationsCrossContextTest {
 
     @AutoClose
-    Context<MemorySegment> nativeContext = ContextFactory.ofMemorySegment();
+    MemoryContext<MemorySegment> nativeContext = ContextFactory.ofMemorySegment();
 
     @AutoClose
-    Context<float[]> floatContext = ContextFactory.ofFloats();
+    MemoryContext<float[]> floatContext = ContextFactory.ofFloats();
 
     @AutoClose
-    Context<ByteBuffer> bufferContext = ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false));
+    MemoryContext<ByteBuffer> bufferContext = ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false));
 
     @Test
     void copyShouldTransferFloatBetweenDifferentContexts() {

@@ -14,7 +14,7 @@ final class ManagedPanamaAllocator implements MemoryAllocator<MemorySegment>, Me
 
     @Override
     public Device device() {
-        return Device.CPU;
+        return Device.NATIVE;
     }
 
     @Override
