@@ -6,7 +6,10 @@ import com.qxotic.jota.Stride;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.Util;
 import com.qxotic.jota.memory.Memory;
+import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.memory.MemoryViewPrinter;
+import com.qxotic.jota.memory.ViewPrintOptions;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -83,6 +86,21 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
     @Override
     public boolean isContiguous() {
         return isContiguous;
+    }
+
+    @Override
+    public String toString() {
+        return MemoryViewPrinter.toString(this);
+    }
+
+    @Override
+    public String toString(MemoryAccess<T> memoryAccess) {
+        return MemoryViewPrinter.toString(this, memoryAccess);
+    }
+
+    @Override
+    public String toString(MemoryAccess<T> memoryAccess, ViewPrintOptions options) {
+        return MemoryViewPrinter.toString(this, memoryAccess, options);
     }
 
     @Override

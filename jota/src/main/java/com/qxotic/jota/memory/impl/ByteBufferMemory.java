@@ -48,10 +48,14 @@ final class ByteBufferMemory implements Memory<ByteBuffer> {
 
     @Override
     public String toString() {
-        return "ByteBufferMemory{" +
-                "size=" + byteSize() +
-                "readOnly=" + isReadOnly() +
-                "device=" + device() +
-                '}';
+        StringBuilder sb = new StringBuilder("Memory{ByteBuffer, byteSize=")
+                .append(byteSize())
+                .append(", device=")
+                .append(device());
+        if (isReadOnly()) {
+            sb.append(", readOnly=true");
+        }
+        sb.append('}');
+        return sb.toString();
     }
 }

@@ -39,10 +39,11 @@ final class ByteArrayMemory implements Memory<byte[]> {
 
     @Override
     public String toString() {
-        return "ByteArrayMemory{" +
-                "size=" + byteSize() +
-                ", readOnly=" + isReadOnly() +
-                ", device=" + device() +
-                '}';
+        return new StringBuilder("Memory{byte[], byteSize=")
+                .append(byteSize())
+                .append(", device=")
+                .append(device())
+                .append('}')
+                .toString();
     }
 }

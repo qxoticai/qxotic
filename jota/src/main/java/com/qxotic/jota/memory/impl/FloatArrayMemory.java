@@ -39,10 +39,11 @@ final class FloatArrayMemory implements Memory<float[]> {
 
     @Override
     public String toString() {
-        return "FloatArrayMemory{" +
-                "size=" + byteSize() +
-                ", readOnly=" + isReadOnly() +
-                ", device=" + device() +
-                '}';
+        return new StringBuilder("Memory{float[], byteSize=")
+                .append(byteSize())
+                .append(", device=")
+                .append(device())
+                .append('}')
+                .toString();
     }
 }

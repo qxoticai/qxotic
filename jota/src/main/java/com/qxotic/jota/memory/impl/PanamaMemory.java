@@ -48,10 +48,14 @@ final class PanamaMemory implements Memory<MemorySegment> {
 
     @Override
     public String toString() {
-        return "PanamaMemory{" +
-                "size=" + byteSize() +
-                "readOnly=" + isReadOnly() +
-                "device=" + device() +
-                '}';
+        StringBuilder sb = new StringBuilder("Memory{MemorySegment, byteSize=")
+                .append(byteSize())
+                .append(", device=")
+                .append(device());
+        if (isReadOnly()) {
+            sb.append(", readOnly=true");
+        }
+        sb.append('}');
+        return sb.toString();
     }
 }
