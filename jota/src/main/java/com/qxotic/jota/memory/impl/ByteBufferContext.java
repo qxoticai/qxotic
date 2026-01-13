@@ -6,7 +6,7 @@ import com.qxotic.jota.memory.*;
 import java.nio.ByteBuffer;
 import java.util.Objects;
 
-class ByteBufferContext implements Context<ByteBuffer> {
+class ByteBufferContext implements MemoryContext<ByteBuffer> {
 
     private final FloatOperations<ByteBuffer> floatOperations = new GenericFloatOperations<>(ByteBufferMemoryAccess.instance());
     private final MemoryAllocator<ByteBuffer> memoryAllocator;
@@ -17,7 +17,7 @@ class ByteBufferContext implements Context<ByteBuffer> {
 
     @Override
     public Device device() {
-        return Device.CPU;
+        return Device.NATIVE;
     }
 
     @Override

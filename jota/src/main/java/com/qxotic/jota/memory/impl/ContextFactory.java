@@ -1,6 +1,6 @@
 package com.qxotic.jota.memory.impl;
 
-import com.qxotic.jota.memory.Context;
+import com.qxotic.jota.memory.MemoryContext;
 import com.qxotic.jota.memory.MemoryAllocator;
 
 import java.lang.foreign.MemorySegment;
@@ -12,15 +12,15 @@ public class ContextFactory {
         // no instances
     }
 
-    public static Context<float[]> ofFloats() {
+    public static MemoryContext<float[]> ofFloats() {
         return new FloatsContext();
     }
 
-    public static Context<MemorySegment> ofMemorySegment() {
+    public static MemoryContext<MemorySegment> ofMemorySegment() {
         return new PanamaContext();
     }
 
-    public static Context<ByteBuffer> ofByteBuffer(MemoryAllocator<ByteBuffer> memoryAllocator) {
+    public static MemoryContext<ByteBuffer> ofByteBuffer(MemoryAllocator<ByteBuffer> memoryAllocator) {
         return new ByteBufferContext(memoryAllocator);
     }
 }
