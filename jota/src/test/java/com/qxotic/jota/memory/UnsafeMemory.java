@@ -25,11 +25,21 @@ public final class UnsafeMemory implements Memory<Void> {
 
     @Override
     public Device device() {
-        return Device.CPU;
+        return Device.NATIVE;
     }
 
     @Override
     public Void base() {
         return null;
+    }
+
+    @Override
+    public String toString() {
+        return new StringBuilder("Memory{unsafe, byteSize=")
+                .append(byteSize())
+                .append(", device=")
+                .append(device())
+                .append('}')
+                .toString();
     }
 }

@@ -125,16 +125,20 @@ public interface MemoryView<B> {
     }
 
     // Factory methods
-    static <B> MemoryView<B> of(Memory<B> memory, long byteOffset, Layout layout, DataType dtype) {
+    static <B> MemoryView<B> of(Memory<B> memory, long byteOffset, DataType dtype, Layout layout) {
         return MemoryViewFactory.of(dtype, memory, byteOffset, layout);
     }
 
-    static <B> MemoryView<B> rowMajor(Memory<B> memory, Shape shape, DataType dtype) {
-        return of(memory, 0, Layout.rowMajor(shape), dtype);
+    static <B> MemoryView<B> of(Memory<B> memory, DataType dtype, Layout layout) {
+        return MemoryViewFactory.of(dtype, memory, 0, layout);
+    }
+
+    static <B> MemoryView<B> rowMajor(Memory<B> memory, DataType dtype, Shape shape) {
+        return of(memory, 0, dtype, Layout.rowMajor(shape));
     }
 
     default MemoryView<B> withLayout(Layout newLayout) {
-        return of(memory(), byteOffset(), newLayout, dataType());
+        return of(memory(), byteOffset(), dataType(), newLayout);
     }
 
     default MemoryView<B> withStride(Stride newStride) {
@@ -144,6 +148,14 @@ public interface MemoryView<B> {
     default MemoryView<B> broadcastTo(Shape targetShape) {
         // Delegate to existing broadcast method for now
         return broadcast(targetShape);
+    }
+
+    default String toString(MemoryAccess<B> memoryAccess) {
+        return MemoryViewPrinter.toString(this, memoryAccess);
+    }
+
+    default String toString(MemoryAccess<B> memoryAccess, ViewPrintOptions options) {
+        return MemoryViewPrinter.toString(this, memoryAccess, options);
     }
 }
 
