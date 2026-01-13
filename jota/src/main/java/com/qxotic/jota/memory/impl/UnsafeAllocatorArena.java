@@ -23,7 +23,7 @@ class UnsafeAllocatorArena implements ScopedMemoryAllocatorArena<MemorySegment> 
 
     @Override
     public Device device() {
-        return Device.CPU;
+        return Device.NATIVE;
     }
 
     @Override

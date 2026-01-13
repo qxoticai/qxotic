@@ -13,7 +13,7 @@ class TestOperations extends AbstractMemoryTest {
 
     @ParameterizedTest
     @MethodSource("contextProvider")
-    <B> void testScalar(Context<B> context) {
+    <B> void testScalar(MemoryContext<B> context) {
         var allocator = context.memoryAllocator();
         MemoryView<B> view = MemoryViewFactory.allocate(allocator, DataType.F32, Shape.scalar());
         assertEquals(DataType.F32.byteSize(), view.memory().byteSize());
@@ -21,7 +21,7 @@ class TestOperations extends AbstractMemoryTest {
 
     @ParameterizedTest
     @MethodSource("contextProvider")
-    <B> void testMatrix(Context<B> context) {
+    <B> void testMatrix(MemoryContext<B> context) {
         var allocator = context.memoryAllocator();
         Shape shape = ShapeFactory.of(3, 5);
         MemoryView<B> view = MemoryViewFactory.allocate(allocator, DataType.F32, shape);

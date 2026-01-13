@@ -9,6 +9,8 @@ public interface Shape extends NestedTuple<Shape> {
 
     long size();
 
+    Shape flattenModes();
+
     default boolean hasZeroElements() {
         return size() == 0;
     }

@@ -24,7 +24,7 @@ final class ByteBufferAllocator implements MemoryAllocator<ByteBuffer> {
 
     @Override
     public Device device() {
-        return Device.CPU;
+        return Device.NATIVE;
     }
 
     @Override

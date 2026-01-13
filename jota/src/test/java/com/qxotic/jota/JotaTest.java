@@ -1,13 +1,10 @@
 package com.qxotic.jota;
 
 import com.llm4j.jota.FloatBinaryOperator;
-import com.qxotic.jota.memory.AbstractMemoryTest;
-import com.qxotic.jota.memory.Context;
-import com.qxotic.jota.memory.FloatOperations;
+import com.qxotic.jota.memory.*;
 import com.qxotic.jota.memory.impl.ContextFactory;
 import com.qxotic.jota.memory.impl.MemoryFactory;
 import com.qxotic.jota.memory.impl.MemoryViewFactory;
-import com.qxotic.jota.memory.MemoryView;
 import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.Test;
 
@@ -18,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class JotaTest {
 
     @AutoClose
-    Context<float[]> context = ContextFactory.ofFloats();
+    MemoryContext<float[]> context = ContextFactory.ofFloats();
 
     public static MemoryView<float[]> ofFloatsVector(float... floats) {
         return MemoryViewFactory.of(DataType.F32, MemoryFactory.ofFloats(floats), Layout.rowMajor(floats.length));
@@ -65,9 +62,12 @@ public class JotaTest {
         ops.reduce(view2x3, FloatBinaryOperator.sum(), view3, 0);
         ops.reduce(view2x3, FloatBinaryOperator.sum(), view2, 1);
 
-        System.out.println(AbstractMemoryTest.toString(context.memoryAccess(), view2x3));
-        System.out.println(AbstractMemoryTest.toString(context.memoryAccess(), view2));
-        System.out.println(AbstractMemoryTest.toString(context.memoryAccess(), view3));
+        MemoryAccess<float[]> memoryAccess2 = context.memoryAccess();
+        System.out.println(MemoryViewPrinter.toString(view2x3, memoryAccess2));
+        MemoryAccess<float[]> memoryAccess1 = context.memoryAccess();
+        System.out.println(MemoryViewPrinter.toString(view2, memoryAccess1));
+        MemoryAccess<float[]> memoryAccess = context.memoryAccess();
+        System.out.println(MemoryViewPrinter.toString(view3, memoryAccess));
     }
 
     @Test
@@ -85,9 +85,11 @@ public class JotaTest {
     @Test
     void testCreate() {
         MemoryView<float[]> view = range(2 * 3);
-        System.out.println(AbstractMemoryTest.toString(context.memoryAccess(), view));
+        MemoryAccess<float[]> memoryAccess1 = context.memoryAccess();
+        System.out.println(MemoryViewPrinter.toString(view, memoryAccess1));
         view = view.view(Shape.of(2, 3)).permute(1, 0);
-        System.out.println(AbstractMemoryTest.toString(context.memoryAccess(), view));
+        MemoryAccess<float[]> memoryAccess = context.memoryAccess();
+        System.out.println(MemoryViewPrinter.toString(view, memoryAccess));
     }
 
 

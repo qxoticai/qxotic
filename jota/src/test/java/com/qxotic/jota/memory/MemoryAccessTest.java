@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class MemoryAccessTest {
 
-    public static Stream<Supplier<Context<?>>> contextProvider() {
+    public static Stream<Supplier<MemoryContext<?>>> contextProvider() {
         return Stream.of(
                 ContextFactory::ofFloats,
                 ContextFactory::ofMemorySegment
@@ -24,7 +24,7 @@ public class MemoryAccessTest {
 
     @ParameterizedTest
     @MethodSource("contextProvider")
-    <B> void testFloatAccess(Supplier<Context<B>> contextSupplier) {
+    <B> void testFloatAccess(Supplier<MemoryContext<B>> contextSupplier) {
         try (var context = contextSupplier.get()) {
             var allocator = context.memoryAllocator();
             Memory<B> memory = allocator.allocateMemory(DataType.F32, 16);

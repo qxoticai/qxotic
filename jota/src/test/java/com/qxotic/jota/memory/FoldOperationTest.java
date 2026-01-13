@@ -6,7 +6,6 @@ import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.impl.ContextFactory;
 import com.qxotic.jota.memory.impl.MemoryFactory;
 import com.qxotic.jota.memory.impl.MemoryViewFactory;
-import com.qxotic.jota.memory.MemoryView;
 import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.Test;
 
@@ -17,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class FoldOperationTest {
 
     @AutoClose
-    Context<float[]> context = ContextFactory.ofFloats();
+    MemoryContext<float[]> context = ContextFactory.ofFloats();
 
     // Helper methods from the sketch
     public static MemoryView<float[]> of(float... floats) {

@@ -10,7 +10,9 @@ import com.qxotic.jota.memory.impl.MemoryViewFactory;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MemoryViewTest {
 
@@ -25,9 +27,9 @@ class MemoryViewTest {
         MemoryView<float[]> view1 = view.slice(0, 1, 2).view(Shape.of(3, 5));
         MemoryAccess<float[]> memoryAccess = MemoryAccessFactory.ofFloats();
 
-        System.out.println(AbstractMemoryTest.toString(memoryAccess, view));
-        System.out.println(AbstractMemoryTest.toString(memoryAccess, view0));
-        System.out.println(AbstractMemoryTest.toString(memoryAccess, view1));
+        System.out.println(MemoryViewPrinter.toString(view, memoryAccess));
+        System.out.println(MemoryViewPrinter.toString(view0, memoryAccess));
+        System.out.println(MemoryViewPrinter.toString(view1, memoryAccess));
     }
 
     @Test
@@ -41,9 +43,59 @@ class MemoryViewTest {
         MemoryView<float[]> view1 = view.slice(-1, 1, 2); // .view(Shape.of(2, 3));
         MemoryAccess<float[]> memoryAccess = MemoryAccessFactory.ofFloats();
 
-        System.out.println(AbstractMemoryTest.toString(memoryAccess, view));
-        System.out.println(AbstractMemoryTest.toString(memoryAccess, view0));
-        System.out.println(AbstractMemoryTest.toString(memoryAccess, view1));
+        System.out.println(MemoryViewPrinter.toString(view, memoryAccess));
+        System.out.println(MemoryViewPrinter.toString(view0, memoryAccess));
+        System.out.println(MemoryViewPrinter.toString(view1, memoryAccess));
+    }
+
+    @Test
+    void testToStringMetadata() {
+        float[] floats = new float[4];
+        MemoryView<float[]> view = MemoryViewFactory.of(
+                DataType.F32,
+                MemoryFactory.ofFloats(floats),
+                Layout.rowMajor(Shape.of(2, 2))
+        );
+
+        String text = view.toString();
+        assertTrue(text.startsWith("MemoryView{"));
+        assertTrue(text.contains("layout="));
+        assertTrue(text.contains("dataType=f32"));
+    }
+
+    @Test
+    void testToStringValuesElision() {
+        float[] floats = new float[100];
+        for (int i = 0; i < floats.length; i++) {
+            floats[i] = i;
+        }
+        MemoryView<float[]> view = MemoryViewFactory.of(
+                DataType.F32,
+                MemoryFactory.ofFloats(floats),
+                Layout.rowMajor(Shape.of(10, 10))
+        );
+        MemoryAccess<float[]> memoryAccess = MemoryAccessFactory.ofFloats();
+
+        String text = view.toString(memoryAccess);
+        assertTrue(text.contains("..."));
+    }
+
+    @Test
+    void testToStringCompactFloats() {
+        float[] floats = new float[]{4.0f, 4.5f, Float.POSITIVE_INFINITY, Float.NaN};
+        MemoryView<float[]> view = MemoryViewFactory.of(
+                DataType.F32,
+                MemoryFactory.ofFloats(floats),
+                Layout.rowMajor(Shape.of(4))
+        );
+        MemoryAccess<float[]> memoryAccess = MemoryAccessFactory.ofFloats();
+
+        String text = view.toString(memoryAccess, ViewPrintOptions.valuesOnly());
+        assertTrue(text.contains("4."));
+        assertTrue(text.contains("4.5"));
+        assertTrue(text.contains("+INF"));
+        assertTrue(text.contains("NaN"));
+        assertFalse(text.contains("4.0000"));
     }
 
     @Test

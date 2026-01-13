@@ -22,7 +22,7 @@ class UnsafeAllocator implements ScopedMemoryAllocator<MemorySegment> {
 
     @Override
     public Device device() {
-        return Device.CPU;
+        return Device.NATIVE;
     }
 
     @Override

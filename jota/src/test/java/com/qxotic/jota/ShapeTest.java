@@ -5,8 +5,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
+import static com.qxotic.jota.Shape.shape;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ShapeTest {
@@ -76,6 +78,16 @@ class ShapeTest {
         assertThrows(IllegalArgumentException.class, () -> shape.permute(0, 2));
         assertThrows(IllegalArgumentException.class, () -> shape.permute(1, -1));
     }
+    @Test
+    void testModeAt() {
+        Shape shape = shape(2, shape(3, 4, shape(5, 6), 7), 8);
+        Shape[] modes = IntStream.range(0, shape.rank())
+                .mapToObj(shape::modeAt)
+                .toArray(Shape[]::new);
+        Shape fromModes = Shape.shape((Object[]) modes);
+        assertEquals(shape, fromModes);
+    }
+
 //
 //    @Test
 //    void swap() {

@@ -2,8 +2,6 @@ package com.qxotic.jota.memory;
 
 import com.qxotic.jota.memory.impl.MemoryAllocatorFactory;
 import com.qxotic.jota.memory.impl.ContextFactory;
-import com.qxotic.jota.memory.Memory;
-import com.qxotic.jota.memory.MemoryAllocator;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -14,8 +12,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class MemoryOperationsTest {
 
-    static Stream<Context<?>> contextProvider() {
-        Stream<Supplier<Context<?>>> lazy = Stream.of(
+    static Stream<MemoryContext<?>> contextProvider() {
+        Stream<Supplier<MemoryContext<?>>> lazy = Stream.of(
                 () -> ContextFactory.ofFloats(),
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
@@ -27,7 +25,7 @@ class MemoryOperationsTest {
 
     @ParameterizedTest
     @MethodSource("contextProvider")
-    <B> void copyShouldTransferDataBetweenBuffers(Context<B> context) {
+    <B> void copyShouldTransferDataBetweenBuffers(MemoryContext<B> context) {
         MemoryAllocator<B> memoryAllocator = context.memoryAllocator();
         MemoryOperations<B> memoryOperations = context.memoryOperations();
         MemoryAccess<B> memoryAccess = context.memoryAccess();
