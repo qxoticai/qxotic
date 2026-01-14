@@ -24,6 +24,7 @@ final class ManagedPanamaAllocator implements MemoryAllocator<MemorySegment>, Me
 
     @Override
     public void close() {
+        // arena.close() // non-closeable arena
         if (this.arena == null) {
             throw new IllegalStateException("already closed");
         } else {

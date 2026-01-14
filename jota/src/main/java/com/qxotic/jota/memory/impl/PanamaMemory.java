@@ -1,5 +1,6 @@
 package com.qxotic.jota.memory.impl;
 
+import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.Memory;
 
@@ -30,12 +31,17 @@ final class PanamaMemory implements Memory<MemorySegment> {
 
     @Override
     public Device device() {
-        return Device.NATIVE;
+        return this.memorySegment.isNative() ? Device.NATIVE : Device.JAVA;
     }
 
     @Override
     public MemorySegment base() {
         return memorySegment;
+    }
+
+    @Override
+    public boolean supportsDataType(DataType dataType) {
+        return true; // all data types supported
     }
 
     public PanamaMemory asReadOnly() {

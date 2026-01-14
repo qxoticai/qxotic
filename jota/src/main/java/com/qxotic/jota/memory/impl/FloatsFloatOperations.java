@@ -11,11 +11,11 @@ import com.qxotic.jota.memory.MemoryView;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 
-final class FloatArrayFloatOperations implements FloatOperations<float[]> {
+final class FloatsFloatOperations implements FloatOperations<float[]> {
 
     final MemoryAccess<float[]> memoryAccess;
 
-    FloatArrayFloatOperations(MemoryAccess<float[]> memoryAccess) {
+    FloatsFloatOperations(MemoryAccess<float[]> memoryAccess) {
         this.memoryAccess = Objects.requireNonNull(memoryAccess);
     }
 

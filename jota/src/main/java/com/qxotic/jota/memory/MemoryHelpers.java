@@ -11,34 +11,53 @@ public final class MemoryHelpers {
     private MemoryHelpers() {
     }
 
-    public static <B> MemoryView<B> full(MemoryContext<B> context, DataType dataType, long count, double value) {
+    public static <B> MemoryView<B> full(MemoryContext<B> context, DataType dataType, long count, Number value) {
         Shape shape = Shape.flat(count);
         MemoryAllocator<B> allocator = context.memoryAllocator();
+        long byteSize = dataType.byteSizeFor(count);
         Memory<B> memory = allocator.allocateMemory(dataType, count);
-        MemoryView<B> view = MemoryView.of(memory, 0L, dataType, Layout.rowMajor(shape));
-        fillView(context, view, value);
-        return view;
+        MemoryOperations<B> memoryOperations = context.memoryOperations();
+        if (dataType == DataType.I8) {
+            memoryOperations.fillByte(memory, 0, byteSize, value.byteValue());
+        } else if (dataType == DataType.I16) {
+            memoryOperations.fillShort(memory, 0, byteSize, value.shortValue());
+        } else if (dataType == DataType.I32) {
+            memoryOperations.fillInt(memory, 0, byteSize, value.intValue());
+        } else if (dataType == DataType.I64) {
+            memoryOperations.fillLong(memory, 0, byteSize, value.longValue());
+        } else if (dataType == DataType.F32) {
+            memoryOperations.fillFloat(memory, 0, byteSize, value.floatValue());
+        } else if (dataType == DataType.F64) {
+            memoryOperations.fillDouble(memory, 0, byteSize, value.doubleValue());
+        } else if (dataType == DataType.F16) {
+            memoryOperations.fillShort(memory, 0, byteSize, Float.floatToFloat16(value.floatValue()));
+        } else if (dataType == DataType.BF16) {
+            memoryOperations.fillShort(memory, 0, byteSize, BFloat16.fromFloat(value.byteValue()));
+        } else {
+            throw new IllegalArgumentException("unsupported value " + value);
+        }
+        return MemoryView.of(memory, dataType, Layout.rowMajor(shape));
     }
 
-    public static <B> MemoryView<B> full(MemoryContext<B> context, Shape shape, DataType dataType, double value) {
+    public static <B> MemoryView<B> full(MemoryContext<B> context, DataType dataType, Shape shape, Number value) {
         MemoryView<B> base = full(context, dataType, shape.size(), value);
         return base.view(shape);
     }
 
     public static <B> MemoryView<B> ones(MemoryContext<B> context, DataType dataType, long count) {
-        return full(context, dataType, count, 1.0);
+        return full(context, dataType, count, 1);
     }
 
-    public static <B> MemoryView<B> ones(MemoryContext<B> context, Shape shape, DataType dataType) {
-        return full(context, shape, dataType, 1.0);
+    public static <B> MemoryView<B> ones(MemoryContext<B> context, DataType dataType, Shape shape) {
+        return full(context, dataType, shape, 1);
     }
 
     public static <B> MemoryView<B> zeros(MemoryContext<B> context, DataType dataType, long count) {
-        return full(context, dataType, count, 0.0);
+        return full(context, dataType, count, 0);
     }
 
-    public static <B> MemoryView<B> zeros(MemoryContext<B> context, Shape shape, DataType dataType) {
-        return full(context, shape, dataType, 0.0);
+    public static <B> MemoryView<B> zeros(MemoryContext<B> context, DataType dataType, Shape shape) {
+        return full(context, dataType, shape, 0);
     }
 
     public static <B> MemoryView<B> arange(MemoryContext<B> context, DataType dataType, long end) {
@@ -50,16 +69,17 @@ public final class MemoryHelpers {
         if (step == 0) {
             throw new IllegalArgumentException("step cannot be 0");
         }
-        long count = arangeCount(start, end, step);
-        Shape shape = Shape.flat(count);
-        MemoryAllocator<B> allocator = context.memoryAllocator();
-        Memory<B> memory = allocator.allocateMemory(dataType, count);
-        MemoryView<B> view = MemoryView.of(memory, 0L, dataType, Layout.rowMajor(shape));
 
         MemoryAccess<B> memoryAccess = context.memoryAccess();
         if (memoryAccess == null) {
             throw new UnsupportedOperationException("Context does not support direct memory access");
         }
+
+        long count = arangeCount(start, end, step);
+        Shape shape = Shape.flat(count);
+        MemoryAllocator<B> allocator = context.memoryAllocator();
+        Memory<B> memory = allocator.allocateMemory(dataType, count);
+        MemoryView<B> view = MemoryView.of(memory, dataType, Layout.rowMajor(shape));
 
         for (long i = 0; i < count; i++) {
             double value = start + (double) i * step;
@@ -109,63 +129,6 @@ public final class MemoryHelpers {
             count++;
         }
         return count;
-    }
-
-    private static <B> void fillView(MemoryContext<B> context, MemoryView<B> view, double value) {
-        DataType dataType = view.dataType();
-        MemoryAccess<B> memoryAccess = context.memoryAccess();
-        if (memoryAccess != null) {
-            long count = view.shape().size();
-            long baseOffset = view.byteOffset();
-            long stride = dataType.byteSize();
-            for (long i = 0; i < count; i++) {
-                long offset = baseOffset + i * stride;
-                if (dataType == DataType.I8) {
-                    memoryAccess.writeByte(view.memory(), offset, (byte) value);
-                } else if (dataType == DataType.I16) {
-                    memoryAccess.writeShort(view.memory(), offset, (short) value);
-                } else if (dataType == DataType.I32) {
-                    memoryAccess.writeInt(view.memory(), offset, (int) value);
-                } else if (dataType == DataType.I64) {
-                    memoryAccess.writeLong(view.memory(), offset, (long) value);
-                } else if (dataType == DataType.F16) {
-                    memoryAccess.writeShort(view.memory(), offset,
-                            (short) Float.floatToFloat16((float) value));
-                } else if (dataType == DataType.BF16) {
-                    memoryAccess.writeShort(view.memory(), offset, BFloat16.fromFloat((float) value));
-                } else if (dataType == DataType.F32) {
-                    memoryAccess.writeFloat(view.memory(), offset, (float) value);
-                } else if (dataType == DataType.F64) {
-                    memoryAccess.writeDouble(view.memory(), offset, value);
-                } else {
-                    throw new IllegalArgumentException("Unsupported data type for full: " + dataType);
-                }
-            }
-            return;
-        }
-
-        MemoryOperations<B> operations = context.memoryOperations();
-        long byteSize = dataType.byteSizeFor(view.shape());
-        if (dataType == DataType.I8) {
-            operations.fillByte(view.memory(), view.byteOffset(), byteSize, (byte) value);
-        } else if (dataType == DataType.I16) {
-            operations.fillShort(view.memory(), view.byteOffset(), byteSize, (short) value);
-        } else if (dataType == DataType.I32) {
-            operations.fillInt(view.memory(), view.byteOffset(), byteSize, (int) value);
-        } else if (dataType == DataType.I64) {
-            operations.fillLong(view.memory(), view.byteOffset(), byteSize, (long) value);
-        } else if (dataType == DataType.F16) {
-            operations.fillShort(view.memory(), view.byteOffset(), byteSize,
-                    (short) Float.floatToFloat16((float) value));
-        } else if (dataType == DataType.BF16) {
-            operations.fillShort(view.memory(), view.byteOffset(), byteSize, BFloat16.fromFloat((float) value));
-        } else if (dataType == DataType.F32) {
-            operations.fillFloat(view.memory(), view.byteOffset(), byteSize, (float) value);
-        } else if (dataType == DataType.F64) {
-            operations.fillDouble(view.memory(), view.byteOffset(), byteSize, value);
-        } else {
-            throw new IllegalArgumentException("Unsupported data type for full: " + dataType);
-        }
     }
 }
 

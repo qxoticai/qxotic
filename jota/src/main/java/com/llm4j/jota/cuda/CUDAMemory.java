@@ -1,5 +1,6 @@
 package com.llm4j.jota.cuda;
 
+import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.ScopedMemory;
 import jcuda.driver.CUdeviceptr;
@@ -33,6 +34,11 @@ public final class CUDAMemory implements ScopedMemory<CUdeviceptr> {
     @Override
     public CUdeviceptr base() {
         return pointer;
+    }
+
+    @Override
+    public boolean supportsDataType(DataType dataType) {
+        return true;
     }
 
     @Override

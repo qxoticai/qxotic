@@ -1,5 +1,6 @@
 package com.llm4j.jota.cuda;
 
+import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.ScopedMemory;
 import com.qxotic.jota.memory.ScopedMemoryAllocator;
@@ -65,6 +66,11 @@ public final class CUDAScopedMemoryAllocator implements ScopedMemoryAllocator<CU
         @Override
         public CUdeviceptr base() {
             return devicePtr;
+        }
+
+        @Override
+        public boolean supportsDataType(DataType dataType) {
+            return true;
         }
 
         @Override

@@ -5,7 +5,7 @@ import com.qxotic.jota.memory.*;
 
 class FloatsContext implements MemoryContext<float[]> {
 
-    private static final FloatOperations<float[]> FLOAT_OPERATIONS = new GenericFloatOperations<>(FloatArrayMemoryAccess.instance());
+    private static final FloatOperations<float[]> FLOAT_OPERATIONS = new GenericFloatOperations<>(FloatsMemoryAccess.instance());
 
     @Override
     public Device device() {
@@ -14,12 +14,12 @@ class FloatsContext implements MemoryContext<float[]> {
 
     @Override
     public MemoryAllocator<float[]> memoryAllocator() {
-        return FloatArrayAllocator.instance();
+        return FloatsMemoryAllocator.instance();
     }
 
     @Override
     public MemoryAccess<float[]> memoryAccess() {
-        return FloatArrayMemoryAccess.instance();
+        return FloatsMemoryAccess.instance();
     }
 
     @Override
@@ -39,6 +39,11 @@ class FloatsContext implements MemoryContext<float[]> {
 
     @Override
     public String toString() {
-        return "context float[]";
+        return new StringBuilder("Context{float[], device=")
+                .append(device())
+                .append(", directAccess=")
+                .append(memoryAccess() != null)
+                .append('}')
+                .toString();
     }
 }

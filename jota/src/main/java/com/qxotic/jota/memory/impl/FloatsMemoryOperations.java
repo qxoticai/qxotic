@@ -1,6 +1,7 @@
 package com.qxotic.jota.memory.impl;
 
 import com.qxotic.jota.memory.Memory;
+import com.qxotic.jota.memory.MemoryAccessChecks;
 import com.qxotic.jota.memory.MemoryOperations;
 
 import java.lang.foreign.MemorySegment;
@@ -16,20 +17,13 @@ final class FloatsMemoryOperations implements MemoryOperations<float[]> {
 
     @Override
     public void copy(Memory<float[]> src, long srcByteOffset, Memory<float[]> dst, long dstByteOffset, long byteSize) {
+        MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
+        MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
+        MemoryAccessChecks.checkAlignedValue(srcByteOffset, Float.BYTES);
+        MemoryAccessChecks.checkAlignedValue(dstByteOffset, Float.BYTES);
+        MemoryAccessChecks.checkAlignedValue(byteSize, Float.BYTES);
         if (byteSize == 0) {
             return;
-        }
-        if (byteSize < 0) {
-            throw new IllegalArgumentException("negative size");
-        }
-        if (srcByteOffset < 0) {
-            throw new IllegalArgumentException("negative src offset");
-        }
-        if (dstByteOffset < 0) {
-            throw new IllegalArgumentException("negative dst offset");
-        }
-        if (srcByteOffset % Float.BYTES != 0 || dstByteOffset % Float.BYTES != 0 || byteSize % Float.BYTES != 0) {
-            throw new IllegalArgumentException("unaligned access");
         }
         System.arraycopy(
                 src.base(), Math.toIntExact(srcByteOffset / Float.BYTES),
@@ -40,20 +34,12 @@ final class FloatsMemoryOperations implements MemoryOperations<float[]> {
 
     @Override
     public void copyFromNative(Memory<MemorySegment> src, long srcByteOffset, Memory<float[]> dst, long dstByteOffset, long byteSize) {
+        MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
+        MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
+        MemoryAccessChecks.checkAlignedValue(dstByteOffset, Float.BYTES);
+        MemoryAccessChecks.checkAlignedValue(byteSize, Float.BYTES);
         if (byteSize == 0) {
             return;
-        }
-        if (byteSize < 0) {
-            throw new IllegalArgumentException("negative size");
-        }
-        if (srcByteOffset < 0) {
-            throw new IllegalArgumentException("negative src offset");
-        }
-        if (dstByteOffset < 0) {
-            throw new IllegalArgumentException("negative dst offset");
-        }
-        if (dstByteOffset % Float.BYTES != 0 || byteSize % Float.BYTES != 0) {
-            throw new IllegalArgumentException("unaligned access");
         }
         MemorySegment.copy(
                 src.base(), srcByteOffset,
@@ -64,20 +50,12 @@ final class FloatsMemoryOperations implements MemoryOperations<float[]> {
 
     @Override
     public void copyToNative(Memory<float[]> src, long srcByteOffset, Memory<MemorySegment> dst, long dstByteOffset, long byteSize) {
+        MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
+        MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
+        MemoryAccessChecks.checkAlignedValue(srcByteOffset, Float.BYTES);
+        MemoryAccessChecks.checkAlignedValue(byteSize, Float.BYTES);
         if (byteSize == 0) {
             return;
-        }
-        if (byteSize < 0) {
-            throw new IllegalArgumentException("negative size");
-        }
-        if (srcByteOffset < 0) {
-            throw new IllegalArgumentException("negative src offset");
-        }
-        if (dstByteOffset < 0) {
-            throw new IllegalArgumentException("negative dst offset");
-        }
-        if (srcByteOffset % Float.BYTES != 0 || byteSize % Float.BYTES != 0) {
-            throw new IllegalArgumentException("unaligned access");
         }
         MemorySegment.copy(
                 MemorySegment.ofArray(src.base()), srcByteOffset,
@@ -88,17 +66,12 @@ final class FloatsMemoryOperations implements MemoryOperations<float[]> {
 
     @Override
     public void fillByte(Memory<float[]> memory, long byteOffset, long byteSize, byte byteValue) {
+        MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
+        MemoryAccessChecks.checkWriteable(memory);
+        MemoryAccessChecks.checkAlignedValue(byteOffset, Float.BYTES);
+        MemoryAccessChecks.checkAlignedValue(byteSize, Float.BYTES);
         if (byteSize == 0) {
             return;
-        }
-        if (byteSize < 0) {
-            throw new IllegalArgumentException("negative size");
-        }
-        if (byteOffset < 0) {
-            throw new IllegalArgumentException("negative offset");
-        }
-        if (byteOffset % Float.BYTES != 0 || byteSize % Float.BYTES != 0) {
-            throw new IllegalArgumentException("unaligned access");
         }
         int bits = 0x01010101 * Byte.toUnsignedInt(byteValue);
         Arrays.fill(
@@ -110,17 +83,12 @@ final class FloatsMemoryOperations implements MemoryOperations<float[]> {
 
     @Override
     public void fillShort(Memory<float[]> memory, long byteOffset, long byteSize, short shortValue) {
+        MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
+        MemoryAccessChecks.checkWriteable(memory);
+        MemoryAccessChecks.checkAlignedValue(byteOffset, Float.BYTES);
+        MemoryAccessChecks.checkAlignedValue(byteSize, Float.BYTES);
         if (byteSize == 0) {
             return;
-        }
-        if (byteSize < 0) {
-            throw new IllegalArgumentException("negative size");
-        }
-        if (byteOffset < 0) {
-            throw new IllegalArgumentException("negative offset");
-        }
-        if (byteOffset % Float.BYTES != 0 || byteSize % Float.BYTES != 0) {
-            throw new IllegalArgumentException("unaligned access");
         }
         int bits = 0x00010001 * Short.toUnsignedInt(shortValue);
         Arrays.fill(
@@ -132,17 +100,12 @@ final class FloatsMemoryOperations implements MemoryOperations<float[]> {
 
     @Override
     public void fillInt(Memory<float[]> memory, long byteOffset, long byteSize, int intValue) {
+        MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
+        MemoryAccessChecks.checkWriteable(memory);
+        MemoryAccessChecks.checkAlignedValue(byteOffset, Float.BYTES);
+        MemoryAccessChecks.checkAlignedValue(byteSize, Float.BYTES);
         if (byteSize == 0) {
             return;
-        }
-        if (byteSize < 0) {
-            throw new IllegalArgumentException("negative size");
-        }
-        if (byteOffset < 0) {
-            throw new IllegalArgumentException("negative offset");
-        }
-        if (byteOffset % Float.BYTES != 0 || byteSize % Float.BYTES != 0) {
-            throw new IllegalArgumentException("unaligned access");
         }
         Arrays.fill(
                 memory.base(), Math.toIntExact(byteOffset / Float.BYTES),
@@ -153,17 +116,12 @@ final class FloatsMemoryOperations implements MemoryOperations<float[]> {
 
     @Override
     public void fillLong(Memory<float[]> memory, long byteOffset, long byteSize, long longValue) {
+        MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
+        MemoryAccessChecks.checkWriteable(memory);
+        MemoryAccessChecks.checkAlignedValue(byteOffset, Long.BYTES);
+        MemoryAccessChecks.checkAlignedValue(byteSize, Long.BYTES);
         if (byteSize == 0) {
             return;
-        }
-        if (byteSize < 0) {
-            throw new IllegalArgumentException("negative size");
-        }
-        if (byteOffset < 0) {
-            throw new IllegalArgumentException("negative offset");
-        }
-        if (byteOffset % Long.BYTES != 0 || byteSize % Long.BYTES != 0) {
-            throw new IllegalArgumentException("unaligned access");
         }
 
         int intByteOffset = Math.toIntExact(byteOffset);

@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class MemoryViewToStringTest extends AbstractMemoryTest {
 
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("contextsSupportingF32")
     <B> void metadataOnlyIncludesLayoutAndMemory(MemoryContext<B> context) {
         MemoryAccess<B> memoryAccess = context.memoryAccess();
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
@@ -30,7 +30,7 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("contextsSupportingF32")
     <B> void valuesIncludeElision(MemoryContext<B> context) {
         MemoryAccess<B> memoryAccess = context.memoryAccess();
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
@@ -44,7 +44,7 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("contextsSupportingF32")
     <B> void valuesOnlyOmitsMetadata(MemoryContext<B> context) {
         MemoryAccess<B> memoryAccess = context.memoryAccess();
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
@@ -59,7 +59,7 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("contextsSupportingF32")
     <B> void scalarValuesPrintInline(MemoryContext<B> context) {
         MemoryAccess<B> memoryAccess = context.memoryAccess();
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
@@ -74,7 +74,7 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("contextsSupportingF32")
     <B> void threeDimensionalAddsBlankLineBetweenBlocks(MemoryContext<B> context) {
         MemoryAccess<B> memoryAccess = context.memoryAccess();
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");

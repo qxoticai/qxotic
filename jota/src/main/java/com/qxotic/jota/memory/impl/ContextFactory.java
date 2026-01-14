@@ -16,6 +16,26 @@ public class ContextFactory {
         return new FloatsContext();
     }
 
+    public static MemoryContext<int[]> ofInts() {
+        return new IntsContext();
+    }
+
+    public static MemoryContext<byte[]> ofBytes() {
+        return new BytesContext();
+    }
+
+    public static MemoryContext<short[]> ofShorts() {
+        return new ShortsContext();
+    }
+
+    public static MemoryContext<long[]> ofLongs() {
+        return new LongsContext();
+    }
+
+    public static MemoryContext<double[]> ofDoubles() {
+        return new DoublesContext();
+    }
+
     public static MemoryContext<MemorySegment> ofMemorySegment() {
         return new PanamaContext();
     }

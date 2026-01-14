@@ -91,6 +91,4 @@ public class JotaTest {
         MemoryAccess<float[]> memoryAccess = context.memoryAccess();
         System.out.println(MemoryViewPrinter.toString(view, memoryAccess));
     }
-
-
 }

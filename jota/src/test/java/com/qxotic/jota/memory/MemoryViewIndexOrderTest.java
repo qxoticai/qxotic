@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class MemoryViewIndexOrderTest extends AbstractMemoryTest {
 
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("contextsSupportingF32")
     <B> void rowMajorCoordinatesMatchLinearOrder(MemoryContext<B> context) {
         MemoryAccess<B> memoryAccess = context.memoryAccess();
         if (memoryAccess == null) {
@@ -35,7 +35,7 @@ class MemoryViewIndexOrderTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("contextsSupportingF32")
     <B> void columnMajorCoordinatesMatchColumnOrder(MemoryContext<B> context) {
         MemoryAccess<B> memoryAccess = context.memoryAccess();
         if (memoryAccess == null) {
@@ -57,7 +57,7 @@ class MemoryViewIndexOrderTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("contextsSupportingF32")
     <B> void rowMajorCoordinatesMatchLinearOrder3d(MemoryContext<B> context) {
         MemoryAccess<B> memoryAccess = context.memoryAccess();
         if (memoryAccess == null) {
@@ -81,7 +81,7 @@ class MemoryViewIndexOrderTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("contextsSupportingF32")
     <B> void columnMajorCoordinatesMatchColumnOrder3d(MemoryContext<B> context) {
         MemoryAccess<B> memoryAccess = context.memoryAccess();
         if (memoryAccess == null) {

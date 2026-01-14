@@ -4,15 +4,15 @@ import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAllocator;
 
-final class ByteArrayAllocator implements MemoryAllocator<byte[]> {
+final class BytesMemoryAllocator implements MemoryAllocator<byte[]> {
 
-    private static final ByteArrayAllocator INSTANCE = new ByteArrayAllocator();
+    private static final BytesMemoryAllocator INSTANCE = new BytesMemoryAllocator();
 
     public static MemoryAllocator<byte[]> instance() {
         return INSTANCE;
     }
 
-    private ByteArrayAllocator() {
+    private BytesMemoryAllocator() {
     }
 
     private static final byte[] EMPTY = new byte[0];
@@ -28,6 +28,6 @@ final class ByteArrayAllocator implements MemoryAllocator<byte[]> {
             throw new IllegalArgumentException("byteAlignment != 1");
         }
         int length = Math.toIntExact(byteSize);
-        return ByteArrayMemory.of(new byte[length]);
+        return BytesMemory.of(new byte[length]);
     }
 }

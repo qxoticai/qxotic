@@ -1,30 +1,15 @@
 package com.qxotic.jota.memory;
 
-import com.qxotic.jota.memory.impl.MemoryAllocatorFactory;
-import com.qxotic.jota.memory.impl.ContextFactory;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
-import java.util.function.Supplier;
-import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class MemoryOperationsTest {
 
-    static Stream<MemoryContext<?>> contextProvider() {
-        Stream<Supplier<MemoryContext<?>>> lazy = Stream.of(
-                () -> ContextFactory.ofFloats(),
-                () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
-                () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                () -> ContextFactory.ofMemorySegment()
-        );
-        // Lazy context creation.
-        return lazy.map(Supplier::get);
-    }
-
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("com.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingF32")
     <B> void copyShouldTransferDataBetweenBuffers(MemoryContext<B> context) {
         MemoryAllocator<B> memoryAllocator = context.memoryAllocator();
         MemoryOperations<B> memoryOperations = context.memoryOperations();

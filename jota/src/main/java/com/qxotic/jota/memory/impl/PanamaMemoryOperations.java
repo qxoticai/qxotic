@@ -1,9 +1,11 @@
 package com.qxotic.jota.memory.impl;
 
 import com.qxotic.jota.memory.Memory;
+import com.qxotic.jota.memory.MemoryAccessChecks;
 import com.qxotic.jota.memory.MemoryOperations;
 
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 
 final class PanamaMemoryOperations implements MemoryOperations<MemorySegment> {
 
@@ -18,11 +20,10 @@ final class PanamaMemoryOperations implements MemoryOperations<MemorySegment> {
 
     @Override
     public void copy(Memory<MemorySegment> src, long srcByteOffset, Memory<MemorySegment> dst, long dstByteOffset, long byteSize) {
+        MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
+        MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
         if (byteSize == 0) {
             return;
-        }
-        if (byteSize < 0) {
-            throw new IllegalArgumentException("negative size");
         }
         MemorySegment.copy(src.base(), srcByteOffset, dst.base(), dstByteOffset, byteSize);
     }
@@ -39,27 +40,50 @@ final class PanamaMemoryOperations implements MemoryOperations<MemorySegment> {
 
     @Override
     public void fillByte(Memory<MemorySegment> memory, long byteOffset, long byteSize, byte value) {
+        MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
+        MemoryAccessChecks.checkWriteable(memory);
         if (byteSize == 0) {
             return;
-        }
-        if (byteSize < 0) {
-            throw new IllegalArgumentException("negative size");
         }
         memory.base().asSlice(byteOffset, byteSize).fill(value);
     }
 
     @Override
     public void fillShort(Memory<MemorySegment> memory, long byteOffset, long byteSize, short shortValue) {
-        throw new UnsupportedOperationException();
+        MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
+        MemoryAccessChecks.checkWriteable(memory);
+        if (byteSize == 0) {
+            return;
+        }
+        long end = byteOffset + byteSize;
+        for (long offset = byteOffset; offset < end; offset += Short.BYTES) {
+            memory.base().set(ValueLayout.JAVA_SHORT_UNALIGNED, offset, shortValue);
+        }
     }
 
     @Override
     public void fillInt(Memory<MemorySegment> memory, long byteOffset, long byteSize, int intValue) {
-        throw new UnsupportedOperationException();
+        MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
+        MemoryAccessChecks.checkWriteable(memory);
+        if (byteSize == 0) {
+            return;
+        }
+        long end = byteOffset + byteSize;
+        for (long offset = byteOffset; offset < end; offset += Integer.BYTES) {
+            memory.base().set(ValueLayout.JAVA_INT_UNALIGNED, offset, intValue);
+        }
     }
 
     @Override
     public void fillLong(Memory<MemorySegment> memory, long byteOffset, long byteSize, long longValue) {
-        throw new UnsupportedOperationException();
+        MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
+        MemoryAccessChecks.checkWriteable(memory);
+        if (byteSize == 0) {
+            return;
+        }
+        long end = byteOffset + byteSize;
+        for (long offset = byteOffset; offset < end; offset += Long.BYTES) {
+            memory.base().set(ValueLayout.JAVA_LONG_UNALIGNED, offset, longValue);
+        }
     }
 }

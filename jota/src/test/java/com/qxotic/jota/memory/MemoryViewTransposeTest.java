@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public class MemoryViewTransposeTest extends AbstractMemoryTest {
 
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("contextsSupportingF32")
     <B> void testTranspose2D(MemoryContext<B> context) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
@@ -51,7 +51,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("contextsSupportingF32")
     <B> void testTranspose3D(MemoryContext<B> context) {
         // Create a 2x3x4 tensor
         Shape shape = Shape.of(2, 3, 4);
@@ -95,7 +95,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("contextsSupportingF32")
     <B> void testTransposeNegativeIndices(MemoryContext<B> context) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
@@ -109,7 +109,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("contextsSupportingF32")
     <B> void testTransposeSameAxis(MemoryContext<B> context) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
@@ -124,7 +124,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("contextsSupportingF32")
     <B> void testTransposeInvalidAxis(MemoryContext<B> context) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
@@ -136,7 +136,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("contextsSupportingF32")
     <B> void testTransposeStrides(MemoryContext<B> context) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
@@ -155,7 +155,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("contextsSupportingF32")
     <B> void testTransposeContiguity(MemoryContext<B> context) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);

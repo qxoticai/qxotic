@@ -15,11 +15,27 @@ public final class MemoryAllocatorFactory {
     }
 
     public static MemoryAllocator<byte[]> ofBytes() {
-        return ByteArrayAllocator.instance();
+        return BytesMemoryAllocator.instance();
     }
 
     public static MemoryAllocator<float[]> ofFloats() {
-        return FloatArrayAllocator.instance();
+        return FloatsMemoryAllocator.instance();
+    }
+
+    public static MemoryAllocator<int[]> ofInts() {
+        return IntsMemoryAllocator.instance();
+    }
+
+    public static MemoryAllocator<short[]> ofShorts() {
+        return ShortsMemoryAllocator.instance();
+    }
+
+    public static MemoryAllocator<long[]> ofLongs() {
+        return LongsMemoryAllocator.instance();
+    }
+
+    public static MemoryAllocator<double[]> ofDoubles() {
+        return DoublesMemoryAllocator.instance();
     }
 
     public static MemoryAllocator<ByteBuffer> ofByteBuffer(boolean direct, ByteOrder byteOrder) {

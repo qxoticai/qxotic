@@ -1,25 +1,26 @@
 package com.qxotic.jota.memory.impl;
 
+import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.Memory;
 
 import java.util.Objects;
 
-final class IntArrayMemory implements Memory<int[]> {
+final class LongsMemory implements Memory<long[]> {
 
-    final int[] ints;
+    final long[] longs;
 
-    private IntArrayMemory(int[] ints) {
-        this.ints = Objects.requireNonNull(ints);
+    private LongsMemory(long[] longs) {
+        this.longs = Objects.requireNonNull(longs);
     }
 
-    static Memory<int[]> of(int[] ints) {
-        return new IntArrayMemory(ints);
+    static Memory<long[]> of(long[] longs) {
+        return new LongsMemory(longs);
     }
 
     @Override
     public long byteSize() {
-        return ints.length * (long) Integer.BYTES;
+        return longs.length * (long) Long.BYTES;
     }
 
     @Override
@@ -33,13 +34,18 @@ final class IntArrayMemory implements Memory<int[]> {
     }
 
     @Override
-    public int[] base() {
-        return ints;
+    public long[] base() {
+        return longs;
+    }
+
+    @Override
+    public boolean supportsDataType(DataType dataType) {
+        return dataType == DataType.I64;
     }
 
     @Override
     public String toString() {
-        return new StringBuilder("Memory{int[], byteSize=")
+        return new StringBuilder("Memory{long[], byteSize=")
                 .append(byteSize())
                 .append(", device=")
                 .append(device())

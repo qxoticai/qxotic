@@ -2,19 +2,20 @@ package com.qxotic.jota.memory.impl;
 
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAccess;
+import com.qxotic.jota.memory.MemoryAccessChecks;
 import sun.misc.Unsafe;
 
-final class FloatArrayMemoryAccess implements MemoryAccess<float[]> {
+final class FloatsMemoryAccess implements MemoryAccess<float[]> {
 
     private static final Unsafe UNSAFE = UnsafeAccess.get();
 
-    private static final FloatArrayMemoryAccess INSTANCE = new FloatArrayMemoryAccess();
+    private static final FloatsMemoryAccess INSTANCE = new FloatsMemoryAccess();
 
     public static MemoryAccess<float[]> instance() {
         return INSTANCE;
     }
 
-    private FloatArrayMemoryAccess() {
+    private FloatsMemoryAccess() {
     }
 
     @Override
@@ -29,13 +30,15 @@ final class FloatArrayMemoryAccess implements MemoryAccess<float[]> {
 
     @Override
     public int readInt(Memory<float[]> memory, long byteOffset) {
-        assert (byteOffset & 3) == 0;
+        MemoryAccessChecks.checkBounds(memory, byteOffset, Float.BYTES);
+        MemoryAccessChecks.checkAlignedValue(byteOffset, Float.BYTES);
         return Float.floatToRawIntBits(memory.base()[(int) (byteOffset / Float.BYTES)]);
     }
 
     @Override
     public float readFloat(Memory<float[]> memory, long byteOffset) {
-        assert (byteOffset & 3) == 0;
+        MemoryAccessChecks.checkBounds(memory, byteOffset, Float.BYTES);
+        MemoryAccessChecks.checkAlignedValue(byteOffset, Float.BYTES);
         return memory.base()[(int) (byteOffset / Float.BYTES)];
     }
 
@@ -61,15 +64,17 @@ final class FloatArrayMemoryAccess implements MemoryAccess<float[]> {
 
     @Override
     public void writeInt(Memory<float[]> memory, long byteOffset, int value) {
-        assert (byteOffset & 3) == 0;
-        assert !memory.isReadOnly();
+        MemoryAccessChecks.checkBounds(memory, byteOffset, Float.BYTES);
+        MemoryAccessChecks.checkAlignedValue(byteOffset, Float.BYTES);
+        MemoryAccessChecks.checkWriteable(memory);
         memory.base()[(int) (byteOffset / Float.BYTES)] = Float.intBitsToFloat(value);
     }
 
     @Override
     public void writeFloat(Memory<float[]> memory, long byteOffset, float value) {
-        assert (byteOffset & 3) == 0;
-        assert !memory.isReadOnly();
+        MemoryAccessChecks.checkBounds(memory, byteOffset, Float.BYTES);
+        MemoryAccessChecks.checkAlignedValue(byteOffset, Float.BYTES);
+        MemoryAccessChecks.checkWriteable(memory);
         memory.base()[(int) (byteOffset / Float.BYTES)] = value;
     }
 
