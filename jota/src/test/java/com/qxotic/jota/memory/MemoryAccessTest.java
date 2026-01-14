@@ -1,31 +1,21 @@
 package com.qxotic.jota.memory;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.memory.impl.ContextFactory;
 import com.qxotic.jota.memory.impl.MemoryAccessFactory;
 import com.qxotic.jota.memory.impl.MemoryFactory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
-import java.util.function.Supplier;
-import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class MemoryAccessTest {
 
-    public static Stream<Supplier<MemoryContext<?>>> contextProvider() {
-        return Stream.of(
-                ContextFactory::ofFloats,
-                ContextFactory::ofMemorySegment
-        );
-    }
-
     @ParameterizedTest
-    @MethodSource("contextProvider")
-    <B> void testFloatAccess(Supplier<MemoryContext<B>> contextSupplier) {
-        try (var context = contextSupplier.get()) {
+    @MethodSource("com.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingF32")
+    <B> void testFloatAccess(MemoryContext<B> context) {
+        try (context) {
             var allocator = context.memoryAllocator();
             Memory<B> memory = allocator.allocateMemory(DataType.F32, 16);
             MemoryAccess<B> memoryAccess = context.memoryAccess();

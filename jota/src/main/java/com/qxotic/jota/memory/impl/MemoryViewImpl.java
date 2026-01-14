@@ -39,6 +39,9 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
         this.byteOffset = byteOffset;
         this.isContiguous = isContiguous(layout);
 
+        if (!memory.supportsDataType(dataType)) {
+            throw new IllegalArgumentException("unsupported data type: " + dataType);
+        }
         if (!MemoryView.isWithinBounds(layout, dataType, byteOffset, memory)) {
             throw new IllegalArgumentException("view spans beyond memory size");
         }

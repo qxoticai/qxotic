@@ -12,15 +12,27 @@ public final class MemoryFactory {
     }
 
     public static Memory<float[]> ofFloats(float... floats) {
-        return FloatArrayMemory.of(floats);
+        return FloatsMemory.of(floats);
     }
 
     public static Memory<byte[]> ofBytes(byte... bytes) {
-        return ByteArrayMemory.of(bytes);
+        return BytesMemory.of(bytes);
     }
 
     public static Memory<int[]> ofInts(int... ints) {
-        return IntArrayMemory.of(ints);
+        return IntsMemory.of(ints);
+    }
+
+    public static Memory<short[]> ofShorts(short... shorts) {
+        return ShortsMemory.of(shorts);
+    }
+
+    public static Memory<long[]> ofLongs(long... longs) {
+        return LongsMemory.of(longs);
+    }
+
+    public static Memory<double[]> ofDoubles(double... doubles) {
+        return DoublesMemory.of(doubles);
     }
 
     public static Memory<ByteBuffer> ofByteBuffer(ByteBuffer byteBuffer) {

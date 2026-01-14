@@ -17,7 +17,7 @@ class ByteBufferContext implements MemoryContext<ByteBuffer> {
 
     @Override
     public Device device() {
-        return Device.NATIVE;
+        return memoryAllocator.device();
     }
 
     @Override
@@ -47,6 +47,11 @@ class ByteBufferContext implements MemoryContext<ByteBuffer> {
 
     @Override
     public String toString() {
-        return "context ByteBuffer";
+        return new StringBuilder("Context{ByteBuffer, device=")
+                .append(device())
+                .append(", directAccess=")
+                .append(memoryAccess() != null)
+                .append('}')
+                .toString();
     }
 }

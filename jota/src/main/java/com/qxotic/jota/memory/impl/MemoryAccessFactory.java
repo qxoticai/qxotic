@@ -11,11 +11,11 @@ public class MemoryAccessFactory {
     }
 
     public static MemoryAccess<float[]> ofFloats() {
-        return FloatArrayMemoryAccess.instance();
+        return FloatsMemoryAccess.instance();
     }
 
     public static MemoryAccess<byte[]> ofBytes() {
-        return ByteArrayMemoryAccess.instance();
+        return BytesMemoryAccess.instance();
     }
 
     public static MemoryAccess<ByteBuffer> ofByteBuffer() {

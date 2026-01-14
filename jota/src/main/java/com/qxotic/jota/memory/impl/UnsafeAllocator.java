@@ -1,5 +1,6 @@
 package com.qxotic.jota.memory.impl;
 
+import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.ScopedMemory;
 import com.qxotic.jota.memory.ScopedMemoryAllocator;
@@ -11,7 +12,7 @@ class UnsafeAllocator implements ScopedMemoryAllocator<MemorySegment> {
 
     private static final Unsafe UNSAFE = UnsafeAccess.get();
 
-    public static UnsafeAllocator INSTANCE = new UnsafeAllocator();
+    public static final UnsafeAllocator INSTANCE = new UnsafeAllocator();
 
     public static ScopedMemoryAllocator<MemorySegment> instance() {
         return INSTANCE;
@@ -71,6 +72,11 @@ class UnsafeAllocator implements ScopedMemoryAllocator<MemorySegment> {
         @Override
         public MemorySegment base() {
             return memorySegment;
+        }
+
+        @Override
+        public boolean supportsDataType(DataType dataType) {
+            return true;
         }
     }
 }

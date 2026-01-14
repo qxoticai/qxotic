@@ -42,6 +42,11 @@ final class PanamaContext implements MemoryContext<MemorySegment> {
 
     @Override
     public String toString() {
-        return "context MemorySegment";
+        return new StringBuilder("Context{MemorySegment, device=")
+                .append(device())
+                .append(", directAccess=")
+                .append(memoryAccess() != null)
+                .append('}')
+                .toString();
     }
 }

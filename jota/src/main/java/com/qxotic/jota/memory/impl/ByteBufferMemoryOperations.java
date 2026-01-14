@@ -1,6 +1,7 @@
 package com.qxotic.jota.memory.impl;
 
 import com.qxotic.jota.memory.Memory;
+import com.qxotic.jota.memory.MemoryAccessChecks;
 import com.qxotic.jota.memory.MemoryOperations;
 
 import java.lang.foreign.MemorySegment;
@@ -20,17 +21,10 @@ final class ByteBufferMemoryOperations implements MemoryOperations<ByteBuffer> {
 
     @Override
     public void copy(Memory<ByteBuffer> src, long srcByteOffset, Memory<ByteBuffer> dst, long dstByteOffset, long byteSize) {
+        MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
+        MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
         if (byteSize == 0) {
             return;
-        }
-        if (byteSize < 0) {
-            throw new IllegalArgumentException("negative size");
-        }
-        if (srcByteOffset < 0) {
-            throw new IllegalArgumentException("negative src offset");
-        }
-        if (dstByteOffset < 0) {
-            throw new IllegalArgumentException("negative dst offset");
         }
         int intSrcByteOffset = Math.toIntExact(srcByteOffset);
         int intDstByteOffset = Math.toIntExact(dstByteOffset);
@@ -41,17 +35,10 @@ final class ByteBufferMemoryOperations implements MemoryOperations<ByteBuffer> {
 
     @Override
     public void copyFromNative(Memory<MemorySegment> src, long srcByteOffset, Memory<ByteBuffer> dst, long dstByteOffset, long byteSize) {
+        MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
+        MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
         if (byteSize == 0) {
             return;
-        }
-        if (byteSize < 0) {
-            throw new IllegalArgumentException("negative size");
-        }
-        if (srcByteOffset < 0) {
-            throw new IllegalArgumentException("negative src offset");
-        }
-        if (dstByteOffset < 0) {
-            throw new IllegalArgumentException("negative dst offset");
         }
         int intDstByteOffset = Math.toIntExact(dstByteOffset);
         int intByteSize = Math.toIntExact(byteSize);
@@ -63,17 +50,10 @@ final class ByteBufferMemoryOperations implements MemoryOperations<ByteBuffer> {
 
     @Override
     public void copyToNative(Memory<ByteBuffer> src, long srcByteOffset, Memory<MemorySegment> dst, long dstByteOffset, long byteSize) {
+        MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
+        MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
         if (byteSize == 0) {
             return;
-        }
-        if (byteSize < 0) {
-            throw new IllegalArgumentException("negative size");
-        }
-        if (srcByteOffset < 0) {
-            throw new IllegalArgumentException("negative src offset");
-        }
-        if (dstByteOffset < 0) {
-            throw new IllegalArgumentException("negative dst offset");
         }
         int intSrcByteOffset = Math.toIntExact(srcByteOffset);
         int intByteSize = Math.toIntExact(byteSize);
@@ -85,14 +65,10 @@ final class ByteBufferMemoryOperations implements MemoryOperations<ByteBuffer> {
 
     @Override
     public void fillByte(Memory<ByteBuffer> memory, long byteOffset, long byteSize, byte byteValue) {
+        MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
+        MemoryAccessChecks.checkWriteable(memory);
         if (byteSize == 0) {
             return;
-        }
-        if (byteSize < 0) {
-            throw new IllegalArgumentException("negative size");
-        }
-        if (byteOffset < 0) {
-            throw new IllegalArgumentException("negative offset");
         }
         int intByteOffset = Math.toIntExact(byteOffset);
         int intByteSize = Math.toIntExact(byteSize);
@@ -103,17 +79,11 @@ final class ByteBufferMemoryOperations implements MemoryOperations<ByteBuffer> {
 
     @Override
     public void fillShort(Memory<ByteBuffer> memory, long byteOffset, long byteSize, short shortValue) {
+        MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
+        MemoryAccessChecks.checkWriteable(memory);
+        MemoryAccessChecks.checkAlignedValue(byteSize, Short.BYTES);
         if (byteSize == 0) {
             return;
-        }
-        if (byteSize < 0) {
-            throw new IllegalArgumentException("negative size");
-        }
-        if (byteOffset < 0) {
-            throw new IllegalArgumentException("negative offset");
-        }
-        if (byteSize % Short.BYTES != 0) {
-            throw new IllegalArgumentException("unaligned byteSize");
         }
         int intByteOffset = Math.toIntExact(byteOffset);
         int intByteSize = Math.toIntExact(byteSize);
@@ -124,17 +94,11 @@ final class ByteBufferMemoryOperations implements MemoryOperations<ByteBuffer> {
 
     @Override
     public void fillInt(Memory<ByteBuffer> memory, long byteOffset, long byteSize, int intValue) {
+        MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
+        MemoryAccessChecks.checkWriteable(memory);
+        MemoryAccessChecks.checkAlignedValue(byteSize, Integer.BYTES);
         if (byteSize == 0) {
             return;
-        }
-        if (byteSize < 0) {
-            throw new IllegalArgumentException("negative size");
-        }
-        if (byteOffset < 0) {
-            throw new IllegalArgumentException("negative offset");
-        }
-        if (byteSize % Integer.BYTES != 0) {
-            throw new IllegalArgumentException("unaligned byteSize");
         }
         int intByteOffset = Math.toIntExact(byteOffset);
         int intByteSize = Math.toIntExact(byteSize);
@@ -145,17 +109,11 @@ final class ByteBufferMemoryOperations implements MemoryOperations<ByteBuffer> {
 
     @Override
     public void fillLong(Memory<ByteBuffer> memory, long byteOffset, long byteSize, long longValue) {
+        MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
+        MemoryAccessChecks.checkWriteable(memory);
+        MemoryAccessChecks.checkAlignedValue(byteSize, Long.BYTES);
         if (byteSize == 0) {
             return;
-        }
-        if (byteSize < 0) {
-            throw new IllegalArgumentException("negative size");
-        }
-        if (byteOffset < 0) {
-            throw new IllegalArgumentException("negative offset");
-        }
-        if (byteSize % Long.BYTES != 0) {
-            throw new IllegalArgumentException("unaligned byteSize");
         }
         int intByteOffset = Math.toIntExact(byteOffset);
         int intByteSize = Math.toIntExact(byteSize);
@@ -166,17 +124,11 @@ final class ByteBufferMemoryOperations implements MemoryOperations<ByteBuffer> {
 
     @Override
     public void fillFloat(Memory<ByteBuffer> memory, long byteOffset, long byteSize, float floatValue) {
+        MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
+        MemoryAccessChecks.checkWriteable(memory);
+        MemoryAccessChecks.checkAlignedValue(byteSize, Float.BYTES);
         if (byteSize == 0) {
             return;
-        }
-        if (byteSize < 0) {
-            throw new IllegalArgumentException("negative size");
-        }
-        if (byteOffset < 0) {
-            throw new IllegalArgumentException("negative offset");
-        }
-        if (byteSize % Float.BYTES != 0) {
-            throw new IllegalArgumentException("unaligned byteSize");
         }
         int intByteOffset = Math.toIntExact(byteOffset);
         int intByteSize = Math.toIntExact(byteSize);
@@ -187,17 +139,11 @@ final class ByteBufferMemoryOperations implements MemoryOperations<ByteBuffer> {
 
     @Override
     public void fillDouble(Memory<ByteBuffer> memory, long byteOffset, long byteSize, double doubleValue) {
+        MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
+        MemoryAccessChecks.checkWriteable(memory);
+        MemoryAccessChecks.checkAlignedValue(byteSize, Double.BYTES);
         if (byteSize == 0) {
             return;
-        }
-        if (byteSize < 0) {
-            throw new IllegalArgumentException("negative size");
-        }
-        if (byteOffset < 0) {
-            throw new IllegalArgumentException("negative offset");
-        }
-        if (byteSize % Double.BYTES != 0) {
-            throw new IllegalArgumentException("unaligned byteSize");
         }
         int intByteOffset = Math.toIntExact(byteOffset);
         int intByteSize = Math.toIntExact(byteSize);

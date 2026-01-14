@@ -1,5 +1,6 @@
 package com.qxotic.jota.memory.impl;
 
+import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.Memory;
 
@@ -36,6 +37,11 @@ final class ByteBufferMemory implements Memory<ByteBuffer> {
     @Override
     public ByteBuffer base() {
         return this.byteBuffer;
+    }
+
+    @Override
+    public boolean supportsDataType(DataType dataType) {
+        return true; // all data types supported
     }
 
     public ByteBufferMemory asReadOnly() {

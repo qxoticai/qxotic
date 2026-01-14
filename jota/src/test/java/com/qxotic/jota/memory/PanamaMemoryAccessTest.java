@@ -75,22 +75,22 @@ class PanamaMemoryAccessTest {
         try (var arena = Arena.ofConfined()) {
             MemorySegment readOnlySegment = arena.allocate(64).asReadOnly();
             Memory<MemorySegment> memory = MemoryFactory.ofMemorySegment(readOnlySegment);
-            assertThrows(IllegalArgumentException.class,
+            assertThrows(UnsupportedOperationException.class,
                     () -> memoryAccess.writeByte(memory, 0, Byte.MAX_VALUE));
 
-            assertThrows(IllegalArgumentException.class,
+            assertThrows(UnsupportedOperationException.class,
                     () -> memoryAccess.writeShort(memory, 0, Short.MAX_VALUE));
 
-            assertThrows(IllegalArgumentException.class,
+            assertThrows(UnsupportedOperationException.class,
                     () -> memoryAccess.writeInt(memory, 0, Integer.MAX_VALUE));
 
-            assertThrows(IllegalArgumentException.class,
+            assertThrows(UnsupportedOperationException.class,
                     () -> memoryAccess.writeLong(memory, 0, Long.MAX_VALUE));
 
-            assertThrows(IllegalArgumentException.class,
+            assertThrows(UnsupportedOperationException.class,
                     () -> memoryAccess.writeFloat(memory, 0, Float.MAX_VALUE));
 
-            assertThrows(IllegalArgumentException.class,
+            assertThrows(UnsupportedOperationException.class,
                     () -> memoryAccess.writeDouble(memory, 0, Double.MAX_VALUE));
         }
     }

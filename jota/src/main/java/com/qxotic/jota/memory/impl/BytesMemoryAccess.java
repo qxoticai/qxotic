@@ -2,84 +2,98 @@ package com.qxotic.jota.memory.impl;
 
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAccess;
+import com.qxotic.jota.memory.MemoryAccessChecks;
 import sun.misc.Unsafe;
 
-final class ByteArrayMemoryAccess implements MemoryAccess<byte[]> {
+final class BytesMemoryAccess implements MemoryAccess<byte[]> {
 
     private static final Unsafe UNSAFE = UnsafeAccess.get();
 
-    private static final ByteArrayMemoryAccess INSTANCE = new ByteArrayMemoryAccess();
+    private static final BytesMemoryAccess INSTANCE = new BytesMemoryAccess();
 
     public static MemoryAccess<byte[]> instance() {
         return INSTANCE;
     }
 
-    private ByteArrayMemoryAccess() {
+    private BytesMemoryAccess() {
     }
 
     @Override
     public byte readByte(Memory<byte[]> memory, long byteOffset) {
+        MemoryAccessChecks.checkBounds(memory, byteOffset, Byte.BYTES);
         return UNSAFE.getByte(memory.base(), Unsafe.ARRAY_BYTE_BASE_OFFSET + byteOffset);
     }
 
+
     @Override
     public short readShort(Memory<byte[]> memory, long byteOffset) {
+        MemoryAccessChecks.checkBounds(memory, byteOffset, Short.BYTES);
         return UNSAFE.getShort(memory.base(), Unsafe.ARRAY_BYTE_BASE_OFFSET + byteOffset);
     }
 
     @Override
     public int readInt(Memory<byte[]> memory, long byteOffset) {
+        MemoryAccessChecks.checkBounds(memory, byteOffset, Integer.BYTES);
         return UNSAFE.getInt(memory.base(), Unsafe.ARRAY_BYTE_BASE_OFFSET + byteOffset);
     }
 
     @Override
     public float readFloat(Memory<byte[]> memory, long byteOffset) {
+        MemoryAccessChecks.checkBounds(memory, byteOffset, Float.BYTES);
         return UNSAFE.getFloat(memory.base(), Unsafe.ARRAY_BYTE_BASE_OFFSET + byteOffset);
     }
 
     @Override
     public long readLong(Memory<byte[]> memory, long byteOffset) {
+        MemoryAccessChecks.checkBounds(memory, byteOffset, Long.BYTES);
         return UNSAFE.getLong(memory.base(), Unsafe.ARRAY_BYTE_BASE_OFFSET + byteOffset);
     }
 
     @Override
     public double readDouble(Memory<byte[]> memory, long byteOffset) {
+        MemoryAccessChecks.checkBounds(memory, byteOffset, Double.BYTES);
         return UNSAFE.getDouble(memory.base(), Unsafe.ARRAY_BYTE_BASE_OFFSET + byteOffset);
     }
 
     @Override
     public void writeByte(Memory<byte[]> memory, long byteOffset, byte value) {
-        assert !memory.isReadOnly();
+        MemoryAccessChecks.checkWriteable(memory);
+        MemoryAccessChecks.checkBounds(memory, byteOffset, Byte.BYTES);
         UNSAFE.putByte(memory.base(), Unsafe.ARRAY_BYTE_BASE_OFFSET + byteOffset, value);
     }
 
     @Override
     public void writeShort(Memory<byte[]> memory, long byteOffset, short value) {
-        assert !memory.isReadOnly();
+        MemoryAccessChecks.checkWriteable(memory);
+        MemoryAccessChecks.checkBounds(memory, byteOffset, Short.BYTES);
         UNSAFE.putShort(memory.base(), Unsafe.ARRAY_BYTE_BASE_OFFSET + byteOffset, value);
     }
 
     @Override
     public void writeInt(Memory<byte[]> memory, long byteOffset, int value) {
-        assert !memory.isReadOnly();
+        MemoryAccessChecks.checkWriteable(memory);
+        MemoryAccessChecks.checkBounds(memory, byteOffset, Integer.BYTES);
         UNSAFE.putInt(memory.base(), Unsafe.ARRAY_BYTE_BASE_OFFSET + byteOffset, value);
     }
 
     @Override
     public void writeFloat(Memory<byte[]> memory, long byteOffset, float value) {
-        assert !memory.isReadOnly();
+        MemoryAccessChecks.checkWriteable(memory);
+        MemoryAccessChecks.checkBounds(memory, byteOffset, Float.BYTES);
         UNSAFE.putFloat(memory.base(), Unsafe.ARRAY_BYTE_BASE_OFFSET + byteOffset, value);
     }
 
     @Override
     public void writeLong(Memory<byte[]> memory, long byteOffset, long value) {
-        assert !memory.isReadOnly();
+        MemoryAccessChecks.checkWriteable(memory);
+        MemoryAccessChecks.checkBounds(memory, byteOffset, Long.BYTES);
         UNSAFE.putLong(memory.base(), Unsafe.ARRAY_BYTE_BASE_OFFSET + byteOffset, value);
     }
 
     @Override
     public void writeDouble(Memory<byte[]> memory, long byteOffset, double value) {
-        assert !memory.isReadOnly();
+        MemoryAccessChecks.checkWriteable(memory);
+        MemoryAccessChecks.checkBounds(memory, byteOffset, Double.BYTES);
         UNSAFE.putDouble(memory.base(), Unsafe.ARRAY_BYTE_BASE_OFFSET + byteOffset, value);
     }
 }

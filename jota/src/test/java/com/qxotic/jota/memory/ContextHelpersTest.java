@@ -11,14 +11,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class ContextHelpersTest extends AbstractMemoryTest {
 
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("contextsSupportingF32")
     <B> void fullFillsWithValue(MemoryContext<B> context) {
         MemoryAccess<B> memoryAccess = context.memoryAccess();
         if (memoryAccess == null) {
             return;
         }
         Shape shape = Shape.of(2, 3);
-        MemoryView<B> view = MemoryHelpers.full(context, shape, DataType.F32, 2.5);
+        MemoryView<B> view = MemoryHelpers.full(context, DataType.F32, shape, 2.5);
         long byteStride = DataType.F32.byteSize();
         for (long i = 0; i < shape.size(); i++) {
             float actual = memoryAccess.readFloat(view.memory(), view.byteOffset() + i * byteStride);
@@ -33,15 +33,15 @@ class ContextHelpersTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("contextsSupportingF32")
     <B> void onesAndZerosFill(MemoryContext<B> context) {
         MemoryAccess<B> memoryAccess = context.memoryAccess();
         if (memoryAccess == null) {
             return;
         }
         Shape shape = Shape.of(2, 2);
-        MemoryView<B> ones = MemoryHelpers.ones(context, shape, DataType.F32);
-        MemoryView<B> zeros = MemoryHelpers.zeros(context, shape, DataType.F32);
+        MemoryView<B> ones = MemoryHelpers.ones(context, DataType.F32, shape);
+        MemoryView<B> zeros = MemoryHelpers.zeros(context, DataType.F32, shape);
         long byteStride = DataType.F32.byteSize();
         for (long i = 0; i < shape.size(); i++) {
             long offset = i * byteStride;
@@ -59,7 +59,7 @@ class ContextHelpersTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("contextsSupportingF32")
     <B> void arangeBuildsSequence(MemoryContext<B> context) {
         MemoryAccess<B> memoryAccess = context.memoryAccess();
         if (memoryAccess == null) {

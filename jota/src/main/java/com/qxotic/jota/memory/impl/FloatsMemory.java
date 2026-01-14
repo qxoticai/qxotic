@@ -1,25 +1,26 @@
 package com.qxotic.jota.memory.impl;
 
+import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.Memory;
 
 import java.util.Objects;
 
-final class ByteArrayMemory implements Memory<byte[]> {
+final class FloatsMemory implements Memory<float[]> {
 
-    final byte[] bytes;
+    final float[] floats;
 
-    private ByteArrayMemory(byte[] bytes) {
-        this.bytes = Objects.requireNonNull(bytes);
+    private FloatsMemory(float[] floats) {
+        this.floats = Objects.requireNonNull(floats);
     }
 
-    static Memory<byte[]> of(byte[] bytes) {
-        return new ByteArrayMemory(bytes);
+    static Memory<float[]> of(float[] floats) {
+        return new FloatsMemory(floats);
     }
 
     @Override
     public long byteSize() {
-        return bytes.length;
+        return floats.length * (long) Float.BYTES;
     }
 
     @Override
@@ -33,13 +34,18 @@ final class ByteArrayMemory implements Memory<byte[]> {
     }
 
     @Override
-    public byte[] base() {
-        return bytes;
+    public float[] base() {
+        return floats;
+    }
+
+    @Override
+    public boolean supportsDataType(DataType dataType) {
+        return dataType == DataType.F32;
     }
 
     @Override
     public String toString() {
-        return new StringBuilder("Memory{byte[], byteSize=")
+        return new StringBuilder("Memory{float[], byteSize=")
                 .append(byteSize())
                 .append(", device=")
                 .append(device())

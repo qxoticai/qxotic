@@ -1,22 +1,26 @@
-package com.qxotic.jota.memory;
+package com.qxotic.jota.memory.impl;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
+import com.qxotic.jota.memory.Memory;
 
-public final class UnsafeMemory implements Memory<Void> {
+import java.util.Objects;
 
-    private static final Memory<Void> INSTANCE = new UnsafeMemory();
+final class BytesMemory implements Memory<byte[]> {
 
-    public static Memory<Void> instance() {
-        return INSTANCE;
+    final byte[] bytes;
+
+    private BytesMemory(byte[] bytes) {
+        this.bytes = Objects.requireNonNull(bytes);
     }
 
-    private UnsafeMemory() {
+    static Memory<byte[]> of(byte[] bytes) {
+        return new BytesMemory(bytes);
     }
 
     @Override
     public long byteSize() {
-        return Long.MAX_VALUE;
+        return bytes.length;
     }
 
     @Override
@@ -26,22 +30,22 @@ public final class UnsafeMemory implements Memory<Void> {
 
     @Override
     public Device device() {
-        return Device.NATIVE;
+        return Device.JAVA;
     }
 
     @Override
-    public Void base() {
-        return null;
+    public byte[] base() {
+        return bytes;
     }
 
     @Override
     public boolean supportsDataType(DataType dataType) {
-        return true;
+        return true; // all data types supported
     }
 
     @Override
     public String toString() {
-        return new StringBuilder("Memory{unsafe, byteSize=")
+        return new StringBuilder("Memory{byte[], byteSize=")
                 .append(byteSize())
                 .append(", device=")
                 .append(device())

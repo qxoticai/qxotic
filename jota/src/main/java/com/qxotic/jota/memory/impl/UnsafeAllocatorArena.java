@@ -1,6 +1,6 @@
 package com.qxotic.jota.memory.impl;
 
-import com.qxotic.jota.memory.impl.UnsafeAllocator;
+import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.ScopedMemory;
 import com.qxotic.jota.memory.ScopedMemoryAllocatorArena;
@@ -56,6 +56,11 @@ class UnsafeAllocatorArena implements ScopedMemoryAllocatorArena<MemorySegment> 
             @Override
             public MemorySegment base() {
                 return scopedMemory.base();
+            }
+
+            @Override
+            public boolean supportsDataType(DataType dataType) {
+                return scopedMemory.supportsDataType(dataType);
             }
         };
     }

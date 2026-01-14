@@ -4,15 +4,15 @@ import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAllocator;
 
-final class FloatArrayAllocator implements MemoryAllocator<float[]> {
+final class FloatsMemoryAllocator implements MemoryAllocator<float[]> {
 
-    private static final FloatArrayAllocator INSTANCE = new FloatArrayAllocator();
+    private static final FloatsMemoryAllocator INSTANCE = new FloatsMemoryAllocator();
 
     public static MemoryAllocator<float[]> instance() {
         return INSTANCE;
     }
 
-    private FloatArrayAllocator() {
+    private FloatsMemoryAllocator() {
     }
 
     @Override

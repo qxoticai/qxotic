@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class IndexingMemoryViewTest extends AbstractMemoryTest {
 
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("contextsSupportingF32")
     <B> void linearToOffsetRowMajorMatchesPhysicalIndex(MemoryContext<B> context) {
         MemoryAccess<B> memoryAccess = context.memoryAccess();
         if (memoryAccess == null) {
@@ -43,7 +43,7 @@ class IndexingMemoryViewTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextProvider")
+    @MethodSource("contextsSupportingF32")
     <B> void linearToOffsetColumnMajorUsesLayout(MemoryContext<B> context) {
         MemoryAccess<B> memoryAccess = context.memoryAccess();
         if (memoryAccess == null) {
