@@ -40,7 +40,7 @@ final class ShortsMemory implements Memory<short[]> {
 
     @Override
     public boolean supportsDataType(DataType dataType) {
-        return dataType == DataType.I16 || dataType == DataType.F16 || dataType == DataType.BF16;
+        return dataType == DataType.I16 || dataType == DataType.FP16 || dataType == DataType.BF16;
     }
 
     @Override

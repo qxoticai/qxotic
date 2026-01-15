@@ -42,7 +42,7 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
         if (!memory.supportsDataType(dataType)) {
             throw new IllegalArgumentException("unsupported data type: " + dataType);
         }
-        if (!MemoryView.isWithinBounds(layout, dataType, byteOffset, memory)) {
+        if (!MemoryView.isWithinBounds(layout, dataType, memory, byteOffset)) {
             throw new IllegalArgumentException("view spans beyond memory size");
         }
     }

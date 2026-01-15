@@ -40,7 +40,7 @@ final class DoublesMemory implements Memory<double[]> {
 
     @Override
     public boolean supportsDataType(DataType dataType) {
-        return dataType == DataType.F64;
+        return dataType == DataType.FP64;
     }
 
     @Override

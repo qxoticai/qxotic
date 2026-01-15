@@ -1,12 +1,8 @@
 package com.qxotic.jota.memory;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Layout;
-import com.qxotic.jota.Shape;
-import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.impl.MemoryAllocatorFactory;
 import com.qxotic.jota.memory.impl.MemoryFactory;
-import com.qxotic.jota.memory.impl.MemoryViewFactory;
 import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.Arena;
@@ -19,7 +15,7 @@ class MemoryTest {
     @Test
     void testAllocate() {
         var allocator = MemoryAllocatorFactory.ofPanama();
-        DataType dataType = DataType.F32;
+        DataType dataType = DataType.FP32;
         long totalBytes = dataType.byteSizeFor(3 * 5);
         try (var memory = allocator.allocateMemory(totalBytes)) {
             assertEquals(3 * 5 * dataType.byteSize(), memory.byteSize());

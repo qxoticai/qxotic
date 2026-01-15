@@ -17,7 +17,7 @@ public class MemoryAccessTest {
     <B> void testFloatAccess(MemoryContext<B> context) {
         try (context) {
             var allocator = context.memoryAllocator();
-            Memory<B> memory = allocator.allocateMemory(DataType.F32, 16);
+            Memory<B> memory = allocator.allocateMemory(DataType.FP32, 16);
             MemoryAccess<B> memoryAccess = context.memoryAccess();
             for (int i = 0; i < 4; ++i) {
                 memoryAccess.writeFloat(memory, i * Float.BYTES, i * (float) Math.PI);

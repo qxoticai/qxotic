@@ -41,8 +41,8 @@ public class MemoryAllocatorTest {
     @MethodSource("managedAllocatorProvider")
     <B> void testAllocateScalar(Supplier<MemoryAllocator<B>> memoryAllocatorSupplier) {
         var allocator = memoryAllocatorSupplier.get();
-        Memory<B> memory = allocator.allocateMemory(DataType.F32, Shape.scalar());
-        assertEquals(DataType.F32.byteSize(), memory.byteSize());
+        Memory<B> memory = allocator.allocateMemory(DataType.FP32, Shape.scalar());
+        assertEquals(DataType.FP32.byteSize(), memory.byteSize());
     }
 
 //    @ParameterizedTest

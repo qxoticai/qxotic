@@ -17,7 +17,12 @@ public final class MemoryHelpers {
         long byteSize = dataType.byteSizeFor(count);
         Memory<B> memory = allocator.allocateMemory(dataType, count);
         MemoryOperations<B> memoryOperations = context.memoryOperations();
-        if (dataType == DataType.I8) {
+        if (dataType == DataType.BOOL) {
+            // doubleValue() handles all numeric types without truncation
+            // != 0.0 treats both +0.0 and -0.0 as false, NaN as true (NumPy convention)
+            byte boolByte = (byte) (value.doubleValue() != 0.0 ? 1 : 0);
+            memoryOperations.fillByte(memory, 0, byteSize, boolByte);
+        } else if (dataType == DataType.I8) {
             memoryOperations.fillByte(memory, 0, byteSize, value.byteValue());
         } else if (dataType == DataType.I16) {
             memoryOperations.fillShort(memory, 0, byteSize, value.shortValue());
@@ -25,11 +30,11 @@ public final class MemoryHelpers {
             memoryOperations.fillInt(memory, 0, byteSize, value.intValue());
         } else if (dataType == DataType.I64) {
             memoryOperations.fillLong(memory, 0, byteSize, value.longValue());
-        } else if (dataType == DataType.F32) {
+        } else if (dataType == DataType.FP32) {
             memoryOperations.fillFloat(memory, 0, byteSize, value.floatValue());
-        } else if (dataType == DataType.F64) {
+        } else if (dataType == DataType.FP64) {
             memoryOperations.fillDouble(memory, 0, byteSize, value.doubleValue());
-        } else if (dataType == DataType.F16) {
+        } else if (dataType == DataType.FP16) {
             memoryOperations.fillShort(memory, 0, byteSize, Float.floatToFloat16(value.floatValue()));
         } else if (dataType == DataType.BF16) {
             memoryOperations.fillShort(memory, 0, byteSize, BFloat16.fromFloat(value.byteValue()));
@@ -37,6 +42,34 @@ public final class MemoryHelpers {
             throw new IllegalArgumentException("unsupported value " + value);
         }
         return MemoryView.of(memory, dataType, Layout.rowMajor(shape));
+    }
+
+    public static <B> MemoryView<B> full(MemoryContext<B> context, long count, boolean boolValue) {
+        return full(context, DataType.BOOL, count, boolValue ? 1 : 0);
+    }
+
+    public static <B> MemoryView<B> full(MemoryContext<B> context, long count, byte byteValue) {
+        return full(context, DataType.I8, count, byteValue);
+    }
+
+    public static <B> MemoryView<B> full(MemoryContext<B> context, long count, short shortValue) {
+        return full(context, DataType.I16, count, shortValue);
+    }
+
+    public static <B> MemoryView<B> full(MemoryContext<B> context, long count, int intValue) {
+        return full(context, DataType.I32, count, intValue);
+    }
+
+    public static <B> MemoryView<B> full(MemoryContext<B> context, long count, long longValue) {
+        return full(context, DataType.I64, count, longValue);
+    }
+
+    public static <B> MemoryView<B> full(MemoryContext<B> context, long count, float floatValue) {
+        return full(context, DataType.FP32, count, floatValue);
+    }
+
+    public static <B> MemoryView<B> full(MemoryContext<B> context, long count, double doubleValue) {
+        return full(context, DataType.FP64, count, doubleValue);
     }
 
     public static <B> MemoryView<B> full(MemoryContext<B> context, DataType dataType, Shape shape, Number value) {
@@ -60,14 +93,14 @@ public final class MemoryHelpers {
         return full(context, dataType, shape, 0);
     }
 
-    public static <B> MemoryView<B> arange(MemoryContext<B> context, DataType dataType, long end) {
-        return arange(context, dataType, 0, end, 1);
-    }
-
+    // Explicit DataType version for integral types
     public static <B> MemoryView<B> arange(MemoryContext<B> context, DataType dataType,
                                            long start, long end, long step) {
         if (step == 0) {
             throw new IllegalArgumentException("step cannot be 0");
+        }
+        if (!dataType.isIntegral() && dataType != DataType.BOOL) {
+            throw new IllegalArgumentException("Long-based arange requires integral DataType, got: " + dataType);
         }
 
         MemoryAccess<B> memoryAccess = context.memoryAccess();
@@ -75,30 +108,63 @@ public final class MemoryHelpers {
             throw new UnsupportedOperationException("Context does not support direct memory access");
         }
 
-        long count = arangeCount(start, end, step);
+        long count = arangeCountLong(start, end, step);
         Shape shape = Shape.flat(count);
         MemoryAllocator<B> allocator = context.memoryAllocator();
         Memory<B> memory = allocator.allocateMemory(dataType, count);
         MemoryView<B> view = MemoryView.of(memory, dataType, Layout.rowMajor(shape));
 
         for (long i = 0; i < count; i++) {
-            double value = start + (double) i * step;
+            long value = start + i * step;
             long offset = i * dataType.byteSize();
-            if (dataType == DataType.I8) {
+            if (dataType == DataType.BOOL) {
+                memoryAccess.writeByte(memory, offset, (byte) (value != 0 ? 1 : 0));
+            } else if (dataType == DataType.I8) {
                 memoryAccess.writeByte(memory, offset, (byte) value);
             } else if (dataType == DataType.I16) {
                 memoryAccess.writeShort(memory, offset, (short) value);
             } else if (dataType == DataType.I32) {
                 memoryAccess.writeInt(memory, offset, (int) value);
             } else if (dataType == DataType.I64) {
-                memoryAccess.writeLong(memory, offset, (long) value);
-            } else if (dataType == DataType.F16) {
-                memoryAccess.writeShort(memory, offset, (short) Float.floatToFloat16((float) value));
+                memoryAccess.writeLong(memory, offset, value);
+            } else {
+                throw new IllegalArgumentException("Unsupported data type for arange: " + dataType);
+            }
+        }
+        return view;
+    }
+
+    // Explicit DataType version for floating-point types
+    public static <B> MemoryView<B> arange(MemoryContext<B> context, DataType dataType,
+                                           double start, double end, double step) {
+        if (step == 0.0) {
+            throw new IllegalArgumentException("step cannot be 0");
+        }
+        if (!dataType.isFloatingPoint()) {
+            throw new IllegalArgumentException("Double-based arange requires floating-point DataType, got: " + dataType);
+        }
+
+        MemoryAccess<B> memoryAccess = context.memoryAccess();
+        if (memoryAccess == null) {
+            throw new UnsupportedOperationException("Context does not support direct memory access");
+        }
+
+        long count = arangeCountDouble(start, end, step);
+        Shape shape = Shape.flat(count);
+        MemoryAllocator<B> allocator = context.memoryAllocator();
+        Memory<B> memory = allocator.allocateMemory(dataType, count);
+        MemoryView<B> view = MemoryView.of(memory, dataType, Layout.rowMajor(shape));
+
+        for (long i = 0; i < count; i++) {
+            double value = start + i * step;
+            long offset = i * dataType.byteSize();
+            if (dataType == DataType.FP16) {
+                memoryAccess.writeShort(memory, offset, Float.floatToFloat16((float) value));
             } else if (dataType == DataType.BF16) {
                 memoryAccess.writeShort(memory, offset, BFloat16.fromFloat((float) value));
-            } else if (dataType == DataType.F32) {
+            } else if (dataType == DataType.FP32) {
                 memoryAccess.writeFloat(memory, offset, (float) value);
-            } else if (dataType == DataType.F64) {
+            } else if (dataType == DataType.FP64) {
                 memoryAccess.writeDouble(memory, offset, value);
             } else {
                 throw new IllegalArgumentException("Unsupported data type for arange: " + dataType);
@@ -107,7 +173,53 @@ public final class MemoryHelpers {
         return view;
     }
 
-    private static long arangeCount(long start, long end, long step) {
+    // Convenience end-only versions with explicit DataType
+
+    public static <B> MemoryView<B> arange(MemoryContext<B> context, DataType dataType, long end) {
+        if (dataType.isIntegral() || dataType == DataType.BOOL) {
+            return arange(context, dataType, 0L, end, 1L);
+        } else if (dataType.isFloatingPoint()) {
+            return arange(context, dataType, 0.0, (double) end, 1.0);
+        } else {
+            throw new IllegalArgumentException("Unsupported data type for arange: " + dataType);
+        }
+    }
+
+    // Convenience overloads that infer DataType
+
+    public static <B> MemoryView<B> arange(MemoryContext<B> context, int start, int end, int step) {
+        return arange(context, DataType.I32, (long) start, (long) end, (long) step);
+    }
+
+    public static <B> MemoryView<B> arange(MemoryContext<B> context, int end) {
+        return arange(context, DataType.I32, 0L, (long) end, 1L);
+    }
+
+    public static <B> MemoryView<B> arange(MemoryContext<B> context, long start, long end, long step) {
+        return arange(context, DataType.I64, start, end, step);
+    }
+
+    public static <B> MemoryView<B> arange(MemoryContext<B> context, long end) {
+        return arange(context, DataType.I64, 0L, end, 1L);
+    }
+
+    public static <B> MemoryView<B> arange(MemoryContext<B> context, float start, float end, float step) {
+        return arange(context, DataType.FP32, (double) start, (double) end, (double) step);
+    }
+
+    public static <B> MemoryView<B> arange(MemoryContext<B> context, float end) {
+        return arange(context, DataType.FP32, 0.0, (double) end, 1.0);
+    }
+
+    public static <B> MemoryView<B> arange(MemoryContext<B> context, double start, double end, double step) {
+        return arange(context, DataType.FP64, start, end, step);
+    }
+
+    public static <B> MemoryView<B> arange(MemoryContext<B> context, double end) {
+        return arange(context, DataType.FP64, 0.0, end, 1.0);
+    }
+
+    private static long arangeCountLong(long start, long end, long step) {
         if (step > 0) {
             if (start >= end) {
                 return 0;
@@ -129,6 +241,19 @@ public final class MemoryHelpers {
             count++;
         }
         return count;
+    }
+
+    private static long arangeCountDouble(double start, double end, double step) {
+        if (step > 0.0) {
+            if (start >= end) {
+                return 0;
+            }
+            return (long) Math.ceil((end - start) / step);
+        }
+        if (start <= end) {
+            return 0;
+        }
+        return (long) Math.ceil((start - end) / Math.abs(step));
     }
 }
 

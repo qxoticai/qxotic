@@ -37,22 +37,22 @@ class IndexingTest {
     void linearToOffsetMatchesRowMajor() {
         Shape shape = Shape.of(2, 3, 4);
         Stride stride = Stride.rowMajor(shape);
-        assertEquals(92, Indexing.linearToOffset(shape, stride, DataType.F32, 23));
-        assertEquals(16, Indexing.linearToOffset(shape, stride, DataType.F32, 4));
+        assertEquals(92, Indexing.linearToOffset(shape, stride, DataType.FP32, 23));
+        assertEquals(16, Indexing.linearToOffset(shape, stride, DataType.FP32, 4));
     }
 
     @Test
     void linearToOffsetLayoutShortcut() {
         Shape shape = Shape.of(2, 3, 4);
         Layout layout = Layout.rowMajor(shape);
-        assertEquals(92, Indexing.linearToOffset(layout, DataType.F32, 23));
+        assertEquals(92, Indexing.linearToOffset(layout, DataType.FP32, 23));
     }
 
     @Test
     void linearToOffsetRespectsStrideLayout() {
         Shape shape = Shape.of(2, 3);
         Stride stride = Stride.columnMajor(shape);
-        assertEquals(12, Indexing.linearToOffset(shape, stride, DataType.F32, 4));
+        assertEquals(12, Indexing.linearToOffset(shape, stride, DataType.FP32, 4));
     }
 
     @Test
@@ -61,8 +61,8 @@ class IndexingTest {
         Stride stride = Stride.rowMajor(shape);
         for (long linear = 0; linear < shape.size(); linear++) {
             long[] coord = Indexing.linearToCoord(shape, linear);
-            long expected = Indexing.coordToOffset(stride, coord) * DataType.F32.byteSize();
-            assertEquals(expected, Indexing.linearToOffset(shape, stride, DataType.F32, linear));
+            long expected = Indexing.coordToOffset(stride, coord) * DataType.FP32.byteSize();
+            assertEquals(expected, Indexing.linearToOffset(shape, stride, DataType.FP32, linear));
         }
     }
 
@@ -87,7 +87,7 @@ class IndexingTest {
         Shape scalar = Shape.scalar();
         assertArrayEquals(new long[0], Indexing.linearToCoord(scalar, 0));
         assertEquals(0, Indexing.coordToLinear(scalar));
-        assertEquals(0, Indexing.linearToOffset(scalar, Stride.rowMajor(scalar), DataType.F32, 0));
+        assertEquals(0, Indexing.linearToOffset(scalar, Stride.rowMajor(scalar), DataType.FP32, 0));
     }
 
     @Test
@@ -95,7 +95,7 @@ class IndexingTest {
         Shape shape = Shape.of(2, 3);
         assertThrows(IllegalArgumentException.class, () -> Indexing.linearToCoord(shape, 6));
         assertThrows(IllegalArgumentException.class, () -> Indexing.linearToCoord(Shape.scalar(), 1));
-        assertThrows(IllegalArgumentException.class, () -> Indexing.linearToOffset(shape, Stride.rowMajor(shape), DataType.F32, -1));
+        assertThrows(IllegalArgumentException.class, () -> Indexing.linearToOffset(shape, Stride.rowMajor(shape), DataType.FP32, -1));
     }
 
     @Test

@@ -23,8 +23,8 @@ class MemoryOperationsComprehensiveTest {
             DataType.I16,
             DataType.I32,
             DataType.I64,
-            DataType.F32,
-            DataType.F64
+            DataType.FP32,
+            DataType.FP64
     };
 
     static Stream<MemoryContext<?>> allContexts() {
@@ -160,10 +160,10 @@ class MemoryOperationsComprehensiveTest {
         Memory<B> probe = allocator.allocateMemory(Long.BYTES * ELEMENT_COUNT);
         Object base = probe.base();
         if (base instanceof float[]) {
-            return DataType.F32;
+            return DataType.FP32;
         }
         if (base instanceof double[]) {
-            return DataType.F64;
+            return DataType.FP64;
         }
         if (base instanceof long[]) {
             return DataType.I64;
@@ -178,7 +178,7 @@ class MemoryOperationsComprehensiveTest {
             return DataType.I8;
         }
         if (base instanceof ByteBuffer) {
-            return DataType.F32;
+            return DataType.FP32;
         }
         if (base instanceof MemorySegment) {
             return DataType.I8;
@@ -195,10 +195,10 @@ class MemoryOperationsComprehensiveTest {
     }
 
     private static Memory<MemorySegment> allocateNativeMemory(DataType dataType) {
-        if (dataType == DataType.F32) {
+        if (dataType == DataType.FP32) {
             return MemoryFactory.ofMemorySegment(MemorySegment.ofArray(new float[ELEMENT_COUNT]));
         }
-        if (dataType == DataType.F64) {
+        if (dataType == DataType.FP64) {
             return MemoryFactory.ofMemorySegment(MemorySegment.ofArray(new double[ELEMENT_COUNT]));
         }
         if (dataType == DataType.I64) {
@@ -222,9 +222,9 @@ class MemoryOperationsComprehensiveTest {
 
     private static <B> void writeValue(MemoryAccess<B> memoryAccess, Memory<B> memory, DataType dataType, int index, int baseOffset) {
         long byteOffset = dataType.byteSize() * index;
-        if (dataType == DataType.F32) {
+        if (dataType == DataType.FP32) {
             memoryAccess.writeFloat(memory, byteOffset, 1.5f + baseOffset + index);
-        } else if (dataType == DataType.F64) {
+        } else if (dataType == DataType.FP64) {
             memoryAccess.writeDouble(memory, byteOffset, 2.5 + baseOffset + index);
         } else if (dataType == DataType.I64) {
             memoryAccess.writeLong(memory, byteOffset, 10000L + baseOffset + index);
@@ -245,9 +245,9 @@ class MemoryOperationsComprehensiveTest {
 
     private static <B> void assertValue(MemoryAccess<B> memoryAccess, Memory<B> memory, DataType dataType, int index, int baseOffset) {
         long byteOffset = dataType.byteSize() * index;
-        if (dataType == DataType.F32) {
+        if (dataType == DataType.FP32) {
             assertEquals(1.5f + baseOffset + index, memoryAccess.readFloat(memory, byteOffset), 0.0f);
-        } else if (dataType == DataType.F64) {
+        } else if (dataType == DataType.FP64) {
             assertEquals(2.5 + baseOffset + index, memoryAccess.readDouble(memory, byteOffset), 0.0);
         } else if (dataType == DataType.I64) {
             assertEquals(10000L + baseOffset + index, memoryAccess.readLong(memory, byteOffset));
@@ -264,9 +264,9 @@ class MemoryOperationsComprehensiveTest {
 
     private static <B> void assertFillValue(MemoryAccess<B> memoryAccess, Memory<B> memory, DataType dataType, int index) {
         long byteOffset = dataType.byteSize() * index;
-        if (dataType == DataType.F32) {
+        if (dataType == DataType.FP32) {
             assertEquals(1.5f, memoryAccess.readFloat(memory, byteOffset), 0.0f);
-        } else if (dataType == DataType.F64) {
+        } else if (dataType == DataType.FP64) {
             assertEquals(2.5, memoryAccess.readDouble(memory, byteOffset), 0.0);
         } else if (dataType == DataType.I64) {
             assertEquals(10000L, memoryAccess.readLong(memory, byteOffset));
@@ -283,9 +283,9 @@ class MemoryOperationsComprehensiveTest {
 
     private static <B> void fill(Memory<B> memory, MemoryOperations<B> memoryOperations, DataType dataType) {
         long byteSize = memory.byteSize();
-        if (dataType == DataType.F32) {
+        if (dataType == DataType.FP32) {
             memoryOperations.fillFloat(memory, 0, byteSize, 1.5f);
-        } else if (dataType == DataType.F64) {
+        } else if (dataType == DataType.FP64) {
             memoryOperations.fillDouble(memory, 0, byteSize, 2.5);
         } else if (dataType == DataType.I64) {
             memoryOperations.fillLong(memory, 0, byteSize, 10000L);
