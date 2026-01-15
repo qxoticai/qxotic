@@ -9,6 +9,15 @@ import com.qxotic.jota.memory.MemoryOperations;
 
 class DoublesContext implements MemoryContext<double[]> {
 
+    private static final DoublesContext INSTANCE = new DoublesContext();
+
+    static MemoryContext<double[]> instance() {
+        return INSTANCE;
+    }
+
+    private DoublesContext() {
+    }
+
     @Override
     public Device device() {
         return Device.JAVA;

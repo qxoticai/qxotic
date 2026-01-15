@@ -26,6 +26,11 @@ final class LongsMemoryAllocator implements MemoryAllocator<long[]> {
     }
 
     @Override
+    public long memoryGranularity() {
+        return Long.BYTES;
+    }
+
+    @Override
     public Memory<long[]> allocateMemory(long byteSize, long byteAlignment) {
         if (defaultByteAlignment() % byteAlignment != 0) {
             throw new IllegalArgumentException("unsupported byteAlignment");

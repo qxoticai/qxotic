@@ -13,27 +13,31 @@ public class ContextFactory {
     }
 
     public static MemoryContext<float[]> ofFloats() {
-        return new FloatsContext();
+        return FloatsContext.instance();
     }
 
     public static MemoryContext<int[]> ofInts() {
-        return new IntsContext();
+        return IntsContext.instance();
     }
 
     public static MemoryContext<byte[]> ofBytes() {
-        return new BytesContext();
+        return BytesContext.instance();
+    }
+
+    public static MemoryContext<boolean[]> ofBooleans() {
+        return BooleansContext.instance();
     }
 
     public static MemoryContext<short[]> ofShorts() {
-        return new ShortsContext();
+        return ShortsContext.instance();
     }
 
     public static MemoryContext<long[]> ofLongs() {
-        return new LongsContext();
+        return LongsContext.instance();
     }
 
     public static MemoryContext<double[]> ofDoubles() {
-        return new DoublesContext();
+        return DoublesContext.instance();
     }
 
     public static MemoryContext<MemorySegment> ofMemorySegment() {

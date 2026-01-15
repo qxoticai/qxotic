@@ -35,6 +35,11 @@ public final class UnsafeMemory implements Memory<Void> {
     }
 
     @Override
+    public long memoryGranularity() {
+        return Byte.BYTES;
+    }
+
+    @Override
     public boolean supportsDataType(DataType dataType) {
         return true;
     }

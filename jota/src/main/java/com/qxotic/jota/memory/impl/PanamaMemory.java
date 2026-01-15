@@ -40,8 +40,8 @@ final class PanamaMemory implements Memory<MemorySegment> {
     }
 
     @Override
-    public boolean supportsDataType(DataType dataType) {
-        return true; // all data types supported
+    public long memoryGranularity() {
+        return Byte.BYTES;
     }
 
     public PanamaMemory asReadOnly() {

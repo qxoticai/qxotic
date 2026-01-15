@@ -39,8 +39,8 @@ final class IntsMemory implements Memory<int[]> {
     }
 
     @Override
-    public boolean supportsDataType(DataType dataType) {
-        return dataType == DataType.I32;
+    public long memoryGranularity() {
+        return Integer.BYTES;
     }
 
     @Override

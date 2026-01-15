@@ -18,6 +18,11 @@ final class ManagedPanamaAllocator implements MemoryAllocator<MemorySegment>, Me
     }
 
     @Override
+    public long memoryGranularity() {
+        return Byte.BYTES;
+    }
+
+    @Override
     public Memory<MemorySegment> allocateMemory(long byteSize, long byteAlignment) {
         return PanamaMemory.of(arena.allocate(byteSize, byteAlignment));
     }

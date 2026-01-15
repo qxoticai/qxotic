@@ -33,11 +33,6 @@ final class IntsMemoryAccess implements MemoryAccess<int[]> {
     }
 
     @Override
-    public float readFloat(Memory<int[]> memory, long byteOffset) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
     public long readLong(Memory<int[]> memory, long byteOffset) {
         throw new UnsupportedOperationException();
     }
@@ -63,11 +58,6 @@ final class IntsMemoryAccess implements MemoryAccess<int[]> {
         MemoryAccessChecks.checkAlignedValue(byteOffset, Integer.BYTES);
         MemoryAccessChecks.checkWriteable(memory);
         memory.base()[(int) (byteOffset / Integer.BYTES)] = value;
-    }
-
-    @Override
-    public void writeFloat(Memory<int[]> memory, long byteOffset, float value) {
-        throw new UnsupportedOperationException();
     }
 
     @Override

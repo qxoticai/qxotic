@@ -7,11 +7,15 @@ public interface MemoryAccess<B> {
 
     int readInt(Memory<B> memory, long byteOffset);
 
-    float readFloat(Memory<B> memory, long byteOffset);
+    default float readFloat(Memory<B> memory, long byteOffset) {
+        return Float.intBitsToFloat(readInt(memory, byteOffset));
+    }
 
     long readLong(Memory<B> memory, long byteOffset);
 
-    double readDouble(Memory<B> memory, long byteOffset);
+    default double readDouble(Memory<B> memory, long byteOffset) {
+        return Double.longBitsToDouble(readLong(memory, byteOffset));
+    }
 
     void writeByte(Memory<B> memory, long byteOffset, byte value);
 
@@ -19,9 +23,13 @@ public interface MemoryAccess<B> {
 
     void writeInt(Memory<B> memory, long byteOffset, int value);
 
-    void writeFloat(Memory<B> memory, long byteOffset, float value);
+    default void writeFloat(Memory<B> memory, long byteOffset, float value) {
+        writeInt(memory, byteOffset, Float.floatToRawIntBits(value));
+    }
 
     void writeLong(Memory<B> memory, long byteOffset, long value);
 
-    void writeDouble(Memory<B> memory, long byteOffset, double value);
+    default void writeDouble(Memory<B> memory, long byteOffset, double value) {
+        writeLong(memory, byteOffset, Double.doubleToRawLongBits(value));
+    }
 }

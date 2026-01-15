@@ -26,6 +26,11 @@ final class ShortsMemoryAllocator implements MemoryAllocator<short[]> {
     }
 
     @Override
+    public long memoryGranularity() {
+        return Short.BYTES;
+    }
+
+    @Override
     public Memory<short[]> allocateMemory(long byteSize, long byteAlignment) {
         if (defaultByteAlignment() % byteAlignment != 0) {
             throw new IllegalArgumentException("unsupported byteAlignment");

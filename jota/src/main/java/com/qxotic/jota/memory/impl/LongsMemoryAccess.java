@@ -43,11 +43,6 @@ final class LongsMemoryAccess implements MemoryAccess<long[]> {
     }
 
     @Override
-    public double readDouble(Memory<long[]> memory, long byteOffset) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
     public void writeByte(Memory<long[]> memory, long byteOffset, byte value) {
         throw new UnsupportedOperationException();
     }
@@ -73,10 +68,5 @@ final class LongsMemoryAccess implements MemoryAccess<long[]> {
         MemoryAccessChecks.checkAlignedValue(byteOffset, Long.BYTES);
         MemoryAccessChecks.checkWriteable(memory);
         memory.base()[(int) (byteOffset / Long.BYTES)] = value;
-    }
-
-    @Override
-    public void writeDouble(Memory<long[]> memory, long byteOffset, double value) {
-        throw new UnsupportedOperationException();
     }
 }

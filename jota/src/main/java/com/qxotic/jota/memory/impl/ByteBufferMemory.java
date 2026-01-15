@@ -40,8 +40,8 @@ final class ByteBufferMemory implements Memory<ByteBuffer> {
     }
 
     @Override
-    public boolean supportsDataType(DataType dataType) {
-        return true; // all data types supported
+    public long memoryGranularity() {
+        return Byte.BYTES;
     }
 
     public ByteBufferMemory asReadOnly() {

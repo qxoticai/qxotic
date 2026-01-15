@@ -26,6 +26,11 @@ public final class CUDAScopedMemoryAllocator implements ScopedMemoryAllocator<CU
     }
 
     @Override
+    public long memoryGranularity() {
+        return Byte.BYTES;
+    }
+
+    @Override
     public ScopedMemory<CUdeviceptr> allocateMemory(long byteSize, long byteAlignment) {
         if (ALLOC_ALIGNMENT % byteAlignment != 0) {
             throw new UnsupportedOperationException();
@@ -69,8 +74,8 @@ public final class CUDAScopedMemoryAllocator implements ScopedMemoryAllocator<CU
         }
 
         @Override
-        public boolean supportsDataType(DataType dataType) {
-            return true;
+        public long memoryGranularity() {
+            return Byte.BYTES;
         }
 
         @Override

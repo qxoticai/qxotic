@@ -65,14 +65,14 @@ class ContextHelpersTest extends AbstractMemoryTest {
         if (memoryAccess == null) {
             return;
         }
-        MemoryView<B> view = MemoryHelpers.arange(context, DataType.FP32, 2.0, 8.0, 2.0);
+        MemoryView<B> view = MemoryHelpers.arange(context, DataType.FP32, 3);
         long byteStride = DataType.FP32.byteSize();
         for (long i = 0; i < view.shape().size(); i++) {
             float actual = memoryAccess.readFloat(view.memory(), view.byteOffset() + i * byteStride);
-            assertEquals(2.0f + i * 2.0f, actual);
+            assertEquals((float) i, actual);
         }
 
-        MemoryView<B> simple = MemoryHelpers.arange(context, 10.0f);
+        MemoryView<B> simple = MemoryHelpers.arange(context, DataType.FP32, 10);
         for (long i = 0; i < simple.shape().size(); i++) {
             float actual = memoryAccess.readFloat(simple.memory(), simple.byteOffset() + i * byteStride);
             assertEquals((float) i, actual);
@@ -88,21 +88,21 @@ class ContextHelpersTest extends AbstractMemoryTest {
         }
 
         // Test I32 with explicit DataType
-        MemoryView<B> i32View = MemoryHelpers.arange(context, DataType.I32, 0L, 10L, 2L);
+        MemoryView<B> i32View = MemoryHelpers.arange(context, DataType.I32, 5);
         assertEquals(DataType.I32, i32View.dataType());
         assertEquals(5, i32View.shape().size());
         for (long i = 0; i < i32View.shape().size(); i++) {
             int actual = memoryAccess.readInt(i32View.memory(), i32View.byteOffset() + i * DataType.I32.byteSize());
-            assertEquals(i * 2, actual);
+            assertEquals(i, actual);
         }
 
         // Test convenience int version (infers I32)
-        MemoryView<B> intView = MemoryHelpers.arange(context, 0, 10, 2);
+        MemoryView<B> intView = MemoryHelpers.arange(context, DataType.I32, 5);
         assertEquals(DataType.I32, intView.dataType());
         assertEquals(5, intView.shape().size());
 
         // Test int end-only version
-        MemoryView<B> simpleInt = MemoryHelpers.arange(context, 5);
+        MemoryView<B> simpleInt = MemoryHelpers.arange(context, DataType.I32, 5);
         assertEquals(DataType.I32, simpleInt.dataType());
         assertEquals(5, simpleInt.shape().size());
         for (long i = 0; i < simpleInt.shape().size(); i++) {
@@ -120,16 +120,16 @@ class ContextHelpersTest extends AbstractMemoryTest {
         }
 
         // Test convenience long version (infers I64)
-        MemoryView<B> longView = MemoryHelpers.arange(context, 0L, 10L, 2L);
+        MemoryView<B> longView = MemoryHelpers.arange(context, DataType.I64, 5);
         assertEquals(DataType.I64, longView.dataType());
         assertEquals(5, longView.shape().size());
         for (long i = 0; i < longView.shape().size(); i++) {
             long actual = memoryAccess.readLong(longView.memory(), longView.byteOffset() + i * DataType.I64.byteSize());
-            assertEquals(i * 2, actual);
+            assertEquals(i, actual);
         }
 
         // Test long end-only version
-        MemoryView<B> simpleLong = MemoryHelpers.arange(context, 5L);
+        MemoryView<B> simpleLong = MemoryHelpers.arange(context, DataType.I64, 5);
         assertEquals(DataType.I64, simpleLong.dataType());
         assertEquals(5, simpleLong.shape().size());
     }
@@ -143,16 +143,16 @@ class ContextHelpersTest extends AbstractMemoryTest {
         }
 
         // Test convenience float version (infers FP32)
-        MemoryView<B> floatView = MemoryHelpers.arange(context, 0.0f, 1.0f, 0.25f);
+        MemoryView<B> floatView = MemoryHelpers.arange(context, DataType.FP32, 4);
         assertEquals(DataType.FP32, floatView.dataType());
         assertEquals(4, floatView.shape().size());
         for (long i = 0; i < floatView.shape().size(); i++) {
             float actual = memoryAccess.readFloat(floatView.memory(), floatView.byteOffset() + i * DataType.FP32.byteSize());
-            assertEquals(i * 0.25f, actual, 1e-6f);
+            assertEquals((float) i, actual, 1e-6f);
         }
 
         // Test float end-only version
-        MemoryView<B> simpleFloat = MemoryHelpers.arange(context, 5.0f);
+        MemoryView<B> simpleFloat = MemoryHelpers.arange(context, DataType.FP32, 5);
         assertEquals(DataType.FP32, simpleFloat.dataType());
         assertEquals(5, simpleFloat.shape().size());
     }
@@ -166,16 +166,16 @@ class ContextHelpersTest extends AbstractMemoryTest {
         }
 
         // Test convenience double version (infers FP64)
-        MemoryView<B> doubleView = MemoryHelpers.arange(context, 0.0, 1.0, 0.25);
+        MemoryView<B> doubleView = MemoryHelpers.arange(context, DataType.FP64, 4);
         assertEquals(DataType.FP64, doubleView.dataType());
         assertEquals(4, doubleView.shape().size());
         for (long i = 0; i < doubleView.shape().size(); i++) {
             double actual = memoryAccess.readDouble(doubleView.memory(), doubleView.byteOffset() + i * DataType.FP64.byteSize());
-            assertEquals(i * 0.25, actual, 1e-12);
+            assertEquals((double) i, actual, 1e-12);
         }
 
         // Test double end-only version
-        MemoryView<B> simpleDouble = MemoryHelpers.arange(context, 5.0);
+        MemoryView<B> simpleDouble = MemoryHelpers.arange(context, DataType.FP64, 5);
         assertEquals(DataType.FP64, simpleDouble.dataType());
         assertEquals(5, simpleDouble.shape().size());
     }
@@ -189,7 +189,7 @@ class ContextHelpersTest extends AbstractMemoryTest {
         }
 
         // Test I16 with explicit DataType
-        MemoryView<B> i16View = MemoryHelpers.arange(context, DataType.I16, 0L, 10L, 1L);
+        MemoryView<B> i16View = MemoryHelpers.arange(context, DataType.I16, 10);
         assertEquals(DataType.I16, i16View.dataType());
         assertEquals(10, i16View.shape().size());
         for (long i = 0; i < i16View.shape().size(); i++) {
@@ -207,7 +207,7 @@ class ContextHelpersTest extends AbstractMemoryTest {
         }
 
         // Test I8 with explicit DataType
-        MemoryView<B> i8View = MemoryHelpers.arange(context, DataType.I8, 0L, 10L, 1L);
+        MemoryView<B> i8View = MemoryHelpers.arange(context, DataType.I8, 10);
         assertEquals(DataType.I8, i8View.dataType());
         assertEquals(10, i8View.shape().size());
         for (long i = 0; i < i8View.shape().size(); i++) {
