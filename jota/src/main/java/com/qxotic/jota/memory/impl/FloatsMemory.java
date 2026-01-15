@@ -40,7 +40,7 @@ final class FloatsMemory implements Memory<float[]> {
 
     @Override
     public boolean supportsDataType(DataType dataType) {
-        return dataType == DataType.F32;
+        return dataType == DataType.FP32;
     }
 
     @Override

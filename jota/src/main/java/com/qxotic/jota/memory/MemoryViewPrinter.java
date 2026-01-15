@@ -193,7 +193,9 @@ public final class MemoryViewPrinter {
         long offset = Indexing.coordToOffset(memoryView, coords);
         DataType dataType = memoryView.dataType();
         Object value;
-        if (dataType == DataType.I8) {
+        if (dataType == DataType.BOOL) {
+            value = memoryAccess.readByte(memoryView.memory(), offset) != 0;
+        } else if (dataType == DataType.I8) {
             value = memoryAccess.readByte(memoryView.memory(), offset);
         } else if (dataType == DataType.I16) {
             value = memoryAccess.readShort(memoryView.memory(), offset);
@@ -203,11 +205,11 @@ public final class MemoryViewPrinter {
             value = memoryAccess.readLong(memoryView.memory(), offset);
         } else if (dataType == DataType.BF16) {
             value = BFloat16.toFloat(memoryAccess.readShort(memoryView.memory(), offset));
-        } else if (dataType == DataType.F16) {
+        } else if (dataType == DataType.FP16) {
             value = Float.float16ToFloat(memoryAccess.readShort(memoryView.memory(), offset));
-        } else if (dataType == DataType.F32) {
+        } else if (dataType == DataType.FP32) {
             value = memoryAccess.readFloat(memoryView.memory(), offset);
-        } else if (dataType == DataType.F64) {
+        } else if (dataType == DataType.FP64) {
             value = memoryAccess.readDouble(memoryView.memory(), offset);
         } else {
             value = "?";

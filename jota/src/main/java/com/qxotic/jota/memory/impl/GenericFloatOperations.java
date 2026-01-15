@@ -21,10 +21,10 @@ final class GenericFloatOperations<B> implements FloatOperations<B> {
 
     @Override
     public void elementWise(MemoryView<B> in, FloatUnaryOperator unaryOperator, MemoryView<B> out) {
-        if (in.dataType() != DataType.F32) {
+        if (in.dataType() != DataType.FP32) {
             throw new UnsupportedOperationException("Unsupported (in) data type: " + in.dataType());
         }
-        if (out.dataType() != DataType.F32) {
+        if (out.dataType() != DataType.FP32) {
             throw new UnsupportedOperationException("Unsupported (out) data type: " + out.dataType());
         }
         if (!Objects.equals(in.shape(), out.shape())) {
@@ -42,7 +42,7 @@ final class GenericFloatOperations<B> implements FloatOperations<B> {
 
     @Override
     public void elementWise(float scalar, FloatUnaryOperator unaryOperator, MemoryView<B> out) {
-        if (out.dataType() != DataType.F32) {
+        if (out.dataType() != DataType.FP32) {
             throw new UnsupportedOperationException("Unsupported (out) data type: " + out.dataType());
         }
         var outIterator = OffsetIterator.create(out);
@@ -54,13 +54,13 @@ final class GenericFloatOperations<B> implements FloatOperations<B> {
 
     @Override
     public void elementWise2(MemoryView<B> left, FloatBinaryOperator binaryOperator, MemoryView<B> right, MemoryView<B> out) {
-        if (left.dataType() != DataType.F32) {
+        if (left.dataType() != DataType.FP32) {
             throw new UnsupportedOperationException("Unsupported (left) data type: " + left.dataType());
         }
-        if (right.dataType() != DataType.F32) {
+        if (right.dataType() != DataType.FP32) {
             throw new UnsupportedOperationException("Unsupported (right) data type: " + right.dataType());
         }
-        if (out.dataType() != DataType.F32) {
+        if (out.dataType() != DataType.FP32) {
             throw new UnsupportedOperationException("Unsupported (out) data type: " + out.dataType());
         }
         if (!Objects.equals(left.shape(), right.shape())) {
@@ -84,10 +84,10 @@ final class GenericFloatOperations<B> implements FloatOperations<B> {
 
     @Override
     public void elementWise2(MemoryView<B> left, FloatBinaryOperator binaryOperator, float right, MemoryView<B> out) {
-        if (left.dataType() != DataType.F32) {
+        if (left.dataType() != DataType.FP32) {
             throw new UnsupportedOperationException("Unsupported (left) data type: " + left.dataType());
         }
-        if (out.dataType() != DataType.F32) {
+        if (out.dataType() != DataType.FP32) {
             throw new UnsupportedOperationException("Unsupported (out) data type: " + out.dataType());
         }
         if (!Objects.equals(left.shape(), out.shape())) {
@@ -286,7 +286,7 @@ final class GenericFloatOperations<B> implements FloatOperations<B> {
 
     @Override
     public float reduceAll(MemoryView<B> in, FloatBinaryOperator binaryOperator) {
-        if (in.dataType() != DataType.F32) {
+        if (in.dataType() != DataType.FP32) {
             throw new UnsupportedOperationException("Unsupported data type: " + in.dataType());
         }
         var iterator = OffsetIterator.create(in);
@@ -304,7 +304,7 @@ final class GenericFloatOperations<B> implements FloatOperations<B> {
 
     @Override
     public float foldAll(MemoryView<B> in, float initialValue, FloatBinaryOperator binaryOperator) {
-        if (in.dataType() != DataType.F32) {
+        if (in.dataType() != DataType.FP32) {
             throw new UnsupportedOperationException("Unsupported data type: " + in.dataType());
         }
         float accumulator = initialValue;

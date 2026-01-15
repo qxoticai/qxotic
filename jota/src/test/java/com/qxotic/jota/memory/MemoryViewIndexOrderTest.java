@@ -21,8 +21,8 @@ class MemoryViewIndexOrderTest extends AbstractMemoryTest {
         }
 
         Shape shape = Shape.of(2, 3);
-        MemoryView<B> base = MemoryHelpers.arange(context, DataType.F32, shape.size());
-        MemoryView<B> view = MemoryView.of(base.memory(), 0L, DataType.F32, Layout.rowMajor(shape));
+        MemoryView<B> base = MemoryHelpers.arange(context, DataType.FP32, shape.size());
+        MemoryView<B> view = MemoryView.of(base.memory(), 0L, DataType.FP32, Layout.rowMajor(shape));
 
         for (long i = 0; i < shape.size(0); i++) {
             for (long j = 0; j < shape.size(1); j++) {
@@ -43,8 +43,8 @@ class MemoryViewIndexOrderTest extends AbstractMemoryTest {
         }
 
         Shape shape = Shape.of(2, 3);
-        MemoryView<B> base = MemoryHelpers.arange(context, DataType.F32, shape.size());
-        MemoryView<B> view = MemoryView.of(base.memory(), DataType.F32, Layout.columnMajor(shape));
+        MemoryView<B> base = MemoryHelpers.arange(context, DataType.FP32, shape.size());
+        MemoryView<B> view = MemoryView.of(base.memory(), DataType.FP32, Layout.columnMajor(shape));
 
         for (long i = 0; i < shape.size(0); i++) {
             for (long j = 0; j < shape.size(1); j++) {
@@ -65,8 +65,8 @@ class MemoryViewIndexOrderTest extends AbstractMemoryTest {
         }
 
         Shape shape = Shape.of(2, 3, 4);
-        MemoryView<B> base = MemoryHelpers.arange(context, DataType.F32, shape.size());
-        MemoryView<B> view = MemoryView.of(base.memory(), DataType.F32, Layout.rowMajor(shape));
+        MemoryView<B> base = MemoryHelpers.arange(context, DataType.FP32, shape.size());
+        MemoryView<B> view = MemoryView.of(base.memory(), DataType.FP32, Layout.rowMajor(shape));
 
         for (long i = 0; i < shape.size(0); i++) {
             for (long j = 0; j < shape.size(1); j++) {
@@ -89,8 +89,8 @@ class MemoryViewIndexOrderTest extends AbstractMemoryTest {
         }
 
         Shape shape = Shape.of(2, 3, 4);
-        MemoryView<B> base = MemoryHelpers.arange(context, DataType.F32, shape.size());
-        MemoryView<B> view = MemoryView.of(base.memory(), 0L, DataType.F32, Layout.columnMajor(shape));
+        MemoryView<B> base = MemoryHelpers.arange(context, DataType.FP32, shape.size());
+        MemoryView<B> view = MemoryView.of(base.memory(), 0L, DataType.FP32, Layout.columnMajor(shape));
 
         for (long i = 0; i < shape.size(0); i++) {
             for (long j = 0; j < shape.size(1); j++) {

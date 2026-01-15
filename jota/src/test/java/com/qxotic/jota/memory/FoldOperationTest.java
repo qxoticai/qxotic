@@ -20,7 +20,7 @@ class FoldOperationTest {
 
     // Helper methods from the sketch
     public static MemoryView<float[]> of(float... floats) {
-        return MemoryViewFactory.of(DataType.F32, MemoryFactory.ofFloats(floats), Layout.rowMajor(floats.length));
+        return MemoryViewFactory.of(DataType.FP32, MemoryFactory.ofFloats(floats), Layout.rowMajor(floats.length));
     }
 
     public static MemoryView<float[]> full(float value, Shape shape) {

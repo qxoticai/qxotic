@@ -15,8 +15,8 @@ class TestOperations extends AbstractMemoryTest {
     @MethodSource("contextsSupportingF32")
     <B> void testScalar(MemoryContext<B> context) {
         var allocator = context.memoryAllocator();
-        MemoryView<B> view = MemoryViewFactory.allocate(allocator, DataType.F32, Shape.scalar());
-        assertEquals(DataType.F32.byteSize(), view.memory().byteSize());
+        MemoryView<B> view = MemoryViewFactory.allocate(allocator, DataType.FP32, Shape.scalar());
+        assertEquals(DataType.FP32.byteSize(), view.memory().byteSize());
     }
 
     @ParameterizedTest
@@ -24,7 +24,7 @@ class TestOperations extends AbstractMemoryTest {
     <B> void testMatrix(MemoryContext<B> context) {
         var allocator = context.memoryAllocator();
         Shape shape = ShapeFactory.of(3, 5);
-        MemoryView<B> view = MemoryViewFactory.allocate(allocator, DataType.F32, shape);
-        assertEquals(DataType.F32.byteSizeFor(shape), view.memory().byteSize());
+        MemoryView<B> view = MemoryViewFactory.allocate(allocator, DataType.FP32, shape);
+        assertEquals(DataType.FP32.byteSizeFor(shape), view.memory().byteSize());
     }
 }

@@ -88,6 +88,15 @@ public abstract class AbstractMemoryTest {
         );
     }
 
+    public static Stream<MemoryContext<?>> contextsSupportingBool() {
+        return contextSuppliers(
+                ContextFactory::ofBytes,
+                () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
+                () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
+                ContextFactory::ofMemorySegment
+        );
+    }
+
     @SafeVarargs
     private static Stream<MemoryContext<?>> contextSuppliers(Supplier<MemoryContext<?>>... suppliers) {
         return Stream.of(suppliers).map(Supplier::get);

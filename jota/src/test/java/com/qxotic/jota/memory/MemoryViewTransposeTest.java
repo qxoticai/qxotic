@@ -16,7 +16,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
     <B> void testTranspose2D(MemoryContext<B> context) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
-        MemoryView<B> view = MemoryViewFactory.allocate(context.memoryAllocator(), DataType.F32, shape);
+        MemoryView<B> view = MemoryViewFactory.allocate(context.memoryAllocator(), DataType.FP32, shape);
 
         // Initialize data if memory access is available
         if (context.memoryAccess() != null) {
@@ -25,7 +25,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
                     float value = i * 3 + j + 1; // 1-6
                     context.memoryAccess().writeFloat(
                             view.memory(),
-                            (i * 3 + j) * DataType.F32.byteSize(),
+                            (i * 3 + j) * DataType.FP32.byteSize(),
                             value
                     );
                 }
@@ -55,7 +55,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
     <B> void testTranspose3D(MemoryContext<B> context) {
         // Create a 2x3x4 tensor
         Shape shape = Shape.of(2, 3, 4);
-        MemoryView<B> view = MemoryViewFactory.allocate(context.memoryAllocator(), DataType.F32, shape);
+        MemoryView<B> view = MemoryViewFactory.allocate(context.memoryAllocator(), DataType.FP32, shape);
 
         // Initialize data if memory access is available
         if (context.memoryAccess() != null) {
@@ -66,7 +66,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
                         assertTrue(view.isContiguous());
                         context.memoryAccess().writeFloat(
                                 view.memory(),
-                                (i * 12 + j * 4 + k) * DataType.F32.byteSize(),
+                                (i * 12 + j * 4 + k) * DataType.FP32.byteSize(),
                                 value
                         );
                     }
@@ -99,7 +99,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
     <B> void testTransposeNegativeIndices(MemoryContext<B> context) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
-        MemoryView<B> view = MemoryViewFactory.allocate(context.memoryAllocator(), DataType.F32, shape);
+        MemoryView<B> view = MemoryViewFactory.allocate(context.memoryAllocator(), DataType.FP32, shape);
 
         // Transpose using negative indices (-1 means last dimension)
         MemoryView<B> transposed = view.transpose(0, -1);
@@ -113,7 +113,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
     <B> void testTransposeSameAxis(MemoryContext<B> context) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
-        MemoryView<B> view = MemoryViewFactory.allocate(context.memoryAllocator(), DataType.F32, shape);
+        MemoryView<B> view = MemoryViewFactory.allocate(context.memoryAllocator(), DataType.FP32, shape);
 
         // Transposing the same axis should return an equivalent view
         MemoryView<B> transposed = view.transpose(0, 0);
@@ -128,7 +128,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
     <B> void testTransposeInvalidAxis(MemoryContext<B> context) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
-        MemoryView<B> view = MemoryViewFactory.allocate(context.memoryAllocator(), DataType.F32, shape);
+        MemoryView<B> view = MemoryViewFactory.allocate(context.memoryAllocator(), DataType.FP32, shape);
 
         // Should throw for invalid axis indices
         assertThrows(IllegalArgumentException.class, () -> view.transpose(0, 2));
@@ -140,7 +140,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
     <B> void testTransposeStrides(MemoryContext<B> context) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
-        MemoryView<B> view = MemoryViewFactory.allocate(context.memoryAllocator(), DataType.F32, shape);
+        MemoryView<B> view = MemoryViewFactory.allocate(context.memoryAllocator(), DataType.FP32, shape);
 
         // Get original strides
         Stride originalStrides = view.byteStride();
@@ -159,7 +159,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
     <B> void testTransposeContiguity(MemoryContext<B> context) {
         // Create a 2x3 matrix
         Shape shape = Shape.of(2, 3);
-        MemoryView<B> view = MemoryViewFactory.allocate(context.memoryAllocator(), DataType.F32, shape);
+        MemoryView<B> view = MemoryViewFactory.allocate(context.memoryAllocator(), DataType.FP32, shape);
 
         // Original view should be contiguous
         assertTrue(view.isContiguous());

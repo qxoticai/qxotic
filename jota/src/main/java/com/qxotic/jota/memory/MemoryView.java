@@ -47,7 +47,7 @@ public interface MemoryView<B> {
         return true;
     }
 
-    static boolean isWithinBounds(Layout layout, DataType dataType, long byteOffset, Memory<?> memory) {
+    static boolean isWithinBounds(Layout layout, DataType dataType, Memory<?> memory, long byteOffset) {
         if (layout.shape().size() == 0) {
             return true;
         }

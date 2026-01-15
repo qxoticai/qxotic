@@ -3,7 +3,6 @@ package com.qxotic.jota.memory;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.impl.MemoryAccessFactory;
 import com.qxotic.jota.memory.impl.MemoryFactory;
-import com.qxotic.jota.memory.Memory;
 import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.Arena;
@@ -55,7 +54,7 @@ class PanamaMemoryAccessTest {
     @Test
     void testReadWriteFloat() {
         try (var arena = Arena.ofConfined()) {
-            Memory<MemorySegment> memory = MemoryFactory.ofMemorySegment(arena.allocate(DataType.F32.byteSize()));
+            Memory<MemorySegment> memory = MemoryFactory.ofMemorySegment(arena.allocate(DataType.FP32.byteSize()));
             memoryAccess.writeFloat(memory, 0, (float) Math.PI);
             assertEquals((float) Math.PI, memoryAccess.readFloat(memory, 0));
         }
@@ -64,7 +63,7 @@ class PanamaMemoryAccessTest {
     @Test
     void testReadWriteDouble() {
         try (var arena = Arena.ofConfined()) {
-            Memory<MemorySegment> memory = MemoryFactory.ofMemorySegment(arena.allocate(DataType.F64.byteSize()));
+            Memory<MemorySegment> memory = MemoryFactory.ofMemorySegment(arena.allocate(DataType.FP64.byteSize()));
             memoryAccess.writeDouble(memory, 0, Math.PI);
             assertEquals(Math.PI, memoryAccess.readDouble(memory, 0));
         }

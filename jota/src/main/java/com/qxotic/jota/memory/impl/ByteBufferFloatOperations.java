@@ -22,10 +22,10 @@ final class ByteBufferFloatOperations implements FloatOperations<ByteBuffer> {
 
     @Override
     public void elementWise(MemoryView<ByteBuffer> in, FloatUnaryOperator unaryOperator, MemoryView<ByteBuffer> out) {
-        if (in.dataType() != DataType.F32) {
+        if (in.dataType() != DataType.FP32) {
             throw new UnsupportedOperationException("Unsupported (in) data type: " + in.dataType());
         }
-        if (out.dataType() != DataType.F32) {
+        if (out.dataType() != DataType.FP32) {
             throw new UnsupportedOperationException("Unsupported (out) data type: " + out.dataType());
         }
         if (!Objects.equals(in.shape(), out.shape())) {
@@ -43,7 +43,7 @@ final class ByteBufferFloatOperations implements FloatOperations<ByteBuffer> {
 
     @Override
     public void elementWise(float scalar, FloatUnaryOperator unaryOperator, MemoryView<ByteBuffer> out) {
-        if (out.dataType() != DataType.F32) {
+        if (out.dataType() != DataType.FP32) {
             throw new UnsupportedOperationException("Unsupported (out) data type: " + out.dataType());
         }
         var outIterator = OffsetIterator.create(out);
@@ -55,13 +55,13 @@ final class ByteBufferFloatOperations implements FloatOperations<ByteBuffer> {
 
     @Override
     public void elementWise2(MemoryView<ByteBuffer> left, FloatBinaryOperator binaryOperator, MemoryView<ByteBuffer> right, MemoryView<ByteBuffer> out) {
-        if (left.dataType() != DataType.F32) {
+        if (left.dataType() != DataType.FP32) {
             throw new UnsupportedOperationException("Unsupported (left) data type: " + left.dataType());
         }
-        if (right.dataType() != DataType.F32) {
+        if (right.dataType() != DataType.FP32) {
             throw new UnsupportedOperationException("Unsupported (right) data type: " + right.dataType());
         }
-        if (out.dataType() != DataType.F32) {
+        if (out.dataType() != DataType.FP32) {
             throw new UnsupportedOperationException("Unsupported (out) data type: " + out.dataType());
         }
         if (!Objects.equals(left.shape(), right.shape())) {
@@ -85,10 +85,10 @@ final class ByteBufferFloatOperations implements FloatOperations<ByteBuffer> {
 
     @Override
     public void elementWise2(MemoryView<ByteBuffer> left, FloatBinaryOperator binaryOperator, float right, MemoryView<ByteBuffer> out) {
-        if (left.dataType() != DataType.F32) {
+        if (left.dataType() != DataType.FP32) {
             throw new UnsupportedOperationException("Unsupported (left) data type: " + left.dataType());
         }
-        if (out.dataType() != DataType.F32) {
+        if (out.dataType() != DataType.FP32) {
             throw new UnsupportedOperationException("Unsupported (out) data type: " + out.dataType());
         }
         if (!Objects.equals(left.shape(), out.shape())) {
@@ -116,7 +116,7 @@ final class ByteBufferFloatOperations implements FloatOperations<ByteBuffer> {
 
     @Override
     public float reduceAll(MemoryView<ByteBuffer> in, FloatBinaryOperator binaryOperator) {
-        if (in.dataType() != DataType.F32) {
+        if (in.dataType() != DataType.FP32) {
             throw new UnsupportedOperationException("Unsupported data type: " + in.dataType());
         }
         var iterator = OffsetIterator.create(in);
@@ -134,7 +134,7 @@ final class ByteBufferFloatOperations implements FloatOperations<ByteBuffer> {
 
     @Override
     public float foldAll(MemoryView<ByteBuffer> in, float initialValue, FloatBinaryOperator binaryOperator) {
-        if (in.dataType() != DataType.F32) {
+        if (in.dataType() != DataType.FP32) {
             throw new UnsupportedOperationException("Unsupported data type: " + in.dataType());
         }
         float accumulator = initialValue;

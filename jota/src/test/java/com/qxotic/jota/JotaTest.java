@@ -18,7 +18,7 @@ public class JotaTest {
     MemoryContext<float[]> context = ContextFactory.ofFloats();
 
     public static MemoryView<float[]> ofFloatsVector(float... floats) {
-        return MemoryViewFactory.of(DataType.F32, MemoryFactory.ofFloats(floats), Layout.rowMajor(floats.length));
+        return MemoryViewFactory.of(DataType.FP32, MemoryFactory.ofFloats(floats), Layout.rowMajor(floats.length));
     }
 
     public static MemoryView<float[]> full(float value, Shape shape) {
