@@ -26,6 +26,11 @@ final class IntsMemoryAllocator implements MemoryAllocator<int[]> {
     }
 
     @Override
+    public long memoryGranularity() {
+        return Integer.BYTES;
+    }
+
+    @Override
     public Memory<int[]> allocateMemory(long byteSize, long byteAlignment) {
         if (defaultByteAlignment() % byteAlignment != 0) {
             throw new IllegalArgumentException("unsupported byteAlignment");

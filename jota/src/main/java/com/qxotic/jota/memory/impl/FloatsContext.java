@@ -5,7 +5,15 @@ import com.qxotic.jota.memory.*;
 
 class FloatsContext implements MemoryContext<float[]> {
 
+    private static final FloatsContext INSTANCE = new FloatsContext();
     private static final FloatOperations<float[]> FLOAT_OPERATIONS = new GenericFloatOperations<>(FloatsMemoryAccess.instance());
+
+    static MemoryContext<float[]> instance() {
+        return INSTANCE;
+    }
+
+    private FloatsContext() {
+    }
 
     @Override
     public Device device() {

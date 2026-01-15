@@ -27,6 +27,11 @@ class UnsafeAllocator implements ScopedMemoryAllocator<MemorySegment> {
     }
 
     @Override
+    public long memoryGranularity() {
+        return Byte.BYTES;
+    }
+
+    @Override
     public ScopedMemory<MemorySegment> allocateMemory(long byteSize, long byteAlignment) {
         if (!Util.isPowerOf2(byteAlignment)) {
             throw new IllegalArgumentException("invalid byteAlignment, not a power of 2");
@@ -75,8 +80,8 @@ class UnsafeAllocator implements ScopedMemoryAllocator<MemorySegment> {
         }
 
         @Override
-        public boolean supportsDataType(DataType dataType) {
-            return true;
+        public long memoryGranularity() {
+            return Byte.BYTES;
         }
     }
 }

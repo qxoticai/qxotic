@@ -37,8 +37,8 @@ public final class CUDAMemory implements ScopedMemory<CUdeviceptr> {
     }
 
     @Override
-    public boolean supportsDataType(DataType dataType) {
-        return true;
+    public long memoryGranularity() {
+        return Byte.BYTES;
     }
 
     @Override

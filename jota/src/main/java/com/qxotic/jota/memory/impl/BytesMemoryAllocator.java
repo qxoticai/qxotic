@@ -23,6 +23,11 @@ final class BytesMemoryAllocator implements MemoryAllocator<byte[]> {
     }
 
     @Override
+    public long memoryGranularity() {
+        return Byte.BYTES;
+    }
+
+    @Override
     public Memory<byte[]> allocateMemory(long byteSize, long byteAlignment) {
         if (byteAlignment != 1) {
             throw new IllegalArgumentException("byteAlignment != 1");

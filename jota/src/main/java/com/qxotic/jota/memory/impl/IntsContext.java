@@ -9,6 +9,15 @@ import com.qxotic.jota.memory.MemoryOperations;
 
 class IntsContext implements MemoryContext<int[]> {
 
+    private static final IntsContext INSTANCE = new IntsContext();
+
+    static MemoryContext<int[]> instance() {
+        return INSTANCE;
+    }
+
+    private IntsContext() {
+    }
+
     @Override
     public Device device() {
         return Device.JAVA;

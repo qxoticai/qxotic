@@ -27,6 +27,11 @@ class UnsafeAllocatorArena implements ScopedMemoryAllocatorArena<MemorySegment> 
     }
 
     @Override
+    public long memoryGranularity() {
+        return Byte.BYTES;
+    }
+
+    @Override
     public ScopedMemory<MemorySegment> allocateMemory(long byteSize, long byteAlignment) {
         ScopedMemory<MemorySegment> scopedMemory = UnsafeAllocator.instance().allocateMemory(byteSize, byteAlignment);
         allocations.add(scopedMemory);
@@ -59,8 +64,8 @@ class UnsafeAllocatorArena implements ScopedMemoryAllocatorArena<MemorySegment> 
             }
 
             @Override
-            public boolean supportsDataType(DataType dataType) {
-                return scopedMemory.supportsDataType(dataType);
+            public long memoryGranularity() {
+                return scopedMemory.memoryGranularity();
             }
         };
     }

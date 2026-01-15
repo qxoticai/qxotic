@@ -19,6 +19,10 @@ public final class MemoryFactory {
         return BytesMemory.of(bytes);
     }
 
+    public static Memory<boolean[]> ofBooleans(boolean... booleans) {
+        return BooleansMemory.of(booleans);
+    }
+
     public static Memory<int[]> ofInts(int... ints) {
         return IntsMemory.of(ints);
     }

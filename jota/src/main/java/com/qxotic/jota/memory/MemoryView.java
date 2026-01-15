@@ -53,7 +53,7 @@ public interface MemoryView<B> {
         }
 
         long minRelativeOffset = 0;
-        long maxRelativeOffset = 0;
+            long maxRelativeOffset = 0;
         long[] strides = layout.stride().scale(dataType.byteSize()).toArray();
         for (int i = 0; i < layout.shape().flatRank(); i++) {
             long dim = layout.shape().flatAt(i);

@@ -26,12 +26,17 @@ final class DoublesMemoryAllocator implements MemoryAllocator<double[]> {
     }
 
     @Override
+    public long memoryGranularity() {
+        return Double.BYTES;
+    }
+
+    @Override
     public Memory<double[]> allocateMemory(long byteSize, long byteAlignment) {
         if (defaultByteAlignment() % byteAlignment != 0) {
             throw new IllegalArgumentException("unsupported byteAlignment");
         }
-        if (byteSize % Double.BYTES != 0) {
-            throw new IllegalArgumentException("unaligned (8) byteSize");
+        if (byteSize % memoryGranularity() != 0) {
+            throw new IllegalArgumentException("unaligned byteSize");
         }
         int length = Math.toIntExact(byteSize / Double.BYTES);
         return MemoryFactory.ofDoubles(new double[length]);

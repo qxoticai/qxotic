@@ -7,15 +7,15 @@ import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryContext;
 import com.qxotic.jota.memory.MemoryOperations;
 
-class BytesContext implements MemoryContext<byte[]> {
+class BooleansContext implements MemoryContext<boolean[]> {
 
-    private static final BytesContext INSTANCE = new BytesContext();
+    private static final BooleansContext INSTANCE = new BooleansContext();
 
-    static MemoryContext<byte[]> instance() {
+    static MemoryContext<boolean[]> instance() {
         return INSTANCE;
     }
 
-    private BytesContext() {
+    private BooleansContext() {
     }
 
     @Override
@@ -24,23 +24,23 @@ class BytesContext implements MemoryContext<byte[]> {
     }
 
     @Override
-    public MemoryAllocator<byte[]> memoryAllocator() {
-        return BytesMemoryAllocator.instance();
+    public MemoryAllocator<boolean[]> memoryAllocator() {
+        return BooleansMemoryAllocator.instance();
     }
 
     @Override
-    public MemoryAccess<byte[]> memoryAccess() {
-        return BytesMemoryAccess.instance();
+    public MemoryAccess<boolean[]> memoryAccess() {
+        return BooleansMemoryAccess.instance();
     }
 
     @Override
-    public MemoryOperations<byte[]> memoryOperations() {
-        return BytesMemoryOperations.instance();
+    public MemoryOperations<boolean[]> memoryOperations() {
+        return BooleansMemoryOperations.instance();
     }
 
     @Override
-    public FloatOperations<byte[]> floatOperations() {
-        return null;
+    public FloatOperations<boolean[]> floatOperations() {
+        return null;  // No float operations for boolean[]
     }
 
     @Override
@@ -50,7 +50,7 @@ class BytesContext implements MemoryContext<byte[]> {
 
     @Override
     public String toString() {
-        return new StringBuilder("Context{byte[], device=")
+        return new StringBuilder("Context{boolean[], device=")
                 .append(device())
                 .append(", directAccess=")
                 .append(memoryAccess() != null)

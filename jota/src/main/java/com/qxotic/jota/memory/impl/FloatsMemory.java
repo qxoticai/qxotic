@@ -39,8 +39,8 @@ final class FloatsMemory implements Memory<float[]> {
     }
 
     @Override
-    public boolean supportsDataType(DataType dataType) {
-        return dataType == DataType.FP32;
+    public long memoryGranularity() {
+        return Float.BYTES;
     }
 
     @Override

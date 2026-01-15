@@ -90,6 +90,7 @@ public abstract class AbstractMemoryTest {
 
     public static Stream<MemoryContext<?>> contextsSupportingBool() {
         return contextSuppliers(
+                ContextFactory::ofBooleans,
                 ContextFactory::ofBytes,
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),

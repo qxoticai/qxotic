@@ -9,6 +9,15 @@ import com.qxotic.jota.memory.MemoryOperations;
 
 class LongsContext implements MemoryContext<long[]> {
 
+    private static final LongsContext INSTANCE = new LongsContext();
+
+    static MemoryContext<long[]> instance() {
+        return INSTANCE;
+    }
+
+    private LongsContext() {
+    }
+
     @Override
     public Device device() {
         return Device.JAVA;

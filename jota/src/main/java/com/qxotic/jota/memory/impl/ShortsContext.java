@@ -9,6 +9,15 @@ import com.qxotic.jota.memory.MemoryOperations;
 
 class ShortsContext implements MemoryContext<short[]> {
 
+    private static final ShortsContext INSTANCE = new ShortsContext();
+
+    static MemoryContext<short[]> instance() {
+        return INSTANCE;
+    }
+
+    private ShortsContext() {
+    }
+
     @Override
     public Device device() {
         return Device.JAVA;

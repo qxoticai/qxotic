@@ -93,14 +93,34 @@ public final class MemoryHelpers {
         return full(context, dataType, shape, 0);
     }
 
-    // Explicit DataType version for integral types
-    public static <B> MemoryView<B> arange(MemoryContext<B> context, DataType dataType,
-                                           long start, long end, long step) {
+    public static <B> MemoryView<B> arange(MemoryContext<B> context, DataType dataType, long endExclusive) {
+        if (dataType.isIntegral() || dataType == DataType.BOOL) {
+            return arangeIntegral(context, dataType, 0L, endExclusive, 1L);
+        } else if (dataType.isFloatingPoint()) {
+            return arangeFloat(context, dataType, 0.0, (double) endExclusive, 1.0);
+        } else {
+            throw new IllegalArgumentException("Unsupported data type for arange: " + dataType);
+        }
+    }
+
+    // ============================================================
+    // INTERNAL IMPLEMENTATION - Integral types
+    // ============================================================
+
+    private static <B> MemoryView<B> arangeIntegral(MemoryContext<B> context, DataType dataType,
+                                                    long start, long end, long step) {
         if (step == 0) {
             throw new IllegalArgumentException("step cannot be 0");
         }
         if (!dataType.isIntegral() && dataType != DataType.BOOL) {
-            throw new IllegalArgumentException("Long-based arange requires integral DataType, got: " + dataType);
+            throw new IllegalArgumentException("Integral arange requires integral DataType, got: " + dataType);
+        }
+        if (!context.supportsDataType(dataType)) {
+            throw new IllegalArgumentException(
+                "Context does not support " + dataType +
+                " (requires " + dataType.byteSize() + "-byte alignment, context has " +
+                context.memoryGranularity() + "-byte granularity)"
+            );
         }
 
         MemoryAccess<B> memoryAccess = context.memoryAccess();
@@ -134,14 +154,24 @@ public final class MemoryHelpers {
         return view;
     }
 
-    // Explicit DataType version for floating-point types
-    public static <B> MemoryView<B> arange(MemoryContext<B> context, DataType dataType,
-                                           double start, double end, double step) {
+    // ============================================================
+    // INTERNAL IMPLEMENTATION - Floating-point types
+    // ============================================================
+
+    private static <B> MemoryView<B> arangeFloat(MemoryContext<B> context, DataType dataType,
+                                                 double start, double end, double step) {
         if (step == 0.0) {
             throw new IllegalArgumentException("step cannot be 0");
         }
         if (!dataType.isFloatingPoint()) {
-            throw new IllegalArgumentException("Double-based arange requires floating-point DataType, got: " + dataType);
+            throw new IllegalArgumentException("Floating-point arange requires floating-point DataType, got: " + dataType);
+        }
+        if (!context.supportsDataType(dataType)) {
+            throw new IllegalArgumentException(
+                "Context does not support " + dataType +
+                " (requires " + dataType.byteSize() + "-byte alignment, context has " +
+                context.memoryGranularity() + "-byte granularity)"
+            );
         }
 
         MemoryAccess<B> memoryAccess = context.memoryAccess();
@@ -173,51 +203,11 @@ public final class MemoryHelpers {
         return view;
     }
 
-    // Convenience end-only versions with explicit DataType
 
-    public static <B> MemoryView<B> arange(MemoryContext<B> context, DataType dataType, long end) {
-        if (dataType.isIntegral() || dataType == DataType.BOOL) {
-            return arange(context, dataType, 0L, end, 1L);
-        } else if (dataType.isFloatingPoint()) {
-            return arange(context, dataType, 0.0, (double) end, 1.0);
-        } else {
-            throw new IllegalArgumentException("Unsupported data type for arange: " + dataType);
-        }
-    }
 
-    // Convenience overloads that infer DataType
-
-    public static <B> MemoryView<B> arange(MemoryContext<B> context, int start, int end, int step) {
-        return arange(context, DataType.I32, (long) start, (long) end, (long) step);
-    }
-
-    public static <B> MemoryView<B> arange(MemoryContext<B> context, int end) {
-        return arange(context, DataType.I32, 0L, (long) end, 1L);
-    }
-
-    public static <B> MemoryView<B> arange(MemoryContext<B> context, long start, long end, long step) {
-        return arange(context, DataType.I64, start, end, step);
-    }
-
-    public static <B> MemoryView<B> arange(MemoryContext<B> context, long end) {
-        return arange(context, DataType.I64, 0L, end, 1L);
-    }
-
-    public static <B> MemoryView<B> arange(MemoryContext<B> context, float start, float end, float step) {
-        return arange(context, DataType.FP32, (double) start, (double) end, (double) step);
-    }
-
-    public static <B> MemoryView<B> arange(MemoryContext<B> context, float end) {
-        return arange(context, DataType.FP32, 0.0, (double) end, 1.0);
-    }
-
-    public static <B> MemoryView<B> arange(MemoryContext<B> context, double start, double end, double step) {
-        return arange(context, DataType.FP64, start, end, step);
-    }
-
-    public static <B> MemoryView<B> arange(MemoryContext<B> context, double end) {
-        return arange(context, DataType.FP64, 0.0, end, 1.0);
-    }
+    // ============================================================
+    // HELPER METHODS
+    // ============================================================
 
     private static long arangeCountLong(long start, long end, long step) {
         if (step > 0) {

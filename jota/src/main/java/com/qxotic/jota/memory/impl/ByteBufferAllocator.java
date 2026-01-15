@@ -28,6 +28,11 @@ final class ByteBufferAllocator implements MemoryAllocator<ByteBuffer> {
     }
 
     @Override
+    public long memoryGranularity() {
+        return Byte.BYTES;
+    }
+
+    @Override
     public Memory<ByteBuffer> allocateMemory(long byteSize, long byteAlignment) {
         if (!Util.isPowerOf2(byteAlignment)) {
             throw new IllegalArgumentException("invalid byteAlignment, not a power of 2");

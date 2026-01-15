@@ -26,6 +26,11 @@ final class FloatsMemoryAllocator implements MemoryAllocator<float[]> {
     }
 
     @Override
+    public long memoryGranularity() {
+        return Float.BYTES;
+    }
+
+    @Override
     public Memory<float[]> allocateMemory(long byteSize, long byteAlignment) {
         if (defaultByteAlignment() % byteAlignment != 0) {
             // Cannot guarantee more than Float.BYTES alignment.

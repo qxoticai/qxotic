@@ -39,8 +39,8 @@ final class BytesMemory implements Memory<byte[]> {
     }
 
     @Override
-    public boolean supportsDataType(DataType dataType) {
-        return true; // all data types supported
+    public long memoryGranularity() {
+        return Byte.BYTES;
     }
 
     @Override

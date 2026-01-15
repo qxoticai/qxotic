@@ -39,8 +39,8 @@ final class DoublesMemory implements Memory<double[]> {
     }
 
     @Override
-    public boolean supportsDataType(DataType dataType) {
-        return dataType == DataType.FP64;
+    public long memoryGranularity() {
+        return Double.BYTES;
     }
 
     @Override

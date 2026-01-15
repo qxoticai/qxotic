@@ -39,8 +39,8 @@ final class LongsMemory implements Memory<long[]> {
     }
 
     @Override
-    public boolean supportsDataType(DataType dataType) {
-        return dataType == DataType.I64;
+    public long memoryGranularity() {
+        return Long.BYTES;
     }
 
     @Override
