@@ -5,13 +5,13 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>com.llm4j</groupId>
-        <artifactId>llm4j-parent</artifactId>
-        <version>${llm4j.version}</version>
+        <groupId>ai.qxotic</groupId>
+        <artifactId>qxotic-parent</artifactId>
+        <version>${qxotic.version}</version>
     </parent>
 
     <artifactId>tokenizers</artifactId>
-    <name>llm4j Tokenizers</name>
+    <name>Quixotic Tokenizers</name>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
@@ -31,11 +31,6 @@
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>com.llm4j</groupId>
-            <artifactId>api</artifactId>
         </dependency>
 
     </dependencies>
