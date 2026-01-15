@@ -4,18 +4,18 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.llm4j</groupId>
-    <artifactId>llm4j-parent</artifactId>
-    <version>${llm4j.version}</version>
+    <groupId>ai.qxotic</groupId>
+    <artifactId>qxotic-parent</artifactId>
+    <version>${qxotic.version}</version>
     <packaging>pom</packaging>
-    <name>llm4j parent</name>
+    <name>Quixotic AI parent</name>
 
     <modules>
-        <module>api</module>
         <module>gguf</module>
         <module>jota</module>
         <module>tokenizers</module>
-        <module>huggingface</module>
+        <module>safetensors</module>
+        <module>json</module>
 
         <!-- deprecated -->
         <module>scratch</module>
@@ -23,7 +23,7 @@
     </modules>
 
     <properties>
-        <llm4j.version>0.1-SNAPSHOT</llm4j.version>
+        <qxotic.version>0.1-SNAPSHOT</qxotic.version>
 
         <junit.version>6.0.1</junit.version>
         <slf4j.version>2.0.13</slf4j.version>
@@ -46,39 +46,39 @@
             </dependency>
 
             <dependency>
-                <groupId>com.llm4j</groupId>
-                <artifactId>api</artifactId>
-                <version>${llm4j.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>com.llm4j</groupId>
+                <groupId>ai.qxotic</groupId>
                 <artifactId>gguf</artifactId>
-                <version>${llm4j.version}</version>
+                <version>${qxotic.version}</version>
             </dependency>
 
             <dependency>
-                <groupId>com.llm4j</groupId>
-                <artifactId>huggingface</artifactId>
-                <version>${llm4j.version}</version>
+                <groupId>ai.qxotic</groupId>
+                <artifactId>safetensors</artifactId>
+                <version>${qxotic.version}</version>
             </dependency>
 
             <dependency>
-                <groupId>com.llm4j</groupId>
+                <groupId>ai.qxotic</groupId>
+                <artifactId>json</artifactId>
+                <version>${qxotic.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>ai.qxotic</groupId>
                 <artifactId>jota</artifactId>
-                <version>${llm4j.version}</version>
+                <version>${qxotic.version}</version>
             </dependency>
 
             <dependency>
-                <groupId>com.llm4j</groupId>
+                <groupId>ai.qxotic</groupId>
                 <artifactId>tokenizers</artifactId>
-                <version>${llm4j.version}</version>
+                <version>${qxotic.version}</version>
             </dependency>
 
             <dependency>
-                <groupId>com.llm4j</groupId>
+                <groupId>ai.qxotic</groupId>
                 <artifactId>span</artifactId>
-                <version>${llm4j.version}</version>
+                <version>${qxotic.version}</version>
             </dependency>
 
             <dependency>
