@@ -95,4 +95,9 @@ final class GGUFImpl implements GGUF {
         long nextAlignedPosition = (position + alignment - 1) / alignment * alignment;
         return nextAlignedPosition - position;
     }
+
+    @Override
+    public String toString() {
+        return GGUFFormatter.toString(this, false, false);
+    }
 }
