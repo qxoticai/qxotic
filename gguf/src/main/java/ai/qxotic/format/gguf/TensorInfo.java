@@ -135,15 +135,26 @@ public final class TensorInfo {
 
     /**
      * Returns a string representation of this {@link TensorInfo}.
-     * <p>
-     * The string includes the tensor's name, shape, type, and offset in hexadecimal.
-     * For example: <i>"TensorInfo{name='token_embd.weight', shape=[768, 32000], ggmlType=F32, offset=0x12300}"</i>
+     *
+     * <p>The string includes the tensor's name, shape, type, and offset in hexadecimal. For
+     * example: <i>"TensorInfo{name='token_embd.weight', shape=[768, 32000], ggmlType=F32,
+     * offset=0x12300}"</i>
      *
      * @return a string representation of this object
      */
     @Override
     public String toString() {
-        return "TensorInfo{" + "name='" + name + '\'' + ", shape=" + Arrays.toString(shape) + ", ggmlType=" + ggmlType
-                + ", offset=" + "0x" + Long.toHexString(offset) + '}';
+        return "TensorInfo{"
+                + "name='"
+                + name
+                + '\''
+                + ", shape="
+                + Arrays.toString(shape)
+                + ", ggmlType="
+                + ggmlType
+                + ", offset="
+                + "0x"
+                + Long.toHexString(offset)
+                + '}';
     }
 }

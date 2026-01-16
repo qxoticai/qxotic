@@ -30,4 +30,18 @@ public final class ImplAccessor {
     public static void write(GGUF gguf, WritableByteChannel byteChannel) throws IOException {
         WriterImpl.writeImpl(gguf, byteChannel);
     }
+
+    public static String toString(GGUF gguf, boolean showKeys, boolean showTensors) {
+        return GGUFFormatter.toString(gguf, showKeys, showTensors);
+    }
+
+    public static String toString(
+            GGUF gguf,
+            boolean showKeys,
+            boolean showTensors,
+            int maxArrayElements,
+            int maxStringLength) {
+        return GGUFFormatter.toString(
+                gguf, showKeys, showTensors, maxArrayElements, maxStringLength);
+    }
 }
