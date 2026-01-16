@@ -46,22 +46,19 @@ final class ReaderImpl {
 
         // Tensor data.
         //
-        // This is arbitrary binary data corresponding to the weights of the model. This data should be
-        // close
-        // or identical to the data in the original model file, but may be different due to quantization
-        // or
-        // other optimizations for inference. Any such deviations should be recorded in the metadata or
-        // as
-        // part of the architecture definition.
+        // This is arbitrary binary data corresponding to the weights of the model. This data should
+        // be close or identical to the data in the original model file, but may be different due to
+        // quantization or other optimizations for inference. Any such deviations should be recorded
+        // in the metadata or as part of the architecture definition.
         //
-        // Each tensor's data must be stored within this array, and located through its `tensor_infos`
-        // entry.
+        // Each tensor's data must be stored within this array, and located through its
+        // `tensor_infos` entry.
         // The offset of each tensor's data must be a multiple of `ALIGNMENT`, and the space between
-        // tensors
-        // should be padded to `ALIGNMENT` bytes.
+        // tensors should be padded to `ALIGNMENT` bytes.
         // uint8_t tensor_data[];
         long tensorDataOffset = totalBytesRead + padding;
-        return new GGUFImpl(this.version, tensorDataOffset, this.metadata, this.metadataTypes, tensorInfos);
+        return new GGUFImpl(
+                this.version, tensorDataOffset, this.metadata, this.metadataTypes, tensorInfos);
     }
 
     private GGMLType readGGMLType(ReadableByteChannel byteChannel) throws IOException {
@@ -114,7 +111,8 @@ final class ReaderImpl {
         // Consider being *very* explicit about the byte order here.
         int magic = readInt(byteChannel); //    uint32_t magic;
         if (magic != GGUF_MAGIC) {
-            throw new IllegalArgumentException("Invalid header.magic: " + magic + " expected: " + GGUF_MAGIC);
+            throw new IllegalArgumentException(
+                    "Invalid header.magic: " + magic + " expected: " + GGUF_MAGIC);
         }
         // The version of the format implemented.
         // Must be `3` for version described in this spec.
@@ -125,14 +123,19 @@ final class ReaderImpl {
         this.version = readInt(byteChannel); // uint32_t version;
         if (!SUPPORTED_GGUF_VERSIONS.contains(version)) {
             throw new IllegalArgumentException(
-                    "Unsupported header.version:" + version + " expected: " + SUPPORTED_GGUF_VERSIONS);
+                    "Unsupported header.version:"
+                            + version
+                            + " expected: "
+                            + SUPPORTED_GGUF_VERSIONS);
         }
         // The number of tensors in the file.
-        // This is explicit, instead of being included in the metadata, to ensure it is always present
+        // This is explicit, instead of being included in the metadata, to ensure it is always
+        // present
         // for loading the tensors.
         int tensorCount = Math.toIntExact(readLong(byteChannel)); // uint64_t tensor_count;
         // The number of metadata key-value pairs.
-        int metadataKeyValueCount = Math.toIntExact(readLong(byteChannel)); // uint64_t metadata_kv_count;
+        int metadataKeyValueCount =
+                Math.toIntExact(readLong(byteChannel)); // uint64_t metadata_kv_count;
         // The metadata key-value pairs.
         // gguf_metadata_kv_t metadata_kv[metadata_kv_count];
         this.metadata = new LinkedHashMap<>(metadataKeyValueCount);
@@ -140,18 +143,24 @@ final class ReaderImpl {
         for (int i = 0; i < metadataKeyValueCount; ++i) {
             // The key of the metadata. It is a standard GGUF string, with the following caveats:
             // - It must be a valid ASCII string.
-            // - It must be a hierarchical key, where each segment is `lower_snake_case` and separated by
-            // a `.`.
+            // - It must be a hierarchical key, where each segment is `lower_snake_case` and
+            // separated by a `.`.
             // - It must be at most 2^16-1/65535 bytes long.
             // Any keys that do not follow these rules are invalid.
             String key = readString(byteChannel); // gguf_string_t key;
             assert key.length() < (1 << 16);
             assert key.codePoints()
-                    .allMatch(cp -> ('a' <= cp && cp <= 'z') || ('0' <= cp && cp <= '9') || cp == '_' || cp == '.');
+                    .allMatch(
+                            cp ->
+                                    ('a' <= cp && cp <= 'z')
+                                            || ('0' <= cp && cp <= '9')
+                                            || cp == '_'
+                                            || cp == '.');
 
             // The type of the value.
             // Must be one of the `gguf_metadata_value_type` values.
-            MetadataValueType valueType = readMetadataValueType(byteChannel); // gguf_metadata_value_type value_type;
+            MetadataValueType valueType =
+                    readMetadataValueType(byteChannel); // gguf_metadata_value_type value_type;
             // The value.
             Object value = readMetadataValueOfType(byteChannel, key, valueType);
             assert !metadata.containsKey(key);
@@ -166,7 +175,8 @@ final class ReaderImpl {
 
     private Object readArray(ReadableByteChannel byteChannel, String key) throws IOException {
         // Any value type is valid, including arrays.
-        MetadataValueType componentType = readMetadataValueType(byteChannel); // gguf_metadata_value_type type;
+        MetadataValueType componentType =
+                readMetadataValueType(byteChannel); // gguf_metadata_value_type type;
         // Record the component type.
         this.metadataTypes.put(key + "[]", componentType);
         // Number of elements, not bytes.
@@ -229,11 +239,13 @@ final class ReaderImpl {
             case ARRAY:
                 throw new UnsupportedOperationException("Cannot read array of arrays");
             default:
-                throw new UnsupportedOperationException("Found array of unknown type " + componentType);
+                throw new UnsupportedOperationException(
+                        "Found array of unknown type " + componentType);
         }
     }
 
-    private Object readMetadataValueOfType(ReadableByteChannel byteChannel, String key, MetadataValueType valueType)
+    private Object readMetadataValueOfType(
+            ReadableByteChannel byteChannel, String key, MetadataValueType valueType)
             throws IOException {
         switch (valueType) {
             case UINT8: // fall-through
@@ -263,7 +275,8 @@ final class ReaderImpl {
         }
     }
 
-    private ByteBuffer readFully(ReadableByteChannel byteChannel, ByteBuffer byteBuffer) throws IOException {
+    private ByteBuffer readFully(ReadableByteChannel byteChannel, ByteBuffer byteBuffer)
+            throws IOException {
         while (byteBuffer.position() < byteBuffer.limit()) {
             int bytesRead = byteChannel.read(byteBuffer);
             if (bytesRead < 0) {
@@ -307,7 +320,8 @@ final class ReaderImpl {
         return Double.longBitsToDouble(readLong(byteChannel));
     }
 
-    private MetadataValueType readMetadataValueType(ReadableByteChannel byteChannel) throws IOException {
+    private MetadataValueType readMetadataValueType(ReadableByteChannel byteChannel)
+            throws IOException {
         int index = readInt(byteChannel);
         return MetadataValueType.fromIndex(index);
     }

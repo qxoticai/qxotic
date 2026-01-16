@@ -1,7 +1,6 @@
 package ai.qxotic.format.gguf.impl;
 
 import ai.qxotic.format.gguf.*;
-
 import java.lang.reflect.Array;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -17,8 +16,7 @@ final class BuilderImpl extends AbstractBuilder {
     private Map<String, MetadataValueType> metadataTypes = new LinkedHashMap<>();
     private Map<String, TensorInfo> tensorInfos = new LinkedHashMap<>();
 
-    BuilderImpl() {
-    }
+    BuilderImpl() {}
 
     static BuilderImpl fromExisting(GGUF gguf) {
         return new BuilderImpl()
@@ -30,8 +28,12 @@ final class BuilderImpl extends AbstractBuilder {
 
     private static Map<String, Object> reconstructMetadata(GGUF gguf) {
         return gguf.getMetadataKeys().stream()
-                .collect(Collectors.toMap(
-                        Function.identity(), key -> gguf.getValue(Object.class, key), (a, b) -> a, LinkedHashMap::new));
+                .collect(
+                        Collectors.toMap(
+                                Function.identity(),
+                                key -> gguf.getValue(Object.class, key),
+                                (a, b) -> a,
+                                LinkedHashMap::new));
     }
 
     private static Map<String, MetadataValueType> reconstructTypes(GGUF gguf) {
@@ -49,13 +51,14 @@ final class BuilderImpl extends AbstractBuilder {
 
     private static Map<String, TensorInfo> fromCollection(Collection<TensorInfo> tensors) {
         return tensors.stream()
-                .collect(Collectors.toMap(
-                        TensorInfo::name,
-                        Function.identity(),
-                        (a, b) -> {
-                            throw new IllegalArgumentException("duplicated tensor names");
-                        },
-                        LinkedHashMap::new));
+                .collect(
+                        Collectors.toMap(
+                                TensorInfo::name,
+                                Function.identity(),
+                                (a, b) -> {
+                                    throw new IllegalArgumentException("duplicated tensor names");
+                                },
+                                LinkedHashMap::new));
     }
 
     @Override
@@ -80,8 +83,14 @@ final class BuilderImpl extends AbstractBuilder {
     public GGUF build(boolean recomputeTensorOffsets) {
         assert this.metadata.keySet().stream().allMatch(key -> this.metadataTypes.containsKey(key));
         long freshTensorDataOffset = computeTensorDataOffset();
-        Map<String, TensorInfo> freshTensorInfos = recomputeTensorOffsets ? computeTensorOffsets() : this.tensorInfos;
-        return new GGUFImpl(this.version, freshTensorDataOffset, this.metadata, this.metadataTypes, freshTensorInfos);
+        Map<String, TensorInfo> freshTensorInfos =
+                recomputeTensorOffsets ? computeTensorOffsets() : this.tensorInfos;
+        return new GGUFImpl(
+                this.version,
+                freshTensorDataOffset,
+                this.metadata,
+                this.metadataTypes,
+                freshTensorInfos);
     }
 
     @Override
@@ -135,12 +144,14 @@ final class BuilderImpl extends AbstractBuilder {
         assert arrayValue.getClass().isArray();
         MetadataValueType componentType = this.metadataTypes.get(key + "[]");
         if (componentType == MetadataValueType.ARRAY) {
-            throw new IllegalArgumentException("array of arrays not supported for key '" + key + "'");
+            throw new IllegalArgumentException(
+                    "array of arrays not supported for key '" + key + "'");
         }
         if (componentType == MetadataValueType.STRING) {
             String[] stringArray = (String[]) arrayValue;
-            long totalSize = Integer.BYTES // gguf_metadata_value_type: uint32_t type;
-                    + Long.BYTES; // uint64_t len;
+            long totalSize =
+                    Integer.BYTES // gguf_metadata_value_type: uint32_t type;
+                            + Long.BYTES; // uint64_t len;
             for (String s : stringArray) {
                 totalSize += sizeOfStringValue(s);
             }
@@ -149,25 +160,28 @@ final class BuilderImpl extends AbstractBuilder {
         // Nested arrays are not supported yet.
         assert arrayValue.getClass().isArray()
                 && (arrayValue.getClass().getComponentType() == String.class
-                || arrayValue.getClass().getComponentType().isPrimitive());
+                        || arrayValue.getClass().getComponentType().isPrimitive());
         return Integer.BYTES // gguf_metadata_value_type: uint32_t component_type;
                 + Long.BYTES // uint64_t len;
-                + Array.getLength(arrayValue) * (long) componentType.byteSize(); // gguf_metadata_value_t array[len];
+                + Array.getLength(arrayValue)
+                        * (long) componentType.byteSize(); // gguf_metadata_value_t array[len];
     }
 
     private static long sizeOfTensorInfo(TensorInfo tensorInfo) {
         return sizeOfStringValue(tensorInfo.name()) // gguf_string_t name
                 + Integer.BYTES // uint32_t n_dimensions;
-                + Long.BYTES * (long) tensorInfo.shape().length // uint64_t dimensions[n_dimensions];
+                + Long.BYTES
+                        * (long) tensorInfo.shape().length // uint64_t dimensions[n_dimensions];
                 + Integer.BYTES // ggmlType type
                 + Long.BYTES; // uint64_t offset
     }
 
     private long computeTensorDataOffset() {
-        long tensorDataOffset = Integer.BYTES // uint32_t MAGIC
-                + Integer.BYTES // uint32_t version
-                + Long.BYTES // uint64_t tensor_count
-                + Long.BYTES; // uint64_t metadata_kv_count;
+        long tensorDataOffset =
+                Integer.BYTES // uint32_t MAGIC
+                        + Integer.BYTES // uint32_t version
+                        + Long.BYTES // uint64_t tensor_count
+                        + Long.BYTES; // uint64_t metadata_kv_count;
 
         for (Map.Entry<String, Object> entry : this.metadata.entrySet()) {
             String key = entry.getKey();
@@ -268,7 +282,8 @@ final class BuilderImpl extends AbstractBuilder {
             TensorInfo tensorInfo = entry.getValue();
             GGMLType ggmlType = tensorInfo.ggmlType();
             long byteSize = ggmlType.byteSizeForShape(tensorInfo.shape());
-            newTensorInfos.put(name, TensorInfo.create(name, tensorInfo.shape(), ggmlType, tensorOffset));
+            newTensorInfos.put(
+                    name, TensorInfo.create(name, tensorInfo.shape(), ggmlType, tensorOffset));
             tensorOffset += byteSize;
         }
         return newTensorInfos;
@@ -364,7 +379,13 @@ final class BuilderImpl extends AbstractBuilder {
             }
         } catch (ClassCastException e) {
             throw new IllegalArgumentException(
-                    "Expected value type " + targetClass + " but got " + value.getClass() + " for key '" + key + "'");
+                    "Expected value type "
+                            + targetClass
+                            + " but got "
+                            + value.getClass()
+                            + " for key '"
+                            + key
+                            + "'");
         }
     }
 }
