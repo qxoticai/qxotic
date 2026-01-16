@@ -5,31 +5,27 @@ import java.util.Objects;
 
 /**
  * Represents metadata about a tensor stored in a GGUF file.
- * <p>
- * A tensor is a multidimensional array of values used in machine learning models.
- * This class stores key information about a tensor including its name, shape,
- * data type, and location/offset with respect to {@link GGUF#getTensorDataOffset()}.
+ *
+ * <p>A tensor is a multidimensional array of values used in machine learning models. This class
+ * stores key information about a tensor including its name, shape, data type, and location/offset
+ * with respect to {@link GGUF#getTensorDataOffset()}.
  */
 public final class TensorInfo {
-    /**
-     * The name identifier of the tensor.
-     */
+    /** The name identifier of the tensor. */
     private final String name;
 
     /**
-     * The dimensions of the tensor.
-     * For example, [768, 32000] represents a 2D tensor with 768 rows and 32000 columns.
+     * The dimensions of the tensor. For example, [768, 32000] represents a 2D tensor with 768 rows
+     * and 32000 columns.
      */
     private final long[] shape;
 
-    /**
-     * The data type of the tensor elements e.g. {@link GGMLType#F32}, {@link GGMLType#Q4_0}.
-     */
+    /** The data type of the tensor elements e.g. {@link GGMLType#F32}, {@link GGMLType#Q4_0}. */
     private final GGMLType ggmlType;
 
     /**
-     * The byte offset where this tensor's data begins with respect
-     * to {@link GGUF#getTensorDataOffset()} in the GGUF file.
+     * The byte offset where this tensor's data begins with respect to {@link
+     * GGUF#getTensorDataOffset()} in the GGUF file.
      */
     private final long offset;
 
@@ -43,10 +39,10 @@ public final class TensorInfo {
     /**
      * Constructs a new {@link TensorInfo} with the specified parameters.
      *
-     * @param name     the name identifier of the tensor
-     * @param shape    the dimensions of the tensor as an array of longs
+     * @param name the name identifier of the tensor
+     * @param shape the dimensions of the tensor as an array of longs
      * @param ggmlType the data type of the tensor elements
-     * @param offset   the byte offset where this tensor's data begins in the file
+     * @param offset the byte offset where this tensor's data begins in the file
      */
     public static TensorInfo create(String name, long[] shape, GGMLType ggmlType, long offset) {
         return new TensorInfo(name, shape, ggmlType, offset);
@@ -63,9 +59,9 @@ public final class TensorInfo {
 
     /**
      * Returns the dimensions of the tensor.
-     * <p>
-     * The returned array represents the size of each dimension.
-     * For example, [768, 32000] represents a 2D tensor with 768 rows and 32000 columns.
+     *
+     * <p>The returned array represents the size of each dimension. For example, [768, 32000]
+     * represents a 2D tensor with 768 rows and 32000 columns.
      *
      * @return the tensor's shape as an array of longs
      */
@@ -76,8 +72,7 @@ public final class TensorInfo {
     /**
      * Returns the data type of the tensor.
      *
-     * <p>
-     * Tensors can be {@link GGMLType#isQuantized() quantized} e.g. {@link GGMLType#Q8_0}.
+     * <p>Tensors can be {@link GGMLType#isQuantized() quantized} e.g. {@link GGMLType#Q8_0}.
      *
      * @return the GGML data type
      */
@@ -90,7 +85,8 @@ public final class TensorInfo {
     }
 
     /**
-     * Returns the byte offset where this tensor's data begins with respect to {@link GGUF#getTensorDataOffset()}.
+     * Returns the byte offset where this tensor's data begins with respect to {@link
+     * GGUF#getTensorDataOffset()}.
      *
      * @return the byte offset of the tensor data
      */
@@ -100,9 +96,9 @@ public final class TensorInfo {
 
     /**
      * Compares this {@link TensorInfo} with another object for equality.
-     * <p>
-     * Two TensorInfo objects are considered equal if they have the same name,
-     * shape, type, and offset.
+     *
+     * <p>Two TensorInfo objects are considered equal if they have the same name, shape, type, and
+     * offset.
      *
      * @param other the object to compare with
      * @return true if the objects are equal, false otherwise

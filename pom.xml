@@ -27,10 +27,11 @@
 
         <junit.version>6.0.1</junit.version>
         <slf4j.version>2.0.13</slf4j.version>
+        <spotless.version>3.1.0</spotless.version>
+        <checkstyle.version>10.21.1</checkstyle.version>
 
         <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
         <maven-surefire-plugin.version>3.5.3</maven-surefire-plugin.version>
-        <maven-assembly-plugin.version>3.6.0</maven-assembly-plugin.version>
         <maven-assembly-plugin.version>3.6.0</maven-assembly-plugin.version>
 
         <maven.compiler.source>11</maven.compiler.source>
@@ -104,6 +105,23 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>${maven-surefire-plugin.version}</version>
+                </plugin>
+
+                <plugin>
+                    <groupId>com.diffplug.spotless</groupId>
+                    <artifactId>spotless-maven-plugin</artifactId>
+                    <version>${spotless.version}</version>
+                    <configuration>
+                        <java>
+                            <googleJavaFormat>
+                                <style>AOSP</style>
+                            </googleJavaFormat>
+                            <trimTrailingWhitespace/>
+                            <endWithNewline/>
+                            <lineEndings>UNIX</lineEndings>
+                            <removeUnusedImports/>
+                        </java>
+                    </configuration>
                 </plugin>
 
                 <plugin>

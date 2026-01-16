@@ -33,7 +33,8 @@ final class WriterImpl {
         assert writer.totalBytesWritten == gguf.getTensorDataOffset();
     }
 
-    private void writeFully(WritableByteChannel byteChannel, ByteBuffer byteBuffer) throws IOException {
+    private void writeFully(WritableByteChannel byteChannel, ByteBuffer byteBuffer)
+            throws IOException {
         while (byteBuffer.hasRemaining()) {
             this.totalBytesWritten += byteChannel.write(byteBuffer);
         }
@@ -85,7 +86,8 @@ final class WriterImpl {
         writeBytes(byteChannel, bytes);
     }
 
-    private void writeTensorInfo(WritableByteChannel byteChannel, TensorInfo tensorInfo) throws IOException {
+    private void writeTensorInfo(WritableByteChannel byteChannel, TensorInfo tensorInfo)
+            throws IOException {
         // The name of the tensor. It is a standard GGUF string, with the caveat that
         // it must be at most 64 bytes long.
         String name = tensorInfo.name();
@@ -118,7 +120,8 @@ final class WriterImpl {
     }
 
     @SuppressWarnings("EnumOrdinal")
-    private void writeGGMLType(WritableByteChannel byteChannel, GGMLType ggmlType) throws IOException {
+    private void writeGGMLType(WritableByteChannel byteChannel, GGMLType ggmlType)
+            throws IOException {
         writeInt(byteChannel, ggmlType.ordinal());
     }
 
@@ -137,7 +140,8 @@ final class WriterImpl {
         // to signify the change.
         writeInt(byteChannel, gguf.getVersion()); // uint32_t version;
         // The number of tensors in the file.
-        // This is explicit, instead of being included in the metadata, to ensure it is always present
+        // This is explicit, instead of being included in the metadata, to ensure it is always
+        // present
         // for loading the tensors.
         writeLong(byteChannel, gguf.getTensors().size()); // uint64_t tensor_count;
         // The number of metadata key-value pairs.
@@ -147,13 +151,19 @@ final class WriterImpl {
         for (String key : gguf.getMetadataKeys()) {
             // The key of the metadata. It is a standard GGUF string, with the following caveats:
             // - It must be a valid ASCII string.
-            // - It must be a hierarchical key, where each segment is `lower_snake_case` and separated by
+            // - It must be a hierarchical key, where each segment is `lower_snake_case` and
+            // separated by
             // a `.`.
             // - It must be at most 2^16-1/65535 bytes long.
             // Any keys that do not follow these rules are invalid.
             assert key.length() < (1 << 16);
             assert key.codePoints()
-                    .allMatch(cp -> ('a' <= cp && cp <= 'z') || ('0' <= cp && cp <= '9') || cp == '_' || cp == '.');
+                    .allMatch(
+                            cp ->
+                                    ('a' <= cp && cp <= 'z')
+                                            || ('0' <= cp && cp <= '9')
+                                            || cp == '_'
+                                            || cp == '.');
             writeString(byteChannel, key);
             Object value = gguf.getValue(Object.class, key);
             assert value != null;
@@ -170,7 +180,8 @@ final class WriterImpl {
         }
     }
 
-    private void writeTypedArrayOf(WritableByteChannel byteChannel, MetadataValueType componentType, Object value)
+    private void writeTypedArrayOf(
+            WritableByteChannel byteChannel, MetadataValueType componentType, Object value)
             throws IOException {
         int arrayLength = Array.getLength(value);
         writeValueType(byteChannel, MetadataValueType.ARRAY);
@@ -225,7 +236,8 @@ final class WriterImpl {
         }
     }
 
-    private void writeTypedValue(WritableByteChannel byteChannel, MetadataValueType valueType, Object value)
+    private void writeTypedValue(
+            WritableByteChannel byteChannel, MetadataValueType valueType, Object value)
             throws IOException {
         if (valueType == MetadataValueType.ARRAY) {
             throw new IllegalArgumentException("use writeArrayOf instead");
@@ -266,7 +278,8 @@ final class WriterImpl {
     }
 
     @SuppressWarnings("EnumOrdinal")
-    private void writeValueType(WritableByteChannel byteChannel, MetadataValueType valueType) throws IOException {
+    private void writeValueType(WritableByteChannel byteChannel, MetadataValueType valueType)
+            throws IOException {
         writeInt(byteChannel, valueType.ordinal());
     }
 }

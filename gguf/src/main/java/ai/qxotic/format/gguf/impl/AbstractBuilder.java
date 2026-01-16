@@ -7,7 +7,8 @@ abstract class AbstractBuilder implements Builder {
 
     protected abstract BuilderImpl putValue(String key, MetadataValueType valueType, Object value);
 
-    protected abstract BuilderImpl putArray(String key, MetadataValueType componentType, Object array);
+    protected abstract BuilderImpl putArray(
+            String key, MetadataValueType componentType, Object array);
 
     @Override
     public abstract Builder clone();

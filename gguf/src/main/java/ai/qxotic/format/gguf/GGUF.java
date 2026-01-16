@@ -11,14 +11,15 @@ import java.util.Collection;
 import java.util.Set;
 
 /**
- * Interface for handling GGUF files, which are used to store
- * large language models and their associated metadata.
- * <p>
- * This interface provides methods to read and write GGUF files, access their metadata,
- * and manage tensor information. GGUF is a binary format that includes both model weights
- * and associated configuration data.
+ * Interface for handling GGUF files, which are used to store large language models and their
+ * associated metadata.
  *
- * @see <a href="https://github.com/ggerganov/ggml/blob/master/docs/gguf.md">GGUF format specification</a>
+ * <p>This interface provides methods to read and write GGUF files, access their metadata, and
+ * manage tensor information. GGUF is a binary format that includes both model weights and
+ * associated configuration data.
+ *
+ * @see <a href="https://github.com/ggerganov/ggml/blob/master/docs/gguf.md">GGUF format
+ *     specification</a>
  */
 public interface GGUF {
     /**
@@ -29,10 +30,10 @@ public interface GGUF {
     int getVersion();
 
     /**
-     * Returns the alignment value used in the GGUF file. If not explicitly set,
-     * returns the default alignment value.
-     * <p>
-     * The alignment determines the byte alignment requirements for tensor data.
+     * Returns the alignment value used in the GGUF file. If not explicitly set, returns the default
+     * alignment value.
+     *
+     * <p>The alignment determines the byte alignment requirements for tensor data.
      *
      * @return the alignment value, or the default alignment if not specified
      */
@@ -59,11 +60,12 @@ public interface GGUF {
     Set<String> getMetadataKeys();
 
     /**
-     * Gets a metadata value associated with the given key, casting it to the specified target class,
-     * or null if the key is not found.
-     * The method handles primitive types, wrapper classes, strings, and arrays.
+     * Gets a metadata value associated with the given key, casting it to the specified target
+     * class, or null if the key is not found. The method handles primitive types, wrapper classes,
+     * strings, and arrays.
      *
      * <p>The actual type of the stored value depends on {@link #getType(String)}:
+     *
      * <ul>
      *   <li>{@code UINT8} → {@code byte} (signed, may require manual unsigned conversion)
      *   <li>{@code INT8} → {@code byte}
@@ -78,23 +80,24 @@ public interface GGUF {
      *   <li>{@code INT64} → {@code long}
      *   <li>{@code FLOAT64} → {@code double}
      *   <li>{@code ARRAY} → Array type depends on {@link #getComponentType(String)}:
-     *     <ul>
-     *       <li>{@code STRING} → {@code String[]}
-     *       <li>{@code UINT8} → {@code byte[]} (signed values)
-     *       <li>{@code INT8} → {@code byte[]}
-     *       <li>{@code UINT16} → {@code short[]} (signed values)
-     *       <li>{@code INT16} → {@code short[]}
-     *       <li>{@code UINT32} → {@code int[]} (signed values)
-     *       <li>{@code INT32} → {@code int[]}
-     *       <li>{@code UINT64} → {@code long[]} (signed values)
-     *       <li>{@code INT64} → {@code long[]}
-     *       <li>{@code FLOAT32} → {@code float[]}
-     *       <li>{@code FLOAT64} → {@code double[]}
-     *       <li>{@code BOOL} → {@code boolean[]}
-     *     </ul>
+     *       <ul>
+     *         <li>{@code STRING} → {@code String[]}
+     *         <li>{@code UINT8} → {@code byte[]} (signed values)
+     *         <li>{@code INT8} → {@code byte[]}
+     *         <li>{@code UINT16} → {@code short[]} (signed values)
+     *         <li>{@code INT16} → {@code short[]}
+     *         <li>{@code UINT32} → {@code int[]} (signed values)
+     *         <li>{@code INT32} → {@code int[]}
+     *         <li>{@code UINT64} → {@code long[]} (signed values)
+     *         <li>{@code INT64} → {@code long[]}
+     *         <li>{@code FLOAT32} → {@code float[]}
+     *         <li>{@code FLOAT64} → {@code double[]}
+     *         <li>{@code BOOL} → {@code boolean[]}
+     *       </ul>
      * </ul>
      *
      * <p>Examples:
+     *
      * <pre>{@code
      * // Primitive types
      * // Will throw NullPointerException is the key is not present.
@@ -117,23 +120,23 @@ public interface GGUF {
      * Object generic = getValue(Object.class, "anyKey");
      * }</pre>
      *
-     * @param <T>         the type to cast the value to
+     * @param <T> the type to cast the value to
      * @param targetClass the Class object representing the desired return type
-     * @param key         the key whose associated value is to be returned
+     * @param key the key whose associated value is to be returned
      * @return the value associated with the key, cast to type T, or null if the key is not found
      * @throws ClassCastException if the value cannot be cast to the requested type or if the
-     *                            requested type doesn't match the type indicated by {@link #getType(String)}
+     *     requested type doesn't match the type indicated by {@link #getType(String)}
      * @see #getType(String)
      * @see #getComponentType(String)
      */
     <T> T getValue(Class<T> targetClass, String key);
 
     /**
-     * Retrieves the value associated with the specified metadata key, or returns
-     * a default value if the key is not present.
+     * Retrieves the value associated with the specified metadata key, or returns a default value if
+     * the key is not present.
      *
-     * @param <T>          the expected type of the value
-     * @param key          the metadata key to look up
+     * @param <T> the expected type of the value
+     * @param key the metadata key to look up
      * @param defaultValue the value to return if the key is not found
      * @return the value associated with the key, or defaultValue if not found
      * @see #getValue(Class, String)
@@ -156,7 +159,8 @@ public interface GGUF {
      * Returns the metadata value type for the specified key.
      *
      * @param key the metadata key to look up
-     * @return the {@link MetadataValueType} of the value associated with the key, or null if not found
+     * @return the {@link MetadataValueType} of the value associated with the key, or null if not
+     *     found
      */
     MetadataValueType getType(String key);
 
@@ -164,7 +168,8 @@ public interface GGUF {
      * Returns the component type for {@link MetadataValueType#ARRAY array} metadata values.
      *
      * @param key the metadata key to look up
-     * @return the {@link MetadataValueType} of the array components, or null if not found or the value associated with the given key is not an {@link MetadataValueType#ARRAY array}
+     * @return the {@link MetadataValueType} of the array components, or null if not found or the
+     *     value associated with the given key is not an {@link MetadataValueType#ARRAY array}
      */
     MetadataValueType getComponentType(String key);
 
@@ -212,7 +217,8 @@ public interface GGUF {
      * @throws IOException if an I/O error occurs during reading
      */
     static GGUF read(Path modelPath) throws IOException {
-        try (ReadableByteChannel byteChannel = Files.newByteChannel(modelPath, StandardOpenOption.READ)) {
+        try (ReadableByteChannel byteChannel =
+                Files.newByteChannel(modelPath, StandardOpenOption.READ)) {
             return read(byteChannel);
         }
     }
@@ -220,7 +226,7 @@ public interface GGUF {
     /**
      * Writes GGUF metadata to a {@link WritableByteChannel}.
      *
-     * @param gguf        the GGUF instance to write
+     * @param gguf the GGUF instance to write
      * @param byteChannel the channel to write to
      * @throws IOException if an I/O error occurs during writing
      */
@@ -231,14 +237,42 @@ public interface GGUF {
     /**
      * Writes a GGUF instance to a file at the specified path.
      *
-     * @param gguf      the GGUF instance to write
+     * @param gguf the GGUF instance to write
      * @param modelPath the path where the GGUF file should be written
      * @throws IOException if an I/O error occurs during writing
      */
     static void write(GGUF gguf, Path modelPath) throws IOException {
         try (WritableByteChannel byteChannel =
-                Files.newByteChannel(modelPath, StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW)) {
+                Files.newByteChannel(
+                        modelPath, StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW)) {
             write(gguf, byteChannel);
         }
+    }
+
+    /**
+     * Returns a detailed string representation of the GGUF with control over what to display.
+     *
+     * @param showKeys whether to display metadata keys and values
+     * @param showTensors whether to display tensor information
+     * @return formatted string representation
+     */
+    default String toString(boolean showKeys, boolean showTensors) {
+        return ImplAccessor.toString(this, showKeys, showTensors);
+    }
+
+    /**
+     * Returns a detailed string representation of the GGUF with full control over display and
+     * elision.
+     *
+     * @param showKeys whether to display metadata keys and values
+     * @param showTensors whether to display tensor information
+     * @param maxArrayElements maximum number of array elements to show before eliding
+     * @param maxStringLength maximum string length before truncation
+     * @return formatted string representation
+     */
+    default String toString(
+            boolean showKeys, boolean showTensors, int maxArrayElements, int maxStringLength) {
+        return ImplAccessor.toString(
+                this, showKeys, showTensors, maxArrayElements, maxStringLength);
     }
 }
