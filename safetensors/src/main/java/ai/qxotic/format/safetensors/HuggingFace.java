@@ -40,9 +40,9 @@ public class HuggingFace {
         try {
             Path indexPath = rootPath.resolve(SAFETENSORS_INDEX);
             if (Files.exists(indexPath)) {
-                return SafeTensors.loadFromModelRoot(rootPath);
+                return Safetensors.loadFromModelRoot(rootPath);
             } else {
-                return SafeTensors.loadTensorEntries(rootPath.resolve(MODEL_SAFETENSORS));
+                return Safetensors.loadTensorEntries(rootPath.resolve(MODEL_SAFETENSORS));
             }
         } catch (IOException e) {
             throw new UncheckedIOException(e);

@@ -4,7 +4,7 @@ import ai.qxotic.format.gguf.GGUF;
 import ai.qxotic.format.safetensors.DType;
 import ai.qxotic.format.safetensors.HFTensorEntry;
 import ai.qxotic.format.safetensors.HuggingFace;
-import ai.qxotic.format.safetensors.SafeTensors;
+import ai.qxotic.format.safetensors.Safetensors;
 import ai.qxotic.model.llm.llama.*;
 import ai.qxotic.span.FloatMatrixView;
 import ai.qxotic.span.FloatSpan;
@@ -31,7 +31,7 @@ public class HuggingFaceLlamaBaseLoader extends AbstractHuggingFaceLoader<Llama,
     }
 
     static Map<String, HFTensorEntry> loadTensorEntries(Path modelPath) throws IOException {
-        return SafeTensors.loadTensorEntries(modelPath);
+        return Safetensors.loadTensorEntries(modelPath);
     }
 
     public static void main(String[] args) throws IOException {
@@ -156,7 +156,7 @@ public class HuggingFaceLlamaBaseLoader extends AbstractHuggingFaceLoader<Llama,
             public FloatSpan apply(Object baseTensor) {
                 HFTensorEntry tensorEntry = (HFTensorEntry) baseTensor;
                 DType baseType = tensorEntry.type();
-                long sizeInBytes = baseType.byteSizeFor(tensorEntry.shape());
+                long sizeInBytes = baseType.byteSizeForShape(tensorEntry.shape());
                 MemorySegment memorySegment = null;
                 try {
                     memorySegment = fileChannel.map(FileChannel.MapMode.READ_ONLY, tensorDataOffset + tensorEntry.offset(), sizeInBytes, Arena.ofAuto());
