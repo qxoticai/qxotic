@@ -50,11 +50,10 @@ public enum DType {
         return numberOfElements * (long) size;
     }
 
-    public long byteSizeFor(long[] shape) {
+    public long byteSizeForShape(long[] shape) {
         long elementCount = Arrays.stream(shape).reduce(1L, Math::multiplyExact);
         return byteSizeFor(elementCount);
     }
-
 
     public Class<?> backingJavaType() {
         return backingJavaType;

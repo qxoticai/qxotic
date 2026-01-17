@@ -11,7 +11,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
 
-public final class SafeTensors {
+public final class Safetensors {
 
     private static final String METADATA_KEY = "__metadata__";
 
