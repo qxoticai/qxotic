@@ -48,14 +48,14 @@ public enum GGMLType {
     F64(Double.BYTES),
     IQ1_M(32 + 16 + 8, GGMLType.QK_K),
     BF16(GGMLType.BFLOAT16_BYTES),
-    Q4_0_4_4(GGMLType.FLOAT16_BYTES + 16 * Byte.BYTES, GGMLType.QK4_0),
-    Q4_0_4_8(GGMLType.FLOAT16_BYTES + 16 * Byte.BYTES, GGMLType.QK4_0),
-    Q4_0_8_8(GGMLType.FLOAT16_BYTES + 16 * Byte.BYTES, GGMLType.QK4_0),
+    Q4_0_4_4(GGMLType.FLOAT16_BYTES + 16 * Byte.BYTES, GGMLType.QK4_0, true, true),
+    Q4_0_4_8(GGMLType.FLOAT16_BYTES + 16 * Byte.BYTES, GGMLType.QK4_0, true, true),
+    Q4_0_8_8(GGMLType.FLOAT16_BYTES + 16 * Byte.BYTES, GGMLType.QK4_0, true, true),
     TQ1_0(51 + 4 + 2, GGMLType.QK_K),
     TQ2_0(64 + 2, GGMLType.QK_K),
-    IQ4_NL_4_4(2 + 16, GGMLType.QK4_NL),
-    IQ4_NL_4_8(2 + 16, GGMLType.QK4_NL),
-    IQ4_NL_8_8(2 + 16, GGMLType.QK4_NL),
+    IQ4_NL_4_4(2 + 16, GGMLType.QK4_NL, true, true),
+    IQ4_NL_4_8(2 + 16, GGMLType.QK4_NL, true, true),
+    IQ4_NL_8_8(2 + 16, GGMLType.QK4_NL, true, true),
     MXFP4(Byte.BYTES + 16, GGMLType.QK_MXFP4);
 
     private static final int FLOAT16_BYTES = 2;
