@@ -2,9 +2,7 @@ package ai.qxotic.format.safetensors;
 
 import java.util.Arrays;
 
-/**
- * Data types supported by the Safetensors format.
- */
+/** Data types supported by the Safetensors format. */
 public enum DType {
     // Boolean type
     BOOL(1, boolean.class),

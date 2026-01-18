@@ -1,7 +1,6 @@
 package ai.qxotic.format.safetensors;
 
 import ai.qxotic.format.safetensors.impl.ImplAccessor;
-
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Collection;
@@ -13,9 +12,7 @@ import java.util.Collection;
  * loading to parse files only when accessed.
  */
 public interface SafetensorsIndex {
-    /**
-     * Returns the model root directory.
-     */
+    /** Returns the model root directory. */
     Path getRootPath();
 
     /**

@@ -3,7 +3,6 @@ package ai.qxotic.format.safetensors.impl;
 import ai.qxotic.format.json.JSON;
 import ai.qxotic.format.safetensors.Safetensors;
 import ai.qxotic.format.safetensors.TensorEntry;
-
 import java.util.Map;
 
 /** Provides formatting for Safetensors instances with simple parameter-based control. */
@@ -17,9 +16,12 @@ class SafetensorsFormatter {
      * @param showTensors whether to display tensor information
      * @return formatted string representation
      */
-    public static String toString(Safetensors safetensors, boolean showMetadata, boolean showTensors) {
+    public static String toString(
+            Safetensors safetensors, boolean showMetadata, boolean showTensors) {
         StringBuilder sb = new StringBuilder("Safetensors {\n");
-        sb.append("  alignment: 0x").append(Long.toHexString(safetensors.getAlignment())).append('\n');
+        sb.append("  alignment: 0x")
+                .append(Long.toHexString(safetensors.getAlignment()))
+                .append('\n');
         sb.append("  tensorDataOffset: 0x")
                 .append(Long.toHexString(safetensors.getTensorDataOffset()))
                 .append('\n');
@@ -27,7 +29,9 @@ class SafetensorsFormatter {
         if (showMetadata) {
             formatMetadata(sb, safetensors);
         } else {
-            sb.append("  \"__metadata__\" : { ").append(safetensors.getMetadata().size()).append(" keys }\n");
+            sb.append("  \"__metadata__\" : { ")
+                    .append(safetensors.getMetadata().size())
+                    .append(" keys }\n");
         }
 
         if (showTensors) {
@@ -45,7 +49,10 @@ class SafetensorsFormatter {
         for (Map.Entry<String, String> entry : safetensors.getMetadata().entrySet()) {
             String key = entry.getKey();
             String value = entry.getValue();
-            sb.append("    ").append(JSON.stringify(key)).append(" : ").append(JSON.stringify(value));
+            sb.append("    ")
+                    .append(JSON.stringify(key))
+                    .append(" : ")
+                    .append(JSON.stringify(value));
             sb.append('\n');
         }
 

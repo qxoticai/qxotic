@@ -5,7 +5,6 @@ import ai.qxotic.format.safetensors.DType;
 import ai.qxotic.format.safetensors.Safetensors;
 import ai.qxotic.format.safetensors.SafetensorsFormatException;
 import ai.qxotic.format.safetensors.TensorEntry;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -101,7 +100,10 @@ class ReaderImpl {
         }
         if (!(dtypeObj instanceof String)) {
             throw new SafetensorsFormatException(
-                    "dtype must be a string for tensor: " + tensorName + ", got " + dtypeObj.getClass().getSimpleName());
+                    "dtype must be a string for tensor: "
+                            + tensorName
+                            + ", got "
+                            + dtypeObj.getClass().getSimpleName());
         }
 
         // Validate shape field
@@ -111,7 +113,10 @@ class ReaderImpl {
         }
         if (!(shapeObj instanceof List)) {
             throw new SafetensorsFormatException(
-                    "shape must be an array for tensor: " + tensorName + ", got " + shapeObj.getClass().getSimpleName());
+                    "shape must be an array for tensor: "
+                            + tensorName
+                            + ", got "
+                            + shapeObj.getClass().getSimpleName());
         }
         List<?> shapeList = (List<?>) shapeObj;
         for (int i = 0; i < shapeList.size(); i++) {
@@ -128,12 +133,18 @@ class ReaderImpl {
         }
         if (!(offsetsObj instanceof List)) {
             throw new SafetensorsFormatException(
-                    "data_offsets must be an array for tensor: " + tensorName + ", got " + offsetsObj.getClass().getSimpleName());
+                    "data_offsets must be an array for tensor: "
+                            + tensorName
+                            + ", got "
+                            + offsetsObj.getClass().getSimpleName());
         }
         List<?> offsetsList = (List<?>) offsetsObj;
         if (offsetsList.size() != 2) {
             throw new SafetensorsFormatException(
-                    "data_offsets must have exactly 2 elements for tensor: " + tensorName + ", got " + offsetsList.size());
+                    "data_offsets must have exactly 2 elements for tensor: "
+                            + tensorName
+                            + ", got "
+                            + offsetsList.size());
         }
         if (!(offsetsList.get(0) instanceof Number)) {
             throw new SafetensorsFormatException(
@@ -148,7 +159,8 @@ class ReaderImpl {
     private static TensorEntry load(Map.Entry<String, Object> entry) {
         String tensorName = entry.getKey();
         if (!(entry.getValue() instanceof Map)) {
-            throw new SafetensorsFormatException("Tensor entry must be a JSON object: " + tensorName);
+            throw new SafetensorsFormatException(
+                    "Tensor entry must be a JSON object: " + tensorName);
         }
         Map<String, Object> tensorEntry = (Map<String, Object>) entry.getValue();
 
@@ -167,10 +179,11 @@ class ReaderImpl {
 
         // Parse shape (already validated as List<Number>)
         List<?> shapeList = (List<?>) tensorEntry.get("shape");
-        long[] shape = shapeList.stream()
-                .map(n -> ((Number) n).longValue())
-                .mapToLong(Long::longValue)
-                .toArray();
+        long[] shape =
+                shapeList.stream()
+                        .map(n -> ((Number) n).longValue())
+                        .mapToLong(Long::longValue)
+                        .toArray();
 
         // Parse data_offsets (already validated as List<Number> with 2 elements)
         List<?> offsetsList = (List<?>) tensorEntry.get("data_offsets");
@@ -181,7 +194,8 @@ class ReaderImpl {
             throw new SafetensorsFormatException("Negative offsets for tensor: " + tensorName);
         }
         if (begin > end) {
-            throw new SafetensorsFormatException("Invalid offsets: begin > end for tensor: " + tensorName);
+            throw new SafetensorsFormatException(
+                    "Invalid offsets: begin > end for tensor: " + tensorName);
         }
 
         long size = end - begin;
@@ -213,9 +227,10 @@ class ReaderImpl {
             if (tensor.byteOffset() < expectedOffset) {
                 throw new SafetensorsFormatException("Overlapping tensors detected");
             }
-//            if (tensor.byteOffset() > expectedOffset) {
-//                throw new SafetensorsFormatException("Gap in byte buffer at offset " + expectedOffset);
-//            }
+            //            if (tensor.byteOffset() > expectedOffset) {
+            //                throw new SafetensorsFormatException("Gap in byte buffer at offset " +
+            // expectedOffset);
+            //            }
             expectedOffset = tensor.byteOffset() + tensor.byteSize();
         }
     }

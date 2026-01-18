@@ -1,11 +1,10 @@
 package ai.qxotic.format.safetensors;
 
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.*;
 import java.util.stream.Collectors;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
 
 public class SafetensorsBuilderTest extends SafetensorsTest {
 
@@ -48,8 +47,7 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
     }
 
     static Builder putMetadata(Builder builder) {
-        return builder
-                .putMetadataKey("format", "pt")
+        return builder.putMetadataKey("format", "pt")
                 .putMetadataKey("model_type", "llama")
                 .putMetadataKey("version", "1.0");
     }
@@ -66,8 +64,11 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
     public void testTensorOrder() {
         List<String> keys = Arrays.asList("foo", "bar", "baz");
         Builder builder = Builder.newBuilder();
-        keys.forEach(key -> builder.putTensor(TensorEntry.create(key, DType.F32, new long[]{123}, 0)));
-        assertEquals(keys, builder.getTensors().stream().map(TensorEntry::name).collect(Collectors.toList()));
+        keys.forEach(
+                key -> builder.putTensor(TensorEntry.create(key, DType.F32, new long[] {123}, 0)));
+        assertEquals(
+                keys,
+                builder.getTensors().stream().map(TensorEntry::name).collect(Collectors.toList()));
     }
 
     @Test
@@ -90,7 +91,8 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
     public void testReverseTensorOrder() {
         List<String> keys = Arrays.asList("foo", "bar", "baz");
         Builder builder = Builder.newBuilder();
-        keys.forEach(key -> builder.putTensor(TensorEntry.create(key, DType.F32, new long[]{123}, 0)));
+        keys.forEach(
+                key -> builder.putTensor(TensorEntry.create(key, DType.F32, new long[] {123}, 0)));
 
         List<TensorEntry> reversedTensors = new ArrayList<>(builder.getTensors());
         Collections.reverse(reversedTensors);
@@ -103,8 +105,9 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
 
     @Test
     public void testPutRemoveTensors() {
-        Builder builder = Builder.newBuilder()
-                .putTensor(TensorEntry.create("foo", DType.F32, new long[]{1, 2}, 0));
+        Builder builder =
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("foo", DType.F32, new long[] {1, 2}, 0));
 
         assertFalse(builder.containsTensor("absent"));
 
@@ -128,10 +131,11 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
 
     @Test
     public void testBuilderClone() {
-        Builder original = Builder.newBuilder()
-                .putMetadataKey("foo", "bar")
-                .putTensor(TensorEntry.create("tensor", DType.F32, new long[]{1}, 0))
-                .setAlignment(64);
+        Builder original =
+                Builder.newBuilder()
+                        .putMetadataKey("foo", "bar")
+                        .putTensor(TensorEntry.create("tensor", DType.F32, new long[] {1}, 0))
+                        .setAlignment(64);
 
         mutateAndCheck(original.clone(), original);
         mutateAndCheck(original, original.clone());
@@ -139,8 +143,8 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
 
     private static void mutateAndCheck(Builder toMutate, Builder toCheck) {
         toMutate.putMetadataKey("foo", "modified");
-        toMutate.putTensor(TensorEntry.create("tensor", DType.F16, new long[]{1, 2, 3}, 0));
-        toMutate.putTensor(TensorEntry.create("new_tensor", DType.I8, new long[]{3, 2, 1}, 0));
+        toMutate.putTensor(TensorEntry.create("tensor", DType.F16, new long[] {1, 2, 3}, 0));
+        toMutate.putTensor(TensorEntry.create("new_tensor", DType.I8, new long[] {3, 2, 1}, 0));
         toMutate.setAlignment(128);
 
         assertEquals("bar", toCheck.getMetadataValue("foo"));
@@ -176,9 +180,10 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
 
     @Test
     public void testBuildWithoutRecomputingOffsets() {
-        Builder builder = Builder.newBuilder()
-                .putTensor(TensorEntry.create("tensor1", DType.F32, new long[]{10}, 100))
-                .putTensor(TensorEntry.create("tensor2", DType.F16, new long[]{5}, 500));
+        Builder builder =
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("tensor1", DType.F32, new long[] {10}, 100))
+                        .putTensor(TensorEntry.create("tensor2", DType.F16, new long[] {5}, 500));
 
         Safetensors st = builder.build(false);
 
@@ -188,9 +193,10 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
 
     @Test
     public void testBuildWithRecomputingOffsets() {
-        Builder builder = Builder.newBuilder()
-                .putTensor(TensorEntry.create("tensor1", DType.F32, new long[]{10}, 999))
-                .putTensor(TensorEntry.create("tensor2", DType.F16, new long[]{5}, 888));
+        Builder builder =
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("tensor1", DType.F32, new long[] {10}, 999))
+                        .putTensor(TensorEntry.create("tensor2", DType.F16, new long[] {5}, 888));
 
         Safetensors st = builder.build(true);
 
@@ -200,10 +206,11 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
 
     @Test
     public void testRecomputeOffsetsWithDefaultAlignment() {
-        Builder builder = Builder.newBuilder()
-                .putTensor(TensorEntry.create("small", DType.I8, new long[]{5}, 0))
-                .putTensor(TensorEntry.create("medium", DType.F16, new long[]{10}, 0))
-                .putTensor(TensorEntry.create("large", DType.F32, new long[]{20}, 0));
+        Builder builder =
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("small", DType.I8, new long[] {5}, 0))
+                        .putTensor(TensorEntry.create("medium", DType.F16, new long[] {10}, 0))
+                        .putTensor(TensorEntry.create("large", DType.F32, new long[] {20}, 0));
 
         Safetensors st = builder.build(true);
         assertEquals(32, st.getAlignment());
@@ -224,10 +231,11 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
 
     @Test
     public void testRecomputeOffsetsWithCustomAlignment() {
-        Builder builder = Builder.newBuilder()
-                .setAlignment(64)
-                .putTensor(TensorEntry.create("tensor1", DType.F32, new long[]{3}, 0))
-                .putTensor(TensorEntry.create("tensor2", DType.F32, new long[]{3}, 0));
+        Builder builder =
+                Builder.newBuilder()
+                        .setAlignment(64)
+                        .putTensor(TensorEntry.create("tensor1", DType.F32, new long[] {3}, 0))
+                        .putTensor(TensorEntry.create("tensor2", DType.F32, new long[] {3}, 0));
 
         Safetensors st = builder.build(true);
 
@@ -237,11 +245,12 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
 
     @Test
     public void testRecomputeOffsetsWithAlignment1() {
-        Builder builder = Builder.newBuilder()
-                .setAlignment(1)
-                .putTensor(TensorEntry.create("t1", DType.I8, new long[]{3}, 999))
-                .putTensor(TensorEntry.create("t2", DType.I8, new long[]{5}, 888))
-                .putTensor(TensorEntry.create("t3", DType.I8, new long[]{7}, 777));
+        Builder builder =
+                Builder.newBuilder()
+                        .setAlignment(1)
+                        .putTensor(TensorEntry.create("t1", DType.I8, new long[] {3}, 999))
+                        .putTensor(TensorEntry.create("t2", DType.I8, new long[] {5}, 888))
+                        .putTensor(TensorEntry.create("t3", DType.I8, new long[] {7}, 777));
 
         Safetensors st = builder.build(true);
 
@@ -252,9 +261,10 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
 
     @Test
     public void testDefaultBuildRecomputesOffsets() {
-        Builder builder = Builder.newBuilder()
-                .putTensor(TensorEntry.create("tensor1", DType.F32, new long[]{10}, 123))
-                .putTensor(TensorEntry.create("tensor2", DType.F16, new long[]{5}, 456));
+        Builder builder =
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("tensor1", DType.F32, new long[] {10}, 123))
+                        .putTensor(TensorEntry.create("tensor2", DType.F16, new long[] {5}, 456));
 
         Safetensors st = builder.build();
 

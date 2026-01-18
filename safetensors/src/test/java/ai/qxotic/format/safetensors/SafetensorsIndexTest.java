@@ -1,15 +1,13 @@
 package ai.qxotic.format.safetensors;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 public class SafetensorsIndexTest extends SafetensorsTest {
 
@@ -17,10 +15,15 @@ public class SafetensorsIndexTest extends SafetensorsTest {
     public void testLoadSingleFile(@TempDir Path tempDir) throws IOException {
         // Create a single safetensors file
         Path modelFile = tempDir.resolve("model.safetensors");
-        Safetensors st = Builder.newBuilder()
-                .putTensor(TensorEntry.create("layer1.weight", DType.F32, new long[]{10, 20}, 0))
-                .putTensor(TensorEntry.create("layer2.weight", DType.F32, new long[]{20, 30}, 0))
-                .build();
+        Safetensors st =
+                Builder.newBuilder()
+                        .putTensor(
+                                TensorEntry.create(
+                                        "layer1.weight", DType.F32, new long[] {10, 20}, 0))
+                        .putTensor(
+                                TensorEntry.create(
+                                        "layer2.weight", DType.F32, new long[] {20, 30}, 0))
+                        .build();
         Safetensors.write(st, modelFile);
 
         // Load directly from file
@@ -40,9 +43,12 @@ public class SafetensorsIndexTest extends SafetensorsTest {
     public void testLoadDirectoryWithSingleFile(@TempDir Path tempDir) throws IOException {
         // Create model.safetensors in directory
         Path modelFile = tempDir.resolve("model.safetensors");
-        Safetensors st = Builder.newBuilder()
-                .putTensor(TensorEntry.create("embedding.weight", DType.F32, new long[]{1000, 512}, 0))
-                .build();
+        Safetensors st =
+                Builder.newBuilder()
+                        .putTensor(
+                                TensorEntry.create(
+                                        "embedding.weight", DType.F32, new long[] {1000, 512}, 0))
+                        .build();
         Safetensors.write(st, modelFile);
 
         // Load from directory
@@ -62,32 +68,41 @@ public class SafetensorsIndexTest extends SafetensorsTest {
         Path shard1 = tempDir.resolve("model-00001-of-00002.safetensors");
         Path shard2 = tempDir.resolve("model-00002-of-00002.safetensors");
 
-        Safetensors st1 = Builder.newBuilder()
-                .putTensor(TensorEntry.create("layer.0.weight", DType.F32, new long[]{100, 100}, 0))
-                .putTensor(TensorEntry.create("layer.1.weight", DType.F32, new long[]{100, 100}, 0))
-                .build();
+        Safetensors st1 =
+                Builder.newBuilder()
+                        .putTensor(
+                                TensorEntry.create(
+                                        "layer.0.weight", DType.F32, new long[] {100, 100}, 0))
+                        .putTensor(
+                                TensorEntry.create(
+                                        "layer.1.weight", DType.F32, new long[] {100, 100}, 0))
+                        .build();
         Safetensors.write(st1, shard1);
 
-        Safetensors st2 = Builder.newBuilder()
-                .putTensor(TensorEntry.create("layer.2.weight", DType.F32, new long[]{100, 100}, 0))
-                .putTensor(TensorEntry.create("layer.3.weight", DType.F32, new long[]{100, 100}, 0))
-                .build();
+        Safetensors st2 =
+                Builder.newBuilder()
+                        .putTensor(
+                                TensorEntry.create(
+                                        "layer.2.weight", DType.F32, new long[] {100, 100}, 0))
+                        .putTensor(
+                                TensorEntry.create(
+                                        "layer.3.weight", DType.F32, new long[] {100, 100}, 0))
+                        .build();
         Safetensors.write(st2, shard2);
 
         // Create index.json
-        String indexJson = """
-                {
-                  "metadata": {
-                    "total_size": 160000
-                  },
-                  "weight_map": {
-                    "layer.0.weight": "model-00001-of-00002.safetensors",
-                    "layer.1.weight": "model-00001-of-00002.safetensors",
-                    "layer.2.weight": "model-00002-of-00002.safetensors",
-                    "layer.3.weight": "model-00002-of-00002.safetensors"
-                  }
-                }
-                """;
+        String indexJson =
+                "{\n"
+                        + "  \"metadata\": {\n"
+                        + "    \"total_size\": 160000\n"
+                        + "  },\n"
+                        + "  \"weight_map\": {\n"
+                        + "    \"layer.0.weight\": \"model-00001-of-00002.safetensors\",\n"
+                        + "    \"layer.1.weight\": \"model-00001-of-00002.safetensors\",\n"
+                        + "    \"layer.2.weight\": \"model-00002-of-00002.safetensors\",\n"
+                        + "    \"layer.3.weight\": \"model-00002-of-00002.safetensors\"\n"
+                        + "  }\n"
+                        + "}\n";
         Files.writeString(tempDir.resolve("model.safetensors.index.json"), indexJson);
 
         // Load sharded model
@@ -109,11 +124,15 @@ public class SafetensorsIndexTest extends SafetensorsTest {
     }
 
     @Test
-    public void testGetSafetensorsPathForNonExistentTensor(@TempDir Path tempDir) throws IOException {
+    public void testGetSafetensorsPathForNonExistentTensor(@TempDir Path tempDir)
+            throws IOException {
         Path modelFile = tempDir.resolve("model.safetensors");
-        Safetensors st = Builder.newBuilder()
-                .putTensor(TensorEntry.create("existing.weight", DType.F32, new long[]{10, 10}, 0))
-                .build();
+        Safetensors st =
+                Builder.newBuilder()
+                        .putTensor(
+                                TensorEntry.create(
+                                        "existing.weight", DType.F32, new long[] {10, 10}, 0))
+                        .build();
         Safetensors.write(st, modelFile);
 
         SafetensorsIndex index = SafetensorsIndex.load(tempDir);
@@ -138,13 +157,12 @@ public class SafetensorsIndexTest extends SafetensorsTest {
     @Test
     public void testLoadMissingShardFile(@TempDir Path tempDir) throws IOException {
         // Create index.json that references non-existent shard
-        String indexJson = """
-                {
-                  "weight_map": {
-                    "layer.weight": "missing-shard.safetensors"
-                  }
-                }
-                """;
+        String indexJson =
+                "{\n"
+                        + "  \"weight_map\": {\n"
+                        + "    \"layer.weight\": \"missing-shard.safetensors\"\n"
+                        + "  }\n"
+                        + "}\n";
         Files.writeString(tempDir.resolve("model.safetensors.index.json"), indexJson);
 
         assertThrows(IOException.class, () -> SafetensorsIndex.load(tempDir));
@@ -153,12 +171,11 @@ public class SafetensorsIndexTest extends SafetensorsTest {
     @Test
     public void testInvalidIndexJsonFormat(@TempDir Path tempDir) throws IOException {
         // Create invalid JSON (missing closing brace)
-        String invalidJson = """
-                {
-                  "weight_map": {
-                    "layer.weight": "shard.safetensors"
-                  }
-                """;
+        String invalidJson =
+                "{\n"
+                        + "  \"weight_map\": {\n"
+                        + "    \"layer.weight\": \"shard.safetensors\"\n"
+                        + "  }\n";
         Files.writeString(tempDir.resolve("model.safetensors.index.json"), invalidJson);
 
         assertThrows(SafetensorsFormatException.class, () -> SafetensorsIndex.load(tempDir));
@@ -167,13 +184,8 @@ public class SafetensorsIndexTest extends SafetensorsTest {
     @Test
     public void testMissingWeightMap(@TempDir Path tempDir) throws IOException {
         // Valid JSON but missing weight_map
-        String indexJson = """
-                {
-                  "metadata": {
-                    "total_size": 1000
-                  }
-                }
-                """;
+        String indexJson =
+                "{\n" + "  \"metadata\": {\n" + "    \"total_size\": 1000\n" + "  }\n" + "}\n";
         Files.writeString(tempDir.resolve("model.safetensors.index.json"), indexJson);
 
         assertThrows(SafetensorsFormatException.class, () -> SafetensorsIndex.load(tempDir));
@@ -182,11 +194,7 @@ public class SafetensorsIndexTest extends SafetensorsTest {
     @Test
     public void testWeightMapNotObject(@TempDir Path tempDir) throws IOException {
         // weight_map is a string instead of object
-        String indexJson = """
-                {
-                  "weight_map": "invalid"
-                }
-                """;
+        String indexJson = "{ \"weight_map\": \"invalid\" }";
         Files.writeString(tempDir.resolve("model.safetensors.index.json"), indexJson);
 
         assertThrows(SafetensorsFormatException.class, () -> SafetensorsIndex.load(tempDir));
@@ -194,14 +202,9 @@ public class SafetensorsIndexTest extends SafetensorsTest {
 
     @Test
     public void testWeightMapInvalidKeys(@TempDir Path tempDir) throws IOException {
-        // weight_map has non-string keys (note: this is tricky in JSON, but we can simulate by having numbers)
-        String indexJson = """
-                {
-                  "weight_map": {
-                    "123": "shard.safetensors"
-                  }
-                }
-                """;
+        // weight_map has non-string keys (note: this is tricky in JSON, but we can simulate by
+        // having numbers)
+        String indexJson = "{\"weight_map\": {\"123\": \"shard.safetensors\"}}";
         // Actually in JSON, all keys are strings, so let's test invalid values instead
         // Let me create a better test for this
         Files.writeString(tempDir.resolve("model.safetensors.index.json"), indexJson);
@@ -209,9 +212,10 @@ public class SafetensorsIndexTest extends SafetensorsTest {
         // This should actually work since JSON keys are always strings
         // We need a shard file to exist
         Path shardFile = tempDir.resolve("shard.safetensors");
-        Safetensors st = Builder.newBuilder()
-                .putTensor(TensorEntry.create("tensor", DType.F32, new long[]{1}, 0))
-                .build();
+        Safetensors st =
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("tensor", DType.F32, new long[] {1}, 0))
+                        .build();
         Safetensors.write(st, shardFile);
 
         // This should succeed
@@ -222,13 +226,8 @@ public class SafetensorsIndexTest extends SafetensorsTest {
     @Test
     public void testWeightMapInvalidValues(@TempDir Path tempDir) throws IOException {
         // weight_map values are not strings
-        String indexJson = """
-                {
-                  "weight_map": {
-                    "layer.weight": 123
-                  }
-                }
-                """;
+        String indexJson =
+                "{\n" + "  \"weight_map\": {\n" + "    \"layer.weight\": 123\n" + "  }\n" + "}\n";
         Files.writeString(tempDir.resolve("model.safetensors.index.json"), indexJson);
 
         assertThrows(SafetensorsFormatException.class, () -> SafetensorsIndex.load(tempDir));
@@ -260,25 +259,26 @@ public class SafetensorsIndexTest extends SafetensorsTest {
     public void testShardedModelWithMetadata(@TempDir Path tempDir) throws IOException {
         // Create shard with metadata
         Path shardFile = tempDir.resolve("model-00001-of-00001.safetensors");
-        Safetensors st = Builder.newBuilder()
-                .putMetadataKey("format", "pt")
-                .putMetadataKey("model_type", "llama")
-                .putTensor(TensorEntry.create("weight", DType.F32, new long[]{100, 100}, 0))
-                .build();
+        Safetensors st =
+                Builder.newBuilder()
+                        .putMetadataKey("format", "pt")
+                        .putMetadataKey("model_type", "llama")
+                        .putTensor(
+                                TensorEntry.create("weight", DType.F32, new long[] {100, 100}, 0))
+                        .build();
         Safetensors.write(st, shardFile);
 
         // Create index.json with additional metadata
-        String indexJson = """
-                {
-                  "metadata": {
-                    "total_size": 40000,
-                    "format": "pt"
-                  },
-                  "weight_map": {
-                    "weight": "model-00001-of-00001.safetensors"
-                  }
-                }
-                """;
+        String indexJson =
+                "{\n"
+                        + "  \"metadata\": {\n"
+                        + "    \"total_size\": 40000,\n"
+                        + "    \"format\": \"pt\"\n"
+                        + "  },\n"
+                        + "  \"weight_map\": {\n"
+                        + "    \"weight\": \"model-00001-of-00001.safetensors\"\n"
+                        + "  }\n"
+                        + "}\n";
         Files.writeString(tempDir.resolve("model.safetensors.index.json"), indexJson);
 
         SafetensorsIndex index = SafetensorsIndex.load(tempDir);

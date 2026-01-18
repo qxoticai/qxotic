@@ -1,7 +1,6 @@
 package ai.qxotic.format.safetensors;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -14,8 +13,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.stream.Collectors;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 public class SafetensorsReadWriteTest extends SafetensorsTest {
 
@@ -26,8 +25,7 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
                         .putMetadataKey("format", "pt")
                         .putMetadataKey("model_type", "llama")
                         .putMetadataKey("version", "1.0")
-                        .build()
-        );
+                        .build());
     }
 
     @Test
@@ -39,13 +37,15 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
 
     @Test
     public void testTensors() {
-        Safetensors st = Builder.newBuilder()
-                .putTensor(TensorEntry.create("foo", DType.F32, new long[]{1, 2}, 0))
-                .putTensor(TensorEntry.create("bar", DType.I8, new long[]{3, 4}, 0))
-                .putTensor(TensorEntry.create("baz", DType.F16, new long[]{5, 6}, 0))
-                .build();
+        Safetensors st =
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("foo", DType.F32, new long[] {1, 2}, 0))
+                        .putTensor(TensorEntry.create("bar", DType.I8, new long[] {3, 4}, 0))
+                        .putTensor(TensorEntry.create("baz", DType.F16, new long[] {5, 6}, 0))
+                        .build();
         assertEquals(3, st.getTensors().size());
-        assertEquals(List.of("foo", "bar", "baz"),
+        assertEquals(
+                List.of("foo", "bar", "baz"),
                 st.getTensors().stream().map(TensorEntry::name).collect(Collectors.toList()));
         TensorEntry foo = st.getTensor("foo");
         assertEquals("foo", foo.name());
@@ -90,13 +90,15 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
         long headerSize = headerBuffer.getLong(0);
         stBytes[8] = (byte) 'X';
 
-        assertThrows(SafetensorsFormatException.class,
+        assertThrows(
+                SafetensorsFormatException.class,
                 () -> Safetensors.read(Channels.newChannel(new ByteArrayInputStream(stBytes))));
     }
 
     @Test
     public void testInvalidJson() {
-        String invalidJson = "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[10],\"data_offsets\":[0,40]";
+        String invalidJson =
+                "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[10],\"data_offsets\":[0,40]";
         byte[] bytes = createSafetensorsBytes(invalidJson);
 
         assertThrows(SafetensorsFormatException.class, () -> readFromBytes(bytes));
@@ -104,11 +106,12 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
 
     @Test
     public void testAlignment() throws IOException {
-        Safetensors st = Builder.newBuilder()
-                .setAlignment(64)
-                .putTensor(TensorEntry.create("tensor1", DType.F32, new long[]{10, 10}, 0))
-                .putTensor(TensorEntry.create("tensor2", DType.F16, new long[]{20, 20}, 0))
-                .build();
+        Safetensors st =
+                Builder.newBuilder()
+                        .setAlignment(64)
+                        .putTensor(TensorEntry.create("tensor1", DType.F32, new long[] {10, 10}, 0))
+                        .putTensor(TensorEntry.create("tensor2", DType.F16, new long[] {20, 20}, 0))
+                        .build();
 
         assertEquals(64, st.getAlignment());
         Safetensors roundTrip = readFromBytes(writeToBytes(st));
@@ -117,9 +120,10 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
 
     @Test
     public void testEmptyTensors() throws IOException {
-        Safetensors st = Builder.newBuilder()
-                .putTensor(TensorEntry.create("empty", DType.F32, new long[]{0, 10}, 0))
-                .build();
+        Safetensors st =
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("empty", DType.F32, new long[] {0, 10}, 0))
+                        .build();
 
         TensorEntry empty = st.getTensor("empty");
         assertEquals(0, empty.totalNumberOfElements());
@@ -128,9 +132,10 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
 
     @Test
     public void testScalarTensor() throws IOException {
-        Safetensors st = Builder.newBuilder()
-                .putTensor(TensorEntry.create("scalar", DType.F32, new long[]{}, 0))
-                .build();
+        Safetensors st =
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("scalar", DType.F32, new long[] {}, 0))
+                        .build();
 
         TensorEntry scalar = st.getTensor("scalar");
         assertEquals(1, scalar.totalNumberOfElements());
@@ -142,27 +147,41 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
         byte[] invalidHeader = new byte[8];
         ByteBuffer.wrap(invalidHeader).order(ByteOrder.LITTLE_ENDIAN).putLong(-1);
 
-        assertThrows(SafetensorsFormatException.class,
-                () -> Safetensors.read(Channels.newChannel(new ByteArrayInputStream(invalidHeader))));
+        assertThrows(
+                SafetensorsFormatException.class,
+                () ->
+                        Safetensors.read(
+                                Channels.newChannel(new ByteArrayInputStream(invalidHeader))));
     }
 
     @Test
     public void testOverlappingTensors() throws IOException {
-        byte[] validBytes = writeToBytes(Builder.newBuilder()
-                .putTensor(TensorEntry.create("t1", DType.F32, new long[]{2}, 0))
-                .putTensor(TensorEntry.create("t2", DType.F32, new long[]{2}, 4))
-                .build(false));
+        byte[] validBytes =
+                writeToBytes(
+                        Builder.newBuilder()
+                                .putTensor(TensorEntry.create("t1", DType.F32, new long[] {2}, 0))
+                                .putTensor(TensorEntry.create("t2", DType.F32, new long[] {2}, 4))
+                                .build(false));
 
-        String validJson = new String(validBytes, 8, (int) ByteBuffer.wrap(validBytes).order(ByteOrder.LITTLE_ENDIAN).getLong(0), StandardCharsets.UTF_8);
-        String invalidJson = validJson.replace("\"data_offsets\":[4,12]", "\"data_offsets\":[2,10]");
+        String validJson =
+                new String(
+                        validBytes,
+                        8,
+                        (int) ByteBuffer.wrap(validBytes).order(ByteOrder.LITTLE_ENDIAN).getLong(0),
+                        StandardCharsets.UTF_8);
+        String invalidJson =
+                validJson.replace("\"data_offsets\":[4,12]", "\"data_offsets\":[2,10]");
 
         byte[] headerBytes = invalidJson.getBytes(StandardCharsets.UTF_8);
         byte[] invalidBytes = new byte[8 + headerBytes.length];
         ByteBuffer.wrap(invalidBytes).order(ByteOrder.LITTLE_ENDIAN).putLong(headerBytes.length);
         System.arraycopy(headerBytes, 0, invalidBytes, 8, headerBytes.length);
 
-        assertThrows(SafetensorsFormatException.class,
-                () -> Safetensors.read(Channels.newChannel(new ByteArrayInputStream(invalidBytes))));
+        assertThrows(
+                SafetensorsFormatException.class,
+                () ->
+                        Safetensors.read(
+                                Channels.newChannel(new ByteArrayInputStream(invalidBytes))));
     }
 
     @Test
@@ -175,7 +194,8 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
 
     @Test
     public void testInvalidShapeType() {
-        String json = "{\"tensor\":{\"dtype\":\"F32\",\"shape\":\"invalid\",\"data_offsets\":[0,40]}}";
+        String json =
+                "{\"tensor\":{\"dtype\":\"F32\",\"shape\":\"invalid\",\"data_offsets\":[0,40]}}";
         byte[] bytes = createSafetensorsBytes(json);
 
         assertThrows(SafetensorsFormatException.class, () -> readFromBytes(bytes));
@@ -183,7 +203,8 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
 
     @Test
     public void testInvalidShapeElementType() {
-        String json = "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[10,\"not_a_number\"],\"data_offsets\":[0,40]}}";
+        String json =
+                "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[10,\"not_a_number\"],\"data_offsets\":[0,40]}}";
         byte[] bytes = createSafetensorsBytes(json);
 
         assertThrows(SafetensorsFormatException.class, () -> readFromBytes(bytes));
@@ -191,7 +212,8 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
 
     @Test
     public void testInvalidDataOffsetsType() {
-        String json = "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[10],\"data_offsets\":\"invalid\"}}";
+        String json =
+                "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[10],\"data_offsets\":\"invalid\"}}";
         byte[] bytes = createSafetensorsBytes(json);
 
         assertThrows(SafetensorsFormatException.class, () -> readFromBytes(bytes));
@@ -207,7 +229,8 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
 
     @Test
     public void testInvalidDataOffsetsElementType() {
-        String json = "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[10],\"data_offsets\":[\"invalid\",40]}}";
+        String json =
+                "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[10],\"data_offsets\":[\"invalid\",40]}}";
         byte[] bytes = createSafetensorsBytes(json);
 
         assertThrows(SafetensorsFormatException.class, () -> readFromBytes(bytes));
