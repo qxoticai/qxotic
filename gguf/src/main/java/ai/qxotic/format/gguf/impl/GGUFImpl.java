@@ -2,7 +2,7 @@ package ai.qxotic.format.gguf.impl;
 
 import ai.qxotic.format.gguf.GGUF;
 import ai.qxotic.format.gguf.MetadataValueType;
-import ai.qxotic.format.gguf.TensorInfo;
+import ai.qxotic.format.gguf.TensorEntry;
 import java.util.*;
 
 final class GGUFImpl implements GGUF {
@@ -10,14 +10,14 @@ final class GGUFImpl implements GGUF {
     private final long tensorDataOffset;
     private final Map<String, Object> metadata;
     private final Map<String, MetadataValueType> metadataTypes;
-    private final Map<String, TensorInfo> tensorInfos;
+    private final Map<String, TensorEntry> tensorInfos;
 
     GGUFImpl(
             int version,
             long tensorDataOffset,
             Map<String, Object> metadata,
             Map<String, MetadataValueType> metadataTypes,
-            Map<String, TensorInfo> tensorInfos) {
+            Map<String, TensorEntry> tensorInfos) {
         this.version = version;
         this.tensorDataOffset = tensorDataOffset;
         this.metadata = Collections.unmodifiableMap(new LinkedHashMap<>(metadata));
@@ -82,12 +82,12 @@ final class GGUFImpl implements GGUF {
     }
 
     @Override
-    public TensorInfo getTensor(String tensorName) {
+    public TensorEntry getTensor(String tensorName) {
         return this.tensorInfos.get(tensorName);
     }
 
     @Override
-    public Collection<TensorInfo> getTensors() {
+    public Collection<TensorEntry> getTensors() {
         return this.tensorInfos.values();
     }
 

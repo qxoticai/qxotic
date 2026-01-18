@@ -1,7 +1,6 @@
 package ai.qxotic.format.gguf;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -13,8 +12,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.stream.Collectors;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 public class ReadWriteTest extends GGUFTest {
 
@@ -34,28 +33,26 @@ public class ReadWriteTest extends GGUFTest {
                         .putUnsignedLong("uint64", -1L)
                         .putFloat("float32", (float) Math.PI)
                         .putDouble("float64", Math.E)
-                        .build()
-        );
+                        .build());
     }
 
     @Test
     public void testArrays() throws IOException {
         GGUFTest.testSerialization(
                 Builder.newBuilder()
-                        .putArrayOfString("string", new String[]{"bar", "baz"})
-                        .putArrayOfBoolean("bool", new boolean[]{true, false})
-                        .putArrayOfByte("int8", new byte[]{123, 42})
-                        .putArrayOfUnsignedByte("uint8", new byte[]{123, -1})
-                        .putArrayOfShort("int16", new short[]{12345, -1})
-                        .putArrayOfUnsignedShort("uint16", new short[]{12345, -1})
-                        .putArrayOfInteger("int32", new int[]{12345678})
-                        .putArrayOfUnsignedInteger("uint32", new int[]{12345678, -1})
-                        .putArrayOfLong("int64", new long[]{1234567890123456L})
-                        .putArrayOfUnsignedLong("uint64", new long[]{1234567890123456L, -1})
-                        .putArrayOfFloat("float32", new float[]{(float) Math.PI})
-                        .putArrayOfDouble("float64", new double[]{Math.E})
-                        .build()
-        );
+                        .putArrayOfString("string", new String[] {"bar", "baz"})
+                        .putArrayOfBoolean("bool", new boolean[] {true, false})
+                        .putArrayOfByte("int8", new byte[] {123, 42})
+                        .putArrayOfUnsignedByte("uint8", new byte[] {123, -1})
+                        .putArrayOfShort("int16", new short[] {12345, -1})
+                        .putArrayOfUnsignedShort("uint16", new short[] {12345, -1})
+                        .putArrayOfInteger("int32", new int[] {12345678})
+                        .putArrayOfUnsignedInteger("uint32", new int[] {12345678, -1})
+                        .putArrayOfLong("int64", new long[] {1234567890123456L})
+                        .putArrayOfUnsignedLong("uint64", new long[] {1234567890123456L, -1})
+                        .putArrayOfFloat("float32", new float[] {(float) Math.PI})
+                        .putArrayOfDouble("float64", new double[] {Math.E})
+                        .build());
     }
 
     @Test
@@ -67,16 +64,18 @@ public class ReadWriteTest extends GGUFTest {
 
     @Test
     public void testTensors() {
-        GGUF gguf = Builder.newBuilder()
-                .putTensor(TensorInfo.create("foo", new long[]{1, 2}, GGMLType.F32, -1))
-                .putTensor(TensorInfo.create("bar", new long[]{3, 4}, GGMLType.I8, -1))
-                .putTensor(TensorInfo.create("baz", new long[]{5, 6}, GGMLType.F16, -1))
-                .build();
+        GGUF gguf =
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("foo", new long[] {1, 2}, GGMLType.F32, -1))
+                        .putTensor(TensorEntry.create("bar", new long[] {3, 4}, GGMLType.I8, -1))
+                        .putTensor(TensorEntry.create("baz", new long[] {5, 6}, GGMLType.F16, -1))
+                        .build();
         assertEquals(3, gguf.getTensors().size());
         // Order must be preserved.
-        assertEquals(List.of("foo", "bar", "baz"),
-                gguf.getTensors().stream().map(TensorInfo::name).collect(Collectors.toList()));
-        TensorInfo foo = gguf.getTensor("foo");
+        assertEquals(
+                List.of("foo", "bar", "baz"),
+                gguf.getTensors().stream().map(TensorEntry::name).collect(Collectors.toList()));
+        TensorEntry foo = gguf.getTensor("foo");
         assertEquals("foo", foo.name());
         assertEquals(GGMLType.F32, foo.ggmlType());
     }
@@ -119,7 +118,8 @@ public class ReadWriteTest extends GGUFTest {
         // Write invalid MAGIC header.
         ByteBuffer.wrap(ggufBytes).order(ByteOrder.nativeOrder()).putInt(0, 0xBADBEEF);
 
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(
+                GGUFFormatException.class,
                 () -> GGUF.read(Channels.newChannel(new ByteArrayInputStream(ggufBytes))));
     }
 
@@ -129,7 +129,89 @@ public class ReadWriteTest extends GGUFTest {
         // Write invalid version.
         ByteBuffer.wrap(ggufBytes).order(ByteOrder.nativeOrder()).putInt(0, 0xBADBEEF);
 
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(
+                GGUFFormatException.class,
                 () -> GGUF.read(Channels.newChannel(new ByteArrayInputStream(ggufBytes))));
+    }
+
+    @Test
+    public void testUnsupportedVersion() throws IOException {
+        byte[] ggufBytes = writeToBytes(Builder.newBuilder().putString("foo", "bar").build());
+        // Write unsupported version (version 99).
+        ByteBuffer.wrap(ggufBytes).order(ByteOrder.nativeOrder()).putInt(4, 99);
+
+        assertThrows(
+                GGUFFormatException.class,
+                () -> GGUF.read(Channels.newChannel(new ByteArrayInputStream(ggufBytes))));
+    }
+
+    @Test
+    public void testInvalidMetadataValueType() throws IOException {
+        byte[] ggufBytes = writeToBytes(Builder.newBuilder().putString("foo", "bar").build());
+
+        // Find the position of the metadata value type (after magic, version, tensor_count,
+        // metadata_kv_count, and key string)
+        // GGUF format: 4 bytes magic + 4 bytes version + 8 bytes tensor_count + 8 bytes
+        // metadata_kv_count
+        // Then: 8 bytes key length + key bytes + 4 bytes value type
+        ByteBuffer buffer = ByteBuffer.wrap(ggufBytes).order(ByteOrder.nativeOrder());
+
+        // Skip: magic(4) + version(4) + tensor_count(8) + metadata_kv_count(8) = 24 bytes
+        int pos = 24;
+        // Read key length
+        long keyLength = buffer.getLong(pos);
+        pos += 8 + (int) keyLength; // Skip key length and key bytes
+
+        // Write invalid metadata value type (999)
+        buffer.putInt(pos, 999);
+
+        assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
+    }
+
+    @Test
+    public void testInvalidArrayComponentType() throws IOException {
+        byte[] ggufBytes =
+                writeToBytes(
+                        Builder.newBuilder()
+                                .putArrayOfFloat("arr", new float[] {1.0f, 2.0f})
+                                .build());
+
+        // Find the position of the array component type
+        ByteBuffer buffer = ByteBuffer.wrap(ggufBytes).order(ByteOrder.nativeOrder());
+
+        // Skip: magic(4) + version(4) + tensor_count(8) + metadata_kv_count(8) = 24 bytes
+        int pos = 24;
+        // Read key length
+        long keyLength = buffer.getLong(pos);
+        pos += 8 + (int) keyLength; // Skip key length and key bytes
+        pos += 4; // Skip the ARRAY value type
+
+        // Write invalid array component type (888)
+        buffer.putInt(pos, 888);
+
+        assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
+    }
+
+    @Test
+    public void testNestedArrays() throws IOException {
+        byte[] ggufBytes =
+                writeToBytes(
+                        Builder.newBuilder().putArrayOfInteger("arr", new int[] {1, 2, 3}).build());
+
+        // Find the position of the array component type and change it to ARRAY (nested arrays not
+        // supported)
+        ByteBuffer buffer = ByteBuffer.wrap(ggufBytes).order(ByteOrder.nativeOrder());
+
+        // Skip: magic(4) + version(4) + tensor_count(8) + metadata_kv_count(8) = 24 bytes
+        int pos = 24;
+        // Read key length
+        long keyLength = buffer.getLong(pos);
+        pos += 8 + (int) keyLength; // Skip key length and key bytes
+        pos += 4; // Skip the ARRAY value type
+
+        // Write ARRAY as component type (value 9 - ARRAY is the 10th enum value, so index 9)
+        buffer.putInt(pos, 9);
+
+        assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
     }
 }

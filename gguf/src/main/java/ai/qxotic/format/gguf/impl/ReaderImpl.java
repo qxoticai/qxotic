@@ -2,8 +2,9 @@ package ai.qxotic.format.gguf.impl;
 
 import ai.qxotic.format.gguf.GGMLType;
 import ai.qxotic.format.gguf.GGUF;
+import ai.qxotic.format.gguf.GGUFFormatException;
 import ai.qxotic.format.gguf.MetadataValueType;
-import ai.qxotic.format.gguf.TensorInfo;
+import ai.qxotic.format.gguf.TensorEntry;
 import java.io.EOFException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -33,9 +34,9 @@ final class ReaderImpl {
         int tensorCount = readHeader(byteChannel); // gguf_header_t header;
         // Tensor infos, which can be used to locate the tensor data.
         // gguf_tensor_info_t tensor_infos[header.tensor_count];
-        Map<String, TensorInfo> tensorInfos = new LinkedHashMap<>(tensorCount);
+        Map<String, TensorEntry> tensorInfos = new LinkedHashMap<>(tensorCount);
         for (int i = 0; i < tensorCount; ++i) {
-            TensorInfo ti = readTensorInfo(byteChannel);
+            TensorEntry ti = readTensorInfo(byteChannel);
             assert !tensorInfos.containsKey(ti.name());
             tensorInfos.put(ti.name(), ti);
         }
@@ -66,7 +67,7 @@ final class ReaderImpl {
         return GGMLType.fromId(ggmlTypeId);
     }
 
-    private TensorInfo readTensorInfo(ReadableByteChannel byteChannel) throws IOException {
+    private TensorEntry readTensorInfo(ReadableByteChannel byteChannel) throws IOException {
         // The name of the tensor. It is a standard GGUF string, with the caveat that
         // it must be at most 64 bytes long.
         String name = readString(byteChannel); // gguf_string_t name;
@@ -90,7 +91,7 @@ final class ReaderImpl {
         // Must be a multiple of `ALIGNMENT`.
         long offset = readLong(byteChannel); // uint64_t offset;
         assert offset % getAlignment() == 0;
-        return TensorInfo.create(name, dimensions, ggmlType, offset);
+        return TensorEntry.create(name, dimensions, ggmlType, offset);
     }
 
     private String readString(ReadableByteChannel byteChannel) throws IOException {
@@ -111,7 +112,7 @@ final class ReaderImpl {
         // Consider being *very* explicit about the byte order here.
         int magic = readInt(byteChannel); //    uint32_t magic;
         if (magic != GGUF_MAGIC) {
-            throw new IllegalArgumentException(
+            throw new GGUFFormatException(
                     "Invalid header.magic: " + magic + " expected: " + GGUF_MAGIC);
         }
         // The version of the format implemented.
@@ -122,7 +123,7 @@ final class ReaderImpl {
         // to signify the change.
         this.version = readInt(byteChannel); // uint32_t version;
         if (!SUPPORTED_GGUF_VERSIONS.contains(version)) {
-            throw new IllegalArgumentException(
+            throw new GGUFFormatException(
                     "Unsupported header.version:"
                             + version
                             + " expected: "
@@ -237,10 +238,9 @@ final class ReaderImpl {
                 }
                 return strings;
             case ARRAY:
-                throw new UnsupportedOperationException("Cannot read array of arrays");
+                throw new GGUFFormatException("Cannot read array of arrays");
             default:
-                throw new UnsupportedOperationException(
-                        "Found array of unknown type " + componentType);
+                throw new GGUFFormatException("Found array of unknown type " + componentType);
         }
     }
 
@@ -271,7 +271,7 @@ final class ReaderImpl {
             case ARRAY:
                 return readArray(byteChannel, key);
             default:
-                throw new IllegalArgumentException();
+                throw new GGUFFormatException("Unknown metadata value type: " + valueType);
         }
     }
 
@@ -323,7 +323,11 @@ final class ReaderImpl {
     private MetadataValueType readMetadataValueType(ReadableByteChannel byteChannel)
             throws IOException {
         int index = readInt(byteChannel);
-        return MetadataValueType.fromIndex(index);
+        try {
+            return MetadataValueType.fromIndex(index);
+        } catch (ArrayIndexOutOfBoundsException e) {
+            throw new GGUFFormatException("Invalid metadata value type index: " + index, e);
+        }
     }
 
     private int getAlignment() {

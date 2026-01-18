@@ -1,14 +1,12 @@
 package ai.qxotic.format.gguf;
 
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.*;
 import java.util.stream.Collectors;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
 
 public class BuilderTest extends GGUFTest {
-
 
     @Test
     public void testEmpty() {
@@ -92,8 +90,13 @@ public class BuilderTest extends GGUFTest {
     public void testTensorOrder() {
         List<String> keys = Arrays.asList("foo", "bar", "baz");
         Builder builder = Builder.newBuilder();
-        keys.forEach(key -> builder.putTensor(TensorInfo.create(key, new long[]{123}, GGMLType.F32, 0)));
-        assertEquals(keys, builder.getTensors().stream().map(TensorInfo::name).collect(Collectors.toList()));
+        keys.forEach(
+                key ->
+                        builder.putTensor(
+                                TensorEntry.create(key, new long[] {123}, GGMLType.F32, 0)));
+        assertEquals(
+                keys,
+                builder.getTensors().stream().map(TensorEntry::name).collect(Collectors.toList()));
     }
 
     @Test
@@ -117,13 +120,16 @@ public class BuilderTest extends GGUFTest {
     public void testReverseTensorOrder() {
         List<String> keys = Arrays.asList("foo", "bar", "baz");
         Builder builder = Builder.newBuilder();
-        keys.forEach(key -> builder.putTensor(TensorInfo.create(key, new long[]{123}, GGMLType.F32, 0)));
+        keys.forEach(
+                key ->
+                        builder.putTensor(
+                                TensorEntry.create(key, new long[] {123}, GGMLType.F32, 0)));
 
-        List<TensorInfo> reversedTensors = new ArrayList<>(builder.getTensors());
+        List<TensorEntry> reversedTensors = new ArrayList<>(builder.getTensors());
         Collections.reverse(reversedTensors);
 
         // Remove and insert the tensors in reverse order.
-        for (TensorInfo tensor : reversedTensors) {
+        for (TensorEntry tensor : reversedTensors) {
             builder.removeTensor(tensor.name()).putTensor(tensor);
         }
         assertEquals(reversedTensors, List.copyOf(builder.getTensors()));
@@ -340,8 +346,9 @@ public class BuilderTest extends GGUFTest {
 
     @Test
     public void testPutRemoveTensors() {
-        Builder builder = Builder.newBuilder()
-                .putTensor(TensorInfo.create("foo", new long[]{1, 2}, GGMLType.F32, -1));
+        Builder builder =
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("foo", new long[] {1, 2}, GGMLType.F32, -1));
 
         assertFalse(builder.containsTensor("absent"));
 
@@ -365,26 +372,29 @@ public class BuilderTest extends GGUFTest {
 
     @Test
     public void testBuilderTypes() {
-        Builder builder = putValues(Builder.newBuilder().putArrayOfString("array", new String[]{"foo"}));
+        Builder builder =
+                putValues(Builder.newBuilder().putArrayOfString("array", new String[] {"foo"}));
 
         for (MetadataValueType valueType : MetadataValueType.values()) {
             assertEquals(valueType, builder.getType(valueType.name().toLowerCase()));
         }
 
-        Set<String> expectedKeys = Arrays.stream(MetadataValueType.values())
-                .map(MetadataValueType::name)
-                .map(String::toLowerCase)
-                .collect(Collectors.toSet());
+        Set<String> expectedKeys =
+                Arrays.stream(MetadataValueType.values())
+                        .map(MetadataValueType::name)
+                        .map(String::toLowerCase)
+                        .collect(Collectors.toSet());
 
         assertEquals(expectedKeys, builder.getMetadataKeys());
     }
 
     @Test
     public void testBuilderClone() {
-        Builder original = Builder.newBuilder()
-                .putString("foo", "bar")
-                .putTensor(TensorInfo.create("tensor", new long[]{1}, GGMLType.F32, 0))
-                .setVersion(2);
+        Builder original =
+                Builder.newBuilder()
+                        .putString("foo", "bar")
+                        .putTensor(TensorEntry.create("tensor", new long[] {1}, GGMLType.F32, 0))
+                        .setVersion(2);
 
         // Changes in the copy do not affect the original.
         mutateAndCheck(original.clone(), original);
@@ -396,8 +406,12 @@ public class BuilderTest extends GGUFTest {
     private static void mutateAndCheck(Builder toMutate, Builder toCheck) {
         // Modify builder.
         toMutate.putInteger("foo", 123);
-        toMutate.putTensor(TensorInfo.create("tensor", new long[]{1, 2, 3}, GGMLType.F16, 0)); // modify mutate
-        toMutate.putTensor(TensorInfo.create("new_tensor", new long[]{3, 2, 1}, GGMLType.Q8_0, 0)); // modify mutate
+        toMutate.putTensor(
+                TensorEntry.create(
+                        "tensor", new long[] {1, 2, 3}, GGMLType.F16, 0)); // modify mutate
+        toMutate.putTensor(
+                TensorEntry.create(
+                        "new_tensor", new long[] {3, 2, 1}, GGMLType.Q8_0, 0)); // modify mutate
         toMutate.setVersion(3);
 
         // Modifications to the mutated Builder do not affect copies.
@@ -407,5 +421,4 @@ public class BuilderTest extends GGUFTest {
         assertEquals(GGMLType.F32, toCheck.getTensor("tensor").ggmlType());
         assertEquals(2, toCheck.getVersion());
     }
-
 }
