@@ -8,20 +8,20 @@ import java.util.Map;
 
 final class SafetensorsImpl implements Safetensors {
 
-    private final long dataOffset;
+    private final long tensorDataOffset;
     private final Map<String, String> metadata;
     private final Map<String, TensorEntry> tensors;
 
     SafetensorsImpl(
             long tensorDataOffset, Map<String, String> metadata, Map<String, TensorEntry> tensors) {
-        this.dataOffset = tensorDataOffset;
+        this.tensorDataOffset = tensorDataOffset;
         this.metadata = Collections.unmodifiableMap(metadata);
         this.tensors = Collections.unmodifiableMap(tensors);
     }
 
     @Override
     public long getTensorDataOffset() {
-        return dataOffset;
+        return tensorDataOffset;
     }
 
     @Override
