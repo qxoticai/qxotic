@@ -1,14 +1,13 @@
 package ai.qxotic.jota.memory;
 
-import ai.llm4j.jota.FloatBinaryOperator;
-import ai.llm4j.jota.FloatUnaryOperator;
-import ai.qxotic.jota.Shape;
-
-import java.util.Objects;
-
 import static ai.llm4j.jota.FloatBinaryOperator.*;
 import static ai.llm4j.jota.FloatUnaryOperator.exp;
 import static ai.llm4j.jota.FloatUnaryOperator.square;
+
+import ai.llm4j.jota.FloatBinaryOperator;
+import ai.llm4j.jota.FloatUnaryOperator;
+import ai.qxotic.jota.Shape;
+import java.util.Objects;
 
 public interface FloatOperations<B> {
 
@@ -21,12 +20,22 @@ public interface FloatOperations<B> {
         return unaryOperator.applyAsFloat(in);
     }
 
-    void elementWise2(MemoryView<B> left, FloatBinaryOperator binaryOperator, MemoryView<B> right, MemoryView<B> out);
+    void elementWise2(
+            MemoryView<B> left,
+            FloatBinaryOperator binaryOperator,
+            MemoryView<B> right,
+            MemoryView<B> out);
 
     // Scalar version.
-    void elementWise2(MemoryView<B> left, FloatBinaryOperator binaryOperator, float right, MemoryView<B> out);
+    void elementWise2(
+            MemoryView<B> left, FloatBinaryOperator binaryOperator, float right, MemoryView<B> out);
 
-    void fold(MemoryView<B> in, FloatBinaryOperator binaryOperator, float initialValue, MemoryView<B> out, int _axis);
+    void fold(
+            MemoryView<B> in,
+            FloatBinaryOperator binaryOperator,
+            float initialValue,
+            MemoryView<B> out,
+            int _axis);
 
     void reduce(MemoryView<B> in, FloatBinaryOperator binaryOperator, MemoryView<B> out, int _axis);
 
@@ -55,18 +64,20 @@ public interface FloatOperations<B> {
     }
 
     // Multiply (R, C) @ (C, 1) = (R)
-    // default void matrixVectorMultiply(MemoryView<B> matrix, MemoryView<B> vector, MemoryView<B> out);
+    // default void matrixVectorMultiply(MemoryView<B> matrix, MemoryView<B> vector, MemoryView<B>
+    // out);
 
     // Multiply (R, K) @ (K, C) = (R, C)
     void matrixMultiply(MemoryView<B> left, MemoryView<B> right, MemoryView<B> out);
 
-//
-//    void gemmRowMajor(long R, long C, long K,
-//                      FloatSpan a, long aOffset, long aRowStride, // [R, K]
-//                      FloatSpan b, long bOffset, long bRowStride, // [K, C]^T
-//                      FloatSpan out, long outOffset, long outRowStride); // [R, C]
+    //
+    //    void gemmRowMajor(long R, long C, long K,
+    //                      FloatSpan a, long aOffset, long aRowStride, // [R, K]
+    //                      FloatSpan b, long bOffset, long bRowStride, // [K, C]^T
+    //                      FloatSpan out, long outOffset, long outRowStride); // [R, C]
 
-    //void rotate(boolean neoxStyle, V span, V freqReal, V freqImag, int position, int numberOfHeads, int headSize, V out);
+    // void rotate(boolean neoxStyle, V span, V freqReal, V freqImag, int position, int
+    // numberOfHeads, int headSize, V out);
 
     default void assign(float scalar, MemoryView<B> out) {
         elementWise(scalar, FloatUnaryOperator.identity(), out);
@@ -125,14 +136,14 @@ public interface FloatOperations<B> {
         elementWise2(out, FloatBinaryOperator.divide(), sum, out);
     }
 
-
-    default void rootMeanSquareNorm(MemoryView<B> in, MemoryView<B> weight, float rmsNormEps, MemoryView<B> out) {
+    default void rootMeanSquareNorm(
+            MemoryView<B> in, MemoryView<B> weight, float rmsNormEps, MemoryView<B> out) {
         // calculate sum of squares
         float ss = foldAll(in, 0f, sum().accumulate(square()));
         ss /= in.shape().size();
         ss += rmsNormEps;
         ss = (float) (1.0 / Math.sqrt(ss));
         elementWise2(in, product(), weight, out); // out = in * weight
-        elementWise2(out, product(), ss, out);      // out = out * ss
+        elementWise2(out, product(), ss, out); // out = out * ss
     }
 }

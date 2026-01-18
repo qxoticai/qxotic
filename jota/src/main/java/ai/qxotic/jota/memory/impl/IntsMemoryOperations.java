@@ -3,7 +3,6 @@ package ai.qxotic.jota.memory.impl;
 import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAccessChecks;
 import ai.qxotic.jota.memory.MemoryOperations;
-
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
 
@@ -15,11 +14,15 @@ final class IntsMemoryOperations implements MemoryOperations<int[]> {
         return INSTANCE;
     }
 
-    private IntsMemoryOperations() {
-    }
+    private IntsMemoryOperations() {}
 
     @Override
-    public void copy(Memory<int[]> src, long srcByteOffset, Memory<int[]> dst, long dstByteOffset, long byteSize) {
+    public void copy(
+            Memory<int[]> src,
+            long srcByteOffset,
+            Memory<int[]> dst,
+            long dstByteOffset,
+            long byteSize) {
         MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
         MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
         MemoryAccessChecks.checkAlignedValue(srcByteOffset, Integer.BYTES);
@@ -29,14 +32,20 @@ final class IntsMemoryOperations implements MemoryOperations<int[]> {
             return;
         }
         System.arraycopy(
-                src.base(), Math.toIntExact(srcByteOffset / Integer.BYTES),
-                dst.base(), Math.toIntExact(dstByteOffset / Integer.BYTES),
-                Math.toIntExact(byteSize / Integer.BYTES)
-        );
+                src.base(),
+                Math.toIntExact(srcByteOffset / Integer.BYTES),
+                dst.base(),
+                Math.toIntExact(dstByteOffset / Integer.BYTES),
+                Math.toIntExact(byteSize / Integer.BYTES));
     }
 
     @Override
-    public void copyFromNative(Memory<MemorySegment> src, long srcByteOffset, Memory<int[]> dst, long dstByteOffset, long byteSize) {
+    public void copyFromNative(
+            Memory<MemorySegment> src,
+            long srcByteOffset,
+            Memory<int[]> dst,
+            long dstByteOffset,
+            long byteSize) {
         MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
         MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
         MemoryAccessChecks.checkAlignedValue(dstByteOffset, Integer.BYTES);
@@ -45,14 +54,20 @@ final class IntsMemoryOperations implements MemoryOperations<int[]> {
             return;
         }
         MemorySegment.copy(
-                src.base(), srcByteOffset,
-                MemorySegment.ofArray(dst.base()), dstByteOffset,
-                byteSize
-        );
+                src.base(),
+                srcByteOffset,
+                MemorySegment.ofArray(dst.base()),
+                dstByteOffset,
+                byteSize);
     }
 
     @Override
-    public void copyToNative(Memory<int[]> src, long srcByteOffset, Memory<MemorySegment> dst, long dstByteOffset, long byteSize) {
+    public void copyToNative(
+            Memory<int[]> src,
+            long srcByteOffset,
+            Memory<MemorySegment> dst,
+            long dstByteOffset,
+            long byteSize) {
         MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
         MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
         MemoryAccessChecks.checkAlignedValue(srcByteOffset, Integer.BYTES);
@@ -61,10 +76,11 @@ final class IntsMemoryOperations implements MemoryOperations<int[]> {
             return;
         }
         MemorySegment.copy(
-                MemorySegment.ofArray(src.base()), srcByteOffset,
-                dst.base(), dstByteOffset,
-                byteSize
-        );
+                MemorySegment.ofArray(src.base()),
+                srcByteOffset,
+                dst.base(),
+                dstByteOffset,
+                byteSize);
     }
 
     @Override
@@ -78,10 +94,10 @@ final class IntsMemoryOperations implements MemoryOperations<int[]> {
         }
         int bits = 0x01010101 * Byte.toUnsignedInt(byteValue);
         Arrays.fill(
-                memory.base(), Math.toIntExact(byteOffset / Integer.BYTES),
+                memory.base(),
+                Math.toIntExact(byteOffset / Integer.BYTES),
                 Math.toIntExact((byteOffset + byteSize) / Integer.BYTES),
-                bits
-        );
+                bits);
     }
 
     @Override
@@ -95,10 +111,10 @@ final class IntsMemoryOperations implements MemoryOperations<int[]> {
         }
         int bits = 0x00010001 * Short.toUnsignedInt(shortValue);
         Arrays.fill(
-                memory.base(), Math.toIntExact(byteOffset / Integer.BYTES),
+                memory.base(),
+                Math.toIntExact(byteOffset / Integer.BYTES),
                 Math.toIntExact((byteOffset + byteSize) / Integer.BYTES),
-                bits
-        );
+                bits);
     }
 
     @Override
@@ -111,10 +127,10 @@ final class IntsMemoryOperations implements MemoryOperations<int[]> {
             return;
         }
         Arrays.fill(
-                memory.base(), Math.toIntExact(byteOffset / Integer.BYTES),
+                memory.base(),
+                Math.toIntExact(byteOffset / Integer.BYTES),
                 Math.toIntExact((byteOffset + byteSize) / Integer.BYTES),
-                intValue
-        );
+                intValue);
     }
 
     @Override

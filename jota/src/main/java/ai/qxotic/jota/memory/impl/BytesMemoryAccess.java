@@ -15,15 +15,13 @@ final class BytesMemoryAccess implements MemoryAccess<byte[]> {
         return INSTANCE;
     }
 
-    private BytesMemoryAccess() {
-    }
+    private BytesMemoryAccess() {}
 
     @Override
     public byte readByte(Memory<byte[]> memory, long byteOffset) {
         MemoryAccessChecks.checkBounds(memory, byteOffset, Byte.BYTES);
         return UNSAFE.getByte(memory.base(), Unsafe.ARRAY_BYTE_BASE_OFFSET + byteOffset);
     }
-
 
     @Override
     public short readShort(Memory<byte[]> memory, long byteOffset) {

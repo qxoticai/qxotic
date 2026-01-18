@@ -4,11 +4,11 @@ import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAllocator;
 import ai.qxotic.jota.memory.MemoryArena;
-
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 
-final class ManagedPanamaAllocator implements MemoryAllocator<MemorySegment>, MemoryArena<MemorySegment> {
+final class ManagedPanamaAllocator
+        implements MemoryAllocator<MemorySegment>, MemoryArena<MemorySegment> {
 
     private Arena arena = Arena.ofAuto();
 

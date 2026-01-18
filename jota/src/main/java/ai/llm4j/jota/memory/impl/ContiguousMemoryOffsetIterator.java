@@ -1,7 +1,7 @@
 package ai.llm4j.jota.memory.impl;
 
-import ai.qxotic.jota.memory.MemoryView;
 import ai.llm4j.jota.memory.OffsetIterator;
+import ai.qxotic.jota.memory.MemoryView;
 
 public final class ContiguousMemoryOffsetIterator implements OffsetIterator {
 

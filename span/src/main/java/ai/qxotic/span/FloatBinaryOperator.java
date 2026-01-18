@@ -10,5 +10,4 @@ public interface FloatBinaryOperator {
     FloatBinaryOperator MAX = Math::max;
 
     float apply(float first, float second);
-
 }

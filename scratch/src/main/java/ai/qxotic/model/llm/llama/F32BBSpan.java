@@ -18,7 +18,12 @@ public final class F32BBSpan extends ByteBufferSpan {
         Util.checkBounds(0 <= sliceIndex && sliceIndex <= size(), "invalid offset");
         Util.checkBounds(sliceLength <= size(), "invalid size");
         Util.checkBounds(sliceIndex <= size() - sliceLength, "slice ouf of bounds");
-        return new F32BBSpan(this.byteBuffer.slice(Math.toIntExact(sliceIndex * Float.BYTES), Math.toIntExact(sliceLength * Float.BYTES)).order(ByteOrder.nativeOrder()));
+        return new F32BBSpan(
+                this.byteBuffer
+                        .slice(
+                                Math.toIntExact(sliceIndex * Float.BYTES),
+                                Math.toIntExact(sliceLength * Float.BYTES))
+                        .order(ByteOrder.nativeOrder()));
     }
 
     @Override

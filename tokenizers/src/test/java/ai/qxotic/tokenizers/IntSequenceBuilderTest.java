@@ -1,10 +1,10 @@
 package ai.qxotic.tokenizers;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 public class IntSequenceBuilderTest {
     private IntSequence.Builder builder;
@@ -23,7 +23,7 @@ public class IntSequenceBuilderTest {
 
     @Test
     public void testNewBuilderWithCapacity() {
-        for (int capacity : new int[]{0, 1, 10, 100, 1000}) {
+        for (int capacity : new int[] {0, 1, 10, 100, 1000}) {
             IntSequence.Builder builder = IntSequence.newBuilder(capacity);
             assertNotNull(builder);
             assertEquals(0, builder.length());
@@ -51,11 +51,11 @@ public class IntSequenceBuilderTest {
         assertFalse(builder.isEmpty());
         assertEquals(1, builder.getFirst());
         assertEquals(3, builder.getLast());
-        assertArrayEquals(new int[]{1, 2, 3}, builder.toArray());
+        assertArrayEquals(new int[] {1, 2, 3}, builder.toArray());
 
         // Test subSequence
         IntSequence subSeq = builder.subSequence(1, 3);
-        assertArrayEquals(new int[]{2, 3}, subSeq.toArray());
+        assertArrayEquals(new int[] {2, 3}, subSeq.toArray());
     }
 
     @Test
@@ -77,14 +77,14 @@ public class IntSequenceBuilderTest {
         IntSequence seq1 = IntSequence.of(1, 2, 3);
         builder.addAll(seq1);
         assertEquals(3, builder.length());
-        assertArrayEquals(new int[]{1, 2, 3}, builder.toArray());
+        assertArrayEquals(new int[] {1, 2, 3}, builder.toArray());
 
         // Test adding from another builder
         IntSequence.Builder builder2 = IntSequence.newBuilder();
         builder2.add(4).add(5);
         builder.addAll(builder2);
         assertEquals(5, builder.length());
-        assertArrayEquals(new int[]{1, 2, 3, 4, 5}, builder.toArray());
+        assertArrayEquals(new int[] {1, 2, 3, 4, 5}, builder.toArray());
     }
 
     @Test
@@ -103,7 +103,7 @@ public class IntSequenceBuilderTest {
 
         // Verify the built sequence
         assertEquals(3, sequence.length());
-        assertArrayEquals(new int[]{1, 2, 3}, sequence.toArray());
+        assertArrayEquals(new int[] {1, 2, 3}, sequence.toArray());
 
         // Verify builder can still be used after build
         builder.add(4);
@@ -112,7 +112,7 @@ public class IntSequenceBuilderTest {
 
         // Verify the previously built sequence remains unchanged
         assertEquals(3, sequence.length());
-        assertArrayEquals(new int[]{1, 2, 3}, sequence.toArray());
+        assertArrayEquals(new int[] {1, 2, 3}, sequence.toArray());
     }
 
     @Test
@@ -126,10 +126,10 @@ public class IntSequenceBuilderTest {
         IntSequence seq2 = builder.build();
 
         // Verify first sequence
-        assertArrayEquals(new int[]{1, 2}, seq1.toArray());
+        assertArrayEquals(new int[] {1, 2}, seq1.toArray());
 
         // Verify second sequence includes all elements
-        assertArrayEquals(new int[]{1, 2, 3, 4}, seq2.toArray());
+        assertArrayEquals(new int[] {1, 2, 3, 4}, seq2.toArray());
     }
 
     @Test
@@ -141,8 +141,8 @@ public class IntSequenceBuilderTest {
         IntSequence doubled = builder.build();
 
         // Original builder content should be [1, 2, 1, 2]
-        assertArrayEquals(new int[]{1, 2}, original.toArray());
-        assertArrayEquals(new int[]{1, 2, 1, 2}, doubled.toArray());
+        assertArrayEquals(new int[] {1, 2}, original.toArray());
+        assertArrayEquals(new int[] {1, 2, 1, 2}, doubled.toArray());
     }
 
     @Test

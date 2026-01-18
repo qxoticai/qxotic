@@ -3,7 +3,6 @@ package ai.qxotic.tokenizers.impl;
 import ai.qxotic.tokenizers.StandardTokenType;
 import ai.qxotic.tokenizers.TokenType;
 import ai.qxotic.tokenizers.Vocabulary;
-
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -14,7 +13,8 @@ public class VocabularyImpl implements Vocabulary {
     protected final Map<String, Integer> tokenToId;
     protected final int[] tokenTypes;
 
-    private VocabularyImpl(String[] tokens, float[] scores, Map<String, Integer> tokenToId, int[] tokenTypes) {
+    private VocabularyImpl(
+            String[] tokens, float[] scores, Map<String, Integer> tokenToId, int[] tokenTypes) {
         this.tokens = tokens;
         this.scores = scores;
         this.tokenToId = Collections.unmodifiableMap(tokenToId);

@@ -1,7 +1,6 @@
 package ai.qxotic.jota.memory;
 
 import ai.qxotic.jota.DataType;
-
 import java.util.Locale;
 import java.util.Objects;
 
@@ -18,11 +17,12 @@ public final class ViewPrintOptions {
     private final boolean includeMetadata;
     private final ValueFormatter formatter;
 
-    public ViewPrintOptions(int maxElements,
-                            int edgeItems,
-                            boolean includeValues,
-                            boolean includeMetadata,
-                            ValueFormatter formatter) {
+    public ViewPrintOptions(
+            int maxElements,
+            int edgeItems,
+            boolean includeValues,
+            boolean includeMetadata,
+            ValueFormatter formatter) {
         if (maxElements < 0) {
             throw new IllegalArgumentException("maxElements must be >= 0");
         }
@@ -37,17 +37,19 @@ public final class ViewPrintOptions {
     }
 
     public static ViewPrintOptions compact() {
-        return new ViewPrintOptions(DEFAULT_MAX_ELEMENTS, DEFAULT_EDGE_ITEMS, true, true, DEFAULT_FORMATTER);
+        return new ViewPrintOptions(
+                DEFAULT_MAX_ELEMENTS, DEFAULT_EDGE_ITEMS, true, true, DEFAULT_FORMATTER);
     }
 
     public static ViewPrintOptions metaOnly() {
-        return new ViewPrintOptions(DEFAULT_MAX_ELEMENTS, DEFAULT_EDGE_ITEMS, false, true, DEFAULT_FORMATTER);
+        return new ViewPrintOptions(
+                DEFAULT_MAX_ELEMENTS, DEFAULT_EDGE_ITEMS, false, true, DEFAULT_FORMATTER);
     }
 
     public static ViewPrintOptions valuesOnly() {
-        return new ViewPrintOptions(DEFAULT_MAX_ELEMENTS, DEFAULT_EDGE_ITEMS, true, false, DEFAULT_FORMATTER);
+        return new ViewPrintOptions(
+                DEFAULT_MAX_ELEMENTS, DEFAULT_EDGE_ITEMS, true, false, DEFAULT_FORMATTER);
     }
-
 
     public int maxElements() {
         return maxElements;
@@ -64,7 +66,6 @@ public final class ViewPrintOptions {
     public boolean includeMetadata() {
         return includeMetadata;
     }
-
 
     public ValueFormatter formatter() {
         return formatter;

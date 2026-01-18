@@ -12,8 +12,7 @@ final class LongsMemoryAllocator implements MemoryAllocator<long[]> {
         return INSTANCE;
     }
 
-    private LongsMemoryAllocator() {
-    }
+    private LongsMemoryAllocator() {}
 
     @Override
     public Device device() {

@@ -5,19 +5,21 @@ import java.util.List;
 import java.util.function.Function;
 
 /**
- * A functional interface for text splitting operations used in tokenization pipelines.
- * TextSplitter breaks input text into smaller chunks before final tokenization,
- * serving as an initial preprocessing step.
+ * A functional interface for text splitting operations used in tokenization pipelines. TextSplitter
+ * breaks input text into smaller chunks before final tokenization, serving as an initial
+ * preprocessing step.
  *
  * <p>Common splitting operations include:
+ *
  * <ul>
- *   <li>Breaking text on whitespace boundaries</li>
- *   <li>Separating punctuation from words</li>
- *   <li>Splitting text into sentences</li>
- *   <li>Isolating special tokens (URLs, emails, etc.)</li>
+ *   <li>Breaking text on whitespace boundaries
+ *   <li>Separating punctuation from words
+ *   <li>Splitting text into sentences
+ *   <li>Isolating special tokens (URLs, emails, etc.)
  * </ul>
  *
  * <p>Example usage:
+ *
  * <pre>{@code
  * // Simple whitespace splitter
  * TextSplitter whitespace = text -> Arrays.asList(text.toString().split("\\s+"));
@@ -34,8 +36,8 @@ import java.util.function.Function;
 @FunctionalInterface
 public interface TextSplitter extends Function<CharSequence, List<CharSequence>> {
     /**
-     * A splitter that returns the input text as a single chunk.
-     * This can be used as a placeholder when splitting is optional or should be skipped.
+     * A splitter that returns the input text as a single chunk. This can be used as a placeholder
+     * when splitting is optional or should be skipped.
      */
     TextSplitter IDENTITY = List::of;
 
@@ -50,10 +52,11 @@ public interface TextSplitter extends Function<CharSequence, List<CharSequence>>
     List<CharSequence> apply(CharSequence text);
 
     /**
-     * Creates a new TextSplitter that sequentially applies multiple splitters.
-     * Each splitter in the sequence operates on the chunks produced by the previous splitter.
+     * Creates a new TextSplitter that sequentially applies multiple splitters. Each splitter in the
+     * sequence operates on the chunks produced by the previous splitter.
      *
      * <p>Example usage:
+     *
      * <pre>{@code
      * TextSplitter combined = TextSplitter.compose(
      *     whitespaceSpitter,

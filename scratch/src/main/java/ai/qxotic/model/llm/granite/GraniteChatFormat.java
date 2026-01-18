@@ -1,17 +1,14 @@
 package ai.qxotic.model.llm.granite;
 
 import ai.qxotic.model.llm.ChatFormat;
+import ai.qxotic.tokenizers.IntSequence;
 import ai.qxotic.tokenizers.Tokenizer;
 import ai.qxotic.tokenizers.Vocabulary;
-import ai.qxotic.tokenizers.IntSequence;
-
 import java.util.List;
 import java.util.OptionalInt;
 import java.util.Set;
 
-/**
- * Utility tailored for the Chat Markup Language (ChatML) prompt format.
- */
+/** Utility tailored for the Chat Markup Language (ChatML) prompt format. */
 public class GraniteChatFormat extends ChatFormat {
 
     public final int endOfText;
@@ -103,12 +100,8 @@ public class GraniteChatFormat extends ChatFormat {
     @Override
     public boolean isValidRole(Role role) {
         return super.isValidRole(role)
-                || List.of(
-                        AVAILABLE_TOOLS.name(),
-                        ASSISTANT_TOOL_CALL.name(),
-                        TOOL_RESPONSE.name())
-                .contains(role.name());
-
+                || List.of(AVAILABLE_TOOLS.name(), ASSISTANT_TOOL_CALL.name(), TOOL_RESPONSE.name())
+                        .contains(role.name());
     }
 
     public static Role AVAILABLE_TOOLS = new Role("available_tools");

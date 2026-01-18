@@ -3,10 +3,9 @@ package ai.qxotic.span;
 import java.util.stream.IntStream;
 
 /**
- * Specialization of MatrixView for floating-point values, providing efficient
- * access to 2D matrices of float values stored in row-major order.
- * This interface includes several factory methods for creating matrix views
- * over float spans with different configurations.
+ * Specialization of MatrixView for floating-point values, providing efficient access to 2D matrices
+ * of float values stored in row-major order. This interface includes several factory methods for
+ * creating matrix views over float spans with different configurations.
  */
 public interface FloatMatrixView extends MatrixView<Float> {
 
@@ -29,8 +28,8 @@ public interface FloatMatrixView extends MatrixView<Float> {
     FloatSpan innerSpan();
 
     /**
-     * Creates a matrix view over a float span with full control over layout parameters.
-     * This method allows for creation of views with custom row stride and optional row caching.
+     * Creates a matrix view over a float span with full control over layout parameters. This method
+     * allows for creation of views with custom row stride and optional row caching.
      *
      * @param span The underlying float span containing the data
      * @param startOffset Starting offset in the span for this matrix
@@ -41,11 +40,20 @@ public interface FloatMatrixView extends MatrixView<Float> {
      * @return A new FloatMatrixView with the specified parameters
      * @throws IllegalArgumentException if the parameters specify an invalid matrix configuration
      */
-    static FloatMatrixView asMatrix(FloatSpan span, long startOffset, long rows, long cols, long rowStride, boolean preComputeRows) {
+    static FloatMatrixView asMatrix(
+            FloatSpan span,
+            long startOffset,
+            long rows,
+            long cols,
+            long rowStride,
+            boolean preComputeRows) {
         return new FloatMatrixView() {
-            final FloatSpan[] rowsSpans = preComputeRows
-                    ? IntStream.range(0, Math.toIntExact(rows)).mapToObj(ri -> span.slice(rowOffset(ri), cols)).toArray(FloatSpan[]::new)
-                    : null;
+            final FloatSpan[] rowsSpans =
+                    preComputeRows
+                            ? IntStream.range(0, Math.toIntExact(rows))
+                                    .mapToObj(ri -> span.slice(rowOffset(ri), cols))
+                                    .toArray(FloatSpan[]::new)
+                            : null;
 
             @Override
             public FloatSpan row(long rowIndex) {
@@ -96,13 +104,14 @@ public interface FloatMatrixView extends MatrixView<Float> {
      * @param rowStride Number of elements between starts of consecutive rows
      * @return A new FloatMatrixView with the specified parameters
      */
-    static FloatMatrixView asMatrix(FloatSpan span, long startOffset, long rows, long cols, long rowStride) {
+    static FloatMatrixView asMatrix(
+            FloatSpan span, long startOffset, long rows, long cols, long rowStride) {
         return asMatrix(span, startOffset, rows, cols, rowStride, false);
     }
 
     /**
-     * Creates a matrix view over a float span with automatic row stride calculation.
-     * The row stride is set equal to the number of columns, assuming dense packing.
+     * Creates a matrix view over a float span with automatic row stride calculation. The row stride
+     * is set equal to the number of columns, assuming dense packing.
      *
      * @param span The underlying float span containing the data
      * @param startOffset Starting offset in the span for this matrix
@@ -134,9 +143,9 @@ public interface FloatMatrixView extends MatrixView<Float> {
     }
 
     /**
-     * Creates a cached matrix view optimized for batch processing.
-     * This method pre-computes row spans for efficient access and ensures
-     * the span size is compatible with the requested batch size.
+     * Creates a cached matrix view optimized for batch processing. This method pre-computes row
+     * spans for efficient access and ensures the span size is compatible with the requested batch
+     * size.
      *
      * @param span The underlying float span containing the data
      * @param batchSize The size of each batch (number of rows)

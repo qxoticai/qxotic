@@ -1,7 +1,6 @@
 package ai.qxotic.model.llm.llama;
 
 import ai.qxotic.span.Span;
-
 import java.util.stream.LongStream;
 
 public interface SpanFactory<T, S extends Span<T>> {
@@ -9,8 +8,8 @@ public interface SpanFactory<T, S extends Span<T>> {
 
     default S allocateBatches(int batchSize, long... dims) {
         assert batchSize > 0 && Integer.bitCount(batchSize) == 1 : "batchSize must be a power of 2";
-        long[] longDims = LongStream.concat(LongStream.of(batchSize), LongStream.of(dims)).toArray();
+        long[] longDims =
+                LongStream.concat(LongStream.of(batchSize), LongStream.of(dims)).toArray();
         return allocate(longDims);
     }
 }
-

@@ -1,11 +1,10 @@
 package ai.qxotic;
 
-import ai.qxotic.jota.Shape;
-import org.junit.jupiter.api.Test;
-
-import java.util.Arrays;
-
 import static org.junit.jupiter.api.Assertions.*;
+
+import ai.qxotic.jota.Shape;
+import java.util.Arrays;
+import org.junit.jupiter.api.Test;
 
 class NestedShapePatternTest {
 
@@ -21,7 +20,7 @@ class NestedShapePatternTest {
         assertEquals(12, shape.size(1), "Second mode size should be 3*4=12");
         assertEquals(24, shape.size(), "Total size should be 2*3*4=24");
 
-        assertArrayEquals(new long[]{2, 3, 4}, shape.toArray());
+        assertArrayEquals(new long[] {2, 3, 4}, shape.toArray());
     }
 
     @Test
@@ -82,7 +81,7 @@ class NestedShapePatternTest {
         assertEquals(0, shape.rank());
         assertEquals(0, shape.flatRank());
         assertEquals(1, shape.size(), "Scalar has size 1");
-        assertArrayEquals(new long[]{}, shape.toArray());
+        assertArrayEquals(new long[] {}, shape.toArray());
     }
 
     @Test
@@ -95,73 +94,102 @@ class NestedShapePatternTest {
         assertEquals(1, shape1.flatRank());
         assertEquals(5, shape1.size(0));
         assertEquals(5, shape1.size());
-        assertArrayEquals(new long[]{5}, shape1.toArray());
+        assertArrayEquals(new long[] {5}, shape1.toArray());
 
         assertEquals(1, shape2.rank());
         assertEquals(1, shape2.flatRank());
         assertEquals(5, shape2.size(0));
         assertEquals(5, shape2.size());
-        assertArrayEquals(new long[]{5}, shape2.toArray());
+        assertArrayEquals(new long[] {5}, shape2.toArray());
     }
 
     @Test
     void testEmptyIdentifiersNotAllowed() {
         // Empty identifiers should throw an exception
-        assertThrows(IllegalArgumentException.class, () -> {
-            Shape.pattern("(,)", 2, 3);
-        }, "Empty identifiers should not be allowed");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Shape.pattern("(,)", 2, 3);
+                },
+                "Empty identifiers should not be allowed");
 
-        assertThrows(IllegalArgumentException.class, () -> {
-            Shape.pattern("(, (, ))", 2, 3, 4);
-        }, "Empty identifiers should not be allowed");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Shape.pattern("(, (, ))", 2, 3, 4);
+                },
+                "Empty identifiers should not be allowed");
     }
 
     @Test
     void testMalformedPatterns() {
         // Empty nested parentheses (()) are not allowed
-        assertThrows(IllegalArgumentException.class, () -> {
-            Shape.pattern("(())");
-        }, "Empty nested parentheses should not be allowed");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Shape.pattern("(())");
+                },
+                "Empty nested parentheses should not be allowed");
 
         // Empty nested parentheses as part of a sequence
-        assertThrows(IllegalArgumentException.class, () -> {
-            Shape.pattern("((), _)", 5);
-        }, "Empty nested parentheses in sequence should not be allowed");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Shape.pattern("((), _)", 5);
+                },
+                "Empty nested parentheses in sequence should not be allowed");
 
-        assertThrows(IllegalArgumentException.class, () -> {
-            Shape.pattern("(_, ())", 5);
-        }, "Empty nested parentheses in sequence should not be allowed");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Shape.pattern("(_, ())", 5);
+                },
+                "Empty nested parentheses in sequence should not be allowed");
     }
 
     @Test
     void testNonNormalizedPatterns() {
         // Single-element nested parentheses ((_)) are not normalized
-        assertThrows(IllegalArgumentException.class, () -> {
-            Shape.pattern("((_))", 5);
-        }, "Single-element nested parentheses should be rejected as non-normalized");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Shape.pattern("((_))", 5);
+                },
+                "Single-element nested parentheses should be rejected as non-normalized");
 
         // ((a)) should also be rejected
-        assertThrows(IllegalArgumentException.class, () -> {
-            Shape.pattern("((dim))", 5);
-        }, "Single-element nested parentheses should be rejected as non-normalized");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Shape.pattern("((dim))", 5);
+                },
+                "Single-element nested parentheses should be rejected as non-normalized");
 
         // More deeply nested single elements
-        assertThrows(IllegalArgumentException.class, () -> {
-            Shape.pattern("(((_)))", 5);
-        }, "Deeply nested single elements should be rejected");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Shape.pattern("(((_)))", 5);
+                },
+                "Deeply nested single elements should be rejected");
 
         // Single element nested within a valid structure
-        assertThrows(IllegalArgumentException.class, () -> {
-            Shape.pattern("(a, ((b)))", 2, 3);
-        }, "Single-element nested parentheses in sequence should be rejected");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Shape.pattern("(a, ((b)))", 2, 3);
+                },
+                "Single-element nested parentheses in sequence should be rejected");
     }
 
     @Test
     void testMismatchedDimensions() {
         // Pattern expects 3 dims but only 2 provided
-        assertThrows(IllegalArgumentException.class, () -> {
-            Shape.pattern("(a, (b, c))", 2, 3);
-        });
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Shape.pattern("(a, (b, c))", 2, 3);
+                });
     }
 
     @Test
@@ -170,9 +198,14 @@ class NestedShapePatternTest {
         assertEquals("(2, (3, 4))", shape.toString());
         assertEquals("()", Shape.pattern("()").toString());
         assertEquals("(42)", Shape.pattern("(_)", 42).toString());
-        assertEquals("(2, ((3, 4), 5), 6)", Shape.pattern("(_, ((_, _), _), _)", 2, 3, 4, 5, 6).toString());
+        assertEquals(
+                "(2, ((3, 4), 5), 6)",
+                Shape.pattern("(_, ((_, _), _), _)", 2, 3, 4, 5, 6).toString());
 
-        assertEquals("(2, (3, (4, 5)), 6, ((7, 8), 9), 10)", Shape.pattern("(_, (_, (_, _)), _, ((_, _), _), _)", 2, 3, 4, 5, 6, 7, 8, 9, 10).toString());
+        assertEquals(
+                "(2, (3, (4, 5)), 6, ((7, 8), 9), 10)",
+                Shape.pattern("(_, (_, (_, _)), _, ((_, _), _), _)", 2, 3, 4, 5, 6, 7, 8, 9, 10)
+                        .toString());
     }
 
     @Test
@@ -217,7 +250,7 @@ class NestedShapePatternTest {
         // Extract mode 1's mode 2 and check it
         Shape mode1_mode2 = mode1.modeAt(2);
         assertEquals(2, mode1_mode2.flatRank());
-        assertArrayEquals(new long[]{5, 6}, mode1_mode2.toArray());
+        assertArrayEquals(new long[] {5, 6}, mode1_mode2.toArray());
 
         System.out.println("Deep nesting: " + shape);
     }

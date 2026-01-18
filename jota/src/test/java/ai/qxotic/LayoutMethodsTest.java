@@ -1,15 +1,13 @@
 package ai.qxotic;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.Stride;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
-
-/**
- * Comprehensive tests for Layout methods including modeAt, flatten, scalar, toString, etc.
- */
+/** Comprehensive tests for Layout methods including modeAt, flatten, scalar, toString, etc. */
 class LayoutMethodsTest {
 
     @Test
@@ -28,7 +26,7 @@ class LayoutMethodsTest {
         Layout layout = Layout.rowMajor(shape);
 
         assertEquals(shape, layout.shape());
-        assertArrayEquals(new long[]{12, 4, 1}, layout.stride().toArray());
+        assertArrayEquals(new long[] {12, 4, 1}, layout.stride().toArray());
     }
 
     @Test
@@ -37,7 +35,7 @@ class LayoutMethodsTest {
         Layout layout = Layout.columnMajor(shape);
 
         assertEquals(shape, layout.shape());
-        assertArrayEquals(new long[]{1, 2, 6}, layout.stride().toArray());
+        assertArrayEquals(new long[] {1, 2, 6}, layout.stride().toArray());
     }
 
     @Test
@@ -94,8 +92,8 @@ class LayoutMethodsTest {
         Layout mode1 = layout.modeAt(1);
         assertEquals(2, mode1.shape().rank());
         assertTrue(mode1.shape().isFlat());
-        assertArrayEquals(new long[]{3, 4}, mode1.shape().toArray());
-        assertArrayEquals(new long[]{4, 1}, mode1.stride().toArray());
+        assertArrayEquals(new long[] {3, 4}, mode1.shape().toArray());
+        assertArrayEquals(new long[] {4, 1}, mode1.stride().toArray());
     }
 
     @Test
@@ -120,7 +118,7 @@ class LayoutMethodsTest {
         Layout layout = Layout.rowMajor(shape);
         Layout flattened = layout.flatten();
 
-        assertSame(layout, flattened);  // Should return same instance
+        assertSame(layout, flattened); // Should return same instance
     }
 
     @Test
@@ -134,8 +132,8 @@ class LayoutMethodsTest {
         assertTrue(flattened.stride().isFlat());
         assertEquals(3, flattened.shape().rank());
         assertEquals(3, flattened.stride().rank());
-        assertArrayEquals(new long[]{2, 3, 4}, flattened.shape().toArray());
-        assertArrayEquals(new long[]{12, 4, 1}, flattened.stride().toArray());
+        assertArrayEquals(new long[] {2, 3, 4}, flattened.shape().toArray());
+        assertArrayEquals(new long[] {12, 4, 1}, flattened.stride().toArray());
     }
 
     @Test
@@ -169,7 +167,7 @@ class LayoutMethodsTest {
         assertEquals(3, layout.shape().flatRank());
         assertFalse(layout.shape().isFlat());
         assertFalse(layout.stride().isFlat());
-        assertArrayEquals(new long[]{12, 4, 1}, layout.stride().toArray());
+        assertArrayEquals(new long[] {12, 4, 1}, layout.stride().toArray());
     }
 
     @Test
@@ -181,7 +179,7 @@ class LayoutMethodsTest {
         assertEquals(3, layout.shape().flatRank());
         assertFalse(layout.shape().isFlat());
         assertFalse(layout.stride().isFlat());
-        assertArrayEquals(new long[]{1, 2, 6}, layout.stride().toArray());
+        assertArrayEquals(new long[] {1, 2, 6}, layout.stride().toArray());
     }
 
     @Test
@@ -192,15 +190,15 @@ class LayoutMethodsTest {
 
         assertEquals(2, layout.shape().rank());
         assertEquals(4, layout.shape().flatRank());
-        assertArrayEquals(new long[]{2, 3, 4, 5}, layout.shape().toArray());
-        assertArrayEquals(new long[]{60, 20, 5, 1}, layout.stride().toArray());
+        assertArrayEquals(new long[] {2, 3, 4, 5}, layout.shape().toArray());
+        assertArrayEquals(new long[] {60, 20, 5, 1}, layout.stride().toArray());
 
         // Test mode extraction
         Layout mode1 = layout.modeAt(1);
         assertEquals(2, mode1.shape().rank());
         assertEquals(3, mode1.shape().flatRank());
-        assertArrayEquals(new long[]{3, 4, 5}, mode1.shape().toArray());
-        assertArrayEquals(new long[]{20, 5, 1}, mode1.stride().toArray());
+        assertArrayEquals(new long[] {3, 4, 5}, mode1.shape().toArray());
+        assertArrayEquals(new long[] {20, 5, 1}, mode1.stride().toArray());
     }
 
     @Test

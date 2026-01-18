@@ -1,17 +1,14 @@
 package ai.qxotic.model.llm.mistral;
 
 import ai.qxotic.model.llm.ChatFormat;
+import ai.qxotic.tokenizers.IntSequence;
 import ai.qxotic.tokenizers.Tokenizer;
 import ai.qxotic.tokenizers.Vocabulary;
-import ai.qxotic.tokenizers.IntSequence;
-
 import java.util.List;
 import java.util.OptionalInt;
 import java.util.Set;
 
-/**
- * Utility tailored for Mistral v0.3 instruct prompt format.
- */
+/** Utility tailored for Mistral v0.3 instruct prompt format. */
 public class MistralChatFormat extends ChatFormat {
 
     public final int unknownToken;
@@ -44,12 +41,9 @@ public class MistralChatFormat extends ChatFormat {
         this.endOfToolResults = vocabulary.id("[/TOOL_RESULTS]");
 
         // Only Codestral supports FIM tokens.
-        this.prefix = vocabulary.contains("[PREFIX]")
-                ? vocabulary.id("[PREFIX]") : unknownToken;
-        this.suffix = vocabulary.contains("[SUFFIX]")
-                ? vocabulary.id("[SUFFIX]") : unknownToken;
-        this.middle = vocabulary.contains("[MIDDLE]")
-                ? vocabulary.id("[MIDDLE]") : unknownToken;
+        this.prefix = vocabulary.contains("[PREFIX]") ? vocabulary.id("[PREFIX]") : unknownToken;
+        this.suffix = vocabulary.contains("[SUFFIX]") ? vocabulary.id("[SUFFIX]") : unknownToken;
+        this.middle = vocabulary.contains("[MIDDLE]") ? vocabulary.id("[MIDDLE]") : unknownToken;
 
         this.stopTokens = Set.of(endOfText, endOfInstruction);
     }
@@ -76,7 +70,9 @@ public class MistralChatFormat extends ChatFormat {
                 builder.addAll(this.tokenizer.encode(assistantMessage));
                 builder.add(this.endOfText);
             }
-            default -> throw new IllegalArgumentException("Message role not supported " + message.role());
+            default ->
+                    throw new IllegalArgumentException(
+                            "Message role not supported " + message.role());
         }
         return builder.build();
     }
@@ -87,8 +83,7 @@ public class MistralChatFormat extends ChatFormat {
         IntSequence.Builder builder = IntSequence.newBuilder();
         switch (role.name()) {
             case "user" -> builder.add(this.beginOfInstruction);
-            case "assistant" -> {
-            }
+            case "assistant" -> {}
         }
         return builder.build();
     }
@@ -105,8 +100,7 @@ public class MistralChatFormat extends ChatFormat {
     @Override
     public boolean isValidRole(Role role) {
         // Mistral doesn't support system prompts.
-        return List.of(USER.name(), ASSISTANT.name())
-                .contains(role.name());
+        return List.of(USER.name(), ASSISTANT.name()).contains(role.name());
     }
 
     @Override
@@ -118,5 +112,4 @@ public class MistralChatFormat extends ChatFormat {
     public OptionalInt endOfText() {
         return OptionalInt.of(this.endOfText);
     }
-
 }

@@ -12,21 +12,32 @@ public final class CheckedMemoryOperations<B> implements MemoryOperations<B> {
     }
 
     @Override
-    public void copy(Memory<B> src, long srcByteOffset, Memory<B> dst, long dstByteOffset, long byteSize) {
+    public void copy(
+            Memory<B> src, long srcByteOffset, Memory<B> dst, long dstByteOffset, long byteSize) {
         checkBounds(src, srcByteOffset, byteSize);
         checkBounds(dst, dstByteOffset, byteSize);
         delegate.copy(src, srcByteOffset, dst, dstByteOffset, byteSize);
     }
 
     @Override
-    public void copyFromNative(Memory<MemorySegment> src, long srcByteOffset, Memory<B> dst, long dstByteOffset, long byteSize) {
+    public void copyFromNative(
+            Memory<MemorySegment> src,
+            long srcByteOffset,
+            Memory<B> dst,
+            long dstByteOffset,
+            long byteSize) {
         checkBounds(src, srcByteOffset, byteSize);
         checkBounds(dst, dstByteOffset, byteSize);
         delegate.copyFromNative(src, srcByteOffset, dst, dstByteOffset, byteSize);
     }
 
     @Override
-    public void copyToNative(Memory<B> src, long srcByteOffset, Memory<MemorySegment> dst, long dstByteOffset, long byteSize) {
+    public void copyToNative(
+            Memory<B> src,
+            long srcByteOffset,
+            Memory<MemorySegment> dst,
+            long dstByteOffset,
+            long byteSize) {
         checkBounds(src, srcByteOffset, byteSize);
         checkBounds(dst, dstByteOffset, byteSize);
         delegate.copyToNative(src, srcByteOffset, dst, dstByteOffset, byteSize);
@@ -81,7 +92,8 @@ public final class CheckedMemoryOperations<B> implements MemoryOperations<B> {
     private void checkBounds(Memory<?> memory, long byteOffset, long byteSize) {
         MemoryAccessChecks.checkBounds(byteOffset >= 0, "negative byte offset");
         MemoryAccessChecks.checkBounds(byteSize >= 0, "negative byte size");
-        MemoryAccessChecks.checkBounds(byteOffset + byteSize <= memory.byteSize(), "out of bounds access");
+        MemoryAccessChecks.checkBounds(
+                byteOffset + byteSize <= memory.byteSize(), "out of bounds access");
     }
 
     private void checkAligned(long value, long alignment) {

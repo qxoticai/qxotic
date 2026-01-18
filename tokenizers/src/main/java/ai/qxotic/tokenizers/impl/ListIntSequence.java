@@ -1,7 +1,6 @@
 package ai.qxotic.tokenizers.impl;
 
 import ai.qxotic.tokenizers.IntSequence;
-
 import java.util.List;
 import java.util.Objects;
 

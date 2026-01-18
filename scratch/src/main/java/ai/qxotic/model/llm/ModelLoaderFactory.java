@@ -10,4 +10,3 @@ public interface ModelLoaderFactory<Source> {
 
     ModelLoader createLoader(Source source);
 }
-

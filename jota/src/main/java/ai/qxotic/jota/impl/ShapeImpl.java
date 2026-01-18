@@ -2,7 +2,6 @@ package ai.qxotic.jota.impl;
 
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.Util;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -257,7 +256,11 @@ final class ShapeImpl extends NestedTupleImpl<Shape> implements Shape {
     @Override
     public Shape permute(int... _modeIndices) {
         if (_modeIndices.length != rank()) {
-            throw new IllegalArgumentException("Permutation must have same length as rank: " + rank() + " vs " + _modeIndices.length);
+            throw new IllegalArgumentException(
+                    "Permutation must have same length as rank: "
+                            + rank()
+                            + " vs "
+                            + _modeIndices.length);
         }
 
         // Normalize negative indices

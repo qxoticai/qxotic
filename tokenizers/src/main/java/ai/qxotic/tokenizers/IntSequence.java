@@ -1,23 +1,23 @@
 package ai.qxotic.tokenizers;
 
 import ai.qxotic.tokenizers.impl.ImplAccessor;
-
 import java.util.*;
 import java.util.stream.IntStream;
 import java.util.stream.StreamSupport;
 
 /**
- * A sequence of integer values providing uniform, read-only access to different kinds of integer collections.
- * This interface combines the functionality of both primitive int arrays and Integer collections while
- * maintaining efficient memory usage and performance characteristics.
- * <p>
- * The interface provides:
+ * A sequence of integer values providing uniform, read-only access to different kinds of integer
+ * collections. This interface combines the functionality of both primitive int arrays and Integer
+ * collections while maintaining efficient memory usage and performance characteristics.
+ *
+ * <p>The interface provides:
+ *
  * <ul>
- *   <li>Read-only access to sequence elements</li>
- *   <li>Conversion methods to arrays and collections</li>
- *   <li>Stream processing capabilities</li>
- *   <li>Builder pattern for creating sequences</li>
- *   <li>Utility methods for sequence comparison and manipulation</li>
+ *   <li>Read-only access to sequence elements
+ *   <li>Conversion methods to arrays and collections
+ *   <li>Stream processing capabilities
+ *   <li>Builder pattern for creating sequences
+ *   <li>Utility methods for sequence comparison and manipulation
  * </ul>
  */
 public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> {
@@ -51,10 +51,10 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
      * Returns a new sequence that is a subsequence of this sequence.
      *
      * @param start the start index, inclusive
-     * @param end   the end index, exclusive
+     * @param end the end index, exclusive
      * @return a new sequence containing the specified range of elements
      * @throws IndexOutOfBoundsException if start or end are out of bounds
-     * @throws IllegalArgumentException  if start is greater than end
+     * @throws IllegalArgumentException if start is greater than end
      */
     IntSequence subSequence(int start, int end);
 
@@ -121,10 +121,8 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
                 Spliterators.spliterator(
                         iterator(),
                         length(),
-                        Spliterator.ORDERED | Spliterator.SIZED | Spliterator.SUBSIZED
-                ),
-                false
-        );
+                        Spliterator.ORDERED | Spliterator.SIZED | Spliterator.SUBSIZED),
+                false);
     }
 
     /**
@@ -201,9 +199,9 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
     }
 
     /**
-     * A builder interface for creating IntSequence instances.
-     * The builder itself implements IntSequence, allowing for efficient
-     * building operations while maintaining read access to the current sequence.
+     * A builder interface for creating IntSequence instances. The builder itself implements
+     * IntSequence, allowing for efficient building operations while maintaining read access to the
+     * current sequence.
      */
     interface Builder extends IntSequence {
         /**
@@ -268,9 +266,10 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
     /**
      * Compares two sequences for content equality.
      *
-     * @param first  the first sequence
+     * @param first the first sequence
      * @param second the second sequence
-     * @return true if both sequences have the same length and contain the same elements in the same order
+     * @return true if both sequences have the same length and contain the same elements in the same
+     *     order
      * @throws NullPointerException if either sequence is null
      */
     static boolean contentEquals(IntSequence first, IntSequence second) {
@@ -292,7 +291,7 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
     /**
      * Compares two sequences lexicographically.
      *
-     * @param first  the first sequence
+     * @param first the first sequence
      * @param second the second sequence
      * @return negative if first < second, zero if equal, positive if first > second
      * @throws NullPointerException if either sequence is null
@@ -313,11 +312,12 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
     }
 
     /**
-     * Returns a string representation of this sequence using the specified delimiter and enclosing symbols.
+     * Returns a string representation of this sequence using the specified delimiter and enclosing
+     * symbols.
      *
      * @param delimiter the separator between elements
-     * @param prefix    the prefix for the string representation
-     * @param suffix    the suffix for the string representation
+     * @param prefix the prefix for the string representation
+     * @param suffix the suffix for the string representation
      * @return a string representation of this sequence
      * @throws NullPointerException if any parameter is null
      */

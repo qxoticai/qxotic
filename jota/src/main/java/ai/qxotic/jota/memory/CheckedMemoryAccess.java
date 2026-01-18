@@ -101,7 +101,8 @@ public final class CheckedMemoryAccess<B> implements MemoryAccess<B> {
     private void checkBounds(Memory<B> memory, long byteOffset, long byteSize) {
         MemoryAccessChecks.checkBounds(byteOffset >= 0, "negative byte offset");
         MemoryAccessChecks.checkBounds(byteSize >= 0, "negative byte size");
-        MemoryAccessChecks.checkBounds(byteOffset + byteSize <= memory.byteSize(), "out of bounds access");
+        MemoryAccessChecks.checkBounds(
+                byteOffset + byteSize <= memory.byteSize(), "out of bounds access");
     }
 
     private void checkWriteable(Memory<B> memory) {

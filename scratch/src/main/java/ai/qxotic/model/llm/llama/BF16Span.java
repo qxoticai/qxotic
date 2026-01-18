@@ -1,7 +1,6 @@
 package ai.qxotic.model.llm.llama;
 
 import ai.qxotic.span.FloatSpan;
-
 import java.lang.foreign.MemorySegment;
 
 public final class BF16Span extends MemorySegmentSpan {

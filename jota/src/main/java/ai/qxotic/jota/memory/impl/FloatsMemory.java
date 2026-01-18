@@ -2,7 +2,6 @@ package ai.qxotic.jota.memory.impl;
 
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.Memory;
-
 import java.util.Objects;
 
 final class FloatsMemory implements Memory<float[]> {

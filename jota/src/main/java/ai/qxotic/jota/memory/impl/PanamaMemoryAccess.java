@@ -3,7 +3,6 @@ package ai.qxotic.jota.memory.impl;
 import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryAccessChecks;
-
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
@@ -15,8 +14,7 @@ final class PanamaMemoryAccess implements MemoryAccess<MemorySegment> {
         return INSTANCE;
     }
 
-    private PanamaMemoryAccess() {
-    }
+    private PanamaMemoryAccess() {}
 
     @Override
     public byte readByte(Memory<MemorySegment> memory, long byteOffset) {

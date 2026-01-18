@@ -2,7 +2,6 @@ package ai.qxotic.jota.memory.impl;
 
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.Memory;
-
 import java.nio.ByteBuffer;
 import java.util.Objects;
 
@@ -53,10 +52,11 @@ final class ByteBufferMemory implements Memory<ByteBuffer> {
 
     @Override
     public String toString() {
-        StringBuilder sb = new StringBuilder("Memory{ByteBuffer, byteSize=")
-                .append(byteSize())
-                .append(", device=")
-                .append(device());
+        StringBuilder sb =
+                new StringBuilder("Memory{ByteBuffer, byteSize=")
+                        .append(byteSize())
+                        .append(", device=")
+                        .append(device());
         if (isReadOnly()) {
             sb.append(", readOnly=true");
         }

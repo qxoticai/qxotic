@@ -1,12 +1,11 @@
 package ai.llm4j.jota.cuda;
 
+import java.io.IOException;
+import java.io.InputStream;
 import jcuda.Pointer;
 import jcuda.driver.CUfunction;
 import jcuda.driver.CUmodule;
 import jcuda.driver.JCudaDriver;
-
-import java.io.IOException;
-import java.io.InputStream;
 
 public class CUDAKernel implements AutoCloseable {
 
@@ -29,13 +28,28 @@ public class CUDAKernel implements AutoCloseable {
         }
     }
 
-    public void launch(int gridDimX, int gridDimY, int gridDimZ, int blockDimX, int blockDimY, int blockDimZ, int sharedMemBytes, Pointer kernelParameters) {
-        JCudaDriver.cuLaunchKernel(function,
-                gridDimX, gridDimY, gridDimZ,
-                blockDimX, blockDimY, blockDimZ,
-                sharedMemBytes, null, // hStream
-                kernelParameters, null // Extra
-        );
+    public void launch(
+            int gridDimX,
+            int gridDimY,
+            int gridDimZ,
+            int blockDimX,
+            int blockDimY,
+            int blockDimZ,
+            int sharedMemBytes,
+            Pointer kernelParameters) {
+        JCudaDriver.cuLaunchKernel(
+                function,
+                gridDimX,
+                gridDimY,
+                gridDimZ,
+                blockDimX,
+                blockDimY,
+                blockDimZ,
+                sharedMemBytes,
+                null, // hStream
+                kernelParameters,
+                null // Extra
+                );
         JCudaDriver.cuCtxSynchronize();
     }
 

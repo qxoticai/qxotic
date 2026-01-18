@@ -16,10 +16,9 @@ import java.util.UUID;
 public class FileCache {
     private static final String DEFAULT_CACHE_DIR = "data-gym-cache";
 
-    /**
-     * Reads file content from URL or filesystem with optional caching
-     */
-        public static byte[] readFileCached(String blobPath, String expectedHash) throws IOException, InterruptedException {
+    /** Reads file content from URL or filesystem with optional caching */
+    public static byte[] readFileCached(String blobPath, String expectedHash)
+            throws IOException, InterruptedException {
         String cacheDir = getCacheDir();
         if (cacheDir.isEmpty()) {
             return readFile(blobPath);
@@ -45,17 +44,17 @@ public class FileCache {
         // Download/read fresh content
         byte[] contents = readFile(blobPath);
         if (expectedHash != null && !checkHash(contents, expectedHash)) {
-            throw new IOException(String.format(
-                    "Hash mismatch for data from %s (expected %s). This may indicate corruption.",
-                    blobPath, expectedHash));
+            throw new IOException(
+                    String.format(
+                            "Hash mismatch for data from %s (expected %s). This may indicate corruption.",
+                            blobPath, expectedHash));
         }
 
         // Cache the contents
         boolean userSpecifiedCache = isUserSpecifiedCache();
         try {
             Files.createDirectories(Paths.get(cacheDir));
-            Path tmpPath = Paths.get(cacheDir,
-                    cacheKey + "." + UUID.randomUUID() + ".tmp");
+            Path tmpPath = Paths.get(cacheDir, cacheKey + "." + UUID.randomUUID() + ".tmp");
             Files.write(tmpPath, contents);
             Files.move(tmpPath, cachePath, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
@@ -75,16 +74,14 @@ public class FileCache {
 
         // HTTP(S) download
         HttpClient client = HttpClient.newHttpClient();
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(blobPath))
-                .build();
+        HttpRequest request = HttpRequest.newBuilder().uri(URI.create(blobPath)).build();
 
-        HttpResponse<byte[]> response = client.send(request,
-                HttpResponse.BodyHandlers.ofByteArray());
+        HttpResponse<byte[]> response =
+                client.send(request, HttpResponse.BodyHandlers.ofByteArray());
 
         if (response.statusCode() != 200) {
-            throw new IOException("HTTP " + response.statusCode() +
-                    " error downloading " + blobPath);
+            throw new IOException(
+                    "HTTP " + response.statusCode() + " error downloading " + blobPath);
         }
 
         return response.body();
@@ -102,13 +99,12 @@ public class FileCache {
         cacheDir = System.getenv("DATA_GYM_CACHE_DIR");
         if (cacheDir != null) return cacheDir;
 
-        return Paths.get(System.getProperty("java.io.tmpdir"),
-                DEFAULT_CACHE_DIR).toString();
+        return Paths.get(System.getProperty("java.io.tmpdir"), DEFAULT_CACHE_DIR).toString();
     }
 
     private static boolean isUserSpecifiedCache() {
-        return System.getenv("TIKTOKEN_CACHE_DIR") != null ||
-                System.getenv("DATA_GYM_CACHE_DIR") != null;
+        return System.getenv("TIKTOKEN_CACHE_DIR") != null
+                || System.getenv("DATA_GYM_CACHE_DIR") != null;
     }
 
     private static String sha1(String input) {

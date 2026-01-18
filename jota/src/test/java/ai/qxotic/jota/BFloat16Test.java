@@ -1,10 +1,9 @@
-
 package ai.qxotic.jota;
-
-import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import org.junit.jupiter.api.Test;
 
 class BFloat16Test {
 
@@ -57,7 +56,8 @@ class BFloat16Test {
             if (Float.isNaN(value)) {
                 assertTrue(Float.isNaN(bfValue));
             } else if (Float.isInfinite(value)) {
-                assertEquals(Float.floatToRawIntBits(value) < 0, Float.floatToRawIntBits(bfValue) < 0);
+                assertEquals(
+                        Float.floatToRawIntBits(value) < 0, Float.floatToRawIntBits(bfValue) < 0);
                 assertTrue(Float.isInfinite(bfValue));
             } else {
                 assertTrue(Float.isFinite(bfValue));
@@ -76,10 +76,12 @@ class BFloat16Test {
             if (Float.isNaN(value)) {
                 assertTrue(Float.isNaN(halfValue));
             } else if (Float.isInfinite(value)) {
-                assertEquals(Float.floatToRawIntBits(value) < 0, Float.floatToRawIntBits(halfValue) < 0);
+                assertEquals(
+                        Float.floatToRawIntBits(value) < 0, Float.floatToRawIntBits(halfValue) < 0);
                 assertTrue(Float.isInfinite(halfValue));
             } else if (Float.isInfinite(halfValue)) {
-                assertEquals(Float.floatToRawIntBits(value) < 0, Float.floatToRawIntBits(halfValue) < 0);
+                assertEquals(
+                        Float.floatToRawIntBits(value) < 0, Float.floatToRawIntBits(halfValue) < 0);
             } else {
                 assertTrue(Float.isFinite(halfValue));
             }

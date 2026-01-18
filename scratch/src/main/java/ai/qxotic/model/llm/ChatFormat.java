@@ -1,10 +1,9 @@
 package ai.qxotic.model.llm;
 
-import ai.qxotic.tokenizers.Tokenizer;
-import ai.qxotic.tokenizers.Vocabulary;
 import ai.qxotic.tokenizers.IntSequence;
 import ai.qxotic.tokenizers.StandardTokenType;
-
+import ai.qxotic.tokenizers.Tokenizer;
+import ai.qxotic.tokenizers.Vocabulary;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.OptionalInt;
@@ -63,8 +62,7 @@ public abstract class ChatFormat {
     }
 
     public boolean isValidRole(Role role) {
-        return List.of(SYSTEM.name(), USER.name(), ASSISTANT.name())
-                .contains(role.name());
+        return List.of(SYSTEM.name(), USER.name(), ASSISTANT.name()).contains(role.name());
     }
 
     protected void validateRole(Role role) {
@@ -127,5 +125,3 @@ public abstract class ChatFormat {
         return this.tokenizer.decode(builder);
     }
 }
-
-

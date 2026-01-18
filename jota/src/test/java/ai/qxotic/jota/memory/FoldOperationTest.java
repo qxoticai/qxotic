@@ -1,26 +1,25 @@
 package ai.qxotic.jota.memory;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.impl.ContextFactory;
 import ai.qxotic.jota.memory.impl.MemoryFactory;
 import ai.qxotic.jota.memory.impl.MemoryViewFactory;
+import java.util.Arrays;
 import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.Test;
 
-import java.util.Arrays;
-
-import static org.junit.jupiter.api.Assertions.*;
-
 class FoldOperationTest {
 
-    @AutoClose
-    MemoryContext<float[]> context = ContextFactory.ofFloats();
+    @AutoClose MemoryContext<float[]> context = ContextFactory.ofFloats();
 
     // Helper methods from the sketch
     public static MemoryView<float[]> of(float... floats) {
-        return MemoryViewFactory.of(DataType.FP32, MemoryFactory.ofFloats(floats), Layout.rowMajor(floats.length));
+        return MemoryViewFactory.of(
+                DataType.FP32, MemoryFactory.ofFloats(floats), Layout.rowMajor(floats.length));
     }
 
     public static MemoryView<float[]> full(float value, Shape shape) {
@@ -118,7 +117,7 @@ class FoldOperationTest {
         context.floatOperations().fold(input, Float::sum, 0f, output, 0);
 
         float[] result = extractValues(output);
-        assertArrayEquals(new float[]{3f, 5f, 7f}, result, 1e-6f);
+        assertArrayEquals(new float[] {3f, 5f, 7f}, result, 1e-6f);
     }
 
     @Test
@@ -133,7 +132,7 @@ class FoldOperationTest {
         context.floatOperations().fold(input, Float::sum, 0f, output, 1);
 
         float[] result = extractValues(output);
-        assertArrayEquals(new float[]{3f, 12f}, result, 1e-6f);
+        assertArrayEquals(new float[] {3f, 12f}, result, 1e-6f);
     }
 
     @Test
@@ -148,7 +147,7 @@ class FoldOperationTest {
         context.floatOperations().fold(input, (a, b) -> a * b, 1f, output, 0);
 
         float[] result = extractValues(output);
-        assertArrayEquals(new float[]{4f, 10f, 18f}, result, 1e-6f);
+        assertArrayEquals(new float[] {4f, 10f, 18f}, result, 1e-6f);
     }
 
     @Test
@@ -166,7 +165,7 @@ class FoldOperationTest {
         // output[0,1] = 1 + 3 + 5 = 9
         // output[1,0] = 6 + 8 + 10 = 24
         // output[1,1] = 7 + 9 + 11 = 27
-        assertArrayEquals(new float[]{6f, 9f, 24f, 27f}, result, 1e-6f);
+        assertArrayEquals(new float[] {6f, 9f, 24f, 27f}, result, 1e-6f);
     }
 
     @Test
@@ -186,7 +185,7 @@ class FoldOperationTest {
         // output[1,0] = 6 + 7 = 13
         // output[1,1] = 8 + 9 = 17
         // output[1,2] = 10 + 11 = 21
-        assertArrayEquals(new float[]{1f, 5f, 9f, 13f, 17f, 21f}, result, 1e-6f);
+        assertArrayEquals(new float[] {1f, 5f, 9f, 13f, 17f, 21f}, result, 1e-6f);
     }
 
     @Test
@@ -203,24 +202,24 @@ class FoldOperationTest {
         //                     [1, 4],
         //                     [2, 5]]
         // Folding along axis 1: [0+3, 1+4, 2+5] = [3, 5, 7]
-        assertArrayEquals(new float[]{3f, 5f, 7f}, result, 1e-6f);
+        assertArrayEquals(new float[] {3f, 5f, 7f}, result, 1e-6f);
     }
 
-//    @Test
-//    void testFoldWithSlice() {
-//        // Test folding on a sliced view
-//        var input = range(12).view(Shape.of(3, 4));
-//        var sliced = input.slice(0, 1, 3); // Take rows 1-2, shape becomes [2, 4]
-//        var output = zeros(Shape.of(4));
-//
-//        context.floatOperations().fold(sliced, Float::sum, 0f, output, 0);
-//
-//        float[] result = extractValues(output);
-//        // Sliced matrix: [[4, 5, 6, 7],
-//        //                 [8, 9, 10, 11]]
-//        // Folding along axis 0: [4+8, 5+9, 6+10, 7+11] = [12, 14, 16, 18]
-//        assertArrayEquals(new float[]{12f, 14f, 16f, 18f}, result, 1e-6f);
-//    }
+    //    @Test
+    //    void testFoldWithSlice() {
+    //        // Test folding on a sliced view
+    //        var input = range(12).view(Shape.of(3, 4));
+    //        var sliced = input.slice(0, 1, 3); // Take rows 1-2, shape becomes [2, 4]
+    //        var output = zeros(Shape.of(4));
+    //
+    //        context.floatOperations().fold(sliced, Float::sum, 0f, output, 0);
+    //
+    //        float[] result = extractValues(output);
+    //        // Sliced matrix: [[4, 5, 6, 7],
+    //        //                 [8, 9, 10, 11]]
+    //        // Folding along axis 0: [4+8, 5+9, 6+10, 7+11] = [12, 14, 16, 18]
+    //        assertArrayEquals(new float[]{12f, 14f, 16f, 18f}, result, 1e-6f);
+    //    }
 
     @Test
     void testFoldWithNonZeroInitialValue() {
@@ -252,19 +251,25 @@ class FoldOperationTest {
         var output = zeros(Shape.of(3));
 
         // Test invalid axis
-        assertThrows(IllegalArgumentException.class, () -> {
-            context.floatOperations().fold(input, Float::sum, 0f, output, -1);
-        });
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    context.floatOperations().fold(input, Float::sum, 0f, output, -1);
+                });
 
-        assertThrows(IllegalArgumentException.class, () -> {
-            context.floatOperations().fold(input, Float::sum, 0f, output, 2);
-        });
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    context.floatOperations().fold(input, Float::sum, 0f, output, 2);
+                });
 
         // Test wrong output shape
         var wrongOutput = zeros(Shape.of(2, 3)); // Should be [3] when folding [2,3] along axis 0
-        assertThrows(IllegalArgumentException.class, () -> {
-            context.floatOperations().fold(input, Float::sum, 0f, wrongOutput, 0);
-        });
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    context.floatOperations().fold(input, Float::sum, 0f, wrongOutput, 0);
+                });
     }
 
     @Test

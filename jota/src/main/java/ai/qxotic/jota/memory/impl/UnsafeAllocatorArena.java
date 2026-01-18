@@ -3,7 +3,6 @@ package ai.qxotic.jota.memory.impl;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.ScopedMemory;
 import ai.qxotic.jota.memory.ScopedMemoryAllocatorArena;
-
 import java.lang.foreign.MemorySegment;
 import java.util.Collections;
 import java.util.Set;
@@ -11,10 +10,10 @@ import java.util.concurrent.ConcurrentHashMap;
 
 class UnsafeAllocatorArena implements ScopedMemoryAllocatorArena<MemorySegment> {
 
-    private final Set<ScopedMemory<MemorySegment>> allocations = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private final Set<ScopedMemory<MemorySegment>> allocations =
+            Collections.newSetFromMap(new ConcurrentHashMap<>());
 
-    private UnsafeAllocatorArena() {
-    }
+    private UnsafeAllocatorArena() {}
 
     static ScopedMemoryAllocatorArena<MemorySegment> create() {
         return new UnsafeAllocatorArena();
@@ -32,9 +31,11 @@ class UnsafeAllocatorArena implements ScopedMemoryAllocatorArena<MemorySegment> 
 
     @Override
     public ScopedMemory<MemorySegment> allocateMemory(long byteSize, long byteAlignment) {
-        ScopedMemory<MemorySegment> scopedMemory = UnsafeAllocator.instance().allocateMemory(byteSize, byteAlignment);
+        ScopedMemory<MemorySegment> scopedMemory =
+                UnsafeAllocator.instance().allocateMemory(byteSize, byteAlignment);
         allocations.add(scopedMemory);
-        // TODO(peterssen): Avoid extra indirection, copy UnsafeAllocator and include memory tracking.
+        // TODO(peterssen): Avoid extra indirection, copy UnsafeAllocator and include memory
+        // tracking.
         return new ScopedMemory<>() {
             @Override
             public void close() {

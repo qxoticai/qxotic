@@ -12,8 +12,7 @@ final class BytesMemoryAllocator implements MemoryAllocator<byte[]> {
         return INSTANCE;
     }
 
-    private BytesMemoryAllocator() {
-    }
+    private BytesMemoryAllocator() {}
 
     private static final byte[] EMPTY = new byte[0];
 

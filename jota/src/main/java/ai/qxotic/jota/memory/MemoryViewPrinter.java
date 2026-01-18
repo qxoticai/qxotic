@@ -6,8 +6,7 @@ import ai.qxotic.jota.Indexing;
 
 public final class MemoryViewPrinter {
 
-    private MemoryViewPrinter() {
-    }
+    private MemoryViewPrinter() {}
 
     public static <B> String toString(MemoryView<B> view) {
         return toString(view, null, ViewPrintOptions.metaOnly());
@@ -17,16 +16,18 @@ public final class MemoryViewPrinter {
         return toString(view, memoryAccess, ViewPrintOptions.compact());
     }
 
-    public static <B> String toString(MemoryView<B> view,
-                                      MemoryAccess<B> memoryAccess,
-                                      ViewPrintOptions options) {
+    public static <B> String toString(
+            MemoryView<B> view, MemoryAccess<B> memoryAccess, ViewPrintOptions options) {
         StringBuilder sb = new StringBuilder();
 
         if (options.includeMetadata()) {
             sb.append("MemoryView{")
-                    .append("layout=").append(view.layout())
-                    .append(", dataType=").append(view.dataType())
-                    .append(", memory=").append(view.memory());
+                    .append("layout=")
+                    .append(view.layout())
+                    .append(", dataType=")
+                    .append(view.dataType())
+                    .append(", memory=")
+                    .append(view.memory());
             if (view.byteOffset() != 0) {
                 sb.append(", offset=0x").append(Long.toHexString(view.byteOffset()));
             }
@@ -47,11 +48,11 @@ public final class MemoryViewPrinter {
         return sb.toString();
     }
 
-
-    private static <B> void appendPrettyValues(StringBuilder sb,
-                                               MemoryView<B> memoryView,
-                                               MemoryAccess<B> memoryAccess,
-                                               ViewPrintOptions options) {
+    private static <B> void appendPrettyValues(
+            StringBuilder sb,
+            MemoryView<B> memoryView,
+            MemoryAccess<B> memoryAccess,
+            ViewPrintOptions options) {
         if (memoryView.shape().isScalar()) {
             sb.append("[");
             sb.append(readElement(memoryAccess, memoryView, new long[0], options));
@@ -71,16 +72,16 @@ public final class MemoryViewPrinter {
         }
     }
 
-
-    private static <B> void appendPrettyRecursive(StringBuilder sb,
-                                                  long[] indices,
-                                                  long[] dims,
-                                                  int dim,
-                                                  MemoryView<B> memoryView,
-                                                  MemoryAccess<B> memoryAccess,
-                                                  ViewPrintOptions options,
-                                                  boolean elide,
-                                                  int indent) {
+    private static <B> void appendPrettyRecursive(
+            StringBuilder sb,
+            long[] indices,
+            long[] dims,
+            int dim,
+            MemoryView<B> memoryView,
+            MemoryAccess<B> memoryAccess,
+            ViewPrintOptions options,
+            boolean elide,
+            int indent) {
         long dimSize = dims[dim];
         int edgeItems = options.edgeItems();
         boolean useElide = elide && edgeItems > 0 && dimSize > 2L * edgeItems;
@@ -92,7 +93,8 @@ public final class MemoryViewPrinter {
         }
 
         if (dim == dims.length - 1) {
-            appendPrettyLineValues(sb, indices, dims, dim, memoryView, memoryAccess, options, useElide, edgeItems);
+            appendPrettyLineValues(
+                    sb, indices, dims, dim, memoryView, memoryAccess, options, useElide, edgeItems);
             sb.append("]");
             return;
         }
@@ -125,7 +127,16 @@ public final class MemoryViewPrinter {
             }
             appendIndent(sb, nextIndent);
             indices[dim] = i;
-            appendPrettyRecursive(sb, indices, dims, dim + 1, memoryView, memoryAccess, options, elide, nextIndent);
+            appendPrettyRecursive(
+                    sb,
+                    indices,
+                    dims,
+                    dim + 1,
+                    memoryView,
+                    memoryAccess,
+                    options,
+                    elide,
+                    nextIndent);
             first = false;
         }
         sb.append(System.lineSeparator());
@@ -133,15 +144,16 @@ public final class MemoryViewPrinter {
         sb.append("]");
     }
 
-    private static <B> void appendPrettyLineValues(StringBuilder sb,
-                                                   long[] indices,
-                                                   long[] dims,
-                                                   int dim,
-                                                   MemoryView<B> memoryView,
-                                                   MemoryAccess<B> memoryAccess,
-                                                   ViewPrintOptions options,
-                                                   boolean useElide,
-                                                   int edgeItems) {
+    private static <B> void appendPrettyLineValues(
+            StringBuilder sb,
+            long[] indices,
+            long[] dims,
+            int dim,
+            MemoryView<B> memoryView,
+            MemoryAccess<B> memoryAccess,
+            ViewPrintOptions options,
+            boolean useElide,
+            int edgeItems) {
         long dimSize = dims[dim];
         long tailStart = Math.max(edgeItems, dimSize - edgeItems);
         int visibleCount = useElide ? edgeItems * 2 + 1 : (int) dimSize;
@@ -186,10 +198,11 @@ public final class MemoryViewPrinter {
         }
     }
 
-    private static <B> String readElement(MemoryAccess<B> memoryAccess,
-                                          MemoryView<B> memoryView,
-                                          long[] coords,
-                                          ViewPrintOptions options) {
+    private static <B> String readElement(
+            MemoryAccess<B> memoryAccess,
+            MemoryView<B> memoryView,
+            long[] coords,
+            ViewPrintOptions options) {
         long offset = Indexing.coordToOffset(memoryView, coords);
         DataType dataType = memoryView.dataType();
         Object value;

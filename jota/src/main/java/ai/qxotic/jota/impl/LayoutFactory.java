@@ -14,4 +14,3 @@ public final class LayoutFactory {
         return LayoutImpl.scalar();
     }
 }
-

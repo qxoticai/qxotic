@@ -8,7 +8,6 @@ import ai.qxotic.model.llm.llama.LlamaLoaderFactory;
 import ai.qxotic.model.llm.phi3.Phi3LoaderFactory;
 import ai.qxotic.model.llm.qwen2.Qwen2LoaderFactory;
 import ai.qxotic.model.llm.qwen3.Qwen3LoaderFactory;
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,15 +23,15 @@ public class Loader {
 
     private static Map<String, ModelLoaderFactory> knownTextSplitterFactories() {
         Map<String, ModelLoaderFactory> factories = new HashMap<>();
-        List<ModelLoaderFactory> knownFactories = List.of(
-                new Qwen2LoaderFactory(),
-                new Qwen3LoaderFactory(),
-                new ApertusLoaderFactory(),
-                new Gemma3LoaderFactory(),
-                new Phi3LoaderFactory(),
-                new LlamaLoaderFactory(),
-                new GraniteLoaderFactory()
-        );
+        List<ModelLoaderFactory> knownFactories =
+                List.of(
+                        new Qwen2LoaderFactory(),
+                        new Qwen3LoaderFactory(),
+                        new ApertusLoaderFactory(),
+                        new Gemma3LoaderFactory(),
+                        new Phi3LoaderFactory(),
+                        new LlamaLoaderFactory(),
+                        new GraniteLoaderFactory());
         for (var f : knownFactories) {
             factories.put(f.getArchitectureName(), f);
         }
@@ -57,4 +56,3 @@ public class Loader {
         return factory.createLoader(gguf);
     }
 }
-

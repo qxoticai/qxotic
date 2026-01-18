@@ -3,7 +3,6 @@ package ai.qxotic.jota.memory.impl;
 import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAccessChecks;
 import ai.qxotic.jota.memory.MemoryOperations;
-
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
 
@@ -15,31 +14,46 @@ class BooleansMemoryOperations implements MemoryOperations<boolean[]> {
         return INSTANCE;
     }
 
-    private BooleansMemoryOperations() {
-    }
+    private BooleansMemoryOperations() {}
 
     @Override
-    public void copy(Memory<boolean[]> src, long srcByteOffset, Memory<boolean[]> dst, long dstByteOffset, long byteSize) {
+    public void copy(
+            Memory<boolean[]> src,
+            long srcByteOffset,
+            Memory<boolean[]> dst,
+            long dstByteOffset,
+            long byteSize) {
         MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
         MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
         if (byteSize == 0) {
             return;
         }
         System.arraycopy(
-                src.base(), Math.toIntExact(srcByteOffset),
-                dst.base(), Math.toIntExact(dstByteOffset),
-                Math.toIntExact(byteSize)
-        );
+                src.base(),
+                Math.toIntExact(srcByteOffset),
+                dst.base(),
+                Math.toIntExact(dstByteOffset),
+                Math.toIntExact(byteSize));
     }
 
     @Override
-    public void copyFromNative(Memory<MemorySegment> src, long srcByteOffset, Memory<boolean[]> dst, long dstByteOffset, long byteSize) {
+    public void copyFromNative(
+            Memory<MemorySegment> src,
+            long srcByteOffset,
+            Memory<boolean[]> dst,
+            long dstByteOffset,
+            long byteSize) {
         // MemorySegment.ofArray() doesn't support boolean[]
         throw new UnsupportedOperationException("copyFromNative not supported for boolean[]");
     }
 
     @Override
-    public void copyToNative(Memory<boolean[]> src, long srcByteOffset, Memory<MemorySegment> dst, long dstByteOffset, long byteSize) {
+    public void copyToNative(
+            Memory<boolean[]> src,
+            long srcByteOffset,
+            Memory<MemorySegment> dst,
+            long dstByteOffset,
+            long byteSize) {
         // MemorySegment.ofArray() doesn't support boolean[]
         throw new UnsupportedOperationException("copyToNative not supported for boolean[]");
     }
@@ -57,7 +71,8 @@ class BooleansMemoryOperations implements MemoryOperations<boolean[]> {
     }
 
     @Override
-    public void fillShort(Memory<boolean[]> memory, long byteOffset, long byteSize, short shortValue) {
+    public void fillShort(
+            Memory<boolean[]> memory, long byteOffset, long byteSize, short shortValue) {
         throw new UnsupportedOperationException("fillShort not supported for boolean[]");
     }
 

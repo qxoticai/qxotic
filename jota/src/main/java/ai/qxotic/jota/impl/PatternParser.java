@@ -1,14 +1,11 @@
 package ai.qxotic.jota.impl;
 
 /**
- * Utility class for parsing nested tuple patterns.
- * Patterns specify the nesting structure using bracket notation.
+ * Utility class for parsing nested tuple patterns. Patterns specify the nesting structure using
+ * bracket notation.
  *
- * Examples:
- * - "()" - scalar (no elements)
- * - "(_)" - singleton (one element)
- * - "(a, b, c)" - flat (three elements)
- * - "(batch, (N, M))" - nested (rank 2, flatRank 3)
+ * <p>Examples: - "()" - scalar (no elements) - "(_)" - singleton (one element) - "(a, b, c)" - flat
+ * (three elements) - "(batch, (N, M))" - nested (rank 2, flatRank 3)
  */
 final class PatternParser {
 
@@ -21,7 +18,8 @@ final class PatternParser {
      *
      * @param pattern the pattern string (e.g., "(a, (b, c))")
      * @param expectedElements the expected number of elements
-     * @param elementTypeName the name of the element type for error messages (e.g., "dimension", "stride")
+     * @param elementTypeName the name of the element type for error messages (e.g., "dimension",
+     *     "stride")
      * @return the nest array describing the nesting structure
      * @throws IllegalArgumentException if the pattern is malformed
      */
@@ -58,8 +56,12 @@ final class PatternParser {
             if (ch == ',') {
                 if (expectingElement[groupDepth]) {
                     throw new IllegalArgumentException(
-                        "Empty identifiers are not allowed in pattern. " +
-                        "Each " + elementTypeName + " must have a name (e.g., use '_' or '" + elementTypeName + "' for placeholders)");
+                            "Empty identifiers are not allowed in pattern. "
+                                    + "Each "
+                                    + elementTypeName
+                                    + " must have a name (e.g., use '_' or '"
+                                    + elementTypeName
+                                    + "' for placeholders)");
                 }
                 expectingElement[groupDepth] = true;
                 index++;
@@ -87,16 +89,26 @@ final class PatternParser {
                 }
                 if (groupCounts[groupDepth] == 0) {
                     throw new IllegalArgumentException(
-                        "Empty nested brackets are not allowed. " +
-                        "Use " + openChar + closeChar + " for scalar or provide " + elementTypeName + "s inside brackets.");
+                            "Empty nested brackets are not allowed. "
+                                    + "Use "
+                                    + openChar
+                                    + closeChar
+                                    + " for scalar or provide "
+                                    + elementTypeName
+                                    + "s inside brackets.");
                 }
                 if (groupCounts[groupDepth] == 1) {
                     throw new IllegalArgumentException(
-                        "Single-element nested brackets are not normalized. " +
-                        "Use " + openChar + "_" + closeChar + " instead.");
+                            "Single-element nested brackets are not normalized. "
+                                    + "Use "
+                                    + openChar
+                                    + "_"
+                                    + closeChar
+                                    + " instead.");
                 }
                 if (lastLeafIndex < 0) {
-                    throw new IllegalArgumentException("Pattern must contain at least one " + elementTypeName);
+                    throw new IllegalArgumentException(
+                            "Pattern must contain at least one " + elementTypeName);
                 }
 
                 nest[lastLeafIndex] -= 1;
@@ -127,7 +139,8 @@ final class PatternParser {
                 throw new IllegalArgumentException("Empty identifiers are not allowed in pattern");
             }
             if (elementIndex >= expectedElements) {
-                throw new ArrayIndexOutOfBoundsException("Pattern has more elements than provided " + elementTypeName + "s");
+                throw new ArrayIndexOutOfBoundsException(
+                        "Pattern has more elements than provided " + elementTypeName + "s");
             }
 
             nest[elementIndex] = pendingOpens;
@@ -147,14 +160,21 @@ final class PatternParser {
         }
         if (!sawAny && expectedElements != 0) {
             throw new IllegalArgumentException(
-                "Pattern structure expects 0 " + elementTypeName + "s but got " + expectedElements);
+                    "Pattern structure expects 0 "
+                            + elementTypeName
+                            + "s but got "
+                            + expectedElements);
         }
         if (elementIndex != expectedElements) {
             throw new IllegalArgumentException(
-                "Pattern structure expects " + elementIndex + " " + elementTypeName + "s but got " + expectedElements);
+                    "Pattern structure expects "
+                            + elementIndex
+                            + " "
+                            + elementTypeName
+                            + "s but got "
+                            + expectedElements);
         }
 
         return nest;
     }
-
 }

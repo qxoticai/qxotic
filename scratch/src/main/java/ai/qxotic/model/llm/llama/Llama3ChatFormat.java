@@ -1,16 +1,13 @@
 package ai.qxotic.model.llm.llama;
 
 import ai.qxotic.model.llm.ChatFormat;
+import ai.qxotic.tokenizers.IntSequence;
 import ai.qxotic.tokenizers.Tokenizer;
 import ai.qxotic.tokenizers.Vocabulary;
-import ai.qxotic.tokenizers.IntSequence;
-
 import java.util.OptionalInt;
 import java.util.Set;
 
-/**
- * Utility tailored for Llama 3 instruct prompt format.
- */
+/** Utility tailored for Llama 3 instruct prompt format. */
 public class Llama3ChatFormat extends ChatFormat {
 
     public final int beginOfText;
@@ -29,8 +26,8 @@ public class Llama3ChatFormat extends ChatFormat {
         this.endHeader = vocabulary.id("<|end_header_id|>");
         this.endOfTurn = vocabulary.id("<|eot_id|>");
         this.endOfText = vocabulary.id("<|end_of_text|>");
-        this.endOfMessage = vocabulary.contains("<|eom_id|>")
-                ? vocabulary.id("<|eom_id|>") : -1; // since 3-.1+
+        this.endOfMessage =
+                vocabulary.contains("<|eom_id|>") ? vocabulary.id("<|eom_id|>") : -1; // since 3-.1+
         this.stopTokens = Set.of(endOfText, endOfTurn);
     }
 
@@ -69,15 +66,15 @@ public class Llama3ChatFormat extends ChatFormat {
     }
 
     //
-//    public IntSequence encodeText(String text, boolean prependBOS, boolean appendEOS) {
-//        IntSequence.Builder builder = IntSequence.newBuilder();
-//        if (prependBOS) {
-//            builder.add(this.beginOfText);
-//        }
-//        builder.addAll(this.tokenizer.encode(text));
-//        if (appendEOS) {
-//            builder.add(this.endOfText);
-//        }
-//        return builder;
-//    }
+    //    public IntSequence encodeText(String text, boolean prependBOS, boolean appendEOS) {
+    //        IntSequence.Builder builder = IntSequence.newBuilder();
+    //        if (prependBOS) {
+    //            builder.add(this.beginOfText);
+    //        }
+    //        builder.addAll(this.tokenizer.encode(text));
+    //        if (appendEOS) {
+    //            builder.add(this.endOfText);
+    //        }
+    //        return builder;
+    //    }
 }

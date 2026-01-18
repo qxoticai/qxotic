@@ -1,7 +1,6 @@
 package ai.qxotic.tokenizers.impl;
 
 import ai.qxotic.tokenizers.TextSplitter;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -10,10 +9,10 @@ import java.util.regex.Pattern;
 public final class RegexSplitter implements TextSplitter {
 
     public static final String[] DEFAULT_BPE_SPLITS = {
-            "[\\p{P}\\$\\+<=>\\^~\\|]+",
-            "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)",
-            "\\p{N}+",
-            "[0-9][0-9][0-9]"
+        "[\\p{P}\\$\\+<=>\\^~\\|]+",
+        "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)",
+        "\\p{N}+",
+        "[0-9][0-9][0-9]"
     };
 
     private final Pattern pattern;

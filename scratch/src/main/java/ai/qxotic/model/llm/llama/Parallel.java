@@ -14,7 +14,8 @@ public final class Parallel {
         }
     }
 
-    public static void parallelFor(int startInclusive, int endExclusive, int batchIndex, IntConsumer action) {
+    public static void parallelFor(
+            int startInclusive, int endExclusive, int batchIndex, IntConsumer action) {
         if (batchIndex >= 0) {
             action.accept(batchIndex);
         } else if (endExclusive - startInclusive == 1) {
@@ -24,7 +25,8 @@ public final class Parallel {
         }
     }
 
-    public static void parallelForLong(long startInclusive, long endExclusive, LongConsumer action) {
+    public static void parallelForLong(
+            long startInclusive, long endExclusive, LongConsumer action) {
         if (endExclusive - startInclusive == 1) {
             action.accept(startInclusive);
         } else {

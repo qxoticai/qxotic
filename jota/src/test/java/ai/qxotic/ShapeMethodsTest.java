@@ -1,13 +1,11 @@
 package ai.qxotic;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import ai.qxotic.jota.Shape;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
-
-/**
- * Comprehensive tests for Shape methods including rank, size, modeAt, flatten, etc.
- */
+/** Comprehensive tests for Shape methods including rank, size, modeAt, flatten, etc. */
 class ShapeMethodsTest {
 
     @Test
@@ -19,7 +17,7 @@ class ShapeMethodsTest {
         assertEquals(24, shape.size());
         assertTrue(shape.isFlat());
         assertFalse(shape.isScalar());
-        assertArrayEquals(new long[]{2, 3, 4}, shape.toArray());
+        assertArrayEquals(new long[] {2, 3, 4}, shape.toArray());
     }
 
     @Test
@@ -32,7 +30,7 @@ class ShapeMethodsTest {
         assertEquals(24, shape.size());
         assertFalse(shape.isFlat());
         assertFalse(shape.isScalar());
-        assertArrayEquals(new long[]{2, 3, 4}, shape.toArray());
+        assertArrayEquals(new long[] {2, 3, 4}, shape.toArray());
     }
 
     @Test
@@ -44,7 +42,7 @@ class ShapeMethodsTest {
         assertEquals(1, scalar.size());
         assertTrue(scalar.isFlat());
         assertTrue(scalar.isScalar());
-        assertArrayEquals(new long[]{}, scalar.toArray());
+        assertArrayEquals(new long[] {}, scalar.toArray());
     }
 
     @Test
@@ -54,7 +52,7 @@ class ShapeMethodsTest {
 
         assertEquals(3, shape.rank());
         assertEquals(2, shape.size(0));
-        assertEquals(12, shape.size(1));  // 3 * 4
+        assertEquals(12, shape.size(1)); // 3 * 4
         assertEquals(5, shape.size(2));
     }
 
@@ -62,9 +60,9 @@ class ShapeMethodsTest {
     void testSizeByModeNegativeIndex() {
         Shape shape = Shape.flat(2, 3, 4);
 
-        assertEquals(4, shape.size(-1));  // Last dimension
-        assertEquals(3, shape.size(-2));  // Second to last
-        assertEquals(2, shape.size(-3));  // Third to last
+        assertEquals(4, shape.size(-1)); // Last dimension
+        assertEquals(3, shape.size(-2)); // Second to last
+        assertEquals(2, shape.size(-3)); // Third to last
     }
 
     @Test
@@ -80,9 +78,9 @@ class ShapeMethodsTest {
     void testFlatAtNegativeIndices() {
         Shape shape = Shape.flat(2, 3, 4);
 
-        assertEquals(4, shape.flatAt(-1));  // Last
-        assertEquals(3, shape.flatAt(-2));  // Second to last
-        assertEquals(2, shape.flatAt(-3));  // Third to last
+        assertEquals(4, shape.flatAt(-1)); // Last
+        assertEquals(3, shape.flatAt(-2)); // Second to last
+        assertEquals(2, shape.flatAt(-3)); // Third to last
     }
 
     @Test
@@ -115,7 +113,7 @@ class ShapeMethodsTest {
         Shape mode1 = shape.modeAt(1);
         assertEquals(2, mode1.rank());
         assertTrue(mode1.isFlat());
-        assertArrayEquals(new long[]{3, 4}, mode1.toArray());
+        assertArrayEquals(new long[] {3, 4}, mode1.toArray());
     }
 
     @Test
@@ -136,7 +134,7 @@ class ShapeMethodsTest {
         Shape shape = Shape.flat(2, 3, 4);
         Shape flattened = shape.flatten();
 
-        assertSame(shape, flattened);  // Should return same instance
+        assertSame(shape, flattened); // Should return same instance
     }
 
     @Test
@@ -148,7 +146,7 @@ class ShapeMethodsTest {
         assertTrue(flattened.isFlat());
         assertEquals(3, flattened.rank());
         assertEquals(3, flattened.flatRank());
-        assertArrayEquals(new long[]{2, 3, 4}, flattened.toArray());
+        assertArrayEquals(new long[] {2, 3, 4}, flattened.toArray());
     }
 
     @Test
@@ -159,13 +157,13 @@ class ShapeMethodsTest {
         assertEquals(2, shape.rank());
         assertEquals(4, shape.flatRank());
         assertEquals(120, shape.size());
-        assertArrayEquals(new long[]{2, 3, 4, 5}, shape.toArray());
+        assertArrayEquals(new long[] {2, 3, 4, 5}, shape.toArray());
 
         // Test mode extraction
         Shape mode1 = shape.modeAt(1);
         assertEquals(2, mode1.rank());
         assertEquals(3, mode1.flatRank());
-        assertArrayEquals(new long[]{3, 4, 5}, mode1.toArray());
+        assertArrayEquals(new long[] {3, 4, 5}, mode1.toArray());
     }
 
     @Test
@@ -176,7 +174,7 @@ class ShapeMethodsTest {
         assertEquals(3, shape.flatRank());
         assertEquals(2, shape.size(0));
         assertEquals(12, shape.size(1));
-        assertArrayEquals(new long[]{2, 3, 4}, shape.toArray());
+        assertArrayEquals(new long[] {2, 3, 4}, shape.toArray());
     }
 
     @Test
@@ -187,7 +185,7 @@ class ShapeMethodsTest {
         assertEquals(template.rank(), newShape.rank());
         assertEquals(template.flatRank(), newShape.flatRank());
         assertEquals(2, newShape.rank());
-        assertArrayEquals(new long[]{10, 20, 30}, newShape.toArray());
+        assertArrayEquals(new long[] {10, 20, 30}, newShape.toArray());
     }
 
     @Test
@@ -198,7 +196,7 @@ class ShapeMethodsTest {
 
         assertEquals(2, shape.rank());
         assertEquals(4, shape.flatRank());
-        assertArrayEquals(new long[]{2, 3, 4, 5}, shape.toArray());
+        assertArrayEquals(new long[] {2, 3, 4, 5}, shape.toArray());
     }
 
     @Test

@@ -13,8 +13,7 @@ final class BooleansMemoryAllocator implements MemoryAllocator<boolean[]> {
         return INSTANCE;
     }
 
-    private BooleansMemoryAllocator() {
-    }
+    private BooleansMemoryAllocator() {}
 
     @Override
     public Device device() {
@@ -28,7 +27,7 @@ final class BooleansMemoryAllocator implements MemoryAllocator<boolean[]> {
 
     @Override
     public boolean supportsDataType(DataType dataType) {
-        return dataType == DataType.BOOL;  // ONLY BOOL - override default behavior
+        return dataType == DataType.BOOL; // ONLY BOOL - override default behavior
     }
 
     @Override
@@ -36,7 +35,7 @@ final class BooleansMemoryAllocator implements MemoryAllocator<boolean[]> {
         if (byteAlignment != 1) {
             throw new IllegalArgumentException("byteAlignment != 1");
         }
-        int length = Math.toIntExact(byteSize);  // 1 byte per boolean
+        int length = Math.toIntExact(byteSize); // 1 byte per boolean
         return BooleansMemory.of(new boolean[length]);
     }
 }

@@ -1,25 +1,23 @@
 package ai.qxotic.jota.memory;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import ai.qxotic.jota.memory.impl.ContextFactory;
 import ai.qxotic.jota.memory.impl.MemoryAllocatorFactory;
+import java.lang.foreign.MemorySegment;
+import java.nio.ByteBuffer;
 import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.Test;
 
-import java.lang.foreign.MemorySegment;
-import java.nio.ByteBuffer;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
 class MemoryOperationsCrossContextTest {
 
-    @AutoClose
-    MemoryContext<MemorySegment> nativeContext = ContextFactory.ofMemorySegment();
+    @AutoClose MemoryContext<MemorySegment> nativeContext = ContextFactory.ofMemorySegment();
+
+    @AutoClose MemoryContext<float[]> floatContext = ContextFactory.ofFloats();
 
     @AutoClose
-    MemoryContext<float[]> floatContext = ContextFactory.ofFloats();
-
-    @AutoClose
-    MemoryContext<ByteBuffer> bufferContext = ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false));
+    MemoryContext<ByteBuffer> bufferContext =
+            ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false));
 
     @Test
     void copyShouldTransferFloatBetweenDifferentContexts() {
@@ -30,9 +28,14 @@ class MemoryOperationsCrossContextTest {
         floatContext.memoryAccess().writeFloat(src, 0, 3.14f);
 
         MemoryOperations.copy(
-                floatContext.memoryOperations(), src, 0,
-                bufferContext.memoryOperations(), dst, 0,
-                4, buffer);
+                floatContext.memoryOperations(),
+                src,
+                0,
+                bufferContext.memoryOperations(),
+                dst,
+                0,
+                4,
+                buffer);
 
         assertEquals(3.14f, bufferContext.memoryAccess().readFloat(dst, 0));
     }
@@ -46,10 +49,14 @@ class MemoryOperationsCrossContextTest {
         bufferContext.memoryAccess().writeInt(src, 4, 0x12345678);
 
         MemoryOperations.copy(
-                bufferContext.memoryOperations(), src, 4,
-                floatContext.memoryOperations(), dst, 0,
-                4, buffer
-        );
+                bufferContext.memoryOperations(),
+                src,
+                4,
+                floatContext.memoryOperations(),
+                dst,
+                0,
+                4,
+                buffer);
 
         assertEquals(0x12345678, floatContext.memoryAccess().readInt(dst, 0));
     }
@@ -63,10 +70,14 @@ class MemoryOperationsCrossContextTest {
         bufferContext.memoryAccess().writeLong(src, 0, 0x1122334455667788L);
 
         MemoryOperations.copy(
-                bufferContext.memoryOperations(), src, 0,
-                nativeContext.memoryOperations(), dst, 0,
-                8, buffer
-        );
+                bufferContext.memoryOperations(),
+                src,
+                0,
+                nativeContext.memoryOperations(),
+                dst,
+                0,
+                8,
+                buffer);
 
         assertEquals(0x1122334455667788L, nativeContext.memoryAccess().readLong(dst, 0));
     }

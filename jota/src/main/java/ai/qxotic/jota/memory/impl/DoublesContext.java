@@ -15,8 +15,7 @@ class DoublesContext implements MemoryContext<double[]> {
         return INSTANCE;
     }
 
-    private DoublesContext() {
-    }
+    private DoublesContext() {}
 
     @Override
     public Device device() {

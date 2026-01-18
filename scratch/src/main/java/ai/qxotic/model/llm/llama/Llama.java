@@ -5,13 +5,15 @@ import ai.qxotic.span.FloatSpan;
 import ai.qxotic.span.FloatUnaryOperator;
 import ai.qxotic.span.KernelOps;
 import ai.qxotic.tokenizers.IntSequence;
-
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
 
 public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Llama.State> {
 
-    public Llama(Configuration configuration, KernelOps<FloatSpan, FloatMatrixView> kernelOps, FloatSpanFactory<? extends FloatSpan> spanFactory) {
+    public Llama(
+            Configuration configuration,
+            KernelOps<FloatSpan, FloatMatrixView> kernelOps,
+            FloatSpanFactory<? extends FloatSpan> spanFactory) {
         super(configuration, kernelOps, spanFactory);
     }
 
@@ -25,7 +27,9 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
         public final int ffnLength; // for ffn layers (hiddenDim)
         public final int numberOfLayers; // number of layers
         public final int numberOfHeads; // number of query heads
-        public final int numberOfKeyValueHeads; // number of key/value heads (can be < query heads because of multiquery)
+        public final int
+                numberOfKeyValueHeads; // number of key/value heads (can be < query heads because of
+        // multiquery)
         public final int vocabularySize; // vocabulary size
         public final int contextLength; // max sequence length
         public final float rmsNormEps;
@@ -46,16 +50,59 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
         public final FloatUnaryOperator activationFunction;
         public final FloatUnaryOperator[] activationFunctionPerLayer;
 
-        public Configuration(int embeddingLength, int ffnLength, int numberOfLayers, int numberOfHeads,
-                             int keyHeadSize, int valueHeadSize,
-                             int numberOfKeyValueHeads, int vocabularySize, int contextLength, float rmsNormEps, float ropeTheta, boolean ropeIsNeoxStyle) {
-            this(embeddingLength, ffnLength, numberOfLayers, numberOfHeads, keyHeadSize, valueHeadSize, numberOfKeyValueHeads, vocabularySize, contextLength, rmsNormEps, ropeTheta, ropeIsNeoxStyle, Float.NaN, Float.NaN, Float.NaN, Float.NaN, FloatUnaryOperator.SILU, null);
+        public Configuration(
+                int embeddingLength,
+                int ffnLength,
+                int numberOfLayers,
+                int numberOfHeads,
+                int keyHeadSize,
+                int valueHeadSize,
+                int numberOfKeyValueHeads,
+                int vocabularySize,
+                int contextLength,
+                float rmsNormEps,
+                float ropeTheta,
+                boolean ropeIsNeoxStyle) {
+            this(
+                    embeddingLength,
+                    ffnLength,
+                    numberOfLayers,
+                    numberOfHeads,
+                    keyHeadSize,
+                    valueHeadSize,
+                    numberOfKeyValueHeads,
+                    vocabularySize,
+                    contextLength,
+                    rmsNormEps,
+                    ropeTheta,
+                    ropeIsNeoxStyle,
+                    Float.NaN,
+                    Float.NaN,
+                    Float.NaN,
+                    Float.NaN,
+                    FloatUnaryOperator.SILU,
+                    null);
         }
 
-        public Configuration(int embeddingLength, int ffnLength, int numberOfLayers, int numberOfHeads,
-                             int keyHeadSize, int valueHeadSize,
-                             int numberOfKeyValueHeads, int vocabularySize, int contextLength, float rmsNormEps, float ropeTheta, boolean ropeIsNeoxStyle, float attentionScale, float residualScale, float logitScale, float embeddingScale,
-                             FloatUnaryOperator activationFunction, FloatUnaryOperator[] activationFunctionPerLayer) {
+        public Configuration(
+                int embeddingLength,
+                int ffnLength,
+                int numberOfLayers,
+                int numberOfHeads,
+                int keyHeadSize,
+                int valueHeadSize,
+                int numberOfKeyValueHeads,
+                int vocabularySize,
+                int contextLength,
+                float rmsNormEps,
+                float ropeTheta,
+                boolean ropeIsNeoxStyle,
+                float attentionScale,
+                float residualScale,
+                float logitScale,
+                float embeddingScale,
+                FloatUnaryOperator activationFunction,
+                FloatUnaryOperator[] activationFunctionPerLayer) {
             this.embeddingLength = embeddingLength;
 
             this.ffnLength = ffnLength;
@@ -80,9 +127,10 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
             // Derived parameters.
             this.headSize = embeddingLength / numberOfHeads;
             // Derive if not specified.
-            this.attentionScale = Float.isNaN(attentionScale)
-                    ? (float) (1.0 / Math.sqrt(keyHeadSize))
-                    : attentionScale;
+            this.attentionScale =
+                    Float.isNaN(attentionScale)
+                            ? (float) (1.0 / Math.sqrt(keyHeadSize))
+                            : attentionScale;
         }
 
         public Configuration with(UnaryOperator<Builder> modifier) {
@@ -98,7 +146,8 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
             int keyHeadSize; // llama.cpp's n_embd_head_k
             int valueHeadSize; // llama.cpp's n_embd_head_v
 
-            int numberOfKeyValueHeads; // number of key/value heads (can be < query heads because of multiquery)
+            int numberOfKeyValueHeads; // number of key/value heads (can be < query heads
+            // because of multiquery)
             int vocabularySize; // vocabulary size, usually 256 (byte-level)
             int contextLength; // max sequence length
             float rmsNormEps;
@@ -188,7 +237,8 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
                 return this;
             }
 
-            public Builder activationFunctionPerLayer(FloatUnaryOperator[] activationFunctionPerLayer) {
+            public Builder activationFunctionPerLayer(
+                    FloatUnaryOperator[] activationFunctionPerLayer) {
                 this.activationFunctionPerLayer = activationFunctionPerLayer;
                 return this;
             }
@@ -218,7 +268,8 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
             }
 
             public Configuration build() {
-                return new Configuration(embeddingLength,
+                return new Configuration(
+                        embeddingLength,
                         ffnLength,
                         numberOfLayers,
                         numberOfHeads,
@@ -235,8 +286,7 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
                         logitScale,
                         embeddingScale,
                         activationFunction,
-                        activationFunctionPerLayer
-                );
+                        activationFunctionPerLayer);
             }
         }
     }
@@ -256,7 +306,7 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
         public final FloatMatrixView[] valueWeights; // (layer, n_kv_heads, head_size, dim)
 
         public final FloatSpan[] queryBias; // (layer, dim)
-        public final FloatSpan[] keyBias;   // (layer, kv_dim)
+        public final FloatSpan[] keyBias; // (layer, kv_dim)
         public final FloatSpan[] valueBias; // (layer, kv_dim)
 
         public final FloatMatrixView[] outputWeights; // (layer, n_heads * head_size, dim)
@@ -273,13 +323,26 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
         // (optional) classifier weights for the logits, on the last layer
         public final FloatMatrixView classifierWeights; // (vocab_size, dim)
 
-        public Weights(FloatMatrixView tokenEmbeddings, FloatSpan[] rmsAttentionWeights,
-                       FloatMatrixView[] queryWeights, FloatMatrixView[] keyWeights, FloatMatrixView[] valueWeights,
-                       FloatSpan[] queryNormWeights, FloatSpan[] keyNormWeights,
-                       FloatSpan[] queryBias, FloatSpan[] keyBias, FloatSpan[] valueBias,
-                       FloatMatrixView[] outputWeights, FloatSpan[] rmsFFNWeights,
-                       FloatMatrixView[] ffnGate, FloatMatrixView[] ffnDown, FloatMatrixView[] ffnUp,
-                       FloatSpan rmsFinalWeights, FloatSpan ropeReal, FloatSpan ropeImag, FloatMatrixView classifierWeights) {
+        public Weights(
+                FloatMatrixView tokenEmbeddings,
+                FloatSpan[] rmsAttentionWeights,
+                FloatMatrixView[] queryWeights,
+                FloatMatrixView[] keyWeights,
+                FloatMatrixView[] valueWeights,
+                FloatSpan[] queryNormWeights,
+                FloatSpan[] keyNormWeights,
+                FloatSpan[] queryBias,
+                FloatSpan[] keyBias,
+                FloatSpan[] valueBias,
+                FloatMatrixView[] outputWeights,
+                FloatSpan[] rmsFFNWeights,
+                FloatMatrixView[] ffnGate,
+                FloatMatrixView[] ffnDown,
+                FloatMatrixView[] ffnUp,
+                FloatSpan rmsFinalWeights,
+                FloatSpan ropeReal,
+                FloatSpan ropeImag,
+                FloatMatrixView classifierWeights) {
             this.tokenEmbeddings = tokenEmbeddings;
             this.rmsAttentionWeights = rmsAttentionWeights;
             this.queryWeights = queryWeights;
@@ -309,27 +372,45 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
         public final int batchSize;
         public final FloatMatrixView x; // activation at current time stamp (batchSize, dim,)
         public final FloatMatrixView xb; // same, but inside a residual branch (batchSize, dim,)
-        public final FloatMatrixView attention_out; // same, but inside a residual branch (batchSize, dim,)
-        public final FloatMatrixView xb2; // an additional buffer just for convenience (batchSize, dim,)
-        public final FloatMatrixView hb; // buffer for hidden dimension in the ffn (batchSize, ffn_length,)
-        public final FloatMatrixView hb2; // buffer for hidden dimension in the ffn (batchSize, ffn_length,)
+        public final FloatMatrixView
+                attention_out; // same, but inside a residual branch (batchSize, dim,)
+        public final FloatMatrixView
+                xb2; // an additional buffer just for convenience (batchSize, dim,)
+        public final FloatMatrixView
+                hb; // buffer for hidden dimension in the ffn (batchSize, ffn_length,)
+        public final FloatMatrixView
+                hb2; // buffer for hidden dimension in the ffn (batchSize, ffn_length,)
         public final FloatMatrixView query; // query (batchSize, dim,)
         public final FloatMatrixView key; // key (batchSize, kvDim,)
         public final FloatMatrixView value; // value (batchSize, kvDim,)
-        public final FloatMatrixView attentionScores; // buffer for scores/attention values (batchSize, n_heads, seq_len)
+        public final FloatMatrixView
+                attentionScores; // buffer for scores/attention values (batchSize, n_heads, seq_len)
 
         // These do not need batches.
         public final FloatSpan logits; // output logits (vocab_size,)
         // kv cache
-        public final FloatSpan[] keyCache;   // (n_layer, seq_len, kv_dim)
+        public final FloatSpan[] keyCache; // (n_layer, seq_len, kv_dim)
         public final FloatSpan[] valueCache; // (n_layer, kv_dim, seq_len) stored transposed
 
         //        public int latestToken; // mutable state
         public int latestIngestedTokenBatchIndex;
         public final IntSequence.Builder ingestedTokens;
 
-        protected State(int batchSize, FloatSpan x, FloatSpan xb, FloatSpan attention_out, FloatSpan xb2, FloatSpan hb, FloatSpan hb2, FloatSpan query, FloatSpan key, FloatSpan value, FloatSpan attentionScores,
-                        FloatSpan logits, FloatSpan[] keyCache, FloatSpan[] valueCache) {
+        protected State(
+                int batchSize,
+                FloatSpan x,
+                FloatSpan xb,
+                FloatSpan attention_out,
+                FloatSpan xb2,
+                FloatSpan hb,
+                FloatSpan hb2,
+                FloatSpan query,
+                FloatSpan key,
+                FloatSpan value,
+                FloatSpan attentionScores,
+                FloatSpan logits,
+                FloatSpan[] keyCache,
+                FloatSpan[] valueCache) {
             this.batchSize = batchSize;
             this.x = FloatMatrixView.inBatchesCached(x, batchSize);
             this.xb = FloatMatrixView.inBatchesCached(xb, batchSize);
@@ -360,26 +441,50 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
         FloatSpan x = spanFactory.allocateBatches(batchSize, config.embeddingLength);
         FloatSpan xb = spanFactory.allocateBatches(batchSize, config.embeddingLength);
 
-        FloatSpan attention_out = spanFactory.allocateBatches(batchSize, config.keyHeadSize * config.numberOfHeads);
+        FloatSpan attention_out =
+                spanFactory.allocateBatches(batchSize, config.keyHeadSize * config.numberOfHeads);
 
         FloatSpan xb2 = spanFactory.allocateBatches(batchSize, config.embeddingLength);
 
         FloatSpan hb = spanFactory.allocateBatches(batchSize, config.ffnLength);
         FloatSpan hb2 = spanFactory.allocateBatches(batchSize, config.ffnLength);
-        FloatSpan query = spanFactory.allocateBatches(batchSize, config.keyHeadSize * config.numberOfHeads);
+        FloatSpan query =
+                spanFactory.allocateBatches(batchSize, config.keyHeadSize * config.numberOfHeads);
         FloatSpan key = spanFactory.allocateBatches(batchSize, kvDim);
         FloatSpan value = spanFactory.allocateBatches(batchSize, kvDim);
-        FloatSpan attentionScores = spanFactory.allocateBatches(batchSize, config.numberOfHeads, config.contextLength);
+        FloatSpan attentionScores =
+                spanFactory.allocateBatches(batchSize, config.numberOfHeads, config.contextLength);
 
         // These not need to be batched.
         FloatSpan logits = spanFactory.allocate(config.vocabularySize);
-        FloatSpan[] keyCache = Stream.generate(() -> spanFactory.allocate(config.contextLength, kvDim)).limit(config.numberOfLayers).toArray(FloatSpan[]::new);
-        FloatSpan[] valueCache = Stream.generate(() -> spanFactory.allocate(kvDim, config.contextLength)).limit(config.numberOfLayers).toArray(FloatSpan[]::new);
+        FloatSpan[] keyCache =
+                Stream.generate(() -> spanFactory.allocate(config.contextLength, kvDim))
+                        .limit(config.numberOfLayers)
+                        .toArray(FloatSpan[]::new);
+        FloatSpan[] valueCache =
+                Stream.generate(() -> spanFactory.allocate(kvDim, config.contextLength))
+                        .limit(config.numberOfLayers)
+                        .toArray(FloatSpan[]::new);
 
-        return new State(batchSize, x, xb, attention_out, xb2, hb, hb2, query, key, value, attentionScores, logits, keyCache, valueCache);
+        return new State(
+                batchSize,
+                x,
+                xb,
+                attention_out,
+                xb2,
+                hb,
+                hb2,
+                query,
+                key,
+                value,
+                attentionScores,
+                logits,
+                keyCache,
+                valueCache);
     }
 
-    private void batchedForwardImpl(Weights weights, State state, int[] tokens, int position, boolean computeLogits) {
+    private void batchedForwardImpl(
+            Weights weights, State state, int[] tokens, int position, boolean computeLogits) {
 
         if (computeLogits && tokens.length != 1) {
             throw new IllegalArgumentException("cannot compute logits of multiple previous tokens");
@@ -388,7 +493,9 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
         // a few convenience variables
         Configuration config = configuration();
         int headSize = config.valueHeadSize;
-        int kvDim = config.numberOfKeyValueHeads * config.keyHeadSize; // (config.embeddingLength * config.numberOfKeyValueHeads) / config.numberOfHeads;
+        int kvDim = config.numberOfKeyValueHeads * config.keyHeadSize; // (config.embeddingLength *
+        // config.numberOfKeyValueHeads) /
+        // config.numberOfHeads;
 
         /*
          * numberOfKeyValueHeads == numberOfHeads => Multi-head attention (MHA)
@@ -404,63 +511,175 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
 
         if (!computeLogits) {
             // copy the token embedding into x
-            Parallel.parallelFor(0, batchSize, t -> kernelOps.copyTo(weights.tokenEmbeddings.row(tokens[t]), state.x.row(t)));
+            Parallel.parallelFor(
+                    0,
+                    batchSize,
+                    t -> kernelOps.copyTo(weights.tokenEmbeddings.row(tokens[t]), state.x.row(t)));
             // For Granite models.
             if (!Float.isNaN(config.embeddingScale)) {
-                Parallel.parallelFor(0, batchSize, t -> kernelOps.scale(state.x.row(t), config.embeddingScale, state.x.row(t)));
+                Parallel.parallelFor(
+                        0,
+                        batchSize,
+                        t ->
+                                kernelOps.scale(
+                                        state.x.row(t), config.embeddingScale, state.x.row(t)));
             }
         }
 
         // forward all the layers
-        for (int currentLayer = computeLogits ? config.numberOfLayers - 1 : 0; currentLayer < config.numberOfLayers; currentLayer++) {
+        for (int currentLayer = computeLogits ? config.numberOfLayers - 1 : 0;
+                currentLayer < config.numberOfLayers;
+                currentLayer++) {
             final int li = currentLayer;
             if (!computeLogits) {
                 // attention rmsnorm
-                Parallel.parallelFor(0, batchSize, t -> kernelOps.rmsNorm(state.x.row(t), weights.rmsAttentionWeights[li], config.rmsNormEps, state.xb.row(t)));
+                Parallel.parallelFor(
+                        0,
+                        batchSize,
+                        t ->
+                                kernelOps.rmsNorm(
+                                        state.x.row(t),
+                                        weights.rmsAttentionWeights[li],
+                                        config.rmsNormEps,
+                                        state.xb.row(t)));
 
                 // qkv matmuls for this position
-                kernelOps.matrixMultiply(batchSize, config.keyHeadSize * config.numberOfHeads, config.embeddingLength, state.xb, weights.queryWeights[li], state.query);
-                kernelOps.matrixMultiply(batchSize, kvDim, config.embeddingLength, state.xb, weights.keyWeights[li], state.key);
-                kernelOps.matrixMultiply(batchSize, kvDim, config.embeddingLength, state.xb, weights.valueWeights[li], state.value);
+                kernelOps.matrixMultiply(
+                        batchSize,
+                        config.keyHeadSize * config.numberOfHeads,
+                        config.embeddingLength,
+                        state.xb,
+                        weights.queryWeights[li],
+                        state.query);
+                kernelOps.matrixMultiply(
+                        batchSize,
+                        kvDim,
+                        config.embeddingLength,
+                        state.xb,
+                        weights.keyWeights[li],
+                        state.key);
+                kernelOps.matrixMultiply(
+                        batchSize,
+                        kvDim,
+                        config.embeddingLength,
+                        state.xb,
+                        weights.valueWeights[li],
+                        state.value);
 
                 // Bias correction.
                 if (weights.queryBias != null && weights.queryBias[li] != null) {
-                    Parallel.parallelFor(0, batchSize, t -> kernelOps.add(state.query.row(t), weights.queryBias[li], state.query.row(t)));
+                    Parallel.parallelFor(
+                            0,
+                            batchSize,
+                            t ->
+                                    kernelOps.add(
+                                            state.query.row(t),
+                                            weights.queryBias[li],
+                                            state.query.row(t)));
                 }
                 if (weights.keyBias != null && weights.keyBias[li] != null) {
-                    Parallel.parallelFor(0, batchSize, t -> kernelOps.add(state.key.row(t), weights.keyBias[li], state.key.row(t)));
+                    Parallel.parallelFor(
+                            0,
+                            batchSize,
+                            t ->
+                                    kernelOps.add(
+                                            state.key.row(t),
+                                            weights.keyBias[li],
+                                            state.key.row(t)));
                 }
                 if (weights.valueBias != null && weights.valueBias[li] != null) {
-                    Parallel.parallelFor(0, batchSize, t -> kernelOps.add(state.value.row(t), weights.valueBias[li], state.value.row(t)));
+                    Parallel.parallelFor(
+                            0,
+                            batchSize,
+                            t ->
+                                    kernelOps.add(
+                                            state.value.row(t),
+                                            weights.valueBias[li],
+                                            state.value.row(t)));
                 }
 
                 if (weights.queryNormWeights != null) {
                     // attention rmsnorm
-                    Parallel.parallelFor(0, batchSize, t -> {
-                        for (int h = 0; h < config.numberOfHeads; ++h) {
-                            FloatSpan queryHead = state.query.row(t).slice(headSize * h, headSize);
-                            kernelOps.rmsNorm(queryHead, weights.queryNormWeights[li], config.rmsNormEps, queryHead);
-                        }
-                    });
+                    Parallel.parallelFor(
+                            0,
+                            batchSize,
+                            t -> {
+                                for (int h = 0; h < config.numberOfHeads; ++h) {
+                                    FloatSpan queryHead =
+                                            state.query.row(t).slice(headSize * h, headSize);
+                                    kernelOps.rmsNorm(
+                                            queryHead,
+                                            weights.queryNormWeights[li],
+                                            config.rmsNormEps,
+                                            queryHead);
+                                }
+                            });
                 }
 
                 if (weights.keyNormWeights != null) {
                     // attention rmsnorm
-                    Parallel.parallelFor(0, batchSize, t -> {
-                        for (int h = 0; h < config.numberOfKeyValueHeads; ++h) {
-                            FloatSpan keyHead = state.key.row(t).slice(config.keyHeadSize * h, config.keyHeadSize);
-                            kernelOps.rmsNorm(keyHead, weights.keyNormWeights[li], config.rmsNormEps, keyHead);
-                        }
-                    });
+                    Parallel.parallelFor(
+                            0,
+                            batchSize,
+                            t -> {
+                                for (int h = 0; h < config.numberOfKeyValueHeads; ++h) {
+                                    FloatSpan keyHead =
+                                            state.key
+                                                    .row(t)
+                                                    .slice(
+                                                            config.keyHeadSize * h,
+                                                            config.keyHeadSize);
+                                    kernelOps.rmsNorm(
+                                            keyHead,
+                                            weights.keyNormWeights[li],
+                                            config.rmsNormEps,
+                                            keyHead);
+                                }
+                            });
                 }
 
                 // RoPE relative positional encoding: complex-valued rotate q and k in each head
-                Parallel.parallelFor(0, batchSize, t -> kernelOps.rotate(config.ropeIsNeoxStyle, state.query.row(t), weights.ropeReal, weights.ropeImag, position + t, config.numberOfHeads, headSize, state.query.row(t)));
-                Parallel.parallelFor(0, batchSize, t -> kernelOps.rotate(config.ropeIsNeoxStyle, state.key.row(t), weights.ropeReal, weights.ropeImag, position + t, config.numberOfKeyValueHeads, headSize, state.key.row(t)));
+                Parallel.parallelFor(
+                        0,
+                        batchSize,
+                        t ->
+                                kernelOps.rotate(
+                                        config.ropeIsNeoxStyle,
+                                        state.query.row(t),
+                                        weights.ropeReal,
+                                        weights.ropeImag,
+                                        position + t,
+                                        config.numberOfHeads,
+                                        headSize,
+                                        state.query.row(t)));
+                Parallel.parallelFor(
+                        0,
+                        batchSize,
+                        t ->
+                                kernelOps.rotate(
+                                        config.ropeIsNeoxStyle,
+                                        state.key.row(t),
+                                        weights.ropeReal,
+                                        weights.ropeImag,
+                                        position + t,
+                                        config.numberOfKeyValueHeads,
+                                        headSize,
+                                        state.key.row(t)));
 
                 // save key,value at this time step (position) to our kv cache
-                //int loff = li * config.seq_len * kvDim; // kv cache layer offset for convenience
-                Parallel.parallelFor(0, batchSize, t -> updateKeyValueCache(position + t, config.contextLength, kvDim, state.key.row(t), state.keyCache[li], state.value.row(t), state.valueCache[li]));
+                // int loff = li * config.seq_len * kvDim; // kv cache layer offset for convenience
+                Parallel.parallelFor(
+                        0,
+                        batchSize,
+                        t ->
+                                updateKeyValueCache(
+                                        position + t,
+                                        config.contextLength,
+                                        kvDim,
+                                        state.key.row(t),
+                                        state.keyCache[li],
+                                        state.value.row(t),
+                                        state.valueCache[li]));
             }
 
             if (!computeLogits && li == config.numberOfLayers - 1) {
@@ -476,87 +695,209 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
             }
 
             // multihead attention
-            Parallel.parallelFor(0, batchSize, batchIndex, t ->
-                    attention(li, position + t, config.numberOfHeads, headSize, config.contextLength, kvDim, config.numberOfKeyValueHeads, config.attentionScale,
-                            state.query.row(t), state.keyCache[li], state.valueCache[li], state.attentionScores.row(t), state.attention_out.row(t)));
+            Parallel.parallelFor(
+                    0,
+                    batchSize,
+                    batchIndex,
+                    t ->
+                            attention(
+                                    li,
+                                    position + t,
+                                    config.numberOfHeads,
+                                    headSize,
+                                    config.contextLength,
+                                    kvDim,
+                                    config.numberOfKeyValueHeads,
+                                    config.attentionScale,
+                                    state.query.row(t),
+                                    state.keyCache[li],
+                                    state.valueCache[li],
+                                    state.attentionScores.row(t),
+                                    state.attention_out.row(t)));
 
             // final matmul to get the output of the attention
             if (batchIndex >= 0) {
-                kernelOps.matrixVectorMultiply(weights.outputWeights[li], /*dim, dim,*/ state.attention_out.row(batchIndex), state.xb2.row(batchIndex));
+                kernelOps.matrixVectorMultiply(
+                        weights.outputWeights[li], /*dim, dim,*/
+                        state.attention_out.row(batchIndex),
+                        state.xb2.row(batchIndex));
             } else {
-                kernelOps.matrixMultiply(batchSize, config.embeddingLength, config.embeddingLength, state.attention_out, weights.outputWeights[li], state.xb2);
+                kernelOps.matrixMultiply(
+                        batchSize,
+                        config.embeddingLength,
+                        config.embeddingLength,
+                        state.attention_out,
+                        weights.outputWeights[li],
+                        state.xb2);
             }
 
             // For Granite models.
             if (!Float.isNaN(config.residualScale)) {
-                Parallel.parallelFor(0, batchSize, batchIndex, t -> kernelOps.scale(state.xb2.row(t), config.residualScale, state.xb2.row(t)));
+                Parallel.parallelFor(
+                        0,
+                        batchSize,
+                        batchIndex,
+                        t ->
+                                kernelOps.scale(
+                                        state.xb2.row(t), config.residualScale, state.xb2.row(t)));
             }
 
             // residual connection back into x
-            Parallel.parallelFor(0, batchSize, batchIndex, t -> kernelOps.add(state.x.row(t), state.xb2.row(t), state.x.row(t)));
+            Parallel.parallelFor(
+                    0,
+                    batchSize,
+                    batchIndex,
+                    t -> kernelOps.add(state.x.row(t), state.xb2.row(t), state.x.row(t)));
 
             // ffn rmsnorm
-            Parallel.parallelFor(0, batchSize, batchIndex, t -> kernelOps.rmsNorm(state.x.row(t), weights.rmsFFNWeights[li], config.rmsNormEps, state.xb.row(t)));
+            Parallel.parallelFor(
+                    0,
+                    batchSize,
+                    batchIndex,
+                    t ->
+                            kernelOps.rmsNorm(
+                                    state.x.row(t),
+                                    weights.rmsFFNWeights[li],
+                                    config.rmsNormEps,
+                                    state.xb.row(t)));
 
             // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
             // first calculate self.w1(x) and self.w3(x)
             if (weights.ffnGate != null) {
                 if (batchIndex >= 0) {
-                    kernelOps.matrixVectorMultiply(weights.ffnGate[li], /*config.ffnLength, dim,*/ state.xb.row(batchIndex), state.hb.row(batchIndex));
+                    kernelOps.matrixVectorMultiply(
+                            weights.ffnGate[li], /*config.ffnLength, dim,*/
+                            state.xb.row(batchIndex),
+                            state.hb.row(batchIndex));
                 } else {
-                    //kernelOps.matrixMultiply(weights.ffnGate[li], /*config.ffnLength, dim,*/ batchSize, state.xb, state.hb);
-                    kernelOps.matrixMultiply(batchSize, config.ffnLength, config.embeddingLength, state.xb, weights.ffnGate[li], state.hb);
+                    // kernelOps.matrixMultiply(weights.ffnGate[li], /*config.ffnLength, dim,*/
+                    // batchSize, state.xb, state.hb);
+                    kernelOps.matrixMultiply(
+                            batchSize,
+                            config.ffnLength,
+                            config.embeddingLength,
+                            state.xb,
+                            weights.ffnGate[li],
+                            state.hb);
                 }
 
                 if (batchIndex >= 0) {
-                    kernelOps.matrixVectorMultiply(weights.ffnUp[li], /*config.ffnLength, dim,*/ state.xb.row(batchIndex), state.hb2.row(batchIndex));
+                    kernelOps.matrixVectorMultiply(
+                            weights.ffnUp[li], /*config.ffnLength, dim,*/
+                            state.xb.row(batchIndex),
+                            state.hb2.row(batchIndex));
                 } else {
-                    kernelOps.matrixMultiply(batchSize, config.ffnLength, config.embeddingLength, state.xb, weights.ffnUp[li], state.hb2);
+                    kernelOps.matrixMultiply(
+                            batchSize,
+                            config.ffnLength,
+                            config.embeddingLength,
+                            state.xb,
+                            weights.ffnUp[li],
+                            state.hb2);
                 }
 
                 // SwiGLU non-linearity
                 // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
-                FloatUnaryOperator activationFunction = config.activationFunction != null ? config.activationFunction : config.activationFunctionPerLayer[currentLayer];
-                Parallel.parallelFor(0, batchSize, batchIndex, t -> kernelOps.elementWise(state.hb.row(t), activationFunction, state.hb.row(t)));
+                FloatUnaryOperator activationFunction =
+                        config.activationFunction != null
+                                ? config.activationFunction
+                                : config.activationFunctionPerLayer[currentLayer];
+                Parallel.parallelFor(
+                        0,
+                        batchSize,
+                        batchIndex,
+                        t ->
+                                kernelOps.elementWise(
+                                        state.hb.row(t), activationFunction, state.hb.row(t)));
 
                 // elementwise multiply with w3(x)
-                Parallel.parallelFor(0, batchSize, batchIndex, t -> kernelOps.multiply(state.hb.row(t), state.hb2.row(t), state.hb.row(t)));
+                Parallel.parallelFor(
+                        0,
+                        batchSize,
+                        batchIndex,
+                        t ->
+                                kernelOps.multiply(
+                                        state.hb.row(t), state.hb2.row(t), state.hb.row(t)));
             } else {
                 if (batchIndex >= 0) {
-                    kernelOps.matrixVectorMultiply(weights.ffnUp[li], /*config.ffnLength, dim,*/ state.xb.row(batchIndex), state.hb.row(batchIndex));
+                    kernelOps.matrixVectorMultiply(
+                            weights.ffnUp[li], /*config.ffnLength, dim,*/
+                            state.xb.row(batchIndex),
+                            state.hb.row(batchIndex));
                 } else {
-                    kernelOps.matrixMultiply(batchSize, config.ffnLength, config.embeddingLength, state.xb, weights.ffnUp[li], state.hb);
+                    kernelOps.matrixMultiply(
+                            batchSize,
+                            config.ffnLength,
+                            config.embeddingLength,
+                            state.xb,
+                            weights.ffnUp[li],
+                            state.hb);
                 }
                 // SwiGLU non-linearity
                 // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
-                FloatUnaryOperator activationFunction = config.activationFunction != null ? config.activationFunction : config.activationFunctionPerLayer[currentLayer];
-                Parallel.parallelFor(0, batchSize, batchIndex, t -> kernelOps.elementWise(state.hb.row(t), activationFunction, state.hb.row(t)));
+                FloatUnaryOperator activationFunction =
+                        config.activationFunction != null
+                                ? config.activationFunction
+                                : config.activationFunctionPerLayer[currentLayer];
+                Parallel.parallelFor(
+                        0,
+                        batchSize,
+                        batchIndex,
+                        t ->
+                                kernelOps.elementWise(
+                                        state.hb.row(t), activationFunction, state.hb.row(t)));
             }
 
             // final matmul to get the output of the ffn
             if (batchIndex >= 0) {
-                kernelOps.matrixVectorMultiply(weights.ffnDown[li], /*dim, config.ffnLength,*/ state.hb.row(batchIndex), state.xb.row(batchIndex));
+                kernelOps.matrixVectorMultiply(
+                        weights.ffnDown[li], /*dim, config.ffnLength,*/
+                        state.hb.row(batchIndex),
+                        state.xb.row(batchIndex));
             } else {
-                kernelOps.matrixMultiply(batchSize, config.embeddingLength, config.ffnLength, state.hb, weights.ffnDown[li], state.xb);
+                kernelOps.matrixMultiply(
+                        batchSize,
+                        config.embeddingLength,
+                        config.ffnLength,
+                        state.hb,
+                        weights.ffnDown[li],
+                        state.xb);
             }
 
             // For Granite models.
             if (!Float.isNaN(config.residualScale)) {
-                Parallel.parallelFor(0, batchSize, batchIndex, t -> kernelOps.scale(state.xb.row(t), config.residualScale, state.xb.row(t)));
+                Parallel.parallelFor(
+                        0,
+                        batchSize,
+                        batchIndex,
+                        t ->
+                                kernelOps.scale(
+                                        state.xb.row(t), config.residualScale, state.xb.row(t)));
             }
 
             // residual connection
-            Parallel.parallelFor(0, batchSize, batchIndex, t -> kernelOps.add(state.x.row(t), state.xb.row(t), state.x.row(t)));
+            Parallel.parallelFor(
+                    0,
+                    batchSize,
+                    batchIndex,
+                    t -> kernelOps.add(state.x.row(t), state.xb.row(t), state.x.row(t)));
         }
 
         // Only compute logits for the latest batch.
         int latestBatch = state.latestIngestedTokenBatchIndex;
 
         // final rmsnorm
-        kernelOps.rmsNorm(state.x.row(latestBatch), weights.rmsFinalWeights, config.rmsNormEps, state.x.row(latestBatch));
+        kernelOps.rmsNorm(
+                state.x.row(latestBatch),
+                weights.rmsFinalWeights,
+                config.rmsNormEps,
+                state.x.row(latestBatch));
 
         // classifier into logits
-        kernelOps.matrixVectorMultiply(weights.classifierWeights, /*config.vocabularySize, dim,*/ state.x.row(latestBatch), state.logits);
+        kernelOps.matrixVectorMultiply(
+                weights.classifierWeights, /*config.vocabularySize, dim,*/
+                state.x.row(latestBatch),
+                state.logits);
 
         // For Granite models.
         if (!Float.isNaN(config.logitScale)) {
@@ -564,42 +905,83 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
         }
     }
 
-    protected void attention(int layerIndex, int position, int numberOfHeads, int headSize, int contextLength, int kvDim, int keyValueHeads, float attentionScale,
-                             FloatSpan query, FloatSpan keyCache, FloatSpan valueCache, FloatSpan attentionScores, FloatSpan attentionOutput) {
+    protected void attention(
+            int layerIndex,
+            int position,
+            int numberOfHeads,
+            int headSize,
+            int contextLength,
+            int kvDim,
+            int keyValueHeads,
+            float attentionScale,
+            FloatSpan query,
+            FloatSpan keyCache,
+            FloatSpan valueCache,
+            FloatSpan attentionScores,
+            FloatSpan attentionOutput) {
         assert numberOfHeads % keyValueHeads == 0;
         int kvMul = numberOfHeads / keyValueHeads;
         // Process each group of kvMul heads that share the same KV cache
-        Parallel.parallelFor(0, keyValueHeads, kvHead -> {
-            int h = kvHead * kvMul; // first query head of the group of kvMul heads.
-            FloatMatrixView keyMatrix = FloatMatrixView.asMatrix(keyCache, kvHead * headSize, position + 1, headSize, kvDim);
-            FloatMatrixView queryMatrix = FloatMatrixView.asMatrix(query, h * headSize, kvMul, headSize);
-            FloatMatrixView scoresMatrix = FloatMatrixView.asMatrix(attentionScores, h * contextLength, kvMul, position + 1, contextLength);
+        Parallel.parallelFor(
+                0,
+                keyValueHeads,
+                kvHead -> {
+                    int h = kvHead * kvMul; // first query head of the group of kvMul heads.
+                    FloatMatrixView keyMatrix =
+                            FloatMatrixView.asMatrix(
+                                    keyCache, kvHead * headSize, position + 1, headSize, kvDim);
+                    FloatMatrixView queryMatrix =
+                            FloatMatrixView.asMatrix(query, h * headSize, kvMul, headSize);
+                    FloatMatrixView scoresMatrix =
+                            FloatMatrixView.asMatrix(
+                                    attentionScores,
+                                    h * contextLength,
+                                    kvMul,
+                                    position + 1,
+                                    contextLength);
 
-            // 1. Compute Q @ K^T for all heads in the group at once
-            kernelOps.matrixMultiply(kvMul, position + 1, headSize, queryMatrix, keyMatrix, scoresMatrix);
+                    // 1. Compute Q @ K^T for all heads in the group at once
+                    kernelOps.matrixMultiply(
+                            kvMul, position + 1, headSize, queryMatrix, keyMatrix, scoresMatrix);
 
-            // 2. Scale attention scores
-            for (int i = 0; i < kvMul; i++) {
-                // Get the scores for one head
-                FloatSpan headScores = scoresMatrix.row(i);
-                kernelOps.scale(headScores, attentionScale, headScores);
-                // Apply softmax to get attention weights
-                kernelOps.softMax(headScores, headScores);
-            }
+                    // 2. Scale attention scores
+                    for (int i = 0; i < kvMul; i++) {
+                        // Get the scores for one head
+                        FloatSpan headScores = scoresMatrix.row(i);
+                        kernelOps.scale(headScores, attentionScale, headScores);
+                        // Apply softmax to get attention weights
+                        kernelOps.softMax(headScores, headScores);
+                    }
 
-            // [keyValueHead, headSize, contextLength]
-            FloatMatrixView valueMatrix = FloatMatrixView.asMatrix(valueCache, (kvHead * headSize) * contextLength, headSize, position + 1, contextLength);
-            FloatMatrixView outputMatrix = FloatMatrixView.asMatrix(attentionOutput, h * headSize, kvMul, headSize);
+                    // [keyValueHead, headSize, contextLength]
+                    FloatMatrixView valueMatrix =
+                            FloatMatrixView.asMatrix(
+                                    valueCache,
+                                    (kvHead * headSize) * contextLength,
+                                    headSize,
+                                    position + 1,
+                                    contextLength);
+                    FloatMatrixView outputMatrix =
+                            FloatMatrixView.asMatrix(
+                                    attentionOutput, h * headSize, kvMul, headSize);
 
-            // 3. Compute attention @ V for all heads in the group at once
-            // [R, K]   -> kvMul, position+1
-            // [K, C]^T -> headSize, position+1
-            // [R, C]   -> kvMul, headSize
-            kernelOps.matrixMultiply(kvMul, headSize, position + 1, scoresMatrix, valueMatrix, outputMatrix);
-        });
+                    // 3. Compute attention @ V for all heads in the group at once
+                    // [R, K]   -> kvMul, position+1
+                    // [K, C]^T -> headSize, position+1
+                    // [R, C]   -> kvMul, headSize
+                    kernelOps.matrixMultiply(
+                            kvMul, headSize, position + 1, scoresMatrix, valueMatrix, outputMatrix);
+                });
     }
 
-    protected void updateKeyValueCache(int position, int contextLength, int kvDim, FloatSpan key, FloatSpan keyCache, FloatSpan value, FloatSpan valueCache) {
+    protected void updateKeyValueCache(
+            int position,
+            int contextLength,
+            int kvDim,
+            FloatSpan key,
+            FloatSpan keyCache,
+            FloatSpan value,
+            FloatSpan valueCache) {
         kernelOps.copyTo(key, keyCache.slice(position * (long) kvDim, kvDim));
         // Copy to valueCache column, since valueCache is transposed.
         kernelOps.copyToStrided(value, valueCache, position, contextLength);
@@ -615,6 +997,11 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
 
     @Override
     public void computeLogits(Weights weights, State state) {
-        batchedForwardImpl(weights, state, new int[]{state.ingestedTokens.getLast()}, state.ingestedTokens.length() - 1, true);
+        batchedForwardImpl(
+                weights,
+                state,
+                new int[] {state.ingestedTokens.getLast()},
+                state.ingestedTokens.length() - 1,
+                true);
     }
 }

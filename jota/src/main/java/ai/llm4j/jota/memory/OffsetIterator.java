@@ -23,4 +23,3 @@ public interface OffsetIterator {
         return new StridedOffsetIteratorImpl(memoryView);
     }
 }
-

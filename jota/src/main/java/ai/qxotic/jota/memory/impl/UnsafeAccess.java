@@ -1,8 +1,7 @@
 package ai.qxotic.jota.memory.impl;
 
-import sun.misc.Unsafe;
-
 import java.lang.reflect.Field;
+import sun.misc.Unsafe;
 
 final class UnsafeAccess {
 

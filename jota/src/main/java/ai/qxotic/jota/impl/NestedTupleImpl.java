@@ -1,7 +1,6 @@
 package ai.qxotic.jota.impl;
 
 import ai.qxotic.jota.Util;
-
 import java.util.Arrays;
 import java.util.Objects;
 
@@ -17,8 +16,11 @@ abstract class NestedTupleImpl<T extends NestedTuple<T>> implements NestedTuple<
 
         // Nest can be null (indicates flat structure)
         // If nest is not null, it must match the flat array length
-        assert nest == null || flat.length == nest.length :
-            "Flat and nest arrays must have the same length: flat.length=" + flat.length + ", nest.length=" + nest.length;
+        assert nest == null || flat.length == nest.length
+                : "Flat and nest arrays must have the same length: flat.length="
+                        + flat.length
+                        + ", nest.length="
+                        + nest.length;
 
         // Validate nest array structure (if not null)
         if (nest != null) {
@@ -30,8 +32,8 @@ abstract class NestedTupleImpl<T extends NestedTuple<T>> implements NestedTuple<
     }
 
     /**
-     * Assert that the nest array structure is valid.
-     * This is called from the constructor to catch structural errors early.
+     * Assert that the nest array structure is valid. This is called from the constructor to catch
+     * structural errors early.
      */
     private static void assertValidNestArray(int[] nest) {
         int depth = 0;

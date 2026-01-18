@@ -15,8 +15,7 @@ class ShortsContext implements MemoryContext<short[]> {
         return INSTANCE;
     }
 
-    private ShortsContext() {
-    }
+    private ShortsContext() {}
 
     @Override
     public Device device() {

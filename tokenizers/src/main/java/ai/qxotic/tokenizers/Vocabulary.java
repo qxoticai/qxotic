@@ -5,14 +5,14 @@ import java.util.NoSuchElementException;
 
 /**
  * Represents a vocabulary for text tokenization, providing bidirectional mapping between token IDs
- * and their string representations. The vocabulary serves as a fundamental component in text tokenization
- * systems, particularly for Large Language Models (LLMs).
+ * and their string representations. The vocabulary serves as a fundamental component in text
+ * tokenization systems, particularly for Large Language Models (LLMs).
  *
- * <p>Each token in the vocabulary has both a string representation and a unique numeric identifier (ID).
- * The vocabulary provides methods for converting between these two representations and verifying the
- * existence of specific tokens or IDs.</p>
+ * <p>Each token in the vocabulary has both a string representation and a unique numeric identifier
+ * (ID). The vocabulary provides methods for converting between these two representations and
+ * verifying the existence of specific tokens or IDs.
  *
- * <p>The vocabulary can be iterated over to access all token-to-ID mappings.</p>
+ * <p>The vocabulary can be iterated over to access all token-to-ID mappings.
  *
  * @see Tokenizer
  */
@@ -60,10 +60,10 @@ public interface Vocabulary extends Iterable<Map.Entry<String, Integer>> {
     boolean contains(String text);
 
     /**
-     * Determines if the token with the given ID belongs to a specific token type.
-     * The default implementation returns false, indicating no type information is available.
+     * Determines if the token with the given ID belongs to a specific token type. The default
+     * implementation returns false, indicating no type information is available.
      *
-     * @param id   the numeric identifier of the token to check
+     * @param id the numeric identifier of the token to check
      * @param type the token type to check against
      * @return true if the token is of the specified type, false otherwise
      * @throws NoSuchElementException if the ID is not present in the vocabulary

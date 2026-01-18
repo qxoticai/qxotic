@@ -32,7 +32,8 @@ public interface FloatBinaryOperator {
 
     default FloatBinaryOperator accumulate(FloatUnaryOperator rightOperator) {
         Objects.requireNonNull(rightOperator);
-        return (float leftAccumulator, float right) -> applyAsFloat(leftAccumulator, rightOperator.applyAsFloat(right));
+        return (float leftAccumulator, float right) ->
+                applyAsFloat(leftAccumulator, rightOperator.applyAsFloat(right));
     }
 
     default FloatBinaryOperator andThen(FloatUnaryOperator after) {

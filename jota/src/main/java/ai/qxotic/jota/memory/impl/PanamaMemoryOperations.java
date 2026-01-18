@@ -3,7 +3,6 @@ package ai.qxotic.jota.memory.impl;
 import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAccessChecks;
 import ai.qxotic.jota.memory.MemoryOperations;
-
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
@@ -15,11 +14,15 @@ final class PanamaMemoryOperations implements MemoryOperations<MemorySegment> {
         return INSTANCE;
     }
 
-    private PanamaMemoryOperations() {
-    }
+    private PanamaMemoryOperations() {}
 
     @Override
-    public void copy(Memory<MemorySegment> src, long srcByteOffset, Memory<MemorySegment> dst, long dstByteOffset, long byteSize) {
+    public void copy(
+            Memory<MemorySegment> src,
+            long srcByteOffset,
+            Memory<MemorySegment> dst,
+            long dstByteOffset,
+            long byteSize) {
         MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
         MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
         if (byteSize == 0) {
@@ -29,12 +32,22 @@ final class PanamaMemoryOperations implements MemoryOperations<MemorySegment> {
     }
 
     @Override
-    public void copyFromNative(Memory<MemorySegment> src, long srcByteOffset, Memory<MemorySegment> dst, long dstByteOffset, long byteSize) {
+    public void copyFromNative(
+            Memory<MemorySegment> src,
+            long srcByteOffset,
+            Memory<MemorySegment> dst,
+            long dstByteOffset,
+            long byteSize) {
         copy(src, srcByteOffset, dst, dstByteOffset, byteSize);
     }
 
     @Override
-    public void copyToNative(Memory<MemorySegment> src, long srcByteOffset, Memory<MemorySegment> dst, long dstByteOffset, long byteSize) {
+    public void copyToNative(
+            Memory<MemorySegment> src,
+            long srcByteOffset,
+            Memory<MemorySegment> dst,
+            long dstByteOffset,
+            long byteSize) {
         copy(src, srcByteOffset, dst, dstByteOffset, byteSize);
     }
 
@@ -49,7 +62,8 @@ final class PanamaMemoryOperations implements MemoryOperations<MemorySegment> {
     }
 
     @Override
-    public void fillShort(Memory<MemorySegment> memory, long byteOffset, long byteSize, short shortValue) {
+    public void fillShort(
+            Memory<MemorySegment> memory, long byteOffset, long byteSize, short shortValue) {
         MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
         MemoryAccessChecks.checkWriteable(memory);
         if (byteSize == 0) {
@@ -62,7 +76,8 @@ final class PanamaMemoryOperations implements MemoryOperations<MemorySegment> {
     }
 
     @Override
-    public void fillInt(Memory<MemorySegment> memory, long byteOffset, long byteSize, int intValue) {
+    public void fillInt(
+            Memory<MemorySegment> memory, long byteOffset, long byteSize, int intValue) {
         MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
         MemoryAccessChecks.checkWriteable(memory);
         if (byteSize == 0) {
@@ -75,7 +90,8 @@ final class PanamaMemoryOperations implements MemoryOperations<MemorySegment> {
     }
 
     @Override
-    public void fillLong(Memory<MemorySegment> memory, long byteOffset, long byteSize, long longValue) {
+    public void fillLong(
+            Memory<MemorySegment> memory, long byteOffset, long byteSize, long longValue) {
         MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
         MemoryAccessChecks.checkWriteable(memory);
         if (byteSize == 0) {

@@ -1,12 +1,10 @@
-
 package ai.qxotic.jota;
 
 public final class BFloat16 {
 
     private static final int ROUNDING_BIAS = 0x7fff;
 
-    private BFloat16() {
-    }
+    private BFloat16() {}
 
     public static short fromFloat(float value) {
         int bits = Float.floatToRawIntBits(value);

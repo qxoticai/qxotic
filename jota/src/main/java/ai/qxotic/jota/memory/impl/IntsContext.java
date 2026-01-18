@@ -15,8 +15,7 @@ class IntsContext implements MemoryContext<int[]> {
         return INSTANCE;
     }
 
-    private IntsContext() {
-    }
+    private IntsContext() {}
 
     @Override
     public Device device() {

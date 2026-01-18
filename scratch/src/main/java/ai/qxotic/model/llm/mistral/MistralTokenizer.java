@@ -1,21 +1,20 @@
 package ai.qxotic.model.llm.mistral;
 
-
 import ai.qxotic.tokenizers.IntSequence;
 import ai.qxotic.tokenizers.Normalizer;
 import ai.qxotic.tokenizers.StandardTokenType;
 import ai.qxotic.tokenizers.TextSplitter;
 import ai.qxotic.tokenizers.impl.AbstractTokenizer;
-
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Byte Pair Encoding tokenizer.
- * <p>
- * Based on <a href="https://github.com/karpathy/minbpe">minbpe</a>, algorithmically follows along the
- * <a href="https://github.com/openai/gpt-2/blob/master/src/encoder.py">GPT 2 tokenizer</a>
+ *
+ * <p>Based on <a href="https://github.com/karpathy/minbpe">minbpe</a>, algorithmically follows
+ * along the <a href="https://github.com/openai/gpt-2/blob/master/src/encoder.py">GPT 2
+ * tokenizer</a>
  */
 public class MistralTokenizer extends AbstractTokenizer {
 
@@ -26,7 +25,8 @@ public class MistralTokenizer extends AbstractTokenizer {
         return (VocabularyImplWithScores) super.vocabulary();
     }
 
-    public MistralTokenizer(VocabularyImplWithScores vocabulary, Normalizer normalizer, TextSplitter preTokenizer) {
+    public MistralTokenizer(
+            VocabularyImplWithScores vocabulary, Normalizer normalizer, TextSplitter preTokenizer) {
         super(vocabulary, normalizer, preTokenizer);
         this.byte0 = vocabulary.id("<0x00>");
     }
@@ -47,25 +47,28 @@ public class MistralTokenizer extends AbstractTokenizer {
         List<Integer> tokens = new ArrayList<>();
 
         // first encode every individual codepoint in the input string
-        text.codePoints().forEachOrdered(cpi -> {
+        text.codePoints()
+                .forEachOrdered(
+                        cpi -> {
+                            String singleCodepoint = Character.toString(cpi);
+                            int id =
+                                    vocabulary.contains(singleCodepoint)
+                                            ? vocabulary.id(singleCodepoint)
+                                            : -1;
 
-            String singleCodepoint = Character.toString(cpi);
-            int id = vocabulary.contains(singleCodepoint)
-                    ? vocabulary.id(singleCodepoint) : -1;
-
-            if (id != -1) {
-                // we found this codepoint in vocab, add it as a token
-                tokens.add(id);
-            } else {
-                // byte_fallback encoding: just encode each byte as a token
-                // +byte0 here to skip all the control and special tokens e.g. <unk>, <s>, </s>
-                // so the individual bytes only start at token <0x00>
-                for (byte b : singleCodepoint.getBytes(StandardCharsets.UTF_8)) {
-                    tokens.add(Byte.toUnsignedInt(b) + byte0);
-                }
-            }
-        });
-
+                            if (id != -1) {
+                                // we found this codepoint in vocab, add it as a token
+                                tokens.add(id);
+                            } else {
+                                // byte_fallback encoding: just encode each byte as a token
+                                // +byte0 here to skip all the control and special tokens e.g.
+                                // <unk>, <s>, </s>
+                                // so the individual bytes only start at token <0x00>
+                                for (byte b : singleCodepoint.getBytes(StandardCharsets.UTF_8)) {
+                                    tokens.add(Byte.toUnsignedInt(b) + byte0);
+                                }
+                            }
+                        });
 
         // merge the best consecutive pair each iteration, according the scores in vocab_scores
         while (true) {
@@ -75,9 +78,9 @@ public class MistralTokenizer extends AbstractTokenizer {
 
             for (int i = 0; i < tokens.size() - 1; ++i) {
                 // check if we can merge the pair (tokens[i], tokens[i+1])
-                String str_buffer = vocabulary.token(tokens.get(i)) + vocabulary.token(tokens.get(i + 1));
-                int id = vocabulary.contains(str_buffer)
-                        ? vocabulary.id(str_buffer) : -1;
+                String str_buffer =
+                        vocabulary.token(tokens.get(i)) + vocabulary.token(tokens.get(i + 1));
+                int id = vocabulary.contains(str_buffer) ? vocabulary.id(str_buffer) : -1;
                 if (id != -1 && vocabulary().getScore(id) > best_score) {
                     // this merge pair exists in vocab! record its score and position
                     best_score = vocabulary().getScore(id);
@@ -107,8 +110,12 @@ public class MistralTokenizer extends AbstractTokenizer {
                 // some tokens designate raw bytes e.g. '<0x10>'
                 String prefix = "<0x";
                 String suffix = ">";
-                if (tokenString.length() == 6 && tokenString.startsWith(prefix) && tokenString.endsWith(suffix)) {
-                    String code = tokenString.substring(prefix.length(), tokenString.length() - suffix.length());
+                if (tokenString.length() == 6
+                        && tokenString.startsWith(prefix)
+                        && tokenString.endsWith(suffix)) {
+                    String code =
+                            tokenString.substring(
+                                    prefix.length(), tokenString.length() - suffix.length());
                     int cp = Integer.parseInt(code, 16);
                     tokenString = Character.toString(cp);
                 }

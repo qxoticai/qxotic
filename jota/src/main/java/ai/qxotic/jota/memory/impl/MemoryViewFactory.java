@@ -13,7 +13,8 @@ public final class MemoryViewFactory {
         // no instances
     }
 
-    public static <B> MemoryView<B> of(DataType dataType, Memory<B> memory, long byteOffset, Layout layout) {
+    public static <B> MemoryView<B> of(
+            DataType dataType, Memory<B> memory, long byteOffset, Layout layout) {
         return MemoryViewImpl.create(layout, dataType, byteOffset, memory);
     }
 
@@ -25,8 +26,10 @@ public final class MemoryViewFactory {
         return of(dataType, memory, 0L, Layout.rowMajor(shape));
     }
 
-    public static <B> MemoryView<B> allocate(MemoryAllocator<B> memoryAllocator, DataType dataType, Shape shape) {
+    public static <B> MemoryView<B> allocate(
+            MemoryAllocator<B> memoryAllocator, DataType dataType, Shape shape) {
         // TODO: rowMajor by default?
-        return rowMajor(dataType, memoryAllocator.allocateMemory(dataType.byteSizeFor(shape)), shape);
+        return rowMajor(
+                dataType, memoryAllocator.allocateMemory(dataType.byteSizeFor(shape)), shape);
     }
 }

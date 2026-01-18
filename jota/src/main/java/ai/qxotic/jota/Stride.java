@@ -33,10 +33,7 @@ public interface Stride extends NestedTuple<Stride> {
         return computeStrides(shape, true);
     }
 
-    /**
-     * Scale stride by factor (multiplies each element).
-     * Preserves nested structure.
-     */
+    /** Scale stride by factor (multiplies each element). Preserves nested structure. */
     Stride scale(long factor);
 
     private static Stride computeStrides(Shape shape, boolean columnMajor) {

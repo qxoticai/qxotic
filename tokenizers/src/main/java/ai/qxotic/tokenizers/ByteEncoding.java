@@ -7,34 +7,37 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 /**
- * Implements the byte-to-unicode encoding scheme used in GPT-2 tokenization.
- * This encoding allows arbitrary byte sequences to be represented as printable Unicode strings,
- * which is essential for tokenizer vocabularies that need to handle raw bytes while
- * avoiding special characters that could interfere with tokenization.
- * <p>
- * The encoding scheme works by:
- * <ul>
- *   <li>Using printable ASCII characters ('!' to '~') directly</li>
- *   <li>Using selected Unicode characters ('¡' to 'ÿ') for additional byte values</li>
- *   <li>Mapping remaining bytes to unused Unicode characters (starting at code point 256)</li>
- * </ul>
- * <p>
- * This encoding is reversible, allowing perfect reconstruction of the original byte sequences.
- * It's particularly useful for handling unknown Unicode characters and binary data in
- * tokenization pipelines.
+ * Implements the byte-to-unicode encoding scheme used in GPT-2 tokenization. This encoding allows
+ * arbitrary byte sequences to be represented as printable Unicode strings, which is essential for
+ * tokenizer vocabularies that need to handle raw bytes while avoiding special characters that could
+ * interfere with tokenization.
  *
- * @see <a href="https://github.com/openai/gpt-2/blob/master/src/encoder.py">Original GPT-2 Implementation</a>
+ * <p>The encoding scheme works by:
+ *
+ * <ul>
+ *   <li>Using printable ASCII characters ('!' to '~') directly
+ *   <li>Using selected Unicode characters ('¡' to 'ÿ') for additional byte values
+ *   <li>Mapping remaining bytes to unused Unicode characters (starting at code point 256)
+ * </ul>
+ *
+ * <p>This encoding is reversible, allowing perfect reconstruction of the original byte sequences.
+ * It's particularly useful for handling unknown Unicode characters and binary data in tokenization
+ * pipelines.
+ *
+ * @see <a href="https://github.com/openai/gpt-2/blob/master/src/encoder.py">Original GPT-2
+ *     Implementation</a>
  */
 public final class ByteEncoding {
 
     /**
      * Generates the byte-to-unicode mapping used for encoding.
-     * <p>
-     * The mapping ensures that:
+     *
+     * <p>The mapping ensures that:
+     *
      * <ul>
-     *   <li>All byte values (0-255) are mapped to printable Unicode characters</li>
-     *   <li>Common ASCII characters maintain their original values</li>
-     *   <li>Control characters and whitespace are avoided in the encoding</li>
+     *   <li>All byte values (0-255) are mapped to printable Unicode characters
+     *   <li>Common ASCII characters maintain their original values
+     *   <li>Control characters and whitespace are avoided in the encoding
      * </ul>
      *
      * @return an unmodifiable map from byte values to Unicode code points
@@ -60,17 +63,14 @@ public final class ByteEncoding {
                 .collect(Collectors.toUnmodifiableMap(bs::get, cs::get));
     }
 
-    /**
-     * Pre-computed encoding lookup table for fast byte-to-unicode conversion.
-     */
+    /** Pre-computed encoding lookup table for fast byte-to-unicode conversion. */
     private static final int[] FAST_BYTE_ENCODER = asArray(bytesToUnicode());
 
-    /**
-     * Pre-computed decoding lookup table for fast unicode-to-byte conversion.
-     */
-    private static final int[] FAST_BYTE_DECODER = asArray(
-            bytesToUnicode().entrySet().stream()
-                    .collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey)));
+    /** Pre-computed decoding lookup table for fast unicode-to-byte conversion. */
+    private static final int[] FAST_BYTE_DECODER =
+            asArray(
+                    bytesToUnicode().entrySet().stream()
+                            .collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey)));
 
     /**
      * Converts a mapping to an array for faster lookup operations.
@@ -119,10 +119,10 @@ public final class ByteEncoding {
     /**
      * Decodes an encoded string into a provided byte array at the specified offset.
      *
-     * @param string     the encoded string to decode
-     * @param destBytes  the destination byte array
+     * @param string the encoded string to decode
+     * @param destBytes the destination byte array
      * @param destOffset the offset in the destination array where to start writing
-     * @throws NullPointerException      if string or destBytes is null
+     * @throws NullPointerException if string or destBytes is null
      * @throws IndexOutOfBoundsException if destOffset is negative or if destBytes is too small
      */
     public static void stringToBytes(String string, byte[] destBytes, int destOffset) {

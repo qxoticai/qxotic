@@ -15,8 +15,7 @@ class BytesContext implements MemoryContext<byte[]> {
         return INSTANCE;
     }
 
-    private BytesContext() {
-    }
+    private BytesContext() {}
 
     @Override
     public Device device() {

@@ -1,19 +1,20 @@
 package ai.qxotic.tokenizers;
 
 /**
- * A marker interface that defines token classification types used in tokenization systems.
- * This interface serves as a base for different token type classification schemes,
- * allowing for extensible token categorization across different tokenizer implementations
- * and model formats.
- * <p>
- * Token types are used to:
+ * A marker interface that defines token classification types used in tokenization systems. This
+ * interface serves as a base for different token type classification schemes, allowing for
+ * extensible token categorization across different tokenizer implementations and model formats.
+ *
+ * <p>Token types are used to:
+ *
  * <ul>
- *   <li>Classify tokens based on their role (e.g., normal text, control tokens, special markers)</li>
- *   <li>Determine token processing behavior during tokenization and detokenization</li>
- *   <li>Support different token classification schemes for various model formats</li>
+ *   <li>Classify tokens based on their role (e.g., normal text, control tokens, special markers)
+ *   <li>Determine token processing behavior during tokenization and detokenization
+ *   <li>Support different token classification schemes for various model formats
  * </ul>
- * <p>
- * Common implementations include:
+ *
+ * <p>Common implementations include:
+ *
  * <pre>{@code
  * // Standard GGUF token types
  * public enum StandardTokenType implements TokenType {
@@ -28,5 +29,4 @@ package ai.qxotic.tokenizers;
  *
  * @see StandardTokenType
  */
-public interface TokenType {
-}
+public interface TokenType {}

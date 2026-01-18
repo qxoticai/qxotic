@@ -12,8 +12,7 @@ final class IntsMemoryAccess implements MemoryAccess<int[]> {
         return INSTANCE;
     }
 
-    private IntsMemoryAccess() {
-    }
+    private IntsMemoryAccess() {}
 
     @Override
     public byte readByte(Memory<int[]> memory, long byteOffset) {

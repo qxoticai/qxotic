@@ -2,9 +2,8 @@ package ai.qxotic.model.llm.llama;
 
 public class BFloat16 {
     /**
-     * Converts a 32-bit float to a bfloat16 representation stored in a short.
-     * BFloat16 keeps the sign bit and exponent (8 bits) from float32,
-     * and the 7 most significant bits of the mantissa.
+     * Converts a 32-bit float to a bfloat16 representation stored in a short. BFloat16 keeps the
+     * sign bit and exponent (8 bits) from float32, and the 7 most significant bits of the mantissa.
      *
      * @param value The float value to convert
      * @return A short containing the bfloat16 representation
@@ -21,8 +20,7 @@ public class BFloat16 {
 
         // Implement rounding
         int remainingBits = bits & 0xFFFF;
-        if (remainingBits > 0x8000 ||
-                (remainingBits == 0x8000 && (bfloat16 & 1) != 0)) {
+        if (remainingBits > 0x8000 || (remainingBits == 0x8000 && (bfloat16 & 1) != 0)) {
             // Round up
             bfloat16++;
         }

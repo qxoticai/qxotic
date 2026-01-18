@@ -1,6 +1,6 @@
 package ai.qxotic.tokenizers;
 
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.Arrays;
 import java.util.List;
@@ -8,8 +8,7 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
 
 public class IntSequenceTest {
     private final IntSequence emptySequence = IntSequence.of();
@@ -19,7 +18,7 @@ public class IntSequenceTest {
     @Test
     void testOf() {
         IntSequence sequence = IntSequence.of(1, 2, 3);
-        assertArrayEquals(new int[]{1, 2, 3}, sequence.toArray());
+        assertArrayEquals(new int[] {1, 2, 3}, sequence.toArray());
     }
 
     @Test
@@ -60,14 +59,14 @@ public class IntSequenceTest {
     @Test
     void testSubSequence() {
         IntSequence subSeq = multiElementSequence.subSequence(1, 4);
-        assertArrayEquals(new int[]{2, 3, 4}, subSeq.toArray());
+        assertArrayEquals(new int[] {2, 3, 4}, subSeq.toArray());
     }
 
     @Test
     void testToArray() {
-        assertArrayEquals(new int[]{}, emptySequence.toArray());
-        assertArrayEquals(new int[]{42}, singleElementSequence.toArray());
-        assertArrayEquals(new int[]{1, 2, 3, 4, 5}, multiElementSequence.toArray());
+        assertArrayEquals(new int[] {}, emptySequence.toArray());
+        assertArrayEquals(new int[] {42}, singleElementSequence.toArray());
+        assertArrayEquals(new int[] {1, 2, 3, 4, 5}, multiElementSequence.toArray());
     }
 
     @Test
@@ -79,8 +78,9 @@ public class IntSequenceTest {
 
     @Test
     void testIterator() {
-        List<Integer> collected = StreamSupport.stream(multiElementSequence.spliterator(), false)
-                .collect(Collectors.toList());
+        List<Integer> collected =
+                StreamSupport.stream(multiElementSequence.spliterator(), false)
+                        .collect(Collectors.toList());
         assertEquals(Arrays.asList(1, 2, 3, 4, 5), collected);
     }
 
@@ -121,14 +121,14 @@ public class IntSequenceTest {
     void testBuilder() {
         IntSequence.Builder builder = IntSequence.newBuilder();
         IntSequence sequence = builder.add(1).add(2).add(3).build();
-        assertArrayEquals(new int[]{1, 2, 3}, sequence.toArray());
+        assertArrayEquals(new int[] {1, 2, 3}, sequence.toArray());
     }
 
     @Test
     void testBuilderWithInitialCapacity() {
         IntSequence.Builder builder = IntSequence.newBuilder(10);
         IntSequence sequence = builder.add(1).add(2).add(3).build();
-        assertArrayEquals(new int[]{1, 2, 3}, sequence.toArray());
+        assertArrayEquals(new int[] {1, 2, 3}, sequence.toArray());
     }
 
     @Test
@@ -137,7 +137,7 @@ public class IntSequenceTest {
         builder.add(1).add(2);
         builder.addAll(IntSequence.of(3, 4, 5));
         IntSequence sequence = builder.build();
-        assertArrayEquals(new int[]{1, 2, 3, 4, 5}, sequence.toArray());
+        assertArrayEquals(new int[] {1, 2, 3, 4, 5}, sequence.toArray());
     }
 
     @Test
@@ -146,7 +146,7 @@ public class IntSequenceTest {
         builder.add(1).add(2);
         builder.addAll(builder);
         IntSequence sequence = builder.build();
-        assertArrayEquals(new int[]{1, 2, 1, 2}, sequence.toArray());
+        assertArrayEquals(new int[] {1, 2, 1, 2}, sequence.toArray());
     }
 
     @Test
@@ -194,14 +194,16 @@ public class IntSequenceTest {
     @Test
     void testHashCode() {
         assertEquals(IntSequence.empty().hashCode(), Arrays.hashCode(new int[0]));
-        int hash123 = Arrays.hashCode(new int[]{1, 2, 3});
+        int hash123 = Arrays.hashCode(new int[] {1, 2, 3});
         assertEquals(IntSequence.of(1, 2, 3).hashCode(), hash123);
-        assertEquals(IntSequence.wrap(new int[]{1, 2, 3}).hashCode(), hash123);
+        assertEquals(IntSequence.wrap(new int[] {1, 2, 3}).hashCode(), hash123);
         assertEquals(IntSequence.wrap(List.of(1, 2, 3)).hashCode(), hash123);
         assertEquals(new ZeroIntSequence(3).hashCode(), Objects.hash(0, 0, 0));
         assertEquals(EmptyIntSequence.get().hashCode(), IntSequence.empty().hashCode());
         assertNotEquals(IntSequence.empty().hashCode(), IntSequence.of(1).hashCode());
-        assertEquals(IntSequence.of(1, 42, 3).subSequence(1, 2).hashCode(), Arrays.hashCode(new int[]{42}));
+        assertEquals(
+                IntSequence.of(1, 42, 3).subSequence(1, 2).hashCode(),
+                Arrays.hashCode(new int[] {42}));
     }
 
     static void assertCompare(int expected, IntSequence first, IntSequence second) {

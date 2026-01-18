@@ -7,7 +7,10 @@ import ai.qxotic.span.FloatSpan;
 import ai.qxotic.span.KernelOps;
 
 public class Qwen3 extends Llama {
-    public Qwen3(Configuration configuration, KernelOps<FloatSpan, FloatMatrixView> kernelOps, FloatSpanFactory<? extends FloatSpan> spanFactory) {
+    public Qwen3(
+            Configuration configuration,
+            KernelOps<FloatSpan, FloatMatrixView> kernelOps,
+            FloatSpanFactory<? extends FloatSpan> spanFactory) {
         super(configuration, kernelOps, spanFactory);
     }
 }

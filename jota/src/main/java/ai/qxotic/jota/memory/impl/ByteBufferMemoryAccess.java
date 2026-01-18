@@ -3,7 +3,6 @@ package ai.qxotic.jota.memory.impl;
 import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryAccessChecks;
-
 import java.nio.ByteBuffer;
 
 final class ByteBufferMemoryAccess implements MemoryAccess<ByteBuffer> {
@@ -14,8 +13,7 @@ final class ByteBufferMemoryAccess implements MemoryAccess<ByteBuffer> {
         return INSTANCE;
     }
 
-    private ByteBufferMemoryAccess() {
-    }
+    private ByteBufferMemoryAccess() {}
 
     @Override
     public byte readByte(Memory<ByteBuffer> memory, long byteOffset) {

@@ -12,8 +12,7 @@ final class DoublesMemoryAllocator implements MemoryAllocator<double[]> {
         return INSTANCE;
     }
 
-    private DoublesMemoryAllocator() {
-    }
+    private DoublesMemoryAllocator() {}
 
     @Override
     public Device device() {

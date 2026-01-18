@@ -34,7 +34,15 @@ public interface Timer extends AutoCloseable {
     }
 
     static Timer log(System.Logger.Level level, TimeUnit timeUnit, String label) {
-        return log(level, timeUnit, elapsedUnits -> label + ": " + elapsedUnits + " " + timeUnit.toChronoUnit().name().toLowerCase());
+        return log(
+                level,
+                timeUnit,
+                elapsedUnits ->
+                        label
+                                + ": "
+                                + elapsedUnits
+                                + " "
+                                + timeUnit.toChronoUnit().name().toLowerCase());
     }
 
     static void measure(String label, ThrowingRunnable action) {
@@ -48,7 +56,8 @@ public interface Timer extends AutoCloseable {
     }
 
     @SuppressWarnings("unchecked")
-    private static <E extends Throwable> RuntimeException uncheckedThrow(Throwable throwable) throws E {
+    private static <E extends Throwable> RuntimeException uncheckedThrow(Throwable throwable)
+            throws E {
         throw (E) throwable;
     }
 

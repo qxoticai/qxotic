@@ -14,8 +14,7 @@ final class UnsafeMemoryAccess implements MemoryAccess<Void> {
         return INSTANCE;
     }
 
-    private UnsafeMemoryAccess() {
-    }
+    private UnsafeMemoryAccess() {}
 
     @Override
     public byte readByte(Memory<Void> memory, long byteOffset) {

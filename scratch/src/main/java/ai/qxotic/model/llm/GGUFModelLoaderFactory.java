@@ -8,4 +8,3 @@ public interface GGUFModelLoaderFactory extends ModelLoaderFactory<GGUF> {
         return "gguf";
     }
 }
-

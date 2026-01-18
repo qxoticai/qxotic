@@ -1,14 +1,14 @@
 package ai.qxotic.jota.memory;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Shape;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MemoryViewToStringTest extends AbstractMemoryTest {
 
@@ -19,8 +19,7 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.of(2, 3);
-        MemoryView<B> view = MemoryHelpers.arange(context, DataType.FP32, shape.size())
-                .view(shape);
+        MemoryView<B> view = MemoryHelpers.arange(context, DataType.FP32, shape.size()).view(shape);
 
         String text = view.toString();
         assertTrue(text.startsWith("MemoryView{"));
@@ -36,8 +35,7 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.of(10, 10);
-        MemoryView<B> view = MemoryHelpers.arange(context, DataType.FP32, shape.size())
-                .view(shape);
+        MemoryView<B> view = MemoryHelpers.arange(context, DataType.FP32, shape.size()).view(shape);
 
         String text = view.toString(memoryAccess);
         assertTrue(text.contains("..."));
@@ -50,8 +48,7 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.of(2, 2);
-        MemoryView<B> view = MemoryHelpers.arange(context, DataType.FP32, shape.size())
-                .view(shape);
+        MemoryView<B> view = MemoryHelpers.arange(context, DataType.FP32, shape.size()).view(shape);
 
         String text = view.toString(memoryAccess, ViewPrintOptions.valuesOnly());
         assertFalse(text.contains("MemoryView{"));
@@ -65,8 +62,7 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.scalar();
-        MemoryView<B> view = MemoryHelpers.arange(context, DataType.FP32, shape.size())
-                .view(shape);
+        MemoryView<B> view = MemoryHelpers.arange(context, DataType.FP32, shape.size()).view(shape);
 
         String text = view.toString(memoryAccess, ViewPrintOptions.valuesOnly());
         assertTrue(text.startsWith("["));
@@ -80,8 +76,7 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.of(2, 2, 2);
-        MemoryView<B> view = MemoryHelpers.arange(context, DataType.FP32, shape.size())
-                .view(shape);
+        MemoryView<B> view = MemoryHelpers.arange(context, DataType.FP32, shape.size()).view(shape);
 
         String text = view.toString(memoryAccess);
         String lineBreak = System.lineSeparator();

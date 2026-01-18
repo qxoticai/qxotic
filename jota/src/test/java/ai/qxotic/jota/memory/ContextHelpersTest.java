@@ -1,12 +1,11 @@
-
 package ai.qxotic.jota.memory;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Shape;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class ContextHelpersTest extends AbstractMemoryTest {
 
@@ -21,13 +20,15 @@ class ContextHelpersTest extends AbstractMemoryTest {
         MemoryView<B> view = MemoryHelpers.full(context, DataType.FP32, shape, 2.5);
         long byteStride = DataType.FP32.byteSize();
         for (long i = 0; i < shape.size(); i++) {
-            float actual = memoryAccess.readFloat(view.memory(), view.byteOffset() + i * byteStride);
+            float actual =
+                    memoryAccess.readFloat(view.memory(), view.byteOffset() + i * byteStride);
             assertEquals(2.5f, actual);
         }
 
         MemoryView<B> flat = MemoryHelpers.full(context, DataType.FP32, 6, 3.5);
         for (long i = 0; i < flat.shape().size(); i++) {
-            float actual = memoryAccess.readFloat(flat.memory(), flat.byteOffset() + i * byteStride);
+            float actual =
+                    memoryAccess.readFloat(flat.memory(), flat.byteOffset() + i * byteStride);
             assertEquals(3.5f, actual);
         }
     }
@@ -53,8 +54,12 @@ class ContextHelpersTest extends AbstractMemoryTest {
         MemoryView<B> flatZeros = MemoryHelpers.zeros(context, DataType.FP32, 4);
         for (long i = 0; i < flatOnes.shape().size(); i++) {
             long offset = i * byteStride;
-            assertEquals(1.0f, memoryAccess.readFloat(flatOnes.memory(), flatOnes.byteOffset() + offset));
-            assertEquals(0.0f, memoryAccess.readFloat(flatZeros.memory(), flatZeros.byteOffset() + offset));
+            assertEquals(
+                    1.0f,
+                    memoryAccess.readFloat(flatOnes.memory(), flatOnes.byteOffset() + offset));
+            assertEquals(
+                    0.0f,
+                    memoryAccess.readFloat(flatZeros.memory(), flatZeros.byteOffset() + offset));
         }
     }
 
@@ -68,13 +73,15 @@ class ContextHelpersTest extends AbstractMemoryTest {
         MemoryView<B> view = MemoryHelpers.arange(context, DataType.FP32, 3);
         long byteStride = DataType.FP32.byteSize();
         for (long i = 0; i < view.shape().size(); i++) {
-            float actual = memoryAccess.readFloat(view.memory(), view.byteOffset() + i * byteStride);
+            float actual =
+                    memoryAccess.readFloat(view.memory(), view.byteOffset() + i * byteStride);
             assertEquals((float) i, actual);
         }
 
         MemoryView<B> simple = MemoryHelpers.arange(context, DataType.FP32, 10);
         for (long i = 0; i < simple.shape().size(); i++) {
-            float actual = memoryAccess.readFloat(simple.memory(), simple.byteOffset() + i * byteStride);
+            float actual =
+                    memoryAccess.readFloat(simple.memory(), simple.byteOffset() + i * byteStride);
             assertEquals((float) i, actual);
         }
     }
@@ -92,7 +99,9 @@ class ContextHelpersTest extends AbstractMemoryTest {
         assertEquals(DataType.I32, i32View.dataType());
         assertEquals(5, i32View.shape().size());
         for (long i = 0; i < i32View.shape().size(); i++) {
-            int actual = memoryAccess.readInt(i32View.memory(), i32View.byteOffset() + i * DataType.I32.byteSize());
+            int actual =
+                    memoryAccess.readInt(
+                            i32View.memory(), i32View.byteOffset() + i * DataType.I32.byteSize());
             assertEquals(i, actual);
         }
 
@@ -106,7 +115,10 @@ class ContextHelpersTest extends AbstractMemoryTest {
         assertEquals(DataType.I32, simpleInt.dataType());
         assertEquals(5, simpleInt.shape().size());
         for (long i = 0; i < simpleInt.shape().size(); i++) {
-            int actual = memoryAccess.readInt(simpleInt.memory(), simpleInt.byteOffset() + i * DataType.I32.byteSize());
+            int actual =
+                    memoryAccess.readInt(
+                            simpleInt.memory(),
+                            simpleInt.byteOffset() + i * DataType.I32.byteSize());
             assertEquals(i, actual);
         }
     }
@@ -124,7 +136,9 @@ class ContextHelpersTest extends AbstractMemoryTest {
         assertEquals(DataType.I64, longView.dataType());
         assertEquals(5, longView.shape().size());
         for (long i = 0; i < longView.shape().size(); i++) {
-            long actual = memoryAccess.readLong(longView.memory(), longView.byteOffset() + i * DataType.I64.byteSize());
+            long actual =
+                    memoryAccess.readLong(
+                            longView.memory(), longView.byteOffset() + i * DataType.I64.byteSize());
             assertEquals(i, actual);
         }
 
@@ -147,7 +161,10 @@ class ContextHelpersTest extends AbstractMemoryTest {
         assertEquals(DataType.FP32, floatView.dataType());
         assertEquals(4, floatView.shape().size());
         for (long i = 0; i < floatView.shape().size(); i++) {
-            float actual = memoryAccess.readFloat(floatView.memory(), floatView.byteOffset() + i * DataType.FP32.byteSize());
+            float actual =
+                    memoryAccess.readFloat(
+                            floatView.memory(),
+                            floatView.byteOffset() + i * DataType.FP32.byteSize());
             assertEquals((float) i, actual, 1e-6f);
         }
 
@@ -170,7 +187,10 @@ class ContextHelpersTest extends AbstractMemoryTest {
         assertEquals(DataType.FP64, doubleView.dataType());
         assertEquals(4, doubleView.shape().size());
         for (long i = 0; i < doubleView.shape().size(); i++) {
-            double actual = memoryAccess.readDouble(doubleView.memory(), doubleView.byteOffset() + i * DataType.FP64.byteSize());
+            double actual =
+                    memoryAccess.readDouble(
+                            doubleView.memory(),
+                            doubleView.byteOffset() + i * DataType.FP64.byteSize());
             assertEquals((double) i, actual, 1e-12);
         }
 
@@ -193,7 +213,9 @@ class ContextHelpersTest extends AbstractMemoryTest {
         assertEquals(DataType.I16, i16View.dataType());
         assertEquals(10, i16View.shape().size());
         for (long i = 0; i < i16View.shape().size(); i++) {
-            short actual = memoryAccess.readShort(i16View.memory(), i16View.byteOffset() + i * DataType.I16.byteSize());
+            short actual =
+                    memoryAccess.readShort(
+                            i16View.memory(), i16View.byteOffset() + i * DataType.I16.byteSize());
             assertEquals(i, actual);
         }
     }
@@ -211,7 +233,9 @@ class ContextHelpersTest extends AbstractMemoryTest {
         assertEquals(DataType.I8, i8View.dataType());
         assertEquals(10, i8View.shape().size());
         for (long i = 0; i < i8View.shape().size(); i++) {
-            byte actual = memoryAccess.readByte(i8View.memory(), i8View.byteOffset() + i * DataType.I8.byteSize());
+            byte actual =
+                    memoryAccess.readByte(
+                            i8View.memory(), i8View.byteOffset() + i * DataType.I8.byteSize());
             assertEquals(i, actual);
         }
     }
@@ -298,20 +322,20 @@ class ContextHelpersTest extends AbstractMemoryTest {
 
         // Test various small non-zero doubles
         double[] smallValues = {
-            Double.MIN_VALUE,           // Smallest positive double
-            Double.MIN_NORMAL,          // Smallest normal positive double
-            -Double.MIN_VALUE,          // Smallest negative double
-            1e-308,                     // Very small positive
-            -1e-308,                    // Very small negative
-            0.0001,                     // Small but not tiny
-            -0.0001                     // Small negative
+            Double.MIN_VALUE, // Smallest positive double
+            Double.MIN_NORMAL, // Smallest normal positive double
+            -Double.MIN_VALUE, // Smallest negative double
+            1e-308, // Very small positive
+            -1e-308, // Very small negative
+            0.0001, // Small but not tiny
+            -0.0001 // Small negative
         };
 
         for (double value : smallValues) {
             MemoryView<B> view = MemoryHelpers.full(context, DataType.BOOL, 1, value);
             byte byteValue = memoryAccess.readByte(view.memory(), view.byteOffset());
-            assertEquals((byte) 1, byteValue,
-                "Small non-zero double " + value + " should be true (1)");
+            assertEquals(
+                    (byte) 1, byteValue, "Small non-zero double " + value + " should be true (1)");
         }
     }
 
@@ -338,8 +362,7 @@ class ContextHelpersTest extends AbstractMemoryTest {
         for (Number value : largeValues) {
             MemoryView<B> view = MemoryHelpers.full(context, DataType.BOOL, 1, value);
             byte byteValue = memoryAccess.readByte(view.memory(), view.byteOffset());
-            assertEquals((byte) 1, byteValue,
-                "Large value " + value + " should be true (1)");
+            assertEquals((byte) 1, byteValue, "Large value " + value + " should be true (1)");
         }
     }
 
@@ -368,7 +391,8 @@ class ContextHelpersTest extends AbstractMemoryTest {
         // Test 42
         MemoryView<B> fortyTwoView = MemoryHelpers.full(context, DataType.BOOL, 3, 42);
         for (long i = 0; i < fortyTwoView.shape().size(); i++) {
-            byte value = memoryAccess.readByte(fortyTwoView.memory(), fortyTwoView.byteOffset() + i);
+            byte value =
+                    memoryAccess.readByte(fortyTwoView.memory(), fortyTwoView.byteOffset() + i);
             assertEquals((byte) 1, value, "42 should be true (1)");
         }
     }

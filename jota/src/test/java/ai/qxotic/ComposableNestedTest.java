@@ -1,16 +1,15 @@
 package ai.qxotic;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.Stride;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
-
 /**
- * Tests for the unified Shape.nested() API that handles:
- * 1. Pattern-based nesting: nested("(batch, (N, M))", 2, 3, 4)
- * 2. Template-based nesting: nested(template, 10, 20, 30)
- * 3. Composition: nested(1, Shape.of(2, 3), 4)
+ * Tests for the unified Shape.nested() API that handles: 1. Pattern-based nesting: nested("(batch,
+ * (N, M))", 2, 3, 4) 2. Template-based nesting: nested(template, 10, 20, 30) 3. Composition:
+ * nested(1, Shape.of(2, 3), 4)
  */
 class ComposableNestedTest {
 
@@ -21,7 +20,7 @@ class ComposableNestedTest {
 
         assertEquals(3, shape.rank());
         assertEquals(4, shape.flatRank());
-        assertArrayEquals(new long[]{2, 4, 5, 6}, shape.toArray());
+        assertArrayEquals(new long[] {2, 4, 5, 6}, shape.toArray());
         assertEquals(2, shape.size(0));
         assertEquals(20, shape.size(1));
         assertEquals(6, shape.size(2));
@@ -34,7 +33,7 @@ class ComposableNestedTest {
 
         assertTrue(shape.isFlat());
         assertEquals(3, shape.rank());
-        assertArrayEquals(new long[]{1, 2, 3}, shape.toArray());
+        assertArrayEquals(new long[] {1, 2, 3}, shape.toArray());
     }
 
     @Test
@@ -66,7 +65,7 @@ class ComposableNestedTest {
 
         assertEquals(2, shape.rank());
         assertEquals(4, shape.flatRank());
-        assertArrayEquals(new long[]{1, 2, 3, 4}, shape.toArray());
+        assertArrayEquals(new long[] {1, 2, 3, 4}, shape.toArray());
     }
 
     @Test
@@ -76,7 +75,7 @@ class ComposableNestedTest {
 
         assertEquals(2, stride.rank());
         assertEquals(3, stride.flatRank());
-        assertArrayEquals(new long[]{100, 10, 1}, stride.toArray());
+        assertArrayEquals(new long[] {100, 10, 1}, stride.toArray());
     }
 
     @Test

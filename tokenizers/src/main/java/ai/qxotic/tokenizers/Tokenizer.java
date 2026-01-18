@@ -4,12 +4,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.NoSuchElementException;
 
 /**
- * Provides functionality for converting between text and token sequences using a defined vocabulary.
- * This interface is fundamental to text processing in Large Language Models (LLMs), handling both
- * the encoding of text into token sequences and decoding of token sequences back into text.
+ * Provides functionality for converting between text and token sequences using a defined
+ * vocabulary. This interface is fundamental to text processing in Large Language Models (LLMs),
+ * handling both the encoding of text into token sequences and decoding of token sequences back into
+ * text.
  *
  * <p>The tokenizer uses an associated {@link Vocabulary} to perform the conversions and maintains
- * consistency in both directions (encoding and decoding).</p>
+ * consistency in both directions (encoding and decoding).
  */
 public interface Tokenizer {
 
@@ -30,9 +31,8 @@ public interface Tokenizer {
     IntSequence encode(String text);
 
     /**
-     * Counts the number of tokens that would result from encoding the given text.
-     * This method may be optimized to be faster than calling {@link #encode(String)}
-     * and checking the length.
+     * Counts the number of tokens that would result from encoding the given text. This method may
+     * be optimized to be faster than calling {@link #encode(String)} and checking the length.
      *
      * @param text the input text to analyze
      * @return the number of tokens the text would encode to
@@ -42,8 +42,8 @@ public interface Tokenizer {
     }
 
     /**
-     * Converts a sequence of token IDs into a UTF-8 string. This is the primary
-     * decoding method for most use cases.
+     * Converts a sequence of token IDs into a UTF-8 string. This is the primary decoding method for
+     * most use cases.
      *
      * @param tokens sequence of token IDs to decode
      * @return the decoded text as a String
@@ -54,8 +54,8 @@ public interface Tokenizer {
     }
 
     /**
-     * Converts a sequence of token IDs into raw bytes. This is a lower-level
-     * decoding operation that provides the underlying byte representation.
+     * Converts a sequence of token IDs into raw bytes. This is a lower-level decoding operation
+     * that provides the underlying byte representation.
      *
      * @param tokens sequence of token IDs to decode
      * @return the raw bytes representing the decoded tokens

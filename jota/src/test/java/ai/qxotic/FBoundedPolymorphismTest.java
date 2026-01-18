@@ -1,15 +1,14 @@
 package ai.qxotic;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.Stride;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
-
 /**
- * Tests demonstrating F-bounded polymorphism type safety.
- * Shape methods return Shape, Stride methods return Stride.
- * No runtime type checking or casting required.
+ * Tests demonstrating F-bounded polymorphism type safety. Shape methods return Shape, Stride
+ * methods return Stride. No runtime type checking or casting required.
  */
 class FBoundedPolymorphismTest {
 
@@ -97,19 +96,21 @@ class FBoundedPolymorphismTest {
     @Test
     void testMethodChaining() {
         // Complex chaining with type-safe operations
-        Shape result = Shape.flat(2, 3, 4)
-            .insert(1, Shape.of(10L))           // Returns Shape
-            .replace(2, Shape.of(20L, 30L))     // Returns Shape
-            .permute(3, 0, 1, 2)                // Returns Shape
-            .remove(1);                         // Returns Shape
+        Shape result =
+                Shape.flat(2, 3, 4)
+                        .insert(1, Shape.of(10L)) // Returns Shape
+                        .replace(2, Shape.of(20L, 30L)) // Returns Shape
+                        .permute(3, 0, 1, 2) // Returns Shape
+                        .remove(1); // Returns Shape
 
         assertEquals(3, result.rank());
 
         // Stride chaining
-        Stride strideResult = Stride.flat(100, 10, 1)
-            .insert(0, Stride.of(1000L))        // Returns Stride
-            .replace(1, Stride.of(200L))        // Returns Stride
-            .permute(3, 2, 1, 0);              // Returns Stride
+        Stride strideResult =
+                Stride.flat(100, 10, 1)
+                        .insert(0, Stride.of(1000L)) // Returns Stride
+                        .replace(1, Stride.of(200L)) // Returns Stride
+                        .permute(3, 2, 1, 0); // Returns Stride
 
         assertEquals(4, strideResult.rank());
     }

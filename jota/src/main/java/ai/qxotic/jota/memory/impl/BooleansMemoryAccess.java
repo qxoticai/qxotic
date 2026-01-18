@@ -15,13 +15,13 @@ final class BooleansMemoryAccess implements MemoryAccess<boolean[]> {
         return INSTANCE;
     }
 
-    private BooleansMemoryAccess() {
-    }
+    private BooleansMemoryAccess() {}
 
     @Override
     public byte readByte(Memory<boolean[]> memory, long byteOffset) {
         MemoryAccessChecks.checkBounds(memory, byteOffset, Byte.BYTES);
-        boolean value = UNSAFE.getBoolean(memory.base(), Unsafe.ARRAY_BOOLEAN_BASE_OFFSET + byteOffset);
+        boolean value =
+                UNSAFE.getBoolean(memory.base(), Unsafe.ARRAY_BOOLEAN_BASE_OFFSET + byteOffset);
         return (byte) (value ? 1 : 0);
     }
 

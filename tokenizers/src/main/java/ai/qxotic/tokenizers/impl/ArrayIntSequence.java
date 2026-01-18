@@ -2,10 +2,7 @@ package ai.qxotic.tokenizers.impl;
 
 import ai.qxotic.tokenizers.IntSequence;
 
-/**
- * An implementation of IntSequence backed by an array.
- */
-
+/** An implementation of IntSequence backed by an array. */
 final class ArrayIntSequence extends AbstractIntSequence {
 
     private final int[] array;
@@ -24,7 +21,7 @@ final class ArrayIntSequence extends AbstractIntSequence {
     /**
      * Creates a new ArrayIntSequence backed by a slice of the given array.
      *
-     * @param array  the source array
+     * @param array the source array
      * @param offset the starting offset in the array
      * @param length the length of the sequence
      */

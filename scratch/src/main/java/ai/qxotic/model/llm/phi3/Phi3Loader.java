@@ -10,7 +10,6 @@ import ai.qxotic.model.llm.llama.Timer;
 import ai.qxotic.span.FloatMatrixView;
 import ai.qxotic.span.FloatSpan;
 import ai.qxotic.tokenizers.Tokenizer;
-
 import java.util.Arrays;
 
 public class Phi3Loader extends BaseLlamaLoader {
@@ -30,7 +29,8 @@ public class Phi3Loader extends BaseLlamaLoader {
     public Phi3.Configuration loadConfiguration(int maxTokens, SpanLoader spanLoader) {
         String arch = gguf.getValue(String.class, "general.architecture");
         if (!PHI3_ARCH.equals(arch)) {
-            throw new IllegalArgumentException("general.architecture expected " + PHI3_ARCH + " but found " + arch);
+            throw new IllegalArgumentException(
+                    "general.architecture expected " + PHI3_ARCH + " but found " + arch);
         }
         return super.loadConfiguration(maxTokens, spanLoader).with(b -> b.ropeIsNeoxStyle(true));
     }
@@ -41,53 +41,108 @@ public class Phi3Loader extends BaseLlamaLoader {
             int dim = config.embeddingLength;
             int kvDim = config.numberOfKeyValueHeads * config.headSize;
 
-            float[][] ropeFreqs = RoPE.precomputeFreqsCis(config.contextLength, config.headSize, config.ropeTheta);
+            float[][] ropeFreqs =
+                    RoPE.precomputeFreqsCis(
+                            config.contextLength, config.headSize, config.ropeTheta);
 
             assert ropeFreqs.length == 2;
             float[] ropeFreqsReal = ropeFreqs[0];
             float[] ropeFreqsImag = ropeFreqs[1];
 
-            FloatMatrixView tokenEmbeddings = tensorAsMatrix(gguf.getTensor("token_embd.weight"), spanLoader);
+            FloatMatrixView tokenEmbeddings =
+                    tensorAsMatrix(gguf.getTensor("token_embd.weight"), spanLoader);
 
-            // If "output.weight" is not present then the embedding weights are tied/shared with the decoder.
+            // If "output.weight" is not present then the embedding weights are tied/shared with the
+            // decoder.
             // This is commonly referred as "tie word embeddings".
-            FloatMatrixView classifierWeights = gguf.containsTensor("output.weight")
-                    ? tensorAsMatrix(gguf.getTensor("output.weight"), spanLoader)
-                    : tokenEmbeddings;
+            FloatMatrixView classifierWeights =
+                    gguf.containsTensor("output.weight")
+                            ? tensorAsMatrix(gguf.getTensor("output.weight"), spanLoader)
+                            : tokenEmbeddings;
 
             // queryWeights + keyWeights + valueWeights
-            FloatSpan[] qkvWeights = loadSpanArray(config.numberOfLayers, i -> gguf.getTensor("blk." + i + ".attn_qkv.weight"), spanLoader);
+            FloatSpan[] qkvWeights =
+                    loadSpanArray(
+                            config.numberOfLayers,
+                            i -> gguf.getTensor("blk." + i + ".attn_qkv.weight"),
+                            spanLoader);
             // ffnGate + ffnUp
-            FloatSpan[] ffnGateUp = loadSpanArray(config.numberOfLayers, i -> gguf.getTensor("blk." + i + ".ffn_up.weight"), spanLoader);
+            FloatSpan[] ffnGateUp =
+                    loadSpanArray(
+                            config.numberOfLayers,
+                            i -> gguf.getTensor("blk." + i + ".ffn_up.weight"),
+                            spanLoader);
 
             return new Phi3.Weights(
                     tokenEmbeddings,
-                    loadSpanArray(config.numberOfLayers, i -> gguf.getTensor("blk." + i + ".attn_norm.weight"), spanLoader),
-
-                    Arrays.stream(qkvWeights).map(span -> FloatMatrixView.asMatrix(span, 0, dim, dim)).toArray(FloatMatrixView[]::new), // queryWeights,
-                    Arrays.stream(qkvWeights).map(span -> FloatMatrixView.asMatrix(span, (long) dim * dim, kvDim, dim)).toArray(FloatMatrixView[]::new), // keyWeights,
-                    Arrays.stream(qkvWeights).map(span -> FloatMatrixView.asMatrix(span, (long) (dim + kvDim) * dim, kvDim, dim)).toArray(FloatMatrixView[]::new), // valueWeights,
-
+                    loadSpanArray(
+                            config.numberOfLayers,
+                            i -> gguf.getTensor("blk." + i + ".attn_norm.weight"),
+                            spanLoader),
+                    Arrays.stream(qkvWeights)
+                            .map(span -> FloatMatrixView.asMatrix(span, 0, dim, dim))
+                            .toArray(FloatMatrixView[]::new), // queryWeights,
+                    Arrays.stream(qkvWeights)
+                            .map(
+                                    span ->
+                                            FloatMatrixView.asMatrix(
+                                                    span, (long) dim * dim, kvDim, dim))
+                            .toArray(FloatMatrixView[]::new), // keyWeights,
+                    Arrays.stream(qkvWeights)
+                            .map(
+                                    span ->
+                                            FloatMatrixView.asMatrix(
+                                                    span, (long) (dim + kvDim) * dim, kvDim, dim))
+                            .toArray(FloatMatrixView[]::new), // valueWeights,
                     null,
                     null,
 
                     // qkv bias can be null.
-                    loadSpanArray(true, config.numberOfLayers, i -> gguf.getTensor("blk." + i + ".attn_q.bias"), spanLoader),
-                    loadSpanArray(true, config.numberOfLayers, i -> gguf.getTensor("blk." + i + ".attn_k.bias"), spanLoader),
-                    loadSpanArray(true, config.numberOfLayers, i -> gguf.getTensor("blk." + i + ".attn_v.bias"), spanLoader),
-
-                    loadMatrixArray(false, config.numberOfLayers, i -> gguf.getTensor("blk." + i + ".attn_output.weight"), spanLoader),
-                    loadSpanArray(config.numberOfLayers, i -> gguf.getTensor("blk." + i + ".ffn_norm.weight"), spanLoader),
-
-                    Arrays.stream(ffnGateUp).map(span -> FloatMatrixView.asMatrix(span, 0, config.ffnLength, dim)).toArray(FloatMatrixView[]::new), // ffnGate
-                    loadMatrixArray(false, config.numberOfLayers, i -> gguf.getTensor("blk." + i + ".ffn_down.weight"), spanLoader), // w2
-                    Arrays.stream(ffnGateUp).map(span -> FloatMatrixView.asMatrix(span, (long) config.ffnLength * dim, config.ffnLength, dim)).toArray(FloatMatrixView[]::new), // ffnUp
-
+                    loadSpanArray(
+                            true,
+                            config.numberOfLayers,
+                            i -> gguf.getTensor("blk." + i + ".attn_q.bias"),
+                            spanLoader),
+                    loadSpanArray(
+                            true,
+                            config.numberOfLayers,
+                            i -> gguf.getTensor("blk." + i + ".attn_k.bias"),
+                            spanLoader),
+                    loadSpanArray(
+                            true,
+                            config.numberOfLayers,
+                            i -> gguf.getTensor("blk." + i + ".attn_v.bias"),
+                            spanLoader),
+                    loadMatrixArray(
+                            false,
+                            config.numberOfLayers,
+                            i -> gguf.getTensor("blk." + i + ".attn_output.weight"),
+                            spanLoader),
+                    loadSpanArray(
+                            config.numberOfLayers,
+                            i -> gguf.getTensor("blk." + i + ".ffn_norm.weight"),
+                            spanLoader),
+                    Arrays.stream(ffnGateUp)
+                            .map(span -> FloatMatrixView.asMatrix(span, 0, config.ffnLength, dim))
+                            .toArray(FloatMatrixView[]::new), // ffnGate
+                    loadMatrixArray(
+                            false,
+                            config.numberOfLayers,
+                            i -> gguf.getTensor("blk." + i + ".ffn_down.weight"),
+                            spanLoader), // w2
+                    Arrays.stream(ffnGateUp)
+                            .map(
+                                    span ->
+                                            FloatMatrixView.asMatrix(
+                                                    span,
+                                                    (long) config.ffnLength * dim,
+                                                    config.ffnLength,
+                                                    dim))
+                            .toArray(FloatMatrixView[]::new), // ffnUp
                     spanLoader.apply(gguf.getTensor("output_norm.weight")),
                     ArraySpan.wrap(ropeFreqsReal),
                     ArraySpan.wrap(ropeFreqsImag),
-                    classifierWeights
-            );
+                    classifierWeights);
         }
     }
 }

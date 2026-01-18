@@ -1,11 +1,11 @@
 package ai.qxotic.model.llm.qwen2;
 
-import com.google.auto.service.AutoService;
 import ai.qxotic.format.gguf.GGUF;
 import ai.qxotic.model.llm.GGUFTextSplitterFactory;
 import ai.qxotic.model.llm.TextSplitterFactory;
 import ai.qxotic.tokenizers.TextSplitter;
 import ai.qxotic.tokenizers.impl.RegexSplitter;
+import com.google.auto.service.AutoService;
 
 @AutoService(TextSplitterFactory.class)
 public class Qwen2TextSplitterFactory implements GGUFTextSplitterFactory {

@@ -1,11 +1,11 @@
 package ai.qxotic.jota.memory;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import ai.qxotic.jota.DataType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 public class MemoryHelpersTest extends AbstractMemoryTest {
 
@@ -302,19 +302,23 @@ public class MemoryHelpersTest extends AbstractMemoryTest {
         assertEquals(0, access.readInt(view.memory(), 0));
     }
 
-
-
     @Test
     void testArangeUnsupportedDataType() {
         // FloatsContext has 4-byte granularity, cannot support I8 (1 byte)
-        var context = AbstractMemoryTest.contextsSupportingF32()
-                .filter(c -> c.memoryGranularity() == Float.BYTES && !c.supportsDataType(DataType.I8))
-                .findFirst()
-                .orElseThrow();
+        var context =
+                AbstractMemoryTest.contextsSupportingF32()
+                        .filter(
+                                c ->
+                                        c.memoryGranularity() == Float.BYTES
+                                                && !c.supportsDataType(DataType.I8))
+                        .findFirst()
+                        .orElseThrow();
 
-        assertThrows(IllegalArgumentException.class, () -> {
-            MemoryHelpers.arange(context, DataType.I8, 10);
-        });
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    MemoryHelpers.arange(context, DataType.I8, 10);
+                });
     }
 
     @ParameterizedTest

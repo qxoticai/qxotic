@@ -15,8 +15,7 @@ class LongsContext implements MemoryContext<long[]> {
         return INSTANCE;
     }
 
-    private LongsContext() {
-    }
+    private LongsContext() {}
 
     @Override
     public Device device() {
