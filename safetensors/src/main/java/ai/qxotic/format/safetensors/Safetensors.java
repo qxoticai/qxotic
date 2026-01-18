@@ -1,123 +1,123 @@
 package ai.qxotic.format.safetensors;
 
-import ai.qxotic.format.safetensors.impl.JSON;
+import ai.qxotic.format.safetensors.impl.ImplAccessor;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.channels.FileChannel;
+import java.nio.channels.ReadableByteChannel;
+import java.nio.channels.WritableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.*;
+import java.util.Collection;
+import java.util.Map;
 
-public final class Safetensors {
+/**
+ * Interface for reading Safetensors format metadata.
+ *
+ * <p>Safetensors is a format for storing tensor metadata and data. This interface provides access
+ * to metadata and tensor information without reading the actual tensor data.
+ *
+ * <p>Format specification:
+ *
+ * <ul>
+ *   <li>8 bytes: header size (N) as unsigned little-endian 64-bit integer
+ *   <li>N bytes: JSON UTF-8 header (must start with '{', may have trailing 0x20 padding)
+ *   <li>Rest: tensor data buffer
+ * </ul>
+ *
+ * @see <a href="https://github.com/huggingface/safetensors">Safetensors specification</a>
+ */
+public interface Safetensors {
 
-    private static final String METADATA_KEY = "__metadata__";
+    /**
+     * Returns the byte offset where tensor data begins. This is always 8 + header size.
+     *
+     * @return byte offset to start of tensor data buffer
+     */
+    long getTensorDataOffset();
 
-    public static Map<String, HFTensorEntry> loadFromModelRoot(Path modelRootDirectory) throws IOException {
-        Objects.requireNonNull(modelRootDirectory, "modelRootDirectory");
-        var indexPath = modelRootDirectory.resolve("model.safetensors.index.json");
-        Map<String, Object> indexJson = (Map<String, Object>) JSON.parse(Files.readString(indexPath));
-        Map<String, Object> weightMap = (Map<String, Object>) indexJson.get("weight_map");
-        if (weightMap == null) {
-            throw new IOException("Missing 'weight_map' in index file: " + indexPath);
-        }
-        Map<String, HFTensorEntry> allTensorEntries = new HashMap<>();
-        for (Object value : Set.copyOf(weightMap.values())) {
-            String containingFile = (String) value;
-            var tensorEntries = loadTensorEntries(modelRootDirectory.resolve(containingFile));
-            if (hasOverlappingKeys(allTensorEntries.keySet(), tensorEntries.keySet())) {
-                throw new IOException("Duplicate tensor names found across safetensors files in: " + modelRootDirectory);
-            }
-            allTensorEntries.putAll(tensorEntries);
-        }
-        return allTensorEntries;
+    int getAlignment();
+
+    /**
+     * Returns metadata from the __metadata__ key. Per spec, all values must be strings.
+     *
+     * @return unmodifiable map of metadata, empty if no __metadata__ present
+     */
+    Map<String, String> getMetadata();
+
+    /**
+     * Returns all tensors in this file, order is preserved.
+     *
+     * @return unmodifiable collection of tensor information
+     */
+    Collection<TensorEntry> getTensors();
+
+    /**
+     * Returns information for a specific tensor.
+     *
+     * @param tensorName the tensor name
+     * @return tensor information, or null if not found
+     */
+    TensorEntry getTensor(String tensorName);
+
+    /**
+     * Checks if a tensor exists.
+     *
+     * @param tensorName the tensor name
+     * @return true if tensor exists
+     */
+    default boolean containsTensor(String tensorName) {
+        return getTensor(tensorName) != null;
     }
 
-    public static Map<String, HFTensorEntry> loadTensorEntries(Path filePath) throws IOException {
-        Objects.requireNonNull(filePath, "filePath");
-        Map<String, HFTensorEntry> tensorEntries = new HashMap<>();
-        try (FileChannel fileChannel = FileChannel.open(filePath, StandardOpenOption.READ)) {
-            ByteBuffer sizeBytes = ByteBuffer.allocate(8);
-            int bytesRead = fileChannel.read(sizeBytes);
-            if (bytesRead != 8) {
-                throw new IOException("Invalid safetensors file: expected 8 bytes for header size, got " + bytesRead + " in " + filePath);
-            }
-            sizeBytes.clear().order(ByteOrder.LITTLE_ENDIAN);
-            long headerSizeLong = sizeBytes.getLong(0);
-            if (headerSizeLong <= 0 || headerSizeLong > Integer.MAX_VALUE) {
-                throw new IOException("Invalid header size: " + headerSizeLong + " in " + filePath);
-            }
-            int headerSize = (int) headerSizeLong;
-
-            byte[] headerBytes = new byte[headerSize];
-            bytesRead = fileChannel.read(ByteBuffer.wrap(headerBytes));
-            if (bytesRead != headerSize) {
-                throw new IOException("Failed to read header: expected " + headerSize + " bytes, got " + bytesRead + " in " + filePath);
-            }
-
-            Map<String, Object> json = (Map<String, Object>) JSON.parse(new String(headerBytes));
-
-            for (Map.Entry<String, Object> entry : json.entrySet()) {
-                String tensorName = entry.getKey();
-                if (METADATA_KEY.equals(tensorName)) {
-                    continue;
-                }
-                Map<String, Object> tensorEntry = (Map<String, Object>) entry.getValue();
-                String dtypeString = (String) tensorEntry.get("dtype");
-                if (dtypeString == null) {
-                    throw new IOException("Missing dtype for tensor: " + tensorName + " in " + filePath);
-                }
-                DType dtype;
-                try {
-                    dtype = DType.valueOf(dtypeString);
-                } catch (IllegalArgumentException e) {
-                    throw new IOException("Unknown dtype '" + dtypeString + "' for tensor: " + tensorName + " in " + filePath, e);
-                }
-                List<Number> shapeList = (List<Number>) tensorEntry.get("shape");
-                if (shapeList == null) {
-                    throw new IOException("Missing shape for tensor: " + tensorName + " in " + filePath);
-                }
-
-                long[] shape = shapeList.stream().mapToLong(Number::longValue).toArray();
-
-                List<Object> offsets = (List<Object>) tensorEntry.get("data_offsets");
-                if (offsets == null || offsets.size() != 2) {
-                    throw new IOException("Invalid data_offsets for tensor: " + tensorName + " in " + filePath);
-                }
-                long begin = ((Number) offsets.get(0)).longValue();
-                long end = ((Number) offsets.get(1)).longValue();
-                if (begin < 0 || end < 0) {
-                    throw new IOException("Invalid offsets [" + begin + ", " + end + "] for tensor: " + tensorName + " in " + filePath);
-                }
-                if (begin > end) {
-                    throw new IOException("Invalid offsets: begin (" + begin + ") > end (" + end + ") for tensor: " + tensorName + " in " + filePath);
-                }
-                long bufferSize = end - begin;
-                long expectedSize = numberOfElements(shape) * (long) dtype.size();
-                if (expectedSize != bufferSize) {
-                    throw new IOException("Size mismatch for tensor " + tensorName + ": expected " + expectedSize + " bytes, got " + bufferSize + " in " + filePath);
-                }
-                tensorEntries.put(tensorName, new HFTensorEntry(tensorName, dtype, shape, Long.BYTES + headerSize + begin, bufferSize));
-            }
-        }
-
-        return tensorEntries;
+    /**
+     * Reads safetensors metadata from a channel. Only reads the header (8 bytes + N bytes JSON),
+     * not tensor data.
+     *
+     * @param channel the channel to read from
+     * @return safetensors metadata
+     * @throws IOException if I/O error or format violation
+     */
+    static Safetensors read(ReadableByteChannel channel) throws IOException {
+        return ImplAccessor.read(channel);
     }
 
-    private static long numberOfElements(long[] shape) {
-        return Arrays.stream(shape).reduce(1L, Math::multiplyExact);
+    /**
+     * Reads safetensors metadata from a file.
+     *
+     * @param path the file path
+     * @return safetensors metadata
+     * @throws IOException if I/O error or format violation
+     */
+    static Safetensors read(Path path) throws IOException {
+        try (ReadableByteChannel channel = Files.newByteChannel(path, StandardOpenOption.READ)) {
+            return read(channel);
+        }
     }
 
-    private static boolean hasOverlappingKeys(Set<String> set1, Set<String> set2) {
-        Set<String> smaller = set1.size() <= set2.size() ? set1 : set2;
-        Set<String> larger = set1.size() > set2.size() ? set1 : set2;
-        for (String key : smaller) {
-            if (larger.contains(key)) {
-                return true;
-            }
+    /**
+     * Writes Safetensors metadata to a {@link WritableByteChannel}.
+     *
+     * @param safetensors the Safetensors instance to write
+     * @param byteChannel the channel to write to
+     * @throws IOException if an I/O error occurs during writing
+     */
+    static void write(Safetensors safetensors, WritableByteChannel byteChannel) throws IOException {
+        ImplAccessor.write(safetensors, byteChannel);
+    }
+
+    /**
+     * Writes a Safetensors instance to a file at the specified path.
+     *
+     * @param safetensors the Safetensors instance to write
+     * @param modelPath the path where the Safetensors file should be written
+     * @throws IOException if an I/O error occurs during writing
+     */
+    static void write(Safetensors safetensors, Path modelPath) throws IOException {
+        try (WritableByteChannel byteChannel =
+                     Files.newByteChannel(
+                             modelPath, StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW)) {
+            write(safetensors, byteChannel);
         }
-        return false;
     }
 }

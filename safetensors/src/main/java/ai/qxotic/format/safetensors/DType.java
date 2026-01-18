@@ -2,6 +2,9 @@ package ai.qxotic.format.safetensors;
 
 import java.util.Arrays;
 
+/**
+ * Data types supported by the Safetensors format.
+ */
 public enum DType {
     // Boolean type
     BOOL(1, boolean.class),
@@ -14,9 +17,9 @@ public enum DType {
     // Unsigned integer (16-bit)
     U16(2, short.class),
     // Half-precision floating point
-    F16(2, short.class),
+    F16(2, short.class), // Java has not float16
     // Brain floating point
-    BF16(2, short.class),
+    BF16(2, short.class), // Java has not bfloat16
     // Signed integer (32-bit)
     I32(4, int.class),
     // Unsigned integer (32-bit)
@@ -31,31 +34,31 @@ public enum DType {
     U64(8, long.class);
 
     private final int size;
-    private final Class<?> backingJavaType;
 
-    DType(int size, Class<?> backingJavaType) {
+    public Class<?> javaType() {
+        return javaType;
+    }
+
+    private final Class<?> javaType;
+
+    DType(int size, Class<?> javaType) {
         this.size = size;
-        this.backingJavaType = backingJavaType;
+        this.javaType = javaType;
     }
 
     public int size() {
         return size;
     }
 
-    public boolean isQuantized() {
-        return false;
-    }
-
-    public long byteSizeFor(long numberOfElements) {
-        return numberOfElements * (long) size;
+    public long byteSizeFor(long numElements) {
+        return Math.multiplyExact(numElements, (long) size);
     }
 
     public long byteSizeForShape(long[] shape) {
-        long elementCount = Arrays.stream(shape).reduce(1L, Math::multiplyExact);
-        return byteSizeFor(elementCount);
+        return byteSizeFor(totalNumberOfElements(shape));
     }
 
-    public Class<?> backingJavaType() {
-        return backingJavaType;
+    public static long totalNumberOfElements(long[] shape) {
+        return Arrays.stream(shape).reduce(1L, Math::multiplyExact);
     }
 }
