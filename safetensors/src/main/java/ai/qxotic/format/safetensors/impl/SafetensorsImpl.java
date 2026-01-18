@@ -2,7 +2,6 @@ package ai.qxotic.format.safetensors.impl;
 
 import ai.qxotic.format.safetensors.Safetensors;
 import ai.qxotic.format.safetensors.TensorEntry;
-
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;

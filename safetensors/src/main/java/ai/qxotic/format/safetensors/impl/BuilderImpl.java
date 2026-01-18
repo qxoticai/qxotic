@@ -4,7 +4,6 @@ import ai.qxotic.format.safetensors.Builder;
 import ai.qxotic.format.safetensors.DType;
 import ai.qxotic.format.safetensors.Safetensors;
 import ai.qxotic.format.safetensors.TensorEntry;
-
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -14,8 +13,7 @@ final class BuilderImpl implements Builder {
     private Map<String, String> metadata = new LinkedHashMap<>();
     private Map<String, TensorEntry> tensorEntries = new LinkedHashMap<>();
 
-    BuilderImpl() {
-    }
+    BuilderImpl() {}
 
     static BuilderImpl fromExisting(Safetensors safetensors) {
         return new BuilderImpl()
@@ -46,7 +44,9 @@ final class BuilderImpl implements Builder {
     public Safetensors build(boolean recomputeTensorOffsets) {
         Map<String, TensorEntry> freshTensorEntries =
                 recomputeTensorOffsets ? computeTensorOffsets() : this.tensorEntries;
-        long freshTensorDataOffset = WriterImpl.computeTensorDataOffset(metadata, freshTensorEntries.values(), getAlignment());
+        long freshTensorDataOffset =
+                WriterImpl.computeTensorDataOffset(
+                        metadata, freshTensorEntries.values(), getAlignment());
         return new SafetensorsImpl(freshTensorDataOffset, this.metadata, freshTensorEntries);
     }
 

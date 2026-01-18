@@ -1,5 +1,7 @@
 package ai.qxotic.format.safetensors;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -8,13 +10,11 @@ import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.WritableByteChannel;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
 public abstract class SafetensorsTest {
 
     static byte[] writeToBytes(Safetensors safetensors) throws IOException {
         try (ByteArrayOutputStream bytesOut = new ByteArrayOutputStream();
-             WritableByteChannel byteChannel = Channels.newChannel(bytesOut)) {
+                WritableByteChannel byteChannel = Channels.newChannel(bytesOut)) {
             Safetensors.write(safetensors, byteChannel);
             return bytesOut.toByteArray();
         }
@@ -22,7 +22,7 @@ public abstract class SafetensorsTest {
 
     static Safetensors readFromBytes(byte[] bytes) throws IOException {
         try (ByteArrayInputStream bytesIn = new ByteArrayInputStream(bytes);
-             ReadableByteChannel byteChannel = Channels.newChannel(bytesIn)) {
+                ReadableByteChannel byteChannel = Channels.newChannel(bytesIn)) {
             return Safetensors.read(byteChannel);
         }
     }
@@ -37,11 +37,8 @@ public abstract class SafetensorsTest {
 
         if (strictOrder) {
             assertEquals(
-                    List.copyOf(a.getMetadata().keySet()),
-                    List.copyOf(b.getMetadata().keySet()));
-            assertEquals(
-                    List.copyOf(a.getTensors()),
-                    List.copyOf(b.getTensors()));
+                    List.copyOf(a.getMetadata().keySet()), List.copyOf(b.getMetadata().keySet()));
+            assertEquals(List.copyOf(a.getTensors()), List.copyOf(b.getTensors()));
         } else {
             assertEquals(a.getMetadata(), b.getMetadata());
             assertEquals(a.getTensors(), b.getTensors());

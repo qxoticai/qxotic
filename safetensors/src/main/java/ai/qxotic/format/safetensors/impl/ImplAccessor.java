@@ -3,15 +3,13 @@ package ai.qxotic.format.safetensors.impl;
 import ai.qxotic.format.safetensors.Builder;
 import ai.qxotic.format.safetensors.Safetensors;
 import ai.qxotic.format.safetensors.SafetensorsIndex;
-
 import java.io.IOException;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.WritableByteChannel;
 import java.nio.file.Path;
 
 public final class ImplAccessor {
-    private ImplAccessor() {
-    }
+    private ImplAccessor() {}
 
     public static Safetensors read(ReadableByteChannel channel) throws IOException {
         return ReaderImpl.read(channel);
@@ -37,7 +35,8 @@ public final class ImplAccessor {
         return ReaderImpl.ALIGNMENT_KEY;
     }
 
-    public static void write(Safetensors safetensors, WritableByteChannel byteChannel) throws IOException {
+    public static void write(Safetensors safetensors, WritableByteChannel byteChannel)
+            throws IOException {
         WriterImpl.writeImpl(safetensors, byteChannel);
     }
 

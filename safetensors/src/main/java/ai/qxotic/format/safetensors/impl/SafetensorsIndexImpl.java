@@ -5,7 +5,6 @@ import ai.qxotic.format.safetensors.Safetensors;
 import ai.qxotic.format.safetensors.SafetensorsFormatException;
 import ai.qxotic.format.safetensors.SafetensorsIndex;
 import ai.qxotic.format.safetensors.TensorEntry;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -54,13 +53,18 @@ public final class SafetensorsIndexImpl implements SafetensorsIndex {
             } else {
                 Path singleFile = path.resolve(MODEL_SAFETENSORS);
                 if (!Files.exists(singleFile)) {
-                    throw new IOException("No safetensors files found (expected " +
-                        MODEL_SAFETENSORS + " or " + SAFETENSORS_INDEX + ")");
+                    throw new IOException(
+                            "No safetensors files found (expected "
+                                    + MODEL_SAFETENSORS
+                                    + " or "
+                                    + SAFETENSORS_INDEX
+                                    + ")");
                 }
                 loadSingleFile(singleFile, tensorIndex);
             }
         } else if (Files.isRegularFile(path) && path.toString().endsWith(".safetensors")) {
-            rootPath = path.getParent() != null ? path.getParent() : path.toAbsolutePath().getParent();
+            rootPath =
+                    path.getParent() != null ? path.getParent() : path.toAbsolutePath().getParent();
             loadSingleFile(path, tensorIndex);
         } else {
             throw new IOException("Path must be a directory or .safetensors file: " + path);
@@ -69,8 +73,8 @@ public final class SafetensorsIndexImpl implements SafetensorsIndex {
         return new SafetensorsIndexImpl(rootPath, tensorIndex);
     }
 
-    private static void loadSharded(Path rootPath, Path indexPath,
-                                    Map<String, Path> tensorIndex) throws IOException {
+    private static void loadSharded(Path rootPath, Path indexPath, Map<String, Path> tensorIndex)
+            throws IOException {
         Map<String, Object> index;
         try {
             index = (Map<String, Object>) JSON.parse(Files.readString(indexPath));
@@ -86,7 +90,10 @@ public final class SafetensorsIndexImpl implements SafetensorsIndex {
         }
         if (!(weightMapObj instanceof Map)) {
             throw new SafetensorsFormatException(
-                    "'weight_map' must be an object in " + SAFETENSORS_INDEX + ", got " + weightMapObj.getClass().getSimpleName());
+                    "'weight_map' must be an object in "
+                            + SAFETENSORS_INDEX
+                            + ", got "
+                            + weightMapObj.getClass().getSimpleName());
         }
 
         Map<?, ?> weightMapRaw = (Map<?, ?>) weightMapObj;
@@ -112,7 +119,8 @@ public final class SafetensorsIndexImpl implements SafetensorsIndex {
         }
     }
 
-    private static void loadSingleFile(Path filePath, Map<String, Path> tensorIndex) throws IOException {
+    private static void loadSingleFile(Path filePath, Map<String, Path> tensorIndex)
+            throws IOException {
         Safetensors st = Safetensors.read(filePath);
 
         for (TensorEntry info : st.getTensors()) {

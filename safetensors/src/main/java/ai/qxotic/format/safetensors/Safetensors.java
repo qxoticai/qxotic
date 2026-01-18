@@ -1,7 +1,6 @@
 package ai.qxotic.format.safetensors;
 
 import ai.qxotic.format.safetensors.impl.ImplAccessor;
-
 import java.io.IOException;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.WritableByteChannel;
@@ -115,8 +114,8 @@ public interface Safetensors {
      */
     static void write(Safetensors safetensors, Path modelPath) throws IOException {
         try (WritableByteChannel byteChannel =
-                     Files.newByteChannel(
-                             modelPath, StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW)) {
+                Files.newByteChannel(
+                        modelPath, StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW)) {
             write(safetensors, byteChannel);
         }
     }

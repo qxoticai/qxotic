@@ -21,8 +21,7 @@ public final class TensorEntry {
         this.byteOffset = byteOffset;
     }
 
-    public static TensorEntry create(
-            String name, DType dtype, long[] shape, long offset) {
+    public static TensorEntry create(String name, DType dtype, long[] shape, long offset) {
         return new TensorEntry(
                 Objects.requireNonNull(name),
                 Objects.requireNonNull(dtype),
@@ -69,11 +68,16 @@ public final class TensorEntry {
     @Override
     public String toString() {
         return "TensorInfo{"
-                + "name=" + name
-                + ", dtype=" + dtype
-                + ", shape=" + Arrays.toString(shape)
-                + ", offset=0x" + Long.toHexString(byteOffset)
-                + ", byteSize=" + dtype.byteSizeForShape(shape)
+                + "name="
+                + name
+                + ", dtype="
+                + dtype
+                + ", shape="
+                + Arrays.toString(shape)
+                + ", offset=0x"
+                + Long.toHexString(byteOffset)
+                + ", byteSize="
+                + dtype.byteSizeForShape(shape)
                 + '}';
     }
 
