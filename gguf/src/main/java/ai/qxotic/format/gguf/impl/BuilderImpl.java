@@ -14,7 +14,7 @@ final class BuilderImpl extends AbstractBuilder {
     private int version = DEFAULT_VERSION;
     private Map<String, Object> metadata = new LinkedHashMap<>();
     private Map<String, MetadataValueType> metadataTypes = new LinkedHashMap<>();
-    private Map<String, TensorInfo> tensorInfos = new LinkedHashMap<>();
+    private Map<String, TensorEntry> tensorInfos = new LinkedHashMap<>();
 
     BuilderImpl() {}
 
@@ -49,11 +49,11 @@ final class BuilderImpl extends AbstractBuilder {
         return metadataTypes;
     }
 
-    private static Map<String, TensorInfo> fromCollection(Collection<TensorInfo> tensors) {
+    private static Map<String, TensorEntry> fromCollection(Collection<TensorEntry> tensors) {
         return tensors.stream()
                 .collect(
                         Collectors.toMap(
-                                TensorInfo::name,
+                                TensorEntry::name,
                                 Function.identity(),
                                 (a, b) -> {
                                     throw new IllegalArgumentException("duplicated tensor names");
@@ -83,7 +83,7 @@ final class BuilderImpl extends AbstractBuilder {
     public GGUF build(boolean recomputeTensorOffsets) {
         assert this.metadata.keySet().stream().allMatch(key -> this.metadataTypes.containsKey(key));
         long freshTensorDataOffset = computeTensorDataOffset();
-        Map<String, TensorInfo> freshTensorInfos =
+        Map<String, TensorEntry> freshTensorInfos =
                 recomputeTensorOffsets ? computeTensorOffsets() : this.tensorInfos;
         return new GGUFImpl(
                 this.version,
@@ -167,11 +167,11 @@ final class BuilderImpl extends AbstractBuilder {
                         * (long) componentType.byteSize(); // gguf_metadata_value_t array[len];
     }
 
-    private static long sizeOfTensorInfo(TensorInfo tensorInfo) {
-        return sizeOfStringValue(tensorInfo.name()) // gguf_string_t name
+    private static long sizeOfTensorInfo(TensorEntry tensorEntry) {
+        return sizeOfStringValue(tensorEntry.name()) // gguf_string_t name
                 + Integer.BYTES // uint32_t n_dimensions;
                 + Long.BYTES
-                        * (long) tensorInfo.shape().length // uint64_t dimensions[n_dimensions];
+                        * (long) tensorEntry.shape().length // uint64_t dimensions[n_dimensions];
                 + Integer.BYTES // ggmlType type
                 + Long.BYTES; // uint64_t offset
     }
@@ -190,8 +190,8 @@ final class BuilderImpl extends AbstractBuilder {
             tensorDataOffset += sizeOfTaggedValue(key, value);
         }
 
-        for (TensorInfo tensorInfo : this.tensorInfos.values()) {
-            tensorDataOffset += sizeOfTensorInfo(tensorInfo);
+        for (TensorEntry tensorEntry : this.tensorInfos.values()) {
+            tensorDataOffset += sizeOfTensorInfo(tensorEntry);
         }
 
         int padding = (int) GGUFImpl.padding(tensorDataOffset, getAlignment());
@@ -199,7 +199,7 @@ final class BuilderImpl extends AbstractBuilder {
         return tensorDataOffset;
     }
 
-    BuilderImpl setTensors(Map<String, TensorInfo> newTensorInfos) {
+    BuilderImpl setTensors(Map<String, TensorEntry> newTensorInfos) {
         // Must preserve insertion order.
         assert newTensorInfos instanceof LinkedHashMap;
         assert newTensorInfos.entrySet().stream()
@@ -209,8 +209,8 @@ final class BuilderImpl extends AbstractBuilder {
     }
 
     @Override
-    public BuilderImpl putTensor(TensorInfo tensorInfo) {
-        this.tensorInfos.put(tensorInfo.name(), tensorInfo);
+    public BuilderImpl putTensor(TensorEntry tensorEntry) {
+        this.tensorInfos.put(tensorEntry.name(), tensorEntry);
         return this;
     }
 
@@ -236,7 +236,7 @@ final class BuilderImpl extends AbstractBuilder {
     }
 
     @Override
-    public TensorInfo getTensor(String tensorName) {
+    public TensorEntry getTensor(String tensorName) {
         return this.tensorInfos.get(tensorName);
     }
 
@@ -246,7 +246,7 @@ final class BuilderImpl extends AbstractBuilder {
     }
 
     @Override
-    public Collection<TensorInfo> getTensors() {
+    public Collection<TensorEntry> getTensors() {
         return Collections.unmodifiableCollection(this.tensorInfos.values());
     }
 
@@ -272,18 +272,18 @@ final class BuilderImpl extends AbstractBuilder {
         return this;
     }
 
-    private Map<String, TensorInfo> computeTensorOffsets() {
+    private Map<String, TensorEntry> computeTensorOffsets() {
         long tensorOffset = 0;
-        Map<String, TensorInfo> newTensorInfos = new LinkedHashMap<>();
-        for (Map.Entry<String, TensorInfo> entry : tensorInfos.entrySet()) {
+        Map<String, TensorEntry> newTensorInfos = new LinkedHashMap<>();
+        for (Map.Entry<String, TensorEntry> entry : tensorInfos.entrySet()) {
             // Add padding, tensor start must be aligned.
             tensorOffset += GGUFImpl.padding(tensorOffset, getAlignment());
             String name = entry.getKey();
-            TensorInfo tensorInfo = entry.getValue();
-            GGMLType ggmlType = tensorInfo.ggmlType();
-            long byteSize = ggmlType.byteSizeForShape(tensorInfo.shape());
+            TensorEntry tensorEntry = entry.getValue();
+            GGMLType ggmlType = tensorEntry.ggmlType();
+            long byteSize = ggmlType.byteSizeForShape(tensorEntry.shape());
             newTensorInfos.put(
-                    name, TensorInfo.create(name, tensorInfo.shape(), ggmlType, tensorOffset));
+                    name, TensorEntry.create(name, tensorEntry.shape(), ggmlType, tensorOffset));
             tensorOffset += byteSize;
         }
         return newTensorInfos;

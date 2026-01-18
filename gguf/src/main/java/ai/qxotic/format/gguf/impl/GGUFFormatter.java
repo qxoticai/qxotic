@@ -2,7 +2,7 @@ package ai.qxotic.format.gguf.impl;
 
 import ai.qxotic.format.gguf.GGUF;
 import ai.qxotic.format.gguf.MetadataValueType;
-import ai.qxotic.format.gguf.TensorInfo;
+import ai.qxotic.format.gguf.TensorEntry;
 import java.lang.reflect.Array;
 
 /** Provides formatting for GGUF instances with simple parameter-based control. */
@@ -158,9 +158,9 @@ class GGUFFormatter {
 
     private static void formatTensors(StringBuilder sb, GGUF gguf) {
         var tensors = gguf.getTensors();
-        sb.append("  tensors: [\n");
+        sb.append("  tensors: {\n");
 
-        for (TensorInfo tensor : tensors) {
+        for (TensorEntry tensor : tensors) {
             sb.append("    ").append(tensor.name()).append(": ");
             sb.append(tensor.ggmlType()).append('[');
 
@@ -170,10 +170,11 @@ class GGUFFormatter {
                 if (i > 0) sb.append(", ");
                 sb.append(shape[i]);
             }
-
-            sb.append("]\n");
+            sb.append("]");
+            sb.append(" @ offset=0x").append(Long.toHexString(tensor.offset()));
+            sb.append("\n");
         }
 
-        sb.append("  ]\n");
+        sb.append("  }\n");
     }
 }

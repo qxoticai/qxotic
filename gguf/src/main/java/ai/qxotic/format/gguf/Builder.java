@@ -66,7 +66,7 @@ public interface Builder extends Cloneable {
     }
 
     /** Adds or updates a tensor. */
-    Builder putTensor(TensorInfo tensorInfo);
+    Builder putTensor(TensorEntry tensorEntry);
 
     /** Removes a tensor by name. */
     Builder removeTensor(String tensorName);
@@ -75,7 +75,7 @@ public interface Builder extends Cloneable {
     boolean containsTensor(String tensorName);
 
     /** Gets tensor information by name. */
-    TensorInfo getTensor(String tensorName);
+    TensorEntry getTensor(String tensorName);
 
     /** Checks if a metadata key exists. */
     boolean containsKey(String key);
@@ -100,7 +100,7 @@ public interface Builder extends Cloneable {
      *
      * @return the collection of tensor information
      */
-    Collection<TensorInfo> getTensors();
+    Collection<TensorEntry> getTensors();
 
     /**
      * Gets the component type for the array value associated with the given key.

@@ -10,7 +10,7 @@ import java.util.Objects;
  * stores key information about a tensor including its name, shape, data type, and location/offset
  * with respect to {@link GGUF#getTensorDataOffset()}.
  */
-public final class TensorInfo {
+public final class TensorEntry {
     /** The name identifier of the tensor. */
     private final String name;
 
@@ -29,23 +29,23 @@ public final class TensorInfo {
      */
     private final long offset;
 
-    private TensorInfo(String name, long[] shape, GGMLType ggmlType, long offset) {
+    private TensorEntry(String name, long[] shape, GGMLType ggmlType, long offset) {
         this.name = name;
-        this.shape = shape;
+        this.shape = shape.clone();
         this.ggmlType = ggmlType;
         this.offset = offset;
     }
 
     /**
-     * Constructs a new {@link TensorInfo} with the specified parameters.
+     * Constructs a new {@link TensorEntry} with the specified parameters.
      *
      * @param name the name identifier of the tensor
      * @param shape the dimensions of the tensor as an array of longs
      * @param ggmlType the data type of the tensor elements
      * @param offset the byte offset where this tensor's data begins in the file
      */
-    public static TensorInfo create(String name, long[] shape, GGMLType ggmlType, long offset) {
-        return new TensorInfo(name, shape, ggmlType, offset);
+    public static TensorEntry create(String name, long[] shape, GGMLType ggmlType, long offset) {
+        return new TensorEntry(name, shape, ggmlType, offset);
     }
 
     /**
@@ -66,7 +66,7 @@ public final class TensorInfo {
      * @return the tensor's shape as an array of longs
      */
     public long[] shape() {
-        return shape;
+        return shape.clone();
     }
 
     /**
@@ -95,7 +95,7 @@ public final class TensorInfo {
     }
 
     /**
-     * Compares this {@link TensorInfo} with another object for equality.
+     * Compares this {@link TensorEntry} with another object for equality.
      *
      * <p>Two TensorInfo objects are considered equal if they have the same name, shape, type, and
      * offset.
@@ -108,8 +108,8 @@ public final class TensorInfo {
         if (this == other) {
             return true;
         }
-        if (other instanceof TensorInfo) {
-            TensorInfo that = (TensorInfo) other;
+        if (other instanceof TensorEntry) {
+            TensorEntry that = (TensorEntry) other;
             return offset == that.offset
                     && Objects.equals(name, that.name)
                     && Arrays.equals(shape, that.shape)
@@ -120,7 +120,7 @@ public final class TensorInfo {
     }
 
     /**
-     * Returns a hash code value for this {@link TensorInfo}.
+     * Returns a hash code value for this {@link TensorEntry}.
      *
      * @return a hash code value for this object
      */
@@ -130,7 +130,7 @@ public final class TensorInfo {
     }
 
     /**
-     * Returns a string representation of this {@link TensorInfo}.
+     * Returns a string representation of this {@link TensorEntry}.
      *
      * <p>The string includes the tensor's name, shape, type, and offset in hexadecimal. For
      * example: <i>"TensorInfo{name='token_embd.weight', shape=[768, 32000], ggmlType=F32,
@@ -141,9 +141,8 @@ public final class TensorInfo {
     @Override
     public String toString() {
         return "TensorInfo{"
-                + "name='"
+                + "name="
                 + name
-                + '\''
                 + ", shape="
                 + Arrays.toString(shape)
                 + ", ggmlType="

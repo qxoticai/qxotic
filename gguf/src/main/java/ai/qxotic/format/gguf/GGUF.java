@@ -176,17 +176,17 @@ public interface GGUF {
     /**
      * Returns information about all tensors stored in the GGUF metadata, order is preserved.
      *
-     * @return a collection of {@link TensorInfo} objects describing all tensors
+     * @return a collection of {@link TensorEntry} objects describing all tensors
      */
-    Collection<TensorInfo> getTensors();
+    Collection<TensorEntry> getTensors();
 
     /**
      * Returns information about a specific tensor by name.
      *
      * @param tensorName the name of the tensor to look up
-     * @return the {@link TensorInfo} for the specified tensor, or null if not found
+     * @return the {@link TensorEntry} for the specified tensor, or null if not found
      */
-    TensorInfo getTensor(String tensorName);
+    TensorEntry getTensor(String tensorName);
 
     /**
      * Checks if a tensor with the specified name exists in the GGUF file.

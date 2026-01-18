@@ -3,7 +3,7 @@ package ai.qxotic.format.gguf.impl;
 import ai.qxotic.format.gguf.GGMLType;
 import ai.qxotic.format.gguf.GGUF;
 import ai.qxotic.format.gguf.MetadataValueType;
-import ai.qxotic.format.gguf.TensorInfo;
+import ai.qxotic.format.gguf.TensorEntry;
 import java.io.IOException;
 import java.lang.reflect.Array;
 import java.nio.ByteBuffer;
@@ -24,8 +24,8 @@ final class WriterImpl {
     static void writeImpl(GGUF gguf, WritableByteChannel byteChannel) throws IOException {
         WriterImpl writer = new WriterImpl(gguf);
         writer.writeHeader(byteChannel);
-        for (TensorInfo tensorInfo : gguf.getTensors()) {
-            writer.writeTensorInfo(byteChannel, tensorInfo);
+        for (TensorEntry tensorEntry : gguf.getTensors()) {
+            writer.writeTensorEntry(byteChannel, tensorEntry);
         }
         // Always align, even if there are no tensors.
         writer.writePaddingForAlignment(byteChannel);
@@ -86,26 +86,26 @@ final class WriterImpl {
         writeBytes(byteChannel, bytes);
     }
 
-    private void writeTensorInfo(WritableByteChannel byteChannel, TensorInfo tensorInfo)
+    private void writeTensorEntry(WritableByteChannel byteChannel, TensorEntry tensorEntry)
             throws IOException {
         // The name of the tensor. It is a standard GGUF string, with the caveat that
         // it must be at most 64 bytes long.
-        String name = tensorInfo.name();
+        String name = tensorEntry.name();
         assert name.length() <= 64;
         writeString(byteChannel, name); // gguf_string_t name;
         // The number of shape in the tensor.
         // Currently at most 4, but this may change in the future.
-        int n_dimensions = tensorInfo.shape().length;
+        int n_dimensions = tensorEntry.shape().length;
         assert n_dimensions <= 4;
         writeInt(byteChannel, n_dimensions); // uint32_t n_dimensions;
         // The shape of the tensor.
-        long[] dimensions = tensorInfo.shape(); // uint64_t shape[n_dimensions];
+        long[] dimensions = tensorEntry.shape(); // uint64_t shape[n_dimensions];
         for (int i = 0; i < n_dimensions; ++i) {
             assert dimensions[i] > 0;
             writeLong(byteChannel, dimensions[i]);
         }
         // The type of the tensor.
-        GGMLType ggmlType = tensorInfo.ggmlType();
+        GGMLType ggmlType = tensorEntry.ggmlType();
         writeGGMLType(byteChannel, ggmlType); // ggml_type type;
         // The offset of the tensor's data in this file in bytes.
         // This offset is relative to `tensor_data`, not to the start
@@ -113,10 +113,10 @@ final class WriterImpl {
         // Readers should consider exposing this offset relative to the
         // file to make it easier to read the data.
         // Must be a multiple of `ALIGNMENT`.
-        long offset = tensorInfo.offset();
+        long offset = tensorEntry.offset();
         writeLong(byteChannel, offset); // uint64_t offset;
         assert offset % gguf.getAlignment() == 0;
-        // return new GGUFTensorInfo(name, dimensions, ggmlType, offset);
+        // return new GGUFTensorEntry(name, dimensions, ggmlType, offset);
     }
 
     @SuppressWarnings("EnumOrdinal")
