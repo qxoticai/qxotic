@@ -1,13 +1,14 @@
 package ai.qxotic.format.safetensors;
 
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 public class SafetensorsIndexTest extends SafetensorsTest {
 
@@ -19,10 +20,10 @@ public class SafetensorsIndexTest extends SafetensorsTest {
                 Builder.newBuilder()
                         .putTensor(
                                 TensorEntry.create(
-                                        "layer1.weight", DType.F32, new long[] {10, 20}, 0))
+                                        "layer1.weight", DType.F32, new long[]{10, 20}, 0))
                         .putTensor(
                                 TensorEntry.create(
-                                        "layer2.weight", DType.F32, new long[] {20, 30}, 0))
+                                        "layer2.weight", DType.F32, new long[]{20, 30}, 0))
                         .build();
         Safetensors.write(st, modelFile);
 
@@ -47,7 +48,7 @@ public class SafetensorsIndexTest extends SafetensorsTest {
                 Builder.newBuilder()
                         .putTensor(
                                 TensorEntry.create(
-                                        "embedding.weight", DType.F32, new long[] {1000, 512}, 0))
+                                        "embedding.weight", DType.F32, new long[]{1000, 512}, 0))
                         .build();
         Safetensors.write(st, modelFile);
 
@@ -72,10 +73,10 @@ public class SafetensorsIndexTest extends SafetensorsTest {
                 Builder.newBuilder()
                         .putTensor(
                                 TensorEntry.create(
-                                        "layer.0.weight", DType.F32, new long[] {100, 100}, 0))
+                                        "layer.0.weight", DType.F32, new long[]{100, 100}, 0))
                         .putTensor(
                                 TensorEntry.create(
-                                        "layer.1.weight", DType.F32, new long[] {100, 100}, 0))
+                                        "layer.1.weight", DType.F32, new long[]{100, 100}, 0))
                         .build();
         Safetensors.write(st1, shard1);
 
@@ -83,10 +84,10 @@ public class SafetensorsIndexTest extends SafetensorsTest {
                 Builder.newBuilder()
                         .putTensor(
                                 TensorEntry.create(
-                                        "layer.2.weight", DType.F32, new long[] {100, 100}, 0))
+                                        "layer.2.weight", DType.F32, new long[]{100, 100}, 0))
                         .putTensor(
                                 TensorEntry.create(
-                                        "layer.3.weight", DType.F32, new long[] {100, 100}, 0))
+                                        "layer.3.weight", DType.F32, new long[]{100, 100}, 0))
                         .build();
         Safetensors.write(st2, shard2);
 
@@ -131,7 +132,7 @@ public class SafetensorsIndexTest extends SafetensorsTest {
                 Builder.newBuilder()
                         .putTensor(
                                 TensorEntry.create(
-                                        "existing.weight", DType.F32, new long[] {10, 10}, 0))
+                                        "existing.weight", DType.F32, new long[]{10, 10}, 0))
                         .build();
         Safetensors.write(st, modelFile);
 
@@ -214,7 +215,7 @@ public class SafetensorsIndexTest extends SafetensorsTest {
         Path shardFile = tempDir.resolve("shard.safetensors");
         Safetensors st =
                 Builder.newBuilder()
-                        .putTensor(TensorEntry.create("tensor", DType.F32, new long[] {1}, 0))
+                        .putTensor(TensorEntry.create("tensor", DType.F32, new long[]{1}, 0))
                         .build();
         Safetensors.write(st, shardFile);
 
@@ -264,7 +265,7 @@ public class SafetensorsIndexTest extends SafetensorsTest {
                         .putMetadataKey("format", "pt")
                         .putMetadataKey("model_type", "llama")
                         .putTensor(
-                                TensorEntry.create("weight", DType.F32, new long[] {100, 100}, 0))
+                                TensorEntry.create("weight", DType.F32, new long[]{100, 100}, 0))
                         .build();
         Safetensors.write(st, shardFile);
 
