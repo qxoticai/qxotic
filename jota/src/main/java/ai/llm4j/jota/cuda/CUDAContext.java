@@ -2,7 +2,6 @@ package ai.llm4j.jota.cuda;
 
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.*;
-import ai.qxotic.jota.memory.*;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.JCudaDriver;
 import jcuda.jcublas.JCublas2;

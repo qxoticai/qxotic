@@ -4,13 +4,10 @@ import ai.qxotic.model.llm.ChatFormat;
 import ai.qxotic.tokenizers.IntSequence;
 import ai.qxotic.tokenizers.Tokenizer;
 import ai.qxotic.tokenizers.Vocabulary;
-
 import java.util.OptionalInt;
 import java.util.Set;
 
-/**
- * Chat format used by DeepSeek's distills of Qwen 3 models (thinking always enabled).
- */
+/** Chat format used by DeepSeek's distills of Qwen 3 models (thinking always enabled). */
 public class DeepSeekFormat extends ChatFormat {
 
     public final int imStart;

@@ -10,8 +10,7 @@ final class EmptyIntSequence extends AbstractIntSequence {
         return EMPTY;
     }
 
-    private EmptyIntSequence() {
-    }
+    private EmptyIntSequence() {}
 
     @Override
     public int intAt(int index) {

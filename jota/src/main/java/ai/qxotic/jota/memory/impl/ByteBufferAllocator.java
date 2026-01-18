@@ -3,7 +3,6 @@ package ai.qxotic.jota.memory.impl;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAllocator;
-
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Objects;
@@ -39,9 +38,8 @@ final class ByteBufferAllocator implements MemoryAllocator<ByteBuffer> {
         }
         int intByteSize = Math.toIntExact(byteSize + byteAlignment - 1);
         int intByteAlignment = Math.toIntExact(byteAlignment);
-        ByteBuffer byteBuffer = direct
-                ? ByteBuffer.allocateDirect(intByteSize)
-                : ByteBuffer.allocate(intByteSize);
+        ByteBuffer byteBuffer =
+                direct ? ByteBuffer.allocateDirect(intByteSize) : ByteBuffer.allocate(intByteSize);
         byteBuffer = byteBuffer.alignedSlice(intByteAlignment).order(byteOrder);
         return MemoryFactory.ofByteBuffer(byteBuffer);
     }

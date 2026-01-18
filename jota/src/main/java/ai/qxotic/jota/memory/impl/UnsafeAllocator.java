@@ -3,9 +3,8 @@ package ai.qxotic.jota.memory.impl;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.ScopedMemory;
 import ai.qxotic.jota.memory.ScopedMemoryAllocator;
-import sun.misc.Unsafe;
-
 import java.lang.foreign.MemorySegment;
+import sun.misc.Unsafe;
 
 class UnsafeAllocator implements ScopedMemoryAllocator<MemorySegment> {
 
@@ -17,8 +16,7 @@ class UnsafeAllocator implements ScopedMemoryAllocator<MemorySegment> {
         return INSTANCE;
     }
 
-    private UnsafeAllocator() {
-    }
+    private UnsafeAllocator() {}
 
     @Override
     public Device device() {

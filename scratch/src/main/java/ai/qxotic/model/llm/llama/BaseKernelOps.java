@@ -1,7 +1,6 @@
 package ai.qxotic.model.llm.llama;
 
 import ai.qxotic.span.*;
-
 import java.util.function.Function;
 
 public class BaseKernelOps implements KernelOps<FloatSpan, FloatMatrixView> {
@@ -27,7 +26,11 @@ public class BaseKernelOps implements KernelOps<FloatSpan, FloatMatrixView> {
         var otherAccess = directAccess.apply(other);
         var outAccess = directAccess.apply(out);
         for (long i = 0; i < span.size(); ++i) {
-            outAccess.setElementAt(out, i, combiner.apply(spanAccess.getElementAt(span, i), otherAccess.getElementAt(other, i)));
+            outAccess.setElementAt(
+                    out,
+                    i,
+                    combiner.apply(
+                            spanAccess.getElementAt(span, i), otherAccess.getElementAt(other, i)));
         }
     }
 
@@ -45,7 +48,8 @@ public class BaseKernelOps implements KernelOps<FloatSpan, FloatMatrixView> {
         var inAccess = directAccess.apply(in);
         var outAccess = directAccess.apply(out);
         for (long i = 0; i < in.size(); ++i) {
-            outAccess.setElementAt(out, outOffset + i * outElementStride, inAccess.getElementAt(in, i));
+            outAccess.setElementAt(
+                    out, outOffset + i * outElementStride, inAccess.getElementAt(in, i));
         }
     }
 
@@ -82,45 +86,81 @@ public class BaseKernelOps implements KernelOps<FloatSpan, FloatMatrixView> {
         long cols = matrix.cols();
         assert out.size() == rows;
         assert vector.size() == cols;
-        Parallel.parallelForLong(0, rows, r -> {
-            float result = scalarDot(matrix.innerSpan(), matrix.rowOffset(r), vector, 0, cols);
-            outAccess.setElementAt(out, r, result);
-        });
+        Parallel.parallelForLong(
+                0,
+                rows,
+                r -> {
+                    float result =
+                            scalarDot(matrix.innerSpan(), matrix.rowOffset(r), vector, 0, cols);
+                    outAccess.setElementAt(out, r, result);
+                });
     }
 
-//    // A @ B = C
-//    // [rows, cols] @ [cols, K]^T = [rows, K]^T
-//    @Override
-//    public void matrixMultiply(FloatMatrixView a, int batchSize, FloatMatrixView b, FloatMatrixView out) {
-//        long rows = a.rows();
-//        long cols = a.cols();
-//        var outAccess = directAccess.apply(out.innerSpan());
-//        for (int r = 0; r < rows; ++r) {
-//            for (int k = 0; k < batchSize; ++k) {
-//                float result = scalarDot(a.innerSpan(), a.rowOffset(r), b.innerSpan(), b.rowOffset(k), cols);
-//                outAccess.setElementAt(out.innerSpan(), out.rowOffset(k) + r, result);
-//            }
-//        }
-//    }
+    //    // A @ B = C
+    //    // [rows, cols] @ [cols, K]^T = [rows, K]^T
+    //    @Override
+    //    public void matrixMultiply(FloatMatrixView a, int batchSize, FloatMatrixView b,
+    // FloatMatrixView out) {
+    //        long rows = a.rows();
+    //        long cols = a.cols();
+    //        var outAccess = directAccess.apply(out.innerSpan());
+    //        for (int r = 0; r < rows; ++r) {
+    //            for (int k = 0; k < batchSize; ++k) {
+    //                float result = scalarDot(a.innerSpan(), a.rowOffset(r), b.innerSpan(),
+    // b.rowOffset(k), cols);
+    //                outAccess.setElementAt(out.innerSpan(), out.rowOffset(k) + r, result);
+    //            }
+    //        }
+    //    }
 
     @Override
-    public void gemmRowMajor(long R, long C, long K,
-                             FloatSpan a, long aOffset, long aRowStride, // [R, K]
-                             FloatSpan b, long bOffset, long bRowStride, // [K, C]^T
-                             FloatSpan out, long outOffset, long outRowStride) { // [R, C]
+    public void gemmRowMajor(
+            long R,
+            long C,
+            long K,
+            FloatSpan a,
+            long aOffset,
+            long aRowStride, // [R, K]
+            FloatSpan b,
+            long bOffset,
+            long bRowStride, // [K, C]^T
+            FloatSpan out,
+            long outOffset,
+            long outRowStride) { // [R, C]
         var outAccess = directAccess.apply(out);
-        Parallel.parallelForLong(0, R, r -> {
-            //for (int r = 0; r < R; ++r) {
-            Parallel.parallelForLong(0, C, c -> {
-                //for (int c = 0; c < C; ++c) {
-                float result = scalarDot(a, aOffset + aRowStride * r, b, bOffset + bRowStride * c, K);
-                outAccess.setElementAt(out, outOffset + outRowStride * r + c, result);
-            });
-        });
+        Parallel.parallelForLong(
+                0,
+                R,
+                r -> {
+                    // for (int r = 0; r < R; ++r) {
+                    Parallel.parallelForLong(
+                            0,
+                            C,
+                            c -> {
+                                // for (int c = 0; c < C; ++c) {
+                                float result =
+                                        scalarDot(
+                                                a,
+                                                aOffset + aRowStride * r,
+                                                b,
+                                                bOffset + bRowStride * c,
+                                                K);
+                                outAccess.setElementAt(
+                                        out, outOffset + outRowStride * r + c, result);
+                            });
+                });
     }
 
     @Override
-    public void rotate(boolean neoxStyle, FloatSpan span, FloatSpan freqReal, FloatSpan freqImag, int position, int numberOfHeads, int headSize, FloatSpan out) {
+    public void rotate(
+            boolean neoxStyle,
+            FloatSpan span,
+            FloatSpan freqReal,
+            FloatSpan freqImag,
+            int position,
+            int numberOfHeads,
+            int headSize,
+            FloatSpan out) {
         assert span.size() == numberOfHeads * (long) headSize;
 
         var freqAccess = directAccess.apply(freqReal);
@@ -128,7 +168,8 @@ public class BaseKernelOps implements KernelOps<FloatSpan, FloatMatrixView> {
         var outAccess = directAccess.apply(out);
 
         if (neoxStyle) {
-            // GPT-NeoX style RoPE, real/imaginary components are stored with a headSize/2 offset per head, instead of consecutive.
+            // GPT-NeoX style RoPE, real/imaginary components are stored with a headSize/2 offset
+            // per head, instead of consecutive.
             for (int h = 0; h < numberOfHeads; ++h) {
                 int poffset = h * headSize;
                 for (int i0 = 0; i0 < headSize; i0 += 2) {
@@ -145,8 +186,12 @@ public class BaseKernelOps implements KernelOps<FloatSpan, FloatMatrixView> {
             // Traditional layout, real/imaginary components are stored consecutive.
             for (int i = 0; i < span.size(); i += 2) {
                 int head_dim = i % headSize;
-                float fcr = freqAccess.getElementAt(freqReal, position * (headSize / 2) + (head_dim / 2));
-                float fci = freqAccess.getElementAt(freqImag, position * (headSize / 2) + (head_dim / 2));
+                float fcr =
+                        freqAccess.getElementAt(
+                                freqReal, position * (headSize / 2) + (head_dim / 2));
+                float fci =
+                        freqAccess.getElementAt(
+                                freqImag, position * (headSize / 2) + (head_dim / 2));
                 float v0 = spanAccess.getElementAt(span, i);
                 float v1 = spanAccess.getElementAt(span, i + 1);
                 outAccess.setElementAt(out, i, v0 * fcr - v1 * fci);
@@ -168,10 +213,7 @@ public class BaseKernelOps implements KernelOps<FloatSpan, FloatMatrixView> {
         elementWise(span, f -> f * value, out);
     }
 
-
-
-    public void transposeInPlace(
-            long R, int C, FloatSpan matrix, long offset, long rowStride) {
+    public void transposeInPlace(long R, int C, FloatSpan matrix, long offset, long rowStride) {
         var access = directAccess.apply(matrix);
 
         for (long r = 0; r < R; r++) {
@@ -192,7 +234,9 @@ public class BaseKernelOps implements KernelOps<FloatSpan, FloatMatrixView> {
         var thatAccess = directAccess.apply(that);
         float result = 0f;
         for (long i = 0; i < size; ++i) {
-            result += thizAccess.getElementAt(thiz, thizOffset + i) * thatAccess.getElementAt(that, thatOffset + i);
+            result +=
+                    thizAccess.getElementAt(thiz, thizOffset + i)
+                            * thatAccess.getElementAt(that, thatOffset + i);
         }
         return result;
     }

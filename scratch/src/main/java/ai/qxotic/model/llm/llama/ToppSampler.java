@@ -1,7 +1,6 @@
 package ai.qxotic.model.llm.llama;
 
 import ai.qxotic.span.FloatSpan;
-
 import java.util.Comparator;
 import java.util.random.RandomGenerator;
 
@@ -45,7 +44,9 @@ final class ToppSampler implements Sampler2 {
         // top-p sampling (or "nucleus sampling") samples from the smallest set of
         // tokens that exceed probability topp. This way we never sample tokens that
         // have very low probabilities and are less likely to go "off the rails".
-        Comparator<Integer> comparator = Comparator.comparingDouble((Integer i) -> logitsOps.getElementAt(logits, (long) i)).reversed();
+        Comparator<Integer> comparator =
+                Comparator.comparingDouble((Integer i) -> logitsOps.getElementAt(logits, (long) i))
+                        .reversed();
 
         int n = Math.toIntExact(logits.size());
         int head = 0;

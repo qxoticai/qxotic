@@ -21,7 +21,8 @@ class FloatValueIteratorImpl implements FloatValueIterator {
     private final OffsetIterator iterator;
     private final MemoryView<?> memoryView;
 
-    <B> FloatValueIteratorImpl(MemoryView<B> memoryView, MemoryAccess<B> memoryAccess, OffsetIterator iterator) {
+    <B> FloatValueIteratorImpl(
+            MemoryView<B> memoryView, MemoryAccess<B> memoryAccess, OffsetIterator iterator) {
         this.memoryView = memoryView;
         this.memoryAccess = memoryAccess;
         this.iterator = iterator;
@@ -35,8 +36,8 @@ class FloatValueIteratorImpl implements FloatValueIterator {
     @Override
     public float nextFloat() {
         throw new UnsupportedOperationException();
-//        Memory<?> memory = memoryView.memory();
-//        return memoryAccess.readFloat(memory, iterator.nextByteOffset());
+        //        Memory<?> memory = memoryView.memory();
+        //        return memoryAccess.readFloat(memory, iterator.nextByteOffset());
     }
 
     @Override

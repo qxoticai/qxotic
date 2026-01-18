@@ -5,15 +5,10 @@ import java.util.Objects;
 
 public final class TypeRules {
 
-    private static final List<DataType> INTEGRAL_ORDER = List.of(
-            DataType.I8,
-            DataType.I16,
-            DataType.I32,
-            DataType.I64
-    );
+    private static final List<DataType> INTEGRAL_ORDER =
+            List.of(DataType.I8, DataType.I16, DataType.I32, DataType.I64);
 
-    private TypeRules() {
-    }
+    private TypeRules() {}
 
     public static DataType promote(DataType left, DataType right) {
         Objects.requireNonNull(left, "left");
@@ -51,7 +46,8 @@ public final class TypeRules {
             return promoteIntegral(left, right);
         }
 
-        throw new IllegalArgumentException("unsupported data type combination: " + left + ", " + right);
+        throw new IllegalArgumentException(
+                "unsupported data type combination: " + left + ", " + right);
     }
 
     private static DataType promoteFloat(DataType left, DataType right) {
@@ -68,7 +64,8 @@ public final class TypeRules {
         int leftIndex = INTEGRAL_ORDER.indexOf(left);
         int rightIndex = INTEGRAL_ORDER.indexOf(right);
         if (leftIndex == -1 || rightIndex == -1) {
-            throw new IllegalArgumentException("unsupported integral type combination: " + left + ", " + right);
+            throw new IllegalArgumentException(
+                    "unsupported integral type combination: " + left + ", " + right);
         }
         return leftIndex >= rightIndex ? left : right;
     }

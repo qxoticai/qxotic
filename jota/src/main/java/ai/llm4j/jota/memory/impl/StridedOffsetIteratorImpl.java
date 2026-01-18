@@ -47,7 +47,9 @@ public final class StridedOffsetIteratorImpl implements OffsetIterator {
             currentPos[dim] = 0;
             dim--;
             currentPos[dim]++;
-            currentOffset += byteStride.flatAt(dim) - (layout.shape().flatAt(dim + 1) * byteStride.flatAt(dim + 1));
+            currentOffset +=
+                    byteStride.flatAt(dim)
+                            - (layout.shape().flatAt(dim + 1) * byteStride.flatAt(dim + 1));
         }
 
         return offsetToReturn;

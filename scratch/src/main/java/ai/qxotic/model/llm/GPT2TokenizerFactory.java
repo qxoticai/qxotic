@@ -1,6 +1,5 @@
 package ai.qxotic.model.llm;
 
-import com.google.auto.service.AutoService;
 import ai.qxotic.format.gguf.GGUF;
 import ai.qxotic.tokenizers.Normalizer;
 import ai.qxotic.tokenizers.TextSplitter;
@@ -9,7 +8,7 @@ import ai.qxotic.tokenizers.Vocabulary;
 import ai.qxotic.tokenizers.impl.GPT2Tokenizer;
 import ai.qxotic.tokenizers.impl.IntPair;
 import ai.qxotic.tokenizers.impl.VocabularyImpl;
-
+import com.google.auto.service.AutoService;
 import java.util.Arrays;
 import java.util.List;
 
@@ -33,13 +32,11 @@ public class GPT2TokenizerFactory implements GGUFTokenizerFactory {
 
     public static List<IntPair> loadMerges(GGUF gguf, Vocabulary vocabulary) {
         String[] mergeLines = gguf.getValue(String[].class, "tokenizer.ggml.merges");
-        List<IntPair> merges = Arrays.stream(mergeLines)
-                .map(line -> line.split(" "))
-                .map(parts ->
-                        new IntPair(
-                                vocabulary.id(parts[0]),
-                                vocabulary.id(parts[1]))
-                ).toList();
+        List<IntPair> merges =
+                Arrays.stream(mergeLines)
+                        .map(line -> line.split(" "))
+                        .map(parts -> new IntPair(vocabulary.id(parts[0]), vocabulary.id(parts[1])))
+                        .toList();
         return merges;
     }
 }

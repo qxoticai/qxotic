@@ -1,6 +1,5 @@
 package ai.qxotic.model.llm;
 
-import ai.qxotic.model.llm.Model;
 import ai.qxotic.tokenizers.Tokenizer;
 
 public interface ModelLoader<M extends Model<C, W, S>, C, W, S> {

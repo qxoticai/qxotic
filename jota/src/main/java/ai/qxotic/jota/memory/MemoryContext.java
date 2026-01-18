@@ -8,9 +8,7 @@ public interface MemoryContext<B> extends AutoCloseable {
 
     MemoryAllocator<B> memoryAllocator();
 
-    /**
-     * Optional capability, can be null for opaque memory implementations e.g. GPUs.
-     */
+    /** Optional capability, can be null for opaque memory implementations e.g. GPUs. */
     MemoryAccess<B> memoryAccess();
 
     MemoryOperations<B> memoryOperations();
@@ -18,8 +16,8 @@ public interface MemoryContext<B> extends AutoCloseable {
     FloatOperations<B> floatOperations();
 
     /**
-     * Returns the memory allocation granularity in bytes.
-     * Delegates to the underlying memory allocator.
+     * Returns the memory allocation granularity in bytes. Delegates to the underlying memory
+     * allocator.
      *
      * @return the allocation granularity in bytes
      * @see MemoryAllocator#memoryGranularity()
@@ -29,8 +27,8 @@ public interface MemoryContext<B> extends AutoCloseable {
     }
 
     /**
-     * Checks if this context can allocate memory for the given DataType.
-     * Delegates to the underlying memory allocator.
+     * Checks if this context can allocate memory for the given DataType. Delegates to the
+     * underlying memory allocator.
      *
      * @param dataType the data type to check
      * @return true if this context can allocate the given DataType
@@ -45,4 +43,3 @@ public interface MemoryContext<B> extends AutoCloseable {
 
     String toString();
 }
-

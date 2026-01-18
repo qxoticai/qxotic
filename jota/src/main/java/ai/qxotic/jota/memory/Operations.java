@@ -4,11 +4,11 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.Util;
 import ai.qxotic.jota.memory.impl.MemoryViewFactory;
-
 import java.util.Arrays;
 
 interface Operations<B> {
     MemoryContext<B> of(DataType dataType);
+
     void map(MemoryView<B> in, UnaryOp op, MemoryView<B> out);
 
     default MemoryView<B> cast(MemoryView<B> in, DataType dataType) {
@@ -62,10 +62,11 @@ interface Operations<B> {
 
     private static Shape reduceShape(Shape shape, boolean keepDims, int... _axes) {
         Shape outShape = shape;
-        int[] axes = Arrays.stream(_axes)
-                .map(axis -> Util.wrapAround(axis, shape.rank()))
-                .sorted()
-                .toArray();
+        int[] axes =
+                Arrays.stream(_axes)
+                        .map(axis -> Util.wrapAround(axis, shape.rank()))
+                        .sorted()
+                        .toArray();
         for (int i = axes.length - 1; i >= 0; i--) {
             int axis = axes[i];
             if (keepDims) {
@@ -96,7 +97,9 @@ record UnaryOpImpl(String name) implements UnaryOp {}
 
 interface BinaryOp {
     String name();
-    BinaryOp ADD = new BinaryOpImpl("add");;
+
+    BinaryOp ADD = new BinaryOpImpl("add");
+    ;
     BinaryOp MULTIPLY = new BinaryOpImpl("multiply");
     BinaryOp DIVIDE = new BinaryOpImpl("divide");
     BinaryOp SUBTRACT = new BinaryOpImpl("subtract");

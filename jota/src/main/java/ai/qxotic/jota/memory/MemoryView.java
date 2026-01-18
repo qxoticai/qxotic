@@ -2,8 +2,6 @@ package ai.qxotic.jota.memory;
 
 import ai.qxotic.jota.*;
 import ai.qxotic.jota.memory.impl.MemoryViewFactory;
-import ai.qxotic.jota.*;
-
 import java.util.Arrays;
 import java.util.stream.IntStream;
 
@@ -48,13 +46,14 @@ public interface MemoryView<B> {
         return true;
     }
 
-    static boolean isWithinBounds(Layout layout, DataType dataType, Memory<?> memory, long byteOffset) {
+    static boolean isWithinBounds(
+            Layout layout, DataType dataType, Memory<?> memory, long byteOffset) {
         if (layout.shape().size() == 0) {
             return true;
         }
 
         long minRelativeOffset = 0;
-            long maxRelativeOffset = 0;
+        long maxRelativeOffset = 0;
         long[] strides = layout.stride().scale(dataType.byteSize()).toArray();
         for (int i = 0; i < layout.shape().flatRank(); i++) {
             long dim = layout.shape().flatAt(i);
@@ -103,8 +102,12 @@ public interface MemoryView<B> {
         // Determine how many mode dimensions we need to add
         int numNewModes = targetShape.rank() - currentShape.rank();
         if (numNewModes < 0) {
-            throw new IllegalArgumentException("Cannot broadcast shape " + currentShape
-                    + " to shape " + targetShape + ": target has fewer modes");
+            throw new IllegalArgumentException(
+                    "Cannot broadcast shape "
+                            + currentShape
+                            + " to shape "
+                            + targetShape
+                            + ": target has fewer modes");
         }
 
         // If ranks match, just expand directly
@@ -143,11 +146,7 @@ public interface MemoryView<B> {
         for (int i = 0; i < numNewModes; i++) {
             newDims[i] = 1;
         }
-        System.arraycopy(
-                currentShape.toArray(), 0,
-                newDims, numNewModes,
-                currentShape.rank()
-        );
+        System.arraycopy(currentShape.toArray(), 0, newDims, numNewModes, currentShape.rank());
 
         // Create the reshaped view
         MemoryView<B> reshaped = this.view(Shape.flat(newDims));
@@ -190,4 +189,3 @@ public interface MemoryView<B> {
         return MemoryViewPrinter.toString(this, memoryAccess, options);
     }
 }
-

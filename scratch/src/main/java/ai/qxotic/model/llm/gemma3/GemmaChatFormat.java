@@ -4,15 +4,11 @@ import ai.qxotic.model.llm.ChatFormat;
 import ai.qxotic.tokenizers.IntSequence;
 import ai.qxotic.tokenizers.Tokenizer;
 import ai.qxotic.tokenizers.Vocabulary;
-
 import java.util.OptionalInt;
 import java.util.Set;
 
-/**
- * Chat format used by DeepSeek's distills of Qwen 3 models (thinking always enabled).
- */
+/** Chat format used by DeepSeek's distills of Qwen 3 models (thinking always enabled). */
 public class GemmaChatFormat extends ChatFormat {
-
 
     public final int beginOfSentence;
     public final int endOfSentence;
@@ -30,10 +26,10 @@ public class GemmaChatFormat extends ChatFormat {
         this.endOfTurn = vocabulary.id("<end_of_turn>");
         this.endOfSentence = vocabulary.id("<eos>");
 
-//        this.fimSuffix = vocabulary.getOrDefault("<|fim_suffix|>", -1);
-//        this.fimPrefix = vocabulary.getOrDefault("<|fim_prefix|>", -1);
-//        this.fimMiddle = vocabulary.getOrDefault("<|fim_middle|>", -1);
-//        this.fileSeparator = vocabulary.getOrDefault("<|file_separator|>", -1);
+        //        this.fimSuffix = vocabulary.getOrDefault("<|fim_suffix|>", -1);
+        //        this.fimPrefix = vocabulary.getOrDefault("<|fim_prefix|>", -1);
+        //        this.fimMiddle = vocabulary.getOrDefault("<|fim_middle|>", -1);
+        //        this.fileSeparator = vocabulary.getOrDefault("<|file_separator|>", -1);
 
         this.stopTokens = Set.of(endOfTurn, endOfSentence);
     }

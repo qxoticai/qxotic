@@ -1,10 +1,9 @@
 package ai.qxotic.tokenizers.impl;
 
-import ai.qxotic.tokenizers.Tokenizer;
-import ai.qxotic.tokenizers.Vocabulary;
 import ai.qxotic.tokenizers.Normalizer;
 import ai.qxotic.tokenizers.TextSplitter;
-
+import ai.qxotic.tokenizers.Tokenizer;
+import ai.qxotic.tokenizers.Vocabulary;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -13,7 +12,8 @@ import java.util.*;
 
 public class ClassicBPE {
 
-    private static List<String> bpe(Map<String, Integer> mergeableRanks, String token, Integer maxRank) {
+    private static List<String> bpe(
+            Map<String, Integer> mergeableRanks, String token, Integer maxRank) {
         List<String> parts = new ArrayList<>();
         for (int i = 0; i < token.length(); i++) {
             char ch = token.charAt(i);
@@ -47,7 +47,8 @@ public class ClassicBPE {
         return parts;
     }
 
-    private static Map<IntPair, GPT2Tokenizer.MergeRank> buildMerges(Map<String, Integer> mergeableRanks) {
+    private static Map<IntPair, GPT2Tokenizer.MergeRank> buildMerges(
+            Map<String, Integer> mergeableRanks) {
         Map<IntPair, GPT2Tokenizer.MergeRank> merges = new HashMap<>();
 
         List<Map.Entry<String, Integer>> entries = new ArrayList<>(mergeableRanks.entrySet());
@@ -62,23 +63,29 @@ public class ClassicBPE {
             int left = mergeableRanks.get(result.get(0));
             int right = mergeableRanks.get(result.get(1));
             int mergeIndex = mergeableRanks.get(entry.getKey());
-            merges.put(new IntPair(left, right), new GPT2Tokenizer.MergeRank(mergeIndex, entry.getValue()));
+            merges.put(
+                    new IntPair(left, right),
+                    new GPT2Tokenizer.MergeRank(mergeIndex, entry.getValue()));
         }
 
         return merges;
     }
 
-    public static Map<String, Integer> loadMergeableRanks(String blobPath, String expectedHash) throws IOException, InterruptedException {
+    public static Map<String, Integer> loadMergeableRanks(String blobPath, String expectedHash)
+            throws IOException, InterruptedException {
         byte[] bytes = FileCache.readFileCached(blobPath, expectedHash);
         return Tiktoken.loadMergeableRanks(
                 new BufferedReader(new InputStreamReader(new ByteArrayInputStream(bytes))));
     }
 
-    public static Tokenizer classicFromTiktoken(Map<String, Integer> mergeableRanks, Map<String, Integer> specialTokens, Normalizer normalizer, TextSplitter preTokenizer) {
+    public static Tokenizer classicFromTiktoken(
+            Map<String, Integer> mergeableRanks,
+            Map<String, Integer> specialTokens,
+            Normalizer normalizer,
+            TextSplitter preTokenizer) {
         Map<IntPair, GPT2Tokenizer.MergeRank> merges = buildMerges(mergeableRanks);
-        Vocabulary vocabulary = VocabularyWithSpecials.create(new VocabularyImpl(mergeableRanks), specialTokens);
+        Vocabulary vocabulary =
+                VocabularyWithSpecials.create(new VocabularyImpl(mergeableRanks), specialTokens);
         return new GPT2Tokenizer(vocabulary, normalizer, preTokenizer, merges);
     }
 }
-
-

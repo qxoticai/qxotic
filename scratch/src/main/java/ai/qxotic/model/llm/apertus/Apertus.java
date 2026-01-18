@@ -7,7 +7,10 @@ import ai.qxotic.span.FloatSpan;
 import ai.qxotic.span.KernelOps;
 
 public class Apertus extends Llama {
-    public Apertus(Configuration configuration, KernelOps<FloatSpan, FloatMatrixView> kernelOps, FloatSpanFactory<? extends FloatSpan> spanFactory) {
+    public Apertus(
+            Configuration configuration,
+            KernelOps<FloatSpan, FloatMatrixView> kernelOps,
+            FloatSpanFactory<? extends FloatSpan> spanFactory) {
         super(configuration, kernelOps, spanFactory);
     }
 }

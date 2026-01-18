@@ -16,7 +16,8 @@ public final class ShapeFactory {
             }
             return ShapeImpl.of(dims, nest);
         } catch (ArrayIndexOutOfBoundsException e) {
-            throw new IllegalArgumentException("Pattern has more elements than provided dimensions", e);
+            throw new IllegalArgumentException(
+                    "Pattern has more elements than provided dimensions", e);
         }
     }
 
@@ -24,7 +25,11 @@ public final class ShapeFactory {
         if (template instanceof NestedTupleImpl<?> impl) {
             if (impl.flatRank() != dims.length) {
                 throw new IllegalArgumentException(
-                    "Template has " + impl.flatRank() + " dimensions but " + dims.length + " were provided");
+                        "Template has "
+                                + impl.flatRank()
+                                + " dimensions but "
+                                + dims.length
+                                + " were provided");
             }
             if (dims.length == 0) {
                 return ShapeImpl.scalar();

@@ -2,17 +2,17 @@ package ai.qxotic.span;
 
 /**
  * Interface providing direct element-wise access to float spans. This represents a low-level,
- * potentially less efficient interface that should only be used for debugging, testing,
- * or when direct access to tensor elements is absolutely necessary.
+ * potentially less efficient interface that should only be used for debugging, testing, or when
+ * direct access to tensor elements is absolutely necessary.
  *
  * @param <S> The specific type of FloatSpan to operate on
  */
 public interface DirectAccessOps<S extends FloatSpan> {
     /**
-     * Retrieves a single element from the span at the specified index.
-     * This operation may be inefficient for some implementations (e.g., GPU-backed spans).
+     * Retrieves a single element from the span at the specified index. This operation may be
+     * inefficient for some implementations (e.g., GPU-backed spans).
      *
-     * @param span  The span to read from
+     * @param span The span to read from
      * @param index The index of the element to retrieve
      * @return The float value at the specified index
      * @throws IndexOutOfBoundsException if index is negative or >= span.size()
@@ -20,10 +20,10 @@ public interface DirectAccessOps<S extends FloatSpan> {
     float getElementAt(S span, long index);
 
     /**
-     * Sets a single element in the span at the specified index.
-     * This operation may be inefficient for some implementations (e.g., GPU-backed spans).
+     * Sets a single element in the span at the specified index. This operation may be inefficient
+     * for some implementations (e.g., GPU-backed spans).
      *
-     * @param span  The span to write to
+     * @param span The span to write to
      * @param index The index of the element to set
      * @param value The float value to write
      * @throws IndexOutOfBoundsException if index is negative or >= span.size()
@@ -31,18 +31,19 @@ public interface DirectAccessOps<S extends FloatSpan> {
     void setElementAt(S span, long index, float value);
 
     /**
-     * Reduces a range within a span to a single value using a binary operator.
-     * The reduction is performed sequentially from left to right.
+     * Reduces a range within a span to a single value using a binary operator. The reduction is
+     * performed sequentially from left to right.
      *
-     * @param span      The span to reduce
+     * @param span The span to reduce
      * @param fromIndex The initial index of the range (inclusive)
-     * @param toIndex   The final index of the range (exclusive)
-     * @param seed      The initial value for the reduction
-     * @param reducer   The binary operator to use for reduction
+     * @param toIndex The final index of the range (exclusive)
+     * @param seed The initial value for the reduction
+     * @param reducer The binary operator to use for reduction
      * @return The final reduced value
      * @throws IllegalArgumentException if fromIndex > toIndex or if the range is out of bounds
      */
-    default float fold(S span, long fromIndex, long toIndex, float seed, FloatBinaryOperator reducer) {
+    default float fold(
+            S span, long fromIndex, long toIndex, float seed, FloatBinaryOperator reducer) {
         checkArg(fromIndex <= toIndex, "fromIndex > toIndex");
         checkArg(0 <= fromIndex && toIndex <= span.size(), "range out-of-bounds");
         float result = seed;
@@ -59,9 +60,9 @@ public interface DirectAccessOps<S extends FloatSpan> {
     /**
      * Finds the minimum value in a range within the span.
      *
-     * @param span      The span to search
+     * @param span The span to search
      * @param fromIndex The initial index of the range (inclusive)
-     * @param toIndex   The final index of the range (exclusive)
+     * @param toIndex The final index of the range (exclusive)
      * @return The minimum value in the specified range
      * @throws IllegalArgumentException if fromIndex > toIndex or if the range is out of bounds
      */
@@ -82,9 +83,9 @@ public interface DirectAccessOps<S extends FloatSpan> {
     /**
      * Finds the maximum value in a range within the span.
      *
-     * @param span      The span to search
+     * @param span The span to search
      * @param fromIndex The initial index of the range (inclusive)
-     * @param toIndex   The final index of the range (exclusive)
+     * @param toIndex The final index of the range (exclusive)
      * @return The maximum value in the specified range
      * @throws IllegalArgumentException if fromIndex > toIndex or if the range is out of bounds
      */
@@ -105,9 +106,9 @@ public interface DirectAccessOps<S extends FloatSpan> {
     /**
      * Computes the sum of all elements in a range within the span.
      *
-     * @param span      The span to sum
+     * @param span The span to sum
      * @param fromIndex The initial index of the range (inclusive)
-     * @param toIndex   The final index of the range (exclusive)
+     * @param toIndex The final index of the range (exclusive)
      * @return The sum of all elements in the specified range
      * @throws IllegalArgumentException if fromIndex > toIndex or if the range is out of bounds
      */
@@ -128,9 +129,9 @@ public interface DirectAccessOps<S extends FloatSpan> {
     /**
      * Computes the product of all elements in a range within the span.
      *
-     * @param span      The span to multiply
+     * @param span The span to multiply
      * @param fromIndex The initial index of the range (inclusive)
-     * @param toIndex   The final index of the range (exclusive)
+     * @param toIndex The final index of the range (exclusive)
      * @return The product of all elements in the specified range
      * @throws IllegalArgumentException if fromIndex > toIndex or if the range is out of bounds
      */
@@ -149,12 +150,12 @@ public interface DirectAccessOps<S extends FloatSpan> {
     }
 
     /**
-     * Finds the index of the maximum value in a range within the span.
-     * If multiple elements have the maximum value, returns the first occurrence.
+     * Finds the index of the maximum value in a range within the span. If multiple elements have
+     * the maximum value, returns the first occurrence.
      *
-     * @param span      The span to search
+     * @param span The span to search
      * @param fromIndex The initial index of the range (inclusive)
-     * @param toIndex   The final index of the range (exclusive)
+     * @param toIndex The final index of the range (exclusive)
      * @return The index of the maximum value within the specified range
      * @throws IllegalArgumentException if fromIndex > toIndex or if the range is out of bounds
      */
@@ -174,8 +175,8 @@ public interface DirectAccessOps<S extends FloatSpan> {
     }
 
     /**
-     * Finds the index of the maximum value in the entire span.
-     * If multiple elements have the maximum value, returns the first occurrence.
+     * Finds the index of the maximum value in the entire span. If multiple elements have the
+     * maximum value, returns the first occurrence.
      *
      * @param span The span to search
      * @return The index of the maximum value in the span
@@ -185,12 +186,12 @@ public interface DirectAccessOps<S extends FloatSpan> {
     }
 
     /**
-     * Finds the index of the minimum value in a range within the span.
-     * If multiple elements have the minimum value, returns the first occurrence.
+     * Finds the index of the minimum value in a range within the span. If multiple elements have
+     * the minimum value, returns the first occurrence.
      *
-     * @param span      The span to search
+     * @param span The span to search
      * @param fromIndex The initial index of the range (inclusive)
-     * @param toIndex   The final index of the range (exclusive)
+     * @param toIndex The final index of the range (exclusive)
      * @return The index of the minimum value within the specified range
      * @throws IllegalArgumentException if fromIndex > toIndex or if the range is out of bounds
      */
@@ -210,8 +211,8 @@ public interface DirectAccessOps<S extends FloatSpan> {
     }
 
     /**
-     * Finds the index of the minimum value in the entire span.
-     * If multiple elements have the minimum value, returns the first occurrence.
+     * Finds the index of the minimum value in the entire span. If multiple elements have the
+     * minimum value, returns the first occurrence.
      *
      * @param span The span to search
      * @return The index of the minimum value in the span

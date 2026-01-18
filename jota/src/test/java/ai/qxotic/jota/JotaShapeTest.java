@@ -1,8 +1,8 @@
 package ai.qxotic.jota;
 
-import org.junit.jupiter.api.Test;
-
 import static org.junit.jupiter.api.Assertions.*;
+
+import org.junit.jupiter.api.Test;
 
 public class JotaShapeTest {
 
@@ -25,7 +25,7 @@ public class JotaShapeTest {
         assertTrue(shape.isFlat());
         assertEquals(1, shape.rank());
         assertEquals(1, shape.flatRank());
-        assertArrayEquals(new long[]{42}, shape.toArray());
+        assertArrayEquals(new long[] {42}, shape.toArray());
         assertEquals("(42)", shape.toString());
         assertEquals(shape, shape.flatten());
     }

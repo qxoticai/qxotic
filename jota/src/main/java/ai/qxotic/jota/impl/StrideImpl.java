@@ -2,7 +2,6 @@ package ai.qxotic.jota.impl;
 
 import ai.qxotic.jota.Stride;
 import ai.qxotic.jota.Util;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -21,7 +20,6 @@ final class StrideImpl extends NestedTupleImpl<Stride> implements Stride {
         }
     }
 
-
     @Override
     public int rank() {
         return this.rank;
@@ -32,12 +30,13 @@ final class StrideImpl extends NestedTupleImpl<Stride> implements Stride {
         int modeIndex = Util.wrapAround(_modeIndex, rank());
 
         if (isFlat()) {
-            return StrideImpl.of(new long[]{flat[modeIndex]});
+            return StrideImpl.of(new long[] {flat[modeIndex]});
         }
 
         ModeRange range = findModeRange(modeIndex);
         long[] modeStridesArray = Arrays.copyOfRange(flat, range.start, range.end);
-        int[] modeNestArray = nest == null ? null : Arrays.copyOfRange(nest, range.start, range.end);
+        int[] modeNestArray =
+                nest == null ? null : Arrays.copyOfRange(nest, range.start, range.end);
 
         if (modeNestArray != null && modeNestArray.length > 0 && modeNestArray[0] > 0) {
             modeNestArray[0] -= 1;
@@ -86,7 +85,7 @@ final class StrideImpl extends NestedTupleImpl<Stride> implements Stride {
     }
 
     static Stride singleton(long stride) {
-        return new StrideImpl(new long[]{stride}, null);
+        return new StrideImpl(new long[] {stride}, null);
     }
 
     static Stride nested(Object... elements) {
@@ -96,7 +95,7 @@ final class StrideImpl extends NestedTupleImpl<Stride> implements Stride {
                 return stride;
             }
             if (elements[0] instanceof Number num) {
-                return StrideImpl.of(new long[]{num.longValue()});
+                return StrideImpl.of(new long[] {num.longValue()});
             }
             throw new IllegalArgumentException("Arguments must be Numbers or Strides");
         }
@@ -212,7 +211,11 @@ final class StrideImpl extends NestedTupleImpl<Stride> implements Stride {
     @Override
     public Stride permute(int... _modeIndices) {
         if (_modeIndices.length != rank()) {
-            throw new IllegalArgumentException("Permutation must have same length as rank: " + rank() + " vs " + _modeIndices.length);
+            throw new IllegalArgumentException(
+                    "Permutation must have same length as rank: "
+                            + rank()
+                            + " vs "
+                            + _modeIndices.length);
         }
 
         int[] axes = new int[_modeIndices.length];

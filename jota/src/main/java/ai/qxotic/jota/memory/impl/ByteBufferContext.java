@@ -2,14 +2,13 @@ package ai.qxotic.jota.memory.impl;
 
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.*;
-import ai.qxotic.jota.memory.*;
-
 import java.nio.ByteBuffer;
 import java.util.Objects;
 
 class ByteBufferContext implements MemoryContext<ByteBuffer> {
 
-    private final FloatOperations<ByteBuffer> floatOperations = new GenericFloatOperations<>(ByteBufferMemoryAccess.instance());
+    private final FloatOperations<ByteBuffer> floatOperations =
+            new GenericFloatOperations<>(ByteBufferMemoryAccess.instance());
     private final MemoryAllocator<ByteBuffer> memoryAllocator;
 
     ByteBufferContext(MemoryAllocator<ByteBuffer> memoryAllocator) {

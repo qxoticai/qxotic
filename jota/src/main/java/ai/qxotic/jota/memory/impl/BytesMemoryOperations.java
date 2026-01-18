@@ -3,7 +3,6 @@ package ai.qxotic.jota.memory.impl;
 import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAccessChecks;
 import ai.qxotic.jota.memory.MemoryOperations;
-
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
 
@@ -15,49 +14,66 @@ class BytesMemoryOperations implements MemoryOperations<byte[]> {
         return INSTANCE;
     }
 
-    private BytesMemoryOperations() {
-    }
+    private BytesMemoryOperations() {}
 
     @Override
-    public void copy(Memory<byte[]> src, long srcByteOffset, Memory<byte[]> dst, long dstByteOffset, long byteSize) {
+    public void copy(
+            Memory<byte[]> src,
+            long srcByteOffset,
+            Memory<byte[]> dst,
+            long dstByteOffset,
+            long byteSize) {
         MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
         MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
         if (byteSize == 0) {
             return;
         }
         System.arraycopy(
-                src.base(), Math.toIntExact(srcByteOffset),
-                dst.base(), Math.toIntExact(dstByteOffset),
-                Math.toIntExact(byteSize)
-        );
+                src.base(),
+                Math.toIntExact(srcByteOffset),
+                dst.base(),
+                Math.toIntExact(dstByteOffset),
+                Math.toIntExact(byteSize));
     }
 
     @Override
-    public void copyFromNative(Memory<MemorySegment> src, long srcByteOffset, Memory<byte[]> dst, long dstByteOffset, long byteSize) {
+    public void copyFromNative(
+            Memory<MemorySegment> src,
+            long srcByteOffset,
+            Memory<byte[]> dst,
+            long dstByteOffset,
+            long byteSize) {
         MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
         MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
         if (byteSize == 0) {
             return;
         }
         MemorySegment.copy(
-                src.base(), srcByteOffset,
-                MemorySegment.ofArray(dst.base()), dstByteOffset,
-                byteSize
-        );
+                src.base(),
+                srcByteOffset,
+                MemorySegment.ofArray(dst.base()),
+                dstByteOffset,
+                byteSize);
     }
 
     @Override
-    public void copyToNative(Memory<byte[]> src, long srcByteOffset, Memory<MemorySegment> dst, long dstByteOffset, long byteSize) {
+    public void copyToNative(
+            Memory<byte[]> src,
+            long srcByteOffset,
+            Memory<MemorySegment> dst,
+            long dstByteOffset,
+            long byteSize) {
         MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
         MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
         if (byteSize == 0) {
             return;
         }
         MemorySegment.copy(
-                MemorySegment.ofArray(src.base()), srcByteOffset,
-                dst.base(), dstByteOffset,
-                byteSize
-        );
+                MemorySegment.ofArray(src.base()),
+                srcByteOffset,
+                dst.base(),
+                dstByteOffset,
+                byteSize);
     }
 
     @Override

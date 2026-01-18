@@ -1,25 +1,23 @@
 package ai.qxotic.jota;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import ai.llm4j.jota.FloatBinaryOperator;
-import ai.qxotic.jota.memory.*;
 import ai.qxotic.jota.memory.*;
 import ai.qxotic.jota.memory.impl.ContextFactory;
 import ai.qxotic.jota.memory.impl.MemoryFactory;
 import ai.qxotic.jota.memory.impl.MemoryViewFactory;
+import java.util.Arrays;
 import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.Test;
 
-import java.util.Arrays;
-
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 public class JotaTest {
 
-    @AutoClose
-    MemoryContext<float[]> context = ContextFactory.ofFloats();
+    @AutoClose MemoryContext<float[]> context = ContextFactory.ofFloats();
 
     public static MemoryView<float[]> ofFloatsVector(float... floats) {
-        return MemoryViewFactory.of(DataType.FP32, MemoryFactory.ofFloats(floats), Layout.rowMajor(floats.length));
+        return MemoryViewFactory.of(
+                DataType.FP32, MemoryFactory.ofFloats(floats), Layout.rowMajor(floats.length));
     }
 
     public static MemoryView<float[]> full(float value, Shape shape) {

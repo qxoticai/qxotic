@@ -1,21 +1,19 @@
-
 package ai.qxotic.jota.memory;
+
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
-
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.IntStream;
-
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class IndexingMemoryViewTest extends AbstractMemoryTest {
 
@@ -77,15 +75,15 @@ class IndexingMemoryViewTest extends AbstractMemoryTest {
     @Test
     void testLinearIsColexicographicOrder() {
         Shape shape = Shape.of(2, 3);
-        List<long[]> linearOrdering = IntStream.range(0, (int) shape.size())
-                .mapToObj(linear -> Indexing.linearToCoord(shape, linear))
-                .toList();
+        List<long[]> linearOrdering =
+                IntStream.range(0, (int) shape.size())
+                        .mapToObj(linear -> Indexing.linearToCoord(shape, linear))
+                        .toList();
 
         Comparator<long[]> byColexicographicOrder = Arrays::compare;
 
-        List<long[]> colexOrdering = linearOrdering.stream()
-                .sorted(byColexicographicOrder)
-                .toList();
+        List<long[]> colexOrdering =
+                linearOrdering.stream().sorted(byColexicographicOrder).toList();
 
         for (int i = 0; i < linearOrdering.size(); i++) {
             assertArrayEquals(colexOrdering.get(i), linearOrdering.get(i));

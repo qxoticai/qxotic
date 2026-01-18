@@ -12,8 +12,7 @@ final class FloatsMemoryAllocator implements MemoryAllocator<float[]> {
         return INSTANCE;
     }
 
-    private FloatsMemoryAllocator() {
-    }
+    private FloatsMemoryAllocator() {}
 
     @Override
     public Device device() {

@@ -3,7 +3,6 @@ package ai.qxotic.jota.memory.impl;
 import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAccessChecks;
 import ai.qxotic.jota.memory.MemoryOperations;
-
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
 
@@ -15,11 +14,15 @@ final class DoublesMemoryOperations implements MemoryOperations<double[]> {
         return INSTANCE;
     }
 
-    private DoublesMemoryOperations() {
-    }
+    private DoublesMemoryOperations() {}
 
     @Override
-    public void copy(Memory<double[]> src, long srcByteOffset, Memory<double[]> dst, long dstByteOffset, long byteSize) {
+    public void copy(
+            Memory<double[]> src,
+            long srcByteOffset,
+            Memory<double[]> dst,
+            long dstByteOffset,
+            long byteSize) {
         MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
         MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
         MemoryAccessChecks.checkAlignedValue(srcByteOffset, Double.BYTES);
@@ -29,14 +32,20 @@ final class DoublesMemoryOperations implements MemoryOperations<double[]> {
             return;
         }
         System.arraycopy(
-                src.base(), Math.toIntExact(srcByteOffset / Double.BYTES),
-                dst.base(), Math.toIntExact(dstByteOffset / Double.BYTES),
-                Math.toIntExact(byteSize / Double.BYTES)
-        );
+                src.base(),
+                Math.toIntExact(srcByteOffset / Double.BYTES),
+                dst.base(),
+                Math.toIntExact(dstByteOffset / Double.BYTES),
+                Math.toIntExact(byteSize / Double.BYTES));
     }
 
     @Override
-    public void copyFromNative(Memory<MemorySegment> src, long srcByteOffset, Memory<double[]> dst, long dstByteOffset, long byteSize) {
+    public void copyFromNative(
+            Memory<MemorySegment> src,
+            long srcByteOffset,
+            Memory<double[]> dst,
+            long dstByteOffset,
+            long byteSize) {
         MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
         MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
         MemoryAccessChecks.checkAlignedValue(dstByteOffset, Double.BYTES);
@@ -45,14 +54,20 @@ final class DoublesMemoryOperations implements MemoryOperations<double[]> {
             return;
         }
         MemorySegment.copy(
-                src.base(), srcByteOffset,
-                MemorySegment.ofArray(dst.base()), dstByteOffset,
-                byteSize
-        );
+                src.base(),
+                srcByteOffset,
+                MemorySegment.ofArray(dst.base()),
+                dstByteOffset,
+                byteSize);
     }
 
     @Override
-    public void copyToNative(Memory<double[]> src, long srcByteOffset, Memory<MemorySegment> dst, long dstByteOffset, long byteSize) {
+    public void copyToNative(
+            Memory<double[]> src,
+            long srcByteOffset,
+            Memory<MemorySegment> dst,
+            long dstByteOffset,
+            long byteSize) {
         MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
         MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
         MemoryAccessChecks.checkAlignedValue(srcByteOffset, Double.BYTES);
@@ -61,10 +76,11 @@ final class DoublesMemoryOperations implements MemoryOperations<double[]> {
             return;
         }
         MemorySegment.copy(
-                MemorySegment.ofArray(src.base()), srcByteOffset,
-                dst.base(), dstByteOffset,
-                byteSize
-        );
+                MemorySegment.ofArray(src.base()),
+                srcByteOffset,
+                dst.base(),
+                dstByteOffset,
+                byteSize);
     }
 
     @Override
@@ -78,14 +94,15 @@ final class DoublesMemoryOperations implements MemoryOperations<double[]> {
         }
         long bits = 0x0101010101010101L * Byte.toUnsignedInt(byteValue);
         Arrays.fill(
-                memory.base(), Math.toIntExact(byteOffset / Double.BYTES),
+                memory.base(),
+                Math.toIntExact(byteOffset / Double.BYTES),
                 Math.toIntExact((byteOffset + byteSize) / Double.BYTES),
-                Double.longBitsToDouble(bits)
-        );
+                Double.longBitsToDouble(bits));
     }
 
     @Override
-    public void fillShort(Memory<double[]> memory, long byteOffset, long byteSize, short shortValue) {
+    public void fillShort(
+            Memory<double[]> memory, long byteOffset, long byteSize, short shortValue) {
         MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
         MemoryAccessChecks.checkWriteable(memory);
         MemoryAccessChecks.checkAlignedValue(byteOffset, Double.BYTES);
@@ -95,10 +112,10 @@ final class DoublesMemoryOperations implements MemoryOperations<double[]> {
         }
         long bits = 0x0001000100010001L * Short.toUnsignedInt(shortValue);
         Arrays.fill(
-                memory.base(), Math.toIntExact(byteOffset / Double.BYTES),
+                memory.base(),
+                Math.toIntExact(byteOffset / Double.BYTES),
                 Math.toIntExact((byteOffset + byteSize) / Double.BYTES),
-                Double.longBitsToDouble(bits)
-        );
+                Double.longBitsToDouble(bits));
     }
 
     @Override
@@ -112,10 +129,10 @@ final class DoublesMemoryOperations implements MemoryOperations<double[]> {
         }
         long bits = (intValue & 0xFFFFFFFFL) | ((long) intValue << 32);
         Arrays.fill(
-                memory.base(), Math.toIntExact(byteOffset / Double.BYTES),
+                memory.base(),
+                Math.toIntExact(byteOffset / Double.BYTES),
                 Math.toIntExact((byteOffset + byteSize) / Double.BYTES),
-                Double.longBitsToDouble(bits)
-        );
+                Double.longBitsToDouble(bits));
     }
 
     @Override
@@ -128,9 +145,9 @@ final class DoublesMemoryOperations implements MemoryOperations<double[]> {
             return;
         }
         Arrays.fill(
-                memory.base(), Math.toIntExact(byteOffset / Double.BYTES),
+                memory.base(),
+                Math.toIntExact(byteOffset / Double.BYTES),
                 Math.toIntExact((byteOffset + byteSize) / Double.BYTES),
-                Double.longBitsToDouble(longValue)
-        );
+                Double.longBitsToDouble(longValue));
     }
 }

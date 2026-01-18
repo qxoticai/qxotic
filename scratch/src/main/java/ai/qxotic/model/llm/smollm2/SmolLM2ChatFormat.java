@@ -1,16 +1,13 @@
 package ai.qxotic.model.llm.smollm2;
 
 import ai.qxotic.model.llm.ChatFormat;
+import ai.qxotic.tokenizers.IntSequence;
 import ai.qxotic.tokenizers.Tokenizer;
 import ai.qxotic.tokenizers.Vocabulary;
-import ai.qxotic.tokenizers.IntSequence;
-
 import java.util.OptionalInt;
 import java.util.Set;
 
-/**
- * Utility tailored for Llama 3 instruct prompt format.
- */
+/** Utility tailored for Llama 3 instruct prompt format. */
 public class SmolLM2ChatFormat extends ChatFormat {
 
     private final Set<Integer> stopTokens;

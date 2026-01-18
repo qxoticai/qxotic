@@ -15,8 +15,7 @@ class BooleansContext implements MemoryContext<boolean[]> {
         return INSTANCE;
     }
 
-    private BooleansContext() {
-    }
+    private BooleansContext() {}
 
     @Override
     public Device device() {
@@ -40,7 +39,7 @@ class BooleansContext implements MemoryContext<boolean[]> {
 
     @Override
     public FloatOperations<boolean[]> floatOperations() {
-        return null;  // No float operations for boolean[]
+        return null; // No float operations for boolean[]
     }
 
     @Override

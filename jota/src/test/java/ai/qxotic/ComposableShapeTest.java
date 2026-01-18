@@ -1,10 +1,10 @@
 package ai.qxotic;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.Stride;
 import org.junit.jupiter.api.Test;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class ComposableShapeTest {
 
@@ -15,7 +15,7 @@ class ComposableShapeTest {
 
         assertTrue(shape.isFlat());
         assertEquals(3, shape.rank());
-        assertArrayEquals(new long[]{1, 2, 3}, shape.toArray());
+        assertArrayEquals(new long[] {1, 2, 3}, shape.toArray());
     }
 
     @Test
@@ -25,7 +25,7 @@ class ComposableShapeTest {
 
         assertTrue(shape.isFlat());
         assertEquals(3, shape.rank());
-        assertArrayEquals(new long[]{1, 2, 3}, shape.toArray());
+        assertArrayEquals(new long[] {1, 2, 3}, shape.toArray());
     }
 
     @Test
@@ -35,7 +35,7 @@ class ComposableShapeTest {
 
         assertEquals(3, shape.rank());
         assertEquals(4, shape.flatRank());
-        assertArrayEquals(new long[]{2, 4, 5, 6}, shape.toArray());
+        assertArrayEquals(new long[] {2, 4, 5, 6}, shape.toArray());
 
         // Check nesting structure
         assertEquals(2, shape.size(0));
@@ -53,7 +53,7 @@ class ComposableShapeTest {
 
         assertTrue(shape.isFlat());
         assertEquals(3, shape.rank());
-        assertArrayEquals(new long[]{1, 2, 3}, shape.toArray());
+        assertArrayEquals(new long[] {1, 2, 3}, shape.toArray());
 
         System.out.println("Normalized flat: " + shape);
     }
@@ -67,7 +67,7 @@ class ComposableShapeTest {
         assertSame(inner, shape); // Should return the same instance
         assertTrue(shape.isFlat());
         assertEquals(2, shape.rank());
-        assertArrayEquals(new long[]{2, 3}, shape.toArray());
+        assertArrayEquals(new long[] {2, 3}, shape.toArray());
     }
 
     @Test
@@ -88,7 +88,7 @@ class ComposableShapeTest {
 
         assertEquals(2, shape.rank());
         assertEquals(3, shape.flatRank());
-        assertArrayEquals(new long[]{2, 3, 4}, shape.toArray());
+        assertArrayEquals(new long[] {2, 3, 4}, shape.toArray());
 
         assertEquals(2, shape.size(0));
         assertEquals(3 * 4, shape.size(1));
@@ -101,7 +101,7 @@ class ComposableShapeTest {
 
         assertEquals(2, shape.rank());
         assertEquals(4, shape.flatRank());
-        assertArrayEquals(new long[]{1, 2, 3, 4}, shape.toArray());
+        assertArrayEquals(new long[] {1, 2, 3, 4}, shape.toArray());
 
         assertEquals(1 * 2, shape.size(0));
         assertEquals(3 * 4, shape.size(1));
@@ -116,7 +116,7 @@ class ComposableShapeTest {
 
         assertEquals(2, shape.rank());
         assertEquals(4, shape.flatRank());
-        assertArrayEquals(new long[]{1, 2, 3, 4}, shape.toArray());
+        assertArrayEquals(new long[] {1, 2, 3, 4}, shape.toArray());
 
         System.out.println("Deep nesting: " + shape);
 
@@ -124,7 +124,7 @@ class ComposableShapeTest {
         Shape mode1 = shape.modeAt(1);
         assertEquals(2, mode1.rank());
         assertEquals(3, mode1.flatRank());
-        assertArrayEquals(new long[]{2, 3, 4}, mode1.toArray());
+        assertArrayEquals(new long[] {2, 3, 4}, mode1.toArray());
     }
 
     @Test
@@ -134,7 +134,7 @@ class ComposableShapeTest {
 
         assertEquals(3, shape.rank());
         assertEquals(5, shape.flatRank());
-        assertArrayEquals(new long[]{1, 2, 3, 4, 5}, shape.toArray());
+        assertArrayEquals(new long[] {1, 2, 3, 4, 5}, shape.toArray());
 
         assertEquals(1, shape.size(0));
         assertEquals(2, shape.size(1));
@@ -148,7 +148,7 @@ class ComposableShapeTest {
 
         assertEquals(2, stride.rank());
         assertEquals(3, stride.flatRank());
-        assertArrayEquals(new long[]{100, 10, 1}, stride.toArray());
+        assertArrayEquals(new long[] {100, 10, 1}, stride.toArray());
 
         System.out.println("Stride nested: " + stride);
     }
@@ -160,7 +160,7 @@ class ComposableShapeTest {
 
         assertEquals(2, stride.rank());
         assertEquals(3, stride.flatRank());
-        assertArrayEquals(new long[]{100, 10, 1}, stride.toArray());
+        assertArrayEquals(new long[] {100, 10, 1}, stride.toArray());
     }
 
     @Test
@@ -180,7 +180,7 @@ class ComposableShapeTest {
 
         assertEquals(1, shape.rank());
         assertEquals(1, shape.flatRank());
-        assertArrayEquals(new long[]{5}, shape.toArray());
+        assertArrayEquals(new long[] {5}, shape.toArray());
     }
 
     @Test
@@ -193,7 +193,7 @@ class ComposableShapeTest {
 
         assertEquals(3, composed.rank());
         assertEquals(5, composed.flatRank());
-        assertArrayEquals(new long[]{1, 2, 3, 4, 5}, composed.toArray());
+        assertArrayEquals(new long[] {1, 2, 3, 4, 5}, composed.toArray());
 
         System.out.println("Composed with nested: " + composed);
 
@@ -205,12 +205,16 @@ class ComposableShapeTest {
 
     @Test
     void testInvalidArguments() {
-        assertThrows(IllegalArgumentException.class, () -> {
-            Shape.of("invalid");
-        });
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Shape.of("invalid");
+                });
 
-        assertThrows(IllegalArgumentException.class, () -> {
-            Stride.of("invalid");
-        });
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Stride.of("invalid");
+                });
     }
 }

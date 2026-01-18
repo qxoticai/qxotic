@@ -12,8 +12,7 @@ final class LongsMemoryAccess implements MemoryAccess<long[]> {
         return INSTANCE;
     }
 
-    private LongsMemoryAccess() {
-    }
+    private LongsMemoryAccess() {}
 
     @Override
     public byte readByte(Memory<long[]> memory, long byteOffset) {

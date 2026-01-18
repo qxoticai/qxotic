@@ -1,5 +1,10 @@
 package ai.qxotic.jota.memory;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
@@ -9,11 +14,6 @@ import ai.qxotic.jota.memory.impl.MemoryFactory;
 import ai.qxotic.jota.memory.impl.MemoryViewFactory;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 class MemoryViewTest {
 
     @Test
@@ -22,7 +22,11 @@ class MemoryViewTest {
         for (int i = 0; i < floats.length; ++i) {
             floats[i] = i;
         }
-        MemoryView<float[]> view = MemoryViewFactory.of(DataType.FP32, MemoryFactory.ofFloats(floats), Layout.rowMajor(Shape.of(2, 3, 5)));
+        MemoryView<float[]> view =
+                MemoryViewFactory.of(
+                        DataType.FP32,
+                        MemoryFactory.ofFloats(floats),
+                        Layout.rowMajor(Shape.of(2, 3, 5)));
         MemoryView<float[]> view0 = view.slice(0, 0, 1).view(Shape.of(3, 5));
         MemoryView<float[]> view1 = view.slice(0, 1, 2).view(Shape.of(3, 5));
         MemoryAccess<float[]> memoryAccess = MemoryAccessFactory.ofFloats();
@@ -38,7 +42,11 @@ class MemoryViewTest {
         for (int i = 0; i < floats.length; ++i) {
             floats[i] = i;
         }
-        MemoryView<float[]> view = MemoryViewFactory.of(DataType.FP32, MemoryFactory.ofFloats(floats), Layout.rowMajor(Shape.of(2, 3, 5)));
+        MemoryView<float[]> view =
+                MemoryViewFactory.of(
+                        DataType.FP32,
+                        MemoryFactory.ofFloats(floats),
+                        Layout.rowMajor(Shape.of(2, 3, 5)));
         MemoryView<float[]> view0 = view.slice(-1, 0, 1); // .view(Shape.of(2, 3));
         MemoryView<float[]> view1 = view.slice(-1, 1, 2); // .view(Shape.of(2, 3));
         MemoryAccess<float[]> memoryAccess = MemoryAccessFactory.ofFloats();
@@ -51,11 +59,11 @@ class MemoryViewTest {
     @Test
     void testToStringMetadata() {
         float[] floats = new float[4];
-        MemoryView<float[]> view = MemoryViewFactory.of(
-                DataType.FP32,
-                MemoryFactory.ofFloats(floats),
-                Layout.rowMajor(Shape.of(2, 2))
-        );
+        MemoryView<float[]> view =
+                MemoryViewFactory.of(
+                        DataType.FP32,
+                        MemoryFactory.ofFloats(floats),
+                        Layout.rowMajor(Shape.of(2, 2)));
 
         String text = view.toString();
         assertTrue(text.startsWith("MemoryView{"));
@@ -69,11 +77,11 @@ class MemoryViewTest {
         for (int i = 0; i < floats.length; i++) {
             floats[i] = i;
         }
-        MemoryView<float[]> view = MemoryViewFactory.of(
-                DataType.FP32,
-                MemoryFactory.ofFloats(floats),
-                Layout.rowMajor(Shape.of(10, 10))
-        );
+        MemoryView<float[]> view =
+                MemoryViewFactory.of(
+                        DataType.FP32,
+                        MemoryFactory.ofFloats(floats),
+                        Layout.rowMajor(Shape.of(10, 10)));
         MemoryAccess<float[]> memoryAccess = MemoryAccessFactory.ofFloats();
 
         String text = view.toString(memoryAccess);
@@ -82,12 +90,12 @@ class MemoryViewTest {
 
     @Test
     void testToStringCompactFloats() {
-        float[] floats = new float[]{4.0f, 4.5f, Float.POSITIVE_INFINITY, Float.NaN};
-        MemoryView<float[]> view = MemoryViewFactory.of(
-                DataType.FP32,
-                MemoryFactory.ofFloats(floats),
-                Layout.rowMajor(Shape.of(4))
-        );
+        float[] floats = new float[] {4.0f, 4.5f, Float.POSITIVE_INFINITY, Float.NaN};
+        MemoryView<float[]> view =
+                MemoryViewFactory.of(
+                        DataType.FP32,
+                        MemoryFactory.ofFloats(floats),
+                        Layout.rowMajor(Shape.of(4)));
         MemoryAccess<float[]> memoryAccess = MemoryAccessFactory.ofFloats();
 
         String text = view.toString(memoryAccess, ViewPrintOptions.valuesOnly());
@@ -102,12 +110,17 @@ class MemoryViewTest {
     void testNonContiguousBounds() {
         float[] small = new float[4];
         Layout outOfBoundsLayout = Layout.of(Shape.flat(2, 2), Stride.flat(3, 1));
-        assertThrows(IllegalArgumentException.class, () ->
-                MemoryViewFactory.of(DataType.FP32, MemoryFactory.ofFloats(small), outOfBoundsLayout));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        MemoryViewFactory.of(
+                                DataType.FP32, MemoryFactory.ofFloats(small), outOfBoundsLayout));
 
         float[] larger = new float[10];
-        assertDoesNotThrow(() ->
-                MemoryViewFactory.of(DataType.FP32, MemoryFactory.ofFloats(larger), outOfBoundsLayout));
+        assertDoesNotThrow(
+                () ->
+                        MemoryViewFactory.of(
+                                DataType.FP32, MemoryFactory.ofFloats(larger), outOfBoundsLayout));
     }
 
     @Test
@@ -115,10 +128,10 @@ class MemoryViewTest {
         Layout layout = Layout.of(Shape.flat(2, 2), Stride.flat(-3, 1));
         Memory<float[]> memory = MemoryFactory.ofFloats(new float[5]);
 
-        assertThrows(IllegalArgumentException.class, () ->
-                MemoryViewFactory.of(DataType.FP32, memory, 8L, layout));
-        assertDoesNotThrow(() ->
-                MemoryViewFactory.of(DataType.FP32, memory, 12L, layout));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> MemoryViewFactory.of(DataType.FP32, memory, 8L, layout));
+        assertDoesNotThrow(() -> MemoryViewFactory.of(DataType.FP32, memory, 12L, layout));
     }
 
     @Test
@@ -126,12 +139,12 @@ class MemoryViewTest {
         Layout layout = Layout.of(Shape.flat(2, 3), Stride.flat(0, 1));
 
         Memory<float[]> small = MemoryFactory.ofFloats(new float[2]);
-        assertThrows(IllegalArgumentException.class, () ->
-                MemoryViewFactory.of(DataType.FP32, small, 0L, layout));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> MemoryViewFactory.of(DataType.FP32, small, 0L, layout));
 
         Memory<float[]> exact = MemoryFactory.ofFloats(new float[3]);
-        assertDoesNotThrow(() ->
-                MemoryViewFactory.of(DataType.FP32, exact, 0L, layout));
+        assertDoesNotThrow(() -> MemoryViewFactory.of(DataType.FP32, exact, 0L, layout));
     }
 
     @Test
@@ -139,9 +152,8 @@ class MemoryViewTest {
         Layout layout = Layout.of(Shape.flat(0, 3), Stride.flat(1, 1));
         Memory<float[]> memory = MemoryFactory.ofFloats(new float[1]);
 
-        assertDoesNotThrow(() ->
-                MemoryViewFactory.of(DataType.FP32, memory, 0L, layout));
-        assertDoesNotThrow(() ->
-                MemoryViewFactory.of(DataType.FP32, memory, memory.byteSize() + 16L, layout));
+        assertDoesNotThrow(() -> MemoryViewFactory.of(DataType.FP32, memory, 0L, layout));
+        assertDoesNotThrow(
+                () -> MemoryViewFactory.of(DataType.FP32, memory, memory.byteSize() + 16L, layout));
     }
 }

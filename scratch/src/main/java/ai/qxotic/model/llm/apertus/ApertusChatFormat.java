@@ -4,7 +4,6 @@ import ai.qxotic.model.llm.ChatFormat;
 import ai.qxotic.tokenizers.IntSequence;
 import ai.qxotic.tokenizers.Tokenizer;
 import ai.qxotic.tokenizers.Vocabulary;
-
 import java.util.OptionalInt;
 import java.util.Set;
 

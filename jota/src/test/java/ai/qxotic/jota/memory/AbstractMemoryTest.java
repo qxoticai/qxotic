@@ -1,10 +1,9 @@
 package ai.qxotic.jota.memory;
 
-import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.*;
+import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.memory.impl.ContextFactory;
 import ai.qxotic.jota.memory.impl.MemoryAllocatorFactory;
-
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
@@ -17,15 +16,13 @@ public abstract class AbstractMemoryTest {
                 ContextFactory::ofInts,
                 ContextFactory::ofLongs,
                 ContextFactory::ofFloats,
-                ContextFactory::ofDoubles
-        );
+                ContextFactory::ofDoubles);
     }
 
     public static Stream<MemoryContext<?>> nativeContexts() {
         return contextSuppliers(
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                ContextFactory::ofMemorySegment
-        );
+                ContextFactory::ofMemorySegment);
     }
 
     public static Stream<MemoryContext<?>> allContexts() {
@@ -38,8 +35,7 @@ public abstract class AbstractMemoryTest {
                 ContextFactory::ofFloats,
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                ContextFactory::ofMemorySegment
-        );
+                ContextFactory::ofMemorySegment);
     }
 
     public static Stream<MemoryContext<?>> contextsSupportingF64() {
@@ -48,8 +44,7 @@ public abstract class AbstractMemoryTest {
                 ContextFactory::ofDoubles,
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                ContextFactory::ofMemorySegment
-        );
+                ContextFactory::ofMemorySegment);
     }
 
     public static Stream<MemoryContext<?>> contextsSupportingI8() {
@@ -57,8 +52,7 @@ public abstract class AbstractMemoryTest {
                 ContextFactory::ofBytes,
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                ContextFactory::ofMemorySegment
-        );
+                ContextFactory::ofMemorySegment);
     }
 
     public static Stream<MemoryContext<?>> contextsSupportingI16() {
@@ -67,8 +61,7 @@ public abstract class AbstractMemoryTest {
                 ContextFactory::ofShorts,
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                ContextFactory::ofMemorySegment
-        );
+                ContextFactory::ofMemorySegment);
     }
 
     public static Stream<MemoryContext<?>> contextsSupportingI32() {
@@ -76,8 +69,7 @@ public abstract class AbstractMemoryTest {
                 ContextFactory::ofInts,
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                ContextFactory::ofMemorySegment
-        );
+                ContextFactory::ofMemorySegment);
     }
 
     public static Stream<MemoryContext<?>> contextsSupportingI64() {
@@ -85,8 +77,7 @@ public abstract class AbstractMemoryTest {
                 ContextFactory::ofLongs,
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                ContextFactory::ofMemorySegment
-        );
+                ContextFactory::ofMemorySegment);
     }
 
     public static Stream<MemoryContext<?>> contextsSupportingBool() {
@@ -95,21 +86,22 @@ public abstract class AbstractMemoryTest {
                 ContextFactory::ofBytes,
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                ContextFactory::ofMemorySegment
-        );
+                ContextFactory::ofMemorySegment);
     }
 
     @SafeVarargs
-    private static Stream<MemoryContext<?>> contextSuppliers(Supplier<MemoryContext<?>>... suppliers) {
+    private static Stream<MemoryContext<?>> contextSuppliers(
+            Supplier<MemoryContext<?>>... suppliers) {
         return Stream.of(suppliers).map(Supplier::get);
     }
 
-    public static <B> float readFloat(MemoryAccess<B> memoryAccess, MemoryView<B> view, long... coords) {
+    public static <B> float readFloat(
+            MemoryAccess<B> memoryAccess, MemoryView<B> view, long... coords) {
         return memoryAccess.readFloat(view.memory(), Indexing.coordToOffset(view, coords));
     }
 
-    public static <B> void writeFloat(MemoryAccess<B> memoryAccess, MemoryView<B> view, float floatValue, long... coords) {
+    public static <B> void writeFloat(
+            MemoryAccess<B> memoryAccess, MemoryView<B> view, float floatValue, long... coords) {
         memoryAccess.writeFloat(view.memory(), Indexing.coordToOffset(view, coords), floatValue);
     }
-
 }

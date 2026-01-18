@@ -7,13 +7,11 @@ import ai.qxotic.model.llm.llama.DefaultKernelOps;
 import ai.qxotic.model.llm.llama.Llama;
 import ai.qxotic.tokenizers.Tokenizer;
 import ai.qxotic.tokenizers.impl.Tiktoken;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.regex.Pattern;
-
 
 public class Qwen2Loader extends BaseLlamaLoader {
 
@@ -25,14 +23,16 @@ public class Qwen2Loader extends BaseLlamaLoader {
 
     @Override
     public Qwen2 loadModel(Llama.Configuration configuration) {
-        return new Qwen2(configuration, DefaultKernelOps.getKernelOps(), DefaultKernelOps.getSpanFactory());
+        return new Qwen2(
+                configuration, DefaultKernelOps.getKernelOps(), DefaultKernelOps.getSpanFactory());
     }
 
     @Override
     public Qwen2.Configuration loadConfiguration(int maxTokens, SpanLoader spanLoader) {
         String arch = gguf.getValue(String.class, "general.architecture");
         if (!QWEN2_ARCH.equals(arch)) {
-            throw new IllegalArgumentException("general.architecture expected " + QWEN2_ARCH + " but found " + arch);
+            throw new IllegalArgumentException(
+                    "general.architecture expected " + QWEN2_ARCH + " but found " + arch);
         }
         return super.loadConfiguration(maxTokens, spanLoader).with(b -> b.ropeIsNeoxStyle(true));
     }
@@ -68,11 +68,14 @@ public class Qwen2Loader extends BaseLlamaLoader {
                 Map.entry("<|fim_suffix|>", 151661),
                 Map.entry("<|fim_pad|>", 151662),
                 Map.entry("<|repo_name|>", 151663),
-                Map.entry("<|file_sep|>", 151664)
-        );
+                Map.entry("<|file_sep|>", 151664));
     }
 
     public static Tokenizer loadTokenizerFromTiktoken(Map<String, Integer> mergeableRanks) {
-        return Tiktoken.createFromTiktoken("qwen2", mergeableRanks, Pattern.compile(Qwen2TextSplitterFactory.QWEN2_PATTERN), qwen2SpecialTokens());
+        return Tiktoken.createFromTiktoken(
+                "qwen2",
+                mergeableRanks,
+                Pattern.compile(Qwen2TextSplitterFactory.QWEN2_PATTERN),
+                qwen2SpecialTokens());
     }
 }

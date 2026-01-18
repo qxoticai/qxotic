@@ -23,54 +23,114 @@ public interface DataType {
         return DataTypeImpl.defaultFloatValue();
     }
 
-    DataType BOOL = new DataTypeImpl(ValueLayout.JAVA_BYTE.withName("bool"), false, false, boolean.class, "boolean");
+    DataType BOOL =
+            new DataTypeImpl(
+                    ValueLayout.JAVA_BYTE.withName("bool"), false, false, boolean.class, "boolean");
 
-    DataType I8 = new DataTypeImpl(ValueLayout.JAVA_BYTE.withName("i8"), false, true, byte.class, "int8", "byte");
-    DataType I16 = new DataTypeImpl(ValueLayout.JAVA_SHORT_UNALIGNED.withName("i16"), false, true, short.class, "int16", "short");
-    DataType I32 = new DataTypeImpl(ValueLayout.JAVA_INT_UNALIGNED.withName("i32"), false, true, int.class, "int32", "int");
-    DataType I64 = new DataTypeImpl(ValueLayout.JAVA_LONG_UNALIGNED.withName("i64"), false, true, long.class, "int64", "long");
+    DataType I8 =
+            new DataTypeImpl(
+                    ValueLayout.JAVA_BYTE.withName("i8"), false, true, byte.class, "int8", "byte");
+    DataType I16 =
+            new DataTypeImpl(
+                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("i16"),
+                    false,
+                    true,
+                    short.class,
+                    "int16",
+                    "short");
+    DataType I32 =
+            new DataTypeImpl(
+                    ValueLayout.JAVA_INT_UNALIGNED.withName("i32"),
+                    false,
+                    true,
+                    int.class,
+                    "int32",
+                    "int");
+    DataType I64 =
+            new DataTypeImpl(
+                    ValueLayout.JAVA_LONG_UNALIGNED.withName("i64"),
+                    false,
+                    true,
+                    long.class,
+                    "int64",
+                    "long");
 
-    DataType FP16 = new DataTypeImpl(ValueLayout.JAVA_SHORT_UNALIGNED.withName("fp16"), true, false, short.class, "float16"); // no float16 in Java
-    DataType BF16 = new DataTypeImpl(ValueLayout.JAVA_SHORT_UNALIGNED.withName("bf16"), true, false, short.class, "bfloat16"); // no bfloat16 in Java
-    DataType FP32 = new DataTypeImpl(ValueLayout.JAVA_FLOAT_UNALIGNED.withName("fp32"), true, false, float.class, "float32", "float");
-    DataType FP64 = new DataTypeImpl(ValueLayout.JAVA_DOUBLE_UNALIGNED.withName("fp64"), true, false, double.class, "float64", "double");
+    DataType FP16 =
+            new DataTypeImpl(
+                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("fp16"),
+                    true,
+                    false,
+                    short.class,
+                    "float16"); // no float16 in Java
+    DataType BF16 =
+            new DataTypeImpl(
+                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("bf16"),
+                    true,
+                    false,
+                    short.class,
+                    "bfloat16"); // no bfloat16 in Java
+    DataType FP32 =
+            new DataTypeImpl(
+                    ValueLayout.JAVA_FLOAT_UNALIGNED.withName("fp32"),
+                    true,
+                    false,
+                    float.class,
+                    "float32",
+                    "float");
+    DataType FP64 =
+            new DataTypeImpl(
+                    ValueLayout.JAVA_DOUBLE_UNALIGNED.withName("fp64"),
+                    true,
+                    false,
+                    double.class,
+                    "float64",
+                    "double");
 
-    /**
-     * scale * q_values[i]
-     */
-    DataType Q8_0 = new DataTypeImpl(
-            32,
-            MemoryLayout.structLayout(
-                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("scale"), // float16
-                    MemoryLayout.sequenceLayout(32, ValueLayout.JAVA_BYTE).withName("q_values")
-            ).withName("q8_0"), false, false, null);
+    /** scale * q_values[i] */
+    DataType Q8_0 =
+            new DataTypeImpl(
+                    32,
+                    MemoryLayout.structLayout(
+                                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("scale"), // float16
+                                    MemoryLayout.sequenceLayout(32, ValueLayout.JAVA_BYTE)
+                                            .withName("q_values"))
+                            .withName("q8_0"),
+                    false,
+                    false,
+                    null);
 
-//    /**
-//     * scale * q_values[i] + zero_point
-//     */
-//    DataType Q8_1 = new DataTypeImpl(
-//            32,
-//            MemoryLayout.structLayout(
-//                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("scale"), // float16
-//                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("zero_point"), // float16
-//                    MemoryLayout.sequenceLayout(32, ValueLayout.JAVA_BYTE).withName("q_values")
-//            ).withName("q8_1"), true, null);
+    //    /**
+    //     * scale * q_values[i] + zero_point
+    //     */
+    //    DataType Q8_1 = new DataTypeImpl(
+    //            32,
+    //            MemoryLayout.structLayout(
+    //                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("scale"), // float16
+    //                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("zero_point"), // float16
+    //                    MemoryLayout.sequenceLayout(32,
+    // ValueLayout.JAVA_BYTE).withName("q_values")
+    //            ).withName("q8_1"), true, null);
 
-    DataType Q4_0 = new DataTypeImpl(
-            32,
-            MemoryLayout.structLayout(
-                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("scale"), // float16
-                    MemoryLayout.sequenceLayout(16, ValueLayout.JAVA_BYTE).withName("q_values")
-            ).withName("q4_0"), false, false, null);
+    DataType Q4_0 =
+            new DataTypeImpl(
+                    32,
+                    MemoryLayout.structLayout(
+                                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("scale"), // float16
+                                    MemoryLayout.sequenceLayout(16, ValueLayout.JAVA_BYTE)
+                                            .withName("q_values"))
+                            .withName("q4_0"),
+                    false,
+                    false,
+                    null);
 
-
-//    DataType Q4_1 = new DataTypeImpl(
-//            32,
-//            MemoryLayout.structLayout(
-//                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("scale"), // float16
-//                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("zero_point"), // float16
-//                    MemoryLayout.sequenceLayout(16, ValueLayout.JAVA_BYTE).withName("q_nibbles")
-//            ).withName("q4_1"), true, null);
+    //    DataType Q4_1 = new DataTypeImpl(
+    //            32,
+    //            MemoryLayout.structLayout(
+    //                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("scale"), // float16
+    //                    ValueLayout.JAVA_SHORT_UNALIGNED.withName("zero_point"), // float16
+    //                    MemoryLayout.sequenceLayout(16,
+    // ValueLayout.JAVA_BYTE).withName("q_nibbles")
+    //            ).withName("q4_1"), true, null);
 
     default long byteSizeFor(long elementCount) {
         if (elementCount < 0) {
@@ -82,7 +142,6 @@ public interface DataType {
     default long byteSizeFor(Shape shape) {
         return byteSizeFor(shape.size());
     }
-
 }
 
 final class DataTypeImpl implements DataType {
@@ -106,22 +165,21 @@ final class DataTypeImpl implements DataType {
             return dataType;
         }
 
-        private DefaultFloatHolder() {
-        }
+        private DefaultFloatHolder() {}
     }
 
     private static DataType primitiveByName(String name) {
-        List<DataType> primitives = List.of(
-                DataType.BOOL,
-                DataType.I8,
-                DataType.I16,
-                DataType.I32,
-                DataType.I64,
-                DataType.FP16,
-                DataType.BF16,
-                DataType.FP32,
-                DataType.FP64
-        );
+        List<DataType> primitives =
+                List.of(
+                        DataType.BOOL,
+                        DataType.I8,
+                        DataType.I16,
+                        DataType.I32,
+                        DataType.I64,
+                        DataType.FP16,
+                        DataType.BF16,
+                        DataType.FP32,
+                        DataType.FP64);
         for (DataType dt : primitives) {
             if (dt.name().equals(name) || dt.aliases().contains(name)) {
                 return dt;
@@ -139,7 +197,14 @@ final class DataTypeImpl implements DataType {
     final Class<?> javaClass;
     final List<String> aliases;
 
-    DataTypeImpl(String name, long elementsPerBlock, MemoryLayout layout, boolean isFloatingPoint, boolean isIntegral, Class<?> javaClass, String... aliases) {
+    DataTypeImpl(
+            String name,
+            long elementsPerBlock,
+            MemoryLayout layout,
+            boolean isFloatingPoint,
+            boolean isIntegral,
+            Class<?> javaClass,
+            String... aliases) {
         this.name = name;
         this.elementsPerBlock = elementsPerBlock;
         this.byteSize = layout.byteSize();
@@ -150,15 +215,46 @@ final class DataTypeImpl implements DataType {
         this.aliases = aliases == null ? List.of() : List.of(aliases);
     }
 
-    DataTypeImpl(long elementsPerBlock, MemoryLayout layout, boolean isFloatingPoint, boolean isIntegral, Class<?> javaClass, String... aliases) {
-        this(layout.name().orElseThrow(), elementsPerBlock, layout, isFloatingPoint, isIntegral, javaClass, aliases);
+    DataTypeImpl(
+            long elementsPerBlock,
+            MemoryLayout layout,
+            boolean isFloatingPoint,
+            boolean isIntegral,
+            Class<?> javaClass,
+            String... aliases) {
+        this(
+                layout.name().orElseThrow(),
+                elementsPerBlock,
+                layout,
+                isFloatingPoint,
+                isIntegral,
+                javaClass,
+                aliases);
     }
 
-    DataTypeImpl(MemoryLayout layout, boolean isFloatingPoint, boolean isIntegral, Class<?> javaClass, String... aliases) {
-        this(layout.name().orElseThrow(), 1L, layout, isFloatingPoint, isIntegral, javaClass, aliases);
+    DataTypeImpl(
+            MemoryLayout layout,
+            boolean isFloatingPoint,
+            boolean isIntegral,
+            Class<?> javaClass,
+            String... aliases) {
+        this(
+                layout.name().orElseThrow(),
+                1L,
+                layout,
+                isFloatingPoint,
+                isIntegral,
+                javaClass,
+                aliases);
     }
 
-    DataTypeImpl(MemoryLayout layout, String name, boolean isFloatingPoint, boolean isIntegral, Class<?> javaClass, String... aliases) {
+    DataTypeImpl(
+            MemoryLayout layout,
+            String name,
+            boolean isFloatingPoint,
+            boolean isIntegral,
+            Class<?> javaClass,
+            String... aliases) {
         this(name, 1L, layout, isFloatingPoint, isIntegral, javaClass, aliases);
     }
 

@@ -1,14 +1,13 @@
 package ai.qxotic.jota.memory.impl;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.Memory;
-import org.junit.jupiter.api.Test;
-
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
 
 class PanamaMemoryTest {
 
@@ -27,7 +26,8 @@ class PanamaMemoryTest {
     @Test
     void testOfBuffer() {
         ByteBuffer buffer = ByteBuffer.allocate(40);
-        Memory<MemorySegment> memory = MemoryFactory.ofMemorySegment(MemorySegment.ofBuffer(buffer));
+        Memory<MemorySegment> memory =
+                MemoryFactory.ofMemorySegment(MemorySegment.ofBuffer(buffer));
         assertEquals(40, memory.byteSize());
         assertFalse(memory.isReadOnly());
     }
@@ -50,7 +50,9 @@ class PanamaMemoryTest {
 
     @Test
     void testNullMemorySegment() {
-        assertThrows(NullPointerException.class, () -> MemoryFactory.ofMemorySegment((MemorySegment) null));
+        assertThrows(
+                NullPointerException.class,
+                () -> MemoryFactory.ofMemorySegment((MemorySegment) null));
     }
 
     @Test

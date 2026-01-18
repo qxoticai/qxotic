@@ -1,12 +1,11 @@
 package ai.qxotic.tokenizers.impl;
 
 import ai.qxotic.tokenizers.IntSequence;
-
 import java.util.Arrays;
 
 /**
- * A builder for creating IntSequences.
- * The build is an IntSequence itself, a view over unmodifiable data.
+ * A builder for creating IntSequences. The build is an IntSequence itself, a view over unmodifiable
+ * data.
  */
 final class IntSequenceBuilder extends AbstractIntSequence implements IntSequence.Builder {
     private int[] data;
@@ -49,7 +48,7 @@ final class IntSequenceBuilder extends AbstractIntSequence implements IntSequenc
         }
         if (minCapacity > data.length
                 && !(data == DEFAULTCAPACITY_EMPTY_ELEMENTDATA
-                && minCapacity <= DEFAULT_CAPACITY)) {
+                        && minCapacity <= DEFAULT_CAPACITY)) {
             grow(minCapacity);
         }
     }
@@ -82,8 +81,8 @@ final class IntSequenceBuilder extends AbstractIntSequence implements IntSequenc
     }
 
     /**
-     * Increases the capacity to ensure that it can hold at least the
-     * number of elements specified by the minimum capacity argument.
+     * Increases the capacity to ensure that it can hold at least the number of elements specified
+     * by the minimum capacity argument.
      *
      * @param minCapacity the desired minimum capacity
      * @throws OutOfMemoryError if minCapacity is less than zero
@@ -91,9 +90,11 @@ final class IntSequenceBuilder extends AbstractIntSequence implements IntSequenc
     private int[] grow(int minCapacity) {
         int oldCapacity = this.data.length;
         if (oldCapacity > 0 || this.data != DEFAULTCAPACITY_EMPTY_ELEMENTDATA) {
-            int newCapacity = newLength(oldCapacity,
-                    minCapacity - oldCapacity, /* minimum growth */
-                    oldCapacity >> 1           /* preferred growth */);
+            int newCapacity =
+                    newLength(
+                            oldCapacity,
+                            minCapacity - oldCapacity, /* minimum growth */
+                            oldCapacity >> 1 /* preferred growth */);
             return this.data = Arrays.copyOf(this.data, newCapacity);
         } else {
             return this.data = new int[Math.max(DEFAULT_CAPACITY, minCapacity)];
@@ -120,7 +121,8 @@ final class IntSequenceBuilder extends AbstractIntSequence implements IntSequenc
     @Override
     public IntSequence subSequence(int start, int end) {
         if (start < 0 || end < start || end > length()) {
-            throw new IllegalArgumentException("Invalid subSequence range [" + start + ", " + end + ")");
+            throw new IllegalArgumentException(
+                    "Invalid subSequence range [" + start + ", " + end + ")");
         }
         if (start == end) {
             return ImplAccessor.empty();

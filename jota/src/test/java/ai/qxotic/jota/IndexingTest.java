@@ -1,19 +1,18 @@
-
 package ai.qxotic.jota;
 
-import org.junit.jupiter.api.Test;
-
 import static org.junit.jupiter.api.Assertions.*;
+
+import org.junit.jupiter.api.Test;
 
 class IndexingTest {
 
     @Test
     void linearToCoordRowMajor() {
         Shape shape = Shape.of(2, 3, 4);
-        assertArrayEquals(new long[]{0, 0, 0}, Indexing.linearToCoord(shape, 0));
-        assertArrayEquals(new long[]{0, 0, 1}, Indexing.linearToCoord(shape, 1));
-        assertArrayEquals(new long[]{0, 1, 0}, Indexing.linearToCoord(shape, 4));
-        assertArrayEquals(new long[]{1, 2, 3}, Indexing.linearToCoord(shape, 23));
+        assertArrayEquals(new long[] {0, 0, 0}, Indexing.linearToCoord(shape, 0));
+        assertArrayEquals(new long[] {0, 0, 1}, Indexing.linearToCoord(shape, 1));
+        assertArrayEquals(new long[] {0, 1, 0}, Indexing.linearToCoord(shape, 4));
+        assertArrayEquals(new long[] {1, 2, 3}, Indexing.linearToCoord(shape, 23));
     }
 
     @Test
@@ -70,8 +69,8 @@ class IndexingTest {
     void nestedShapeUsesFlatCoordinates() {
         Shape shape = Shape.pattern("(a, (b, c))", 2, 3, 4);
         Stride stride = Stride.rowMajor(shape);
-        assertArrayEquals(new long[]{0, 0, 0}, Indexing.linearToCoord(shape, 0));
-        assertArrayEquals(new long[]{1, 2, 3}, Indexing.linearToCoord(shape, 23));
+        assertArrayEquals(new long[] {0, 0, 0}, Indexing.linearToCoord(shape, 0));
+        assertArrayEquals(new long[] {1, 2, 3}, Indexing.linearToCoord(shape, 23));
         assertEquals(23, Indexing.coordToLinear(shape, 1, 2, 3));
         assertEquals(23, Indexing.coordToOffset(stride, 1, 2, 3));
     }
@@ -94,8 +93,11 @@ class IndexingTest {
     void throwsForOutOfBoundsLinearIndex() {
         Shape shape = Shape.of(2, 3);
         assertThrows(IllegalArgumentException.class, () -> Indexing.linearToCoord(shape, 6));
-        assertThrows(IllegalArgumentException.class, () -> Indexing.linearToCoord(Shape.scalar(), 1));
-        assertThrows(IllegalArgumentException.class, () -> Indexing.linearToOffset(shape, Stride.rowMajor(shape), DataType.FP32, -1));
+        assertThrows(
+                IllegalArgumentException.class, () -> Indexing.linearToCoord(Shape.scalar(), 1));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Indexing.linearToOffset(shape, Stride.rowMajor(shape), DataType.FP32, -1));
     }
 
     @Test

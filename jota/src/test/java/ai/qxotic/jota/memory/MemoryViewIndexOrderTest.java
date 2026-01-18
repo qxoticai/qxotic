@@ -1,5 +1,6 @@
-
 package ai.qxotic.jota.memory;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Indexing;
@@ -7,8 +8,6 @@ import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class MemoryViewIndexOrderTest extends AbstractMemoryTest {
 
@@ -22,7 +21,8 @@ class MemoryViewIndexOrderTest extends AbstractMemoryTest {
 
         Shape shape = Shape.of(2, 3);
         MemoryView<B> base = MemoryHelpers.arange(context, DataType.FP32, shape.size());
-        MemoryView<B> view = MemoryView.of(base.memory(), 0L, DataType.FP32, Layout.rowMajor(shape));
+        MemoryView<B> view =
+                MemoryView.of(base.memory(), 0L, DataType.FP32, Layout.rowMajor(shape));
 
         for (long i = 0; i < shape.size(0); i++) {
             for (long j = 0; j < shape.size(1); j++) {
@@ -90,7 +90,8 @@ class MemoryViewIndexOrderTest extends AbstractMemoryTest {
 
         Shape shape = Shape.of(2, 3, 4);
         MemoryView<B> base = MemoryHelpers.arange(context, DataType.FP32, shape.size());
-        MemoryView<B> view = MemoryView.of(base.memory(), 0L, DataType.FP32, Layout.columnMajor(shape));
+        MemoryView<B> view =
+                MemoryView.of(base.memory(), 0L, DataType.FP32, Layout.columnMajor(shape));
 
         for (long i = 0; i < shape.size(0); i++) {
             for (long j = 0; j < shape.size(1); j++) {

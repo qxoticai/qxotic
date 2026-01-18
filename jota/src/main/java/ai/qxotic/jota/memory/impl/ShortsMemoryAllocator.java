@@ -12,8 +12,7 @@ final class ShortsMemoryAllocator implements MemoryAllocator<short[]> {
         return INSTANCE;
     }
 
-    private ShortsMemoryAllocator() {
-    }
+    private ShortsMemoryAllocator() {}
 
     @Override
     public Device device() {

@@ -1,15 +1,12 @@
 package ai.qxotic.model.llm.generic;
 
 import ai.qxotic.model.llm.ChatFormat;
+import ai.qxotic.tokenizers.IntSequence;
 import ai.qxotic.tokenizers.Tokenizer;
 import ai.qxotic.tokenizers.Vocabulary;
-import ai.qxotic.tokenizers.IntSequence;
-
 import java.util.Set;
 
-/**
- * Utility tailored for the Chat Markup Language (ChatML) prompt format.
- */
+/** Utility tailored for the Chat Markup Language (ChatML) prompt format. */
 public class ChatMLFormat extends ChatFormat {
 
     public final int imStart;

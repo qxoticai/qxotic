@@ -1,16 +1,15 @@
 package ai.qxotic.model.llm.llama;
 
 import ai.qxotic.span.FloatSpan;
-
 import java.lang.foreign.MemorySegment;
 
 /**
- * A final implementation of {@link MemorySegmentSpan} that handles 32-bit floating-point data.
- * This class provides operations for working with contiguous blocks of float values stored in
- * native memory segments.
- * <p>
- * The class ensures that the underlying memory segment's size is always a multiple of
- * {@link Float#BYTES}, guaranteeing proper alignment for float values.
+ * A final implementation of {@link MemorySegmentSpan} that handles 32-bit floating-point data. This
+ * class provides operations for working with contiguous blocks of float values stored in native
+ * memory segments.
+ *
+ * <p>The class ensures that the underlying memory segment's size is always a multiple of {@link
+ * Float#BYTES}, guaranteeing proper alignment for float values.
  *
  * @see MemorySegmentSpan
  * @see FloatSpan
@@ -37,16 +36,15 @@ public final class F32Span extends MemorySegmentSpan {
     }
 
     /**
-     * Creates a new span that represents a subsection of this span.
-     * If the requested slice matches the entire span, returns this instance instead
-     * of creating a new object.
+     * Creates a new span that represents a subsection of this span. If the requested slice matches
+     * the entire span, returns this instance instead of creating a new object.
      *
-     * @param spanIndex  the starting index of the slice (in float values, not bytes)
+     * @param spanIndex the starting index of the slice (in float values, not bytes)
      * @param spanLength the length of the slice (in float values, not bytes)
-     * @return a new F32Span representing the requested slice, or this instance if the
-     * slice encompasses the entire span
-     * @throws IllegalArgumentException if the spanIndex is negative or if the slice
-     *                                  would extend beyond the span's bounds
+     * @return a new F32Span representing the requested slice, or this instance if the slice
+     *     encompasses the entire span
+     * @throws IllegalArgumentException if the spanIndex is negative or if the slice would extend
+     *     beyond the span's bounds
      */
     @Override
     public FloatSpan slice(long spanIndex, long spanLength) {

@@ -15,8 +15,7 @@ final class FloatsMemoryAccess implements MemoryAccess<float[]> {
         return INSTANCE;
     }
 
-    private FloatsMemoryAccess() {
-    }
+    private FloatsMemoryAccess() {}
 
     @Override
     public byte readByte(Memory<float[]> memory, long byteOffset) {

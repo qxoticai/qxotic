@@ -1,7 +1,6 @@
 package ai.qxotic.model.llm.llama;
 
 import ai.qxotic.span.FloatSpan;
-
 import java.util.random.RandomGenerator;
 
 record CategoricalSampler(RandomGenerator rng) implements Sampler2 {

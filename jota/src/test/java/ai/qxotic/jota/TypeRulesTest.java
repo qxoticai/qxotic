@@ -1,9 +1,9 @@
 package ai.qxotic.jota;
 
-import org.junit.jupiter.api.Test;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import org.junit.jupiter.api.Test;
 
 class TypeRulesTest {
 
@@ -26,7 +26,11 @@ class TypeRulesTest {
 
     @Test
     void rejectsQuantizedTypes() {
-        assertThrows(IllegalArgumentException.class, () -> TypeRules.promote(DataType.Q8_0, DataType.FP32));
-        assertThrows(IllegalArgumentException.class, () -> TypeRules.promote(DataType.I32, DataType.Q4_0));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> TypeRules.promote(DataType.Q8_0, DataType.FP32));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> TypeRules.promote(DataType.I32, DataType.Q4_0));
     }
 }

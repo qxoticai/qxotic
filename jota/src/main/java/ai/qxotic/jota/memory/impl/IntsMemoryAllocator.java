@@ -12,8 +12,7 @@ final class IntsMemoryAllocator implements MemoryAllocator<int[]> {
         return INSTANCE;
     }
 
-    private IntsMemoryAllocator() {
-    }
+    private IntsMemoryAllocator() {}
 
     @Override
     public Device device() {

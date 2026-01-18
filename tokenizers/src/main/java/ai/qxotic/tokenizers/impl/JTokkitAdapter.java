@@ -1,15 +1,14 @@
 package ai.qxotic.tokenizers.impl;
 
+import ai.qxotic.tokenizers.ByteEncoding;
+import ai.qxotic.tokenizers.IntSequence;
+import ai.qxotic.tokenizers.Tokenizer;
+import ai.qxotic.tokenizers.Vocabulary;
 import com.knuddels.jtokkit.Encodings;
 import com.knuddels.jtokkit.api.Encoding;
 import com.knuddels.jtokkit.api.EncodingRegistry;
 import com.knuddels.jtokkit.api.GptBytePairEncodingParams;
 import com.knuddels.jtokkit.api.IntArrayList;
-import ai.qxotic.tokenizers.Tokenizer;
-import ai.qxotic.tokenizers.Vocabulary;
-import ai.qxotic.tokenizers.ByteEncoding;
-import ai.qxotic.tokenizers.IntSequence;
-
 import java.util.Arrays;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -26,16 +25,17 @@ class JTokkitAdapter implements Tokenizer {
         this.encoding = encoding;
     }
 
-    static Tokenizer create(String name, Pattern splitPattern, Map<String, Integer> mergeableRanks, Map<String, Integer> specialTokens) {
+    static Tokenizer create(
+            String name,
+            Pattern splitPattern,
+            Map<String, Integer> mergeableRanks,
+            Map<String, Integer> specialTokens) {
         Map<byte[], Integer> rawMergeableRanks =
-                mergeableRanks.entrySet()
-                        .stream()
+                mergeableRanks.entrySet().stream()
                         .collect(
                                 Collectors.toMap(
                                         entry -> ByteEncoding.stringToBytes(entry.getKey()),
-                                        Map.Entry::getValue
-                                )
-                        );
+                                        Map.Entry::getValue));
 
         GptBytePairEncodingParams params =
                 new GptBytePairEncodingParams(name, splitPattern, rawMergeableRanks, specialTokens);
@@ -49,7 +49,8 @@ class JTokkitAdapter implements Tokenizer {
         return new JTokkitAdapter(vocabulary, encoding);
     }
 
-    private static Vocabulary createVocabulary(Map<String, Integer> mergeableRanks, Map<String, Integer> specialTokens) {
+    private static Vocabulary createVocabulary(
+            Map<String, Integer> mergeableRanks, Map<String, Integer> specialTokens) {
         String[] tokens = new String[mergeableRanks.size()];
         for (Map.Entry<String, Integer> entry : mergeableRanks.entrySet()) {
             tokens[entry.getValue()] = entry.getKey();

@@ -1,9 +1,8 @@
 package ai.qxotic.tokenizers.impl;
 
-import ai.qxotic.tokenizers.Vocabulary;
 import ai.qxotic.tokenizers.StandardTokenType;
 import ai.qxotic.tokenizers.TokenType;
-
+import ai.qxotic.tokenizers.Vocabulary;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -14,12 +13,15 @@ class VocabularyWithSpecials implements Vocabulary {
     private final Map<String, Integer> specialToIndex;
     private final Map<Integer, String> indexToSpecial;
 
-
-    private VocabularyWithSpecials(Vocabulary innerVocabulary, Map<String, Integer> specialToIndex) {
+    private VocabularyWithSpecials(
+            Vocabulary innerVocabulary, Map<String, Integer> specialToIndex) {
         this.innerVocabulary = innerVocabulary;
         this.specialToIndex = Map.copyOf(specialToIndex);
-        this.indexToSpecial = specialToIndex.entrySet().stream()
-                .collect(Collectors.toUnmodifiableMap(Map.Entry::getValue, Map.Entry::getKey));
+        this.indexToSpecial =
+                specialToIndex.entrySet().stream()
+                        .collect(
+                                Collectors.toUnmodifiableMap(
+                                        Map.Entry::getValue, Map.Entry::getKey));
 
         assert this.specialToIndex.keySet().stream().noneMatch(innerVocabulary::contains);
         assert this.indexToSpecial.keySet().stream().noneMatch(innerVocabulary::contains);
@@ -31,7 +33,8 @@ class VocabularyWithSpecials implements Vocabulary {
         } else if (innerVocabulary instanceof VocabularyWithSpecials innerWithSpecials) {
             Map<String, Integer> combinedSpecials = new HashMap<>(innerWithSpecials.specialToIndex);
             // No overlap.
-            assert specialToIndex.keySet().stream().noneMatch(innerWithSpecials.specialToIndex::containsKey);
+            assert specialToIndex.keySet().stream()
+                    .noneMatch(innerWithSpecials.specialToIndex::containsKey);
             combinedSpecials.putAll(specialToIndex);
             return new VocabularyWithSpecials(innerWithSpecials.innerVocabulary, combinedSpecials);
         } else {
@@ -84,6 +87,7 @@ class VocabularyWithSpecials implements Vocabulary {
 
     @Override
     public Iterator<Map.Entry<String, Integer>> iterator() {
-        return IteratorCombiner.of(innerVocabulary.iterator(), specialToIndex.entrySet().iterator());
+        return IteratorCombiner.of(
+                innerVocabulary.iterator(), specialToIndex.entrySet().iterator());
     }
 }

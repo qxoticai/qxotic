@@ -3,7 +3,6 @@ package ai.qxotic.jota.memory.impl;
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.Memory;
-
 import java.util.Objects;
 
 final class BooleansMemory implements Memory<boolean[]> {
@@ -20,7 +19,7 @@ final class BooleansMemory implements Memory<boolean[]> {
 
     @Override
     public long byteSize() {
-        return booleans.length;  // 1 byte per boolean in array
+        return booleans.length; // 1 byte per boolean in array
     }
 
     @Override
@@ -40,12 +39,12 @@ final class BooleansMemory implements Memory<boolean[]> {
 
     @Override
     public long memoryGranularity() {
-        return Byte.BYTES;  // 1 byte per boolean
+        return Byte.BYTES; // 1 byte per boolean
     }
 
     @Override
     public boolean supportsDataType(DataType dataType) {
-        return dataType == DataType.BOOL;  // ONLY BOOL - override default behavior
+        return dataType == DataType.BOOL; // ONLY BOOL - override default behavior
     }
 
     @Override

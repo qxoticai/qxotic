@@ -2,7 +2,6 @@ package ai.qxotic.model.llm.llama;
 
 import ai.qxotic.format.gguf.GGMLType;
 import ai.qxotic.span.FloatSpan;
-
 import java.lang.foreign.MemorySegment;
 
 public class Q4_0Span extends MemorySegmentSpan {
@@ -13,7 +12,9 @@ public class Q4_0Span extends MemorySegmentSpan {
 
     @Override
     public long size() {
-        return this.memorySegment.byteSize() / GGMLType.Q4_0.getBlockByteSize() * GGMLType.Q4_0.getElementsPerBlock();
+        return this.memorySegment.byteSize()
+                / GGMLType.Q4_0.getBlockByteSize()
+                * GGMLType.Q4_0.getElementsPerBlock();
     }
 
     @Override
@@ -21,12 +22,15 @@ public class Q4_0Span extends MemorySegmentSpan {
         if (spanIndex == 0 && spanLength == size()) {
             return this;
         }
-        if (spanIndex % GGMLType.Q4_0.getElementsPerBlock() != 0 || spanLength % GGMLType.Q4_0.getElementsPerBlock() != 0) {
-            throw new IllegalArgumentException("Slices must be multiples of " + GGMLType.Q4_0.getElementsPerBlock());
+        if (spanIndex % GGMLType.Q4_0.getElementsPerBlock() != 0
+                || spanLength % GGMLType.Q4_0.getElementsPerBlock() != 0) {
+            throw new IllegalArgumentException(
+                    "Slices must be multiples of " + GGMLType.Q4_0.getElementsPerBlock());
         }
-        long offsetInBytes = spanIndex / GGMLType.Q4_0.getElementsPerBlock() * GGMLType.Q4_0.getBlockByteSize();
-        long lengthInBytes = spanLength / GGMLType.Q4_0.getElementsPerBlock() * GGMLType.Q4_0.getBlockByteSize();
+        long offsetInBytes =
+                spanIndex / GGMLType.Q4_0.getElementsPerBlock() * GGMLType.Q4_0.getBlockByteSize();
+        long lengthInBytes =
+                spanLength / GGMLType.Q4_0.getElementsPerBlock() * GGMLType.Q4_0.getBlockByteSize();
         return new Q4_0Span(this.memorySegment.asSlice(offsetInBytes, lengthInBytes));
     }
 }
-

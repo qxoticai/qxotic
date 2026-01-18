@@ -3,7 +3,6 @@ package ai.qxotic.jota.memory.impl;
 import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAccessChecks;
 import ai.qxotic.jota.memory.MemoryOperations;
-
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.ByteBuffer;
@@ -16,11 +15,15 @@ final class ByteBufferMemoryOperations implements MemoryOperations<ByteBuffer> {
         return INSTANCE;
     }
 
-    private ByteBufferMemoryOperations() {
-    }
+    private ByteBufferMemoryOperations() {}
 
     @Override
-    public void copy(Memory<ByteBuffer> src, long srcByteOffset, Memory<ByteBuffer> dst, long dstByteOffset, long byteSize) {
+    public void copy(
+            Memory<ByteBuffer> src,
+            long srcByteOffset,
+            Memory<ByteBuffer> dst,
+            long dstByteOffset,
+            long byteSize) {
         MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
         MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
         if (byteSize == 0) {
@@ -34,7 +37,12 @@ final class ByteBufferMemoryOperations implements MemoryOperations<ByteBuffer> {
     }
 
     @Override
-    public void copyFromNative(Memory<MemorySegment> src, long srcByteOffset, Memory<ByteBuffer> dst, long dstByteOffset, long byteSize) {
+    public void copyFromNative(
+            Memory<MemorySegment> src,
+            long srcByteOffset,
+            Memory<ByteBuffer> dst,
+            long dstByteOffset,
+            long byteSize) {
         MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
         MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
         if (byteSize == 0) {
@@ -49,7 +57,12 @@ final class ByteBufferMemoryOperations implements MemoryOperations<ByteBuffer> {
     }
 
     @Override
-    public void copyToNative(Memory<ByteBuffer> src, long srcByteOffset, Memory<MemorySegment> dst, long dstByteOffset, long byteSize) {
+    public void copyToNative(
+            Memory<ByteBuffer> src,
+            long srcByteOffset,
+            Memory<MemorySegment> dst,
+            long dstByteOffset,
+            long byteSize) {
         MemoryAccessChecks.checkBounds(src, srcByteOffset, byteSize);
         MemoryAccessChecks.checkBounds(dst, dstByteOffset, byteSize);
         if (byteSize == 0) {
@@ -64,7 +77,8 @@ final class ByteBufferMemoryOperations implements MemoryOperations<ByteBuffer> {
     }
 
     @Override
-    public void fillByte(Memory<ByteBuffer> memory, long byteOffset, long byteSize, byte byteValue) {
+    public void fillByte(
+            Memory<ByteBuffer> memory, long byteOffset, long byteSize, byte byteValue) {
         MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
         MemoryAccessChecks.checkWriteable(memory);
         if (byteSize == 0) {
@@ -78,7 +92,8 @@ final class ByteBufferMemoryOperations implements MemoryOperations<ByteBuffer> {
     }
 
     @Override
-    public void fillShort(Memory<ByteBuffer> memory, long byteOffset, long byteSize, short shortValue) {
+    public void fillShort(
+            Memory<ByteBuffer> memory, long byteOffset, long byteSize, short shortValue) {
         MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
         MemoryAccessChecks.checkWriteable(memory);
         MemoryAccessChecks.checkAlignedValue(byteSize, Short.BYTES);
@@ -108,7 +123,8 @@ final class ByteBufferMemoryOperations implements MemoryOperations<ByteBuffer> {
     }
 
     @Override
-    public void fillLong(Memory<ByteBuffer> memory, long byteOffset, long byteSize, long longValue) {
+    public void fillLong(
+            Memory<ByteBuffer> memory, long byteOffset, long byteSize, long longValue) {
         MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
         MemoryAccessChecks.checkWriteable(memory);
         MemoryAccessChecks.checkAlignedValue(byteSize, Long.BYTES);
@@ -123,7 +139,8 @@ final class ByteBufferMemoryOperations implements MemoryOperations<ByteBuffer> {
     }
 
     @Override
-    public void fillFloat(Memory<ByteBuffer> memory, long byteOffset, long byteSize, float floatValue) {
+    public void fillFloat(
+            Memory<ByteBuffer> memory, long byteOffset, long byteSize, float floatValue) {
         MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
         MemoryAccessChecks.checkWriteable(memory);
         MemoryAccessChecks.checkAlignedValue(byteSize, Float.BYTES);
@@ -138,7 +155,8 @@ final class ByteBufferMemoryOperations implements MemoryOperations<ByteBuffer> {
     }
 
     @Override
-    public void fillDouble(Memory<ByteBuffer> memory, long byteOffset, long byteSize, double doubleValue) {
+    public void fillDouble(
+            Memory<ByteBuffer> memory, long byteOffset, long byteSize, double doubleValue) {
         MemoryAccessChecks.checkBounds(memory, byteOffset, byteSize);
         MemoryAccessChecks.checkWriteable(memory);
         MemoryAccessChecks.checkAlignedValue(byteSize, Double.BYTES);
@@ -151,5 +169,4 @@ final class ByteBufferMemoryOperations implements MemoryOperations<ByteBuffer> {
             memory.base().putDouble(intByteOffset + i, doubleValue);
         }
     }
-
 }

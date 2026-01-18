@@ -11,8 +11,7 @@ public final class UnsafeMemory implements Memory<Void> {
         return INSTANCE;
     }
 
-    private UnsafeMemory() {
-    }
+    private UnsafeMemory() {}
 
     @Override
     public long byteSize() {

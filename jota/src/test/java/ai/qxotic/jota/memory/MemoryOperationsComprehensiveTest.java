@@ -1,30 +1,24 @@
 package ai.qxotic.jota.memory;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.memory.impl.ContextFactory;
 import ai.qxotic.jota.memory.impl.MemoryAccessFactory;
 import ai.qxotic.jota.memory.impl.MemoryAllocatorFactory;
 import ai.qxotic.jota.memory.impl.MemoryFactory;
-import org.junit.jupiter.api.Assumptions;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
-
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.util.stream.Stream;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class MemoryOperationsComprehensiveTest {
 
     private static final int ELEMENT_COUNT = 8;
     private static final DataType[] DATA_TYPES = {
-            DataType.I8,
-            DataType.I16,
-            DataType.I32,
-            DataType.I64,
-            DataType.FP32,
-            DataType.FP64
+        DataType.I8, DataType.I16, DataType.I32, DataType.I64, DataType.FP32, DataType.FP64
     };
 
     static Stream<MemoryContext<?>> allContexts() {
@@ -33,9 +27,7 @@ class MemoryOperationsComprehensiveTest {
                 Stream.of(
                         ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
                         ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                        ContextFactory.ofMemorySegment()
-                )
-        );
+                        ContextFactory.ofMemorySegment()));
     }
 
     @ParameterizedTest
@@ -216,11 +208,17 @@ class MemoryOperationsComprehensiveTest {
         throw new IllegalArgumentException("Unsupported data type: " + dataType);
     }
 
-    private static <B> void writeValue(MemoryAccess<B> memoryAccess, Memory<B> memory, DataType dataType, int index) {
+    private static <B> void writeValue(
+            MemoryAccess<B> memoryAccess, Memory<B> memory, DataType dataType, int index) {
         writeValue(memoryAccess, memory, dataType, index, 0);
     }
 
-    private static <B> void writeValue(MemoryAccess<B> memoryAccess, Memory<B> memory, DataType dataType, int index, int baseOffset) {
+    private static <B> void writeValue(
+            MemoryAccess<B> memoryAccess,
+            Memory<B> memory,
+            DataType dataType,
+            int index,
+            int baseOffset) {
         long byteOffset = dataType.byteSize() * index;
         if (dataType == DataType.FP32) {
             memoryAccess.writeFloat(memory, byteOffset, 1.5f + baseOffset + index);
@@ -239,30 +237,41 @@ class MemoryOperationsComprehensiveTest {
         }
     }
 
-    private static <B> void assertValue(MemoryAccess<B> memoryAccess, Memory<B> memory, DataType dataType, int index) {
+    private static <B> void assertValue(
+            MemoryAccess<B> memoryAccess, Memory<B> memory, DataType dataType, int index) {
         assertValue(memoryAccess, memory, dataType, index, 0);
     }
 
-    private static <B> void assertValue(MemoryAccess<B> memoryAccess, Memory<B> memory, DataType dataType, int index, int baseOffset) {
+    private static <B> void assertValue(
+            MemoryAccess<B> memoryAccess,
+            Memory<B> memory,
+            DataType dataType,
+            int index,
+            int baseOffset) {
         long byteOffset = dataType.byteSize() * index;
         if (dataType == DataType.FP32) {
-            assertEquals(1.5f + baseOffset + index, memoryAccess.readFloat(memory, byteOffset), 0.0f);
+            assertEquals(
+                    1.5f + baseOffset + index, memoryAccess.readFloat(memory, byteOffset), 0.0f);
         } else if (dataType == DataType.FP64) {
-            assertEquals(2.5 + baseOffset + index, memoryAccess.readDouble(memory, byteOffset), 0.0);
+            assertEquals(
+                    2.5 + baseOffset + index, memoryAccess.readDouble(memory, byteOffset), 0.0);
         } else if (dataType == DataType.I64) {
             assertEquals(10000L + baseOffset + index, memoryAccess.readLong(memory, byteOffset));
         } else if (dataType == DataType.I32) {
             assertEquals(1000 + baseOffset + index, memoryAccess.readInt(memory, byteOffset));
         } else if (dataType == DataType.I16) {
-            assertEquals((short) (100 + baseOffset + index), memoryAccess.readShort(memory, byteOffset));
+            assertEquals(
+                    (short) (100 + baseOffset + index), memoryAccess.readShort(memory, byteOffset));
         } else if (dataType == DataType.I8) {
-            assertEquals((byte) (10 + baseOffset + index), memoryAccess.readByte(memory, byteOffset));
+            assertEquals(
+                    (byte) (10 + baseOffset + index), memoryAccess.readByte(memory, byteOffset));
         } else {
             throw new IllegalArgumentException("Unsupported data type: " + dataType);
         }
     }
 
-    private static <B> void assertFillValue(MemoryAccess<B> memoryAccess, Memory<B> memory, DataType dataType, int index) {
+    private static <B> void assertFillValue(
+            MemoryAccess<B> memoryAccess, Memory<B> memory, DataType dataType, int index) {
         long byteOffset = dataType.byteSize() * index;
         if (dataType == DataType.FP32) {
             assertEquals(1.5f, memoryAccess.readFloat(memory, byteOffset), 0.0f);
@@ -281,7 +290,8 @@ class MemoryOperationsComprehensiveTest {
         }
     }
 
-    private static <B> void fill(Memory<B> memory, MemoryOperations<B> memoryOperations, DataType dataType) {
+    private static <B> void fill(
+            Memory<B> memory, MemoryOperations<B> memoryOperations, DataType dataType) {
         long byteSize = memory.byteSize();
         if (dataType == DataType.FP32) {
             memoryOperations.fillFloat(memory, 0, byteSize, 1.5f);

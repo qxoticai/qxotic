@@ -1,4 +1,3 @@
-
 package ai.qxotic.jota.memory;
 
 import ai.qxotic.jota.BFloat16;
@@ -8,10 +7,10 @@ import ai.qxotic.jota.Shape;
 
 public final class MemoryHelpers {
 
-    private MemoryHelpers() {
-    }
+    private MemoryHelpers() {}
 
-    public static <B> MemoryView<B> full(MemoryContext<B> context, DataType dataType, long count, Number value) {
+    public static <B> MemoryView<B> full(
+            MemoryContext<B> context, DataType dataType, long count, Number value) {
         Shape shape = Shape.flat(count);
         MemoryAllocator<B> allocator = context.memoryAllocator();
         long byteSize = dataType.byteSizeFor(count);
@@ -35,7 +34,8 @@ public final class MemoryHelpers {
         } else if (dataType == DataType.FP64) {
             memoryOperations.fillDouble(memory, 0, byteSize, value.doubleValue());
         } else if (dataType == DataType.FP16) {
-            memoryOperations.fillShort(memory, 0, byteSize, Float.floatToFloat16(value.floatValue()));
+            memoryOperations.fillShort(
+                    memory, 0, byteSize, Float.floatToFloat16(value.floatValue()));
         } else if (dataType == DataType.BF16) {
             memoryOperations.fillShort(memory, 0, byteSize, BFloat16.fromFloat(value.byteValue()));
         } else {
@@ -72,7 +72,8 @@ public final class MemoryHelpers {
         return full(context, DataType.FP64, count, doubleValue);
     }
 
-    public static <B> MemoryView<B> full(MemoryContext<B> context, DataType dataType, Shape shape, Number value) {
+    public static <B> MemoryView<B> full(
+            MemoryContext<B> context, DataType dataType, Shape shape, Number value) {
         MemoryView<B> base = full(context, dataType, shape.size(), value);
         return base.view(shape);
     }
@@ -89,11 +90,13 @@ public final class MemoryHelpers {
         return full(context, dataType, count, 0);
     }
 
-    public static <B> MemoryView<B> zeros(MemoryContext<B> context, DataType dataType, Shape shape) {
+    public static <B> MemoryView<B> zeros(
+            MemoryContext<B> context, DataType dataType, Shape shape) {
         return full(context, dataType, shape, 0);
     }
 
-    public static <B> MemoryView<B> arange(MemoryContext<B> context, DataType dataType, long endExclusive) {
+    public static <B> MemoryView<B> arange(
+            MemoryContext<B> context, DataType dataType, long endExclusive) {
         if (dataType.isIntegral() || dataType == DataType.BOOL) {
             return arangeIntegral(context, dataType, 0L, endExclusive, 1L);
         } else if (dataType.isFloatingPoint()) {
@@ -107,25 +110,30 @@ public final class MemoryHelpers {
     // INTERNAL IMPLEMENTATION - Integral types
     // ============================================================
 
-    private static <B> MemoryView<B> arangeIntegral(MemoryContext<B> context, DataType dataType,
-                                                    long start, long end, long step) {
+    private static <B> MemoryView<B> arangeIntegral(
+            MemoryContext<B> context, DataType dataType, long start, long end, long step) {
         if (step == 0) {
             throw new IllegalArgumentException("step cannot be 0");
         }
         if (!dataType.isIntegral()) {
-            throw new IllegalArgumentException("Integral arange requires integral DataType, got: " + dataType);
+            throw new IllegalArgumentException(
+                    "Integral arange requires integral DataType, got: " + dataType);
         }
         if (!context.supportsDataType(dataType)) {
             throw new IllegalArgumentException(
-                "Context does not support " + dataType +
-                " (requires " + dataType.byteSize() + "-byte alignment, context has " +
-                context.memoryGranularity() + "-byte granularity)"
-            );
+                    "Context does not support "
+                            + dataType
+                            + " (requires "
+                            + dataType.byteSize()
+                            + "-byte alignment, context has "
+                            + context.memoryGranularity()
+                            + "-byte granularity)");
         }
 
         MemoryAccess<B> memoryAccess = context.memoryAccess();
         if (memoryAccess == null) {
-            throw new UnsupportedOperationException("Context does not support direct memory access");
+            throw new UnsupportedOperationException(
+                    "Context does not support direct memory access");
         }
 
         long count = arangeCountLong(start, end, step);
@@ -156,25 +164,30 @@ public final class MemoryHelpers {
     // INTERNAL IMPLEMENTATION - Floating-point types
     // ============================================================
 
-    private static <B> MemoryView<B> arangeFloat(MemoryContext<B> context, DataType dataType,
-                                                 double start, double end, double step) {
+    private static <B> MemoryView<B> arangeFloat(
+            MemoryContext<B> context, DataType dataType, double start, double end, double step) {
         if (step == 0.0) {
             throw new IllegalArgumentException("step cannot be 0");
         }
         if (!dataType.isFloatingPoint()) {
-            throw new IllegalArgumentException("Floating-point arange requires floating-point DataType, got: " + dataType);
+            throw new IllegalArgumentException(
+                    "Floating-point arange requires floating-point DataType, got: " + dataType);
         }
         if (!context.supportsDataType(dataType)) {
             throw new IllegalArgumentException(
-                "Context does not support " + dataType +
-                " (requires " + dataType.byteSize() + "-byte alignment, context has " +
-                context.memoryGranularity() + "-byte granularity)"
-            );
+                    "Context does not support "
+                            + dataType
+                            + " (requires "
+                            + dataType.byteSize()
+                            + "-byte alignment, context has "
+                            + context.memoryGranularity()
+                            + "-byte granularity)");
         }
 
         MemoryAccess<B> memoryAccess = context.memoryAccess();
         if (memoryAccess == null) {
-            throw new UnsupportedOperationException("Context does not support direct memory access");
+            throw new UnsupportedOperationException(
+                    "Context does not support direct memory access");
         }
 
         long count = arangeCountDouble(start, end, step);
@@ -200,8 +213,6 @@ public final class MemoryHelpers {
         }
         return view;
     }
-
-
 
     // ============================================================
     // HELPER METHODS
@@ -244,4 +255,3 @@ public final class MemoryHelpers {
         return (long) Math.ceil((start - end) / Math.abs(step));
     }
 }
-

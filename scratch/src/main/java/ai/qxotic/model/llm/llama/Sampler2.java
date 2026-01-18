@@ -4,7 +4,6 @@ import ai.qxotic.model.llm.Sampler;
 import ai.qxotic.span.FloatMatrixView;
 import ai.qxotic.span.FloatSpan;
 import ai.qxotic.span.KernelOps;
-
 import java.util.function.Function;
 import java.util.random.RandomGenerator;
 import java.util.random.RandomGeneratorFactory;
@@ -34,19 +33,20 @@ public interface Sampler2 extends Sampler<FloatSpan> {
                 // top-p (nucleus) sampling, clamping the least likely tokens to zero
                 innerSampler = new ToppSampler(vocabularySize, topp, rng);
             }
-            sampler = logits -> {
-                // apply the temperature to the logits
-                // TODO(peterssen): Derive kernelOps implementation from logits.
-                KernelOps<FloatSpan, FloatMatrixView> logitKernelOps = DefaultKernelOps.getKernelOps();
-                //logits.divideInPlace(0, logits.size(), temperature);
-                logitKernelOps.scale(logits, 1f / temperature, logits);
+            sampler =
+                    logits -> {
+                        // apply the temperature to the logits
+                        // TODO(peterssen): Derive kernelOps implementation from logits.
+                        KernelOps<FloatSpan, FloatMatrixView> logitKernelOps =
+                                DefaultKernelOps.getKernelOps();
+                        // logits.divideInPlace(0, logits.size(), temperature);
+                        logitKernelOps.scale(logits, 1f / temperature, logits);
 
-                // apply softmax to the logits to get the probabilities for next token
-                logitKernelOps.softMax(logits, logits);
-                return innerSampler.applyAsInt(logits);
-            };
+                        // apply softmax to the logits to get the probabilities for next token
+                        logitKernelOps.softMax(logits, logits);
+                        return innerSampler.applyAsInt(logits);
+                    };
         }
         return sampler;
     }
 }
-

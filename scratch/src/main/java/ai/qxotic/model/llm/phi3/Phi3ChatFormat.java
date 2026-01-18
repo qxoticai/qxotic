@@ -1,16 +1,13 @@
 package ai.qxotic.model.llm.phi3;
 
 import ai.qxotic.model.llm.ChatFormat;
+import ai.qxotic.tokenizers.IntSequence;
 import ai.qxotic.tokenizers.Tokenizer;
 import ai.qxotic.tokenizers.Vocabulary;
-import ai.qxotic.tokenizers.IntSequence;
-
 import java.util.OptionalInt;
 import java.util.Set;
 
-/**
- * Utility tailored for Phi3 instruct prompt format.
- */
+/** Utility tailored for Phi3 instruct prompt format. */
 public class Phi3ChatFormat extends ChatFormat {
 
     protected final int unknownToken;

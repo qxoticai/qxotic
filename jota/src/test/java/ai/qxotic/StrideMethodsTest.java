@@ -1,13 +1,14 @@
 package ai.qxotic;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.Stride;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
-
 /**
- * Comprehensive tests for Stride methods including rank, modeAt, flatten, rowMajor, columnMajor, etc.
+ * Comprehensive tests for Stride methods including rank, modeAt, flatten, rowMajor, columnMajor,
+ * etc.
  */
 class StrideMethodsTest {
 
@@ -19,7 +20,7 @@ class StrideMethodsTest {
         assertEquals(3, stride.flatRank());
         assertTrue(stride.isFlat());
         assertFalse(stride.isScalar());
-        assertArrayEquals(new long[]{6, 3, 1}, stride.toArray());
+        assertArrayEquals(new long[] {6, 3, 1}, stride.toArray());
     }
 
     @Test
@@ -31,7 +32,7 @@ class StrideMethodsTest {
         assertEquals(3, stride.flatRank());
         assertFalse(stride.isFlat());
         assertFalse(stride.isScalar());
-        assertArrayEquals(new long[]{12, 4, 1}, stride.toArray());
+        assertArrayEquals(new long[] {12, 4, 1}, stride.toArray());
     }
 
     @Test
@@ -42,7 +43,7 @@ class StrideMethodsTest {
         assertEquals(0, scalar.flatRank());
         assertTrue(scalar.isFlat());
         assertTrue(scalar.isScalar());
-        assertArrayEquals(new long[]{}, scalar.toArray());
+        assertArrayEquals(new long[] {}, scalar.toArray());
     }
 
     @Test
@@ -58,9 +59,9 @@ class StrideMethodsTest {
     void testFlatAtNegativeIndices() {
         Stride stride = Stride.flat(12, 4, 1);
 
-        assertEquals(1, stride.flatAt(-1));   // Last
-        assertEquals(4, stride.flatAt(-2));   // Second to last
-        assertEquals(12, stride.flatAt(-3));  // Third to last
+        assertEquals(1, stride.flatAt(-1)); // Last
+        assertEquals(4, stride.flatAt(-2)); // Second to last
+        assertEquals(12, stride.flatAt(-3)); // Third to last
     }
 
     @Test
@@ -93,7 +94,7 @@ class StrideMethodsTest {
         Stride mode1 = stride.modeAt(1);
         assertEquals(2, mode1.rank());
         assertTrue(mode1.isFlat());
-        assertArrayEquals(new long[]{4, 1}, mode1.toArray());
+        assertArrayEquals(new long[] {4, 1}, mode1.toArray());
     }
 
     @Test
@@ -114,7 +115,7 @@ class StrideMethodsTest {
         Stride stride = Stride.flat(12, 4, 1);
         Stride flattened = stride.flatten();
 
-        assertSame(stride, flattened);  // Should return same instance
+        assertSame(stride, flattened); // Should return same instance
     }
 
     @Test
@@ -126,7 +127,7 @@ class StrideMethodsTest {
         assertTrue(flattened.isFlat());
         assertEquals(3, flattened.rank());
         assertEquals(3, flattened.flatRank());
-        assertArrayEquals(new long[]{12, 4, 1}, flattened.toArray());
+        assertArrayEquals(new long[] {12, 4, 1}, flattened.toArray());
     }
 
     @Test
@@ -136,7 +137,7 @@ class StrideMethodsTest {
 
         assertTrue(stride.isFlat());
         assertEquals(3, stride.rank());
-        assertArrayEquals(new long[]{12, 4, 1}, stride.toArray());
+        assertArrayEquals(new long[] {12, 4, 1}, stride.toArray());
     }
 
     @Test
@@ -146,7 +147,7 @@ class StrideMethodsTest {
 
         assertTrue(stride.isFlat());
         assertEquals(3, stride.rank());
-        assertArrayEquals(new long[]{1, 2, 6}, stride.toArray());
+        assertArrayEquals(new long[] {1, 2, 6}, stride.toArray());
     }
 
     @Test
@@ -158,7 +159,7 @@ class StrideMethodsTest {
         assertFalse(stride.isFlat());
         assertEquals(2, stride.rank());
         assertEquals(3, stride.flatRank());
-        assertArrayEquals(new long[]{12, 4, 1}, stride.toArray());
+        assertArrayEquals(new long[] {12, 4, 1}, stride.toArray());
     }
 
     @Test
@@ -170,7 +171,7 @@ class StrideMethodsTest {
         assertFalse(stride.isFlat());
         assertEquals(2, stride.rank());
         assertEquals(3, stride.flatRank());
-        assertArrayEquals(new long[]{1, 2, 6}, stride.toArray());
+        assertArrayEquals(new long[] {1, 2, 6}, stride.toArray());
     }
 
     @Test
@@ -180,7 +181,7 @@ class StrideMethodsTest {
 
         assertTrue(stride.isScalar());
         assertEquals(0, stride.rank());
-        assertArrayEquals(new long[]{}, stride.toArray());
+        assertArrayEquals(new long[] {}, stride.toArray());
     }
 
     @Test
@@ -190,7 +191,7 @@ class StrideMethodsTest {
 
         assertTrue(stride.isScalar());
         assertEquals(0, stride.rank());
-        assertArrayEquals(new long[]{}, stride.toArray());
+        assertArrayEquals(new long[] {}, stride.toArray());
     }
 
     @Test
@@ -200,7 +201,7 @@ class StrideMethodsTest {
 
         assertEquals(2, stride.rank());
         assertEquals(3, stride.flatRank());
-        assertArrayEquals(new long[]{100, 10, 1}, stride.toArray());
+        assertArrayEquals(new long[] {100, 10, 1}, stride.toArray());
     }
 
     @Test
@@ -210,13 +211,13 @@ class StrideMethodsTest {
 
         assertEquals(2, stride.rank());
         assertEquals(4, stride.flatRank());
-        assertArrayEquals(new long[]{100, 10, 2, 1}, stride.toArray());
+        assertArrayEquals(new long[] {100, 10, 2, 1}, stride.toArray());
 
         // Test mode extraction
         Stride mode1 = stride.modeAt(1);
         assertEquals(2, mode1.rank());
         assertEquals(3, mode1.flatRank());
-        assertArrayEquals(new long[]{10, 2, 1}, mode1.toArray());
+        assertArrayEquals(new long[] {10, 2, 1}, mode1.toArray());
     }
 
     @Test
@@ -226,7 +227,7 @@ class StrideMethodsTest {
 
         assertEquals(shape.rank(), stride.rank());
         assertEquals(shape.flatRank(), stride.flatRank());
-        assertArrayEquals(new long[]{12, 4, 1}, stride.toArray());
+        assertArrayEquals(new long[] {12, 4, 1}, stride.toArray());
     }
 
     @Test
@@ -236,7 +237,7 @@ class StrideMethodsTest {
 
         assertEquals(shape.rank(), stride.rank());
         assertEquals(shape.flatRank(), stride.flatRank());
-        assertArrayEquals(new long[]{1, 2, 6}, stride.toArray());
+        assertArrayEquals(new long[] {1, 2, 6}, stride.toArray());
     }
 
     @Test
@@ -255,17 +256,18 @@ class StrideMethodsTest {
 
         assertEquals(2, stride.rank());
         assertEquals(3, stride.flatRank());
-        assertArrayEquals(new long[]{100, 10, 1}, stride.toArray());
+        assertArrayEquals(new long[] {100, 10, 1}, stride.toArray());
     }
 
     @Test
     void testSingleElementNormalization() {
-        // Single-element strides get unwrapped: nested(100, Stride.of(10), Stride.of(1)) → (100, 10, 1)
+        // Single-element strides get unwrapped: nested(100, Stride.of(10), Stride.of(1)) → (100,
+        // 10, 1)
         Stride stride = Stride.of(100, Stride.of(10L), Stride.of(1L));
 
         assertTrue(stride.isFlat());
         assertEquals(3, stride.rank());
-        assertArrayEquals(new long[]{100, 10, 1}, stride.toArray());
+        assertArrayEquals(new long[] {100, 10, 1}, stride.toArray());
     }
 
     @Test
@@ -285,7 +287,7 @@ class StrideMethodsTest {
         assertEquals(3, stride.rank());
         assertEquals(3, stride.flatRank());
         assertTrue(stride.isFlat());
-        assertArrayEquals(new long[]{12, 4, 1}, stride.toArray());
+        assertArrayEquals(new long[] {12, 4, 1}, stride.toArray());
     }
 
     @Test
@@ -295,7 +297,7 @@ class StrideMethodsTest {
 
         assertEquals(2, stride.rank());
         assertEquals(3, stride.flatRank());
-        assertArrayEquals(new long[]{100, 10, 1}, stride.toArray());
+        assertArrayEquals(new long[] {100, 10, 1}, stride.toArray());
     }
 
     @Test
@@ -305,7 +307,7 @@ class StrideMethodsTest {
 
         assertEquals(0, stride.rank());
         assertEquals(0, stride.flatRank());
-        assertArrayEquals(new long[]{}, stride.toArray());
+        assertArrayEquals(new long[] {}, stride.toArray());
     }
 
     @Test
@@ -316,66 +318,96 @@ class StrideMethodsTest {
 
         assertEquals(1, stride1.rank());
         assertEquals(1, stride1.flatRank());
-        assertArrayEquals(new long[]{12}, stride1.toArray());
+        assertArrayEquals(new long[] {12}, stride1.toArray());
 
         assertEquals(1, stride2.rank());
         assertEquals(1, stride2.flatRank());
-        assertArrayEquals(new long[]{12}, stride2.toArray());
+        assertArrayEquals(new long[] {12}, stride2.toArray());
     }
 
     @Test
     void testStrideEmptyIdentifiersNotAllowed() {
         // Empty identifiers should throw an exception
-        assertThrows(IllegalArgumentException.class, () -> {
-            Stride.pattern("(,)", 12, 4);
-        }, "Empty identifiers should not be allowed");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Stride.pattern("(,)", 12, 4);
+                },
+                "Empty identifiers should not be allowed");
 
-        assertThrows(IllegalArgumentException.class, () -> {
-            Stride.pattern("(, (, ))", 100, 10, 1);
-        }, "Empty identifiers should not be allowed");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Stride.pattern("(, (, ))", 100, 10, 1);
+                },
+                "Empty identifiers should not be allowed");
 
-        assertThrows(IllegalArgumentException.class, () -> {
-            Stride.pattern("(, (, ))", 100, 10, 1);
-        }, "Empty identifiers should not be allowed");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Stride.pattern("(, (, ))", 100, 10, 1);
+                },
+                "Empty identifiers should not be allowed");
     }
 
     @Test
     void testStrideMalformedPatterns() {
         // Empty nested brackets (()) are not allowed
-        assertThrows(IllegalArgumentException.class, () -> {
-            Stride.pattern("(())");
-        }, "Empty nested brackets should not be allowed");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Stride.pattern("(())");
+                },
+                "Empty nested brackets should not be allowed");
 
         // Empty nested brackets as part of a sequence
-        assertThrows(IllegalArgumentException.class, () -> {
-            Stride.pattern("((), _)", 12);
-        }, "Empty nested brackets in sequence should not be allowed");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Stride.pattern("((), _)", 12);
+                },
+                "Empty nested brackets in sequence should not be allowed");
 
-        assertThrows(IllegalArgumentException.class, () -> {
-            Stride.pattern("(_, ())", 12);
-        }, "Empty nested brackets in sequence should not be allowed");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Stride.pattern("(_, ())", 12);
+                },
+                "Empty nested brackets in sequence should not be allowed");
     }
 
     @Test
     void testStrideNonNormalizedPatterns() {
         // Single-element nested brackets (( _ )) are not normalized
-        assertThrows(IllegalArgumentException.class, () -> {
-            Stride.pattern("((_))", 12);
-        }, "Single-element nested brackets should be rejected as non-normalized");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Stride.pattern("((_))", 12);
+                },
+                "Single-element nested brackets should be rejected as non-normalized");
 
         // ((s)) should also be rejected
-        assertThrows(IllegalArgumentException.class, () -> {
-            Stride.pattern("((stride))", 12);
-        }, "Single-element nested brackets should be rejected as non-normalized");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Stride.pattern("((stride))", 12);
+                },
+                "Single-element nested brackets should be rejected as non-normalized");
 
         // More deeply nested single elements
-        assertThrows(IllegalArgumentException.class, () -> {
-            Stride.pattern("(((_)))", 12);
-        }, "Deeply nested single elements should be rejected");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Stride.pattern("(((_)))", 12);
+                },
+                "Deeply nested single elements should be rejected");
 
         // Single element nested within a valid structure
-        assertThrows(IllegalArgumentException.class, () -> {
-            Stride.pattern("(s1, ((s2)))", 12, 4);
-        }, "Single-element nested brackets in sequence should be rejected");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Stride.pattern("(s1, ((s2)))", 12, 4);
+                },
+                "Single-element nested brackets in sequence should be rejected");
     }
 }

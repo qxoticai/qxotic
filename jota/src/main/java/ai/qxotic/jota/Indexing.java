@@ -1,12 +1,10 @@
-
 package ai.qxotic.jota;
 
 import ai.qxotic.jota.memory.MemoryView;
 
 public final class Indexing {
 
-    private Indexing() {
-    }
+    private Indexing() {}
 
     public static long[] linearToCoord(Shape shape, long linearIndex) {
         long[] dims = shape.toArray();
@@ -36,7 +34,10 @@ public final class Indexing {
         long[] dims = shape.toArray();
         if (coord.length != dims.length) {
             throw new IllegalArgumentException(
-                    "Coordinate flat rank " + coord.length + " does not match shape flat rank " + dims.length);
+                    "Coordinate flat rank "
+                            + coord.length
+                            + " does not match shape flat rank "
+                            + dims.length);
         }
         if (dims.length == 0) {
             return 0;
@@ -47,7 +48,8 @@ public final class Indexing {
             long dim = dims[i];
             long value = coord[i];
             if (value < 0 || value >= dim) {
-                throw new IllegalArgumentException("Coordinate out of bounds at axis " + i + ": " + value);
+                throw new IllegalArgumentException(
+                        "Coordinate out of bounds at axis " + i + ": " + value);
             }
             linear = Math.multiplyExact(linear, dim) + value;
         }
@@ -58,7 +60,10 @@ public final class Indexing {
         int flatRank = stride.flatRank();
         if (coord.length != flatRank) {
             throw new IllegalArgumentException(
-                    "Coordinate flat rank " + coord.length + " does not match stride flat rank " + flatRank);
+                    "Coordinate flat rank "
+                            + coord.length
+                            + " does not match stride flat rank "
+                            + flatRank);
         }
         long offset = 0;
         for (int i = 0; i < flatRank; i++) {
@@ -72,7 +77,10 @@ public final class Indexing {
         int flatRank = stride.flatRank();
         if (coord.length != flatRank) {
             throw new IllegalArgumentException(
-                    "Coordinate flat rank " + coord.length + " does not match stride flat rank " + flatRank);
+                    "Coordinate flat rank "
+                            + coord.length
+                            + " does not match stride flat rank "
+                            + flatRank);
         }
         long offset = view.byteOffset();
         for (int i = 0; i < flatRank; i++) {
@@ -81,12 +89,16 @@ public final class Indexing {
         return offset;
     }
 
-    public static long linearToOffset(Shape shape, Stride stride, DataType dataType, long linearIndex) {
+    public static long linearToOffset(
+            Shape shape, Stride stride, DataType dataType, long linearIndex) {
         long[] dims = shape.toArray();
         long[] strides = stride.toArray();
         if (dims.length != strides.length) {
             throw new IllegalArgumentException(
-                    "Shape flat rank " + dims.length + " does not match stride flat rank " + strides.length);
+                    "Shape flat rank "
+                            + dims.length
+                            + " does not match stride flat rank "
+                            + strides.length);
         }
         if (dims.length == 0) {
             if (linearIndex != 0) {
@@ -116,7 +128,8 @@ public final class Indexing {
     }
 
     public static long linearToOffset(MemoryView<?> view, long linearIndex) {
-        long relativeOffset = linearToOffset(view.shape(), view.stride(), view.dataType(), linearIndex);
+        long relativeOffset =
+                linearToOffset(view.shape(), view.stride(), view.dataType(), linearIndex);
         return view.byteOffset() + relativeOffset;
     }
 }

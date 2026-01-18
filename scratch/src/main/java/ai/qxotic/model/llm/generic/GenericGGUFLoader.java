@@ -1,7 +1,7 @@
 package ai.qxotic.model.llm.generic;
 
-import ai.qxotic.model.llm.*;
 import ai.qxotic.format.gguf.GGUF;
+import ai.qxotic.model.llm.*;
 import ai.qxotic.model.llm.apertus.ApertusChatFormat;
 import ai.qxotic.model.llm.gemma3.GemmaChatFormat;
 import ai.qxotic.model.llm.granite.GraniteChatFormat;
@@ -10,10 +10,10 @@ import ai.qxotic.model.llm.mistral.MistralChatFormat;
 import ai.qxotic.model.llm.phi3.Phi3ChatFormat;
 import ai.qxotic.model.llm.qwen3.DeepSeekFormat;
 import ai.qxotic.tokenizers.Tokenizer;
-
 import java.util.stream.Stream;
 
-public class GenericGGUFLoader extends AbstractGGUFLoader<Model<Object, Object, Object>, Object, Object, Object> {
+public class GenericGGUFLoader
+        extends AbstractGGUFLoader<Model<Object, Object, Object>, Object, Object, Object> {
 
     @Override
     public Model loadModel(Object configuration) {
@@ -56,7 +56,8 @@ public class GenericGGUFLoader extends AbstractGGUFLoader<Model<Object, Object, 
         }
 
         // Phi 3 +
-        if (Stream.of("<|system|>", "<|assistant|>", "<|user|>", "<|end|>").allMatch(chatTemplate::contains)) {
+        if (Stream.of("<|system|>", "<|assistant|>", "<|user|>", "<|end|>")
+                .allMatch(chatTemplate::contains)) {
             return new Phi3ChatFormat(tokenizer);
         }
 
@@ -66,7 +67,8 @@ public class GenericGGUFLoader extends AbstractGGUFLoader<Model<Object, Object, 
         }
 
         // Llama 3 +
-        if (Stream.of("<|start_header_id|>", "<|end_header_id|>", "<|eot_id|>").allMatch(chatTemplate::contains)) {
+        if (Stream.of("<|start_header_id|>", "<|end_header_id|>", "<|eot_id|>")
+                .allMatch(chatTemplate::contains)) {
             return new Llama3ChatFormat(tokenizer);
         }
 
@@ -91,9 +93,10 @@ public class GenericGGUFLoader extends AbstractGGUFLoader<Model<Object, Object, 
         }
 
         if (Stream.of(
-                "<|system_start|>", "<|system_end|>",
-                "<|user_start|>", "<|user_end|>",
-                "<|assistant_start|>", "<|assistant_end|>").allMatch(chatTemplate::contains)) {
+                        "<|system_start|>", "<|system_end|>",
+                        "<|user_start|>", "<|user_end|>",
+                        "<|assistant_start|>", "<|assistant_end|>")
+                .allMatch(chatTemplate::contains)) {
             return new ApertusChatFormat(tokenizer);
         }
 

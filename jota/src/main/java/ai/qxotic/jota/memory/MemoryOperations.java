@@ -4,17 +4,20 @@ import java.lang.foreign.MemorySegment;
 
 public interface MemoryOperations<B> {
 
-    void copy(Memory<B> src, long srcByteOffset,
-              Memory<B> dst, long dstByteOffset,
-              long byteSize);
+    void copy(Memory<B> src, long srcByteOffset, Memory<B> dst, long dstByteOffset, long byteSize);
 
-    void copyFromNative(Memory<MemorySegment> src, long srcByteOffset,
-                        Memory<B> dst, long dstByteOffset,
-                        long byteSize);
+    void copyFromNative(
+            Memory<MemorySegment> src,
+            long srcByteOffset,
+            Memory<B> dst,
+            long dstByteOffset,
+            long byteSize);
 
     void copyToNative(
-            Memory<B> src, long srcByteOffset,
-            Memory<MemorySegment> dst, long dstByteOffset,
+            Memory<B> src,
+            long srcByteOffset,
+            Memory<MemorySegment> dst,
+            long dstByteOffset,
             long byteSize);
 
     void fillByte(Memory<B> memory, long byteOffset, long byteSize, byte byteValue);
@@ -34,8 +37,12 @@ public interface MemoryOperations<B> {
     }
 
     static <S, T> void copy(
-            MemoryOperations<S> srcOps, Memory<S> src, long srcByteOffset,
-            MemoryOperations<T> dstOps, Memory<T> dst, long dstByteOffset,
+            MemoryOperations<S> srcOps,
+            Memory<S> src,
+            long srcByteOffset,
+            MemoryOperations<T> dstOps,
+            Memory<T> dst,
+            long dstByteOffset,
             long byteSize,
             Memory<MemorySegment> buffer) {
         if (byteSize == 0) {
@@ -53,4 +60,3 @@ public interface MemoryOperations<B> {
         }
     }
 }
-

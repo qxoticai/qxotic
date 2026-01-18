@@ -11,7 +11,11 @@ public final class StrideFactory {
     public static Stride template(NestedTuple<?> template, long... strides) {
         if (template.flatRank() != strides.length) {
             throw new IllegalArgumentException(
-                    "Template has " + template.flatRank() + " dimensions but " + strides.length + " were provided");
+                    "Template has "
+                            + template.flatRank()
+                            + " dimensions but "
+                            + strides.length
+                            + " were provided");
         }
         if (strides.length == 0) {
             return StrideImpl.scalar();
@@ -44,7 +48,8 @@ public final class StrideFactory {
             }
             return StrideImpl.of(strides, nest);
         } catch (ArrayIndexOutOfBoundsException e) {
-            throw new IllegalArgumentException("Pattern has more elements than provided strides", e);
+            throw new IllegalArgumentException(
+                    "Pattern has more elements than provided strides", e);
         }
     }
 }

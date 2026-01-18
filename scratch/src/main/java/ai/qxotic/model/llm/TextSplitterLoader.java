@@ -9,7 +9,6 @@ import ai.qxotic.model.llm.llama.LlamaBPETextSplitterFactory;
 import ai.qxotic.model.llm.qwen2.Qwen2TextSplitterFactory;
 import ai.qxotic.model.llm.smollm2.SmolLMTextSplitterFactory;
 import ai.qxotic.tokenizers.TextSplitter;
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,15 +24,15 @@ public class TextSplitterLoader {
 
     private static Map<String, TextSplitterFactory> knownTextSplitterFactories() {
         Map<String, TextSplitterFactory> factories = new HashMap<>();
-        List<TextSplitterFactory> knownFactories = List.of(
-            new LlamaBPETextSplitterFactory(),
-            new DBRXTextSplitterFactory(),
-            new SmolLMTextSplitterFactory(),
-            new DefaultTextSplitterFactory(),
-            new Qwen2TextSplitterFactory(),
-            new RefactTextSplitterFactory(),
-            new TekkenTextSplitterFactory()
-        );
+        List<TextSplitterFactory> knownFactories =
+                List.of(
+                        new LlamaBPETextSplitterFactory(),
+                        new DBRXTextSplitterFactory(),
+                        new SmolLMTextSplitterFactory(),
+                        new DefaultTextSplitterFactory(),
+                        new Qwen2TextSplitterFactory(),
+                        new RefactTextSplitterFactory(),
+                        new TekkenTextSplitterFactory());
         for (var f : knownFactories) {
             factories.put(f.getTextSplitterName(), f);
         }

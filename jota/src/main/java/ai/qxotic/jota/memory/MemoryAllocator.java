@@ -14,16 +14,16 @@ public interface MemoryAllocator<B> {
     }
 
     /**
-     * Returns the memory allocation granularity in bytes.
-     * This is the size of each element in the backing buffer.
+     * Returns the memory allocation granularity in bytes. This is the size of each element in the
+     * backing buffer.
      *
      * @return the allocation granularity in bytes
      */
     long memoryGranularity();
 
     /**
-     * Checks if this allocator can allocate memory for the given DataType.
-     * A DataType is supported if its byteSize is a multiple of the memory granularity.
+     * Checks if this allocator can allocate memory for the given DataType. A DataType is supported
+     * if its byteSize is a multiple of the memory granularity.
      *
      * @param dataType the data type to check
      * @return true if this allocator can allocate the given DataType
@@ -55,4 +55,3 @@ public interface MemoryAllocator<B> {
         return allocateMemory(dataType, shape, defaultByteAlignment());
     }
 }
-

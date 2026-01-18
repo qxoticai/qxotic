@@ -1,7 +1,6 @@
 package ai.qxotic.model.llm.llama;
 
 import ai.qxotic.span.FloatSpan;
-
 import java.nio.ByteBuffer;
 
 public abstract class ByteBufferSpan implements FloatSpan {

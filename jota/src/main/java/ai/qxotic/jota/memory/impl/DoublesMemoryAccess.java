@@ -12,8 +12,7 @@ final class DoublesMemoryAccess implements MemoryAccess<double[]> {
         return INSTANCE;
     }
 
-    private DoublesMemoryAccess() {
-    }
+    private DoublesMemoryAccess() {}
 
     @Override
     public byte readByte(Memory<double[]> memory, long byteOffset) {

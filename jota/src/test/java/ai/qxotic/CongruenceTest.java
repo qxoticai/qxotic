@@ -1,15 +1,13 @@
 package ai.qxotic;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.Stride;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
-
-/**
- * Tests for isCongruent() method and Layout flatRank validation.
- */
+/** Tests for isCongruent() method and Layout flatRank validation. */
 class CongruenceTest {
 
     @Test
@@ -86,9 +84,11 @@ class CongruenceTest {
     void testCongruenceNull() {
         Shape shape = Shape.flat(2, 3, 4);
 
-        assertThrows(NullPointerException.class, () -> {
-            shape.isCongruentWith(null);
-        });
+        assertThrows(
+                NullPointerException.class,
+                () -> {
+                    shape.isCongruentWith(null);
+                });
     }
 
     @Test
@@ -101,7 +101,8 @@ class CongruenceTest {
         assertTrue(shape.isCongruentWith(stride));
 
         // Check layout-to-layout congruence
-        Layout layout2 = Layout.of(Shape.of(10, Shape.of(20L, 30L)), Stride.of(600, Stride.of(30L, 1L)));
+        Layout layout2 =
+                Layout.of(Shape.of(10, Shape.of(20L, 30L)), Stride.of(600, Stride.of(30L, 1L)));
         assertTrue(layout.isCongruentWith(layout2));
     }
 
@@ -128,9 +129,12 @@ class CongruenceTest {
         Shape shape = Shape.flat(2, 3);
         Stride stride = Stride.flat(12, 4, 1);
 
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> {
-            Layout.of(shape, stride);
-        });
+        IllegalArgumentException ex =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> {
+                            Layout.of(shape, stride);
+                        });
 
         assertTrue(ex.getMessage().contains("same flatRank"));
         assertTrue(ex.getMessage().contains("shape.flatRank()=2"));

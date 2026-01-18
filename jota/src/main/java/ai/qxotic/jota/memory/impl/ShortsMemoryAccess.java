@@ -12,8 +12,7 @@ final class ShortsMemoryAccess implements MemoryAccess<short[]> {
         return INSTANCE;
     }
 
-    private ShortsMemoryAccess() {
-    }
+    private ShortsMemoryAccess() {}
 
     @Override
     public byte readByte(Memory<short[]> memory, long byteOffset) {

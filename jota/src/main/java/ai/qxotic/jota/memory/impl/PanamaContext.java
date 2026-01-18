@@ -2,14 +2,14 @@ package ai.qxotic.jota.memory.impl;
 
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.*;
-import ai.qxotic.jota.memory.*;
-
 import java.lang.foreign.MemorySegment;
 
 final class PanamaContext implements MemoryContext<MemorySegment> {
 
-    private final FloatOperations<MemorySegment> rawOperations = new PanamaFloatOperations(PanamaMemoryAccess.instance());
-    private final ScopedMemoryAllocatorArena<MemorySegment> allocatorArena = MemoryAllocatorFactory.newPanamaArena();
+    private final FloatOperations<MemorySegment> rawOperations =
+            new PanamaFloatOperations(PanamaMemoryAccess.instance());
+    private final ScopedMemoryAllocatorArena<MemorySegment> allocatorArena =
+            MemoryAllocatorFactory.newPanamaArena();
 
     @Override
     public Device device() {

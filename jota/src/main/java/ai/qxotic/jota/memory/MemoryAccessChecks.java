@@ -28,8 +28,7 @@ public final class MemoryAccessChecks {
     private static final String MODE_PROPERTY = "jota.memory.checks";
     private static final Mode MODE = resolveMode(System.getProperty(MODE_PROPERTY));
 
-    private MemoryAccessChecks() {
-    }
+    private MemoryAccessChecks() {}
 
     public static Mode mode() {
         return MODE;

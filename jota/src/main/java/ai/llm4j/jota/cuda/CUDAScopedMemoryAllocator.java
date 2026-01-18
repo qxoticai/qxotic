@@ -1,13 +1,13 @@
 package ai.llm4j.jota.cuda;
 
+import static jcuda.driver.JCudaDriver.cuMemAlloc;
+import static jcuda.driver.JCudaDriver.cuMemFree;
+
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.ScopedMemory;
 import ai.qxotic.jota.memory.ScopedMemoryAllocator;
 import jcuda.driver.CUdeviceptr;
 import jcuda.driver.CUresult;
-
-import static jcuda.driver.JCudaDriver.cuMemAlloc;
-import static jcuda.driver.JCudaDriver.cuMemFree;
 
 public final class CUDAScopedMemoryAllocator implements ScopedMemoryAllocator<CUdeviceptr> {
 
@@ -87,10 +87,7 @@ public final class CUDAScopedMemoryAllocator implements ScopedMemoryAllocator<CU
 
         @Override
         public String toString() {
-            return "CUDAScopedMemory{" +
-                    "size=" + byteSize +
-                    ", device=" + device() +
-                    '}';
+            return "CUDAScopedMemory{" + "size=" + byteSize + ", device=" + device() + '}';
         }
     }
 }

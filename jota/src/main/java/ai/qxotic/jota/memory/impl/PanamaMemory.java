@@ -2,7 +2,6 @@ package ai.qxotic.jota.memory.impl;
 
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.Memory;
-
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
 
@@ -53,10 +52,11 @@ final class PanamaMemory implements Memory<MemorySegment> {
 
     @Override
     public String toString() {
-        StringBuilder sb = new StringBuilder("Memory{MemorySegment, byteSize=")
-                .append(byteSize())
-                .append(", device=")
-                .append(device());
+        StringBuilder sb =
+                new StringBuilder("Memory{MemorySegment, byteSize=")
+                        .append(byteSize())
+                        .append(", device=")
+                        .append(device());
         if (isReadOnly()) {
             sb.append(", readOnly=true");
         }

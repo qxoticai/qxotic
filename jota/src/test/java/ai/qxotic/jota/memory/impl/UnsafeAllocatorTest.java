@@ -1,12 +1,11 @@
 package ai.qxotic.jota.memory.impl;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.ScopedMemory;
-import org.junit.jupiter.api.Test;
-
 import java.lang.foreign.MemorySegment;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
 
 class UnsafeAllocatorTest {
 
@@ -25,8 +24,10 @@ class UnsafeAllocatorTest {
 
     @Test
     void testBadAlignment() {
-        for (long badAlignment : new long[]{-1, 0, 3, 17, 69}) {
-            assertThrows(IllegalArgumentException.class, () -> unsafeAllocator.allocateMemory(128, badAlignment));
+        for (long badAlignment : new long[] {-1, 0, 3, 17, 69}) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> unsafeAllocator.allocateMemory(128, badAlignment));
         }
     }
 
@@ -43,7 +44,8 @@ class UnsafeAllocatorTest {
 
         memory.close();
 
-        // Verify memory was freed by trying to allocate at same address (this is a bit implementation-dependent)
+        // Verify memory was freed by trying to allocate at same address (this is a bit
+        // implementation-dependent)
         try (ScopedMemory<MemorySegment> newMemory = UnsafeAllocator.INSTANCE.allocateMemory(100)) {
             assertNotEquals(address, newMemory.base().address());
         }

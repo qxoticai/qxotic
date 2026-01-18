@@ -1,27 +1,29 @@
 package ai.qxotic.tokenizers.impl;
 
 import ai.qxotic.tokenizers.*;
-
 import java.util.List;
 
 /**
- * Abstract base implementation of the {@link Tokenizer} interface that provides a
- * configurable tokenization pipeline with normalization and splitting steps.
+ * Abstract base implementation of the {@link Tokenizer} interface that provides a configurable
+ * tokenization pipeline with normalization and splitting steps.
  *
  * <p>The tokenization process follows these steps:
+ *
  * <ol>
- *   <li>Text normalization using a configured {@link Normalizer}</li>
- *   <li>Text splitting into chunks using a configured {@link TextSplitter}</li>
- *   <li>Token encoding for each chunk using the implementation-specific algorithm</li>
+ *   <li>Text normalization using a configured {@link Normalizer}
+ *   <li>Text splitting into chunks using a configured {@link TextSplitter}
+ *   <li>Token encoding for each chunk using the implementation-specific algorithm
  * </ol>
  *
  * <p>Implementations need to provide:
+ *
  * <ul>
- *   <li>The core encoding logic via {@link #encodeImpl(CharSequence)}</li>
- *   <li>The decoding logic via {@link #decodeBytes(IntSequence)}</li>
+ *   <li>The core encoding logic via {@link #encodeImpl(CharSequence)}
+ *   <li>The decoding logic via {@link #decodeBytes(IntSequence)}
  * </ul>
  *
  * <p>Example usage:
+ *
  * <pre>{@code
  * class MyTokenizer extends AbstractTokenizer {
  *     public MyTokenizer(Vocabulary vocab) {
@@ -41,19 +43,13 @@ import java.util.List;
  * }</pre>
  */
 public abstract class AbstractTokenizer implements Tokenizer {
-    /**
-     * The vocabulary used for token lookup.
-     */
+    /** The vocabulary used for token lookup. */
     protected final Vocabulary vocabulary;
 
-    /**
-     * The normalizer used for text preprocessing.
-     */
+    /** The normalizer used for text preprocessing. */
     protected final Normalizer normalizer;
 
-    /**
-     * The splitter used to break text into chunks.
-     */
+    /** The splitter used to break text into chunks. */
     protected final TextSplitter splitter;
 
     /**
@@ -61,10 +57,11 @@ public abstract class AbstractTokenizer implements Tokenizer {
      *
      * @param vocabulary the vocabulary for token lookup
      * @param normalizer the normalizer for text preprocessing
-     * @param splitter   the splitter for breaking text into chunks
+     * @param splitter the splitter for breaking text into chunks
      * @throws NullPointerException if any parameter is null
      */
-    protected AbstractTokenizer(Vocabulary vocabulary, Normalizer normalizer, TextSplitter splitter) {
+    protected AbstractTokenizer(
+            Vocabulary vocabulary, Normalizer normalizer, TextSplitter splitter) {
         this.vocabulary = vocabulary;
         this.normalizer = normalizer;
         this.splitter = splitter;
@@ -92,9 +89,13 @@ public abstract class AbstractTokenizer implements Tokenizer {
         List<CharSequence> chunks = splitter.apply(normalizedPart);
 
         assert CharSequence.compare(
-                normalizedPart,
-                chunks.stream().reduce(new StringBuilder(), StringBuilder::append, StringBuilder::append)
-        ) == 0;
+                        normalizedPart,
+                        chunks.stream()
+                                .reduce(
+                                        new StringBuilder(),
+                                        StringBuilder::append,
+                                        StringBuilder::append))
+                == 0;
 
         for (CharSequence chunk : chunks) {
             tokens.addAll(encodeImpl(chunk));
@@ -103,9 +104,8 @@ public abstract class AbstractTokenizer implements Tokenizer {
     }
 
     /**
-     * Implements the core encoding logic for a chunk of text. This method is called
-     * after normalization and splitting, and should implement the actual token
-     * generation algorithm.
+     * Implements the core encoding logic for a chunk of text. This method is called after
+     * normalization and splitting, and should implement the actual token generation algorithm.
      *
      * @param text the chunk of text to encode
      * @return sequence of token IDs representing the text

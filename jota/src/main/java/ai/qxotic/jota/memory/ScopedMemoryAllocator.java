@@ -11,7 +11,8 @@ public interface ScopedMemoryAllocator<B> extends MemoryAllocator<B> {
         return allocateMemory(byteSize, defaultByteAlignment());
     }
 
-    default ScopedMemory<B> allocateMemory(DataType dataType, long elementCount, long byteAlignment) {
+    default ScopedMemory<B> allocateMemory(
+            DataType dataType, long elementCount, long byteAlignment) {
         long byteSize = dataType.byteSizeFor(elementCount);
         return allocateMemory(byteSize, byteAlignment);
     }

@@ -1,7 +1,6 @@
 package ai.qxotic.model.llm.llama;
 
 import ai.qxotic.span.FloatSpan;
-
 import java.util.stream.IntStream;
 
 public final class ArraySpan implements FloatSpan {
@@ -12,7 +11,7 @@ public final class ArraySpan implements FloatSpan {
 
     ArraySpan(float[] values, int offset, int size) {
         Util.checkBounds(0 <= size && size <= values.length, "invalid size");
-        //Util.checkArg(0 <= offset && offset <= size, "invalid offset");
+        // Util.checkArg(0 <= offset && offset <= size, "invalid offset");
         Util.checkBounds(offset <= values.length - size, "slice ouf of bounds");
         this.values = values;
         this.offset = offset;

@@ -13,9 +13,11 @@ class StreamingDecoder {
     private static final ByteBuffer EMPTY = ByteBuffer.allocate(0);
 
     public StreamingDecoder() {
-        this.decoder = StandardCharsets.UTF_8.newDecoder()
-                .onMalformedInput(CodingErrorAction.REPLACE)
-                .onMalformedInput(CodingErrorAction.REPLACE);
+        this.decoder =
+                StandardCharsets.UTF_8
+                        .newDecoder()
+                        .onMalformedInput(CodingErrorAction.REPLACE)
+                        .onMalformedInput(CodingErrorAction.REPLACE);
         this.remainingBytes = EMPTY;
     }
 

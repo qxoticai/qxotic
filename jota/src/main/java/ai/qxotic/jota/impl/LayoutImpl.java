@@ -3,7 +3,6 @@ package ai.qxotic.jota.impl;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.Stride;
-
 import java.util.Objects;
 
 final class LayoutImpl implements Layout {
@@ -19,10 +18,16 @@ final class LayoutImpl implements Layout {
 
         if (shape.flatRank() != stride.flatRank()) {
             throw new IllegalArgumentException(
-                "Shape and stride must have the same flatRank: " +
-                "shape.flatRank()=" + shape.flatRank() +
-                " stride.flatRank()=" + stride.flatRank() +
-                " (shape=" + shape + " stride=" + stride + ")");
+                    "Shape and stride must have the same flatRank: "
+                            + "shape.flatRank()="
+                            + shape.flatRank()
+                            + " stride.flatRank()="
+                            + stride.flatRank()
+                            + " (shape="
+                            + shape
+                            + " stride="
+                            + stride
+                            + ")");
         }
 
         // Note: We allow different nesting structures as long as flatRank matches,
@@ -65,7 +70,7 @@ final class LayoutImpl implements Layout {
     public boolean isCongruentWith(Layout other) {
         Objects.requireNonNull(other);
         return this.shape.isCongruentWith(other.shape())
-            && this.stride.isCongruentWith(other.stride());
+                && this.stride.isCongruentWith(other.stride());
     }
 
     @Override
