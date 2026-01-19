@@ -1,6 +1,5 @@
 package ai.qxotic.jota.memory;
 
-import ai.qxotic.jota.*;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.memory.impl.ContextFactory;
 import ai.qxotic.jota.memory.impl.MemoryAllocatorFactory;
@@ -10,7 +9,7 @@ import java.util.stream.Stream;
 public abstract class AbstractMemoryTest {
 
     public static Stream<MemoryContext<?>> onHeapContexts() {
-        return contextSuppliers(
+        return suppliedBy(
                 ContextFactory::ofBytes,
                 ContextFactory::ofShorts,
                 ContextFactory::ofInts,
@@ -20,7 +19,7 @@ public abstract class AbstractMemoryTest {
     }
 
     public static Stream<MemoryContext<?>> nativeContexts() {
-        return contextSuppliers(
+        return suppliedBy(
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
                 ContextFactory::ofMemorySegment);
     }
@@ -30,7 +29,7 @@ public abstract class AbstractMemoryTest {
     }
 
     public static Stream<MemoryContext<?>> contextsSupportingF32() {
-        return contextSuppliers(
+        return suppliedBy(
                 ContextFactory::ofBytes,
                 ContextFactory::ofFloats,
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
@@ -39,7 +38,7 @@ public abstract class AbstractMemoryTest {
     }
 
     public static Stream<MemoryContext<?>> contextsSupportingF64() {
-        return contextSuppliers(
+        return suppliedBy(
                 ContextFactory::ofBytes,
                 ContextFactory::ofDoubles,
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
@@ -48,7 +47,7 @@ public abstract class AbstractMemoryTest {
     }
 
     public static Stream<MemoryContext<?>> contextsSupportingI8() {
-        return contextSuppliers(
+        return suppliedBy(
                 ContextFactory::ofBytes,
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
@@ -56,7 +55,7 @@ public abstract class AbstractMemoryTest {
     }
 
     public static Stream<MemoryContext<?>> contextsSupportingI16() {
-        return contextSuppliers(
+        return suppliedBy(
                 ContextFactory::ofBytes,
                 ContextFactory::ofShorts,
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
@@ -65,7 +64,7 @@ public abstract class AbstractMemoryTest {
     }
 
     public static Stream<MemoryContext<?>> contextsSupportingI32() {
-        return contextSuppliers(
+        return suppliedBy(
                 ContextFactory::ofInts,
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
@@ -73,7 +72,7 @@ public abstract class AbstractMemoryTest {
     }
 
     public static Stream<MemoryContext<?>> contextsSupportingI64() {
-        return contextSuppliers(
+        return suppliedBy(
                 ContextFactory::ofLongs,
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
@@ -81,7 +80,7 @@ public abstract class AbstractMemoryTest {
     }
 
     public static Stream<MemoryContext<?>> contextsSupportingBool() {
-        return contextSuppliers(
+        return suppliedBy(
                 ContextFactory::ofBooleans,
                 ContextFactory::ofBytes,
                 () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
@@ -90,8 +89,8 @@ public abstract class AbstractMemoryTest {
     }
 
     @SafeVarargs
-    private static Stream<MemoryContext<?>> contextSuppliers(
-            Supplier<MemoryContext<?>>... suppliers) {
+    private static <T> Stream<T> suppliedBy(
+            Supplier<T>... suppliers) {
         return Stream.of(suppliers).map(Supplier::get);
     }
 
