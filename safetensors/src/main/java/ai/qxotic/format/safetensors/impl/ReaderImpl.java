@@ -221,16 +221,12 @@ class ReaderImpl {
         List<TensorEntry> sorted = new ArrayList<>(tensors);
         sorted.sort(Comparator.comparingLong(TensorEntry::byteOffset));
 
-        // Check for gaps and overlaps
+        // Check for overlaps
         long expectedOffset = 0;
         for (TensorEntry tensor : sorted) {
             if (tensor.byteOffset() < expectedOffset) {
                 throw new SafetensorsFormatException("Overlapping tensors detected");
             }
-            //            if (tensor.byteOffset() > expectedOffset) {
-            //                throw new SafetensorsFormatException("Gap in byte buffer at offset " +
-            // expectedOffset);
-            //            }
             expectedOffset = tensor.byteOffset() + tensor.byteSize();
         }
     }
