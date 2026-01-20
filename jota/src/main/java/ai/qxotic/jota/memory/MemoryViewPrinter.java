@@ -122,9 +122,6 @@ public final class MemoryViewPrinter {
                 sb.append(",");
             }
             sb.append(System.lineSeparator());
-            if (addBlockSpacing && !first) {
-                sb.append(System.lineSeparator());
-            }
             appendIndent(sb, nextIndent);
             indices[dim] = i;
             appendPrettyRecursive(
