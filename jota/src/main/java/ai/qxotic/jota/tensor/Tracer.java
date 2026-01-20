@@ -8,6 +8,11 @@ public final class Tracer {
 
     private Tracer() {}
 
+    public static OptimizingCallSite createOptimizingCallSite(Function<Tensor, Tensor> function) {
+        Objects.requireNonNull(function, "function");
+        return new OptimizingCallSiteImpl(function);
+    }
+
     public static Tensor trace(Tensor input, Function<Tensor, Tensor> function) {
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(function, "function");
