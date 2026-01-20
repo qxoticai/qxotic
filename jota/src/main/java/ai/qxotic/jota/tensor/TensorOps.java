@@ -79,6 +79,22 @@ public interface TensorOps {
         return sum(x, accumulatorType, false, axes[0], Arrays.copyOfRange(axes, 1, axes.length));
     }
 
+    Tensor product(Tensor x, DataType accumulatorType, boolean keepDims, int _axis, int... _axes);
+
+    default Tensor product(Tensor x, DataType accumulatorType, int _axis, int... _axes) {
+        return product(x, accumulatorType, false, _axis, _axes);
+    }
+
+    default Tensor product(Tensor x, DataType accumulatorType) {
+        int rank = x.shape().rank();
+        if (rank == 0) {
+            return x;
+        }
+        int[] axes = IntStream.range(0, rank).toArray();
+        return product(
+                x, accumulatorType, false, axes[0], Arrays.copyOfRange(axes, 1, axes.length));
+    }
+
     Tensor mean(Tensor x, int axis, boolean keepDims);
 
     default Tensor mean(Tensor x, int axis) {

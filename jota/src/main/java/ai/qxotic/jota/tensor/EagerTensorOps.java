@@ -143,6 +143,13 @@ public class EagerTensorOps implements TensorOps {
     }
 
     @Override
+    public Tensor product(
+            Tensor x, DataType accumulatorType, boolean keepDims, int _axis, int... _axes) {
+        throw new UnsupportedOperationException(
+                "Generic reduction op dispatch not yet implemented");
+    }
+
+    @Override
     public Tensor mean(Tensor x, int axis, boolean keepDims) {
         return reductionOp(x, ReductionOp.MEAN, axis, keepDims);
     }
