@@ -1,8 +1,12 @@
 package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.DataType;
+import ai.qxotic.jota.Device;
+import ai.qxotic.jota.DeviceRegistry;
+import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
+import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
 import java.util.Objects;
@@ -133,6 +137,66 @@ public class EagerTensorOps implements TensorOps {
     @Override
     public Tensor silu(Tensor x) {
         return unaryOp(x, UnaryOp.SILU);
+    }
+
+    @Override
+    public Tensor to(Tensor x, Device device) {
+        Objects.requireNonNull(device, "device");
+        if (x.device().equals(device)) {
+            return x;
+        }
+        MemoryView<?> sourceView = x.materialize();
+        MemoryContext<?> sourceContext = DeviceRegistry.context(x.device());
+        MemoryContext<?> targetContext = DeviceRegistry.context(device);
+        if (!targetContext.supportsDataType(sourceView.dataType())) {
+            throw new IllegalArgumentException(
+                    "Target context does not support data type: " + sourceView.dataType());
+        }
+        if (!sourceContext.device().equals(targetContext.device()) && !sourceView.isContiguous()) {
+            throw new IllegalArgumentException(
+                    "Target backend cannot preserve layout; call x.contiguous().to(device)");
+        }
+        OutputBufferSpec outputSpec = computeOutputSpec(sourceView.layout(), sourceView.dataType());
+        MemoryView<?> targetView =
+                MemoryView.of(
+                        targetContext.memoryAllocator().allocateMemory(outputSpec.byteSize),
+                        outputSpec.byteOffset,
+                        sourceView.dataType(),
+                        sourceView.layout());
+        copyBetweenContexts(sourceContext, sourceView, targetContext, targetView);
+        return Tensor.of(targetView);
+    }
+
+    @Override
+    public Tensor contiguous(Tensor x) {
+        MemoryView<?> sourceView = x.materialize();
+        if (sourceView.isContiguous()) {
+            return x;
+        }
+        boolean primitive =
+                sourceView.dataType() == DataType.BOOL
+                        || sourceView.dataType() == DataType.I8
+                        || sourceView.dataType() == DataType.I16
+                        || sourceView.dataType() == DataType.I32
+                        || sourceView.dataType() == DataType.I64
+                        || sourceView.dataType() == DataType.FP16
+                        || sourceView.dataType() == DataType.BF16
+                        || sourceView.dataType() == DataType.FP32
+                        || sourceView.dataType() == DataType.FP64;
+        if (!primitive) {
+            throw new IllegalArgumentException(
+                    "contiguous requires primitive data type, got " + sourceView.dataType());
+        }
+        Layout layout = Layout.rowMajor(sourceView.layout().shape());
+        OutputBufferSpec outputSpec = computeOutputSpec(layout, sourceView.dataType());
+        MemoryView<?> targetView =
+                MemoryView.of(
+                        context.memoryAllocator().allocateMemory(outputSpec.byteSize),
+                        outputSpec.byteOffset,
+                        sourceView.dataType(),
+                        layout);
+        copyBetweenContexts(context, sourceView, context, targetView);
+        return Tensor.of(targetView);
     }
 
     @Override
@@ -344,8 +408,145 @@ public class EagerTensorOps implements TensorOps {
     }
 
     private Tensor unaryOp(Tensor x, UnaryOp op) {
-        throw new UnsupportedOperationException("Generic unary op dispatch not yet implemented");
+        if (!(x instanceof MaterializedTensor materialized)) {
+            throw new IllegalArgumentException("Eager ops require a materialized tensor");
+        }
+        return unaryOp(materialized.materialize(), op);
     }
+
+    private Tensor unaryOp(MemoryView<?> view, UnaryOp op) {
+        if (view.dataType() == DataType.FP32) {
+            return unaryOpFloat(view, op);
+        }
+        if (view.dataType() == DataType.I32) {
+            return unaryOpInt(view, op);
+        }
+        throw new IllegalArgumentException("Unsupported data type for eager op");
+    }
+
+    private Tensor unaryOpFloat(MemoryView<?> view, UnaryOp op) {
+        MemoryAccess<Object> access = requireMemoryAccess();
+        MemoryView<?> output = allocate(DataType.FP32, view.shape());
+        long size = view.shape().size();
+        @SuppressWarnings("unchecked")
+        ai.qxotic.jota.memory.Memory<Object> srcMemory =
+                (ai.qxotic.jota.memory.Memory<Object>) view.memory();
+        @SuppressWarnings("unchecked")
+        ai.qxotic.jota.memory.Memory<Object> dstMemory =
+                (ai.qxotic.jota.memory.Memory<Object>) output.memory();
+        for (long i = 0; i < size; i++) {
+            long srcOffset = Indexing.linearToOffset(view, i);
+            long dstOffset = Indexing.linearToOffset(output, i);
+            float value = access.readFloat(srcMemory, srcOffset);
+            float result = applyUnaryFloat(op, value);
+            access.writeFloat(dstMemory, dstOffset, result);
+        }
+        return Tensor.of(output);
+    }
+
+    private Tensor unaryOpInt(MemoryView<?> view, UnaryOp op) {
+        MemoryAccess<Object> access = requireMemoryAccess();
+        MemoryView<?> output = allocate(DataType.I32, view.shape());
+        long size = view.shape().size();
+        @SuppressWarnings("unchecked")
+        ai.qxotic.jota.memory.Memory<Object> srcMemory =
+                (ai.qxotic.jota.memory.Memory<Object>) view.memory();
+        @SuppressWarnings("unchecked")
+        ai.qxotic.jota.memory.Memory<Object> dstMemory =
+                (ai.qxotic.jota.memory.Memory<Object>) output.memory();
+        for (long i = 0; i < size; i++) {
+            long srcOffset = Indexing.linearToOffset(view, i);
+            long dstOffset = Indexing.linearToOffset(output, i);
+            int value = access.readInt(srcMemory, srcOffset);
+            int result = applyUnaryInt(op, value);
+            access.writeInt(dstMemory, dstOffset, result);
+        }
+        return Tensor.of(output);
+    }
+
+    private MemoryAccess<Object> requireMemoryAccess() {
+        MemoryAccess<?> access = context.memoryAccess();
+        if (access == null) {
+            throw new IllegalStateException("Eager ops require MemoryAccess");
+        }
+        @SuppressWarnings("unchecked")
+        MemoryAccess<Object> cast = (MemoryAccess<Object>) access;
+        return cast;
+    }
+
+    private float applyUnaryFloat(UnaryOp op, float value) {
+        return switch (op.name()) {
+            case "negate" -> -value;
+            case "abs" -> Math.abs(value);
+            case "exp" -> (float) Math.exp(value);
+            case "log" -> (float) Math.log(value);
+            case "sqrt" -> (float) Math.sqrt(value);
+            case "square" -> value * value;
+            case "sin" -> (float) Math.sin(value);
+            case "cos" -> (float) Math.cos(value);
+            case "tanh" -> (float) Math.tanh(value);
+            case "sigmoid" -> 1.0f / (1.0f + (float) Math.exp(-value));
+            case "relu" -> Math.max(0.0f, value);
+            case "gelu" -> {
+                float cubic = value * value * value;
+                float inner = 0.79788456f * (value + 0.044715f * cubic);
+                yield 0.5f * value * (1.0f + (float) Math.tanh(inner));
+            }
+            case "silu" -> value / (1.0f + (float) Math.exp(-value));
+            default -> throw new IllegalStateException("Unsupported unary op: " + op.name());
+        };
+    }
+
+    private int applyUnaryInt(UnaryOp op, int value) {
+        return switch (op.name()) {
+            case "negate" -> -value;
+            case "abs" -> Math.abs(value);
+            case "square" -> value * value;
+            case "relu" -> Math.max(0, value);
+            default -> throw new IllegalStateException("Unsupported unary op: " + op.name());
+        };
+    }
+
+    private static void copyBetweenContexts(
+            MemoryContext<?> sourceContext,
+            MemoryView<?> sourceView,
+            MemoryContext<?> targetContext,
+            MemoryView<?> targetView) {
+        @SuppressWarnings("unchecked")
+        MemoryContext<Object> source = (MemoryContext<Object>) sourceContext;
+        @SuppressWarnings("unchecked")
+        MemoryView<Object> src = (MemoryView<Object>) sourceView;
+        @SuppressWarnings("unchecked")
+        MemoryContext<Object> target = (MemoryContext<Object>) targetContext;
+        @SuppressWarnings("unchecked")
+        MemoryView<Object> dst = (MemoryView<Object>) targetView;
+        MemoryContext.copy(source, src, target, dst);
+    }
+
+    private static OutputBufferSpec computeOutputSpec(Layout layout, DataType dataType) {
+        long[] shape = layout.shape().toArray();
+        long[] strideBytes = layout.stride().scale(dataType.byteSize()).toArray();
+        long minOffset = 0;
+        long maxOffset = 0;
+        for (int i = 0; i < shape.length; i++) {
+            long dim = shape[i];
+            if (dim <= 1) {
+                continue;
+            }
+            long span = (dim - 1) * strideBytes[i];
+            if (strideBytes[i] >= 0) {
+                maxOffset += span;
+            } else {
+                minOffset += span;
+            }
+        }
+        long byteOffset = -minOffset;
+        long byteSize = maxOffset - minOffset + dataType.byteSize();
+        return new OutputBufferSpec(byteOffset, byteSize);
+    }
+
+    private record OutputBufferSpec(long byteOffset, long byteSize) {}
+
 
     private Tensor binaryOp(Tensor a, Tensor b, BinaryOp op) {
         throw new UnsupportedOperationException("Generic binary op dispatch not yet implemented");
