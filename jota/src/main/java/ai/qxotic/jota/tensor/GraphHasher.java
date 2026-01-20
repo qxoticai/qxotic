@@ -25,42 +25,52 @@ public final class GraphHasher {
         update(digest, node.layout().toString());
         update(digest, node.device().name());
 
-        if (node instanceof InputNode input) {
-            update(digest, "input");
-            update(digest, Integer.toString(input.index()));
-            return;
+        switch (node) {
+            case InputNode input -> {
+                update(digest, "input");
+                update(digest, Integer.toString(input.index()));
+            }
+            case ScalarNode scalar -> {
+                update(digest, "scalar");
+                update(digest, String.valueOf(scalar.value()));
+            }
+            case UnaryNode unary -> {
+                update(digest, "unary");
+                update(digest, unary.op().name());
+                writeNode(unary.input(), digest, ids);
+            }
+            case BinaryNode binary -> {
+                update(digest, "binary");
+                update(digest, binary.op().name());
+                writeNode(binary.left(), digest, ids);
+                writeNode(binary.right(), digest, ids);
+            }
+            case CastNode cast -> {
+                update(digest, "cast");
+                update(digest, cast.targetType().name());
+                writeNode(cast.input(), digest, ids);
+            }
+            case ReductionNode reduction -> {
+                update(digest, "reduction");
+                update(digest, reduction.op().name());
+                update(digest, Integer.toString(reduction.axis()));
+                update(digest, Boolean.toString(reduction.keepDims()));
+                writeNode(reduction.input(), digest, ids);
+            }
+            case TernaryNode ternary -> {
+                update(digest, "ternary");
+                update(digest, ternary.op().name());
+                writeNode(ternary.condition(), digest, ids);
+                writeNode(ternary.trueValue(), digest, ids);
+                writeNode(ternary.falseValue(), digest, ids);
+            }
+            default -> {
+                throw new UnsupportedOperationException("Hash for node not implemented: " + node.getClass());
+            }
         }
-        if (node instanceof ScalarNode scalar) {
-            update(digest, "scalar");
-            update(digest, String.valueOf(scalar.value()));
-            return;
-        }
-        if (node instanceof UnaryNode unary) {
-            update(digest, "unary");
-            update(digest, unary.op().name());
-            writeNode(unary.input(), digest, ids);
-            return;
-        }
-        if (node instanceof BinaryNode binary) {
-            update(digest, "binary");
-            update(digest, binary.op().name());
-            writeNode(binary.left(), digest, ids);
-            writeNode(binary.right(), digest, ids);
-            return;
-        }
-        if (node instanceof CastNode cast) {
-            update(digest, "cast");
-            update(digest, cast.targetType().name());
-            writeNode(cast.input(), digest, ids);
-            return;
-        }
-        if (node instanceof ReductionNode reduction) {
-            update(digest, "reduction");
-            update(digest, reduction.op().name());
-            update(digest, Integer.toString(reduction.axis()));
-            update(digest, Boolean.toString(reduction.keepDims()));
-            writeNode(reduction.input(), digest, ids);
-        }
+
+
+
     }
 
     private static void update(MessageDigest digest, String value) {
