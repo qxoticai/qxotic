@@ -145,6 +145,14 @@ public interface Tensor {
         return TensorOpsContext.require().min(this);
     }
 
+    default Tensor to(Device device) {
+        return TensorOpsContext.require().to(this, device);
+    }
+
+    default Tensor contiguous() {
+        return TensorOpsContext.require().contiguous(this);
+    }
+
     default Tensor bitwiseNot() {
         return TensorOpsContext.require().bitwiseNot(this);
     }

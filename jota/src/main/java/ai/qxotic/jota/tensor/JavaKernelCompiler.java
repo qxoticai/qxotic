@@ -222,6 +222,10 @@ final class JavaKernelCompiler {
                     stack.push(ternary.condition());
                     stack.push(ternary.trueValue());
                     stack.push(ternary.falseValue());
+                } else if (node instanceof TransferNode transfer) {
+                    stack.push(transfer.input());
+                } else if (node instanceof ContiguousNode contiguous) {
+                    stack.push(contiguous.input());
                 } else if (node instanceof CastNode cast) {
                     stack.push(cast.input());
                 } else if (node instanceof InputNode || node instanceof ScalarNode) {
@@ -987,6 +991,10 @@ final class JavaKernelCompiler {
                                 + ");");
                 return var;
             }
+            if (node instanceof TransferNode || node instanceof ContiguousNode) {
+                throw new IllegalStateException(
+                        "Transfer/contiguous operations must be the final node in the graph");
+            }
             if (node instanceof CastNode cast) {
                 String inputVar = emitNode(cast.input());
                 String var = nextVar();
@@ -1041,6 +1049,10 @@ final class JavaKernelCompiler {
                 String falseExpr = expressionForNode(ternary.falseValue(), indexVar, overrides);
                 String guard = booleanExpression(conditionExpr, ternary.condition().dataType());
                 return "(" + guard + " ? " + trueExpr + " : " + falseExpr + ")";
+            }
+            if (node instanceof TransferNode || node instanceof ContiguousNode) {
+                throw new IllegalStateException(
+                        "Transfer/contiguous operations must be the final node in the graph");
             }
             if (node instanceof CastNode cast) {
                 String inputExpr = expressionForNode(cast.input(), indexVar, overrides);

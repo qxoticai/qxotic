@@ -7,6 +7,7 @@ import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.TypeRules;
 import ai.qxotic.jota.Util;
 import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryView;
 import java.util.Arrays;
 import java.util.Objects;
 
@@ -130,6 +131,31 @@ final class TracingTensorOps implements TensorOps {
     @Override
     public Tensor silu(Tensor x) {
         return unaryOp(x, UnaryOp.SILU);
+    }
+
+    @Override
+    public Tensor to(Tensor x, Device device) {
+        Objects.requireNonNull(device, "device");
+        TraceTensor trace = requireTrace(x);
+        if (trace.device().equals(device)) {
+            return trace;
+        }
+        ExprNode node =
+                new TransferNode(trace.node(), device, trace.dataType(), trace.layout());
+        return new TraceTensor(node);
+    }
+
+    @Override
+    public Tensor contiguous(Tensor x) {
+        TraceTensor trace = requireTrace(x);
+        requirePrimitive(trace.dataType(), "contiguous");
+        MemoryView<?> view = trace.tryGetMaterialized().orElse(null);
+        if ((view != null && view.isContiguous()) || trace.layout().shape().hasZeroElements()) {
+            return trace;
+        }
+        Layout layout = Layout.rowMajor(trace.layout().shape());
+        ExprNode node = new ContiguousNode(trace.node(), trace.dataType(), layout, trace.device());
+        return new TraceTensor(node);
     }
 
     @Override
@@ -613,6 +639,23 @@ final class TracingTensorOps implements TensorOps {
         if (!dataType.isIntegral() || dataType == DataType.BOOL) {
             throw new IllegalArgumentException(
                     opName + " requires integral data type, got " + dataType);
+        }
+    }
+
+    private void requirePrimitive(DataType dataType, String opName) {
+        boolean primitive =
+                dataType == DataType.BOOL
+                        || dataType == DataType.I8
+                        || dataType == DataType.I16
+                        || dataType == DataType.I32
+                        || dataType == DataType.I64
+                        || dataType == DataType.FP16
+                        || dataType == DataType.BF16
+                        || dataType == DataType.FP32
+                        || dataType == DataType.FP64;
+        if (!primitive) {
+            throw new IllegalArgumentException(
+                    opName + " requires primitive data type, got " + dataType);
         }
     }
 
