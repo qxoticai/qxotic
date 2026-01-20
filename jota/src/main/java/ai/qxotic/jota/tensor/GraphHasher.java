@@ -65,12 +65,10 @@ public final class GraphHasher {
                 writeNode(ternary.falseValue(), digest, ids);
             }
             default -> {
-                throw new UnsupportedOperationException("Hash for node not implemented: " + node.getClass());
+                throw new UnsupportedOperationException(
+                        "Hash for node not implemented: " + node.getClass());
             }
         }
-
-
-
     }
 
     private static void update(MessageDigest digest, String value) {

@@ -136,7 +136,13 @@ final class TracingTensorOps implements TensorOps {
     public Tensor logicalNot(Tensor x) {
         TraceTensor trace = requireTrace(x);
         requireBool(trace.dataType(), "logicalNot");
-        ExprNode node = new UnaryNode(UnaryOp.LOGICAL_NOT, trace.node(), trace.dataType(), trace.layout(), trace.device());
+        ExprNode node =
+                new UnaryNode(
+                        UnaryOp.LOGICAL_NOT,
+                        trace.node(),
+                        trace.dataType(),
+                        trace.layout(),
+                        trace.device());
         return new TraceTensor(node);
     }
 
@@ -176,14 +182,15 @@ final class TracingTensorOps implements TensorOps {
         layout = requireCompatibleLayout(cond, whenTrue);
         Device device = requireCompatibleDevice(whenTrue, whenFalse);
         device = requireCompatibleDevice(cond, whenTrue);
-        ExprNode node = new TernaryNode(
-                TernaryOp.WHERE,
-                cond.node(),
-                whenTrue.node(),
-                whenFalse.node(),
-                whenTrue.dataType(),
-                layout,
-                device);
+        ExprNode node =
+                new TernaryNode(
+                        TernaryOp.WHERE,
+                        cond.node(),
+                        whenTrue.node(),
+                        whenFalse.node(),
+                        whenTrue.dataType(),
+                        layout,
+                        device);
         return new TraceTensor(node);
     }
 
@@ -546,7 +553,8 @@ final class TracingTensorOps implements TensorOps {
     private void requireSameType(TraceTensor left, TraceTensor right, String opName) {
         if (left.dataType() != right.dataType()) {
             throw new IllegalArgumentException(
-                    opName + " requires same data types, got "
+                    opName
+                            + " requires same data types, got "
                             + left.dataType()
                             + " and "
                             + right.dataType());

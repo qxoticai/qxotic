@@ -9,7 +9,6 @@ import ai.qxotic.jota.memory.*;
 import ai.qxotic.jota.memory.impl.ContextFactory;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -76,7 +75,8 @@ class BooleanOpsTest extends AbstractMemoryTest {
 
             Tensor equalTensor = Tracer.trace(leftTensor, rightTensor, Tensor::equal);
             MemoryView<?> equalOut =
-                    ComputeEngineContext.with(new JavaComputeEngine(context), equalTensor::materialize);
+                    ComputeEngineContext.with(
+                            new JavaComputeEngine(context), equalTensor::materialize);
             for (int i = 0; i < shape.size(); i++) {
                 assertEquals(1, readBool(equalOut, i));
             }
@@ -88,7 +88,8 @@ class BooleanOpsTest extends AbstractMemoryTest {
             Tensor thresholdTensor = Tensor.of(threshold);
             Tensor lessThanTensor = Tracer.trace(leftTensor, thresholdTensor, Tensor::lessThan);
             MemoryView<?> lessOut =
-                    ComputeEngineContext.with(new JavaComputeEngine(context), lessThanTensor::materialize);
+                    ComputeEngineContext.with(
+                            new JavaComputeEngine(context), lessThanTensor::materialize);
 
             if (dataType == DataType.BOOL) {
                 assertEquals(1, readBool(lessOut, 0));
@@ -105,10 +106,36 @@ class BooleanOpsTest extends AbstractMemoryTest {
     }
 
     @Test
+    void fusedWhere() {
+        Shape shape = Shape.of(4);
+        MemoryView<MemorySegment> trueView =
+                MemoryHelpers.arange(context, DataType.I32, shape.size()).view(shape);
+        MemoryView<MemorySegment> falseView =
+                MemoryHelpers.full(context, DataType.I32, shape.size(), 2).view(shape);
+
+        Tensor trueTensor = Tensor.of(trueView);
+        Tensor falseTensor = Tensor.of(falseView);
+
+        Tensor min =
+                Tracer.trace(
+                        trueTensor,
+                        falseTensor,
+                        // Odd min function.
+                        (t, f) -> Tensor.where(t.lessThan(f), t, f));
+
+        MemoryView<?> output =
+                ComputeEngineContext.with(new JavaComputeEngine(context), min::materialize);
+
+        assertEquals(0, readInt(output, 0));
+        assertEquals(1, readInt(output, 1));
+        assertEquals(2, readInt(output, 2));
+        assertEquals(2, readInt(output, 3));
+    }
+
+    @Test
     void whereSelectsBetweenValues() {
         Shape shape = Shape.of(4);
-        MemoryView<MemorySegment> conditionView =
-                boolPattern(shape, new byte[] {1, 0, 1, 0});
+        MemoryView<MemorySegment> conditionView = boolPattern(shape, new byte[] {1, 0, 1, 0});
         MemoryView<MemorySegment> trueView =
                 MemoryHelpers.arange(context, DataType.I32, shape.size()).view(shape);
         MemoryView<MemorySegment> falseView =

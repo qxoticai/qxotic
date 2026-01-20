@@ -93,8 +93,7 @@ final class JavaKernelCompiler {
     private KernelCacheKey buildCacheKey(ExpressionGraph graph, KernelStyle style) {
         KernelCacheKey baseKey = GraphHasher.hash(graph);
         String suffix = style == null ? "unknown" : style.name().toLowerCase(Locale.ROOT);
-            return KernelCacheKey.of(baseKey.value() + "-" + suffix + "-v5");
-
+        return KernelCacheKey.of(baseKey.value() + "-" + suffix + "-v5");
     }
 
     private String formatDiagnostics(List<Diagnostic<? extends JavaFileObject>> diagnostics) {
@@ -1188,10 +1187,14 @@ final class JavaKernelCompiler {
                 return "outBase.set(ValueLayout.JAVA_LONG_UNALIGNED, outOffset, " + valueVar + ");";
             }
             if (dataType == DataType.FP32) {
-                return "outBase.set(ValueLayout.JAVA_FLOAT_UNALIGNED, outOffset, " + valueVar + ");";
+                return "outBase.set(ValueLayout.JAVA_FLOAT_UNALIGNED, outOffset, "
+                        + valueVar
+                        + ");";
             }
             if (dataType == DataType.FP64) {
-                return "outBase.set(ValueLayout.JAVA_DOUBLE_UNALIGNED, outOffset, " + valueVar + ");";
+                return "outBase.set(ValueLayout.JAVA_DOUBLE_UNALIGNED, outOffset, "
+                        + valueVar
+                        + ");";
             }
             throw unsupported(dataType, "output");
         }
@@ -1346,15 +1349,23 @@ final class JavaKernelCompiler {
                                     + ") ? 1 : 0)";
                     case "equal" ->
                             "(byte) (("
-                                    + "(" + numericExpression(leftVar, leftType) + ")"
+                                    + "("
+                                    + numericExpression(leftVar, leftType)
+                                    + ")"
                                     + " == "
-                                    + "(" + numericExpression(rightVar, rightType) + ")"
+                                    + "("
+                                    + numericExpression(rightVar, rightType)
+                                    + ")"
                                     + ") ? 1 : 0)";
                     case "lessThan" ->
                             "(byte) (("
-                                    + "(" + numericExpression(leftVar, leftType) + ")"
+                                    + "("
+                                    + numericExpression(leftVar, leftType)
+                                    + ")"
                                     + " < "
-                                    + "(" + numericExpression(rightVar, rightType) + ")"
+                                    + "("
+                                    + numericExpression(rightVar, rightType)
+                                    + ")"
                                     + ") ? 1 : 0)";
                     default ->
                             throw new IllegalStateException("Unsupported binary op: " + op.name());
