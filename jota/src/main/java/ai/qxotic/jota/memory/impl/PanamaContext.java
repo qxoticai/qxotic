@@ -6,8 +6,6 @@ import java.lang.foreign.MemorySegment;
 
 final class PanamaContext implements MemoryContext<MemorySegment> {
 
-    private final FloatOperations<MemorySegment> rawOperations =
-            new PanamaFloatOperations(PanamaMemoryAccess.instance());
     private final ScopedMemoryAllocatorArena<MemorySegment> allocatorArena =
             MemoryAllocatorFactory.newPanamaArena();
 
@@ -29,11 +27,6 @@ final class PanamaContext implements MemoryContext<MemorySegment> {
     @Override
     public MemoryOperations<MemorySegment> memoryOperations() {
         return PanamaMemoryOperations.instance();
-    }
-
-    @Override
-    public FloatOperations<MemorySegment> floatOperations() {
-        return this.rawOperations;
     }
 
     @Override

@@ -16,8 +16,6 @@ public interface MemoryContext<B> extends AutoCloseable {
 
     MemoryOperations<B> memoryOperations();
 
-    FloatOperations<B> floatOperations();
-
     /**
      * Returns the memory allocation granularity in bytes. Delegates to the underlying memory
      * allocator.

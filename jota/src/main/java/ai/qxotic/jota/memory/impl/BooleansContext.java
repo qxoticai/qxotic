@@ -1,7 +1,6 @@
 package ai.qxotic.jota.memory.impl;
 
 import ai.qxotic.jota.Device;
-import ai.qxotic.jota.memory.FloatOperations;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryAllocator;
 import ai.qxotic.jota.memory.MemoryContext;
@@ -35,11 +34,6 @@ class BooleansContext implements MemoryContext<boolean[]> {
     @Override
     public MemoryOperations<boolean[]> memoryOperations() {
         return BooleansMemoryOperations.instance();
-    }
-
-    @Override
-    public FloatOperations<boolean[]> floatOperations() {
-        return null; // No float operations for boolean[]
     }
 
     @Override

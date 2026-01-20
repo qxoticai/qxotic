@@ -6,8 +6,6 @@ import ai.qxotic.jota.memory.*;
 class FloatsContext implements MemoryContext<float[]> {
 
     private static final FloatsContext INSTANCE = new FloatsContext();
-    private static final FloatOperations<float[]> FLOAT_OPERATIONS =
-            new GenericFloatOperations<>(FloatsMemoryAccess.instance());
 
     static MemoryContext<float[]> instance() {
         return INSTANCE;
@@ -33,11 +31,6 @@ class FloatsContext implements MemoryContext<float[]> {
     @Override
     public MemoryOperations<float[]> memoryOperations() {
         return FloatsMemoryOperations.instance();
-    }
-
-    @Override
-    public FloatOperations<float[]> floatOperations() {
-        return FLOAT_OPERATIONS;
     }
 
     @Override
