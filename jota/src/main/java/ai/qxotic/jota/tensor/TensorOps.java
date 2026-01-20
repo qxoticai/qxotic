@@ -62,15 +62,25 @@ public interface TensorOps {
 
     Tensor silu(Tensor x);
 
+    // === Bitwise Operations ===
+
+    Tensor bitwiseNot(Tensor x); // ~x
+
+    Tensor bitwiseAnd(Tensor a, Tensor b); // a & b
+
+    Tensor bitwiseOr(Tensor a, Tensor b); // a | b
+
+    Tensor bitwiseXor(Tensor a, Tensor b); // a ^ b
+
     // === Boolean Operations ===
 
-    Tensor logicalNot(Tensor x);
+    Tensor logicalNot(Tensor x); // !x
 
-    Tensor logicalAnd(Tensor a, Tensor b);
+    Tensor logicalAnd(Tensor a, Tensor b); // a && b
 
-    Tensor logicalOr(Tensor a, Tensor b);
+    Tensor logicalOr(Tensor a, Tensor b); // a || b
 
-    Tensor logicalXor(Tensor a, Tensor b);
+    Tensor logicalXor(Tensor a, Tensor b); // a ^ b
 
     Tensor equal(Tensor a, Tensor b);
 

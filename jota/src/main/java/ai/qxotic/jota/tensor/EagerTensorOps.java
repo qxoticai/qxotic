@@ -136,6 +136,30 @@ public class EagerTensorOps implements TensorOps {
     }
 
     @Override
+    public Tensor bitwiseNot(Tensor x) {
+        throw new UnsupportedOperationException(
+                "Generic bitwise op dispatch not yet implemented");
+    }
+
+    @Override
+    public Tensor bitwiseAnd(Tensor a, Tensor b) {
+        throw new UnsupportedOperationException(
+                "Generic bitwise op dispatch not yet implemented");
+    }
+
+    @Override
+    public Tensor bitwiseOr(Tensor a, Tensor b) {
+        throw new UnsupportedOperationException(
+                "Generic bitwise op dispatch not yet implemented");
+    }
+
+    @Override
+    public Tensor bitwiseXor(Tensor a, Tensor b) {
+        throw new UnsupportedOperationException(
+                "Generic bitwise op dispatch not yet implemented");
+    }
+
+    @Override
     public Tensor logicalNot(Tensor x) {
         throw new UnsupportedOperationException("Generic boolean op dispatch not yet implemented");
     }

@@ -145,6 +145,22 @@ public interface Tensor {
         return TensorOpsContext.require().min(this);
     }
 
+    default Tensor bitwiseNot() {
+        return TensorOpsContext.require().bitwiseNot(this);
+    }
+
+    default Tensor bitwiseAnd(Tensor other) {
+        return TensorOpsContext.require().bitwiseAnd(this, other);
+    }
+
+    default Tensor bitwiseOr(Tensor other) {
+        return TensorOpsContext.require().bitwiseOr(this, other);
+    }
+
+    default Tensor bitwiseXor(Tensor other) {
+        return TensorOpsContext.require().bitwiseXor(this, other);
+    }
+
     default Tensor logicalNot() {
         return TensorOpsContext.require().logicalNot(this);
     }

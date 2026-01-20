@@ -336,6 +336,7 @@ public final class KernelInterpreter {
             case "abs" -> Math.abs(value);
             case "square" -> value * value;
             case "relu" -> Math.max(0, value);
+            case "bitwiseNot" -> ~value;
             default ->
                     throw new IllegalStateException("Unsupported unary op for I32: " + op.name());
         };
@@ -363,6 +364,9 @@ public final class KernelInterpreter {
             case "min" -> Math.min(left, right);
             case "max" -> Math.max(left, right);
             case "pow" -> (int) Math.pow(left, right);
+            case "bitwiseAnd" -> left & right;
+            case "bitwiseOr" -> left | right;
+            case "bitwiseXor" -> left ^ right;
             default -> throw new IllegalStateException("Unsupported binary op: " + op.name());
         };
     }
