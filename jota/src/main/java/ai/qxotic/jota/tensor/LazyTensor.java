@@ -1,0 +1,77 @@
+package ai.qxotic.jota.tensor;
+
+import ai.qxotic.jota.DataType;
+import ai.qxotic.jota.Device;
+import ai.qxotic.jota.Layout;
+import ai.qxotic.jota.memory.MemoryView;
+import java.util.Objects;
+import java.util.Optional;
+
+final class LazyTensor implements Tensor {
+
+    private final LazyComputation computation;
+    private final DataType dtype;
+    private final Layout layout;
+    private final Device device;
+
+    private volatile MemoryView<?> cachedResult;
+    private final Object materializeLock = new Object();
+
+    LazyTensor(LazyComputation computation, DataType dtype, Layout layout, Device device) {
+        this.computation = Objects.requireNonNull(computation);
+        this.dtype = Objects.requireNonNull(dtype);
+        this.layout = Objects.requireNonNull(layout);
+        this.device = Objects.requireNonNull(device);
+    }
+
+    @Override
+    public DataType dataType() {
+        return dtype;
+    }
+
+    @Override
+    public Layout layout() {
+        return layout;
+    }
+
+    @Override
+    public Device device() {
+        return device;
+    }
+
+    @Override
+    public boolean isMaterialized() {
+        return cachedResult != null;
+    }
+
+    @Override
+    public boolean isLazy() {
+        return true;
+    }
+
+    @Override
+    public MemoryView<?> materialize() {
+        if (cachedResult != null) {
+            return cachedResult;
+        }
+
+        synchronized (materializeLock) {
+            if (cachedResult != null) {
+                return cachedResult;
+            }
+
+            cachedResult = computation.execute();
+            return cachedResult;
+        }
+    }
+
+    @Override
+    public Optional<MemoryView<?>> tryGetMaterialized() {
+        return Optional.ofNullable(cachedResult);
+    }
+
+    @Override
+    public Optional<LazyComputation> computation() {
+        return Optional.of(computation);
+    }
+}

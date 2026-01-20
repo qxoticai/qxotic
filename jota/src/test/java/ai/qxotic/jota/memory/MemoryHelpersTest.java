@@ -340,18 +340,6 @@ public class MemoryHelpersTest extends AbstractMemoryTest {
         assertEquals(3, access.readInt(view.memory(), 12));
     }
 
-    static final List<DataType> PRIMITIVES =
-            List.of(
-                    DataType.BOOL,
-                    DataType.I8,
-                    DataType.I16,
-                    DataType.I32,
-                    DataType.I64,
-                    DataType.FP16,
-                    DataType.BF16,
-                    DataType.FP32,
-                    DataType.FP64);
-
     @ParameterizedTest
     @MethodSource("allContexts")
     <B> void nestingPreservesLinearOrdering(MemoryContext<B> context) {
@@ -359,7 +347,7 @@ public class MemoryHelpersTest extends AbstractMemoryTest {
         Shape flatShape = Shape.flat(2, 3, 5, 7);
         Layout flatLayout = Layout.rowMajor(flatShape);
 
-        for (DataType dataType : PRIMITIVES) {
+        for (DataType dataType : PRIMITIVE_DATA_TYPES) {
             if (!context.supportsDataType(dataType)) {
                 continue;
             }
