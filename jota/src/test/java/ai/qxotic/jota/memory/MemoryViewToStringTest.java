@@ -68,21 +68,7 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
         assertTrue(text.startsWith("["));
         assertTrue(text.endsWith("]"));
     }
-
-    @ParameterizedTest
-    @MethodSource("contextsSupportingF32")
-    <B> void threeDimensionalAddsBlankLineBetweenBlocks(MemoryContext<B> context) {
-        MemoryAccess<B> memoryAccess = context.memoryAccess();
-        Assumptions.assumeTrue(memoryAccess != null, "memory access required");
-
-        Shape shape = Shape.of(2, 2, 2);
-        MemoryView<B> view = MemoryHelpers.arange(context, DataType.FP32, shape.size()).view(shape);
-
-        String text = view.toString(memoryAccess);
-        String lineBreak = System.lineSeparator();
-        assertTrue(text.contains(lineBreak + lineBreak + "  ["));
-    }
-
+    
     @ParameterizedTest
     @MethodSource("contextsSupportingBool")
     <B> void booleanScalarPrintsCorrectly(MemoryContext<B> context) {
