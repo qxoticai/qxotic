@@ -244,6 +244,47 @@ class LayoutMethodsTest {
     }
 
     @Test
+    void testModeLocalVsSuffixContiguity() {
+        Shape shape = Shape.of(2, Shape.of(3L, 4L), 5L); // (A, (B, C), D)
+        Stride stride = Stride.flat(200, 20, 5, 2); // D is strided (2)
+        Layout layout = Layout.of(shape, stride);
+
+        assertTrue(layout.isLocalContiguous(1));
+        assertFalse(layout.isSuffixContiguous(1));
+    }
+
+    @Test
+    void testFlatContiguityHelpers() {
+        Layout layout = Layout.rowMajor(2, 3, 4);
+        assertTrue(layout.isLocalContiguousFlat(0));
+        assertTrue(layout.isSuffixContiguousFlat(0));
+        assertTrue(layout.isLocalContiguousFlat(1));
+        assertTrue(layout.isSuffixContiguousFlat(1));
+        assertTrue(layout.isLocalContiguousFlat(2));
+        assertTrue(layout.isSuffixContiguousFlat(2));
+
+        Layout strided = Layout.of(Shape.flat(2, 3, 4), Stride.flat(24, 4, 1));
+        assertTrue(strided.isLocalContiguousFlat(1));
+        assertTrue(strided.isSuffixContiguousFlat(1));
+        assertFalse(strided.isLocalContiguousFlat(0));
+        assertFalse(strided.isSuffixContiguousFlat(0));
+    }
+
+    @Test
+    void testContiguityWrapAroundIndices() {
+        Layout layout = Layout.rowMajor(2, 3, 4);
+        assertTrue(layout.isLocalContiguous(-1));
+        assertTrue(layout.isSuffixContiguous(-1));
+        assertTrue(layout.isLocalContiguousFlat(-1));
+        assertTrue(layout.isSuffixContiguousFlat(-1));
+
+        Shape shape = Shape.of(2, Shape.of(3L, 4L), 5L);
+        Layout nested = Layout.of(shape, Stride.flat(200, 20, 5, 2));
+        assertTrue(nested.isLocalContiguous(-2));
+        assertFalse(nested.isSuffixContiguous(-2));
+    }
+
+    @Test
     void testPatternBasedLayout() {
         Shape shape = Shape.pattern("(batch, (N, M))", 2, 3, 4);
         Layout layout = Layout.rowMajor(shape);

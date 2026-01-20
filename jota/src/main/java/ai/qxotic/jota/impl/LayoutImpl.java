@@ -59,14 +59,6 @@ final class LayoutImpl implements Layout {
     }
 
     @Override
-    public Layout flatten() {
-        if (shape.isFlat() && stride.isFlat()) {
-            return this;
-        }
-        return new LayoutImpl(shape.flatten(), stride.flatten());
-    }
-
-    @Override
     public boolean isCongruentWith(Layout other) {
         Objects.requireNonNull(other);
         return this.shape.isCongruentWith(other.shape())
