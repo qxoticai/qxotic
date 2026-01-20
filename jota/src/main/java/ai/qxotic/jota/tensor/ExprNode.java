@@ -16,7 +16,8 @@ public sealed interface ExprNode
 
 record InputNode(int index, DataType dataType, Layout layout, Device device) implements ExprNode {}
 
-record ScalarNode(Number value, DataType dataType, Layout layout, Device device) implements ExprNode {}
+record ScalarNode(Number value, DataType dataType, Layout layout, Device device)
+        implements ExprNode {}
 
 record UnaryNode(UnaryOp op, ExprNode input, DataType dataType, Layout layout, Device device)
         implements ExprNode {}

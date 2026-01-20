@@ -32,9 +32,8 @@ class CastOpsTest extends AbstractMemoryTest {
         Tensor input = Tensor.of(view);
 
         Tensor castI32 = Tracer.trace(input, t -> t.cast(DataType.I32));
-        MemoryView<?> outI32 = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                castI32::materialize);
+        MemoryView<?> outI32 =
+                ComputeEngineContext.with(new JavaComputeEngine(context), castI32::materialize);
         assertEquals(shape, outI32.shape());
         assertEquals(1, readInt(outI32, 0));
         assertEquals(0, readInt(outI32, 1));
@@ -42,9 +41,8 @@ class CastOpsTest extends AbstractMemoryTest {
         assertEquals(0, readInt(outI32, 3));
 
         Tensor castI64 = Tracer.trace(input, t -> t.cast(DataType.I64));
-        MemoryView<?> outI64 = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                castI64::materialize);
+        MemoryView<?> outI64 =
+                ComputeEngineContext.with(new JavaComputeEngine(context), castI64::materialize);
         assertEquals(shape, outI64.shape());
         assertEquals(1L, readLong(outI64, 0));
         assertEquals(0L, readLong(outI64, 1));
@@ -58,9 +56,8 @@ class CastOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = intPattern(shape, new int[] {0, 2, -1, 0});
         Tensor input = Tensor.of(view);
         Tensor castBool = Tracer.trace(input, t -> t.cast(DataType.BOOL));
-        MemoryView<?> outBool = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                castBool::materialize);
+        MemoryView<?> outBool =
+                ComputeEngineContext.with(new JavaComputeEngine(context), castBool::materialize);
         assertEquals(shape, outBool.shape());
         assertEquals((byte) 0, readByte(outBool, 0));
         assertEquals((byte) 1, readByte(outBool, 1));
@@ -74,13 +71,13 @@ class CastOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = intPattern(shape, new int[] {0, 2, -1, 0});
         Tensor input0 = Tensor.of(view);
         Tensor input1 = Tensor.of(view);
-        Tensor output = Tracer.trace(
-                input0,
-                input1,
-                (t0, t1) -> t0.add(t1).sum(DataType.I32).cast(DataType.FP32));
-        MemoryView<?> result = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                output::materialize);
+        Tensor output =
+                Tracer.trace(
+                        input0,
+                        input1,
+                        (t0, t1) -> t0.add(t1).sum(DataType.I32).cast(DataType.FP32));
+        MemoryView<?> result =
+                ComputeEngineContext.with(new JavaComputeEngine(context), output::materialize);
         assertEquals(Shape.scalar(), result.shape());
         assertEquals(2.0f, readFloat(result, 0), 0.0001f);
     }
@@ -92,9 +89,8 @@ class CastOpsTest extends AbstractMemoryTest {
         Tensor input = Tensor.of(view);
 
         Tensor castI32 = Tracer.trace(input, t -> t.cast(DataType.I32));
-        MemoryView<?> outI32 = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                castI32::materialize);
+        MemoryView<?> outI32 =
+                ComputeEngineContext.with(new JavaComputeEngine(context), castI32::materialize);
         assertEquals(shape, outI32.shape());
         assertEquals(1, readInt(outI32, 0));
         assertEquals(-2, readInt(outI32, 1));

@@ -14,22 +14,22 @@ import ai.qxotic.jota.memory.impl.ContextFactory;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.List;
-
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 class ReductionOpsTest extends AbstractMemoryTest {
 
-    private static final java.util.List<DataType> PRIMITIVE_TYPES = List.of(
-            DataType.BOOL,
-            DataType.I8,
-            DataType.I16,
-            DataType.I32,
-            DataType.I64,
-            DataType.FP16,
-            DataType.BF16,
-            DataType.FP32,
-            DataType.FP64);
+    private static final java.util.List<DataType> PRIMITIVE_TYPES =
+            List.of(
+                    DataType.BOOL,
+                    DataType.I8,
+                    DataType.I16,
+                    DataType.I32,
+                    DataType.I64,
+                    DataType.FP16,
+                    DataType.BF16,
+                    DataType.FP32,
+                    DataType.FP64);
 
     private static MemoryContext<MemorySegment> context;
 
@@ -46,12 +46,13 @@ class ReductionOpsTest extends AbstractMemoryTest {
 
             Tensor input = Tensor.of(view);
             Tensor reduced = Tracer.trace(input, t -> t.max(1));
-            MemoryView<?> output = ComputeEngineContext.with(
-                    new JavaComputeEngine(context),
-                    reduced::materialize);
+            MemoryView<?> output =
+                    ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
             assertEquals(Shape.of(2), output.shape());
-            assertValueEquals(dataType, expectedMax(dataType, 0, 3), readValue(output, 0, dataType));
-            assertValueEquals(dataType, expectedMax(dataType, 3, 3), readValue(output, 1, dataType));
+            assertValueEquals(
+                    dataType, expectedMax(dataType, 0, 3), readValue(output, 0, dataType));
+            assertValueEquals(
+                    dataType, expectedMax(dataType, 3, 3), readValue(output, 1, dataType));
         }
     }
 
@@ -62,12 +63,13 @@ class ReductionOpsTest extends AbstractMemoryTest {
             MemoryView<MemorySegment> view = range(dataType, shape);
             Tensor input = Tensor.of(view);
             Tensor reduced = Tracer.trace(input, t -> t.min(1));
-            MemoryView<?> output = ComputeEngineContext.with(
-                    new JavaComputeEngine(context),
-                    reduced::materialize);
+            MemoryView<?> output =
+                    ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
             assertEquals(Shape.of(2), output.shape());
-            assertValueEquals(dataType, expectedMin(dataType, 0, 3), readValue(output, 0, dataType));
-            assertValueEquals(dataType, expectedMin(dataType, 3, 3), readValue(output, 1, dataType));
+            assertValueEquals(
+                    dataType, expectedMin(dataType, 0, 3), readValue(output, 0, dataType));
+            assertValueEquals(
+                    dataType, expectedMin(dataType, 3, 3), readValue(output, 1, dataType));
         }
     }
 
@@ -76,9 +78,8 @@ class ReductionOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = range(DataType.FP32, Shape.of(2, 3));
         Tensor input = Tensor.of(view);
         Tensor reduced = Tracer.trace(input, t -> t.max(true, 1));
-        MemoryView<?> output = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                reduced::materialize);
+        MemoryView<?> output =
+                ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
         assertEquals(Shape.of(2, 1), output.shape());
     }
 
@@ -87,9 +88,8 @@ class ReductionOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = range(DataType.FP32, Shape.of(2, 2, 2));
         Tensor input = Tensor.of(view);
         Tensor reduced = Tracer.trace(input, t -> t.min(1, 2));
-        MemoryView<?> output = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                reduced::materialize);
+        MemoryView<?> output =
+                ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
         assertEquals(Shape.of(2), output.shape());
         assertValueEquals(DataType.FP32, 0.0f, readValue(output, 0, DataType.FP32));
         assertValueEquals(DataType.FP32, 4.0f, readValue(output, 1, DataType.FP32));
@@ -100,9 +100,8 @@ class ReductionOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = range(DataType.FP32, Shape.of(2, 3));
         Tensor input = Tensor.of(view);
         Tensor reduced = Tracer.trace(input, t -> t.add(1).max(1));
-        MemoryView<?> output = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                reduced::materialize);
+        MemoryView<?> output =
+                ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
         assertValueEquals(DataType.FP32, 3.0f, readValue(output, 0, DataType.FP32));
         assertValueEquals(DataType.FP32, 6.0f, readValue(output, 1, DataType.FP32));
     }

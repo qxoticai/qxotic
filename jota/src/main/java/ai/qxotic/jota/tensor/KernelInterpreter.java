@@ -30,11 +30,12 @@ public final class KernelInterpreter {
         InputAccessor[] accessors = new InputAccessor[inputs.length];
         for (int i = 0; i < inputs.length; i++) {
             MemoryView<MemorySegment> view = inputs[i];
-            accessors[i] = new InputAccessor(
-                    view.memory().base(),
-                    view.byteOffset(),
-                    view.shape().toArray(),
-                    view.byteStride().toArray());
+            accessors[i] =
+                    new InputAccessor(
+                            view.memory().base(),
+                            view.byteOffset(),
+                            view.shape().toArray(),
+                            view.byteStride().toArray());
         }
 
         long size = output.shape().size();
@@ -145,7 +146,8 @@ public final class KernelInterpreter {
             case "abs" -> Math.abs(value);
             case "square" -> value * value;
             case "relu" -> Math.max(0, value);
-            default -> throw new IllegalStateException("Unsupported unary op for I32: " + op.name());
+            default ->
+                    throw new IllegalStateException("Unsupported unary op for I32: " + op.name());
         };
     }
 
@@ -179,7 +181,8 @@ public final class KernelInterpreter {
             ReductionNode reduction, long index, InputAccessor[] inputs) {
         ReductionInfo info = collectReductionInfo(reduction);
         if (info.dataType() != DataType.FP32) {
-            throw new IllegalStateException("Unsupported reduction output type: " + info.dataType());
+            throw new IllegalStateException(
+                    "Unsupported reduction output type: " + info.dataType());
         }
         Shape inShape = info.input().layout().shape();
         Shape outShape = reduction.layout().shape();
@@ -247,7 +250,8 @@ public final class KernelInterpreter {
             ReductionNode reduction, long index, InputAccessor[] inputs) {
         ReductionInfo info = collectReductionInfo(reduction);
         if (info.dataType() != DataType.I32) {
-            throw new IllegalStateException("Unsupported reduction output type: " + info.dataType());
+            throw new IllegalStateException(
+                    "Unsupported reduction output type: " + info.dataType());
         }
         Shape inShape = info.input().layout().shape();
         Shape outShape = reduction.layout().shape();
@@ -345,11 +349,7 @@ public final class KernelInterpreter {
         return offset;
     }
 
-    private record InputAccessor(
-            MemorySegment base,
-            long baseOffset,
-            long[] shape,
-            long[] stride) {
+    private record InputAccessor(MemorySegment base, long baseOffset, long[] shape, long[] stride) {
 
         float readFloat(long index) {
             long offset = offsetForIndex(index, baseOffset, shape, stride);

@@ -5,10 +5,8 @@ import java.io.IOException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -62,11 +60,12 @@ final class JavaKernelCompiler {
                 compiler.getStandardFileManager(diagnostics, Locale.ROOT, null)) {
             Iterable<? extends JavaFileObject> units =
                     fileManager.getJavaFileObjects(entry.sourcePath().toFile());
-            List<String> options = List.of(
-                    "-classpath",
-                    System.getProperty("java.class.path"),
-                    "-d",
-                    entry.classOutputDir().toString());
+            List<String> options =
+                    List.of(
+                            "-classpath",
+                            System.getProperty("java.class.path"),
+                            "-d",
+                            entry.classOutputDir().toString());
             JavaCompiler.CompilationTask task =
                     compiler.getTask(null, fileManager, diagnostics, options, null, units);
             Boolean success = task.call();
@@ -78,9 +77,10 @@ final class JavaKernelCompiler {
 
     private JitKernel load(KernelCacheEntry entry) {
         try {
-            URLClassLoader loader = new URLClassLoader(
-                    new URL[] {entry.classOutputDir().toUri().toURL()},
-                    JitKernel.class.getClassLoader());
+            URLClassLoader loader =
+                    new URLClassLoader(
+                            new URL[] {entry.classOutputDir().toUri().toURL()},
+                            JitKernel.class.getClassLoader());
             Class<?> clazz =
                     Class.forName(entry.packageName() + "." + entry.className(), true, loader);
             Object instance = clazz.getDeclaredConstructor().newInstance();
@@ -93,8 +93,7 @@ final class JavaKernelCompiler {
     private KernelCacheKey buildCacheKey(ExpressionGraph graph, KernelStyle style) {
         KernelCacheKey baseKey = GraphHasher.hash(graph);
         String suffix = style == null ? "unknown" : style.name().toLowerCase(Locale.ROOT);
-            return KernelCacheKey.of(baseKey.value() + "-" + suffix + "-v4");
-
+        return KernelCacheKey.of(baseKey.value() + "-" + suffix + "-v4");
     }
 
     private String formatDiagnostics(List<Diagnostic<? extends JavaFileObject>> diagnostics) {
@@ -122,7 +121,8 @@ final class JavaKernelCompiler {
         private final Set<HelperMethod> helpers = new HashSet<>();
         private int counter;
 
-        private KernelSourceGenerator(KernelCacheEntry entry, ExpressionGraph graph, KernelStyle style) {
+        private KernelSourceGenerator(
+                KernelCacheEntry entry, ExpressionGraph graph, KernelStyle style) {
             this.entry = entry;
             this.graph = graph;
             this.style = style;
@@ -145,10 +145,12 @@ final class JavaKernelCompiler {
             source.append("import java.lang.foreign.MemorySegment;\n");
             source.append("import java.lang.foreign.ValueLayout;\n");
             source.append("\n");
-            source.append("public final class ").append(entry.className())
+            source.append("public final class ")
+                    .append(entry.className())
                     .append(" implements JitKernel {\n");
             source.append("  @Override\n");
-            source.append("  public void execute(MemoryContext<?> context, MemoryView<MemorySegment>[] inputs, MemoryView<MemorySegment> output) {\n");
+            source.append(
+                    "  public void execute(MemoryContext<?> context, MemoryView<MemorySegment>[] inputs, MemoryView<MemorySegment> output) {\n");
 
             ReductionNode reductionRoot = findReductionRoot(graph.root());
             if (reductionRoot != null) {
@@ -164,11 +166,23 @@ final class JavaKernelCompiler {
                 source.append("    long[] shape = output.shape().toArray();\n");
                 source.append("    long[] outStride = output.byteStride().toArray();\n");
                 source.append("    long outBaseOffset = output.byteOffset();\n");
-                source.append("    MemorySegment outBase = (MemorySegment) output.memory().base();\n");
+                source.append(
+                        "    MemorySegment outBase = (MemorySegment) output.memory().base();\n");
                 for (int i = 0; i < graph.inputs().size(); i++) {
-                    source.append("    MemorySegment in" + i + " = (MemorySegment) inputs[" + i + "].memory().base();\n");
-                    source.append("    long in" + i + "BaseOffset = inputs[" + i + "].byteOffset();\n");
-                    source.append("    long[] in" + i + "Stride = inputs[" + i + "].byteStride().toArray();\n");
+                    source.append(
+                            "    MemorySegment in"
+                                    + i
+                                    + " = (MemorySegment) inputs["
+                                    + i
+                                    + "].memory().base();\n");
+                    source.append(
+                            "    long in" + i + "BaseOffset = inputs[" + i + "].byteOffset();\n");
+                    source.append(
+                            "    long[] in"
+                                    + i
+                                    + "Stride = inputs["
+                                    + i
+                                    + "].byteStride().toArray();\n");
                 }
             }
             source.append("    long size = output.shape().size();\n");
@@ -240,7 +254,8 @@ final class JavaKernelCompiler {
             return rootReduction;
         }
 
-        private void appendReductionBody(StringBuilder source, ExprNode root, ReductionNode reduction) {
+        private void appendReductionBody(
+                StringBuilder source, ExprNode root, ReductionNode reduction) {
             ReductionInfo info = collectReductionInfo(reduction);
             if (info.op() == ReductionOp.SUM) {
                 appendSumReductionBody(source, root, reduction, info);
@@ -252,9 +267,19 @@ final class JavaKernelCompiler {
         private void appendStridedInputPreamble(StringBuilder source) {
             source.append("    long[] shape = output.shape().toArray();\n");
             for (int i = 0; i < graph.inputs().size(); i++) {
-                source.append("    MemorySegment in" + i + " = (MemorySegment) inputs[" + i + "].memory().base();\n");
+                source.append(
+                        "    MemorySegment in"
+                                + i
+                                + " = (MemorySegment) inputs["
+                                + i
+                                + "].memory().base();\n");
                 source.append("    long in" + i + "BaseOffset = inputs[" + i + "].byteOffset();\n");
-                source.append("    long[] in" + i + "Stride = inputs[" + i + "].byteStride().toArray();\n");
+                source.append(
+                        "    long[] in"
+                                + i
+                                + "Stride = inputs["
+                                + i
+                                + "].byteStride().toArray();\n");
             }
         }
 
@@ -302,7 +327,8 @@ final class JavaKernelCompiler {
                 appendStridedInputPreamble(source);
             }
             if (expressionInput && inputType != DataType.FP32 && inputType != DataType.I32) {
-                source.append("    throw new IllegalStateException(\"Reduction expressions are only supported for FP32/I32\");\n");
+                source.append(
+                        "    throw new IllegalStateException(\"Reduction expressions are only supported for FP32/I32\");\n");
                 return;
             }
             source.append("    long outSize = output.shape().size();\n");
@@ -329,56 +355,76 @@ final class JavaKernelCompiler {
             }
 
             if (dataType == DataType.BOOL || dataType == DataType.I8) {
-                source.append("      long inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
-                source.append("      long inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
-                source.append("      byte acc = input.memory().base().get(ValueLayout.JAVA_BYTE, inputOffset);\n");
+                source.append(
+                        "      long inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
+                source.append(
+                        "      long inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
+                source.append(
+                        "      byte acc = input.memory().base().get(ValueLayout.JAVA_BYTE, inputOffset);\n");
                 source.append("      for (long r = 1; r < reduceSize; r++) {\n");
-                source.append("        long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);\n");
+                source.append(
+                        "        long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);\n");
                 source.append("        for (int j = 0; j < axes.length; j++) {\n");
                 source.append("          inCoord[axes[j]] = reduceCoord[j];\n");
                 source.append("        }\n");
-                source.append("        inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
-                source.append("        inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
-                source.append("        byte value = input.memory().base().get(ValueLayout.JAVA_BYTE, inputOffset);\n");
+                source.append(
+                        "        inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
+                source.append(
+                        "        inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
+                source.append(
+                        "        byte value = input.memory().base().get(ValueLayout.JAVA_BYTE, inputOffset);\n");
                 source.append("        if (value ").append(comparator).append(" acc) {\n");
                 source.append("          acc = value;\n");
                 source.append("        }\n");
                 source.append("      }\n");
                 appendPostReductionOutput(source, root, reduction);
             } else if (dataType == DataType.I16) {
-                source.append("      long inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
-                source.append("      long inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
-                source.append("      short acc = input.memory().base().get(ValueLayout.JAVA_SHORT_UNALIGNED, inputOffset);\n");
+                source.append(
+                        "      long inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
+                source.append(
+                        "      long inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
+                source.append(
+                        "      short acc = input.memory().base().get(ValueLayout.JAVA_SHORT_UNALIGNED, inputOffset);\n");
                 source.append("      for (long r = 1; r < reduceSize; r++) {\n");
-                source.append("        long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);\n");
+                source.append(
+                        "        long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);\n");
                 source.append("        for (int j = 0; j < axes.length; j++) {\n");
                 source.append("          inCoord[axes[j]] = reduceCoord[j];\n");
                 source.append("        }\n");
-                source.append("        inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
-                source.append("        inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
-                source.append("        short value = input.memory().base().get(ValueLayout.JAVA_SHORT_UNALIGNED, inputOffset);\n");
+                source.append(
+                        "        inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
+                source.append(
+                        "        inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
+                source.append(
+                        "        short value = input.memory().base().get(ValueLayout.JAVA_SHORT_UNALIGNED, inputOffset);\n");
                 source.append("        if (value ").append(comparator).append(" acc) {\n");
                 source.append("          acc = value;\n");
                 source.append("        }\n");
                 source.append("      }\n");
                 appendPostReductionOutput(source, root, reduction);
             } else if (dataType == DataType.I32) {
-                String valueExpr = expressionInput
-                        ? expressionForNode(info.input(), "inputIndex")
-                        : "input.memory().base().get(ValueLayout.JAVA_INT_UNALIGNED, inputOffset)";
-                source.append("      long inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
+                String valueExpr =
+                        expressionInput
+                                ? expressionForNode(info.input(), "inputIndex")
+                                : "input.memory().base().get(ValueLayout.JAVA_INT_UNALIGNED, inputOffset)";
+                source.append(
+                        "      long inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
                 if (!expressionInput) {
-                    source.append("      long inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
+                    source.append(
+                            "      long inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
                 }
                 source.append("      int acc = ").append(valueExpr).append(";\n");
                 source.append("      for (long r = 1; r < reduceSize; r++) {\n");
-                source.append("        long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);\n");
+                source.append(
+                        "        long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);\n");
                 source.append("        for (int j = 0; j < axes.length; j++) {\n");
                 source.append("          inCoord[axes[j]] = reduceCoord[j];\n");
                 source.append("        }\n");
-                source.append("        inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
+                source.append(
+                        "        inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
                 if (!expressionInput) {
-                    source.append("        inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
+                    source.append(
+                            "        inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
                 }
                 source.append("        int value = ").append(valueExpr).append(";\n");
                 source.append("        if (value ").append(comparator).append(" acc) {\n");
@@ -387,35 +433,49 @@ final class JavaKernelCompiler {
                 source.append("      }\n");
                 appendPostReductionOutput(source, root, reduction);
             } else if (dataType == DataType.I64) {
-                source.append("      long inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
-                source.append("      long inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
-                source.append("      long acc = input.memory().base().get(ValueLayout.JAVA_LONG_UNALIGNED, inputOffset);\n");
+                source.append(
+                        "      long inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
+                source.append(
+                        "      long inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
+                source.append(
+                        "      long acc = input.memory().base().get(ValueLayout.JAVA_LONG_UNALIGNED, inputOffset);\n");
                 source.append("      for (long r = 1; r < reduceSize; r++) {\n");
-                source.append("        long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);\n");
+                source.append(
+                        "        long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);\n");
                 source.append("        for (int j = 0; j < axes.length; j++) {\n");
                 source.append("          inCoord[axes[j]] = reduceCoord[j];\n");
                 source.append("        }\n");
-                source.append("        inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
-                source.append("        inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
-                source.append("        long value = input.memory().base().get(ValueLayout.JAVA_LONG_UNALIGNED, inputOffset);\n");
+                source.append(
+                        "        inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
+                source.append(
+                        "        inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
+                source.append(
+                        "        long value = input.memory().base().get(ValueLayout.JAVA_LONG_UNALIGNED, inputOffset);\n");
                 source.append("        if (value ").append(comparator).append(" acc) {\n");
                 source.append("          acc = value;\n");
                 source.append("        }\n");
                 source.append("      }\n");
                 appendPostReductionOutput(source, root, reduction);
             } else if (dataType == DataType.FP16) {
-                source.append("      long inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
-                source.append("      long inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
-                source.append("      short accBits = input.memory().base().get(ValueLayout.JAVA_SHORT_UNALIGNED, inputOffset);\n");
+                source.append(
+                        "      long inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
+                source.append(
+                        "      long inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
+                source.append(
+                        "      short accBits = input.memory().base().get(ValueLayout.JAVA_SHORT_UNALIGNED, inputOffset);\n");
                 source.append("      float acc = Float.float16ToFloat(accBits);\n");
                 source.append("      for (long r = 1; r < reduceSize; r++) {\n");
-                source.append("        long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);\n");
+                source.append(
+                        "        long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);\n");
                 source.append("        for (int j = 0; j < axes.length; j++) {\n");
                 source.append("          inCoord[axes[j]] = reduceCoord[j];\n");
                 source.append("        }\n");
-                source.append("        inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
-                source.append("        inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
-                source.append("        short valueBits = input.memory().base().get(ValueLayout.JAVA_SHORT_UNALIGNED, inputOffset);\n");
+                source.append(
+                        "        inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
+                source.append(
+                        "        inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
+                source.append(
+                        "        short valueBits = input.memory().base().get(ValueLayout.JAVA_SHORT_UNALIGNED, inputOffset);\n");
                 source.append("        float value = Float.float16ToFloat(valueBits);\n");
                 source.append("        if (value ").append(comparator).append(" acc) {\n");
                 source.append("          acc = value;\n");
@@ -423,18 +483,25 @@ final class JavaKernelCompiler {
                 source.append("      }\n");
                 appendPostReductionOutput(source, root, reduction);
             } else if (dataType == DataType.BF16) {
-                source.append("      long inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
-                source.append("      long inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
-                source.append("      short accBits = input.memory().base().get(ValueLayout.JAVA_SHORT_UNALIGNED, inputOffset);\n");
+                source.append(
+                        "      long inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
+                source.append(
+                        "      long inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
+                source.append(
+                        "      short accBits = input.memory().base().get(ValueLayout.JAVA_SHORT_UNALIGNED, inputOffset);\n");
                 source.append("      float acc = BFloat16.toFloat(accBits);\n");
                 source.append("      for (long r = 1; r < reduceSize; r++) {\n");
-                source.append("        long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);\n");
+                source.append(
+                        "        long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);\n");
                 source.append("        for (int j = 0; j < axes.length; j++) {\n");
                 source.append("          inCoord[axes[j]] = reduceCoord[j];\n");
                 source.append("        }\n");
-                source.append("        inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
-                source.append("        inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
-                source.append("        short valueBits = input.memory().base().get(ValueLayout.JAVA_SHORT_UNALIGNED, inputOffset);\n");
+                source.append(
+                        "        inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
+                source.append(
+                        "        inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
+                source.append(
+                        "        short valueBits = input.memory().base().get(ValueLayout.JAVA_SHORT_UNALIGNED, inputOffset);\n");
                 source.append("        float value = BFloat16.toFloat(valueBits);\n");
                 source.append("        if (value ").append(comparator).append(" acc) {\n");
                 source.append("          acc = value;\n");
@@ -442,22 +509,28 @@ final class JavaKernelCompiler {
                 source.append("      }\n");
                 appendPostReductionOutput(source, root, reduction);
             } else if (dataType == DataType.FP32) {
-                String valueExpr = expressionInput
-                        ? expressionForNode(info.input(), "inputIndex")
-                        : "input.memory().base().get(ValueLayout.JAVA_FLOAT_UNALIGNED, inputOffset)";
-                source.append("      long inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
+                String valueExpr =
+                        expressionInput
+                                ? expressionForNode(info.input(), "inputIndex")
+                                : "input.memory().base().get(ValueLayout.JAVA_FLOAT_UNALIGNED, inputOffset)";
+                source.append(
+                        "      long inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
                 if (!expressionInput) {
-                    source.append("      long inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
+                    source.append(
+                            "      long inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
                 }
                 source.append("      float acc = ").append(valueExpr).append(";\n");
                 source.append("      for (long r = 1; r < reduceSize; r++) {\n");
-                source.append("        long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);\n");
+                source.append(
+                        "        long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);\n");
                 source.append("        for (int j = 0; j < axes.length; j++) {\n");
                 source.append("          inCoord[axes[j]] = reduceCoord[j];\n");
                 source.append("        }\n");
-                source.append("        inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
+                source.append(
+                        "        inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
                 if (!expressionInput) {
-                    source.append("        inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
+                    source.append(
+                            "        inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
                 }
                 source.append("        float value = ").append(valueExpr).append(";\n");
                 source.append("        if (value ").append(comparator).append(" acc) {\n");
@@ -466,24 +539,32 @@ final class JavaKernelCompiler {
                 source.append("      }\n");
                 appendPostReductionOutput(source, root, reduction);
             } else if (dataType == DataType.FP64) {
-                source.append("      long inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
-                source.append("      long inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
-                source.append("      double acc = input.memory().base().get(ValueLayout.JAVA_DOUBLE_UNALIGNED, inputOffset);\n");
+                source.append(
+                        "      long inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
+                source.append(
+                        "      long inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
+                source.append(
+                        "      double acc = input.memory().base().get(ValueLayout.JAVA_DOUBLE_UNALIGNED, inputOffset);\n");
                 source.append("      for (long r = 1; r < reduceSize; r++) {\n");
-                source.append("        long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);\n");
+                source.append(
+                        "        long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);\n");
                 source.append("        for (int j = 0; j < axes.length; j++) {\n");
                 source.append("          inCoord[axes[j]] = reduceCoord[j];\n");
                 source.append("        }\n");
-                source.append("        inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
-                source.append("        inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
-                source.append("        double value = input.memory().base().get(ValueLayout.JAVA_DOUBLE_UNALIGNED, inputOffset);\n");
+                source.append(
+                        "        inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
+                source.append(
+                        "        inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
+                source.append(
+                        "        double value = input.memory().base().get(ValueLayout.JAVA_DOUBLE_UNALIGNED, inputOffset);\n");
                 source.append("        if (value ").append(comparator).append(" acc) {\n");
                 source.append("          acc = value;\n");
                 source.append("        }\n");
                 source.append("      }\n");
                 appendPostReductionOutput(source, root, reduction);
             } else {
-                source.append("      throw new IllegalStateException(\"Unsupported data type for reduction\");\n");
+                source.append(
+                        "      throw new IllegalStateException(\"Unsupported data type for reduction\");\n");
             }
             source.append("    }\n");
         }
@@ -531,7 +612,8 @@ final class JavaKernelCompiler {
                 appendStridedInputPreamble(source);
             }
             if (expressionInput && inputType != DataType.FP32 && inputType != DataType.I32) {
-                source.append("    throw new IllegalStateException(\"Reduction expressions are only supported for FP32/I32\");\n");
+                source.append(
+                        "    throw new IllegalStateException(\"Reduction expressions are only supported for FP32/I32\");\n");
                 return;
             }
             source.append("    long outSize = output.shape().size();\n");
@@ -562,46 +644,76 @@ final class JavaKernelCompiler {
             source.append("        for (int j = 0; j < axes.length; j++) {\n");
             source.append("          inCoord[axes[j]] = reduceCoord[j];\n");
             source.append("        }\n");
-            source.append("        long inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
+            source.append(
+                    "        long inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
             if (!expressionInput) {
-                source.append("        long inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
+                source.append(
+                        "        long inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
             }
             if (expressionInput) {
                 String valueExpr = expressionForNode(info.input(), "inputIndex");
                 String castedValue = castToAccumulator(valueExpr, inputType, accumulatorType);
                 source.append("        acc += ").append(castedValue).append(";\n");
             } else if (inputType == DataType.BOOL) {
-                source.append("        byte value = input.memory().base().get(ValueLayout.JAVA_BYTE, inputOffset);\n");
+                source.append(
+                        "        byte value = input.memory().base().get(ValueLayout.JAVA_BYTE, inputOffset);\n");
                 String boolExpr = "value == 0 ? 0 : 1";
-                source.append("        acc += ").append(castToAccumulator(boolExpr, DataType.I32, accumulatorType)).append(";\n");
+                source.append("        acc += ")
+                        .append(castToAccumulator(boolExpr, DataType.I32, accumulatorType))
+                        .append(";\n");
             } else if (inputType == DataType.I8) {
-                source.append("        byte value = input.memory().base().get(ValueLayout.JAVA_BYTE, inputOffset);\n");
-                source.append("        acc += ").append(castToAccumulator("value", inputType, accumulatorType)).append(";\n");
+                source.append(
+                        "        byte value = input.memory().base().get(ValueLayout.JAVA_BYTE, inputOffset);\n");
+                source.append("        acc += ")
+                        .append(castToAccumulator("value", inputType, accumulatorType))
+                        .append(";\n");
             } else if (inputType == DataType.I16) {
-                source.append("        short value = input.memory().base().get(ValueLayout.JAVA_SHORT_UNALIGNED, inputOffset);\n");
-                source.append("        acc += ").append(castToAccumulator("value", inputType, accumulatorType)).append(";\n");
+                source.append(
+                        "        short value = input.memory().base().get(ValueLayout.JAVA_SHORT_UNALIGNED, inputOffset);\n");
+                source.append("        acc += ")
+                        .append(castToAccumulator("value", inputType, accumulatorType))
+                        .append(";\n");
             } else if (inputType == DataType.I32) {
-                source.append("        int value = input.memory().base().get(ValueLayout.JAVA_INT_UNALIGNED, inputOffset);\n");
-                source.append("        acc += ").append(castToAccumulator("value", inputType, accumulatorType)).append(";\n");
+                source.append(
+                        "        int value = input.memory().base().get(ValueLayout.JAVA_INT_UNALIGNED, inputOffset);\n");
+                source.append("        acc += ")
+                        .append(castToAccumulator("value", inputType, accumulatorType))
+                        .append(";\n");
             } else if (inputType == DataType.I64) {
-                source.append("        long value = input.memory().base().get(ValueLayout.JAVA_LONG_UNALIGNED, inputOffset);\n");
-                source.append("        acc += ").append(castToAccumulator("value", inputType, accumulatorType)).append(";\n");
+                source.append(
+                        "        long value = input.memory().base().get(ValueLayout.JAVA_LONG_UNALIGNED, inputOffset);\n");
+                source.append("        acc += ")
+                        .append(castToAccumulator("value", inputType, accumulatorType))
+                        .append(";\n");
             } else if (inputType == DataType.FP16) {
-                source.append("        short valueBits = input.memory().base().get(ValueLayout.JAVA_SHORT_UNALIGNED, inputOffset);\n");
+                source.append(
+                        "        short valueBits = input.memory().base().get(ValueLayout.JAVA_SHORT_UNALIGNED, inputOffset);\n");
                 source.append("        float value = Float.float16ToFloat(valueBits);\n");
-                source.append("        acc += ").append(castToAccumulator("value", DataType.FP32, accumulatorType)).append(";\n");
+                source.append("        acc += ")
+                        .append(castToAccumulator("value", DataType.FP32, accumulatorType))
+                        .append(";\n");
             } else if (inputType == DataType.BF16) {
-                source.append("        short valueBits = input.memory().base().get(ValueLayout.JAVA_SHORT_UNALIGNED, inputOffset);\n");
+                source.append(
+                        "        short valueBits = input.memory().base().get(ValueLayout.JAVA_SHORT_UNALIGNED, inputOffset);\n");
                 source.append("        float value = BFloat16.toFloat(valueBits);\n");
-                source.append("        acc += ").append(castToAccumulator("value", DataType.FP32, accumulatorType)).append(";\n");
+                source.append("        acc += ")
+                        .append(castToAccumulator("value", DataType.FP32, accumulatorType))
+                        .append(";\n");
             } else if (inputType == DataType.FP32) {
-                source.append("        float value = input.memory().base().get(ValueLayout.JAVA_FLOAT_UNALIGNED, inputOffset);\n");
-                source.append("        acc += ").append(castToAccumulator("value", inputType, accumulatorType)).append(";\n");
+                source.append(
+                        "        float value = input.memory().base().get(ValueLayout.JAVA_FLOAT_UNALIGNED, inputOffset);\n");
+                source.append("        acc += ")
+                        .append(castToAccumulator("value", inputType, accumulatorType))
+                        .append(";\n");
             } else if (inputType == DataType.FP64) {
-                source.append("        double value = input.memory().base().get(ValueLayout.JAVA_DOUBLE_UNALIGNED, inputOffset);\n");
-                source.append("        acc += ").append(castToAccumulator("value", inputType, accumulatorType)).append(";\n");
+                source.append(
+                        "        double value = input.memory().base().get(ValueLayout.JAVA_DOUBLE_UNALIGNED, inputOffset);\n");
+                source.append("        acc += ")
+                        .append(castToAccumulator("value", inputType, accumulatorType))
+                        .append(";\n");
             } else {
-                source.append("        throw new IllegalStateException(\"Unsupported data type for sum reduction\");\n");
+                source.append(
+                        "        throw new IllegalStateException(\"Unsupported data type for sum reduction\");\n");
             }
             source.append("      }\n");
             appendPostReductionOutput(source, root, reduction);
@@ -631,13 +743,16 @@ final class JavaKernelCompiler {
             if (helpers.contains(HelperMethod.READ_BYTE)) {
                 source.append("\n");
                 if (style == KernelStyle.CONTIGUOUS) {
-                    source.append("  private static byte readByte(MemoryView<MemorySegment> view, long index) {\n");
-                    source.append("    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
+                    source.append(
+                            "  private static byte readByte(MemoryView<MemorySegment> view, long index) {\n");
+                    source.append(
+                            "    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
                     source.append("    MemorySegment base = view.memory().base();\n");
                     source.append("    return base.get(ValueLayout.JAVA_BYTE, offset);\n");
                     source.append("  }\n");
                 } else {
-                    source.append("  private static byte readByte(MemorySegment base, long offset) {\n");
+                    source.append(
+                            "  private static byte readByte(MemorySegment base, long offset) {\n");
                     source.append("    return base.get(ValueLayout.JAVA_BYTE, offset);\n");
                     source.append("  }\n");
                 }
@@ -645,41 +760,54 @@ final class JavaKernelCompiler {
             if (helpers.contains(HelperMethod.READ_SHORT)) {
                 source.append("\n");
                 if (style == KernelStyle.CONTIGUOUS) {
-                    source.append("  private static short readShort(MemoryView<MemorySegment> view, long index) {\n");
-                    source.append("    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
+                    source.append(
+                            "  private static short readShort(MemoryView<MemorySegment> view, long index) {\n");
+                    source.append(
+                            "    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
                     source.append("    MemorySegment base = view.memory().base();\n");
-                    source.append("    return base.get(ValueLayout.JAVA_SHORT_UNALIGNED, offset);\n");
+                    source.append(
+                            "    return base.get(ValueLayout.JAVA_SHORT_UNALIGNED, offset);\n");
                     source.append("  }\n");
                 } else {
-                    source.append("  private static short readShort(MemorySegment base, long offset) {\n");
-                    source.append("    return base.get(ValueLayout.JAVA_SHORT_UNALIGNED, offset);\n");
+                    source.append(
+                            "  private static short readShort(MemorySegment base, long offset) {\n");
+                    source.append(
+                            "    return base.get(ValueLayout.JAVA_SHORT_UNALIGNED, offset);\n");
                     source.append("  }\n");
                 }
             }
             if (helpers.contains(HelperMethod.READ_FLOAT)) {
                 source.append("\n");
                 if (style == KernelStyle.CONTIGUOUS) {
-                    source.append("  private static float readFloat(MemoryView<MemorySegment> view, long index) {\n");
-                    source.append("    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
+                    source.append(
+                            "  private static float readFloat(MemoryView<MemorySegment> view, long index) {\n");
+                    source.append(
+                            "    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
                     source.append("    MemorySegment base = view.memory().base();\n");
-                    source.append("    return base.get(ValueLayout.JAVA_FLOAT_UNALIGNED, offset);\n");
+                    source.append(
+                            "    return base.get(ValueLayout.JAVA_FLOAT_UNALIGNED, offset);\n");
                     source.append("  }\n");
                 } else {
-                    source.append("  private static float readFloat(MemorySegment base, long offset) {\n");
-                    source.append("    return base.get(ValueLayout.JAVA_FLOAT_UNALIGNED, offset);\n");
+                    source.append(
+                            "  private static float readFloat(MemorySegment base, long offset) {\n");
+                    source.append(
+                            "    return base.get(ValueLayout.JAVA_FLOAT_UNALIGNED, offset);\n");
                     source.append("  }\n");
                 }
             }
             if (helpers.contains(HelperMethod.READ_INT)) {
                 source.append("\n");
                 if (style == KernelStyle.CONTIGUOUS) {
-                    source.append("  private static int readInt(MemoryView<MemorySegment> view, long index) {\n");
-                    source.append("    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
+                    source.append(
+                            "  private static int readInt(MemoryView<MemorySegment> view, long index) {\n");
+                    source.append(
+                            "    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
                     source.append("    MemorySegment base = view.memory().base();\n");
                     source.append("    return base.get(ValueLayout.JAVA_INT_UNALIGNED, offset);\n");
                     source.append("  }\n");
                 } else {
-                    source.append("  private static int readInt(MemorySegment base, long offset) {\n");
+                    source.append(
+                            "  private static int readInt(MemorySegment base, long offset) {\n");
                     source.append("    return base.get(ValueLayout.JAVA_INT_UNALIGNED, offset);\n");
                     source.append("  }\n");
                 }
@@ -687,41 +815,54 @@ final class JavaKernelCompiler {
             if (helpers.contains(HelperMethod.READ_LONG)) {
                 source.append("\n");
                 if (style == KernelStyle.CONTIGUOUS) {
-                    source.append("  private static long readLong(MemoryView<MemorySegment> view, long index) {\n");
-                    source.append("    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
+                    source.append(
+                            "  private static long readLong(MemoryView<MemorySegment> view, long index) {\n");
+                    source.append(
+                            "    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
                     source.append("    MemorySegment base = view.memory().base();\n");
-                    source.append("    return base.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);\n");
+                    source.append(
+                            "    return base.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);\n");
                     source.append("  }\n");
                 } else {
-                    source.append("  private static long readLong(MemorySegment base, long offset) {\n");
-                    source.append("    return base.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);\n");
+                    source.append(
+                            "  private static long readLong(MemorySegment base, long offset) {\n");
+                    source.append(
+                            "    return base.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);\n");
                     source.append("  }\n");
                 }
             }
             if (helpers.contains(HelperMethod.READ_DOUBLE)) {
                 source.append("\n");
                 if (style == KernelStyle.CONTIGUOUS) {
-                    source.append("  private static double readDouble(MemoryView<MemorySegment> view, long index) {\n");
-                    source.append("    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
+                    source.append(
+                            "  private static double readDouble(MemoryView<MemorySegment> view, long index) {\n");
+                    source.append(
+                            "    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
                     source.append("    MemorySegment base = view.memory().base();\n");
-                    source.append("    return base.get(ValueLayout.JAVA_DOUBLE_UNALIGNED, offset);\n");
+                    source.append(
+                            "    return base.get(ValueLayout.JAVA_DOUBLE_UNALIGNED, offset);\n");
                     source.append("  }\n");
                 } else {
-                    source.append("  private static double readDouble(MemorySegment base, long offset) {\n");
-                    source.append("    return base.get(ValueLayout.JAVA_DOUBLE_UNALIGNED, offset);\n");
+                    source.append(
+                            "  private static double readDouble(MemorySegment base, long offset) {\n");
+                    source.append(
+                            "    return base.get(ValueLayout.JAVA_DOUBLE_UNALIGNED, offset);\n");
                     source.append("  }\n");
                 }
             }
             if (helpers.contains(HelperMethod.WRITE_BYTE)) {
                 source.append("\n");
                 if (style == KernelStyle.CONTIGUOUS) {
-                    source.append("  private static void writeByte(MemoryView<MemorySegment> view, long index, byte value) {\n");
-                    source.append("    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
+                    source.append(
+                            "  private static void writeByte(MemoryView<MemorySegment> view, long index, byte value) {\n");
+                    source.append(
+                            "    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
                     source.append("    MemorySegment base = view.memory().base();\n");
                     source.append("    base.set(ValueLayout.JAVA_BYTE, offset, value);\n");
                     source.append("  }\n");
                 } else {
-                    source.append("  private static void writeByte(MemorySegment base, long offset, byte value) {\n");
+                    source.append(
+                            "  private static void writeByte(MemorySegment base, long offset, byte value) {\n");
                     source.append("    base.set(ValueLayout.JAVA_BYTE, offset, value);\n");
                     source.append("  }\n");
                 }
@@ -729,41 +870,54 @@ final class JavaKernelCompiler {
             if (helpers.contains(HelperMethod.WRITE_SHORT)) {
                 source.append("\n");
                 if (style == KernelStyle.CONTIGUOUS) {
-                    source.append("  private static void writeShort(MemoryView<MemorySegment> view, long index, short value) {\n");
-                    source.append("    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
+                    source.append(
+                            "  private static void writeShort(MemoryView<MemorySegment> view, long index, short value) {\n");
+                    source.append(
+                            "    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
                     source.append("    MemorySegment base = view.memory().base();\n");
-                    source.append("    base.set(ValueLayout.JAVA_SHORT_UNALIGNED, offset, value);\n");
+                    source.append(
+                            "    base.set(ValueLayout.JAVA_SHORT_UNALIGNED, offset, value);\n");
                     source.append("  }\n");
                 } else {
-                    source.append("  private static void writeShort(MemorySegment base, long offset, short value) {\n");
-                    source.append("    base.set(ValueLayout.JAVA_SHORT_UNALIGNED, offset, value);\n");
+                    source.append(
+                            "  private static void writeShort(MemorySegment base, long offset, short value) {\n");
+                    source.append(
+                            "    base.set(ValueLayout.JAVA_SHORT_UNALIGNED, offset, value);\n");
                     source.append("  }\n");
                 }
             }
             if (helpers.contains(HelperMethod.WRITE_FLOAT)) {
                 source.append("\n");
                 if (style == KernelStyle.CONTIGUOUS) {
-                    source.append("  private static void writeFloat(MemoryView<MemorySegment> view, long index, float value) {\n");
-                    source.append("    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
+                    source.append(
+                            "  private static void writeFloat(MemoryView<MemorySegment> view, long index, float value) {\n");
+                    source.append(
+                            "    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
                     source.append("    MemorySegment base = view.memory().base();\n");
-                    source.append("    base.set(ValueLayout.JAVA_FLOAT_UNALIGNED, offset, value);\n");
+                    source.append(
+                            "    base.set(ValueLayout.JAVA_FLOAT_UNALIGNED, offset, value);\n");
                     source.append("  }\n");
                 } else {
-                    source.append("  private static void writeFloat(MemorySegment base, long offset, float value) {\n");
-                    source.append("    base.set(ValueLayout.JAVA_FLOAT_UNALIGNED, offset, value);\n");
+                    source.append(
+                            "  private static void writeFloat(MemorySegment base, long offset, float value) {\n");
+                    source.append(
+                            "    base.set(ValueLayout.JAVA_FLOAT_UNALIGNED, offset, value);\n");
                     source.append("  }\n");
                 }
             }
             if (helpers.contains(HelperMethod.WRITE_INT)) {
                 source.append("\n");
                 if (style == KernelStyle.CONTIGUOUS) {
-                    source.append("  private static void writeInt(MemoryView<MemorySegment> view, long index, int value) {\n");
-                    source.append("    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
+                    source.append(
+                            "  private static void writeInt(MemoryView<MemorySegment> view, long index, int value) {\n");
+                    source.append(
+                            "    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
                     source.append("    MemorySegment base = view.memory().base();\n");
                     source.append("    base.set(ValueLayout.JAVA_INT_UNALIGNED, offset, value);\n");
                     source.append("  }\n");
                 } else {
-                    source.append("  private static void writeInt(MemorySegment base, long offset, int value) {\n");
+                    source.append(
+                            "  private static void writeInt(MemorySegment base, long offset, int value) {\n");
                     source.append("    base.set(ValueLayout.JAVA_INT_UNALIGNED, offset, value);\n");
                     source.append("  }\n");
                 }
@@ -771,28 +925,38 @@ final class JavaKernelCompiler {
             if (helpers.contains(HelperMethod.WRITE_LONG)) {
                 source.append("\n");
                 if (style == KernelStyle.CONTIGUOUS) {
-                    source.append("  private static void writeLong(MemoryView<MemorySegment> view, long index, long value) {\n");
-                    source.append("    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
+                    source.append(
+                            "  private static void writeLong(MemoryView<MemorySegment> view, long index, long value) {\n");
+                    source.append(
+                            "    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
                     source.append("    MemorySegment base = view.memory().base();\n");
-                    source.append("    base.set(ValueLayout.JAVA_LONG_UNALIGNED, offset, value);\n");
+                    source.append(
+                            "    base.set(ValueLayout.JAVA_LONG_UNALIGNED, offset, value);\n");
                     source.append("  }\n");
                 } else {
-                    source.append("  private static void writeLong(MemorySegment base, long offset, long value) {\n");
-                    source.append("    base.set(ValueLayout.JAVA_LONG_UNALIGNED, offset, value);\n");
+                    source.append(
+                            "  private static void writeLong(MemorySegment base, long offset, long value) {\n");
+                    source.append(
+                            "    base.set(ValueLayout.JAVA_LONG_UNALIGNED, offset, value);\n");
                     source.append("  }\n");
                 }
             }
             if (helpers.contains(HelperMethod.WRITE_DOUBLE)) {
                 source.append("\n");
                 if (style == KernelStyle.CONTIGUOUS) {
-                    source.append("  private static void writeDouble(MemoryView<MemorySegment> view, long index, double value) {\n");
-                    source.append("    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
+                    source.append(
+                            "  private static void writeDouble(MemoryView<MemorySegment> view, long index, double value) {\n");
+                    source.append(
+                            "    long offset = view.byteOffset() + index * view.dataType().byteSize();\n");
                     source.append("    MemorySegment base = view.memory().base();\n");
-                    source.append("    base.set(ValueLayout.JAVA_DOUBLE_UNALIGNED, offset, value);\n");
+                    source.append(
+                            "    base.set(ValueLayout.JAVA_DOUBLE_UNALIGNED, offset, value);\n");
                     source.append("  }\n");
                 } else {
-                    source.append("  private static void writeDouble(MemorySegment base, long offset, double value) {\n");
-                    source.append("    base.set(ValueLayout.JAVA_DOUBLE_UNALIGNED, offset, value);\n");
+                    source.append(
+                            "  private static void writeDouble(MemorySegment base, long offset, double value) {\n");
+                    source.append(
+                            "    base.set(ValueLayout.JAVA_DOUBLE_UNALIGNED, offset, value);\n");
                     source.append("  }\n");
                 }
             }
@@ -819,7 +983,8 @@ final class JavaKernelCompiler {
             if (helpers.contains(HelperMethod.OFFSET_FOR_INDEX)) {
                 source.append("\n");
                 source.append("  private static long offsetForIndex(\n");
-                source.append("          long index, long baseOffset, long[] shape, long[] stride) {\n");
+                source.append(
+                        "          long index, long baseOffset, long[] shape, long[] stride) {\n");
                 source.append("    long offset = baseOffset;\n");
                 source.append("    long remaining = index;\n");
                 source.append("    for (int dim = shape.length - 1; dim >= 0; dim--) {\n");
@@ -858,8 +1023,13 @@ final class JavaKernelCompiler {
                 String inputVar = emitNode(unary.input());
                 String var = nextVar();
                 names.put(node, var);
-                lines.add(typeFor(node.dataType()) + " " + var + " = "
-                        + unaryExpression(unary.op(), inputVar, node.dataType()) + ";");
+                lines.add(
+                        typeFor(node.dataType())
+                                + " "
+                                + var
+                                + " = "
+                                + unaryExpression(unary.op(), inputVar, node.dataType())
+                                + ";");
                 return var;
             }
             if (node instanceof BinaryNode binary) {
@@ -867,17 +1037,27 @@ final class JavaKernelCompiler {
                 String rightVar = emitNode(binary.right());
                 String var = nextVar();
                 names.put(node, var);
-                lines.add(typeFor(node.dataType()) + " " + var + " = "
-                        + binaryExpression(binary.op(), leftVar, rightVar, node.dataType()) + ";");
+                lines.add(
+                        typeFor(node.dataType())
+                                + " "
+                                + var
+                                + " = "
+                                + binaryExpression(binary.op(), leftVar, rightVar, node.dataType())
+                                + ";");
                 return var;
             }
             if (node instanceof CastNode cast) {
                 String inputVar = emitNode(cast.input());
                 String var = nextVar();
                 names.put(node, var);
-                lines.add(typeFor(cast.targetType()) + " " + var + " = "
-                        + castExpression(inputVar, cast.input().dataType(), cast.targetType())
-                        + ";");
+                lines.add(
+                        typeFor(cast.targetType())
+                                + " "
+                                + var
+                                + " = "
+                                + castExpression(
+                                        inputVar, cast.input().dataType(), cast.targetType())
+                                + ";");
                 return var;
             }
             throw new IllegalStateException("Unsupported node: " + node);
@@ -913,7 +1093,8 @@ final class JavaKernelCompiler {
                 return castExpression(inputExpr, cast.input().dataType(), cast.targetType());
             }
             if (node instanceof ReductionNode) {
-                throw new IllegalStateException("Reductions are not supported in elementwise expressions");
+                throw new IllegalStateException(
+                        "Reductions are not supported in elementwise expressions");
             }
             throw new IllegalStateException("Unsupported node in reduction: " + node);
         }
@@ -1038,8 +1219,12 @@ final class JavaKernelCompiler {
             if (dataType == DataType.BOOL || dataType == DataType.I8) {
                 return "outBase.set(ValueLayout.JAVA_BYTE, outOffset, " + valueVar + ");";
             }
-            if (dataType == DataType.I16 || dataType == DataType.FP16 || dataType == DataType.BF16) {
-                return "outBase.set(ValueLayout.JAVA_SHORT_UNALIGNED, outOffset, " + valueVar + ");";
+            if (dataType == DataType.I16
+                    || dataType == DataType.FP16
+                    || dataType == DataType.BF16) {
+                return "outBase.set(ValueLayout.JAVA_SHORT_UNALIGNED, outOffset, "
+                        + valueVar
+                        + ");";
             }
             if (dataType == DataType.I32) {
                 return "outBase.set(ValueLayout.JAVA_INT_UNALIGNED, outOffset, " + valueVar + ");";
@@ -1048,10 +1233,14 @@ final class JavaKernelCompiler {
                 return "outBase.set(ValueLayout.JAVA_LONG_UNALIGNED, outOffset, " + valueVar + ");";
             }
             if (dataType == DataType.FP32) {
-                return "outBase.set(ValueLayout.JAVA_FLOAT_UNALIGNED, outOffset, " + valueVar + ");";
+                return "outBase.set(ValueLayout.JAVA_FLOAT_UNALIGNED, outOffset, "
+                        + valueVar
+                        + ");";
             }
             if (dataType == DataType.FP64) {
-                return "outBase.set(ValueLayout.JAVA_DOUBLE_UNALIGNED, outOffset, " + valueVar + ");";
+                return "outBase.set(ValueLayout.JAVA_DOUBLE_UNALIGNED, outOffset, "
+                        + valueVar
+                        + ");";
             }
             throw unsupported(dataType, "output");
         }
@@ -1149,7 +1338,8 @@ final class JavaKernelCompiler {
                     case "relu" -> "Math.max(0.0f, " + inputVar + ")";
                     case "gelu" -> withHelper(HelperMethod.GELU, "gelu(" + inputVar + ")");
                     case "silu" -> withHelper(HelperMethod.SILU, "silu(" + inputVar + ")");
-                    default -> throw new IllegalStateException("Unsupported unary op: " + op.name());
+                    default ->
+                            throw new IllegalStateException("Unsupported unary op: " + op.name());
                 };
             }
             if (dataType == DataType.I32) {
@@ -1158,13 +1348,16 @@ final class JavaKernelCompiler {
                     case "abs" -> "Math.abs(" + inputVar + ")";
                     case "square" -> "(" + inputVar + " * " + inputVar + ")";
                     case "relu" -> "Math.max(0, " + inputVar + ")";
-                    default -> throw new IllegalStateException("Unsupported unary op for I32: " + op.name());
+                    default ->
+                            throw new IllegalStateException(
+                                    "Unsupported unary op for I32: " + op.name());
                 };
             }
             throw unsupported(dataType, "unary");
         }
 
-        private String binaryExpression(BinaryOp op, String leftVar, String rightVar, DataType dataType) {
+        private String binaryExpression(
+                BinaryOp op, String leftVar, String rightVar, DataType dataType) {
             if (dataType == DataType.FP32) {
                 return switch (op.name()) {
                     case "add" -> leftVar + " + " + rightVar;
@@ -1174,7 +1367,8 @@ final class JavaKernelCompiler {
                     case "min" -> "Math.min(" + leftVar + ", " + rightVar + ")";
                     case "max" -> "Math.max(" + leftVar + ", " + rightVar + ")";
                     case "pow" -> "(float) Math.pow(" + leftVar + ", " + rightVar + ")";
-                    default -> throw new IllegalStateException("Unsupported binary op: " + op.name());
+                    default ->
+                            throw new IllegalStateException("Unsupported binary op: " + op.name());
                 };
             }
             if (dataType == DataType.I32) {
@@ -1186,7 +1380,8 @@ final class JavaKernelCompiler {
                     case "min" -> "Math.min(" + leftVar + ", " + rightVar + ")";
                     case "max" -> "Math.max(" + leftVar + ", " + rightVar + ")";
                     case "pow" -> "(int) Math.pow(" + leftVar + ", " + rightVar + ")";
-                    default -> throw new IllegalStateException("Unsupported binary op: " + op.name());
+                    default ->
+                            throw new IllegalStateException("Unsupported binary op: " + op.name());
                 };
             }
             throw unsupported(dataType, "binary");
@@ -1282,7 +1477,9 @@ final class JavaKernelCompiler {
             if (dataType == DataType.BOOL || dataType == DataType.I8) {
                 return "byte";
             }
-            if (dataType == DataType.I16 || dataType == DataType.FP16 || dataType == DataType.BF16) {
+            if (dataType == DataType.I16
+                    || dataType == DataType.FP16
+                    || dataType == DataType.BF16) {
                 return "short";
             }
             if (dataType == DataType.I32) {

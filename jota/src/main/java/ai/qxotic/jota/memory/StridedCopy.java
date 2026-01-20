@@ -27,8 +27,8 @@ final class StridedCopy {
             if (bytes == 0) {
                 return;
             }
-            context.memoryOperations().copy(
-                    src.memory(), src.byteOffset(), dst.memory(), dst.byteOffset(), bytes);
+            context.memoryOperations()
+                    .copy(src.memory(), src.byteOffset(), dst.memory(), dst.byteOffset(), bytes);
             return;
         }
 
@@ -53,10 +53,7 @@ final class StridedCopy {
     }
 
     private static <B> void copyWithAccess(
-            MemoryAccess<B> access,
-            MemoryView<B> src,
-            MemoryView<B> dst,
-            DataType dataType) {
+            MemoryAccess<B> access, MemoryView<B> src, MemoryView<B> dst, DataType dataType) {
         long size = src.shape().size();
         for (long index = 0; index < size; index++) {
             long srcOffset = Indexing.linearToOffset(src, index);
@@ -64,7 +61,9 @@ final class StridedCopy {
             if (dataType == DataType.BOOL || dataType == DataType.I8) {
                 byte value = access.readByte(src.memory(), srcOffset);
                 access.writeByte(dst.memory(), dstOffset, value);
-            } else if (dataType == DataType.I16 || dataType == DataType.FP16 || dataType == DataType.BF16) {
+            } else if (dataType == DataType.I16
+                    || dataType == DataType.FP16
+                    || dataType == DataType.BF16) {
                 short value = access.readShort(src.memory(), srcOffset);
                 access.writeShort(dst.memory(), dstOffset, value);
             } else if (dataType == DataType.I32) {
@@ -98,7 +97,9 @@ final class StridedCopy {
             if (dataType == DataType.BOOL || dataType == DataType.I8) {
                 byte value = src.get(ValueLayout.JAVA_BYTE, srcOffset);
                 dst.set(ValueLayout.JAVA_BYTE, dstOffset, value);
-            } else if (dataType == DataType.I16 || dataType == DataType.FP16 || dataType == DataType.BF16) {
+            } else if (dataType == DataType.I16
+                    || dataType == DataType.FP16
+                    || dataType == DataType.BF16) {
                 short value = src.get(ValueLayout.JAVA_SHORT_UNALIGNED, srcOffset);
                 dst.set(ValueLayout.JAVA_SHORT_UNALIGNED, dstOffset, value);
             } else if (dataType == DataType.I32) {

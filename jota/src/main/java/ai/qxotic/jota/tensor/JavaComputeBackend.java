@@ -22,7 +22,6 @@ final class JavaComputeBackend implements ComputeBackend {
         this.compiler = new JavaKernelCompiler(cache);
     }
 
-
     @Override
     public Device device() {
         return context.device();

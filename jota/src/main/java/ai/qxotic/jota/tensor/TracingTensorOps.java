@@ -133,7 +133,8 @@ final class TracingTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor sum(Tensor x, DataType accumulatorType, boolean keepDims, int _axis, int... _axes) {
+    public Tensor sum(
+            Tensor x, DataType accumulatorType, boolean keepDims, int _axis, int... _axes) {
         TraceTensor trace = requireTrace(x);
         validateSumAccumulator(trace.dataType(), accumulatorType);
         return reduceAxes(trace, ReductionOp.SUM, accumulatorType, keepDims, _axis, _axes);
@@ -262,7 +263,8 @@ final class TracingTensorOps implements TensorOps {
 
     private Tensor unaryOp(Tensor x, UnaryOp op) {
         TraceTensor trace = requireTrace(x);
-        ExprNode node = new UnaryNode(op, trace.node(), trace.dataType(), trace.layout(), trace.device());
+        ExprNode node =
+                new UnaryNode(op, trace.node(), trace.dataType(), trace.layout(), trace.device());
         return new TraceTensor(node);
     }
 
@@ -292,8 +294,7 @@ final class TracingTensorOps implements TensorOps {
         return new TraceTensor(node);
     }
 
-    private Tensor reduceAxes(
-            Tensor x, ReductionOp op, boolean keepDims, int _axis, int... _axes) {
+    private Tensor reduceAxes(Tensor x, ReductionOp op, boolean keepDims, int _axis, int... _axes) {
         return reduceAxes(x, op, x.dataType(), keepDims, _axis, _axes);
     }
 
@@ -323,14 +324,15 @@ final class TracingTensorOps implements TensorOps {
         Shape inputShape = input.layout().shape();
         Shape outputShape = reduceShape(inputShape, flatAxis, keepDims);
         Layout outputLayout = Layout.rowMajor(outputShape);
-        ReductionNode node = new ReductionNode(
-                op,
-                input.node(),
-                flatAxis,
-                keepDims,
-                accumulatorType,
-                outputLayout,
-                input.device());
+        ReductionNode node =
+                new ReductionNode(
+                        op,
+                        input.node(),
+                        flatAxis,
+                        keepDims,
+                        accumulatorType,
+                        outputLayout,
+                        input.device());
         return new TraceTensor(node);
     }
 
@@ -344,11 +346,12 @@ final class TracingTensorOps implements TensorOps {
                 axes[i + 1] = Util.wrapAround(moreAxes[i], modeRank);
             }
         }
-        int[] flatAxes = Arrays.stream(axes)
-                .distinct()
-                .flatMap(axis -> modeToFlatAxes(shape, axis))
-                .distinct()
-                .toArray();
+        int[] flatAxes =
+                Arrays.stream(axes)
+                        .distinct()
+                        .flatMap(axis -> modeToFlatAxes(shape, axis))
+                        .distinct()
+                        .toArray();
         Arrays.sort(flatAxes);
         for (int i = 0; i < flatAxes.length / 2; i++) {
             int tmp = flatAxes[i];
@@ -401,7 +404,8 @@ final class TracingTensorOps implements TensorOps {
         if (inputType.isFloatingPoint()) {
             if (accumulatorType != DataType.FP32 && accumulatorType != DataType.FP64) {
                 throw new IllegalArgumentException(
-                        "Floating-point sum accumulator must be FP32 or FP64, got " + accumulatorType);
+                        "Floating-point sum accumulator must be FP32 or FP64, got "
+                                + accumulatorType);
             }
             return;
         }

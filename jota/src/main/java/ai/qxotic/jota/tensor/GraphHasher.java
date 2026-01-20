@@ -17,8 +17,7 @@ public final class GraphHasher {
         return KernelCacheKey.of(toHex(digest.digest()));
     }
 
-    private static void writeNode(
-            ExprNode node, MessageDigest digest, Map<ExprNode, Integer> ids) {
+    private static void writeNode(ExprNode node, MessageDigest digest, Map<ExprNode, Integer> ids) {
         int nodeId = ids.computeIfAbsent(node, key -> ids.size());
         update(digest, node.getClass().getSimpleName());
         update(digest, Integer.toString(nodeId));

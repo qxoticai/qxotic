@@ -3,14 +3,11 @@ package ai.qxotic.jota.memory;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import ai.qxotic.jota.*;
+import ai.qxotic.jota.memory.impl.ContextFactory;
 import ai.qxotic.jota.tensor.JavaComputeEngine;
 import ai.qxotic.jota.tensor.Tensor;
-import ai.qxotic.jota.memory.MemoryContext;
-import ai.qxotic.jota.memory.MemoryHelpers;
-import ai.qxotic.jota.memory.impl.ContextFactory;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -29,10 +26,11 @@ class MemoryCopyTest extends AbstractMemoryTest {
         for (DataType dataType : PRIMITIVE_DATA_TYPES) {
             MemoryView<MemorySegment> base = range(dataType, Shape.of(2, 3));
             MemoryView<MemorySegment> src = base.transpose(0, 1);
-            MemoryView<MemorySegment> dst = MemoryView.of(
-                    context.memoryAllocator().allocateMemory(dataType, src.shape()),
-                    dataType,
-                    src.layout());
+            MemoryView<MemorySegment> dst =
+                    MemoryView.of(
+                            context.memoryAllocator().allocateMemory(dataType, src.shape()),
+                            dataType,
+                            src.layout());
 
             context.copy(src, dst);
             assertCopyMatches(src, dst, dataType);
@@ -88,5 +86,4 @@ class MemoryCopyTest extends AbstractMemoryTest {
         }
         throw new IllegalStateException("Unsupported data type: " + dataType);
     }
-
 }

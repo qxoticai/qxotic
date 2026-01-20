@@ -7,11 +7,10 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-
-import java.util.List;
 
 public class MemoryHelpersTest extends AbstractMemoryTest {
 
@@ -355,18 +354,18 @@ public class MemoryHelpersTest extends AbstractMemoryTest {
             Memory<B> memory = context.memoryAllocator().allocateMemory(dataType, flatShape.size());
             MemoryView<B> flatView = MemoryView.of(memory, dataType, flatLayout);
 
-            for (String nesting : List.of(
-                    "((_,_),_,_)",
-                    "(_,(_,_),_)",
-                    "(_,_,(_,_))",
-                    "(((_,_),_),_)",
-                    "((_,(_,_)),_)",
-                    "(_,(_,(_,_)))",
-                    "(_,((_,_),_))",
-                    "((_,_,_),_)",
-                    "(_,(_,_,_))",
-                    "((_,_),(_,_))"
-            )) {
+            for (String nesting :
+                    List.of(
+                            "((_,_),_,_)",
+                            "(_,(_,_),_)",
+                            "(_,_,(_,_))",
+                            "(((_,_),_),_)",
+                            "((_,(_,_)),_)",
+                            "(_,(_,(_,_)))",
+                            "(_,((_,_),_))",
+                            "((_,_,_),_)",
+                            "(_,(_,_,_))",
+                            "((_,_),(_,_))")) {
                 Shape nestedShape = Shape.pattern(nesting, flatShape.toArray());
                 Layout nestedLayout = Layout.rowMajor(nestedShape);
                 MemoryView<B> nestedView = MemoryView.of(memory, dataType, nestedLayout);
