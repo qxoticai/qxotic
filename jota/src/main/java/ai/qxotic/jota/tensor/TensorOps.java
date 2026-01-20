@@ -2,6 +2,7 @@ package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Shape;
+import ai.qxotic.jota.Util;
 import ai.qxotic.jota.memory.MemoryContext;
 import java.util.Arrays;
 import java.util.stream.IntStream;
@@ -61,6 +62,38 @@ public interface TensorOps {
     Tensor gelu(Tensor x);
 
     Tensor silu(Tensor x);
+
+    // === Boolean Operations ===
+
+    Tensor logicalNot(Tensor x);
+
+    Tensor logicalAnd(Tensor a, Tensor b);
+
+    Tensor logicalOr(Tensor a, Tensor b);
+
+    Tensor logicalXor(Tensor a, Tensor b);
+
+    Tensor equal(Tensor a, Tensor b);
+
+    Tensor lessThan(Tensor a, Tensor b);
+
+    default Tensor notEqual(Tensor a, Tensor b) {
+        return logicalNot(equal(a, b));
+    }
+
+    default Tensor greaterThan(Tensor a, Tensor b) {
+        return lessThan(b, a);
+    }
+
+    default Tensor lessThanOrEqual(Tensor a, Tensor b) {
+        return logicalNot(lessThan(b, a));
+    }
+
+    default Tensor greaterThanOrEqual(Tensor a, Tensor b) {
+        return logicalNot(lessThan(a, b));
+    }
+
+    Tensor where(Tensor condition, Tensor trueValue, Tensor falseValue);
 
     // === Reduction Operations ===
 

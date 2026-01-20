@@ -14,6 +14,11 @@ public interface BinaryOp extends Op {
     BinaryOp MIN = new BinaryOpImpl("min");
     BinaryOp MAX = new BinaryOpImpl("max");
     BinaryOp POW = new BinaryOpImpl("pow");
+    BinaryOp LOGICAL_AND = new BinaryOpImpl("logicalAnd");
+    BinaryOp LOGICAL_OR = new BinaryOpImpl("logicalOr");
+    BinaryOp LOGICAL_XOR = new BinaryOpImpl("logicalXor");
+    BinaryOp EQUAL = new BinaryOpImpl("equal");
+    BinaryOp LESS_THAN = new BinaryOpImpl("lessThan");
 }
 
 record BinaryOpImpl(String name) implements BinaryOp {}

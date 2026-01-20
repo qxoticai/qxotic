@@ -93,7 +93,8 @@ final class JavaKernelCompiler {
     private KernelCacheKey buildCacheKey(ExpressionGraph graph, KernelStyle style) {
         KernelCacheKey baseKey = GraphHasher.hash(graph);
         String suffix = style == null ? "unknown" : style.name().toLowerCase(Locale.ROOT);
-        return KernelCacheKey.of(baseKey.value() + "-" + suffix + "-v4");
+            return KernelCacheKey.of(baseKey.value() + "-" + suffix + "-v5");
+
     }
 
     private String formatDiagnostics(List<Diagnostic<? extends JavaFileObject>> diagnostics) {
@@ -218,6 +219,10 @@ final class JavaKernelCompiler {
                 } else if (node instanceof BinaryNode binary) {
                     stack.push(binary.left());
                     stack.push(binary.right());
+                } else if (node instanceof TernaryNode ternary) {
+                    stack.push(ternary.condition());
+                    stack.push(ternary.trueValue());
+                    stack.push(ternary.falseValue());
                 } else if (node instanceof CastNode cast) {
                     stack.push(cast.input());
                 } else if (node instanceof InputNode || node instanceof ScalarNode) {
@@ -953,8 +958,34 @@ final class JavaKernelCompiler {
                                 + " "
                                 + var
                                 + " = "
-                                + binaryExpression(binary.op(), leftVar, rightVar, node.dataType())
+                                + binaryExpression(
+                                        binary.op(),
+                                        leftVar,
+                                        binary.left().dataType(),
+                                        rightVar,
+                                        binary.right().dataType(),
+                                        node.dataType())
                                 + ";");
+                return var;
+            }
+            if (node instanceof TernaryNode ternary) {
+                String condVar = emitNode(ternary.condition());
+                String trueVar = emitNode(ternary.trueValue());
+                String falseVar = emitNode(ternary.falseValue());
+                String var = nextVar();
+                names.put(node, var);
+                String guard = booleanExpression(condVar, ternary.condition().dataType());
+                lines.add(
+                        typeFor(node.dataType())
+                                + " "
+                                + var
+                                + " = ("
+                                + guard
+                                + " ? "
+                                + trueVar
+                                + " : "
+                                + falseVar
+                                + ");");
                 return var;
             }
             if (node instanceof CastNode cast) {
@@ -997,7 +1028,20 @@ final class JavaKernelCompiler {
             if (node instanceof BinaryNode binary) {
                 String leftExpr = expressionForNode(binary.left(), indexVar, overrides);
                 String rightExpr = expressionForNode(binary.right(), indexVar, overrides);
-                return binaryExpression(binary.op(), leftExpr, rightExpr, node.dataType());
+                return binaryExpression(
+                        binary.op(),
+                        leftExpr,
+                        binary.left().dataType(),
+                        rightExpr,
+                        binary.right().dataType(),
+                        node.dataType());
+            }
+            if (node instanceof TernaryNode ternary) {
+                String conditionExpr = expressionForNode(ternary.condition(), indexVar, overrides);
+                String trueExpr = expressionForNode(ternary.trueValue(), indexVar, overrides);
+                String falseExpr = expressionForNode(ternary.falseValue(), indexVar, overrides);
+                String guard = booleanExpression(conditionExpr, ternary.condition().dataType());
+                return "(" + guard + " ? " + trueExpr + " : " + falseExpr + ")";
             }
             if (node instanceof CastNode cast) {
                 String inputExpr = expressionForNode(cast.input(), indexVar, overrides);
@@ -1144,14 +1188,10 @@ final class JavaKernelCompiler {
                 return "outBase.set(ValueLayout.JAVA_LONG_UNALIGNED, outOffset, " + valueVar + ");";
             }
             if (dataType == DataType.FP32) {
-                return "outBase.set(ValueLayout.JAVA_FLOAT_UNALIGNED, outOffset, "
-                        + valueVar
-                        + ");";
+                return "outBase.set(ValueLayout.JAVA_FLOAT_UNALIGNED, outOffset, " + valueVar + ");";
             }
             if (dataType == DataType.FP64) {
-                return "outBase.set(ValueLayout.JAVA_DOUBLE_UNALIGNED, outOffset, "
-                        + valueVar
-                        + ");";
+                return "outBase.set(ValueLayout.JAVA_DOUBLE_UNALIGNED, outOffset, " + valueVar + ");";
             }
             throw unsupported(dataType, "output");
         }
@@ -1230,10 +1270,20 @@ final class JavaKernelCompiler {
             if (scalar.dataType() == DataType.I32) {
                 return Integer.toString(scalar.value().intValue());
             }
+            if (scalar.dataType() == DataType.BOOL) {
+                return scalar.value().intValue() == 0 ? "(byte) 0" : "(byte) 1";
+            }
             throw unsupported(scalar.dataType(), "scalar");
         }
 
         private String unaryExpression(UnaryOp op, String inputVar, DataType dataType) {
+            if (dataType == DataType.BOOL) {
+                return switch (op.name()) {
+                    case "logicalNot" -> "(byte) (" + inputVar + " == 0 ? 1 : 0)";
+                    default ->
+                            throw new IllegalStateException("Unsupported unary op: " + op.name());
+                };
+            }
             if (dataType == DataType.FP32) {
                 return switch (op.name()) {
                     case "negate" -> "-" + inputVar;
@@ -1268,7 +1318,48 @@ final class JavaKernelCompiler {
         }
 
         private String binaryExpression(
-                BinaryOp op, String leftVar, String rightVar, DataType dataType) {
+                BinaryOp op,
+                String leftVar,
+                DataType leftType,
+                String rightVar,
+                DataType rightType,
+                DataType dataType) {
+            if (dataType == DataType.BOOL) {
+                return switch (op.name()) {
+                    case "logicalAnd" ->
+                            "(byte) (("
+                                    + booleanExpression(leftVar, leftType)
+                                    + " && "
+                                    + booleanExpression(rightVar, rightType)
+                                    + ") ? 1 : 0)";
+                    case "logicalOr" ->
+                            "(byte) (("
+                                    + booleanExpression(leftVar, leftType)
+                                    + " || "
+                                    + booleanExpression(rightVar, rightType)
+                                    + ") ? 1 : 0)";
+                    case "logicalXor" ->
+                            "(byte) (("
+                                    + booleanExpression(leftVar, leftType)
+                                    + " ^ "
+                                    + booleanExpression(rightVar, rightType)
+                                    + ") ? 1 : 0)";
+                    case "equal" ->
+                            "(byte) (("
+                                    + "(" + numericExpression(leftVar, leftType) + ")"
+                                    + " == "
+                                    + "(" + numericExpression(rightVar, rightType) + ")"
+                                    + ") ? 1 : 0)";
+                    case "lessThan" ->
+                            "(byte) (("
+                                    + "(" + numericExpression(leftVar, leftType) + ")"
+                                    + " < "
+                                    + "(" + numericExpression(rightVar, rightType) + ")"
+                                    + ") ? 1 : 0)";
+                    default ->
+                            throw new IllegalStateException("Unsupported binary op: " + op.name());
+                };
+            }
             if (dataType == DataType.FP32) {
                 return switch (op.name()) {
                     case "add" -> leftVar + " + " + rightVar;

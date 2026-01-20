@@ -133,6 +133,61 @@ final class TracingTensorOps implements TensorOps {
     }
 
     @Override
+    public Tensor logicalNot(Tensor x) {
+        TraceTensor trace = requireTrace(x);
+        requireBool(trace.dataType(), "logicalNot");
+        ExprNode node = new UnaryNode(UnaryOp.LOGICAL_NOT, trace.node(), trace.dataType(), trace.layout(), trace.device());
+        return new TraceTensor(node);
+    }
+
+    @Override
+    public Tensor logicalAnd(Tensor a, Tensor b) {
+        return booleanBinaryOp(a, b, BinaryOp.LOGICAL_AND, "logicalAnd");
+    }
+
+    @Override
+    public Tensor logicalOr(Tensor a, Tensor b) {
+        return booleanBinaryOp(a, b, BinaryOp.LOGICAL_OR, "logicalOr");
+    }
+
+    @Override
+    public Tensor logicalXor(Tensor a, Tensor b) {
+        return booleanBinaryOp(a, b, BinaryOp.LOGICAL_XOR, "logicalXor");
+    }
+
+    @Override
+    public Tensor equal(Tensor a, Tensor b) {
+        return comparisonOp(a, b, BinaryOp.EQUAL, "equal");
+    }
+
+    @Override
+    public Tensor lessThan(Tensor a, Tensor b) {
+        return comparisonOp(a, b, BinaryOp.LESS_THAN, "lessThan");
+    }
+
+    @Override
+    public Tensor where(Tensor condition, Tensor trueValue, Tensor falseValue) {
+        TraceTensor cond = requireTrace(condition);
+        TraceTensor whenTrue = requireTrace(trueValue);
+        TraceTensor whenFalse = requireTrace(falseValue);
+        requireBool(cond.dataType(), "where");
+        requireSameType(whenTrue, whenFalse, "where");
+        Layout layout = requireCompatibleLayout(whenTrue, whenFalse);
+        layout = requireCompatibleLayout(cond, whenTrue);
+        Device device = requireCompatibleDevice(whenTrue, whenFalse);
+        device = requireCompatibleDevice(cond, whenTrue);
+        ExprNode node = new TernaryNode(
+                TernaryOp.WHERE,
+                cond.node(),
+                whenTrue.node(),
+                whenFalse.node(),
+                whenTrue.dataType(),
+                layout,
+                device);
+        return new TraceTensor(node);
+    }
+
+    @Override
     public Tensor sum(
             Tensor x, DataType accumulatorType, boolean keepDims, int _axis, int... _axes) {
         TraceTensor trace = requireTrace(x);
@@ -285,6 +340,29 @@ final class TracingTensorOps implements TensorOps {
         ExprNode leftNode = maybeCast(left.node(), targetType, layout, device);
         ExprNode rightNode = maybeCast(right.node(), targetType, layout, device);
         ExprNode node = new BinaryNode(op, leftNode, rightNode, targetType, layout, device);
+        return new TraceTensor(node);
+    }
+
+    private Tensor booleanBinaryOp(Tensor a, Tensor b, BinaryOp op, String opName) {
+        TraceTensor left = requireTrace(a);
+        TraceTensor right = requireTrace(b);
+        requireSameType(left, right, opName);
+        requireBool(left.dataType(), opName);
+        Layout layout = requireCompatibleLayout(left, right);
+        Device device = requireCompatibleDevice(left, right);
+        ExprNode node =
+                new BinaryNode(op, left.node(), right.node(), DataType.BOOL, layout, device);
+        return new TraceTensor(node);
+    }
+
+    private Tensor comparisonOp(Tensor a, Tensor b, BinaryOp op, String opName) {
+        TraceTensor left = requireTrace(a);
+        TraceTensor right = requireTrace(b);
+        requireSameType(left, right, opName);
+        Layout layout = requireCompatibleLayout(left, right);
+        Device device = requireCompatibleDevice(left, right);
+        ExprNode node =
+                new BinaryNode(op, left.node(), right.node(), DataType.BOOL, layout, device);
         return new TraceTensor(node);
     }
 
@@ -463,6 +541,23 @@ final class TracingTensorOps implements TensorOps {
             return node;
         }
         return new CastNode(node, targetType, layout, device);
+    }
+
+    private void requireSameType(TraceTensor left, TraceTensor right, String opName) {
+        if (left.dataType() != right.dataType()) {
+            throw new IllegalArgumentException(
+                    opName + " requires same data types, got "
+                            + left.dataType()
+                            + " and "
+                            + right.dataType());
+        }
+    }
+
+    private void requireBool(DataType dataType, String opName) {
+        if (dataType != DataType.BOOL) {
+            throw new IllegalArgumentException(
+                    opName + " requires BOOL data type, got " + dataType);
+        }
     }
 
     private Layout requireCompatibleLayout(TraceTensor left, TraceTensor right) {
