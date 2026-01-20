@@ -21,6 +21,7 @@ public interface UnaryOp extends Op {
     UnaryOp RELU = new UnaryOpImpl("relu");
     UnaryOp GELU = new UnaryOpImpl("gelu");
     UnaryOp SILU = new UnaryOpImpl("silu");
+    UnaryOp LOGICAL_NOT = new UnaryOpImpl("logicalNot");
 }
 
 record UnaryOpImpl(String name) implements UnaryOp {}

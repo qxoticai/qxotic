@@ -1,6 +1,8 @@
 package ai.qxotic.jota.tensor;
 
+import ai.qxotic.jota.BFloat16;
 import ai.qxotic.jota.DataType;
+import static ai.qxotic.jota.DataType.*;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.MemoryView;
@@ -56,6 +58,14 @@ public final class KernelInterpreter {
             }
             return;
         }
+        if (root.dataType() == DataType.BOOL) {
+            for (long index = 0; index < size; index++) {
+                byte value = evalBool(root, index, accessors);
+                long offset = offsetForIndex(index, outputBaseOffset, outputShape, outputStride);
+                outputBase.set(ValueLayout.JAVA_BYTE, offset, value);
+            }
+            return;
+        }
         throw new IllegalStateException("Unsupported output type: " + root.dataType());
     }
 
@@ -81,6 +91,12 @@ public final class KernelInterpreter {
                 return (float) evalInt(input, index, inputs);
             }
             return evalFloat(input, index, inputs);
+        }
+        if (node instanceof TernaryNode ternary) {
+            byte cond = evalBool(ternary.condition(), index, inputs);
+            return cond == 0
+                    ? evalFloat(ternary.falseValue(), index, inputs)
+                    : evalFloat(ternary.trueValue(), index, inputs);
         }
         if (node instanceof ReductionNode reduction) {
             return evalReductionFloat(reduction, index, inputs);
@@ -111,8 +127,47 @@ public final class KernelInterpreter {
             }
             return evalInt(input, index, inputs);
         }
+        if (node instanceof TernaryNode ternary) {
+            byte cond = evalBool(ternary.condition(), index, inputs);
+            return cond == 0
+                    ? evalInt(ternary.falseValue(), index, inputs)
+                    : evalInt(ternary.trueValue(), index, inputs);
+        }
         if (node instanceof ReductionNode reduction) {
             return evalReductionInt(reduction, index, inputs);
+        }
+        throw new IllegalStateException("Unsupported node: " + node);
+    }
+
+    private static byte evalBool(ExprNode node, long index, InputAccessor[] inputs) {
+        if (node instanceof InputNode input) {
+            return inputs[input.index()].readByte(index);
+        }
+        if (node instanceof ScalarNode scalar) {
+            return (byte) (scalar.value().intValue() == 0 ? 0 : 1);
+        }
+        if (node instanceof UnaryNode unary) {
+            byte value = evalBool(unary.input(), index, inputs);
+            return applyUnaryBool(unary.op(), value);
+        }
+        if (node instanceof BinaryNode binary) {
+            return applyBinaryBool(binary, index, inputs);
+        }
+        if (node instanceof CastNode cast) {
+            ExprNode input = cast.input();
+            if (input.dataType() == DataType.I32) {
+                return (byte) (evalInt(input, index, inputs) == 0 ? 0 : 1);
+            }
+            if (input.dataType() == DataType.FP32) {
+                return (byte) (evalFloat(input, index, inputs) == 0.0f ? 0 : 1);
+            }
+            return evalBool(input, index, inputs);
+        }
+        if (node instanceof TernaryNode ternary) {
+            byte cond = evalBool(ternary.condition(), index, inputs);
+            return cond == 0
+                    ? evalBool(ternary.falseValue(), index, inputs)
+                    : evalBool(ternary.trueValue(), index, inputs);
         }
         throw new IllegalStateException("Unsupported node: " + node);
     }
@@ -138,6 +193,142 @@ public final class KernelInterpreter {
             case "silu" -> value / (1.0f + (float) Math.exp(-value));
             default -> throw new IllegalStateException("Unsupported unary op: " + op.name());
         };
+    }
+
+    private static byte applyUnaryBool(UnaryOp op, byte value) {
+        return switch (op.name()) {
+            case "logicalNot" -> (byte) (value == 0 ? 1 : 0);
+            default -> throw new IllegalStateException("Unsupported unary op: " + op.name());
+        };
+    }
+
+    private static byte applyBinaryBool(BinaryNode binary, long index, InputAccessor[] inputs) {
+        return switch (binary.op().name()) {
+            case "logicalAnd" ->
+                    (byte)
+                            ((evalBool(binary.left(), index, inputs) != 0
+                                            && evalBool(binary.right(), index, inputs) != 0)
+                                    ? 1
+                                    : 0);
+            case "logicalOr" ->
+                    (byte)
+                            ((evalBool(binary.left(), index, inputs) != 0
+                                            || evalBool(binary.right(), index, inputs) != 0)
+                                    ? 1
+                                    : 0);
+            case "logicalXor" ->
+                    (byte)
+                            (((evalBool(binary.left(), index, inputs) != 0)
+                                            ^ (evalBool(binary.right(), index, inputs) != 0))
+                                    ? 1
+                                    : 0);
+            case "equal", "lessThan" ->
+                    (byte)
+                            (compareValues(binary, index, inputs) ? 1 : 0);
+            default ->
+                    throw new IllegalStateException("Unsupported binary op: " + binary.op().name());
+        };
+    }
+
+    private static boolean compareValues(
+            BinaryNode binary, long index, InputAccessor[] inputs) {
+        ExprNode left = binary.left();
+        ExprNode right = binary.right();
+        DataType type = left.dataType();
+        if (type != right.dataType()) {
+            throw new IllegalStateException("Mismatched comparison types: " + type + " vs " + right.dataType());
+        }
+        boolean equals = "equal".equals(binary.op().name());
+        if (type == DataType.BOOL) {
+            byte leftValue = evalBool(left, index, inputs);
+            byte rightValue = evalBool(right, index, inputs);
+            return equals ? leftValue == rightValue : leftValue < rightValue;
+        }
+        if (type == DataType.I32) {
+            int leftValue = evalInt(left, index, inputs);
+            int rightValue = evalInt(right, index, inputs);
+            return equals ? leftValue == rightValue : leftValue < rightValue;
+        }
+        if (type == DataType.FP32) {
+            float leftValue = evalFloat(left, index, inputs);
+            float rightValue = evalFloat(right, index, inputs);
+            return equals ? leftValue == rightValue : leftValue < rightValue;
+        }
+        if (type.isIntegral()) {
+            long leftValue = evalIntegralValue(left, type, index, inputs);
+            long rightValue = evalIntegralValue(right, type, index, inputs);
+            return equals ? leftValue == rightValue : leftValue < rightValue;
+        }
+        if (type.isFloatingPoint()) {
+            double leftValue = evalFloatingValue(left, type, index, inputs);
+            double rightValue = evalFloatingValue(right, type, index, inputs);
+            return equals ? leftValue == rightValue : leftValue < rightValue;
+        }
+        throw new IllegalStateException("Unsupported comparison type: " + type);
+    }
+
+    private static long evalIntegralValue(
+            ExprNode node, DataType type, long index, InputAccessor[] inputs) {
+        if (node instanceof InputNode input) {
+            if (type == DataType.BOOL || type == DataType.I8) {
+                return inputs[input.index()].readByte(index);
+            }
+            if (type == DataType.I16) {
+                return inputs[input.index()].readShort(index);
+            }
+            if (type == DataType.I32) {
+                return inputs[input.index()].readInt(index);
+            }
+            if (type == DataType.I64) {
+                return inputs[input.index()].readLong(index);
+            }
+            throw new IllegalStateException("Unsupported integral type: " + type);
+        }
+        if (node instanceof ScalarNode scalar) {
+            return scalar.value().longValue();
+        }
+        if (node instanceof CastNode cast) {
+            if (type == DataType.I32) {
+                return evalInt(cast.input(), index, inputs);
+            }
+            if (type == DataType.I64) {
+                return (long) evalInt(cast.input(), index, inputs);
+            }
+            return evalIntegralValue(cast.input(), type, index, inputs);
+        }
+        throw new IllegalStateException("Unsupported node for integral comparison: " + node);
+    }
+
+    private static double evalFloatingValue(
+            ExprNode node, DataType type, long index, InputAccessor[] inputs) {
+        if (node instanceof InputNode input) {
+            if (type == DataType.FP16) {
+                return Float.float16ToFloat(inputs[input.index()].readShort(index));
+            }
+            if (type == DataType.BF16) {
+                return BFloat16.toFloat(inputs[input.index()].readShort(index));
+            }
+            if (type == DataType.FP32) {
+                return inputs[input.index()].readFloat(index);
+            }
+            if (type == DataType.FP64) {
+                return inputs[input.index()].readDouble(index);
+            }
+            throw new IllegalStateException("Unsupported floating type: " + type);
+        }
+        if (node instanceof ScalarNode scalar) {
+            return scalar.value().doubleValue();
+        }
+        if (node instanceof CastNode cast) {
+            if (type == DataType.FP32) {
+                return evalFloat(cast.input(), index, inputs);
+            }
+            if (type == DataType.FP64) {
+                return evalFloat(cast.input(), index, inputs);
+            }
+            return evalFloatingValue(cast.input(), type, index, inputs);
+        }
+        throw new IllegalStateException("Unsupported node for floating comparison: " + node);
     }
 
     private static int applyUnaryInt(UnaryOp op, int value) {
@@ -375,14 +566,34 @@ public final class KernelInterpreter {
 
     private record InputAccessor(MemorySegment base, long baseOffset, long[] shape, long[] stride) {
 
-        float readFloat(long index) {
+        byte readByte(long index) {
             long offset = offsetForIndex(index, baseOffset, shape, stride);
-            return base.get(ValueLayout.JAVA_FLOAT_UNALIGNED, offset);
+            return base.get(ValueLayout.JAVA_BYTE, offset);
+        }
+
+        short readShort(long index) {
+            long offset = offsetForIndex(index, baseOffset, shape, stride);
+            return base.get(ValueLayout.JAVA_SHORT_UNALIGNED, offset);
         }
 
         int readInt(long index) {
             long offset = offsetForIndex(index, baseOffset, shape, stride);
             return base.get(ValueLayout.JAVA_INT_UNALIGNED, offset);
+        }
+
+        long readLong(long index) {
+            long offset = offsetForIndex(index, baseOffset, shape, stride);
+            return base.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+        }
+
+        float readFloat(long index) {
+            long offset = offsetForIndex(index, baseOffset, shape, stride);
+            return base.get(ValueLayout.JAVA_FLOAT_UNALIGNED, offset);
+        }
+
+        double readDouble(long index) {
+            long offset = offsetForIndex(index, baseOffset, shape, stride);
+            return base.get(ValueLayout.JAVA_DOUBLE_UNALIGNED, offset);
         }
     }
 }

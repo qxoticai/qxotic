@@ -10,7 +10,7 @@ import java.util.stream.Stream;
 
 public abstract class AbstractMemoryTest {
 
-    static final List<DataType> PRIMITIVE_DATA_TYPES =
+    public static final List<DataType> PRIMITIVE_DATA_TYPES =
             List.of(
                     DataType.BOOL,
                     DataType.I8,

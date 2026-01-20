@@ -131,6 +131,64 @@ public interface Tensor {
         return TensorOpsContext.require().max(this, keepDims, _axis, _axes);
     }
 
+    default Tensor any() {
+        if (dataType() != DataType.BOOL) {
+            throw new IllegalArgumentException("expected BOOL");
+        }
+        return TensorOpsContext.require().max(this);
+    }
+
+    default Tensor all() {
+        if (dataType() != DataType.BOOL) {
+            throw new IllegalArgumentException("expected BOOL");
+        }
+        return TensorOpsContext.require().min(this);
+    }
+
+    default Tensor logicalNot() {
+        return TensorOpsContext.require().logicalNot(this);
+    }
+
+    default Tensor logicalAnd(Tensor other) {
+        return TensorOpsContext.require().logicalAnd(this, other);
+    }
+
+    default Tensor logicalOr(Tensor other) {
+        return TensorOpsContext.require().logicalOr(this, other);
+    }
+
+    default Tensor logicalXor(Tensor other) {
+        return TensorOpsContext.require().logicalXor(this, other);
+    }
+
+    default Tensor equal(Tensor other) {
+        return TensorOpsContext.require().equal(this, other);
+    }
+
+    default Tensor lessThan(Tensor other) {
+        return TensorOpsContext.require().lessThan(this, other);
+    }
+
+    default Tensor notEqual(Tensor other) {
+        return equal(other).logicalNot();
+    }
+
+    default Tensor greaterThan(Tensor other) {
+        return other.lessThan(this);
+    }
+
+    default Tensor lessThanOrEqual(Tensor other) {
+        return other.lessThan(this).logicalNot();
+    }
+
+    default Tensor greaterThanOrEqual(Tensor other) {
+        return lessThan(other).logicalNot();
+    }
+
+    static Tensor where(Tensor condition, Tensor trueValue, Tensor falseValue) {
+        return TensorOpsContext.require().where(condition, trueValue, falseValue);
+    }
+
     default Tensor sum(DataType accumulatorType) {
         return TensorOpsContext.require().sum(this, accumulatorType);
     }
