@@ -1,0 +1,364 @@
+package ai.qxotic.jota.tensor;
+
+import ai.qxotic.jota.DataType;
+import ai.qxotic.jota.Indexing;
+import ai.qxotic.jota.Shape;
+import ai.qxotic.jota.memory.MemoryView;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Objects;
+
+public final class KernelInterpreter {
+
+    private KernelInterpreter() {}
+
+    public static void execute(
+            ExpressionGraph graph,
+            MemoryView<MemorySegment>[] inputs,
+            MemoryView<MemorySegment> output) {
+        Objects.requireNonNull(graph, "graph");
+        Objects.requireNonNull(inputs, "inputs");
+        Objects.requireNonNull(output, "output");
+
+        long[] outputShape = output.shape().toArray();
+        long[] outputStride = output.byteStride().toArray();
+        long outputBaseOffset = output.byteOffset();
+        MemorySegment outputBase = output.memory().base();
+
+        InputAccessor[] accessors = new InputAccessor[inputs.length];
+        for (int i = 0; i < inputs.length; i++) {
+            MemoryView<MemorySegment> view = inputs[i];
+            accessors[i] = new InputAccessor(
+                    view.memory().base(),
+                    view.byteOffset(),
+                    view.shape().toArray(),
+                    view.byteStride().toArray());
+        }
+
+        long size = output.shape().size();
+        ExprNode root = graph.root();
+        if (root.dataType() == DataType.FP32) {
+            for (long index = 0; index < size; index++) {
+                float value = evalFloat(root, index, accessors);
+                long offset = offsetForIndex(index, outputBaseOffset, outputShape, outputStride);
+                outputBase.set(ValueLayout.JAVA_FLOAT_UNALIGNED, offset, value);
+            }
+            return;
+        }
+        if (root.dataType() == DataType.I32) {
+            for (long index = 0; index < size; index++) {
+                int value = evalInt(root, index, accessors);
+                long offset = offsetForIndex(index, outputBaseOffset, outputShape, outputStride);
+                outputBase.set(ValueLayout.JAVA_INT_UNALIGNED, offset, value);
+            }
+            return;
+        }
+        throw new IllegalStateException("Unsupported output type: " + root.dataType());
+    }
+
+    private static float evalFloat(ExprNode node, long index, InputAccessor[] inputs) {
+        if (node instanceof InputNode input) {
+            return inputs[input.index()].readFloat(index);
+        }
+        if (node instanceof ScalarNode scalar) {
+            return scalar.value().floatValue();
+        }
+        if (node instanceof UnaryNode unary) {
+            float value = evalFloat(unary.input(), index, inputs);
+            return applyUnaryFloat(unary.op(), value);
+        }
+        if (node instanceof BinaryNode binary) {
+            float left = evalFloat(binary.left(), index, inputs);
+            float right = evalFloat(binary.right(), index, inputs);
+            return applyBinaryFloat(binary.op(), left, right);
+        }
+        if (node instanceof CastNode cast) {
+            ExprNode input = cast.input();
+            if (input.dataType() == DataType.I32) {
+                return (float) evalInt(input, index, inputs);
+            }
+            return evalFloat(input, index, inputs);
+        }
+        if (node instanceof ReductionNode reduction) {
+            return evalReductionFloat(reduction, index, inputs);
+        }
+        throw new IllegalStateException("Unsupported node: " + node);
+    }
+
+    private static int evalInt(ExprNode node, long index, InputAccessor[] inputs) {
+        if (node instanceof InputNode input) {
+            return inputs[input.index()].readInt(index);
+        }
+        if (node instanceof ScalarNode scalar) {
+            return scalar.value().intValue();
+        }
+        if (node instanceof UnaryNode unary) {
+            int value = evalInt(unary.input(), index, inputs);
+            return applyUnaryInt(unary.op(), value);
+        }
+        if (node instanceof BinaryNode binary) {
+            int left = evalInt(binary.left(), index, inputs);
+            int right = evalInt(binary.right(), index, inputs);
+            return applyBinaryInt(binary.op(), left, right);
+        }
+        if (node instanceof CastNode cast) {
+            ExprNode input = cast.input();
+            if (input.dataType() == DataType.FP32) {
+                return (int) evalFloat(input, index, inputs);
+            }
+            return evalInt(input, index, inputs);
+        }
+        if (node instanceof ReductionNode reduction) {
+            return evalReductionInt(reduction, index, inputs);
+        }
+        throw new IllegalStateException("Unsupported node: " + node);
+    }
+
+    private static float applyUnaryFloat(UnaryOp op, float value) {
+        return switch (op.name()) {
+            case "negate" -> -value;
+            case "abs" -> Math.abs(value);
+            case "exp" -> (float) Math.exp(value);
+            case "log" -> (float) Math.log(value);
+            case "sqrt" -> (float) Math.sqrt(value);
+            case "square" -> value * value;
+            case "sin" -> (float) Math.sin(value);
+            case "cos" -> (float) Math.cos(value);
+            case "tanh" -> (float) Math.tanh(value);
+            case "sigmoid" -> 1.0f / (1.0f + (float) Math.exp(-value));
+            case "relu" -> Math.max(0.0f, value);
+            case "gelu" -> {
+                float cubic = value * value * value;
+                float inner = 0.79788456f * (value + 0.044715f * cubic);
+                yield 0.5f * value * (1.0f + (float) Math.tanh(inner));
+            }
+            case "silu" -> value / (1.0f + (float) Math.exp(-value));
+            default -> throw new IllegalStateException("Unsupported unary op: " + op.name());
+        };
+    }
+
+    private static int applyUnaryInt(UnaryOp op, int value) {
+        return switch (op.name()) {
+            case "negate" -> -value;
+            case "abs" -> Math.abs(value);
+            case "square" -> value * value;
+            case "relu" -> Math.max(0, value);
+            default -> throw new IllegalStateException("Unsupported unary op for I32: " + op.name());
+        };
+    }
+
+    private static float applyBinaryFloat(BinaryOp op, float left, float right) {
+        return switch (op.name()) {
+            case "add" -> left + right;
+            case "subtract" -> left - right;
+            case "multiply" -> left * right;
+            case "divide" -> left / right;
+            case "min" -> Math.min(left, right);
+            case "max" -> Math.max(left, right);
+            case "pow" -> (float) Math.pow(left, right);
+            default -> throw new IllegalStateException("Unsupported binary op: " + op.name());
+        };
+    }
+
+    private static int applyBinaryInt(BinaryOp op, int left, int right) {
+        return switch (op.name()) {
+            case "add" -> left + right;
+            case "subtract" -> left - right;
+            case "multiply" -> left * right;
+            case "divide" -> left / right;
+            case "min" -> Math.min(left, right);
+            case "max" -> Math.max(left, right);
+            case "pow" -> (int) Math.pow(left, right);
+            default -> throw new IllegalStateException("Unsupported binary op: " + op.name());
+        };
+    }
+
+    private static float evalReductionFloat(
+            ReductionNode reduction, long index, InputAccessor[] inputs) {
+        ReductionInfo info = collectReductionInfo(reduction);
+        if (info.dataType() != DataType.FP32) {
+            throw new IllegalStateException("Unsupported reduction output type: " + info.dataType());
+        }
+        Shape inShape = info.input().layout().shape();
+        Shape outShape = reduction.layout().shape();
+        long[] inDims = inShape.toArray();
+        long[] outCoord = Indexing.linearToCoord(outShape, index);
+        long[] inCoord = new long[inDims.length];
+        if (info.keepDims()) {
+            System.arraycopy(outCoord, 0, inCoord, 0, inCoord.length);
+        } else {
+            int outDim = 0;
+            for (int dim = 0; dim < inCoord.length; dim++) {
+                boolean reduced = false;
+                for (int axis : info.axes()) {
+                    if (axis == dim) {
+                        reduced = true;
+                        break;
+                    }
+                }
+                inCoord[dim] = reduced ? 0 : outCoord[outDim++];
+            }
+        }
+        long[] reduceDims = new long[info.axes().length];
+        for (int i = 0; i < info.axes().length; i++) {
+            reduceDims[i] = inDims[info.axes()[i]];
+        }
+        Shape reduceShape = Shape.flat(reduceDims);
+        long reduceSize = reduceShape.size();
+        if (info.op() == ReductionOp.SUM) {
+            float acc = 0.0f;
+            for (long r = 0; r < reduceSize; r++) {
+                long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);
+                for (int j = 0; j < info.axes().length; j++) {
+                    inCoord[info.axes()[j]] = reduceCoord[j];
+                }
+                long inputIndex = Indexing.coordToLinear(inShape, inCoord);
+                acc += evalFloat(info.input(), inputIndex, inputs);
+            }
+            return acc;
+        }
+        if (reduceSize == 0) {
+            return 0.0f;
+        }
+        for (int j = 0; j < info.axes().length; j++) {
+            inCoord[info.axes()[j]] = 0;
+        }
+        long startIndex = Indexing.coordToLinear(inShape, inCoord);
+        float acc = evalFloat(info.input(), startIndex, inputs);
+        for (long r = 1; r < reduceSize; r++) {
+            long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);
+            for (int j = 0; j < info.axes().length; j++) {
+                inCoord[info.axes()[j]] = reduceCoord[j];
+            }
+            long inputIndex = Indexing.coordToLinear(inShape, inCoord);
+            float value = evalFloat(info.input(), inputIndex, inputs);
+            if (info.op() == ReductionOp.MIN) {
+                acc = Math.min(acc, value);
+            } else {
+                acc = Math.max(acc, value);
+            }
+        }
+        return acc;
+    }
+
+    private static int evalReductionInt(
+            ReductionNode reduction, long index, InputAccessor[] inputs) {
+        ReductionInfo info = collectReductionInfo(reduction);
+        if (info.dataType() != DataType.I32) {
+            throw new IllegalStateException("Unsupported reduction output type: " + info.dataType());
+        }
+        Shape inShape = info.input().layout().shape();
+        Shape outShape = reduction.layout().shape();
+        long[] inDims = inShape.toArray();
+        long[] outCoord = Indexing.linearToCoord(outShape, index);
+        long[] inCoord = new long[inDims.length];
+        if (info.keepDims()) {
+            System.arraycopy(outCoord, 0, inCoord, 0, inCoord.length);
+        } else {
+            int outDim = 0;
+            for (int dim = 0; dim < inCoord.length; dim++) {
+                boolean reduced = false;
+                for (int axis : info.axes()) {
+                    if (axis == dim) {
+                        reduced = true;
+                        break;
+                    }
+                }
+                inCoord[dim] = reduced ? 0 : outCoord[outDim++];
+            }
+        }
+        long[] reduceDims = new long[info.axes().length];
+        for (int i = 0; i < info.axes().length; i++) {
+            reduceDims[i] = inDims[info.axes()[i]];
+        }
+        Shape reduceShape = Shape.flat(reduceDims);
+        long reduceSize = reduceShape.size();
+        if (info.op() == ReductionOp.SUM) {
+            int acc = 0;
+            for (long r = 0; r < reduceSize; r++) {
+                long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);
+                for (int j = 0; j < info.axes().length; j++) {
+                    inCoord[info.axes()[j]] = reduceCoord[j];
+                }
+                long inputIndex = Indexing.coordToLinear(inShape, inCoord);
+                acc += evalInt(info.input(), inputIndex, inputs);
+            }
+            return acc;
+        }
+        if (reduceSize == 0) {
+            return 0;
+        }
+        for (int j = 0; j < info.axes().length; j++) {
+            inCoord[info.axes()[j]] = 0;
+        }
+        long startIndex = Indexing.coordToLinear(inShape, inCoord);
+        int acc = evalInt(info.input(), startIndex, inputs);
+        for (long r = 1; r < reduceSize; r++) {
+            long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);
+            for (int j = 0; j < info.axes().length; j++) {
+                inCoord[info.axes()[j]] = reduceCoord[j];
+            }
+            long inputIndex = Indexing.coordToLinear(inShape, inCoord);
+            int value = evalInt(info.input(), inputIndex, inputs);
+            if (info.op() == ReductionOp.MIN) {
+                acc = Math.min(acc, value);
+            } else {
+                acc = Math.max(acc, value);
+            }
+        }
+        return acc;
+    }
+
+    private static ReductionInfo collectReductionInfo(ReductionNode reduction) {
+        ArrayList<Integer> axes = new ArrayList<>();
+        ExprNode current = reduction;
+        ReductionOp op = reduction.op();
+        boolean keepDims = reduction.keepDims();
+        while (current instanceof ReductionNode node
+                && node.op() == op
+                && node.keepDims() == keepDims) {
+            axes.add(node.axis());
+            current = node.input();
+        }
+        int[] axisArray = axes.stream().distinct().mapToInt(Integer::intValue).toArray();
+        Arrays.sort(axisArray);
+        return new ReductionInfo(current, axisArray, keepDims, op, reduction.dataType());
+    }
+
+    private record ReductionInfo(
+            ExprNode input, int[] axes, boolean keepDims, ReductionOp op, DataType dataType) {}
+
+    private static long offsetForIndex(long index, long baseOffset, long[] shape, long[] stride) {
+        long offset = baseOffset;
+        long remaining = index;
+        for (int dim = shape.length - 1; dim >= 0; dim--) {
+            long size = shape[dim];
+            if (size == 0) {
+                return baseOffset;
+            }
+            long coord = remaining % size;
+            remaining /= size;
+            offset += coord * stride[dim];
+        }
+        return offset;
+    }
+
+    private record InputAccessor(
+            MemorySegment base,
+            long baseOffset,
+            long[] shape,
+            long[] stride) {
+
+        float readFloat(long index) {
+            long offset = offsetForIndex(index, baseOffset, shape, stride);
+            return base.get(ValueLayout.JAVA_FLOAT_UNALIGNED, offset);
+        }
+
+        int readInt(long index) {
+            long offset = offsetForIndex(index, baseOffset, shape, stride);
+            return base.get(ValueLayout.JAVA_INT_UNALIGNED, offset);
+        }
+    }
+}

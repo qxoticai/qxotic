@@ -1,11 +1,13 @@
 package ai.qxotic.model.llm;
 
+import ai.qxotic.format.safetensors.SafetensorsIndex;
+
 public abstract class AbstractHuggingFaceLoader<M extends Model<C, W, S>, C, W, S>
         implements ModelLoader<M, C, W, S> {
 
-    protected final HuggingFaceModel huggingFace;
+    protected final SafetensorsIndex safetensorsIndex;
 
-    protected AbstractHuggingFaceLoader(HuggingFaceModel huggingFace) {
-        this.huggingFace = huggingFace;
+    protected AbstractHuggingFaceLoader(SafetensorsIndex safetensorsIndex) {
+        this.safetensorsIndex = safetensorsIndex;
     }
 }
