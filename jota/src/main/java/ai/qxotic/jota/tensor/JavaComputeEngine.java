@@ -2,6 +2,8 @@ package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.MemoryContext;
+
+import java.lang.foreign.MemorySegment;
 import java.util.Objects;
 
 public final class JavaComputeEngine implements ComputeEngine {
@@ -9,11 +11,11 @@ public final class JavaComputeEngine implements ComputeEngine {
     private final KernelCache cache;
     private final ComputeBackend backend;
 
-    public JavaComputeEngine(MemoryContext<?> context) {
+    public JavaComputeEngine(MemoryContext<MemorySegment> context) {
         this(context, DiskKernelCache.defaultCache());
     }
 
-    public JavaComputeEngine(MemoryContext<?> context, KernelCache cache) {
+    public JavaComputeEngine(MemoryContext<MemorySegment> context, KernelCache cache) {
         Objects.requireNonNull(context, "context");
         this.cache = Objects.requireNonNull(cache, "cache");
         this.backend = new JavaComputeBackend(context, cache);

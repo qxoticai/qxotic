@@ -7,7 +7,7 @@ import java.lang.foreign.MemorySegment;
 public interface JitKernel {
 
     void execute(
-            MemoryContext<?> context,
+            MemoryContext<MemorySegment> context,
             MemoryView<MemorySegment>[] inputs,
             MemoryView<MemorySegment> output);
 }

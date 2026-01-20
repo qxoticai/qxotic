@@ -3,6 +3,7 @@ package ai.qxotic.jota.tensor;
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Layout;
+import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
@@ -12,11 +13,11 @@ import java.util.Objects;
 
 final class JavaComputeBackend implements ComputeBackend {
 
-    private final MemoryContext<?> context;
+    private final MemoryContext<MemorySegment> context;
     private final KernelCache cache;
     private final JavaKernelCompiler compiler;
 
-    JavaComputeBackend(MemoryContext<?> context, KernelCache cache) {
+    JavaComputeBackend(MemoryContext<MemorySegment> context, KernelCache cache) {
         this.context = Objects.requireNonNull(context, "context");
         this.cache = Objects.requireNonNull(cache, "cache");
         this.compiler = new JavaKernelCompiler(cache);
