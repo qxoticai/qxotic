@@ -1312,9 +1312,34 @@ final class JavaKernelCompiler {
                     case "abs" -> "Math.abs(" + inputVar + ")";
                     case "square" -> "(" + inputVar + " * " + inputVar + ")";
                     case "relu" -> "Math.max(0, " + inputVar + ")";
+                    case "bitwiseNot" -> "~" + inputVar;
                     default ->
                             throw new IllegalStateException(
                                     "Unsupported unary op for I32: " + op.name());
+                };
+            }
+            if (dataType == DataType.I8) {
+                return switch (op.name()) {
+                    case "bitwiseNot" -> "(byte) (~" + inputVar + ")";
+                    default ->
+                            throw new IllegalStateException(
+                                    "Unsupported unary op for I8: " + op.name());
+                };
+            }
+            if (dataType == DataType.I16) {
+                return switch (op.name()) {
+                    case "bitwiseNot" -> "(short) (~" + inputVar + ")";
+                    default ->
+                            throw new IllegalStateException(
+                                    "Unsupported unary op for I16: " + op.name());
+                };
+            }
+            if (dataType == DataType.I64) {
+                return switch (op.name()) {
+                    case "bitwiseNot" -> "~" + inputVar;
+                    default ->
+                            throw new IllegalStateException(
+                                    "Unsupported unary op for I64: " + op.name());
                 };
             }
             throw unsupported(dataType, "unary");
@@ -1393,8 +1418,41 @@ final class JavaKernelCompiler {
                     case "min" -> "Math.min(" + leftVar + ", " + rightVar + ")";
                     case "max" -> "Math.max(" + leftVar + ", " + rightVar + ")";
                     case "pow" -> "(int) Math.pow(" + leftVar + ", " + rightVar + ")";
+                    case "bitwiseAnd" -> leftVar + " & " + rightVar;
+                    case "bitwiseOr" -> leftVar + " | " + rightVar;
+                    case "bitwiseXor" -> leftVar + " ^ " + rightVar;
                     default ->
                             throw new IllegalStateException("Unsupported binary op: " + op.name());
+                };
+            }
+            if (dataType == DataType.I8) {
+                return switch (op.name()) {
+                    case "bitwiseAnd" -> "(byte) (" + leftVar + " & " + rightVar + ")";
+                    case "bitwiseOr" -> "(byte) (" + leftVar + " | " + rightVar + ")";
+                    case "bitwiseXor" -> "(byte) (" + leftVar + " ^ " + rightVar + ")";
+                    default ->
+                            throw new IllegalStateException(
+                                    "Unsupported binary op for I8: " + op.name());
+                };
+            }
+            if (dataType == DataType.I16) {
+                return switch (op.name()) {
+                    case "bitwiseAnd" -> "(short) (" + leftVar + " & " + rightVar + ")";
+                    case "bitwiseOr" -> "(short) (" + leftVar + " | " + rightVar + ")";
+                    case "bitwiseXor" -> "(short) (" + leftVar + " ^ " + rightVar + ")";
+                    default ->
+                            throw new IllegalStateException(
+                                    "Unsupported binary op for I16: " + op.name());
+                };
+            }
+            if (dataType == DataType.I64) {
+                return switch (op.name()) {
+                    case "bitwiseAnd" -> leftVar + " & " + rightVar;
+                    case "bitwiseOr" -> leftVar + " | " + rightVar;
+                    case "bitwiseXor" -> leftVar + " ^ " + rightVar;
+                    default ->
+                            throw new IllegalStateException(
+                                    "Unsupported binary op for I64: " + op.name());
                 };
             }
             throw unsupported(dataType, "binary");

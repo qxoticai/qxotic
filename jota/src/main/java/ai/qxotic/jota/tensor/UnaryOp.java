@@ -8,6 +8,7 @@ public interface UnaryOp extends Op {
     }
 
     UnaryOp IDENTITY = new UnaryOpImpl("identity");
+
     UnaryOp NEGATE = new UnaryOpImpl("negate");
     UnaryOp ABS = new UnaryOpImpl("abs");
     UnaryOp EXP = new UnaryOpImpl("exp");
@@ -21,7 +22,9 @@ public interface UnaryOp extends Op {
     UnaryOp RELU = new UnaryOpImpl("relu");
     UnaryOp GELU = new UnaryOpImpl("gelu");
     UnaryOp SILU = new UnaryOpImpl("silu");
+
     UnaryOp LOGICAL_NOT = new UnaryOpImpl("logicalNot");
+    UnaryOp BITWISE_NOT = new UnaryOpImpl("bitwiseNot");
 }
 
 record UnaryOpImpl(String name) implements UnaryOp {}

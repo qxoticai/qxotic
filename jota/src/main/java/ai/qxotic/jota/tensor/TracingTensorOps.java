@@ -162,6 +162,35 @@ final class TracingTensorOps implements TensorOps {
     }
 
     @Override
+    public Tensor bitwiseNot(Tensor x) {
+        TraceTensor trace = requireTrace(x);
+        requireIntegral(trace.dataType(), "bitwiseNot");
+        ExprNode node =
+                new UnaryNode(
+                        UnaryOp.BITWISE_NOT,
+                        trace.node(),
+                        trace.dataType(),
+                        trace.layout(),
+                        trace.device());
+        return new TraceTensor(node);
+    }
+
+    @Override
+    public Tensor bitwiseAnd(Tensor a, Tensor b) {
+        return bitwiseBinaryOp(a, b, BinaryOp.BITWISE_AND, "bitwiseAnd");
+    }
+
+    @Override
+    public Tensor bitwiseOr(Tensor a, Tensor b) {
+        return bitwiseBinaryOp(a, b, BinaryOp.BITWISE_OR, "bitwiseOr");
+    }
+
+    @Override
+    public Tensor bitwiseXor(Tensor a, Tensor b) {
+        return bitwiseBinaryOp(a, b, BinaryOp.BITWISE_XOR, "bitwiseXor");
+    }
+
+    @Override
     public Tensor equal(Tensor a, Tensor b) {
         return comparisonOp(a, b, BinaryOp.EQUAL, "equal");
     }
@@ -359,6 +388,18 @@ final class TracingTensorOps implements TensorOps {
         Device device = requireCompatibleDevice(left, right);
         ExprNode node =
                 new BinaryNode(op, left.node(), right.node(), DataType.BOOL, layout, device);
+        return new TraceTensor(node);
+    }
+
+    private Tensor bitwiseBinaryOp(Tensor a, Tensor b, BinaryOp op, String opName) {
+        TraceTensor left = requireTrace(a);
+        TraceTensor right = requireTrace(b);
+        requireSameType(left, right, opName);
+        requireIntegral(left.dataType(), opName);
+        Layout layout = requireCompatibleLayout(left, right);
+        Device device = requireCompatibleDevice(left, right);
+        ExprNode node =
+                new BinaryNode(op, left.node(), right.node(), left.dataType(), layout, device);
         return new TraceTensor(node);
     }
 
@@ -565,6 +606,13 @@ final class TracingTensorOps implements TensorOps {
         if (dataType != DataType.BOOL) {
             throw new IllegalArgumentException(
                     opName + " requires BOOL data type, got " + dataType);
+        }
+    }
+
+    private void requireIntegral(DataType dataType, String opName) {
+        if (!dataType.isIntegral() || dataType == DataType.BOOL) {
+            throw new IllegalArgumentException(
+                    opName + " requires integral data type, got " + dataType);
         }
     }
 
