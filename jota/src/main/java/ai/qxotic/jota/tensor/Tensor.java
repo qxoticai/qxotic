@@ -143,6 +143,18 @@ public interface Tensor {
         return TensorOpsContext.require().sum(this, accumulatorType, keepDims, _axis, _axes);
     }
 
+    default Tensor product(DataType accumulatorType) {
+        return TensorOpsContext.require().product(this, accumulatorType);
+    }
+
+    default Tensor product(DataType accumulatorType, int _axis, int... _axes) {
+        return TensorOpsContext.require().product(this, accumulatorType, _axis, _axes);
+    }
+
+    default Tensor product(DataType accumulatorType, boolean keepDims, int _axis, int... _axes) {
+        return TensorOpsContext.require().product(this, accumulatorType, keepDims, _axis, _axes);
+    }
+
     default Tensor cast(DataType targetType) {
         return TensorOpsContext.require().cast(this, targetType);
     }

@@ -222,6 +222,18 @@ public final class KernelInterpreter {
             }
             return acc;
         }
+        if (info.op() == ReductionOp.PROD) {
+            float acc = 1.0f;
+            for (long r = 0; r < reduceSize; r++) {
+                long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);
+                for (int j = 0; j < info.axes().length; j++) {
+                    inCoord[info.axes()[j]] = reduceCoord[j];
+                }
+                long inputIndex = Indexing.coordToLinear(inShape, inCoord);
+                acc *= evalFloat(info.input(), inputIndex, inputs);
+            }
+            return acc;
+        }
         if (reduceSize == 0) {
             return 0.0f;
         }
@@ -288,6 +300,18 @@ public final class KernelInterpreter {
                 }
                 long inputIndex = Indexing.coordToLinear(inShape, inCoord);
                 acc += evalInt(info.input(), inputIndex, inputs);
+            }
+            return acc;
+        }
+        if (info.op() == ReductionOp.PROD) {
+            int acc = 1;
+            for (long r = 0; r < reduceSize; r++) {
+                long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);
+                for (int j = 0; j < info.axes().length; j++) {
+                    inCoord[info.axes()[j]] = reduceCoord[j];
+                }
+                long inputIndex = Indexing.coordToLinear(inShape, inCoord);
+                acc *= evalInt(info.input(), inputIndex, inputs);
             }
             return acc;
         }

@@ -136,8 +136,16 @@ final class TracingTensorOps implements TensorOps {
     public Tensor sum(
             Tensor x, DataType accumulatorType, boolean keepDims, int _axis, int... _axes) {
         TraceTensor trace = requireTrace(x);
-        validateSumAccumulator(trace.dataType(), accumulatorType);
+        validateAccumulator(trace.dataType(), accumulatorType, "sum");
         return reduceAxes(trace, ReductionOp.SUM, accumulatorType, keepDims, _axis, _axes);
+    }
+
+    @Override
+    public Tensor product(
+            Tensor x, DataType accumulatorType, boolean keepDims, int _axis, int... _axes) {
+        TraceTensor trace = requireTrace(x);
+        validateAccumulator(trace.dataType(), accumulatorType, "product");
+        return reduceAxes(trace, ReductionOp.PROD, accumulatorType, keepDims, _axis, _axes);
     }
 
     @Override
@@ -392,19 +400,25 @@ final class TracingTensorOps implements TensorOps {
         return Shape.flat(reduced);
     }
 
-    private void validateSumAccumulator(DataType inputType, DataType accumulatorType) {
+    private void validateAccumulator(
+            DataType inputType, DataType accumulatorType, String reductionName) {
         Objects.requireNonNull(accumulatorType, "accumulatorType");
         if (inputType == DataType.BOOL) {
             if (accumulatorType != DataType.I32 && accumulatorType != DataType.I64) {
                 throw new IllegalArgumentException(
-                        "BOOL sum accumulator must be I32 or I64, got " + accumulatorType);
+                        "BOOL "
+                                + reductionName
+                                + " accumulator must be I32 or I64, got "
+                                + accumulatorType);
             }
             return;
         }
         if (inputType.isFloatingPoint()) {
             if (accumulatorType != DataType.FP32 && accumulatorType != DataType.FP64) {
                 throw new IllegalArgumentException(
-                        "Floating-point sum accumulator must be FP32 or FP64, got "
+                        "Floating-point "
+                                + reductionName
+                                + " accumulator must be FP32 or FP64, got "
                                 + accumulatorType);
             }
             return;
@@ -418,14 +432,17 @@ final class TracingTensorOps implements TensorOps {
             }
             if (!isIntegralAccumulator || accumulatorType.byteSize() < inputType.byteSize()) {
                 throw new IllegalArgumentException(
-                        "Integral sum accumulator must be >= input type or FP32/FP64, got "
+                        "Integral "
+                                + reductionName
+                                + " accumulator must be >= input type or FP32/FP64, got "
                                 + accumulatorType
                                 + " for input "
                                 + inputType);
             }
             return;
         }
-        throw new IllegalArgumentException("Unsupported sum input type: " + inputType);
+        throw new IllegalArgumentException(
+                "Unsupported " + reductionName + " input type: " + inputType);
     }
 
     private DataType scalarType(Number scalar) {

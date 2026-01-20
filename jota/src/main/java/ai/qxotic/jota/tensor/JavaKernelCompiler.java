@@ -261,6 +261,10 @@ final class JavaKernelCompiler {
                 appendSumReductionBody(source, root, reduction, info);
                 return;
             }
+            if (info.op() == ReductionOp.PROD) {
+                appendProductReductionBody(source, root, reduction, info);
+                return;
+            }
             appendMinMaxReductionBody(source, root, reduction, info);
         }
 
@@ -714,6 +718,157 @@ final class JavaKernelCompiler {
             } else {
                 source.append(
                         "        throw new IllegalStateException(\"Unsupported data type for sum reduction\");\n");
+            }
+            source.append("      }\n");
+            appendPostReductionOutput(source, root, reduction);
+            source.append("    }\n");
+        }
+
+        private void appendProductReductionBody(
+                StringBuilder source, ExprNode root, ReductionNode reduction, ReductionInfo info) {
+            boolean expressionInput = !(info.input() instanceof InputNode);
+            DataType inputType = info.input().dataType();
+            DataType accumulatorType = info.dataType();
+            String accumulatorJavaType;
+            String accumulatorOne;
+            if (accumulatorType == DataType.I32) {
+                accumulatorJavaType = "int";
+                accumulatorOne = "1";
+            } else if (accumulatorType == DataType.I64) {
+                accumulatorJavaType = "long";
+                accumulatorOne = "1L";
+            } else if (accumulatorType == DataType.FP32) {
+                accumulatorJavaType = "float";
+                accumulatorOne = "1.0f";
+            } else if (accumulatorType == DataType.FP64) {
+                accumulatorJavaType = "double";
+                accumulatorOne = "1.0d";
+            } else {
+                throw unsupported(accumulatorType, "product accumulator");
+            }
+            source.append("    MemoryView<MemorySegment> input = inputs[0];\n");
+            source.append("    long[] inShape = input.shape().toArray();\n");
+            source.append("    int[] axes = new int[] {");
+            for (int i = 0; i < info.axes().length; i++) {
+                if (i > 0) {
+                    source.append(", ");
+                }
+                source.append(info.axes()[i]);
+            }
+            source.append("};\n");
+            source.append("    long[] reduceDims = new long[axes.length];\n");
+            source.append("    for (int i = 0; i < axes.length; i++) {\n");
+            source.append("      reduceDims[i] = inShape[axes[i]];\n");
+            source.append("    }\n");
+            source.append("    Shape reduceShape = Shape.flat(reduceDims);\n");
+            source.append("    long reduceSize = reduceShape.size();\n");
+            source.append("    MemorySegment outBase = (MemorySegment) output.memory().base();\n");
+            if (style == KernelStyle.STRIDED) {
+                appendStridedInputPreamble(source);
+            }
+            if (expressionInput && inputType != DataType.FP32 && inputType != DataType.I32) {
+                source.append(
+                        "    throw new IllegalStateException(\"Reduction expressions are only supported for FP32/I32\");\n");
+                return;
+            }
+            source.append("    long outSize = output.shape().size();\n");
+            source.append("    for (long i = 0; i < outSize; i++) {\n");
+            source.append("      long[] outCoord = Indexing.linearToCoord(output.shape(), i);\n");
+            source.append("      long[] inCoord = new long[inShape.length];\n");
+            if (info.keepDims()) {
+                source.append("      for (int dim = 0; dim < inShape.length; dim++) {\n");
+                source.append("        inCoord[dim] = outCoord[dim];\n");
+                source.append("      }\n");
+            } else {
+                source.append("      int outDim = 0;\n");
+                source.append("      for (int dim = 0; dim < inShape.length; dim++) {\n");
+                source.append("        boolean reduced = false;\n");
+                source.append("        for (int ax : axes) {\n");
+                source.append("          if (ax == dim) { reduced = true; break; }\n");
+                source.append("        }\n");
+                source.append("        if (reduced) {\n");
+                source.append("          inCoord[dim] = 0;\n");
+                source.append("        } else {\n");
+                source.append("          inCoord[dim] = outCoord[outDim++];\n");
+                source.append("        }\n");
+                source.append("      }\n");
+            }
+            source.append("      " + accumulatorJavaType + " acc = " + accumulatorOne + ";\n");
+            source.append("      for (long r = 0; r < reduceSize; r++) {\n");
+            source.append("        long[] reduceCoord = Indexing.linearToCoord(reduceShape, r);\n");
+            source.append("        for (int j = 0; j < axes.length; j++) {\n");
+            source.append("          inCoord[axes[j]] = reduceCoord[j];\n");
+            source.append("        }\n");
+            source.append(
+                    "        long inputIndex = Indexing.coordToLinear(input.shape(), inCoord);\n");
+            if (!expressionInput) {
+                source.append(
+                        "        long inputOffset = Indexing.linearToOffset(input, inputIndex);\n");
+            }
+            if (expressionInput) {
+                String valueExpr = expressionForNode(info.input(), "inputIndex");
+                String castedValue = castToAccumulator(valueExpr, inputType, accumulatorType);
+                source.append("        acc *= ").append(castedValue).append(";\n");
+            } else if (inputType == DataType.BOOL) {
+                source.append(
+                        "        byte value = input.memory().base().get(ValueLayout.JAVA_BYTE, inputOffset);\n");
+                String boolExpr = "value == 0 ? 0 : 1";
+                source.append("        acc *= ")
+                        .append(castToAccumulator(boolExpr, DataType.I32, accumulatorType))
+                        .append(";\n");
+            } else if (inputType == DataType.I8) {
+                source.append(
+                        "        byte value = input.memory().base().get(ValueLayout.JAVA_BYTE, inputOffset);\n");
+                source.append("        acc *= ")
+                        .append(castToAccumulator("value", inputType, accumulatorType))
+                        .append(";\n");
+            } else if (inputType == DataType.I16) {
+                source.append(
+                        "        short value = input.memory().base().get(ValueLayout.JAVA_SHORT_UNALIGNED, inputOffset);\n");
+                source.append("        acc *= ")
+                        .append(castToAccumulator("value", inputType, accumulatorType))
+                        .append(";\n");
+            } else if (inputType == DataType.I32) {
+                source.append(
+                        "        int value = input.memory().base().get(ValueLayout.JAVA_INT_UNALIGNED, inputOffset);\n");
+                source.append("        acc *= ")
+                        .append(castToAccumulator("value", inputType, accumulatorType))
+                        .append(";\n");
+            } else if (inputType == DataType.I64) {
+                source.append(
+                        "        long value = input.memory().base().get(ValueLayout.JAVA_LONG_UNALIGNED, inputOffset);\n");
+                source.append("        acc *= ")
+                        .append(castToAccumulator("value", inputType, accumulatorType))
+                        .append(";\n");
+            } else if (inputType == DataType.FP16) {
+                source.append(
+                        "        short valueBits = input.memory().base().get(ValueLayout.JAVA_SHORT_UNALIGNED, inputOffset);\n");
+                source.append("        float value = Float.float16ToFloat(valueBits);\n");
+                source.append("        acc *= ")
+                        .append(castToAccumulator("value", DataType.FP32, accumulatorType))
+                        .append(";\n");
+            } else if (inputType == DataType.BF16) {
+                source.append(
+                        "        short valueBits = input.memory().base().get(ValueLayout.JAVA_SHORT_UNALIGNED, inputOffset);\n");
+                source.append("        float value = BFloat16.toFloat(valueBits);\n");
+                source.append("        acc *= ")
+                        .append(castToAccumulator("value", DataType.FP32, accumulatorType))
+                        .append(";\n");
+            } else if (inputType == DataType.FP32) {
+                source.append(
+                        "        float value = input.memory().base().get(ValueLayout.JAVA_FLOAT_UNALIGNED, inputOffset);\n");
+                source.append("        acc *= ")
+                        .append(castToAccumulator("value", inputType, accumulatorType))
+                        .append(";\n");
+            } else if (inputType == DataType.FP64) {
+                source.append(
+                        "        double value = input.memory().base().get(ValueLayout.JAVA_DOUBLE_UNALIGNED, inputOffset);\n");
+                source.append("        acc *= ")
+                        .append(castToAccumulator("value", inputType, accumulatorType))
+                        .append(";\n");
+            } else {
+                source.append(
+                        "        throw new IllegalStateException(\"Unsupported data type for product reduction\");\n");
             }
             source.append("      }\n");
             appendPostReductionOutput(source, root, reduction);
