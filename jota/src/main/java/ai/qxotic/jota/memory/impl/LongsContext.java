@@ -1,7 +1,6 @@
 package ai.qxotic.jota.memory.impl;
 
 import ai.qxotic.jota.Device;
-import ai.qxotic.jota.memory.FloatOperations;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryAllocator;
 import ai.qxotic.jota.memory.MemoryContext;
@@ -35,11 +34,6 @@ class LongsContext implements MemoryContext<long[]> {
     @Override
     public MemoryOperations<long[]> memoryOperations() {
         return LongsMemoryOperations.instance();
-    }
-
-    @Override
-    public FloatOperations<long[]> floatOperations() {
-        return null;
     }
 
     @Override

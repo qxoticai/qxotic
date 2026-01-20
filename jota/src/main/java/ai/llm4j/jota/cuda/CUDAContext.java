@@ -41,11 +41,6 @@ public class CUDAContext implements MemoryContext<CUdeviceptr> {
         return CUDAMemoryOperations.instance();
     }
 
-    @Override
-    public FloatOperations<CUdeviceptr> floatOperations() {
-        throw new UnsupportedOperationException(); // return CUDAFloatOperations.instance();
-    }
-
     public cublasHandle getCublasHandle() {
         return cublasHandle;
     }

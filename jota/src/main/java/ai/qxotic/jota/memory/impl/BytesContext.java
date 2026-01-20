@@ -1,7 +1,6 @@
 package ai.qxotic.jota.memory.impl;
 
 import ai.qxotic.jota.Device;
-import ai.qxotic.jota.memory.FloatOperations;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryAllocator;
 import ai.qxotic.jota.memory.MemoryContext;
@@ -35,11 +34,6 @@ class BytesContext implements MemoryContext<byte[]> {
     @Override
     public MemoryOperations<byte[]> memoryOperations() {
         return BytesMemoryOperations.instance();
-    }
-
-    @Override
-    public FloatOperations<byte[]> floatOperations() {
-        return null;
     }
 
     @Override

@@ -7,8 +7,6 @@ import java.util.Objects;
 
 class ByteBufferContext implements MemoryContext<ByteBuffer> {
 
-    private final FloatOperations<ByteBuffer> floatOperations =
-            new GenericFloatOperations<>(ByteBufferMemoryAccess.instance());
     private final MemoryAllocator<ByteBuffer> memoryAllocator;
 
     ByteBufferContext(MemoryAllocator<ByteBuffer> memoryAllocator) {
@@ -33,11 +31,6 @@ class ByteBufferContext implements MemoryContext<ByteBuffer> {
     @Override
     public MemoryOperations<ByteBuffer> memoryOperations() {
         return ByteBufferMemoryOperations.instance();
-    }
-
-    @Override
-    public FloatOperations<ByteBuffer> floatOperations() {
-        return this.floatOperations;
     }
 
     @Override
