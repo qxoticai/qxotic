@@ -151,7 +151,7 @@ final class JavaKernelCompiler {
                     .append(" implements JitKernel {\n");
             source.append("  @Override\n");
             source.append(
-                    "  public void execute(MemoryContext<?> context, MemoryView<MemorySegment>[] inputs, MemoryView<MemorySegment> output) {\n");
+                    "  public void execute(MemoryContext<MemorySegment> context, MemoryView<MemorySegment>[] inputs, MemoryView<MemorySegment> output) {\n");
 
             ReductionNode reductionRoot = findReductionRoot(graph.root());
             if (reductionRoot != null) {
