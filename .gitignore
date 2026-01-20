@@ -33,3 +33,6 @@ out/
 # no models in the repo
 *.gguf
 venv/
+
+# no cache kernels
+*/__kernels
