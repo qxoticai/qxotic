@@ -2,8 +2,6 @@ package ai.qxotic.jota;
 
 import ai.qxotic.jota.impl.LayoutFactory;
 
-import ai.qxotic.jota.Util;
-
 public interface Layout {
     Shape shape();
 
@@ -24,9 +22,9 @@ public interface Layout {
      * Returns true if the given mode (wrap-around index) is contiguous within its own mode range.
      * This checks contiguity only inside the mode and ignores any outer modes.
      *
-     * <p>Example: shape = (A, (B, C), D), stride = [B*C*D*2, C*D, D, 2].
-     * Mode 1 (B, C) is locally contiguous because strides inside the mode follow row-major
-     * expectations when treating D as the inner element size, even though axis D is strided.
+     * <p>Example: shape = (A, (B, C), D), stride = [B*C*D*2, C*D, D, 2]. Mode 1 (B, C) is locally
+     * contiguous because strides inside the mode follow row-major expectations when treating D as
+     * the inner element size, even though axis D is strided.
      */
     default boolean isLocalContiguous(int _modeIndex) {
         int modeIndex = Util.wrapAround(_modeIndex, shape().rank());
@@ -55,12 +53,12 @@ public interface Layout {
 
     /**
      * Returns true if the given mode (wrap-around index) and all inner flat axes are contiguous.
-     * This is stricter than {@link #isLocalContiguous(int)} and requires the mode to be a suffix
-     * of the flattened layout.
+     * This is stricter than {@link #isLocalContiguous(int)} and requires the mode to be a suffix of
+     * the flattened layout.
      *
-     * <p>Example: shape = (A, (B, C), D). Mode 1 (B, C) can still be locally contiguous because
-     * its internal strides match row-major when treated as a block, but suffix contiguity will be
-     * false if axis D is strided (e.g., stride[D] != 1).
+     * <p>Example: shape = (A, (B, C), D). Mode 1 (B, C) can still be locally contiguous because its
+     * internal strides match row-major when treated as a block, but suffix contiguity will be false
+     * if axis D is strided (e.g., stride[D] != 1).
      */
     default boolean isSuffixContiguous(int _modeIndex) {
         int modeIndex = Util.wrapAround(_modeIndex, shape().rank());
@@ -79,16 +77,16 @@ public interface Layout {
     }
 
     /**
-     * Flat-axis version of {@link #isLocalContiguous(int)}. The flat axis is treated as a mode
-     * in the flattened layout.
+     * Flat-axis version of {@link #isLocalContiguous(int)}. The flat axis is treated as a mode in
+     * the flattened layout.
      */
     default boolean isLocalContiguousFlat(int _flatIndex) {
         return flatten().isLocalContiguous(_flatIndex);
     }
 
     /**
-     * Flat-axis version of {@link #isSuffixContiguous(int)}. The flat axis is treated as a mode
-     * in the flattened layout.
+     * Flat-axis version of {@link #isSuffixContiguous(int)}. The flat axis is treated as a mode in
+     * the flattened layout.
      */
     default boolean isSuffixContiguousFlat(int _flatIndex) {
         return flatten().isSuffixContiguous(_flatIndex);

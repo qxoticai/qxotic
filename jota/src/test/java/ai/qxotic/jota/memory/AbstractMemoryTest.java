@@ -4,36 +4,29 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.memory.impl.ContextFactory;
 import ai.qxotic.jota.memory.impl.MemoryAllocatorFactory;
-
 import java.util.List;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 public abstract class AbstractMemoryTest {
 
-    static final List<DataType> PRIMITIVE_DATA_TYPES = List.of(
-            DataType.BOOL,
-            DataType.I8,
-            DataType.I16,
-            DataType.I32,
-            DataType.I64,
-            DataType.FP16,
-            DataType.BF16,
-            DataType.FP32,
-            DataType.FP64);
+    static final List<DataType> PRIMITIVE_DATA_TYPES =
+            List.of(
+                    DataType.BOOL,
+                    DataType.I8,
+                    DataType.I16,
+                    DataType.I32,
+                    DataType.I64,
+                    DataType.FP16,
+                    DataType.BF16,
+                    DataType.FP32,
+                    DataType.FP64);
 
-    static final List<DataType> INTEGRAL_DATA_TYPES = List.of(
-            DataType.I8,
-            DataType.I16,
-            DataType.I32,
-            DataType.I64);
+    static final List<DataType> INTEGRAL_DATA_TYPES =
+            List.of(DataType.I8, DataType.I16, DataType.I32, DataType.I64);
 
-    static final List<DataType> FLOATING_POINTS_DATA_TYPES = List.of(
-            DataType.FP16,
-            DataType.BF16,
-            DataType.FP32,
-            DataType.FP64);
-
+    static final List<DataType> FLOATING_POINTS_DATA_TYPES =
+            List.of(DataType.FP16, DataType.BF16, DataType.FP32, DataType.FP64);
 
     public static Stream<MemoryContext<?>> onHeapContexts() {
         return suppliedBy(
@@ -116,8 +109,7 @@ public abstract class AbstractMemoryTest {
     }
 
     @SafeVarargs
-    private static <T> Stream<T> suppliedBy(
-            Supplier<T>... suppliers) {
+    private static <T> Stream<T> suppliedBy(Supplier<T>... suppliers) {
         return Stream.of(suppliers).map(Supplier::get);
     }
 

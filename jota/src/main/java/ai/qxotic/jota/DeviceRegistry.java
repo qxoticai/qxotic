@@ -10,8 +10,7 @@ public final class DeviceRegistry {
 
     private static final ConcurrentMap<Device, MemoryContext<?>> CONTEXTS =
             new ConcurrentHashMap<>();
-    private static final ConcurrentMap<Device, ComputeEngine> ENGINES =
-            new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Device, ComputeEngine> ENGINES = new ConcurrentHashMap<>();
 
     private DeviceRegistry() {}
 

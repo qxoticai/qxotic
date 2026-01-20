@@ -136,8 +136,10 @@ public class EagerTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor sum(Tensor x, DataType accumulatorType, boolean keepDims, int _axis, int... _axes) {
-        throw new UnsupportedOperationException("Generic reduction op dispatch not yet implemented");
+    public Tensor sum(
+            Tensor x, DataType accumulatorType, boolean keepDims, int _axis, int... _axes) {
+        throw new UnsupportedOperationException(
+                "Generic reduction op dispatch not yet implemented");
     }
 
     @Override
@@ -147,12 +149,14 @@ public class EagerTensorOps implements TensorOps {
 
     @Override
     public Tensor max(Tensor x, boolean keepDims, int _axis, int... _axes) {
-        throw new UnsupportedOperationException("Generic reduction op dispatch not yet implemented");
+        throw new UnsupportedOperationException(
+                "Generic reduction op dispatch not yet implemented");
     }
 
     @Override
     public Tensor min(Tensor x, boolean keepDims, int _axis, int... _axes) {
-        throw new UnsupportedOperationException("Generic reduction op dispatch not yet implemented");
+        throw new UnsupportedOperationException(
+                "Generic reduction op dispatch not yet implemented");
     }
 
     @Override
@@ -268,9 +272,7 @@ public class EagerTensorOps implements TensorOps {
     private MemoryView<?> allocate(DataType dtype, Shape shape) {
         Layout layout = Layout.rowMajor(shape);
         return MemoryView.of(
-                context.memoryAllocator().allocateMemory(dtype.byteSizeFor(shape)),
-                dtype,
-                layout);
+                context.memoryAllocator().allocateMemory(dtype.byteSizeFor(shape)), dtype, layout);
     }
 
     private Tensor unaryOp(Tensor x, UnaryOp op) {
@@ -286,6 +288,7 @@ public class EagerTensorOps implements TensorOps {
     }
 
     private Tensor reductionOp(Tensor x, ReductionOp op, int axis, boolean keepDims) {
-        throw new UnsupportedOperationException("Generic reduction op dispatch not yet implemented");
+        throw new UnsupportedOperationException(
+                "Generic reduction op dispatch not yet implemented");
     }
 }

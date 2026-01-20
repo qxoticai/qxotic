@@ -4,7 +4,6 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.DeviceRegistry;
 import ai.qxotic.jota.Layout;
-
 import java.lang.foreign.MemorySegment;
 
 public interface MemoryContext<B> extends AutoCloseable {
@@ -76,15 +75,14 @@ public interface MemoryContext<B> extends AutoCloseable {
                 allocateContiguous(nativeContext, src.dataType(), src.shape().size());
         copyContiguous(srcContext, srcContig, nativeContext, nativeContig);
 
-        MemoryView<D> dstContig = allocateContiguous(dstContext, dst.dataType(), dst.shape().size());
+        MemoryView<D> dstContig =
+                allocateContiguous(dstContext, dst.dataType(), dst.shape().size());
         copyContiguous(nativeContext, nativeContig, dstContext, dstContig);
         copySameDevice(dstContext, dstContig, dst);
     }
 
     private static <S, D> void copySameDevice(
-            MemoryContext<S> context,
-            MemoryView<S> src,
-            MemoryView<D> dst) {
+            MemoryContext<S> context, MemoryView<S> src, MemoryView<D> dst) {
         if (srcContextDevice(context).equals(dst.memory().device())) {
             @SuppressWarnings("unchecked")
             MemoryView<S> castDst = (MemoryView<S>) dst;

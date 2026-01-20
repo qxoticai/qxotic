@@ -39,9 +39,7 @@ public final class DiskKernelCache implements KernelCache {
         Path sourcePath = directory.resolve(className + ".java");
         Path classOutputDir = directory.resolve("classes");
         Path classFilePath =
-                classOutputDir
-                        .resolve(packageName.replace('.', '/'))
-                        .resolve(className + ".class");
+                classOutputDir.resolve(packageName.replace('.', '/')).resolve(className + ".class");
         return new KernelCacheEntry(
                 key, packageName, className, directory, sourcePath, classOutputDir, classFilePath);
     }

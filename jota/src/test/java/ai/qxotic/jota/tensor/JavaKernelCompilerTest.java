@@ -1,5 +1,7 @@
 package ai.qxotic.jota.tensor;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import ai.llm4j.jota.FloatUnaryOperator;
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Indexing;
@@ -8,22 +10,17 @@ import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.memory.impl.ContextFactory;
 import ai.qxotic.jota.memory.impl.MemoryViewFactory;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
-import java.util.Arrays;
-import java.util.concurrent.TimeUnit;
-
-import static org.junit.jupiter.api.Assertions.*;
-
 class JavaKernelCompilerTest {
 
     @AutoClose
-    private final MemoryContext<MemorySegment> context =
-            ContextFactory.ofMemorySegment();
+    private final MemoryContext<MemorySegment> context = ContextFactory.ofMemorySegment();
 
     private static float gelu(float value) {
         float cubic = value * value * value;
@@ -51,12 +48,11 @@ class JavaKernelCompilerTest {
         Tensor inputTensor = Tensor.of(input);
         Tensor traced = Tracer.trace(inputTensor, JavaKernelCompilerTest::tensorGelu);
 
-        MemoryView<?> output = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                traced::materialize);
+        MemoryView<?> output =
+                ComputeEngineContext.with(new JavaComputeEngine(context), traced::materialize);
 
         float[] values = readFloatValues(output, 6);
-        float[] expected = map(new float[]{0, 1, 2, 3, 4, 5}, JavaKernelCompilerTest::gelu);
+        float[] expected = map(new float[] {0, 1, 2, 3, 4, 5}, JavaKernelCompilerTest::gelu);
         assertArrayEquals(expected, values, 0.0001f);
     }
 
@@ -73,50 +69,43 @@ class JavaKernelCompilerTest {
         MemoryView<MemorySegment> input = range(Shape.of(100, 1_000_000));
         Tensor inputTensor = Tensor.of(input);
 
-//        float[] in = new float[100_000_000];
-//        for (int i = 0; i < in.length; ++i) {
-//            in[i] = i;
-//        }
+        //        float[] in = new float[100_000_000];
+        //        for (int i = 0; i < in.length; ++i) {
+        //            in[i] = i;
+        //        }
 
         JavaComputeEngine engine = new JavaComputeEngine(context);
-        //BytecodeComputeEngine engine = new BytecodeComputeEngine(context);
+        // BytecodeComputeEngine engine = new BytecodeComputeEngine(context);
 
         for (int i = 0; i < 10; ++i) {
             Tensor traced = Tracer.trace(inputTensor, JavaKernelCompilerTest::tensorGelu);
             long startNanos = System.nanoTime();
-//            float[] out = new float[100_000_000];
-            MemoryView<?> output = ComputeEngineContext.with(
-                    engine,
-                    traced::materialize);
-  //          pepe(in, out);
+            //            float[] out = new float[100_000_000];
+            MemoryView<?> output = ComputeEngineContext.with(engine, traced::materialize);
+            //          pepe(in, out);
             long elapsedNanos = System.nanoTime() - startNanos;
             long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(elapsedNanos);
             System.out.println("Kernel execution time: " + elapsedMillis + " ms");
 
             float[] values =
-    //                Arrays.copyOf(out, 6); //
+                    //                Arrays.copyOf(out, 6); //
                     readFloatValues(output, 6);
-            float[] expected = map(new float[]{0, 1, 2, 3, 4, 5}, JavaKernelCompilerTest::gelu);
+            float[] expected = map(new float[] {0, 1, 2, 3, 4, 5}, JavaKernelCompilerTest::gelu);
             assertArrayEquals(expected, values, 0.0001f);
         }
-
-
     }
 
     @Test
     void canary() {
         Tensor tensor0 = Tensor.of(range(Shape.of(2, 3)));
         Tensor tensor1 = Tensor.of(range(Shape.of(2, 3)));
-        Tensor traced = Tracer.trace(tensor0, tensor1, (t0, t1)
-                -> t0.multiply(t1)
-        );
+        Tensor traced = Tracer.trace(tensor0, tensor1, (t0, t1) -> t0.multiply(t1));
 
-        MemoryView<?> output = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                traced::materialize);
+        MemoryView<?> output =
+                ComputeEngineContext.with(new JavaComputeEngine(context), traced::materialize);
 
         float[] values = readFloatValues(output, 6);
-        assertArrayEquals(new float[]{0, 1, 4, 9, 16, 25}, values, 0.0001f);
+        assertArrayEquals(new float[] {0, 1, 4, 9, 16, 25}, values, 0.0001f);
     }
 
     @Test
@@ -125,12 +114,11 @@ class JavaKernelCompilerTest {
         Tensor inputTensor = Tensor.of(input);
         Tensor traced = Tracer.trace(inputTensor, t -> t.add(t));
 
-        MemoryView<?> output = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                traced::materialize);
+        MemoryView<?> output =
+                ComputeEngineContext.with(new JavaComputeEngine(context), traced::materialize);
 
         float[] values = readFloatValues(output, 6);
-        assertArrayEquals(new float[]{0, 2, 4, 6, 8, 10}, values, 0.0001f);
+        assertArrayEquals(new float[] {0, 2, 4, 6, 8, 10}, values, 0.0001f);
     }
 
     @Test
@@ -139,12 +127,11 @@ class JavaKernelCompilerTest {
         Tensor inputTensor = Tensor.of(input);
         Tensor traced = Tracer.trace(inputTensor, t -> t.square().add(1));
 
-        MemoryView<?> output = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                traced::materialize);
+        MemoryView<?> output =
+                ComputeEngineContext.with(new JavaComputeEngine(context), traced::materialize);
 
         float[] values = readFloatValues(output, 6);
-        assertArrayEquals(new float[]{1, 10, 2, 17, 5, 26}, values, 0.0001f);
+        assertArrayEquals(new float[] {1, 10, 2, 17, 5, 26}, values, 0.0001f);
         assertEquals(input.layout(), output.layout());
     }
 
@@ -154,12 +141,11 @@ class JavaKernelCompilerTest {
         Tensor inputTensor = Tensor.of(input);
         Tensor traced = Tracer.trace(inputTensor, t -> t.add(3).square());
 
-        MemoryView<?> output = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                traced::materialize);
+        MemoryView<?> output =
+                ComputeEngineContext.with(new JavaComputeEngine(context), traced::materialize);
 
         int[] values = readIntValues(output, 4);
-        assertArrayEquals(new int[]{9, 16, 25, 36}, values);
+        assertArrayEquals(new int[] {9, 16, 25, 36}, values);
     }
 
     @Test
@@ -187,15 +173,15 @@ class JavaKernelCompilerTest {
         MemoryView<MemorySegment> input0 = range(Shape.of(2, 2));
         MemoryView<MemorySegment> input1 = range(Shape.of(2, 2));
         MemoryView<MemorySegment> input2 = range(Shape.of(2, 2));
-        Tensor traced = Tracer.trace(
-                Tensor.of(input0),
-                Tensor.of(input1),
-                Tensor.of(input2),
-                (a, b, c) -> a.add(b).multiply(c));
+        Tensor traced =
+                Tracer.trace(
+                        Tensor.of(input0),
+                        Tensor.of(input1),
+                        Tensor.of(input2),
+                        (a, b, c) -> a.add(b).multiply(c));
 
-        MemoryView<?> output = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                traced::materialize);
+        MemoryView<?> output =
+                ComputeEngineContext.with(new JavaComputeEngine(context), traced::materialize);
 
         float[] values = readFloatValues(output, 4);
         assertArrayEquals(new float[] {0, 2, 8, 18}, values, 0.0001f);

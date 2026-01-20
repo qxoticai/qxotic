@@ -22,14 +22,15 @@ class SumReductionOpsTest extends AbstractMemoryTest {
 
     private record SumCase(DataType inputType, DataType accumulatorType) {}
 
-    private static final List<SumCase> SUM_CASES = List.of(
-            new SumCase(DataType.BOOL, DataType.I32),
-            new SumCase(DataType.I8, DataType.I32),
-            new SumCase(DataType.I16, DataType.FP32),
-            new SumCase(DataType.I32, DataType.I64),
-            new SumCase(DataType.FP16, DataType.FP32),
-            new SumCase(DataType.BF16, DataType.FP32),
-            new SumCase(DataType.FP64, DataType.FP64));
+    private static final List<SumCase> SUM_CASES =
+            List.of(
+                    new SumCase(DataType.BOOL, DataType.I32),
+                    new SumCase(DataType.I8, DataType.I32),
+                    new SumCase(DataType.I16, DataType.FP32),
+                    new SumCase(DataType.I32, DataType.I64),
+                    new SumCase(DataType.FP16, DataType.FP32),
+                    new SumCase(DataType.BF16, DataType.FP32),
+                    new SumCase(DataType.FP64, DataType.FP64));
 
     private static MemoryContext<MemorySegment> context;
 
@@ -45,14 +46,15 @@ class SumReductionOpsTest extends AbstractMemoryTest {
             MemoryView<MemorySegment> view = range(sumCase.inputType(), shape);
             Tensor input = Tensor.of(view);
             Tensor reduced = Tracer.trace(input, t -> t.sum(sumCase.accumulatorType(), 1));
-            MemoryView<?> output = ComputeEngineContext.with(
-                    new JavaComputeEngine(context),
-                    reduced::materialize);
+            MemoryView<?> output =
+                    ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
             assertEquals(Shape.of(2), output.shape());
-            assertValueEquals(sumCase.accumulatorType(),
+            assertValueEquals(
+                    sumCase.accumulatorType(),
                     expectedSum(sumCase.inputType(), sumCase.accumulatorType(), 0, 3),
                     readValue(output, 0, sumCase.accumulatorType()));
-            assertValueEquals(sumCase.accumulatorType(),
+            assertValueEquals(
+                    sumCase.accumulatorType(),
                     expectedSum(sumCase.inputType(), sumCase.accumulatorType(), 3, 3),
                     readValue(output, 1, sumCase.accumulatorType()));
         }
@@ -64,9 +66,8 @@ class SumReductionOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = range(DataType.I32, shape);
         Tensor input = Tensor.of(view);
         Tensor reduced = Tracer.trace(input, t -> t.sum(DataType.I64, 1, 2));
-        MemoryView<?> output = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                reduced::materialize);
+        MemoryView<?> output =
+                ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
         assertEquals(Shape.of(2), output.shape());
         assertValueEquals(DataType.I64, 6L, readValue(output, 0, DataType.I64));
         assertValueEquals(DataType.I64, 22L, readValue(output, 1, DataType.I64));
@@ -77,9 +78,8 @@ class SumReductionOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = range(DataType.FP32, Shape.of(2, 3));
         Tensor input = Tensor.of(view);
         Tensor reduced = Tracer.trace(input, t -> t.sum(DataType.FP32, true, 1));
-        MemoryView<?> output = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                reduced::materialize);
+        MemoryView<?> output =
+                ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
         assertEquals(Shape.of(2, 1), output.shape());
     }
 
@@ -88,9 +88,8 @@ class SumReductionOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = range(DataType.FP32, Shape.of(2, 3));
         Tensor input = Tensor.of(view);
         Tensor reduced = Tracer.trace(input, t -> t.add(1).sum(DataType.FP32, 1));
-        MemoryView<?> output = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                reduced::materialize);
+        MemoryView<?> output =
+                ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
         assertValueEquals(DataType.FP32, 6.0f, readValue(output, 0, DataType.FP32));
         assertValueEquals(DataType.FP32, 15.0f, readValue(output, 1, DataType.FP32));
     }
@@ -99,12 +98,10 @@ class SumReductionOpsTest extends AbstractMemoryTest {
     void appliesPostReductionOps() {
         MemoryView<MemorySegment> view = range(DataType.I32, Shape.of(2, 3));
         Tensor input = Tensor.of(view);
-        Tensor reduced = Tracer.trace(
-                input,
-                t -> t.sum(DataType.I32, 1).cast(DataType.FP32).add(1));
-        MemoryView<?> output = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                reduced::materialize);
+        Tensor reduced =
+                Tracer.trace(input, t -> t.sum(DataType.I32, 1).cast(DataType.FP32).add(1));
+        MemoryView<?> output =
+                ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
         assertEquals(Shape.of(2), output.shape());
         assertValueEquals(DataType.FP32, 4.0f, readValue(output, 0, DataType.FP32));
         assertValueEquals(DataType.FP32, 13.0f, readValue(output, 1, DataType.FP32));
@@ -115,9 +112,8 @@ class SumReductionOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = range(DataType.I32, Shape.of(2, 3));
         Tensor input = Tensor.of(view);
         Tensor reduced = Tracer.trace(input, t -> t.sum(DataType.I64, -1));
-        MemoryView<?> output = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                reduced::materialize);
+        MemoryView<?> output =
+                ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
         assertEquals(Shape.of(2), output.shape());
         assertValueEquals(DataType.I64, 3L, readValue(output, 0, DataType.I64));
         assertValueEquals(DataType.I64, 12L, readValue(output, 1, DataType.I64));
@@ -129,17 +125,15 @@ class SumReductionOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = boolPattern(shape, new byte[] {1, 0, 1, 0, 1, 0});
         Tensor input = Tensor.of(view);
         Tensor reducedI32 = Tracer.trace(input, t -> t.sum(DataType.I32, 1));
-        MemoryView<?> outputI32 = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                reducedI32::materialize);
+        MemoryView<?> outputI32 =
+                ComputeEngineContext.with(new JavaComputeEngine(context), reducedI32::materialize);
         assertEquals(Shape.of(2), outputI32.shape());
         assertValueEquals(DataType.I32, 2, readValue(outputI32, 0, DataType.I32));
         assertValueEquals(DataType.I32, 1, readValue(outputI32, 1, DataType.I32));
 
         Tensor reducedI64 = Tracer.trace(input, t -> t.sum(DataType.I64, 1));
-        MemoryView<?> outputI64 = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                reducedI64::materialize);
+        MemoryView<?> outputI64 =
+                ComputeEngineContext.with(new JavaComputeEngine(context), reducedI64::materialize);
         assertEquals(Shape.of(2), outputI64.shape());
         assertValueEquals(DataType.I64, 2L, readValue(outputI64, 0, DataType.I64));
         assertValueEquals(DataType.I64, 1L, readValue(outputI64, 1, DataType.I64));
@@ -150,9 +144,8 @@ class SumReductionOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = range(DataType.I32, Shape.of(2, 2, 3));
         Tensor input = Tensor.of(view);
         Tensor reduced = Tracer.trace(input, t -> t.sum(DataType.I64, -1));
-        MemoryView<?> output = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                reduced::materialize);
+        MemoryView<?> output =
+                ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
         assertEquals(Shape.of(2, 2), output.shape());
         assertValueEquals(DataType.I64, 3L, readValue(output, 0, DataType.I64));
         assertValueEquals(DataType.I64, 12L, readValue(output, 1, DataType.I64));
@@ -165,9 +158,8 @@ class SumReductionOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = range(DataType.I32, Shape.of(2, 2, 3));
         Tensor input = Tensor.of(view);
         Tensor reduced = Tracer.trace(input, t -> t.sum(DataType.I64, 0));
-        MemoryView<?> output = ComputeEngineContext.with(
-                new JavaComputeEngine(context),
-                reduced::materialize);
+        MemoryView<?> output =
+                ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
         assertEquals(Shape.of(2, 3), output.shape());
         assertValueEquals(DataType.I64, 6L, readValue(output, 0, DataType.I64));
         assertValueEquals(DataType.I64, 8L, readValue(output, 1, DataType.I64));
@@ -237,9 +229,10 @@ class SumReductionOpsTest extends AbstractMemoryTest {
 
     private Object expectedSum(
             DataType inputType, DataType accumulatorType, int start, int length) {
-        long sum = inputType == DataType.BOOL
-                ? length
-                : (long) length * (2L * start + length - 1) / 2L;
+        long sum =
+                inputType == DataType.BOOL
+                        ? length
+                        : (long) length * (2L * start + length - 1) / 2L;
         if (accumulatorType == DataType.I32) {
             return (int) sum;
         }

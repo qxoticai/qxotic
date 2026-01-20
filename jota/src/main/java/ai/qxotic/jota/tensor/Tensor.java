@@ -38,7 +38,9 @@ public interface Tensor {
         MemoryView<Object> dstView =
                 (MemoryView<Object>)
                         MemoryView.of(
-                                dstContext.memoryAllocator().allocateMemory(dataType(), layout().shape()),
+                                dstContext
+                                        .memoryAllocator()
+                                        .allocateMemory(dataType(), layout().shape()),
                                 dataType(),
                                 layout());
         @SuppressWarnings("unchecked")
@@ -50,7 +52,6 @@ public interface Tensor {
         MemoryContext.copy(castSrcContext, castSrcView, castDstContext, dstView);
         return Tensor.of(dstView);
     }
-
 
     default boolean isScalar() {
         return size() == 1;
