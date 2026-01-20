@@ -2,7 +2,6 @@ package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Shape;
-import ai.qxotic.jota.Util;
 import ai.qxotic.jota.memory.MemoryContext;
 import java.util.Arrays;
 import java.util.stream.IntStream;

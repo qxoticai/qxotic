@@ -2,7 +2,6 @@ package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.MemoryContext;
-
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
 

@@ -14,7 +14,6 @@ import ai.qxotic.jota.memory.MemoryHelpers;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.memory.impl.ContextFactory;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -35,8 +34,9 @@ class OptimizingCallSiteTest {
     @Test
     void returnsTracedTensorWhenInputIsTraced() {
         OptimizingCallSite callSite = Tracer.createOptimizingCallSite(t -> t.add(1));
-        TraceTensor tracedInput = new TraceTensor(
-                new InputNode(0, DataType.FP32, Layout.rowMajor(4), context.device()));
+        TraceTensor tracedInput =
+                new TraceTensor(
+                        new InputNode(0, DataType.FP32, Layout.rowMajor(4), context.device()));
 
         Tensor result = callSite.apply(tracedInput);
 

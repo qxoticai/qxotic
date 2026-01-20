@@ -1,8 +1,9 @@
 package ai.qxotic.jota.tensor;
 
+import static ai.qxotic.jota.DataType.*;
+
 import ai.qxotic.jota.BFloat16;
 import ai.qxotic.jota.DataType;
-import static ai.qxotic.jota.DataType.*;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.MemoryView;
@@ -222,21 +223,19 @@ public final class KernelInterpreter {
                                             ^ (evalBool(binary.right(), index, inputs) != 0))
                                     ? 1
                                     : 0);
-            case "equal", "lessThan" ->
-                    (byte)
-                            (compareValues(binary, index, inputs) ? 1 : 0);
+            case "equal", "lessThan" -> (byte) (compareValues(binary, index, inputs) ? 1 : 0);
             default ->
                     throw new IllegalStateException("Unsupported binary op: " + binary.op().name());
         };
     }
 
-    private static boolean compareValues(
-            BinaryNode binary, long index, InputAccessor[] inputs) {
+    private static boolean compareValues(BinaryNode binary, long index, InputAccessor[] inputs) {
         ExprNode left = binary.left();
         ExprNode right = binary.right();
         DataType type = left.dataType();
         if (type != right.dataType()) {
-            throw new IllegalStateException("Mismatched comparison types: " + type + " vs " + right.dataType());
+            throw new IllegalStateException(
+                    "Mismatched comparison types: " + type + " vs " + right.dataType());
         }
         boolean equals = "equal".equals(binary.op().name());
         if (type == DataType.BOOL) {

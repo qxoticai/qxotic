@@ -5,13 +5,7 @@ import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Layout;
 
 public sealed interface ExprNode
-        permits InputNode,
-                UnaryNode,
-                BinaryNode,
-                TernaryNode,
-                ScalarNode,
-                CastNode,
-                ReductionNode {
+        permits InputNode, UnaryNode, BinaryNode, TernaryNode, ScalarNode, CastNode, ReductionNode {
 
     DataType dataType();
 

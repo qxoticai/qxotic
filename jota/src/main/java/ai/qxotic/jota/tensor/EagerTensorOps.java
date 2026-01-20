@@ -137,26 +137,22 @@ public class EagerTensorOps implements TensorOps {
 
     @Override
     public Tensor logicalNot(Tensor x) {
-        throw new UnsupportedOperationException(
-                "Generic boolean op dispatch not yet implemented");
+        throw new UnsupportedOperationException("Generic boolean op dispatch not yet implemented");
     }
 
     @Override
     public Tensor logicalAnd(Tensor a, Tensor b) {
-        throw new UnsupportedOperationException(
-                "Generic boolean op dispatch not yet implemented");
+        throw new UnsupportedOperationException("Generic boolean op dispatch not yet implemented");
     }
 
     @Override
     public Tensor logicalOr(Tensor a, Tensor b) {
-        throw new UnsupportedOperationException(
-                "Generic boolean op dispatch not yet implemented");
+        throw new UnsupportedOperationException("Generic boolean op dispatch not yet implemented");
     }
 
     @Override
     public Tensor logicalXor(Tensor a, Tensor b) {
-        throw new UnsupportedOperationException(
-                "Generic boolean op dispatch not yet implemented");
+        throw new UnsupportedOperationException("Generic boolean op dispatch not yet implemented");
     }
 
     @Override
@@ -173,8 +169,7 @@ public class EagerTensorOps implements TensorOps {
 
     @Override
     public Tensor where(Tensor condition, Tensor trueValue, Tensor falseValue) {
-        throw new UnsupportedOperationException(
-                "Generic where op dispatch not yet implemented");
+        throw new UnsupportedOperationException("Generic where op dispatch not yet implemented");
     }
 
     @Override

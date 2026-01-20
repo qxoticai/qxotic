@@ -47,12 +47,17 @@ final class OptimizingCallSiteImpl implements OptimizingCallSite {
 
     private KernelEntry compileFor(Tensor input) {
         Tensor traced = Tracer.trace(input, function);
-        ExpressionComputation computation = (ExpressionComputation) traced
-                .computation()
-                .orElseThrow(() -> new IllegalStateException("Expected traced computation"));
+        ExpressionComputation computation =
+                (ExpressionComputation)
+                        traced.computation()
+                                .orElseThrow(
+                                        () ->
+                                                new IllegalStateException(
+                                                        "Expected traced computation"));
         ExpressionGraph graph = computation.graph();
         TensorSpec outputSpec = new TensorSpec(traced.dataType(), traced.layout(), traced.device());
-        LayoutSignature signature = new LayoutSignature(List.of(TensorSpec.from(input)), outputSpec);
+        LayoutSignature signature =
+                new LayoutSignature(List.of(TensorSpec.from(input)), outputSpec);
         return new KernelEntry(signature, graph, outputSpec);
     }
 
@@ -63,7 +68,5 @@ final class OptimizingCallSiteImpl implements OptimizingCallSite {
     }
 
     private record KernelEntry(
-            LayoutSignature signature,
-            ExpressionGraph graph,
-            TensorSpec outputSpec) {}
+            LayoutSignature signature, ExpressionGraph graph, TensorSpec outputSpec) {}
 }

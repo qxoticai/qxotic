@@ -2,7 +2,6 @@ package ai.qxotic.jota;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import ai.llm4j.jota.FloatBinaryOperator;
 import ai.qxotic.jota.memory.*;
 import ai.qxotic.jota.memory.impl.ContextFactory;
 import ai.qxotic.jota.memory.impl.MemoryFactory;
