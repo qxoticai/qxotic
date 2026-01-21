@@ -52,7 +52,8 @@ class ComparisonOpsTest {
                     Tracer.trace(leftTensor, rightTensor, Tensor::greaterThanOrEqual);
 
             MemoryView<?> notEqualOut =
-                    ComputeEngineContext.with(new JavaComputeEngine(context), notEqual::materialize);
+                    ComputeEngineContext.with(
+                            new JavaComputeEngine(context), notEqual::materialize);
             MemoryView<?> greaterThanOut =
                     ComputeEngineContext.with(
                             new JavaComputeEngine(context), greaterThan::materialize);
@@ -72,8 +73,7 @@ class ComparisonOpsTest {
                 assertEquals(leftValue >= rightValue ? 1 : 0, readBool(greaterThanOrEqualOut, i));
             }
 
-            Tensor flippedGreaterThan =
-                    Tracer.trace(rightTensor, leftTensor, Tensor::greaterThan);
+            Tensor flippedGreaterThan = Tracer.trace(rightTensor, leftTensor, Tensor::greaterThan);
             MemoryView<?> flippedGreaterOut =
                     ComputeEngineContext.with(
                             new JavaComputeEngine(context), flippedGreaterThan::materialize);
