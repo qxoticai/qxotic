@@ -371,16 +371,6 @@ final class TracingTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor copy(Tensor x) {
-        throw unsupported("copy");
-    }
-
-    @Override
-    public Tensor clone(Tensor x) {
-        throw unsupported("clone");
-    }
-
-    @Override
     public void copyInto(Tensor src, Tensor dst) {
         throw unsupported("copyInto");
     }
