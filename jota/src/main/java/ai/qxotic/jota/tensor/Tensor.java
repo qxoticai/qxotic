@@ -2,11 +2,9 @@ package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
-import ai.qxotic.jota.DeviceRegistry;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.Stride;
-import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
 import java.util.Optional;
 
@@ -30,28 +28,6 @@ public interface Tensor {
         return shape().size();
     }
 
-    default Tensor copyTo(Device targetDevice) {
-        MemoryView<?> srcView = materialize();
-        MemoryContext<?> srcContext = DeviceRegistry.context(device());
-        MemoryContext<?> dstContext = DeviceRegistry.context(targetDevice);
-        @SuppressWarnings("unchecked")
-        MemoryView<Object> dstView =
-                (MemoryView<Object>)
-                        MemoryView.of(
-                                dstContext
-                                        .memoryAllocator()
-                                        .allocateMemory(dataType(), layout().shape()),
-                                dataType(),
-                                layout());
-        @SuppressWarnings("unchecked")
-        MemoryContext<Object> castSrcContext = (MemoryContext<Object>) srcContext;
-        @SuppressWarnings("unchecked")
-        MemoryContext<Object> castDstContext = (MemoryContext<Object>) dstContext;
-        @SuppressWarnings("unchecked")
-        MemoryView<Object> castSrcView = (MemoryView<Object>) srcView;
-        MemoryContext.copy(castSrcContext, castSrcView, castDstContext, dstView);
-        return Tensor.of(dstView);
-    }
 
     default boolean isScalar() {
         return size() == 1;

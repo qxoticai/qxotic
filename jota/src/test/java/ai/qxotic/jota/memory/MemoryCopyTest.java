@@ -38,12 +38,19 @@ class MemoryCopyTest extends AbstractMemoryTest {
     }
 
     @Test
-    void tensorCopyToUsesRegistryForAllTypes() {
+    void registryContextCopiesAcrossViewsForAllTypes() {
         for (DataType dataType : PRIMITIVE_DATA_TYPES) {
             MemoryView<MemorySegment> src = range(dataType, Shape.of(2, 2));
-            Tensor tensor = Tensor.of(src);
-            Tensor copied = tensor.copyTo(Device.NATIVE);
-            assertCopyMatches(src, copied.materialize(), dataType);
+            MemoryContext<?> registryContext = DeviceRegistry.context(Device.NATIVE);
+            MemoryView<MemorySegment> dst =
+                    MemoryView.of(
+                            context.memoryAllocator().allocateMemory(dataType, src.shape()),
+                            dataType,
+                            src.layout());
+            @SuppressWarnings("unchecked")
+            MemoryContext<MemorySegment> srcContext = (MemoryContext<MemorySegment>) registryContext;
+            MemoryContext.copy(srcContext, src, srcContext, dst);
+            assertCopyMatches(src, dst, dataType);
         }
     }
 

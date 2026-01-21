@@ -226,9 +226,5 @@ public interface TensorOps {
 
     // === Memory Operations ===
 
-    Tensor copy(Tensor x);
-
-    Tensor clone(Tensor x);
-
     void copyInto(Tensor src, Tensor dst);
 }

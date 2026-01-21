@@ -383,16 +383,6 @@ public class EagerTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor copy(Tensor x) {
-        throw new UnsupportedOperationException("Not yet implemented");
-    }
-
-    @Override
-    public Tensor clone(Tensor x) {
-        throw new UnsupportedOperationException("Not yet implemented");
-    }
-
-    @Override
     public void copyInto(Tensor src, Tensor dst) {
         throw new UnsupportedOperationException("Not yet implemented");
     }
