@@ -140,8 +140,7 @@ final class TracingTensorOps implements TensorOps {
         if (trace.device().equals(device)) {
             return trace;
         }
-        ExprNode node =
-                new TransferNode(trace.node(), device, trace.dataType(), trace.layout());
+        ExprNode node = new TransferNode(trace.node(), device, trace.dataType(), trace.layout());
         return new TraceTensor(node);
     }
 

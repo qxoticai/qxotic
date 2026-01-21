@@ -63,11 +63,14 @@ class BitwiseOpsTest {
             Tensor xorTensor = Tracer.trace(a, b, Tensor::bitwiseXor);
 
             MemoryView<?> andOut =
-                    ComputeEngineContext.with(new JavaComputeEngine(context), andTensor::materialize);
+                    ComputeEngineContext.with(
+                            new JavaComputeEngine(context), andTensor::materialize);
             MemoryView<?> orOut =
-                    ComputeEngineContext.with(new JavaComputeEngine(context), orTensor::materialize);
+                    ComputeEngineContext.with(
+                            new JavaComputeEngine(context), orTensor::materialize);
             MemoryView<?> xorOut =
-                    ComputeEngineContext.with(new JavaComputeEngine(context), xorTensor::materialize);
+                    ComputeEngineContext.with(
+                            new JavaComputeEngine(context), xorTensor::materialize);
 
             for (int i = 0; i < shape.size(); i++) {
                 long leftValue = castIntegral(i, dataType);
@@ -94,7 +97,8 @@ class BitwiseOpsTest {
         MemoryView<MemorySegment> boolView =
                 MemoryHelpers.full(context, DataType.BOOL, shape.size(), 1).view(shape);
         Tensor boolTensor = Tensor.of(boolView);
-        assertThrows(IllegalArgumentException.class, () -> Tracer.trace(boolTensor, Tensor::bitwiseNot));
+        assertThrows(
+                IllegalArgumentException.class, () -> Tracer.trace(boolTensor, Tensor::bitwiseNot));
 
         MemoryView<MemorySegment> floatView =
                 MemoryHelpers.arange(context, DataType.FP32, shape.size()).view(shape);

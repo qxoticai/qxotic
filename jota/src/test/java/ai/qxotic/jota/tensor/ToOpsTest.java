@@ -52,6 +52,8 @@ class ToOpsTest {
         Tensor input = Tensor.of(view);
         assertThrows(
                 IllegalStateException.class,
-                () -> TensorOpsContext.with(new EagerTensorOps(context), () -> input.to(Device.GPU)));
+                () ->
+                        TensorOpsContext.with(
+                                new EagerTensorOps(context), () -> input.to(Device.GPU)));
     }
 }

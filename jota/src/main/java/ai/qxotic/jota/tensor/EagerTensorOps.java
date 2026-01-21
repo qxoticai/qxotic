@@ -201,26 +201,22 @@ public class EagerTensorOps implements TensorOps {
 
     @Override
     public Tensor bitwiseNot(Tensor x) {
-        throw new UnsupportedOperationException(
-                "Generic bitwise op dispatch not yet implemented");
+        throw new UnsupportedOperationException("Generic bitwise op dispatch not yet implemented");
     }
 
     @Override
     public Tensor bitwiseAnd(Tensor a, Tensor b) {
-        throw new UnsupportedOperationException(
-                "Generic bitwise op dispatch not yet implemented");
+        throw new UnsupportedOperationException("Generic bitwise op dispatch not yet implemented");
     }
 
     @Override
     public Tensor bitwiseOr(Tensor a, Tensor b) {
-        throw new UnsupportedOperationException(
-                "Generic bitwise op dispatch not yet implemented");
+        throw new UnsupportedOperationException("Generic bitwise op dispatch not yet implemented");
     }
 
     @Override
     public Tensor bitwiseXor(Tensor a, Tensor b) {
-        throw new UnsupportedOperationException(
-                "Generic bitwise op dispatch not yet implemented");
+        throw new UnsupportedOperationException("Generic bitwise op dispatch not yet implemented");
     }
 
     @Override
@@ -546,7 +542,6 @@ public class EagerTensorOps implements TensorOps {
     }
 
     private record OutputBufferSpec(long byteOffset, long byteSize) {}
-
 
     private Tensor binaryOp(Tensor a, Tensor b, BinaryOp op) {
         throw new UnsupportedOperationException("Generic binary op dispatch not yet implemented");

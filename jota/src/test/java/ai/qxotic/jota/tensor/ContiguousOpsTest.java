@@ -90,8 +90,7 @@ class ContiguousOpsTest {
             Memory<MemorySegment> srcMemory = source.memory();
             Object srcValue = readValue(access, srcMemory, srcOffset, dataType);
             @SuppressWarnings("unchecked")
-            Memory<MemorySegment> dstMemory =
-                    (Memory<MemorySegment>) target.memory();
+            Memory<MemorySegment> dstMemory = (Memory<MemorySegment>) target.memory();
             Object dstValue = readValue(access, dstMemory, dstOffset, dataType);
             assertEquals(srcValue, dstValue, "Mismatch for " + dataType + " at " + i);
         }

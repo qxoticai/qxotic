@@ -68,7 +68,7 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
         assertTrue(text.startsWith("["));
         assertTrue(text.endsWith("]"));
     }
-    
+
     @ParameterizedTest
     @MethodSource("contextsSupportingBool")
     <B> void booleanScalarPrintsCorrectly(MemoryContext<B> context) {
