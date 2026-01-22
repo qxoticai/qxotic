@@ -25,6 +25,10 @@ public interface Device {
     Device NATIVE = CPU.child("native"); // native memory address space
 
     Device GPU = Device.of("gpu");
+
+    static Device defaultDevice() {
+        return Environment.current().defaultDevice();
+    }
 }
 
 final class DeviceImpl implements Device {

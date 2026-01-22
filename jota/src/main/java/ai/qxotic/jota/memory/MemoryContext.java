@@ -2,7 +2,7 @@ package ai.qxotic.jota.memory;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
-import ai.qxotic.jota.DeviceRegistry;
+import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Layout;
 import java.lang.foreign.MemorySegment;
 
@@ -126,7 +126,8 @@ public interface MemoryContext<B> extends AutoCloseable {
 
     @SuppressWarnings("unchecked")
     private static MemoryContext<MemorySegment> nativeContext() {
-        return (MemoryContext<MemorySegment>) DeviceRegistry.context(Device.NATIVE);
+        return (MemoryContext<MemorySegment>)
+                Environment.current().registry().context(Device.NATIVE);
     }
 
     private static <B> Device srcContextDevice(MemoryContext<B> context) {

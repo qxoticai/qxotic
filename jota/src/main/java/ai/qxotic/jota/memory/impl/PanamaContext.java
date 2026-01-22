@@ -14,6 +14,11 @@ final class PanamaContext implements MemoryContext<MemorySegment> {
         return Device.NATIVE;
     }
 
+    //    @Override
+    //    public MemoryAllocator<MemorySegment> memoryAllocator() {
+    //        return PanamaBytesAllocator.instance();
+    //    }
+
     @Override
     public ScopedMemoryAllocatorArena<MemorySegment> memoryAllocator() {
         return allocatorArena;

@@ -25,9 +25,10 @@ class OptimizingCallSiteTest {
     static void setUp() {
         context = ContextFactory.ofMemorySegment();
         try {
-            DeviceRegistry.engine(context.device());
+            DeviceRegistry.global().engine(context.device());
         } catch (IllegalStateException ignored) {
-            DeviceRegistry.register(context.device(), context, new JavaComputeEngine(context));
+            DeviceRegistry.global()
+                    .register(context.device(), context, new JavaComputeEngine(context));
         }
     }
 

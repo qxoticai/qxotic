@@ -223,8 +223,4 @@ public interface TensorOps {
     Tensor quantize(Tensor x, DataType quantType);
 
     Tensor dequantize(Tensor x, DataType targetType);
-
-    // === Memory Operations ===
-
-    void copyInto(Tensor src, Tensor dst);
 }

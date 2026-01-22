@@ -1,11 +1,9 @@
 package ai.qxotic.jota.tensor;
 
-import ai.qxotic.jota.DataType;
-import ai.qxotic.jota.Device;
-import ai.qxotic.jota.Layout;
-import ai.qxotic.jota.Shape;
-import ai.qxotic.jota.Stride;
+import ai.qxotic.jota.*;
 import ai.qxotic.jota.memory.MemoryView;
+import java.util.Arrays;
+import java.util.Objects;
 import java.util.Optional;
 
 public interface Tensor {
@@ -28,9 +26,29 @@ public interface Tensor {
         return shape().size();
     }
 
-
     default boolean isScalar() {
         return size() == 1;
+    }
+
+    /**
+     * Returns true if this tensor is a scalar broadcast (single value with all strides zero).
+     *
+     * <p>A scalar broadcast tensor stores a single element that is logically replicated across the
+     * entire shape. This is memory-efficient for constants like zeros, ones, or fill values.
+     */
+    default boolean isScalarBroadcast() {
+        Optional<MemoryView<?>> materialized = tryGetMaterialized();
+        if (materialized.isPresent()) {
+            MemoryView<?> view = materialized.get();
+            return view.isBroadcasted()
+                    && Arrays.stream(view.stride().toArray()).allMatch(s -> s == 0L);
+        }
+        return computation()
+                .filter(ConstantComputation.class::isInstance)
+                .map(
+                        computation ->
+                                Arrays.stream(layout().stride().toArray()).allMatch(s -> s == 0L))
+                .orElse(false);
     }
 
     boolean isMaterialized();
@@ -273,8 +291,26 @@ public interface Tensor {
         return new MaterializedTensor(view);
     }
 
+    static Tensor broadcasted(float value, Shape shape) {
+        return broadcasted(Float.valueOf(value), DataType.FP32, shape, Device.defaultDevice());
+    }
+
+    static Tensor broadcasted(long value, Shape shape) {
+        return broadcasted(Long.valueOf(value), DataType.I64, shape, Device.defaultDevice());
+    }
+
     static Tensor lazy(LazyComputation computation, DataType dtype, Layout layout, Device device) {
         return new LazyTensor(computation, dtype, layout, device);
+    }
+
+    private static Tensor broadcasted(Number value, DataType dataType, Shape shape, Device device) {
+        Objects.requireNonNull(value, "value");
+        Objects.requireNonNull(dataType, "dataType");
+        Objects.requireNonNull(shape, "shape");
+        Objects.requireNonNull(device, "device");
+        Layout layout = Layout.of(shape, Stride.zeros(shape));
+        ConstantComputation computation = ConstantComputation.of(value, dataType, shape, device);
+        return lazy(computation, dataType, layout, device);
     }
 
     @Deprecated

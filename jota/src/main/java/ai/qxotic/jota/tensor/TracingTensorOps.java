@@ -10,6 +10,7 @@ import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.Optional;
 
 final class TracingTensorOps implements TensorOps {
 
@@ -368,11 +369,6 @@ final class TracingTensorOps implements TensorOps {
     @Override
     public Tensor dequantize(Tensor x, DataType targetType) {
         throw unsupported("dequantize");
-    }
-
-    @Override
-    public void copyInto(Tensor src, Tensor dst) {
-        throw unsupported("copyInto");
     }
 
     private Tensor unaryOp(Tensor x, UnaryOp op) {
