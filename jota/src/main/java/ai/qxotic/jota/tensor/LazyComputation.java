@@ -4,7 +4,7 @@ import ai.qxotic.jota.memory.MemoryView;
 import java.util.List;
 import java.util.Map;
 
-public interface LazyComputation {
+public sealed interface LazyComputation permits ExpressionComputation, ConstantComputation {
 
     Op operation();
 

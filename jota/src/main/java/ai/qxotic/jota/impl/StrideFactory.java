@@ -40,6 +40,21 @@ public final class StrideFactory {
         return StrideImpl.scalar();
     }
 
+    public static Stride zeros(int rank) {
+        if (rank == 0) {
+            return StrideImpl.scalar();
+        }
+        return StrideImpl.flat(new long[rank]); // All zeros
+    }
+
+    public static Stride zeros(NestedTuple<?> template) {
+        int flatRank = template.flatRank();
+        if (flatRank == 0) {
+            return StrideImpl.scalar();
+        }
+        return template(template, new long[flatRank]); // All zeros with template structure
+    }
+
     public static Stride pattern(String pattern, long... strides) {
         try {
             int[] nest = PatternParser.parsePattern(pattern, strides.length, "stride");
