@@ -13,6 +13,16 @@ public interface Stride extends NestedTuple<Stride> {
         return StrideFactory.flat(strides);
     }
 
+    /** Creates a stride with all zeros (for broadcast/scalar tensors). */
+    static Stride zeros(int rank) {
+        return StrideFactory.zeros(rank);
+    }
+
+    /** Creates a stride with all zeros matching the template's structure. */
+    static Stride zeros(NestedTuple<?> template) {
+        return StrideFactory.zeros(template);
+    }
+
     static Stride of(Object... elements) {
         return StrideFactory.of(elements);
     }

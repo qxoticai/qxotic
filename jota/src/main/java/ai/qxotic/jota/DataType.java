@@ -20,7 +20,7 @@ public interface DataType {
     List<String> aliases();
 
     static DataType defaultFloat() {
-        return DataTypeImpl.defaultFloatValue();
+        return Environment.current().defaultFloat();
     }
 
     DataType BOOL =

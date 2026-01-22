@@ -1,7 +1,7 @@
 package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.DataType;
-import ai.qxotic.jota.DeviceRegistry;
+import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
@@ -111,8 +111,10 @@ final class ExpressionComputation implements LazyComputation {
                             + " vs "
                             + sourceView.layout());
         }
-        MemoryContext<?> sourceContext = DeviceRegistry.context(inputNode.device());
-        MemoryContext<?> targetContext = DeviceRegistry.context(transfer.device());
+        MemoryContext<?> sourceContext =
+                Environment.current().registry().context(inputNode.device());
+        MemoryContext<?> targetContext =
+                Environment.current().registry().context(transfer.device());
         if (!targetContext.supportsDataType(sourceView.dataType())) {
             throw new IllegalArgumentException(
                     "Target context does not support data type: " + sourceView.dataType());
@@ -148,7 +150,7 @@ final class ExpressionComputation implements LazyComputation {
         if (sourceView.isContiguous()) {
             return sourceView;
         }
-        MemoryContext<?> context = DeviceRegistry.context(inputNode.device());
+        MemoryContext<?> context = Environment.current().registry().context(inputNode.device());
         if (!context.supportsDataType(sourceView.dataType())) {
             throw new IllegalArgumentException(
                     "Target context does not support data type: " + sourceView.dataType());

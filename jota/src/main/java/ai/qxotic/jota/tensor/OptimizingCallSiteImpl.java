@@ -1,6 +1,6 @@
 package ai.qxotic.jota.tensor;
 
-import ai.qxotic.jota.DeviceRegistry;
+import ai.qxotic.jota.Environment;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -62,7 +62,7 @@ final class OptimizingCallSiteImpl implements OptimizingCallSite {
     }
 
     private Tensor execute(KernelEntry entry, Tensor input) {
-        ComputeEngine engine = DeviceRegistry.engine(entry.outputSpec().device());
+        ComputeEngine engine = Environment.current().registry().engine(entry.outputSpec().device());
         ComputeBackend backend = engine.backendFor(entry.outputSpec().device());
         return Tensor.of(backend.execute(entry.graph(), List.of(input)));
     }

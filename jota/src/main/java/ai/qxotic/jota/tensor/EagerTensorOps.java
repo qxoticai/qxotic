@@ -2,7 +2,7 @@ package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
-import ai.qxotic.jota.DeviceRegistry;
+import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
@@ -146,8 +146,8 @@ public class EagerTensorOps implements TensorOps {
             return x;
         }
         MemoryView<?> sourceView = x.materialize();
-        MemoryContext<?> sourceContext = DeviceRegistry.context(x.device());
-        MemoryContext<?> targetContext = DeviceRegistry.context(device);
+        MemoryContext<?> sourceContext = Environment.current().registry().context(x.device());
+        MemoryContext<?> targetContext = Environment.current().registry().context(device);
         if (!targetContext.supportsDataType(sourceView.dataType())) {
             throw new IllegalArgumentException(
                     "Target context does not support data type: " + sourceView.dataType());
@@ -379,11 +379,6 @@ public class EagerTensorOps implements TensorOps {
 
     @Override
     public Tensor dequantize(Tensor x, DataType targetType) {
-        throw new UnsupportedOperationException("Not yet implemented");
-    }
-
-    @Override
-    public void copyInto(Tensor src, Tensor dst) {
         throw new UnsupportedOperationException("Not yet implemented");
     }
 
