@@ -668,6 +668,13 @@ final class TracingTensorOps implements TensorOps {
         if (tensor instanceof TraceTensor traceTensor) {
             return traceTensor;
         }
+        Optional<LazyComputation> computation = tensor.computation();
+        if (computation.isPresent() && computation.get() instanceof ConstantComputation constant) {
+            ScalarNode node =
+                    new ScalarNode(
+                            constant.value(), tensor.dataType(), tensor.layout(), tensor.device());
+            return new TraceTensor(node);
+        }
         throw new IllegalArgumentException("Tracing requires trace tensors, got: " + tensor);
     }
 
