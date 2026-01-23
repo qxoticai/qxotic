@@ -63,7 +63,7 @@ class PanamaMemoryTest {
             String str = memory.toString();
             assertTrue(str.contains("byteSize=40"));
             assertFalse(str.contains("readOnly=true")); // rw
-            assertTrue(str.contains("device=cpu:native"));
+            assertTrue(str.contains("device=cpu:panama"));
         }
     }
 }

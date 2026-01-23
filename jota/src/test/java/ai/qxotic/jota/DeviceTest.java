@@ -42,7 +42,7 @@ class DeviceTest {
         assertNull(Device.GPU.parent());
         assertSame(Device.GPU, Device.GPU.root());
 
-        assertEquals("cpu:native", Device.PANAMA.name());
+        assertEquals("cpu:panama", Device.PANAMA.name());
         assertSame(Device.CPU, Device.PANAMA.parent());
         assertSame(Device.CPU, Device.PANAMA.root());
 
