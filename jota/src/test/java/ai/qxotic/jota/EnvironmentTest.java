@@ -45,11 +45,8 @@ class EnvironmentTest {
     void registryExposesRegisteredDevices() {
         DeviceRegistry registry =
                 DeviceRegistry.builder()
-                        .register(
-                                ContextFactory.ofBytes(), dummyEngine())
-                        .register(
-                                ContextFactory.ofMemorySegment(),
-                                dummyEngine())
+                        .register(ContextFactory.ofBytes(), dummyEngine())
+                        .register(ContextFactory.ofMemorySegment(), dummyEngine())
                         .build();
 
         assertTrue(registry.devices().contains(Device.PANAMA));
