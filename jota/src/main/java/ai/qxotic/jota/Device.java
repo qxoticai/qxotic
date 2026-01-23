@@ -24,7 +24,7 @@ public interface Device {
     Device GPU = Device.of("gpu");
 
     // Engines
-    Device PANAMA = CPU.child("native"); // MemorySegment-backed memory
+    Device PANAMA = CPU.child("panama"); // MemorySegment-backed memory
     Device CUDA = GPU.child("cuda");
 
     static Device defaultDevice() {
