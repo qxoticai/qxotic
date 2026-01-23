@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import ai.qxotic.jota.*;
 import ai.qxotic.jota.memory.impl.ContextFactory;
-import ai.qxotic.jota.tensor.JavaComputeEngine;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.BeforeAll;
@@ -15,9 +14,8 @@ class MemoryCopyTest extends AbstractMemoryTest {
     private static MemoryContext<MemorySegment> context;
 
     @BeforeAll
-    static void registerNativeContext() {
+    static void setupContext() {
         context = ContextFactory.ofMemorySegment();
-        DeviceRegistry.global().register(Device.NATIVE, context, new JavaComputeEngine(context));
     }
 
     @Test
@@ -37,19 +35,15 @@ class MemoryCopyTest extends AbstractMemoryTest {
     }
 
     @Test
-    void registryContextCopiesAcrossViewsForAllTypes() {
+    void contextCopiesAcrossViewsForAllTypes() {
         for (DataType dataType : PRIMITIVE_DATA_TYPES) {
             MemoryView<MemorySegment> src = range(dataType, Shape.of(2, 2));
-            MemoryContext<?> registryContext = DeviceRegistry.global().context(Device.NATIVE);
             MemoryView<MemorySegment> dst =
                     MemoryView.of(
                             context.memoryAllocator().allocateMemory(dataType, src.shape()),
                             dataType,
                             src.layout());
-            @SuppressWarnings("unchecked")
-            MemoryContext<MemorySegment> srcContext =
-                    (MemoryContext<MemorySegment>) registryContext;
-            MemoryContext.copy(srcContext, src, srcContext, dst);
+            MemoryContext.copy(context, src, context, dst);
             assertCopyMatches(src, dst, dataType);
         }
     }

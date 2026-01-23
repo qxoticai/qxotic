@@ -3,25 +3,25 @@ package ai.qxotic.jota.memory.impl;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.*;
 import java.lang.foreign.MemorySegment;
+import java.util.Objects;
 
 final class PanamaContext implements MemoryContext<MemorySegment> {
 
-    private final ScopedMemoryAllocatorArena<MemorySegment> allocatorArena =
-            MemoryAllocatorFactory.newPanamaArena();
+    private final MemoryAllocator<MemorySegment> memoryAllocator;
+
+    PanamaContext(MemoryAllocator<MemorySegment> memoryAllocator) {
+        this.memoryAllocator = Objects.requireNonNull(memoryAllocator);
+        assert memoryAllocator.device().belongsTo(Device.PANAMA);
+    }
 
     @Override
     public Device device() {
-        return Device.NATIVE;
+        return memoryAllocator.device();
     }
 
-    //    @Override
-    //    public MemoryAllocator<MemorySegment> memoryAllocator() {
-    //        return PanamaBytesAllocator.instance();
-    //    }
-
     @Override
-    public ScopedMemoryAllocatorArena<MemorySegment> memoryAllocator() {
-        return allocatorArena;
+    public MemoryAllocator<MemorySegment> memoryAllocator() {
+        return memoryAllocator;
     }
 
     @Override
@@ -36,7 +36,9 @@ final class PanamaContext implements MemoryContext<MemorySegment> {
 
     @Override
     public void close() {
-        allocatorArena.close();
+        if (memoryAllocator instanceof MemoryArena<MemorySegment> memoryArena) {
+            memoryArena.close();
+        }
     }
 
     @Override

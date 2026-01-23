@@ -19,7 +19,7 @@ class PanamaMemoryTest {
             assertSame(segment, memory.base());
             assertEquals(100, memory.byteSize());
             assertFalse(memory.isReadOnly());
-            assertEquals(Device.NATIVE, memory.device());
+            assertEquals(Device.PANAMA, memory.device());
         }
     }
 

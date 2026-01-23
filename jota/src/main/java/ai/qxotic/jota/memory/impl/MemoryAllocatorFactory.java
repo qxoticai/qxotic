@@ -61,4 +61,8 @@ public final class MemoryAllocatorFactory {
     public static MemoryAllocator<MemorySegment> newPanamaAuto() {
         return new ManagedPanamaAllocator();
     }
+
+    public static MemoryAllocator<MemorySegment> newPanamaOnHeap() {
+        return PanamaBytesAllocator.instance();
+    }
 }

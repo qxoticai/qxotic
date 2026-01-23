@@ -17,7 +17,7 @@ class UnsafeAllocatorTest {
             assertNotNull(memory);
             assertEquals(100, memory.byteSize());
             assertFalse(memory.isReadOnly());
-            assertEquals(Device.NATIVE, memory.device());
+            assertEquals(Device.PANAMA, memory.device());
             assertNotNull(memory.base());
         }
     }
@@ -33,7 +33,7 @@ class UnsafeAllocatorTest {
 
     @Test
     void testDevice() {
-        assertEquals(Device.NATIVE, unsafeAllocator.device());
+        assertEquals(Device.PANAMA, unsafeAllocator.device());
     }
 
     @Test

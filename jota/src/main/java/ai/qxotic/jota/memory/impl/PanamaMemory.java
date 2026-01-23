@@ -29,7 +29,7 @@ final class PanamaMemory implements Memory<MemorySegment> {
 
     @Override
     public Device device() {
-        return this.memorySegment.isNative() ? Device.NATIVE : Device.JAVA;
+        return this.memorySegment.isNative() ? Device.PANAMA : Device.PANAMA;
     }
 
     @Override

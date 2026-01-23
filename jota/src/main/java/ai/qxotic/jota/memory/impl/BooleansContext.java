@@ -8,6 +8,7 @@ import ai.qxotic.jota.memory.MemoryOperations;
 
 class BooleansContext implements MemoryContext<boolean[]> {
 
+    private static final Device BOOLEANS = Device.CPU.child("booleans");
     private static final BooleansContext INSTANCE = new BooleansContext();
 
     static MemoryContext<boolean[]> instance() {
@@ -18,7 +19,7 @@ class BooleansContext implements MemoryContext<boolean[]> {
 
     @Override
     public Device device() {
-        return Device.JAVA;
+        return BOOLEANS;
     }
 
     @Override

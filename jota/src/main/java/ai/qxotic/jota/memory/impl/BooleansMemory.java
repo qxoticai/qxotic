@@ -29,7 +29,7 @@ final class BooleansMemory implements Memory<boolean[]> {
 
     @Override
     public Device device() {
-        return Device.JAVA;
+        return Device.PANAMA;
     }
 
     @Override

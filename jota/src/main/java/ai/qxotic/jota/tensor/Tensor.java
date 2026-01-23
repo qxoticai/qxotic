@@ -299,6 +299,21 @@ public interface Tensor {
         return broadcasted(Long.valueOf(value), DataType.I64, shape, Device.defaultDevice());
     }
 
+    static Tensor scalar(float value) {
+        return broadcasted(
+                Float.valueOf(value), DataType.FP32, Shape.scalar(), Device.defaultDevice());
+    }
+
+    static Tensor scalar(double value) {
+        return broadcasted(
+                Double.valueOf(value), DataType.FP64, Shape.scalar(), Device.defaultDevice());
+    }
+
+    static Tensor scalar(long value) {
+        return broadcasted(
+                Long.valueOf(value), DataType.I64, Shape.scalar(), Device.defaultDevice());
+    }
+
     static Tensor lazy(LazyComputation computation, DataType dtype, Layout layout, Device device) {
         return new LazyTensor(computation, dtype, layout, device);
     }

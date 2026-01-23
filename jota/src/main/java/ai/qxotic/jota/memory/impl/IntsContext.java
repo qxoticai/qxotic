@@ -8,17 +8,20 @@ import ai.qxotic.jota.memory.MemoryOperations;
 
 class IntsContext implements MemoryContext<int[]> {
 
+    private static final Device INTS = Device.CPU.child("ints");
     private static final IntsContext INSTANCE = new IntsContext();
+
 
     static MemoryContext<int[]> instance() {
         return INSTANCE;
     }
 
-    private IntsContext() {}
+    private IntsContext() {
+    }
 
     @Override
     public Device device() {
-        return Device.JAVA;
+        return INTS;
     }
 
     @Override

@@ -28,7 +28,7 @@ final class ShortsMemory implements Memory<short[]> {
 
     @Override
     public Device device() {
-        return Device.JAVA;
+        return Device.PANAMA;
     }
 
     @Override

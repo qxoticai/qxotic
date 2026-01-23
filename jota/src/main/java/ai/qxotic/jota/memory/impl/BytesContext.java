@@ -16,9 +16,11 @@ class BytesContext implements MemoryContext<byte[]> {
 
     private BytesContext() {}
 
+    private static final Device BYTES = Device.CPU.child("bytes");
+
     @Override
     public Device device() {
-        return Device.JAVA;
+        return BYTES;
     }
 
     @Override
