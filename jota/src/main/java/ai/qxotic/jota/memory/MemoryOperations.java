@@ -1,5 +1,7 @@
 package ai.qxotic.jota.memory;
 
+import ai.qxotic.jota.memory.impl.MemoryFactory;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 
 public interface MemoryOperations<B> {
@@ -51,12 +53,72 @@ public interface MemoryOperations<B> {
         if (byteSize < 0) {
             throw new IllegalArgumentException("Negative size");
         }
+        checkGranularity(src, srcByteOffset, dst, dstByteOffset, byteSize);
         long copiedBytes = 0;
         while (copiedBytes < byteSize) {
             long chunkBytes = Math.min(byteSize - copiedBytes, buffer.byteSize());
             srcOps.copyToNative(src, srcByteOffset + copiedBytes, buffer, 0, chunkBytes);
             dstOps.copyFromNative(buffer, 0, dst, dstByteOffset + copiedBytes, chunkBytes);
             copiedBytes += chunkBytes;
+        }
+    }
+
+    static <S, T> void copy(
+            MemoryOperations<S> srcOps,
+            Memory<S> src,
+            long srcByteOffset,
+            MemoryOperations<T> dstOps,
+            Memory<T> dst,
+            long dstByteOffset,
+            long byteSize) {
+        if (byteSize == 0) {
+            return;
+        }
+        if (byteSize < 0) {
+            throw new IllegalArgumentException("Negative size");
+        }
+        checkGranularity(src, srcByteOffset, dst, dstByteOffset, byteSize);
+        int log2 = 64 - Long.numberOfLeadingZeros(byteSize);
+        long bufferSize = Math.max(4 << 10, byteSize / Math.max(1, log2));
+        try (var arena = Arena.ofConfined()) {
+            MemorySegment memorySegment = arena.allocate(bufferSize, 4 << 10);
+            Memory<MemorySegment> memory = MemoryFactory.ofMemorySegment(memorySegment);
+            copy(srcOps, src, srcByteOffset, dstOps, dst, dstByteOffset, byteSize, memory);
+        }
+    }
+
+    private static <S, T> void checkGranularity(
+            Memory<S> src, long srcByteOffset, Memory<T> dst, long dstByteOffset, long byteSize) {
+        long srcGranularity = src.memoryGranularity();
+        long dstGranularity = dst.memoryGranularity();
+
+        if (srcByteOffset % srcGranularity != 0) {
+            throw new IllegalArgumentException(
+                    "Source offset "
+                            + srcByteOffset
+                            + " is not aligned to source granularity "
+                            + srcGranularity);
+        }
+        if (dstByteOffset % dstGranularity != 0) {
+            throw new IllegalArgumentException(
+                    "Destination offset "
+                            + dstByteOffset
+                            + " is not aligned to destination granularity "
+                            + dstGranularity);
+        }
+        if (byteSize % srcGranularity != 0) {
+            throw new IllegalArgumentException(
+                    "Byte size "
+                            + byteSize
+                            + " is not a multiple of source granularity "
+                            + srcGranularity);
+        }
+        if (byteSize % dstGranularity != 0) {
+            throw new IllegalArgumentException(
+                    "Byte size "
+                            + byteSize
+                            + " is not a multiple of destination granularity "
+                            + dstGranularity);
         }
     }
 }
