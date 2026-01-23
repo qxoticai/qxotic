@@ -67,11 +67,25 @@ class UnsafeAllocatorArena implements ScopedMemoryAllocatorArena<MemorySegment> 
             public long memoryGranularity() {
                 return scopedMemory.memoryGranularity();
             }
+
+            @Override
+            public String toString() {
+                long address = scopedMemory.base().address();
+                StringBuilder sb = new StringBuilder("ArenaScopedMemory{address=0x");
+                sb.append(Long.toHexString(address));
+                sb.append(", byteSize=").append(byteSize());
+                sb.append(", tracked=").append(allocations.contains(scopedMemory));
+                if (isReadOnly()) {
+                    sb.append(", readOnly=true");
+                }
+                sb.append('}');
+                return sb.toString();
+            }
         };
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
         this.allocations.forEach(ScopedMemory::close);
         this.allocations.clear();
     }
