@@ -399,9 +399,7 @@ class MemoryOperationsAutoBufferTest {
 
         for (int i = 0; i < byteSize; i += 64) {
             assertEquals(
-                    (byte) ((i / 64) & 0xFF),
-                    readByte(dstCtx, dst, i),
-                    "Mismatch at offset " + i);
+                    (byte) ((i / 64) & 0xFF), readByte(dstCtx, dst, i), "Mismatch at offset " + i);
         }
     }
 
@@ -554,7 +552,9 @@ class MemoryOperationsAutoBufferTest {
 
         for (int i = 0; i < byteSize; i += 100) {
             assertEquals(
-                    (byte) (i % 256), bufferContext.memoryAccess().readByte(dst, i), "At offset " + i);
+                    (byte) (i % 256),
+                    bufferContext.memoryAccess().readByte(dst, i),
+                    "At offset " + i);
         }
     }
 
