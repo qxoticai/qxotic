@@ -11,13 +11,11 @@ class FloatsContext implements MemoryContext<float[]> {
     private static final Device FLOATS = Device.CPU.child("floats");
     private static final FloatsContext INSTANCE = new FloatsContext();
 
-
     static MemoryContext<float[]> instance() {
         return INSTANCE;
     }
 
-    private FloatsContext() {
-    }
+    private FloatsContext() {}
 
     @Override
     public Device device() {

@@ -11,7 +11,6 @@ import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.ExecutionMode;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
-import ai.qxotic.jota.memory.AbstractMemoryTest;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
@@ -68,8 +67,7 @@ class ConstantTensorTest {
                     long firstOffset = Indexing.linearToOffset(view, 0);
                     long lastOffset = Indexing.linearToOffset(view, 5);
                     assertEquals(1.25f, access.readFloat(typedView.memory(), firstOffset), 0.0001f);
-                    assertEquals(
-                            1.25f, access.readFloat(typedView.memory(), lastOffset), 0.0001f);
+                    assertEquals(1.25f, access.readFloat(typedView.memory(), lastOffset), 0.0001f);
                     return null;
                 });
     }
