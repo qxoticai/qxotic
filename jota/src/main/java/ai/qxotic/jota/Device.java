@@ -33,7 +33,7 @@ public interface Device {
 
     // CUDA.belongsTo(Device.GPU)
     default boolean belongsTo(Device other) {
-        return other.name().startsWith(this.name());
+        return this.name().startsWith(other.name());
     }
 }
 
