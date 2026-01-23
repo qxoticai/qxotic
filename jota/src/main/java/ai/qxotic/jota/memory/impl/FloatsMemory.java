@@ -28,7 +28,7 @@ final class FloatsMemory implements Memory<float[]> {
 
     @Override
     public Device device() {
-        return Device.JAVA;
+        return Device.PANAMA;
     }
 
     @Override

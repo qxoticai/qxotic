@@ -37,7 +37,7 @@ final class StridedCopy {
             throw new IllegalStateException("MemoryAccess is required for strided copies");
         }
 
-        if (context.device() == ai.qxotic.jota.Device.NATIVE
+        if (context.device() == ai.qxotic.jota.Device.PANAMA
                 && src.memory().base() instanceof MemorySegment
                 && dst.memory().base() instanceof MemorySegment) {
             copyWithMemorySegment(

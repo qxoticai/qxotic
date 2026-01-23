@@ -23,7 +23,7 @@ final class ByteBufferAllocator implements MemoryAllocator<ByteBuffer> {
 
     @Override
     public Device device() {
-        return Device.NATIVE;
+        return Device.PANAMA;
     }
 
     @Override

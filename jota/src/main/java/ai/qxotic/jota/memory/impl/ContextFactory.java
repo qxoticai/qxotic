@@ -2,6 +2,7 @@ package ai.qxotic.jota.memory.impl;
 
 import ai.qxotic.jota.memory.MemoryAllocator;
 import ai.qxotic.jota.memory.MemoryContext;
+
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 
@@ -39,8 +40,12 @@ public class ContextFactory {
         return DoublesContext.instance();
     }
 
+    public static MemoryContext<MemorySegment> ofMemorySegment(MemoryAllocator<MemorySegment> memoryAllocator) {
+        return new PanamaContext(memoryAllocator);
+    }
+
     public static MemoryContext<MemorySegment> ofMemorySegment() {
-        return new PanamaContext();
+        return new PanamaContext(UnsafeAllocatorArena.create());
     }
 
     public static MemoryContext<ByteBuffer> ofByteBuffer(

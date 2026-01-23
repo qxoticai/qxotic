@@ -31,7 +31,7 @@ class ToOpsTest {
                 MemoryHelpers.arange(context, DataType.FP32, 4).view(Shape.of(4));
         Tensor input = Tensor.of(view);
         Tensor result =
-                TensorOpsContext.with(new EagerTensorOps(context), () -> input.to(Device.NATIVE));
+                TensorOpsContext.with(new EagerTensorOps(context), () -> input.to(Device.PANAMA));
         assertSame(input, result);
     }
 

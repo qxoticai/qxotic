@@ -20,7 +20,7 @@ class UnsafeAllocator implements ScopedMemoryAllocator<MemorySegment> {
 
     @Override
     public Device device() {
-        return Device.NATIVE;
+        return Device.PANAMA;
     }
 
     @Override
@@ -68,7 +68,7 @@ class UnsafeAllocator implements ScopedMemoryAllocator<MemorySegment> {
 
         @Override
         public Device device() {
-            return Device.NATIVE;
+            return Device.PANAMA;
         }
 
         @Override

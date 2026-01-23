@@ -28,7 +28,7 @@ final class LongsMemory implements Memory<long[]> {
 
     @Override
     public Device device() {
-        return Device.JAVA;
+        return Device.PANAMA;
     }
 
     @Override

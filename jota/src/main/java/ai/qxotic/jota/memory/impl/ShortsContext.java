@@ -8,17 +8,19 @@ import ai.qxotic.jota.memory.MemoryOperations;
 
 class ShortsContext implements MemoryContext<short[]> {
 
+    private static final Device SHORTS = Device.CPU.child("shorts");
     private static final ShortsContext INSTANCE = new ShortsContext();
 
     static MemoryContext<short[]> instance() {
         return INSTANCE;
     }
 
-    private ShortsContext() {}
+    private ShortsContext() {
+    }
 
     @Override
     public Device device() {
-        return Device.JAVA;
+        return SHORTS;
     }
 
     @Override

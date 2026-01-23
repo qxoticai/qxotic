@@ -19,15 +19,21 @@ public interface Device {
         return new DeviceImpl(this, childName);
     }
 
+    // Roots
     Device CPU = Device.of("cpu");
-
-    Device JAVA = CPU.child("java"); // Java managed heap
-    Device NATIVE = CPU.child("native"); // native memory address space
-
     Device GPU = Device.of("gpu");
+
+    // Engines
+    Device PANAMA = CPU.child("native"); // MemorySegment-backed memory
+    Device CUDA = GPU.child("cuda");
 
     static Device defaultDevice() {
         return Environment.current().defaultDevice();
+    }
+
+    // CUDA.belongsTo(Device.GPU)
+    default boolean belongsTo(Device other) {
+        return other.name().startsWith(this.name());
     }
 }
 

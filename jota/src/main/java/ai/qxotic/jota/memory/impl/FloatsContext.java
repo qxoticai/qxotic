@@ -1,21 +1,27 @@
 package ai.qxotic.jota.memory.impl;
 
 import ai.qxotic.jota.Device;
-import ai.qxotic.jota.memory.*;
+import ai.qxotic.jota.memory.MemoryAccess;
+import ai.qxotic.jota.memory.MemoryAllocator;
+import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryOperations;
 
 class FloatsContext implements MemoryContext<float[]> {
 
+    private static final Device FLOATS = Device.CPU.child("floats");
     private static final FloatsContext INSTANCE = new FloatsContext();
+
 
     static MemoryContext<float[]> instance() {
         return INSTANCE;
     }
 
-    private FloatsContext() {}
+    private FloatsContext() {
+    }
 
     @Override
     public Device device() {
-        return Device.JAVA;
+        return FLOATS;
     }
 
     @Override

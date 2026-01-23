@@ -29,7 +29,7 @@ final class ByteBufferMemory implements Memory<ByteBuffer> {
 
     @Override
     public Device device() {
-        return byteBuffer.isDirect() ? Device.NATIVE : Device.JAVA;
+        return byteBuffer.isDirect() ? Device.PANAMA : Device.PANAMA;
     }
 
     @Override

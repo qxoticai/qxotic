@@ -9,16 +9,30 @@ public final class Environment {
     private static final ScopedValue<Environment> CURRENT = ScopedValue.newInstance();
     private static final AtomicReference<Environment> GLOBAL = new AtomicReference<>();
     private static final Environment DEFAULT_GLOBAL =
-            new Environment(Device.JAVA, DataTypeImpl.defaultFloatValue(), DeviceRegistry.global());
+            new Environment(
+                    Device.PANAMA,
+                    DataTypeImpl.defaultFloatValue(),
+                    DeviceRegistry.global(),
+                    ExecutionMode.EAGER);
 
     private final Device defaultDevice;
     private final DataType defaultFloat;
     private final DeviceRegistry registry;
+    private final ExecutionMode executionMode;
 
     public Environment(Device defaultDevice, DataType defaultFloat, DeviceRegistry registry) {
+        this(defaultDevice, defaultFloat, registry, ExecutionMode.EAGER);
+    }
+
+    public Environment(
+            Device defaultDevice,
+            DataType defaultFloat,
+            DeviceRegistry registry,
+            ExecutionMode executionMode) {
         this.defaultDevice = Objects.requireNonNull(defaultDevice, "defaultDevice");
         this.defaultFloat = Objects.requireNonNull(defaultFloat, "defaultFloat");
         this.registry = Objects.requireNonNull(registry, "registry");
+        this.executionMode = Objects.requireNonNull(executionMode, "executionMode");
     }
 
     public static Environment current() {
@@ -59,5 +73,9 @@ public final class Environment {
 
     public DeviceRegistry registry() {
         return registry;
+    }
+
+    public ExecutionMode executionMode() {
+        return executionMode;
     }
 }

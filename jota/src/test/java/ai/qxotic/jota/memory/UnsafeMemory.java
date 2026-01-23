@@ -25,7 +25,7 @@ public final class UnsafeMemory implements Memory<Void> {
 
     @Override
     public Device device() {
-        return Device.NATIVE;
+        return Device.PANAMA;
     }
 
     @Override

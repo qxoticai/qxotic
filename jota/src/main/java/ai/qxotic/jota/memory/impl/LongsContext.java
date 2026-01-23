@@ -8,17 +8,20 @@ import ai.qxotic.jota.memory.MemoryOperations;
 
 class LongsContext implements MemoryContext<long[]> {
 
+    private static final Device LONGS = Device.CPU.child("longs");
     private static final LongsContext INSTANCE = new LongsContext();
+
 
     static MemoryContext<long[]> instance() {
         return INSTANCE;
     }
 
-    private LongsContext() {}
+    private LongsContext() {
+    }
 
     @Override
     public Device device() {
-        return Device.JAVA;
+        return LONGS;
     }
 
     @Override

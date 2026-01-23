@@ -18,7 +18,7 @@ final class BytesMemoryAllocator implements MemoryAllocator<byte[]> {
 
     @Override
     public Device device() {
-        return Device.JAVA;
+        return Device.PANAMA;
     }
 
     @Override

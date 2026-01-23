@@ -14,7 +14,7 @@ final class ManagedPanamaAllocator
 
     @Override
     public Device device() {
-        return Device.NATIVE;
+        return Device.PANAMA;
     }
 
     @Override

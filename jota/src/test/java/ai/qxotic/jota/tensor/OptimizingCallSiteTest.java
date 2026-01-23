@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import ai.qxotic.jota.DataType;
-import ai.qxotic.jota.DeviceRegistry;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.MemoryContext;
@@ -24,12 +23,6 @@ class OptimizingCallSiteTest {
     @BeforeAll
     static void setUp() {
         context = ContextFactory.ofMemorySegment();
-        try {
-            DeviceRegistry.global().engine(context.device());
-        } catch (IllegalStateException ignored) {
-            DeviceRegistry.global()
-                    .register(context.device(), context, new JavaComputeEngine(context));
-        }
     }
 
     @Test

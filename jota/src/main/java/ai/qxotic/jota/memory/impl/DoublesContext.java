@@ -8,17 +8,19 @@ import ai.qxotic.jota.memory.MemoryOperations;
 
 class DoublesContext implements MemoryContext<double[]> {
 
+    private static final Device DOUBLES = Device.CPU.child("doubles");
     private static final DoublesContext INSTANCE = new DoublesContext();
 
     static MemoryContext<double[]> instance() {
         return INSTANCE;
     }
 
-    private DoublesContext() {}
+    private DoublesContext() {
+    }
 
     @Override
     public Device device() {
-        return Device.JAVA;
+        return DOUBLES;
     }
 
     @Override

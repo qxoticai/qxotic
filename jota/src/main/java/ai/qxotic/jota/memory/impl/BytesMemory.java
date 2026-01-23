@@ -28,7 +28,7 @@ final class BytesMemory implements Memory<byte[]> {
 
     @Override
     public Device device() {
-        return Device.JAVA;
+        return Device.PANAMA;
     }
 
     @Override
