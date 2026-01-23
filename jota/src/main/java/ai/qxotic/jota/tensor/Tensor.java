@@ -1,7 +1,13 @@
 package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.*;
+import ai.qxotic.jota.memory.Memory;
+import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryOperations;
 import ai.qxotic.jota.memory.MemoryView;
+import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.impl.MemoryFactory;
+import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
@@ -291,6 +297,112 @@ public interface Tensor {
         return new MaterializedTensor(view);
     }
 
+    // ========== Tensor Creation Methods ==========
+
+    /**
+     * Creates a tensor filled with zeros.
+     *
+     * <p>Uses the default float type from {@link DataType#defaultFloat()}.
+     *
+     * @param shape the shape of the tensor
+     * @return a lazy tensor filled with zeros
+     */
+    static Tensor zeros(Shape shape) {
+        return zeros(DataType.defaultFloat(), shape);
+    }
+
+    /**
+     * Creates a tensor filled with zeros with the specified data type.
+     *
+     * @param dtype the data type
+     * @param shape the shape of the tensor
+     * @return a lazy tensor filled with zeros
+     */
+    static Tensor zeros(DataType dtype, Shape shape) {
+        return broadcasted(0, dtype, shape, Device.defaultDevice());
+    }
+
+    /**
+     * Creates a tensor filled with ones.
+     *
+     * <p>Uses the default float type from {@link DataType#defaultFloat()}.
+     *
+     * @param shape the shape of the tensor
+     * @return a lazy tensor filled with ones
+     */
+    static Tensor ones(Shape shape) {
+        return ones(DataType.defaultFloat(), shape);
+    }
+
+    /**
+     * Creates a tensor filled with ones with the specified data type.
+     *
+     * @param dtype the data type
+     * @param shape the shape of the tensor
+     * @return a lazy tensor filled with ones
+     */
+    static Tensor ones(DataType dtype, Shape shape) {
+        return broadcasted(1, dtype, shape, Device.defaultDevice());
+    }
+
+    /**
+     * Creates a tensor filled with the specified float value.
+     *
+     * @param value the fill value
+     * @param shape the shape of the tensor
+     * @return a lazy tensor filled with the value (FP32)
+     */
+    static Tensor full(float value, Shape shape) {
+        return broadcasted(Float.valueOf(value), DataType.FP32, shape, Device.defaultDevice());
+    }
+
+    /**
+     * Creates a tensor filled with the specified double value.
+     *
+     * @param value the fill value
+     * @param shape the shape of the tensor
+     * @return a lazy tensor filled with the value (FP64)
+     */
+    static Tensor full(double value, Shape shape) {
+        return broadcasted(Double.valueOf(value), DataType.FP64, shape, Device.defaultDevice());
+    }
+
+    /**
+     * Creates a tensor filled with the specified long value.
+     *
+     * @param value the fill value
+     * @param shape the shape of the tensor
+     * @return a lazy tensor filled with the value (I64)
+     */
+    static Tensor full(long value, Shape shape) {
+        return broadcasted(Long.valueOf(value), DataType.I64, shape, Device.defaultDevice());
+    }
+
+    /**
+     * Creates a tensor filled with the specified int value.
+     *
+     * @param value the fill value
+     * @param shape the shape of the tensor
+     * @return a lazy tensor filled with the value (I32)
+     */
+    static Tensor full(int value, Shape shape) {
+        return broadcasted(Integer.valueOf(value), DataType.I32, shape, Device.defaultDevice());
+    }
+
+    /**
+     * Creates a tensor filled with the specified value and data type.
+     *
+     * @param value the fill value
+     * @param dtype the data type
+     * @param shape the shape of the tensor
+     * @return a lazy tensor filled with the value
+     */
+    static Tensor full(Number value, DataType dtype, Shape shape) {
+        return broadcasted(value, dtype, shape, Device.defaultDevice());
+    }
+
+    // ========== Broadcasted and Scalar ==========
+
     static Tensor broadcasted(float value, Shape shape) {
         return broadcasted(Float.valueOf(value), DataType.FP32, shape, Device.defaultDevice());
     }
@@ -326,6 +438,184 @@ public interface Tensor {
         Layout layout = Layout.of(shape, Stride.zeros(shape));
         ConstantComputation computation = ConstantComputation.of(value, dataType, shape, device);
         return lazy(computation, dataType, layout, device);
+    }
+
+    // ========== Array Creation (Eager) ==========
+
+    /**
+     * Creates a tensor from a float array.
+     *
+     * @param data the source array (copied, not referenced)
+     * @return a materialized tensor with shape [data.length] and FP32 dtype
+     */
+    static Tensor of(float[] data) {
+        return of(data, Shape.flat(data.length));
+    }
+
+    /**
+     * Creates a tensor from a float array with the specified shape.
+     *
+     * @param data the source array (copied, not referenced)
+     * @param shape the shape (must match array length)
+     * @return a materialized tensor with FP32 dtype
+     */
+    static Tensor of(float[] data, Shape shape) {
+        if (data.length != shape.size()) {
+            throw new IllegalArgumentException(
+                    "array length " + data.length + " does not match shape size " + shape.size());
+        }
+        MemoryContext<?> context = Environment.current().registry().context(Device.defaultDevice());
+        MemoryView<?> view = copyFloatArray(context, data, shape);
+        return of(view);
+    }
+
+    /**
+     * Creates a tensor from a double array.
+     *
+     * @param data the source array (copied, not referenced)
+     * @return a materialized tensor with shape [data.length] and FP64 dtype
+     */
+    static Tensor of(double[] data) {
+        return of(data, Shape.flat(data.length));
+    }
+
+    /**
+     * Creates a tensor from a double array with the specified shape.
+     *
+     * @param data the source array (copied, not referenced)
+     * @param shape the shape (must match array length)
+     * @return a materialized tensor with FP64 dtype
+     */
+    static Tensor of(double[] data, Shape shape) {
+        if (data.length != shape.size()) {
+            throw new IllegalArgumentException(
+                    "array length " + data.length + " does not match shape size " + shape.size());
+        }
+        MemoryContext<?> context = Environment.current().registry().context(Device.defaultDevice());
+        MemoryView<?> view = copyDoubleArray(context, data, shape);
+        return of(view);
+    }
+
+    /**
+     * Creates a tensor from an int array.
+     *
+     * @param data the source array (copied, not referenced)
+     * @return a materialized tensor with shape [data.length] and I32 dtype
+     */
+    static Tensor of(int[] data) {
+        return of(data, Shape.flat(data.length));
+    }
+
+    /**
+     * Creates a tensor from an int array with the specified shape.
+     *
+     * @param data the source array (copied, not referenced)
+     * @param shape the shape (must match array length)
+     * @return a materialized tensor with I32 dtype
+     */
+    static Tensor of(int[] data, Shape shape) {
+        if (data.length != shape.size()) {
+            throw new IllegalArgumentException(
+                    "array length " + data.length + " does not match shape size " + shape.size());
+        }
+        MemoryContext<?> context = Environment.current().registry().context(Device.defaultDevice());
+        MemoryView<?> view = copyIntArray(context, data, shape);
+        return of(view);
+    }
+
+    /**
+     * Creates a tensor from a long array.
+     *
+     * @param data the source array (copied, not referenced)
+     * @return a materialized tensor with shape [data.length] and I64 dtype
+     */
+    static Tensor of(long[] data) {
+        return of(data, Shape.flat(data.length));
+    }
+
+    /**
+     * Creates a tensor from a long array with the specified shape.
+     *
+     * @param data the source array (copied, not referenced)
+     * @param shape the shape (must match array length)
+     * @return a materialized tensor with I64 dtype
+     */
+    static Tensor of(long[] data, Shape shape) {
+        if (data.length != shape.size()) {
+            throw new IllegalArgumentException(
+                    "array length " + data.length + " does not match shape size " + shape.size());
+        }
+        MemoryContext<?> context = Environment.current().registry().context(Device.defaultDevice());
+        MemoryView<?> view = copyLongArray(context, data, shape);
+        return of(view);
+    }
+
+    private static <B> MemoryView<B> copyFloatArray(
+            MemoryContext<B> context, float[] data, Shape shape) {
+        Memory<B> dst = context.memoryAllocator().allocateMemory(DataType.FP32, data.length);
+        Memory<MemorySegment> src = MemoryFactory.ofMemorySegment(MemorySegment.ofArray(data));
+        MemoryOperations<MemorySegment> srcOps =
+                ContextFactory.ofMemorySegment().memoryOperations();
+        MemoryOperations.copy(
+                srcOps,
+                src,
+                0,
+                context.memoryOperations(),
+                dst,
+                0,
+                (long) data.length * Float.BYTES);
+        return MemoryView.of(dst, DataType.FP32, Layout.rowMajor(shape));
+    }
+
+    private static <B> MemoryView<B> copyDoubleArray(
+            MemoryContext<B> context, double[] data, Shape shape) {
+        Memory<B> dst = context.memoryAllocator().allocateMemory(DataType.FP64, data.length);
+        Memory<MemorySegment> src = MemoryFactory.ofMemorySegment(MemorySegment.ofArray(data));
+        MemoryOperations<MemorySegment> srcOps =
+                ContextFactory.ofMemorySegment().memoryOperations();
+        MemoryOperations.copy(
+                srcOps,
+                src,
+                0,
+                context.memoryOperations(),
+                dst,
+                0,
+                (long) data.length * Double.BYTES);
+        return MemoryView.of(dst, DataType.FP64, Layout.rowMajor(shape));
+    }
+
+    private static <B> MemoryView<B> copyIntArray(
+            MemoryContext<B> context, int[] data, Shape shape) {
+        Memory<B> dst = context.memoryAllocator().allocateMemory(DataType.I32, data.length);
+        Memory<MemorySegment> src = MemoryFactory.ofMemorySegment(MemorySegment.ofArray(data));
+        MemoryOperations<MemorySegment> srcOps =
+                ContextFactory.ofMemorySegment().memoryOperations();
+        MemoryOperations.copy(
+                srcOps,
+                src,
+                0,
+                context.memoryOperations(),
+                dst,
+                0,
+                (long) data.length * Integer.BYTES);
+        return MemoryView.of(dst, DataType.I32, Layout.rowMajor(shape));
+    }
+
+    private static <B> MemoryView<B> copyLongArray(
+            MemoryContext<B> context, long[] data, Shape shape) {
+        Memory<B> dst = context.memoryAllocator().allocateMemory(DataType.I64, data.length);
+        Memory<MemorySegment> src = MemoryFactory.ofMemorySegment(MemorySegment.ofArray(data));
+        MemoryOperations<MemorySegment> srcOps =
+                ContextFactory.ofMemorySegment().memoryOperations();
+        MemoryOperations.copy(
+                srcOps,
+                src,
+                0,
+                context.memoryOperations(),
+                dst,
+                0,
+                (long) data.length * Long.BYTES);
+        return MemoryView.of(dst, DataType.I64, Layout.rowMajor(shape));
     }
 
     @Deprecated
