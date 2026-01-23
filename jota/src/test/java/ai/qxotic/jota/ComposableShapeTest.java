@@ -1,9 +1,7 @@
-package ai.qxotic;
+package ai.qxotic.jota;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import ai.qxotic.jota.Shape;
-import ai.qxotic.jota.Stride;
 import org.junit.jupiter.api.Test;
 
 class ComposableShapeTest {

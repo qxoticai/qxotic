@@ -1,8 +1,7 @@
-package ai.qxotic;
+package ai.qxotic.jota;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import ai.qxotic.jota.Shape;
 import org.junit.jupiter.api.Test;
 
 /** Comprehensive tests for Shape methods including rank, size, modeAt, flatten, etc. */
