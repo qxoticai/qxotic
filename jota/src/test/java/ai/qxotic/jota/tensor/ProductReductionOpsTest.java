@@ -86,7 +86,7 @@ class ProductReductionOpsTest extends AbstractMemoryTest {
     void reducesExpressionInputs() {
         MemoryView<MemorySegment> view = range(DataType.FP32, Shape.of(2, 3));
         Tensor input = Tensor.of(view);
-        Tensor reduced = Tracer.trace(input, t -> t.add(1).product(DataType.FP32, 1));
+        Tensor reduced = Tracer.trace(input, t -> t.add(1f).product(DataType.FP32, 1));
         MemoryView<?> output =
                 ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
         assertValueEquals(DataType.FP32, 6.0f, readValue(output, 0, DataType.FP32));
@@ -98,7 +98,7 @@ class ProductReductionOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = range(DataType.I32, Shape.of(2, 3));
         Tensor input = Tensor.of(view);
         Tensor reduced =
-                Tracer.trace(input, t -> t.product(DataType.I32, 1).cast(DataType.FP32).add(1));
+                Tracer.trace(input, t -> t.product(DataType.I32, 1).cast(DataType.FP32).add(1f));
         MemoryView<?> output =
                 ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
         assertEquals(Shape.of(2), output.shape());

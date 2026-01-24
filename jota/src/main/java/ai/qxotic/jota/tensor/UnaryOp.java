@@ -18,10 +18,7 @@ public interface UnaryOp extends Op {
     UnaryOp SIN = new UnaryOpImpl("sin");
     UnaryOp COS = new UnaryOpImpl("cos");
     UnaryOp TANH = new UnaryOpImpl("tanh");
-    UnaryOp SIGMOID = new UnaryOpImpl("sigmoid");
-    UnaryOp RELU = new UnaryOpImpl("relu");
-    UnaryOp GELU = new UnaryOpImpl("gelu");
-    UnaryOp SILU = new UnaryOpImpl("silu");
+    UnaryOp RECIPROCAL = new UnaryOpImpl("reciprocal");
 
     UnaryOp LOGICAL_NOT = new UnaryOpImpl("logicalNot");
     UnaryOp BITWISE_NOT = new UnaryOpImpl("bitwiseNot");

@@ -879,26 +879,6 @@ final class JavaKernelCompiler {
                     source.append("  }\n");
                 }
             }
-            if (helpers.contains(HelperMethod.SIGMOID)) {
-                source.append("\n");
-                source.append("  private static float sigmoid(float value) {\n");
-                source.append("    return 1.0f / (1.0f + (float) Math.exp(-value));\n");
-                source.append("  }\n");
-            }
-            if (helpers.contains(HelperMethod.SILU)) {
-                source.append("\n");
-                source.append("  private static float silu(float value) {\n");
-                source.append("    return value / (1.0f + (float) Math.exp(-value));\n");
-                source.append("  }\n");
-            }
-            if (helpers.contains(HelperMethod.GELU)) {
-                source.append("\n");
-                source.append("  private static float gelu(float value) {\n");
-                source.append("    float cubic = value * value * value;\n");
-                source.append("    float inner = 0.79788456f * (value + 0.044715f * cubic);\n");
-                source.append("    return 0.5f * value * (1.0f + (float) Math.tanh(inner));\n");
-                source.append("  }\n");
-            }
             if (helpers.contains(HelperMethod.OFFSET_FOR_INDEX)) {
                 source.append("\n");
                 source.append("  private static long offsetForIndex(\n");
@@ -1299,6 +1279,24 @@ final class JavaKernelCompiler {
                             throw new IllegalStateException("Unsupported unary op: " + op.name());
                 };
             }
+            if (dataType == DataType.FP16) {
+                return switch (op.name()) {
+                    case "reciprocal" ->
+                            "Float.floatToFloat16(1.0f / Float.float16ToFloat(" + inputVar + "))";
+                    default ->
+                            throw new IllegalStateException(
+                                    "Unsupported unary op for FP16: " + op.name());
+                };
+            }
+            if (dataType == DataType.BF16) {
+                return switch (op.name()) {
+                    case "reciprocal" ->
+                            "BFloat16.fromFloat(1.0f / BFloat16.toFloat(" + inputVar + "))";
+                    default ->
+                            throw new IllegalStateException(
+                                    "Unsupported unary op for BF16: " + op.name());
+                };
+            }
             if (dataType == DataType.FP32) {
                 return switch (op.name()) {
                     case "negate" -> "-" + inputVar;
@@ -1310,12 +1308,17 @@ final class JavaKernelCompiler {
                     case "sin" -> "(float) Math.sin(" + inputVar + ")";
                     case "cos" -> "(float) Math.cos(" + inputVar + ")";
                     case "tanh" -> "(float) Math.tanh(" + inputVar + ")";
-                    case "sigmoid" -> withHelper(HelperMethod.SIGMOID, "sigmoid(" + inputVar + ")");
-                    case "relu" -> "Math.max(0.0f, " + inputVar + ")";
-                    case "gelu" -> withHelper(HelperMethod.GELU, "gelu(" + inputVar + ")");
-                    case "silu" -> withHelper(HelperMethod.SILU, "silu(" + inputVar + ")");
+                    case "reciprocal" -> "1.0f / " + inputVar;
                     default ->
                             throw new IllegalStateException("Unsupported unary op: " + op.name());
+                };
+            }
+            if (dataType == DataType.FP64) {
+                return switch (op.name()) {
+                    case "reciprocal" -> "1.0 / " + inputVar;
+                    default ->
+                            throw new IllegalStateException(
+                                    "Unsupported unary op for FP64: " + op.name());
                 };
             }
             if (dataType == DataType.I32) {
@@ -1607,9 +1610,6 @@ final class JavaKernelCompiler {
             WRITE_INT,
             WRITE_LONG,
             WRITE_DOUBLE,
-            SIGMOID,
-            SILU,
-            GELU,
             OFFSET_FOR_INDEX
         }
     }

@@ -99,7 +99,7 @@ class ReductionOpsTest extends AbstractMemoryTest {
     void reducesExpressionInputs() {
         MemoryView<MemorySegment> view = range(DataType.FP32, Shape.of(2, 3));
         Tensor input = Tensor.of(view);
-        Tensor reduced = Tracer.trace(input, t -> t.add(1).max(1));
+        Tensor reduced = Tracer.trace(input, t -> t.add(1f).max(1));
         MemoryView<?> output =
                 ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
         assertValueEquals(DataType.FP32, 3.0f, readValue(output, 0, DataType.FP32));

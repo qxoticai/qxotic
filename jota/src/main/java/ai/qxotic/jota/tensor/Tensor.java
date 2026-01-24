@@ -68,35 +68,89 @@ public interface Tensor {
     Optional<LazyComputation> computation();
 
     default Tensor add(Tensor other) {
-        return TensorOpsContext.require().add(this, other);
+        return tryFoldBinaryOp(other, BinaryOp.ADD)
+                .orElseGet(() -> TensorOpsContext.require().add(this, broadcastIfScalar(other)));
     }
 
-    default Tensor add(Number scalar) {
-        return TensorOpsContext.require().add(this, scalar);
+    default Tensor add(int scalar) {
+        return add(Tensor.broadcasted(scalar, shape()));
+    }
+
+    default Tensor add(long scalar) {
+        return add(Tensor.broadcasted(scalar, shape()));
+    }
+
+    default Tensor add(float scalar) {
+        return add(Tensor.broadcasted(scalar, shape()));
+    }
+
+    default Tensor add(double scalar) {
+        return add(Tensor.broadcasted(scalar, shape()));
     }
 
     default Tensor subtract(Tensor other) {
-        return TensorOpsContext.require().subtract(this, other);
+        return tryFoldBinaryOp(other, BinaryOp.SUBTRACT)
+                .orElseGet(
+                        () -> TensorOpsContext.require().subtract(this, broadcastIfScalar(other)));
     }
 
-    default Tensor subtract(Number scalar) {
-        return TensorOpsContext.require().subtract(this, scalar);
+    default Tensor subtract(int scalar) {
+        return subtract(Tensor.broadcasted(scalar, shape()));
+    }
+
+    default Tensor subtract(long scalar) {
+        return subtract(Tensor.broadcasted(scalar, shape()));
+    }
+
+    default Tensor subtract(float scalar) {
+        return subtract(Tensor.broadcasted(scalar, shape()));
+    }
+
+    default Tensor subtract(double scalar) {
+        return subtract(Tensor.broadcasted(scalar, shape()));
     }
 
     default Tensor multiply(Tensor other) {
-        return TensorOpsContext.require().multiply(this, other);
+        return tryFoldBinaryOp(other, BinaryOp.MULTIPLY)
+                .orElseGet(
+                        () -> TensorOpsContext.require().multiply(this, broadcastIfScalar(other)));
     }
 
-    default Tensor multiply(Number scalar) {
-        return TensorOpsContext.require().multiply(this, scalar);
+    default Tensor multiply(int scalar) {
+        return multiply(Tensor.broadcasted(scalar, shape()));
+    }
+
+    default Tensor multiply(long scalar) {
+        return multiply(Tensor.broadcasted(scalar, shape()));
+    }
+
+    default Tensor multiply(float scalar) {
+        return multiply(Tensor.broadcasted(scalar, shape()));
+    }
+
+    default Tensor multiply(double scalar) {
+        return multiply(Tensor.broadcasted(scalar, shape()));
     }
 
     default Tensor divide(Tensor other) {
-        return TensorOpsContext.require().divide(this, other);
+        return tryFoldBinaryOp(other, BinaryOp.DIVIDE)
+                .orElseGet(() -> TensorOpsContext.require().divide(this, broadcastIfScalar(other)));
     }
 
-    default Tensor divide(Number scalar) {
-        return TensorOpsContext.require().divide(this, scalar);
+    default Tensor divide(int scalar) {
+        return divide(Tensor.broadcasted(scalar, shape()));
+    }
+
+    default Tensor divide(long scalar) {
+        return divide(Tensor.broadcasted(scalar, shape()));
+    }
+
+    default Tensor divide(float scalar) {
+        return divide(Tensor.broadcasted(scalar, shape()));
+    }
+
+    default Tensor divide(double scalar) {
+        return divide(Tensor.broadcasted(scalar, shape()));
     }
 
     default Tensor min(Tensor other) {
@@ -151,6 +205,36 @@ public interface Tensor {
 
     default Tensor contiguous() {
         return TensorOpsContext.require().contiguous(this);
+    }
+
+    /**
+     * Returns a view of this tensor with a different shape.
+     *
+     * <p>This is a non-allocating reshape that returns a tensor sharing the same underlying memory.
+     * The new shape must be compatible with the current layout (total size must match and the
+     * layout must span a contiguous memory range).
+     *
+     * @param newShape the new shape for the view
+     * @return a tensor with the new shape sharing the same memory
+     * @throws IllegalArgumentException if a view cannot be created without copying
+     */
+    default Tensor view(Shape newShape) {
+        return TensorOpsContext.require().view(this, newShape);
+    }
+
+    /**
+     * Returns a tensor with the specified shape.
+     *
+     * <p>This method tries to create a view first (non-allocating). If that's not possible because
+     * the layout has gaps or doesn't span a contiguous memory range, it allocates new memory and
+     * copies the data to create a contiguous tensor with the new shape.
+     *
+     * @param newShape the new shape (must have the same total number of elements)
+     * @return a tensor with the new shape (may or may not share memory with the original)
+     * @throws IllegalArgumentException if the total number of elements doesn't match
+     */
+    default Tensor reshape(Shape newShape) {
+        return TensorOpsContext.require().reshape(this, newShape);
     }
 
     default Tensor bitwiseNot() {
@@ -238,59 +322,184 @@ public interface Tensor {
     }
 
     default Tensor cast(DataType targetType) {
+        if (this.dataType() == targetType) {
+            return this;
+        }
         return TensorOpsContext.require().cast(this, targetType);
     }
 
     default Tensor negate() {
-        return TensorOpsContext.require().negate(this);
+        return tryFoldUnaryOp(UnaryOp.NEGATE)
+                .orElseGet(() -> TensorOpsContext.require().negate(this));
     }
 
     default Tensor abs() {
-        return TensorOpsContext.require().abs(this);
+        return tryFoldUnaryOp(UnaryOp.ABS).orElseGet(() -> TensorOpsContext.require().abs(this));
     }
 
     default Tensor exp() {
-        return TensorOpsContext.require().exp(this);
+        return tryFoldUnaryOp(UnaryOp.EXP).orElseGet(() -> TensorOpsContext.require().exp(this));
     }
 
     default Tensor log() {
-        return TensorOpsContext.require().log(this);
+        return tryFoldUnaryOp(UnaryOp.LOG).orElseGet(() -> TensorOpsContext.require().log(this));
     }
 
     default Tensor sqrt() {
-        return TensorOpsContext.require().sqrt(this);
+        return tryFoldUnaryOp(UnaryOp.SQRT).orElseGet(() -> TensorOpsContext.require().sqrt(this));
     }
 
     default Tensor square() {
-        return TensorOpsContext.require().square(this);
+        return tryFoldUnaryOp(UnaryOp.SQUARE)
+                .orElseGet(() -> TensorOpsContext.require().square(this));
     }
 
     default Tensor sin() {
-        return TensorOpsContext.require().sin(this);
+        return tryFoldUnaryOp(UnaryOp.SIN).orElseGet(() -> TensorOpsContext.require().sin(this));
     }
 
     default Tensor cos() {
-        return TensorOpsContext.require().cos(this);
+        return tryFoldUnaryOp(UnaryOp.COS).orElseGet(() -> TensorOpsContext.require().cos(this));
     }
 
     default Tensor tanh() {
-        return TensorOpsContext.require().tanh(this);
-    }
-
-    default Tensor sigmoid() {
-        return TensorOpsContext.require().sigmoid(this);
+        return tryFoldUnaryOp(UnaryOp.TANH).orElseGet(() -> TensorOpsContext.require().tanh(this));
     }
 
     default Tensor relu() {
-        return TensorOpsContext.require().relu(this);
+        requireFloatingPoint("relu");
+        return max(Tensor.full(0f, dataType(), shape()));
     }
 
-    default Tensor gelu() {
-        return TensorOpsContext.require().gelu(this);
+    default Tensor sigmoid() {
+        requireFloatingPoint("sigmoid");
+        return negate().exp().add(Tensor.scalar(1, dataType())).reciprocal();
     }
 
     default Tensor silu() {
-        return TensorOpsContext.require().silu(this);
+        requireFloatingPoint("silu");
+        return multiply(sigmoid()); // x * sigmoid(x)
+    }
+
+    default Tensor gelu() {
+        requireFloatingPoint("gelu");
+        // GELU(x) ≈ 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
+        DataType dt = dataType();
+        Tensor cubic = multiply(this).multiply(this);
+        Tensor inner =
+                cubic.multiply(Tensor.scalar(0.044715, dt))
+                        .add(this)
+                        .multiply(Tensor.scalar(0.7978845608, dt));
+        return inner.tanh()
+                .add(Tensor.scalar(1, dt))
+                .multiply(this)
+                .multiply(Tensor.scalar(0.5, dt));
+    }
+
+    private void requireFloatingPoint(String op) {
+        if (!dataType().isFloatingPoint()) {
+            throw new IllegalArgumentException(
+                    op + " requires floating-point tensor, got " + dataType());
+        }
+    }
+
+    private Tensor broadcastIfScalar(Tensor other) {
+        if (!other.isScalar() || this.isScalar()) {
+            return other;
+        }
+        // Extract value from scalar and broadcast to this shape
+        return other.computation()
+                .filter(ConstantComputation.class::isInstance)
+                .map(ConstantComputation.class::cast)
+                .map(c -> Tensor.full(c.value(), c.dataType(), shape()))
+                .orElse(other);
+    }
+
+    private Optional<ConstantComputation> asConstant() {
+        return computation()
+                .filter(ConstantComputation.class::isInstance)
+                .map(ConstantComputation.class::cast);
+    }
+
+    private Optional<Tensor> tryFoldBinaryOp(Tensor other, BinaryOp op) {
+        Optional<ConstantComputation> leftConst = this.asConstant();
+        Optional<ConstantComputation> rightConst = other.asConstant();
+        if (leftConst.isEmpty() || rightConst.isEmpty()) {
+            return Optional.empty();
+        }
+        ConstantComputation left = leftConst.get();
+        ConstantComputation right = rightConst.get();
+        DataType resultType = TypeRules.promote(left.dataType(), right.dataType());
+        double a = left.value().doubleValue();
+        double b = right.value().doubleValue();
+        double result;
+        if (op == BinaryOp.ADD) {
+            result = a + b;
+        } else if (op == BinaryOp.SUBTRACT) {
+            result = a - b;
+        } else if (op == BinaryOp.MULTIPLY) {
+            result = a * b;
+        } else if (op == BinaryOp.DIVIDE) {
+            result = a / b;
+        } else if (op == BinaryOp.MIN) {
+            result = Math.min(a, b);
+        } else if (op == BinaryOp.MAX) {
+            result = Math.max(a, b);
+        } else {
+            throw new UnsupportedOperationException("Cannot fold: " + op);
+        }
+        return Optional.of(Tensor.scalar(result, resultType));
+    }
+
+    private Optional<Tensor> tryFoldUnaryOp(UnaryOp op) {
+        Optional<ConstantComputation> constant = this.asConstant();
+        if (constant.isEmpty()) {
+            return Optional.empty();
+        }
+        ConstantComputation c = constant.get();
+        double a = c.value().doubleValue();
+        double result;
+        if (op == UnaryOp.NEGATE) {
+            result = -a;
+        } else if (op == UnaryOp.ABS) {
+            result = Math.abs(a);
+        } else if (op == UnaryOp.EXP) {
+            result = Math.exp(a);
+        } else if (op == UnaryOp.LOG) {
+            result = Math.log(a);
+        } else if (op == UnaryOp.SQRT) {
+            result = Math.sqrt(a);
+        } else if (op == UnaryOp.SQUARE) {
+            result = a * a;
+        } else if (op == UnaryOp.SIN) {
+            result = Math.sin(a);
+        } else if (op == UnaryOp.COS) {
+            result = Math.cos(a);
+        } else if (op == UnaryOp.TANH) {
+            result = Math.tanh(a);
+        } else if (op == UnaryOp.RECIPROCAL) {
+            result = 1.0 / a;
+        } else {
+            return Optional.empty();
+        }
+        return Optional.of(Tensor.scalar(result, c.dataType()));
+    }
+
+    default Tensor reciprocal() {
+        if (!dataType().isFloatingPoint()) {
+            throw new IllegalArgumentException(
+                    "reciprocal requires floating-point tensor, got " + dataType());
+        }
+        return tryFoldUnaryOp(UnaryOp.RECIPROCAL)
+                .orElseGet(() -> TensorOpsContext.require().reciprocal(this));
+    }
+
+    default Tensor reciprocal(DataType dataType) {
+        if (!dataType.isFloatingPoint()) {
+            throw new IllegalArgumentException(
+                    "reciprocal target type must be floating-point, got " + dataType);
+        }
+        return this.cast(dataType).reciprocal();
     }
 
     static Tensor of(MemoryView<?> view) {
@@ -403,12 +612,25 @@ public interface Tensor {
 
     // ========== Broadcasted and Scalar ==========
 
-    static Tensor broadcasted(float value, Shape shape) {
-        return broadcasted(Float.valueOf(value), DataType.FP32, shape, Device.defaultDevice());
+    static Tensor broadcasted(int value, Shape shape) {
+        return broadcasted(Integer.valueOf(value), DataType.I32, shape, Device.defaultDevice());
     }
 
     static Tensor broadcasted(long value, Shape shape) {
         return broadcasted(Long.valueOf(value), DataType.I64, shape, Device.defaultDevice());
+    }
+
+    static Tensor broadcasted(float value, Shape shape) {
+        return broadcasted(Float.valueOf(value), DataType.FP32, shape, Device.defaultDevice());
+    }
+
+    static Tensor broadcasted(double value, Shape shape) {
+        return broadcasted(Double.valueOf(value), DataType.FP64, shape, Device.defaultDevice());
+    }
+
+    static Tensor scalar(int value) {
+        return broadcasted(
+                Integer.valueOf(value), DataType.I32, Shape.scalar(), Device.defaultDevice());
     }
 
     static Tensor scalar(float value) {
@@ -424,6 +646,32 @@ public interface Tensor {
     static Tensor scalar(long value) {
         return broadcasted(
                 Long.valueOf(value), DataType.I64, Shape.scalar(), Device.defaultDevice());
+    }
+
+    /**
+     * Creates a scalar tensor with the specified data type.
+     *
+     * <p>The primitive value is used as a carrier and cast to the target type.
+     *
+     * @param value the scalar value (used as carrier)
+     * @param dtype the target data type
+     * @return a scalar tensor with the specified type
+     */
+    static Tensor scalar(double value, DataType dtype) {
+        return broadcasted(Double.valueOf(value), dtype, Shape.scalar(), Device.defaultDevice());
+    }
+
+    /**
+     * Creates a scalar tensor with the specified data type.
+     *
+     * <p>The primitive value is used as a carrier and cast to the target type.
+     *
+     * @param value the scalar value (used as carrier)
+     * @param dtype the target data type
+     * @return a scalar tensor with the specified type
+     */
+    static Tensor scalar(long value, DataType dtype) {
+        return broadcasted(Long.valueOf(value), dtype, Shape.scalar(), Device.defaultDevice());
     }
 
     static Tensor lazy(LazyComputation computation, DataType dtype, Layout layout, Device device) {
