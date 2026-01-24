@@ -15,6 +15,8 @@ import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
+import ai.qxotic.jota.memory.MemoryViewPrinter;
+import ai.qxotic.jota.memory.impl.ContextFactory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -502,5 +504,288 @@ class ConstantTensorTest {
         float[] data = {1.0f, 2.0f, 3.0f};
         assertThrows(
                 IllegalArgumentException.class, () -> Tensor.of(data, Shape.of(2, 3))); // 3 != 6
+    }
+
+    @Test
+    void canary() {
+        Tensor scalar =
+                Tensor.scalar(3.14f); // Tensor.of(new float[] {3.14f}).view(Shape.scalar());
+        Tensor reciprocal1 = scalar.reciprocal();
+        Tensor reciprocal =
+                TensorOpsContext.with(
+                        new EagerTensorOps(ContextFactory.ofMemorySegment()), scalar::reciprocal);
+        MemoryAccess access = Environment.current().panamaContext().memoryAccess();
+        System.out.println(MemoryViewPrinter.toString(reciprocal1.materialize(), access));
+    }
+
+    // ========== Typed scalar tests (carrier methods) ==========
+
+    @Test
+    void scalarWithDoubleCarrierCreatesFP16() {
+        Tensor tensor = Tensor.scalar(3.14, DataType.FP16);
+
+        assertTrue(tensor.isLazy());
+        assertTrue(tensor.isScalarBroadcast());
+        assertEquals(Shape.scalar(), tensor.shape());
+        assertEquals(DataType.FP16, tensor.dataType());
+    }
+
+    @Test
+    void scalarWithDoubleCarrierCreatesBF16() {
+        Tensor tensor = Tensor.scalar(2.718, DataType.BF16);
+
+        assertTrue(tensor.isLazy());
+        assertTrue(tensor.isScalarBroadcast());
+        assertEquals(Shape.scalar(), tensor.shape());
+        assertEquals(DataType.BF16, tensor.dataType());
+    }
+
+    @Test
+    void scalarWithDoubleCarrierCreatesFP32() {
+        Tensor tensor = Tensor.scalar(1.5, DataType.FP32);
+
+        assertTrue(tensor.isLazy());
+        assertTrue(tensor.isScalarBroadcast());
+        assertEquals(Shape.scalar(), tensor.shape());
+        assertEquals(DataType.FP32, tensor.dataType());
+    }
+
+    @Test
+    void scalarWithDoubleCarrierCreatesFP64() {
+        Tensor tensor = Tensor.scalar(1.5, DataType.FP64);
+
+        assertTrue(tensor.isLazy());
+        assertTrue(tensor.isScalarBroadcast());
+        assertEquals(Shape.scalar(), tensor.shape());
+        assertEquals(DataType.FP64, tensor.dataType());
+    }
+
+    @Test
+    void scalarWithLongCarrierCreatesI8() {
+        Tensor tensor = Tensor.scalar(42L, DataType.I8);
+
+        assertTrue(tensor.isLazy());
+        assertTrue(tensor.isScalarBroadcast());
+        assertEquals(Shape.scalar(), tensor.shape());
+        assertEquals(DataType.I8, tensor.dataType());
+    }
+
+    @Test
+    void scalarWithLongCarrierCreatesI16() {
+        Tensor tensor = Tensor.scalar(1000L, DataType.I16);
+
+        assertTrue(tensor.isLazy());
+        assertTrue(tensor.isScalarBroadcast());
+        assertEquals(Shape.scalar(), tensor.shape());
+        assertEquals(DataType.I16, tensor.dataType());
+    }
+
+    @Test
+    void scalarWithLongCarrierCreatesI32() {
+        Tensor tensor = Tensor.scalar(100000L, DataType.I32);
+
+        assertTrue(tensor.isLazy());
+        assertTrue(tensor.isScalarBroadcast());
+        assertEquals(Shape.scalar(), tensor.shape());
+        assertEquals(DataType.I32, tensor.dataType());
+    }
+
+    @Test
+    void scalarWithLongCarrierCreatesI64() {
+        Tensor tensor = Tensor.scalar(9999999999L, DataType.I64);
+
+        assertTrue(tensor.isLazy());
+        assertTrue(tensor.isScalarBroadcast());
+        assertEquals(Shape.scalar(), tensor.shape());
+        assertEquals(DataType.I64, tensor.dataType());
+    }
+
+    // ========== Constant folding tests (binary ops) ==========
+
+    private static ConstantComputation getConstant(Tensor tensor) {
+        return tensor.computation()
+                .filter(ConstantComputation.class::isInstance)
+                .map(ConstantComputation.class::cast)
+                .orElseThrow(() -> new AssertionError("Expected ConstantComputation"));
+    }
+
+    @Test
+    void foldsBinaryAdd() {
+        Tensor result = Tensor.scalar(2.0f).add(3.0f);
+
+        assertTrue(result.isLazy());
+        assertTrue(result.isScalarBroadcast());
+        assertEquals(Shape.scalar(), result.shape());
+        assertEquals(DataType.FP32, result.dataType());
+
+        ConstantComputation constant = getConstant(result);
+        assertEquals(5.0, constant.value().doubleValue(), 0.0001);
+    }
+
+    @Test
+    void foldsBinarySubtract() {
+        Tensor result = Tensor.scalar(10.0f).subtract(3.0f);
+
+        assertTrue(result.isLazy());
+        ConstantComputation constant = getConstant(result);
+        assertEquals(7.0, constant.value().doubleValue(), 0.0001);
+    }
+
+    @Test
+    void foldsBinaryMultiply() {
+        Tensor result = Tensor.scalar(4.0f).multiply(5.0f);
+
+        assertTrue(result.isLazy());
+        ConstantComputation constant = getConstant(result);
+        assertEquals(20.0, constant.value().doubleValue(), 0.0001);
+    }
+
+    @Test
+    void foldsBinaryDivide() {
+        Tensor result = Tensor.scalar(15.0f).divide(3.0f);
+
+        assertTrue(result.isLazy());
+        ConstantComputation constant = getConstant(result);
+        assertEquals(5.0, constant.value().doubleValue(), 0.0001);
+    }
+
+    @Test
+    void foldsBinaryWithTypePromotion() {
+        Tensor result = Tensor.scalar(2.0f).add(Tensor.scalar(3.0)); // FP32 + FP64 -> FP64
+
+        assertTrue(result.isLazy());
+        assertEquals(DataType.FP64, result.dataType());
+        ConstantComputation constant = getConstant(result);
+        assertEquals(5.0, constant.value().doubleValue(), 0.0001);
+    }
+
+    @Test
+    void foldsChainedBinaryOps() {
+        // (2 + 3) * 4 = 20
+        Tensor result = Tensor.scalar(2.0f).add(3.0f).multiply(4.0f);
+
+        assertTrue(result.isLazy());
+        ConstantComputation constant = getConstant(result);
+        assertEquals(20.0, constant.value().doubleValue(), 0.0001);
+    }
+
+    // ========== Constant folding tests (unary ops) ==========
+
+    @Test
+    void foldsUnaryNegate() {
+        Tensor result = Tensor.scalar(5.0f).negate();
+
+        assertTrue(result.isLazy());
+        ConstantComputation constant = getConstant(result);
+        assertEquals(-5.0, constant.value().doubleValue(), 0.0001);
+    }
+
+    @Test
+    void foldsUnaryAbs() {
+        Tensor result = Tensor.scalar(-7.0f).abs();
+
+        assertTrue(result.isLazy());
+        ConstantComputation constant = getConstant(result);
+        assertEquals(7.0, constant.value().doubleValue(), 0.0001);
+    }
+
+    @Test
+    void foldsUnaryExp() {
+        Tensor result = Tensor.scalar(1.0f).exp();
+
+        assertTrue(result.isLazy());
+        ConstantComputation constant = getConstant(result);
+        assertEquals(Math.E, constant.value().doubleValue(), 0.0001);
+    }
+
+    @Test
+    void foldsUnaryLog() {
+        Tensor result = Tensor.scalar((float) Math.E).log();
+
+        assertTrue(result.isLazy());
+        ConstantComputation constant = getConstant(result);
+        assertEquals(1.0, constant.value().doubleValue(), 0.0001);
+    }
+
+    @Test
+    void foldsUnarySqrt() {
+        Tensor result = Tensor.scalar(16.0f).sqrt();
+
+        assertTrue(result.isLazy());
+        ConstantComputation constant = getConstant(result);
+        assertEquals(4.0, constant.value().doubleValue(), 0.0001);
+    }
+
+    @Test
+    void foldsUnarySin() {
+        Tensor result = Tensor.scalar(0.0f).sin();
+
+        assertTrue(result.isLazy());
+        ConstantComputation constant = getConstant(result);
+        assertEquals(0.0, constant.value().doubleValue(), 0.0001);
+    }
+
+    @Test
+    void foldsUnaryCos() {
+        Tensor result = Tensor.scalar(0.0f).cos();
+
+        assertTrue(result.isLazy());
+        ConstantComputation constant = getConstant(result);
+        assertEquals(1.0, constant.value().doubleValue(), 0.0001);
+    }
+
+    @Test
+    void foldsUnaryTanh() {
+        Tensor result = Tensor.scalar(0.0f).tanh();
+
+        assertTrue(result.isLazy());
+        ConstantComputation constant = getConstant(result);
+        assertEquals(0.0, constant.value().doubleValue(), 0.0001);
+    }
+
+    @Test
+    void foldsUnaryReciprocal() {
+        Tensor result = Tensor.scalar(4.0f).reciprocal();
+
+        assertTrue(result.isLazy());
+        ConstantComputation constant = getConstant(result);
+        assertEquals(0.25, constant.value().doubleValue(), 0.0001);
+    }
+
+    @Test
+    void foldsUnarySigmoid() {
+        Tensor result = Tensor.scalar(0.0f).sigmoid();
+
+        assertTrue(result.isLazy());
+        ConstantComputation constant = getConstant(result);
+        assertEquals(0.5, constant.value().doubleValue(), 0.0001);
+    }
+
+    @Test
+    void foldsChainedUnaryOps() {
+        // abs(-5) = 5, then negate = -5
+        Tensor result = Tensor.scalar(-5.0f).abs().negate();
+
+        assertTrue(result.isLazy());
+        ConstantComputation constant = getConstant(result);
+        assertEquals(-5.0, constant.value().doubleValue(), 0.0001);
+    }
+
+    @Test
+    void foldsUnaryPreservesDataType() {
+        Tensor result = Tensor.scalar(4.0, DataType.FP32).negate();
+
+        assertTrue(result.isLazy());
+        assertEquals(DataType.FP32, result.dataType());
+    }
+
+    @Test
+    void foldsMixedUnaryAndBinaryOps() {
+        // negate(2) + 5 = -2 + 5 = 3
+        Tensor result = Tensor.scalar(2.0f).negate().add(5.0f);
+
+        assertTrue(result.isLazy());
+        ConstantComputation constant = getConstant(result);
+        assertEquals(3.0, constant.value().doubleValue(), 0.0001);
     }
 }

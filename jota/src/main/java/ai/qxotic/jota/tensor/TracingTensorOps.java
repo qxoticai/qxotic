@@ -50,26 +50,6 @@ final class TracingTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor add(Tensor a, Number scalar) {
-        return scalarOp(a, scalar, BinaryOp.ADD);
-    }
-
-    @Override
-    public Tensor subtract(Tensor a, Number scalar) {
-        return scalarOp(a, scalar, BinaryOp.SUBTRACT);
-    }
-
-    @Override
-    public Tensor multiply(Tensor a, Number scalar) {
-        return scalarOp(a, scalar, BinaryOp.MULTIPLY);
-    }
-
-    @Override
-    public Tensor divide(Tensor a, Number scalar) {
-        return scalarOp(a, scalar, BinaryOp.DIVIDE);
-    }
-
-    @Override
     public Tensor negate(Tensor x) {
         return unaryOp(x, UnaryOp.NEGATE);
     }
@@ -115,23 +95,8 @@ final class TracingTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor sigmoid(Tensor x) {
-        return unaryOp(x, UnaryOp.SIGMOID);
-    }
-
-    @Override
-    public Tensor relu(Tensor x) {
-        return unaryOp(x, UnaryOp.RELU);
-    }
-
-    @Override
-    public Tensor gelu(Tensor x) {
-        return unaryOp(x, UnaryOp.GELU);
-    }
-
-    @Override
-    public Tensor silu(Tensor x) {
-        return unaryOp(x, UnaryOp.SILU);
+    public Tensor reciprocal(Tensor x) {
+        return unaryOp(x, UnaryOp.RECIPROCAL);
     }
 
     @Override
@@ -281,21 +246,6 @@ final class TracingTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor meanAll(Tensor x) {
-        throw unsupported("meanAll");
-    }
-
-    @Override
-    public Tensor maxAll(Tensor x) {
-        throw unsupported("maxAll");
-    }
-
-    @Override
-    public Tensor minAll(Tensor x) {
-        throw unsupported("minAll");
-    }
-
-    @Override
     public Tensor matmul(Tensor a, Tensor b) {
         throw unsupported("matmul");
     }
@@ -336,21 +286,6 @@ final class TracingTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor softmax(Tensor x, int axis) {
-        throw unsupported("softmax");
-    }
-
-    @Override
-    public Tensor layerNorm(Tensor x, Tensor weight, Tensor bias, float eps) {
-        throw unsupported("layerNorm");
-    }
-
-    @Override
-    public Tensor rmsNorm(Tensor x, Tensor weight, float eps) {
-        throw unsupported("rmsNorm");
-    }
-
-    @Override
     public Tensor cast(Tensor x, DataType targetType) {
         Objects.requireNonNull(targetType, "targetType");
         TraceTensor trace = requireTrace(x);
@@ -359,16 +294,6 @@ final class TracingTensorOps implements TensorOps {
         }
         ExprNode node = new CastNode(trace.node(), targetType, trace.layout(), trace.device());
         return new TraceTensor(node);
-    }
-
-    @Override
-    public Tensor quantize(Tensor x, DataType quantType) {
-        throw unsupported("quantize");
-    }
-
-    @Override
-    public Tensor dequantize(Tensor x, DataType targetType) {
-        throw unsupported("dequantize");
     }
 
     private Tensor unaryOp(Tensor x, UnaryOp op) {

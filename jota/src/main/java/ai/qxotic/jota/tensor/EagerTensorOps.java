@@ -6,6 +6,7 @@ import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
+import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
@@ -54,25 +55,25 @@ public class EagerTensorOps implements TensorOps {
         return binaryOp(a, b, BinaryOp.MAX);
     }
 
-    @Override
-    public Tensor add(Tensor a, Number scalar) {
-        return scalarOp(a, scalar, BinaryOp.ADD);
-    }
-
-    @Override
-    public Tensor subtract(Tensor a, Number scalar) {
-        return scalarOp(a, scalar, BinaryOp.SUBTRACT);
-    }
-
-    @Override
-    public Tensor multiply(Tensor a, Number scalar) {
-        return scalarOp(a, scalar, BinaryOp.MULTIPLY);
-    }
-
-    @Override
-    public Tensor divide(Tensor a, Number scalar) {
-        return scalarOp(a, scalar, BinaryOp.DIVIDE);
-    }
+    //    @Override
+    //    public Tensor add(Tensor a, Number scalar) {
+    //        return scalarOp(a, scalar, BinaryOp.ADD);
+    //    }
+    //
+    //    @Override
+    //    public Tensor subtract(Tensor a, Number scalar) {
+    //        return scalarOp(a, scalar, BinaryOp.SUBTRACT);
+    //    }
+    //
+    //    @Override
+    //    public Tensor multiply(Tensor a, Number scalar) {
+    //        return scalarOp(a, scalar, BinaryOp.MULTIPLY);
+    //    }
+    //
+    //    @Override
+    //    public Tensor divide(Tensor a, Number scalar) {
+    //        return scalarOp(a, scalar, BinaryOp.DIVIDE);
+    //    }
 
     @Override
     public Tensor negate(Tensor x) {
@@ -120,23 +121,8 @@ public class EagerTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor sigmoid(Tensor x) {
-        return unaryOp(x, UnaryOp.SIGMOID);
-    }
-
-    @Override
-    public Tensor relu(Tensor x) {
-        return unaryOp(x, UnaryOp.RELU);
-    }
-
-    @Override
-    public Tensor gelu(Tensor x) {
-        return unaryOp(x, UnaryOp.GELU);
-    }
-
-    @Override
-    public Tensor silu(Tensor x) {
-        return unaryOp(x, UnaryOp.SILU);
+    public Tensor reciprocal(Tensor x) {
+        return unaryOp(x, UnaryOp.RECIPROCAL);
     }
 
     @Override
@@ -288,21 +274,6 @@ public class EagerTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor meanAll(Tensor x) {
-        throw new UnsupportedOperationException("Not yet implemented");
-    }
-
-    @Override
-    public Tensor maxAll(Tensor x) {
-        throw new UnsupportedOperationException("Not yet implemented");
-    }
-
-    @Override
-    public Tensor minAll(Tensor x) {
-        throw new UnsupportedOperationException("Not yet implemented");
-    }
-
-    @Override
     public Tensor matmul(Tensor a, Tensor b) {
         throw new UnsupportedOperationException("Not yet implemented");
     }
@@ -321,7 +292,15 @@ public class EagerTensorOps implements TensorOps {
 
     @Override
     public Tensor reshape(Tensor x, Shape newShape) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        // Try view first (non-allocating)
+        try {
+            return view(x, newShape);
+        } catch (IllegalArgumentException e) {
+            // View failed - need to copy data
+            // Make contiguous first, then view with new shape
+            Tensor contiguousTensor = contiguous(x);
+            return view(contiguousTensor, newShape);
+        }
     }
 
     @Override
@@ -353,33 +332,8 @@ public class EagerTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor softmax(Tensor x, int axis) {
-        throw new UnsupportedOperationException("Not yet implemented");
-    }
-
-    @Override
-    public Tensor layerNorm(Tensor x, Tensor weight, Tensor bias, float eps) {
-        throw new UnsupportedOperationException("Not yet implemented");
-    }
-
-    @Override
-    public Tensor rmsNorm(Tensor x, Tensor weight, float eps) {
-        throw new UnsupportedOperationException("Not yet implemented");
-    }
-
-    @Override
     public Tensor cast(Tensor x, DataType targetType) {
         return Tracer.trace(x, input -> input.cast(targetType));
-    }
-
-    @Override
-    public Tensor quantize(Tensor x, DataType quantType) {
-        throw new UnsupportedOperationException("Not yet implemented");
-    }
-
-    @Override
-    public Tensor dequantize(Tensor x, DataType targetType) {
-        throw new UnsupportedOperationException("Not yet implemented");
     }
 
     private MemoryView<?> allocate(DataType dtype, Shape shape) {
@@ -389,10 +343,7 @@ public class EagerTensorOps implements TensorOps {
     }
 
     private Tensor unaryOp(Tensor x, UnaryOp op) {
-        if (!(x instanceof MaterializedTensor materialized)) {
-            throw new IllegalArgumentException("Eager ops require a materialized tensor");
-        }
-        return unaryOp(materialized.materialize(), op);
+        return unaryOp(x.materialize(), op);
     }
 
     private Tensor unaryOp(MemoryView<?> view, UnaryOp op) {
@@ -410,11 +361,9 @@ public class EagerTensorOps implements TensorOps {
         MemoryView<?> output = allocate(DataType.FP32, view.shape());
         long size = view.shape().size();
         @SuppressWarnings("unchecked")
-        ai.qxotic.jota.memory.Memory<Object> srcMemory =
-                (ai.qxotic.jota.memory.Memory<Object>) view.memory();
+        Memory<Object> srcMemory = (Memory<Object>) view.memory();
         @SuppressWarnings("unchecked")
-        ai.qxotic.jota.memory.Memory<Object> dstMemory =
-                (ai.qxotic.jota.memory.Memory<Object>) output.memory();
+        Memory<Object> dstMemory = (Memory<Object>) output.memory();
         for (long i = 0; i < size; i++) {
             long srcOffset = Indexing.linearToOffset(view, i);
             long dstOffset = Indexing.linearToOffset(output, i);
@@ -430,11 +379,9 @@ public class EagerTensorOps implements TensorOps {
         MemoryView<?> output = allocate(DataType.I32, view.shape());
         long size = view.shape().size();
         @SuppressWarnings("unchecked")
-        ai.qxotic.jota.memory.Memory<Object> srcMemory =
-                (ai.qxotic.jota.memory.Memory<Object>) view.memory();
+        Memory<Object> srcMemory = (Memory<Object>) view.memory();
         @SuppressWarnings("unchecked")
-        ai.qxotic.jota.memory.Memory<Object> dstMemory =
-                (ai.qxotic.jota.memory.Memory<Object>) output.memory();
+        Memory<Object> dstMemory = (Memory<Object>) output.memory();
         for (long i = 0; i < size; i++) {
             long srcOffset = Indexing.linearToOffset(view, i);
             long dstOffset = Indexing.linearToOffset(output, i);
@@ -466,14 +413,7 @@ public class EagerTensorOps implements TensorOps {
             case "sin" -> (float) Math.sin(value);
             case "cos" -> (float) Math.cos(value);
             case "tanh" -> (float) Math.tanh(value);
-            case "sigmoid" -> 1.0f / (1.0f + (float) Math.exp(-value));
-            case "relu" -> Math.max(0.0f, value);
-            case "gelu" -> {
-                float cubic = value * value * value;
-                float inner = 0.79788456f * (value + 0.044715f * cubic);
-                yield 0.5f * value * (1.0f + (float) Math.tanh(inner));
-            }
-            case "silu" -> value / (1.0f + (float) Math.exp(-value));
+            case "reciprocal" -> 1.0f / value;
             default -> throw new IllegalStateException("Unsupported unary op: " + op.name());
         };
     }
@@ -483,7 +423,6 @@ public class EagerTensorOps implements TensorOps {
             case "negate" -> -value;
             case "abs" -> Math.abs(value);
             case "square" -> value * value;
-            case "relu" -> Math.max(0, value);
             default -> throw new IllegalStateException("Unsupported unary op: " + op.name());
         };
     }

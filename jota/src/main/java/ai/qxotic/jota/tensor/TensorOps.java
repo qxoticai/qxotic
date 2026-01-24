@@ -27,13 +27,13 @@ public interface TensorOps {
 
     // === Elementwise - Scalar ===
 
-    Tensor add(Tensor a, Number scalar);
-
-    Tensor subtract(Tensor a, Number scalar);
-
-    Tensor multiply(Tensor a, Number scalar);
-
-    Tensor divide(Tensor a, Number scalar);
+    //    Tensor add(Tensor a, Number scalar);
+    //
+    //    Tensor subtract(Tensor a, Number scalar);
+    //
+    //    Tensor multiply(Tensor a, Number scalar);
+    //
+    //    Tensor divide(Tensor a, Number scalar);
 
     // === Elementwise - Unary ===
 
@@ -55,13 +55,7 @@ public interface TensorOps {
 
     Tensor tanh(Tensor x);
 
-    Tensor sigmoid(Tensor x);
-
-    Tensor relu(Tensor x);
-
-    Tensor gelu(Tensor x);
-
-    Tensor silu(Tensor x);
+    Tensor reciprocal(Tensor x);
 
     Tensor to(Tensor x, Device device);
 
@@ -178,12 +172,6 @@ public interface TensorOps {
         return min(x, false, axes[0], Arrays.copyOfRange(axes, 1, axes.length));
     }
 
-    Tensor meanAll(Tensor x);
-
-    Tensor maxAll(Tensor x);
-
-    Tensor minAll(Tensor x);
-
     // === Linear Algebra ===
 
     Tensor matmul(Tensor a, Tensor b);
@@ -208,19 +196,11 @@ public interface TensorOps {
 
     Tensor slice(Tensor x, int axis, long start, long end);
 
-    // === Special Operations ===
-
-    Tensor softmax(Tensor x, int axis);
-
-    Tensor layerNorm(Tensor x, Tensor weight, Tensor bias, float eps);
-
-    Tensor rmsNorm(Tensor x, Tensor weight, float eps);
-
     // === Type Conversion ===
 
     Tensor cast(Tensor x, DataType targetType);
 
-    Tensor quantize(Tensor x, DataType quantType);
-
-    Tensor dequantize(Tensor x, DataType targetType);
+    //    Tensor quantize(Tensor x, DataType quantType);
+    //
+    //    Tensor dequantize(Tensor x, DataType targetType);
 }

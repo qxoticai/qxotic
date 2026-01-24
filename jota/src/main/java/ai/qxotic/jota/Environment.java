@@ -1,5 +1,7 @@
 package ai.qxotic.jota;
 
+import ai.qxotic.jota.memory.MemoryContext;
+import java.lang.foreign.MemorySegment;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
@@ -37,6 +39,11 @@ public final class Environment {
 
     public static Environment current() {
         return CURRENT.isBound() ? CURRENT.get() : global();
+    }
+
+    @SuppressWarnings("unchecked")
+    public MemoryContext<MemorySegment> panamaContext() {
+        return (MemoryContext<MemorySegment>) registry.context(Device.PANAMA);
     }
 
     public static Environment global() {

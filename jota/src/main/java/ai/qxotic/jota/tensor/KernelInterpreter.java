@@ -192,6 +192,7 @@ public final class KernelInterpreter {
                 yield 0.5f * value * (1.0f + (float) Math.tanh(inner));
             }
             case "silu" -> value / (1.0f + (float) Math.exp(-value));
+            case "reciprocal" -> 1.0f / value;
             default -> throw new IllegalStateException("Unsupported unary op: " + op.name());
         };
     }

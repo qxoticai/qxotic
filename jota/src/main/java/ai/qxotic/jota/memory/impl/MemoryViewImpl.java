@@ -112,10 +112,13 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
             throw new IllegalArgumentException("total element count mismatch");
         }
 
-        if (isContiguous) {
+        // CuTe semantics: if the layout spans a contiguous memory range [0, n-1],
+        // the new shape gets row-major strides (linear memory iteration order).
+        if (spansContiguousRange()) {
             return MemoryViewImpl.create(Layout.rowMajor(newShape), dataType, byteOffset, memory);
         }
 
+        // For non-contiguous layouts, check if reshape is still possible
         long[] oldStrides = layout.stride().toArray();
         if (!canReshapeWithoutCopy(layout.shape(), newShape, oldStrides)) {
             throw new IllegalArgumentException("Cannot view: would require copying data");
@@ -124,6 +127,29 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
         long[] newStrides = computeReshapeStrides(layout.shape(), newShape, oldStrides);
         Layout newLayout = Layout.of(newShape, Stride.template(newShape, newStrides));
         return MemoryViewImpl.create(newLayout, dataType, byteOffset, memory);
+    }
+
+    /**
+     * Checks if this layout spans a contiguous memory range [0, n-1].
+     *
+     * <p>This is true if: sum((dim_i - 1) * stride_i) == totalElements - 1
+     *
+     * <p>This is more general than row-major contiguity. For example, (2, 2, 2):(4, 1, 2) spans [0,
+     * 7] contiguously even though iteration order is not linear.
+     */
+    private boolean spansContiguousRange() {
+        if (layout.shape().hasZeroElements()) {
+            return true;
+        }
+        long span = 0;
+        long totalElements = 1;
+        long[] strides = layout.stride().toArray();
+        for (int i = 0; i < layout.shape().flatRank(); i++) {
+            long dim = layout.shape().flatAt(i);
+            span += (dim - 1) * strides[i];
+            totalElements *= dim;
+        }
+        return span == totalElements - 1;
     }
 
     @Override
@@ -291,20 +317,34 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
         return oldIdx == oldDims.size() && newIdx == newDims.size();
     }
 
+    /**
+     * Checks if a group of dimensions spans a contiguous memory range.
+     *
+     * <p>For dimensions with sizes (d0, d1, ...) and strides (s0, s1, ...), they span a contiguous
+     * range if: sum((di - 1) * si) == product(di) - 1
+     *
+     * <p>This is more general than row-major contiguity. For example, (2, 2):(1, 2) spans offsets
+     * {0, 1, 2, 3} which is contiguous, even though the access order is [0, 2, 1, 3].
+     *
+     * <p>Note: A single dimension with stride > 1 has holes and is NOT contiguous.
+     */
     private static boolean areContiguous(
             List<Long> dims, List<Long> strides, int startIdx, int endIdx) {
-        if (endIdx - startIdx <= 1) {
-            return true;
+        if (endIdx - startIdx == 0) {
+            return true; // Empty range is trivially contiguous
         }
 
-        long expectedStride = 1;
-        for (int i = endIdx - 1; i >= startIdx; i--) {
-            if (strides.get(i) != expectedStride) {
-                return false;
-            }
-            expectedStride *= dims.get(i);
+        // Calculate span: sum of (dim - 1) * stride for each dimension
+        long span = 0;
+        long totalElements = 1;
+        for (int i = startIdx; i < endIdx; i++) {
+            span += (dims.get(i) - 1) * strides.get(i);
+            totalElements *= dims.get(i);
         }
-        return true;
+
+        // Dimensions span a contiguous range if max_offset == total_elements - 1
+        // (min offset is 0 at all-zero indices, and valid layouts have no duplicates)
+        return span == totalElements - 1;
     }
 
     private static long[] computeReshapeStrides(Shape oldShape, Shape newShape, long[] oldStrides) {

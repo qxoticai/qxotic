@@ -168,8 +168,14 @@ class ReshapeTest extends AbstractMemoryTest {
                 });
     }
 
+    /**
+     * Tests that permuted views spanning contiguous memory can be reshaped.
+     *
+     * <p>With CuTe semantics, a permuted view (2,4,3):(12,1,4) spans [0-23] contiguously, so any
+     * reshape to size 24 is valid - the new shape gets row-major strides.
+     */
     @Test
-    void testReshapeNonContiguousErrorCases() {
+    void testReshapePermutedViewSpanningContiguousRange() {
         float[] floats = arange(2 * 3 * 4);
         MemoryView<float[]> view =
                 MemoryViewFactory.of(
@@ -177,16 +183,16 @@ class ReshapeTest extends AbstractMemoryTest {
                         MemoryFactory.ofFloats(floats),
                         Layout.rowMajor(Shape.of(2, 3, 4)));
 
-        // Create non-contiguous view by permuting
+        // Permuted view (2, 4, 3):(12, 1, 4) spans [0-23] contiguously
+        // Condition: (2-1)*12 + (4-1)*1 + (3-1)*4 = 12+3+8 = 23 = 24-1 ✓
         MemoryView<float[]> permuted = view.permute(0, 2, 1); // Shape: (2, 4, 3)
         assertFalse(permuted.isContiguous());
 
-        // Some reshapes should fail on non-contiguous views
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> {
-                    permuted.view(Shape.of(8, 3)); // This would require copying
-                });
+        // CuTe semantics: reshape works, new shape gets row-major strides
+        MemoryView<float[]> reshaped = permuted.view(Shape.of(8, 3));
+        assertEquals(Shape.of(8, 3), reshaped.shape());
+        assertTrue(reshaped.isContiguous());
+        assertSame(view.memory(), reshaped.memory());
     }
 
     @Test
@@ -369,6 +375,16 @@ class ReshapeTest extends AbstractMemoryTest {
         assertThrows(IllegalArgumentException.class, () -> sliced.view(Shape.of(6)));
     }
 
+    /**
+     * Tests that strided slices with gaps cannot be reshaped (except to same shape).
+     *
+     * <p>Taking every other row (rows 0 and 2) creates shape (2, 4) with stride (8, 1). This layout
+     * accesses offsets {0,1,2,3, 8,9,10,11} - there's a gap at offsets 4-7. Span: (2-1)*8 + (4-1)*1
+     * = 11 ≠ 8-1 = 7, so not contiguous.
+     *
+     * <p>With CuTe semantics, reshapes that change dimensions fail because the memory has gaps.
+     * Same-shape "reshape" succeeds as it's effectively a no-op.
+     */
     @Test
     void testReshapeNonContiguousView4() {
         float[] data = arange(12);
@@ -376,15 +392,15 @@ class ReshapeTest extends AbstractMemoryTest {
                 MemoryViewFactory.rowMajor(
                         DataType.FP32, MemoryFactory.ofFloats(data), Shape.of(3, 4));
 
-        // Create a non-contiguous view by taking every other row
-        MemoryView<float[]> sliced = view.slice(0, 0, 3, 2); // First two rows
+        // Create a non-contiguous view by taking every other row (rows 0 and 2)
+        MemoryView<float[]> sliced = view.slice(0, 0, 3, 2); // shape (2, 4), stride (8, 1)
         assertFalse(sliced.isContiguous());
 
-        // Should be able to reshape as long as we don't change non-singleton dimensions
+        // Same-shape "reshape" is a no-op - succeeds trivially
         assertDoesNotThrow(() -> sliced.view(Shape.of(2, 4)));
-        assertDoesNotThrow(() -> sliced.view(Shape.of(2, 2, 2)));
 
-        // Should throw when trying to change non-singleton dimensions
+        // Reshapes that change dimensions fail - memory has gaps
+        assertThrows(IllegalArgumentException.class, () -> sliced.view(Shape.of(2, 2, 2)));
         assertThrows(IllegalArgumentException.class, () -> sliced.view(Shape.of(8)));
     }
 

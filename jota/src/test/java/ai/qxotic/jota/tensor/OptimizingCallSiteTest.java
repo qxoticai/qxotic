@@ -27,7 +27,7 @@ class OptimizingCallSiteTest {
 
     @Test
     void returnsTracedTensorWhenInputIsTraced() {
-        OptimizingCallSite callSite = Tracer.createOptimizingCallSite(t -> t.add(1));
+        OptimizingCallSite callSite = Tracer.createOptimizingCallSite(t -> t.add(1f));
         TraceTensor tracedInput =
                 new TraceTensor(
                         new InputNode(0, DataType.FP32, Layout.rowMajor(4), context.device()));
@@ -41,7 +41,7 @@ class OptimizingCallSiteTest {
 
     @Test
     void returnsMaterializedTensorWhenInputIsEager() {
-        OptimizingCallSite add1 = Tracer.createOptimizingCallSite(t -> t.add(1));
+        OptimizingCallSite add1 = Tracer.createOptimizingCallSite(t -> t.add(1f));
         MemoryView<MemorySegment> view =
                 MemoryHelpers.arange(context, DataType.FP32, 4).view(Shape.of(4));
         Tensor input = Tensor.of(view);

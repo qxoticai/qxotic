@@ -31,7 +31,7 @@ class JavaKernelCompilerTest {
     private static Tensor tensorGelu(Tensor value) {
         Tensor cubic = value.multiply(value).multiply(value);
         Tensor inner = cubic.multiply(0.044715f).add(value).multiply(0.79788456f);
-        return inner.tanh().add(1f).multiply(value).multiply(0.5);
+        return inner.tanh().add(1f).multiply(value).multiply(0.5f);
     }
 
     static float[] map(float[] in, FloatUnaryOperator mapper) {
@@ -125,7 +125,7 @@ class JavaKernelCompilerTest {
     void compilesAndRunsStridedKernel() {
         MemoryView<MemorySegment> input = range(Shape.of(2, 3)).transpose(0, 1);
         Tensor inputTensor = Tensor.of(input);
-        Tensor traced = Tracer.trace(inputTensor, t -> t.square().add(1));
+        Tensor traced = Tracer.trace(inputTensor, t -> t.square().add(1f));
 
         MemoryView<?> output =
                 ComputeEngineContext.with(new JavaComputeEngine(context), traced::materialize);

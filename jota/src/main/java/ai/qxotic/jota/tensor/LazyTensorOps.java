@@ -41,92 +41,57 @@ final class LazyTensorOps implements TensorOps {
 
     @Override
     public Tensor max(Tensor a, Tensor b) {
-        return traceBinary(a, b, (t0, t1) -> TensorOpsContext.require().max(t0, t1));
-    }
-
-    @Override
-    public Tensor add(Tensor a, Number scalar) {
-        return traceUnary(a, t -> TensorOpsContext.require().add(t, scalar));
-    }
-
-    @Override
-    public Tensor subtract(Tensor a, Number scalar) {
-        return traceUnary(a, t -> TensorOpsContext.require().subtract(t, scalar));
-    }
-
-    @Override
-    public Tensor multiply(Tensor a, Number scalar) {
-        return traceUnary(a, t -> TensorOpsContext.require().multiply(t, scalar));
-    }
-
-    @Override
-    public Tensor divide(Tensor a, Number scalar) {
-        return traceUnary(a, t -> TensorOpsContext.require().divide(t, scalar));
+        return traceBinary(a, b, TensorOpsContext.require()::max);
     }
 
     @Override
     public Tensor negate(Tensor x) {
-        return traceUnary(x, t -> TensorOpsContext.require().negate(t));
+        return traceUnary(x, TensorOpsContext.require()::negate);
     }
 
     @Override
     public Tensor abs(Tensor x) {
-        return traceUnary(x, t -> TensorOpsContext.require().abs(t));
+        return traceUnary(x, TensorOpsContext.require()::abs);
     }
 
     @Override
     public Tensor exp(Tensor x) {
-        return traceUnary(x, t -> TensorOpsContext.require().exp(t));
+        return traceUnary(x, TensorOpsContext.require()::exp);
     }
 
     @Override
     public Tensor log(Tensor x) {
-        return traceUnary(x, t -> TensorOpsContext.require().log(t));
+        return traceUnary(x, TensorOpsContext.require()::log);
     }
 
     @Override
     public Tensor sqrt(Tensor x) {
-        return traceUnary(x, t -> TensorOpsContext.require().sqrt(t));
+        return traceUnary(x, TensorOpsContext.require()::sqrt);
     }
 
     @Override
     public Tensor square(Tensor x) {
-        return traceUnary(x, t -> TensorOpsContext.require().square(t));
+        return traceUnary(x, TensorOpsContext.require()::square);
     }
 
     @Override
     public Tensor sin(Tensor x) {
-        return traceUnary(x, t -> TensorOpsContext.require().sin(t));
+        return traceUnary(x, TensorOpsContext.require()::sin);
     }
 
     @Override
     public Tensor cos(Tensor x) {
-        return traceUnary(x, t -> TensorOpsContext.require().cos(t));
+        return traceUnary(x, TensorOpsContext.require()::cos);
     }
 
     @Override
     public Tensor tanh(Tensor x) {
-        return traceUnary(x, t -> TensorOpsContext.require().tanh(t));
+        return traceUnary(x, TensorOpsContext.require()::tanh);
     }
 
     @Override
-    public Tensor sigmoid(Tensor x) {
-        return traceUnary(x, t -> TensorOpsContext.require().sigmoid(t));
-    }
-
-    @Override
-    public Tensor relu(Tensor x) {
-        return traceUnary(x, t -> TensorOpsContext.require().relu(t));
-    }
-
-    @Override
-    public Tensor gelu(Tensor x) {
-        return traceUnary(x, t -> TensorOpsContext.require().gelu(t));
-    }
-
-    @Override
-    public Tensor silu(Tensor x) {
-        return traceUnary(x, t -> TensorOpsContext.require().silu(t));
+    public Tensor reciprocal(Tensor x) {
+        return traceUnary(x, TensorOpsContext.require()::reciprocal);
     }
 
     @Override
@@ -136,12 +101,12 @@ final class LazyTensorOps implements TensorOps {
 
     @Override
     public Tensor contiguous(Tensor x) {
-        return traceUnary(x, t -> TensorOpsContext.require().contiguous(t));
+        return traceUnary(x, TensorOpsContext.require()::contiguous);
     }
 
     @Override
     public Tensor bitwiseNot(Tensor x) {
-        return traceUnary(x, t -> TensorOpsContext.require().bitwiseNot(t));
+        return traceUnary(x, TensorOpsContext.require()::bitwiseNot);
     }
 
     @Override
@@ -161,7 +126,7 @@ final class LazyTensorOps implements TensorOps {
 
     @Override
     public Tensor logicalNot(Tensor x) {
-        return traceUnary(x, t -> TensorOpsContext.require().logicalNot(t));
+        return traceUnary(x, TensorOpsContext.require()::logicalNot);
     }
 
     @Override
@@ -222,27 +187,12 @@ final class LazyTensorOps implements TensorOps {
 
     @Override
     public Tensor max(Tensor x, boolean keepDims, int _axis, int... _axes) {
-        return traceUnary(x, t -> TensorOpsContext.require().max(t, keepDims, _axis, _axes));
+        return traceUnary(x, TensorOpsContext.require()::max);
     }
 
     @Override
     public Tensor min(Tensor x, boolean keepDims, int _axis, int... _axes) {
-        return traceUnary(x, t -> TensorOpsContext.require().min(t, keepDims, _axis, _axes));
-    }
-
-    @Override
-    public Tensor meanAll(Tensor x) {
-        return traceUnary(x, t -> TensorOpsContext.require().meanAll(t));
-    }
-
-    @Override
-    public Tensor maxAll(Tensor x) {
-        return traceUnary(x, t -> TensorOpsContext.require().maxAll(t));
-    }
-
-    @Override
-    public Tensor minAll(Tensor x) {
-        return traceUnary(x, t -> TensorOpsContext.require().minAll(t));
+        return traceUnary(x, TensorOpsContext.require()::min);
     }
 
     @Override
@@ -257,7 +207,7 @@ final class LazyTensorOps implements TensorOps {
 
     @Override
     public Tensor transpose(Tensor x, int axis0, int axis1) {
-        return traceUnary(x, t -> TensorOpsContext.require().transpose(t, axis0, axis1));
+        return traceUnary(x, TensorOpsContext.require()::transpose);
     }
 
     @Override
@@ -286,37 +236,8 @@ final class LazyTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor softmax(Tensor x, int axis) {
-        return traceUnary(x, t -> TensorOpsContext.require().softmax(t, axis));
-    }
-
-    @Override
-    public Tensor layerNorm(Tensor x, Tensor weight, Tensor bias, float eps) {
-        return traceTernary(
-                x,
-                weight,
-                bias,
-                (t0, t1, t2) -> TensorOpsContext.require().layerNorm(t0, t1, t2, eps));
-    }
-
-    @Override
-    public Tensor rmsNorm(Tensor x, Tensor weight, float eps) {
-        return traceBinary(x, weight, (t0, t1) -> TensorOpsContext.require().rmsNorm(t0, t1, eps));
-    }
-
-    @Override
     public Tensor cast(Tensor x, DataType targetType) {
         return traceUnary(x, t -> TensorOpsContext.require().cast(t, targetType));
-    }
-
-    @Override
-    public Tensor quantize(Tensor x, DataType quantType) {
-        return traceUnary(x, t -> TensorOpsContext.require().quantize(t, quantType));
-    }
-
-    @Override
-    public Tensor dequantize(Tensor x, DataType targetType) {
-        return traceUnary(x, t -> TensorOpsContext.require().dequantize(t, targetType));
     }
 
     private Tensor traceUnary(Tensor x, Function<Tensor, Tensor> fn) {
