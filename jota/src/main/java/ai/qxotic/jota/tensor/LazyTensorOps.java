@@ -70,11 +70,6 @@ final class LazyTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor square(Tensor x) {
-        return traceUnary(x, TensorOpsContext.require()::square);
-    }
-
-    @Override
     public Tensor sin(Tensor x) {
         return traceUnary(x, TensorOpsContext.require()::sin);
     }

@@ -47,8 +47,6 @@ public interface TensorOps {
 
     Tensor sqrt(Tensor x);
 
-    Tensor square(Tensor x);
-
     Tensor sin(Tensor x);
 
     Tensor cos(Tensor x);

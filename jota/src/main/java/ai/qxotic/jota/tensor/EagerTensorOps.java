@@ -101,11 +101,6 @@ public class EagerTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor square(Tensor x) {
-        return unaryOp(x, UnaryOp.SQUARE);
-    }
-
-    @Override
     public Tensor sin(Tensor x) {
         return unaryOp(x, UnaryOp.SIN);
     }
@@ -187,54 +182,157 @@ public class EagerTensorOps implements TensorOps {
 
     @Override
     public Tensor bitwiseNot(Tensor x) {
-        throw new UnsupportedOperationException("Generic bitwise op dispatch not yet implemented");
+        return unaryOp(x, UnaryOp.BITWISE_NOT);
     }
 
     @Override
     public Tensor bitwiseAnd(Tensor a, Tensor b) {
-        throw new UnsupportedOperationException("Generic bitwise op dispatch not yet implemented");
+        return binaryOp(a, b, BinaryOp.BITWISE_AND);
     }
 
     @Override
     public Tensor bitwiseOr(Tensor a, Tensor b) {
-        throw new UnsupportedOperationException("Generic bitwise op dispatch not yet implemented");
+        return binaryOp(a, b, BinaryOp.BITWISE_OR);
     }
 
     @Override
     public Tensor bitwiseXor(Tensor a, Tensor b) {
-        throw new UnsupportedOperationException("Generic bitwise op dispatch not yet implemented");
+        return binaryOp(a, b, BinaryOp.BITWISE_XOR);
     }
 
     @Override
     public Tensor logicalNot(Tensor x) {
-        throw new UnsupportedOperationException("Generic boolean op dispatch not yet implemented");
+        return unaryOp(x, UnaryOp.LOGICAL_NOT);
     }
 
     @Override
     public Tensor logicalAnd(Tensor a, Tensor b) {
-        throw new UnsupportedOperationException("Generic boolean op dispatch not yet implemented");
+        return logicalBinaryOp(a, b, (va, vb) -> va && vb);
     }
 
     @Override
     public Tensor logicalOr(Tensor a, Tensor b) {
-        throw new UnsupportedOperationException("Generic boolean op dispatch not yet implemented");
+        return logicalBinaryOp(a, b, (va, vb) -> va || vb);
     }
 
     @Override
     public Tensor logicalXor(Tensor a, Tensor b) {
-        throw new UnsupportedOperationException("Generic boolean op dispatch not yet implemented");
+        return logicalBinaryOp(a, b, (va, vb) -> va ^ vb);
+    }
+
+    @FunctionalInterface
+    private interface LogicalBinaryFunc {
+        boolean apply(boolean a, boolean b);
+    }
+
+    private Tensor logicalBinaryOp(Tensor a, Tensor b, LogicalBinaryFunc func) {
+        MemoryView<?> viewA = a.materialize();
+        MemoryView<?> viewB = b.materialize();
+        if (viewA.dataType() != DataType.BOOL || viewB.dataType() != DataType.BOOL) {
+            throw new IllegalArgumentException("Logical ops require BOOL tensors");
+        }
+        Shape resultShape = viewA.shape();
+        if (!viewA.shape().equals(viewB.shape())) {
+            throw new IllegalArgumentException(
+                    "Shape mismatch: " + viewA.shape() + " vs " + viewB.shape());
+        }
+        MemoryAccess<Object> access = requireMemoryAccess();
+        MemoryView<?> output = allocate(DataType.BOOL, resultShape);
+        long size = resultShape.size();
+        @SuppressWarnings("unchecked")
+        Memory<Object> memA = (Memory<Object>) viewA.memory();
+        @SuppressWarnings("unchecked")
+        Memory<Object> memB = (Memory<Object>) viewB.memory();
+        @SuppressWarnings("unchecked")
+        Memory<Object> memOut = (Memory<Object>) output.memory();
+        for (long i = 0; i < size; i++) {
+            long offA = Indexing.linearToOffset(viewA, i);
+            long offB = Indexing.linearToOffset(viewB, i);
+            long offOut = Indexing.linearToOffset(output, i);
+            boolean va = access.readByte(memA, offA) != 0;
+            boolean vb = access.readByte(memB, offB) != 0;
+            access.writeByte(memOut, offOut, (byte) (func.apply(va, vb) ? 1 : 0));
+        }
+        return Tensor.of(output);
     }
 
     @Override
     public Tensor equal(Tensor a, Tensor b) {
-        throw new UnsupportedOperationException(
-                "Generic comparison op dispatch not yet implemented");
+        return compareOp(a, b, BinaryOp.EQUAL);
     }
 
     @Override
     public Tensor lessThan(Tensor a, Tensor b) {
-        throw new UnsupportedOperationException(
-                "Generic comparison op dispatch not yet implemented");
+        return compareOp(a, b, BinaryOp.LESS_THAN);
+    }
+
+    private Tensor compareOp(Tensor a, Tensor b, BinaryOp op) {
+        MemoryView<?> viewA = a.materialize();
+        MemoryView<?> viewB = b.materialize();
+        DataType dtype = viewA.dataType();
+        if (dtype != viewB.dataType()) {
+            throw new IllegalArgumentException(
+                    "Type mismatch: " + dtype + " vs " + viewB.dataType());
+        }
+        Shape resultShape = viewA.shape();
+        if (!viewA.shape().equals(viewB.shape())) {
+            throw new IllegalArgumentException(
+                    "Shape mismatch: " + viewA.shape() + " vs " + viewB.shape());
+        }
+        MemoryAccess<Object> access = requireMemoryAccess();
+        MemoryView<?> output = allocate(DataType.BOOL, resultShape);
+        long size = resultShape.size();
+        @SuppressWarnings("unchecked")
+        Memory<Object> memA = (Memory<Object>) viewA.memory();
+        @SuppressWarnings("unchecked")
+        Memory<Object> memB = (Memory<Object>) viewB.memory();
+        @SuppressWarnings("unchecked")
+        Memory<Object> memOut = (Memory<Object>) output.memory();
+        for (long i = 0; i < size; i++) {
+            long offA = Indexing.linearToOffset(viewA, i);
+            long offB = Indexing.linearToOffset(viewB, i);
+            long offOut = Indexing.linearToOffset(output, i);
+            boolean result = applyCompareOp(access, memA, offA, memB, offB, dtype, op);
+            access.writeByte(memOut, offOut, (byte) (result ? 1 : 0));
+        }
+        return Tensor.of(output);
+    }
+
+    private boolean applyCompareOp(
+            MemoryAccess<Object> access,
+            Memory<Object> memA,
+            long offA,
+            Memory<Object> memB,
+            long offB,
+            DataType dtype,
+            BinaryOp op) {
+        if (dtype == DataType.I8 || dtype == DataType.BOOL) {
+            byte a = access.readByte(memA, offA);
+            byte b = access.readByte(memB, offB);
+            return ConstantFolder.evalCompare(a, b, op);
+        } else if (dtype == DataType.I16) {
+            short a = access.readShort(memA, offA);
+            short b = access.readShort(memB, offB);
+            return ConstantFolder.evalCompare(a, b, op);
+        } else if (dtype == DataType.I32) {
+            int a = access.readInt(memA, offA);
+            int b = access.readInt(memB, offB);
+            return ConstantFolder.evalCompare(a, b, op);
+        } else if (dtype == DataType.I64) {
+            long a = access.readLong(memA, offA);
+            long b = access.readLong(memB, offB);
+            return ConstantFolder.evalCompare(a, b, op);
+        } else if (dtype == DataType.FP32) {
+            float a = access.readFloat(memA, offA);
+            float b = access.readFloat(memB, offB);
+            return ConstantFolder.evalCompare(a, b, op);
+        } else if (dtype == DataType.FP64) {
+            double a = access.readDouble(memA, offA);
+            double b = access.readDouble(memB, offB);
+            return ConstantFolder.evalCompare(a, b, op);
+        } else {
+            throw new UnsupportedOperationException("Unsupported type: " + dtype);
+        }
     }
 
     @Override
@@ -333,7 +431,71 @@ public class EagerTensorOps implements TensorOps {
 
     @Override
     public Tensor cast(Tensor x, DataType targetType) {
-        return Tracer.trace(x, input -> input.cast(targetType));
+        MemoryView<?> view = x.materialize();
+        if (view.dataType() == targetType) {
+            return x;
+        }
+        MemoryAccess<Object> access = requireMemoryAccess();
+        MemoryView<?> output = allocate(targetType, view.shape());
+        long size = view.shape().size();
+        @SuppressWarnings("unchecked")
+        Memory<Object> srcMemory = (Memory<Object>) view.memory();
+        @SuppressWarnings("unchecked")
+        Memory<Object> dstMemory = (Memory<Object>) output.memory();
+        DataType srcType = view.dataType();
+        for (long i = 0; i < size; i++) {
+            long srcOffset = Indexing.linearToOffset(view, i);
+            long dstOffset = Indexing.linearToOffset(output, i);
+            double value = readAsDouble(access, srcMemory, srcOffset, srcType);
+            writeFromDouble(access, dstMemory, dstOffset, targetType, value);
+        }
+        return Tensor.of(output);
+    }
+
+    private double readAsDouble(
+            MemoryAccess<Object> access, Memory<Object> memory, long offset, DataType type) {
+        if (type == DataType.BOOL || type == DataType.I8) {
+            return access.readByte(memory, offset);
+        } else if (type == DataType.I16 || type == DataType.FP16 || type == DataType.BF16) {
+            return access.readShort(memory, offset);
+        } else if (type == DataType.I32) {
+            return access.readInt(memory, offset);
+        } else if (type == DataType.FP32) {
+            return access.readFloat(memory, offset);
+        } else if (type == DataType.I64) {
+            return access.readLong(memory, offset);
+        } else if (type == DataType.FP64) {
+            return access.readDouble(memory, offset);
+        } else {
+            throw new UnsupportedOperationException("Unsupported data type: " + type);
+        }
+    }
+
+    private void writeFromDouble(
+            MemoryAccess<Object> access,
+            Memory<Object> memory,
+            long offset,
+            DataType type,
+            double value) {
+        if (type == DataType.BOOL) {
+            access.writeByte(memory, offset, (byte) (value != 0 ? 1 : 0));
+        } else if (type == DataType.I8) {
+            access.writeByte(memory, offset, (byte) value);
+        } else if (type == DataType.I16) {
+            access.writeShort(memory, offset, (short) value);
+        } else if (type == DataType.I32) {
+            access.writeInt(memory, offset, (int) value);
+        } else if (type == DataType.FP32) {
+            access.writeFloat(memory, offset, (float) value);
+        } else if (type == DataType.I64) {
+            access.writeLong(memory, offset, (long) value);
+        } else if (type == DataType.FP64) {
+            access.writeDouble(memory, offset, value);
+        } else if (type == DataType.FP16 || type == DataType.BF16) {
+            access.writeShort(memory, offset, (short) Float.floatToFloat16((float) value));
+        } else {
+            throw new UnsupportedOperationException("Unsupported data type: " + type);
+        }
     }
 
     private MemoryView<?> allocate(DataType dtype, Shape shape) {
@@ -343,22 +505,10 @@ public class EagerTensorOps implements TensorOps {
     }
 
     private Tensor unaryOp(Tensor x, UnaryOp op) {
-        return unaryOp(x.materialize(), op);
-    }
-
-    private Tensor unaryOp(MemoryView<?> view, UnaryOp op) {
-        if (view.dataType() == DataType.FP32) {
-            return unaryOpFloat(view, op);
-        }
-        if (view.dataType() == DataType.I32) {
-            return unaryOpInt(view, op);
-        }
-        throw new IllegalArgumentException("Unsupported data type for eager op");
-    }
-
-    private Tensor unaryOpFloat(MemoryView<?> view, UnaryOp op) {
+        MemoryView<?> view = x.materialize();
+        DataType dtype = view.dataType();
         MemoryAccess<Object> access = requireMemoryAccess();
-        MemoryView<?> output = allocate(DataType.FP32, view.shape());
+        MemoryView<?> output = allocate(dtype, view.shape());
         long size = view.shape().size();
         @SuppressWarnings("unchecked")
         Memory<Object> srcMemory = (Memory<Object>) view.memory();
@@ -367,29 +517,43 @@ public class EagerTensorOps implements TensorOps {
         for (long i = 0; i < size; i++) {
             long srcOffset = Indexing.linearToOffset(view, i);
             long dstOffset = Indexing.linearToOffset(output, i);
-            float value = access.readFloat(srcMemory, srcOffset);
-            float result = applyUnaryFloat(op, value);
-            access.writeFloat(dstMemory, dstOffset, result);
+            applyUnaryOp(access, srcMemory, srcOffset, dstMemory, dstOffset, dtype, op);
         }
         return Tensor.of(output);
     }
 
-    private Tensor unaryOpInt(MemoryView<?> view, UnaryOp op) {
-        MemoryAccess<Object> access = requireMemoryAccess();
-        MemoryView<?> output = allocate(DataType.I32, view.shape());
-        long size = view.shape().size();
-        @SuppressWarnings("unchecked")
-        Memory<Object> srcMemory = (Memory<Object>) view.memory();
-        @SuppressWarnings("unchecked")
-        Memory<Object> dstMemory = (Memory<Object>) output.memory();
-        for (long i = 0; i < size; i++) {
-            long srcOffset = Indexing.linearToOffset(view, i);
-            long dstOffset = Indexing.linearToOffset(output, i);
-            int value = access.readInt(srcMemory, srcOffset);
-            int result = applyUnaryInt(op, value);
-            access.writeInt(dstMemory, dstOffset, result);
+    private void applyUnaryOp(
+            MemoryAccess<Object> access,
+            Memory<Object> srcMem,
+            long srcOff,
+            Memory<Object> dstMem,
+            long dstOff,
+            DataType dtype,
+            UnaryOp op) {
+        if (dtype == DataType.BOOL) {
+            byte v = access.readByte(srcMem, srcOff);
+            access.writeByte(dstMem, dstOff, ConstantFolder.evalBool(v != 0, op));
+        } else if (dtype == DataType.I8) {
+            byte v = access.readByte(srcMem, srcOff);
+            access.writeByte(dstMem, dstOff, ConstantFolder.evalByte(v, op));
+        } else if (dtype == DataType.I16) {
+            short v = access.readShort(srcMem, srcOff);
+            access.writeShort(dstMem, dstOff, ConstantFolder.evalShort(v, op));
+        } else if (dtype == DataType.I32) {
+            int v = access.readInt(srcMem, srcOff);
+            access.writeInt(dstMem, dstOff, ConstantFolder.evalInt(v, op));
+        } else if (dtype == DataType.I64) {
+            long v = access.readLong(srcMem, srcOff);
+            access.writeLong(dstMem, dstOff, ConstantFolder.evalLong(v, op));
+        } else if (dtype == DataType.FP32) {
+            float v = access.readFloat(srcMem, srcOff);
+            access.writeFloat(dstMem, dstOff, ConstantFolder.evalFloat(v, op));
+        } else if (dtype == DataType.FP64) {
+            double v = access.readDouble(srcMem, srcOff);
+            access.writeDouble(dstMem, dstOff, ConstantFolder.evalDouble(v, op));
+        } else {
+            throw new UnsupportedOperationException("Unsupported type: " + dtype);
         }
-        return Tensor.of(output);
     }
 
     private MemoryAccess<Object> requireMemoryAccess() {
@@ -400,31 +564,6 @@ public class EagerTensorOps implements TensorOps {
         @SuppressWarnings("unchecked")
         MemoryAccess<Object> cast = (MemoryAccess<Object>) access;
         return cast;
-    }
-
-    private float applyUnaryFloat(UnaryOp op, float value) {
-        return switch (op.name()) {
-            case "negate" -> -value;
-            case "abs" -> Math.abs(value);
-            case "exp" -> (float) Math.exp(value);
-            case "log" -> (float) Math.log(value);
-            case "sqrt" -> (float) Math.sqrt(value);
-            case "square" -> value * value;
-            case "sin" -> (float) Math.sin(value);
-            case "cos" -> (float) Math.cos(value);
-            case "tanh" -> (float) Math.tanh(value);
-            case "reciprocal" -> 1.0f / value;
-            default -> throw new IllegalStateException("Unsupported unary op: " + op.name());
-        };
-    }
-
-    private int applyUnaryInt(UnaryOp op, int value) {
-        return switch (op.name()) {
-            case "negate" -> -value;
-            case "abs" -> Math.abs(value);
-            case "square" -> value * value;
-            default -> throw new IllegalStateException("Unsupported unary op: " + op.name());
-        };
     }
 
     private static void copyBetweenContexts(
@@ -468,7 +607,73 @@ public class EagerTensorOps implements TensorOps {
     private record OutputBufferSpec(long byteOffset, long byteSize) {}
 
     private Tensor binaryOp(Tensor a, Tensor b, BinaryOp op) {
-        throw new UnsupportedOperationException("Generic binary op dispatch not yet implemented");
+        MemoryView<?> viewA = a.materialize();
+        MemoryView<?> viewB = b.materialize();
+        DataType dtype = viewA.dataType();
+        if (dtype != viewB.dataType()) {
+            throw new IllegalArgumentException(
+                    "Type mismatch: " + dtype + " vs " + viewB.dataType());
+        }
+        Shape resultShape = viewA.shape();
+        if (!viewA.shape().equals(viewB.shape())) {
+            throw new IllegalArgumentException(
+                    "Shape mismatch: " + viewA.shape() + " vs " + viewB.shape());
+        }
+        MemoryAccess<Object> access = requireMemoryAccess();
+        MemoryView<?> output = allocate(dtype, resultShape);
+        long size = resultShape.size();
+        @SuppressWarnings("unchecked")
+        Memory<Object> memA = (Memory<Object>) viewA.memory();
+        @SuppressWarnings("unchecked")
+        Memory<Object> memB = (Memory<Object>) viewB.memory();
+        @SuppressWarnings("unchecked")
+        Memory<Object> memOut = (Memory<Object>) output.memory();
+        for (long i = 0; i < size; i++) {
+            long offA = Indexing.linearToOffset(viewA, i);
+            long offB = Indexing.linearToOffset(viewB, i);
+            long offOut = Indexing.linearToOffset(output, i);
+            applyBinaryOp(access, memA, offA, memB, offB, memOut, offOut, dtype, op);
+        }
+        return Tensor.of(output);
+    }
+
+    private void applyBinaryOp(
+            MemoryAccess<Object> access,
+            Memory<Object> memA,
+            long offA,
+            Memory<Object> memB,
+            long offB,
+            Memory<Object> memOut,
+            long offOut,
+            DataType dtype,
+            BinaryOp op) {
+        if (dtype == DataType.I8 || dtype == DataType.BOOL) {
+            byte a = access.readByte(memA, offA);
+            byte b = access.readByte(memB, offB);
+            access.writeByte(memOut, offOut, ConstantFolder.evalByte(a, b, op));
+        } else if (dtype == DataType.I16) {
+            short a = access.readShort(memA, offA);
+            short b = access.readShort(memB, offB);
+            access.writeShort(memOut, offOut, ConstantFolder.evalShort(a, b, op));
+        } else if (dtype == DataType.I32) {
+            int a = access.readInt(memA, offA);
+            int b = access.readInt(memB, offB);
+            access.writeInt(memOut, offOut, ConstantFolder.evalInt(a, b, op));
+        } else if (dtype == DataType.I64) {
+            long a = access.readLong(memA, offA);
+            long b = access.readLong(memB, offB);
+            access.writeLong(memOut, offOut, ConstantFolder.evalLong(a, b, op));
+        } else if (dtype == DataType.FP32) {
+            float a = access.readFloat(memA, offA);
+            float b = access.readFloat(memB, offB);
+            access.writeFloat(memOut, offOut, ConstantFolder.evalFloat(a, b, op));
+        } else if (dtype == DataType.FP64) {
+            double a = access.readDouble(memA, offA);
+            double b = access.readDouble(memB, offB);
+            access.writeDouble(memOut, offOut, ConstantFolder.evalDouble(a, b, op));
+        } else {
+            throw new UnsupportedOperationException("Unsupported type: " + dtype);
+        }
     }
 
     private Tensor scalarOp(Tensor a, Number scalar, BinaryOp op) {

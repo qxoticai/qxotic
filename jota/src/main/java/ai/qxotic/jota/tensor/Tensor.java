@@ -68,7 +68,7 @@ public interface Tensor {
     Optional<LazyComputation> computation();
 
     default Tensor add(Tensor other) {
-        return tryFoldBinaryOp(other, BinaryOp.ADD)
+        return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.ADD)
                 .orElseGet(() -> TensorOpsContext.require().add(this, broadcastIfScalar(other)));
     }
 
@@ -89,7 +89,7 @@ public interface Tensor {
     }
 
     default Tensor subtract(Tensor other) {
-        return tryFoldBinaryOp(other, BinaryOp.SUBTRACT)
+        return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.SUBTRACT)
                 .orElseGet(
                         () -> TensorOpsContext.require().subtract(this, broadcastIfScalar(other)));
     }
@@ -111,7 +111,7 @@ public interface Tensor {
     }
 
     default Tensor multiply(Tensor other) {
-        return tryFoldBinaryOp(other, BinaryOp.MULTIPLY)
+        return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.MULTIPLY)
                 .orElseGet(
                         () -> TensorOpsContext.require().multiply(this, broadcastIfScalar(other)));
     }
@@ -133,7 +133,7 @@ public interface Tensor {
     }
 
     default Tensor divide(Tensor other) {
-        return tryFoldBinaryOp(other, BinaryOp.DIVIDE)
+        return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.DIVIDE)
                 .orElseGet(() -> TensorOpsContext.require().divide(this, broadcastIfScalar(other)));
     }
 
@@ -154,7 +154,8 @@ public interface Tensor {
     }
 
     default Tensor min(Tensor other) {
-        return TensorOpsContext.require().min(this, other);
+        return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.MIN)
+                .orElseGet(() -> TensorOpsContext.require().min(this, broadcastIfScalar(other)));
     }
 
     default Tensor min() {
@@ -170,7 +171,8 @@ public interface Tensor {
     }
 
     default Tensor max(Tensor other) {
-        return TensorOpsContext.require().max(this, other);
+        return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.MAX)
+                .orElseGet(() -> TensorOpsContext.require().max(this, broadcastIfScalar(other)));
     }
 
     default Tensor max() {
@@ -238,23 +240,35 @@ public interface Tensor {
     }
 
     default Tensor bitwiseNot() {
-        return TensorOpsContext.require().bitwiseNot(this);
+        return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.BITWISE_NOT)
+                .orElseGet(() -> TensorOpsContext.require().bitwiseNot(this));
     }
 
     default Tensor bitwiseAnd(Tensor other) {
-        return TensorOpsContext.require().bitwiseAnd(this, other);
+        return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.BITWISE_AND)
+                .orElseGet(
+                        () ->
+                                TensorOpsContext.require()
+                                        .bitwiseAnd(this, broadcastIfScalar(other)));
     }
 
     default Tensor bitwiseOr(Tensor other) {
-        return TensorOpsContext.require().bitwiseOr(this, other);
+        return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.BITWISE_OR)
+                .orElseGet(
+                        () -> TensorOpsContext.require().bitwiseOr(this, broadcastIfScalar(other)));
     }
 
     default Tensor bitwiseXor(Tensor other) {
-        return TensorOpsContext.require().bitwiseXor(this, other);
+        return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.BITWISE_XOR)
+                .orElseGet(
+                        () ->
+                                TensorOpsContext.require()
+                                        .bitwiseXor(this, broadcastIfScalar(other)));
     }
 
     default Tensor logicalNot() {
-        return TensorOpsContext.require().logicalNot(this);
+        return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.LOGICAL_NOT)
+                .orElseGet(() -> TensorOpsContext.require().logicalNot(this));
     }
 
     default Tensor logicalAnd(Tensor other) {
@@ -270,11 +284,14 @@ public interface Tensor {
     }
 
     default Tensor equal(Tensor other) {
-        return TensorOpsContext.require().equal(this, other);
+        return ConstantFolder.tryFoldCompareOp(this, other, BinaryOp.EQUAL)
+                .orElseGet(() -> TensorOpsContext.require().equal(this, broadcastIfScalar(other)));
     }
 
     default Tensor lessThan(Tensor other) {
-        return TensorOpsContext.require().lessThan(this, other);
+        return ConstantFolder.tryFoldCompareOp(this, other, BinaryOp.LESS_THAN)
+                .orElseGet(
+                        () -> TensorOpsContext.require().lessThan(this, broadcastIfScalar(other)));
     }
 
     default Tensor notEqual(Tensor other) {
@@ -325,45 +342,52 @@ public interface Tensor {
         if (this.dataType() == targetType) {
             return this;
         }
-        return TensorOpsContext.require().cast(this, targetType);
+        return ConstantFolder.tryFoldCast(this, targetType)
+                .orElseGet(() -> TensorOpsContext.require().cast(this, targetType));
     }
 
     default Tensor negate() {
-        return tryFoldUnaryOp(UnaryOp.NEGATE)
+        return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.NEGATE)
                 .orElseGet(() -> TensorOpsContext.require().negate(this));
     }
 
     default Tensor abs() {
-        return tryFoldUnaryOp(UnaryOp.ABS).orElseGet(() -> TensorOpsContext.require().abs(this));
+        return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.ABS)
+                .orElseGet(() -> TensorOpsContext.require().abs(this));
     }
 
     default Tensor exp() {
-        return tryFoldUnaryOp(UnaryOp.EXP).orElseGet(() -> TensorOpsContext.require().exp(this));
+        return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.EXP)
+                .orElseGet(() -> TensorOpsContext.require().exp(this));
     }
 
     default Tensor log() {
-        return tryFoldUnaryOp(UnaryOp.LOG).orElseGet(() -> TensorOpsContext.require().log(this));
+        return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.LOG)
+                .orElseGet(() -> TensorOpsContext.require().log(this));
     }
 
     default Tensor sqrt() {
-        return tryFoldUnaryOp(UnaryOp.SQRT).orElseGet(() -> TensorOpsContext.require().sqrt(this));
+        return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.SQRT)
+                .orElseGet(() -> TensorOpsContext.require().sqrt(this));
     }
 
     default Tensor square() {
-        return tryFoldUnaryOp(UnaryOp.SQUARE)
-                .orElseGet(() -> TensorOpsContext.require().square(this));
+        return multiply(this);
     }
 
     default Tensor sin() {
-        return tryFoldUnaryOp(UnaryOp.SIN).orElseGet(() -> TensorOpsContext.require().sin(this));
+        return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.SIN)
+                .orElseGet(() -> TensorOpsContext.require().sin(this));
     }
 
     default Tensor cos() {
-        return tryFoldUnaryOp(UnaryOp.COS).orElseGet(() -> TensorOpsContext.require().cos(this));
+        return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.COS)
+                .orElseGet(() -> TensorOpsContext.require().cos(this));
     }
 
     default Tensor tanh() {
-        return tryFoldUnaryOp(UnaryOp.TANH).orElseGet(() -> TensorOpsContext.require().tanh(this));
+        return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.TANH)
+                .orElseGet(() -> TensorOpsContext.require().tanh(this));
     }
 
     default Tensor relu() {
@@ -415,82 +439,12 @@ public interface Tensor {
                 .orElse(other);
     }
 
-    private Optional<ConstantComputation> asConstant() {
-        return computation()
-                .filter(ConstantComputation.class::isInstance)
-                .map(ConstantComputation.class::cast);
-    }
-
-    private Optional<Tensor> tryFoldBinaryOp(Tensor other, BinaryOp op) {
-        Optional<ConstantComputation> leftConst = this.asConstant();
-        Optional<ConstantComputation> rightConst = other.asConstant();
-        if (leftConst.isEmpty() || rightConst.isEmpty()) {
-            return Optional.empty();
-        }
-        ConstantComputation left = leftConst.get();
-        ConstantComputation right = rightConst.get();
-        DataType resultType = TypeRules.promote(left.dataType(), right.dataType());
-        double a = left.value().doubleValue();
-        double b = right.value().doubleValue();
-        double result;
-        if (op == BinaryOp.ADD) {
-            result = a + b;
-        } else if (op == BinaryOp.SUBTRACT) {
-            result = a - b;
-        } else if (op == BinaryOp.MULTIPLY) {
-            result = a * b;
-        } else if (op == BinaryOp.DIVIDE) {
-            result = a / b;
-        } else if (op == BinaryOp.MIN) {
-            result = Math.min(a, b);
-        } else if (op == BinaryOp.MAX) {
-            result = Math.max(a, b);
-        } else {
-            throw new UnsupportedOperationException("Cannot fold: " + op);
-        }
-        return Optional.of(Tensor.scalar(result, resultType));
-    }
-
-    private Optional<Tensor> tryFoldUnaryOp(UnaryOp op) {
-        Optional<ConstantComputation> constant = this.asConstant();
-        if (constant.isEmpty()) {
-            return Optional.empty();
-        }
-        ConstantComputation c = constant.get();
-        double a = c.value().doubleValue();
-        double result;
-        if (op == UnaryOp.NEGATE) {
-            result = -a;
-        } else if (op == UnaryOp.ABS) {
-            result = Math.abs(a);
-        } else if (op == UnaryOp.EXP) {
-            result = Math.exp(a);
-        } else if (op == UnaryOp.LOG) {
-            result = Math.log(a);
-        } else if (op == UnaryOp.SQRT) {
-            result = Math.sqrt(a);
-        } else if (op == UnaryOp.SQUARE) {
-            result = a * a;
-        } else if (op == UnaryOp.SIN) {
-            result = Math.sin(a);
-        } else if (op == UnaryOp.COS) {
-            result = Math.cos(a);
-        } else if (op == UnaryOp.TANH) {
-            result = Math.tanh(a);
-        } else if (op == UnaryOp.RECIPROCAL) {
-            result = 1.0 / a;
-        } else {
-            return Optional.empty();
-        }
-        return Optional.of(Tensor.scalar(result, c.dataType()));
-    }
-
     default Tensor reciprocal() {
         if (!dataType().isFloatingPoint()) {
             throw new IllegalArgumentException(
                     "reciprocal requires floating-point tensor, got " + dataType());
         }
-        return tryFoldUnaryOp(UnaryOp.RECIPROCAL)
+        return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.RECIPROCAL)
                 .orElseGet(() -> TensorOpsContext.require().reciprocal(this));
     }
 
