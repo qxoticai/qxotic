@@ -74,7 +74,6 @@ final class TracingTensorOps implements TensorOps {
         return unaryOp(x, UnaryOp.SQRT);
     }
 
-    @Override
     public Tensor square(Tensor x) {
         return unaryOp(x, UnaryOp.SQUARE);
     }
