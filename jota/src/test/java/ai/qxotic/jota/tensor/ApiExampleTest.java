@@ -1,0 +1,49 @@
+package ai.qxotic.jota.tensor;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import ai.qxotic.jota.DataType;
+import ai.qxotic.jota.Device;
+import ai.qxotic.jota.Environment;
+import ai.qxotic.jota.Indexing;
+import ai.qxotic.jota.Shape;
+import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryHelpers;
+import ai.qxotic.jota.memory.MemoryView;
+import java.lang.foreign.MemorySegment;
+import org.junit.jupiter.api.Test;
+
+class ApiExampleTest {
+
+    @SuppressWarnings("unchecked")
+    private static final MemoryContext<MemorySegment> CONTEXT =
+            (MemoryContext<MemorySegment>) Environment.current().registry().context(Device.PANAMA);
+
+    @Test
+    void basicFunctionRunsAndMaterializes() {
+        MemoryView<MemorySegment> view =
+                MemoryHelpers.arange(CONTEXT, DataType.FP32, 6).view(Shape.of(2, 3));
+        Tensor x = Tensor.of(view);
+        Tensor y = x.add(x).sqrt();
+
+        assertTrue(y.isLazy());
+        assertFalse(y.isMaterialized());
+
+        MemoryView<?> output = y.materialize();
+
+        assertEquals(DataType.FP32, output.dataType());
+        assertEquals(Shape.of(2, 3), output.shape());
+        assertEquals(0.0f, readFloat(CONTEXT, output, 0), 0.0001f);
+        assertEquals((float) Math.sqrt(10.0), readFloat(CONTEXT, output, 5), 0.0001f);
+    }
+
+    private static float readFloat(
+            MemoryContext<MemorySegment> context, MemoryView<?> view, long linearIndex) {
+        @SuppressWarnings("unchecked")
+        MemoryView<MemorySegment> typedView = (MemoryView<MemorySegment>) view;
+        long offset = Indexing.linearToOffset(typedView, linearIndex);
+        return context.memoryAccess().readFloat(typedView.memory(), offset);
+    }
+}

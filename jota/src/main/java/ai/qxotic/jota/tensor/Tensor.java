@@ -1,6 +1,7 @@
 package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.*;
+import ai.qxotic.jota.impl.ViewTransforms;
 import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryOperations;
@@ -221,7 +222,45 @@ public interface Tensor {
      * @throws IllegalArgumentException if a view cannot be created without copying
      */
     default Tensor view(Shape newShape) {
-        return TensorOpsContext.require().view(this, newShape);
+        ViewTransforms.ViewTransformSpec spec = ViewTransforms.view(layout(), newShape);
+        return TensorOpsContext.require()
+                .viewTransform(this, spec.layout(), spec.byteOffsetDelta(), "view");
+    }
+
+    default Tensor broadcast(Shape targetShape) {
+        ViewTransforms.ViewTransformSpec spec = ViewTransforms.broadcast(layout(), targetShape);
+        return TensorOpsContext.require()
+                .viewTransform(this, spec.layout(), spec.byteOffsetDelta(), "broadcast");
+    }
+
+    default Tensor expand(Shape targetShape) {
+        ViewTransforms.ViewTransformSpec spec = ViewTransforms.expand(layout(), targetShape);
+        return TensorOpsContext.require()
+                .viewTransform(this, spec.layout(), spec.byteOffsetDelta(), "expand");
+    }
+
+    default Tensor transpose(int axis0, int axis1) {
+        ViewTransforms.ViewTransformSpec spec = ViewTransforms.transpose(layout(), axis0, axis1);
+        return TensorOpsContext.require()
+                .viewTransform(this, spec.layout(), spec.byteOffsetDelta(), "transpose");
+    }
+
+    default Tensor permute(int... permutationIndices) {
+        ViewTransforms.ViewTransformSpec spec =
+                ViewTransforms.permute(layout(), permutationIndices);
+        return TensorOpsContext.require()
+                .viewTransform(this, spec.layout(), spec.byteOffsetDelta(), "permute");
+    }
+
+    default Tensor slice(int axis, long start, long end) {
+        return slice(axis, start, end, 1);
+    }
+
+    default Tensor slice(int axis, long start, long end, long indexStride) {
+        ViewTransforms.ViewTransformSpec spec =
+                ViewTransforms.slice(layout(), dataType(), axis, start, end, indexStride);
+        return TensorOpsContext.require()
+                .viewTransform(this, spec.layout(), spec.byteOffsetDelta(), "slice");
     }
 
     /**
@@ -509,6 +548,37 @@ public interface Tensor {
     }
 
     /**
+     * Creates a 1D range tensor [0, 1, 2, ..., n-1] with I64 dtype.
+     *
+     * @param n number of elements (non-negative)
+     * @return a lazy range tensor
+     */
+    static Tensor arange(long n) {
+        if (n < 0) {
+            throw new IllegalArgumentException("n must be non-negative, got: " + n);
+        }
+        Shape shape = Shape.flat(n);
+        Layout layout = Layout.rowMajor(shape);
+        RangeComputation computation = new RangeComputation(n, Device.defaultDevice());
+        return lazy(computation, DataType.I64, layout, Device.defaultDevice());
+    }
+
+    /**
+     * Creates a 1D range tensor [0, 1, 2, ..., n-1] and casts to the target type.
+     *
+     * @param n number of elements (non-negative)
+     * @param dataType target data type (integral or floating-point)
+     * @return a lazy range tensor cast to the target type
+     */
+    static Tensor arange(long n, DataType dataType) {
+        Objects.requireNonNull(dataType, "dataType");
+        if (dataType == DataType.BOOL || !(dataType.isIntegral() || dataType.isFloatingPoint())) {
+            throw new IllegalArgumentException("Unsupported data type for arange: " + dataType);
+        }
+        return arange(n).cast(dataType);
+    }
+
+    /**
      * Creates a tensor filled with the specified float value.
      *
      * @param value the fill value
@@ -752,6 +822,33 @@ public interface Tensor {
         return of(view);
     }
 
+    /**
+     * Creates a tensor from a boolean array.
+     *
+     * @param data the source array (copied, not referenced)
+     * @return a materialized tensor with shape [data.length] and BOOL dtype
+     */
+    static Tensor of(boolean[] data) {
+        return of(data, Shape.flat(data.length));
+    }
+
+    /**
+     * Creates a tensor from a boolean array with the specified shape.
+     *
+     * @param data the source array (copied, not referenced)
+     * @param shape the shape (must match array length)
+     * @return a materialized tensor with BOOL dtype
+     */
+    static Tensor of(boolean[] data, Shape shape) {
+        if (data.length != shape.size()) {
+            throw new IllegalArgumentException(
+                    "array length " + data.length + " does not match shape size " + shape.size());
+        }
+        MemoryContext<?> context = Environment.current().registry().context(Device.defaultDevice());
+        MemoryView<?> view = copyBooleanArray(context, data, shape);
+        return of(view);
+    }
+
     private static <B> MemoryView<B> copyFloatArray(
             MemoryContext<B> context, float[] data, Shape shape) {
         Memory<B> dst = context.memoryAllocator().allocateMemory(DataType.FP32, data.length);
@@ -818,6 +915,27 @@ public interface Tensor {
                 0,
                 (long) data.length * Long.BYTES);
         return MemoryView.of(dst, DataType.I64, Layout.rowMajor(shape));
+    }
+
+    private static <B> MemoryView<B> copyBooleanArray(
+            MemoryContext<B> context, boolean[] data, Shape shape) {
+        Memory<B> dst = context.memoryAllocator().allocateMemory(DataType.BOOL, data.length);
+        byte[] bytes = new byte[data.length];
+        for (int i = 0; i < data.length; i++) {
+            bytes[i] = data[i] ? (byte) 1 : 0;
+        }
+        Memory<MemorySegment> src = MemoryFactory.ofMemorySegment(MemorySegment.ofArray(bytes));
+        MemoryOperations<MemorySegment> srcOps =
+                ContextFactory.ofMemorySegment().memoryOperations();
+        MemoryOperations.copy(
+                srcOps,
+                src,
+                0,
+                context.memoryOperations(),
+                dst,
+                0,
+                (long) data.length * Byte.BYTES);
+        return MemoryView.of(dst, DataType.BOOL, Layout.rowMajor(shape));
     }
 
     @Deprecated

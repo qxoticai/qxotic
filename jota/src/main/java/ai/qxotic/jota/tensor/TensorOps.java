@@ -2,7 +2,9 @@ package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
+import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
+import ai.qxotic.jota.impl.ViewTransforms;
 import ai.qxotic.jota.memory.MemoryContext;
 import java.util.Arrays;
 import java.util.stream.IntStream;
@@ -178,7 +180,12 @@ public interface TensorOps {
 
     // === Shape Operations ===
 
-    Tensor transpose(Tensor x, int axis0, int axis1);
+    Tensor viewTransform(Tensor x, Layout layout, long byteOffsetDelta, String hint);
+
+    default Tensor transpose(Tensor x, int axis0, int axis1) {
+        ViewTransforms.ViewTransformSpec spec = ViewTransforms.transpose(x.layout(), axis0, axis1);
+        return viewTransform(x, spec.layout(), spec.byteOffsetDelta(), "transpose");
+    }
 
     default Tensor transpose(Tensor x) {
         return transpose(x, -2, -1);
@@ -186,13 +193,36 @@ public interface TensorOps {
 
     Tensor reshape(Tensor x, Shape newShape);
 
-    Tensor view(Tensor x, Shape newShape);
+    default Tensor view(Tensor x, Shape newShape) {
+        ViewTransforms.ViewTransformSpec spec = ViewTransforms.view(x.layout(), newShape);
+        return viewTransform(x, spec.layout(), spec.byteOffsetDelta(), "view");
+    }
 
-    Tensor broadcast(Tensor x, Shape targetShape);
+    default Tensor broadcast(Tensor x, Shape targetShape) {
+        ViewTransforms.ViewTransformSpec spec = ViewTransforms.broadcast(x.layout(), targetShape);
+        return viewTransform(x, spec.layout(), spec.byteOffsetDelta(), "broadcast");
+    }
 
-    Tensor expand(Tensor x, Shape targetShape);
+    default Tensor expand(Tensor x, Shape targetShape) {
+        ViewTransforms.ViewTransformSpec spec = ViewTransforms.expand(x.layout(), targetShape);
+        return viewTransform(x, spec.layout(), spec.byteOffsetDelta(), "expand");
+    }
 
-    Tensor slice(Tensor x, int axis, long start, long end);
+    default Tensor permute(Tensor x, int... permutationIndices) {
+        ViewTransforms.ViewTransformSpec spec =
+                ViewTransforms.permute(x.layout(), permutationIndices);
+        return viewTransform(x, spec.layout(), spec.byteOffsetDelta(), "permute");
+    }
+
+    default Tensor slice(Tensor x, int axis, long start, long end) {
+        return slice(x, axis, start, end, 1);
+    }
+
+    default Tensor slice(Tensor x, int axis, long start, long end, long indexStride) {
+        ViewTransforms.ViewTransformSpec spec =
+                ViewTransforms.slice(x.layout(), x.dataType(), axis, start, end, indexStride);
+        return viewTransform(x, spec.layout(), spec.byteOffsetDelta(), "slice");
+    }
 
     // === Type Conversion ===
 

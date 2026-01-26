@@ -34,6 +34,10 @@ public final class GraphHasher {
                 update(digest, "scalar");
                 update(digest, String.valueOf(scalar.value()));
             }
+            case RangeNode range -> {
+                update(digest, "range");
+                update(digest, Long.toString(range.count()));
+            }
             case UnaryNode unary -> {
                 update(digest, "unary");
                 update(digest, unary.op().name());

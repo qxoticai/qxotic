@@ -1,5 +1,6 @@
 package ai.qxotic.jota.tensor;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
@@ -17,8 +18,8 @@ public final class Tracer {
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(function, "function");
 
-        InputNode inputNode = new InputNode(0, input.dataType(), input.layout(), input.device());
-        TraceTensor tracedInput = new TraceTensor(inputNode);
+        TraceInputs inputs = traceInputs(List.of(input));
+        TraceTensor tracedInput = inputs.traces().get(0);
         TracingTensorOps tracingOps = new TracingTensorOps();
 
         TraceTensor output =
@@ -33,8 +34,8 @@ public final class Tracer {
                                     "Tracing function must return a traced tensor, got: " + result);
                         });
 
-        ExpressionGraph graph = new ExpressionGraph(output.node(), List.of(inputNode));
-        ExpressionComputation computation = new ExpressionComputation(graph, List.of(input));
+        ExpressionGraph graph = new ExpressionGraph(output.node(), inputs.nodes());
+        ExpressionComputation computation = new ExpressionComputation(graph, inputs.tensors());
         return Tensor.lazy(computation, output.dataType(), output.layout(), output.device());
     }
 
@@ -44,10 +45,9 @@ public final class Tracer {
         Objects.requireNonNull(right, "right");
         Objects.requireNonNull(fn, "fn");
 
-        InputNode leftNode = new InputNode(0, left.dataType(), left.layout(), left.device());
-        InputNode rightNode = new InputNode(1, right.dataType(), right.layout(), right.device());
-        TraceTensor tracedLeft = new TraceTensor(leftNode);
-        TraceTensor tracedRight = new TraceTensor(rightNode);
+        TraceInputs inputs = traceInputs(List.of(left, right));
+        TraceTensor tracedLeft = inputs.traces().get(0);
+        TraceTensor tracedRight = inputs.traces().get(1);
         TracingTensorOps tracingOps = new TracingTensorOps();
 
         TraceTensor output =
@@ -62,8 +62,8 @@ public final class Tracer {
                                     "Tracing function must return a traced tensor, got: " + result);
                         });
 
-        ExpressionGraph graph = new ExpressionGraph(output.node(), List.of(leftNode, rightNode));
-        ExpressionComputation computation = new ExpressionComputation(graph, List.of(left, right));
+        ExpressionGraph graph = new ExpressionGraph(output.node(), inputs.nodes());
+        ExpressionComputation computation = new ExpressionComputation(graph, inputs.tensors());
         return Tensor.lazy(computation, output.dataType(), output.layout(), output.device());
     }
 
@@ -77,13 +77,10 @@ public final class Tracer {
         Objects.requireNonNull(third, "third");
         Objects.requireNonNull(fn, "fn");
 
-        InputNode firstNode = new InputNode(0, first.dataType(), first.layout(), first.device());
-        InputNode secondNode =
-                new InputNode(1, second.dataType(), second.layout(), second.device());
-        InputNode thirdNode = new InputNode(2, third.dataType(), third.layout(), third.device());
-        TraceTensor tracedFirst = new TraceTensor(firstNode);
-        TraceTensor tracedSecond = new TraceTensor(secondNode);
-        TraceTensor tracedThird = new TraceTensor(thirdNode);
+        TraceInputs inputs = traceInputs(List.of(first, second, third));
+        TraceTensor tracedFirst = inputs.traces().get(0);
+        TraceTensor tracedSecond = inputs.traces().get(1);
+        TraceTensor tracedThird = inputs.traces().get(2);
         TracingTensorOps tracingOps = new TracingTensorOps();
 
         TraceTensor output =
@@ -98,10 +95,34 @@ public final class Tracer {
                                     "Tracing function must return a traced tensor, got: " + result);
                         });
 
-        ExpressionGraph graph =
-                new ExpressionGraph(output.node(), List.of(firstNode, secondNode, thirdNode));
-        ExpressionComputation computation =
-                new ExpressionComputation(graph, List.of(first, second, third));
+        ExpressionGraph graph = new ExpressionGraph(output.node(), inputs.nodes());
+        ExpressionComputation computation = new ExpressionComputation(graph, inputs.tensors());
         return Tensor.lazy(computation, output.dataType(), output.layout(), output.device());
     }
+
+    private static TraceInputs traceInputs(List<Tensor> inputs) {
+        List<InputNode> nodes = new ArrayList<>();
+        List<Tensor> tensors = new ArrayList<>();
+        List<TraceTensor> traces = new ArrayList<>(inputs.size());
+        int inputIndex = 0;
+        for (Tensor input : inputs) {
+            if (input.computation().orElse(null) instanceof RangeComputation range) {
+                TraceTensor trace =
+                        new TraceTensor(
+                                new RangeNode(range.count(), input.layout(), input.device()));
+                traces.add(trace);
+                continue;
+            }
+            InputNode node =
+                    new InputNode(inputIndex, input.dataType(), input.layout(), input.device());
+            nodes.add(node);
+            tensors.add(input);
+            traces.add(new TraceTensor(node));
+            inputIndex++;
+        }
+        return new TraceInputs(traces, nodes, tensors);
+    }
+
+    private record TraceInputs(
+            List<TraceTensor> traces, List<InputNode> nodes, List<Tensor> tensors) {}
 }

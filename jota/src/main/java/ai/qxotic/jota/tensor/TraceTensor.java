@@ -57,4 +57,19 @@ final class TraceTensor implements Tensor {
     public Optional<LazyComputation> computation() {
         return Optional.empty();
     }
+
+    @Override
+    public String toString() {
+        return "Tensor(materialized=false, lazy=true, dtype="
+                + dataType()
+                + ", shape="
+                + layout().shape()
+                + ", layout="
+                + layout()
+                + ", device="
+                + device().name()
+                + ", node="
+                + node.getClass().getSimpleName()
+                + ")";
+    }
 }

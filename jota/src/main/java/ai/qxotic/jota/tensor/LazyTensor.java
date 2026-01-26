@@ -74,4 +74,26 @@ final class LazyTensor implements Tensor {
     public Optional<LazyComputation> computation() {
         return Optional.of(computation);
     }
+
+    @Override
+    public String toString() {
+        StringBuilder builder =
+                new StringBuilder("Tensor(materialized=")
+                        .append(isMaterialized())
+                        .append(", lazy=true, dtype=")
+                        .append(dtype)
+                        .append(", shape=")
+                        .append(layout.shape())
+                        .append(", layout=")
+                        .append(layout)
+                        .append(", device=")
+                        .append(device.name());
+        if (computation instanceof ConstantComputation constant) {
+            builder.append(", constant=").append(constant.value());
+        } else {
+            builder.append(", op=").append(computation.operation().name());
+        }
+        builder.append(")");
+        return builder.toString();
+    }
 }

@@ -3,7 +3,7 @@ package ai.qxotic.jota.memory;
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
 
-public interface Memory<B> {
+public interface Memory<B> extends Storage {
 
     long byteSize();
 

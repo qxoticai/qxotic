@@ -255,33 +255,24 @@ final class TracingTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor transpose(Tensor x, int axis0, int axis1) {
-        throw unsupported("transpose");
+    public Tensor viewTransform(Tensor x, Layout layout, long byteOffsetDelta, String hint) {
+        Objects.requireNonNull(layout, "layout");
+        Objects.requireNonNull(hint, "hint");
+        TraceTensor trace = requireTrace(x);
+        ExprNode node =
+                new ViewTransformOp(
+                        trace.node(),
+                        layout,
+                        byteOffsetDelta,
+                        hint,
+                        trace.dataType(),
+                        trace.device());
+        return new TraceTensor(node);
     }
 
     @Override
     public Tensor reshape(Tensor x, ai.qxotic.jota.Shape newShape) {
         throw unsupported("reshape");
-    }
-
-    @Override
-    public Tensor view(Tensor x, ai.qxotic.jota.Shape newShape) {
-        throw unsupported("view");
-    }
-
-    @Override
-    public Tensor broadcast(Tensor x, ai.qxotic.jota.Shape targetShape) {
-        throw unsupported("broadcast");
-    }
-
-    @Override
-    public Tensor expand(Tensor x, ai.qxotic.jota.Shape targetShape) {
-        throw unsupported("expand");
-    }
-
-    @Override
-    public Tensor slice(Tensor x, int axis, long start, long end) {
-        throw unsupported("slice");
     }
 
     @Override
@@ -589,11 +580,21 @@ final class TracingTensorOps implements TensorOps {
             return traceTensor;
         }
         Optional<LazyComputation> computation = tensor.computation();
-        if (computation.isPresent() && computation.get() instanceof ConstantComputation constant) {
-            ScalarNode node =
-                    new ScalarNode(
-                            constant.value(), tensor.dataType(), tensor.layout(), tensor.device());
-            return new TraceTensor(node);
+        if (computation.isPresent()) {
+            LazyComputation op = computation.get();
+            if (op instanceof ConstantComputation constant) {
+                ScalarNode node =
+                        new ScalarNode(
+                                constant.value(),
+                                tensor.dataType(),
+                                tensor.layout(),
+                                tensor.device());
+                return new TraceTensor(node);
+            }
+            if (op instanceof RangeComputation range) {
+                RangeNode node = new RangeNode(range.count(), tensor.layout(), tensor.device());
+                return new TraceTensor(node);
+            }
         }
         throw new IllegalArgumentException("Tracing requires trace tensors, got: " + tensor);
     }

@@ -40,13 +40,16 @@ final class ConstantFolder {
 
     static Number evalBinary(Number a, Number b, DataType type, BinaryOp op) {
         return switch (type) {
-            case DataType t when t == DataType.I8 -> (byte) evalByte(a.byteValue(), b.byteValue(), op);
-            case DataType t when t == DataType.I16 -> (short) evalShort(a.shortValue(), b.shortValue(), op);
+            case DataType t when t == DataType.I8 ->
+                    (byte) evalByte(a.byteValue(), b.byteValue(), op);
+            case DataType t when t == DataType.I16 ->
+                    (short) evalShort(a.shortValue(), b.shortValue(), op);
             case DataType t when t == DataType.I32 -> evalInt(a.intValue(), b.intValue(), op);
             case DataType t when t == DataType.I64 -> evalLong(a.longValue(), b.longValue(), op);
             case DataType t when t == DataType.FP16 || t == DataType.BF16 || t == DataType.FP32 ->
                     evalFloat(a.floatValue(), b.floatValue(), op);
-            case DataType t when t == DataType.FP64 -> evalDouble(a.doubleValue(), b.doubleValue(), op);
+            case DataType t when t == DataType.FP64 ->
+                    evalDouble(a.doubleValue(), b.doubleValue(), op);
             default -> throw new UnsupportedOperationException("Unsupported type: " + type);
         };
     }
@@ -230,12 +233,14 @@ final class ConstantFolder {
     static boolean evalCompare(Number a, Number b, DataType type, BinaryOp op) {
         return switch (type) {
             case DataType t when t == DataType.I8 -> evalCompare(a.byteValue(), b.byteValue(), op);
-            case DataType t when t == DataType.I16 -> evalCompare(a.shortValue(), b.shortValue(), op);
+            case DataType t when t == DataType.I16 ->
+                    evalCompare(a.shortValue(), b.shortValue(), op);
             case DataType t when t == DataType.I32 -> evalCompare(a.intValue(), b.intValue(), op);
             case DataType t when t == DataType.I64 -> evalCompare(a.longValue(), b.longValue(), op);
             case DataType t when t == DataType.FP16 || t == DataType.BF16 || t == DataType.FP32 ->
                     evalCompare(a.floatValue(), b.floatValue(), op);
-            case DataType t when t == DataType.FP64 -> evalCompare(a.doubleValue(), b.doubleValue(), op);
+            case DataType t when t == DataType.FP64 ->
+                    evalCompare(a.doubleValue(), b.doubleValue(), op);
             default -> throw new UnsupportedOperationException("Unsupported type: " + type);
         };
     }
@@ -298,7 +303,9 @@ final class ConstantFolder {
                     value.floatValue();
             case DataType t when t == DataType.FP64 -> value.doubleValue();
             case DataType t when t == DataType.BOOL -> value.longValue() != 0 ? 1L : 0L;
-            default -> throw new UnsupportedOperationException("Unsupported target type: " + targetType);
+            default ->
+                    throw new UnsupportedOperationException(
+                            "Unsupported target type: " + targetType);
         };
     }
 }

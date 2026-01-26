@@ -12,7 +12,9 @@ public sealed interface ExprNode
                 TransferNode,
                 ContiguousNode,
                 ScalarNode,
+                RangeNode,
                 CastNode,
+                ViewTransformOp,
                 ReductionNode {
 
     DataType dataType();
@@ -26,6 +28,14 @@ record InputNode(int index, DataType dataType, Layout layout, Device device) imp
 
 record ScalarNode(Number value, DataType dataType, Layout layout, Device device)
         implements ExprNode {}
+
+record RangeNode(long count, Layout layout, Device device) implements ExprNode {
+
+    @Override
+    public DataType dataType() {
+        return DataType.I64;
+    }
+}
 
 record UnaryNode(UnaryOp op, ExprNode input, DataType dataType, Layout layout, Device device)
         implements ExprNode {}
@@ -64,6 +74,15 @@ record CastNode(ExprNode input, DataType targetType, Layout layout, Device devic
         return targetType;
     }
 }
+
+record ViewTransformOp(
+        ExprNode input,
+        Layout layout,
+        long byteOffsetDelta,
+        String hint,
+        DataType dataType,
+        Device device)
+        implements ExprNode {}
 
 record ReductionNode(
         ReductionOp op,

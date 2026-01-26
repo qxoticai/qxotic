@@ -54,4 +54,17 @@ final class MaterializedTensor implements Tensor {
     public Optional<LazyComputation> computation() {
         return Optional.empty();
     }
+
+    @Override
+    public String toString() {
+        return "Tensor(materialized=true, lazy=false, dtype="
+                + dataType()
+                + ", shape="
+                + layout().shape()
+                + ", layout="
+                + layout()
+                + ", device="
+                + device().name()
+                + ")";
+    }
 }
