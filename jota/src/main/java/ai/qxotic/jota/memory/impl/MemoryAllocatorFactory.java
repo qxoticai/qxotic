@@ -59,7 +59,7 @@ public final class MemoryAllocatorFactory {
     }
 
     public static MemoryAllocator<MemorySegment> newPanamaAuto() {
-        return new ManagedPanamaAllocator();
+        return new PanamaAutoAllocator();
     }
 
     public static MemoryAllocator<MemorySegment> newPanamaOnHeap() {

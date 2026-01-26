@@ -6,11 +6,12 @@ import ai.qxotic.jota.memory.MemoryAllocator;
 import ai.qxotic.jota.memory.MemoryArena;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.util.concurrent.atomic.AtomicReference;
 
-final class ManagedPanamaAllocator
+final class PanamaAutoAllocator
         implements MemoryAllocator<MemorySegment>, MemoryArena<MemorySegment> {
 
-    private Arena arena = Arena.ofAuto();
+    private final AtomicReference<Arena> arenaRef = new AtomicReference<>(Arena.ofAuto());
 
     @Override
     public Device device() {
@@ -24,16 +25,23 @@ final class ManagedPanamaAllocator
 
     @Override
     public Memory<MemorySegment> allocateMemory(long byteSize, long byteAlignment) {
+        Arena arena = getArena();
         return PanamaMemory.of(arena.allocate(byteSize, byteAlignment));
+    }
+
+    private Arena getArena() {
+        Arena arena = arenaRef.get();
+        if (arena == null) {
+            throw new IllegalStateException("arena already closed");
+        }
+        return arena;
     }
 
     @Override
     public void close() {
-        // arena.close() // non-closeable arena
-        if (this.arena == null) {
-            throw new IllegalStateException("already closed");
-        } else {
-            this.arena = null;
+        Arena oldArena = arenaRef.getAndSet(null);
+        if (oldArena == null) {
+            throw new IllegalStateException("arena already closed");
         }
     }
 }

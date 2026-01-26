@@ -77,6 +77,9 @@ public final class KernelInterpreter {
         if (node instanceof ScalarNode scalar) {
             return scalar.value().floatValue();
         }
+        if (node instanceof RangeNode) {
+            return (float) index;
+        }
         if (node instanceof UnaryNode unary) {
             float value = evalFloat(unary.input(), index, inputs);
             return applyUnaryFloat(unary.op(), value);
@@ -112,6 +115,9 @@ public final class KernelInterpreter {
         if (node instanceof ScalarNode scalar) {
             return scalar.value().intValue();
         }
+        if (node instanceof RangeNode) {
+            return (int) index;
+        }
         if (node instanceof UnaryNode unary) {
             int value = evalInt(unary.input(), index, inputs);
             return applyUnaryInt(unary.op(), value);
@@ -146,6 +152,9 @@ public final class KernelInterpreter {
         }
         if (node instanceof ScalarNode scalar) {
             return (byte) (scalar.value().intValue() == 0 ? 0 : 1);
+        }
+        if (node instanceof RangeNode) {
+            return index == 0 ? (byte) 0 : (byte) 1;
         }
         if (node instanceof UnaryNode unary) {
             byte value = evalBool(unary.input(), index, inputs);
@@ -287,6 +296,9 @@ public final class KernelInterpreter {
         if (node instanceof ScalarNode scalar) {
             return scalar.value().longValue();
         }
+        if (node instanceof RangeNode) {
+            return index;
+        }
         if (node instanceof CastNode cast) {
             if (type == DataType.I32) {
                 return evalInt(cast.input(), index, inputs);
@@ -318,6 +330,9 @@ public final class KernelInterpreter {
         }
         if (node instanceof ScalarNode scalar) {
             return scalar.value().doubleValue();
+        }
+        if (node instanceof RangeNode) {
+            return (double) index;
         }
         if (node instanceof CastNode cast) {
             if (type == DataType.FP32) {

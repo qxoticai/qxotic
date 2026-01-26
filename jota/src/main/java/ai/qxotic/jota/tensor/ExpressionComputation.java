@@ -1,6 +1,7 @@
 package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.DataType;
+import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.memory.MemoryContext;
@@ -50,10 +51,13 @@ final class ExpressionComputation implements LazyComputation {
             if (root instanceof ContiguousNode contiguous) {
                 return executeContiguous(contiguous);
             }
+            if (root instanceof ViewTransformOp transform) {
+                return executeViewTransform(transform);
+            }
             throw new IllegalStateException(
-                    "Transfer/contiguous operations must be the final node in the graph");
+                    "View transform/transfer/contiguous operations must be the final node in the graph");
         }
-        ComputeEngine engine = ComputeEngineContext.require();
+        ComputeEngine engine = resolveEngine(root.device());
         ComputeBackend backend = engine.backendFor(root.device());
         return backend.execute(graph, inputs);
     }
@@ -63,7 +67,9 @@ final class ExpressionComputation implements LazyComputation {
         stack.push(node);
         while (!stack.isEmpty()) {
             ExprNode current = stack.pop();
-            if (current instanceof TransferNode || current instanceof ContiguousNode) {
+            if (current instanceof TransferNode
+                    || current instanceof ContiguousNode
+                    || current instanceof ViewTransformOp) {
                 return true;
             }
             if (current instanceof UnaryNode unary) {
@@ -77,9 +83,13 @@ final class ExpressionComputation implements LazyComputation {
                 stack.push(ternary.falseValue());
             } else if (current instanceof CastNode cast) {
                 stack.push(cast.input());
+            } else if (current instanceof ViewTransformOp transform) {
+                stack.push(transform.input());
             } else if (current instanceof ReductionNode reduction) {
                 stack.push(reduction.input());
-            } else if (current instanceof InputNode || current instanceof ScalarNode) {
+            } else if (current instanceof InputNode
+                    || current instanceof ScalarNode
+                    || current instanceof RangeNode) {
                 continue;
             } else {
                 throw new IllegalStateException("Unsupported node: " + current);
@@ -91,7 +101,7 @@ final class ExpressionComputation implements LazyComputation {
     private MemoryView<?> executeTransfer(TransferNode transfer) {
         ExprNode inputNode = transfer.input();
         ExpressionGraph sourceGraph = new ExpressionGraph(inputNode, graph.inputs());
-        ComputeEngine engine = ComputeEngineContext.require();
+        ComputeEngine engine = resolveEngine(inputNode.device());
         MemoryView<?> sourceView =
                 engine.backendFor(inputNode.device()).execute(sourceGraph, inputs);
         if (inputNode.device().equals(transfer.device())) {
@@ -137,7 +147,7 @@ final class ExpressionComputation implements LazyComputation {
     private MemoryView<?> executeContiguous(ContiguousNode contiguous) {
         ExprNode inputNode = contiguous.input();
         ExpressionGraph sourceGraph = new ExpressionGraph(inputNode, graph.inputs());
-        ComputeEngine engine = ComputeEngineContext.require();
+        ComputeEngine engine = resolveEngine(inputNode.device());
         MemoryView<?> sourceView =
                 engine.backendFor(inputNode.device()).execute(sourceGraph, inputs);
         if (!contiguous.layout().isCongruentWith(sourceView.layout())) {
@@ -164,6 +174,33 @@ final class ExpressionComputation implements LazyComputation {
                         contiguous.layout());
         copyBetweenContexts(context, sourceView, context, targetView);
         return targetView;
+    }
+
+    private MemoryView<?> executeViewTransform(ViewTransformOp transform) {
+        ExprNode inputNode = transform.input();
+        ExpressionGraph sourceGraph = new ExpressionGraph(inputNode, graph.inputs());
+        ComputeEngine engine = resolveEngine(inputNode.device());
+        MemoryView<?> sourceView =
+                engine.backendFor(inputNode.device()).execute(sourceGraph, inputs);
+        if (sourceView.dataType() != transform.dataType()) {
+            throw new IllegalStateException(
+                    "View transform dtype mismatch: "
+                            + sourceView.dataType()
+                            + " vs "
+                            + transform.dataType());
+        }
+        if (!inputNode.device().equals(transform.device())) {
+            throw new IllegalStateException(
+                    "View transform device mismatch: "
+                            + inputNode.device()
+                            + " vs "
+                            + transform.device());
+        }
+        return MemoryView.of(
+                sourceView.memory(),
+                sourceView.byteOffset() + transform.byteOffsetDelta(),
+                sourceView.dataType(),
+                transform.layout());
     }
 
     private static void copyBetweenContexts(
@@ -202,6 +239,14 @@ final class ExpressionComputation implements LazyComputation {
         long byteOffset = -minOffset;
         long byteSize = maxOffset - minOffset + dataType.byteSize();
         return new OutputBufferSpec(byteOffset, byteSize);
+    }
+
+    private static ComputeEngine resolveEngine(Device device) {
+        ComputeEngine engine = ComputeEngineContext.current();
+        if (engine != null) {
+            return engine;
+        }
+        return Environment.current().engineFor(device);
     }
 
     private record OutputBufferSpec(long byteOffset, long byteSize) {}

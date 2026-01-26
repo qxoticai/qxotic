@@ -4,7 +4,7 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.Stride;
-import ai.qxotic.jota.Util;
+import ai.qxotic.jota.impl.ViewTransforms;
 import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryView;
@@ -108,25 +108,9 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
 
     @Override
     public MemoryView<T> view(Shape newShape) {
-        if (layout.shape().size() != newShape.size()) {
-            throw new IllegalArgumentException("total element count mismatch");
-        }
-
-        // CuTe semantics: if the layout spans a contiguous memory range [0, n-1],
-        // the new shape gets row-major strides (linear memory iteration order).
-        if (spansContiguousRange()) {
-            return MemoryViewImpl.create(Layout.rowMajor(newShape), dataType, byteOffset, memory);
-        }
-
-        // For non-contiguous layouts, check if reshape is still possible
-        long[] oldStrides = layout.stride().toArray();
-        if (!canReshapeWithoutCopy(layout.shape(), newShape, oldStrides)) {
-            throw new IllegalArgumentException("Cannot view: would require copying data");
-        }
-
-        long[] newStrides = computeReshapeStrides(layout.shape(), newShape, oldStrides);
-        Layout newLayout = Layout.of(newShape, Stride.template(newShape, newStrides));
-        return MemoryViewImpl.create(newLayout, dataType, byteOffset, memory);
+        ViewTransforms.ViewTransformSpec spec = ViewTransforms.view(layout, newShape);
+        return MemoryViewImpl.create(
+                spec.layout(), dataType, byteOffset + spec.byteOffsetDelta(), memory);
     }
 
     /**
@@ -154,105 +138,25 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
 
     @Override
     public MemoryView<T> permute(int... permutationIndices) {
-        Shape newShape = layout.shape().permute(permutationIndices);
-        Stride newStride = layout.stride().permute(permutationIndices);
-        Layout newLayout = Layout.of(newShape, newStride);
-        return MemoryViewImpl.create(newLayout, dataType, byteOffset, memory);
+        ViewTransforms.ViewTransformSpec spec = ViewTransforms.permute(layout, permutationIndices);
+        return MemoryViewImpl.create(
+                spec.layout(), dataType, byteOffset + spec.byteOffsetDelta(), memory);
     }
 
     @Override
     public MemoryView<T> expand(Shape newShape) {
-        Shape currentShape = layout.shape();
-
-        // Must have same rank (same nesting structure)
-        if (!currentShape.isCongruentWith(newShape)) {
-            throw new IllegalArgumentException(
-                    "expand requires congruent shapes: current="
-                            + currentShape
-                            + ", target="
-                            + newShape);
-        }
-
-        // Validate expansion is possible and compute new strides
-        long[] currentStrides = layout.stride().toArray();
-        long[] newStrides = new long[currentShape.flatRank()];
-
-        for (int i = 0; i < currentShape.flatRank(); i++) {
-            long currentDim = currentShape.flatAt(i);
-            long newDim = newShape.flatAt(i);
-
-            if (currentDim == 1) {
-                // Broadcasting: stride becomes 0
-                newStrides[i] = 0;
-            } else if (currentDim == newDim) {
-                // Dimension matches: preserve stride
-                newStrides[i] = currentStrides[i];
-            } else {
-                throw new IllegalArgumentException(
-                        "Cannot expand dimension "
-                                + i
-                                + " from size "
-                                + currentDim
-                                + " to "
-                                + newDim);
-            }
-        }
-
-        // Create new layout preserving nesting structure
-        Stride newStride = Stride.template(newShape, newStrides);
-        Layout newLayout = Layout.of(newShape, newStride);
-
-        return MemoryViewImpl.create(newLayout, dataType, byteOffset, memory);
+        ViewTransforms.ViewTransformSpec spec = ViewTransforms.expand(layout, newShape);
+        return MemoryViewImpl.create(
+                spec.layout(), dataType, byteOffset + spec.byteOffsetDelta(), memory);
     }
 
     @Override
     public MemoryView<T> slice(int _axis, long fromInclusive, long toExclusive, long indexStride) {
-        int axis = Util.wrapAround(_axis, layout.shape().rank());
-        long dimSize = layout.shape().size(axis);
-
-        if (indexStride == 0) {
-            throw new IllegalArgumentException("Step cannot be zero");
-        }
-
-        if (indexStride > 0) {
-            if (fromInclusive < 0 || toExclusive > dimSize || fromInclusive > toExclusive) {
-                throw new IllegalArgumentException(
-                        String.format(
-                                "Invalid slice range [%d, %d) with step %d for dimension %d of size %d",
-                                fromInclusive, toExclusive, indexStride, axis, dimSize));
-            }
-        } else {
-            if (fromInclusive < 0
-                    || fromInclusive >= dimSize
-                    || toExclusive < -1
-                    || toExclusive >= dimSize
-                    || fromInclusive < toExclusive) {
-                throw new IllegalArgumentException(
-                        String.format(
-                                "Invalid slice range [%d, %d) with step %d for dimension %d of size %d",
-                                fromInclusive, toExclusive, indexStride, axis, dimSize));
-            }
-        }
-
-        long newOffset = byteOffset + fromInclusive * byteStride.modeAt(axis).flatAt(0);
-
-        long length;
-        if (indexStride > 0) {
-            length = (toExclusive - fromInclusive + indexStride - 1) / indexStride;
-        } else {
-            length = (toExclusive - fromInclusive + indexStride + 1) / indexStride;
-        }
-        if (length < 0) {
-            length = 0;
-        }
-
-        Shape newModeShape = Shape.flat(length);
-        Shape newShape = layout.shape().replace(axis, newModeShape);
-        Stride newModeStride = layout.stride().modeAt(axis).scale(indexStride);
-        Stride newStride = layout.stride().replace(axis, newModeStride);
-
-        Layout newLayout = Layout.of(newShape, newStride);
-        return MemoryViewImpl.create(newLayout, dataType, newOffset, memory);
+        ViewTransforms.ViewTransformSpec spec =
+                ViewTransforms.slice(
+                        layout, dataType, _axis, fromInclusive, toExclusive, indexStride);
+        return MemoryViewImpl.create(
+                spec.layout(), dataType, byteOffset + spec.byteOffsetDelta(), memory);
     }
 
     private static boolean canReshapeWithoutCopy(

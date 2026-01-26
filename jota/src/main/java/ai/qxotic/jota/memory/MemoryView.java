@@ -5,7 +5,7 @@ import ai.qxotic.jota.memory.impl.MemoryViewFactory;
 import java.util.Arrays;
 import java.util.stream.IntStream;
 
-public interface MemoryView<B> {
+public interface MemoryView<B> extends View {
 
     Layout layout();
 
@@ -19,13 +19,18 @@ public interface MemoryView<B> {
 
     DataType dataType();
 
+    Memory<B> memory();
+
+    @Override
+    default Storage storage() {
+        return memory();
+    }
+
+    long byteOffset();
+
     default Stride byteStride() {
         return stride().scale(dataType().byteSize());
     }
-
-    Memory<B> memory();
-
-    long byteOffset();
 
     default boolean isBroadcasted() {
         return Arrays.stream(stride().toArray()).anyMatch(stride -> stride == 0L);

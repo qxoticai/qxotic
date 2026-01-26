@@ -2,6 +2,7 @@ package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
+import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.MemoryContext;
 import java.util.function.BiFunction;
@@ -41,52 +42,52 @@ final class LazyTensorOps implements TensorOps {
 
     @Override
     public Tensor max(Tensor a, Tensor b) {
-        return traceBinary(a, b, TensorOpsContext.require()::max);
+        return traceBinary(a, b, (t0, t1) -> TensorOpsContext.require().max(t0, t1));
     }
 
     @Override
     public Tensor negate(Tensor x) {
-        return traceUnary(x, TensorOpsContext.require()::negate);
+        return traceUnary(x, t -> TensorOpsContext.require().negate(t));
     }
 
     @Override
     public Tensor abs(Tensor x) {
-        return traceUnary(x, TensorOpsContext.require()::abs);
+        return traceUnary(x, t -> TensorOpsContext.require().abs(t));
     }
 
     @Override
     public Tensor exp(Tensor x) {
-        return traceUnary(x, TensorOpsContext.require()::exp);
+        return traceUnary(x, t -> TensorOpsContext.require().exp(t));
     }
 
     @Override
     public Tensor log(Tensor x) {
-        return traceUnary(x, TensorOpsContext.require()::log);
+        return traceUnary(x, t -> TensorOpsContext.require().log(t));
     }
 
     @Override
     public Tensor sqrt(Tensor x) {
-        return traceUnary(x, TensorOpsContext.require()::sqrt);
+        return traceUnary(x, t -> TensorOpsContext.require().sqrt(t));
     }
 
     @Override
     public Tensor sin(Tensor x) {
-        return traceUnary(x, TensorOpsContext.require()::sin);
+        return traceUnary(x, t -> TensorOpsContext.require().sin(t));
     }
 
     @Override
     public Tensor cos(Tensor x) {
-        return traceUnary(x, TensorOpsContext.require()::cos);
+        return traceUnary(x, t -> TensorOpsContext.require().cos(t));
     }
 
     @Override
     public Tensor tanh(Tensor x) {
-        return traceUnary(x, TensorOpsContext.require()::tanh);
+        return traceUnary(x, t -> TensorOpsContext.require().tanh(t));
     }
 
     @Override
     public Tensor reciprocal(Tensor x) {
-        return traceUnary(x, TensorOpsContext.require()::reciprocal);
+        return traceUnary(x, t -> TensorOpsContext.require().reciprocal(t));
     }
 
     @Override
@@ -96,12 +97,12 @@ final class LazyTensorOps implements TensorOps {
 
     @Override
     public Tensor contiguous(Tensor x) {
-        return traceUnary(x, TensorOpsContext.require()::contiguous);
+        return traceUnary(x, t -> TensorOpsContext.require().contiguous(t));
     }
 
     @Override
     public Tensor bitwiseNot(Tensor x) {
-        return traceUnary(x, TensorOpsContext.require()::bitwiseNot);
+        return traceUnary(x, t -> TensorOpsContext.require().bitwiseNot(t));
     }
 
     @Override
@@ -121,7 +122,7 @@ final class LazyTensorOps implements TensorOps {
 
     @Override
     public Tensor logicalNot(Tensor x) {
-        return traceUnary(x, TensorOpsContext.require()::logicalNot);
+        return traceUnary(x, t -> TensorOpsContext.require().logicalNot(t));
     }
 
     @Override
@@ -182,12 +183,12 @@ final class LazyTensorOps implements TensorOps {
 
     @Override
     public Tensor max(Tensor x, boolean keepDims, int _axis, int... _axes) {
-        return traceUnary(x, TensorOpsContext.require()::max);
+        return traceUnary(x, t -> TensorOpsContext.require().max(t));
     }
 
     @Override
     public Tensor min(Tensor x, boolean keepDims, int _axis, int... _axes) {
-        return traceUnary(x, TensorOpsContext.require()::min);
+        return traceUnary(x, t -> TensorOpsContext.require().min(t));
     }
 
     @Override
@@ -201,33 +202,14 @@ final class LazyTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor transpose(Tensor x, int axis0, int axis1) {
-        return traceUnary(x, TensorOpsContext.require()::transpose);
+    public Tensor viewTransform(Tensor x, Layout layout, long byteOffsetDelta, String hint) {
+        return traceUnary(
+                x, t -> TensorOpsContext.require().viewTransform(t, layout, byteOffsetDelta, hint));
     }
 
     @Override
     public Tensor reshape(Tensor x, Shape newShape) {
         return traceUnary(x, t -> TensorOpsContext.require().reshape(t, newShape));
-    }
-
-    @Override
-    public Tensor view(Tensor x, Shape newShape) {
-        return traceUnary(x, t -> TensorOpsContext.require().view(t, newShape));
-    }
-
-    @Override
-    public Tensor broadcast(Tensor x, Shape targetShape) {
-        return traceUnary(x, t -> TensorOpsContext.require().broadcast(t, targetShape));
-    }
-
-    @Override
-    public Tensor expand(Tensor x, Shape targetShape) {
-        return traceUnary(x, t -> TensorOpsContext.require().expand(t, targetShape));
-    }
-
-    @Override
-    public Tensor slice(Tensor x, int axis, long start, long end) {
-        return traceUnary(x, t -> TensorOpsContext.require().slice(t, axis, start, end));
     }
 
     @Override

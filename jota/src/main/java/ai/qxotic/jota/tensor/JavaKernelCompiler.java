@@ -163,9 +163,6 @@ final class JavaKernelCompiler {
 
             String outputVar = emitNode(graph.root());
             if (style == KernelStyle.STRIDED) {
-                source.append("    long[] shape = output.shape().toArray();\n");
-                source.append("    long[] outStride = output.byteStride().toArray();\n");
-                source.append("    long outBaseOffset = output.byteOffset();\n");
                 source.append(
                         "    MemorySegment outBase = (MemorySegment) output.memory().base();\n");
                 for (int i = 0; i < graph.inputs().size(); i++) {
@@ -175,14 +172,6 @@ final class JavaKernelCompiler {
                                     + " = (MemorySegment) inputs["
                                     + i
                                     + "].memory().base();\n");
-                    source.append(
-                            "    long in" + i + "BaseOffset = inputs[" + i + "].byteOffset();\n");
-                    source.append(
-                            "    long[] in"
-                                    + i
-                                    + "Stride = inputs["
-                                    + i
-                                    + "].byteStride().toArray();\n");
                 }
             }
             source.append("    long size = output.shape().size();\n");
@@ -226,9 +215,13 @@ final class JavaKernelCompiler {
                     stack.push(transfer.input());
                 } else if (node instanceof ContiguousNode contiguous) {
                     stack.push(contiguous.input());
+                } else if (node instanceof ViewTransformOp transform) {
+                    stack.push(transform.input());
                 } else if (node instanceof CastNode cast) {
                     stack.push(cast.input());
-                } else if (node instanceof InputNode || node instanceof ScalarNode) {
+                } else if (node instanceof InputNode
+                        || node instanceof ScalarNode
+                        || node instanceof RangeNode) {
                     continue;
                 } else {
                     throw new IllegalStateException("Unsupported node: " + node);
@@ -879,25 +872,6 @@ final class JavaKernelCompiler {
                     source.append("  }\n");
                 }
             }
-            if (helpers.contains(HelperMethod.OFFSET_FOR_INDEX)) {
-                source.append("\n");
-                source.append("  private static long offsetForIndex(\n");
-                source.append(
-                        "          long index, long baseOffset, long[] shape, long[] stride) {\n");
-                source.append("    long offset = baseOffset;\n");
-                source.append("    long remaining = index;\n");
-                source.append("    for (int dim = shape.length - 1; dim >= 0; dim--) {\n");
-                source.append("      long size = shape[dim];\n");
-                source.append("      if (size == 0) {\n");
-                source.append("        return baseOffset;\n");
-                source.append("      }\n");
-                source.append("      long coord = remaining % size;\n");
-                source.append("      remaining /= size;\n");
-                source.append("      offset += coord * stride[dim];\n");
-                source.append("    }\n");
-                source.append("    return offset;\n");
-                source.append("  }\n");
-            }
         }
 
         private String emitNode(ExprNode node) {
@@ -916,6 +890,12 @@ final class JavaKernelCompiler {
                 String var = nextVar();
                 names.put(node, var);
                 lines.add(typeFor(node.dataType()) + " " + var + " = " + literal(scalar) + ";");
+                return var;
+            }
+            if (node instanceof RangeNode) {
+                String var = nextVar();
+                names.put(node, var);
+                lines.add(typeFor(node.dataType()) + " " + var + " = i;");
                 return var;
             }
             if (node instanceof UnaryNode unary) {
@@ -971,9 +951,11 @@ final class JavaKernelCompiler {
                                 + ");");
                 return var;
             }
-            if (node instanceof TransferNode || node instanceof ContiguousNode) {
+            if (node instanceof TransferNode
+                    || node instanceof ContiguousNode
+                    || node instanceof ViewTransformOp) {
                 throw new IllegalStateException(
-                        "Transfer/contiguous operations must be the final node in the graph");
+                        "Transfer/contiguous/viewTransform operations must be the final node in the graph");
             }
             if (node instanceof CastNode cast) {
                 String inputVar = emitNode(cast.input());
@@ -1008,6 +990,9 @@ final class JavaKernelCompiler {
             if (node instanceof ScalarNode scalar) {
                 return literal(scalar);
             }
+            if (node instanceof RangeNode) {
+                return "i";
+            }
             if (node instanceof UnaryNode unary) {
                 String inputExpr = expressionForNode(unary.input(), indexVar, overrides);
                 return unaryExpression(unary.op(), inputExpr, node.dataType());
@@ -1030,9 +1015,11 @@ final class JavaKernelCompiler {
                 String guard = booleanExpression(conditionExpr, ternary.condition().dataType());
                 return "(" + guard + " ? " + trueExpr + " : " + falseExpr + ")";
             }
-            if (node instanceof TransferNode || node instanceof ContiguousNode) {
+            if (node instanceof TransferNode
+                    || node instanceof ContiguousNode
+                    || node instanceof ViewTransformOp) {
                 throw new IllegalStateException(
-                        "Transfer/contiguous operations must be the final node in the graph");
+                        "Transfer/contiguous/viewTransform operations must be the final node in the graph");
             }
             if (node instanceof CastNode cast) {
                 String inputExpr = expressionForNode(cast.input(), indexVar, overrides);
@@ -1055,16 +1042,13 @@ final class JavaKernelCompiler {
                 if (style == KernelStyle.CONTIGUOUS) {
                     return "readByte(inputs[" + input.index() + "], " + indexVar + ")";
                 }
-                helpers.add(HelperMethod.OFFSET_FOR_INDEX);
                 return "readByte(in"
                         + input.index()
-                        + ", offsetForIndex("
+                        + ", Indexing.linearToOffset(inputs["
+                        + input.index()
+                        + "], "
                         + indexVar
-                        + ", in"
-                        + input.index()
-                        + "BaseOffset, shape, in"
-                        + input.index()
-                        + "Stride))";
+                        + "))";
             }
             if (input.dataType() == DataType.I16
                     || input.dataType() == DataType.FP16
@@ -1073,80 +1057,65 @@ final class JavaKernelCompiler {
                 if (style == KernelStyle.CONTIGUOUS) {
                     return "readShort(inputs[" + input.index() + "], " + indexVar + ")";
                 }
-                helpers.add(HelperMethod.OFFSET_FOR_INDEX);
                 return "readShort(in"
                         + input.index()
-                        + ", offsetForIndex("
+                        + ", Indexing.linearToOffset(inputs["
+                        + input.index()
+                        + "], "
                         + indexVar
-                        + ", in"
-                        + input.index()
-                        + "BaseOffset, shape, in"
-                        + input.index()
-                        + "Stride))";
+                        + "))";
             }
             if (input.dataType() == DataType.I32) {
                 helpers.add(HelperMethod.READ_INT);
                 if (style == KernelStyle.CONTIGUOUS) {
                     return "readInt(inputs[" + input.index() + "], " + indexVar + ")";
                 }
-                helpers.add(HelperMethod.OFFSET_FOR_INDEX);
                 return "readInt(in"
                         + input.index()
-                        + ", offsetForIndex("
+                        + ", Indexing.linearToOffset(inputs["
+                        + input.index()
+                        + "], "
                         + indexVar
-                        + ", in"
-                        + input.index()
-                        + "BaseOffset, shape, in"
-                        + input.index()
-                        + "Stride))";
+                        + "))";
             }
             if (input.dataType() == DataType.I64) {
                 helpers.add(HelperMethod.READ_LONG);
                 if (style == KernelStyle.CONTIGUOUS) {
                     return "readLong(inputs[" + input.index() + "], " + indexVar + ")";
                 }
-                helpers.add(HelperMethod.OFFSET_FOR_INDEX);
                 return "readLong(in"
                         + input.index()
-                        + ", offsetForIndex("
+                        + ", Indexing.linearToOffset(inputs["
+                        + input.index()
+                        + "], "
                         + indexVar
-                        + ", in"
-                        + input.index()
-                        + "BaseOffset, shape, in"
-                        + input.index()
-                        + "Stride))";
+                        + "))";
             }
             if (input.dataType() == DataType.FP32) {
                 helpers.add(HelperMethod.READ_FLOAT);
                 if (style == KernelStyle.CONTIGUOUS) {
                     return "readFloat(inputs[" + input.index() + "], " + indexVar + ")";
                 }
-                helpers.add(HelperMethod.OFFSET_FOR_INDEX);
                 return "readFloat(in"
                         + input.index()
-                        + ", offsetForIndex("
+                        + ", Indexing.linearToOffset(inputs["
+                        + input.index()
+                        + "], "
                         + indexVar
-                        + ", in"
-                        + input.index()
-                        + "BaseOffset, shape, in"
-                        + input.index()
-                        + "Stride))";
+                        + "))";
             }
             if (input.dataType() == DataType.FP64) {
                 helpers.add(HelperMethod.READ_DOUBLE);
                 if (style == KernelStyle.CONTIGUOUS) {
                     return "readDouble(inputs[" + input.index() + "], " + indexVar + ")";
                 }
-                helpers.add(HelperMethod.OFFSET_FOR_INDEX);
                 return "readDouble(in"
                         + input.index()
-                        + ", offsetForIndex("
+                        + ", Indexing.linearToOffset(inputs["
+                        + input.index()
+                        + "], "
                         + indexVar
-                        + ", in"
-                        + input.index()
-                        + "BaseOffset, shape, in"
-                        + input.index()
-                        + "Stride))";
+                        + "))";
             }
             throw unsupported(input.dataType(), "input");
         }
@@ -1197,10 +1166,7 @@ final class JavaKernelCompiler {
                 if (style == KernelStyle.CONTIGUOUS) {
                     return "writeByte(output, i, " + valueVar + ");";
                 }
-                helpers.add(HelperMethod.OFFSET_FOR_INDEX);
-                return "writeByte(outBase, offsetForIndex(i, outBaseOffset, shape, outStride), "
-                        + valueVar
-                        + ");";
+                return "writeByte(outBase, Indexing.linearToOffset(output, i), " + valueVar + ");";
             }
             if (node.dataType() == DataType.I16
                     || node.dataType() == DataType.FP16
@@ -1209,48 +1175,35 @@ final class JavaKernelCompiler {
                 if (style == KernelStyle.CONTIGUOUS) {
                     return "writeShort(output, i, " + valueVar + ");";
                 }
-                helpers.add(HelperMethod.OFFSET_FOR_INDEX);
-                return "writeShort(outBase, offsetForIndex(i, outBaseOffset, shape, outStride), "
-                        + valueVar
-                        + ");";
+                return "writeShort(outBase, Indexing.linearToOffset(output, i), " + valueVar + ");";
             }
             if (node.dataType() == DataType.I32) {
                 helpers.add(HelperMethod.WRITE_INT);
                 if (style == KernelStyle.CONTIGUOUS) {
                     return "writeInt(output, i, " + valueVar + ");";
                 }
-                helpers.add(HelperMethod.OFFSET_FOR_INDEX);
-                return "writeInt(outBase, offsetForIndex(i, outBaseOffset, shape, outStride), "
-                        + valueVar
-                        + ");";
+                return "writeInt(outBase, Indexing.linearToOffset(output, i), " + valueVar + ");";
             }
             if (node.dataType() == DataType.I64) {
                 helpers.add(HelperMethod.WRITE_LONG);
                 if (style == KernelStyle.CONTIGUOUS) {
                     return "writeLong(output, i, " + valueVar + ");";
                 }
-                helpers.add(HelperMethod.OFFSET_FOR_INDEX);
-                return "writeLong(outBase, offsetForIndex(i, outBaseOffset, shape, outStride), "
-                        + valueVar
-                        + ");";
+                return "writeLong(outBase, Indexing.linearToOffset(output, i), " + valueVar + ");";
             }
             if (node.dataType() == DataType.FP32) {
                 helpers.add(HelperMethod.WRITE_FLOAT);
                 if (style == KernelStyle.CONTIGUOUS) {
                     return "writeFloat(output, i, " + valueVar + ");";
                 }
-                helpers.add(HelperMethod.OFFSET_FOR_INDEX);
-                return "writeFloat(outBase, offsetForIndex(i, outBaseOffset, shape, outStride), "
-                        + valueVar
-                        + ");";
+                return "writeFloat(outBase, Indexing.linearToOffset(output, i), " + valueVar + ");";
             }
             if (node.dataType() == DataType.FP64) {
                 helpers.add(HelperMethod.WRITE_DOUBLE);
                 if (style == KernelStyle.CONTIGUOUS) {
                     return "writeDouble(output, i, " + valueVar + ");";
                 }
-                helpers.add(HelperMethod.OFFSET_FOR_INDEX);
-                return "writeDouble(outBase, offsetForIndex(i, outBaseOffset, shape, outStride), "
+                return "writeDouble(outBase, Indexing.linearToOffset(output, i), "
                         + valueVar
                         + ");";
             }
@@ -1609,8 +1562,7 @@ final class JavaKernelCompiler {
             WRITE_FLOAT,
             WRITE_INT,
             WRITE_LONG,
-            WRITE_DOUBLE,
-            OFFSET_FOR_INDEX
+            WRITE_DOUBLE
         }
     }
 }

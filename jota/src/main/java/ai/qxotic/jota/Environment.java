@@ -1,6 +1,7 @@
 package ai.qxotic.jota;
 
 import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.tensor.ComputeEngine;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
@@ -15,7 +16,7 @@ public final class Environment {
                     Device.PANAMA,
                     DataTypeImpl.defaultFloatValue(),
                     DeviceRegistry.global(),
-                    ExecutionMode.EAGER);
+                    ExecutionMode.LAZY);
 
     private final Device defaultDevice;
     private final DataType defaultFloat;
@@ -23,7 +24,7 @@ public final class Environment {
     private final ExecutionMode executionMode;
 
     public Environment(Device defaultDevice, DataType defaultFloat, DeviceRegistry registry) {
-        this(defaultDevice, defaultFloat, registry, ExecutionMode.EAGER);
+        this(defaultDevice, defaultFloat, registry, ExecutionMode.LAZY);
     }
 
     public Environment(
@@ -80,6 +81,10 @@ public final class Environment {
 
     public DeviceRegistry registry() {
         return registry;
+    }
+
+    public ComputeEngine engineFor(Device device) {
+        return registry.engine(device);
     }
 
     public ExecutionMode executionMode() {

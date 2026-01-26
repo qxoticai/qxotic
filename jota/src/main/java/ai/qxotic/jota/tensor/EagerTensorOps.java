@@ -382,10 +382,15 @@ public class EagerTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor transpose(Tensor x, int axis0, int axis1) {
-        MemoryView<?> view = x.materialize();
-        MemoryView<?> transposed = view.transpose(axis0, axis1);
-        return Tensor.of(transposed);
+    public Tensor viewTransform(Tensor x, Layout layout, long byteOffsetDelta, String hint) {
+        MemoryView<?> sourceView = x.materialize();
+        MemoryView<?> transformed =
+                MemoryView.of(
+                        sourceView.memory(),
+                        sourceView.byteOffset() + byteOffsetDelta,
+                        sourceView.dataType(),
+                        layout);
+        return Tensor.of(transformed);
     }
 
     @Override
@@ -399,34 +404,6 @@ public class EagerTensorOps implements TensorOps {
             Tensor contiguousTensor = contiguous(x);
             return view(contiguousTensor, newShape);
         }
-    }
-
-    @Override
-    public Tensor view(Tensor x, Shape newShape) {
-        MemoryView<?> memView = x.materialize();
-        MemoryView<?> reshaped = memView.view(newShape);
-        return Tensor.of(reshaped);
-    }
-
-    @Override
-    public Tensor broadcast(Tensor x, Shape targetShape) {
-        MemoryView<?> view = x.materialize();
-        MemoryView<?> broadcasted = view.broadcast(targetShape);
-        return Tensor.of(broadcasted);
-    }
-
-    @Override
-    public Tensor expand(Tensor x, Shape targetShape) {
-        MemoryView<?> view = x.materialize();
-        MemoryView<?> expanded = view.expand(targetShape);
-        return Tensor.of(expanded);
-    }
-
-    @Override
-    public Tensor slice(Tensor x, int axis, long start, long end) {
-        MemoryView<?> view = x.materialize();
-        MemoryView<?> sliced = view.slice(axis, start, end);
-        return Tensor.of(sliced);
     }
 
     @Override

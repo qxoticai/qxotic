@@ -10,8 +10,8 @@ final class PanamaContext implements MemoryContext<MemorySegment> {
     private final MemoryAllocator<MemorySegment> memoryAllocator;
 
     PanamaContext(MemoryAllocator<MemorySegment> memoryAllocator) {
-        this.memoryAllocator = Objects.requireNonNull(memoryAllocator);
         assert memoryAllocator.device().belongsTo(Device.PANAMA);
+        this.memoryAllocator = Objects.requireNonNull(memoryAllocator);
     }
 
     @Override
