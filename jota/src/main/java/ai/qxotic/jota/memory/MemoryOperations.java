@@ -78,13 +78,19 @@ public interface MemoryOperations<B> {
             throw new IllegalArgumentException("Negative size");
         }
         checkGranularity(src, srcByteOffset, dst, dstByteOffset, byteSize);
-        int log2 = 64 - Long.numberOfLeadingZeros(byteSize);
-        long bufferSize = Math.max(4 << 10, byteSize / Math.max(1, log2));
+        long bufferSize = computeSizeBufferSize(byteSize);
         try (var arena = Arena.ofConfined()) {
             MemorySegment memorySegment = arena.allocate(bufferSize, 4 << 10);
             Memory<MemorySegment> memory = MemoryFactory.ofMemorySegment(memorySegment);
             copy(srcOps, src, srcByteOffset, dstOps, dst, dstByteOffset, byteSize, memory);
         }
+    }
+
+    private static long computeSizeBufferSize(long byteSize) {
+        long chunkSize = 4 << 10; // 4KB
+        int log2 = 64 - Long.numberOfLeadingZeros(byteSize / chunkSize + 1);
+        long bufferSize = Math.max(4 << 10, byteSize / Math.max(1, log2));
+        return bufferSize;
     }
 
     private static <S, T> void checkGranularity(

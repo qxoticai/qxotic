@@ -34,7 +34,7 @@ public interface Tensor {
     }
 
     default boolean isScalar() {
-        return size() == 1;
+        return shape().isScalar();
     }
 
     /**
@@ -70,7 +70,12 @@ public interface Tensor {
 
     default Tensor add(Tensor other) {
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.ADD)
-                .orElseGet(() -> TensorOpsContext.require().add(this, broadcastIfScalar(other)));
+                .orElseGet(
+                        () ->
+                                TensorOpsContext.require()
+                                        .add(
+                                                broadcastLeftScalar(this, other),
+                                                broadcastRightScalar(this, other)));
     }
 
     default Tensor add(int scalar) {
@@ -92,7 +97,11 @@ public interface Tensor {
     default Tensor subtract(Tensor other) {
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.SUBTRACT)
                 .orElseGet(
-                        () -> TensorOpsContext.require().subtract(this, broadcastIfScalar(other)));
+                        () ->
+                                TensorOpsContext.require()
+                                        .subtract(
+                                                broadcastLeftScalar(this, other),
+                                                broadcastRightScalar(this, other)));
     }
 
     default Tensor subtract(int scalar) {
@@ -114,7 +123,11 @@ public interface Tensor {
     default Tensor multiply(Tensor other) {
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.MULTIPLY)
                 .orElseGet(
-                        () -> TensorOpsContext.require().multiply(this, broadcastIfScalar(other)));
+                        () ->
+                                TensorOpsContext.require()
+                                        .multiply(
+                                                broadcastLeftScalar(this, other),
+                                                broadcastRightScalar(this, other)));
     }
 
     default Tensor multiply(int scalar) {
@@ -135,7 +148,12 @@ public interface Tensor {
 
     default Tensor divide(Tensor other) {
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.DIVIDE)
-                .orElseGet(() -> TensorOpsContext.require().divide(this, broadcastIfScalar(other)));
+                .orElseGet(
+                        () ->
+                                TensorOpsContext.require()
+                                        .divide(
+                                                broadcastLeftScalar(this, other),
+                                                broadcastRightScalar(this, other)));
     }
 
     default Tensor divide(int scalar) {
@@ -156,7 +174,12 @@ public interface Tensor {
 
     default Tensor min(Tensor other) {
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.MIN)
-                .orElseGet(() -> TensorOpsContext.require().min(this, broadcastIfScalar(other)));
+                .orElseGet(
+                        () ->
+                                TensorOpsContext.require()
+                                        .min(
+                                                broadcastLeftScalar(this, other),
+                                                broadcastRightScalar(this, other)));
     }
 
     default Tensor min() {
@@ -173,7 +196,12 @@ public interface Tensor {
 
     default Tensor max(Tensor other) {
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.MAX)
-                .orElseGet(() -> TensorOpsContext.require().max(this, broadcastIfScalar(other)));
+                .orElseGet(
+                        () ->
+                                TensorOpsContext.require()
+                                        .max(
+                                                broadcastLeftScalar(this, other),
+                                                broadcastRightScalar(this, other)));
     }
 
     default Tensor max() {
@@ -288,13 +316,19 @@ public interface Tensor {
                 .orElseGet(
                         () ->
                                 TensorOpsContext.require()
-                                        .bitwiseAnd(this, broadcastIfScalar(other)));
+                                        .bitwiseAnd(
+                                                broadcastLeftScalar(this, other),
+                                                broadcastRightScalar(this, other)));
     }
 
     default Tensor bitwiseOr(Tensor other) {
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.BITWISE_OR)
                 .orElseGet(
-                        () -> TensorOpsContext.require().bitwiseOr(this, broadcastIfScalar(other)));
+                        () ->
+                                TensorOpsContext.require()
+                                        .bitwiseOr(
+                                                broadcastLeftScalar(this, other),
+                                                broadcastRightScalar(this, other)));
     }
 
     default Tensor bitwiseXor(Tensor other) {
@@ -302,7 +336,9 @@ public interface Tensor {
                 .orElseGet(
                         () ->
                                 TensorOpsContext.require()
-                                        .bitwiseXor(this, broadcastIfScalar(other)));
+                                        .bitwiseXor(
+                                                broadcastLeftScalar(this, other),
+                                                broadcastRightScalar(this, other)));
     }
 
     default Tensor logicalNot() {
@@ -311,26 +347,38 @@ public interface Tensor {
     }
 
     default Tensor logicalAnd(Tensor other) {
-        return TensorOpsContext.require().logicalAnd(this, other);
+        return TensorOpsContext.require()
+                .logicalAnd(broadcastLeftScalar(this, other), broadcastRightScalar(this, other));
     }
 
     default Tensor logicalOr(Tensor other) {
-        return TensorOpsContext.require().logicalOr(this, other);
+        return TensorOpsContext.require()
+                .logicalOr(broadcastLeftScalar(this, other), broadcastRightScalar(this, other));
     }
 
     default Tensor logicalXor(Tensor other) {
-        return TensorOpsContext.require().logicalXor(this, other);
+        return TensorOpsContext.require()
+                .logicalXor(broadcastLeftScalar(this, other), broadcastRightScalar(this, other));
     }
 
     default Tensor equal(Tensor other) {
         return ConstantFolder.tryFoldCompareOp(this, other, BinaryOp.EQUAL)
-                .orElseGet(() -> TensorOpsContext.require().equal(this, broadcastIfScalar(other)));
+                .orElseGet(
+                        () ->
+                                TensorOpsContext.require()
+                                        .equal(
+                                                broadcastLeftScalar(this, other),
+                                                broadcastRightScalar(this, other)));
     }
 
     default Tensor lessThan(Tensor other) {
         return ConstantFolder.tryFoldCompareOp(this, other, BinaryOp.LESS_THAN)
                 .orElseGet(
-                        () -> TensorOpsContext.require().lessThan(this, broadcastIfScalar(other)));
+                        () ->
+                                TensorOpsContext.require()
+                                        .lessThan(
+                                                broadcastLeftScalar(this, other),
+                                                broadcastRightScalar(this, other)));
     }
 
     default Tensor notEqual(Tensor other) {
@@ -466,16 +514,38 @@ public interface Tensor {
         }
     }
 
-    private Tensor broadcastIfScalar(Tensor other) {
-        if (!other.isScalar() || this.isScalar()) {
-            return other;
+    /** Broadcasts the left operand to match right's shape if left is a scalar and right is not. */
+    private static Tensor broadcastLeftScalar(Tensor left, Tensor right) {
+        if (!left.isScalar() || right.isScalar()) {
+            return left;
         }
-        // Extract value from scalar and broadcast to this shape
-        return other.computation()
+        return left.computation()
                 .filter(ConstantComputation.class::isInstance)
                 .map(ConstantComputation.class::cast)
-                .map(c -> Tensor.full(c.value(), c.dataType(), shape()))
-                .orElse(other);
+                .map(c -> Tensor.full(c.value(), c.dataType(), right.shape()))
+                .orElse(left);
+    }
+
+    /** Broadcasts the right operand to match left's shape if right is a scalar and left is not. */
+    private static Tensor broadcastRightScalar(Tensor left, Tensor right) {
+        if (!right.isScalar() || left.isScalar()) {
+            return right;
+        }
+        return right.computation()
+                .filter(ConstantComputation.class::isInstance)
+                .map(ConstantComputation.class::cast)
+                .map(c -> Tensor.full(c.value(), c.dataType(), left.shape()))
+                .orElse(right);
+    }
+
+    /** Broadcasts the other operand if it is scalar and this is not. */
+    private Tensor broadcastIfScalar(Tensor other) {
+        return broadcastRightScalar(this, other);
+    }
+
+    /** Broadcasts this operand if it is scalar and other is not. */
+    private Tensor broadcastSelfIfScalar(Tensor other) {
+        return broadcastLeftScalar(this, other);
     }
 
     default Tensor reciprocal() {

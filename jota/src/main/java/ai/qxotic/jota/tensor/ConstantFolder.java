@@ -1,6 +1,7 @@
 package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.DataType;
+import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.TypeRules;
 import java.util.Optional;
 
@@ -15,12 +16,20 @@ final class ConstantFolder {
                 .map(ConstantComputation.class::cast);
     }
 
-    private static Tensor scalarOf(Number value, DataType type) {
-        if (type.isIntegral() || type == DataType.BOOL) {
-            return Tensor.scalar(value.longValue(), type);
-        } else {
-            return Tensor.scalar(value.doubleValue(), type);
+    /**
+     * Creates a broadcasted constant tensor with the given value, type, and shape.
+     * For true scalars (shape.isScalar()), creates a scalar tensor.
+     */
+    private static Tensor broadcastedOf(Number value, DataType type, Shape shape) {
+        if (shape.isScalar()) {
+            if (type.isIntegral() || type == DataType.BOOL) {
+                return Tensor.scalar(value.longValue(), type);
+            } else {
+                return Tensor.scalar(value.doubleValue(), type);
+            }
         }
+        // Preserve the shape by creating a broadcasted constant
+        return Tensor.full(value, type, shape);
     }
 
     // ========== Binary Operations ==========
@@ -35,7 +44,9 @@ final class ConstantFolder {
         ConstantComputation rc = rightConst.get();
         DataType resultType = TypeRules.promote(lc.dataType(), rc.dataType());
         Number result = evalBinary(lc.value(), rc.value(), resultType, op);
-        return Optional.of(scalarOf(result, resultType));
+        // Use the larger shape to preserve broadcasting semantics
+        Shape resultShape = lc.shape().size() >= rc.shape().size() ? lc.shape() : rc.shape();
+        return Optional.of(broadcastedOf(result, resultType, resultShape));
     }
 
     static Number evalBinary(Number a, Number b, DataType type, BinaryOp op) {
@@ -136,7 +147,8 @@ final class ConstantFolder {
         ConstantComputation c = constant.get();
         try {
             Number result = evalUnary(c.value(), c.dataType(), op);
-            return Optional.of(scalarOf(result, c.dataType()));
+            // Preserve the original shape
+            return Optional.of(broadcastedOf(result, c.dataType(), c.shape()));
         } catch (UnsupportedOperationException e) {
             return Optional.empty();
         }
@@ -288,9 +300,10 @@ final class ConstantFolder {
         if (constant.isEmpty()) {
             return Optional.empty();
         }
-        Number value = constant.get().value();
-        Number result = cast(value, targetType);
-        return Optional.of(scalarOf(result, targetType));
+        ConstantComputation c = constant.get();
+        Number result = cast(c.value(), targetType);
+        // Preserve the original shape
+        return Optional.of(broadcastedOf(result, targetType, c.shape()));
     }
 
     static Number cast(Number value, DataType targetType) {

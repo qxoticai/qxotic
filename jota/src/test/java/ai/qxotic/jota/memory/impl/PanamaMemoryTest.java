@@ -33,18 +33,11 @@ class PanamaMemoryTest {
     }
 
     @Test
-    void testAsReadOnly() {
+    void testReadOnlySegment() {
         try (Arena arena = Arena.ofConfined()) {
-            MemorySegment segment = arena.allocate(40);
-            PanamaMemory memory = PanamaMemory.of(segment);
-            assertFalse(memory.isReadOnly());
-
-            PanamaMemory readOnly = memory.asReadOnly();
-            assertTrue(readOnly.isReadOnly());
-
-            // Calling asReadOnly on already read-only memory should return same instance
-            PanamaMemory readOnly2 = readOnly.asReadOnly();
-            assertSame(readOnly, readOnly2);
+            MemorySegment segment = arena.allocate(40).asReadOnly();
+            Memory<MemorySegment> memory = MemoryFactory.ofMemorySegment(segment);
+            assertTrue(memory.isReadOnly());
         }
     }
 
@@ -59,7 +52,7 @@ class PanamaMemoryTest {
     void testToString() {
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment segment = arena.allocate(40);
-            PanamaMemory memory = PanamaMemory.of(segment);
+            Memory<MemorySegment> memory = MemoryFactory.ofMemorySegment(segment);
             String str = memory.toString();
             assertTrue(str.contains("byteSize=40"));
             assertFalse(str.contains("readOnly=true")); // rw

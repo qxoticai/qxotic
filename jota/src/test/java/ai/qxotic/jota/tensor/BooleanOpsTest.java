@@ -7,6 +7,7 @@ import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.*;
 import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.panama.JavaComputeEngine;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.BeforeAll;

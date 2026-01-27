@@ -10,7 +10,8 @@ import org.junit.jupiter.api.Test;
 
 class UnsafeAllocatorTest {
 
-    static final ScopedMemoryAllocator<MemorySegment> unsafeAllocator = UnsafeAllocator.instance();
+    static final ScopedMemoryAllocator<MemorySegment> unsafeAllocator =
+            MemoryAllocatorFactory.ofPanama();
 
     @Test
     void testAllocateMemory() {
