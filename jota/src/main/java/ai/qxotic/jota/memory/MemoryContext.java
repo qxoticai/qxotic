@@ -137,5 +137,6 @@ public interface MemoryContext<B> extends AutoCloseable {
     @Override
     void close();
 
+    @Override
     String toString();
 }

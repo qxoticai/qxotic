@@ -1,6 +1,12 @@
 package ai.qxotic.jota;
 
+import ai.qxotic.jota.backend.Backend;
+import ai.qxotic.jota.backend.BackendRegistry;
+import ai.qxotic.jota.backend.DefaultBackendRegistry;
+import ai.qxotic.jota.hip.HipBackend;
+import ai.qxotic.jota.hip.HipRuntime;
 import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.panama.PanamaBackend;
 import ai.qxotic.jota.tensor.ComputeEngine;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
@@ -15,12 +21,13 @@ public final class Environment {
             new Environment(
                     Device.PANAMA,
                     DataTypeImpl.defaultFloatValue(),
-                    DeviceRegistry.global(),
+                    buildDefaultBackends(),
                     ExecutionMode.LAZY);
 
     private final Device defaultDevice;
     private final DataType defaultFloat;
     private final DeviceRegistry registry;
+    private final BackendRegistry backends;
     private final ExecutionMode executionMode;
 
     public Environment(Device defaultDevice, DataType defaultFloat, DeviceRegistry registry) {
@@ -32,9 +39,22 @@ public final class Environment {
             DataType defaultFloat,
             DeviceRegistry registry,
             ExecutionMode executionMode) {
+        this(
+                defaultDevice,
+                defaultFloat,
+                DefaultBackendRegistry.fromDeviceRegistry(registry),
+                executionMode);
+    }
+
+    public Environment(
+            Device defaultDevice,
+            DataType defaultFloat,
+            BackendRegistry backends,
+            ExecutionMode executionMode) {
         this.defaultDevice = Objects.requireNonNull(defaultDevice, "defaultDevice");
         this.defaultFloat = Objects.requireNonNull(defaultFloat, "defaultFloat");
-        this.registry = Objects.requireNonNull(registry, "registry");
+        this.backends = Objects.requireNonNull(backends, "backends");
+        this.registry = DeviceRegistry.fromBackends(backends);
         this.executionMode = Objects.requireNonNull(executionMode, "executionMode");
     }
 
@@ -44,7 +64,7 @@ public final class Environment {
 
     @SuppressWarnings("unchecked")
     public MemoryContext<MemorySegment> panamaContext() {
-        return (MemoryContext<MemorySegment>) registry.context(Device.PANAMA);
+        return (MemoryContext<MemorySegment>) backends.nativeBackend().memoryContext();
     }
 
     public static Environment global() {
@@ -83,11 +103,32 @@ public final class Environment {
         return registry;
     }
 
+    public BackendRegistry backends() {
+        return backends;
+    }
+
+    public Backend backend(Device device) {
+        return backends.backend(device);
+    }
+
+    public Backend nativeBackend() {
+        return backends.nativeBackend();
+    }
+
     public ComputeEngine engineFor(Device device) {
-        return registry.engine(device);
+        return backends.backend(device).computeEngine();
     }
 
     public ExecutionMode executionMode() {
         return executionMode;
+    }
+
+    private static BackendRegistry buildDefaultBackends() {
+        DefaultBackendRegistry registry =
+                DefaultBackendRegistry.withNative(new PanamaBackend());
+        if (HipRuntime.isAvailable()) {
+            registry.register(new HipBackend());
+        }
+        return registry;
     }
 }

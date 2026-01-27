@@ -1,10 +1,13 @@
 package ai.qxotic.jota;
 
+import ai.qxotic.jota.backend.Backend;
+import ai.qxotic.jota.backend.BackendRegistry;
+import ai.qxotic.jota.backend.DefaultBackendRegistry;
+import ai.qxotic.jota.hip.HipBackend;
+import ai.qxotic.jota.hip.HipRuntime;
 import ai.qxotic.jota.memory.MemoryContext;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.panama.PanamaBackend;
 import ai.qxotic.jota.tensor.ComputeEngine;
-import ai.qxotic.jota.tensor.JavaComputeEngine;
-import java.lang.foreign.MemorySegment;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -12,28 +15,49 @@ import java.util.Set;
 
 public final class DeviceRegistry {
 
-    private static final MemoryContext<MemorySegment> DEFAULT_CONTEXT =
-            ContextFactory.ofMemorySegment();
-    private static final DeviceRegistry GLOBAL =
-            builder().register(DEFAULT_CONTEXT, new JavaComputeEngine(DEFAULT_CONTEXT)).build();
+    private static final DeviceRegistry GLOBAL = buildGlobal();
 
     private final Map<Device, MemoryContext<?>> contexts;
     private final Map<Device, ComputeEngine> engines;
+    private final BackendRegistry backends;
 
     private DeviceRegistry(Builder builder) {
         this.contexts = Map.copyOf(builder.contexts);
         this.engines = Map.copyOf(builder.engines);
+        this.backends = null;
+    }
+
+    private DeviceRegistry(BackendRegistry backends) {
+        this.contexts = Map.of();
+        this.engines = Map.of();
+        this.backends = Objects.requireNonNull(backends, "backends");
     }
 
     public static DeviceRegistry global() {
         return GLOBAL;
     }
 
+    private static DeviceRegistry buildGlobal() {
+        DefaultBackendRegistry registry =
+                DefaultBackendRegistry.withNative(new PanamaBackend());
+        if (HipRuntime.isAvailable()) {
+            registry.register(new HipBackend());
+        }
+        return fromBackends(registry);
+    }
+
     public static Builder builder() {
         return new Builder();
     }
 
+    public static DeviceRegistry fromBackends(BackendRegistry backends) {
+        return new DeviceRegistry(backends);
+    }
+
     public MemoryContext<?> context(Device device) {
+        if (backends != null) {
+            return backends.backend(device).memoryContext();
+        }
         MemoryContext<?> context = contexts.get(device);
         if (context == null) {
             throw new IllegalStateException("No MemoryContext registered for " + device);
@@ -42,6 +66,9 @@ public final class DeviceRegistry {
     }
 
     public ComputeEngine engine(Device device) {
+        if (backends != null) {
+            return backends.backend(device).computeEngine();
+        }
         ComputeEngine engine = engines.get(device);
         if (engine == null) {
             throw new IllegalStateException("No ComputeEngine registered for " + device);
@@ -50,6 +77,9 @@ public final class DeviceRegistry {
     }
 
     public Set<Device> devices() {
+        if (backends != null) {
+            return backends.devices();
+        }
         return contexts.keySet(); // Already unmodifiable from Map.copyOf
     }
 
@@ -73,6 +103,11 @@ public final class DeviceRegistry {
                 throw new IllegalStateException("ComputeEngine already registered for " + device);
             }
             return this;
+        }
+
+        public Builder register(Backend backend) {
+            Objects.requireNonNull(backend, "backend");
+            return register(backend.memoryContext(), backend.computeEngine());
         }
 
         public DeviceRegistry build() {

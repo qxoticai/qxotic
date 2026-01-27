@@ -1,6 +1,7 @@
 package ai.qxotic.jota.memory.impl;
 
 import ai.qxotic.jota.memory.Memory;
+import ai.qxotic.jota.panama.PanamaFactory;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 
@@ -43,6 +44,6 @@ public final class MemoryFactory {
     }
 
     public static Memory<MemorySegment> ofMemorySegment(MemorySegment memorySegment) {
-        return PanamaMemory.of(memorySegment);
+        return PanamaFactory.memory(memorySegment);
     }
 }

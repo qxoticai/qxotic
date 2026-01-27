@@ -564,7 +564,26 @@ final class TracingTensorOps implements TensorOps {
             throw new IllegalArgumentException(
                     "Incompatible layouts: " + left.layout() + " vs " + right.layout());
         }
+        // Handle broadcasts: if either layout has any zero strides (broadcast dimension),
+        // create a proper row-major layout for the output.
+        // This ensures that operations on broadcasted inputs produce fully materialized outputs.
+        boolean leftHasBroadcast = hasBroadcastDimension(left.layout());
+        boolean rightHasBroadcast = hasBroadcastDimension(right.layout());
+        if (leftHasBroadcast && !rightHasBroadcast) {
+            return right.layout();
+        }
+        if (rightHasBroadcast && !leftHasBroadcast) {
+            return left.layout();
+        }
+        if (leftHasBroadcast) {
+            return Layout.rowMajor(left.layout().shape());
+        }
         return left.layout();
+    }
+
+    private boolean hasBroadcastDimension(Layout layout) {
+        long[] strides = layout.stride().toArray();
+        return strides.length > 0 && Arrays.stream(strides).anyMatch(s -> s == 0L);
     }
 
     private Device requireCompatibleDevice(TraceTensor left, TraceTensor right) {

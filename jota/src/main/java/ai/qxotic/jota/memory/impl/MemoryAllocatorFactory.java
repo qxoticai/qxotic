@@ -3,6 +3,7 @@ package ai.qxotic.jota.memory.impl;
 import ai.qxotic.jota.memory.MemoryAllocator;
 import ai.qxotic.jota.memory.ScopedMemoryAllocator;
 import ai.qxotic.jota.memory.ScopedMemoryAllocatorArena;
+import ai.qxotic.jota.panama.PanamaFactory;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -51,18 +52,18 @@ public final class MemoryAllocatorFactory {
     }
 
     public static ScopedMemoryAllocator<MemorySegment> ofPanama() {
-        return UnsafeAllocator.instance();
+        return PanamaFactory.scopedAllocator();
     }
 
     public static ScopedMemoryAllocatorArena<MemorySegment> newPanamaArena() {
-        return UnsafeAllocatorArena.create();
+        return PanamaFactory.newArena();
     }
 
     public static MemoryAllocator<MemorySegment> newPanamaAuto() {
-        return new PanamaAutoAllocator();
+        return PanamaFactory.autoAllocator();
     }
 
     public static MemoryAllocator<MemorySegment> newPanamaOnHeap() {
-        return PanamaBytesAllocator.instance();
+        return PanamaFactory.onHeapAllocator();
     }
 }

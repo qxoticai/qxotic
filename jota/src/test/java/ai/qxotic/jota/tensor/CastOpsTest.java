@@ -11,6 +11,7 @@ import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryHelpers;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.panama.JavaComputeEngine;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.BeforeAll;

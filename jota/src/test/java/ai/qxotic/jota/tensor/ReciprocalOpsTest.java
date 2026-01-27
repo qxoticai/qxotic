@@ -9,6 +9,7 @@ import ai.qxotic.jota.memory.AbstractMemoryTest;
 import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.panama.JavaComputeEngine;
 import ai.qxotic.jota.memory.impl.MemoryFactory;
 import ai.qxotic.jota.memory.impl.MemoryViewFactory;
 import java.lang.foreign.MemorySegment;
