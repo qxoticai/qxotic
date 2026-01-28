@@ -13,7 +13,8 @@ public final class DefaultKernelRegistry implements KernelRegistry {
     private final Map<String, List<PrioritizedKernel>> kernels = new ConcurrentHashMap<>();
 
     @Override
-    public <I extends KernelInput, O extends KernelOutput> void register(String name, Kernel<I, O> kernel) {
+    public <I extends KernelInput, O extends KernelOutput> void register(
+            String name, Kernel<I, O> kernel) {
         register(name, kernel, 0);
     }
 

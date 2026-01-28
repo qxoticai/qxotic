@@ -1,13 +1,13 @@
 package ai.qxotic.jota.hip;
 
 import ai.qxotic.jota.tensor.ExpressionGraph;
+import ai.qxotic.jota.tensor.GraphHasher;
 import ai.qxotic.jota.tensor.KernelBackend;
 import ai.qxotic.jota.tensor.KernelCacheKey;
 import ai.qxotic.jota.tensor.KernelExecutable;
 import ai.qxotic.jota.tensor.KernelProgram;
 import ai.qxotic.jota.tensor.LaunchConfig;
 import ai.qxotic.jota.tensor.LaunchHints;
-import ai.qxotic.jota.tensor.GraphHasher;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 

@@ -26,9 +26,9 @@ public interface KernelExecutor {
         public KernelOutput execute(String name, KernelInput input, ExecutionContext ctx) {
             Device device = ctx.device();
             Optional<Kernel<KernelInput, KernelOutput>> kernel =
-                    registry.find(name, device, input).map(k -> (Kernel<KernelInput, KernelOutput>) k);
-            return kernel
-                    .orElseThrow(
+                    registry.find(name, device, input)
+                            .map(k -> (Kernel<KernelInput, KernelOutput>) k);
+            return kernel.orElseThrow(
                             () ->
                                     new UnsupportedOperationException(
                                             "No kernel '" + name + "' for device " + device))

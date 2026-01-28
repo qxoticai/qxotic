@@ -3,7 +3,6 @@ package ai.qxotic.jota.tensor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import ai.qxotic.jota.DataType;
-import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
@@ -23,7 +22,7 @@ class WhereWithBroadcastedScalarTest {
 
     @SuppressWarnings("unchecked")
     private static final MemoryContext<MemorySegment> CONTEXT =
-            (MemoryContext<MemorySegment>) Environment.current().registry().context(Device.PANAMA);
+            (MemoryContext<MemorySegment>) Environment.current().nativeBackend().memoryContext();
 
     @Test
     void whereWithBroadcastedScalarFalseValue() {
@@ -106,8 +105,9 @@ class WhereWithBroadcastedScalarTest {
             // i=0: elements 0,1 escape; i=1: element 2 escapes; i=2: elements 3,4,5 escape
             Tensor threshold = Tensor.scalar((float) (i * 2));
             Tensor indices = Tensor.arange(6, DataType.FP32).view(shape);
-            Tensor shouldUpdate = indices.greaterThanOrEqual(threshold)
-                    .logicalAnd(indices.lessThan(Tensor.scalar((float) (i * 2 + 2))));
+            Tensor shouldUpdate =
+                    indices.greaterThanOrEqual(threshold)
+                            .logicalAnd(indices.lessThan(Tensor.scalar((float) (i * 2 + 2))));
 
             Tensor newValue = Tensor.broadcasted((float) i, shape);
             iterations = Tensor.where(shouldUpdate, newValue, iterations);
@@ -155,7 +155,13 @@ class WhereWithBroadcastedScalarTest {
             for (int j = 0; j < 6; j++) {
                 if (readFloat(escView, j) > 0.5f) escapedCount++;
             }
-            System.out.println("Iteration " + i + " (threshold=" + threshold + "): escapedCount=" + escapedCount);
+            System.out.println(
+                    "Iteration "
+                            + i
+                            + " (threshold="
+                            + threshold
+                            + "): escapedCount="
+                            + escapedCount);
         }
 
         MemoryView<?> view = iterations.materialize();

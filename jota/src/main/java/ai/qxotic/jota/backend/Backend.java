@@ -16,10 +16,10 @@ public interface Backend {
 
     ComputeEngine computeEngine();
 
-    KernelPipeline kernelPipeline();
+    Optional<KernelService> kernels();
 
     default boolean supportsKernels() {
-        return kernelPipeline() != null;
+        return kernels().isPresent();
     }
 
     default KernelCacheKey keyFor(KernelProgram program) {
@@ -34,23 +34,22 @@ public interface Backend {
     default KernelExecutable registerKernel(KernelProgram program, KernelCacheKey key) {
         Objects.requireNonNull(program, "program");
         Objects.requireNonNull(key, "key");
-        KernelPipeline pipeline = requirePipeline();
-        pipeline.programStore().store(program, key);
-        KernelExecutable exec = pipeline.backend().getOrCompile(program, key);
-        return exec;
+        KernelService kernels = requireKernels();
+        return kernels.register(program, key);
     }
 
     default Optional<KernelProgram> loadRegisteredKernel(KernelCacheKey key) {
         Objects.requireNonNull(key, "key");
-        KernelPipeline pipeline = requirePipeline();
-        return pipeline.programStore().load(key);
+        KernelService kernels = requireKernels();
+        return kernels.loadRegisteredKernel(key);
     }
 
-    private KernelPipeline requirePipeline() {
-        KernelPipeline pipeline = kernelPipeline();
-        if (pipeline == null) {
-            throw new UnsupportedOperationException("Backend does not support kernels: " + device());
+    private KernelService requireKernels() {
+        Optional<KernelService> service = kernels();
+        if (service.isEmpty()) {
+            throw new UnsupportedOperationException(
+                    "Backend does not support kernels: " + device());
         }
-        return pipeline;
+        return service.get();
     }
 }

@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import ai.qxotic.jota.backend.DefaultBackendRegistry;
+import ai.qxotic.jota.backend.KernelService;
 import ai.qxotic.jota.memory.impl.ContextFactory;
 import ai.qxotic.jota.tensor.ComputeBackend;
 import ai.qxotic.jota.tensor.ComputeEngine;
@@ -21,7 +23,12 @@ class EnvironmentTest {
 
     @Test
     void scopedEnvironmentOverridesDefaults() {
-        Environment env = new Environment(Device.PANAMA, DataType.FP64, DeviceRegistry.global());
+        Environment env =
+                new Environment(
+                        Device.PANAMA,
+                        DataType.FP64,
+                        Environment.global().backends(),
+                        ExecutionMode.LAZY);
 
         Environment.with(
                 env,
@@ -43,13 +50,10 @@ class EnvironmentTest {
 
     @Test
     void registryExposesRegisteredDevices() {
-        DeviceRegistry registry =
-                DeviceRegistry.builder()
-                        .register(ContextFactory.ofBytes(), dummyEngine())
-                        .register(ContextFactory.ofMemorySegment(), dummyEngine())
-                        .build();
+        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        registry.register(new StubBackend(ContextFactory.ofBytes(), dummyEngine()));
+        registry.register(new StubBackend(ContextFactory.ofMemorySegment(), dummyEngine()));
 
-        assertTrue(registry.devices().contains(Device.PANAMA));
         assertTrue(registry.devices().contains(Device.PANAMA));
     }
 
@@ -65,5 +69,35 @@ class EnvironmentTest {
                 return DiskKernelCache.defaultCache();
             }
         };
+    }
+
+    private static final class StubBackend implements ai.qxotic.jota.backend.Backend {
+        private final ai.qxotic.jota.memory.MemoryContext<?> context;
+        private final ComputeEngine engine;
+
+        private StubBackend(ai.qxotic.jota.memory.MemoryContext<?> context, ComputeEngine engine) {
+            this.context = context;
+            this.engine = engine;
+        }
+
+        @Override
+        public Device device() {
+            return context.device();
+        }
+
+        @Override
+        public ai.qxotic.jota.memory.MemoryContext<?> memoryContext() {
+            return context;
+        }
+
+        @Override
+        public ComputeEngine computeEngine() {
+            return engine;
+        }
+
+        @Override
+        public java.util.Optional<KernelService> kernels() {
+            return java.util.Optional.empty();
+        }
     }
 }

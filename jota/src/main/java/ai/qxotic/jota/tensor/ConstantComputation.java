@@ -50,7 +50,7 @@ record ConstantComputation(long rawBits, DataType dataType, Shape shape, Device 
 
     @Override
     public MemoryView<?> execute() {
-        MemoryContext<?> context = Environment.current().registry().context(device);
+        MemoryContext<?> context = Environment.current().backend(device).memoryContext();
         return allocateAndFill(context);
     }
 

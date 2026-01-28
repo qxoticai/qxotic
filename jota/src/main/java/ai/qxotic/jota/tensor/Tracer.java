@@ -172,18 +172,24 @@ public final class Tracer {
         ExprNode mapped;
         if (node instanceof InputNode input) {
             mapped = remap.getOrDefault(input, input);
-        } else if (node instanceof ScalarNode
-                || node instanceof RangeNode) {
+        } else if (node instanceof ScalarNode || node instanceof RangeNode) {
             mapped = node;
         } else if (node instanceof UnaryNode unary) {
             ExprNode child = remapInputs(unary.input(), remap, cache);
-            mapped = new UnaryNode(unary.op(), child, unary.dataType(), unary.layout(), unary.device());
+            mapped =
+                    new UnaryNode(
+                            unary.op(), child, unary.dataType(), unary.layout(), unary.device());
         } else if (node instanceof BinaryNode binary) {
             ExprNode left = remapInputs(binary.left(), remap, cache);
             ExprNode right = remapInputs(binary.right(), remap, cache);
             mapped =
                     new BinaryNode(
-                            binary.op(), left, right, binary.dataType(), binary.layout(), binary.device());
+                            binary.op(),
+                            left,
+                            right,
+                            binary.dataType(),
+                            binary.layout(),
+                            binary.device());
         } else if (node instanceof TernaryNode ternary) {
             ExprNode cond = remapInputs(ternary.condition(), remap, cache);
             ExprNode tVal = remapInputs(ternary.trueValue(), remap, cache);
@@ -200,10 +206,13 @@ public final class Tracer {
         } else if (node instanceof TransferNode transfer) {
             ExprNode child = remapInputs(transfer.input(), remap, cache);
             mapped =
-                    new TransferNode(child, transfer.targetDevice(), transfer.dataType(), transfer.layout());
+                    new TransferNode(
+                            child, transfer.targetDevice(), transfer.dataType(), transfer.layout());
         } else if (node instanceof ContiguousNode contiguous) {
             ExprNode child = remapInputs(contiguous.input(), remap, cache);
-            mapped = new ContiguousNode(child, contiguous.dataType(), contiguous.layout(), contiguous.device());
+            mapped =
+                    new ContiguousNode(
+                            child, contiguous.dataType(), contiguous.layout(), contiguous.device());
         } else if (node instanceof CastNode cast) {
             ExprNode child = remapInputs(cast.input(), remap, cache);
             mapped = new CastNode(child, cast.targetType(), cast.layout(), cast.device());

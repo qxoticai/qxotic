@@ -8,11 +8,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
-import ai.qxotic.jota.DeviceRegistry;
 import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.ExecutionMode;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
+import ai.qxotic.jota.backend.Backend;
+import ai.qxotic.jota.backend.DefaultBackendRegistry;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
@@ -51,7 +52,8 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingF32")
     <B> void materializesBroadcastedFloat(MemoryContext<B> context) {
-        DeviceRegistry registry = DeviceRegistry.builder().register(context, dummyEngine()).build();
+        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        registry.register(new StubBackend<>(context, dummyEngine()));
         Environment environment =
                 new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
@@ -79,7 +81,8 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingI64")
     <B> void materializesBroadcastedLong(MemoryContext<B> context) {
-        DeviceRegistry registry = DeviceRegistry.builder().register(context, dummyEngine()).build();
+        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        registry.register(new StubBackend<>(context, dummyEngine()));
         Environment environment =
                 new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
@@ -120,7 +123,8 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingF64")
     <B> void materializesScalarDouble(MemoryContext<B> context) {
-        DeviceRegistry registry = DeviceRegistry.builder().register(context, dummyEngine()).build();
+        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        registry.register(new StubBackend<>(context, dummyEngine()));
         Environment environment =
                 new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
@@ -148,7 +152,8 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingI64")
     <B> void materializesScalarLong(MemoryContext<B> context) {
-        DeviceRegistry registry = DeviceRegistry.builder().register(context, dummyEngine()).build();
+        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        registry.register(new StubBackend<>(context, dummyEngine()));
         Environment environment =
                 new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
@@ -176,7 +181,8 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#allContexts")
     <B> void scalarUsesEnvironmentDefaultDevice(MemoryContext<B> context) {
-        DeviceRegistry registry = DeviceRegistry.builder().register(context, dummyEngine()).build();
+        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        registry.register(new StubBackend<>(context, dummyEngine()));
         Environment environment =
                 new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
@@ -214,7 +220,8 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingF32")
     <B> void materializesZeros(MemoryContext<B> context) {
-        DeviceRegistry registry = DeviceRegistry.builder().register(context, dummyEngine()).build();
+        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        registry.register(new StubBackend<>(context, dummyEngine()));
         Environment environment =
                 new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
@@ -261,7 +268,8 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingF32")
     <B> void materializesOnes(MemoryContext<B> context) {
-        DeviceRegistry registry = DeviceRegistry.builder().register(context, dummyEngine()).build();
+        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        registry.register(new StubBackend<>(context, dummyEngine()));
         Environment environment =
                 new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
@@ -333,7 +341,8 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingF32")
     <B> void materializesFull(MemoryContext<B> context) {
-        DeviceRegistry registry = DeviceRegistry.builder().register(context, dummyEngine()).build();
+        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        registry.register(new StubBackend<>(context, dummyEngine()));
         Environment environment =
                 new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
@@ -362,7 +371,8 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingF32")
     <B> void ofFloatArray(MemoryContext<B> context) {
-        DeviceRegistry registry = DeviceRegistry.builder().register(context, dummyEngine()).build();
+        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        registry.register(new StubBackend<>(context, dummyEngine()));
         Environment environment =
                 new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
@@ -393,7 +403,8 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingF32")
     <B> void ofFloatArrayWithShape(MemoryContext<B> context) {
-        DeviceRegistry registry = DeviceRegistry.builder().register(context, dummyEngine()).build();
+        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        registry.register(new StubBackend<>(context, dummyEngine()));
         Environment environment =
                 new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
@@ -412,7 +423,8 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingF64")
     <B> void ofDoubleArray(MemoryContext<B> context) {
-        DeviceRegistry registry = DeviceRegistry.builder().register(context, dummyEngine()).build();
+        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        registry.register(new StubBackend<>(context, dummyEngine()));
         Environment environment =
                 new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
@@ -443,7 +455,8 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingI32")
     <B> void ofIntArray(MemoryContext<B> context) {
-        DeviceRegistry registry = DeviceRegistry.builder().register(context, dummyEngine()).build();
+        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        registry.register(new StubBackend<>(context, dummyEngine()));
         Environment environment =
                 new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
@@ -473,7 +486,8 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingI64")
     <B> void ofLongArray(MemoryContext<B> context) {
-        DeviceRegistry registry = DeviceRegistry.builder().register(context, dummyEngine()).build();
+        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        registry.register(new StubBackend<>(context, dummyEngine()));
         Environment environment =
                 new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
@@ -608,6 +622,36 @@ class ConstantTensorTest {
                 .filter(ConstantComputation.class::isInstance)
                 .map(ConstantComputation.class::cast)
                 .orElseThrow(() -> new AssertionError("Expected ConstantComputation"));
+    }
+
+    private static final class StubBackend<B> implements Backend {
+        private final MemoryContext<B> context;
+        private final ComputeEngine engine;
+
+        private StubBackend(MemoryContext<B> context, ComputeEngine engine) {
+            this.context = context;
+            this.engine = engine;
+        }
+
+        @Override
+        public Device device() {
+            return context.device();
+        }
+
+        @Override
+        public MemoryContext<?> memoryContext() {
+            return context;
+        }
+
+        @Override
+        public ComputeEngine computeEngine() {
+            return engine;
+        }
+
+        @Override
+        public java.util.Optional<ai.qxotic.jota.backend.KernelService> kernels() {
+            return java.util.Optional.empty();
+        }
     }
 
     @Test

@@ -37,7 +37,7 @@ record RangeComputation(long count, Device device) implements LazyComputation {
 
     @Override
     public MemoryView<?> execute() {
-        MemoryContext<?> context = Environment.current().registry().context(device);
+        MemoryContext<?> context = Environment.current().backend(device).memoryContext();
         return MemoryHelpers.arange(context, DataType.I64, count);
     }
 

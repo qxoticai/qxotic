@@ -46,10 +46,10 @@ class HipGeluKernelSmokeTest {
 
         Environment env = Environment.current();
         Environment hipEnv =
-                new Environment(Device.HIP, env.defaultFloat(), env.registry(), env.executionMode());
+                new Environment(
+                        Device.HIP, env.defaultFloat(), env.backends(), env.executionMode());
 
-        MemoryView<?> output =
-                Environment.with(hipEnv, () -> Tensor.of(dev).gelu().materialize());
+        MemoryView<?> output = Environment.with(hipEnv, () -> Tensor.of(dev).gelu().materialize());
 
         @SuppressWarnings("unchecked")
         MemoryView<HipDevicePtr> deviceOut = (MemoryView<HipDevicePtr>) output;

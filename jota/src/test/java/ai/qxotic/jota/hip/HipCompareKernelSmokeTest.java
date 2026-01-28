@@ -185,18 +185,20 @@ class HipCompareKernelSmokeTest {
     }
 
     private static MemoryView<?> runCompare(
-            MemoryView<MemorySegment> hostA,
-            MemoryView<MemorySegment> hostB,
-            TensorOp op) {
+            MemoryView<MemorySegment> hostA, MemoryView<MemorySegment> hostB, TensorOp op) {
         HipMemoryContext hipContext = HipMemoryContext.instance();
         MemoryView<HipDevicePtr> devA =
                 MemoryView.of(
-                        hipContext.memoryAllocator().allocateMemory(DataType.FP32, hostA.shape().size()),
+                        hipContext
+                                .memoryAllocator()
+                                .allocateMemory(DataType.FP32, hostA.shape().size()),
                         DataType.FP32,
                         Layout.rowMajor(hostA.shape()));
         MemoryView<HipDevicePtr> devB =
                 MemoryView.of(
-                        hipContext.memoryAllocator().allocateMemory(DataType.FP32, hostB.shape().size()),
+                        hipContext
+                                .memoryAllocator()
+                                .allocateMemory(DataType.FP32, hostB.shape().size()),
                         DataType.FP32,
                         Layout.rowMajor(hostB.shape()));
         MemoryContext.copy(ContextFactory.ofMemorySegment(), hostA, hipContext, devA);
@@ -221,18 +223,20 @@ class HipCompareKernelSmokeTest {
     }
 
     private static MemoryView<?> runCompareFp64(
-            MemoryView<MemorySegment> hostA,
-            MemoryView<MemorySegment> hostB,
-            TensorOp op) {
+            MemoryView<MemorySegment> hostA, MemoryView<MemorySegment> hostB, TensorOp op) {
         HipMemoryContext hipContext = HipMemoryContext.instance();
         MemoryView<HipDevicePtr> devA =
                 MemoryView.of(
-                        hipContext.memoryAllocator().allocateMemory(DataType.FP64, hostA.shape().size()),
+                        hipContext
+                                .memoryAllocator()
+                                .allocateMemory(DataType.FP64, hostA.shape().size()),
                         DataType.FP64,
                         Layout.rowMajor(hostA.shape()));
         MemoryView<HipDevicePtr> devB =
                 MemoryView.of(
-                        hipContext.memoryAllocator().allocateMemory(DataType.FP64, hostB.shape().size()),
+                        hipContext
+                                .memoryAllocator()
+                                .allocateMemory(DataType.FP64, hostB.shape().size()),
                         DataType.FP64,
                         Layout.rowMajor(hostB.shape()));
         MemoryContext.copy(ContextFactory.ofMemorySegment(), hostA, hipContext, devA);

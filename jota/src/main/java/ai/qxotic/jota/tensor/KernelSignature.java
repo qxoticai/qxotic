@@ -49,7 +49,12 @@ public record KernelSignature(
         }
 
         public KernelSignature build() {
-            return new KernelSignature(name, List.copyOf(inputs), List.copyOf(outputs), Set.copyOf(dtypes), Set.copyOf(devices));
+            return new KernelSignature(
+                    name,
+                    List.copyOf(inputs),
+                    List.copyOf(outputs),
+                    Set.copyOf(dtypes),
+                    Set.copyOf(devices));
         }
     }
 }

@@ -1,7 +1,6 @@
 package ai.qxotic.jota.examples;
 
 import ai.qxotic.jota.DataType;
-import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
@@ -134,12 +133,12 @@ public class MandelbrotDemo {
             zImag = zImagNew;
 
             // Checkpoint every 10 iterations to prevent expression graph explosion
-//            if (i % 10 == 9) {
-//                zReal = Tensor.of(zReal.materialize());
-//                zImag = Tensor.of(zImag.materialize());
-//                iterations = Tensor.of(iterations.materialize());
-//                escaped = Tensor.of(escaped.materialize());
-//            }
+            //            if (i % 10 == 9) {
+            //                zReal = Tensor.of(zReal.materialize());
+            //                zImag = Tensor.of(zImag.materialize());
+            //                iterations = Tensor.of(iterations.materialize());
+            //                escaped = Tensor.of(escaped.materialize());
+            //            }
         }
 
         return iterations;
@@ -156,7 +155,7 @@ public class MandelbrotDemo {
         MemoryView<?> view = iterations.materialize();
         MemoryContext<MemorySegment> context =
                 (MemoryContext<MemorySegment>)
-                        Environment.current().registry().context(Device.PANAMA);
+                        Environment.current().nativeBackend().memoryContext();
         MemoryView<MemorySegment> typedView = (MemoryView<MemorySegment>) view;
         MemoryAccess<MemorySegment> access = context.memoryAccess();
 

@@ -806,7 +806,8 @@ public interface Tensor {
             throw new IllegalArgumentException(
                     "array length " + data.length + " does not match shape size " + shape.size());
         }
-        MemoryContext<?> context = Environment.current().registry().context(Device.defaultDevice());
+        MemoryContext<?> context =
+                Environment.current().backend(Device.defaultDevice()).memoryContext();
         MemoryView<?> view = copyFloatArray(context, data, shape);
         return of(view);
     }
@@ -833,7 +834,8 @@ public interface Tensor {
             throw new IllegalArgumentException(
                     "array length " + data.length + " does not match shape size " + shape.size());
         }
-        MemoryContext<?> context = Environment.current().registry().context(Device.defaultDevice());
+        MemoryContext<?> context =
+                Environment.current().backend(Device.defaultDevice()).memoryContext();
         MemoryView<?> view = copyDoubleArray(context, data, shape);
         return of(view);
     }
@@ -860,7 +862,8 @@ public interface Tensor {
             throw new IllegalArgumentException(
                     "array length " + data.length + " does not match shape size " + shape.size());
         }
-        MemoryContext<?> context = Environment.current().registry().context(Device.defaultDevice());
+        MemoryContext<?> context =
+                Environment.current().backend(Device.defaultDevice()).memoryContext();
         MemoryView<?> view = copyIntArray(context, data, shape);
         return of(view);
     }
@@ -887,7 +890,8 @@ public interface Tensor {
             throw new IllegalArgumentException(
                     "array length " + data.length + " does not match shape size " + shape.size());
         }
-        MemoryContext<?> context = Environment.current().registry().context(Device.defaultDevice());
+        MemoryContext<?> context =
+                Environment.current().backend(Device.defaultDevice()).memoryContext();
         MemoryView<?> view = copyLongArray(context, data, shape);
         return of(view);
     }
@@ -914,7 +918,8 @@ public interface Tensor {
             throw new IllegalArgumentException(
                     "array length " + data.length + " does not match shape size " + shape.size());
         }
-        MemoryContext<?> context = Environment.current().registry().context(Device.defaultDevice());
+        MemoryContext<?> context =
+                Environment.current().backend(Device.defaultDevice()).memoryContext();
         MemoryView<?> view = copyBooleanArray(context, data, shape);
         return of(view);
     }

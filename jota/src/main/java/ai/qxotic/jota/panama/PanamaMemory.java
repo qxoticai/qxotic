@@ -5,11 +5,9 @@ import ai.qxotic.jota.memory.Memory;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
 
-final class PanamaMemory implements Memory<MemorySegment> {
+record PanamaMemory(MemorySegment memorySegment) implements Memory<MemorySegment> {
 
-    final MemorySegment memorySegment;
-
-    private PanamaMemory(MemorySegment memorySegment) {
+    PanamaMemory(MemorySegment memorySegment) {
         this.memorySegment = Objects.requireNonNull(memorySegment);
     }
 
@@ -29,7 +27,7 @@ final class PanamaMemory implements Memory<MemorySegment> {
 
     @Override
     public Device device() {
-        return this.memorySegment.isNative() ? Device.PANAMA : Device.PANAMA;
+        return Device.PANAMA;
     }
 
     @Override

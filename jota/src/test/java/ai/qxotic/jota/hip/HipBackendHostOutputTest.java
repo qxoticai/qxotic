@@ -28,7 +28,7 @@ class HipBackendHostOutputTest {
         Environment env = Environment.current();
         Environment cpuEnv =
                 new Environment(
-                        Device.PANAMA, env.defaultFloat(), env.registry(), env.executionMode());
+                        Device.PANAMA, env.defaultFloat(), env.backends(), env.executionMode());
 
         MemoryView<?> output =
                 Environment.with(

@@ -126,8 +126,7 @@ public interface MemoryContext<B> extends AutoCloseable {
 
     @SuppressWarnings("unchecked")
     private static MemoryContext<MemorySegment> nativeContext() {
-        return (MemoryContext<MemorySegment>)
-                Environment.current().registry().context(Device.PANAMA);
+        return (MemoryContext<MemorySegment>) Environment.current().nativeBackend().memoryContext();
     }
 
     private static <B> Device srcContextDevice(MemoryContext<B> context) {

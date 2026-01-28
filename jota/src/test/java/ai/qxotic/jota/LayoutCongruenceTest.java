@@ -35,17 +35,13 @@ class LayoutCongruenceTest {
 
     @Test
     void testNonCongruentStrides() {
-        // Same shape structure but different stride structure
-        Layout layout1 =
-                Layout.of(
-                        Shape.of(2, Shape.of(3L, 4L)), Stride.flat(12, 4, 1) // Flat stride
-                        );
+        // Different nesting structures between shape and stride
+        Shape shape1 = Shape.of(2, Shape.of(3L, 4L));
+        Shape shape2 = Shape.of(Shape.of(2L, 3L), 4L);
 
-        Layout layout2 =
-                Layout.of(
-                        Shape.of(2, Shape.of(3L, 4L)),
-                        Stride.of(12, Stride.of(4L, 1L)) // Nested stride
-                        );
+        // Both layouts have congruent shape-stride pairs, but different nesting structures
+        Layout layout1 = Layout.of(shape1, Stride.rowMajor(shape1));
+        Layout layout2 = Layout.of(shape2, Stride.rowMajor(shape2));
 
         assertFalse(layout1.isCongruentWith(layout2));
     }

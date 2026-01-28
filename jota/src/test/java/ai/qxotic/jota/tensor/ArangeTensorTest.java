@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import ai.qxotic.jota.DataType;
-import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
@@ -19,7 +18,7 @@ class ArangeTensorTest {
 
     @SuppressWarnings("unchecked")
     private static final MemoryContext<MemorySegment> CONTEXT =
-            (MemoryContext<MemorySegment>) Environment.current().registry().context(Device.PANAMA);
+            (MemoryContext<MemorySegment>) Environment.current().nativeBackend().memoryContext();
 
     @Test
     void arangeDefaultsToI64() {

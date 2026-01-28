@@ -4,7 +4,6 @@ import ai.qxotic.jota.Device;
 import ai.qxotic.jota.tensor.BinaryOp;
 import ai.qxotic.jota.tensor.ExpressionGraph;
 import ai.qxotic.jota.tensor.GraphHasher;
-import ai.qxotic.jota.tensor.HipElementwiseKernelGenerator;
 import ai.qxotic.jota.tensor.KernelCacheKey;
 import ai.qxotic.jota.tensor.KernelProgram;
 import java.io.IOException;
@@ -155,5 +154,4 @@ final class HipKernelCompiler {
                 + "  }\n"
                 + "}\n";
     }
-
 }
