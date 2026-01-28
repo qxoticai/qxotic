@@ -560,6 +560,19 @@ final class TracingTensorOps implements TensorOps {
     }
 
     private Layout requireCompatibleLayout(TraceTensor left, TraceTensor right) {
+        boolean leftIsScalar = left.layout().shape().isScalar();
+        boolean rightIsScalar = right.layout().shape().isScalar();
+
+        if (leftIsScalar && rightIsScalar) {
+            return left.layout();
+        }
+        if (leftIsScalar && !rightIsScalar) {
+            return right.layout();
+        }
+        if (!leftIsScalar && rightIsScalar) {
+            return left.layout();
+        }
+
         if (!left.layout().isCongruentWith(right.layout())) {
             throw new IllegalArgumentException(
                     "Incompatible layouts: " + left.layout() + " vs " + right.layout());

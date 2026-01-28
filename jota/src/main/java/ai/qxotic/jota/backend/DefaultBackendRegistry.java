@@ -1,11 +1,8 @@
 package ai.qxotic.jota.backend;
 
 import ai.qxotic.jota.Device;
-import ai.qxotic.jota.memory.MemoryContext;
-import ai.qxotic.jota.tensor.ComputeEngine;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -60,35 +57,5 @@ public final class DefaultBackendRegistry implements BackendRegistry {
     @Override
     public Set<Device> devices() {
         return Set.copyOf(backends.keySet());
-    }
-
-    private static final class LegacyBackend implements Backend {
-        private final MemoryContext<?> context;
-        private final ComputeEngine engine;
-
-        private LegacyBackend(MemoryContext<?> context, ComputeEngine engine) {
-            this.context = Objects.requireNonNull(context, "context");
-            this.engine = Objects.requireNonNull(engine, "engine");
-        }
-
-        @Override
-        public Device device() {
-            return context.device();
-        }
-
-        @Override
-        public MemoryContext<?> memoryContext() {
-            return context;
-        }
-
-        @Override
-        public ComputeEngine computeEngine() {
-            return engine;
-        }
-
-        @Override
-        public Optional<KernelService> kernels() {
-            return Optional.empty();
-        }
     }
 }

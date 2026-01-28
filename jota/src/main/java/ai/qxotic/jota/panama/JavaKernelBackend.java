@@ -1,7 +1,6 @@
 package ai.qxotic.jota.panama;
 
 import ai.qxotic.jota.memory.MemoryContext;
-import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.tensor.DiskKernelCache;
 import ai.qxotic.jota.tensor.ExecutionStream;
 import ai.qxotic.jota.tensor.ExpressionGraph;
@@ -19,7 +18,6 @@ import java.io.IOException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -123,31 +121,7 @@ public final class JavaKernelBackend implements KernelBackend {
         return new KernelExecutable() {
             @Override
             public void launch(LaunchConfig config, KernelArgs args, ExecutionStream stream) {
-                List<KernelArgs.Entry> entries = args.entries();
-                List<MemoryView<java.lang.foreign.MemorySegment>> buffers = new ArrayList<>();
-                for (KernelArgs.Entry entry : entries) {
-                    if (entry.kind() != KernelArgs.Kind.BUFFER) {
-                        throw new UnsupportedOperationException(
-                                "Java kernel supports buffers only");
-                    }
-                    @SuppressWarnings("unchecked")
-                    MemoryView<java.lang.foreign.MemorySegment> view =
-                            (MemoryView<java.lang.foreign.MemorySegment>) entry.value();
-                    buffers.add(view);
-                }
-                if (buffers.isEmpty()) {
-                    throw new IllegalArgumentException("Java kernel requires output buffer");
-                }
-                MemoryView<java.lang.foreign.MemorySegment> output =
-                        buffers.get(buffers.size() - 1);
-                @SuppressWarnings("unchecked")
-                MemoryView<java.lang.foreign.MemorySegment>[] inputs =
-                        buffers.subList(0, buffers.size() - 1)
-                                .toArray(
-                                        size ->
-                                                (MemoryView<java.lang.foreign.MemorySegment>[])
-                                                        new MemoryView[size]);
-                kernel.execute(context, inputs, output);
+                kernel.execute(context, args);
             }
 
             @Override

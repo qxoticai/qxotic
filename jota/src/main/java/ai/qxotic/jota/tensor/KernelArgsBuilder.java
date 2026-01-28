@@ -11,6 +11,16 @@ public final class KernelArgsBuilder {
         List<InputNode> inputNodes = graph.inputs();
         for (InputNode inputNode : inputNodes) {
             Tensor inputTensor = inputs.get(inputNode.index());
+            ConstantComputation constant =
+                    inputTensor
+                            .computation()
+                            .filter(ConstantComputation.class::isInstance)
+                            .map(ConstantComputation.class::cast)
+                            .orElse(null);
+            if (constant != null && inputTensor.isScalar()) {
+                args.addScalarBits(constant.rawBits(), inputTensor.dataType());
+                continue;
+            }
             MemoryView<?> view =
                     inputTensor.tryGetMaterialized().orElseGet(inputTensor::materialize);
             args.addBuffer(view);
@@ -23,5 +33,28 @@ public final class KernelArgsBuilder {
         }
         args.addScalar((int) n, DataType.I32);
         return args;
+    }
+
+    public DataType[] buildSignature(
+            ExpressionGraph graph,
+            List<Tensor> inputs,
+            java.util.Map<Integer, Tensor> inputTensorMap) {
+        List<InputNode> inputNodes = graph.inputs();
+        DataType[] signature = new DataType[inputNodes.size() + 2];
+        for (InputNode inputNode : inputNodes) {
+            Tensor inputTensor = inputTensorMap.get(inputNode.index());
+            ConstantComputation constant =
+                    inputTensor
+                            .computation()
+                            .filter(ConstantComputation.class::isInstance)
+                            .map(ConstantComputation.class::cast)
+                            .orElse(null);
+            if (constant != null && inputTensor.isScalar()) {
+                signature[inputNode.index()] = inputTensor.dataType();
+            }
+        }
+        signature[signature.length - 2] = null;
+        signature[signature.length - 1] = DataType.I32;
+        return signature;
     }
 }

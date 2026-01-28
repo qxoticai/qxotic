@@ -36,3 +36,4 @@ venv/
 
 # no cache kernels
 */__kernels
+__kernels/

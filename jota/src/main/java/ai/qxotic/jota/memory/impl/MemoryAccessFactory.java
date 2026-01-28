@@ -23,6 +23,6 @@ public class MemoryAccessFactory {
     }
 
     public static MemoryAccess<MemorySegment> ofMemorySegment() {
-        return PanamaFactory.access();
+        return PanamaFactory.memoryAccess();
     }
 }

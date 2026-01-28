@@ -36,8 +36,10 @@ public final class Tracer {
                                     "Tracing function must return a traced tensor, got: " + result);
                         });
 
-        ExpressionGraph graph = new ExpressionGraph(output.node(), inputs.nodes());
-        ExpressionComputation computation = new ExpressionComputation(graph, inputs.tensors());
+        ExpressionGraph graph =
+                new ExpressionGraph(output.node(), inputs.nodes(), inputs.inputTensorMap());
+        ExpressionComputation computation =
+                new ExpressionComputation(graph, inputs.tensors(), inputs.inputTensorMap());
         return Tensor.lazy(computation, output.dataType(), output.layout(), output.device());
     }
 
@@ -64,8 +66,10 @@ public final class Tracer {
                                     "Tracing function must return a traced tensor, got: " + result);
                         });
 
-        ExpressionGraph graph = new ExpressionGraph(output.node(), inputs.nodes());
-        ExpressionComputation computation = new ExpressionComputation(graph, inputs.tensors());
+        ExpressionGraph graph =
+                new ExpressionGraph(output.node(), inputs.nodes(), inputs.inputTensorMap());
+        ExpressionComputation computation =
+                new ExpressionComputation(graph, inputs.tensors(), inputs.inputTensorMap());
         return Tensor.lazy(computation, output.dataType(), output.layout(), output.device());
     }
 
@@ -97,8 +101,10 @@ public final class Tracer {
                                     "Tracing function must return a traced tensor, got: " + result);
                         });
 
-        ExpressionGraph graph = new ExpressionGraph(output.node(), inputs.nodes());
-        ExpressionComputation computation = new ExpressionComputation(graph, inputs.tensors());
+        ExpressionGraph graph =
+                new ExpressionGraph(output.node(), inputs.nodes(), inputs.inputTensorMap());
+        ExpressionComputation computation =
+                new ExpressionComputation(graph, inputs.tensors(), inputs.inputTensorMap());
         return Tensor.lazy(computation, output.dataType(), output.layout(), output.device());
     }
 
@@ -106,6 +112,7 @@ public final class Tracer {
         List<InputNode> nodes = new ArrayList<>();
         List<Tensor> tensors = new ArrayList<>();
         List<TraceTensor> traces = new ArrayList<>(inputs.size());
+        Map<Integer, Tensor> inputTensorMap = new HashMap<>();
         int inputIndex = 0;
         for (Tensor input : inputs) {
             LazyComputation computation = input.computation().orElse(null);
@@ -121,6 +128,7 @@ public final class Tracer {
                         new ScalarNode(
                                 constant.value(), input.dataType(), input.layout(), input.device());
                 traces.add(new TraceTensor(node));
+                inputTensorMap.put(inputIndex, input);
                 continue;
             }
             if (computation instanceof ExpressionComputation expr) {
@@ -132,6 +140,7 @@ public final class Tracer {
                     nodes.add(node);
                     tensors.add(input);
                     traces.add(new TraceTensor(node));
+                    inputTensorMap.put(inputIndex, input);
                     inputIndex++;
                     continue;
                 }
@@ -146,9 +155,10 @@ public final class Tracer {
                                     subInput.device());
                     remap.put(subInput, mapped);
                     nodes.add(mapped);
+                    tensors.add(expr.inputs().get(subInput.index()));
+                    inputTensorMap.put(inputIndex, expr.inputs().get(subInput.index()));
                     inputIndex++;
                 }
-                tensors.addAll(expr.inputs());
                 ExprNode remappedRoot = remapInputs(graph.root(), remap, new HashMap<>());
                 traces.add(new TraceTensor(remappedRoot));
                 continue;
@@ -158,9 +168,10 @@ public final class Tracer {
             nodes.add(node);
             tensors.add(input);
             traces.add(new TraceTensor(node));
+            inputTensorMap.put(inputIndex, input);
             inputIndex++;
         }
-        return new TraceInputs(traces, nodes, tensors);
+        return new TraceInputs(traces, nodes, tensors, inputTensorMap);
     }
 
     private static ExprNode remapInputs(
@@ -279,5 +290,8 @@ public final class Tracer {
     }
 
     private record TraceInputs(
-            List<TraceTensor> traces, List<InputNode> nodes, List<Tensor> tensors) {}
+            List<TraceTensor> traces,
+            List<InputNode> nodes,
+            List<Tensor> tensors,
+            Map<Integer, Tensor> inputTensorMap) {}
 }

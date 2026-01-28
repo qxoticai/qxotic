@@ -1,13 +1,9 @@
 package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.memory.MemoryContext;
-import ai.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 
 public interface JitKernel {
 
-    void execute(
-            MemoryContext<MemorySegment> context,
-            MemoryView<MemorySegment>[] inputs,
-            MemoryView<MemorySegment> output);
+    void execute(MemoryContext<MemorySegment> context, KernelArgs args);
 }

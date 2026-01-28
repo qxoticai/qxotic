@@ -29,12 +29,17 @@ public record KernelSignature(
         }
 
         public Builder input(String name, int rank, DataType dtype, Layout layout) {
-            inputs.add(new TensorDescriptor(name, rank, dtype, layout));
+            inputs.add(new TensorDescriptor(name, KernelInputKind.TENSOR, rank, dtype, layout));
+            return this;
+        }
+
+        public Builder inputScalar(String name, DataType dtype) {
+            inputs.add(new TensorDescriptor(name, KernelInputKind.SCALAR, -1, dtype, null));
             return this;
         }
 
         public Builder output(String name, int rank, DataType dtype, Layout layout) {
-            outputs.add(new TensorDescriptor(name, rank, dtype, layout));
+            outputs.add(new TensorDescriptor(name, KernelInputKind.TENSOR, rank, dtype, layout));
             return this;
         }
 
