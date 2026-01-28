@@ -13,11 +13,12 @@ public final class PanamaFactory {
 
     private PanamaFactory() {}
 
-    public static MemoryContext<MemorySegment> context() {
-        return new PanamaContext(UnsafeAllocatorArena.create());
+    public static MemoryContext<MemorySegment> createContext() {
+        return createContext(createArena());
     }
 
-    public static MemoryContext<MemorySegment> context(MemoryAllocator<MemorySegment> allocator) {
+    public static MemoryContext<MemorySegment> createContext(
+            MemoryAllocator<MemorySegment> allocator) {
         return new PanamaContext(allocator);
     }
 
@@ -25,11 +26,11 @@ public final class PanamaFactory {
         return UnsafeAllocator.instance();
     }
 
-    public static ScopedMemoryAllocatorArena<MemorySegment> newArena() {
+    public static ScopedMemoryAllocatorArena<MemorySegment> createArena() {
         return UnsafeAllocatorArena.create();
     }
 
-    public static MemoryAllocator<MemorySegment> autoAllocator() {
+    public static MemoryAllocator<MemorySegment> createManagedArena() {
         return new PanamaAutoAllocator();
     }
 
@@ -37,11 +38,11 @@ public final class PanamaFactory {
         return PanamaBytesAllocator.instance();
     }
 
-    public static MemoryAccess<MemorySegment> access() {
+    public static MemoryAccess<MemorySegment> memoryAccess() {
         return PanamaMemoryAccess.instance();
     }
 
-    public static MemoryOperations<MemorySegment> operations() {
+    public static MemoryOperations<MemorySegment> mempryOperations() {
         return PanamaMemoryOperations.instance();
     }
 

@@ -161,7 +161,7 @@ class JavaKernelCompilerTest {
         ExpressionComputation computation =
                 (ExpressionComputation) traced.computation().orElseThrow();
         KernelCacheKey baseKey = GraphHasher.hash(computation.graph());
-        KernelCacheKey key = KernelCacheKey.of(baseKey.value() + "-contiguous-v5");
+        KernelCacheKey key = KernelCacheKey.of(baseKey.value() + "-contiguous-v6");
         KernelCacheEntry entry = engine.cache().entryFor(key);
         assertEquals(true, java.nio.file.Files.exists(entry.classFilePath()));
 

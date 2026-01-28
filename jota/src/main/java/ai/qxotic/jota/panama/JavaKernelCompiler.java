@@ -52,14 +52,14 @@ final class JavaKernelCompiler {
         this.cache = Objects.requireNonNull(cache, "cache");
     }
 
-    JitKernel compile(ExpressionGraph graph, KernelStyle style) {
+    JitKernel compile(ExpressionGraph graph, KernelStyle style, DataType[] signature) {
         KernelCacheKey key = buildCacheKey(graph, style);
         KernelCacheEntry entry = cache.entryFor(key);
         try {
             Files.createDirectories(entry.classOutputDir());
             Files.createDirectories(entry.directory());
             if (Files.notExists(entry.sourcePath())) {
-                String source = KernelSourceGenerator.generate(entry, graph, style);
+                String source = KernelSourceGenerator.generate(entry, graph, style, signature);
                 Files.writeString(entry.sourcePath(), source);
             }
             if (Files.exists(entry.classFilePath())) {
@@ -115,7 +115,7 @@ final class JavaKernelCompiler {
     private KernelCacheKey buildCacheKey(ExpressionGraph graph, KernelStyle style) {
         KernelCacheKey baseKey = GraphHasher.hash(graph);
         String suffix = style == null ? "unknown" : style.name().toLowerCase(Locale.ROOT);
-        return KernelCacheKey.of(baseKey.value() + "-" + suffix + "-v5");
+        return KernelCacheKey.of(baseKey.value() + "-" + suffix + "-v6");
     }
 
     private String formatDiagnostics(List<Diagnostic<? extends JavaFileObject>> diagnostics) {
@@ -138,20 +138,30 @@ final class JavaKernelCompiler {
         private final KernelCacheEntry entry;
         private final ExpressionGraph graph;
         private final KernelStyle style;
+        private final DataType[] signature;
         private final Map<ExprNode, String> names = new IdentityHashMap<>();
         private final List<String> lines = new ArrayList<>();
         private final Set<HelperMethod> helpers = new HashSet<>();
         private int counter;
 
         private KernelSourceGenerator(
-                KernelCacheEntry entry, ExpressionGraph graph, KernelStyle style) {
+                KernelCacheEntry entry,
+                ExpressionGraph graph,
+                KernelStyle style,
+                DataType[] signature) {
             this.entry = entry;
             this.graph = graph;
             this.style = style;
+            this.signature = signature;
         }
 
-        static String generate(KernelCacheEntry entry, ExpressionGraph graph, KernelStyle style) {
-            KernelSourceGenerator generator = new KernelSourceGenerator(entry, graph, style);
+        static String generate(
+                KernelCacheEntry entry,
+                ExpressionGraph graph,
+                KernelStyle style,
+                DataType[] signature) {
+            KernelSourceGenerator generator =
+                    new KernelSourceGenerator(entry, graph, style, signature);
             return generator.generate();
         }
 
@@ -163,6 +173,7 @@ final class JavaKernelCompiler {
             source.append("import ai.qxotic.jota.Shape;\n");
             source.append("import ai.qxotic.jota.memory.MemoryContext;\n");
             source.append("import ai.qxotic.jota.memory.MemoryView;\n");
+            source.append("import ai.qxotic.jota.tensor.KernelArgs;\n");
             source.append("import ai.qxotic.jota.tensor.JitKernel;\n");
             source.append("import java.lang.foreign.MemorySegment;\n");
             source.append("import java.lang.foreign.ValueLayout;\n");
@@ -172,7 +183,39 @@ final class JavaKernelCompiler {
                     .append(" implements JitKernel {\n");
             source.append("  @Override\n");
             source.append(
-                    "  public void execute(MemoryContext<MemorySegment> context, MemoryView<MemorySegment>[] inputs, MemoryView<MemorySegment> output) {\n");
+                    "  public void execute(MemoryContext<MemorySegment> context, KernelArgs args) {\n");
+            for (int i = 0; i < graph.inputs().size(); i++) {
+                if (signature[i] == null) {
+                    source.append(
+                            "    @SuppressWarnings(\"unchecked\") MemoryView<MemorySegment> input"
+                                    + i
+                                    + " = (MemoryView<MemorySegment>) args.getBuffer("
+                                    + i
+                                    + ");\n");
+                } else {
+                    String typeName = typeFor(signature[i]);
+                    source.append(
+                            "    "
+                                    + typeName
+                                    + " input"
+                                    + i
+                                    + " = args.get"
+                                    + getScalarMethodSuffix(signature[i])
+                                    + "("
+                                    + i
+                                    + ");\n");
+                }
+            }
+            int outputIndex = graph.inputs().size();
+            source.append(
+                    "    @SuppressWarnings(\"unchecked\") MemoryView<MemorySegment> output = (MemoryView<MemorySegment>) args.getBuffer("
+                            + outputIndex
+                            + ");\n");
+            int sizeIndex = outputIndex + 1;
+            source.append("    int size = args.getInt(" + sizeIndex + ");\n");
+            source.append("    if (output == null) {\n");
+            source.append("      throw new IllegalArgumentException(\"Missing output buffer\");\n");
+            source.append("    }\n");
 
             ReductionNode reductionRoot = findReductionRoot(graph.root());
             if (reductionRoot != null) {
@@ -188,15 +231,16 @@ final class JavaKernelCompiler {
                 source.append(
                         "    MemorySegment outBase = (MemorySegment) output.memory().base();\n");
                 for (int i = 0; i < graph.inputs().size(); i++) {
-                    source.append(
-                            "    MemorySegment in"
-                                    + i
-                                    + " = (MemorySegment) inputs["
-                                    + i
-                                    + "].memory().base();\n");
+                    if (signature[i] == null) {
+                        source.append(
+                                "    MemorySegment in"
+                                        + i
+                                        + " = (MemorySegment) input"
+                                        + i
+                                        + ".memory().base();\n");
+                    }
                 }
             }
-            source.append("    long size = output.shape().size();\n");
             source.append("    for (long i = 0; i < size; i++) {\n");
             for (String line : lines) {
                 source.append("      ").append(line).append("\n");
@@ -292,19 +336,22 @@ final class JavaKernelCompiler {
         private void appendStridedInputPreamble(StringBuilder source) {
             source.append("    long[] shape = output.shape().toArray();\n");
             for (int i = 0; i < graph.inputs().size(); i++) {
-                source.append(
-                        "    MemorySegment in"
-                                + i
-                                + " = (MemorySegment) inputs["
-                                + i
-                                + "].memory().base();\n");
-                source.append("    long in" + i + "BaseOffset = inputs[" + i + "].byteOffset();\n");
-                source.append(
-                        "    long[] in"
-                                + i
-                                + "Stride = inputs["
-                                + i
-                                + "].byteStride().toArray();\n");
+                if (signature[i] == null) {
+                    source.append(
+                            "    MemorySegment in"
+                                    + i
+                                    + " = (MemorySegment) input"
+                                    + i
+                                    + ".memory().base();\n");
+                    source.append(
+                            "    long in" + i + "BaseOffset = input" + i + ".byteOffset();\n");
+                    source.append(
+                            "    long[] in"
+                                    + i
+                                    + "Stride = input"
+                                    + i
+                                    + ".byteStride().toArray();\n");
+                }
             }
         }
 
@@ -332,8 +379,12 @@ final class JavaKernelCompiler {
             String accumulatorJavaType = typeFor(accumulatorType);
             String seedExpr = seedFor(info.op(), accumulatorType);
             String combineExpr = combineExpression(info.op(), accumulatorType);
-            source.append("    MemoryView<MemorySegment> input = inputs[0];\n");
-            source.append("    long[] inShape = input.shape().toArray();\n");
+            if (graph.inputs().size() > 0 && signature[0] == null) {
+                source.append("    MemoryView<MemorySegment> input = input0;\n");
+                source.append("    long[] inShape = input.shape().toArray();\n");
+            } else {
+                source.append("    long[] inShape = output.shape().toArray();\n");
+            }
             source.append("    int[] axes = new int[] {");
             for (int i = 0; i < info.axes().length; i++) {
                 if (i > 0) {
@@ -357,7 +408,7 @@ final class JavaKernelCompiler {
                         "    throw new IllegalStateException(\"Reduction expressions are only supported for FP32/I32\");\n");
                 return;
             }
-            source.append("    long outSize = output.shape().size();\n");
+            source.append("    long outSize = size;\n");
             source.append("    for (long i = 0; i < outSize; i++) {\n");
             source.append("      long[] outCoord = Indexing.linearToCoord(output.shape(), i);\n");
             source.append("      long[] inCoord = new long[inShape.length];\n");
@@ -904,7 +955,12 @@ final class JavaKernelCompiler {
             if (node instanceof InputNode input) {
                 String var = nextVar();
                 names.put(node, var);
-                String read = readInput(input, "i");
+                String read;
+                if (signature[input.index()] != null) {
+                    read = "input" + input.index();
+                } else {
+                    read = readInput(input, "i");
+                }
                 lines.add(typeFor(node.dataType()) + " " + var + " = " + read + ";");
                 return var;
             }
@@ -1059,16 +1115,19 @@ final class JavaKernelCompiler {
         }
 
         private String readInput(InputNode input, String indexVar) {
+            if (signature[input.index()] != null) {
+                return "input" + input.index();
+            }
             if (input.dataType() == DataType.BOOL || input.dataType() == DataType.I8) {
                 helpers.add(HelperMethod.READ_BYTE);
                 if (style == KernelStyle.CONTIGUOUS) {
-                    return "readByte(inputs[" + input.index() + "], " + indexVar + ")";
+                    return "readByte(input" + input.index() + ", " + indexVar + ")";
                 }
                 return "readByte(in"
                         + input.index()
-                        + ", Indexing.linearToOffset(inputs["
+                        + ", Indexing.linearToOffset(input"
                         + input.index()
-                        + "], "
+                        + ", "
                         + indexVar
                         + "))";
             }
@@ -1077,65 +1136,65 @@ final class JavaKernelCompiler {
                     || input.dataType() == DataType.BF16) {
                 helpers.add(HelperMethod.READ_SHORT);
                 if (style == KernelStyle.CONTIGUOUS) {
-                    return "readShort(inputs[" + input.index() + "], " + indexVar + ")";
+                    return "readShort(input" + input.index() + ", " + indexVar + ")";
                 }
                 return "readShort(in"
                         + input.index()
-                        + ", Indexing.linearToOffset(inputs["
+                        + ", Indexing.linearToOffset(input"
                         + input.index()
-                        + "], "
+                        + ", "
                         + indexVar
                         + "))";
             }
             if (input.dataType() == DataType.I32) {
                 helpers.add(HelperMethod.READ_INT);
                 if (style == KernelStyle.CONTIGUOUS) {
-                    return "readInt(inputs[" + input.index() + "], " + indexVar + ")";
+                    return "readInt(input" + input.index() + ", " + indexVar + ")";
                 }
                 return "readInt(in"
                         + input.index()
-                        + ", Indexing.linearToOffset(inputs["
+                        + ", Indexing.linearToOffset(input"
                         + input.index()
-                        + "], "
+                        + ", "
                         + indexVar
                         + "))";
             }
             if (input.dataType() == DataType.I64) {
                 helpers.add(HelperMethod.READ_LONG);
                 if (style == KernelStyle.CONTIGUOUS) {
-                    return "readLong(inputs[" + input.index() + "], " + indexVar + ")";
+                    return "readLong(input" + input.index() + ", " + indexVar + ")";
                 }
                 return "readLong(in"
                         + input.index()
-                        + ", Indexing.linearToOffset(inputs["
+                        + ", Indexing.linearToOffset(input"
                         + input.index()
-                        + "], "
+                        + ", "
                         + indexVar
                         + "))";
             }
             if (input.dataType() == DataType.FP32) {
                 helpers.add(HelperMethod.READ_FLOAT);
                 if (style == KernelStyle.CONTIGUOUS) {
-                    return "readFloat(inputs[" + input.index() + "], " + indexVar + ")";
+                    return "readFloat(input" + input.index() + ", " + indexVar + ")";
                 }
                 return "readFloat(in"
                         + input.index()
-                        + ", Indexing.linearToOffset(inputs["
+                        + ", Indexing.linearToOffset(input"
                         + input.index()
-                        + "], "
+                        + ", "
                         + indexVar
                         + "))";
             }
             if (input.dataType() == DataType.FP64) {
                 helpers.add(HelperMethod.READ_DOUBLE);
                 if (style == KernelStyle.CONTIGUOUS) {
-                    return "readDouble(inputs[" + input.index() + "], " + indexVar + ")";
+                    return "readDouble(input" + input.index() + ", " + indexVar + ")";
                 }
                 return "readDouble(in"
                         + input.index()
-                        + ", Indexing.linearToOffset(inputs["
+                        + ", Indexing.linearToOffset(input"
                         + input.index()
-                        + "], "
+                        + ", "
                         + indexVar
                         + "))";
             }
@@ -1567,6 +1626,34 @@ final class JavaKernelCompiler {
 
         private String nextVar() {
             return "v" + counter++;
+        }
+
+        private String getScalarMethodSuffix(DataType dataType) {
+            if (dataType == DataType.BOOL) {
+                return "Boolean";
+            }
+            if (dataType == DataType.I8) {
+                return "Byte";
+            }
+            if (dataType == DataType.I16) {
+                return "Short";
+            }
+            if (dataType == DataType.I32) {
+                return "Int";
+            }
+            if (dataType == DataType.I64) {
+                return "Long";
+            }
+            if (dataType == DataType.FP16 || dataType == DataType.BF16) {
+                return "Float";
+            }
+            if (dataType == DataType.FP32) {
+                return "Float";
+            }
+            if (dataType == DataType.FP64) {
+                return "Double";
+            }
+            throw unsupported(dataType, "scalar method suffix");
         }
 
         private String withHelper(HelperMethod helper, String expression) {

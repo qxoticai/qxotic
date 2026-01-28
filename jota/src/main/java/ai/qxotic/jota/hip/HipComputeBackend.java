@@ -85,7 +85,8 @@ final class HipComputeBackend implements ComputeBackend {
             return executeReductionHost(graph, inputs);
         }
 
-        ExpressionGraph inputGraph = new ExpressionGraph(reduction.input(), graph.inputs());
+        ExpressionGraph inputGraph =
+                new ExpressionGraph(reduction.input(), graph.inputs(), graph.inputTensorMap());
         MemoryView<?> inputView = execute(inputGraph, inputs);
         HipMemoryContext hipContext = HipMemoryContext.instance();
         MemoryView<HipDevicePtr> deviceInput =

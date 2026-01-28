@@ -6,10 +6,16 @@ import ai.qxotic.jota.Layout;
 import java.util.List;
 import java.util.Optional;
 
-public record ExpressionGraph(ExprNode root, List<InputNode> inputs) {
+public record ExpressionGraph(
+        ExprNode root, List<InputNode> inputs, java.util.Map<Integer, Tensor> inputTensorMap) {
 
     public ExpressionGraph {
         inputs = List.copyOf(inputs);
+        inputTensorMap = java.util.Map.copyOf(inputTensorMap);
+    }
+
+    public java.util.Map<Integer, Tensor> inputTensorMap() {
+        return inputTensorMap;
     }
 
     public Optional<ReductionInfo> reductionRoot() {

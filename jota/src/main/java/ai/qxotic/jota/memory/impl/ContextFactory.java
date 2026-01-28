@@ -42,11 +42,11 @@ public class ContextFactory {
 
     public static MemoryContext<MemorySegment> ofMemorySegment(
             MemoryAllocator<MemorySegment> memoryAllocator) {
-        return PanamaFactory.context(memoryAllocator);
+        return PanamaFactory.createContext(memoryAllocator);
     }
 
     public static MemoryContext<MemorySegment> ofMemorySegment() {
-        return PanamaFactory.context();
+        return PanamaFactory.createContext();
     }
 
     public static MemoryContext<ByteBuffer> ofByteBuffer(

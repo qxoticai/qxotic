@@ -56,11 +56,11 @@ public final class MemoryAllocatorFactory {
     }
 
     public static ScopedMemoryAllocatorArena<MemorySegment> newPanamaArena() {
-        return PanamaFactory.newArena();
+        return PanamaFactory.createArena();
     }
 
     public static MemoryAllocator<MemorySegment> newPanamaAuto() {
-        return PanamaFactory.autoAllocator();
+        return PanamaFactory.createManagedArena();
     }
 
     public static MemoryAllocator<MemorySegment> newPanamaOnHeap() {

@@ -21,7 +21,7 @@ public final class PanamaBackend implements Backend {
     private final KernelService kernelService;
 
     public PanamaBackend() {
-        this(PanamaFactory.context(), DiskKernelCache.defaultCache());
+        this(PanamaFactory.createContext(), DiskKernelCache.defaultCache());
     }
 
     public PanamaBackend(MemoryContext<MemorySegment> context, DiskKernelCache cache) {
@@ -41,7 +41,7 @@ public final class PanamaBackend implements Backend {
     }
 
     @Override
-    public MemoryContext<?> memoryContext() {
+    public MemoryContext<MemorySegment> memoryContext() {
         return context;
     }
 

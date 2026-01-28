@@ -10,6 +10,8 @@ import ai.qxotic.jota.tensor.ExprNode;
 import ai.qxotic.jota.tensor.ExpressionGraph;
 import ai.qxotic.jota.tensor.InputNode;
 import ai.qxotic.jota.tensor.JitKernel;
+import ai.qxotic.jota.tensor.KernelArgs;
+import ai.qxotic.jota.tensor.KernelArgsBuilder;
 import ai.qxotic.jota.tensor.KernelCache;
 import ai.qxotic.jota.tensor.KernelStyle;
 import ai.qxotic.jota.tensor.Tensor;
@@ -45,8 +47,9 @@ final class JavaComputeBackend implements ComputeBackend {
         }
         List<MemoryView<MemorySegment>> inputViews = new ArrayList<>(inputs.size());
         boolean allContiguous = true;
+        java.util.Map<Integer, Tensor> inputTensorMap = graph.inputTensorMap();
         for (InputNode inputNode : graph.inputs()) {
-            Tensor inputTensor = inputs.get(inputNode.index());
+            Tensor inputTensor = inputTensorMap.get(inputNode.index());
             MemoryView<?> view = inputTensor.materialize();
             requireCompatible(inputNode, view);
             requireSameShape(inputNode, view);
@@ -73,11 +76,11 @@ final class JavaComputeBackend implements ComputeBackend {
         MemoryView<MemorySegment> panamaOutput = (MemoryView<MemorySegment>) outputView;
 
         KernelStyle style = allContiguous ? KernelStyle.CONTIGUOUS : KernelStyle.STRIDED;
-        JitKernel kernel = compiler.compile(graph, style);
-        @SuppressWarnings("unchecked")
-        MemoryView<MemorySegment>[] inputsArray =
-                inputViews.toArray(size -> (MemoryView<MemorySegment>[]) new MemoryView[size]);
-        kernel.execute(context, inputsArray, panamaOutput);
+        DataType[] signature =
+                new KernelArgsBuilder().buildSignature(graph, inputs, graph.inputTensorMap());
+        JitKernel kernel = compiler.compile(graph, style, signature);
+        KernelArgs args = new KernelArgsBuilder().build(graph, inputs, panamaOutput);
+        kernel.execute(context, args);
         return outputView;
     }
 

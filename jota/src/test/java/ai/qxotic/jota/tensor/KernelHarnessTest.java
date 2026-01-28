@@ -120,6 +120,7 @@ class KernelHarnessTest {
         public KernelSignature signature() {
             return KernelSignature.builder("test_scale_kernel")
                     .input("a", -1, null, null)
+                    .inputScalar("scale", DataType.FP32)
                     .output("out", -1, null, null)
                     .supportedDevices(Device.PANAMA)
                     .build();
