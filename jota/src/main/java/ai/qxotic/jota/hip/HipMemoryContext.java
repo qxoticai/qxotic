@@ -14,8 +14,7 @@ public final class HipMemoryContext implements MemoryContext<HipDevicePtr> {
         return INSTANCE;
     }
 
-    private HipMemoryContext() {
-    }
+    private HipMemoryContext() {}
 
     @Override
     public Device device() {
@@ -44,8 +43,10 @@ public final class HipMemoryContext implements MemoryContext<HipDevicePtr> {
 
     @Override
     public String toString() {
-        return "HipMemoryContext{HipDevicePtr, device=" + device() +
-                ", directAccess=" + (memoryAccess() != null) +
-                '}';
+        return "HipMemoryContext{HipDevicePtr, device="
+                + device()
+                + ", directAccess="
+                + (memoryAccess() != null)
+                + '}';
     }
 }

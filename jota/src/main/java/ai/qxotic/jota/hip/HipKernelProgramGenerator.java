@@ -1,11 +1,10 @@
 package ai.qxotic.jota.hip;
 
 import ai.qxotic.jota.tensor.ExpressionGraph;
-import ai.qxotic.jota.tensor.HipElementwiseKernelGenerator;
+import ai.qxotic.jota.tensor.GraphHasher;
+import ai.qxotic.jota.tensor.KernelCacheKey;
 import ai.qxotic.jota.tensor.KernelProgram;
 import ai.qxotic.jota.tensor.KernelProgramGenerator;
-import ai.qxotic.jota.tensor.KernelCacheKey;
-import ai.qxotic.jota.tensor.GraphHasher;
 
 final class HipKernelProgramGenerator implements KernelProgramGenerator {
     @Override

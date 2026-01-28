@@ -143,7 +143,10 @@ public final class JavaKernelBackend implements KernelBackend {
                 @SuppressWarnings("unchecked")
                 MemoryView<java.lang.foreign.MemorySegment>[] inputs =
                         buffers.subList(0, buffers.size() - 1)
-                                .toArray(size -> (MemoryView<java.lang.foreign.MemorySegment>[]) new MemoryView[size]);
+                                .toArray(
+                                        size ->
+                                                (MemoryView<java.lang.foreign.MemorySegment>[])
+                                                        new MemoryView[size]);
                 kernel.execute(context, inputs, output);
             }
 
@@ -161,7 +164,7 @@ public final class JavaKernelBackend implements KernelBackend {
         }
         DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
         try (StandardJavaFileManager fileManager =
-                     compiler.getStandardFileManager(diagnostics, Locale.ROOT, null)) {
+                compiler.getStandardFileManager(diagnostics, Locale.ROOT, null)) {
             Iterable<? extends JavaFileObject> units =
                     fileManager.getJavaFileObjects(entry.sourcePath().toFile());
             List<String> options =
@@ -182,7 +185,7 @@ public final class JavaKernelBackend implements KernelBackend {
     private JitKernel load(KernelCacheEntry entry) {
         try {
             URLClassLoader loader =
-                    new URLClassLoader(new URL[]{entry.classOutputDir().toUri().toURL()});
+                    new URLClassLoader(new URL[] {entry.classOutputDir().toUri().toURL()});
             String fqcn = entry.packageName() + "." + entry.className();
             Class<?> clazz = Class.forName(fqcn, true, loader);
             Object instance = clazz.getDeclaredConstructor().newInstance();
@@ -212,7 +215,8 @@ public final class JavaKernelBackend implements KernelBackend {
         throw new IllegalArgumentException("Expected Java class payload as byte[]");
     }
 
-    private static String formatDiagnostics(List<Diagnostic<? extends JavaFileObject>> diagnostics) {
+    private static String formatDiagnostics(
+            List<Diagnostic<? extends JavaFileObject>> diagnostics) {
         StringBuilder sb = new StringBuilder("Java kernel compilation failed:\n");
         for (Diagnostic<? extends JavaFileObject> diagnostic : diagnostics) {
             sb.append("  ")

@@ -8,11 +8,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
-import ai.qxotic.jota.DeviceRegistry;
 import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.ExecutionMode;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
+import ai.qxotic.jota.backend.Backend;
+import ai.qxotic.jota.backend.DefaultBackendRegistry;
 import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryHelpers;
 import ai.qxotic.jota.memory.MemoryView;
@@ -39,7 +40,8 @@ class ExecutionModeTest {
 
     @Test
     void eagerModeSelectsEagerOps() {
-        DeviceRegistry registry = DeviceRegistry.builder().register(CONTEXT, ENGINE).build();
+        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        registry.register(new StubBackend(CONTEXT, ENGINE));
         Environment environment =
                 new Environment(CONTEXT.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
@@ -55,7 +57,8 @@ class ExecutionModeTest {
 
     @Test
     void lazyModeReturnsLazyTensor() {
-        DeviceRegistry registry = DeviceRegistry.builder().register(CONTEXT, ENGINE).build();
+        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        registry.register(new StubBackend(CONTEXT, ENGINE));
         Environment environment =
                 new Environment(Device.PANAMA, DataType.FP32, registry, ExecutionMode.LAZY);
 
@@ -75,7 +78,8 @@ class ExecutionModeTest {
     @Test
     void eagerOpsMaterializeScalarSqrt() {
         MemoryContext<MemorySegment> segmentContext = ContextFactory.ofMemorySegment();
-        DeviceRegistry registry = DeviceRegistry.builder().register(segmentContext, ENGINE).build();
+        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        registry.register(new StubBackend(segmentContext, ENGINE));
         Environment environment =
                 new Environment(
                         segmentContext.device(), DataType.FP32, registry, ExecutionMode.EAGER);
@@ -109,5 +113,35 @@ class ExecutionModeTest {
         MemoryView<MemorySegment> typedView = (MemoryView<MemorySegment>) view;
         long offset = Indexing.linearToOffset(typedView, 0);
         return context.memoryAccess().readFloat(typedView.memory(), offset);
+    }
+
+    private static final class StubBackend implements Backend {
+        private final MemoryContext<?> context;
+        private final ComputeEngine engine;
+
+        private StubBackend(MemoryContext<?> context, ComputeEngine engine) {
+            this.context = context;
+            this.engine = engine;
+        }
+
+        @Override
+        public Device device() {
+            return context.device();
+        }
+
+        @Override
+        public MemoryContext<?> memoryContext() {
+            return context;
+        }
+
+        @Override
+        public ComputeEngine computeEngine() {
+            return engine;
+        }
+
+        @Override
+        public java.util.Optional<ai.qxotic.jota.backend.KernelService> kernels() {
+            return java.util.Optional.empty();
+        }
     }
 }

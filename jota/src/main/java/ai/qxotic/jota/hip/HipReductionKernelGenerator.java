@@ -58,8 +58,11 @@ final class HipReductionKernelGenerator {
 
         for (int i = 0; i < outDims.length; i++) {
             long stride = outStride[i];
-            source.append("  long long o").append(i).append(" = tmp / ")
-                    .append(stride).append("LL;\n");
+            source.append("  long long o")
+                    .append(i)
+                    .append(" = tmp / ")
+                    .append(stride)
+                    .append("LL;\n");
             if (i < outDims.length - 1) {
                 source.append("  tmp = tmp % ").append(stride).append("LL;\n");
             }
@@ -92,7 +95,9 @@ final class HipReductionKernelGenerator {
         } else {
             source.append("  ").append(typeName).append(" acc = input[base];\n");
             source.append("  for (int r = 1; r < ").append(reduceDim).append("; r++) {\n");
-            source.append("    ").append(typeName).append(" v = input[base + (long long)r * ")
+            source.append("    ")
+                    .append(typeName)
+                    .append(" v = input[base + (long long)r * ")
                     .append(inStride[axis])
                     .append("LL];\n");
             if (reduction.op() == ai.qxotic.jota.tensor.ReductionOp.MIN) {

@@ -38,7 +38,7 @@ final class EnvironmentOps {
             synchronized (this) {
                 if (eagerOps == null) {
                     MemoryContext<?> context =
-                            environment.registry().context(environment.defaultDevice());
+                            environment.backend(environment.defaultDevice()).memoryContext();
                     eagerOps = new EagerTensorOps(context);
                 }
                 return eagerOps;

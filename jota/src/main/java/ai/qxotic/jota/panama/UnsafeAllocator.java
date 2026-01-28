@@ -3,8 +3,8 @@ package ai.qxotic.jota.panama;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.ScopedMemory;
 import ai.qxotic.jota.memory.ScopedMemoryAllocator;
-import java.lang.reflect.Field;
 import java.lang.foreign.MemorySegment;
+import java.lang.reflect.Field;
 import java.util.concurrent.atomic.AtomicBoolean;
 import sun.misc.Unsafe;
 

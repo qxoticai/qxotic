@@ -65,9 +65,9 @@ final class ExpressionComputation implements LazyComputation {
                             + sourceView.layout());
         }
         MemoryContext<?> sourceContext =
-                Environment.current().registry().context(inputNode.device());
+                Environment.current().backend(inputNode.device()).memoryContext();
         MemoryContext<?> targetContext =
-                Environment.current().registry().context(transfer.device());
+                Environment.current().backend(transfer.device()).memoryContext();
         if (!targetContext.supportsDataType(sourceView.dataType())) {
             throw new IllegalArgumentException(
                     "Target context does not support data type: " + sourceView.dataType());
@@ -100,7 +100,8 @@ final class ExpressionComputation implements LazyComputation {
         if (sourceView.isContiguous()) {
             return sourceView;
         }
-        MemoryContext<?> context = Environment.current().registry().context(inputNode.device());
+        MemoryContext<?> context =
+                Environment.current().backend(inputNode.device()).memoryContext();
         if (!context.supportsDataType(sourceView.dataType())) {
             throw new IllegalArgumentException(
                     "Target context does not support data type: " + sourceView.dataType());

@@ -4,7 +4,11 @@ import java.util.Map;
 import java.util.Objects;
 
 public record KernelProgram(
-        Kind kind, Language language, Object payload, String entryPoint, Map<String, String> options) {
+        Kind kind,
+        Language language,
+        Object payload,
+        String entryPoint,
+        Map<String, String> options) {
 
     public KernelProgram {
         Objects.requireNonNull(kind, "kind");

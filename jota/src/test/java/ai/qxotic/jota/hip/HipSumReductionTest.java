@@ -48,23 +48,37 @@ class HipSumReductionTest {
 
         Environment env = Environment.current();
         Environment hipEnv =
-                new Environment(Device.HIP, env.defaultFloat(), env.registry(), env.executionMode());
+                new Environment(
+                        Device.HIP, env.defaultFloat(), env.backends(), env.executionMode());
 
         MemoryView<MemorySegment> axis1 =
                 reduceToHost(host, hipContext, hipEnv, deviceView, DataType.FP32, false, 1);
-        assertEquals(6.0f, access.readFloat(axis1.memory(), Indexing.linearToOffset(axis1, 0)), 0.0001f);
-        assertEquals(15.0f, access.readFloat(axis1.memory(), Indexing.linearToOffset(axis1, 1)), 0.0001f);
+        assertEquals(
+                6.0f, access.readFloat(axis1.memory(), Indexing.linearToOffset(axis1, 0)), 0.0001f);
+        assertEquals(
+                15.0f,
+                access.readFloat(axis1.memory(), Indexing.linearToOffset(axis1, 1)),
+                0.0001f);
 
         MemoryView<MemorySegment> axis0 =
                 reduceToHost(host, hipContext, hipEnv, deviceView, DataType.FP32, false, 0);
-        assertEquals(5.0f, access.readFloat(axis0.memory(), Indexing.linearToOffset(axis0, 0)), 0.0001f);
-        assertEquals(7.0f, access.readFloat(axis0.memory(), Indexing.linearToOffset(axis0, 1)), 0.0001f);
-        assertEquals(9.0f, access.readFloat(axis0.memory(), Indexing.linearToOffset(axis0, 2)), 0.0001f);
+        assertEquals(
+                5.0f, access.readFloat(axis0.memory(), Indexing.linearToOffset(axis0, 0)), 0.0001f);
+        assertEquals(
+                7.0f, access.readFloat(axis0.memory(), Indexing.linearToOffset(axis0, 1)), 0.0001f);
+        assertEquals(
+                9.0f, access.readFloat(axis0.memory(), Indexing.linearToOffset(axis0, 2)), 0.0001f);
 
         MemoryView<MemorySegment> keepDims =
                 reduceToHost(host, hipContext, hipEnv, deviceView, DataType.FP32, true, 1);
-        assertEquals(6.0f, access.readFloat(keepDims.memory(), Indexing.linearToOffset(keepDims, 0)), 0.0001f);
-        assertEquals(15.0f, access.readFloat(keepDims.memory(), Indexing.linearToOffset(keepDims, 1)), 0.0001f);
+        assertEquals(
+                6.0f,
+                access.readFloat(keepDims.memory(), Indexing.linearToOffset(keepDims, 0)),
+                0.0001f);
+        assertEquals(
+                15.0f,
+                access.readFloat(keepDims.memory(), Indexing.linearToOffset(keepDims, 1)),
+                0.0001f);
     }
 
     private static MemoryView<MemorySegment> reduceToHost(
@@ -86,8 +100,8 @@ class HipSumReductionTest {
         MemoryView<HipDevicePtr> deviceOut = (MemoryView<HipDevicePtr>) output;
         MemoryView<MemorySegment> hostOut =
                 MemoryView.of(
-                        host.memoryAllocator().allocateMemory(
-                                accumulatorType, deviceOut.shape().size()),
+                        host.memoryAllocator()
+                                .allocateMemory(accumulatorType, deviceOut.shape().size()),
                         accumulatorType,
                         Layout.rowMajor(deviceOut.shape()));
         MemoryContext.copy(hipContext, deviceOut, host, hostOut);

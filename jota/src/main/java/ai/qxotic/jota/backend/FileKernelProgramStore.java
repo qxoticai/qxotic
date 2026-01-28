@@ -75,7 +75,8 @@ public final class FileKernelProgramStore implements KernelProgramStore {
             throw new IllegalStateException("Failed to read kernel program metadata " + key, e);
         }
         KernelProgram.Kind kind = KernelProgram.Kind.valueOf(props.getProperty("kind"));
-        KernelProgram.Language language = KernelProgram.Language.valueOf(props.getProperty("language"));
+        KernelProgram.Language language =
+                KernelProgram.Language.valueOf(props.getProperty("language"));
         String entryPoint = props.getProperty("entryPoint");
         Map<String, String> options = readOptions(props);
         Object payload;

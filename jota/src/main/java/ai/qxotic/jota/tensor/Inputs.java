@@ -15,7 +15,8 @@ public final class Inputs {
     }
 
     public static KernelInput of(Map<String, Tensor> named) {
-        return new DefaultKernelInput(List.copyOf(named.values()), new LinkedHashMap<>(named), Map.of());
+        return new DefaultKernelInput(
+                List.copyOf(named.values()), new LinkedHashMap<>(named), Map.of());
     }
 
     public static Builder builder() {

@@ -1,6 +1,7 @@
-package ai.qxotic.jota.tensor;
+package ai.qxotic.jota.hip;
 
 import ai.qxotic.jota.DataType;
+import ai.qxotic.jota.tensor.*;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -34,8 +35,11 @@ public final class HipElementwiseKernelGenerator {
         body.append("#include <hip/hip_runtime.h>\n");
         body.append("#include <stdint.h>\n");
         body.append("#include <math.h>\n");
-        body.append("extern \"C\" __global__ void ").append(kernelName).append("(")
-                .append(signature).append(") {\n");
+        body.append("extern \"C\" __global__ void ")
+                .append(kernelName)
+                .append("(")
+                .append(signature)
+                .append(") {\n");
         body.append("  int idx = blockIdx.x * blockDim.x + threadIdx.x;\n");
         body.append("  if (idx < n) {\n");
         for (String line : lines) {

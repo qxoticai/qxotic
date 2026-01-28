@@ -17,8 +17,8 @@ final class ConstantFolder {
     }
 
     /**
-     * Creates a broadcasted constant tensor with the given value, type, and shape.
-     * For true scalars (shape.isScalar()), creates a scalar tensor.
+     * Creates a broadcasted constant tensor with the given value, type, and shape. For true scalars
+     * (shape.isScalar()), creates a scalar tensor.
      */
     private static Tensor broadcastedOf(Number value, DataType type, Shape shape) {
         if (shape.isScalar()) {

@@ -26,25 +26,8 @@ public final class Environment {
 
     private final Device defaultDevice;
     private final DataType defaultFloat;
-    private final DeviceRegistry registry;
     private final BackendRegistry backends;
     private final ExecutionMode executionMode;
-
-    public Environment(Device defaultDevice, DataType defaultFloat, DeviceRegistry registry) {
-        this(defaultDevice, defaultFloat, registry, ExecutionMode.LAZY);
-    }
-
-    public Environment(
-            Device defaultDevice,
-            DataType defaultFloat,
-            DeviceRegistry registry,
-            ExecutionMode executionMode) {
-        this(
-                defaultDevice,
-                defaultFloat,
-                DefaultBackendRegistry.fromDeviceRegistry(registry),
-                executionMode);
-    }
 
     public Environment(
             Device defaultDevice,
@@ -54,7 +37,6 @@ public final class Environment {
         this.defaultDevice = Objects.requireNonNull(defaultDevice, "defaultDevice");
         this.defaultFloat = Objects.requireNonNull(defaultFloat, "defaultFloat");
         this.backends = Objects.requireNonNull(backends, "backends");
-        this.registry = DeviceRegistry.fromBackends(backends);
         this.executionMode = Objects.requireNonNull(executionMode, "executionMode");
     }
 
@@ -99,10 +81,6 @@ public final class Environment {
         return defaultFloat;
     }
 
-    public DeviceRegistry registry() {
-        return registry;
-    }
-
     public BackendRegistry backends() {
         return backends;
     }
@@ -124,11 +102,13 @@ public final class Environment {
     }
 
     private static BackendRegistry buildDefaultBackends() {
-        DefaultBackendRegistry registry =
-                DefaultBackendRegistry.withNative(new PanamaBackend());
+        DefaultBackendRegistry registry = DefaultBackendRegistry.withNative(new PanamaBackend());
         if (HipRuntime.isAvailable()) {
             registry.register(new HipBackend());
         }
+        //        if (WebGPUSupport.hasGpuAdapter()) {
+        //            registry.register(WebGPUWBackend.create());
+        //        }
         return registry;
     }
 }

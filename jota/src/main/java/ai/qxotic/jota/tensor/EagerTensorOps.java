@@ -127,8 +127,8 @@ public class EagerTensorOps implements TensorOps {
             return x;
         }
         MemoryView<?> sourceView = x.materialize();
-        MemoryContext<?> sourceContext = Environment.current().registry().context(x.device());
-        MemoryContext<?> targetContext = Environment.current().registry().context(device);
+        MemoryContext<?> sourceContext = Environment.current().backend(x.device()).memoryContext();
+        MemoryContext<?> targetContext = Environment.current().backend(device).memoryContext();
         if (!targetContext.supportsDataType(sourceView.dataType())) {
             throw new IllegalArgumentException(
                     "Target context does not support data type: " + sourceView.dataType());

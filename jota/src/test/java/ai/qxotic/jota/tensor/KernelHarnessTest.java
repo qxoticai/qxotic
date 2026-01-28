@@ -18,7 +18,7 @@ class KernelHarnessTest {
 
     @SuppressWarnings("unchecked")
     private static final MemoryContext<MemorySegment> CONTEXT =
-            (MemoryContext<MemorySegment>) Environment.current().registry().context(Device.PANAMA);
+            (MemoryContext<MemorySegment>) Environment.current().nativeBackend().memoryContext();
 
     @Test
     void executesRegisteredKernelThroughDefaultContext() {

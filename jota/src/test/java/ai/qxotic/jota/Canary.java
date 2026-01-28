@@ -7,10 +7,10 @@ public class Canary {
 
         //        Environment environment =
         //                new Environment(
-        //                        Device.PANAMA, DataType.FP32, DeviceRegistry.global(),
+        //                        Device.PANAMA, DataType.FP32, Environment.global().backends(),
         // ExecutionMode.LAZY);
         //        MemoryContext<MemorySegment> context = (MemoryContext<MemorySegment>)
-        // environment.registry().context(Device.PANAMA);
+        // Environment.current().nativeBackend().memoryContext();
         //
         //        var two = Tensor.scalar(2f);
         //        var result =

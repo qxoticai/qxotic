@@ -9,19 +9,19 @@ import ai.qxotic.jota.Stride;
 import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.tensor.ComputeBackend;
+import ai.qxotic.jota.tensor.ExecutionStream;
 import ai.qxotic.jota.tensor.ExpressionGraph;
 import ai.qxotic.jota.tensor.KernelArgs;
 import ai.qxotic.jota.tensor.KernelArgsBuilder;
 import ai.qxotic.jota.tensor.KernelCacheKey;
 import ai.qxotic.jota.tensor.KernelHarness;
+import ai.qxotic.jota.tensor.KernelInterpreter;
 import ai.qxotic.jota.tensor.KernelProgram;
 import ai.qxotic.jota.tensor.KernelProgramGenerator;
 import ai.qxotic.jota.tensor.LaunchConfig;
 import ai.qxotic.jota.tensor.LaunchHints;
 import ai.qxotic.jota.tensor.ReductionOp;
-import ai.qxotic.jota.tensor.ExecutionStream;
 import ai.qxotic.jota.tensor.Tensor;
-import ai.qxotic.jota.tensor.KernelInterpreter;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.List;
@@ -36,7 +36,8 @@ final class HipComputeBackend implements ComputeBackend {
     private final HipKernelBackend backend = new HipKernelBackend();
     private final KernelArgsBuilder argsBuilder = new KernelArgsBuilder();
     private final KernelHarness harness = new KernelHarness(generator, backend, argsBuilder);
-    private final HipReductionKernelGenerator reductionGenerator = new HipReductionKernelGenerator();
+    private final HipReductionKernelGenerator reductionGenerator =
+            new HipReductionKernelGenerator();
 
     HipComputeBackend(Device device) {
         this.device = device;
@@ -107,7 +108,9 @@ final class HipComputeBackend implements ComputeBackend {
         }
         MemoryView<HipDevicePtr> devOut =
                 MemoryView.of(
-                        hipContext.memoryAllocator().allocateMemory(graph.root().dataType(), outSize),
+                        hipContext
+                                .memoryAllocator()
+                                .allocateMemory(graph.root().dataType(), outSize),
                         graph.root().dataType(),
                         Layout.rowMajor(shape));
 
@@ -134,7 +137,8 @@ final class HipComputeBackend implements ComputeBackend {
 
     private MemoryView<?> executeReductionHost(ExpressionGraph graph, List<Tensor> inputs) {
         MemoryContext<MemorySegment> hostContext =
-                (MemoryContext<MemorySegment>) Environment.current().registry().context(Device.PANAMA);
+                (MemoryContext<MemorySegment>)
+                        Environment.current().nativeBackend().memoryContext();
         List<MemoryView<MemorySegment>> hostInputs = new ArrayList<>(inputs.size());
         for (int i = 0; i < graph.inputs().size(); i++) {
             Tensor inputTensor = inputs.get(i);
@@ -151,7 +155,9 @@ final class HipComputeBackend implements ComputeBackend {
         Shape shape = layout.shape();
         MemoryView<MemorySegment> hostOutput =
                 MemoryView.of(
-                        hostContext.memoryAllocator().allocateMemory(graph.root().dataType(), shape),
+                        hostContext
+                                .memoryAllocator()
+                                .allocateMemory(graph.root().dataType(), shape),
                         graph.root().dataType(),
                         layout);
         KernelInterpreter.execute(graph, inputArray, hostOutput);
@@ -219,7 +225,7 @@ final class HipComputeBackend implements ComputeBackend {
         @SuppressWarnings("unchecked")
         MemoryContext<Object> srcContext =
                 (MemoryContext<Object>)
-                        Environment.current().registry().context(view.memory().device());
+                        Environment.current().backend(view.memory().device()).memoryContext();
         @SuppressWarnings("unchecked")
         MemoryView<Object> srcView = (MemoryView<Object>) view;
         MemoryView<HipDevicePtr> dst =
@@ -255,7 +261,7 @@ final class HipComputeBackend implements ComputeBackend {
         @SuppressWarnings("unchecked")
         MemoryContext<Object> srcContext =
                 (MemoryContext<Object>)
-                        Environment.current().registry().context(view.memory().device());
+                        Environment.current().backend(view.memory().device()).memoryContext();
         @SuppressWarnings("unchecked")
         MemoryView<Object> srcView = (MemoryView<Object>) view;
         MemoryContext.copy(srcContext, srcView, hostContext, dst);
@@ -271,7 +277,7 @@ final class HipComputeBackend implements ComputeBackend {
             HipMemoryContext hipContext, MemoryView<HipDevicePtr> view) {
         @SuppressWarnings("unchecked")
         MemoryContext<Object> hostContext =
-                (MemoryContext<Object>) Environment.current().registry().context(Device.PANAMA);
+                (MemoryContext<Object>) Environment.current().nativeBackend().memoryContext();
         @SuppressWarnings("unchecked")
         MemoryView<Object> hostView =
                 (MemoryView<Object>)

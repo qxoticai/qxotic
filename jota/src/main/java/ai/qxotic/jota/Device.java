@@ -25,8 +25,10 @@ public interface Device {
 
     // Engines
     Device PANAMA = CPU.child("panama"); // MemorySegment-backed memory
+
     Device CUDA = GPU.child("cuda");
     Device HIP = GPU.child("hip");
+    Device WEBGPU = GPU.child("webgpu");
 
     static Device defaultDevice() {
         return Environment.current().defaultDevice();

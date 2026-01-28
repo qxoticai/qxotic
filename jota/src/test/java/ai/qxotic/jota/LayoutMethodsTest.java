@@ -243,7 +243,7 @@ class LayoutMethodsTest {
     @Test
     void testModeLocalVsSuffixContiguity() {
         Shape shape = Shape.of(2, Shape.of(3L, 4L), 5L); // (A, (B, C), D)
-        Stride stride = Stride.flat(200, 20, 5, 2); // D is strided (2)
+        Stride stride = Stride.template(shape, 200, 20, 5, 2); // D is strided (2)
         Layout layout = Layout.of(shape, stride);
 
         assertTrue(layout.isLocalContiguous(1));
@@ -276,7 +276,7 @@ class LayoutMethodsTest {
         assertTrue(layout.isSuffixContiguousFlat(-1));
 
         Shape shape = Shape.of(2, Shape.of(3L, 4L), 5L);
-        Layout nested = Layout.of(shape, Stride.flat(200, 20, 5, 2));
+        Layout nested = Layout.of(shape, Stride.template(shape, 200, 20, 5, 2));
         assertTrue(nested.isLocalContiguous(-2));
         assertFalse(nested.isSuffixContiguous(-2));
     }

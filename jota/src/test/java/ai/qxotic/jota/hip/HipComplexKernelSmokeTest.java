@@ -26,8 +26,7 @@ class HipComplexKernelSmokeTest {
 
         int n = 128;
         MemoryView<MemorySegment> hostInput = hostArray(n, i -> (i - 64) * 0.05f);
-        MemoryView<MemorySegment> output =
-                runOnHip(hostInput, t -> t.sigmoid(), DataType.FP32, n);
+        MemoryView<MemorySegment> output = runOnHip(hostInput, t -> t.sigmoid(), DataType.FP32, n);
 
         MemoryAccess<MemorySegment> access = hostAccess();
         long lastOffset = Indexing.linearToOffset(output, n - 1);
@@ -43,8 +42,7 @@ class HipComplexKernelSmokeTest {
 
         int n = 128;
         MemoryView<MemorySegment> hostInput = hostArray(n, i -> (i - 64) * 0.05f);
-        MemoryView<MemorySegment> output =
-                runOnHip(hostInput, t -> t.silu(), DataType.FP32, n);
+        MemoryView<MemorySegment> output = runOnHip(hostInput, t -> t.silu(), DataType.FP32, n);
 
         MemoryAccess<MemorySegment> access = hostAccess();
         long lastOffset = Indexing.linearToOffset(output, n - 1);
@@ -61,8 +59,7 @@ class HipComplexKernelSmokeTest {
 
         int n = 16;
         MemoryView<MemorySegment> hostInput = hostArray(n, i -> (i - 8) * 0.5f);
-        MemoryView<MemorySegment> output =
-                runOnHip(hostInput, t -> t.relu(), DataType.FP32, n);
+        MemoryView<MemorySegment> output = runOnHip(hostInput, t -> t.relu(), DataType.FP32, n);
 
         MemoryAccess<MemorySegment> access = hostAccess();
         long offset0 = Indexing.linearToOffset(output, 0);
@@ -81,7 +78,9 @@ class HipComplexKernelSmokeTest {
         MemoryView<MemorySegment> output =
                 runOnHip(
                         hostInput,
-                        t -> Tensor.where(t.lessThan(Tensor.scalar(0f, t.dataType())), t.negate(), t),
+                        t ->
+                                Tensor.where(
+                                        t.lessThan(Tensor.scalar(0f, t.dataType())), t.negate(), t),
                         DataType.FP32,
                         n);
 
@@ -109,8 +108,7 @@ class HipComplexKernelSmokeTest {
         MemoryAccess<MemorySegment> access = hostAccess();
         long lastOffset = Indexing.linearToOffset(output, n - 1);
         float input = (n - 1 + 1) * 0.01f;
-        float expected =
-                (float) Math.tanh(Math.exp(input) + Math.log(input + 1.0f));
+        float expected = (float) Math.tanh(Math.exp(input) + Math.log(input + 1.0f));
         assertEquals(expected, access.readFloat(output.memory(), lastOffset), 0.0008f);
     }
 
@@ -141,9 +139,11 @@ class HipComplexKernelSmokeTest {
         MemoryView<MemorySegment> output =
                 runOnHip(
                         hostInput,
-                        t -> Tensor.where(t.lessThan(Tensor.scalar(0f, t.dataType())),
-                                t.negate().square(),
-                                t.square()),
+                        t ->
+                                Tensor.where(
+                                        t.lessThan(Tensor.scalar(0f, t.dataType())),
+                                        t.negate().square(),
+                                        t.square()),
                         DataType.FP32,
                         n);
 
@@ -164,11 +164,7 @@ class HipComplexKernelSmokeTest {
         int n = 64;
         MemoryView<MemorySegment> hostInput = hostArrayFp64(n, i -> 0.1 + i * 0.02);
         MemoryView<MemorySegment> output =
-                runOnHip(
-                        hostInput,
-                        t -> t.exp().add(t.log()).tanh(),
-                        DataType.FP64,
-                        n);
+                runOnHip(hostInput, t -> t.exp().add(t.log()).tanh(), DataType.FP64, n);
 
         MemoryAccess<MemorySegment> access = hostAccess();
         long lastOffset = Indexing.linearToOffset(output, n - 1);
@@ -190,7 +186,9 @@ class HipComplexKernelSmokeTest {
                         t ->
                                 Tensor.where(
                                         t.lessThan(Tensor.scalar(0f, t.dataType()))
-                                                .logicalOr(t.greaterThan(Tensor.scalar(1f, t.dataType()))),
+                                                .logicalOr(
+                                                        t.greaterThan(
+                                                                Tensor.scalar(1f, t.dataType()))),
                                         t.negate(),
                                         t),
                         DataType.FP32,
@@ -213,8 +211,9 @@ class HipComplexKernelSmokeTest {
         MemoryView<MemorySegment> output =
                 runOnHip(
                         hostInput,
-                        t -> t.bitwiseAnd(Tensor.scalar(3, t.dataType()))
-                                .bitwiseXor(Tensor.scalar(1, t.dataType())),
+                        t ->
+                                t.bitwiseAnd(Tensor.scalar(3, t.dataType()))
+                                        .bitwiseXor(Tensor.scalar(1, t.dataType())),
                         DataType.I32,
                         n);
 
@@ -233,7 +232,8 @@ class HipComplexKernelSmokeTest {
         int n = 64;
         Environment env = Environment.current();
         Environment hipEnv =
-                new Environment(Device.HIP, env.defaultFloat(), env.registry(), env.executionMode());
+                new Environment(
+                        Device.HIP, env.defaultFloat(), env.backends(), env.executionMode());
         MemoryView<?> deviceOut =
                 Environment.with(
                         hipEnv,
@@ -306,10 +306,7 @@ class HipComplexKernelSmokeTest {
     }
 
     private static MemoryView<MemorySegment> runOnHip(
-            MemoryView<MemorySegment> hostInput,
-            TensorOp op,
-            DataType dataType,
-            int n) {
+            MemoryView<MemorySegment> hostInput, TensorOp op, DataType dataType, int n) {
         MemoryContext<MemorySegment> host = ContextFactory.ofMemorySegment();
         HipMemoryContext hipContext = HipMemoryContext.instance();
 
@@ -322,7 +319,8 @@ class HipComplexKernelSmokeTest {
 
         Environment env = Environment.current();
         Environment hipEnv =
-                new Environment(Device.HIP, env.defaultFloat(), env.registry(), env.executionMode());
+                new Environment(
+                        Device.HIP, env.defaultFloat(), env.backends(), env.executionMode());
         MemoryView<?> deviceOut =
                 Environment.with(hipEnv, () -> op.apply(Tensor.of(devInput)).materialize());
 

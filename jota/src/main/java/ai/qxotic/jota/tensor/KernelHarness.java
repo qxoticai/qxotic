@@ -9,7 +9,9 @@ public final class KernelHarness {
     private final KernelArgsBuilder argsBuilder;
 
     public KernelHarness(
-            KernelProgramGenerator generator, KernelBackend backend, KernelArgsBuilder argsBuilder) {
+            KernelProgramGenerator generator,
+            KernelBackend backend,
+            KernelArgsBuilder argsBuilder) {
         this.generator = generator;
         this.backend = backend;
         this.argsBuilder = argsBuilder;
