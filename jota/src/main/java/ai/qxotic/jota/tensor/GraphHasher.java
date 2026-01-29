@@ -68,6 +68,11 @@ public final class GraphHasher {
                 writeNode(ternary.trueValue(), digest, ids);
                 writeNode(ternary.falseValue(), digest, ids);
             }
+            case ViewTransformOp transform -> {
+                update(digest, "viewTransform");
+                update(digest, transform.hint() != null ? transform.hint() : "viewTransform");
+                writeNode(transform.input(), digest, ids);
+            }
             default -> {
                 throw new UnsupportedOperationException(
                         "Hash for node not implemented: " + node.getClass());

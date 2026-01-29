@@ -8,6 +8,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -107,7 +108,7 @@ public final class FileKernelProgramStore implements KernelProgramStore {
     }
 
     private static Map<String, String> readOptions(Properties props) {
-        java.util.Map<String, String> options = new java.util.LinkedHashMap<>();
+        Map<String, String> options = new LinkedHashMap<>();
         for (String name : props.stringPropertyNames()) {
             if (name.startsWith("option.")) {
                 options.put(name.substring("option.".length()), props.getProperty(name));
