@@ -1,6 +1,8 @@
 package ai.qxotic.jota;
 
-import ai.qxotic.jota.tensor.*;
+import ai.qxotic.jota.memory.MemoryAccess;
+import ai.qxotic.jota.tensor.Tensor;
+import ai.qxotic.jota.tensor.Tracer;
 
 public class Canary {
     static void main() {
@@ -27,9 +29,7 @@ public class Canary {
         //        var x2 = add2(x);
         //
         //        MemoryView<MemorySegment> view =
-        //                (MemoryView<MemorySegment>) ComputeEngineContext.with(
-        //                        new JavaComputeEngine((MemoryContext<MemorySegment>) context),
-        //                        x2::materialize);
+        //                (MemoryView<MemorySegment>) x2.materialize();
         //
         //        System.out.println(view.toString(context.memoryAccess()));
         //
@@ -40,15 +40,12 @@ public class Canary {
         //
         //        System.out.println(result2); // view.toString(conte0xt.memoryAccess()));
 
-        Tensor x = Tensor.of(new float[] {0, 1, 2, 3, 4, 5}).view(Shape.of(2, 3)); // [2x3]
-        Tensor y = x.add(x).sqrt(); // lazy ops chain
-        System.out.println("isLazy=" + y.isLazy());
+        Tensor x = Tensor.arange(6, DataType.FP32).view(Shape.of(2, 3)); // [2x3]
+        Tensor result =
+                Tracer.trace(x, Tensor.scalar(2f), (a, b) -> a.add(b).add(Tensor.scalar(3.14f)));
         // Trigger execution
-        var out = y.materialize();
-        System.out.println(out);
-    }
-
-    static Tensor add2(Tensor in) {
-        return in.add(Tensor.scalar(2f));
+        var out = result.materialize();
+        MemoryAccess access = Environment.current().panamaContext().memoryAccess();
+        System.out.println(out.toString(access));
     }
 }

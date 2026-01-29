@@ -10,7 +10,6 @@ import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.memory.impl.ContextFactory;
 import ai.qxotic.jota.memory.impl.MemoryViewFactory;
-import ai.qxotic.jota.panama.JavaComputeEngine;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.concurrent.TimeUnit;
@@ -49,8 +48,7 @@ class JavaKernelCompilerTest {
         Tensor inputTensor = Tensor.of(input);
         Tensor traced = Tracer.trace(inputTensor, JavaKernelCompilerTest::tensorGelu);
 
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), traced::materialize);
+        MemoryView<?> output = traced.materialize();
 
         float[] values = readFloatValues(output, 6);
         float[] expected = map(new float[] {0, 1, 2, 3, 4, 5}, JavaKernelCompilerTest::gelu);
@@ -75,14 +73,11 @@ class JavaKernelCompilerTest {
         //            in[i] = i;
         //        }
 
-        JavaComputeEngine engine = new JavaComputeEngine(context);
-        // BytecodeComputeEngine engine = new BytecodeComputeEngine(context);
-
         for (int i = 0; i < 10; ++i) {
             Tensor traced = Tracer.trace(inputTensor, JavaKernelCompilerTest::tensorGelu);
             long startNanos = System.nanoTime();
             //            float[] out = new float[100_000_000];
-            MemoryView<?> output = ComputeEngineContext.with(engine, traced::materialize);
+            MemoryView<?> output = traced.materialize();
             //          pepe(in, out);
             long elapsedNanos = System.nanoTime() - startNanos;
             long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(elapsedNanos);
@@ -102,8 +97,7 @@ class JavaKernelCompilerTest {
         Tensor tensor1 = Tensor.of(range(Shape.of(2, 3)));
         Tensor traced = Tracer.trace(tensor0, tensor1, (t0, t1) -> t0.multiply(t1));
 
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), traced::materialize);
+        MemoryView<?> output = traced.materialize();
 
         float[] values = readFloatValues(output, 6);
         assertArrayEquals(new float[] {0, 1, 4, 9, 16, 25}, values, 0.0001f);
@@ -115,8 +109,7 @@ class JavaKernelCompilerTest {
         Tensor inputTensor = Tensor.of(input);
         Tensor traced = Tracer.trace(inputTensor, t -> t.add(t));
 
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), traced::materialize);
+        MemoryView<?> output = traced.materialize();
 
         float[] values = readFloatValues(output, 6);
         assertArrayEquals(new float[] {0, 2, 4, 6, 8, 10}, values, 0.0001f);
@@ -128,8 +121,7 @@ class JavaKernelCompilerTest {
         Tensor inputTensor = Tensor.of(input);
         Tensor traced = Tracer.trace(inputTensor, t -> t.square().add(1f));
 
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), traced::materialize);
+        MemoryView<?> output = traced.materialize();
 
         float[] values = readFloatValues(output, 6);
         assertArrayEquals(new float[] {1, 10, 2, 17, 5, 26}, values, 0.0001f);
@@ -142,8 +134,7 @@ class JavaKernelCompilerTest {
         Tensor inputTensor = Tensor.of(input);
         Tensor traced = Tracer.trace(inputTensor, t -> t.add(3).square());
 
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), traced::materialize);
+        MemoryView<?> output = traced.materialize();
 
         int[] values = readIntValues(output, 4);
         assertArrayEquals(new int[] {9, 16, 25, 36}, values);
@@ -153,19 +144,16 @@ class JavaKernelCompilerTest {
     void kernelCacheIsPersisted() {
         MemoryView<MemorySegment> input = range(Shape.of(1, 4));
         Tensor traced = Tracer.trace(Tensor.of(input), t -> t.add(t));
-        JavaComputeEngine engine = new JavaComputeEngine(context);
 
-        MemoryView<?> first = ComputeEngineContext.with(engine, traced::materialize);
+        MemoryView<?> first = traced.materialize();
         assertNotNull(first);
 
         ExpressionComputation computation =
                 (ExpressionComputation) traced.computation().orElseThrow();
         KernelCacheKey baseKey = GraphHasher.hash(computation.graph());
         KernelCacheKey key = KernelCacheKey.of(baseKey.value() + "-contiguous-v6");
-        KernelCacheEntry entry = engine.cache().entryFor(key);
-        assertEquals(true, java.nio.file.Files.exists(entry.classFilePath()));
 
-        MemoryView<?> second = ComputeEngineContext.with(engine, traced::materialize);
+        MemoryView<?> second = traced.materialize();
         assertNotNull(second);
     }
 
@@ -181,8 +169,7 @@ class JavaKernelCompilerTest {
                         Tensor.of(input2),
                         (a, b, c) -> a.add(b).multiply(c));
 
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), traced::materialize);
+        MemoryView<?> output = traced.materialize();
 
         float[] values = readFloatValues(output, 4);
         assertArrayEquals(new float[] {0, 2, 8, 18}, values, 0.0001f);

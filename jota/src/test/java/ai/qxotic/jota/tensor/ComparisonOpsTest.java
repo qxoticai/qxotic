@@ -9,7 +9,6 @@ import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryHelpers;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.memory.impl.ContextFactory;
-import ai.qxotic.jota.panama.JavaComputeEngine;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.List;
@@ -52,18 +51,10 @@ class ComparisonOpsTest {
             Tensor greaterThanOrEqual =
                     Tracer.trace(leftTensor, rightTensor, Tensor::greaterThanOrEqual);
 
-            MemoryView<?> notEqualOut =
-                    ComputeEngineContext.with(
-                            new JavaComputeEngine(context), notEqual::materialize);
-            MemoryView<?> greaterThanOut =
-                    ComputeEngineContext.with(
-                            new JavaComputeEngine(context), greaterThan::materialize);
-            MemoryView<?> lessThanOrEqualOut =
-                    ComputeEngineContext.with(
-                            new JavaComputeEngine(context), lessThanOrEqual::materialize);
-            MemoryView<?> greaterThanOrEqualOut =
-                    ComputeEngineContext.with(
-                            new JavaComputeEngine(context), greaterThanOrEqual::materialize);
+            MemoryView<?> notEqualOut = notEqual.materialize();
+            MemoryView<?> greaterThanOut = greaterThan.materialize();
+            MemoryView<?> lessThanOrEqualOut = lessThanOrEqual.materialize();
+            MemoryView<?> greaterThanOrEqualOut = greaterThanOrEqual.materialize();
 
             for (int i = 0; i < shape.size(); i++) {
                 int leftValue = dataType == DataType.BOOL ? (i % 2) : i;
@@ -75,9 +66,7 @@ class ComparisonOpsTest {
             }
 
             Tensor flippedGreaterThan = Tracer.trace(rightTensor, leftTensor, Tensor::greaterThan);
-            MemoryView<?> flippedGreaterOut =
-                    ComputeEngineContext.with(
-                            new JavaComputeEngine(context), flippedGreaterThan::materialize);
+            MemoryView<?> flippedGreaterOut = flippedGreaterThan.materialize();
             for (int i = 0; i < shape.size(); i++) {
                 int leftValue = dataType == DataType.BOOL ? (i % 2) : i;
                 int rightValue = 0;

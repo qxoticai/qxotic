@@ -11,7 +11,6 @@ import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.memory.impl.ContextFactory;
 import ai.qxotic.jota.memory.impl.MemoryFactory;
 import ai.qxotic.jota.memory.impl.MemoryViewFactory;
-import ai.qxotic.jota.panama.JavaComputeEngine;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.List;
@@ -36,9 +35,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
             if (dataType == DataType.FP32) {
                 Tensor input = Tensor.of(new float[] {1.0f, 2.0f, 4.0f, 8.0f}, shape);
                 Tensor result = Tracer.trace(input, Tensor::reciprocal);
-                MemoryView<?> output =
-                        ComputeEngineContext.with(
-                                new JavaComputeEngine(context), result::materialize);
+                MemoryView<?> output = result.materialize();
 
                 assertEquals(DataType.FP32, output.dataType());
                 assertEquals(shape, output.shape());
@@ -49,9 +46,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
             } else if (dataType == DataType.FP64) {
                 Tensor input = Tensor.of(new double[] {1.0, 2.0, 4.0, 8.0}, shape);
                 Tensor result = Tracer.trace(input, Tensor::reciprocal);
-                MemoryView<?> output =
-                        ComputeEngineContext.with(
-                                new JavaComputeEngine(context), result::materialize);
+                MemoryView<?> output = result.materialize();
 
                 assertEquals(DataType.FP64, output.dataType());
                 assertEquals(shape, output.shape());
@@ -67,8 +62,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
     void reciprocalWithFloatInput() {
         Tensor input = Tensor.of(new float[] {1.0f, 2.0f, 0.5f, 4.0f});
         Tensor result = Tracer.trace(input, Tensor::reciprocal);
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), result::materialize);
+        MemoryView<?> output = result.materialize();
 
         assertEquals(DataType.FP32, output.dataType());
         assertEquals(Shape.of(4), output.shape());
@@ -82,8 +76,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
     void reciprocalWithDoubleInput() {
         Tensor input = Tensor.of(new double[] {1.0, 2.0, 4.0});
         Tensor result = Tracer.trace(input, Tensor::reciprocal);
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), result::materialize);
+        MemoryView<?> output = result.materialize();
 
         assertEquals(DataType.FP64, output.dataType());
         assertEquals(Shape.of(3), output.shape());
@@ -96,8 +89,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
     void reciprocalWithNegativeValues() {
         Tensor input = Tensor.of(new float[] {-1.0f, -2.0f, -4.0f});
         Tensor result = Tracer.trace(input, Tensor::reciprocal);
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), result::materialize);
+        MemoryView<?> output = result.materialize();
 
         assertEquals(-1.0f, readFloat(output, 0), 0.0001f);
         assertEquals(-0.5f, readFloat(output, 1), 0.0001f);
@@ -109,8 +101,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
         Shape shape = Shape.of(2, 2);
         Tensor input = Tensor.of(new float[] {0.1f, 0.01f, 0.25f, 0.5f}, shape);
         Tensor result = Tracer.trace(input, Tensor::reciprocal);
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), result::materialize);
+        MemoryView<?> output = result.materialize();
 
         assertEquals(10.0f, readFloat(output, 0), 0.001f);
         assertEquals(100.0f, readFloat(output, 1), 0.01f);
@@ -122,8 +113,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
     void reciprocalWithScalar() {
         Tensor input = Tensor.of(new float[] {5.0f});
         Tensor result = Tracer.trace(input, Tensor::reciprocal);
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), result::materialize);
+        MemoryView<?> output = result.materialize();
 
         assertEquals(Shape.of(1), output.shape());
         assertEquals(0.2f, readFloat(output, 0), 0.0001f);
@@ -133,8 +123,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
     void reciprocalWithScalar2() {
         Tensor input = Tensor.of(new float[] {5.0f}).view(Shape.scalar());
         Tensor result = Tracer.trace(input, Tensor::reciprocal);
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), result::materialize);
+        MemoryView<?> output = result.materialize();
 
         assertEquals(Shape.scalar(), output.shape());
         assertEquals(0.2f, readFloat(output, 0), 0.0001f);
@@ -144,8 +133,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
     void reciprocalWithScalar3() {
         Tensor input = Tensor.scalar(5.0f);
         Tensor result = Tracer.trace(input, Tensor::reciprocal);
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), result::materialize);
+        MemoryView<?> output = result.materialize();
 
         assertEquals(Shape.scalar(), output.shape());
         assertEquals(0.2f, readFloat(output, 0), 0.0001f);
@@ -181,8 +169,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
         Shape shape = Shape.of(2, 2);
         Tensor input = Tensor.of(new float[] {1.0f, 2.0f, 4.0f, 8.0f}, shape);
         Tensor result = Tracer.trace(input, t -> t.reciprocal(DataType.FP64));
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), result::materialize);
+        MemoryView<?> output = result.materialize();
 
         assertEquals(DataType.FP64, output.dataType());
         assertEquals(shape, output.shape());
@@ -196,8 +183,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
     void reciprocalWithTargetDataTypeFromFP32ToFP64() {
         Tensor input = Tensor.of(new float[] {2.0f, 4.0f});
         Tensor result = Tracer.trace(input, t -> t.reciprocal(DataType.FP64));
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), result::materialize);
+        MemoryView<?> output = result.materialize();
 
         assertEquals(DataType.FP64, output.dataType());
         assertEquals(0.5, readDouble(output, 0), 0.001);
@@ -227,8 +213,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
         Shape shape = Shape.of(2, 2);
         Tensor input = Tensor.of(new float[] {1.0f, 2.0f, 4.0f, 8.0f}, shape);
         Tensor result = Tracer.trace(input, t -> t.reciprocal().add(1.0f));
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), result::materialize);
+        MemoryView<?> output = result.materialize();
 
         assertEquals(2.0f, readFloat(output, 0), 0.0001f);
         assertEquals(1.5f, readFloat(output, 1), 0.0001f);
@@ -240,8 +225,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
     void reciprocalChainedWithOtherOperations() {
         Tensor input = Tensor.of(new float[] {2.0f, 4.0f, 8.0f});
         Tensor result = Tracer.trace(input, t -> t.reciprocal().multiply(2.0f).add(1.0f));
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), result::materialize);
+        MemoryView<?> output = result.materialize();
 
         assertEquals(2.0f, readFloat(output, 0), 0.0001f);
         assertEquals(1.5f, readFloat(output, 1), 0.0001f);

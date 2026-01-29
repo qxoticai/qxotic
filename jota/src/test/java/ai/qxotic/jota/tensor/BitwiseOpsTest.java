@@ -11,7 +11,6 @@ import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryHelpers;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.memory.impl.ContextFactory;
-import ai.qxotic.jota.panama.JavaComputeEngine;
 import java.lang.foreign.MemorySegment;
 import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
@@ -37,8 +36,7 @@ class BitwiseOpsTest {
                     MemoryHelpers.arange(context, dataType, shape.size()).view(shape);
             Tensor input = Tensor.of(left);
             Tensor output = Tracer.trace(input, Tensor::bitwiseNot);
-            MemoryView<?> result =
-                    ComputeEngineContext.with(new JavaComputeEngine(context), output::materialize);
+            MemoryView<?> result = output.materialize();
 
             for (int i = 0; i < shape.size(); i++) {
                 long value = readIntegral(result, i, dataType);
@@ -63,15 +61,9 @@ class BitwiseOpsTest {
             Tensor orTensor = Tracer.trace(a, b, Tensor::bitwiseOr);
             Tensor xorTensor = Tracer.trace(a, b, Tensor::bitwiseXor);
 
-            MemoryView<?> andOut =
-                    ComputeEngineContext.with(
-                            new JavaComputeEngine(context), andTensor::materialize);
-            MemoryView<?> orOut =
-                    ComputeEngineContext.with(
-                            new JavaComputeEngine(context), orTensor::materialize);
-            MemoryView<?> xorOut =
-                    ComputeEngineContext.with(
-                            new JavaComputeEngine(context), xorTensor::materialize);
+            MemoryView<?> andOut = andTensor.materialize();
+            MemoryView<?> orOut = orTensor.materialize();
+            MemoryView<?> xorOut = xorTensor.materialize();
 
             for (int i = 0; i < shape.size(); i++) {
                 long leftValue = castIntegral(i, dataType);
