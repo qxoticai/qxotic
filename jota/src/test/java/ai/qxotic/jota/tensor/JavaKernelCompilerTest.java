@@ -1,5 +1,7 @@
 package ai.qxotic.jota.tensor;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
@@ -7,15 +9,12 @@ import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.memory.impl.ContextFactory;
 import ai.qxotic.jota.memory.impl.MemoryViewFactory;
-import org.junit.jupiter.api.AutoClose;
-import org.junit.jupiter.api.Disabled;
-import org.junit.jupiter.api.Test;
-
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.concurrent.TimeUnit;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.AutoClose;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 class JavaKernelCompilerTest {
 
@@ -56,7 +55,7 @@ class JavaKernelCompilerTest {
         MemoryView<?> output = traced.materialize();
 
         float[] values = readFloatValues(output, 6);
-        float[] expected = map(new float[]{0, 1, 2, 3, 4, 5}, JavaKernelCompilerTest::gelu);
+        float[] expected = map(new float[] {0, 1, 2, 3, 4, 5}, JavaKernelCompilerTest::gelu);
         assertArrayEquals(expected, values, 0.0001f);
     }
 
@@ -91,7 +90,7 @@ class JavaKernelCompilerTest {
             float[] values =
                     //                Arrays.copyOf(out, 6); //
                     readFloatValues(output, 6);
-            float[] expected = map(new float[]{0, 1, 2, 3, 4, 5}, JavaKernelCompilerTest::gelu);
+            float[] expected = map(new float[] {0, 1, 2, 3, 4, 5}, JavaKernelCompilerTest::gelu);
             assertArrayEquals(expected, values, 0.0001f);
         }
     }
@@ -105,7 +104,7 @@ class JavaKernelCompilerTest {
         MemoryView<?> output = traced.materialize();
 
         float[] values = readFloatValues(output, 6);
-        assertArrayEquals(new float[]{0, 1, 4, 9, 16, 25}, values, 0.0001f);
+        assertArrayEquals(new float[] {0, 1, 4, 9, 16, 25}, values, 0.0001f);
     }
 
     @Test
@@ -117,7 +116,7 @@ class JavaKernelCompilerTest {
         MemoryView<?> output = traced.materialize();
 
         float[] values = readFloatValues(output, 6);
-        assertArrayEquals(new float[]{0, 2, 4, 6, 8, 10}, values, 0.0001f);
+        assertArrayEquals(new float[] {0, 2, 4, 6, 8, 10}, values, 0.0001f);
     }
 
     @Test
@@ -129,7 +128,7 @@ class JavaKernelCompilerTest {
         MemoryView<?> output = traced.materialize();
 
         float[] values = readFloatValues(output, 6);
-        assertArrayEquals(new float[]{1, 10, 2, 17, 5, 26}, values, 0.0001f);
+        assertArrayEquals(new float[] {1, 10, 2, 17, 5, 26}, values, 0.0001f);
         assertEquals(input.layout(), output.layout());
     }
 
@@ -142,7 +141,7 @@ class JavaKernelCompilerTest {
         MemoryView<?> output = traced.materialize();
 
         int[] values = readIntValues(output, 4);
-        assertArrayEquals(new int[]{9, 16, 25, 36}, values);
+        assertArrayEquals(new int[] {9, 16, 25, 36}, values);
     }
 
     @Test

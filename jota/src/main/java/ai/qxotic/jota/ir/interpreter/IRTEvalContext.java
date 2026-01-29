@@ -19,17 +19,17 @@ public final class IRTEvalContext implements AutoCloseable {
     private final ScopedMemoryAllocatorArena<MemorySegment> arena;
     private final Map<Integer, MemoryView<MemorySegment>> inputMap;
     private final Map<IRTNode, MemoryView<MemorySegment>> resultCache;
-    private final TensorAccess<MemorySegment> access;
+    private final MemoryAccess<MemorySegment> memAccess;
 
     private IRTEvalContext(
             ScopedMemoryAllocatorArena<MemorySegment> arena,
             Map<Integer, MemoryView<MemorySegment>> inputMap,
             Map<IRTNode, MemoryView<MemorySegment>> resultCache,
-            TensorAccess<MemorySegment> access) {
+            MemoryAccess<MemorySegment> memAccess) {
         this.arena = arena;
         this.inputMap = inputMap;
         this.resultCache = resultCache;
-        this.access = access;
+        this.memAccess = memAccess;
     }
 
     @SuppressWarnings("unchecked")
@@ -43,7 +43,7 @@ public final class IRTEvalContext implements AutoCloseable {
                 (MemoryAccess<MemorySegment>) context.memoryAccess();
         ScopedMemoryAllocatorArena<MemorySegment> arena = PanamaFactory.createArena();
 
-        return new IRTEvalContext(arena, inputMap, new HashMap<>(), new TensorAccess<>(memAccess));
+        return new IRTEvalContext(arena, inputMap, new HashMap<>(), memAccess);
     }
 
     public MemoryView<MemorySegment> getInput(int tensorId) {
@@ -73,8 +73,8 @@ public final class IRTEvalContext implements AutoCloseable {
         return allocateOutput(dtype, layout);
     }
 
-    public TensorAccess<MemorySegment> getTensorAccess() {
-        return access;
+    public MemoryAccess<MemorySegment> getMemoryAccess() {
+        return memAccess;
     }
 
     @Override
