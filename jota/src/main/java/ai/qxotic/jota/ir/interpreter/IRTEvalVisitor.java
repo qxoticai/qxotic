@@ -2,6 +2,7 @@ package ai.qxotic.jota.ir.interpreter;
 
 import ai.qxotic.jota.*;
 import ai.qxotic.jota.ir.irt.*;
+import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
@@ -10,11 +11,11 @@ import java.util.List;
 final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
 
     private final IRTEvalContext context;
-    private final TensorAccess<MemorySegment> access;
+    private final MemoryAccess<MemorySegment> memAccess;
 
     IRTEvalVisitor(IRTEvalContext context) {
         this.context = context;
-        this.access = context.getTensorAccess();
+        this.memAccess = context.getMemoryAccess();
     }
 
     @Override
@@ -61,7 +62,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             MemoryView<MemorySegment> output,
             long size) {
         for (long i = 0; i < size; i++) {
-            float a = access.readFloat(input, i);
+            float a = memAccess.readFloat(input.memory(), Indexing.linearToOffset(input, i));
             float result =
                     switch (op) {
                         case NEGATE -> -a;
@@ -82,7 +83,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                                 throw new UnsupportedOperationException(
                                         "BITWISE_NOT not supported for FP32");
                     };
-            access.writeFloat(output, i, result);
+            memAccess.writeFloat(output.memory(), Indexing.linearToOffset(output, i), result);
         }
     }
 
@@ -92,7 +93,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             MemoryView<MemorySegment> output,
             long size) {
         for (long i = 0; i < size; i++) {
-            double a = access.readDouble(input, i);
+            double a = memAccess.readDouble(input.memory(), Indexing.linearToOffset(input, i));
             double result =
                     switch (op) {
                         case NEGATE -> -a;
@@ -113,7 +114,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                                 throw new UnsupportedOperationException(
                                         "BITWISE_NOT not supported for FP64");
                     };
-            access.writeDouble(output, i, result);
+            memAccess.writeDouble(output.memory(), Indexing.linearToOffset(output, i), result);
         }
     }
 
@@ -123,7 +124,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             MemoryView<MemorySegment> output,
             long size) {
         for (long i = 0; i < size; i++) {
-            short bits = access.readShort(input, i);
+            short bits = memAccess.readShort(input.memory(), Indexing.linearToOffset(input, i));
             float a = Float.float16ToFloat(bits);
             float result =
                     switch (op) {
@@ -146,7 +147,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                                         "BITWISE_NOT not supported for FP16");
                     };
             short resultBits = Float.floatToFloat16(result);
-            access.writeShort(output, i, resultBits);
+            memAccess.writeShort(output.memory(), Indexing.linearToOffset(output, i), resultBits);
         }
     }
 
@@ -156,7 +157,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             MemoryView<MemorySegment> output,
             long size) {
         for (long i = 0; i < size; i++) {
-            short bits = access.readShort(input, i);
+            short bits = memAccess.readShort(input.memory(), Indexing.linearToOffset(input, i));
             float a = BFloat16.toFloat(bits);
             float result =
                     switch (op) {
@@ -179,7 +180,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                                         "BITWISE_NOT not supported for BF16");
                     };
             short resultBits = BFloat16.fromFloat(result);
-            access.writeShort(output, i, resultBits);
+            memAccess.writeShort(output.memory(), Indexing.linearToOffset(output, i), resultBits);
         }
     }
 
@@ -189,7 +190,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             MemoryView<MemorySegment> output,
             long size) {
         for (long i = 0; i < size; i++) {
-            byte a = access.readByte(input, i);
+            byte a = memAccess.readByte(input.memory(), Indexing.linearToOffset(input, i));
             byte result =
                     switch (op) {
                         case NEGATE -> (byte) -a;
@@ -199,7 +200,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                                 throw new UnsupportedOperationException(
                                         "Unsupported unary op for I8: " + op);
                     };
-            access.writeByte(output, i, result);
+            memAccess.writeByte(output.memory(), Indexing.linearToOffset(output, i), result);
         }
     }
 
@@ -209,7 +210,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             MemoryView<MemorySegment> output,
             long size) {
         for (long i = 0; i < size; i++) {
-            short a = access.readShort(input, i);
+            short a = memAccess.readShort(input.memory(), Indexing.linearToOffset(input, i));
             short result =
                     switch (op) {
                         case NEGATE -> (short) -a;
@@ -219,7 +220,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                                 throw new UnsupportedOperationException(
                                         "Unsupported unary op for I16: " + op);
                     };
-            access.writeShort(output, i, result);
+            memAccess.writeShort(output.memory(), Indexing.linearToOffset(output, i), result);
         }
     }
 
@@ -229,7 +230,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             MemoryView<MemorySegment> output,
             long size) {
         for (long i = 0; i < size; i++) {
-            int a = access.readInt(input, i);
+            int a = memAccess.readInt(input.memory(), Indexing.linearToOffset(input, i));
             int result =
                     switch (op) {
                         case NEGATE -> -a;
@@ -239,7 +240,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                                 throw new UnsupportedOperationException(
                                         "Unsupported unary op for I32: " + op);
                     };
-            access.writeInt(output, i, result);
+            memAccess.writeInt(output.memory(), Indexing.linearToOffset(output, i), result);
         }
     }
 
@@ -249,7 +250,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             MemoryView<MemorySegment> output,
             long size) {
         for (long i = 0; i < size; i++) {
-            long a = access.readLong(input, i);
+            long a = memAccess.readLong(input.memory(), Indexing.linearToOffset(input, i));
             long result =
                     switch (op) {
                         case NEGATE -> -a;
@@ -259,7 +260,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                                 throw new UnsupportedOperationException(
                                         "Unsupported unary op for I64: " + op);
                     };
-            access.writeLong(output, i, result);
+            memAccess.writeLong(output.memory(), Indexing.linearToOffset(output, i), result);
         }
     }
 
@@ -269,7 +270,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             MemoryView<MemorySegment> output,
             long size) {
         for (long i = 0; i < size; i++) {
-            byte a = access.readByte(input, i);
+            byte a = memAccess.readByte(input.memory(), Indexing.linearToOffset(input, i));
             byte result =
                     switch (op) {
                         case LOGICAL_NOT -> (byte) (a != 0 ? 0 : 1);
@@ -277,7 +278,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                                 throw new UnsupportedOperationException(
                                         "Unsupported unary op for BOOL: " + op);
                     };
-            access.writeByte(output, i, result);
+            memAccess.writeByte(output.memory(), Indexing.linearToOffset(output, i), result);
         }
     }
 
@@ -322,8 +323,8 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             MemoryView<MemorySegment> output,
             long size) {
         for (long i = 0; i < size; i++) {
-            float a = access.readFloat(left, i);
-            float b = access.readFloat(right, i);
+            float a = memAccess.readFloat(left.memory(), Indexing.linearToOffset(left, i));
+            float b = memAccess.readFloat(right.memory(), Indexing.linearToOffset(right, i));
             float result =
                     switch (op) {
                         case ADD -> a + b;
@@ -355,7 +356,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                                 throw new UnsupportedOperationException(
                                         "Comparison operations should use BOOL output");
                     };
-            access.writeFloat(output, i, result);
+            memAccess.writeFloat(output.memory(), Indexing.linearToOffset(output, i), result);
         }
     }
 
@@ -366,8 +367,8 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             MemoryView<MemorySegment> output,
             long size) {
         for (long i = 0; i < size; i++) {
-            double a = access.readDouble(left, i);
-            double b = access.readDouble(right, i);
+            double a = memAccess.readDouble(left.memory(), Indexing.linearToOffset(left, i));
+            double b = memAccess.readDouble(right.memory(), Indexing.linearToOffset(right, i));
             double result =
                     switch (op) {
                         case ADD -> a + b;
@@ -399,7 +400,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                                 throw new UnsupportedOperationException(
                                         "Comparison operations should use BOOL output");
                     };
-            access.writeDouble(output, i, result);
+            memAccess.writeDouble(output.memory(), Indexing.linearToOffset(output, i), result);
         }
     }
 
@@ -410,8 +411,8 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             MemoryView<MemorySegment> output,
             long size) {
         for (long i = 0; i < size; i++) {
-            short aBits = access.readShort(left, i);
-            short bBits = access.readShort(right, i);
+            short aBits = memAccess.readShort(left.memory(), Indexing.linearToOffset(left, i));
+            short bBits = memAccess.readShort(right.memory(), Indexing.linearToOffset(right, i));
             float a = Float.float16ToFloat(aBits);
             float b = Float.float16ToFloat(bBits);
             float result =
@@ -446,7 +447,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                                         "Comparison operations should use BOOL output");
                     };
             short resultBits = Float.floatToFloat16(result);
-            access.writeShort(output, i, resultBits);
+            memAccess.writeShort(output.memory(), Indexing.linearToOffset(output, i), resultBits);
         }
     }
 
@@ -457,8 +458,8 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             MemoryView<MemorySegment> output,
             long size) {
         for (long i = 0; i < size; i++) {
-            short aBits = access.readShort(left, i);
-            short bBits = access.readShort(right, i);
+            short aBits = memAccess.readShort(left.memory(), Indexing.linearToOffset(left, i));
+            short bBits = memAccess.readShort(right.memory(), Indexing.linearToOffset(right, i));
             float a = BFloat16.toFloat(aBits);
             float b = BFloat16.toFloat(bBits);
             float result =
@@ -493,7 +494,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                                         "Comparison operations should use BOOL output");
                     };
             short resultBits = BFloat16.fromFloat(result);
-            access.writeShort(output, i, resultBits);
+            memAccess.writeShort(output.memory(), Indexing.linearToOffset(output, i), resultBits);
         }
     }
 
@@ -504,8 +505,8 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             MemoryView<MemorySegment> output,
             long size) {
         for (long i = 0; i < size; i++) {
-            byte a = access.readByte(left, i);
-            byte b = access.readByte(right, i);
+            byte a = memAccess.readByte(left.memory(), Indexing.linearToOffset(left, i));
+            byte b = memAccess.readByte(right.memory(), Indexing.linearToOffset(right, i));
             byte result =
                     switch (op) {
                         case ADD -> (byte) (a + b);
@@ -532,7 +533,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                                 throw new UnsupportedOperationException(
                                         "Comparison operations should use BOOL output");
                     };
-            access.writeByte(output, i, result);
+            memAccess.writeByte(output.memory(), Indexing.linearToOffset(output, i), result);
         }
     }
 
@@ -543,8 +544,8 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             MemoryView<MemorySegment> output,
             long size) {
         for (long i = 0; i < size; i++) {
-            short a = access.readShort(left, i);
-            short b = access.readShort(right, i);
+            short a = memAccess.readShort(left.memory(), Indexing.linearToOffset(left, i));
+            short b = memAccess.readShort(right.memory(), Indexing.linearToOffset(right, i));
             short result =
                     switch (op) {
                         case ADD -> (short) (a + b);
@@ -572,7 +573,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                                 throw new UnsupportedOperationException(
                                         "Comparison operations should use BOOL output");
                     };
-            access.writeShort(output, i, result);
+            memAccess.writeShort(output.memory(), Indexing.linearToOffset(output, i), result);
         }
     }
 
@@ -583,8 +584,8 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             MemoryView<MemorySegment> output,
             long size) {
         for (long i = 0; i < size; i++) {
-            int a = access.readInt(left, i);
-            int b = access.readInt(right, i);
+            int a = memAccess.readInt(left.memory(), Indexing.linearToOffset(left, i));
+            int b = memAccess.readInt(right.memory(), Indexing.linearToOffset(right, i));
             int result =
                     switch (op) {
                         case ADD -> a + b;
@@ -612,7 +613,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                                 throw new UnsupportedOperationException(
                                         "Comparison operations should use BOOL output");
                     };
-            access.writeInt(output, i, result);
+            memAccess.writeInt(output.memory(), Indexing.linearToOffset(output, i), result);
         }
     }
 
@@ -623,8 +624,8 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             MemoryView<MemorySegment> output,
             long size) {
         for (long i = 0; i < size; i++) {
-            long a = access.readLong(left, i);
-            long b = access.readLong(right, i);
+            long a = memAccess.readLong(left.memory(), Indexing.linearToOffset(left, i));
+            long b = memAccess.readLong(right.memory(), Indexing.linearToOffset(right, i));
             long result =
                     switch (op) {
                         case ADD -> a + b;
@@ -652,7 +653,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                                 throw new UnsupportedOperationException(
                                         "Comparison operations should use BOOL output");
                     };
-            access.writeLong(output, i, result);
+            memAccess.writeLong(output.memory(), Indexing.linearToOffset(output, i), result);
         }
     }
 
@@ -663,8 +664,8 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             MemoryView<MemorySegment> output,
             long size) {
         for (long i = 0; i < size; i++) {
-            byte a = access.readByte(left, i);
-            byte b = access.readByte(right, i);
+            byte a = memAccess.readByte(left.memory(), Indexing.linearToOffset(left, i));
+            byte b = memAccess.readByte(right.memory(), Indexing.linearToOffset(right, i));
             byte result =
                     switch (op) {
                         case LOGICAL_AND -> (byte) ((a != 0 && b != 0) ? 1 : 0);
@@ -680,7 +681,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                                 throw new UnsupportedOperationException(
                                         "Comparison operations should use BOOL output");
                     };
-            access.writeByte(output, i, result);
+            memAccess.writeByte(output.memory(), Indexing.linearToOffset(output, i), result);
         }
     }
 
@@ -695,38 +696,38 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
         long size = layout.shape().size();
 
         for (long i = 0; i < size; i++) {
-            boolean condition = access.readByte(cond, i) != 0;
+            boolean condition = memAccess.readByte(cond.memory(), Indexing.linearToOffset(cond, i)) != 0;
 
             if (dtype == DataType.FP32) {
                 float val =
-                        condition ? access.readFloat(trueExpr, i) : access.readFloat(falseExpr, i);
-                access.writeFloat(output, i, val);
+                        condition ? memAccess.readFloat(trueExpr.memory(), Indexing.linearToOffset(trueExpr, i)) : memAccess.readFloat(falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
+                memAccess.writeFloat(output.memory(), Indexing.linearToOffset(output, i), val);
             } else if (dtype == DataType.FP64) {
                 double val =
                         condition
-                                ? access.readDouble(trueExpr, i)
-                                : access.readDouble(falseExpr, i);
-                access.writeDouble(output, i, val);
+                                ? memAccess.readDouble(trueExpr.memory(), Indexing.linearToOffset(trueExpr, i))
+                                : memAccess.readDouble(falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
+                memAccess.writeDouble(output.memory(), Indexing.linearToOffset(output, i), val);
             } else if (dtype == DataType.FP16 || dtype == DataType.BF16) {
                 short val =
-                        condition ? access.readShort(trueExpr, i) : access.readShort(falseExpr, i);
-                access.writeShort(output, i, val);
+                        condition ? memAccess.readShort(trueExpr.memory(), Indexing.linearToOffset(trueExpr, i)) : memAccess.readShort(falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
+                memAccess.writeShort(output.memory(), Indexing.linearToOffset(output, i), val);
             } else if (dtype == DataType.I8) {
-                byte val = condition ? access.readByte(trueExpr, i) : access.readByte(falseExpr, i);
-                access.writeByte(output, i, val);
+                byte val = condition ? memAccess.readByte(trueExpr.memory(), Indexing.linearToOffset(trueExpr, i)) : memAccess.readByte(falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
+                memAccess.writeByte(output.memory(), Indexing.linearToOffset(output, i), val);
             } else if (dtype == DataType.I16) {
                 short val =
-                        condition ? access.readShort(trueExpr, i) : access.readShort(falseExpr, i);
-                access.writeShort(output, i, val);
+                        condition ? memAccess.readShort(trueExpr.memory(), Indexing.linearToOffset(trueExpr, i)) : memAccess.readShort(falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
+                memAccess.writeShort(output.memory(), Indexing.linearToOffset(output, i), val);
             } else if (dtype == DataType.I32) {
-                int val = condition ? access.readInt(trueExpr, i) : access.readInt(falseExpr, i);
-                access.writeInt(output, i, val);
+                int val = condition ? memAccess.readInt(trueExpr.memory(), Indexing.linearToOffset(trueExpr, i)) : memAccess.readInt(falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
+                memAccess.writeInt(output.memory(), Indexing.linearToOffset(output, i), val);
             } else if (dtype == DataType.I64) {
-                long val = condition ? access.readLong(trueExpr, i) : access.readLong(falseExpr, i);
-                access.writeLong(output, i, val);
+                long val = condition ? memAccess.readLong(trueExpr.memory(), Indexing.linearToOffset(trueExpr, i)) : memAccess.readLong(falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
+                memAccess.writeLong(output.memory(), Indexing.linearToOffset(output, i), val);
             } else if (dtype == DataType.BOOL) {
-                byte val = condition ? access.readByte(trueExpr, i) : access.readByte(falseExpr, i);
-                access.writeByte(output, i, val);
+                byte val = condition ? memAccess.readByte(trueExpr.memory(), Indexing.linearToOffset(trueExpr, i)) : memAccess.readByte(falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
+                memAccess.writeByte(output.memory(), Indexing.linearToOffset(output, i), val);
             } else {
                 throw new UnsupportedOperationException("Unsupported data type: " + dtype);
             }
@@ -750,33 +751,33 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
 
             if (targetDtype == DataType.FP32) {
                 float value = readAsFloat(input, sourceDtype, inOffset);
-                access.getAccess().writeFloat(input.memory(), outOffset, value);
+                memAccess.writeFloat(input.memory(), outOffset, value);
             } else if (targetDtype == DataType.FP64) {
                 double value = readAsDouble(input, sourceDtype, inOffset);
-                access.getAccess().writeDouble(input.memory(), outOffset, value);
+                memAccess.writeDouble(input.memory(), outOffset, value);
             } else if (targetDtype == DataType.FP16) {
                 float value = readAsFloat(input, sourceDtype, inOffset);
                 short bits = Float.floatToFloat16(value);
-                access.getAccess().writeShort(input.memory(), outOffset, bits);
+                memAccess.writeShort(input.memory(), outOffset, bits);
             } else if (targetDtype == DataType.BF16) {
                 float value = readAsFloat(input, sourceDtype, inOffset);
                 short bits = BFloat16.fromFloat(value);
-                access.getAccess().writeShort(input.memory(), outOffset, bits);
+                memAccess.writeShort(input.memory(), outOffset, bits);
             } else if (targetDtype == DataType.I8) {
                 long value = readAsLong(input, sourceDtype, inOffset);
-                access.getAccess().writeByte(input.memory(), outOffset, (byte) value);
+                memAccess.writeByte(input.memory(), outOffset, (byte) value);
             } else if (targetDtype == DataType.I16) {
                 long value = readAsLong(input, sourceDtype, inOffset);
-                access.getAccess().writeShort(input.memory(), outOffset, (short) value);
+                memAccess.writeShort(input.memory(), outOffset, (short) value);
             } else if (targetDtype == DataType.I32) {
                 long value = readAsLong(input, sourceDtype, inOffset);
-                access.getAccess().writeInt(input.memory(), outOffset, (int) value);
+                memAccess.writeInt(input.memory(), outOffset, (int) value);
             } else if (targetDtype == DataType.I64) {
                 long value = readAsLong(input, sourceDtype, inOffset);
-                access.getAccess().writeLong(input.memory(), outOffset, value);
+                memAccess.writeLong(input.memory(), outOffset, value);
             } else if (targetDtype == DataType.BOOL) {
                 long value = readAsLong(input, sourceDtype, inOffset);
-                access.getAccess()
+                memAccess
                         .writeByte(input.memory(), outOffset, (byte) (value != 0 ? 1 : 0));
             } else {
                 throw new UnsupportedOperationException(
@@ -789,23 +790,23 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
 
     private float readAsFloat(MemoryView<MemorySegment> view, DataType dtype, long offset) {
         if (dtype == DataType.FP32) {
-            return access.getAccess().readFloat(view.memory(), offset);
+            return memAccess.readFloat(view.memory(), offset);
         } else if (dtype == DataType.FP64) {
-            return (float) access.getAccess().readDouble(view.memory(), offset);
+            return (float) memAccess.readDouble(view.memory(), offset);
         } else if (dtype == DataType.FP16) {
-            return Float.float16ToFloat(access.getAccess().readShort(view.memory(), offset));
+            return Float.float16ToFloat(memAccess.readShort(view.memory(), offset));
         } else if (dtype == DataType.BF16) {
-            return BFloat16.toFloat(access.getAccess().readShort(view.memory(), offset));
+            return BFloat16.toFloat(memAccess.readShort(view.memory(), offset));
         } else if (dtype == DataType.I8) {
-            return access.getAccess().readByte(view.memory(), offset);
+            return memAccess.readByte(view.memory(), offset);
         } else if (dtype == DataType.I16) {
-            return access.getAccess().readShort(view.memory(), offset);
+            return memAccess.readShort(view.memory(), offset);
         } else if (dtype == DataType.I32) {
-            return access.getAccess().readInt(view.memory(), offset);
+            return memAccess.readInt(view.memory(), offset);
         } else if (dtype == DataType.I64) {
-            return access.getAccess().readLong(view.memory(), offset);
+            return memAccess.readLong(view.memory(), offset);
         } else if (dtype == DataType.BOOL) {
-            return access.getAccess().readByte(view.memory(), offset) != 0 ? 1.0f : 0.0f;
+            return memAccess.readByte(view.memory(), offset) != 0 ? 1.0f : 0.0f;
         } else {
             throw new UnsupportedOperationException("Cannot convert to float from: " + dtype);
         }
@@ -813,23 +814,23 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
 
     private double readAsDouble(MemoryView<MemorySegment> view, DataType dtype, long offset) {
         if (dtype == DataType.FP32) {
-            return access.getAccess().readFloat(view.memory(), offset);
+            return memAccess.readFloat(view.memory(), offset);
         } else if (dtype == DataType.FP64) {
-            return access.getAccess().readDouble(view.memory(), offset);
+            return memAccess.readDouble(view.memory(), offset);
         } else if (dtype == DataType.FP16) {
-            return Float.float16ToFloat(access.getAccess().readShort(view.memory(), offset));
+            return Float.float16ToFloat(memAccess.readShort(view.memory(), offset));
         } else if (dtype == DataType.BF16) {
-            return BFloat16.toFloat(access.getAccess().readShort(view.memory(), offset));
+            return BFloat16.toFloat(memAccess.readShort(view.memory(), offset));
         } else if (dtype == DataType.I8) {
-            return access.getAccess().readByte(view.memory(), offset);
+            return memAccess.readByte(view.memory(), offset);
         } else if (dtype == DataType.I16) {
-            return access.getAccess().readShort(view.memory(), offset);
+            return memAccess.readShort(view.memory(), offset);
         } else if (dtype == DataType.I32) {
-            return access.getAccess().readInt(view.memory(), offset);
+            return memAccess.readInt(view.memory(), offset);
         } else if (dtype == DataType.I64) {
-            return access.getAccess().readLong(view.memory(), offset);
+            return memAccess.readLong(view.memory(), offset);
         } else if (dtype == DataType.BOOL) {
-            return access.getAccess().readByte(view.memory(), offset) != 0 ? 1.0 : 0.0;
+            return memAccess.readByte(view.memory(), offset) != 0 ? 1.0 : 0.0;
         } else {
             throw new UnsupportedOperationException("Cannot convert to double from: " + dtype);
         }
@@ -837,23 +838,23 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
 
     private long readAsLong(MemoryView<MemorySegment> view, DataType dtype, long offset) {
         if (dtype == DataType.FP32) {
-            return (long) access.getAccess().readFloat(view.memory(), offset);
+            return (long) memAccess.readFloat(view.memory(), offset);
         } else if (dtype == DataType.FP64) {
-            return (long) access.getAccess().readDouble(view.memory(), offset);
+            return (long) memAccess.readDouble(view.memory(), offset);
         } else if (dtype == DataType.FP16) {
-            return (long) Float.float16ToFloat(access.getAccess().readShort(view.memory(), offset));
+            return (long) Float.float16ToFloat(memAccess.readShort(view.memory(), offset));
         } else if (dtype == DataType.BF16) {
-            return (long) BFloat16.toFloat(access.getAccess().readShort(view.memory(), offset));
+            return (long) BFloat16.toFloat(memAccess.readShort(view.memory(), offset));
         } else if (dtype == DataType.I8) {
-            return access.getAccess().readByte(view.memory(), offset);
+            return memAccess.readByte(view.memory(), offset);
         } else if (dtype == DataType.I16) {
-            return access.getAccess().readShort(view.memory(), offset);
+            return memAccess.readShort(view.memory(), offset);
         } else if (dtype == DataType.I32) {
-            return access.getAccess().readInt(view.memory(), offset);
+            return memAccess.readInt(view.memory(), offset);
         } else if (dtype == DataType.I64) {
-            return access.getAccess().readLong(view.memory(), offset);
+            return memAccess.readLong(view.memory(), offset);
         } else if (dtype == DataType.BOOL) {
-            return access.getAccess().readByte(view.memory(), offset);
+            return memAccess.readByte(view.memory(), offset);
         } else {
             throw new UnsupportedOperationException("Cannot convert to long from: " + dtype);
         }
@@ -968,7 +969,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                     iterateReduction(
                             inputShape, axes, Indexing.linearToCoord(outputShape, outIdx))) {
                 long inOffset = Indexing.coordToOffset(input, inCoord);
-                float value = access.readFloat(input, inOffset);
+                float value = memAccess.readFloat(input.memory(), inOffset);
                 acc =
                         switch (op) {
                             case SUM -> acc + value;
@@ -979,7 +980,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             }
 
             long outOffset = Indexing.linearToOffset(output, outIdx);
-            access.writeFloat(output, outOffset, acc);
+            memAccess.writeFloat(output.memory(), outOffset, acc);
         }
     }
 
@@ -1005,7 +1006,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                     iterateReduction(
                             inputShape, axes, Indexing.linearToCoord(outputShape, outIdx))) {
                 long inOffset = Indexing.coordToOffset(input, inCoord);
-                double value = access.readDouble(input, inOffset);
+                double value = memAccess.readDouble(input.memory(), inOffset);
                 acc =
                         switch (op) {
                             case SUM -> acc + value;
@@ -1016,7 +1017,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             }
 
             long outOffset = Indexing.linearToOffset(output, outIdx);
-            access.writeDouble(output, outOffset, acc);
+            memAccess.writeDouble(output.memory(), outOffset, acc);
         }
     }
 
@@ -1042,7 +1043,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                     iterateReduction(
                             inputShape, axes, Indexing.linearToCoord(outputShape, outIdx))) {
                 long inOffset = Indexing.coordToOffset(input, inCoord);
-                short bits = access.getAccess().readShort(input.memory(), inOffset);
+                short bits = memAccess.readShort(input.memory(), inOffset);
                 float value = Float.float16ToFloat(bits);
                 acc =
                         switch (op) {
@@ -1056,7 +1057,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             long outOffset =
                     Indexing.linearToOffset(outputShape, output.stride(), DataType.FP16, outIdx);
             short resultBits = Float.floatToFloat16(acc);
-            access.getAccess().writeShort(output.memory(), outOffset, resultBits);
+            memAccess.writeShort(output.memory(), outOffset, resultBits);
         }
     }
 
@@ -1082,7 +1083,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                     iterateReduction(
                             inputShape, axes, Indexing.linearToCoord(outputShape, outIdx))) {
                 long inOffset = Indexing.coordToOffset(input, inCoord);
-                short bits = access.getAccess().readShort(input.memory(), inOffset);
+                short bits = memAccess.readShort(input.memory(), inOffset);
                 float value = BFloat16.toFloat(bits);
                 acc =
                         switch (op) {
@@ -1096,7 +1097,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
             long outOffset =
                     Indexing.linearToOffset(outputShape, output.stride(), DataType.BF16, outIdx);
             short resultBits = BFloat16.fromFloat(acc);
-            access.getAccess().writeShort(output.memory(), outOffset, resultBits);
+            memAccess.writeShort(output.memory(), outOffset, resultBits);
         }
     }
 
@@ -1122,7 +1123,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                     iterateReduction(
                             inputShape, axes, Indexing.linearToCoord(outputShape, outIdx))) {
                 long inOffset = Indexing.coordToOffset(input, inCoord);
-                byte value = access.getAccess().readByte(input.memory(), inOffset);
+                byte value = memAccess.readByte(input.memory(), inOffset);
                 acc =
                         switch (op) {
                             case SUM -> (byte) (((acc != 0) ? 1 : 0) + ((value != 0) ? 1 : 0));
@@ -1134,7 +1135,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
 
             long outOffset =
                     Indexing.linearToOffset(outputShape, output.stride(), DataType.I8, outIdx);
-            access.getAccess().writeByte(output.memory(), outOffset, acc);
+            memAccess.writeByte(output.memory(), outOffset, acc);
         }
     }
 
@@ -1160,7 +1161,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                     iterateReduction(
                             inputShape, axes, Indexing.linearToCoord(outputShape, outIdx))) {
                 long inOffset = Indexing.coordToOffset(input, inCoord);
-                short value = access.getAccess().readShort(input.memory(), inOffset);
+                short value = memAccess.readShort(input.memory(), inOffset);
                 acc =
                         switch (op) {
                             case SUM -> (short) (acc + value);
@@ -1172,7 +1173,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
 
             long outOffset =
                     Indexing.linearToOffset(outputShape, output.stride(), DataType.I16, outIdx);
-            access.getAccess().writeShort(output.memory(), outOffset, acc);
+            memAccess.writeShort(output.memory(), outOffset, acc);
         }
     }
 
@@ -1198,7 +1199,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                     iterateReduction(
                             inputShape, axes, Indexing.linearToCoord(outputShape, outIdx))) {
                 long inOffset = Indexing.coordToOffset(input, inCoord);
-                int value = access.getAccess().readInt(input.memory(), inOffset);
+                int value = memAccess.readInt(input.memory(), inOffset);
                 acc =
                         switch (op) {
                             case SUM -> acc + value;
@@ -1210,7 +1211,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
 
             long outOffset =
                     Indexing.linearToOffset(outputShape, output.stride(), DataType.I32, outIdx);
-            access.getAccess().writeInt(output.memory(), outOffset, acc);
+            memAccess.writeInt(output.memory(), outOffset, acc);
         }
     }
 
@@ -1236,7 +1237,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                     iterateReduction(
                             inputShape, axes, Indexing.linearToCoord(outputShape, outIdx))) {
                 long inOffset = Indexing.coordToOffset(input, inCoord);
-                long value = access.getAccess().readLong(input.memory(), inOffset);
+                long value = memAccess.readLong(input.memory(), inOffset);
                 acc =
                         switch (op) {
                             case SUM -> acc + value;
@@ -1248,7 +1249,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
 
             long outOffset =
                     Indexing.linearToOffset(outputShape, output.stride(), DataType.I64, outIdx);
-            access.getAccess().writeLong(output.memory(), outOffset, acc);
+            memAccess.writeLong(output.memory(), outOffset, acc);
         }
     }
 
@@ -1274,7 +1275,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
                     iterateReduction(
                             inputShape, axes, Indexing.linearToCoord(outputShape, outIdx))) {
                 long inOffset = Indexing.coordToOffset(input, inCoord);
-                byte value = access.getAccess().readByte(input.memory(), inOffset);
+                byte value = memAccess.readByte(input.memory(), inOffset);
                 acc =
                         switch (op) {
                             case SUM -> (byte) (((acc != 0) ? 1 : 0) + ((value != 0) ? 1 : 0));
@@ -1286,7 +1287,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
 
             long outOffset =
                     Indexing.linearToOffset(outputShape, output.stride(), DataType.BOOL, outIdx);
-            access.getAccess().writeByte(output.memory(), outOffset, acc);
+            memAccess.writeByte(output.memory(), outOffset, acc);
         }
     }
 
@@ -1363,8 +1364,8 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
         for (long i = 0; i < size; i++) {
             long inOffset = Indexing.linearToOffset(input, i);
             long outOffset = Indexing.linearToOffset(output, i);
-            byte value = access.getAccess().readByte(input.memory(), inOffset);
-            access.getAccess().writeByte(output.memory(), outOffset, value);
+            byte value = memAccess.readByte(input.memory(), inOffset);
+            memAccess.writeByte(output.memory(), outOffset, value);
         }
 
         return output;
@@ -1379,24 +1380,24 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
         long offset = Indexing.linearToOffset(output, 0);
 
         if (dtype == DataType.FP32) {
-            access.getAccess()
+            memAccess
                     .writeFloat(
                             output.memory(), offset, Float.intBitsToFloat((int) node.rawBits()));
         } else if (dtype == DataType.FP64) {
-            access.getAccess()
+            memAccess
                     .writeDouble(output.memory(), offset, Double.longBitsToDouble(node.rawBits()));
         } else if (dtype == DataType.FP16 || dtype == DataType.BF16) {
-            access.getAccess().writeShort(output.memory(), offset, (short) node.rawBits());
+            memAccess.writeShort(output.memory(), offset, (short) node.rawBits());
         } else if (dtype == DataType.I8) {
-            access.getAccess().writeByte(output.memory(), offset, (byte) node.rawBits());
+            memAccess.writeByte(output.memory(), offset, (byte) node.rawBits());
         } else if (dtype == DataType.I16) {
-            access.getAccess().writeShort(output.memory(), offset, (short) node.rawBits());
+            memAccess.writeShort(output.memory(), offset, (short) node.rawBits());
         } else if (dtype == DataType.I32) {
-            access.getAccess().writeInt(output.memory(), offset, (int) node.rawBits());
+            memAccess.writeInt(output.memory(), offset, (int) node.rawBits());
         } else if (dtype == DataType.I64) {
-            access.getAccess().writeLong(output.memory(), offset, node.rawBits());
+            memAccess.writeLong(output.memory(), offset, node.rawBits());
         } else if (dtype == DataType.BOOL) {
-            access.getAccess()
+            memAccess
                     .writeByte(output.memory(), offset, (byte) (node.rawBits() != 0 ? 1 : 0));
         } else {
             throw new UnsupportedOperationException("Unsupported data type: " + dtype);
@@ -1414,34 +1415,34 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
 
         for (long i = 0; i < count; i++) {
             if (dtype == DataType.FP32) {
-                access.getAccess()
+                memAccess
                         .writeFloat(output.memory(), Indexing.linearToOffset(output, i), (float) i);
             } else if (dtype == DataType.FP64) {
-                access.getAccess()
+                memAccess
                         .writeDouble(
                                 output.memory(), Indexing.linearToOffset(output, i), (double) i);
             } else if (dtype == DataType.FP16) {
                 short bits = Float.floatToFloat16((float) i);
-                access.getAccess()
+                memAccess
                         .writeShort(output.memory(), Indexing.linearToOffset(output, i), bits);
             } else if (dtype == DataType.BF16) {
                 short bits = BFloat16.fromFloat((float) i);
-                access.getAccess()
+                memAccess
                         .writeShort(output.memory(), Indexing.linearToOffset(output, i), bits);
             } else if (dtype == DataType.I8) {
-                access.getAccess()
+                memAccess
                         .writeByte(output.memory(), Indexing.linearToOffset(output, i), (byte) i);
             } else if (dtype == DataType.I16) {
-                access.getAccess()
+                memAccess
                         .writeShort(output.memory(), Indexing.linearToOffset(output, i), (short) i);
             } else if (dtype == DataType.I32) {
-                access.getAccess()
+                memAccess
                         .writeInt(output.memory(), Indexing.linearToOffset(output, i), (int) i);
             } else if (dtype == DataType.I64) {
-                access.getAccess()
+                memAccess
                         .writeLong(output.memory(), Indexing.linearToOffset(output, i), i);
             } else if (dtype == DataType.BOOL) {
-                access.getAccess()
+                memAccess
                         .writeByte(
                                 output.memory(),
                                 Indexing.linearToOffset(output, i),
