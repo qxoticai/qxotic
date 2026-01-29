@@ -79,4 +79,17 @@ public interface Stride extends NestedTuple<Stride> {
     static Stride stride(Object... elements) {
         return of(elements);
     }
+
+    /**
+     * Returns true if all stride values are zero. Used for validating scalar constant tensors that
+     * can be broadcasted without allocation.
+     */
+    default boolean isAllZeros() {
+        for (int i = 0; i < flatRank(); i++) {
+            if (flatAt(i) != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
 }
