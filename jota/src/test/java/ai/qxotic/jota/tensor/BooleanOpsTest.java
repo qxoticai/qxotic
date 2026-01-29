@@ -7,7 +7,6 @@ import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.*;
 import ai.qxotic.jota.memory.impl.ContextFactory;
-import ai.qxotic.jota.panama.JavaComputeEngine;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.BeforeAll;
@@ -35,14 +34,10 @@ class BooleanOpsTest extends AbstractMemoryTest {
         Tensor orTensor = Tracer.trace(a, b, Tensor::logicalOr);
         Tensor xorTensor = Tracer.trace(a, b, Tensor::logicalXor);
 
-        MemoryView<?> notOut =
-                ComputeEngineContext.with(new JavaComputeEngine(context), notA::materialize);
-        MemoryView<?> andOut =
-                ComputeEngineContext.with(new JavaComputeEngine(context), andTensor::materialize);
-        MemoryView<?> orOut =
-                ComputeEngineContext.with(new JavaComputeEngine(context), orTensor::materialize);
-        MemoryView<?> xorOut =
-                ComputeEngineContext.with(new JavaComputeEngine(context), xorTensor::materialize);
+        MemoryView<?> notOut = notA.materialize();
+        MemoryView<?> andOut = andTensor.materialize();
+        MemoryView<?> orOut = orTensor.materialize();
+        MemoryView<?> xorOut = xorTensor.materialize();
 
         assertEquals(0, readBool(notOut, 0));
         assertEquals(1, readBool(notOut, 1));
@@ -75,9 +70,7 @@ class BooleanOpsTest extends AbstractMemoryTest {
             Tensor rightTensor = Tensor.of(right);
 
             Tensor equalTensor = Tracer.trace(leftTensor, rightTensor, Tensor::equal);
-            MemoryView<?> equalOut =
-                    ComputeEngineContext.with(
-                            new JavaComputeEngine(context), equalTensor::materialize);
+            MemoryView<?> equalOut = equalTensor.materialize();
             for (int i = 0; i < shape.size(); i++) {
                 assertEquals(1, readBool(equalOut, i));
             }
@@ -88,9 +81,7 @@ class BooleanOpsTest extends AbstractMemoryTest {
                             : MemoryHelpers.full(context, dataType, shape.size(), 2).view(shape);
             Tensor thresholdTensor = Tensor.of(threshold);
             Tensor lessThanTensor = Tracer.trace(leftTensor, thresholdTensor, Tensor::lessThan);
-            MemoryView<?> lessOut =
-                    ComputeEngineContext.with(
-                            new JavaComputeEngine(context), lessThanTensor::materialize);
+            MemoryView<?> lessOut = lessThanTensor.materialize();
 
             if (dataType == DataType.BOOL) {
                 assertEquals(1, readBool(lessOut, 0));
@@ -124,8 +115,7 @@ class BooleanOpsTest extends AbstractMemoryTest {
                         // Odd min function.
                         (t, f) -> Tensor.where(t.lessThan(f), t, f));
 
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), min::materialize);
+        MemoryView<?> output = min.materialize();
 
         assertEquals(0, readInt(output, 0));
         assertEquals(1, readInt(output, 1));
@@ -147,8 +137,7 @@ class BooleanOpsTest extends AbstractMemoryTest {
         Tensor falseTensor = Tensor.of(falseView);
 
         Tensor selected = Tracer.trace(condition, trueTensor, falseTensor, Tensor::where);
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), selected::materialize);
+        MemoryView<?> output = selected.materialize();
 
         assertEquals(0, readInt(output, 0));
         assertEquals(-1, readInt(output, 1));

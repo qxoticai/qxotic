@@ -27,16 +27,6 @@ public interface TensorOps {
 
     Tensor max(Tensor a, Tensor b);
 
-    // === Elementwise - Scalar ===
-
-    //    Tensor add(Tensor a, Number scalar);
-    //
-    //    Tensor subtract(Tensor a, Number scalar);
-    //
-    //    Tensor multiply(Tensor a, Number scalar);
-    //
-    //    Tensor divide(Tensor a, Number scalar);
-
     // === Elementwise - Unary ===
 
     Tensor negate(Tensor x);
@@ -56,10 +46,6 @@ public interface TensorOps {
     Tensor tanh(Tensor x);
 
     Tensor reciprocal(Tensor x);
-
-    Tensor to(Tensor x, Device device);
-
-    Tensor contiguous(Tensor x);
 
     // === Bitwise Operations ===
 
@@ -227,6 +213,12 @@ public interface TensorOps {
     // === Type Conversion ===
 
     Tensor cast(Tensor x, DataType targetType);
+
+    // === Misc Conversion ===
+
+    Tensor to(Tensor x, Device device);
+
+    Tensor contiguous(Tensor x);
 
     //    Tensor quantize(Tensor x, DataType quantType);
     //

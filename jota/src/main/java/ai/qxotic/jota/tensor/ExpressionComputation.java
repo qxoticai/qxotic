@@ -206,10 +206,6 @@ final class ExpressionComputation implements LazyComputation {
     }
 
     private static ComputeEngine resolveEngine(Device device) {
-        ComputeEngine engine = ComputeEngineContext.current();
-        if (engine != null) {
-            return engine;
-        }
         return Environment.current().engineFor(device);
     }
 

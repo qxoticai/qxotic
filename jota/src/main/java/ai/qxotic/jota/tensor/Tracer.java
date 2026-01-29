@@ -124,11 +124,13 @@ public final class Tracer {
                 continue;
             }
             if (computation instanceof ConstantComputation constant) {
-                ScalarNode node =
-                        new ScalarNode(
-                                constant.value(), input.dataType(), input.layout(), input.device());
-                traces.add(new TraceTensor(node));
+                InputNode inputNode =
+                        new InputNode(inputIndex, input.dataType(), input.layout(), input.device());
+                nodes.add(inputNode);
+                tensors.add(input);
                 inputTensorMap.put(inputIndex, input);
+                traces.add(new TraceTensor(inputNode));
+                inputIndex++;
                 continue;
             }
             if (computation instanceof ExpressionComputation expr) {
@@ -167,8 +169,8 @@ public final class Tracer {
                     new InputNode(inputIndex, input.dataType(), input.layout(), input.device());
             nodes.add(node);
             tensors.add(input);
-            traces.add(new TraceTensor(node));
             inputTensorMap.put(inputIndex, input);
+            traces.add(new TraceTensor(node));
             inputIndex++;
         }
         return new TraceInputs(traces, nodes, tensors, inputTensorMap);

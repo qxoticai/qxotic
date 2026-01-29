@@ -55,26 +55,6 @@ public class EagerTensorOps implements TensorOps {
         return binaryOp(a, b, BinaryOp.MAX);
     }
 
-    //    @Override
-    //    public Tensor add(Tensor a, Number scalar) {
-    //        return scalarOp(a, scalar, BinaryOp.ADD);
-    //    }
-    //
-    //    @Override
-    //    public Tensor subtract(Tensor a, Number scalar) {
-    //        return scalarOp(a, scalar, BinaryOp.SUBTRACT);
-    //    }
-    //
-    //    @Override
-    //    public Tensor multiply(Tensor a, Number scalar) {
-    //        return scalarOp(a, scalar, BinaryOp.MULTIPLY);
-    //    }
-    //
-    //    @Override
-    //    public Tensor divide(Tensor a, Number scalar) {
-    //        return scalarOp(a, scalar, BinaryOp.DIVIDE);
-    //    }
-
     @Override
     public Tensor negate(Tensor x) {
         return unaryOp(x, UnaryOp.NEGATE);

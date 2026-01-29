@@ -11,7 +11,6 @@ import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryHelpers;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.memory.impl.ContextFactory;
-import ai.qxotic.jota.panama.JavaComputeEngine;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.List;
@@ -46,8 +45,7 @@ class ProductReductionOpsTest extends AbstractMemoryTest {
             MemoryView<MemorySegment> view = range(productCase.inputType(), shape);
             Tensor input = Tensor.of(view);
             Tensor reduced = Tracer.trace(input, t -> t.product(productCase.accumulatorType(), 1));
-            MemoryView<?> output =
-                    ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
+            MemoryView<?> output = reduced.materialize();
             assertEquals(Shape.of(2), output.shape());
             assertValueEquals(
                     productCase.accumulatorType(),
@@ -66,8 +64,7 @@ class ProductReductionOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = range(DataType.I32, shape);
         Tensor input = Tensor.of(view);
         Tensor reduced = Tracer.trace(input, t -> t.product(DataType.I64, 1, 2));
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
+        MemoryView<?> output = reduced.materialize();
         assertEquals(Shape.of(2), output.shape());
         assertValueEquals(DataType.I64, 0L, readValue(output, 0, DataType.I64));
         assertValueEquals(DataType.I64, 840L, readValue(output, 1, DataType.I64));
@@ -78,8 +75,7 @@ class ProductReductionOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = range(DataType.FP32, Shape.of(2, 3));
         Tensor input = Tensor.of(view);
         Tensor reduced = Tracer.trace(input, t -> t.product(DataType.FP32, true, 1));
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
+        MemoryView<?> output = reduced.materialize();
         assertEquals(Shape.of(2, 1), output.shape());
     }
 
@@ -88,8 +84,7 @@ class ProductReductionOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = range(DataType.FP32, Shape.of(2, 3));
         Tensor input = Tensor.of(view);
         Tensor reduced = Tracer.trace(input, t -> t.add(1f).product(DataType.FP32, 1));
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
+        MemoryView<?> output = reduced.materialize();
         assertValueEquals(DataType.FP32, 6.0f, readValue(output, 0, DataType.FP32));
         assertValueEquals(DataType.FP32, 120.0f, readValue(output, 1, DataType.FP32));
     }
@@ -100,8 +95,7 @@ class ProductReductionOpsTest extends AbstractMemoryTest {
         Tensor input = Tensor.of(view);
         Tensor reduced =
                 Tracer.trace(input, t -> t.product(DataType.I32, 1).cast(DataType.FP32).add(1f));
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
+        MemoryView<?> output = reduced.materialize();
         assertEquals(Shape.of(2), output.shape());
         assertValueEquals(DataType.FP32, 1.0f, readValue(output, 0, DataType.FP32));
         assertValueEquals(DataType.FP32, 61.0f, readValue(output, 1, DataType.FP32));
@@ -112,8 +106,7 @@ class ProductReductionOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = range(DataType.I32, Shape.of(2, 3));
         Tensor input = Tensor.of(view);
         Tensor reduced = Tracer.trace(input, t -> t.product(DataType.I64, -1));
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
+        MemoryView<?> output = reduced.materialize();
         assertEquals(Shape.of(2), output.shape());
         assertValueEquals(DataType.I64, 0L, readValue(output, 0, DataType.I64));
         assertValueEquals(DataType.I64, 60L, readValue(output, 1, DataType.I64));
@@ -124,8 +117,7 @@ class ProductReductionOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = range(DataType.I32, Shape.of(2, 2));
         Tensor input = Tensor.of(view);
         Tensor reduced = Tracer.trace(input, t -> t.product(DataType.I64));
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
+        MemoryView<?> output = reduced.materialize();
         assertEquals(Shape.scalar(), output.shape());
         assertValueEquals(DataType.I64, 0L, readValue(output, 0, DataType.I64));
     }
@@ -135,8 +127,7 @@ class ProductReductionOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = range(DataType.I32, Shape.of(2, 0));
         Tensor input = Tensor.of(view);
         Tensor reduced = Tracer.trace(input, t -> t.product(DataType.I64, 1));
-        MemoryView<?> output =
-                ComputeEngineContext.with(new JavaComputeEngine(context), reduced::materialize);
+        MemoryView<?> output = reduced.materialize();
         assertEquals(Shape.of(2), output.shape());
         assertValueEquals(DataType.I64, 1L, readValue(output, 0, DataType.I64));
         assertValueEquals(DataType.I64, 1L, readValue(output, 1, DataType.I64));
