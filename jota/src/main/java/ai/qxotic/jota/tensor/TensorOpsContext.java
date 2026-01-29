@@ -21,6 +21,10 @@ public final class TensorOpsContext {
         return EnvironmentOps.resolve(Environment.current());
     }
 
+    public static <T> T withIR(Supplier<T> supplier) {
+        return with(new IRTensorOps(), supplier);
+    }
+
     public static <T> T with(TensorOps ops, Supplier<T> action) {
         Objects.requireNonNull(ops, "ops");
         Objects.requireNonNull(action, "action");

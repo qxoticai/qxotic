@@ -177,7 +177,7 @@ class JavaKernelCompilerTest {
         MemoryView<?> output = traced.materialize();
 
         float[] values = readFloatValues(output, 4);
-        assertArrayEquals(new float[]{0, 2, 8, 18}, values, 0.0001f);
+        assertArrayEquals(new float[] {0, 2, 8, 18}, values, 0.0001f);
     }
 
     private MemoryView<MemorySegment> range(Shape shape) {

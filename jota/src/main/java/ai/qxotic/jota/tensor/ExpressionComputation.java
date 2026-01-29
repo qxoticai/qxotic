@@ -14,12 +14,10 @@ final class ExpressionComputation implements LazyComputation {
 
     private final ExpressionGraph graph;
     private final List<Tensor> inputs;
-    private final java.util.Map<Integer, Tensor> inputTensorMap;
+    private final Map<Integer, Tensor> inputTensorMap;
 
     ExpressionComputation(
-            ExpressionGraph graph,
-            List<Tensor> inputs,
-            java.util.Map<Integer, Tensor> inputTensorMap) {
+            ExpressionGraph graph, List<Tensor> inputs, Map<Integer, Tensor> inputTensorMap) {
         this.graph = Objects.requireNonNull(graph, "graph");
         this.inputs = List.copyOf(inputs);
         this.inputTensorMap = java.util.Map.copyOf(inputTensorMap);
@@ -39,7 +37,7 @@ final class ExpressionComputation implements LazyComputation {
         return inputs;
     }
 
-    java.util.Map<Integer, Tensor> inputTensorMap() {
+    Map<Integer, Tensor> inputTensorMap() {
         return inputTensorMap;
     }
 

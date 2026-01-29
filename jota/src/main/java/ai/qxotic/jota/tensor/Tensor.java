@@ -10,8 +10,10 @@ import ai.qxotic.jota.memory.impl.ContextFactory;
 import ai.qxotic.jota.memory.impl.MemoryFactory;
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Function;
 
 public interface Tensor {
 
@@ -1017,5 +1019,13 @@ public interface Tensor {
     default Tensor realize() {
         materialize();
         return this;
+    }
+
+    default Tensor traceIR(Function<Tensor, Tensor> fn) {
+        return IRTracer.trace(this, fn);
+    }
+
+    static Tensor traceIR(List<Tensor> inputs, Function<List<Tensor>, Tensor> fn) {
+        return IRTracer.trace(inputs, fn);
     }
 }

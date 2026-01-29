@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Map;
 
 public sealed interface LazyComputation
-        permits ExpressionComputation, ConstantComputation, RangeComputation {
+        permits ExpressionComputation, ConstantComputation, RangeComputation, IRComputation {
 
     Op operation();
 
