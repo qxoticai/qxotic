@@ -1,8 +1,7 @@
 package ai.qxotic.jota.ir.lir;
 
 import ai.qxotic.jota.DataType;
-import ai.qxotic.jota.ir.tir.BinaryOperator;
-import ai.qxotic.jota.ir.tir.UnaryOperator;
+import ai.qxotic.jota.ir.TextRenderUtils;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -70,7 +69,7 @@ public class LIRTextRenderer implements LIRVisitor<String> {
             String name = "in" + nextInputId++;
             bufferIdToName.put(input.id(), name);
             appendLine(
-                    ai.qxotic.jota.ir.TextRenderUtils.formatBuffer(
+                    TextRenderUtils.formatBuffer(
                                     "in",
                                     nextInputId - 1,
                                     input.dataType(),
@@ -90,7 +89,7 @@ public class LIRTextRenderer implements LIRVisitor<String> {
             String name = "out" + nextOutputId++;
             bufferIdToName.put(outputBuf.id(), name);
             appendLine(
-                    ai.qxotic.jota.ir.TextRenderUtils.formatBuffer(
+                    TextRenderUtils.formatBuffer(
                                     "out",
                                     nextOutputId - 1,
                                     outputBuf.dataType(),
@@ -241,9 +240,9 @@ public class LIRTextRenderer implements LIRVisitor<String> {
         } else if (dt == DataType.BOOL) {
             return node.asBool() ? "true" : "false";
         } else if (dt == DataType.FP16) {
-            return ai.qxotic.jota.ir.Float16Formatter.formatFloat16((short) node.rawBits());
+            return TextRenderUtils.formatFloat16((short) node.rawBits());
         } else if (dt == DataType.BF16) {
-            return ai.qxotic.jota.ir.Float16Formatter.formatBFloat16((short) node.rawBits());
+            return TextRenderUtils.formatBFloat16((short) node.rawBits());
         } else {
             return "0x" + Long.toHexString(node.rawBits());
         }
@@ -252,60 +251,22 @@ public class LIRTextRenderer implements LIRVisitor<String> {
     @Override
     public String visitScalarUnary(ScalarUnary node) {
         String input = getVar(node.input());
-        String op = formatUnaryOp(node.op());
+        String op = TextRenderUtils.formatUnaryOp(node.op());
         DataType dt = node.dataType();
         String result = allocateVar(node, op + " " + dt + " " + input);
         appendLine(result);
         return exprToVar.get(node);
     }
 
-    private String formatUnaryOp(UnaryOperator op) {
-        return switch (op) {
-            case NEGATE -> "neg";
-            case ABS -> "abs";
-            case EXP -> "exp";
-            case LOG -> "log";
-            case SQRT -> "sqrt";
-            case SQUARE -> "square";
-            case SIN -> "sin";
-            case COS -> "cos";
-            case TAN -> "tan";
-            case TANH -> "tanh";
-            case RECIPROCAL -> "recipro";
-            case LOGICAL_NOT -> "not";
-            case BITWISE_NOT -> "bnot";
-        };
-    }
-
     @Override
     public String visitScalarBinary(ScalarBinary node) {
         String left = getVar(node.left());
         String right = getVar(node.right());
-        String op = formatBinaryOp(node.op());
+        String op = TextRenderUtils.formatBinaryOp(node.op());
         DataType dt = node.dataType();
         String result = allocateVar(node, op + " " + dt + " " + left + ", " + right);
         appendLine(result);
         return exprToVar.get(node);
-    }
-
-    private String formatBinaryOp(BinaryOperator op) {
-        return switch (op) {
-            case ADD -> "add";
-            case SUBTRACT -> "sub";
-            case MULTIPLY -> "mul";
-            case DIVIDE -> "div";
-            case MIN -> "min";
-            case MAX -> "max";
-            case POW -> "pow";
-            case LOGICAL_AND -> "and";
-            case LOGICAL_OR -> "or";
-            case LOGICAL_XOR -> "xor";
-            case BITWISE_AND -> "band";
-            case BITWISE_OR -> "bor";
-            case BITWISE_XOR -> "bxor";
-            case EQUAL -> "eq";
-            case LESS_THAN -> "lt";
-        };
     }
 
     @Override

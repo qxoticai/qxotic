@@ -1,6 +1,11 @@
 package ai.qxotic.jota.ir;
 
+import ai.qxotic.jota.BFloat16;
 import ai.qxotic.jota.DataType;
+import ai.qxotic.jota.ir.tir.BinaryOperator;
+import ai.qxotic.jota.ir.tir.ReductionOperator;
+import ai.qxotic.jota.ir.tir.TernaryOperator;
+import ai.qxotic.jota.ir.tir.UnaryOperator;
 
 /**
  * Shared utilities for text rendering of IR graphs (TIR and LIR).
@@ -254,5 +259,150 @@ public final class TextRenderUtils {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Formats a FP16 (IEEE 754 binary16) value.
+     *
+     * @param bits 16-bit representation
+     * @return formatted string like "f16:0x3C00 (1.0)"
+     */
+    public static String formatFloat16(short bits) {
+        int intBits = bits & 0xFFFF;
+        float value = Float.float16ToFloat(bits);
+        String hex = String.format("0x%04X", intBits);
+        String valueStr = formatFloat16Value(value, bits, true);
+        return "f16:" + hex + " (" + valueStr + ")";
+    }
+
+    /**
+     * Formats a BF16 (bfloat16) value.
+     *
+     * @param bits 16-bit representation
+     * @return formatted string like "bf16:0x3F80 (1.0)"
+     */
+    public static String formatBFloat16(short bits) {
+        int intBits = bits & 0xFFFF;
+        float value = BFloat16.toFloat(bits);
+        String hex = String.format("0x%04X", intBits);
+        String valueStr = formatFloat16Value(value, bits, false);
+        return "bf16:" + hex + " (" + valueStr + ")";
+    }
+
+    /**
+     * Formats a unary operator name to lowercase string.
+     *
+     * @param op unary operator
+     * @return lowercase operator name (e.g., "negate", "reciprocal")
+     */
+    public static String formatUnaryOp(UnaryOperator op) {
+        return op.name().toLowerCase();
+    }
+
+    /**
+     * Formats a binary operator name to lowercase string.
+     *
+     * @param op binary operator
+     * @return lowercase operator name (e.g., "add", "multiply")
+     */
+    public static String formatBinaryOp(BinaryOperator op) {
+        return op.name().toLowerCase();
+    }
+
+    /**
+     * Formats a ternary operator name to lowercase string.
+     *
+     * @param op ternary operator
+     * @return lowercase operator name
+     */
+    public static String formatTernaryOp(TernaryOperator op) {
+        return op.name().toLowerCase();
+    }
+
+    /**
+     * Formats a reduction operator name to lowercase string.
+     *
+     * @param op reduction operator
+     * @return lowercase operator name
+     */
+    public static String formatReductionOp(ReductionOperator op) {
+        return op.name().toLowerCase();
+    }
+
+    /**
+     * Formats a scalar value from raw bits based on data type.
+     *
+     * <p>Handles FP32, FP64, I32, I64, BOOL, FP16, BF16, I8, I16 data types.
+     *
+     * @param rawBits the raw bit representation of the scalar
+     * @param dataType the data type
+     * @return formatted scalar value string
+     */
+    public static String formatScalarValue(long rawBits, DataType dataType) {
+        if (dataType.equals(DataType.FP32)) {
+            return Float.intBitsToFloat((int) rawBits) + "f";
+        } else if (dataType.equals(DataType.FP64)) {
+            return Double.longBitsToDouble(rawBits) + "";
+        } else if (dataType.equals(DataType.I32)) {
+            return String.valueOf((int) rawBits);
+        } else if (dataType.equals(DataType.I64)) {
+            return String.valueOf(rawBits);
+        } else if (dataType.equals(DataType.BOOL)) {
+            return rawBits != 0 ? "true" : "false";
+        } else if (dataType.equals(DataType.FP16)) {
+            return formatFloat16((short) rawBits);
+        } else if (dataType.equals(DataType.BF16)) {
+            return formatBFloat16((short) rawBits);
+        } else if (dataType.equals(DataType.I8) || dataType.equals(DataType.I16)) {
+            return String.valueOf(rawBits);
+        } else {
+            return "0x" + Long.toHexString(rawBits);
+        }
+    }
+
+    private static String formatFloat16Value(float value, short bits, boolean isFloat16) {
+        if (Float.isNaN(value)) {
+            return "NaN";
+        }
+        if (Float.isInfinite(value)) {
+            return value > 0 ? "+Inf" : "-Inf";
+        }
+        if (value == 0.0f) {
+            return (bits & 0x8000) != 0 ? "-0.0" : "0.0";
+        }
+        boolean isSubnormal = isFloat16Subnormal(bits, isFloat16);
+        String valueStr = formatCompactFloat16(value);
+        if (isSubnormal) {
+            return valueStr + " (sub-normal)";
+        }
+        return valueStr;
+    }
+
+    private static boolean isFloat16Subnormal(short bits, boolean isFloat16) {
+        int intBits = bits & 0xFFFF;
+        if (isFloat16) {
+            int exponent = intBits & 0x7C00;
+            int mantissa = intBits & 0x03FF;
+            return exponent == 0 && mantissa != 0;
+        } else {
+            int exponent = intBits & 0x7F80;
+            int mantissa = intBits & 0x007F;
+            return exponent == 0 && mantissa != 0;
+        }
+    }
+
+    private static String formatCompactFloat16(float value) {
+        String str = String.valueOf(value);
+        if (str.contains("E") || str.contains("e")) {
+            return str;
+        }
+        if (str.endsWith(".0")) {
+            return str.substring(0, str.length() - 2);
+        }
+        int dotIndex = str.indexOf('.');
+        if (dotIndex != -1 && str.length() - dotIndex > 6) {
+            return String.format("%.5f", value);
+        }
+        return str;
     }
 }
