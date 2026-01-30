@@ -28,7 +28,7 @@ class WhereWithBroadcastedScalarTest {
     void whereWithBroadcastedScalarFalseValue() {
         // Create a condition where some elements are true
         Shape shape = Shape.of(2, 3);
-        Tensor values = Tensor.arange(6, DataType.FP32).view(shape); // [0,1,2,3,4,5]
+        Tensor values = Tensor.iota(6, DataType.FP32).view(shape); // [0,1,2,3,4,5]
         Tensor condition = values.greaterThan(Tensor.scalar(2.0f)); // [F,F,F,T,T,T]
 
         // Use broadcasted scalar as false value
@@ -51,7 +51,7 @@ class WhereWithBroadcastedScalarTest {
     void whereWithBroadcastedScalarTrueValue() {
         // Create a condition where some elements are true
         Shape shape = Shape.of(2, 3);
-        Tensor values = Tensor.arange(6, DataType.FP32).view(shape); // [0,1,2,3,4,5]
+        Tensor values = Tensor.iota(6, DataType.FP32).view(shape); // [0,1,2,3,4,5]
         Tensor condition = values.lessThan(Tensor.scalar(3.0f)); // [T,T,T,F,F,F]
 
         // Use broadcasted scalar as true value
@@ -74,7 +74,7 @@ class WhereWithBroadcastedScalarTest {
     void whereWithBothBroadcastedScalars() {
         // Create a condition where some elements are true
         Shape shape = Shape.of(2, 3);
-        Tensor values = Tensor.arange(6, DataType.FP32).view(shape); // [0,1,2,3,4,5]
+        Tensor values = Tensor.iota(6, DataType.FP32).view(shape); // [0,1,2,3,4,5]
         Tensor condition = values.greaterThan(Tensor.scalar(2.5f)); // [F,F,F,T,T,T]
 
         // Both true and false values are broadcasted scalars
@@ -104,7 +104,7 @@ class WhereWithBroadcastedScalarTest {
             // Create a condition that becomes true for different elements each iteration
             // i=0: elements 0,1 escape; i=1: element 2 escapes; i=2: elements 3,4,5 escape
             Tensor threshold = Tensor.scalar((float) (i * 2));
-            Tensor indices = Tensor.arange(6, DataType.FP32).view(shape);
+            Tensor indices = Tensor.iota(6, DataType.FP32).view(shape);
             Tensor shouldUpdate =
                     indices.greaterThanOrEqual(threshold)
                             .logicalAnd(indices.lessThan(Tensor.scalar((float) (i * 2 + 2))));

@@ -1,6 +1,6 @@
 package ai.qxotic.jota.tensor;
 
-import ai.qxotic.jota.ir.irt.IRGraph;
+import ai.qxotic.jota.ir.irt.IRTGraph;
 import ai.qxotic.jota.ir.irt.IRTNode;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -28,7 +28,7 @@ public final class IRTracer {
                 TensorOpsContext.with(
                         new IRTensorOps(), () -> fn.apply(new ArrayList<>(traceInputs.tensors())));
         IRTensor irtOutput = (IRTensor) output;
-        IRGraph graph = new IRGraph(traceInputs.nodes(), List.of(irtOutput.node()));
+        IRTGraph graph = new IRTGraph(traceInputs.nodes(), List.of(irtOutput.node()));
         return Tensor.lazy(
                 new IRComputation(graph, inputs),
                 output.dataType(),
@@ -66,7 +66,7 @@ public final class IRTracer {
         return new TraceInputs(nodes, tensors, tensorMap);
     }
 
-    private static IRTNode remapInputs(IRGraph graph, int baseIndex, List<Tensor> originalInputs) {
+    private static IRTNode remapInputs(IRTGraph graph, int baseIndex, List<Tensor> originalInputs) {
         IRTNode oldRoot = graph.outputs().get(0);
         return remapNode(oldRoot, baseIndex);
     }

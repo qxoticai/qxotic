@@ -40,7 +40,7 @@ public class Canary {
         //
         //        System.out.println(result2); // view.toString(conte0xt.memoryAccess()));
 
-        Tensor x = Tensor.arange(6, DataType.FP32).view(Shape.of(2, 3)); // [2x3]
+        Tensor x = Tensor.iota(6, DataType.FP32).view(Shape.of(2, 3)); // [2x3]
         Tensor result =
                 Tracer.trace(x, Tensor.scalar(2f), (a, b) -> a.add(b).add(Tensor.scalar(3.14f)));
         // Trigger execution

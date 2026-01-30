@@ -2,6 +2,7 @@ package ai.qxotic.jota.ir.irt;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Layout;
+import ai.qxotic.jota.Shape;
 import java.util.Objects;
 
 /** Ternary operation node in IR-T (e.g., where/select). */
@@ -22,6 +23,8 @@ public record TernaryOp(TernaryOperator op, IRTNode cond, IRTNode trueExpr, IRTN
 
     @Override
     public Layout layout() {
-        return trueExpr.layout();
+        // Output must be row-major, not a broadcast layout with zero strides.
+        Shape shape = trueExpr.layout().shape();
+        return Layout.rowMajor(shape);
     }
 }

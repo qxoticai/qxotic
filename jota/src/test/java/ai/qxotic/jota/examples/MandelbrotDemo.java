@@ -70,7 +70,7 @@ public class MandelbrotDemo {
     private static Tensor linspace(float start, float end, int count) {
         // linspace(start, end, count) = start + arange(count) * (end - start) / (count - 1)
         float step = (end - start) / (count - 1);
-        return Tensor.arange(count, DataType.FP32).multiply(step).add(start);
+        return Tensor.iota(count, DataType.FP32).multiply(step).add(start);
     }
 
     /**

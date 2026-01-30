@@ -1,8 +1,13 @@
 package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.DataType;
+import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.TypeRules;
+import ai.qxotic.jota.ir.irt.BinaryOperator;
+import ai.qxotic.jota.ir.irt.IRConstantFolder;
+import ai.qxotic.jota.ir.irt.ScalarConstant;
+import ai.qxotic.jota.ir.irt.UnaryOperator;
 import java.util.Optional;
 
 /** Package-private utility class for constant folding of tensor operations. */
@@ -14,6 +19,56 @@ final class ConstantFolder {
         return tensor.computation()
                 .filter(ConstantComputation.class::isInstance)
                 .map(ConstantComputation.class::cast);
+    }
+
+    /** Returns the ScalarConstant node if tensor is an IRTensor wrapping one. */
+    static Optional<ScalarConstant> asScalarConstant(Tensor tensor) {
+        if (tensor instanceof IRTensor ir && ir.node() instanceof ScalarConstant sc) {
+            return Optional.of(sc);
+        }
+        return Optional.empty();
+    }
+
+    /** Wraps a ScalarConstant in an IRTensor with the given device. */
+    private static IRTensor wrapScalarConstant(ScalarConstant sc, Device device) {
+        return new IRTensor(sc, device);
+    }
+
+    /** Maps Tensor API BinaryOp to IR BinaryOperator. Returns null if not mappable. */
+    private static BinaryOperator toIRBinaryOp(BinaryOp op) {
+        if (op == BinaryOp.ADD) return BinaryOperator.ADD;
+        if (op == BinaryOp.SUBTRACT) return BinaryOperator.SUBTRACT;
+        if (op == BinaryOp.MULTIPLY) return BinaryOperator.MULTIPLY;
+        if (op == BinaryOp.DIVIDE) return BinaryOperator.DIVIDE;
+        if (op == BinaryOp.MIN) return BinaryOperator.MIN;
+        if (op == BinaryOp.MAX) return BinaryOperator.MAX;
+        if (op == BinaryOp.POW) return BinaryOperator.POW;
+        if (op == BinaryOp.LOGICAL_AND) return BinaryOperator.LOGICAL_AND;
+        if (op == BinaryOp.LOGICAL_OR) return BinaryOperator.LOGICAL_OR;
+        if (op == BinaryOp.LOGICAL_XOR) return BinaryOperator.LOGICAL_XOR;
+        if (op == BinaryOp.BITWISE_AND) return BinaryOperator.BITWISE_AND;
+        if (op == BinaryOp.BITWISE_OR) return BinaryOperator.BITWISE_OR;
+        if (op == BinaryOp.BITWISE_XOR) return BinaryOperator.BITWISE_XOR;
+        if (op == BinaryOp.EQUAL) return BinaryOperator.EQUAL;
+        if (op == BinaryOp.LESS_THAN) return BinaryOperator.LESS_THAN;
+        return null;
+    }
+
+    /** Maps Tensor API UnaryOp to IR UnaryOperator. Returns null if not mappable. */
+    private static UnaryOperator toIRUnaryOp(UnaryOp op) {
+        if (op == UnaryOp.NEGATE) return UnaryOperator.NEGATE;
+        if (op == UnaryOp.ABS) return UnaryOperator.ABS;
+        if (op == UnaryOp.EXP) return UnaryOperator.EXP;
+        if (op == UnaryOp.LOG) return UnaryOperator.LOG;
+        if (op == UnaryOp.SQRT) return UnaryOperator.SQRT;
+        if (op == UnaryOp.SQUARE) return UnaryOperator.SQUARE;
+        if (op == UnaryOp.SIN) return UnaryOperator.SIN;
+        if (op == UnaryOp.COS) return UnaryOperator.COS;
+        if (op == UnaryOp.TANH) return UnaryOperator.TANH;
+        if (op == UnaryOp.RECIPROCAL) return UnaryOperator.RECIPROCAL;
+        if (op == UnaryOp.LOGICAL_NOT) return UnaryOperator.LOGICAL_NOT;
+        if (op == UnaryOp.BITWISE_NOT) return UnaryOperator.BITWISE_NOT;
+        return null;
     }
 
     /**
@@ -35,18 +90,34 @@ final class ConstantFolder {
     // ========== Binary Operations ==========
 
     static Optional<Tensor> tryFoldBinaryOp(Tensor left, Tensor right, BinaryOp op) {
+        // First try ConstantComputation-based folding
         Optional<ConstantComputation> leftConst = asConstant(left);
         Optional<ConstantComputation> rightConst = asConstant(right);
-        if (leftConst.isEmpty() || rightConst.isEmpty()) {
-            return Optional.empty();
+        if (leftConst.isPresent() && rightConst.isPresent()) {
+            ConstantComputation lc = leftConst.get();
+            ConstantComputation rc = rightConst.get();
+            DataType resultType = TypeRules.promote(lc.dataType(), rc.dataType());
+            Number result = evalBinary(lc.value(), rc.value(), resultType, op);
+            // Use the larger shape to preserve broadcasting semantics
+            Shape resultShape = lc.shape().size() >= rc.shape().size() ? lc.shape() : rc.shape();
+            return Optional.of(broadcastedOf(result, resultType, resultShape));
         }
-        ConstantComputation lc = leftConst.get();
-        ConstantComputation rc = rightConst.get();
-        DataType resultType = TypeRules.promote(lc.dataType(), rc.dataType());
-        Number result = evalBinary(lc.value(), rc.value(), resultType, op);
-        // Use the larger shape to preserve broadcasting semantics
-        Shape resultShape = lc.shape().size() >= rc.shape().size() ? lc.shape() : rc.shape();
-        return Optional.of(broadcastedOf(result, resultType, resultShape));
+
+        // Try IR ScalarConstant-based folding
+        Optional<ScalarConstant> leftSc = asScalarConstant(left);
+        Optional<ScalarConstant> rightSc = asScalarConstant(right);
+        if (leftSc.isPresent() && rightSc.isPresent()) {
+            BinaryOperator irOp = toIRBinaryOp(op);
+            if (irOp != null) {
+                ScalarConstant folded =
+                        IRConstantFolder.foldBinary(irOp, leftSc.get(), rightSc.get());
+                if (folded != null) {
+                    return Optional.of(wrapScalarConstant(folded, left.device()));
+                }
+            }
+        }
+
+        return Optional.empty();
     }
 
     static Number evalBinary(Number a, Number b, DataType type, BinaryOp op) {
@@ -140,18 +211,32 @@ final class ConstantFolder {
     // ========== Unary Operations ==========
 
     static Optional<Tensor> tryFoldUnaryOp(Tensor tensor, UnaryOp op) {
+        // First try ConstantComputation-based folding
         Optional<ConstantComputation> constant = asConstant(tensor);
-        if (constant.isEmpty()) {
-            return Optional.empty();
+        if (constant.isPresent()) {
+            ConstantComputation c = constant.get();
+            try {
+                Number result = evalUnary(c.value(), c.dataType(), op);
+                // Preserve the original shape
+                return Optional.of(broadcastedOf(result, c.dataType(), c.shape()));
+            } catch (UnsupportedOperationException e) {
+                // Fall through to try IR folding
+            }
         }
-        ConstantComputation c = constant.get();
-        try {
-            Number result = evalUnary(c.value(), c.dataType(), op);
-            // Preserve the original shape
-            return Optional.of(broadcastedOf(result, c.dataType(), c.shape()));
-        } catch (UnsupportedOperationException e) {
-            return Optional.empty();
+
+        // Try IR ScalarConstant-based folding
+        Optional<ScalarConstant> sc = asScalarConstant(tensor);
+        if (sc.isPresent()) {
+            UnaryOperator irOp = toIRUnaryOp(op);
+            if (irOp != null) {
+                ScalarConstant folded = IRConstantFolder.foldUnary(irOp, sc.get());
+                if (folded != null) {
+                    return Optional.of(wrapScalarConstant(folded, tensor.device()));
+                }
+            }
         }
+
+        return Optional.empty();
     }
 
     static Number evalUnary(Number a, DataType type, UnaryOp op) {
@@ -296,14 +381,25 @@ final class ConstantFolder {
     // ========== Cast Operation ==========
 
     static Optional<Tensor> tryFoldCast(Tensor tensor, DataType targetType) {
+        // First try ConstantComputation-based folding
         Optional<ConstantComputation> constant = asConstant(tensor);
-        if (constant.isEmpty()) {
-            return Optional.empty();
+        if (constant.isPresent()) {
+            ConstantComputation c = constant.get();
+            Number result = cast(c.value(), targetType);
+            // Preserve the original shape
+            return Optional.of(broadcastedOf(result, targetType, c.shape()));
         }
-        ConstantComputation c = constant.get();
-        Number result = cast(c.value(), targetType);
-        // Preserve the original shape
-        return Optional.of(broadcastedOf(result, targetType, c.shape()));
+
+        // Try IR ScalarConstant-based folding
+        Optional<ScalarConstant> sc = asScalarConstant(tensor);
+        if (sc.isPresent()) {
+            ScalarConstant folded = IRConstantFolder.foldCast(sc.get(), targetType);
+            if (folded != null) {
+                return Optional.of(wrapScalarConstant(folded, tensor.device()));
+            }
+        }
+
+        return Optional.empty();
     }
 
     static Number cast(Number value, DataType targetType) {

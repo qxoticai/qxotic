@@ -8,13 +8,6 @@ final class EvaluatorUtils {
 
     private EvaluatorUtils() {}
 
-    static long broadcastCoord(long coord, long inputDim, long outputDim) {
-        if (inputDim == 1 && outputDim > 1) {
-            return 0;
-        }
-        return coord;
-    }
-
     static void forEachElement(Layout layout, ElementConsumer consumer) {
         Shape shape = layout.shape();
         long size = shape.size();

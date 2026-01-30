@@ -31,8 +31,8 @@ class SpiralGalaxyDemoTest {
 
     @Test
     void rendersSpiralGalaxyField() throws IOException {
-        Tensor x = Tensor.arange(WIDTH, DataType.FP32).multiply(2.0f / (WIDTH - 1)).add(-1.0f);
-        Tensor y = Tensor.arange(HEIGHT, DataType.FP32).multiply(2.0f / (HEIGHT - 1)).add(-1.0f);
+        Tensor x = Tensor.iota(WIDTH, DataType.FP32).multiply(2.0f / (WIDTH - 1)).add(-1.0f);
+        Tensor y = Tensor.iota(HEIGHT, DataType.FP32).multiply(2.0f / (HEIGHT - 1)).add(-1.0f);
 
         Tensor xGrid = x.view(Shape.of(1, WIDTH)).broadcast(Shape.of(HEIGHT, WIDTH));
         Tensor yGrid = y.view(Shape.of(HEIGHT, 1)).broadcast(Shape.of(HEIGHT, WIDTH));

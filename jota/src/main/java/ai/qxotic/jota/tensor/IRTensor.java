@@ -5,6 +5,7 @@ import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.ir.irt.IRTNode;
 import ai.qxotic.jota.memory.MemoryView;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -17,8 +18,8 @@ final class IRTensor implements Tensor {
     private final Device device;
 
     IRTensor(IRTNode node, Device device) {
-        this.node = java.util.Objects.requireNonNull(node);
-        this.device = java.util.Objects.requireNonNull(device);
+        this.node = Objects.requireNonNull(node);
+        this.device = Objects.requireNonNull(device);
     }
 
     @Override

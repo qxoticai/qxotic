@@ -21,8 +21,8 @@ class ArangeTensorTest {
             (MemoryContext<MemorySegment>) Environment.current().nativeBackend().memoryContext();
 
     @Test
-    void arangeDefaultsToI64() {
-        Tensor range = Tensor.arange(6);
+    void iotaDefaultsToI64() {
+        Tensor range = Tensor.iota(6);
 
         assertTrue(range.isLazy());
         assertFalse(range.isMaterialized());
@@ -36,8 +36,8 @@ class ArangeTensorTest {
     }
 
     @Test
-    void arangeCastsToFp32() {
-        Tensor range = Tensor.arange(6, DataType.FP32);
+    void iotaCastsToFp32() {
+        Tensor range = Tensor.iota(6, DataType.FP32);
         MemoryView<?> output = range.materialize();
 
         assertEquals(DataType.FP32, output.dataType());
@@ -47,13 +47,13 @@ class ArangeTensorTest {
     }
 
     @Test
-    void arangeRejectsBool() {
-        assertThrows(IllegalArgumentException.class, () -> Tensor.arange(4, DataType.BOOL));
+    void iotaRejectsBool() {
+        assertThrows(IllegalArgumentException.class, () -> Tensor.iota(4, DataType.BOOL));
     }
 
     @Test
-    void arangeRejectsNegativeCounts() {
-        assertThrows(IllegalArgumentException.class, () -> Tensor.arange(-1));
+    void iotaRejectsNegativeCounts() {
+        assertThrows(IllegalArgumentException.class, () -> Tensor.iota(-1));
     }
 
     private static long readLong(
