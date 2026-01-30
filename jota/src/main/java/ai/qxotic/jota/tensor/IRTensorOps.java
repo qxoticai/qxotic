@@ -5,13 +5,13 @@ import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.TypeRules;
-import ai.qxotic.jota.ir.irt.BinaryOperator;
-import ai.qxotic.jota.ir.irt.CastOp;
-import ai.qxotic.jota.ir.irt.Contiguous;
-import ai.qxotic.jota.ir.irt.IRTNode;
-import ai.qxotic.jota.ir.irt.ReductionOperator;
-import ai.qxotic.jota.ir.irt.UnaryOperator;
-import ai.qxotic.jota.ir.irt.ViewTransform;
+import ai.qxotic.jota.ir.tir.BinaryOperator;
+import ai.qxotic.jota.ir.tir.CastOp;
+import ai.qxotic.jota.ir.tir.Contiguous;
+import ai.qxotic.jota.ir.tir.ReductionOperator;
+import ai.qxotic.jota.ir.tir.TIRNode;
+import ai.qxotic.jota.ir.tir.UnaryOperator;
+import ai.qxotic.jota.ir.tir.ViewTransform;
 import ai.qxotic.jota.memory.MemoryContext;
 
 final class IRTensorOps implements TensorOps {
@@ -152,9 +152,9 @@ final class IRTensorOps implements TensorOps {
         IRTensor aTensor = requireIRTensor(trueValue);
         IRTensor bTensor = requireIRTensor(falseValue);
         Layout layout = requireCompatibleLayout(aTensor, bTensor);
-        ai.qxotic.jota.ir.irt.TernaryOp node =
-                new ai.qxotic.jota.ir.irt.TernaryOp(
-                        ai.qxotic.jota.ir.irt.TernaryOperator.WHERE,
+        ai.qxotic.jota.ir.tir.TernaryOp node =
+                new ai.qxotic.jota.ir.tir.TernaryOp(
+                        ai.qxotic.jota.ir.tir.TernaryOperator.WHERE,
                         condTensor.node(),
                         aTensor.node(),
                         bTensor.node());
@@ -203,7 +203,7 @@ final class IRTensorOps implements TensorOps {
     @Override
     public Tensor viewTransform(Tensor input, Layout layout, long byteOffsetDelta, String hint) {
         IRTensor tensor = requireIRTensor(input);
-        IRTNode node = new ViewTransform(tensor.node(), hint, layout);
+        TIRNode node = new ViewTransform(tensor.node(), hint, layout);
         return new IRTensor(node, tensor.device());
     }
 
@@ -227,7 +227,7 @@ final class IRTensorOps implements TensorOps {
             return broadcast(tensor, newShape);
         }
         Layout newLayout = Layout.of(newShape, ai.qxotic.jota.Stride.rowMajor(newShape));
-        IRTNode node = new ViewTransform(tensor.node(), "view", newLayout);
+        TIRNode node = new ViewTransform(tensor.node(), "view", newLayout);
         return new IRTensor(node, tensor.device());
     }
 
@@ -244,20 +244,20 @@ final class IRTensorOps implements TensorOps {
         if (tensor.layout().isSuffixContiguous(0)) {
             return tensor;
         }
-        IRTNode node = new Contiguous(tensor.node());
+        TIRNode node = new Contiguous(tensor.node());
         return new IRTensor(node, tensor.device());
     }
 
     @Override
     public Tensor cast(Tensor input, DataType targetType) {
         IRTensor tensor = requireIRTensor(input);
-        IRTNode node = new CastOp(tensor.node(), targetType);
+        TIRNode node = new CastOp(tensor.node(), targetType);
         return new IRTensor(node, tensor.device());
     }
 
     private Tensor unaryOp(Tensor x, UnaryOperator op) {
         IRTensor tensor = requireIRTensor(x);
-        IRTNode node = new ai.qxotic.jota.ir.irt.UnaryOp(op, tensor.node());
+        TIRNode node = new ai.qxotic.jota.ir.tir.UnaryOp(op, tensor.node());
         return new IRTensor(node, tensor.device());
     }
 
@@ -266,9 +266,9 @@ final class IRTensorOps implements TensorOps {
         IRTensor right = requireIRTensor(b);
         Layout layout = requireCompatibleLayout(left, right);
         DataType targetType = TypeRules.promote(left.dataType(), right.dataType());
-        IRTNode leftNode = maybeCast(left.node(), targetType);
-        IRTNode rightNode = maybeCast(right.node(), targetType);
-        IRTNode node = new ai.qxotic.jota.ir.irt.BinaryOp(op, leftNode, rightNode);
+        TIRNode leftNode = maybeCast(left.node(), targetType);
+        TIRNode rightNode = maybeCast(right.node(), targetType);
+        TIRNode node = new ai.qxotic.jota.ir.tir.BinaryOp(op, leftNode, rightNode);
         return new IRTensor(node, left.device());
     }
 
@@ -277,9 +277,9 @@ final class IRTensorOps implements TensorOps {
         IRTensor right = requireIRTensor(b);
         requireSameType(left, right, opName);
         Layout layout = requireCompatibleLayout(left, right);
-        IRTNode leftNode = left.node();
-        IRTNode rightNode = right.node();
-        IRTNode node = new ai.qxotic.jota.ir.irt.BinaryOp(op, leftNode, rightNode);
+        TIRNode leftNode = left.node();
+        TIRNode rightNode = right.node();
+        TIRNode node = new ai.qxotic.jota.ir.tir.BinaryOp(op, leftNode, rightNode);
         return new IRTensor(node, left.device());
     }
 
@@ -287,7 +287,7 @@ final class IRTensorOps implements TensorOps {
             Tensor input, ReductionOp op, int[] axes, boolean keepDims, DataType accumulatorType) {
         IRTensor tensor = requireIRTensor(input);
         ReductionOperator irtOp = mapReductionOp(op);
-        IRTNode node = new ai.qxotic.jota.ir.irt.ReductionOp(irtOp, tensor.node(), axes, keepDims);
+        TIRNode node = new ai.qxotic.jota.ir.tir.ReductionOp(irtOp, tensor.node(), axes, keepDims);
         return new IRTensor(node, tensor.device());
     }
 
@@ -301,7 +301,7 @@ final class IRTensorOps implements TensorOps {
         return result;
     }
 
-    private IRTNode maybeCast(IRTNode node, DataType targetType) {
+    private TIRNode maybeCast(TIRNode node, DataType targetType) {
         if (node.dataType() == targetType) {
             return node;
         }

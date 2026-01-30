@@ -1,0 +1,22 @@
+package ai.qxotic.jota.ir.tir;
+
+import ai.qxotic.jota.DataType;
+import ai.qxotic.jota.Layout;
+
+/**
+ * Iota constant (0..n-1 sequence) for arange support. Only supports base case: [0, 1, 2, ..., n-1]
+ * Other variants (start, step) can be expressed as: add(multiply(IotaConstant, step), start)
+ */
+public record IotaConstant(long count, DataType dataType, Layout layout) implements TIRNode {
+
+    public IotaConstant {
+        if (count < 0) {
+            throw new IllegalArgumentException("count must be non-negative, got: " + count);
+        }
+    }
+
+    /** Creates an iota constant with the specified count. */
+    public static IotaConstant of(long count, DataType dataType) {
+        return new IotaConstant(count, dataType, Layout.rowMajor(count));
+    }
+}

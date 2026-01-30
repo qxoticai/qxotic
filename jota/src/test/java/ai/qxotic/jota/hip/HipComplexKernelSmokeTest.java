@@ -236,8 +236,7 @@ class HipComplexKernelSmokeTest {
                         Device.HIP, env.defaultFloat(), env.backends(), env.executionMode());
         MemoryView<?> deviceOut =
                 Environment.with(
-                        hipEnv,
-                        () -> Tensor.iota(n, DataType.FP32).add(1.0f).tanh().materialize());
+                        hipEnv, () -> Tensor.iota(n, DataType.FP32).add(1.0f).tanh().materialize());
 
         @SuppressWarnings("unchecked")
         MemoryView<HipDevicePtr> hipOut = (MemoryView<HipDevicePtr>) deviceOut;

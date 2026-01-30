@@ -26,7 +26,7 @@ final class HipMemoryAllocator implements MemoryAllocator<HipDevicePtr> {
         }
         HipRuntime.requireAvailable();
         long ptr = HipRuntime.malloc(byteSize);
-        return new HipDeviceMemory(new HipDevicePtr(ptr), byteSize);
+        return new HipMemory(new HipDevicePtr(ptr), byteSize);
     }
 
     @Override
