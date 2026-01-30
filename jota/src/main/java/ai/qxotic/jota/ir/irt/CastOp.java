@@ -19,6 +19,7 @@ public record CastOp(IRTNode input, DataType targetDtype) implements IRTNode {
 
     @Override
     public Layout layout() {
-        return input.layout();
+        // Compute operations produce row-major outputs.
+        return Layout.rowMajor(input.layout().shape());
     }
 }

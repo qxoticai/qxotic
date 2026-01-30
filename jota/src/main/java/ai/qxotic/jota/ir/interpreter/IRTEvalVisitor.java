@@ -2,6 +2,7 @@ package ai.qxotic.jota.ir.interpreter;
 
 import ai.qxotic.jota.*;
 import ai.qxotic.jota.ir.irt.*;
+import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
@@ -696,37 +697,72 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
         long size = layout.shape().size();
 
         for (long i = 0; i < size; i++) {
-            boolean condition = memAccess.readByte(cond.memory(), Indexing.linearToOffset(cond, i)) != 0;
+            boolean condition =
+                    memAccess.readByte(cond.memory(), Indexing.linearToOffset(cond, i)) != 0;
 
             if (dtype == DataType.FP32) {
                 float val =
-                        condition ? memAccess.readFloat(trueExpr.memory(), Indexing.linearToOffset(trueExpr, i)) : memAccess.readFloat(falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
+                        condition
+                                ? memAccess.readFloat(
+                                        trueExpr.memory(), Indexing.linearToOffset(trueExpr, i))
+                                : memAccess.readFloat(
+                                        falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
                 memAccess.writeFloat(output.memory(), Indexing.linearToOffset(output, i), val);
             } else if (dtype == DataType.FP64) {
                 double val =
                         condition
-                                ? memAccess.readDouble(trueExpr.memory(), Indexing.linearToOffset(trueExpr, i))
-                                : memAccess.readDouble(falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
+                                ? memAccess.readDouble(
+                                        trueExpr.memory(), Indexing.linearToOffset(trueExpr, i))
+                                : memAccess.readDouble(
+                                        falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
                 memAccess.writeDouble(output.memory(), Indexing.linearToOffset(output, i), val);
             } else if (dtype == DataType.FP16 || dtype == DataType.BF16) {
                 short val =
-                        condition ? memAccess.readShort(trueExpr.memory(), Indexing.linearToOffset(trueExpr, i)) : memAccess.readShort(falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
+                        condition
+                                ? memAccess.readShort(
+                                        trueExpr.memory(), Indexing.linearToOffset(trueExpr, i))
+                                : memAccess.readShort(
+                                        falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
                 memAccess.writeShort(output.memory(), Indexing.linearToOffset(output, i), val);
             } else if (dtype == DataType.I8) {
-                byte val = condition ? memAccess.readByte(trueExpr.memory(), Indexing.linearToOffset(trueExpr, i)) : memAccess.readByte(falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
+                byte val =
+                        condition
+                                ? memAccess.readByte(
+                                        trueExpr.memory(), Indexing.linearToOffset(trueExpr, i))
+                                : memAccess.readByte(
+                                        falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
                 memAccess.writeByte(output.memory(), Indexing.linearToOffset(output, i), val);
             } else if (dtype == DataType.I16) {
                 short val =
-                        condition ? memAccess.readShort(trueExpr.memory(), Indexing.linearToOffset(trueExpr, i)) : memAccess.readShort(falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
+                        condition
+                                ? memAccess.readShort(
+                                        trueExpr.memory(), Indexing.linearToOffset(trueExpr, i))
+                                : memAccess.readShort(
+                                        falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
                 memAccess.writeShort(output.memory(), Indexing.linearToOffset(output, i), val);
             } else if (dtype == DataType.I32) {
-                int val = condition ? memAccess.readInt(trueExpr.memory(), Indexing.linearToOffset(trueExpr, i)) : memAccess.readInt(falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
+                int val =
+                        condition
+                                ? memAccess.readInt(
+                                        trueExpr.memory(), Indexing.linearToOffset(trueExpr, i))
+                                : memAccess.readInt(
+                                        falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
                 memAccess.writeInt(output.memory(), Indexing.linearToOffset(output, i), val);
             } else if (dtype == DataType.I64) {
-                long val = condition ? memAccess.readLong(trueExpr.memory(), Indexing.linearToOffset(trueExpr, i)) : memAccess.readLong(falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
+                long val =
+                        condition
+                                ? memAccess.readLong(
+                                        trueExpr.memory(), Indexing.linearToOffset(trueExpr, i))
+                                : memAccess.readLong(
+                                        falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
                 memAccess.writeLong(output.memory(), Indexing.linearToOffset(output, i), val);
             } else if (dtype == DataType.BOOL) {
-                byte val = condition ? memAccess.readByte(trueExpr.memory(), Indexing.linearToOffset(trueExpr, i)) : memAccess.readByte(falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
+                byte val =
+                        condition
+                                ? memAccess.readByte(
+                                        trueExpr.memory(), Indexing.linearToOffset(trueExpr, i))
+                                : memAccess.readByte(
+                                        falseExpr.memory(), Indexing.linearToOffset(falseExpr, i));
                 memAccess.writeByte(output.memory(), Indexing.linearToOffset(output, i), val);
             } else {
                 throw new UnsupportedOperationException("Unsupported data type: " + dtype);
@@ -751,34 +787,33 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
 
             if (targetDtype == DataType.FP32) {
                 float value = readAsFloat(input, sourceDtype, inOffset);
-                memAccess.writeFloat(input.memory(), outOffset, value);
+                memAccess.writeFloat(output.memory(), outOffset, value);
             } else if (targetDtype == DataType.FP64) {
                 double value = readAsDouble(input, sourceDtype, inOffset);
-                memAccess.writeDouble(input.memory(), outOffset, value);
+                memAccess.writeDouble(output.memory(), outOffset, value);
             } else if (targetDtype == DataType.FP16) {
                 float value = readAsFloat(input, sourceDtype, inOffset);
                 short bits = Float.floatToFloat16(value);
-                memAccess.writeShort(input.memory(), outOffset, bits);
+                memAccess.writeShort(output.memory(), outOffset, bits);
             } else if (targetDtype == DataType.BF16) {
                 float value = readAsFloat(input, sourceDtype, inOffset);
                 short bits = BFloat16.fromFloat(value);
-                memAccess.writeShort(input.memory(), outOffset, bits);
+                memAccess.writeShort(output.memory(), outOffset, bits);
             } else if (targetDtype == DataType.I8) {
                 long value = readAsLong(input, sourceDtype, inOffset);
-                memAccess.writeByte(input.memory(), outOffset, (byte) value);
+                memAccess.writeByte(output.memory(), outOffset, (byte) value);
             } else if (targetDtype == DataType.I16) {
                 long value = readAsLong(input, sourceDtype, inOffset);
-                memAccess.writeShort(input.memory(), outOffset, (short) value);
+                memAccess.writeShort(output.memory(), outOffset, (short) value);
             } else if (targetDtype == DataType.I32) {
                 long value = readAsLong(input, sourceDtype, inOffset);
-                memAccess.writeInt(input.memory(), outOffset, (int) value);
+                memAccess.writeInt(output.memory(), outOffset, (int) value);
             } else if (targetDtype == DataType.I64) {
                 long value = readAsLong(input, sourceDtype, inOffset);
-                memAccess.writeLong(input.memory(), outOffset, value);
+                memAccess.writeLong(output.memory(), outOffset, value);
             } else if (targetDtype == DataType.BOOL) {
                 long value = readAsLong(input, sourceDtype, inOffset);
-                memAccess
-                        .writeByte(input.memory(), outOffset, (byte) (value != 0 ? 1 : 0));
+                memAccess.writeByte(output.memory(), outOffset, (byte) (value != 0 ? 1 : 0));
             } else {
                 throw new UnsupportedOperationException(
                         "Unsupported target data type: " + targetDtype);
@@ -1364,11 +1399,33 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
         for (long i = 0; i < size; i++) {
             long inOffset = Indexing.linearToOffset(input, i);
             long outOffset = Indexing.linearToOffset(output, i);
-            byte value = memAccess.readByte(input.memory(), inOffset);
-            memAccess.writeByte(output.memory(), outOffset, value);
+            copyElement(input.memory(), inOffset, output.memory(), outOffset, dtype);
         }
 
         return output;
+    }
+
+    private void copyElement(
+            Memory<MemorySegment> src,
+            long srcOffset,
+            Memory<MemorySegment> dst,
+            long dstOffset,
+            DataType dtype) {
+        if (dtype == DataType.FP32) {
+            memAccess.writeFloat(dst, dstOffset, memAccess.readFloat(src, srcOffset));
+        } else if (dtype == DataType.FP64) {
+            memAccess.writeDouble(dst, dstOffset, memAccess.readDouble(src, srcOffset));
+        } else if (dtype == DataType.FP16 || dtype == DataType.BF16 || dtype == DataType.I16) {
+            memAccess.writeShort(dst, dstOffset, memAccess.readShort(src, srcOffset));
+        } else if (dtype == DataType.I32) {
+            memAccess.writeInt(dst, dstOffset, memAccess.readInt(src, srcOffset));
+        } else if (dtype == DataType.I64) {
+            memAccess.writeLong(dst, dstOffset, memAccess.readLong(src, srcOffset));
+        } else if (dtype == DataType.I8 || dtype == DataType.BOOL) {
+            memAccess.writeByte(dst, dstOffset, memAccess.readByte(src, srcOffset));
+        } else {
+            throw new UnsupportedOperationException("Unsupported data type: " + dtype);
+        }
     }
 
     @Override
@@ -1380,12 +1437,10 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
         long offset = Indexing.linearToOffset(output, 0);
 
         if (dtype == DataType.FP32) {
-            memAccess
-                    .writeFloat(
-                            output.memory(), offset, Float.intBitsToFloat((int) node.rawBits()));
+            memAccess.writeFloat(
+                    output.memory(), offset, Float.intBitsToFloat((int) node.rawBits()));
         } else if (dtype == DataType.FP64) {
-            memAccess
-                    .writeDouble(output.memory(), offset, Double.longBitsToDouble(node.rawBits()));
+            memAccess.writeDouble(output.memory(), offset, Double.longBitsToDouble(node.rawBits()));
         } else if (dtype == DataType.FP16 || dtype == DataType.BF16) {
             memAccess.writeShort(output.memory(), offset, (short) node.rawBits());
         } else if (dtype == DataType.I8) {
@@ -1397,8 +1452,7 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
         } else if (dtype == DataType.I64) {
             memAccess.writeLong(output.memory(), offset, node.rawBits());
         } else if (dtype == DataType.BOOL) {
-            memAccess
-                    .writeByte(output.memory(), offset, (byte) (node.rawBits() != 0 ? 1 : 0));
+            memAccess.writeByte(output.memory(), offset, (byte) (node.rawBits() != 0 ? 1 : 0));
         } else {
             throw new UnsupportedOperationException("Unsupported data type: " + dtype);
         }
@@ -1415,38 +1469,31 @@ final class IRTEvalVisitor implements IRTVisitor<MemoryView<MemorySegment>> {
 
         for (long i = 0; i < count; i++) {
             if (dtype == DataType.FP32) {
-                memAccess
-                        .writeFloat(output.memory(), Indexing.linearToOffset(output, i), (float) i);
+                memAccess.writeFloat(
+                        output.memory(), Indexing.linearToOffset(output, i), (float) i);
             } else if (dtype == DataType.FP64) {
-                memAccess
-                        .writeDouble(
-                                output.memory(), Indexing.linearToOffset(output, i), (double) i);
+                memAccess.writeDouble(
+                        output.memory(), Indexing.linearToOffset(output, i), (double) i);
             } else if (dtype == DataType.FP16) {
                 short bits = Float.floatToFloat16((float) i);
-                memAccess
-                        .writeShort(output.memory(), Indexing.linearToOffset(output, i), bits);
+                memAccess.writeShort(output.memory(), Indexing.linearToOffset(output, i), bits);
             } else if (dtype == DataType.BF16) {
                 short bits = BFloat16.fromFloat((float) i);
-                memAccess
-                        .writeShort(output.memory(), Indexing.linearToOffset(output, i), bits);
+                memAccess.writeShort(output.memory(), Indexing.linearToOffset(output, i), bits);
             } else if (dtype == DataType.I8) {
-                memAccess
-                        .writeByte(output.memory(), Indexing.linearToOffset(output, i), (byte) i);
+                memAccess.writeByte(output.memory(), Indexing.linearToOffset(output, i), (byte) i);
             } else if (dtype == DataType.I16) {
-                memAccess
-                        .writeShort(output.memory(), Indexing.linearToOffset(output, i), (short) i);
+                memAccess.writeShort(
+                        output.memory(), Indexing.linearToOffset(output, i), (short) i);
             } else if (dtype == DataType.I32) {
-                memAccess
-                        .writeInt(output.memory(), Indexing.linearToOffset(output, i), (int) i);
+                memAccess.writeInt(output.memory(), Indexing.linearToOffset(output, i), (int) i);
             } else if (dtype == DataType.I64) {
-                memAccess
-                        .writeLong(output.memory(), Indexing.linearToOffset(output, i), i);
+                memAccess.writeLong(output.memory(), Indexing.linearToOffset(output, i), i);
             } else if (dtype == DataType.BOOL) {
-                memAccess
-                        .writeByte(
-                                output.memory(),
-                                Indexing.linearToOffset(output, i),
-                                (byte) (i != 0 ? 1 : 0));
+                memAccess.writeByte(
+                        output.memory(),
+                        Indexing.linearToOffset(output, i),
+                        (byte) (i != 0 ? 1 : 0));
             } else {
                 throw new UnsupportedOperationException("Unsupported data type: " + dtype);
             }

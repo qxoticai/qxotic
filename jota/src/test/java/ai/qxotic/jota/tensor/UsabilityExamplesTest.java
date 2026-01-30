@@ -21,7 +21,7 @@ class UsabilityExamplesTest {
 
     @Test
     void elementwiseChainMaterializes() {
-        Tensor y = Tensor.arange(6, DataType.FP32).view(Shape.of(2, 3)).add(1.0f).sqrt();
+        Tensor y = Tensor.iota(6, DataType.FP32).view(Shape.of(2, 3)).add(1.0f).sqrt();
 
         assertTrue(y.isLazy());
         assertFalse(y.isMaterialized());
@@ -37,7 +37,7 @@ class UsabilityExamplesTest {
     @Test
     void elementwiseAddSameShape() {
         Tensor y =
-                Tensor.arange(6)
+                Tensor.iota(6)
                         .cast(DataType.FP32)
                         .view(Shape.of(2, 3))
                         .add(Tensor.ones(Shape.of(2, 3)));
@@ -53,7 +53,7 @@ class UsabilityExamplesTest {
 
     @Test
     void transposeViewReordersAxes() {
-        Tensor y = Tensor.arange(6).view(Shape.of(2, 3)).transpose(0, 1);
+        Tensor y = Tensor.iota(6).view(Shape.of(2, 3)).transpose(0, 1);
 
         MemoryView<?> output = y.materialize();
 
@@ -65,7 +65,7 @@ class UsabilityExamplesTest {
 
     @Test
     void sumReducesAlongAxis() {
-        Tensor y = Tensor.arange(6, DataType.FP32).view(Shape.of(2, 3)).sum(DataType.FP32, 1);
+        Tensor y = Tensor.iota(6, DataType.FP32).view(Shape.of(2, 3)).sum(DataType.FP32, 1);
 
         MemoryView<?> output = y.materialize();
 
@@ -77,7 +77,7 @@ class UsabilityExamplesTest {
 
     @Test
     void comparisonProducesBoolTensor() {
-        Tensor y = Tensor.arange(5).lessThan(Tensor.full(2L, Shape.flat(5)));
+        Tensor y = Tensor.iota(5).lessThan(Tensor.full(2L, Shape.flat(5)));
 
         MemoryView<?> output = y.materialize();
 

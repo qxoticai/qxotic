@@ -516,28 +516,46 @@ public interface Tensor {
         }
     }
 
-    /** Broadcasts the left operand to match right's shape if left is a scalar and right is not. */
+    /**
+     * Broadcasts the left operand to match right's shape if left is a rank-0 scalar and right is
+     * not.
+     */
     private static Tensor broadcastLeftScalar(Tensor left, Tensor right) {
         if (!left.isScalar() || right.isScalar()) {
             return left;
         }
-        return left.computation()
-                .filter(ConstantComputation.class::isInstance)
-                .map(ConstantComputation.class::cast)
-                .map(c -> Tensor.full(c.value(), c.dataType(), right.shape()))
-                .orElse(left);
+        // For constant computations, create a new broadcasted constant
+        Optional<Tensor> constant =
+                left.computation()
+                        .filter(ConstantComputation.class::isInstance)
+                        .map(ConstantComputation.class::cast)
+                        .map(c -> Tensor.full(c.value(), c.dataType(), right.shape()));
+        if (constant.isPresent()) {
+            return constant.get();
+        }
+        // For other scalars (e.g., IRTensor), use broadcast view transform
+        return left.broadcast(right.shape());
     }
 
-    /** Broadcasts the right operand to match left's shape if right is a scalar and left is not. */
+    /**
+     * Broadcasts the right operand to match left's shape if right is a rank-0 scalar and left is
+     * not.
+     */
     private static Tensor broadcastRightScalar(Tensor left, Tensor right) {
         if (!right.isScalar() || left.isScalar()) {
             return right;
         }
-        return right.computation()
-                .filter(ConstantComputation.class::isInstance)
-                .map(ConstantComputation.class::cast)
-                .map(c -> Tensor.full(c.value(), c.dataType(), left.shape()))
-                .orElse(right);
+        // For constant computations, create a new broadcasted constant
+        Optional<Tensor> constant =
+                right.computation()
+                        .filter(ConstantComputation.class::isInstance)
+                        .map(ConstantComputation.class::cast)
+                        .map(c -> Tensor.full(c.value(), c.dataType(), left.shape()));
+        if (constant.isPresent()) {
+            return constant.get();
+        }
+        // For other scalars (e.g., IRTensor), use broadcast view transform
+        return right.broadcast(left.shape());
     }
 
     /** Broadcasts the other operand if it is scalar and this is not. */
@@ -625,7 +643,7 @@ public interface Tensor {
      * @param n number of elements (non-negative)
      * @return a lazy range tensor
      */
-    static Tensor arange(long n) {
+    static Tensor iota(long n) {
         if (n < 0) {
             throw new IllegalArgumentException("n must be non-negative, got: " + n);
         }
@@ -642,12 +660,12 @@ public interface Tensor {
      * @param dataType target data type (integral or floating-point)
      * @return a lazy range tensor cast to the target type
      */
-    static Tensor arange(long n, DataType dataType) {
+    static Tensor iota(long n, DataType dataType) {
         Objects.requireNonNull(dataType, "dataType");
         if (dataType == DataType.BOOL || !(dataType.isIntegral() || dataType.isFloatingPoint())) {
             throw new IllegalArgumentException("Unsupported data type for arange: " + dataType);
         }
-        return arange(n).cast(dataType);
+        return iota(n).cast(dataType);
     }
 
     /**
@@ -780,8 +798,41 @@ public interface Tensor {
         Objects.requireNonNull(shape, "shape");
         Objects.requireNonNull(device, "device");
         Layout layout = Layout.of(shape, Stride.zeros(shape));
+
+        if (TensorOpsContext.current() instanceof IRTensorOps) {
+            return createIRScalarConstant(value, dataType, shape, device);
+        }
+
         ConstantComputation computation = ConstantComputation.of(value, dataType, shape, device);
         return lazy(computation, dataType, layout, device);
+    }
+
+    private static Tensor createIRScalarConstant(
+            Number value, DataType dataType, Shape shape, Device device) {
+        ai.qxotic.jota.ir.irt.ScalarConstant scalar;
+        long rawBits;
+        if (dataType == DataType.FP32) {
+            rawBits = Float.floatToIntBits(value.floatValue());
+            scalar = ai.qxotic.jota.ir.irt.ScalarConstant.broadcast(rawBits, dataType, shape);
+        } else if (dataType == DataType.FP64) {
+            rawBits = Double.doubleToLongBits(value.doubleValue());
+            scalar = ai.qxotic.jota.ir.irt.ScalarConstant.broadcast(rawBits, dataType, shape);
+        } else if (dataType == DataType.BOOL
+                || dataType == DataType.I8
+                || dataType == DataType.I16
+                || dataType == DataType.I32) {
+            rawBits = value.longValue();
+            scalar = ai.qxotic.jota.ir.irt.ScalarConstant.broadcast(rawBits, dataType, shape);
+        } else if (dataType == DataType.I64) {
+            rawBits = value.longValue();
+            scalar = ai.qxotic.jota.ir.irt.ScalarConstant.broadcast(rawBits, dataType, shape);
+        } else if (dataType == DataType.FP16 || dataType == DataType.BF16) {
+            rawBits = (long) Float.floatToIntBits(value.floatValue());
+            scalar = ai.qxotic.jota.ir.irt.ScalarConstant.broadcast(rawBits, dataType, shape);
+        } else {
+            throw new IllegalArgumentException("Unsupported data type: " + dataType);
+        }
+        return new IRTensor(scalar, device);
     }
 
     // ========== Array Creation (Eager) ==========

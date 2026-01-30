@@ -2,7 +2,7 @@ package ai.qxotic.jota.ir.interpreter;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Layout;
-import ai.qxotic.jota.ir.irt.IRGraph;
+import ai.qxotic.jota.ir.irt.IRTGraph;
 import ai.qxotic.jota.ir.irt.IRTNode;
 import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAccess;
@@ -18,7 +18,7 @@ public final class IRTInterpreter {
     private IRTInterpreter() {}
 
     public static List<MemoryView<MemorySegment>> execute(
-            IRGraph graph, List<MemoryView<?>> inputs, MemoryContext<?> context) {
+            IRTGraph graph, List<MemoryView<?>> inputs, MemoryContext<?> context) {
 
         try (IRTEvalContext evalContext = IRTEvalContext.create(inputs, context)) {
             List<MemoryView<MemorySegment>> arenaOutputs = new ArrayList<>();

@@ -2,6 +2,7 @@ package ai.qxotic.jota.ir.irt;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Layout;
+import ai.qxotic.jota.Shape;
 import java.util.Objects;
 
 /** Unary operation node in IR-T. */
@@ -19,6 +20,8 @@ public record UnaryOp(UnaryOperator op, IRTNode input) implements IRTNode {
 
     @Override
     public Layout layout() {
-        return input.layout();
+        // Output must be row-major, not a broadcast layout with zero strides.
+        Shape shape = input.layout().shape();
+        return Layout.rowMajor(shape);
     }
 }
