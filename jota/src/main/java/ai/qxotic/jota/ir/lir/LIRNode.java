@@ -14,7 +14,6 @@ public sealed interface LIRNode extends IRNode
                 Load,
                 Store,
                 Accumulator,
-                AccumulatorRead,
                 AccumulatorUpdate,
                 Loop,
                 TiledLoop,

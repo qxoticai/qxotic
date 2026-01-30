@@ -4,7 +4,7 @@ import ai.qxotic.jota.DataType;
 import java.util.Objects;
 
 /** Read the current value of an accumulator. */
-public record AccumulatorRead(String name, DataType dataType) implements LIRNode {
+public record AccumulatorRead(String name, DataType dataType) implements ScalarExpr {
 
     public AccumulatorRead {
         Objects.requireNonNull(name, "name cannot be null");

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
+import ai.qxotic.jota.Stride;
 import ai.qxotic.jota.ir.lir.LIRGraph;
 import ai.qxotic.jota.ir.lir.LIRInterpreter;
 import ai.qxotic.jota.ir.lir.LIRTextRenderer;
@@ -415,5 +416,1025 @@ class TIRToLIRLowererTest {
     private static float geluReference(float x) {
         double inner = 0.7978845608 * (x + 0.044715 * x * x * x);
         return (float) (0.5 * x * (1 + Math.tanh(inner)));
+    }
+
+    // ==================== Reduction Tests ====================
+
+    @Test
+    void testReductionSum1D() {
+        // TIR: output = sum(input)
+        try (Arena arena = Arena.ofConfined()) {
+            int size = 5;
+
+            MemorySegment input = arena.allocate(size * Float.BYTES);
+            MemorySegment output = arena.allocate(Float.BYTES);
+
+            float expectedSum = 0;
+            for (int i = 0; i < size; i++) {
+                float val = i + 1.0f;
+                input.setAtIndex(ValueLayout.JAVA_FLOAT, i, val);
+                expectedSum += val;
+            }
+
+            // Build TIR graph
+            Layout layout = Layout.rowMajor(size);
+            TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
+            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, in0, new int[] {0}, false);
+
+            TIRGraph tirGraph = new TIRGraph(List.of(in0), sum);
+
+            // Lower to LIR
+            TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+            LIRGraph lirGraph = lowerer.lower(tirGraph);
+
+            System.out.println(new LIRTextRenderer().render(lirGraph));
+
+            // Execute
+            LIRInterpreter interpreter = new LIRInterpreter();
+            interpreter.bindBuffer(0, input);
+            interpreter.bindBuffer(1, output);
+            interpreter.execute(lirGraph);
+
+            // Verify
+            float actual = output.getAtIndex(ValueLayout.JAVA_FLOAT, 0);
+            assertEquals(expectedSum, actual, 1e-5f);
+        }
+    }
+
+    @Test
+    void testReductionMax1D() {
+        // TIR: output = max(input)
+        try (Arena arena = Arena.ofConfined()) {
+            float[] inputData = {3.0f, 1.0f, 4.0f, 1.0f, 5.0f, 9.0f, 2.0f};
+            int size = inputData.length;
+
+            MemorySegment input = arena.allocate(size * Float.BYTES);
+            MemorySegment output = arena.allocate(Float.BYTES);
+
+            float expectedMax = Float.NEGATIVE_INFINITY;
+            for (int i = 0; i < size; i++) {
+                input.setAtIndex(ValueLayout.JAVA_FLOAT, i, inputData[i]);
+                expectedMax = Math.max(expectedMax, inputData[i]);
+            }
+
+            // Build TIR graph
+            Layout layout = Layout.rowMajor(size);
+            TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
+            ReductionOp max = new ReductionOp(ReductionOperator.MAX, in0, new int[] {0}, false);
+
+            TIRGraph tirGraph = new TIRGraph(List.of(in0), max);
+
+            // Lower and execute
+            TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+            LIRGraph lirGraph = lowerer.lower(tirGraph);
+
+            System.out.println(new LIRTextRenderer().render(lirGraph));
+
+            LIRInterpreter interpreter = new LIRInterpreter();
+            interpreter.bindBuffer(0, input);
+            interpreter.bindBuffer(1, output);
+            interpreter.execute(lirGraph);
+
+            float actual = output.getAtIndex(ValueLayout.JAVA_FLOAT, 0);
+            assertEquals(expectedMax, actual, 1e-5f);
+        }
+    }
+
+    @Test
+    void testReductionMin1D() {
+        // TIR: output = min(input)
+        try (Arena arena = Arena.ofConfined()) {
+            float[] inputData = {3.0f, 1.0f, 4.0f, 1.0f, 5.0f, 9.0f, 2.0f};
+            int size = inputData.length;
+
+            MemorySegment input = arena.allocate(size * Float.BYTES);
+            MemorySegment output = arena.allocate(Float.BYTES);
+
+            float expectedMin = Float.POSITIVE_INFINITY;
+            for (int i = 0; i < size; i++) {
+                input.setAtIndex(ValueLayout.JAVA_FLOAT, i, inputData[i]);
+                expectedMin = Math.min(expectedMin, inputData[i]);
+            }
+
+            // Build TIR graph
+            Layout layout = Layout.rowMajor(size);
+            TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
+            ReductionOp min = new ReductionOp(ReductionOperator.MIN, in0, new int[] {0}, false);
+
+            TIRGraph tirGraph = new TIRGraph(List.of(in0), min);
+
+            // Lower and execute
+            TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+            LIRGraph lirGraph = lowerer.lower(tirGraph);
+
+            System.out.println(new LIRTextRenderer().render(lirGraph));
+
+            LIRInterpreter interpreter = new LIRInterpreter();
+            interpreter.bindBuffer(0, input);
+            interpreter.bindBuffer(1, output);
+            interpreter.execute(lirGraph);
+
+            float actual = output.getAtIndex(ValueLayout.JAVA_FLOAT, 0);
+            assertEquals(expectedMin, actual, 1e-5f);
+        }
+    }
+
+    @Test
+    void testReductionProd1D() {
+        // TIR: output = prod(input)
+        try (Arena arena = Arena.ofConfined()) {
+            float[] inputData = {1.0f, 2.0f, 3.0f, 4.0f};
+            int size = inputData.length;
+
+            MemorySegment input = arena.allocate(size * Float.BYTES);
+            MemorySegment output = arena.allocate(Float.BYTES);
+
+            float expectedProd = 1.0f;
+            for (int i = 0; i < size; i++) {
+                input.setAtIndex(ValueLayout.JAVA_FLOAT, i, inputData[i]);
+                expectedProd *= inputData[i];
+            }
+
+            // Build TIR graph
+            Layout layout = Layout.rowMajor(size);
+            TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
+            ReductionOp prod = new ReductionOp(ReductionOperator.PROD, in0, new int[] {0}, false);
+
+            TIRGraph tirGraph = new TIRGraph(List.of(in0), prod);
+
+            // Lower and execute
+            TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+            LIRGraph lirGraph = lowerer.lower(tirGraph);
+
+            System.out.println(new LIRTextRenderer().render(lirGraph));
+
+            LIRInterpreter interpreter = new LIRInterpreter();
+            interpreter.bindBuffer(0, input);
+            interpreter.bindBuffer(1, output);
+            interpreter.execute(lirGraph);
+
+            float actual = output.getAtIndex(ValueLayout.JAVA_FLOAT, 0);
+            assertEquals(expectedProd, actual, 1e-5f);
+        }
+    }
+
+    @Test
+    void testReductionSum2DAxis0() {
+        // TIR: output[j] = sum(input[:, j], axis=0) - sum over rows
+        try (Arena arena = Arena.ofConfined()) {
+            int rows = 3;
+            int cols = 4;
+
+            MemorySegment input = arena.allocate(rows * cols * Float.BYTES);
+            MemorySegment output = arena.allocate(cols * Float.BYTES);
+
+            // Initialize input and compute expected
+            float[] expectedSums = new float[cols];
+            for (int i = 0; i < rows; i++) {
+                for (int j = 0; j < cols; j++) {
+                    float val = i * cols + j + 1.0f;
+                    input.setAtIndex(ValueLayout.JAVA_FLOAT, i * cols + j, val);
+                    expectedSums[j] += val;
+                }
+            }
+
+            // Build TIR graph
+            Layout layout = Layout.rowMajor(rows, cols);
+            TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
+            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, in0, new int[] {0}, false);
+
+            TIRGraph tirGraph = new TIRGraph(List.of(in0), sum);
+
+            // Lower and execute
+            TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+            LIRGraph lirGraph = lowerer.lower(tirGraph);
+
+            System.out.println(new LIRTextRenderer().render(lirGraph));
+
+            LIRInterpreter interpreter = new LIRInterpreter();
+            interpreter.bindBuffer(0, input);
+            interpreter.bindBuffer(1, output);
+            interpreter.execute(lirGraph);
+
+            // Verify
+            for (int j = 0; j < cols; j++) {
+                float actual = output.getAtIndex(ValueLayout.JAVA_FLOAT, j);
+                assertEquals(expectedSums[j], actual, 1e-5f, "Mismatch at column " + j);
+            }
+        }
+    }
+
+    @Test
+    void testReductionSum2DAxis1() {
+        // TIR: output[i] = sum(input[i, :], axis=1) - sum over columns
+        try (Arena arena = Arena.ofConfined()) {
+            int rows = 3;
+            int cols = 4;
+
+            MemorySegment input = arena.allocate(rows * cols * Float.BYTES);
+            MemorySegment output = arena.allocate(rows * Float.BYTES);
+
+            // Initialize input and compute expected
+            float[] expectedSums = new float[rows];
+            for (int i = 0; i < rows; i++) {
+                for (int j = 0; j < cols; j++) {
+                    float val = i * cols + j + 1.0f;
+                    input.setAtIndex(ValueLayout.JAVA_FLOAT, i * cols + j, val);
+                    expectedSums[i] += val;
+                }
+            }
+
+            // Build TIR graph
+            Layout layout = Layout.rowMajor(rows, cols);
+            TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
+            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, in0, new int[] {1}, false);
+
+            TIRGraph tirGraph = new TIRGraph(List.of(in0), sum);
+
+            // Lower and execute
+            TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+            LIRGraph lirGraph = lowerer.lower(tirGraph);
+
+            System.out.println(new LIRTextRenderer().render(lirGraph));
+
+            LIRInterpreter interpreter = new LIRInterpreter();
+            interpreter.bindBuffer(0, input);
+            interpreter.bindBuffer(1, output);
+            interpreter.execute(lirGraph);
+
+            // Verify
+            for (int i = 0; i < rows; i++) {
+                float actual = output.getAtIndex(ValueLayout.JAVA_FLOAT, i);
+                assertEquals(expectedSums[i], actual, 1e-5f, "Mismatch at row " + i);
+            }
+        }
+    }
+
+    @Test
+    void testReductionSum2DAllAxes() {
+        // TIR: output = sum(input) - sum over all axes
+        try (Arena arena = Arena.ofConfined()) {
+            int rows = 3;
+            int cols = 4;
+
+            MemorySegment input = arena.allocate(rows * cols * Float.BYTES);
+            MemorySegment output = arena.allocate(Float.BYTES);
+
+            // Initialize input and compute expected
+            float expectedSum = 0;
+            for (int i = 0; i < rows; i++) {
+                for (int j = 0; j < cols; j++) {
+                    float val = i * cols + j + 1.0f;
+                    input.setAtIndex(ValueLayout.JAVA_FLOAT, i * cols + j, val);
+                    expectedSum += val;
+                }
+            }
+
+            // Build TIR graph
+            Layout layout = Layout.rowMajor(rows, cols);
+            TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
+            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, in0, new int[] {0, 1}, false);
+
+            TIRGraph tirGraph = new TIRGraph(List.of(in0), sum);
+
+            // Lower and execute
+            TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+            LIRGraph lirGraph = lowerer.lower(tirGraph);
+
+            System.out.println(new LIRTextRenderer().render(lirGraph));
+
+            LIRInterpreter interpreter = new LIRInterpreter();
+            interpreter.bindBuffer(0, input);
+            interpreter.bindBuffer(1, output);
+            interpreter.execute(lirGraph);
+
+            float actual = output.getAtIndex(ValueLayout.JAVA_FLOAT, 0);
+            assertEquals(expectedSum, actual, 1e-4f);
+        }
+    }
+
+    @Test
+    void testReductionMax2DAxis0() {
+        // TIR: output[j] = max(input[:, j], axis=0) - max over rows
+        try (Arena arena = Arena.ofConfined()) {
+            int rows = 3;
+            int cols = 4;
+
+            MemorySegment input = arena.allocate(rows * cols * Float.BYTES);
+            MemorySegment output = arena.allocate(cols * Float.BYTES);
+
+            // Input data with clear max per column
+            float[][] data = {
+                {1.0f, 5.0f, 2.0f, 8.0f},
+                {4.0f, 2.0f, 7.0f, 3.0f},
+                {3.0f, 9.0f, 1.0f, 6.0f}
+            };
+
+            float[] expectedMax = new float[cols];
+            for (int j = 0; j < cols; j++) {
+                expectedMax[j] = Float.NEGATIVE_INFINITY;
+            }
+
+            for (int i = 0; i < rows; i++) {
+                for (int j = 0; j < cols; j++) {
+                    input.setAtIndex(ValueLayout.JAVA_FLOAT, i * cols + j, data[i][j]);
+                    expectedMax[j] = Math.max(expectedMax[j], data[i][j]);
+                }
+            }
+
+            // Build TIR graph
+            Layout layout = Layout.rowMajor(rows, cols);
+            TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
+            ReductionOp max = new ReductionOp(ReductionOperator.MAX, in0, new int[] {0}, false);
+
+            TIRGraph tirGraph = new TIRGraph(List.of(in0), max);
+
+            // Lower and execute
+            TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+            LIRGraph lirGraph = lowerer.lower(tirGraph);
+
+            System.out.println(new LIRTextRenderer().render(lirGraph));
+
+            LIRInterpreter interpreter = new LIRInterpreter();
+            interpreter.bindBuffer(0, input);
+            interpreter.bindBuffer(1, output);
+            interpreter.execute(lirGraph);
+
+            // Verify: expected max per column is [4, 9, 7, 8]
+            for (int j = 0; j < cols; j++) {
+                float actual = output.getAtIndex(ValueLayout.JAVA_FLOAT, j);
+                assertEquals(expectedMax[j], actual, 1e-5f, "Mismatch at column " + j);
+            }
+        }
+    }
+
+    @Test
+    void testReductionMin2DAxis1() {
+        // TIR: output[i] = min(input[i, :], axis=1) - min over columns
+        try (Arena arena = Arena.ofConfined()) {
+            int rows = 3;
+            int cols = 4;
+
+            MemorySegment input = arena.allocate(rows * cols * Float.BYTES);
+            MemorySegment output = arena.allocate(rows * Float.BYTES);
+
+            // Input data with clear min per row
+            float[][] data = {
+                {5.0f, 2.0f, 8.0f, 3.0f}, // min = 2
+                {7.0f, 4.0f, 1.0f, 9.0f}, // min = 1
+                {6.0f, 3.0f, 5.0f, 2.0f} // min = 2
+            };
+
+            float[] expectedMin = new float[rows];
+            for (int i = 0; i < rows; i++) {
+                expectedMin[i] = Float.POSITIVE_INFINITY;
+            }
+
+            for (int i = 0; i < rows; i++) {
+                for (int j = 0; j < cols; j++) {
+                    input.setAtIndex(ValueLayout.JAVA_FLOAT, i * cols + j, data[i][j]);
+                    expectedMin[i] = Math.min(expectedMin[i], data[i][j]);
+                }
+            }
+
+            // Build TIR graph
+            Layout layout = Layout.rowMajor(rows, cols);
+            TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
+            ReductionOp min = new ReductionOp(ReductionOperator.MIN, in0, new int[] {1}, false);
+
+            TIRGraph tirGraph = new TIRGraph(List.of(in0), min);
+
+            // Lower and execute
+            TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+            LIRGraph lirGraph = lowerer.lower(tirGraph);
+
+            System.out.println(new LIRTextRenderer().render(lirGraph));
+
+            LIRInterpreter interpreter = new LIRInterpreter();
+            interpreter.bindBuffer(0, input);
+            interpreter.bindBuffer(1, output);
+            interpreter.execute(lirGraph);
+
+            // Verify: expected min per row is [2, 1, 2]
+            for (int i = 0; i < rows; i++) {
+                float actual = output.getAtIndex(ValueLayout.JAVA_FLOAT, i);
+                assertEquals(expectedMin[i], actual, 1e-5f, "Mismatch at row " + i);
+            }
+        }
+    }
+
+    @Test
+    void testReductionMax2DAllAxes() {
+        // TIR: output = max(input) - max over all axes
+        try (Arena arena = Arena.ofConfined()) {
+            int rows = 3;
+            int cols = 4;
+
+            MemorySegment input = arena.allocate(rows * cols * Float.BYTES);
+            MemorySegment output = arena.allocate(Float.BYTES);
+
+            float[][] data = {
+                {1.0f, 5.0f, 2.0f, 8.0f},
+                {4.0f, 2.0f, 7.0f, 3.0f},
+                {3.0f, 9.0f, 1.0f, 6.0f} // 9 is the global max
+            };
+
+            float expectedMax = Float.NEGATIVE_INFINITY;
+            for (int i = 0; i < rows; i++) {
+                for (int j = 0; j < cols; j++) {
+                    input.setAtIndex(ValueLayout.JAVA_FLOAT, i * cols + j, data[i][j]);
+                    expectedMax = Math.max(expectedMax, data[i][j]);
+                }
+            }
+
+            // Build TIR graph
+            Layout layout = Layout.rowMajor(rows, cols);
+            TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
+            ReductionOp max = new ReductionOp(ReductionOperator.MAX, in0, new int[] {0, 1}, false);
+
+            TIRGraph tirGraph = new TIRGraph(List.of(in0), max);
+
+            // Lower and execute
+            TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+            LIRGraph lirGraph = lowerer.lower(tirGraph);
+
+            System.out.println(new LIRTextRenderer().render(lirGraph));
+
+            LIRInterpreter interpreter = new LIRInterpreter();
+            interpreter.bindBuffer(0, input);
+            interpreter.bindBuffer(1, output);
+            interpreter.execute(lirGraph);
+
+            float actual = output.getAtIndex(ValueLayout.JAVA_FLOAT, 0);
+            assertEquals(expectedMax, actual, 1e-5f);
+        }
+    }
+
+    @Test
+    void testReductionMin2DAllAxes() {
+        // TIR: output = min(input) - min over all axes
+        try (Arena arena = Arena.ofConfined()) {
+            int rows = 3;
+            int cols = 4;
+
+            MemorySegment input = arena.allocate(rows * cols * Float.BYTES);
+            MemorySegment output = arena.allocate(Float.BYTES);
+
+            float[][] data = {
+                {5.0f, 2.0f, 8.0f, 3.0f},
+                {7.0f, 4.0f, 1.0f, 9.0f}, // 1 is the global min
+                {6.0f, 3.0f, 5.0f, 2.0f}
+            };
+
+            float expectedMin = Float.POSITIVE_INFINITY;
+            for (int i = 0; i < rows; i++) {
+                for (int j = 0; j < cols; j++) {
+                    input.setAtIndex(ValueLayout.JAVA_FLOAT, i * cols + j, data[i][j]);
+                    expectedMin = Math.min(expectedMin, data[i][j]);
+                }
+            }
+
+            // Build TIR graph
+            Layout layout = Layout.rowMajor(rows, cols);
+            TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
+            ReductionOp min = new ReductionOp(ReductionOperator.MIN, in0, new int[] {0, 1}, false);
+
+            TIRGraph tirGraph = new TIRGraph(List.of(in0), min);
+
+            // Lower and execute
+            TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+            LIRGraph lirGraph = lowerer.lower(tirGraph);
+
+            System.out.println(new LIRTextRenderer().render(lirGraph));
+
+            LIRInterpreter interpreter = new LIRInterpreter();
+            interpreter.bindBuffer(0, input);
+            interpreter.bindBuffer(1, output);
+            interpreter.execute(lirGraph);
+
+            float actual = output.getAtIndex(ValueLayout.JAVA_FLOAT, 0);
+            assertEquals(expectedMin, actual, 1e-5f);
+        }
+    }
+
+    // ==================== Matmul Tests (tinygrad-style broadcast) ====================
+
+    @Test
+    void testMatmulBroadcast() {
+        // Matmul via broadcast: C = A @ B
+        // A (M, K), B (K, N) -> C (M, N)
+        //
+        // tinygrad approach:
+        //   A.reshape(M, 1, K) * B.T.reshape(1, N, K) -> (M, N, K)
+        //   .sum(axis=2) -> (M, N)
+        //
+        // C[i,j] = sum_k(A[i,k] * B[k,j])
+        try (Arena arena = Arena.ofConfined()) {
+            int M = 2;
+            int K = 3;
+            int N = 4;
+
+            MemorySegment inputA = arena.allocate(M * K * Float.BYTES);
+            MemorySegment inputB = arena.allocate(K * N * Float.BYTES);
+            MemorySegment output = arena.allocate(M * N * Float.BYTES);
+
+            // A = [[1, 2, 3],
+            //      [4, 5, 6]]  (2x3)
+            float[][] A = {{1, 2, 3}, {4, 5, 6}};
+            for (int i = 0; i < M; i++) {
+                for (int k = 0; k < K; k++) {
+                    inputA.setAtIndex(ValueLayout.JAVA_FLOAT, i * K + k, A[i][k]);
+                }
+            }
+
+            // B = [[1, 2, 3, 4],
+            //      [5, 6, 7, 8],
+            //      [9, 10, 11, 12]]  (3x4)
+            float[][] B = {{1, 2, 3, 4}, {5, 6, 7, 8}, {9, 10, 11, 12}};
+            for (int k = 0; k < K; k++) {
+                for (int n = 0; n < N; n++) {
+                    inputB.setAtIndex(ValueLayout.JAVA_FLOAT, k * N + n, B[k][n]);
+                }
+            }
+
+            // Compute expected C = A @ B
+            float[][] expectedC = new float[M][N];
+            for (int i = 0; i < M; i++) {
+                for (int j = 0; j < N; j++) {
+                    for (int k = 0; k < K; k++) {
+                        expectedC[i][j] += A[i][k] * B[k][j];
+                    }
+                }
+            }
+
+            // Build TIR graph
+            // Input A: (M, K) row-major
+            Layout layoutA = Layout.rowMajor(M, K);
+            TensorInput inA = new TensorInput(0, DataType.FP32, layoutA);
+
+            // Input B: (K, N) row-major
+            Layout layoutB = Layout.rowMajor(K, N);
+            TensorInput inB = new TensorInput(1, DataType.FP32, layoutB);
+
+            // A.reshape(M, 1, K): shape (M, 1, K), strides (K, 0, 1)
+            // This broadcasts A over the N dimension
+            Shape shapeA3D = Shape.flat(M, 1, K);
+            Stride strideA3D = Stride.flat(K, 0, 1);
+            Layout layoutA3D = Layout.of(shapeA3D, strideA3D);
+            ViewTransform viewA = new ViewTransform(inA, "broadcast", layoutA3D);
+
+            // B.T.reshape(1, N, K): first transpose B to (N, K), then broadcast to (1, N, K)
+            // B[k,n] at offset k*N + n
+            // B.T[n,k] = B[k,n] => strides (1, N) for shape (N, K)
+            // Then broadcast to (1, N, K) with strides (0, 1, N)
+            Shape shapeB3D = Shape.flat(1, N, K);
+            Stride strideB3D = Stride.flat(0, 1, N);
+            Layout layoutB3D = Layout.of(shapeB3D, strideB3D);
+            ViewTransform viewB = new ViewTransform(inB, "broadcast", layoutB3D);
+
+            // Element-wise multiply: (M, 1, K) * (1, N, K) -> (M, N, K)
+            // After broadcasting: (M, N, K) * (M, N, K)
+            BinaryOp mul = new BinaryOp(BinaryOperator.MULTIPLY, viewA, viewB);
+
+            // Sum over axis 2 (K): (M, N, K) -> (M, N)
+            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false);
+
+            TIRGraph tirGraph = new TIRGraph(List.of(inA, inB), sum);
+
+            // Lower to LIR
+            TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+            LIRGraph lirGraph = lowerer.lower(tirGraph);
+
+            System.out.println(new LIRTextRenderer().render(lirGraph));
+
+            // Execute
+            LIRInterpreter interpreter = new LIRInterpreter();
+            interpreter.bindBuffer(0, inputA);
+            interpreter.bindBuffer(1, inputB);
+            interpreter.bindBuffer(2, output);
+            interpreter.execute(lirGraph);
+
+            // Verify
+            for (int i = 0; i < M; i++) {
+                for (int j = 0; j < N; j++) {
+                    float actual = output.getAtIndex(ValueLayout.JAVA_FLOAT, i * N + j);
+                    assertEquals(
+                            expectedC[i][j], actual, 1e-5f, "Mismatch at C[" + i + "," + j + "]");
+                }
+            }
+        }
+    }
+
+    @Test
+    void testMatmulBroadcastLarger() {
+        // Larger matmul: A (4, 5) @ B (5, 6) = C (4, 6)
+        try (Arena arena = Arena.ofConfined()) {
+            int M = 4;
+            int K = 5;
+            int N = 6;
+
+            MemorySegment inputA = arena.allocate(M * K * Float.BYTES);
+            MemorySegment inputB = arena.allocate(K * N * Float.BYTES);
+            MemorySegment output = arena.allocate(M * N * Float.BYTES);
+
+            // Initialize A with values 1..20
+            float[][] A = new float[M][K];
+            for (int i = 0; i < M; i++) {
+                for (int k = 0; k < K; k++) {
+                    A[i][k] = i * K + k + 1;
+                    inputA.setAtIndex(ValueLayout.JAVA_FLOAT, i * K + k, A[i][k]);
+                }
+            }
+
+            // Initialize B with values 1..30
+            float[][] B = new float[K][N];
+            for (int k = 0; k < K; k++) {
+                for (int n = 0; n < N; n++) {
+                    B[k][n] = k * N + n + 1;
+                    inputB.setAtIndex(ValueLayout.JAVA_FLOAT, k * N + n, B[k][n]);
+                }
+            }
+
+            // Compute expected C = A @ B
+            float[][] expectedC = new float[M][N];
+            for (int i = 0; i < M; i++) {
+                for (int j = 0; j < N; j++) {
+                    for (int k = 0; k < K; k++) {
+                        expectedC[i][j] += A[i][k] * B[k][j];
+                    }
+                }
+            }
+
+            // Build TIR graph (same pattern as above)
+            Layout layoutA = Layout.rowMajor(M, K);
+            TensorInput inA = new TensorInput(0, DataType.FP32, layoutA);
+
+            Layout layoutB = Layout.rowMajor(K, N);
+            TensorInput inB = new TensorInput(1, DataType.FP32, layoutB);
+
+            // A.reshape(M, 1, K)
+            Layout layoutA3D = Layout.of(Shape.flat(M, 1, K), Stride.flat(K, 0, 1));
+            ViewTransform viewA = new ViewTransform(inA, "broadcast", layoutA3D);
+
+            // B.T.reshape(1, N, K)
+            Layout layoutB3D = Layout.of(Shape.flat(1, N, K), Stride.flat(0, 1, N));
+            ViewTransform viewB = new ViewTransform(inB, "broadcast", layoutB3D);
+
+            BinaryOp mul = new BinaryOp(BinaryOperator.MULTIPLY, viewA, viewB);
+            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false);
+
+            TIRGraph tirGraph = new TIRGraph(List.of(inA, inB), sum);
+
+            // Lower and execute
+            TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+            LIRGraph lirGraph = lowerer.lower(tirGraph);
+
+            System.out.println(new LIRTextRenderer().render(lirGraph));
+
+            LIRInterpreter interpreter = new LIRInterpreter();
+            interpreter.bindBuffer(0, inputA);
+            interpreter.bindBuffer(1, inputB);
+            interpreter.bindBuffer(2, output);
+            interpreter.execute(lirGraph);
+
+            // Verify
+            for (int i = 0; i < M; i++) {
+                for (int j = 0; j < N; j++) {
+                    float actual = output.getAtIndex(ValueLayout.JAVA_FLOAT, i * N + j);
+                    assertEquals(
+                            expectedC[i][j], actual, 1e-4f, "Mismatch at C[" + i + "," + j + "]");
+                }
+            }
+        }
+    }
+
+    @Test
+    void testMatmulSquare() {
+        // Square matmul: A (3, 3) @ B (3, 3) = C (3, 3)
+        try (Arena arena = Arena.ofConfined()) {
+            int N = 3;
+
+            MemorySegment inputA = arena.allocate(N * N * Float.BYTES);
+            MemorySegment inputB = arena.allocate(N * N * Float.BYTES);
+            MemorySegment output = arena.allocate(N * N * Float.BYTES);
+
+            // A = identity matrix
+            float[][] A = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+            for (int i = 0; i < N; i++) {
+                for (int j = 0; j < N; j++) {
+                    inputA.setAtIndex(ValueLayout.JAVA_FLOAT, i * N + j, A[i][j]);
+                }
+            }
+
+            // B = some matrix
+            float[][] B = {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}};
+            for (int i = 0; i < N; i++) {
+                for (int j = 0; j < N; j++) {
+                    inputB.setAtIndex(ValueLayout.JAVA_FLOAT, i * N + j, B[i][j]);
+                }
+            }
+
+            // Expected: I @ B = B
+            float[][] expectedC = B;
+
+            // Build TIR graph
+            Layout layoutA = Layout.rowMajor(N, N);
+            TensorInput inA = new TensorInput(0, DataType.FP32, layoutA);
+
+            Layout layoutB = Layout.rowMajor(N, N);
+            TensorInput inB = new TensorInput(1, DataType.FP32, layoutB);
+
+            // A.reshape(N, 1, N)
+            Layout layoutA3D = Layout.of(Shape.flat(N, 1, N), Stride.flat(N, 0, 1));
+            ViewTransform viewA = new ViewTransform(inA, "broadcast", layoutA3D);
+
+            // B.T.reshape(1, N, N)
+            Layout layoutB3D = Layout.of(Shape.flat(1, N, N), Stride.flat(0, 1, N));
+            ViewTransform viewB = new ViewTransform(inB, "broadcast", layoutB3D);
+
+            BinaryOp mul = new BinaryOp(BinaryOperator.MULTIPLY, viewA, viewB);
+            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false);
+
+            TIRGraph tirGraph = new TIRGraph(List.of(inA, inB), sum);
+
+            // Lower and execute
+            TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+            LIRGraph lirGraph = lowerer.lower(tirGraph);
+
+            System.out.println(new LIRTextRenderer().render(lirGraph));
+
+            LIRInterpreter interpreter = new LIRInterpreter();
+            interpreter.bindBuffer(0, inputA);
+            interpreter.bindBuffer(1, inputB);
+            interpreter.bindBuffer(2, output);
+            interpreter.execute(lirGraph);
+
+            // Verify
+            for (int i = 0; i < N; i++) {
+                for (int j = 0; j < N; j++) {
+                    float actual = output.getAtIndex(ValueLayout.JAVA_FLOAT, i * N + j);
+                    assertEquals(
+                            expectedC[i][j], actual, 1e-5f, "Mismatch at C[" + i + "," + j + "]");
+                }
+            }
+        }
+    }
+
+    @Test
+    void testMatmulIota() {
+        // Matmul with iota-initialized matrices:
+        // A = iota(6).view(2, 3) = [[0, 1, 2], [3, 4, 5]]
+        // B = iota(15).view(3, 5) = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9], [10, 11, 12, 13, 14]]
+        // C = A @ B = (2, 5)
+        try (Arena arena = Arena.ofConfined()) {
+            int M = 2;
+            int K = 3;
+            int N = 5;
+
+            MemorySegment inputA = arena.allocate(M * K * Float.BYTES);
+            MemorySegment inputB = arena.allocate(K * N * Float.BYTES);
+            MemorySegment output = arena.allocate(M * N * Float.BYTES);
+
+            // A = iota(6).view(2, 3)
+            // [[0, 1, 2],
+            //  [3, 4, 5]]
+            float[][] A = new float[M][K];
+            for (int i = 0; i < M * K; i++) {
+                A[i / K][i % K] = i;
+                inputA.setAtIndex(ValueLayout.JAVA_FLOAT, i, (float) i);
+            }
+
+            // B = iota(15).view(3, 5)
+            // [[0, 1, 2, 3, 4],
+            //  [5, 6, 7, 8, 9],
+            //  [10, 11, 12, 13, 14]]
+            float[][] B = new float[K][N];
+            for (int i = 0; i < K * N; i++) {
+                B[i / N][i % N] = i;
+                inputB.setAtIndex(ValueLayout.JAVA_FLOAT, i, (float) i);
+            }
+
+            // Compute expected C = A @ B
+            // C[0,0] = 0*0 + 1*5 + 2*10 = 25
+            // C[0,1] = 0*1 + 1*6 + 2*11 = 28
+            // ...
+            float[][] expectedC = new float[M][N];
+            for (int i = 0; i < M; i++) {
+                for (int j = 0; j < N; j++) {
+                    for (int k = 0; k < K; k++) {
+                        expectedC[i][j] += A[i][k] * B[k][j];
+                    }
+                }
+            }
+
+            // Build TIR graph
+            Layout layoutA = Layout.rowMajor(M, K);
+            TensorInput inA = new TensorInput(0, DataType.FP32, layoutA);
+
+            Layout layoutB = Layout.rowMajor(K, N);
+            TensorInput inB = new TensorInput(1, DataType.FP32, layoutB);
+
+            // A.reshape(M, 1, K)
+            Layout layoutA3D = Layout.of(Shape.flat(M, 1, K), Stride.flat(K, 0, 1));
+            ViewTransform viewA = new ViewTransform(inA, "broadcast", layoutA3D);
+
+            // B.T.reshape(1, N, K)
+            Layout layoutB3D = Layout.of(Shape.flat(1, N, K), Stride.flat(0, 1, N));
+            ViewTransform viewB = new ViewTransform(inB, "broadcast", layoutB3D);
+
+            BinaryOp mul = new BinaryOp(BinaryOperator.MULTIPLY, viewA, viewB);
+            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false);
+
+            TIRGraph tirGraph = new TIRGraph(List.of(inA, inB), sum);
+
+            // Lower and execute
+            TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+            LIRGraph lirGraph = lowerer.lower(tirGraph);
+
+            System.out.println(new LIRTextRenderer().render(lirGraph));
+
+            LIRInterpreter interpreter = new LIRInterpreter();
+            interpreter.bindBuffer(0, inputA);
+            interpreter.bindBuffer(1, inputB);
+            interpreter.bindBuffer(2, output);
+            interpreter.execute(lirGraph);
+
+            // Verify
+            // Expected: [[25, 28, 31, 34, 37], [70, 82, 94, 106, 118]]
+            for (int i = 0; i < M; i++) {
+                for (int j = 0; j < N; j++) {
+                    float actual = output.getAtIndex(ValueLayout.JAVA_FLOAT, i * N + j);
+                    assertEquals(
+                            expectedC[i][j], actual, 1e-4f, "Mismatch at C[" + i + "," + j + "]");
+                }
+            }
+        }
+    }
+
+    @Test
+    void testMatmulIotaLarger() {
+        // Larger iota matmul:
+        // A = iota(20).view(4, 5)
+        // B = iota(30).view(5, 6)
+        // C = A @ B = (4, 6)
+        try (Arena arena = Arena.ofConfined()) {
+            int M = 4;
+            int K = 5;
+            int N = 6;
+
+            MemorySegment inputA = arena.allocate(M * K * Float.BYTES);
+            MemorySegment inputB = arena.allocate(K * N * Float.BYTES);
+            MemorySegment output = arena.allocate(M * N * Float.BYTES);
+
+            // A = iota(20).view(4, 5)
+            float[][] A = new float[M][K];
+            for (int i = 0; i < M * K; i++) {
+                A[i / K][i % K] = i;
+                inputA.setAtIndex(ValueLayout.JAVA_FLOAT, i, (float) i);
+            }
+
+            // B = iota(30).view(5, 6)
+            float[][] B = new float[K][N];
+            for (int i = 0; i < K * N; i++) {
+                B[i / N][i % N] = i;
+                inputB.setAtIndex(ValueLayout.JAVA_FLOAT, i, (float) i);
+            }
+
+            // Compute expected C = A @ B
+            float[][] expectedC = new float[M][N];
+            for (int i = 0; i < M; i++) {
+                for (int j = 0; j < N; j++) {
+                    for (int k = 0; k < K; k++) {
+                        expectedC[i][j] += A[i][k] * B[k][j];
+                    }
+                }
+            }
+
+            // Build TIR graph
+            Layout layoutA = Layout.rowMajor(M, K);
+            TensorInput inA = new TensorInput(0, DataType.FP32, layoutA);
+
+            Layout layoutB = Layout.rowMajor(K, N);
+            TensorInput inB = new TensorInput(1, DataType.FP32, layoutB);
+
+            // A.reshape(M, 1, K)
+            Layout layoutA3D = Layout.of(Shape.flat(M, 1, K), Stride.flat(K, 0, 1));
+            ViewTransform viewA = new ViewTransform(inA, "broadcast", layoutA3D);
+
+            // B.T.reshape(1, N, K)
+            Layout layoutB3D = Layout.of(Shape.flat(1, N, K), Stride.flat(0, 1, N));
+            ViewTransform viewB = new ViewTransform(inB, "broadcast", layoutB3D);
+
+            BinaryOp mul = new BinaryOp(BinaryOperator.MULTIPLY, viewA, viewB);
+            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false);
+
+            TIRGraph tirGraph = new TIRGraph(List.of(inA, inB), sum);
+
+            // Lower and execute
+            TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+            LIRGraph lirGraph = lowerer.lower(tirGraph);
+
+            System.out.println(new LIRTextRenderer().render(lirGraph));
+
+            LIRInterpreter interpreter = new LIRInterpreter();
+            interpreter.bindBuffer(0, inputA);
+            interpreter.bindBuffer(1, inputB);
+            interpreter.bindBuffer(2, output);
+            interpreter.execute(lirGraph);
+
+            // Verify
+            for (int i = 0; i < M; i++) {
+                for (int j = 0; j < N; j++) {
+                    float actual = output.getAtIndex(ValueLayout.JAVA_FLOAT, i * N + j);
+                    assertEquals(
+                            expectedC[i][j], actual, 1e-3f, "Mismatch at C[" + i + "," + j + "]");
+                }
+            }
+        }
+    }
+
+    @Test
+    void testMatmulIotaSquare() {
+        // Square iota matmul:
+        // A = iota(16).view(4, 4)
+        // B = iota(16).view(4, 4)
+        // C = A @ B = (4, 4)
+        try (Arena arena = Arena.ofConfined()) {
+            int N = 4;
+
+            MemorySegment inputA = arena.allocate(N * N * Float.BYTES);
+            MemorySegment inputB = arena.allocate(N * N * Float.BYTES);
+            MemorySegment output = arena.allocate(N * N * Float.BYTES);
+
+            // A = B = iota(16).view(4, 4)
+            // [[0, 1, 2, 3],
+            //  [4, 5, 6, 7],
+            //  [8, 9, 10, 11],
+            //  [12, 13, 14, 15]]
+            float[][] A = new float[N][N];
+            float[][] B = new float[N][N];
+            for (int i = 0; i < N * N; i++) {
+                A[i / N][i % N] = i;
+                B[i / N][i % N] = i;
+                inputA.setAtIndex(ValueLayout.JAVA_FLOAT, i, (float) i);
+                inputB.setAtIndex(ValueLayout.JAVA_FLOAT, i, (float) i);
+            }
+
+            // Compute expected C = A @ B (A squared)
+            float[][] expectedC = new float[N][N];
+            for (int i = 0; i < N; i++) {
+                for (int j = 0; j < N; j++) {
+                    for (int k = 0; k < N; k++) {
+                        expectedC[i][j] += A[i][k] * B[k][j];
+                    }
+                }
+            }
+
+            // Build TIR graph
+            Layout layoutA = Layout.rowMajor(N, N);
+            TensorInput inA = new TensorInput(0, DataType.FP32, layoutA);
+
+            Layout layoutB = Layout.rowMajor(N, N);
+            TensorInput inB = new TensorInput(1, DataType.FP32, layoutB);
+
+            // A.reshape(N, 1, N)
+            Layout layoutA3D = Layout.of(Shape.flat(N, 1, N), Stride.flat(N, 0, 1));
+            ViewTransform viewA = new ViewTransform(inA, "broadcast", layoutA3D);
+
+            // B.T.reshape(1, N, N)
+            Layout layoutB3D = Layout.of(Shape.flat(1, N, N), Stride.flat(0, 1, N));
+            ViewTransform viewB = new ViewTransform(inB, "broadcast", layoutB3D);
+
+            BinaryOp mul = new BinaryOp(BinaryOperator.MULTIPLY, viewA, viewB);
+            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false);
+
+            TIRGraph tirGraph = new TIRGraph(List.of(inA, inB), sum);
+
+            // Lower and execute
+            TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+            LIRGraph lirGraph = lowerer.lower(tirGraph);
+
+            System.out.println(new LIRTextRenderer().render(lirGraph));
+
+            LIRInterpreter interpreter = new LIRInterpreter();
+            interpreter.bindBuffer(0, inputA);
+            interpreter.bindBuffer(1, inputB);
+            interpreter.bindBuffer(2, output);
+            interpreter.execute(lirGraph);
+
+            // Verify
+            // Expected for iota(16)^2:
+            // [[56, 62, 68, 74],
+            //  [152, 174, 196, 218],
+            //  [248, 286, 324, 362],
+            //  [344, 398, 452, 506]]
+            for (int i = 0; i < N; i++) {
+                for (int j = 0; j < N; j++) {
+                    float actual = output.getAtIndex(ValueLayout.JAVA_FLOAT, i * N + j);
+                    assertEquals(
+                            expectedC[i][j], actual, 1e-4f, "Mismatch at C[" + i + "," + j + "]");
+                }
+            }
+        }
     }
 }

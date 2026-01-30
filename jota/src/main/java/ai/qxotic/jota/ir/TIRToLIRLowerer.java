@@ -97,6 +97,11 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
 
     /** Lowers a single output expression to LIR loop nest. */
     private LIRNode lowerOutput(TIRNode output, BufferRef outBuf) {
+        // Handle reductions specially
+        if (output instanceof ReductionOp reduction) {
+            return lowerReduction(reduction, outBuf);
+        }
+
         Layout outLayout = output.layout().flatten();
         int rank = outLayout.shape().flatRank();
 
@@ -125,6 +130,88 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         return body;
     }
 
+    /** Lowers a reduction operation to LIR with accumulators. */
+    private LIRNode lowerReduction(ReductionOp reduction, BufferRef outBuf) {
+        TIRNode input = reduction.input();
+        Layout inputLayout = input.layout().flatten();
+        int inputRank = inputLayout.shape().flatRank();
+        int[] axes = reduction.axes();
+        DataType dtype = reduction.dataType();
+        ReductionOperator op = reduction.op();
+
+        // Determine which dimensions are reduced
+        boolean[] isReduced = new boolean[inputRank];
+        for (int axis : axes) {
+            isReduced[axis] = true;
+        }
+
+        // Create index variables for all input dimensions
+        loopIndices.clear();
+        List<IndexVar> outerIndices = new ArrayList<>();
+        List<IndexVar> innerIndices = new ArrayList<>();
+        List<Long> outerBounds = new ArrayList<>();
+        List<Long> innerBounds = new ArrayList<>();
+
+        for (int i = 0; i < inputRank; i++) {
+            IndexVar idx = new IndexVar("i" + i);
+            loopIndices.add(idx);
+            if (isReduced[i]) {
+                innerIndices.add(idx);
+                innerBounds.add(inputLayout.shape().flatAt(i));
+            } else {
+                outerIndices.add(idx);
+                outerBounds.add(inputLayout.shape().flatAt(i));
+            }
+        }
+
+        // Create accumulator
+        String accName = "acc";
+        Accumulator acc = createAccumulator(accName, dtype, op);
+
+        // Load value from input and update accumulator
+        ScalarExpr inputValue = input.accept(this);
+        AccumulatorUpdate update = new AccumulatorUpdate(accName, inputValue);
+
+        // Build the reduction loop (inner loops over reduced axes)
+        LIRNode reductionBody = update;
+        for (int i = innerIndices.size() - 1; i >= 0; i--) {
+            reductionBody =
+                    Loop.sequential(innerIndices.get(i).name(), innerBounds.get(i), reductionBody);
+        }
+
+        // Read accumulator and store to output
+        AccumulatorRead read = new AccumulatorRead(accName, dtype);
+
+        // Compute output offset from outer indices only
+        IndexExpr outOffset;
+        if (outerIndices.isEmpty()) {
+            outOffset = new IndexConst(0);
+        } else {
+            outOffset = computeOffset(outerIndices, outBuf.strides());
+        }
+        Store store = new Store(outBuf, outOffset, read);
+
+        // Combine: declare acc, reduction loops, store result
+        Block innerBlock = new Block(List.of(acc, reductionBody, store));
+
+        // Wrap in outer loops (over non-reduced dimensions)
+        LIRNode body = innerBlock;
+        for (int i = outerIndices.size() - 1; i >= 0; i--) {
+            body = Loop.parallel(outerIndices.get(i).name(), outerBounds.get(i), body);
+        }
+
+        return body;
+    }
+
+    private Accumulator createAccumulator(String name, DataType dtype, ReductionOperator op) {
+        return switch (op) {
+            case SUM -> Accumulator.sum(name, dtype);
+            case PROD -> Accumulator.product(name, dtype);
+            case MIN -> Accumulator.min(name, dtype);
+            case MAX -> Accumulator.max(name, dtype);
+        };
+    }
+
     /** Computes byte offset from indices and byte strides. */
     private IndexExpr computeOffset(List<IndexVar> indices, long[] strides) {
         if (indices.isEmpty()) {
@@ -136,7 +223,7 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
             if (strides[i] == 0) {
                 continue; // Broadcasting dimension - skip
             }
-            IndexExpr term = IndexBinary.mul(indices.get(i), new IndexConst(strides[i]));
+            IndexExpr term = IndexBinary.multiply(indices.get(i), new IndexConst(strides[i]));
             offset = (offset == null) ? term : IndexBinary.add(offset, term);
         }
         return offset != null ? offset : new IndexConst(0);
@@ -196,7 +283,29 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
 
     @Override
     public ScalarExpr visitViewTransform(ViewTransform node) {
-        // ViewTransform changes layout but not data - just lower the input with new strides
+        // ViewTransform changes layout but not data - use view's strides to compute offset
+        // Find the underlying TensorInput
+        TIRNode underlying = node.input();
+        while (underlying instanceof ViewTransform vt) {
+            underlying = vt.input();
+        }
+
+        if (underlying instanceof TensorInput tensorInput) {
+            BufferRef buf = inputBuffers.get(tensorInput);
+            if (buf == null) {
+                throw new IllegalStateException("Unknown TensorInput: " + tensorInput.id());
+            }
+
+            // Use the ViewTransform's layout strides (converted to bytes)
+            Layout viewLayout = node.layout().flatten();
+            long[] viewByteStrides = toByteStrides(viewLayout, node.dataType());
+
+            // Compute offset using view strides and current loop indices
+            IndexExpr offset = computeOffset(loopIndices, viewByteStrides);
+            return new ScalarLoad(buf, offset);
+        }
+
+        // For other input types, delegate normally
         return node.input().accept(this);
     }
 
@@ -218,7 +327,7 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         IndexExpr linearIdx = null;
         long stride = 1;
         for (int i = layout.shape().flatRank() - 1; i >= 0; i--) {
-            IndexExpr term = IndexBinary.mul(loopIndices.get(i), new IndexConst(stride));
+            IndexExpr term = IndexBinary.multiply(loopIndices.get(i), new IndexConst(stride));
             linearIdx = (linearIdx == null) ? term : IndexBinary.add(term, linearIdx);
             stride *= layout.shape().flatAt(i);
         }

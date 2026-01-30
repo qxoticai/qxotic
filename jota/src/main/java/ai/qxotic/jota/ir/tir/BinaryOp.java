@@ -24,9 +24,35 @@ public record BinaryOp(BinaryOperator op, TIRNode left, TIRNode right) implement
 
     @Override
     public Layout layout() {
-        // Output must be row-major, not a broadcast layout with zero strides.
-        // Use left's shape but ensure proper row-major strides.
-        Shape shape = left.layout().shape();
-        return Layout.rowMajor(shape);
+        // Compute broadcast shape from left and right operands
+        Shape leftShape = left.layout().shape();
+        Shape rightShape = right.layout().shape();
+        Shape broadcastShape = broadcastShapes(leftShape, rightShape);
+        return Layout.rowMajor(broadcastShape);
+    }
+
+    /** Computes the broadcast result shape following numpy broadcasting rules. */
+    private static Shape broadcastShapes(Shape a, Shape b) {
+        int rankA = a.flatRank();
+        int rankB = b.flatRank();
+        int maxRank = Math.max(rankA, rankB);
+
+        long[] result = new long[maxRank];
+        for (int i = 0; i < maxRank; i++) {
+            // Index from the right (like numpy broadcasting)
+            long dimA = (i < rankA) ? a.flatAt(rankA - 1 - i) : 1;
+            long dimB = (i < rankB) ? b.flatAt(rankB - 1 - i) : 1;
+
+            if (dimA == dimB) {
+                result[maxRank - 1 - i] = dimA;
+            } else if (dimA == 1) {
+                result[maxRank - 1 - i] = dimB;
+            } else if (dimB == 1) {
+                result[maxRank - 1 - i] = dimA;
+            } else {
+                throw new IllegalArgumentException("Shapes not broadcastable: " + a + " and " + b);
+            }
+        }
+        return Shape.flat(result);
     }
 }
