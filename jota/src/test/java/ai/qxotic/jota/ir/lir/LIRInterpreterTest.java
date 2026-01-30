@@ -37,7 +37,7 @@ class LIRInterpreterTest {
 
             // Create loop body: output[i] = input0[i] + input1[i]
             IndexVar i = new IndexVar("i");
-            IndexExpr offset = IndexBinary.mul(i, new IndexConst(Float.BYTES));
+            IndexExpr offset = IndexBinary.multiply(i, new IndexConst(Float.BYTES));
             ScalarExpr v0 = new ScalarLoad(in0, offset);
             ScalarExpr v1 = new ScalarLoad(in1, offset);
             ScalarExpr sum = new ScalarBinary(BinaryOperator.ADD, v0, v1);
@@ -80,7 +80,7 @@ class LIRInterpreterTest {
             BufferRef out = builder.addContiguousOutput(DataType.FP32, size);
 
             IndexVar i = new IndexVar("i");
-            IndexExpr offset = IndexBinary.mul(i, new IndexConst(Float.BYTES));
+            IndexExpr offset = IndexBinary.multiply(i, new IndexConst(Float.BYTES));
             ScalarExpr v0 = new ScalarLoad(in0, offset);
             ScalarExpr neg = new ScalarUnary(UnaryOperator.NEGATE, v0);
             Store store = new Store(out, offset, neg);
@@ -120,7 +120,7 @@ class LIRInterpreterTest {
             BufferRef out = builder.addContiguousOutput(DataType.FP32, size);
 
             IndexVar i = new IndexVar("i");
-            IndexExpr offset = IndexBinary.mul(i, new IndexConst(Float.BYTES));
+            IndexExpr offset = IndexBinary.multiply(i, new IndexConst(Float.BYTES));
             ScalarExpr x = new ScalarLoad(in0, offset);
 
             // Constants
@@ -201,7 +201,7 @@ class LIRInterpreterTest {
 
             IndexVar i = new IndexVar("i");
             IndexExpr boolOffset = i;
-            IndexExpr floatOffset = IndexBinary.mul(i, new IndexConst(Float.BYTES));
+            IndexExpr floatOffset = IndexBinary.multiply(i, new IndexConst(Float.BYTES));
 
             ScalarExpr condVal = new ScalarLoad(condBuf, boolOffset);
             ScalarExpr trueExpr = new ScalarLoad(trueBuf, floatOffset);
@@ -248,7 +248,7 @@ class LIRInterpreterTest {
             BufferRef out = builder.addContiguousOutput(DataType.FP32, size);
 
             IndexVar i = new IndexVar("i");
-            IndexExpr offset = IndexBinary.mul(i, new IndexConst(Float.BYTES));
+            IndexExpr offset = IndexBinary.multiply(i, new IndexConst(Float.BYTES));
             ScalarExpr v0 = new ScalarLoad(in0, offset);
             ScalarExpr v1 = new ScalarLoad(in1, offset);
             ScalarExpr sum = new ScalarBinary(BinaryOperator.ADD, v0, v1);
@@ -294,7 +294,7 @@ class LIRInterpreterTest {
             BufferRef out = builder.addContiguousOutput(DataType.FP32, 1);
 
             IndexVar i = new IndexVar("i");
-            IndexExpr offset = IndexBinary.mul(i, new IndexConst(Float.BYTES));
+            IndexExpr offset = IndexBinary.multiply(i, new IndexConst(Float.BYTES));
             ScalarExpr v0 = new ScalarLoad(in0, offset);
 
             // Block: declare accumulator, update accumulator
@@ -344,7 +344,7 @@ class LIRInterpreterTest {
             BufferRef out = builder.addContiguousOutput(DataType.FP32, size);
 
             IndexVar i = new IndexVar("i");
-            IndexExpr offset = IndexBinary.mul(i, new IndexConst(Float.BYTES));
+            IndexExpr offset = IndexBinary.multiply(i, new IndexConst(Float.BYTES));
             ScalarExpr v0 = new ScalarLoad(in0, offset);
             Store store = new Store(out, offset, v0);
 
@@ -386,8 +386,8 @@ class LIRInterpreterTest {
             IndexVar i = new IndexVar("i");
             IndexVar j = new IndexVar("j");
             // offset = (i * cols + j) * sizeof(float)
-            IndexExpr linearIdx = IndexBinary.add(IndexBinary.mul(i, new IndexConst(cols)), j);
-            IndexExpr offset = IndexBinary.mul(linearIdx, new IndexConst(Float.BYTES));
+            IndexExpr linearIdx = IndexBinary.add(IndexBinary.multiply(i, new IndexConst(cols)), j);
+            IndexExpr offset = IndexBinary.multiply(linearIdx, new IndexConst(Float.BYTES));
 
             ScalarExpr v0 = new ScalarLoad(in0, offset);
             Store store = new Store(out, offset, v0);
@@ -428,8 +428,8 @@ class LIRInterpreterTest {
             BufferRef out = builder.addContiguousOutput(DataType.FP32, size);
 
             IndexVar i = new IndexVar("i");
-            IndexExpr inOffset = IndexBinary.mul(i, new IndexConst(Integer.BYTES));
-            IndexExpr outOffset = IndexBinary.mul(i, new IndexConst(Float.BYTES));
+            IndexExpr inOffset = IndexBinary.multiply(i, new IndexConst(Integer.BYTES));
+            IndexExpr outOffset = IndexBinary.multiply(i, new IndexConst(Float.BYTES));
 
             ScalarExpr v0 = new ScalarLoad(in0, inOffset);
             ScalarExpr cast = new ScalarCast(v0, DataType.FP32);
@@ -463,10 +463,10 @@ class LIRInterpreterTest {
         IndexConst b = new IndexConst(3);
 
         assertEquals(13L, interpreter.evaluateIndex(IndexBinary.add(a, b)));
-        assertEquals(7L, interpreter.evaluateIndex(IndexBinary.sub(a, b)));
-        assertEquals(30L, interpreter.evaluateIndex(IndexBinary.mul(a, b)));
-        assertEquals(3L, interpreter.evaluateIndex(IndexBinary.div(a, b)));
-        assertEquals(1L, interpreter.evaluateIndex(IndexBinary.mod(a, b)));
+        assertEquals(7L, interpreter.evaluateIndex(IndexBinary.subtract(a, b)));
+        assertEquals(30L, interpreter.evaluateIndex(IndexBinary.multiply(a, b)));
+        assertEquals(3L, interpreter.evaluateIndex(IndexBinary.divide(a, b)));
+        assertEquals(1L, interpreter.evaluateIndex(IndexBinary.modulo(a, b)));
     }
 
     @Test

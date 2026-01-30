@@ -113,22 +113,6 @@ public class LIRTextRenderer implements LIRVisitor<String> {
         return output.toString();
     }
 
-    private String formatBufferType(BufferRef buffer) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(buffer.dataType());
-        sb.append("[");
-        sb.append(formatTuple(buffer.shape()));
-        sb.append(":");
-        sb.append(formatTuple(buffer.strides()));
-        sb.append("]");
-        if (isContiguous(buffer)) {
-            sb.append(" contiguous");
-        } else {
-            sb.append(" strided");
-        }
-        return sb.toString();
-    }
-
     private String formatTuple(long[] values) {
         StringBuilder sb = new StringBuilder();
         sb.append("(");
@@ -217,10 +201,10 @@ public class LIRTextRenderer implements LIRVisitor<String> {
     private String formatIndexBinaryOp(IndexBinary.IndexBinaryOp op) {
         return switch (op) {
             case ADD -> "+";
-            case SUB -> "-";
-            case MUL -> "*";
-            case DIV -> "/";
-            case MOD -> "%";
+            case SUBTRACT -> "-";
+            case MULTIPLY -> "*";
+            case DIVIDE -> "/";
+            case MODULO -> "%";
         };
     }
 

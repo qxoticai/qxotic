@@ -43,7 +43,6 @@ public final class LIRInterpreter {
             case ScalarExpr ignored -> {}
             case BufferRef ignored -> {}
             case Load ignored -> {}
-            case AccumulatorRead ignored -> {}
         }
     }
 
@@ -187,10 +186,10 @@ public final class LIRInterpreter {
                 long right = evaluateIndex(b.right());
                 yield switch (b.op()) {
                     case ADD -> left + right;
-                    case SUB -> left - right;
-                    case MUL -> left * right;
-                    case DIV -> left / right;
-                    case MOD -> left % right;
+                    case SUBTRACT -> left - right;
+                    case MULTIPLY -> left * right;
+                    case DIVIDE -> left / right;
+                    case MODULO -> left % right;
                 };
             }
         };
@@ -209,6 +208,7 @@ public final class LIRInterpreter {
             case ScalarBinary b -> evaluateBinary(b);
             case ScalarTernary t -> evaluateTernary(t);
             case ScalarCast c -> evaluateCast(c);
+            case AccumulatorRead r -> getAccumulatorValue(r.name());
         };
     }
 

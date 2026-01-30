@@ -18,7 +18,7 @@ class LIRTextRendererTest {
         BufferRef out = builder.addContiguousOutput(DataType.FP32, 4);
 
         IndexVar i = new IndexVar("i");
-        IndexExpr offset = IndexBinary.mul(i, new IndexConst(4)); // 4 = Float.BYTES
+        IndexExpr offset = IndexBinary.multiply(i, new IndexConst(4)); // 4 = Float.BYTES
         ScalarExpr v0 = new ScalarLoad(in0, offset);
         ScalarExpr v1 = new ScalarLoad(in1, offset);
         ScalarExpr sum = new ScalarBinary(BinaryOperator.ADD, v0, v1);
@@ -58,7 +58,7 @@ class LIRTextRendererTest {
         BufferRef out = builder.addContiguousOutput(DataType.FP32, 4);
 
         IndexVar i = new IndexVar("i");
-        IndexExpr offset = IndexBinary.mul(i, new IndexConst(4));
+        IndexExpr offset = IndexBinary.multiply(i, new IndexConst(4));
         ScalarExpr v0 = new ScalarLoad(in0, offset);
         ScalarExpr neg = new ScalarUnary(UnaryOperator.NEGATE, v0);
         Store store = new Store(out, offset, neg);
@@ -70,7 +70,8 @@ class LIRTextRendererTest {
         LIRTextRenderer renderer = new LIRTextRenderer();
         String output = renderer.render(graph);
 
-        assertTrue(output.contains("negate fp32"));
+        // Verify full operator name is used
+        assertTrue(output.contains("negate fp32"), "Should contain 'negate fp32'");
     }
 
     @Test
@@ -82,8 +83,8 @@ class LIRTextRendererTest {
 
         IndexVar i = new IndexVar("i");
         IndexVar j = new IndexVar("j");
-        IndexExpr linearIdx = IndexBinary.add(IndexBinary.mul(i, new IndexConst(3)), j);
-        IndexExpr offset = IndexBinary.mul(linearIdx, new IndexConst(4));
+        IndexExpr linearIdx = IndexBinary.add(IndexBinary.multiply(i, new IndexConst(3)), j);
+        IndexExpr offset = IndexBinary.multiply(linearIdx, new IndexConst(4));
         ScalarExpr v0 = new ScalarLoad(in0, offset);
         Store store = new Store(out, offset, v0);
 
@@ -97,11 +98,58 @@ class LIRTextRendererTest {
 
         // Verify key elements are present
         assertTrue(
-                output.contains("multiply fp32") || output.contains("negate fp32"),
-                "Should contain multiply (full name) or negate (full name) operations");
+                output.contains("fp32[(2, 3):(12, 4)]") || output.contains("fp32[(4):(12)]"),
+                "Should contain buffer shape and strides");
+        assertTrue(output.contains("contiguous"), "Should contain contiguity keyword");
+        assertTrue(
+                output.contains("multiply fp32"), "Should contain multiply (full name) operations");
         assertTrue(output.contains("add fp32"), "Should contain add operations");
         assertTrue(output.contains("store %out0"), "Should store to output");
     }
+
+    //    @Test
+    //    void testGelu() {
+    //        // Build GELU graph: GELU(x) ≈ 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
+    //        LIRGraph.Builder builder = LIRGraph.builder();
+    //        BufferRef in0 = builder.addContiguousInput(DataType.FP32, 5);
+    //        BufferRef out = builder.addContiguousOutput(DataType.FP32, 5);
+    //
+    //        IndexVar i = new IndexVar("i");
+    //        IndexExpr offset = IndexBinary.multiply(i, new IndexConst(4));
+    //        ScalarExpr x = new ScalarLoad(in0, offset);
+    //
+    //        // Constants
+    //        ScalarExpr c_0_044715 = ScalarConst.ofFloat(0.044715f);
+    //        ScalarExpr c_sqrt_2_pi = ScalarConst.ofFloat(0.79788456f);
+    //        ScalarExpr c_1 = ScalarConst.ofFloat(1.0f);
+    //        ScalarExpr c_0_5 = ScalarConst.ofFloat(0.5f);
+    //
+    //        // Build GELU expression tree
+    //        ScalarExpr x_squared = new ScalarBinary(BinaryOperator.MULTIPLY, x, x);
+    //        ScalarExpr x_cubed = new ScalarBinary(BinaryOperator.MULTIPLY, x_squared, x);
+    //        ScalarExpr scaled_cubic = new ScalarBinary(BinaryOperator.MULTIPLY, c_0_044715,
+    // x_cubed);
+    //        ScalarExpr inner_sum = new ScalarBinary(BinaryOperator.ADD, x, scaled_cubic);
+    //        ScalarExpr scaled_inner = new ScalarBinary(BinaryOperator.MULTIPLY, c_sqrt_2_pi,
+    // inner_sum);
+    //        ScalarExpr tanh_result = new ScalarUnary(UnaryOperator.TANH, scaled_inner);
+    //        ScalarExpr one_plus_tanh = new ScalarBinary(BinaryOperator.ADD, c_1, tanh_result);
+    //        ScalarExpr x_times_bracket = new ScalarBinary(BinaryOperator.MULTIPLY, x,
+    // one_plus_tanh);
+    //        ScalarExpr gelu = new ScalarBinary(BinaryOperator.MULTIPLY, c_0_5, x_times_bracket);
+    //
+    //        Store store = new Store(out, offset, gelu);
+    //        Loop loop = Loop.parallel("i", 5, store);
+    //        LIRGraph graph = builder.build(loop);
+    //
+    //        // Render
+    //        LIRTextRenderer renderer = new LIRTextRenderer();
+    //        String output = renderer.render(graph);
+    //
+    //        // Print for debugging
+    //        System.out.println("=== GELU LIR Output ===");
+    //        System.out.println(output);
+    //        System.out.println("=======================");
 
     @Test
     void testGelu() {
@@ -111,7 +159,7 @@ class LIRTextRendererTest {
         BufferRef out = builder.addContiguousOutput(DataType.FP32, 5);
 
         IndexVar i = new IndexVar("i");
-        IndexExpr offset = IndexBinary.mul(i, new IndexConst(4));
+        IndexExpr offset = IndexBinary.multiply(i, new IndexConst(4));
         ScalarExpr x = new ScalarLoad(in0, offset);
 
         // Constants
@@ -152,8 +200,7 @@ class LIRTextRendererTest {
         assertTrue(output.contains("0.7978846f"), "Should contain sqrt(2/pi) constant");
         assertTrue(output.contains("tanh fp32"), "Should contain tanh operation");
         assertTrue(
-                output.contains("multiply fp32") || output.contains("negate fp32"),
-                "Should contain multiply (full name) or negate (full name) operations");
+                output.contains("multiply fp32"), "Should contain multiply (full name) operations");
         assertTrue(output.contains("add fp32"), "Should contain add operations");
         assertTrue(output.contains("store %out0"), "Should store to output");
     }
