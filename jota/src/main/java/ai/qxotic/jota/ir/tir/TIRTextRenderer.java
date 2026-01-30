@@ -1,6 +1,7 @@
 package ai.qxotic.jota.ir.tir;
 
 import ai.qxotic.jota.DataType;
+import ai.qxotic.jota.ir.TextRenderUtils;
 import java.util.IdentityHashMap;
 import java.util.Map;
 
@@ -147,13 +148,13 @@ public class TIRTextRenderer implements TIRVisitor<String> {
 
     private void renderScalarConstantForGraph(ScalarConstant node) {
         String var = nodeToVar.get(node);
-        String value = formatScalarValue(node.rawBits(), node.dataType());
+        String value = TextRenderUtils.formatScalarValue(node.rawBits(), node.dataType());
         String typeLayout =
                 ai.qxotic.jota.ir.TextRenderUtils.formatTypeLayout(
                         node.dataType(),
                         node.layout().shape().toArray(),
                         node.layout().stride().toArray(),
-                        true); // element-based for TIR
+                        true);
         String scalarDef = var + " = " + value + " " + typeLayout;
         appendLine(scalarDef);
     }
@@ -177,7 +178,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
             renderNodeForGraph(node.input());
         }
         String input = nodeToVar.get(node.input());
-        String op = formatUnaryOp(node.op());
+        String op = TextRenderUtils.formatUnaryOp(node.op());
         String var = nodeToVar.get(node);
         String unaryDef = var + " = " + op + " " + formatDataType(node.dataType()) + " " + input;
         appendLine(unaryDef);
@@ -192,7 +193,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
         }
         String left = nodeToVar.get(node.left());
         String right = nodeToVar.get(node.right());
-        String op = formatBinaryOp(node.op());
+        String op = TextRenderUtils.formatBinaryOp(node.op());
         String var = nodeToVar.get(node);
         String binaryDef =
                 var
@@ -220,7 +221,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
         String cond = nodeToVar.get(node.cond());
         String trueExpr = nodeToVar.get(node.trueExpr());
         String falseExpr = nodeToVar.get(node.falseExpr());
-        String op = formatTernaryOp(node.op());
+        String op = TextRenderUtils.formatTernaryOp(node.op());
         String var = nodeToVar.get(node);
         String ternaryDef =
                 var
@@ -252,7 +253,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
             renderNodeForGraph(node.input());
         }
         String input = nodeToVar.get(node.input());
-        String op = formatReductionOp(node.op());
+        String op = TextRenderUtils.formatReductionOp(node.op());
         String var = nodeToVar.get(node);
         StringBuilder axesStr = new StringBuilder();
         for (int i = 0; i < node.axes().length; i++) {
@@ -406,50 +407,22 @@ public class TIRTextRenderer implements TIRVisitor<String> {
     @Override
     public String visitScalarConstant(ScalarConstant node) {
         String var = allocateVar(node);
-        String value = formatScalarValue(node.rawBits(), node.dataType());
+        String value = TextRenderUtils.formatScalarValue(node.rawBits(), node.dataType());
         String typeLayout =
                 ai.qxotic.jota.ir.TextRenderUtils.formatTypeLayout(
                         node.dataType(),
                         node.layout().shape().toArray(),
                         node.layout().stride().toArray(),
-                        true); // element-based for TIR
+                        true);
         String scalarDef = var + " = " + value + " " + typeLayout;
         appendLine(scalarDef);
         return var;
     }
 
-    private String formatScalarValue(long rawBits, DataType dataType) {
-        if (dataType.equals(DataType.FP32)) {
-            return Float.intBitsToFloat((int) rawBits) + "f";
-        } else if (dataType.equals(DataType.FP64)) {
-            return Double.longBitsToDouble(rawBits) + "";
-        } else if (dataType.equals(DataType.I32)) {
-            return String.valueOf((int) rawBits);
-        } else if (dataType.equals(DataType.I64)) {
-            return String.valueOf(rawBits);
-        } else if (dataType.equals(DataType.BOOL)) {
-            return rawBits != 0 ? "true" : "false";
-        } else if (dataType.equals(DataType.FP16)) {
-            return ai.qxotic.jota.ir.Float16Formatter.formatFloat16((short) rawBits);
-        } else if (dataType.equals(DataType.BF16)) {
-            return ai.qxotic.jota.ir.Float16Formatter.formatBFloat16((short) rawBits);
-        } else if (dataType.equals(DataType.I8) || dataType.equals(DataType.I16)) {
-            return String.valueOf(rawBits);
-        } else {
-            return "0x" + Long.toHexString(rawBits);
-        }
-    }
-
     @Override
     public String visitIotaConstant(IotaConstant node) {
         String var = allocateVar(node);
-
-        // Check contiguity for iota layout
-        long[] shape = node.layout().shape().toArray();
-        long[] strides = node.layout().stride().toArray();
-        boolean contiguous = ai.qxotic.jota.ir.TextRenderUtils.isContiguous(shape, strides);
-        String layoutAnnotation = contiguous ? " contiguous" : " strided";
-
+        String value = TextRenderUtils.formatFloat16((short) node.layout().shape().toArray()[0]);
         String iotaDef =
                 var
                         + " = iota("
@@ -458,8 +431,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
                         + formatDataType(node.dataType())
                         + "["
                         + node.layout()
-                        + "]"
-                        + layoutAnnotation;
+                        + "]";
         appendLine(iotaDef);
         return var;
     }
@@ -467,22 +439,18 @@ public class TIRTextRenderer implements TIRVisitor<String> {
     @Override
     public String visitUnaryOp(UnaryOp node) {
         String input = node.input().accept(this);
-        String op = formatUnaryOp(node.op());
+        String op = TextRenderUtils.formatUnaryOp(node.op());
         String var = allocateVar(node);
         String unaryDef = var + " = " + op + " " + formatDataType(node.dataType()) + " " + input;
         appendLine(unaryDef);
         return var;
     }
 
-    private String formatUnaryOp(UnaryOperator op) {
-        return op.name().toLowerCase();
-    }
-
     @Override
     public String visitBinaryOp(BinaryOp node) {
         String left = node.left().accept(this);
         String right = node.right().accept(this);
-        String op = formatBinaryOp(node.op());
+        String op = TextRenderUtils.formatBinaryOp(node.op());
         String var = allocateVar(node);
         String binaryDef =
                 var
@@ -498,16 +466,12 @@ public class TIRTextRenderer implements TIRVisitor<String> {
         return var;
     }
 
-    private String formatBinaryOp(BinaryOperator op) {
-        return op.name().toLowerCase();
-    }
-
     @Override
     public String visitTernaryOp(TernaryOp node) {
         String cond = node.cond().accept(this);
         String trueExpr = node.trueExpr().accept(this);
         String falseExpr = node.falseExpr().accept(this);
-        String op = formatTernaryOp(node.op());
+        String op = TextRenderUtils.formatTernaryOp(node.op());
         String var = allocateVar(node);
         String ternaryDef =
                 var
@@ -525,10 +489,6 @@ public class TIRTextRenderer implements TIRVisitor<String> {
         return var;
     }
 
-    private String formatTernaryOp(TernaryOperator op) {
-        return op.name().toLowerCase();
-    }
-
     @Override
     public String visitCastOp(CastOp node) {
         String input = node.input().accept(this);
@@ -541,7 +501,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
     @Override
     public String visitReductionOp(ReductionOp node) {
         String input = node.input().accept(this);
-        String op = formatReductionOp(node.op());
+        String op = TextRenderUtils.formatReductionOp(node.op());
         String var = allocateVar(node);
         StringBuilder axesStr = new StringBuilder();
         for (int i = 0; i < node.axes().length; i++) {
@@ -564,10 +524,6 @@ public class TIRTextRenderer implements TIRVisitor<String> {
                         + (node.keepDims() ? " keep_dims=true" : " keep_dims=false");
         appendLine(reductionDef);
         return var;
-    }
-
-    private String formatReductionOp(ReductionOperator op) {
-        return op.name().toLowerCase();
     }
 
     @Override
