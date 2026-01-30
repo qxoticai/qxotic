@@ -5,6 +5,7 @@ import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.MemoryContext;
+import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
@@ -218,15 +219,17 @@ final class LazyTensorOps implements TensorOps {
     }
 
     private Tensor traceUnary(Tensor x, Function<Tensor, Tensor> fn) {
-        return Tracer.trace(x, fn);
+        return IRTracer.trace(x, fn);
     }
 
     private Tensor traceBinary(Tensor a, Tensor b, BiFunction<Tensor, Tensor, Tensor> fn) {
-        return Tracer.trace(a, b, fn);
+        return IRTracer.trace(List.of(a, b), tensors -> fn.apply(tensors.get(0), tensors.get(1)));
     }
 
     private Tensor traceTernary(
             Tensor a, Tensor b, Tensor c, TriFunction<Tensor, Tensor, Tensor, Tensor> fn) {
-        return Tracer.trace(a, b, c, fn);
+        return IRTracer.trace(
+                List.of(a, b, c),
+                tensors -> fn.apply(tensors.get(0), tensors.get(1), tensors.get(2)));
     }
 }

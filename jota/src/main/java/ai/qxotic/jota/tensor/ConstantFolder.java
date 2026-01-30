@@ -4,10 +4,10 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.TypeRules;
-import ai.qxotic.jota.ir.irt.BinaryOperator;
-import ai.qxotic.jota.ir.irt.IRConstantFolder;
-import ai.qxotic.jota.ir.irt.ScalarConstant;
-import ai.qxotic.jota.ir.irt.UnaryOperator;
+import ai.qxotic.jota.ir.tir.BinaryOperator;
+import ai.qxotic.jota.ir.tir.IRConstantFolder;
+import ai.qxotic.jota.ir.tir.ScalarConstant;
+import ai.qxotic.jota.ir.tir.UnaryOperator;
 import java.util.Optional;
 
 /** Package-private utility class for constant folding of tensor operations. */

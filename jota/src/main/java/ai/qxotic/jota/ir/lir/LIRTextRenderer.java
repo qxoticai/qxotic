@@ -1,0 +1,474 @@
+package ai.qxotic.jota.ir.lir;
+
+import ai.qxotic.jota.DataType;
+import ai.qxotic.jota.ir.tir.BinaryOperator;
+import ai.qxotic.jota.ir.tir.UnaryOperator;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Renders IR-L graphs as MLIR-style text representation.
+ *
+ * <p>Output format characteristics:
+ *
+ * <ul>
+ *   <li>SSA-style variable naming with descriptive buffer names
+ *   <li>Explicit data types on all operations
+ *   <li>Inline index expressions
+ *   <li>Full buffer metadata (shape, strides)
+ *   <li>Compact loop notation: {@code parallel.for %i in [0, 4)}
+ *   <li>Flat representation with intermediate variables
+ * </ul>
+ */
+public class LIRTextRenderer implements LIRVisitor<String> {
+
+    private final StringBuilder output;
+    private final int indentSize;
+    private int currentIndent;
+    private int nextVarId;
+    private final Map<ScalarExpr, String> exprToVar;
+    private final Map<Integer, String> bufferIdToName;
+    private int nextInputId;
+    private int nextOutputId;
+
+    /** Creates a new renderer with default settings. */
+    public LIRTextRenderer() {
+        this(2);
+    }
+
+    /** Creates a new renderer with specified indent size. */
+    public LIRTextRenderer(int indentSize) {
+        this.output = new StringBuilder();
+        this.indentSize = indentSize;
+        this.currentIndent = 0;
+        this.nextVarId = 0;
+        this.exprToVar = new HashMap<>();
+        this.bufferIdToName = new HashMap<>();
+        this.nextInputId = 0;
+        this.nextOutputId = 0;
+    }
+
+    /** Renders an LIRGraph to MLIR-style text. */
+    public String render(LIRGraph graph) {
+        output.setLength(0);
+        currentIndent = 0;
+        nextVarId = 0;
+        nextInputId = 0;
+        nextOutputId = 0;
+        exprToVar.clear();
+        bufferIdToName.clear();
+
+        appendLine("LIRGraph {");
+        increaseIndent();
+
+        // Render inputs and build buffer name map
+        appendLine("inputs: [");
+        increaseIndent();
+        for (int i = 0; i < graph.inputs().size(); i++) {
+            BufferRef input = graph.inputs().get(i);
+            String suffix = (i < graph.inputs().size() - 1) ? "," : "";
+            String name = "in" + nextInputId++;
+            bufferIdToName.put(input.id(), name);
+            appendLine(
+                    ai.qxotic.jota.ir.TextRenderUtils.formatBuffer(
+                                    "in",
+                                    nextInputId - 1,
+                                    input.dataType(),
+                                    input.shape(),
+                                    input.strides())
+                            + suffix);
+        }
+        decreaseIndent();
+        appendLine("]");
+
+        // Render outputs and build buffer name map
+        appendLine("outputs: [");
+        increaseIndent();
+        for (int i = 0; i < graph.outputs().size(); i++) {
+            BufferRef outputBuf = graph.outputs().get(i);
+            String suffix = (i < graph.outputs().size() - 1) ? "," : "";
+            String name = "out" + nextOutputId++;
+            bufferIdToName.put(outputBuf.id(), name);
+            appendLine(
+                    ai.qxotic.jota.ir.TextRenderUtils.formatBuffer(
+                                    "out",
+                                    nextOutputId - 1,
+                                    outputBuf.dataType(),
+                                    outputBuf.shape(),
+                                    outputBuf.strides())
+                            + suffix);
+        }
+        decreaseIndent();
+        appendLine("]");
+
+        // Render body
+        appendLine("body {");
+        increaseIndent();
+        graph.body().accept(this);
+        decreaseIndent();
+        appendLine("}");
+
+        decreaseIndent();
+        appendLine("}");
+
+        return output.toString();
+    }
+
+    private String formatBufferType(BufferRef buffer) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(buffer.dataType());
+        sb.append("[");
+        sb.append(formatTuple(buffer.shape()));
+        sb.append(":");
+        sb.append(formatTuple(buffer.strides()));
+        sb.append("]");
+        if (isContiguous(buffer)) {
+            sb.append(" contiguous");
+        } else {
+            sb.append(" strided");
+        }
+        return sb.toString();
+    }
+
+    private String formatTuple(long[] values) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("(");
+        for (int i = 0; i < values.length; i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(values[i]);
+        }
+        sb.append(")");
+        return sb.toString();
+    }
+
+    private boolean isContiguous(BufferRef buffer) {
+        long[] shape = buffer.shape();
+        long[] strides = buffer.strides();
+        if (shape.length == 0) {
+            return true;
+        }
+
+        long expectedStride = buffer.dataType().byteSize();
+        for (int i = shape.length - 1; i >= 0; i--) {
+            if (strides[i] != expectedStride) {
+                return false;
+            }
+            expectedStride *= shape[i];
+        }
+        return true;
+    }
+
+    private void appendLine(String line) {
+        appendIndent();
+        output.append(line);
+        output.append("\n");
+    }
+
+    private void append(String text) {
+        output.append(text);
+    }
+
+    private void appendIndent() {
+        for (int i = 0; i < currentIndent * indentSize; i++) {
+            output.append(" ");
+        }
+    }
+
+    private void increaseIndent() {
+        currentIndent++;
+    }
+
+    private void decreaseIndent() {
+        currentIndent--;
+    }
+
+    private String allocateVar(ScalarExpr expr, String rendered) {
+        String varName = "%" + nextVarId++;
+        exprToVar.put(expr, varName);
+        return varName + " = " + rendered;
+    }
+
+    private String getVar(ScalarExpr expr) {
+        if (exprToVar.containsKey(expr)) {
+            return exprToVar.get(expr);
+        }
+        return expr.accept(this);
+    }
+
+    // ==================== Index Expressions ====================
+
+    @Override
+    public String visitIndexVar(IndexVar node) {
+        return "%" + node.name();
+    }
+
+    @Override
+    public String visitIndexConst(IndexConst node) {
+        return String.valueOf(node.value());
+    }
+
+    @Override
+    public String visitIndexBinary(IndexBinary node) {
+        String left = node.left().accept(this);
+        String right = node.right().accept(this);
+        String op = formatIndexBinaryOp(node.op());
+        return left + " " + op + " " + right;
+    }
+
+    private String formatIndexBinaryOp(IndexBinary.IndexBinaryOp op) {
+        return switch (op) {
+            case ADD -> "+";
+            case SUB -> "-";
+            case MUL -> "*";
+            case DIV -> "/";
+            case MOD -> "%";
+        };
+    }
+
+    // ==================== Scalar Expressions ====================
+
+    @Override
+    public String visitScalarConst(ScalarConst node) {
+        DataType dt = node.dataType();
+        if (dt == DataType.FP32) {
+            return node.asFloat() + "f";
+        } else if (dt == DataType.FP64) {
+            return node.asDouble() + "";
+        } else if (dt == DataType.I32) {
+            return String.valueOf(node.asInt());
+        } else if (dt == DataType.I64) {
+            return String.valueOf(node.asLong());
+        } else if (dt == DataType.BOOL) {
+            return node.asBool() ? "true" : "false";
+        } else if (dt == DataType.FP16) {
+            return ai.qxotic.jota.ir.Float16Formatter.formatFloat16((short) node.rawBits());
+        } else if (dt == DataType.BF16) {
+            return ai.qxotic.jota.ir.Float16Formatter.formatBFloat16((short) node.rawBits());
+        } else {
+            return "0x" + Long.toHexString(node.rawBits());
+        }
+    }
+
+    @Override
+    public String visitScalarUnary(ScalarUnary node) {
+        String input = getVar(node.input());
+        String op = formatUnaryOp(node.op());
+        DataType dt = node.dataType();
+        String result = allocateVar(node, op + " " + dt + " " + input);
+        appendLine(result);
+        return exprToVar.get(node);
+    }
+
+    private String formatUnaryOp(UnaryOperator op) {
+        return switch (op) {
+            case NEGATE -> "neg";
+            case ABS -> "abs";
+            case EXP -> "exp";
+            case LOG -> "log";
+            case SQRT -> "sqrt";
+            case SQUARE -> "square";
+            case SIN -> "sin";
+            case COS -> "cos";
+            case TAN -> "tan";
+            case TANH -> "tanh";
+            case RECIPROCAL -> "recipro";
+            case LOGICAL_NOT -> "not";
+            case BITWISE_NOT -> "bnot";
+        };
+    }
+
+    @Override
+    public String visitScalarBinary(ScalarBinary node) {
+        String left = getVar(node.left());
+        String right = getVar(node.right());
+        String op = formatBinaryOp(node.op());
+        DataType dt = node.dataType();
+        String result = allocateVar(node, op + " " + dt + " " + left + ", " + right);
+        appendLine(result);
+        return exprToVar.get(node);
+    }
+
+    private String formatBinaryOp(BinaryOperator op) {
+        return switch (op) {
+            case ADD -> "add";
+            case SUBTRACT -> "sub";
+            case MULTIPLY -> "mul";
+            case DIVIDE -> "div";
+            case MIN -> "min";
+            case MAX -> "max";
+            case POW -> "pow";
+            case LOGICAL_AND -> "and";
+            case LOGICAL_OR -> "or";
+            case LOGICAL_XOR -> "xor";
+            case BITWISE_AND -> "band";
+            case BITWISE_OR -> "bor";
+            case BITWISE_XOR -> "bxor";
+            case EQUAL -> "eq";
+            case LESS_THAN -> "lt";
+        };
+    }
+
+    @Override
+    public String visitScalarTernary(ScalarTernary node) {
+        String cond = getVar(node.condition());
+        String trueVal = getVar(node.trueValue());
+        String falseVal = getVar(node.falseValue());
+        DataType dt = node.dataType();
+        String result =
+                allocateVar(node, "select " + dt + " " + cond + ", " + trueVal + ", " + falseVal);
+        appendLine(result);
+        return exprToVar.get(node);
+    }
+
+    @Override
+    public String visitScalarCast(ScalarCast node) {
+        String input = getVar(node.input());
+        DataType target = node.targetType();
+        String result = allocateVar(node, "cast " + target + " " + input);
+        appendLine(result);
+        return exprToVar.get(node);
+    }
+
+    @Override
+    public String visitScalarLoad(ScalarLoad node) {
+        String offset = node.offset().accept(this);
+        BufferRef buffer = node.buffer();
+        DataType dt = node.dataType();
+        String result =
+                allocateVar(node, "load " + dt + " %" + bufferName(buffer) + "[" + offset + "]");
+        appendLine(result);
+        return exprToVar.get(node);
+    }
+
+    private String bufferName(BufferRef buffer) {
+        // Look up the buffer name from the map, or use a generic name
+        return bufferIdToName.getOrDefault(buffer.id(), "buffer" + buffer.id());
+    }
+
+    // ==================== Memory Operations ====================
+
+    @Override
+    public String visitBufferRef(BufferRef node) {
+        return "%" + bufferName(node);
+    }
+
+    @Override
+    public String visitLoad(Load node) {
+        String offset = node.offset().accept(this);
+        BufferRef buffer = node.buffer();
+        DataType dt = node.dataType();
+        appendLine("load " + dt + " %" + bufferName(buffer) + "[" + offset + "]");
+        return "";
+    }
+
+    @Override
+    public String visitStore(Store node) {
+        String offset = node.offset().accept(this);
+        BufferRef buffer = node.buffer();
+        String value = getVar(node.value());
+        appendLine("store %" + bufferName(buffer) + "[" + offset + "], " + value);
+        return "";
+    }
+
+    // ==================== Accumulators ====================
+
+    @Override
+    public String visitAccumulator(Accumulator node) {
+        String identity = formatIdentityValue(node.identityBits(), node.dataType());
+        appendLine(
+                "acc %"
+                        + node.name()
+                        + ": "
+                        + node.dataType()
+                        + " = "
+                        + identity
+                        + " # "
+                        + node.op());
+        return "";
+    }
+
+    private String formatIdentityValue(long bits, DataType dt) {
+        if (dt == DataType.FP32) {
+            return Float.intBitsToFloat((int) bits) + "f";
+        } else if (dt == DataType.FP64) {
+            return Double.longBitsToDouble(bits) + "";
+        } else if (dt == DataType.I32) {
+            return String.valueOf((int) bits);
+        } else if (dt == DataType.I64) {
+            return String.valueOf(bits);
+        } else {
+            return String.valueOf(bits);
+        }
+    }
+
+    @Override
+    public String visitAccumulatorRead(AccumulatorRead node) {
+        String varName = "%" + nextVarId++;
+        appendLine(varName + " = read.acc %" + node.name() + " : " + node.dataType());
+        return varName;
+    }
+
+    @Override
+    public String visitAccumulatorUpdate(AccumulatorUpdate node) {
+        String value = getVar(node.value());
+        appendLine("update.acc %" + node.name() + ", " + value);
+        return "";
+    }
+
+    // ==================== Control Flow ====================
+
+    @Override
+    public String visitLoop(Loop node) {
+        String bound = node.bound().accept(this);
+        String loopType = node.isParallel() ? "parallel.for" : "for";
+        appendLine(loopType + " %" + node.indexName() + " in [0, " + bound + ") {");
+        increaseIndent();
+        node.body().accept(this);
+        decreaseIndent();
+        appendLine("}");
+        return "";
+    }
+
+    @Override
+    public String visitTiledLoop(TiledLoop node) {
+        String totalBound = node.totalBound().accept(this);
+        appendLine(
+                "tiled.for %"
+                        + node.outerName()
+                        + ", %"
+                        + node.innerName()
+                        + " in [0, "
+                        + totalBound
+                        + ") tile="
+                        + node.tileSize()
+                        + " {");
+        increaseIndent();
+        node.body().accept(this);
+        decreaseIndent();
+        appendLine("}");
+        return "";
+    }
+
+    @Override
+    public String visitLoopNest(LoopNest node) {
+        appendLine("loop.nest {");
+        increaseIndent();
+        for (Loop loop : node.loops()) {
+            String bound = loop.bound().accept(this);
+            String loopType = loop.isParallel() ? "parallel.for" : "for";
+            appendLine(loopType + " %" + loop.indexName() + " in [0, " + bound + ")");
+        }
+        node.body().accept(this);
+        decreaseIndent();
+        appendLine("}");
+        return "";
+    }
+
+    @Override
+    public String visitBlock(Block node) {
+        for (LIRNode statement : node.statements()) {
+            statement.accept(this);
+        }
+        return "";
+    }
+}

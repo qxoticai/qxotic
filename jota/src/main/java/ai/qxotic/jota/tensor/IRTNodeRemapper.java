@@ -1,59 +1,59 @@
 package ai.qxotic.jota.tensor;
 
-import ai.qxotic.jota.ir.irt.IRTNode;
-import ai.qxotic.jota.ir.irt.IRTVisitor;
+import ai.qxotic.jota.ir.tir.TIRNode;
+import ai.qxotic.jota.ir.tir.TIRVisitor;
 import java.util.IdentityHashMap;
 import java.util.Map;
 
-class IRTNodeRemapper implements IRTVisitor<IRTNode> {
+class TIRNodeRemapper implements TIRVisitor<TIRNode> {
 
     private final int indexOffset;
-    private final Map<IRTNode, IRTNode> cache = new IdentityHashMap<>();
+    private final Map<TIRNode, TIRNode> cache = new IdentityHashMap<>();
 
-    IRTNodeRemapper(int indexOffset) {
+    TIRNodeRemapper(int indexOffset) {
         this.indexOffset = indexOffset;
     }
 
     @Override
-    public IRTNode visitTensorInput(ai.qxotic.jota.ir.irt.TensorInput node) {
+    public TIRNode visitTensorInput(ai.qxotic.jota.ir.tir.TensorInput node) {
         return cache.computeIfAbsent(
                 node,
                 n ->
-                        new ai.qxotic.jota.ir.irt.TensorInput(
+                        new ai.qxotic.jota.ir.tir.TensorInput(
                                 node.id() + indexOffset, node.dataType(), node.layout()));
     }
 
     @Override
-    public IRTNode visitScalarConstant(ai.qxotic.jota.ir.irt.ScalarConstant node) {
+    public TIRNode visitScalarConstant(ai.qxotic.jota.ir.tir.ScalarConstant node) {
         return cache.computeIfAbsent(node, n -> n);
     }
 
     @Override
-    public IRTNode visitIotaConstant(ai.qxotic.jota.ir.irt.IotaConstant node) {
+    public TIRNode visitIotaConstant(ai.qxotic.jota.ir.tir.IotaConstant node) {
         return cache.computeIfAbsent(node, n -> n);
     }
 
     @Override
-    public IRTNode visitUnaryOp(ai.qxotic.jota.ir.irt.UnaryOp node) {
+    public TIRNode visitUnaryOp(ai.qxotic.jota.ir.tir.UnaryOp node) {
         return cache.computeIfAbsent(
-                node, n -> new ai.qxotic.jota.ir.irt.UnaryOp(node.op(), remap(node.input())));
+                node, n -> new ai.qxotic.jota.ir.tir.UnaryOp(node.op(), remap(node.input())));
     }
 
     @Override
-    public IRTNode visitBinaryOp(ai.qxotic.jota.ir.irt.BinaryOp node) {
+    public TIRNode visitBinaryOp(ai.qxotic.jota.ir.tir.BinaryOp node) {
         return cache.computeIfAbsent(
                 node,
                 n ->
-                        new ai.qxotic.jota.ir.irt.BinaryOp(
+                        new ai.qxotic.jota.ir.tir.BinaryOp(
                                 node.op(), remap(node.left()), remap(node.right())));
     }
 
     @Override
-    public IRTNode visitTernaryOp(ai.qxotic.jota.ir.irt.TernaryOp node) {
+    public TIRNode visitTernaryOp(ai.qxotic.jota.ir.tir.TernaryOp node) {
         return cache.computeIfAbsent(
                 node,
                 n ->
-                        new ai.qxotic.jota.ir.irt.TernaryOp(
+                        new ai.qxotic.jota.ir.tir.TernaryOp(
                                 node.op(),
                                 remap(node.cond()),
                                 remap(node.trueExpr()),
@@ -61,37 +61,37 @@ class IRTNodeRemapper implements IRTVisitor<IRTNode> {
     }
 
     @Override
-    public IRTNode visitCastOp(ai.qxotic.jota.ir.irt.CastOp node) {
+    public TIRNode visitCastOp(ai.qxotic.jota.ir.tir.CastOp node) {
         return cache.computeIfAbsent(
                 node,
-                n -> new ai.qxotic.jota.ir.irt.CastOp(remap(node.input()), node.targetDtype()));
+                n -> new ai.qxotic.jota.ir.tir.CastOp(remap(node.input()), node.targetDataType()));
     }
 
     @Override
-    public IRTNode visitReductionOp(ai.qxotic.jota.ir.irt.ReductionOp node) {
+    public TIRNode visitReductionOp(ai.qxotic.jota.ir.tir.ReductionOp node) {
         return cache.computeIfAbsent(
                 node,
                 n ->
-                        new ai.qxotic.jota.ir.irt.ReductionOp(
+                        new ai.qxotic.jota.ir.tir.ReductionOp(
                                 node.op(), remap(node.input()), node.axes(), node.keepDims()));
     }
 
     @Override
-    public IRTNode visitViewTransform(ai.qxotic.jota.ir.irt.ViewTransform node) {
+    public TIRNode visitViewTransform(ai.qxotic.jota.ir.tir.ViewTransform node) {
         return cache.computeIfAbsent(
                 node,
                 n ->
-                        new ai.qxotic.jota.ir.irt.ViewTransform(
+                        new ai.qxotic.jota.ir.tir.ViewTransform(
                                 remap(node.input()), node.hint(), node.layout()));
     }
 
     @Override
-    public IRTNode visitContiguous(ai.qxotic.jota.ir.irt.Contiguous node) {
+    public TIRNode visitContiguous(ai.qxotic.jota.ir.tir.Contiguous node) {
         return cache.computeIfAbsent(
-                node, n -> new ai.qxotic.jota.ir.irt.Contiguous(remap(node.input())));
+                node, n -> new ai.qxotic.jota.ir.tir.Contiguous(remap(node.input())));
     }
 
-    private IRTNode remap(IRTNode node) {
+    private TIRNode remap(TIRNode node) {
         return node.accept(this);
     }
 }

@@ -809,26 +809,26 @@ public interface Tensor {
 
     private static Tensor createIRScalarConstant(
             Number value, DataType dataType, Shape shape, Device device) {
-        ai.qxotic.jota.ir.irt.ScalarConstant scalar;
+        ai.qxotic.jota.ir.tir.ScalarConstant scalar;
         long rawBits;
         if (dataType == DataType.FP32) {
             rawBits = Float.floatToIntBits(value.floatValue());
-            scalar = ai.qxotic.jota.ir.irt.ScalarConstant.broadcast(rawBits, dataType, shape);
+            scalar = ai.qxotic.jota.ir.tir.ScalarConstant.broadcast(rawBits, dataType, shape);
         } else if (dataType == DataType.FP64) {
             rawBits = Double.doubleToLongBits(value.doubleValue());
-            scalar = ai.qxotic.jota.ir.irt.ScalarConstant.broadcast(rawBits, dataType, shape);
+            scalar = ai.qxotic.jota.ir.tir.ScalarConstant.broadcast(rawBits, dataType, shape);
         } else if (dataType == DataType.BOOL
                 || dataType == DataType.I8
                 || dataType == DataType.I16
                 || dataType == DataType.I32) {
             rawBits = value.longValue();
-            scalar = ai.qxotic.jota.ir.irt.ScalarConstant.broadcast(rawBits, dataType, shape);
+            scalar = ai.qxotic.jota.ir.tir.ScalarConstant.broadcast(rawBits, dataType, shape);
         } else if (dataType == DataType.I64) {
             rawBits = value.longValue();
-            scalar = ai.qxotic.jota.ir.irt.ScalarConstant.broadcast(rawBits, dataType, shape);
+            scalar = ai.qxotic.jota.ir.tir.ScalarConstant.broadcast(rawBits, dataType, shape);
         } else if (dataType == DataType.FP16 || dataType == DataType.BF16) {
             rawBits = (long) Float.floatToIntBits(value.floatValue());
-            scalar = ai.qxotic.jota.ir.irt.ScalarConstant.broadcast(rawBits, dataType, shape);
+            scalar = ai.qxotic.jota.ir.tir.ScalarConstant.broadcast(rawBits, dataType, shape);
         } else {
             throw new IllegalArgumentException("Unsupported data type: " + dataType);
         }

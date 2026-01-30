@@ -3,21 +3,21 @@ package ai.qxotic.jota.tensor;
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Layout;
-import ai.qxotic.jota.ir.irt.IRTNode;
+import ai.qxotic.jota.ir.tir.TIRNode;
 import ai.qxotic.jota.memory.MemoryView;
 import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Temporary wrapper for IRTNode during IR-T tracing. Similar to TraceTensor but uses IR-T instead
+ * Temporary wrapper for TIRNode during IR-T tracing. Similar to TraceTensor but uses IR-T instead
  * of ExprNode.
  */
 final class IRTensor implements Tensor {
 
-    private final IRTNode node;
+    private final TIRNode node;
     private final Device device;
 
-    IRTensor(IRTNode node, Device device) {
+    IRTensor(TIRNode node, Device device) {
         this.node = Objects.requireNonNull(node);
         this.device = Objects.requireNonNull(device);
     }
@@ -64,7 +64,7 @@ final class IRTensor implements Tensor {
         return Optional.empty();
     }
 
-    IRTNode node() {
+    TIRNode node() {
         return node;
     }
 }

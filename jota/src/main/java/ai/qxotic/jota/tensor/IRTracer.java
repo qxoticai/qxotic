@@ -1,7 +1,7 @@
 package ai.qxotic.jota.tensor;
 
-import ai.qxotic.jota.ir.irt.IRTGraph;
-import ai.qxotic.jota.ir.irt.IRTNode;
+import ai.qxotic.jota.ir.tir.TIRGraph;
+import ai.qxotic.jota.ir.tir.TIRNode;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -28,7 +28,7 @@ public final class IRTracer {
                 TensorOpsContext.with(
                         new IRTensorOps(), () -> fn.apply(new ArrayList<>(traceInputs.tensors())));
         IRTensor irtOutput = (IRTensor) output;
-        IRTGraph graph = new IRTGraph(traceInputs.nodes(), List.of(irtOutput.node()));
+        TIRGraph graph = new TIRGraph(traceInputs.nodes(), List.of(irtOutput.node()));
         return Tensor.lazy(
                 new IRComputation(graph, inputs),
                 output.dataType(),
@@ -37,23 +37,27 @@ public final class IRTracer {
     }
 
     private static TraceInputs traceInputs(List<Tensor> inputs) {
-        List<IRTNode> nodes = new ArrayList<>();
+        List<TIRNode> nodes = new ArrayList<>();
         List<Tensor> tensors = new ArrayList<>();
         Map<Integer, Tensor> tensorMap = new HashMap<>();
 
         for (int i = 0; i < inputs.size(); i++) {
             Tensor input = inputs.get(i);
-            IRTNode node;
+            TIRNode node;
 
             if (input.isMaterialized() || input.computation().isEmpty()) {
-                node = new ai.qxotic.jota.ir.irt.TensorInput(i, input.dataType(), input.layout());
+                node = new ai.qxotic.jota.ir.tir.TensorInput(i, input.dataType(), input.layout());
             } else {
                 LazyComputation comp = input.computation().orElseThrow();
                 if (comp instanceof IRComputation irComp) {
                     node = remapInputs(irComp.graph(), i, irComp.inputTensors());
+                } else if (comp instanceof RangeComputation range) {
+                    node =
+                            new ai.qxotic.jota.ir.tir.IotaConstant(
+                                    range.count(), input.dataType(), input.layout());
                 } else {
                     node =
-                            new ai.qxotic.jota.ir.irt.TensorInput(
+                            new ai.qxotic.jota.ir.tir.TensorInput(
                                     i, input.dataType(), input.layout());
                 }
             }
@@ -66,18 +70,18 @@ public final class IRTracer {
         return new TraceInputs(nodes, tensors, tensorMap);
     }
 
-    private static IRTNode remapInputs(IRTGraph graph, int baseIndex, List<Tensor> originalInputs) {
-        IRTNode oldRoot = graph.outputs().get(0);
+    private static TIRNode remapInputs(TIRGraph graph, int baseIndex, List<Tensor> originalInputs) {
+        TIRNode oldRoot = graph.outputs().get(0);
         return remapNode(oldRoot, baseIndex);
     }
 
-    private static IRTNode remapNode(IRTNode node, int indexOffset) {
-        return node.accept(new IRTNodeRemapper(indexOffset));
+    private static TIRNode remapNode(TIRNode node, int indexOffset) {
+        return node.accept(new TIRNodeRemapper(indexOffset));
     }
 
     private record TraceInputs(
-            List<IRTNode> nodes, List<Tensor> tensors, Map<Integer, Tensor> tensorMap) {
-        public List<IRTNode> nodes() {
+            List<TIRNode> nodes, List<Tensor> tensors, Map<Integer, Tensor> tensorMap) {
+        public List<TIRNode> nodes() {
             return nodes;
         }
 
