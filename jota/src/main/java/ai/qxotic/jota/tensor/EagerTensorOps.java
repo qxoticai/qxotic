@@ -6,6 +6,8 @@ import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
+import ai.qxotic.jota.impl.ViewTransforms;
+import ai.qxotic.jota.ir.tir.ViewKind;
 import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryContext;
@@ -362,28 +364,49 @@ public class EagerTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor viewTransform(Tensor x, Layout layout, long byteOffsetDelta, String hint) {
+    public Tensor viewTransform(Tensor x, ViewTransforms.ViewTransformSpec spec) {
+        // Eager path: if lazy indexing is needed, force contiguous copy first
+        if (spec.needsLazyIndexing()) {
+            Tensor contiguousTensor = contiguous(x);
+            // Recompute spec with contiguous layout
+            ViewTransforms.ViewTransformSpec newSpec =
+                    switch (spec.kind()) {
+                        case ViewKind.Reshape reshape ->
+                                ViewTransforms.view(contiguousTensor.layout(), reshape.toShape());
+                        case ViewKind.Broadcast broadcast ->
+                                ViewTransforms.broadcast(
+                                        contiguousTensor.layout(), broadcast.toShape());
+                        case ViewKind.Expand expand ->
+                                ViewTransforms.expand(contiguousTensor.layout(), expand.toShape());
+                        case ViewKind.Transpose transpose ->
+                                ViewTransforms.permute(
+                                        contiguousTensor.layout(), transpose.permutation());
+                        case ViewKind.Slice slice ->
+                                ViewTransforms.slice(
+                                        contiguousTensor.layout(),
+                                        x.dataType(),
+                                        slice.axis(),
+                                        slice.start(),
+                                        slice.start() + spec.layout().shape().flatAt(slice.axis()),
+                                        slice.step());
+                    };
+            return viewTransform(contiguousTensor, newSpec);
+        }
+
         MemoryView<?> sourceView = x.materialize();
         MemoryView<?> transformed =
                 MemoryView.of(
                         sourceView.memory(),
-                        sourceView.byteOffset() + byteOffsetDelta,
+                        sourceView.byteOffset() + spec.byteOffsetDelta(),
                         sourceView.dataType(),
-                        layout);
+                        spec.layout());
         return Tensor.of(transformed);
     }
 
     @Override
     public Tensor reshape(Tensor x, Shape newShape) {
-        // Try view first (non-allocating)
-        try {
-            return view(x, newShape);
-        } catch (IllegalArgumentException e) {
-            // View failed - need to copy data
-            // Make contiguous first, then view with new shape
-            Tensor contiguousTensor = contiguous(x);
-            return view(contiguousTensor, newShape);
-        }
+        ViewTransforms.ViewTransformSpec spec = ViewTransforms.view(x.layout(), newShape);
+        return viewTransform(x, spec);
     }
 
     @Override

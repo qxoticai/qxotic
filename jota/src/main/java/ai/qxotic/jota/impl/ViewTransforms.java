@@ -5,6 +5,7 @@ import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.Stride;
 import ai.qxotic.jota.Util;
+import ai.qxotic.jota.ir.tir.ViewKind;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -13,25 +14,56 @@ public final class ViewTransforms {
 
     private ViewTransforms() {}
 
-    public record ViewTransformSpec(Layout layout, long byteOffsetDelta) {}
+    /**
+     * Result of a view transformation.
+     *
+     * @param kind the transformation type with parameters (for lazy index computation)
+     * @param layout result shape + strides (strides are valid for simple cases, placeholder for
+     *     complex cases requiring lazy index computation)
+     * @param byteOffsetDelta byte offset adjustment (for slicing)
+     * @param needsLazyIndexing true if strides couldn't be computed and lazy index composition is
+     *     required
+     */
+    public record ViewTransformSpec(
+            ViewKind kind, Layout layout, long byteOffsetDelta, boolean needsLazyIndexing) {
+
+        /** Convenience constructor for simple cases (no lazy indexing needed). */
+        public static ViewTransformSpec simple(ViewKind kind, Layout layout, long byteOffsetDelta) {
+            return new ViewTransformSpec(kind, layout, byteOffsetDelta, false);
+        }
+
+        /** Convenience constructor for complex cases requiring lazy index computation. */
+        public static ViewTransformSpec lazy(ViewKind kind, Layout layout, long byteOffsetDelta) {
+            return new ViewTransformSpec(kind, layout, byteOffsetDelta, true);
+        }
+    }
 
     public static ViewTransformSpec view(Layout layout, Shape newShape) {
         if (layout.shape().size() != newShape.size()) {
             throw new IllegalArgumentException("total element count mismatch");
         }
 
+        ViewKind kind = new ViewKind.Reshape(layout.shape(), newShape);
+
+        // Fast path: data is contiguous in row-major order
         if (spansContiguousRange(layout)) {
-            return new ViewTransformSpec(Layout.rowMajor(newShape), 0L);
+            return ViewTransformSpec.simple(kind, Layout.rowMajor(newShape), 0L);
         }
 
         long[] oldStrides = layout.stride().toArray();
-        if (!canReshapeWithoutCopy(layout.shape(), newShape, oldStrides)) {
-            throw new IllegalArgumentException("Cannot view: would require copying data");
+
+        // Check if we can compute simple strides
+        if (canReshapeWithoutCopy(layout.shape(), newShape, oldStrides)) {
+            long[] newStrides = computeReshapeStrides(layout.shape(), newShape, oldStrides);
+            Layout newLayout = Layout.of(newShape, Stride.template(newShape, newStrides));
+            return ViewTransformSpec.simple(kind, newLayout, 0L);
         }
 
-        long[] newStrides = computeReshapeStrides(layout.shape(), newShape, oldStrides);
-        Layout newLayout = Layout.of(newShape, Stride.template(newShape, newStrides));
-        return new ViewTransformSpec(newLayout, 0L);
+        // Complex case: strides can't be computed simply, need lazy index composition.
+        // Return placeholder row-major strides; the actual indexing will be computed
+        // at LIR lowering time by walking the view chain.
+        Layout placeholderLayout = Layout.rowMajor(newShape);
+        return ViewTransformSpec.lazy(kind, placeholderLayout, 0L);
     }
 
     public static ViewTransformSpec expand(Layout layout, Shape newShape) {
@@ -67,9 +99,10 @@ public final class ViewTransforms {
             }
         }
 
+        ViewKind kind = new ViewKind.Expand(currentShape, newShape);
         Stride newStride = Stride.template(newShape, newStrides);
         Layout newLayout = Layout.of(newShape, newStride);
-        return new ViewTransformSpec(newLayout, 0L);
+        return ViewTransformSpec.simple(kind, newLayout, 0L);
     }
 
     public static ViewTransformSpec broadcast(Layout layout, Shape targetShape) {
@@ -84,8 +117,16 @@ public final class ViewTransforms {
                             + ": target has fewer modes");
         }
 
+        ViewKind kind = new ViewKind.Broadcast(currentShape, targetShape);
+
         if (numNewModes == 0) {
-            return expand(layout, targetShape);
+            // Same rank, just expand
+            ViewTransformSpec expandSpec = expand(layout, targetShape);
+            return new ViewTransformSpec(
+                    kind,
+                    expandSpec.layout(),
+                    expandSpec.byteOffsetDelta(),
+                    expandSpec.needsLazyIndexing());
         }
 
         if (!currentShape.isFlat() || !targetShape.isFlat()) {
@@ -98,7 +139,9 @@ public final class ViewTransforms {
 
             Shape reshapedShape = Shape.flat(newDims);
             ViewTransformSpec reshaped = view(layout, reshapedShape);
-            return expand(reshaped.layout(), targetShape);
+            ViewTransformSpec expandSpec = expand(reshaped.layout(), targetShape);
+            boolean needsLazy = reshaped.needsLazyIndexing() || expandSpec.needsLazyIndexing();
+            return new ViewTransformSpec(kind, expandSpec.layout(), 0L, needsLazy);
         }
 
         long[] newDims = new long[targetShape.rank()];
@@ -108,14 +151,17 @@ public final class ViewTransforms {
         System.arraycopy(currentShape.toArray(), 0, newDims, numNewModes, currentShape.rank());
 
         ViewTransformSpec reshaped = view(layout, Shape.flat(newDims));
-        return expand(reshaped.layout(), targetShape);
+        ViewTransformSpec expandSpec = expand(reshaped.layout(), targetShape);
+        boolean needsLazy = reshaped.needsLazyIndexing() || expandSpec.needsLazyIndexing();
+        return new ViewTransformSpec(kind, expandSpec.layout(), 0L, needsLazy);
     }
 
     public static ViewTransformSpec permute(Layout layout, int... permutationIndices) {
         Shape newShape = layout.shape().permute(permutationIndices);
         Stride newStride = layout.stride().permute(permutationIndices);
         Layout newLayout = Layout.of(newShape, newStride);
-        return new ViewTransformSpec(newLayout, 0L);
+        ViewKind kind = new ViewKind.Transpose(permutationIndices.clone());
+        return ViewTransformSpec.simple(kind, newLayout, 0L);
     }
 
     public static ViewTransformSpec transpose(Layout layout, int _axis0, int _axis1) {
@@ -183,23 +229,50 @@ public final class ViewTransforms {
         Stride newModeStride = layout.stride().modeAt(axis).scale(indexStride);
         Stride newStride = layout.stride().replace(axis, newModeStride);
 
+        ViewKind kind = new ViewKind.Slice(axis, fromInclusive, indexStride);
         Layout newLayout = Layout.of(newShape, newStride);
-        return new ViewTransformSpec(newLayout, byteOffsetDelta);
+        return ViewTransformSpec.simple(kind, newLayout, byteOffsetDelta);
     }
 
+    /**
+     * Returns true if the layout is contiguous in row-major order.
+     *
+     * <p>This checks two conditions:
+     *
+     * <ol>
+     *   <li>The data spans a contiguous memory range (span == totalElements - 1)
+     *   <li>The strides are in row-major order (stride[i] == stride[i+1] * dim[i+1])
+     * </ol>
+     *
+     * <p>Both conditions are required for reshape to work by simply changing the shape. A
+     * transposed tensor satisfies condition 1 but not condition 2.
+     */
     private static boolean spansContiguousRange(Layout layout) {
         if (layout.shape().hasZeroElements()) {
             return true;
         }
-        long span = 0;
-        long totalElements = 1;
-        long[] strides = layout.stride().toArray();
-        for (int i = 0; i < layout.shape().flatRank(); i++) {
-            long dim = layout.shape().flatAt(i);
-            span += (dim - 1) * strides[i];
-            totalElements *= dim;
+
+        int rank = layout.shape().flatRank();
+        if (rank == 0) {
+            return true;
         }
-        return span == totalElements - 1;
+
+        long[] strides = layout.stride().toArray();
+
+        // Check row-major ordering: stride[i] == stride[i+1] * dim[i+1]
+        // The innermost stride should be 1 for true row-major
+        if (strides[rank - 1] != 1) {
+            return false;
+        }
+
+        for (int i = rank - 2; i >= 0; i--) {
+            long expectedStride = strides[i + 1] * layout.shape().flatAt(i + 1);
+            if (strides[i] != expectedStride) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static boolean canReshapeWithoutCopy(
@@ -223,6 +296,11 @@ public final class ViewTransforms {
         }
 
         if (oldDims.equals(newDims)) {
+            // When non-singleton dims match (just adding/removing size-1 dimensions),
+            // the existing strides are valid for the new shape. This handles:
+            // - Squeeze: (2,3,1):(15,5,1) -> (2,3):(15,5)
+            // - Unsqueeze: (2,3):(15,5) -> (2,3,1):(15,5,?)
+            // - Same-shape no-op: (4,3):(1,4) -> (4,3):(1,4)
             return true;
         }
 
@@ -264,20 +342,39 @@ public final class ViewTransforms {
         return oldIdx == oldDims.size() && newIdx == newDims.size();
     }
 
+    /**
+     * Checks if strides within the given range form a row-major pattern.
+     *
+     * <p>For reshape without copy to work, the strides must satisfy:
+     *
+     * <ol>
+     *   <li>The innermost stride must be 1
+     *   <li>stride[i] == stride[i+1] * dim[i+1] for all i in [startIdx, endIdx-1)
+     * </ol>
+     *
+     * <p>This ensures that iterating in row-major order visits elements in the same order as their
+     * memory layout.
+     */
     private static boolean areContiguous(
             List<Long> dims, List<Long> strides, int startIdx, int endIdx) {
-        if (endIdx - startIdx == 0) {
+        if (endIdx <= startIdx) {
             return true;
         }
 
-        long span = 0;
-        long totalElements = 1;
-        for (int i = startIdx; i < endIdx; i++) {
-            span += (dims.get(i) - 1) * strides.get(i);
-            totalElements *= dims.get(i);
+        // The innermost stride must be 1 for true contiguity
+        if (strides.get(endIdx - 1) != 1) {
+            return false;
         }
 
-        return span == totalElements - 1;
+        // Verify row-major ordering: stride[i] == stride[i+1] * dim[i+1]
+        for (int i = startIdx; i < endIdx - 1; i++) {
+            long expectedStride = strides.get(i + 1) * dims.get(i + 1);
+            if (strides.get(i) != expectedStride) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static long[] computeReshapeStrides(Shape oldShape, Shape newShape, long[] oldStrides) {

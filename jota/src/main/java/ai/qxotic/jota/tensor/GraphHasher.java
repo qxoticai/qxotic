@@ -70,7 +70,7 @@ public final class GraphHasher {
             }
             case ViewTransformOp transform -> {
                 update(digest, "viewTransform");
-                update(digest, transform.hint() != null ? transform.hint() : "viewTransform");
+                update(digest, transform.spec().kind().getClass().getSimpleName());
                 writeNode(transform.input(), digest, ids);
             }
             default -> {

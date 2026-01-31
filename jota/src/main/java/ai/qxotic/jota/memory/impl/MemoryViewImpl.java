@@ -109,6 +109,12 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
     @Override
     public MemoryView<T> view(Shape newShape) {
         ViewTransforms.ViewTransformSpec spec = ViewTransforms.view(layout, newShape);
+        if (spec.needsLazyIndexing()) {
+            throw new IllegalArgumentException(
+                    "Cannot reshape non-contiguous view without copying. "
+                            + "Use Tensor.view() which handles this automatically, "
+                            + "or make a contiguous copy first.");
+        }
         return MemoryViewImpl.create(
                 spec.layout(), dataType, byteOffset + spec.byteOffsetDelta(), memory);
     }

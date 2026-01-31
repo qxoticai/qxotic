@@ -100,40 +100,51 @@ class ViewOpsTest {
     }
 
     /**
-     * Tests that transposed tensors CAN be viewed as flat when they span contiguous memory.
+     * Tests that transposed tensors CAN be viewed as flat, but require a copy in eager mode.
      *
-     * <p>A (3, 4) tensor transposed to (4, 3):(1, 4) spans offsets [0-11] contiguously. Condition:
-     * (4-1)*1 + (3-1)*4 = 11 = 12-1 ✓
+     * <p>A (3, 4) tensor transposed to (4, 3):(1, 4) has non-row-major strides. Flattening to (12,)
+     * requires either lazy index computation (in TIR codegen) or a copy (in eager mode) to preserve
+     * the correct logical element ordering.
      */
     @Test
-    void viewTransposedAllowsFlattenWhenContiguousRange() {
+    void viewTransposedRequiresCopyToFlatten() {
         MemoryView<MemorySegment> view =
                 MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(3, 4));
         MemoryView<MemorySegment> transposed = view.transpose(0, 1);
         assertFalse(transposed.isContiguous());
         Tensor input = Tensor.of(transposed);
 
-        // Transposed tensor spans contiguous memory range, so view is allowed
+        // Transposed tensor has non-row-major strides, so flatten requires copy in eager mode
         Tensor result = TensorOpsContext.with(ops, () -> input.view(Shape.of(12)));
 
         assertEquals(Shape.of(12), result.shape());
-        assertSame(transposed.memory(), result.materialize().memory());
+        // A copy was made - different memory backing
+        assertNotSame(transposed.memory(), result.materialize().memory());
+        // Result is now contiguous
+        assertTrue(result.materialize().isContiguous());
     }
 
+    /**
+     * Tests that sliced tensors with stride can be viewed, but require a copy in eager mode.
+     *
+     * <p>A sliced tensor with step > 1 has non-contiguous strides and requires lazy indexing or
+     * copy.
+     */
     @Test
-    void viewThrowsOnSlicedWithStrideWhenCopyRequired() {
+    void viewSlicedWithStrideRequiresCopy() {
         MemoryView<MemorySegment> view =
                 MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(3, 4));
         MemoryView<MemorySegment> sliced = view.slice(1, 0, 4, 2);
         assertFalse(sliced.isContiguous());
         Tensor input = Tensor.of(sliced);
 
-        IllegalArgumentException ex =
-                assertThrows(
-                        IllegalArgumentException.class,
-                        () -> TensorOpsContext.with(ops, () -> input.view(Shape.of(6))));
+        // Sliced tensor with stride requires copy in eager mode
+        Tensor result = TensorOpsContext.with(ops, () -> input.view(Shape.of(6)));
 
-        assertTrue(ex.getMessage().contains("copying"));
+        assertEquals(Shape.of(6), result.shape());
+        // A copy was made
+        assertNotSame(sliced.memory(), result.materialize().memory());
+        assertTrue(result.materialize().isContiguous());
     }
 
     @Test
@@ -173,27 +184,26 @@ class ViewOpsTest {
     /**
      * Tests view with non-standard stride layout (2, 2, 2):(4, 1, 2).
      *
-     * <p>The inner 2x2 block with strides (1, 2) spans memory offsets {0, 1, 2, 3} - a contiguous
-     * range. Even though the access order differs from row-major, the view to (2, 4):(4, 1) is
-     * valid because both layouts cover the same contiguous memory regions.
+     * <p>The strides are not in row-major order (4, 1, 2 vs expected 4, 2, 1). Reshaping requires
+     * lazy indexing (in codegen) or copy (in eager mode) to preserve correct element ordering.
      */
     @Test
-    void viewNonStandardStrideAllowsContiguousRangeReshape() {
+    void viewNonStandardStrideRequiresCopy() {
         Memory<MemorySegment> memory = context.memoryAllocator().allocateMemory(DataType.FP32, 8);
 
-        // Shape (2, 2, 2) with stride (4, 1, 2)
-        // Inner dims (2, 2):(1, 2) span offsets {0, 1, 2, 3} - contiguous range
-        // Condition: (2-1)*1 + (2-1)*2 = 3 = 4-1 ✓
+        // Shape (2, 2, 2) with stride (4, 1, 2) - NOT row-major order
         Layout layout = Layout.of(Shape.flat(2, 2, 2), Stride.flat(4, 1, 2));
         MemoryView<MemorySegment> view = MemoryView.of(memory, DataType.FP32, layout);
         assertFalse(view.isContiguous());
         Tensor input = Tensor.of(view);
 
-        // Can reshape to (2, 4):(4, 1) because inner dims span contiguous range
+        // Non-row-major strides require copy in eager mode
         Tensor result = TensorOpsContext.with(ops, () -> input.view(Shape.of(2, 4)));
 
         assertEquals(Shape.of(2, 4), result.shape());
-        assertSame(view.memory(), result.materialize().memory());
+        // A copy was made
+        assertNotSame(view.memory(), result.materialize().memory());
+        assertTrue(result.materialize().isContiguous());
     }
 
     /**
@@ -302,13 +312,13 @@ class ViewOpsTest {
     // ========== Corner Cases: View Should Fail ==========
 
     /**
-     * Tests that view fails when layout has holes (skipping elements).
+     * Tests that view with holes (skipping elements) requires a copy.
      *
-     * <p>Shape (4,) with stride (2) accesses {0, 2, 4, 6} - skipping odd offsets. Span: (4-1)*2 = 6
-     * ≠ 4-1 = 3, so not contiguous.
+     * <p>Shape (4,) with stride (2) accesses {0, 2, 4, 6} - skipping odd offsets. This requires
+     * lazy indexing or copy to reshape correctly.
      */
     @Test
-    void viewFailsWithHoles() {
+    void viewWithHolesRequiresCopy() {
         Memory<MemorySegment> memory = context.memoryAllocator().allocateMemory(DataType.FP32, 8);
 
         // Shape (4,) with stride (2) - accesses every other element: {0, 2, 4, 6}
@@ -316,20 +326,23 @@ class ViewOpsTest {
         MemoryView<MemorySegment> view = MemoryView.of(memory, DataType.FP32, layout);
         Tensor input = Tensor.of(view);
 
-        // Cannot reshape - there are holes in the memory access pattern
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> TensorOpsContext.with(ops, () -> input.view(Shape.of(2, 2))));
+        // Holes in memory access pattern require copy in eager mode
+        Tensor result = TensorOpsContext.with(ops, () -> input.view(Shape.of(2, 2)));
+
+        assertEquals(Shape.of(2, 2), result.shape());
+        // A copy was made
+        assertNotSame(view.memory(), result.materialize().memory());
+        assertTrue(result.materialize().isContiguous());
     }
 
     /**
-     * Tests that view fails with interleaved access pattern.
+     * Tests that view with interleaved access pattern requires a copy.
      *
-     * <p>Shape (2, 2) with stride (4, 2) accesses {0, 2, 4, 6} - interleaved with holes. Span:
-     * (2-1)*4 + (2-1)*2 = 6 ≠ 4-1 = 3, so not contiguous.
+     * <p>Shape (2, 2) with stride (4, 2) accesses {0, 2, 4, 6} - interleaved with holes. This
+     * requires lazy indexing or copy to reshape correctly.
      */
     @Test
-    void viewFailsWithInterleavedAccess() {
+    void viewWithInterleavedAccessRequiresCopy() {
         Memory<MemorySegment> memory = context.memoryAllocator().allocateMemory(DataType.FP32, 8);
 
         // Shape (2, 2) with stride (4, 2) - interleaved access: {0, 2, 4, 6}
@@ -337,20 +350,22 @@ class ViewOpsTest {
         MemoryView<MemorySegment> view = MemoryView.of(memory, DataType.FP32, layout);
         Tensor input = Tensor.of(view);
 
-        // Cannot reshape - interleaved pattern has holes
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> TensorOpsContext.with(ops, () -> input.view(Shape.of(4))));
+        // Interleaved pattern requires copy in eager mode
+        Tensor result = TensorOpsContext.with(ops, () -> input.view(Shape.of(4)));
+
+        assertEquals(Shape.of(4), result.shape());
+        assertNotSame(view.memory(), result.materialize().memory());
+        assertTrue(result.materialize().isContiguous());
     }
 
     /**
-     * Tests that view fails with non-contiguous gaps.
+     * Tests that view with gaps requires a copy.
      *
-     * <p>Shape (2, 2) with stride (3, 1) accesses {0, 1, 3, 4} - missing offset 2. Span: (2-1)*3 +
-     * (2-1)*1 = 4 ≠ 4-1 = 3, so not contiguous.
+     * <p>Shape (2, 2) with stride (3, 1) accesses {0, 1, 3, 4} - missing offset 2. This requires
+     * lazy indexing or copy to reshape correctly.
      */
     @Test
-    void viewFailsWithGaps() {
+    void viewWithGapsRequiresCopy() {
         Memory<MemorySegment> memory = context.memoryAllocator().allocateMemory(DataType.FP32, 8);
 
         // Shape (2, 2) with stride (3, 1) - accesses {0, 1, 3, 4}, missing 2
@@ -358,20 +373,23 @@ class ViewOpsTest {
         MemoryView<MemorySegment> view = MemoryView.of(memory, DataType.FP32, layout);
         Tensor input = Tensor.of(view);
 
-        // Cannot reshape - there's a gap at offset 2
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> TensorOpsContext.with(ops, () -> input.view(Shape.of(4))));
+        // Gap in memory access requires copy in eager mode
+        Tensor result = TensorOpsContext.with(ops, () -> input.view(Shape.of(4)));
+
+        assertEquals(Shape.of(4), result.shape());
+        // A copy was made
+        assertNotSame(view.memory(), result.materialize().memory());
+        assertTrue(result.materialize().isContiguous());
     }
 
     /**
-     * Tests that view fails with sparse strided access.
+     * Tests that view with sparse strided access requires a copy.
      *
-     * <p>Shape (2, 2) with stride (6, 3) accesses {0, 3, 6, 9} - very sparse. Span: (2-1)*6 +
-     * (2-1)*3 = 9 ≠ 4-1 = 3, so not contiguous.
+     * <p>Shape (2, 2) with stride (6, 3) accesses {0, 3, 6, 9} - very sparse. This requires lazy
+     * indexing or copy to reshape correctly.
      */
     @Test
-    void viewFailsWithSparseAccess() {
+    void viewWithSparseAccessRequiresCopy() {
         Memory<MemorySegment> memory = context.memoryAllocator().allocateMemory(DataType.FP32, 16);
 
         // Shape (2, 2) with stride (6, 3) - sparse access: {0, 3, 6, 9}
@@ -379,20 +397,22 @@ class ViewOpsTest {
         MemoryView<MemorySegment> view = MemoryView.of(memory, DataType.FP32, layout);
         Tensor input = Tensor.of(view);
 
-        // Cannot reshape - very sparse, lots of holes
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> TensorOpsContext.with(ops, () -> input.view(Shape.of(4))));
+        // Sparse pattern requires copy in eager mode
+        Tensor result = TensorOpsContext.with(ops, () -> input.view(Shape.of(4)));
+
+        assertEquals(Shape.of(4), result.shape());
+        assertNotSame(view.memory(), result.materialize().memory());
+        assertTrue(result.materialize().isContiguous());
     }
 
     /**
-     * Tests that view fails when slicing creates non-contiguous layout.
+     * Tests that view with strided slice requires a copy.
      *
      * <p>Taking every other row from a 4x3 matrix creates shape (2, 3) with stride (6, 1),
-     * accessing rows 0 and 2. Span: (2-1)*6 + (3-1)*1 = 8 ≠ 6-1 = 5, so not contiguous.
+     * accessing rows 0 and 2. This requires lazy indexing or copy to flatten correctly.
      */
     @Test
-    void viewFailsWithStridedSlice() {
+    void viewWithStridedSliceRequiresCopy() {
         MemoryView<MemorySegment> view =
                 MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(4, 3));
 
@@ -401,20 +421,23 @@ class ViewOpsTest {
         assertFalse(sliced.isContiguous());
         Tensor input = Tensor.of(sliced);
 
-        // Cannot flatten - rows are not adjacent in memory
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> TensorOpsContext.with(ops, () -> input.view(Shape.of(6))));
+        // Strided slice requires copy in eager mode
+        Tensor result = TensorOpsContext.with(ops, () -> input.view(Shape.of(6)));
+
+        assertEquals(Shape.of(6), result.shape());
+        // A copy was made
+        assertNotSame(sliced.memory(), result.materialize().memory());
+        assertTrue(result.materialize().isContiguous());
     }
 
     /**
-     * Tests that view fails when taking non-adjacent columns.
+     * Tests that view with non-adjacent columns requires a copy.
      *
-     * <p>Taking every other column from a 3x4 matrix creates shape (3, 2) with stride (4, 2). Span:
-     * (3-1)*4 + (2-1)*2 = 10 ≠ 6-1 = 5, so not contiguous.
+     * <p>Taking every other column from a 3x4 matrix creates shape (3, 2) with stride (4, 2). This
+     * requires lazy indexing or copy to flatten correctly.
      */
     @Test
-    void viewFailsWithColumnSlice() {
+    void viewWithColumnSliceRequiresCopy() {
         MemoryView<MemorySegment> view =
                 MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(3, 4));
 
@@ -423,20 +446,22 @@ class ViewOpsTest {
         assertFalse(sliced.isContiguous());
         Tensor input = Tensor.of(sliced);
 
-        // Cannot flatten - columns are interleaved
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> TensorOpsContext.with(ops, () -> input.view(Shape.of(6))));
+        // Column slice requires copy in eager mode
+        Tensor result = TensorOpsContext.with(ops, () -> input.view(Shape.of(6)));
+
+        assertEquals(Shape.of(6), result.shape());
+        assertNotSame(sliced.memory(), result.materialize().memory());
+        assertTrue(result.materialize().isContiguous());
     }
 
     /**
-     * Tests that view fails with broadcast (zero stride) dimensions.
+     * Tests that view with broadcast (zero stride) dimensions requires a copy.
      *
-     * <p>A broadcasted tensor with stride 0 on some dimension cannot be reshaped without
-     * materializing, as the same memory location is accessed multiple times.
+     * <p>A broadcasted tensor with stride 0 on some dimension cannot be reshaped without copying,
+     * as the same memory location is accessed multiple times and must be materialized.
      */
     @Test
-    void viewFailsWithBroadcastedDimension() {
+    void viewWithBroadcastedDimensionRequiresCopy() {
         Memory<MemorySegment> memory = context.memoryAllocator().allocateMemory(DataType.FP32, 4);
 
         // Shape (2, 4) with stride (0, 1) - first dim is broadcasted
@@ -446,11 +471,13 @@ class ViewOpsTest {
         assertTrue(view.isBroadcasted());
         Tensor input = Tensor.of(view);
 
-        // Cannot reshape - broadcast means duplicate memory access
-        // Span: (2-1)*0 + (4-1)*1 = 3 ≠ 8-1 = 7
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> TensorOpsContext.with(ops, () -> input.view(Shape.of(8))));
+        // Broadcast requires copy to materialize duplicated elements
+        Tensor result = TensorOpsContext.with(ops, () -> input.view(Shape.of(8)));
+
+        assertEquals(Shape.of(8), result.shape());
+        // A copy was made (new memory with 8 elements, not 4)
+        assertNotSame(view.memory(), result.materialize().memory());
+        assertTrue(result.materialize().isContiguous());
     }
 
     // ========== Reshape Tests (view with fallback to copy) ==========
@@ -497,13 +524,16 @@ class ViewOpsTest {
         MemoryView<MemorySegment> transposed = view.transpose(0, 1); // (4, 3):(1, 4)
         Tensor input = Tensor.of(transposed);
 
-        // Flatten - view succeeds because transpose spans contiguous range
+        // Flatten - requires copy because transpose has non-row-major strides
         Tensor flatView = TensorOpsContext.with(ops, () -> input.view(Shape.of(12)));
-        assertSame(transposed.memory(), flatView.materialize().memory());
+        // A copy was made
+        assertNotSame(transposed.memory(), flatView.materialize().memory());
+        assertTrue(flatView.materialize().isContiguous());
 
         // reshape should also work (uses view internally)
         Tensor flatReshape = TensorOpsContext.with(ops, () -> input.reshape(Shape.of(12)));
         assertEquals(Shape.of(12), flatReshape.shape());
+        assertTrue(flatReshape.materialize().isContiguous());
     }
 
     /** Tests that reshape copies data for sliced tensor with gaps. */

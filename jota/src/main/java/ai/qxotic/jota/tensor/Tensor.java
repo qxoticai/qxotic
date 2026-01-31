@@ -253,33 +253,28 @@ public interface Tensor {
      */
     default Tensor view(Shape newShape) {
         ViewTransforms.ViewTransformSpec spec = ViewTransforms.view(layout(), newShape);
-        return TensorOpsContext.require()
-                .viewTransform(this, spec.layout(), spec.byteOffsetDelta(), "view");
+        return TensorOpsContext.require().viewTransform(this, spec);
     }
 
     default Tensor broadcast(Shape targetShape) {
         ViewTransforms.ViewTransformSpec spec = ViewTransforms.broadcast(layout(), targetShape);
-        return TensorOpsContext.require()
-                .viewTransform(this, spec.layout(), spec.byteOffsetDelta(), "broadcast");
+        return TensorOpsContext.require().viewTransform(this, spec);
     }
 
     default Tensor expand(Shape targetShape) {
         ViewTransforms.ViewTransformSpec spec = ViewTransforms.expand(layout(), targetShape);
-        return TensorOpsContext.require()
-                .viewTransform(this, spec.layout(), spec.byteOffsetDelta(), "expand");
+        return TensorOpsContext.require().viewTransform(this, spec);
     }
 
     default Tensor transpose(int axis0, int axis1) {
         ViewTransforms.ViewTransformSpec spec = ViewTransforms.transpose(layout(), axis0, axis1);
-        return TensorOpsContext.require()
-                .viewTransform(this, spec.layout(), spec.byteOffsetDelta(), "transpose");
+        return TensorOpsContext.require().viewTransform(this, spec);
     }
 
     default Tensor permute(int... permutationIndices) {
         ViewTransforms.ViewTransformSpec spec =
                 ViewTransforms.permute(layout(), permutationIndices);
-        return TensorOpsContext.require()
-                .viewTransform(this, spec.layout(), spec.byteOffsetDelta(), "permute");
+        return TensorOpsContext.require().viewTransform(this, spec);
     }
 
     default Tensor slice(int axis, long start, long end) {
@@ -289,8 +284,7 @@ public interface Tensor {
     default Tensor slice(int axis, long start, long end, long indexStride) {
         ViewTransforms.ViewTransformSpec spec =
                 ViewTransforms.slice(layout(), dataType(), axis, start, end, indexStride);
-        return TensorOpsContext.require()
-                .viewTransform(this, spec.layout(), spec.byteOffsetDelta(), "slice");
+        return TensorOpsContext.require().viewTransform(this, spec);
     }
 
     /**

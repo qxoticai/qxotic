@@ -981,7 +981,8 @@ class TIRToLIRLowererTest {
             Shape shapeA3D = Shape.flat(M, 1, K);
             Stride strideA3D = Stride.flat(K, 0, 1);
             Layout layoutA3D = Layout.of(shapeA3D, strideA3D);
-            ViewTransform viewA = new ViewTransform(inA, "broadcast", layoutA3D);
+            ViewKind kindA = new ViewKind.Broadcast(layoutA.shape(), shapeA3D);
+            ViewTransform viewA = new ViewTransform(inA, kindA, layoutA3D, false);
 
             // B.T.reshape(1, N, K): first transpose B to (N, K), then broadcast to (1, N, K)
             // B[k,n] at offset k*N + n
@@ -990,7 +991,8 @@ class TIRToLIRLowererTest {
             Shape shapeB3D = Shape.flat(1, N, K);
             Stride strideB3D = Stride.flat(0, 1, N);
             Layout layoutB3D = Layout.of(shapeB3D, strideB3D);
-            ViewTransform viewB = new ViewTransform(inB, "broadcast", layoutB3D);
+            ViewKind kindB = new ViewKind.Broadcast(layoutB.shape(), shapeB3D);
+            ViewTransform viewB = new ViewTransform(inB, kindB, layoutB3D, false);
 
             // Element-wise multiply: (M, 1, K) * (1, N, K) -> (M, N, K)
             // After broadcasting: (M, N, K) * (M, N, K)
@@ -1074,11 +1076,13 @@ class TIRToLIRLowererTest {
 
             // A.reshape(M, 1, K)
             Layout layoutA3D = Layout.of(Shape.flat(M, 1, K), Stride.flat(K, 0, 1));
-            ViewTransform viewA = new ViewTransform(inA, "broadcast", layoutA3D);
+            ViewKind kindA = new ViewKind.Broadcast(layoutA.shape(), layoutA3D.shape());
+            ViewTransform viewA = new ViewTransform(inA, kindA, layoutA3D, false);
 
             // B.T.reshape(1, N, K)
             Layout layoutB3D = Layout.of(Shape.flat(1, N, K), Stride.flat(0, 1, N));
-            ViewTransform viewB = new ViewTransform(inB, "broadcast", layoutB3D);
+            ViewKind kindB = new ViewKind.Broadcast(layoutB.shape(), layoutB3D.shape());
+            ViewTransform viewB = new ViewTransform(inB, kindB, layoutB3D, false);
 
             BinaryOp mul = new BinaryOp(BinaryOperator.MULTIPLY, viewA, viewB);
             ReductionOp sum = new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false);
@@ -1146,11 +1150,13 @@ class TIRToLIRLowererTest {
 
             // A.reshape(N, 1, N)
             Layout layoutA3D = Layout.of(Shape.flat(N, 1, N), Stride.flat(N, 0, 1));
-            ViewTransform viewA = new ViewTransform(inA, "broadcast", layoutA3D);
+            ViewKind kindA = new ViewKind.Broadcast(layoutA.shape(), layoutA3D.shape());
+            ViewTransform viewA = new ViewTransform(inA, kindA, layoutA3D, false);
 
             // B.T.reshape(1, N, N)
             Layout layoutB3D = Layout.of(Shape.flat(1, N, N), Stride.flat(0, 1, N));
-            ViewTransform viewB = new ViewTransform(inB, "broadcast", layoutB3D);
+            ViewKind kindB = new ViewKind.Broadcast(layoutB.shape(), layoutB3D.shape());
+            ViewTransform viewB = new ViewTransform(inB, kindB, layoutB3D, false);
 
             BinaryOp mul = new BinaryOp(BinaryOperator.MULTIPLY, viewA, viewB);
             ReductionOp sum = new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false);
@@ -1236,11 +1242,13 @@ class TIRToLIRLowererTest {
 
             // A.reshape(M, 1, K)
             Layout layoutA3D = Layout.of(Shape.flat(M, 1, K), Stride.flat(K, 0, 1));
-            ViewTransform viewA = new ViewTransform(inA, "broadcast", layoutA3D);
+            ViewKind kindA = new ViewKind.Broadcast(layoutA.shape(), layoutA3D.shape());
+            ViewTransform viewA = new ViewTransform(inA, kindA, layoutA3D, false);
 
             // B.T.reshape(1, N, K)
             Layout layoutB3D = Layout.of(Shape.flat(1, N, K), Stride.flat(0, 1, N));
-            ViewTransform viewB = new ViewTransform(inB, "broadcast", layoutB3D);
+            ViewKind kindB = new ViewKind.Broadcast(layoutB.shape(), layoutB3D.shape());
+            ViewTransform viewB = new ViewTransform(inB, kindB, layoutB3D, false);
 
             BinaryOp mul = new BinaryOp(BinaryOperator.MULTIPLY, viewA, viewB);
             ReductionOp sum = new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false);
@@ -1319,11 +1327,13 @@ class TIRToLIRLowererTest {
 
             // A.reshape(M, 1, K)
             Layout layoutA3D = Layout.of(Shape.flat(M, 1, K), Stride.flat(K, 0, 1));
-            ViewTransform viewA = new ViewTransform(inA, "broadcast", layoutA3D);
+            ViewKind kindA = new ViewKind.Broadcast(layoutA.shape(), layoutA3D.shape());
+            ViewTransform viewA = new ViewTransform(inA, kindA, layoutA3D, false);
 
             // B.T.reshape(1, N, K)
             Layout layoutB3D = Layout.of(Shape.flat(1, N, K), Stride.flat(0, 1, N));
-            ViewTransform viewB = new ViewTransform(inB, "broadcast", layoutB3D);
+            ViewKind kindB = new ViewKind.Broadcast(layoutB.shape(), layoutB3D.shape());
+            ViewTransform viewB = new ViewTransform(inB, kindB, layoutB3D, false);
 
             BinaryOp mul = new BinaryOp(BinaryOperator.MULTIPLY, viewA, viewB);
             ReductionOp sum = new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false);
@@ -1399,11 +1409,13 @@ class TIRToLIRLowererTest {
 
             // A.reshape(N, 1, N)
             Layout layoutA3D = Layout.of(Shape.flat(N, 1, N), Stride.flat(N, 0, 1));
-            ViewTransform viewA = new ViewTransform(inA, "broadcast", layoutA3D);
+            ViewKind kindA = new ViewKind.Broadcast(layoutA.shape(), layoutA3D.shape());
+            ViewTransform viewA = new ViewTransform(inA, kindA, layoutA3D, false);
 
             // B.T.reshape(1, N, N)
             Layout layoutB3D = Layout.of(Shape.flat(1, N, N), Stride.flat(0, 1, N));
-            ViewTransform viewB = new ViewTransform(inB, "broadcast", layoutB3D);
+            ViewKind kindB = new ViewKind.Broadcast(layoutB.shape(), layoutB3D.shape());
+            ViewTransform viewB = new ViewTransform(inB, kindB, layoutB3D, false);
 
             BinaryOp mul = new BinaryOp(BinaryOperator.MULTIPLY, viewA, viewB);
             ReductionOp sum = new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false);

@@ -379,7 +379,8 @@ class TIRInterpreterTest {
         // Create a scalar constant and broadcast it
         TIRNode scalar = ScalarConstant.of(floatBits(5.0f), DataType.FP32);
         Layout broadcastLayout = Layout.of(Shape.of(3), Stride.zeros(Shape.of(3)));
-        TIRNode broadcast = new ViewTransform(scalar, "broadcast", broadcastLayout);
+        ViewKind broadcastKind = new ViewKind.Broadcast(Shape.scalar(), Shape.of(3));
+        TIRNode broadcast = new ViewTransform(scalar, broadcastKind, broadcastLayout, false);
 
         MemoryView<?> input = createFloatTensor(new float[] {1.0f, 2.0f, 3.0f});
         TIRNode tensorInput = new TensorInput(0, DataType.FP32, input.layout());
@@ -656,7 +657,8 @@ class TIRInterpreterTest {
 
         // Broadcast sum back to original shape for division
         Layout broadcastLayout = Layout.of(Shape.of(3), Stride.zeros(Shape.of(3)));
-        TIRNode sum_broadcast = new ViewTransform(sum_exp, "broadcast", broadcastLayout);
+        ViewKind broadcastKind = new ViewKind.Broadcast(Shape.scalar(), Shape.of(3));
+        TIRNode sum_broadcast = new ViewTransform(sum_exp, broadcastKind, broadcastLayout, false);
 
         // exp(x) / sum(exp(x))
         TIRNode softmax = new BinaryOp(BinaryOperator.DIVIDE, exp_x, sum_broadcast);
@@ -701,7 +703,8 @@ class TIRInterpreterTest {
         // mean = sum(x) / n
         TIRNode sum_x = new ReductionOp(ReductionOperator.SUM, x, new int[] {0}, false);
         Layout scalarBroadcast = Layout.of(shape, Stride.zeros(shape));
-        TIRNode sum_broadcast = new ViewTransform(sum_x, "broadcast", scalarBroadcast);
+        ViewKind broadcastKind = new ViewKind.Broadcast(Shape.scalar(), shape);
+        TIRNode sum_broadcast = new ViewTransform(sum_x, broadcastKind, scalarBroadcast, false);
         TIRNode n_const = ScalarConstant.broadcast(floatBits((float) n), DataType.FP32, shape);
         TIRNode mean = new BinaryOp(BinaryOperator.DIVIDE, sum_broadcast, n_const);
 
@@ -714,7 +717,7 @@ class TIRInterpreterTest {
         // var = sum((x - mean)^2) / n
         TIRNode sum_sq =
                 new ReductionOp(ReductionOperator.SUM, x_centered_sq, new int[] {0}, false);
-        TIRNode sum_sq_broadcast = new ViewTransform(sum_sq, "broadcast", scalarBroadcast);
+        TIRNode sum_sq_broadcast = new ViewTransform(sum_sq, broadcastKind, scalarBroadcast, false);
         TIRNode var = new BinaryOp(BinaryOperator.DIVIDE, sum_sq_broadcast, n_const);
 
         // sqrt(var + eps)

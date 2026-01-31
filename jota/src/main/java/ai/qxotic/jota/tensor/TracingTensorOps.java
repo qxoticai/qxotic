@@ -6,6 +6,7 @@ import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.TypeRules;
 import ai.qxotic.jota.Util;
+import ai.qxotic.jota.impl.ViewTransforms;
 import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
 import java.util.Arrays;
@@ -255,24 +256,17 @@ final class TracingTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor viewTransform(Tensor x, Layout layout, long byteOffsetDelta, String hint) {
-        Objects.requireNonNull(layout, "layout");
-        Objects.requireNonNull(hint, "hint");
+    public Tensor viewTransform(Tensor x, ViewTransforms.ViewTransformSpec spec) {
+        Objects.requireNonNull(spec, "spec");
         TraceTensor trace = requireTrace(x);
-        ExprNode node =
-                new ViewTransformOp(
-                        trace.node(),
-                        layout,
-                        byteOffsetDelta,
-                        hint,
-                        trace.dataType(),
-                        trace.device());
+        ExprNode node = new ViewTransformOp(trace.node(), spec, trace.dataType(), trace.device());
         return new TraceTensor(node);
     }
 
     @Override
     public Tensor reshape(Tensor x, ai.qxotic.jota.Shape newShape) {
-        throw unsupported("reshape");
+        ViewTransforms.ViewTransformSpec spec = ViewTransforms.view(x.layout(), newShape);
+        return viewTransform(x, spec);
     }
 
     @Override

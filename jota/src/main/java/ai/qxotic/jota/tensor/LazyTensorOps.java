@@ -2,8 +2,8 @@ package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
-import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
+import ai.qxotic.jota.impl.ViewTransforms;
 import ai.qxotic.jota.memory.MemoryContext;
 import java.util.List;
 import java.util.function.BiFunction;
@@ -203,9 +203,8 @@ final class LazyTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor viewTransform(Tensor x, Layout layout, long byteOffsetDelta, String hint) {
-        return traceUnary(
-                x, t -> TensorOpsContext.require().viewTransform(t, layout, byteOffsetDelta, hint));
+    public Tensor viewTransform(Tensor x, ViewTransforms.ViewTransformSpec spec) {
+        return traceUnary(x, t -> TensorOpsContext.require().viewTransform(t, spec));
     }
 
     @Override
