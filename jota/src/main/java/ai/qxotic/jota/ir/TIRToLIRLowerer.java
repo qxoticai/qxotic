@@ -19,10 +19,11 @@ import java.util.Map;
 public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
 
     private final Map<TIRNode, BufferRef> inputBuffers = new HashMap<>();
+    private final Map<TIRNode, ScalarInput> inputScalars = new HashMap<>();
     private final Map<TIRNode, BufferRef> outputBuffers = new HashMap<>();
-    private final List<BufferRef> allInputs = new ArrayList<>();
+    private final List<LIRInput> allInputs = new ArrayList<>();
     private final List<BufferRef> allOutputs = new ArrayList<>();
-    private int nextBufferId = 0;
+    private int nextId = 0;
 
     // Current loop indices for the output iteration
     private final List<IndexVar> loopIndices = new ArrayList<>();
@@ -30,17 +31,39 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
     /** Lowers a TIRGraph to an LIRGraph. */
     public LIRGraph lower(TIRGraph tirGraph) {
         inputBuffers.clear();
+        inputScalars.clear();
         outputBuffers.clear();
         allInputs.clear();
         allOutputs.clear();
         loopIndices.clear();
-        nextBufferId = 0;
+        nextId = 0;
 
-        // Create input buffers
+        // Create inputs for materialized inputs
+        // - IotaConstant: always virtual (computed from loop index)
+        // - ScalarConstant as input: becomes a scalar parameter (dynamic, passed by value)
+        // - ViewTransform wrapping ScalarConstant: also becomes a scalar parameter
+        // - ScalarConstant not as input: inlined as constant (static)
+        // - TensorInput: becomes a buffer reference (passed by pointer)
         for (TIRNode input : tirGraph.inputs()) {
-            BufferRef buf = createBufferRef(input);
-            inputBuffers.put(input, buf);
-            allInputs.add(buf);
+            if (isVirtualInput(input)) {
+                // IotaConstant is computed from loop index, no input needed
+                continue;
+            }
+
+            // Check if this is a ScalarConstant or a ViewTransform chain wrapping one
+            ScalarConstant underlyingScalar = extractUnderlyingScalarConstant(input);
+            if (underlyingScalar != null) {
+                // Scalar inputs become scalar parameters (passed by value)
+                ScalarInput scalarInput = new ScalarInput(nextId++, underlyingScalar.dataType());
+                // Map both the input node and the underlying scalar to this ScalarInput
+                inputScalars.put(input, scalarInput);
+                inputScalars.put(underlyingScalar, scalarInput);
+                allInputs.add(scalarInput);
+            } else {
+                BufferRef buf = createBufferRef(input);
+                inputBuffers.put(input, buf);
+                allInputs.add(buf);
+            }
         }
 
         // Create output buffers
@@ -64,30 +87,48 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         return new LIRGraph(allInputs, allOutputs, body);
     }
 
+    /**
+     * Returns true if the node is a "virtual" input that doesn't need backing memory. Virtual
+     * inputs are computed on-the-fly from loop indices, rather than loaded from memory.
+     *
+     * <p>Note: ScalarConstant is NOT virtual when it's an explicit graph input - in that case it
+     * becomes a scalar parameter that can vary between kernel invocations. Only IotaConstant is
+     * always virtual since its values are determined purely by shape/index.
+     */
+    private boolean isVirtualInput(TIRNode node) {
+        return node instanceof IotaConstant;
+    }
+
+    /**
+     * Extracts the underlying ScalarConstant from a node if it's a ScalarConstant
+     * or a chain of ViewTransforms wrapping a ScalarConstant.
+     *
+     * @param node the TIR node to examine
+     * @return the underlying ScalarConstant, or null if not found
+     */
+    private ScalarConstant extractUnderlyingScalarConstant(TIRNode node) {
+        if (node instanceof ScalarConstant sc) {
+            return sc;
+        }
+        if (node instanceof ViewTransform vt) {
+            return extractUnderlyingScalarConstant(vt.input());
+        }
+        return null;
+    }
+
     private BufferRef createBufferRef(TIRNode node) {
-        Layout layout = node.layout().flatten();
-        long[] shape = toArray(layout.shape());
-        long[] strides = toByteStrides(layout, node.dataType());
-        return new BufferRef(nextBufferId++, node.dataType(), shape, strides);
+        return BufferRef.of(nextId++, node.dataType(), node.layout());
     }
 
     private BufferRef createOutputBufferRef(TIRNode node) {
-        Layout layout = node.layout().flatten();
-        long[] shape = toArray(layout.shape());
         // Outputs are always contiguous row-major
-        return BufferRef.contiguous(nextBufferId++, node.dataType(), shape);
+        return BufferRef.of(
+                nextId++, node.dataType(), Layout.rowMajor(node.layout().shape()));
     }
 
-    private long[] toArray(ai.qxotic.jota.Shape shape) {
-        long[] arr = new long[shape.flatRank()];
-        for (int i = 0; i < arr.length; i++) {
-            arr[i] = shape.flatAt(i);
-        }
-        return arr;
-    }
-
+    /** Computes byte strides from a layout and data type. */
     private long[] toByteStrides(Layout layout, DataType dtype) {
-        int rank = layout.shape().flatRank();
+        int rank = (int) layout.shape().flatRank();
         long[] strides = new long[rank];
         long byteSize = dtype.byteSize();
         for (int i = 0; i < rank; i++) {
@@ -116,7 +157,7 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         ScalarExpr value = output.accept(this);
 
         // Compute output offset
-        IndexExpr outOffset = computeOffset(loopIndices, outBuf.strides());
+        IndexExpr outOffset = computeOffset(loopIndices, outBuf.byteStrides());
 
         // Create the store
         Store store = new Store(outBuf, outOffset, value);
@@ -188,7 +229,7 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         if (outerIndices.isEmpty()) {
             outOffset = new IndexConst(0);
         } else {
-            outOffset = computeOffset(outerIndices, outBuf.strides());
+            outOffset = computeOffset(outerIndices, outBuf.byteStrides());
         }
         Store store = new Store(outBuf, outOffset, read);
 
@@ -238,13 +279,20 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         if (buf == null) {
             throw new IllegalStateException("Unknown TensorInput: " + node.id());
         }
-        IndexExpr offset = computeOffset(loopIndices, buf.strides());
+        IndexExpr offset = computeOffset(loopIndices, buf.byteStrides());
         return new ScalarLoad(buf, offset);
     }
 
     @Override
     public ScalarExpr visitScalarConstant(ScalarConstant node) {
-        return new ScalarConst(node.rawBits(), node.dataType());
+        // Check if this scalar is an explicit input (dynamic parameter)
+        ScalarInput scalarInput = inputScalars.get(node);
+        if (scalarInput != null) {
+            // Scalar input - reference the scalar parameter directly (passed by value)
+            return scalarInput;
+        }
+        // Not an input - inline as literal
+        return new ScalarLiteral(node.rawBits(), node.dataType());
     }
 
     @Override
@@ -348,7 +396,7 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         }
 
         // Compute final offset using the BASE input's strides
-        IndexExpr offset = computeOffset(indices, buf.strides());
+        IndexExpr offset = computeOffset(indices, buf.byteStrides());
         return new ScalarLoad(buf, offset);
     }
 
@@ -515,7 +563,7 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
     public ScalarExpr visitIotaConstant(IotaConstant node) {
         // Iota returns the index value - need to compute the linear index
         if (loopIndices.isEmpty()) {
-            return ScalarConst.ofLong(0);
+            return ScalarLiteral.ofLong(0);
         }
 
         // Compute linear index from loop indices

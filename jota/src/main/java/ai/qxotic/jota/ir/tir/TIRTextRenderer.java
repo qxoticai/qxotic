@@ -273,7 +273,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
                         + " axes=["
                         + axesStr
                         + "]"
-                        + (node.keepDims() ? " keep_dims=true" : " keep_dims=false");
+                        + (" keepDims=" + node.keepDims());
         appendLine(reductionDef);
     }
 
@@ -521,7 +521,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
                         + " axes=["
                         + axesStr
                         + "]"
-                        + (node.keepDims() ? " keep_dims=true" : " keep_dims=false");
+                        + " keep_dims=" + node.keepDims();
         appendLine(reductionDef);
         return var;
     }

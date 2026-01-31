@@ -5,11 +5,12 @@ package ai.qxotic.jota.ir.lir;
  * computations within loops.
  */
 public sealed interface ScalarExpr extends LIRNode
-        permits ScalarConst,
+        permits ScalarLiteral,
                 ScalarUnary,
                 ScalarBinary,
                 ScalarTernary,
                 ScalarCast,
                 ScalarLoad,
+                ScalarInput,
                 AccumulatorRead,
                 ScalarFromIndex {}

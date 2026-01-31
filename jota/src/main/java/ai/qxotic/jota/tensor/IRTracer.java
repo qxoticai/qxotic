@@ -55,6 +55,13 @@ public final class IRTracer {
                     node =
                             new ai.qxotic.jota.ir.tir.IotaConstant(
                                     range.count(), input.dataType(), input.layout());
+                } else if (comp instanceof ConstantComputation constComp) {
+                    // Convert constant computation to ScalarConstant for proper folding
+                    node =
+                            ai.qxotic.jota.ir.tir.ScalarConstant.broadcast(
+                                    constComp.rawBits(),
+                                    constComp.dataType(),
+                                    input.layout().shape());
                 } else {
                     node =
                             new ai.qxotic.jota.ir.tir.TensorInput(

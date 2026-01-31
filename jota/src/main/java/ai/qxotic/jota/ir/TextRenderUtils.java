@@ -2,6 +2,7 @@ package ai.qxotic.jota.ir;
 
 import ai.qxotic.jota.BFloat16;
 import ai.qxotic.jota.DataType;
+import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.ir.tir.BinaryOperator;
 import ai.qxotic.jota.ir.tir.ReductionOperator;
 import ai.qxotic.jota.ir.tir.TernaryOperator;
@@ -202,6 +203,27 @@ public final class TextRenderUtils {
      */
     public static String formatBuffer(
             String prefix, int id, DataType dataType, long[] shape, long[] strides) {
+        return formatBuffer(prefix, id, dataType, shape, strides, false);
+    }
+
+    /**
+     * Formats a buffer reference with Layout using byte-based contiguity (for LIR).
+     *
+     * @param prefix the prefix ("in" or "out")
+     * @param id the buffer id
+     * @param dataType the data type
+     * @param layout the layout (uses element strides, converted to byte strides for display)
+     * @return formatted buffer string
+     */
+    public static String formatBuffer(String prefix, int id, DataType dataType, Layout layout) {
+        int rank = (int) layout.shape().flatRank();
+        long[] shape = new long[rank];
+        long[] strides = new long[rank];
+        long byteSize = dataType.byteSize();
+        for (int i = 0; i < rank; i++) {
+            shape[i] = layout.shape().flatAt(i);
+            strides[i] = layout.stride().flatAt(i) * byteSize;
+        }
         return formatBuffer(prefix, id, dataType, shape, strides, false);
     }
 
