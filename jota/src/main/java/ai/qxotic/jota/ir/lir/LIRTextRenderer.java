@@ -205,6 +205,9 @@ public class LIRTextRenderer implements LIRVisitor<String> {
             case MULTIPLY -> "*";
             case DIVIDE -> "/";
             case MODULO -> "%";
+            case BITWISE_AND -> "&";
+            case SHIFT_LEFT -> "<<";
+            case SHIFT_RIGHT -> ">>";
         };
     }
 
@@ -285,6 +288,15 @@ public class LIRTextRenderer implements LIRVisitor<String> {
         return exprToVar.get(node);
     }
 
+    @Override
+    public String visitScalarFromIndex(ScalarFromIndex node) {
+        String index = node.index().accept(this);
+        DataType dt = node.dataType();
+        String result = allocateVar(node, "from_index " + dt + " " + index);
+        appendLine(result);
+        return exprToVar.get(node);
+    }
+
     private String bufferName(BufferRef buffer) {
         // Look up the buffer name from the map, or use a generic name
         return bufferIdToName.getOrDefault(buffer.id(), "buffer" + buffer.id());
@@ -321,7 +333,7 @@ public class LIRTextRenderer implements LIRVisitor<String> {
     public String visitAccumulator(Accumulator node) {
         String identity = formatIdentityValue(node.identityBits(), node.dataType());
         appendLine(
-                "acc %"
+                "accumulator %"
                         + node.name()
                         + ": "
                         + node.dataType()

@@ -233,12 +233,7 @@ public final class Tracer {
             ExprNode child = remapInputs(transform.input(), remap, cache);
             mapped =
                     new ViewTransformOp(
-                            child,
-                            transform.layout(),
-                            transform.byteOffsetDelta(),
-                            transform.hint(),
-                            transform.dataType(),
-                            transform.device());
+                            child, transform.spec(), transform.dataType(), transform.device());
         } else if (node instanceof ReductionNode reduction) {
             ExprNode child = remapInputs(reduction.input(), remap, cache);
             mapped =

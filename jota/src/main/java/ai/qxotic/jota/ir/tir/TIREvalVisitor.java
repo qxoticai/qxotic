@@ -322,9 +322,26 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
             MemoryView<MemorySegment> right,
             MemoryView<MemorySegment> output,
             long size) {
+        // Debug: Print first few values for MULTIPLY operations on broadcasted tensors
+        boolean debug = op == BinaryOperator.MULTIPLY && size == 30; // (2,5,3) = 30 elements
         for (long i = 0; i < size; i++) {
-            float a = memAccess.readFloat(left.memory(), Indexing.linearToOffset(left, i));
-            float b = memAccess.readFloat(right.memory(), Indexing.linearToOffset(right, i));
+            long leftOffset = Indexing.linearToOffset(left, i);
+            long rightOffset = Indexing.linearToOffset(right, i);
+            float a = memAccess.readFloat(left.memory(), leftOffset);
+            float b = memAccess.readFloat(right.memory(), rightOffset);
+            if (debug && i < 6) {
+                System.out.println(
+                        "DEBUG MULTIPLY i="
+                                + i
+                                + ": leftOffset="
+                                + leftOffset
+                                + " a="
+                                + a
+                                + ", rightOffset="
+                                + rightOffset
+                                + " b="
+                                + b);
+            }
             float result =
                     switch (op) {
                         case ADD -> a + b;
@@ -989,6 +1006,9 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
             Shape outputShape,
             int[] axes) {
         long outputSize = outputShape.size();
+        // Debug for matmul test case: input (2,5,3), output (2,5), reducing axis 2
+        boolean debug =
+                op == ReductionOperator.SUM && outputSize == 10 && axes.length == 1 && axes[0] == 2;
 
         for (long outIdx = 0; outIdx < outputSize; outIdx++) {
             float acc =
@@ -999,11 +1019,36 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case MAX -> -Float.MAX_VALUE;
                     };
 
+            if (debug && outIdx == 0) {
+                System.out.println(
+                        "DEBUG REDUCTION: inputShape="
+                                + inputShape
+                                + ", outputShape="
+                                + outputShape
+                                + ", axes=["
+                                + axes[0]
+                                + "], outIdx="
+                                + outIdx);
+            }
+
+            int k = 0;
             for (long[] inCoord :
                     iterateReduction(
                             inputShape, axes, Indexing.linearToCoord(outputShape, outIdx))) {
                 long inOffset = Indexing.coordToOffset(input, inCoord);
                 float value = memAccess.readFloat(input.memory(), inOffset);
+                if (debug && outIdx == 0 && k < 3) {
+                    System.out.println(
+                            "DEBUG REDUCTION outIdx=0, k="
+                                    + k
+                                    + ": inCoord="
+                                    + java.util.Arrays.toString(inCoord)
+                                    + ", inOffset="
+                                    + inOffset
+                                    + ", value="
+                                    + value);
+                }
+                k++;
                 acc =
                         switch (op) {
                             case SUM -> acc + value;
@@ -1011,6 +1056,10 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                             case MIN -> Math.min(acc, value);
                             case MAX -> Math.max(acc, value);
                         };
+            }
+
+            if (debug && outIdx == 0) {
+                System.out.println("DEBUG REDUCTION outIdx=0: final acc=" + acc);
             }
 
             long outOffset = Indexing.linearToOffset(output, outIdx);
@@ -1379,7 +1428,76 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
     @Override
     public MemoryView<MemorySegment> visitViewTransform(ViewTransform node) {
         MemoryView<MemorySegment> input = context.evaluate(node.input());
+
+        // If lazy indexing is needed (e.g., transpose + reshape), we must copy to contiguous first
+        // because the strides in node.layout() are placeholders.
+        if (node.needsLazyIndexing()) {
+            // Force contiguous copy, then apply the view with correct layout
+            MemoryView<MemorySegment> contiguous = copyToContiguous(input);
+            // After copy, data is row-major, so we can use row-major strides for the new shape
+            return MemoryView.of(
+                    contiguous.memory(),
+                    contiguous.byteOffset(),
+                    node.dataType(),
+                    Layout.rowMajor(node.layout().shape()));
+        }
+
         return MemoryView.of(input.memory(), input.byteOffset(), node.dataType(), node.layout());
+    }
+
+    private MemoryView<MemorySegment> copyToContiguous(MemoryView<MemorySegment> input) {
+        if (input.isContiguous()) {
+            return input;
+        }
+        Layout rowMajor = Layout.rowMajor(input.shape());
+        MemoryView<MemorySegment> output = context.allocateTemporary(input.dataType(), rowMajor);
+        long size = input.shape().size();
+        DataType dtype = input.dataType();
+
+        for (long i = 0; i < size; i++) {
+            long inOffset = Indexing.linearToOffset(input, i);
+            long outOffset = i * dtype.byteSize();
+            copyElement(input, inOffset, output, outOffset, dtype);
+        }
+        return output;
+    }
+
+    private void copyElement(
+            MemoryView<MemorySegment> src,
+            long srcOffset,
+            MemoryView<MemorySegment> dst,
+            long dstOffset,
+            DataType dtype) {
+        if (dtype == DataType.FP32) {
+            float val = memAccess.readFloat(src.memory(), srcOffset);
+            memAccess.writeFloat(dst.memory(), dstOffset, val);
+        } else if (dtype == DataType.FP64) {
+            double val = memAccess.readDouble(src.memory(), srcOffset);
+            memAccess.writeDouble(dst.memory(), dstOffset, val);
+        } else if (dtype == DataType.I32) {
+            int val = memAccess.readInt(src.memory(), srcOffset);
+            memAccess.writeInt(dst.memory(), dstOffset, val);
+        } else if (dtype == DataType.I64) {
+            long val = memAccess.readLong(src.memory(), srcOffset);
+            memAccess.writeLong(dst.memory(), dstOffset, val);
+        } else if (dtype == DataType.I8) {
+            byte val = memAccess.readByte(src.memory(), srcOffset);
+            memAccess.writeByte(dst.memory(), dstOffset, val);
+        } else if (dtype == DataType.I16) {
+            short val = memAccess.readShort(src.memory(), srcOffset);
+            memAccess.writeShort(dst.memory(), dstOffset, val);
+        } else if (dtype == DataType.FP16) {
+            short val = memAccess.readShort(src.memory(), srcOffset);
+            memAccess.writeShort(dst.memory(), dstOffset, val);
+        } else if (dtype == DataType.BF16) {
+            short val = memAccess.readShort(src.memory(), srcOffset);
+            memAccess.writeShort(dst.memory(), dstOffset, val);
+        } else if (dtype == DataType.BOOL) {
+            byte val = memAccess.readByte(src.memory(), srcOffset);
+            memAccess.writeByte(dst.memory(), dstOffset, val);
+        } else {
+            throw new UnsupportedOperationException("Unsupported dtype: " + dtype);
+        }
     }
 
     @Override

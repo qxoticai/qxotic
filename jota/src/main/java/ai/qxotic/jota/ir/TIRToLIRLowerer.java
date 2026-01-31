@@ -2,6 +2,7 @@ package ai.qxotic.jota.ir;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Layout;
+import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.ir.lir.*;
 import ai.qxotic.jota.ir.tir.*;
 import java.util.ArrayList;
@@ -213,7 +214,7 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
     }
 
     /** Computes byte offset from indices and byte strides. */
-    private IndexExpr computeOffset(List<IndexVar> indices, long[] strides) {
+    private IndexExpr computeOffset(List<? extends IndexExpr> indices, long[] strides) {
         if (indices.isEmpty()) {
             return new IndexConst(0);
         }
@@ -283,30 +284,225 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
 
     @Override
     public ScalarExpr visitViewTransform(ViewTransform node) {
-        // ViewTransform changes layout but not data - use view's strides to compute offset
-        // Find the underlying TensorInput
-        TIRNode underlying = node.input();
-        while (underlying instanceof ViewTransform vt) {
-            underlying = vt.input();
+        // Collect the chain of ViewTransforms
+        List<ViewTransform> chain = new ArrayList<>();
+        TIRNode current = node;
+        while (current instanceof ViewTransform vt) {
+            chain.add(0, vt); // prepend to get oldest-first order
+            current = vt.input();
         }
 
-        if (underlying instanceof TensorInput tensorInput) {
-            BufferRef buf = inputBuffers.get(tensorInput);
-            if (buf == null) {
-                throw new IllegalStateException("Unknown TensorInput: " + tensorInput.id());
-            }
+        // Handle the base input type (possibly wrapped in CastOp)
+        TIRNode baseNode = current;
+        DataType castType = null;
 
-            // Use the ViewTransform's layout strides (converted to bytes)
+        // Unwrap CastOp if present
+        if (baseNode instanceof CastOp castOp) {
+            castType = castOp.targetDataType();
+            baseNode = castOp.input();
+        }
+
+        ScalarExpr result;
+        if (baseNode instanceof TensorInput tensorInput) {
+            result = lowerTensorInputWithViewChain(tensorInput, chain, node);
+        } else if (baseNode instanceof IotaConstant iotaConstant) {
+            result = lowerIotaConstantWithViewChain(iotaConstant, chain, node);
+        } else {
+            // For other input types, delegate normally
+            return node.input().accept(this);
+        }
+
+        // Apply cast if needed
+        if (castType != null && castType != result.dataType()) {
+            return new ScalarCast(result, castType);
+        }
+        return result;
+    }
+
+    private ScalarExpr lowerTensorInputWithViewChain(
+            TensorInput tensorInput, List<ViewTransform> chain, ViewTransform node) {
+        BufferRef buf = inputBuffers.get(tensorInput);
+        if (buf == null) {
+            throw new IllegalStateException("Unknown TensorInput: " + tensorInput.id());
+        }
+
+        // Check if any transform in the chain needs lazy indexing
+        boolean needsLazy = chain.stream().anyMatch(ViewTransform::needsLazyIndexing);
+
+        if (!needsLazy) {
+            // Simple case: use the final view's strides directly
             Layout viewLayout = node.layout().flatten();
             long[] viewByteStrides = toByteStrides(viewLayout, node.dataType());
-
-            // Compute offset using view strides and current loop indices
             IndexExpr offset = computeOffset(loopIndices, viewByteStrides);
             return new ScalarLoad(buf, offset);
         }
 
-        // For other input types, delegate normally
-        return node.input().accept(this);
+        // Lazy indexing: compose index expressions by walking the chain in reverse
+        // Start with output loop indices and transform back to input coordinates
+        List<IndexExpr> indices = new ArrayList<>(loopIndices);
+
+        // Apply transforms in REVERSE order (from output to input)
+        for (int i = chain.size() - 1; i >= 0; i--) {
+            ViewTransform vt = chain.get(i);
+            indices = applyInverseTransform(vt, indices);
+        }
+
+        // Compute final offset using the BASE input's strides
+        IndexExpr offset = computeOffset(indices, buf.strides());
+        return new ScalarLoad(buf, offset);
+    }
+
+    private ScalarExpr lowerIotaConstantWithViewChain(
+            IotaConstant iotaConstant, List<ViewTransform> chain, ViewTransform node) {
+        // For IotaConstant, we compute the linear index from the inverse-transformed coordinates
+        // Start with output loop indices and transform back to IotaConstant's original space
+        List<IndexExpr> indices = new ArrayList<>(loopIndices);
+
+        // Apply transforms in REVERSE order (from output to input)
+        for (int i = chain.size() - 1; i >= 0; i--) {
+            ViewTransform vt = chain.get(i);
+            indices = applyInverseTransform(vt, indices);
+        }
+
+        // Now 'indices' are in IotaConstant's original flat space
+        // Compute linear index from these coordinates using IotaConstant's layout
+        Layout iotaLayout = iotaConstant.layout().flatten();
+        IndexExpr linearIdx = null;
+        long stride = 1;
+        // Compute row-major linear index: sum(idx[i] * stride[i])
+        for (int i = indices.size() - 1; i >= 0; i--) {
+            IndexExpr term = IndexBinary.multiply(indices.get(i), new IndexConst(stride));
+            linearIdx = (linearIdx == null) ? term : IndexBinary.add(term, linearIdx);
+            stride *= (i < iotaLayout.shape().flatRank()) ? iotaLayout.shape().flatAt(i) : 1;
+        }
+
+        if (linearIdx == null) {
+            linearIdx = new IndexConst(0);
+        }
+
+        // Cast index to the output type
+        DataType targetType = iotaConstant.dataType();
+        ScalarExpr indexValue = new ScalarFromIndex(linearIdx);
+        if (targetType == DataType.I64) {
+            return indexValue;
+        } else {
+            return new ScalarCast(indexValue, targetType);
+        }
+    }
+
+    /**
+     * Applies the inverse of a view transformation to convert output indices to input indices.
+     *
+     * <p>For example, if the transform is Transpose([1, 0]) on shape (A, B) -> (B, A), the inverse
+     * maps (i, j) in output space to (j, i) in input space.
+     */
+    private List<IndexExpr> applyInverseTransform(ViewTransform vt, List<IndexExpr> outputIndices) {
+        return switch (vt.kind()) {
+            case ViewKind.Transpose transpose -> {
+                // Transpose: permute indices using inverse permutation
+                int[] invPerm = transpose.inverse();
+                List<IndexExpr> result = new ArrayList<>(outputIndices.size());
+                for (int j : invPerm) {
+                    result.add(outputIndices.get(j));
+                }
+                yield result;
+            }
+            case ViewKind.Reshape reshape -> {
+                // Reshape: decompose linear index and recompose
+                // First flatten output indices to linear index
+                Shape toShape = reshape.toShape();
+                Shape fromShape = reshape.fromShape();
+                IndexExpr linearIdx = flattenIndices(outputIndices, toShape);
+                // Then decompose to input shape coordinates
+                yield unflattenIndex(linearIdx, fromShape);
+            }
+            case ViewKind.Broadcast broadcast -> {
+                // Broadcast: output has more/larger dims, input has fewer/smaller
+                // For broadcast dims (input size 1), the input index is always 0
+                // For other dims, pass through
+                Shape fromShape = broadcast.fromShape();
+                Shape toShape = broadcast.toShape();
+                int fromRank = (int) fromShape.flatRank();
+                int toRank = (int) toShape.flatRank();
+                int offset = toRank - fromRank;
+
+                List<IndexExpr> result = new ArrayList<>();
+                for (int i = 0; i < fromRank; i++) {
+                    long fromDim = fromShape.flatAt(i);
+                    if (fromDim == 1) {
+                        // Broadcast dimension - input index is always 0
+                        result.add(new IndexConst(0));
+                    } else {
+                        // Pass through
+                        result.add(outputIndices.get(offset + i));
+                    }
+                }
+                yield result;
+            }
+            case ViewKind.Expand expand -> {
+                // Expand is similar to broadcast within same rank
+                Shape fromShape = expand.fromShape();
+                List<IndexExpr> result = new ArrayList<>();
+                for (int i = 0; i < fromShape.flatRank(); i++) {
+                    long fromDim = fromShape.flatAt(i);
+                    if (fromDim == 1) {
+                        result.add(new IndexConst(0));
+                    } else {
+                        result.add(outputIndices.get(i));
+                    }
+                }
+                yield result;
+            }
+            case ViewKind.Slice slice -> {
+                // Slice: output index maps to input index with offset and step
+                // input_idx = start + output_idx * step
+                List<IndexExpr> result = new ArrayList<>(outputIndices);
+                IndexExpr outIdx = outputIndices.get(slice.axis());
+                IndexExpr inIdx =
+                        IndexBinary.add(
+                                new IndexConst(slice.start()),
+                                IndexBinary.multiply(outIdx, new IndexConst(slice.step())));
+                result.set(slice.axis(), inIdx);
+                yield result;
+            }
+        };
+    }
+
+    /** Flattens multi-dimensional indices to a linear index using row-major order. */
+    private IndexExpr flattenIndices(List<IndexExpr> indices, Shape shape) {
+        if (indices.isEmpty()) {
+            return new IndexConst(0);
+        }
+        IndexExpr linear = null;
+        long stride = 1;
+        for (int i = (int) shape.flatRank() - 1; i >= 0; i--) {
+            IndexExpr term = IndexBinary.multiply(indices.get(i), new IndexConst(stride));
+            linear = (linear == null) ? term : IndexBinary.add(term, linear);
+            stride *= shape.flatAt(i);
+        }
+        return linear != null ? linear : new IndexConst(0);
+    }
+
+    /** Decomposes a linear index into multi-dimensional indices using row-major order. */
+    private List<IndexExpr> unflattenIndex(IndexExpr linearIdx, Shape shape) {
+        int rank = (int) shape.flatRank();
+        if (rank == 0) {
+            return List.of();
+        }
+        List<IndexExpr> indices = new ArrayList<>(rank);
+        // Compute strides (row-major)
+        long[] strides = new long[rank];
+        strides[rank - 1] = 1;
+        for (int i = rank - 2; i >= 0; i--) {
+            strides[i] = strides[i + 1] * shape.flatAt(i + 1);
+        }
+        // Decompose: idx[i] = (linear / stride[i]) % dim[i]
+        for (int i = 0; i < rank; i++) {
+            IndexExpr divided = IndexBinary.divide(linearIdx, new IndexConst(strides[i]));
+            IndexExpr idx = IndexBinary.modulo(divided, new IndexConst(shape.flatAt(i)));
+            indices.add(idx);
+        }
+        return indices;
     }
 
     @Override
@@ -339,13 +535,11 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
 
         // IndexExpr is I64, cast to target type if needed
         DataType targetType = node.dataType();
+        ScalarExpr indexValue = new ScalarFromIndex(linearIdx);
         if (targetType == DataType.I64) {
-            // Can't directly use IndexExpr as ScalarExpr - need to convert
-            // For now, return as constant 0 placeholder
-            throw new UnsupportedOperationException(
-                    "IotaConstant lowering requires IndexExpr to ScalarExpr conversion");
+            return indexValue;
+        } else {
+            return new ScalarCast(indexValue, targetType);
         }
-
-        throw new UnsupportedOperationException("IotaConstant lowering not yet implemented");
     }
 }

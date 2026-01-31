@@ -143,9 +143,9 @@ final class ExpressionComputation implements LazyComputation {
         }
         return MemoryView.of(
                 sourceView.memory(),
-                sourceView.byteOffset() + transform.byteOffsetDelta(),
+                sourceView.byteOffset() + transform.spec().byteOffsetDelta(),
                 sourceView.dataType(),
-                transform.layout());
+                transform.spec().layout());
     }
 
     private MemoryView<?> executeNode(ExprNode node) {

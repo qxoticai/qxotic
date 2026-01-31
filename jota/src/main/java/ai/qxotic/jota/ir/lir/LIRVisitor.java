@@ -23,6 +23,8 @@ public interface LIRVisitor<T> {
 
     T visitScalarLoad(ScalarLoad node);
 
+    T visitScalarFromIndex(ScalarFromIndex node);
+
     // Memory access
     T visitBufferRef(BufferRef node);
 

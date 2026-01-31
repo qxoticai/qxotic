@@ -82,7 +82,10 @@ class TIRNodeRemapper implements TIRVisitor<TIRNode> {
                 node,
                 n ->
                         new ai.qxotic.jota.ir.tir.ViewTransform(
-                                remap(node.input()), node.hint(), node.layout()));
+                                remap(node.input()),
+                                node.kind(),
+                                node.layout(),
+                                node.needsLazyIndexing()));
     }
 
     @Override

@@ -2,28 +2,26 @@ package ai.qxotic.jota.ir.tir;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Layout;
-import java.util.Set;
 
 /**
  * View transform operation in IR-T. Represents operations that only change the layout (shape +
- * stride) without allocating new memory. The hint indicates the type of transform: "broadcast",
- * "transpose", "slice", "view", "expand".
+ * stride) without allocating new memory.
+ *
+ * <p>The {@code kind} describes the transformation type with its parameters, enabling lazy index
+ * computation at LIR lowering time for complex cases (e.g., transpose followed by reshape).
+ *
+ * <p>When {@code needsLazyIndexing} is true, the strides in {@code layout} are placeholders and the
+ * actual index computation must be performed by walking the ViewTransform chain at lowering time.
  */
-public record ViewTransform(TIRNode input, String hint, Layout layout) implements TIRNode {
-
-    private static final Set<String> VALID_HINTS =
-            Set.of("broadcast", "transpose", "slice", "view", "expand");
+public record ViewTransform(TIRNode input, ViewKind kind, Layout layout, boolean needsLazyIndexing)
+        implements TIRNode {
 
     public ViewTransform {
         if (input == null) {
             throw new IllegalArgumentException("input cannot be null");
         }
-        if (hint == null || hint.isEmpty()) {
-            throw new IllegalArgumentException("hint cannot be null or empty");
-        }
-        if (!VALID_HINTS.contains(hint)) {
-            throw new IllegalArgumentException(
-                    "Invalid hint: " + hint + ", must be one of: " + VALID_HINTS);
+        if (kind == null) {
+            throw new IllegalArgumentException("kind cannot be null");
         }
         if (layout == null) {
             throw new IllegalArgumentException("layout cannot be null");
@@ -33,5 +31,16 @@ public record ViewTransform(TIRNode input, String hint, Layout layout) implement
     @Override
     public DataType dataType() {
         return input.dataType();
+    }
+
+    /** Returns a hint string for debugging/display (derived from kind). */
+    public String hint() {
+        return switch (kind) {
+            case ViewKind.Transpose t -> "transpose";
+            case ViewKind.Reshape r -> "view";
+            case ViewKind.Broadcast b -> "broadcast";
+            case ViewKind.Expand e -> "expand";
+            case ViewKind.Slice s -> "slice";
+        };
     }
 }

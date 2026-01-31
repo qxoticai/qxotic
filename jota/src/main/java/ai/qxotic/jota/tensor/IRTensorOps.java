@@ -5,6 +5,7 @@ import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.TypeRules;
+import ai.qxotic.jota.impl.ViewTransforms;
 import ai.qxotic.jota.ir.tir.BinaryOperator;
 import ai.qxotic.jota.ir.tir.CastOp;
 import ai.qxotic.jota.ir.tir.Contiguous;
@@ -201,9 +202,11 @@ final class IRTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor viewTransform(Tensor input, Layout layout, long byteOffsetDelta, String hint) {
+    public Tensor viewTransform(Tensor input, ViewTransforms.ViewTransformSpec spec) {
         IRTensor tensor = requireIRTensor(input);
-        TIRNode node = new ViewTransform(tensor.node(), hint, layout);
+        TIRNode node =
+                new ViewTransform(
+                        tensor.node(), spec.kind(), spec.layout(), spec.needsLazyIndexing());
         return new IRTensor(node, tensor.device());
     }
 
@@ -226,9 +229,8 @@ final class IRTensorOps implements TensorOps {
         if (inputShape.isScalar()) {
             return broadcast(tensor, newShape);
         }
-        Layout newLayout = Layout.of(newShape, ai.qxotic.jota.Stride.rowMajor(newShape));
-        TIRNode node = new ViewTransform(tensor.node(), "view", newLayout);
-        return new IRTensor(node, tensor.device());
+        ViewTransforms.ViewTransformSpec spec = ViewTransforms.view(tensor.layout(), newShape);
+        return viewTransform(tensor, spec);
     }
 
     @Override

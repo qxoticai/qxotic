@@ -32,6 +32,7 @@ public sealed interface LIRNode extends IRNode
             case ScalarTernary n -> visitor.visitScalarTernary(n);
             case ScalarCast n -> visitor.visitScalarCast(n);
             case ScalarLoad n -> visitor.visitScalarLoad(n);
+            case ScalarFromIndex n -> visitor.visitScalarFromIndex(n);
             case BufferRef n -> visitor.visitBufferRef(n);
             case Load n -> visitor.visitLoad(n);
             case Store n -> visitor.visitStore(n);

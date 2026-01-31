@@ -3,11 +3,19 @@ package ai.qxotic.jota.ir.lir;
 import static org.junit.jupiter.api.Assertions.*;
 
 import ai.qxotic.jota.DataType;
+import ai.qxotic.jota.Shape;
+import ai.qxotic.jota.ir.TIRToLIRLowerer;
 import ai.qxotic.jota.ir.tir.BinaryOperator;
+import ai.qxotic.jota.ir.tir.TIRGraph;
 import ai.qxotic.jota.ir.tir.UnaryOperator;
+import ai.qxotic.jota.tensor.IRTracer;
+import ai.qxotic.jota.tensor.LazyComputation;
+import ai.qxotic.jota.tensor.Tensor;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class LIRInterpreterTest {
@@ -492,5 +500,90 @@ class LIRInterpreterTest {
 
         ScalarConst falseConst = ScalarConst.ofBool(false);
         assertEquals(0L, interpreter.evaluateScalar(falseConst));
+    }
+
+    @Test
+    void testMatrixMultiplicationViaTIRLowering() {
+        // Test: (2, 3) @ (3, 5) matmul using TIR trace → LIR lowering → LIR interpretation
+        // This mirrors IRTracerTest but executes via LIRInterpreter instead of TIRInterpreter
+        try (Arena arena = Arena.ofConfined()) {
+            int N = 2;
+            int K = 3;
+            int M = 5;
+
+            // Create input tensors with LAZY iota values using Tensor API
+            // These are NOT materialized - they become IotaConstant nodes wrapped in ViewTransforms
+            Tensor a = Tensor.iota(N * K, DataType.FP32).view(Shape.of(N, K));
+            Tensor b = Tensor.iota(K * M, DataType.FP32).view(Shape.of(K, M));
+
+            // Trace the matmul to get TIR
+            Tensor result =
+                    IRTracer.trace(
+                            List.of(a, b), tensors -> matmulTIR(tensors.get(0), tensors.get(1)));
+
+            // Extract TIRGraph from the lazy computation using attributes
+            LazyComputation comp = result.computation().orElseThrow();
+            Map<String, Object> attrs = comp.attributes();
+            TIRGraph tirGraph = (TIRGraph) attrs.get("graph");
+
+            // Lower TIR to LIR
+            TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+            LIRGraph lirGraph = lowerer.lower(tirGraph);
+
+            // Allocate input/output buffers
+            MemorySegment inputA = arena.allocate(N * K * Float.BYTES);
+            MemorySegment inputB = arena.allocate(K * M * Float.BYTES);
+            MemorySegment outputC = arena.allocate(N * M * Float.BYTES);
+
+            // Initialize with iota values
+            for (int i = 0; i < N * K; i++) {
+                inputA.setAtIndex(ValueLayout.JAVA_FLOAT, i, (float) i);
+            }
+            for (int i = 0; i < K * M; i++) {
+                inputB.setAtIndex(ValueLayout.JAVA_FLOAT, i, (float) i);
+            }
+
+            // Execute LIR
+            LIRInterpreter interpreter = new LIRInterpreter();
+            interpreter.bindBuffer(0, inputA);
+            interpreter.bindBuffer(1, inputB);
+            interpreter.bindBuffer(2, outputC);
+            interpreter.execute(lirGraph);
+
+            // Verify results
+            for (int row = 0; row < N; row++) {
+                for (int col = 0; col < M; col++) {
+                    float expected = 0.0f;
+                    for (int inner = 0; inner < K; inner++) {
+                        float aVal = inputA.getAtIndex(ValueLayout.JAVA_FLOAT, row * K + inner);
+                        float bVal = inputB.getAtIndex(ValueLayout.JAVA_FLOAT, inner * M + col);
+                        expected += aVal * bVal;
+                    }
+                    float actual = outputC.getAtIndex(ValueLayout.JAVA_FLOAT, row * M + col);
+                    assertEquals(expected, actual, 1e-6f, "Mismatch at C[" + row + "," + col + "]");
+                }
+            }
+        }
+    }
+
+    private static Tensor matmulTIR(Tensor x, Tensor y) {
+        long N = x.shape().size(0);
+        long K = x.shape().size(1);
+        long M = y.shape().size(1);
+
+        // x.reshape(N, 1, K)
+        Tensor xReshaped = x.reshape(Shape.of(N, 1, K));
+
+        // y.T gives (M, K) -> reshape to (1, M, K)
+        Tensor yTransposed = y.transpose(0, 1);
+        Tensor yReshaped = yTransposed.reshape(Shape.of(1, M, K));
+
+        // Broadcast and multiply: (N, 1, K) * (1, M, K) -> (N, M, K)
+        Tensor xBroadcasted = xReshaped.broadcast(Shape.of(N, M, K));
+        Tensor yBroadcasted = yReshaped.broadcast(Shape.of(N, M, K));
+        Tensor product = xBroadcasted.multiply(yBroadcasted);
+
+        // Sum over K dimension: (N, M, K) -> (N, M)
+        return product.sum(DataType.FP32, 2);
     }
 }

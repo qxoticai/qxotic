@@ -11,4 +11,5 @@ public sealed interface ScalarExpr extends LIRNode
                 ScalarTernary,
                 ScalarCast,
                 ScalarLoad,
-                AccumulatorRead {}
+                AccumulatorRead,
+                ScalarFromIndex {}

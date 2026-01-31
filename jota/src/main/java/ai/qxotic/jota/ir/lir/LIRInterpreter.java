@@ -190,6 +190,9 @@ public final class LIRInterpreter {
                     case MULTIPLY -> left * right;
                     case DIVIDE -> left / right;
                     case MODULO -> left % right;
+                    case BITWISE_AND -> left & right;
+                    case SHIFT_LEFT -> left << right;
+                    case SHIFT_RIGHT -> left >>> right; // Unsigned right shift
                 };
             }
         };
@@ -209,6 +212,7 @@ public final class LIRInterpreter {
             case ScalarTernary t -> evaluateTernary(t);
             case ScalarCast c -> evaluateCast(c);
             case AccumulatorRead r -> getAccumulatorValue(r.name());
+            case ScalarFromIndex sfi -> evaluateIndex(sfi.index());
         };
     }
 
