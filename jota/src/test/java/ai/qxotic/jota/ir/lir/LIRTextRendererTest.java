@@ -119,10 +119,10 @@ class LIRTextRendererTest {
     //        ScalarExpr x = new ScalarLoad(in0, offset);
     //
     //        // Constants
-    //        ScalarExpr c_0_044715 = ScalarConst.ofFloat(0.044715f);
-    //        ScalarExpr c_sqrt_2_pi = ScalarConst.ofFloat(0.79788456f);
-    //        ScalarExpr c_1 = ScalarConst.ofFloat(1.0f);
-    //        ScalarExpr c_0_5 = ScalarConst.ofFloat(0.5f);
+    //        ScalarExpr c_0_044715 = ScalarLiteral.ofFloat(0.044715f);
+    //        ScalarExpr c_sqrt_2_pi = ScalarLiteral.ofFloat(0.79788456f);
+    //        ScalarExpr c_1 = ScalarLiteral.ofFloat(1.0f);
+    //        ScalarExpr c_0_5 = ScalarLiteral.ofFloat(0.5f);
     //
     //        // Build GELU expression tree
     //        ScalarExpr x_squared = new ScalarBinary(BinaryOperator.MULTIPLY, x, x);
@@ -163,10 +163,10 @@ class LIRTextRendererTest {
         ScalarExpr x = new ScalarLoad(in0, offset);
 
         // Constants
-        ScalarExpr c_0_044715 = ScalarConst.ofFloat(0.044715f);
-        ScalarExpr c_sqrt_2_pi = ScalarConst.ofFloat(0.79788456f);
-        ScalarExpr c_1 = ScalarConst.ofFloat(1.0f);
-        ScalarExpr c_0_5 = ScalarConst.ofFloat(0.5f);
+        ScalarExpr c_0_044715 = ScalarLiteral.ofFloat(0.044715f);
+        ScalarExpr c_sqrt_2_pi = ScalarLiteral.ofFloat(0.79788456f);
+        ScalarExpr c_1 = ScalarLiteral.ofFloat(1.0f);
+        ScalarExpr c_0_5 = ScalarLiteral.ofFloat(0.5f);
 
         // Build GELU expression tree
         ScalarExpr x_squared = new ScalarBinary(BinaryOperator.MULTIPLY, x, x);

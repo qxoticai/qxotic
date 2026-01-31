@@ -1,15 +1,18 @@
 package ai.qxotic.jota.ir.lir;
 
 import ai.qxotic.jota.DataType;
+import ai.qxotic.jota.Layout;
+import ai.qxotic.jota.Shape;
+import ai.qxotic.jota.Stride;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
 /**
- * Container for an IR-L program. An IR-L graph consists of input buffers, output buffers, and a
- * body that performs the computation.
+ * Container for an IR-L program. An IR-L graph consists of inputs (buffers or scalars), output
+ * buffers, and a body that performs the computation.
  */
-public record LIRGraph(List<BufferRef> inputs, List<BufferRef> outputs, LIRNode body) {
+public record LIRGraph(List<LIRInput> inputs, List<BufferRef> outputs, LIRNode body) {
 
     public LIRGraph {
         Objects.requireNonNull(inputs, "inputs cannot be null");
@@ -19,13 +22,18 @@ public record LIRGraph(List<BufferRef> inputs, List<BufferRef> outputs, LIRNode 
         outputs = List.copyOf(outputs);
     }
 
-    /** Returns the total number of buffers (inputs + outputs). */
-    public int bufferCount() {
-        return inputs.size() + outputs.size();
+    /** Returns the total number of inputs. */
+    public int inputCount() {
+        return inputs.size();
     }
 
-    /** Returns the input buffer with the given index. */
-    public BufferRef getInput(int index) {
+    /** Returns the total number of outputs. */
+    public int outputCount() {
+        return outputs.size();
+    }
+
+    /** Returns the input with the given index. */
+    public LIRInput getInput(int index) {
         return inputs.get(index);
     }
 
@@ -36,34 +44,59 @@ public record LIRGraph(List<BufferRef> inputs, List<BufferRef> outputs, LIRNode 
 
     /** Builder for constructing IR-L graphs. */
     public static class Builder {
-        private final List<BufferRef> inputs = new ArrayList<>();
+        private final List<LIRInput> inputs = new ArrayList<>();
         private final List<BufferRef> outputs = new ArrayList<>();
-        private int nextBufferId = 0;
+        private int nextId = 0;
 
-        /** Adds an input buffer and returns its reference. */
+        /** Adds an input buffer with the given layout and returns its reference. */
+        public BufferRef addInput(DataType dtype, Layout layout) {
+            BufferRef ref = BufferRef.of(nextId++, dtype, layout);
+            inputs.add(ref);
+            return ref;
+        }
+
+        /** Adds an input buffer with the given shape and strides and returns its reference. */
         public BufferRef addInput(DataType dtype, long[] shape, long[] strides) {
-            BufferRef ref = new BufferRef(nextBufferId++, dtype, shape, strides);
+            Shape s = Shape.flat(shape);
+            Stride st = Stride.flat(strides);
+            BufferRef ref = BufferRef.of(nextId++, dtype, Layout.of(s, st));
             inputs.add(ref);
             return ref;
         }
 
         /** Adds a contiguous input buffer and returns its reference. */
         public BufferRef addContiguousInput(DataType dtype, long... shape) {
-            BufferRef ref = BufferRef.contiguous(nextBufferId++, dtype, shape);
+            BufferRef ref = BufferRef.contiguous(nextId++, dtype, shape);
             inputs.add(ref);
             return ref;
         }
 
-        /** Adds an output buffer and returns its reference. */
+        /** Adds a scalar input and returns its reference. */
+        public ScalarInput addScalarInput(DataType dtype) {
+            ScalarInput ref = new ScalarInput(nextId++, dtype);
+            inputs.add(ref);
+            return ref;
+        }
+
+        /** Adds an output buffer with the given layout and returns its reference. */
+        public BufferRef addOutput(DataType dtype, Layout layout) {
+            BufferRef ref = BufferRef.of(nextId++, dtype, layout);
+            outputs.add(ref);
+            return ref;
+        }
+
+        /** Adds an output buffer with the given shape and strides and returns its reference. */
         public BufferRef addOutput(DataType dtype, long[] shape, long[] strides) {
-            BufferRef ref = new BufferRef(nextBufferId++, dtype, shape, strides);
+            Shape s = Shape.flat(shape);
+            Stride st = Stride.flat(strides);
+            BufferRef ref = BufferRef.of(nextId++, dtype, Layout.of(s, st));
             outputs.add(ref);
             return ref;
         }
 
         /** Adds a contiguous output buffer and returns its reference. */
         public BufferRef addContiguousOutput(DataType dtype, long... shape) {
-            BufferRef ref = BufferRef.contiguous(nextBufferId++, dtype, shape);
+            BufferRef ref = BufferRef.contiguous(nextId++, dtype, shape);
             outputs.add(ref);
             return ref;
         }

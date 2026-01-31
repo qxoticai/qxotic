@@ -60,22 +60,26 @@ public class LIRTextRenderer implements LIRVisitor<String> {
         appendLine("LIRGraph {");
         increaseIndent();
 
-        // Render inputs and build buffer name map
+        // Render inputs and build name map
         appendLine("inputs: [");
         increaseIndent();
         for (int i = 0; i < graph.inputs().size(); i++) {
-            BufferRef input = graph.inputs().get(i);
+            LIRInput input = graph.inputs().get(i);
             String suffix = (i < graph.inputs().size() - 1) ? "," : "";
             String name = "in" + nextInputId++;
             bufferIdToName.put(input.id(), name);
-            appendLine(
-                    TextRenderUtils.formatBuffer(
-                                    "in",
-                                    nextInputId - 1,
-                                    input.dataType(),
-                                    input.shape(),
-                                    input.strides())
-                            + suffix);
+            String formatted =
+                    switch (input) {
+                        case BufferRef buf ->
+                                TextRenderUtils.formatBuffer(
+                                        "in", nextInputId - 1, buf.dataType(), buf.layout());
+                        case ScalarInput scalar ->
+                                "in"
+                                        + (nextInputId - 1)
+                                        + ": scalar "
+                                        + TextRenderUtils.formatDataType(scalar.dataType());
+                    };
+            appendLine(formatted + suffix);
         }
         decreaseIndent();
         appendLine("]");
@@ -93,8 +97,7 @@ public class LIRTextRenderer implements LIRVisitor<String> {
                                     "out",
                                     nextOutputId - 1,
                                     outputBuf.dataType(),
-                                    outputBuf.shape(),
-                                    outputBuf.strides())
+                                    outputBuf.layout())
                             + suffix);
         }
         decreaseIndent();
@@ -111,34 +114,6 @@ public class LIRTextRenderer implements LIRVisitor<String> {
         appendLine("}");
 
         return output.toString();
-    }
-
-    private String formatTuple(long[] values) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("(");
-        for (int i = 0; i < values.length; i++) {
-            if (i > 0) sb.append(", ");
-            sb.append(values[i]);
-        }
-        sb.append(")");
-        return sb.toString();
-    }
-
-    private boolean isContiguous(BufferRef buffer) {
-        long[] shape = buffer.shape();
-        long[] strides = buffer.strides();
-        if (shape.length == 0) {
-            return true;
-        }
-
-        long expectedStride = buffer.dataType().byteSize();
-        for (int i = shape.length - 1; i >= 0; i--) {
-            if (strides[i] != expectedStride) {
-                return false;
-            }
-            expectedStride *= shape[i];
-        }
-        return true;
     }
 
     private void appendLine(String line) {
@@ -214,7 +189,7 @@ public class LIRTextRenderer implements LIRVisitor<String> {
     // ==================== Scalar Expressions ====================
 
     @Override
-    public String visitScalarConst(ScalarConst node) {
+    public String visitScalarLiteral(ScalarLiteral node) {
         DataType dt = node.dataType();
         if (dt == DataType.FP32) {
             return node.asFloat() + "f";
@@ -286,6 +261,12 @@ public class LIRTextRenderer implements LIRVisitor<String> {
                 allocateVar(node, "load " + dt + " %" + bufferName(buffer) + "[" + offset + "]");
         appendLine(result);
         return exprToVar.get(node);
+    }
+
+    @Override
+    public String visitScalarInput(ScalarInput node) {
+        // Scalar inputs are referenced directly by name (no load needed)
+        return "%scalar" + node.id();
     }
 
     @Override

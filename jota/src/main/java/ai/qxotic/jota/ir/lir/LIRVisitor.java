@@ -11,7 +11,7 @@ public interface LIRVisitor<T> {
     T visitIndexBinary(IndexBinary node);
 
     // Scalar expressions
-    T visitScalarConst(ScalarConst node);
+    T visitScalarLiteral(ScalarLiteral node);
 
     T visitScalarUnary(ScalarUnary node);
 
@@ -22,6 +22,8 @@ public interface LIRVisitor<T> {
     T visitScalarCast(ScalarCast node);
 
     T visitScalarLoad(ScalarLoad node);
+
+    T visitScalarInput(ScalarInput node);
 
     T visitScalarFromIndex(ScalarFromIndex node);
 

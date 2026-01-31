@@ -14,14 +14,22 @@ import java.util.Map;
 public final class LIRInterpreter {
 
     private final Map<Integer, MemorySegment> buffers = new HashMap<>();
+    private final Map<Integer, ScalarInputValue> scalarInputs = new HashMap<>();
     private final Map<String, Long> indexVars = new HashMap<>();
     private final Map<String, AccumulatorState> accumulators = new HashMap<>();
+
+    private record ScalarInputValue(long rawBits, DataType dataType) {}
 
     private record AccumulatorState(DataType dtype, ReductionOperator op, long valueBits) {}
 
     /** Binds a buffer to the given id. */
     public void bindBuffer(int id, MemorySegment segment) {
         buffers.put(id, segment);
+    }
+
+    /** Binds a scalar input value (as raw bits) with its data type to the given id. */
+    public void bindScalarInput(int id, long rawBits, DataType dataType) {
+        scalarInputs.put(id, new ScalarInputValue(rawBits, dataType));
     }
 
     /** Executes an IR-L graph. */
@@ -201,11 +209,19 @@ public final class LIRInterpreter {
     /** Evaluates a scalar expression and returns its raw bits. */
     public long evaluateScalar(ScalarExpr expr) {
         return switch (expr) {
-            case ScalarConst c -> c.rawBits();
+            case ScalarLiteral c -> c.rawBits();
             case ScalarLoad load -> {
                 MemorySegment buffer = buffers.get(load.buffer().id());
                 long offset = evaluateIndex(load.offset());
                 yield readValue(buffer, offset, load.buffer().dataType());
+            }
+            case ScalarInput input -> {
+                // Scalar input: read from bound scalar value
+                ScalarInputValue value = scalarInputs.get(input.id());
+                if (value == null) {
+                    throw new IllegalStateException("Scalar input not bound: " + input.id());
+                }
+                yield value.rawBits();
             }
             case ScalarUnary u -> evaluateUnary(u);
             case ScalarBinary b -> evaluateBinary(b);
@@ -506,6 +522,7 @@ public final class LIRInterpreter {
     /** Clears all interpreter state. */
     public void reset() {
         buffers.clear();
+        scalarInputs.clear();
         indexVars.clear();
         accumulators.clear();
     }

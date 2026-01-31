@@ -10,7 +10,7 @@ import ai.qxotic.jota.ir.base.IRNode;
 public sealed interface LIRNode extends IRNode
         permits IndexExpr,
                 ScalarExpr,
-                BufferRef,
+                LIRInput,
                 Load,
                 Store,
                 Accumulator,
@@ -26,12 +26,13 @@ public sealed interface LIRNode extends IRNode
             case IndexVar n -> visitor.visitIndexVar(n);
             case IndexConst n -> visitor.visitIndexConst(n);
             case IndexBinary n -> visitor.visitIndexBinary(n);
-            case ScalarConst n -> visitor.visitScalarConst(n);
+            case ScalarLiteral n -> visitor.visitScalarLiteral(n);
             case ScalarUnary n -> visitor.visitScalarUnary(n);
             case ScalarBinary n -> visitor.visitScalarBinary(n);
             case ScalarTernary n -> visitor.visitScalarTernary(n);
             case ScalarCast n -> visitor.visitScalarCast(n);
             case ScalarLoad n -> visitor.visitScalarLoad(n);
+            case ScalarInput n -> visitor.visitScalarInput(n);
             case ScalarFromIndex n -> visitor.visitScalarFromIndex(n);
             case BufferRef n -> visitor.visitBufferRef(n);
             case Load n -> visitor.visitLoad(n);

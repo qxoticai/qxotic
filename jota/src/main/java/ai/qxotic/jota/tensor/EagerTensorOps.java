@@ -365,6 +365,21 @@ public class EagerTensorOps implements TensorOps {
 
     @Override
     public Tensor viewTransform(Tensor x, ViewTransforms.ViewTransformSpec spec) {
+        // Preserve lazy ConstantComputation for broadcasts/reshapes - don't materialize
+        // This is critical for IR tracing to recognize constants
+        if (x.computation().orElse(null) instanceof ConstantComputation constComp
+                && !x.isMaterialized()) {
+            Shape newShape = spec.layout().shape();
+            // For constants, we can just create a new lazy constant with the new shape
+            // The strides will be all zeros (broadcast semantics)
+            return Tensor.lazy(
+                    new ConstantComputation(
+                            constComp.rawBits(), constComp.dataType(), newShape, constComp.device()),
+                    constComp.dataType(),
+                    spec.layout(),
+                    x.device());
+        }
+
         // Eager path: if lazy indexing is needed, force contiguous copy first
         if (spec.needsLazyIndexing()) {
             Tensor contiguousTensor = contiguous(x);

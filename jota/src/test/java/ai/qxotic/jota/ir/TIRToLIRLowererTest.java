@@ -9,6 +9,7 @@ import ai.qxotic.jota.Stride;
 import ai.qxotic.jota.ir.lir.LIRGraph;
 import ai.qxotic.jota.ir.lir.LIRInterpreter;
 import ai.qxotic.jota.ir.lir.LIRTextRenderer;
+import ai.qxotic.jota.ir.lir.ScalarInput;
 import ai.qxotic.jota.ir.tir.*;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -1448,5 +1449,155 @@ class TIRToLIRLowererTest {
                 }
             }
         }
+    }
+
+    @Test
+    void testMatmulWithScalarInputs() {
+        // Matmul with two scalar inputs broadcast to matrices:
+        // A = Tensor.scalar(2f).view(2, 3) -> 2x3 matrix filled with 2.0
+        // B = Tensor.scalar(3f).view(3, 5) -> 3x5 matrix filled with 3.0
+        // C = A @ B -> 2x5 matrix
+        // C[i,j] = sum_k(A[i,k] * B[k,j]) = sum_k(2.0 * 3.0) = 3 * 6.0 = 18.0
+        try (Arena arena = Arena.ofConfined()) {
+            int M = 2;
+            int K = 3;
+            int N = 5;
+
+            // Scalar inputs - single float values
+            MemorySegment scalarA = arena.allocate(Float.BYTES);
+            MemorySegment scalarB = arena.allocate(Float.BYTES);
+            MemorySegment output = arena.allocate(M * N * Float.BYTES);
+
+            scalarA.setAtIndex(ValueLayout.JAVA_FLOAT, 0, 2.0f);
+            scalarB.setAtIndex(ValueLayout.JAVA_FLOAT, 0, 3.0f);
+
+            // Build TIR graph
+            // ScalarConstant broadcast to (M, K) with stride (0, 0)
+            Shape shapeA = Shape.flat(M, K);
+            ScalarConstant inA =
+                    ScalarConstant.broadcast(Float.floatToRawIntBits(2.0f), DataType.FP32, shapeA);
+
+            // ScalarConstant broadcast to (K, N) with stride (0, 0)
+            Shape shapeB = Shape.flat(K, N);
+            ScalarConstant inB =
+                    ScalarConstant.broadcast(Float.floatToRawIntBits(3.0f), DataType.FP32, shapeB);
+
+            // A.reshape(M, 1, K) for broadcast matmul
+            Shape shapeA3D = Shape.flat(M, 1, K);
+            Stride strideA3D = Stride.flat(0, 0, 0); // All zeros - broadcast scalar
+            Layout layoutA3D = Layout.of(shapeA3D, strideA3D);
+            ViewKind kindA = new ViewKind.Broadcast(shapeA, shapeA3D);
+            ViewTransform viewA = new ViewTransform(inA, kindA, layoutA3D, false);
+
+            // B.T.reshape(1, N, K) for broadcast matmul
+            Shape shapeB3D = Shape.flat(1, N, K);
+            Stride strideB3D = Stride.flat(0, 0, 0); // All zeros - broadcast scalar
+            Layout layoutB3D = Layout.of(shapeB3D, strideB3D);
+            ViewKind kindB = new ViewKind.Broadcast(shapeB, shapeB3D);
+            ViewTransform viewB = new ViewTransform(inB, kindB, layoutB3D, false);
+
+            // Element-wise multiply and reduce
+            BinaryOp mul = new BinaryOp(BinaryOperator.MULTIPLY, viewA, viewB);
+            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false);
+
+            // Both scalars are inputs (dynamic parameters)
+            TIRGraph tirGraph = new TIRGraph(List.of(inA, inB), sum);
+
+            // Lower to LIR
+            TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+            LIRGraph lirGraph = lowerer.lower(tirGraph);
+
+            System.out.println(new LIRTextRenderer().render(lirGraph));
+
+            // Verify we have scalar inputs
+            assertEquals(2, lirGraph.inputs().size());
+            assertInstanceOf(ScalarInput.class, lirGraph.inputs().get(0), "First input should be scalar");
+            assertInstanceOf(ScalarInput.class, lirGraph.inputs().get(1), "Second input should be scalar");
+
+            // Execute
+            LIRInterpreter interpreter = new LIRInterpreter();
+            interpreter.bindScalarInput(0, Float.floatToRawIntBits(2.0f), DataType.FP32);
+            interpreter.bindScalarInput(1, Float.floatToRawIntBits(3.0f), DataType.FP32);
+            interpreter.bindBuffer(2, output);
+            interpreter.execute(lirGraph);
+
+            // Verify: C[i,j] = K * (2.0 * 3.0) = 3 * 6.0 = 18.0
+            float expected = K * 2.0f * 3.0f;
+            for (int i = 0; i < M; i++) {
+                for (int j = 0; j < N; j++) {
+                    float actual = output.getAtIndex(ValueLayout.JAVA_FLOAT, i * N + j);
+                    assertEquals(expected, actual, 1e-5f, "Mismatch at C[" + i + "," + j + "]");
+                }
+            }
+        }
+    }
+
+    @Test
+    void testMatmulWithScalarConstantFolding() {
+        // Test folding of matmul with broadcasted scalar constants
+        // A: 2x3 tensor filled with 2.0, B: 3x5 tensor filled with 3.0
+        // Matmul result: each element = sum_k(2.0 * 3.0) = 3 * 6.0 = 18.0
+        // Expected: 2x5 tensor filled with 18.0
+
+        // Scalar constant A = 2.0
+        ScalarConstant scalarA = ScalarConstant.of(Float.floatToRawIntBits(2.0f), DataType.FP32);
+
+        // Broadcast A to (2, 3)
+        Shape shapeA2D = Shape.flat(2, 3);
+        Layout layoutA2D = Layout.rowMajor(shapeA2D);
+        ViewKind kindA = new ViewKind.Broadcast(Shape.scalar(), shapeA2D);
+        ViewTransform broadcastA = new ViewTransform(scalarA, kindA, layoutA2D, false);
+
+        // Scalar constant B = 3.0
+        ScalarConstant scalarB = ScalarConstant.of(Float.floatToRawIntBits(3.0f), DataType.FP32);
+
+        // Broadcast B to (3, 5)
+        Shape shapeB2D = Shape.flat(3, 5);
+        Layout layoutB2D = Layout.rowMajor(shapeB2D);
+        ViewKind kindB = new ViewKind.Broadcast(Shape.scalar(), shapeB2D);
+        ViewTransform broadcastB = new ViewTransform(scalarB, kindB, layoutB2D, false);
+
+        // Reshape A to (2, 1, 3) for matmul broadcasting
+        Shape shapeA3D = Shape.flat(2, 1, 3);
+        Layout layoutA3D = Layout.of(shapeA3D, Stride.flat(3, 0, 1));
+        ViewKind reshapeA = new ViewKind.Broadcast(shapeA2D, shapeA3D);
+        ViewTransform viewA = new ViewTransform(broadcastA, reshapeA, layoutA3D, false);
+
+        // Reshape B.T to (1, 5, 3) for matmul broadcasting
+        Shape shapeB3D = Shape.flat(1, 5, 3);
+        Layout layoutB3D = Layout.of(shapeB3D, Stride.flat(0, 1, 5));
+        ViewKind reshapeB = new ViewKind.Broadcast(shapeB2D, shapeB3D);
+        ViewTransform viewB = new ViewTransform(broadcastB, reshapeB, layoutB3D, false);
+
+        // Element-wise multiply: (2, 1, 3) * (1, 5, 3) -> (2, 5, 3)
+        BinaryOp mul = new BinaryOp(BinaryOperator.MULTIPLY, viewA, viewB);
+
+        // Sum over axis 2 (the contraction dimension K=3): (2, 5, 3) -> (2, 5)
+        ReductionOp sum = new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false);
+
+        // Build TIR graph with no inputs (all constants)
+        TIRGraph tirGraph = new TIRGraph(List.of(), sum);
+
+        // Run constant folding pass
+        TIRConstantFoldingPass foldingPass = new TIRConstantFoldingPass();
+        TIRGraph foldedGraph = foldingPass.run(tirGraph);
+
+        // Verify the result
+        assertEquals(1, foldedGraph.outputs().size());
+        TIRNode result = foldedGraph.outputs().get(0);
+
+        // Result should be a ScalarConstant
+        assertTrue(
+                result instanceof ScalarConstant,
+                "Expected ScalarConstant but got " + result.getClass().getSimpleName());
+        ScalarConstant resultSc = (ScalarConstant) result;
+
+        // Check shape: should be (2, 5)
+        assertEquals(Shape.flat(2, 5), resultSc.layout().shape());
+
+        // Check value: 2.0 * 3.0 * 3 = 18.0
+        float expectedValue = 2.0f * 3.0f * 3; // a * b * K
+        float actualValue = Float.intBitsToFloat((int) resultSc.rawBits());
+        assertEquals(expectedValue, actualValue, 1e-5f);
     }
 }

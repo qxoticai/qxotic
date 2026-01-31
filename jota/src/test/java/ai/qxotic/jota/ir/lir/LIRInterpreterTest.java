@@ -132,10 +132,10 @@ class LIRInterpreterTest {
             ScalarExpr x = new ScalarLoad(in0, offset);
 
             // Constants
-            ScalarExpr c_0_044715 = ScalarConst.ofFloat(0.044715f);
-            ScalarExpr c_sqrt_2_pi = ScalarConst.ofFloat(0.79788456f);
-            ScalarExpr c_1 = ScalarConst.ofFloat(1.0f);
-            ScalarExpr c_0_5 = ScalarConst.ofFloat(0.5f);
+            ScalarExpr c_0_044715 = ScalarLiteral.ofFloat(0.044715f);
+            ScalarExpr c_sqrt_2_pi = ScalarLiteral.ofFloat(0.79788456f);
+            ScalarExpr c_1 = ScalarLiteral.ofFloat(1.0f);
+            ScalarExpr c_0_5 = ScalarLiteral.ofFloat(0.5f);
 
             // x^2 = x * x
             ScalarExpr x_squared = new ScalarBinary(BinaryOperator.MULTIPLY, x, x);
@@ -260,7 +260,7 @@ class LIRInterpreterTest {
             ScalarExpr v0 = new ScalarLoad(in0, offset);
             ScalarExpr v1 = new ScalarLoad(in1, offset);
             ScalarExpr sum = new ScalarBinary(BinaryOperator.ADD, v0, v1);
-            ScalarExpr two = ScalarConst.ofFloat(2.0f);
+            ScalarExpr two = ScalarLiteral.ofFloat(2.0f);
             ScalarExpr result = new ScalarBinary(BinaryOperator.MULTIPLY, sum, two);
             Store store = new Store(out, offset, result);
 
@@ -324,7 +324,7 @@ class LIRInterpreterTest {
                 long offsetVal = (long) idx * Float.BYTES;
                 MemorySegment buf = input;
                 float val = buf.get(ValueLayout.JAVA_FLOAT_UNALIGNED, offsetVal);
-                ScalarConst constVal = ScalarConst.ofFloat(val);
+                ScalarLiteral constVal = ScalarLiteral.ofFloat(val);
                 interpreter.executeNode(new AccumulatorUpdate("acc", constVal));
             }
 
@@ -478,27 +478,27 @@ class LIRInterpreterTest {
     }
 
     @Test
-    void testScalarConstants() {
+    void testScalarLiteralants() {
         LIRInterpreter interpreter = new LIRInterpreter();
 
-        ScalarConst floatConst = ScalarConst.ofFloat(3.14f);
+        ScalarLiteral floatConst = ScalarLiteral.ofFloat(3.14f);
         assertEquals(
                 3.14f, Float.intBitsToFloat((int) interpreter.evaluateScalar(floatConst)), 1e-6f);
 
-        ScalarConst doubleConst = ScalarConst.ofDouble(2.718);
+        ScalarLiteral doubleConst = ScalarLiteral.ofDouble(2.718);
         assertEquals(
                 2.718, Double.longBitsToDouble(interpreter.evaluateScalar(doubleConst)), 1e-10);
 
-        ScalarConst intConst = ScalarConst.ofInt(42);
+        ScalarLiteral intConst = ScalarLiteral.ofInt(42);
         assertEquals(42, (int) interpreter.evaluateScalar(intConst));
 
-        ScalarConst longConst = ScalarConst.ofLong(123456789L);
+        ScalarLiteral longConst = ScalarLiteral.ofLong(123456789L);
         assertEquals(123456789L, interpreter.evaluateScalar(longConst));
 
-        ScalarConst trueConst = ScalarConst.ofBool(true);
+        ScalarLiteral trueConst = ScalarLiteral.ofBool(true);
         assertEquals(1L, interpreter.evaluateScalar(trueConst));
 
-        ScalarConst falseConst = ScalarConst.ofBool(false);
+        ScalarLiteral falseConst = ScalarLiteral.ofBool(false);
         assertEquals(0L, interpreter.evaluateScalar(falseConst));
     }
 
