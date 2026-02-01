@@ -49,14 +49,15 @@ public class IsContiguousTest extends MemoryTest {
     }
 
     @Test
-    void testTransposeIsNotContiguous() {
+    void testTransposeIsContiguous() {
         MemoryView<float[]> v =
                 MemoryViewFactory.of(
                         DataType.FP32,
                         MemoryFactory.ofFloats(new float[12]),
                         Layout.rowMajor(3, 4));
         MemoryView<float[]> t = v.transpose(0, 1);
-        assertFalse(t.isContiguous(), "Transposed 2D view should not be contiguous (row-major)");
+        // With CuTe semantics, transpose IS contiguous because it spans the same contiguous range
+        assertTrue(t.isContiguous(), "Transposed 2D view spans contiguous range [0-11]");
     }
 
     @Test

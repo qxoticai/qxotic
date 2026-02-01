@@ -100,8 +100,8 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
     }
 
     /**
-     * Extracts the underlying ScalarConstant from a node if it's a ScalarConstant
-     * or a chain of ViewTransforms wrapping a ScalarConstant.
+     * Extracts the underlying ScalarConstant from a node if it's a ScalarConstant or a chain of
+     * ViewTransforms wrapping a ScalarConstant.
      *
      * @param node the TIR node to examine
      * @return the underlying ScalarConstant, or null if not found
@@ -122,8 +122,7 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
 
     private BufferRef createOutputBufferRef(TIRNode node) {
         // Outputs are always contiguous row-major
-        return BufferRef.of(
-                nextId++, node.dataType(), Layout.rowMajor(node.layout().shape()));
+        return BufferRef.of(nextId++, node.dataType(), Layout.rowMajor(node.layout().shape()));
     }
 
     /** Computes byte strides from a layout and data type. */
@@ -163,10 +162,17 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         Store store = new Store(outBuf, outOffset, value);
 
         // Wrap in nested loops (innermost first)
-        LIRNode body = store;
+        LIRNode body = ensureYield(store);
         for (int i = rank - 1; i >= 0; i--) {
             long bound = outLayout.shape().flatAt(i);
-            body = Loop.parallel(loopIndices.get(i).name(), bound, body);
+            body =
+                    new StructuredFor(
+                            loopIndices.get(i).name(),
+                            new IndexConst(0),
+                            new IndexConst(bound),
+                            new IndexConst(1),
+                            List.of(),
+                            ensureYield(body));
         }
 
         return body;
@@ -206,23 +212,14 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
             }
         }
 
-        // Create accumulator
-        String accName = "acc";
-        Accumulator acc = createAccumulator(accName, dtype, op);
-
-        // Load value from input and update accumulator
+        // Load value from input and update accumulator (loop-carried)
         ScalarExpr inputValue = input.accept(this);
-        AccumulatorUpdate update = new AccumulatorUpdate(accName, inputValue);
 
-        // Build the reduction loop (inner loops over reduced axes)
-        LIRNode reductionBody = update;
-        for (int i = innerIndices.size() - 1; i >= 0; i--) {
-            reductionBody =
-                    Loop.sequential(innerIndices.get(i).name(), innerBounds.get(i), reductionBody);
-        }
+        LIRNode reductionBody =
+                buildReductionLoop(innerIndices, innerBounds, dtype, op, inputValue);
 
         // Read accumulator and store to output
-        AccumulatorRead read = new AccumulatorRead(accName, dtype);
+        ScalarRef read = new ScalarRef("acc0", dtype);
 
         // Compute output offset from outer indices only
         IndexExpr outOffset;
@@ -234,24 +231,159 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         Store store = new Store(outBuf, outOffset, read);
 
         // Combine: declare acc, reduction loops, store result
-        Block innerBlock = new Block(List.of(acc, reductionBody, store));
+        Block innerBlock = new Block(List.of(reductionBody, store));
 
         // Wrap in outer loops (over non-reduced dimensions)
         LIRNode body = innerBlock;
         for (int i = outerIndices.size() - 1; i >= 0; i--) {
-            body = Loop.parallel(outerIndices.get(i).name(), outerBounds.get(i), body);
+            body =
+                    new StructuredFor(
+                            outerIndices.get(i).name(),
+                            new IndexConst(0),
+                            new IndexConst(outerBounds.get(i)),
+                            new IndexConst(1),
+                            List.of(),
+                            ensureYield(body));
         }
 
         return body;
     }
 
-    private Accumulator createAccumulator(String name, DataType dtype, ReductionOperator op) {
+    private LIRNode buildReductionLoop(
+            List<IndexVar> innerIndices,
+            List<Long> innerBounds,
+            DataType dtype,
+            ReductionOperator op,
+            ScalarExpr inputValue) {
+        int depth = innerIndices.size();
+        if (depth == 0) {
+            ScalarExpr combined = combineAccumulator(new ScalarRef("acc0", dtype), inputValue, op);
+            return new Yield(List.of(combined));
+        }
+
+        String[] accNames = new String[depth];
+        for (int i = 0; i < depth; i++) {
+            accNames[i] = "acc" + i;
+        }
+
+        ScalarExpr identity = createIdentityLiteral(dtype, op);
+
+        ScalarExpr combined =
+                combineAccumulator(new ScalarRef(accNames[depth - 1], dtype), inputValue, op);
+        LIRNode inner = new Yield(List.of(combined));
+
+        for (int level = depth - 1; level >= 0; level--) {
+            String accName = accNames[level];
+            ScalarExpr init = (level == 0) ? identity : new ScalarRef(accNames[level - 1], dtype);
+
+            LIRNode body;
+            if (level == depth - 1) {
+                body = inner;
+            } else {
+                body =
+                        new Block(
+                                List.of(
+                                        inner,
+                                        new Yield(
+                                                List.of(
+                                                        new ScalarRef(
+                                                                accNames[level + 1], dtype)))));
+            }
+
+            inner =
+                    new StructuredFor(
+                            innerIndices.get(level).name(),
+                            new IndexConst(0),
+                            new IndexConst(innerBounds.get(level)),
+                            new IndexConst(1),
+                            List.of(new LoopIterArg(accName, dtype, init)),
+                            body);
+        }
+
+        return inner;
+    }
+
+    private ScalarExpr combineAccumulator(ScalarExpr acc, ScalarExpr value, ReductionOperator op) {
         return switch (op) {
-            case SUM -> Accumulator.sum(name, dtype);
-            case PROD -> Accumulator.product(name, dtype);
-            case MIN -> Accumulator.min(name, dtype);
-            case MAX -> Accumulator.max(name, dtype);
+            case SUM -> new ScalarBinary(BinaryOperator.ADD, acc, value);
+            case PROD -> new ScalarBinary(BinaryOperator.MULTIPLY, acc, value);
+            case MIN -> new ScalarBinary(BinaryOperator.MIN, acc, value);
+            case MAX -> new ScalarBinary(BinaryOperator.MAX, acc, value);
         };
+    }
+
+    private ScalarExpr createIdentityLiteral(DataType dtype, ReductionOperator op) {
+        return switch (op) {
+            case SUM -> ScalarLiteral.ofRawBits(identityZeroBits(dtype), dtype);
+            case PROD -> ScalarLiteral.ofRawBits(identityOneBits(dtype), dtype);
+            case MIN -> ScalarLiteral.ofRawBits(identityMaxBits(dtype), dtype);
+            case MAX -> ScalarLiteral.ofRawBits(identityMinBits(dtype), dtype);
+        };
+    }
+
+    private long identityZeroBits(DataType dtype) {
+        if (dtype == DataType.FP32) {
+            return Float.floatToRawIntBits(0.0f);
+        } else if (dtype == DataType.FP64) {
+            return Double.doubleToRawLongBits(0.0);
+        }
+        return 0L;
+    }
+
+    private long identityOneBits(DataType dtype) {
+        if (dtype == DataType.FP32) {
+            return Float.floatToRawIntBits(1.0f);
+        } else if (dtype == DataType.FP64) {
+            return Double.doubleToRawLongBits(1.0);
+        }
+        return 1L;
+    }
+
+    private long identityMaxBits(DataType dtype) {
+        if (dtype == DataType.FP32) {
+            return Float.floatToRawIntBits(Float.POSITIVE_INFINITY);
+        } else if (dtype == DataType.FP64) {
+            return Double.doubleToRawLongBits(Double.POSITIVE_INFINITY);
+        } else if (dtype == DataType.I32) {
+            return Integer.MAX_VALUE;
+        } else if (dtype == DataType.I64) {
+            return Long.MAX_VALUE;
+        } else if (dtype == DataType.I8) {
+            return Byte.MAX_VALUE;
+        } else if (dtype == DataType.I16) {
+            return Short.MAX_VALUE;
+        }
+        return Long.MAX_VALUE;
+    }
+
+    private long identityMinBits(DataType dtype) {
+        if (dtype == DataType.FP32) {
+            return Float.floatToRawIntBits(Float.NEGATIVE_INFINITY);
+        } else if (dtype == DataType.FP64) {
+            return Double.doubleToRawLongBits(Double.NEGATIVE_INFINITY);
+        } else if (dtype == DataType.I32) {
+            return Integer.MIN_VALUE;
+        } else if (dtype == DataType.I64) {
+            return Long.MIN_VALUE;
+        } else if (dtype == DataType.I8) {
+            return Byte.MIN_VALUE;
+        } else if (dtype == DataType.I16) {
+            return Short.MIN_VALUE;
+        }
+        return Long.MIN_VALUE;
+    }
+
+    private LIRNode ensureYield(LIRNode body) {
+        if (body instanceof Yield) {
+            return body;
+        }
+        if (body instanceof Block block) {
+            if (!block.statements().isEmpty()
+                    && block.statements().getLast() instanceof Yield) {
+                return body;
+            }
+        }
+        return new Block(List.of(body, Yield.empty()));
     }
 
     /** Computes byte offset from indices and byte strides. */

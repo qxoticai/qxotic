@@ -374,7 +374,10 @@ public class EagerTensorOps implements TensorOps {
             // The strides will be all zeros (broadcast semantics)
             return Tensor.lazy(
                     new ConstantComputation(
-                            constComp.rawBits(), constComp.dataType(), newShape, constComp.device()),
+                            constComp.rawBits(),
+                            constComp.dataType(),
+                            newShape,
+                            constComp.device()),
                     constComp.dataType(),
                     spec.layout(),
                     x.device());

@@ -6,6 +6,7 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
+import ai.qxotic.jota.ir.lir.IndexSimplificationPass;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
@@ -356,6 +357,79 @@ class IRTracerTest {
         // Lower optimized TIR to LIR
         TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
         LIRGraph lirGraph = lowerer.lower(optimizedTir);
+
+        // Execute with LIRInterpreter
+        // Scalar inputs are passed at runtime (not folded since they're graph inputs)
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment output = arena.allocate(M * N * Float.BYTES);
+
+            // Execute - bind output buffer and scalar inputs
+            LIRInterpreter interpreter = new LIRInterpreter();
+            // Scalar inputs: id 0 = 2.0f, id 1 = 3.0f
+            interpreter.bindScalarInput(0, Float.floatToRawIntBits(2.0f), DataType.FP32);
+            interpreter.bindScalarInput(1, Float.floatToRawIntBits(3.0f), DataType.FP32);
+            // Output buffer at id 2
+            interpreter.bindBuffer(2, output);
+            interpreter.execute(lirGraph);
+
+            // Verify: each element should be 2.0 * 3.0 * K = 18.0
+            float expected = 2.0f * 3.0f * K;
+            for (int i = 0; i < M; i++) {
+                for (int j = 0; j < N; j++) {
+                    float actual = output.getAtIndex(ValueLayout.JAVA_FLOAT, i * N + j);
+                    assertEquals(
+                            expected, actual, 1e-5f, "Mismatch at [" + i + "," + j + "]");
+                }
+            }
+        }
+    }
+
+    @Test
+    void testMatmulFoldingFullIotasPipeline() {
+        int M = 2;
+        int K = 3;
+        int N = 5;
+
+        // Create constant-filled tensors using Tensor.full()
+        // These are materialized tensors filled with constant values
+        Tensor aFilled = Tensor.iota(M * K).view(Shape.of(M, K));
+        Tensor bFilled = Tensor.iota(K * N).view(Shape.of(K, N));
+
+        // Trace matmul operation using high-level Tensor API
+        Tensor result =
+                IRTracer.trace(
+                        List.of(aFilled, bFilled),
+                        tensors -> {
+                            Tensor a = tensors.get(0);
+                            Tensor b = tensors.get(1);
+
+                            // Reshape for matmul: a to (M, 1, K), b.T to (1, N, K)
+                            Tensor aReshaped = a.reshape(Shape.of(M, 1, K));
+                            Tensor bReshaped = b.transpose(0, 1).reshape(Shape.of(1, N, K));
+
+                            // Broadcast to (M, N, K) and multiply
+                            Shape broadcastShape = Shape.of(M, N, K);
+                            Tensor aBroadcasted = aReshaped.broadcast(broadcastShape);
+                            Tensor bBroadcasted = bReshaped.broadcast(broadcastShape);
+                            Tensor multiplied = aBroadcasted.multiply(bBroadcasted);
+
+                            // Sum over K dimension -> (M, N)
+                            return multiplied.sum(DataType.FP32, 2);
+                        });
+
+        // Extract TIRGraph from lazy tensor
+        LazyComputation comp = result.computation().orElseThrow();
+        Map<String, Object> attrs = comp.attributes();
+        TIRGraph tirGraph = (TIRGraph) attrs.get("graph");
+
+        // Apply constant folding - should fold entire matmul computation
+        TIRConstantFoldingPass foldingPass = new TIRConstantFoldingPass();
+        TIRGraph optimizedTir = foldingPass.run(tirGraph);
+
+        // Lower optimized TIR to LIR
+        TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+        LIRGraph lirGraph = lowerer.lower(optimizedTir);
+        lirGraph = new IndexSimplificationPass().run(lirGraph);
 
         // Execute with LIRInterpreter
         // Scalar inputs are passed at runtime (not folded since they're graph inputs)

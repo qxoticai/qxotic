@@ -235,44 +235,14 @@ public final class ViewTransforms {
     }
 
     /**
-     * Returns true if the layout is contiguous in row-major order.
+     * Returns true if the layout spans a contiguous memory range.
      *
-     * <p>This checks two conditions:
-     *
-     * <ol>
-     *   <li>The data spans a contiguous memory range (span == totalElements - 1)
-     *   <li>The strides are in row-major order (stride[i] == stride[i+1] * dim[i+1])
-     * </ol>
-     *
-     * <p>Both conditions are required for reshape to work by simply changing the shape. A
-     * transposed tensor satisfies condition 1 but not condition 2.
+     * <p>Delegates to {@link Layout#spansContiguousRange()} for CuTe-style contiguity checking.
+     * A layout spans a contiguous range if all elements fit within a contiguous block of memory
+     * without gaps: sum((dim_i - 1) * stride_i) == totalElements - 1.
      */
     private static boolean spansContiguousRange(Layout layout) {
-        if (layout.shape().hasZeroElements()) {
-            return true;
-        }
-
-        int rank = layout.shape().flatRank();
-        if (rank == 0) {
-            return true;
-        }
-
-        long[] strides = layout.stride().toArray();
-
-        // Check row-major ordering: stride[i] == stride[i+1] * dim[i+1]
-        // The innermost stride should be 1 for true row-major
-        if (strides[rank - 1] != 1) {
-            return false;
-        }
-
-        for (int i = rank - 2; i >= 0; i--) {
-            long expectedStride = strides[i + 1] * layout.shape().flatAt(i + 1);
-            if (strides[i] != expectedStride) {
-                return false;
-            }
-        }
-
-        return true;
+        return layout.spansContiguousRange();
     }
 
     private static boolean canReshapeWithoutCopy(

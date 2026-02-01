@@ -90,7 +90,9 @@ final class ShapeImpl extends NestedTupleImpl<Shape> implements Shape {
 
     @Override
     public Shape flattenModes() {
-        return flat(modeSize);
+        Shape flat = flat(modeSize);
+        assert flat.isFlat();
+        return flat;
     }
 
     @Override

@@ -184,22 +184,6 @@ public final class CommonSubexpressionElimination implements LIRPass {
             return new Store(node.buffer(), newOffset, newValue);
         }
 
-        // Accumulators - AccumulatorRead can be canonicalized
-
-        @Override
-        public LIRNode visitAccumulatorRead(AccumulatorRead node) {
-            return canonicalize(node);
-        }
-
-        @Override
-        public LIRNode visitAccumulatorUpdate(AccumulatorUpdate node) {
-            ScalarExpr newValue = (ScalarExpr) node.value().accept(this);
-            if (newValue == node.value()) {
-                return node;
-            }
-            return new AccumulatorUpdate(node.name(), newValue);
-        }
-
         // Control flow - not canonicalized, but children are processed
 
         @Override
@@ -213,6 +197,37 @@ public final class CommonSubexpressionElimination implements LIRPass {
         }
 
         @Override
+        public LIRNode visitStructuredFor(StructuredFor node) {
+            IndexExpr newLower = (IndexExpr) node.lowerBound().accept(this);
+            IndexExpr newUpper = (IndexExpr) node.upperBound().accept(this);
+            IndexExpr newStep = (IndexExpr) node.step().accept(this);
+
+            java.util.List<LoopIterArg> newIterArgs =
+                    new java.util.ArrayList<>(node.iterArgs().size());
+            boolean iterChanged = false;
+            for (LoopIterArg arg : node.iterArgs()) {
+                ScalarExpr newInit = (ScalarExpr) arg.init().accept(this);
+                if (newInit != arg.init()) {
+                    iterChanged = true;
+                    newIterArgs.add(new LoopIterArg(arg.name(), arg.dataType(), newInit));
+                } else {
+                    newIterArgs.add(arg);
+                }
+            }
+
+            LIRNode newBody = node.body().accept(this);
+            if (newLower == node.lowerBound()
+                    && newUpper == node.upperBound()
+                    && newStep == node.step()
+                    && !iterChanged
+                    && newBody == node.body()) {
+                return node;
+            }
+            return new StructuredFor(
+                    node.indexName(), newLower, newUpper, newStep, newIterArgs, newBody);
+        }
+
+        @Override
         public LIRNode visitTiledLoop(TiledLoop node) {
             IndexExpr newTotalBound = (IndexExpr) node.totalBound().accept(this);
             LIRNode newBody = node.body().accept(this);
@@ -221,6 +236,24 @@ public final class CommonSubexpressionElimination implements LIRPass {
             }
             return new TiledLoop(
                     node.outerName(), node.innerName(), newTotalBound, node.tileSize(), newBody);
+        }
+
+        @Override
+        public LIRNode visitYield(Yield node) {
+            java.util.List<ScalarExpr> newValues =
+                    new java.util.ArrayList<>(node.values().size());
+            boolean changed = false;
+            for (ScalarExpr value : node.values()) {
+                ScalarExpr newValue = (ScalarExpr) value.accept(this);
+                newValues.add(newValue);
+                if (newValue != value) {
+                    changed = true;
+                }
+            }
+            if (!changed) {
+                return node;
+            }
+            return new Yield(newValues);
         }
     }
 }

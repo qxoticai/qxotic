@@ -186,7 +186,8 @@ class ReshapeTest extends AbstractMemoryTest {
         // Permuted view (2, 4, 3):(12, 1, 4) spans [0-23] contiguously
         // Condition: (2-1)*12 + (4-1)*1 + (3-1)*4 = 12+3+8 = 23 = 24-1 ✓
         MemoryView<float[]> permuted = view.permute(0, 2, 1); // Shape: (2, 4, 3)
-        assertFalse(permuted.isContiguous());
+        // With CuTe semantics, this IS contiguous because it spans a contiguous range
+        assertTrue(permuted.isContiguous());
 
         // CuTe semantics: reshape works, new shape gets row-major strides
         MemoryView<float[]> reshaped = permuted.view(Shape.of(8, 3));

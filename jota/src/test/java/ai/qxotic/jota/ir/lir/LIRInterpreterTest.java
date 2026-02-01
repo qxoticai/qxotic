@@ -305,31 +305,30 @@ class LIRInterpreterTest {
             IndexExpr offset = IndexBinary.multiply(i, new IndexConst(Float.BYTES));
             ScalarExpr v0 = new ScalarLoad(in0, offset);
 
-            // Block: declare accumulator, update accumulator
-            Accumulator acc = Accumulator.sum("acc", DataType.FP32);
-            AccumulatorUpdate update = new AccumulatorUpdate("acc", v0);
-            Block loopBody = Block.of(update);
+            ScalarExpr init = ScalarLiteral.ofFloat(0.0f);
+            ScalarRef accRef = new ScalarRef("acc", DataType.FP32);
+            ScalarExpr updated = new ScalarBinary(BinaryOperator.ADD, accRef, v0);
 
-            // After loop: read accumulator and store
-            AccumulatorRead read = new AccumulatorRead("acc", DataType.FP32);
+            StructuredFor loop =
+                    new StructuredFor(
+                            "i",
+                            new IndexConst(0),
+                            new IndexConst(size),
+                            new IndexConst(1),
+                            List.of(new LoopIterArg("acc", DataType.FP32, init)),
+                            new Yield(List.of(updated)));
 
-            // Create full program: declare acc, loop, store result
+            Store store = new Store(out, new IndexConst(0), new ScalarRef("acc", DataType.FP32));
+            Block body = new Block(List.of(loop, store));
+
+            LIRGraph graph = builder.build(body);
+
             LIRInterpreter interpreter = new LIRInterpreter();
             interpreter.bindBuffer(in0.id(), input);
             interpreter.bindBuffer(out.id(), output);
+            interpreter.execute(graph);
 
-            // Execute manually since we need to handle accumulator declaration
-            interpreter.executeNode(acc);
-            for (int idx = 0; idx < size; idx++) {
-                long offsetVal = (long) idx * Float.BYTES;
-                MemorySegment buf = input;
-                float val = buf.get(ValueLayout.JAVA_FLOAT_UNALIGNED, offsetVal);
-                ScalarLiteral constVal = ScalarLiteral.ofFloat(val);
-                interpreter.executeNode(new AccumulatorUpdate("acc", constVal));
-            }
-
-            long accBits = interpreter.getAccumulatorValue("acc");
-            float result = Float.intBitsToFloat((int) accBits);
+            float result = output.getAtIndex(ValueLayout.JAVA_FLOAT, 0);
             assertEquals(expectedSum, result, 1e-6f);
         }
     }

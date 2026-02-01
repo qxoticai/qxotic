@@ -1511,8 +1511,10 @@ class TIRToLIRLowererTest {
 
             // Verify we have scalar inputs
             assertEquals(2, lirGraph.inputs().size());
-            assertInstanceOf(ScalarInput.class, lirGraph.inputs().get(0), "First input should be scalar");
-            assertInstanceOf(ScalarInput.class, lirGraph.inputs().get(1), "Second input should be scalar");
+            assertInstanceOf(
+                    ScalarInput.class, lirGraph.inputs().get(0), "First input should be scalar");
+            assertInstanceOf(
+                    ScalarInput.class, lirGraph.inputs().get(1), "Second input should be scalar");
 
             // Execute
             LIRInterpreter interpreter = new LIRInterpreter();

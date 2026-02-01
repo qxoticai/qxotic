@@ -13,12 +13,13 @@ public sealed interface LIRNode extends IRNode
                 LIRInput,
                 Load,
                 Store,
-                Accumulator,
-                AccumulatorUpdate,
                 Loop,
+                StructuredFor,
                 TiledLoop,
                 LoopNest,
-                Block {
+                Block,
+                Yield,
+                ScalarLet {
 
     /** Accepts a visitor for traversing the IR-L graph. */
     default <T> T accept(LIRVisitor<T> visitor) {
@@ -34,16 +35,17 @@ public sealed interface LIRNode extends IRNode
             case ScalarLoad n -> visitor.visitScalarLoad(n);
             case ScalarInput n -> visitor.visitScalarInput(n);
             case ScalarFromIndex n -> visitor.visitScalarFromIndex(n);
+            case ScalarRef n -> visitor.visitScalarRef(n);
             case BufferRef n -> visitor.visitBufferRef(n);
             case Load n -> visitor.visitLoad(n);
             case Store n -> visitor.visitStore(n);
-            case Accumulator n -> visitor.visitAccumulator(n);
-            case AccumulatorRead n -> visitor.visitAccumulatorRead(n);
-            case AccumulatorUpdate n -> visitor.visitAccumulatorUpdate(n);
             case Loop n -> visitor.visitLoop(n);
+            case StructuredFor n -> visitor.visitStructuredFor(n);
             case TiledLoop n -> visitor.visitTiledLoop(n);
             case LoopNest n -> visitor.visitLoopNest(n);
             case Block n -> visitor.visitBlock(n);
+            case Yield n -> visitor.visitYield(n);
+            case ScalarLet n -> visitor.visitScalarLet(n);
         };
     }
 

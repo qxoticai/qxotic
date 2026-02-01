@@ -125,6 +125,21 @@ public class LIRRewriter implements LIRVisitor<LIRNode> {
         return new ScalarFromIndex(newIndex);
     }
 
+    @Override
+    public LIRNode visitScalarRef(ScalarRef node) {
+        // ScalarRef has no children to rewrite
+        return node;
+    }
+
+    @Override
+    public LIRNode visitScalarLet(ScalarLet node) {
+        ScalarExpr newValue = (ScalarExpr) node.value().accept(this);
+        if (newValue == node.value()) {
+            return node;
+        }
+        return new ScalarLet(node.name(), newValue);
+    }
+
     // Memory access
 
     @Override
@@ -151,27 +166,6 @@ public class LIRRewriter implements LIRVisitor<LIRNode> {
         return new Store(node.buffer(), newOffset, newValue);
     }
 
-    // Accumulators
-
-    @Override
-    public LIRNode visitAccumulator(Accumulator node) {
-        return node;
-    }
-
-    @Override
-    public LIRNode visitAccumulatorRead(AccumulatorRead node) {
-        return node;
-    }
-
-    @Override
-    public LIRNode visitAccumulatorUpdate(AccumulatorUpdate node) {
-        ScalarExpr newValue = (ScalarExpr) node.value().accept(this);
-        if (newValue == node.value()) {
-            return node;
-        }
-        return new AccumulatorUpdate(node.name(), newValue);
-    }
-
     // Loops and control flow
 
     @Override
@@ -182,6 +176,37 @@ public class LIRRewriter implements LIRVisitor<LIRNode> {
             return node;
         }
         return new Loop(node.indexName(), newBound, node.isParallel(), newBody);
+    }
+
+    @Override
+    public LIRNode visitStructuredFor(StructuredFor node) {
+        IndexExpr newLower = (IndexExpr) node.lowerBound().accept(this);
+        IndexExpr newUpper = (IndexExpr) node.upperBound().accept(this);
+        IndexExpr newStep = (IndexExpr) node.step().accept(this);
+
+        List<LoopIterArg> newIterArgs = new ArrayList<>(node.iterArgs().size());
+        boolean iterChanged = false;
+        for (LoopIterArg arg : node.iterArgs()) {
+            ScalarExpr newInit = (ScalarExpr) arg.init().accept(this);
+            if (newInit != arg.init()) {
+                iterChanged = true;
+                newIterArgs.add(new LoopIterArg(arg.name(), arg.dataType(), newInit));
+            } else {
+                newIterArgs.add(arg);
+            }
+        }
+
+        LIRNode newBody = node.body().accept(this);
+        if (newLower == node.lowerBound()
+                && newUpper == node.upperBound()
+                && newStep == node.step()
+                && !iterChanged
+                && newBody == node.body()) {
+            return node;
+        }
+
+        return new StructuredFor(
+                node.indexName(), newLower, newUpper, newStep, newIterArgs, newBody);
     }
 
     @Override
@@ -228,5 +253,22 @@ public class LIRRewriter implements LIRVisitor<LIRNode> {
             return node;
         }
         return new Block(newStatements);
+    }
+
+    @Override
+    public LIRNode visitYield(Yield node) {
+        List<ScalarExpr> newValues = new ArrayList<>(node.values().size());
+        boolean changed = false;
+        for (ScalarExpr value : node.values()) {
+            ScalarExpr newValue = (ScalarExpr) value.accept(this);
+            newValues.add(newValue);
+            if (newValue != value) {
+                changed = true;
+            }
+        }
+        if (!changed) {
+            return node;
+        }
+        return new Yield(newValues);
     }
 }
