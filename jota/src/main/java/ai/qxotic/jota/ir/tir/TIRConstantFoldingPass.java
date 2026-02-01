@@ -39,8 +39,8 @@ public final class TIRConstantFoldingPass implements TIRPass {
     }
 
     /**
-     * Extracts underlying ScalarConstant nodes from a graph input.
-     * ViewTransforms are traversed to find the base scalar.
+     * Extracts underlying ScalarConstant nodes from a graph input. ViewTransforms are traversed to
+     * find the base scalar.
      */
     private void extractUnderlyingScalars(TIRNode node, java.util.Set<ScalarConstant> scalars) {
         if (node instanceof ScalarConstant sc) {
@@ -58,7 +58,10 @@ public final class TIRConstantFoldingPass implements TIRPass {
 
     private static final class ConstantFoldingRewriter extends TIRRewriter {
 
-        /** ScalarConstants that are graph inputs - represent runtime parameters and must not be folded. */
+        /**
+         * ScalarConstants that are graph inputs - represent runtime parameters and must not be
+         * folded.
+         */
         private final java.util.Set<ScalarConstant> inputScalars;
 
         ConstantFoldingRewriter(java.util.Set<ScalarConstant> inputScalars) {
@@ -66,8 +69,8 @@ public final class TIRConstantFoldingPass implements TIRPass {
         }
 
         /**
-         * Returns true if this ScalarConstant can be folded (compile-time constant).
-         * Graph inputs are runtime parameters and cannot be folded.
+         * Returns true if this ScalarConstant can be folded (compile-time constant). Graph inputs
+         * are runtime parameters and cannot be folded.
          */
         private boolean canFold(ScalarConstant sc) {
             return !inputScalars.contains(sc);
@@ -130,7 +133,8 @@ public final class TIRConstantFoldingPass implements TIRPass {
             }
 
             // Try to fold reduction on iota constant
-            // Note: IotaConstant is always virtual (computed from index), so it can always be folded
+            // Note: IotaConstant is always virtual (computed from index), so it can always be
+            // folded
             if (newInput instanceof IotaConstant iota) {
                 ScalarConstant folded = foldReductionIota(node.op(), iota, node.axes());
                 if (folded != null) {
@@ -499,8 +503,8 @@ public final class TIRConstantFoldingPass implements TIRPass {
         }
 
         /**
-         * Extracts a ScalarConstant from a node, but only if it can be folded
-         * (i.e., it's not a graph input). Graph inputs represent runtime parameters.
+         * Extracts a ScalarConstant from a node, but only if it can be folded (i.e., it's not a
+         * graph input). Graph inputs represent runtime parameters.
          *
          * @param node the TIR node to examine
          * @return Optional containing the foldable ScalarConstant, empty otherwise
@@ -538,8 +542,7 @@ public final class TIRConstantFoldingPass implements TIRPass {
             } else if (vt.kind() instanceof ViewKind.Reshape) {
                 // Reshape preserves values
                 return extractScalarConstant(vt.input());
-            }
-            else if (vt.kind() instanceof ViewKind.Transpose) {
+            } else if (vt.kind() instanceof ViewKind.Transpose) {
                 // Transpose preserves values
                 return extractScalarConstant(vt.input());
             }
@@ -548,8 +551,9 @@ public final class TIRConstantFoldingPass implements TIRPass {
         }
 
         /**
-         * Extracts scalar constant from a TensorInput. A TensorInput represents a broadcasted scalar
-         * if it has all-zero strides (meaning all elements point to the same memory location).
+         * Extracts scalar constant from a TensorInput. A TensorInput represents a broadcasted
+         * scalar if it has all-zero strides (meaning all elements point to the same memory
+         * location).
          */
         private Optional<ScalarConstant> extractFromTensorInput(TensorInput ti) {
             // Check if this is a broadcasted scalar by examining strides

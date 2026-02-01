@@ -3,7 +3,6 @@ package ai.qxotic.jota.ir.lir;
 import ai.qxotic.jota.BFloat16;
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.ir.tir.BinaryOperator;
-import ai.qxotic.jota.ir.tir.ReductionOperator;
 import ai.qxotic.jota.ir.tir.UnaryOperator;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -16,15 +15,21 @@ public final class LIRInterpreter {
     private final Map<Integer, MemorySegment> buffers = new HashMap<>();
     private final Map<Integer, ScalarInputValue> scalarInputs = new HashMap<>();
     private final Map<String, Long> indexVars = new HashMap<>();
-    private final Map<String, AccumulatorState> accumulators = new HashMap<>();
+    private final Map<String, ScalarValue> scalarBindings = new HashMap<>();
 
     private record ScalarInputValue(long rawBits, DataType dataType) {}
 
-    private record AccumulatorState(DataType dtype, ReductionOperator op, long valueBits) {}
+    private record ScalarValue(long rawBits, DataType dataType) {}
+
 
     /** Binds a buffer to the given id. */
     public void bindBuffer(int id, MemorySegment segment) {
         buffers.put(id, segment);
+    }
+
+    /** Binds a float input value to the given id. */
+    public void bindFloatInput(int id, float value) {
+        scalarInputs.put(id, new ScalarInputValue(Float.floatToRawIntBits(value), DataType.FP32));
     }
 
     /** Binds a scalar input value (as raw bits) with its data type to the given id. */
@@ -41,17 +46,25 @@ public final class LIRInterpreter {
     public void executeNode(LIRNode node) {
         switch (node) {
             case Loop loop -> executeLoop(loop);
+            case StructuredFor structuredFor -> executeStructuredFor(structuredFor);
             case TiledLoop tiledLoop -> executeTiledLoop(tiledLoop);
             case LoopNest loopNest -> executeLoopNest(loopNest);
             case Block block -> executeBlock(block);
             case Store store -> executeStore(store);
-            case Accumulator acc -> executeAccumulator(acc);
-            case AccumulatorUpdate update -> executeAccumulatorUpdate(update);
+            case ScalarLet let -> executeScalarLet(let);
+            case Yield ignored -> {}
             case IndexExpr ignored -> {}
             case ScalarExpr ignored -> {}
             case BufferRef ignored -> {}
             case Load ignored -> {}
         }
+    }
+
+    private void executeScalarLet(ScalarLet let) {
+        // Evaluate the value and bind it (available for rest of block)
+        long valueBits = evaluateScalar(let.value());
+        DataType dtype = let.value().dataType();
+        scalarBindings.put(let.name(), new ScalarValue(valueBits, dtype));
     }
 
     private void executeLoop(Loop loop) {
@@ -61,6 +74,75 @@ public final class LIRInterpreter {
             executeNode(loop.body());
         }
         indexVars.remove(loop.indexName());
+    }
+
+    private void executeStructuredFor(StructuredFor loop) {
+        long lower = evaluateIndex(loop.lowerBound());
+        long upper = evaluateIndex(loop.upperBound());
+        long step = evaluateIndex(loop.step());
+        if (step == 0) {
+            throw new IllegalArgumentException("Loop step cannot be zero");
+        }
+
+        long[] iterValues = new long[loop.iterArgs().size()];
+        DataType[] iterTypes = new DataType[loop.iterArgs().size()];
+        for (int i = 0; i < loop.iterArgs().size(); i++) {
+            LoopIterArg arg = loop.iterArgs().get(i);
+            iterValues[i] = evaluateScalar(arg.init());
+            iterTypes[i] = arg.dataType();
+            scalarBindings.put(arg.name(), new ScalarValue(iterValues[i], iterTypes[i]));
+        }
+
+        for (long i = lower; step > 0 ? i < upper : i > upper; i += step) {
+            indexVars.put(loop.indexName(), i);
+            for (int j = 0; j < loop.iterArgs().size(); j++) {
+                LoopIterArg arg = loop.iterArgs().get(j);
+                scalarBindings.put(arg.name(), new ScalarValue(iterValues[j], iterTypes[j]));
+            }
+            long[] yielded = executeBodyAndYield(loop.body(), loop.iterArgs().size());
+            System.arraycopy(yielded, 0, iterValues, 0, yielded.length);
+        }
+
+        indexVars.remove(loop.indexName());
+        for (int i = 0; i < loop.iterArgs().size(); i++) {
+            LoopIterArg arg = loop.iterArgs().get(i);
+            scalarBindings.put(arg.name(), new ScalarValue(iterValues[i], iterTypes[i]));
+        }
+    }
+
+    private long[] executeBodyAndYield(LIRNode body, int expectedArity) {
+        if (body instanceof Yield yield) {
+            return evaluateYield(yield, expectedArity);
+        }
+        if (body instanceof Block block) {
+            if (block.statements().isEmpty()) {
+                throw new IllegalStateException("Structured loop body cannot be empty");
+            }
+            for (int i = 0; i < block.statements().size() - 1; i++) {
+                executeNode(block.statements().get(i));
+            }
+            LIRNode last = block.statements().getLast();
+            if (!(last instanceof Yield yield)) {
+                throw new IllegalStateException("Structured loop body must end with Yield");
+            }
+            return evaluateYield(yield, expectedArity);
+        }
+        throw new IllegalStateException("Structured loop body must end with Yield");
+    }
+
+    private long[] evaluateYield(Yield yield, int expectedArity) {
+        if (yield.values().size() != expectedArity) {
+            throw new IllegalStateException(
+                    "Yield arity "
+                            + yield.values().size()
+                            + " does not match iter args "
+                            + expectedArity);
+        }
+        long[] values = new long[yield.values().size()];
+        for (int i = 0; i < values.length; i++) {
+            values[i] = evaluateScalar(yield.values().get(i));
+        }
+        return values;
     }
 
     private void executeTiledLoop(TiledLoop tiledLoop) {
@@ -113,70 +195,6 @@ public final class LIRInterpreter {
         writeValue(buffer, offset, valueBits, store.buffer().dataType());
     }
 
-    private void executeAccumulator(Accumulator acc) {
-        accumulators.put(
-                acc.name(), new AccumulatorState(acc.dataType(), acc.op(), acc.identityBits()));
-    }
-
-    private void executeAccumulatorUpdate(AccumulatorUpdate update) {
-        AccumulatorState state = accumulators.get(update.name());
-        if (state == null) {
-            throw new IllegalStateException("Accumulator not found: " + update.name());
-        }
-
-        long newValueBits = evaluateScalar(update.value());
-        long combinedBits =
-                combineAccumulator(state.valueBits, newValueBits, state.dtype, state.op);
-        accumulators.put(update.name(), new AccumulatorState(state.dtype, state.op, combinedBits));
-    }
-
-    private long combineAccumulator(
-            long accBits, long valueBits, DataType dtype, ReductionOperator op) {
-        if (dtype == DataType.FP32) {
-            float acc = Float.intBitsToFloat((int) accBits);
-            float value = Float.intBitsToFloat((int) valueBits);
-            float result =
-                    switch (op) {
-                        case SUM -> acc + value;
-                        case PROD -> acc * value;
-                        case MIN -> Math.min(acc, value);
-                        case MAX -> Math.max(acc, value);
-                    };
-            return Float.floatToRawIntBits(result);
-        } else if (dtype == DataType.FP64) {
-            double acc = Double.longBitsToDouble(accBits);
-            double value = Double.longBitsToDouble(valueBits);
-            double result =
-                    switch (op) {
-                        case SUM -> acc + value;
-                        case PROD -> acc * value;
-                        case MIN -> Math.min(acc, value);
-                        case MAX -> Math.max(acc, value);
-                    };
-            return Double.doubleToRawLongBits(result);
-        } else if (dtype == DataType.I32) {
-            int acc = (int) accBits;
-            int value = (int) valueBits;
-            int result =
-                    switch (op) {
-                        case SUM -> acc + value;
-                        case PROD -> acc * value;
-                        case MIN -> Math.min(acc, value);
-                        case MAX -> Math.max(acc, value);
-                    };
-            return result;
-        } else if (dtype == DataType.I64) {
-            long result =
-                    switch (op) {
-                        case SUM -> accBits + valueBits;
-                        case PROD -> accBits * valueBits;
-                        case MIN -> Math.min(accBits, valueBits);
-                        case MAX -> Math.max(accBits, valueBits);
-                    };
-            return result;
-        }
-        throw new UnsupportedOperationException("Unsupported dtype for accumulator: " + dtype);
-    }
 
     /** Evaluates an index expression and returns its value. */
     public long evaluateIndex(IndexExpr expr) {
@@ -227,8 +245,15 @@ public final class LIRInterpreter {
             case ScalarBinary b -> evaluateBinary(b);
             case ScalarTernary t -> evaluateTernary(t);
             case ScalarCast c -> evaluateCast(c);
-            case AccumulatorRead r -> getAccumulatorValue(r.name());
             case ScalarFromIndex sfi -> evaluateIndex(sfi.index());
+            case ScalarRef ref -> {
+                // Reference to a let-bound scalar
+                ScalarValue value = scalarBindings.get(ref.name());
+                if (value == null) {
+                    throw new IllegalStateException("Scalar binding not found: " + ref.name());
+                }
+                yield value.rawBits();
+            }
         };
     }
 
@@ -510,20 +535,11 @@ public final class LIRInterpreter {
         }
     }
 
-    /** Gets the current value of an accumulator. */
-    public long getAccumulatorValue(String name) {
-        AccumulatorState state = accumulators.get(name);
-        if (state == null) {
-            throw new IllegalStateException("Accumulator not found: " + name);
-        }
-        return state.valueBits;
-    }
-
     /** Clears all interpreter state. */
     public void reset() {
         buffers.clear();
         scalarInputs.clear();
         indexVars.clear();
-        accumulators.clear();
+        scalarBindings.clear();
     }
 }

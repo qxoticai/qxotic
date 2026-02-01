@@ -37,18 +37,7 @@ public interface MemoryView<B> extends View {
     }
 
     default boolean isContiguous() {
-        if (shape().hasZeroElements()) {
-            return true; // Empty views are trivially contiguous
-        }
-        long expectedStride = 1; // element stride for contiguous layout
-        long[] strides = stride().toArray();
-        for (int i = shape().flatRank() - 1; i >= 0; i--) {
-            if (strides[i] != expectedStride) {
-                return false;
-            }
-            expectedStride *= shape().flatAt(i);
-        }
-        return true;
+        return layout().isContiguous();
     }
 
     static boolean isWithinBounds(

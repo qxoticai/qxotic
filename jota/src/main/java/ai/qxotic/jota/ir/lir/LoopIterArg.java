@@ -3,14 +3,15 @@ package ai.qxotic.jota.ir.lir;
 import ai.qxotic.jota.DataType;
 import java.util.Objects;
 
-/** Read the current value of an accumulator. */
-public record AccumulatorRead(String name, DataType dataType) implements ScalarExpr {
+/** Loop-carried argument for structured loops. */
+public record LoopIterArg(String name, DataType dataType, ScalarExpr init) {
 
-    public AccumulatorRead {
+    public LoopIterArg {
         Objects.requireNonNull(name, "name cannot be null");
         if (name.isEmpty()) {
             throw new IllegalArgumentException("name cannot be empty");
         }
         Objects.requireNonNull(dataType, "dataType cannot be null");
+        Objects.requireNonNull(init, "init cannot be null");
     }
 }

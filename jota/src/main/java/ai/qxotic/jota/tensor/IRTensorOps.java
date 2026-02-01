@@ -213,7 +213,7 @@ final class IRTensorOps implements TensorOps {
     @Override
     public Tensor reshape(Tensor input, Shape newShape) {
         IRTensor tensor = requireIRTensor(input);
-        Shape inputShape = tensor.layout().shape();
+        Shape inputShape = tensor.shape();
         if (inputShape.size() != newShape.size()) {
             throw new IllegalArgumentException(
                     "Cannot reshape from "

@@ -24,7 +24,14 @@ class LIRTextRendererTest {
         ScalarExpr sum = new ScalarBinary(BinaryOperator.ADD, v0, v1);
         Store store = new Store(out, offset, sum);
 
-        Loop loop = Loop.parallel("i", 4, store);
+        StructuredFor loop =
+                new StructuredFor(
+                        "i",
+                        new IndexConst(0),
+                        new IndexConst(4),
+                        new IndexConst(1),
+                        java.util.List.of(),
+                        new Block(java.util.List.of(store, Yield.empty())));
         LIRGraph graph = builder.build(loop);
 
         // Render
@@ -42,12 +49,13 @@ class LIRTextRendererTest {
         assertTrue(output.contains("outputs:"), "Should contain 'outputs:'");
         assertTrue(output.contains("body {"), "Should contain 'body {'");
         assertTrue(
-                output.contains("parallel.for %i in [0, 4) {"),
-                "Should contain 'parallel.for %i in [0, 4) {'");
+                output.contains("for %i = 0 to 4 step 1"),
+                "Should contain structured for header");
         assertTrue(output.contains("load fp32 %in0"), "Should contain 'load fp32 %in0'");
         assertTrue(output.contains("load fp32 %in1"), "Should contain 'load fp32 %in1'");
         assertTrue(output.contains("add fp32"), "Should contain 'add fp32'");
         assertTrue(output.contains("store %out0"), "Should contain 'store %out0'");
+        assertTrue(output.contains("yield"), "Should contain yield");
     }
 
     @Test
@@ -96,14 +104,20 @@ class LIRTextRendererTest {
         LIRTextRenderer renderer = new LIRTextRenderer();
         String output = renderer.render(graph);
 
+        // Print for debugging
+        System.out.println("=== LIR Output (testBufferMetadata) ===");
+        System.out.println(output);
+        System.out.println("========================================");
+
         // Verify key elements are present
         assertTrue(
                 output.contains("fp32[(2, 3):(12, 4)]") || output.contains("fp32[(4):(12)]"),
                 "Should contain buffer shape and strides");
         assertTrue(output.contains("contiguous"), "Should contain contiguity keyword");
-        assertTrue(
-                output.contains("multiply fp32"), "Should contain multiply (full name) operations");
-        assertTrue(output.contains("add fp32"), "Should contain add operations");
+        // Index multiplications render as "*" in offset expressions, not "multiply fp32"
+        assertTrue(output.contains(" * "), "Should contain index multiplication operators");
+        // Index additions render as "+" in offset expressions, not "add fp32"
+        assertTrue(output.contains(" + "), "Should contain index addition operators");
         assertTrue(output.contains("store %out0"), "Should store to output");
     }
 

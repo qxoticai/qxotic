@@ -89,8 +89,8 @@ public final class CanonicalizationPass implements LIRPass {
     /**
      * Compares two scalar expressions for canonical ordering.
      *
-     * <p>Order: ScalarLiteral < AccumulatorRead < ScalarLoad < ScalarFromIndex < ScalarCast <
-     * ScalarUnary < ScalarTernary < ScalarBinary
+     * <p>Order: ScalarLiteral < ScalarInput < ScalarRef < ScalarLoad < ScalarFromIndex < ScalarCast
+     * < ScalarUnary < ScalarTernary < ScalarBinary
      */
     private static int compareScalar(ScalarExpr a, ScalarExpr b) {
         int typeA = scalarTypeOrder(a);
@@ -106,7 +106,6 @@ public final class CanonicalizationPass implements LIRPass {
                 if (dtCmp != 0) yield dtCmp;
                 yield Long.compare(ca.rawBits(), cb.rawBits());
             }
-            case AccumulatorRead ra -> ra.name().compareTo(((AccumulatorRead) b).name());
             case ScalarLoad la -> {
                 ScalarLoad lb = (ScalarLoad) b;
                 int bufCmp = Integer.compare(la.buffer().id(), lb.buffer().id());
@@ -143,14 +142,15 @@ public final class CanonicalizationPass implements LIRPass {
                 if (leftCmp != 0) yield leftCmp;
                 yield compareScalar(ba.right(), bb.right());
             }
+            case ScalarRef ra -> ra.name().compareTo(((ScalarRef) b).name());
         };
     }
 
     private static int scalarTypeOrder(ScalarExpr e) {
         return switch (e) {
             case ScalarLiteral __ -> 0;
-            case AccumulatorRead __ -> 1;
-            case ScalarInput __ -> 2;
+            case ScalarInput __ -> 1;
+            case ScalarRef __ -> 2;
             case ScalarLoad __ -> 3;
             case ScalarFromIndex __ -> 4;
             case ScalarCast __ -> 5;

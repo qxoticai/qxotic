@@ -21,6 +21,30 @@ public record ScalarLiteral(long rawBits, DataType dataType) implements ScalarEx
         return new ScalarLiteral(rawBits, dataType);
     }
 
+    /**
+     * Creates a literal from a long value, converting to the target type. The value is converted
+     * (not reinterpreted) to the target type.
+     */
+    public static ScalarLiteral of(long value, DataType targetType) {
+        if (targetType == DataType.FP32) {
+            return ofFloat((float) value);
+        } else if (targetType == DataType.FP64) {
+            return ofDouble((double) value);
+        } else if (targetType == DataType.I32) {
+            return ofInt((int) value);
+        } else if (targetType == DataType.I64) {
+            return ofLong(value);
+        } else if (targetType == DataType.BOOL) {
+            return ofBool(value != 0);
+        } else if (targetType == DataType.FP16) {
+            return new ScalarLiteral(Float.floatToFloat16((float) value), DataType.FP16);
+        } else if (targetType == DataType.BF16) {
+            return new ScalarLiteral(BFloat16.fromFloat((float) value), DataType.BF16);
+        } else {
+            throw new IllegalArgumentException("Unsupported target type: " + targetType);
+        }
+    }
+
     /** Creates a float literal. */
     public static ScalarLiteral ofFloat(float value) {
         return new ScalarLiteral(Float.floatToRawIntBits(value), DataType.FP32);
@@ -72,7 +96,8 @@ public record ScalarLiteral(long rawBits, DataType dataType) implements ScalarEx
         if (dataType == DataType.FP64) {
             return Double.longBitsToDouble(rawBits);
         }
-        throw new IllegalStateException("Cannot extract double from " + dataType + ", expected FP64");
+        throw new IllegalStateException(
+                "Cannot extract double from " + dataType + ", expected FP64");
     }
 
     /**
@@ -120,6 +145,7 @@ public record ScalarLiteral(long rawBits, DataType dataType) implements ScalarEx
         if (dataType == DataType.BOOL) {
             return rawBits != 0;
         }
-        throw new IllegalStateException("Cannot extract boolean from " + dataType + ", expected BOOL");
+        throw new IllegalStateException(
+                "Cannot extract boolean from " + dataType + ", expected BOOL");
     }
 }

@@ -15,7 +15,7 @@ import java.util.Map;
  *   <li>Explicit data types on all operations
  *   <li>Inline index expressions
  *   <li>Full buffer metadata (shape, strides)
- *   <li>Compact loop notation: {@code parallel.for %i in [0, 4)}
+ *   <li>Structured loop notation: {@code for %i = 0 to 4 step 1}
  *   <li>Flat representation with intermediate variables
  * </ul>
  */
@@ -74,7 +74,7 @@ public class LIRTextRenderer implements LIRVisitor<String> {
                                 TextRenderUtils.formatBuffer(
                                         "in", nextInputId - 1, buf.dataType(), buf.layout());
                         case ScalarInput scalar ->
-                                "in"
+                                "%in"
                                         + (nextInputId - 1)
                                         + ": scalar "
                                         + TextRenderUtils.formatDataType(scalar.dataType());
@@ -153,6 +153,52 @@ public class LIRTextRenderer implements LIRVisitor<String> {
         return expr.accept(this);
     }
 
+    /**
+     * Renders the RHS of an expression (the operation without variable assignment). Used for
+     * ScalarLet to avoid creating intermediate variables.
+     */
+    private String renderExprRhs(ScalarExpr expr) {
+        return switch (expr) {
+            case ScalarLiteral lit -> visitScalarLiteral(lit);
+            case ScalarInput input -> visitScalarInput(input);
+            case ScalarRef ref -> visitScalarRef(ref);
+            case ScalarFromIndex sfi ->
+                    "from_index " + sfi.dataType() + " " + sfi.index().accept(this);
+            case ScalarLoad load ->
+                    "load "
+                            + load.dataType()
+                            + " %"
+                            + bufferName(load.buffer())
+                            + "["
+                            + load.offset().accept(this)
+                            + "]";
+            case ScalarCast cast -> "cast " + cast.targetType() + " " + getVar(cast.input());
+            case ScalarUnary unary ->
+                    TextRenderUtils.formatUnaryOp(unary.op())
+                            + " "
+                            + unary.dataType()
+                            + " "
+                            + getVar(unary.input());
+            case ScalarBinary binary ->
+                    TextRenderUtils.formatBinaryOp(binary.op())
+                            + " "
+                            + binary.dataType()
+                            + " "
+                            + getVar(binary.left())
+                            + ", "
+                            + getVar(binary.right());
+            case ScalarTernary ternary ->
+                    "select "
+                            + ternary.dataType()
+                            + " "
+                            + getVar(ternary.condition())
+                            + ", "
+                            + getVar(ternary.trueValue())
+                            + ", "
+                            + getVar(ternary.falseValue());
+        };
+    }
+
     // ==================== Index Expressions ====================
 
     @Override
@@ -170,6 +216,15 @@ public class LIRTextRenderer implements LIRVisitor<String> {
         String left = node.left().accept(this);
         String right = node.right().accept(this);
         String op = formatIndexBinaryOp(node.op());
+
+        // Always wrap IndexBinary children in parentheses to show exact tree structure
+        if (node.left() instanceof IndexBinary) {
+            left = "(" + left + ")";
+        }
+        if (node.right() instanceof IndexBinary) {
+            right = "(" + right + ")";
+        }
+
         return left + " " + op + " " + right;
     }
 
@@ -278,6 +333,22 @@ public class LIRTextRenderer implements LIRVisitor<String> {
         return exprToVar.get(node);
     }
 
+    @Override
+    public String visitScalarRef(ScalarRef node) {
+        // Reference to a let-bound scalar
+        return "%" + node.name();
+    }
+
+    @Override
+    public String visitScalarLet(ScalarLet node) {
+        // Render as SSA definition with the let's name
+        String rhs = renderExprRhs(node.value());
+        String varName = "%" + node.name();
+        exprToVar.put(node.value(), varName); // Register so future refs use this name
+        appendLine(varName + " = " + rhs);
+        return "";
+    }
+
     private String bufferName(BufferRef buffer) {
         // Look up the buffer name from the map, or use a generic name
         return bufferIdToName.getOrDefault(buffer.id(), "buffer" + buffer.id());
@@ -308,51 +379,6 @@ public class LIRTextRenderer implements LIRVisitor<String> {
         return "";
     }
 
-    // ==================== Accumulators ====================
-
-    @Override
-    public String visitAccumulator(Accumulator node) {
-        String identity = formatIdentityValue(node.identityBits(), node.dataType());
-        appendLine(
-                "accumulator %"
-                        + node.name()
-                        + ": "
-                        + node.dataType()
-                        + " = "
-                        + identity
-                        + " # "
-                        + node.op());
-        return "";
-    }
-
-    private String formatIdentityValue(long bits, DataType dt) {
-        if (dt == DataType.FP32) {
-            return Float.intBitsToFloat((int) bits) + "f";
-        } else if (dt == DataType.FP64) {
-            return Double.longBitsToDouble(bits) + "";
-        } else if (dt == DataType.I32) {
-            return String.valueOf((int) bits);
-        } else if (dt == DataType.I64) {
-            return String.valueOf(bits);
-        } else {
-            return String.valueOf(bits);
-        }
-    }
-
-    @Override
-    public String visitAccumulatorRead(AccumulatorRead node) {
-        String varName = "%" + nextVarId++;
-        appendLine(varName + " = read.acc %" + node.name() + " : " + node.dataType());
-        return varName;
-    }
-
-    @Override
-    public String visitAccumulatorUpdate(AccumulatorUpdate node) {
-        String value = getVar(node.value());
-        appendLine("update.acc %" + node.name() + ", " + value);
-        return "";
-    }
-
     // ==================== Control Flow ====================
 
     @Override
@@ -360,6 +386,53 @@ public class LIRTextRenderer implements LIRVisitor<String> {
         String bound = node.bound().accept(this);
         String loopType = node.isParallel() ? "parallel.for" : "for";
         appendLine(loopType + " %" + node.indexName() + " in [0, " + bound + ") {");
+        increaseIndent();
+        node.body().accept(this);
+        decreaseIndent();
+        appendLine("}");
+        return "";
+    }
+
+    @Override
+    public String visitStructuredFor(StructuredFor node) {
+        String lb = node.lowerBound().accept(this);
+        String ub = node.upperBound().accept(this);
+        String step = node.step().accept(this);
+
+        StringBuilder header = new StringBuilder();
+        header.append("for %")
+                .append(node.indexName())
+                .append(" = ")
+                .append(lb)
+                .append(" to ")
+                .append(ub)
+                .append(" step ")
+                .append(step);
+
+        if (!node.iterArgs().isEmpty()) {
+            header.append(" iter_args(");
+            for (int i = 0; i < node.iterArgs().size(); i++) {
+                LoopIterArg arg = node.iterArgs().get(i);
+                if (i > 0) {
+                    header.append(", ");
+                }
+                header.append("%")
+                        .append(arg.name())
+                        .append(" = ")
+                        .append(renderExprRhs(arg.init()));
+            }
+            header.append(") -> (");
+            for (int i = 0; i < node.iterArgs().size(); i++) {
+                if (i > 0) {
+                    header.append(", ");
+                }
+                header.append(node.iterArgs().get(i).dataType());
+            }
+            header.append(")");
+        }
+
+        header.append(" {");
+        appendLine(header.toString());
         increaseIndent();
         node.body().accept(this);
         decreaseIndent();
@@ -407,6 +480,24 @@ public class LIRTextRenderer implements LIRVisitor<String> {
         for (LIRNode statement : node.statements()) {
             statement.accept(this);
         }
+        return "";
+    }
+
+    @Override
+    public String visitYield(Yield node) {
+        if (node.values().isEmpty()) {
+            appendLine("yield");
+            return "";
+        }
+        StringBuilder line = new StringBuilder();
+        line.append("yield ");
+        for (int i = 0; i < node.values().size(); i++) {
+            if (i > 0) {
+                line.append(", ");
+            }
+            line.append(getVar(node.values().get(i)));
+        }
+        appendLine(line.toString());
         return "";
     }
 }

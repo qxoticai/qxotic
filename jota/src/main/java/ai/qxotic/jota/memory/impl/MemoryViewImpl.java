@@ -20,7 +20,6 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
     private final Stride byteStride;
     private final Memory<T> memory;
     private final long byteOffset;
-    final boolean isContiguous;
 
     @Override
     public Stride byteStride() {
@@ -36,7 +35,6 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
         this.byteStride = this.layout.stride().scale(this.dataType.byteSize());
         this.memory = memory;
         this.byteOffset = byteOffset;
-        this.isContiguous = isContiguous(layout);
 
         if (!memory.supportsDataType(dataType)) {
             throw new IllegalArgumentException("unsupported data type: " + dataType);
@@ -49,21 +47,6 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
     static <B> MemoryView<B> create(
             Layout layout, DataType dataType, long byteOffset, Memory<B> memory) {
         return new MemoryViewImpl<>(layout, dataType, byteOffset, memory);
-    }
-
-    private static boolean isContiguous(Layout layout) {
-        if (layout.shape().hasZeroElements()) {
-            return true;
-        }
-        long expectedStride = 1;
-        long[] strides = layout.stride().toArray();
-        for (int i = layout.shape().flatRank() - 1; i >= 0; i--) {
-            if (strides[i] != expectedStride) {
-                return false;
-            }
-            expectedStride *= layout.shape().flatAt(i);
-        }
-        return true;
     }
 
     @Override
@@ -86,10 +69,7 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
         return dataType;
     }
 
-    @Override
-    public boolean isContiguous() {
-        return isContiguous;
-    }
+
 
     @Override
     public String toString() {
@@ -117,29 +97,6 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
         }
         return MemoryViewImpl.create(
                 spec.layout(), dataType, byteOffset + spec.byteOffsetDelta(), memory);
-    }
-
-    /**
-     * Checks if this layout spans a contiguous memory range [0, n-1].
-     *
-     * <p>This is true if: sum((dim_i - 1) * stride_i) == totalElements - 1
-     *
-     * <p>This is more general than row-major contiguity. For example, (2, 2, 2):(4, 1, 2) spans [0,
-     * 7] contiguously even though iteration order is not linear.
-     */
-    private boolean spansContiguousRange() {
-        if (layout.shape().hasZeroElements()) {
-            return true;
-        }
-        long span = 0;
-        long totalElements = 1;
-        long[] strides = layout.stride().toArray();
-        for (int i = 0; i < layout.shape().flatRank(); i++) {
-            long dim = layout.shape().flatAt(i);
-            span += (dim - 1) * strides[i];
-            totalElements *= dim;
-        }
-        return span == totalElements - 1;
     }
 
     @Override

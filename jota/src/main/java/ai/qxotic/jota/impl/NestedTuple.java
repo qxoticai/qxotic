@@ -18,10 +18,6 @@ public interface NestedTuple<T extends NestedTuple<T>> {
         return rank() == 0;
     }
 
-    default boolean isSingleton() {
-        return flatRank() == 1;
-    }
-
     T flatten();
 
     boolean isCongruentWith(NestedTuple<?> other);
