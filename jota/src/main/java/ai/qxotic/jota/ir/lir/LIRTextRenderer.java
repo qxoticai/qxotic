@@ -1,7 +1,10 @@
 package ai.qxotic.jota.ir.lir;
 
 import ai.qxotic.jota.DataType;
+import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.ir.TextRenderUtils;
+import ai.qxotic.jota.ir.tir.BinaryOperator;
+import ai.qxotic.jota.ir.tir.UnaryOperator;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -57,63 +60,72 @@ public class LIRTextRenderer implements LIRVisitor<String> {
         exprToVar.clear();
         bufferIdToName.clear();
 
-        appendLine("LIRGraph {");
-        increaseIndent();
-
-        // Render inputs and build name map
-        appendLine("inputs: [");
-        increaseIndent();
+        // Build parameter list (inputs + outputs)
+        StringBuilder params = new StringBuilder();
         for (int i = 0; i < graph.inputs().size(); i++) {
             LIRInput input = graph.inputs().get(i);
-            String suffix = (i < graph.inputs().size() - 1) ? "," : "";
             String name = "in" + nextInputId++;
             bufferIdToName.put(input.id(), name);
-            String formatted =
-                    switch (input) {
-                        case BufferRef buf ->
-                                TextRenderUtils.formatBuffer(
-                                        "in", nextInputId - 1, buf.dataType(), buf.layout());
-                        case ScalarInput scalar ->
-                                "%in"
-                                        + (nextInputId - 1)
-                                        + ": scalar "
-                                        + TextRenderUtils.formatDataType(scalar.dataType());
-                    };
-            appendLine(formatted + suffix);
-        }
-        decreaseIndent();
-        appendLine("]");
 
-        // Render outputs and build buffer name map
-        appendLine("outputs: [");
-        increaseIndent();
+            switch (input) {
+                case BufferRef buf ->
+                        params.append("%")
+                                .append(name)
+                                .append(": ")
+                                .append(formatMemRefType(buf.dataType(), buf.layout()));
+                case ScalarInput scalar ->
+                        params.append("%")
+                                .append(name)
+                                .append(": ")
+                                .append(TextRenderUtils.formatDataType(scalar.dataType()));
+            }
+            if (i < graph.inputs().size() - 1 || !graph.outputs().isEmpty()) {
+                params.append(", ");
+            }
+        }
         for (int i = 0; i < graph.outputs().size(); i++) {
             BufferRef outputBuf = graph.outputs().get(i);
-            String suffix = (i < graph.outputs().size() - 1) ? "," : "";
             String name = "out" + nextOutputId++;
             bufferIdToName.put(outputBuf.id(), name);
-            appendLine(
-                    TextRenderUtils.formatBuffer(
-                                    "out",
-                                    nextOutputId - 1,
-                                    outputBuf.dataType(),
-                                    outputBuf.layout())
-                            + suffix);
+
+            params.append("%")
+                    .append(name)
+                    .append(": ")
+                    .append(formatMemRefType(outputBuf.dataType(), outputBuf.layout()));
+            if (i < graph.outputs().size() - 1) {
+                params.append(", ");
+            }
         }
-        decreaseIndent();
-        appendLine("]");
 
-        // Render body
-        appendLine("body {");
+        appendLine("module {");
         increaseIndent();
-        graph.body().accept(this);
-        decreaseIndent();
-        appendLine("}");
+        appendLine("func.func @kernel(" + params + ") {");
+        increaseIndent();
 
+        graph.body().accept(this);
+
+        decreaseIndent();
+        appendLine("  return");
+        appendLine("}");
         decreaseIndent();
         appendLine("}");
 
         return output.toString();
+    }
+
+    private String formatMemRefType(DataType dataType, Layout layout) {
+        int rank = (int) layout.shape().flatRank();
+        long[] shape = new long[rank];
+        long[] strides = new long[rank];
+        long byteSize = dataType.byteSize();
+        for (int i = 0; i < rank; i++) {
+            shape[i] = layout.shape().flatAt(i);
+            strides[i] = layout.stride().flatAt(i) * byteSize;
+        }
+        boolean contiguous =
+                TextRenderUtils.isContiguous(shape, strides, (int) dataType.byteSize());
+        return TextRenderUtils.formatMemRefType(
+                dataType, shape, strides, (int) byteSize, contiguous);
     }
 
     private void appendLine(String line) {
@@ -163,32 +175,35 @@ public class LIRTextRenderer implements LIRVisitor<String> {
             case ScalarInput input -> visitScalarInput(input);
             case ScalarRef ref -> visitScalarRef(ref);
             case ScalarFromIndex sfi ->
-                    "from_index " + sfi.dataType() + " " + sfi.index().accept(this);
+                    "arith.index_cast "
+                            + sfi.index().accept(this)
+                            + TextRenderUtils.formatOpTypeSuffix(sfi.dataType());
             case ScalarLoad load ->
-                    "load "
-                            + load.dataType()
-                            + " %"
+                    "memref.load %"
                             + bufferName(load.buffer())
                             + "["
                             + load.offset().accept(this)
-                            + "]";
-            case ScalarCast cast -> "cast " + cast.targetType() + " " + getVar(cast.input());
+                            + "] : "
+                            + formatMemRefType(load.dataType(), load.buffer().layout());
+            case ScalarCast cast ->
+                    formatCastOp(cast.input().dataType(), cast.targetType())
+                            + " "
+                            + getVar(cast.input())
+                            + TextRenderUtils.formatOpTypeSuffix(cast.targetType());
             case ScalarUnary unary ->
-                    TextRenderUtils.formatUnaryOp(unary.op())
+                    formatUnaryOp(unary.op())
                             + " "
-                            + unary.dataType()
-                            + " "
-                            + getVar(unary.input());
+                            + getVar(unary.input())
+                            + TextRenderUtils.formatOpTypeSuffix(unary.dataType());
             case ScalarBinary binary ->
-                    TextRenderUtils.formatBinaryOp(binary.op())
-                            + " "
-                            + binary.dataType()
+                    formatBinaryOp(binary.op())
                             + " "
                             + getVar(binary.left())
                             + ", "
-                            + getVar(binary.right());
+                            + getVar(binary.right())
+                            + TextRenderUtils.formatOpTypeSuffix(binary.dataType());
             case ScalarTernary ternary ->
-                    "select "
+                    "arith.select "
                             + ternary.dataType()
                             + " "
                             + getVar(ternary.condition())
@@ -268,22 +283,42 @@ public class LIRTextRenderer implements LIRVisitor<String> {
     @Override
     public String visitScalarUnary(ScalarUnary node) {
         String input = getVar(node.input());
-        String op = TextRenderUtils.formatUnaryOp(node.op());
+        String op = formatUnaryOp(node.op());
         DataType dt = node.dataType();
-        String result = allocateVar(node, op + " " + dt + " " + input);
-        appendLine(result);
-        return exprToVar.get(node);
+        String varName = "%" + nextVarId++;
+        exprToVar.put(node, varName);
+        appendLine(
+                varName
+                        + " = "
+                        + op
+                        + " "
+                        + input
+                        + TextRenderUtils.formatOpTypeSuffix(dt)
+                        + "  // "
+                        + getUnaryOpComment(node.op()));
+        return varName;
     }
 
     @Override
     public String visitScalarBinary(ScalarBinary node) {
         String left = getVar(node.left());
         String right = getVar(node.right());
-        String op = TextRenderUtils.formatBinaryOp(node.op());
+        String op = formatBinaryOp(node.op());
         DataType dt = node.dataType();
-        String result = allocateVar(node, op + " " + dt + " " + left + ", " + right);
-        appendLine(result);
-        return exprToVar.get(node);
+        String varName = "%" + nextVarId++;
+        exprToVar.put(node, varName);
+        appendLine(
+                varName
+                        + " = "
+                        + op
+                        + " "
+                        + left
+                        + ", "
+                        + right
+                        + TextRenderUtils.formatOpTypeSuffix(dt)
+                        + "  // "
+                        + getBinaryOpComment(node.op(), left, right));
+        return varName;
     }
 
     @Override
@@ -292,19 +327,30 @@ public class LIRTextRenderer implements LIRVisitor<String> {
         String trueVal = getVar(node.trueValue());
         String falseVal = getVar(node.falseValue());
         DataType dt = node.dataType();
-        String result =
-                allocateVar(node, "select " + dt + " " + cond + ", " + trueVal + ", " + falseVal);
-        appendLine(result);
-        return exprToVar.get(node);
+        String varName = "%" + nextVarId++;
+        exprToVar.put(node, varName);
+        appendLine(
+                varName
+                        + " = arith.select "
+                        + cond
+                        + ", "
+                        + trueVal
+                        + ", "
+                        + falseVal
+                        + TextRenderUtils.formatOpTypeSuffix(dt));
+        return varName;
     }
 
     @Override
     public String visitScalarCast(ScalarCast node) {
         String input = getVar(node.input());
         DataType target = node.targetType();
-        String result = allocateVar(node, "cast " + target + " " + input);
-        appendLine(result);
-        return exprToVar.get(node);
+        DataType source = node.input().dataType();
+        String op = formatCastOp(source, target);
+        String varName = "%" + nextVarId++;
+        exprToVar.put(node, varName);
+        appendLine(varName + " = " + op + " " + input + TextRenderUtils.formatOpTypeSuffix(target));
+        return varName;
     }
 
     @Override
@@ -312,41 +358,105 @@ public class LIRTextRenderer implements LIRVisitor<String> {
         String offset = node.offset().accept(this);
         BufferRef buffer = node.buffer();
         DataType dt = node.dataType();
-        String result =
-                allocateVar(node, "load " + dt + " %" + bufferName(buffer) + "[" + offset + "]");
-        appendLine(result);
-        return exprToVar.get(node);
+        String varName = "%" + nextVarId++;
+        exprToVar.put(node, varName);
+        appendLine(
+                varName
+                        + " = memref.load %"
+                        + bufferName(buffer)
+                        + "["
+                        + offset
+                        + "] : "
+                        + formatMemRefType(dt, buffer.layout())
+                        + "  // input");
+        return varName;
     }
 
     @Override
     public String visitScalarInput(ScalarInput node) {
-        // Scalar inputs are referenced directly by name (no load needed)
-        return "%scalar" + node.id();
+        String name = bufferIdToName.get(node.id());
+        if (name == null) {
+            name = "in" + node.id();
+        }
+        return "%" + name;
     }
 
     @Override
     public String visitScalarFromIndex(ScalarFromIndex node) {
         String index = node.index().accept(this);
         DataType dt = node.dataType();
-        String result = allocateVar(node, "from_index " + dt + " " + index);
-        appendLine(result);
-        return exprToVar.get(node);
+        String varName = "%" + nextVarId++;
+        exprToVar.put(node, varName);
+        appendLine(
+                varName + " = arith.index_cast " + index + TextRenderUtils.formatOpTypeSuffix(dt));
+        return varName;
     }
 
     @Override
     public String visitScalarRef(ScalarRef node) {
-        // Reference to a let-bound scalar
         return "%" + node.name();
     }
 
     @Override
     public String visitScalarLet(ScalarLet node) {
-        // Render as SSA definition with the let's name
         String rhs = renderExprRhs(node.value());
         String varName = "%" + node.name();
-        exprToVar.put(node.value(), varName); // Register so future refs use this name
+        exprToVar.put(node.value(), varName);
         appendLine(varName + " = " + rhs);
         return "";
+    }
+
+    private String formatUnaryOp(UnaryOperator op) {
+        return switch (op) {
+            case NEGATE -> "arith.negf";
+            case ABS -> "math.abs";
+            case EXP -> "math.exp";
+            case LOG -> "math.log";
+            case SQRT -> "math.sqrt";
+            case TANH -> "math.tanh";
+            case RECIPROCAL -> "arith.divf 1.0";
+            default -> "arith." + op.name().toLowerCase();
+        };
+    }
+
+    private String formatBinaryOp(BinaryOperator op) {
+        return switch (op) {
+            case ADD -> "arith.addf";
+            case SUBTRACT -> "arith.subf";
+            case MULTIPLY -> "arith.mulf";
+            case DIVIDE -> "arith.divf";
+            case MIN -> "arith.minf";
+            case MAX -> "arith.maxf";
+            case POW -> "math.powf";
+            default -> "arith." + op.name().toLowerCase();
+        };
+    }
+
+    private String formatCastOp(DataType source, DataType target) {
+        if (source.isFloatingPoint() && target.isIntegral()) {
+            return "arith.fptosi";
+        } else if (source.isIntegral() && target.isFloatingPoint()) {
+            return "arith.sitofp";
+        } else if (source.byteSize() == target.byteSize()) {
+            return "arith.bitcast";
+        } else {
+            return "arith.extf";
+        }
+    }
+
+    private String getUnaryOpComment(UnaryOperator op) {
+        return op.name().toLowerCase();
+    }
+
+    private String getBinaryOpComment(BinaryOperator op, String left, String right) {
+        if (left.equals(right)) {
+            return switch (op) {
+                case MULTIPLY -> "squared";
+                case ADD -> "doubled";
+                default -> op.name().toLowerCase();
+            };
+        }
+        return op.name().toLowerCase();
     }
 
     private String bufferName(BufferRef buffer) {
@@ -366,8 +476,16 @@ public class LIRTextRenderer implements LIRVisitor<String> {
         String offset = node.offset().accept(this);
         BufferRef buffer = node.buffer();
         DataType dt = node.dataType();
-        appendLine("load " + dt + " %" + bufferName(buffer) + "[" + offset + "]");
-        return "";
+        String varName = "%" + nextVarId++;
+        appendLine(
+                varName
+                        + " = memref.load %"
+                        + bufferName(buffer)
+                        + "["
+                        + offset
+                        + "] : "
+                        + formatMemRefType(dt, buffer.layout()));
+        return varName;
     }
 
     @Override
@@ -375,7 +493,15 @@ public class LIRTextRenderer implements LIRVisitor<String> {
         String offset = node.offset().accept(this);
         BufferRef buffer = node.buffer();
         String value = getVar(node.value());
-        appendLine("store %" + bufferName(buffer) + "[" + offset + "], " + value);
+        appendLine(
+                "memref.store "
+                        + value
+                        + ", %"
+                        + bufferName(buffer)
+                        + "["
+                        + offset
+                        + "] : "
+                        + formatMemRefType(node.value().dataType(), buffer.layout()));
         return "";
     }
 
@@ -384,8 +510,12 @@ public class LIRTextRenderer implements LIRVisitor<String> {
     @Override
     public String visitLoop(Loop node) {
         String bound = node.bound().accept(this);
-        String loopType = node.isParallel() ? "parallel.for" : "for";
-        appendLine(loopType + " %" + node.indexName() + " in [0, " + bound + ") {");
+        String loopType =
+                node.isParallel()
+                        ? "scf.parallel (%i) = (0) to (%b) step (1)"
+                        : "scf.for %i = 0 to %b step 1";
+        loopType = loopType.replace("%i", "%" + node.indexName()).replace("%b", bound);
+        appendLine(loopType + " {");
         increaseIndent();
         node.body().accept(this);
         decreaseIndent();
@@ -400,7 +530,7 @@ public class LIRTextRenderer implements LIRVisitor<String> {
         String step = node.step().accept(this);
 
         StringBuilder header = new StringBuilder();
-        header.append("for %")
+        header.append("scf.for %")
                 .append(node.indexName())
                 .append(" = ")
                 .append(lb)
@@ -426,7 +556,7 @@ public class LIRTextRenderer implements LIRVisitor<String> {
                 if (i > 0) {
                     header.append(", ");
                 }
-                header.append(node.iterArgs().get(i).dataType());
+                header.append(TextRenderUtils.formatDataType(node.iterArgs().get(i).dataType()));
             }
             header.append(")");
         }
@@ -444,17 +574,30 @@ public class LIRTextRenderer implements LIRVisitor<String> {
     public String visitTiledLoop(TiledLoop node) {
         String totalBound = node.totalBound().accept(this);
         appendLine(
-                "tiled.for %"
+                "scf.for %"
                         + node.outerName()
-                        + ", %"
-                        + node.innerName()
-                        + " in [0, "
+                        + " = 0 to "
                         + totalBound
-                        + ") tile="
+                        + " step "
                         + node.tileSize()
                         + " {");
         increaseIndent();
+        appendLine(
+                "  scf.for %"
+                        + node.innerName()
+                        + " = 0 to min(%"
+                        + node.tileSize()
+                        + ", "
+                        + totalBound
+                        + " - %"
+                        + node.outerName()
+                        + " * "
+                        + node.tileSize()
+                        + ") {");
+        increaseIndent();
         node.body().accept(this);
+        decreaseIndent();
+        appendLine("  }");
         decreaseIndent();
         appendLine("}");
         return "";
@@ -462,16 +605,19 @@ public class LIRTextRenderer implements LIRVisitor<String> {
 
     @Override
     public String visitLoopNest(LoopNest node) {
-        appendLine("loop.nest {");
+        appendLine("// loop nest");
         increaseIndent();
         for (Loop loop : node.loops()) {
             String bound = loop.bound().accept(this);
-            String loopType = loop.isParallel() ? "parallel.for" : "for";
-            appendLine(loopType + " %" + loop.indexName() + " in [0, " + bound + ")");
+            String loopType =
+                    loop.isParallel()
+                            ? "scf.parallel (%i) = (0) to (%b) step (1)"
+                            : "scf.for %i = 0 to %b step 1";
+            loopType = loopType.replace("%i", "%" + loop.indexName()).replace("%b", bound);
+            appendLine(loopType);
         }
-        node.body().accept(this);
         decreaseIndent();
-        appendLine("}");
+        node.body().accept(this);
         return "";
     }
 
@@ -486,11 +632,10 @@ public class LIRTextRenderer implements LIRVisitor<String> {
     @Override
     public String visitYield(Yield node) {
         if (node.values().isEmpty()) {
-            appendLine("yield");
             return "";
         }
         StringBuilder line = new StringBuilder();
-        line.append("yield ");
+        line.append("scf.yield ");
         for (int i = 0; i < node.values().size(); i++) {
             if (i > 0) {
                 line.append(", ");

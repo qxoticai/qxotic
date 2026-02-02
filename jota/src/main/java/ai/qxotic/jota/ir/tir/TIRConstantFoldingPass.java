@@ -96,7 +96,7 @@ public final class TIRConstantFoldingPass implements TIRPass {
             if (newLeft == node.left() && newRight == node.right()) {
                 return node;
             }
-            return new BinaryOp(node.op(), newLeft, newRight);
+            return new BinaryOp(node.op(), newLeft, newRight, node.shape());
         }
 
         @Override
@@ -114,7 +114,7 @@ public final class TIRConstantFoldingPass implements TIRPass {
             if (newInput == node.input()) {
                 return node;
             }
-            return new UnaryOp(node.op(), newInput);
+            return new UnaryOp(node.op(), newInput, node.shape());
         }
 
         @Override
@@ -125,8 +125,7 @@ public final class TIRConstantFoldingPass implements TIRPass {
             if (newInput instanceof ScalarConstant scalar && canFold(scalar)) {
                 ScalarConstant folded = foldReductionScalar(node.op(), scalar, node.axes());
                 if (folded != null) {
-                    // Apply the output shape from the reduction
-                    Shape outputShape = node.layout().shape();
+                    Shape outputShape = node.shape();
                     return ScalarConstant.broadcast(
                             folded.rawBits(), folded.dataType(), outputShape);
                 }
@@ -138,7 +137,7 @@ public final class TIRConstantFoldingPass implements TIRPass {
             if (newInput instanceof IotaConstant iota) {
                 ScalarConstant folded = foldReductionIota(node.op(), iota, node.axes());
                 if (folded != null) {
-                    Shape outputShape = node.layout().shape();
+                    Shape outputShape = node.shape();
                     return ScalarConstant.broadcast(
                             folded.rawBits(), folded.dataType(), outputShape);
                 }
@@ -157,7 +156,7 @@ public final class TIRConstantFoldingPass implements TIRPass {
                     ScalarConstant folded =
                             foldMatmul(leftOpt.get(), rightOpt.get(), binOp, node.axes());
                     if (folded != null) {
-                        Shape outputShape = node.layout().shape();
+                        Shape outputShape = node.shape();
                         return ScalarConstant.broadcast(
                                 folded.rawBits(), folded.dataType(), outputShape);
                     }
@@ -167,7 +166,8 @@ public final class TIRConstantFoldingPass implements TIRPass {
             if (newInput == node.input()) {
                 return node;
             }
-            return new ReductionOp(node.op(), newInput, node.axes(), node.keepDims());
+            return new ReductionOp(
+                    node.op(), newInput, node.axes(), node.keepDims(), node.accumulatorType(), node.shape());
         }
 
         // ==================== Binary Folding ====================
@@ -180,8 +180,8 @@ public final class TIRConstantFoldingPass implements TIRPass {
             }
 
             // Compute broadcast shape
-            Shape leftShape = left.layout().shape();
-            Shape rightShape = right.layout().shape();
+            Shape leftShape = left.shape();
+            Shape rightShape = right.shape();
             Shape resultShape = broadcastShapes(leftShape, rightShape);
 
             long resultBits = evaluateBinary(op, left.rawBits(), right.rawBits(), dtype);
@@ -263,7 +263,7 @@ public final class TIRConstantFoldingPass implements TIRPass {
         private ScalarConstant foldUnary(UnaryOperator op, ScalarConstant input) {
             DataType dtype = input.dataType();
             long resultBits = evaluateUnary(op, input.rawBits(), dtype);
-            return new ScalarConstant(resultBits, dtype, input.layout());
+            return new ScalarConstant(resultBits, dtype, input.shape());
         }
 
         private long evaluateUnary(UnaryOperator op, long bits, DataType dtype) {
@@ -339,7 +339,7 @@ public final class TIRConstantFoldingPass implements TIRPass {
         private ScalarConstant foldReductionScalar(
                 ReductionOperator op, ScalarConstant scalar, int[] axes) {
             // Compute the size of the reduced dimensions
-            Shape shape = scalar.layout().shape();
+            Shape shape = scalar.shape();
             long reducedSize = 1;
             for (int axis : axes) {
                 reducedSize *= shape.flatAt(axis);
@@ -366,7 +366,7 @@ public final class TIRConstantFoldingPass implements TIRPass {
             DataType dtype = iota.dataType();
 
             // Only handle full reduction for now (all axes)
-            Shape shape = iota.layout().shape();
+            Shape shape = iota.shape();
             long totalSize = shape.size();
             if (n != totalSize) {
                 return null; // Partial reduction on reshaped iota is complex
@@ -664,7 +664,7 @@ public final class TIRConstantFoldingPass implements TIRPass {
 
             // Compute the contraction dimension size (K)
             long contractionSize = 1;
-            Shape mulShape = mulOp.layout().shape();
+            Shape mulShape = mulOp.shape();
             for (int axis : axes) {
                 if (axis >= 0 && axis < mulShape.rank()) {
                     contractionSize *= mulShape.flatAt(axis);

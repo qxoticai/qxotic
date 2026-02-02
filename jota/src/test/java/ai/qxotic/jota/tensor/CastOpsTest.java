@@ -31,7 +31,7 @@ class CastOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = boolPattern(shape, new byte[] {1, 0, 1, 0});
         Tensor input = Tensor.of(view);
 
-        Tensor castI32 = Tracer.trace(input, t -> t.cast(DataType.I32));
+        Tensor castI32 = IRTracer.trace(input, t -> t.cast(DataType.I32));
         MemoryView<?> outI32 = castI32.materialize();
         assertEquals(shape, outI32.shape());
         assertEquals(1, readInt(outI32, 0));
@@ -39,7 +39,7 @@ class CastOpsTest extends AbstractMemoryTest {
         assertEquals(1, readInt(outI32, 2));
         assertEquals(0, readInt(outI32, 3));
 
-        Tensor castI64 = Tracer.trace(input, t -> t.cast(DataType.I64));
+        Tensor castI64 = IRTracer.trace(input, t -> t.cast(DataType.I64));
         MemoryView<?> outI64 = castI64.materialize();
         assertEquals(shape, outI64.shape());
         assertEquals(1L, readLong(outI64, 0));
@@ -53,7 +53,7 @@ class CastOpsTest extends AbstractMemoryTest {
         Shape shape = Shape.of(2, 2);
         MemoryView<MemorySegment> view = intPattern(shape, new int[] {0, 2, -1, 0});
         Tensor input = Tensor.of(view);
-        Tensor castBool = Tracer.trace(input, t -> t.cast(DataType.BOOL));
+        Tensor castBool = IRTracer.trace(input, t -> t.cast(DataType.BOOL));
         MemoryView<?> outBool = castBool.materialize();
         assertEquals(shape, outBool.shape());
         assertEquals((byte) 0, readByte(outBool, 0));
@@ -68,11 +68,10 @@ class CastOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = intPattern(shape, new int[] {0, 2, -1, 0});
         Tensor input0 = Tensor.of(view);
         Tensor input1 = Tensor.of(view);
-        Tensor output =
-                Tracer.trace(
-                        input0,
-                        input1,
-                        (t0, t1) -> t0.add(t1).sum(DataType.I32).cast(DataType.FP32));
+        // Materialize the reduction result first, then cast
+        Tensor sum =
+                IRTracer.trace(input0, input1, (t0, t1) -> t0.add(t1).sum(DataType.I32));
+        Tensor output = IRTracer.trace(sum, s -> s.cast(DataType.FP32));
         MemoryView<?> result = output.materialize();
         assertEquals(Shape.scalar(), result.shape());
         assertEquals(2.0f, readFloat(result, 0), 0.0001f);
@@ -84,7 +83,7 @@ class CastOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = floatPattern(shape, new float[] {1.8f, -2.4f, 0.0f});
         Tensor input = Tensor.of(view);
 
-        Tensor castI32 = Tracer.trace(input, t -> t.cast(DataType.I32));
+        Tensor castI32 = IRTracer.trace(input, t -> t.cast(DataType.I32));
         MemoryView<?> outI32 = castI32.materialize();
         assertEquals(shape, outI32.shape());
         assertEquals(1, readInt(outI32, 0));

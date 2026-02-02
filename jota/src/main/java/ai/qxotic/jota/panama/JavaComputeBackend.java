@@ -38,6 +38,7 @@ final class JavaComputeBackend implements ComputeBackend {
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public MemoryView<?> execute(ExpressionGraph graph, List<Tensor> inputs) {
         Objects.requireNonNull(graph, "graph");
         Objects.requireNonNull(inputs, "inputs");
@@ -55,7 +56,6 @@ final class JavaComputeBackend implements ComputeBackend {
             requireSameShape(inputNode, view);
             requirePanama(view, "input" + inputNode.index());
             allContiguous &= view.isContiguous();
-            @SuppressWarnings("unchecked")
             MemoryView<MemorySegment> panamaView = (MemoryView<MemorySegment>) view;
             inputViews.add(panamaView);
         }
@@ -72,7 +72,6 @@ final class JavaComputeBackend implements ComputeBackend {
                         layout);
         requirePanama(outputView, "output");
         allContiguous &= outputView.isContiguous();
-        @SuppressWarnings("unchecked")
         MemoryView<MemorySegment> panamaOutput = (MemoryView<MemorySegment>) outputView;
 
         KernelStyle style = allContiguous ? KernelStyle.CONTIGUOUS : KernelStyle.STRIDED;

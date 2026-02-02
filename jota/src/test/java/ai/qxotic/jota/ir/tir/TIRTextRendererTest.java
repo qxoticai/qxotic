@@ -26,11 +26,9 @@ class TIRTextRendererTest {
         String rendered = new TIRTextRenderer().render(tirGraph);
 
         assertNotNull(rendered);
-        assertTrue(rendered.contains("TIRGraph {"));
-        assertTrue(rendered.contains("inputs: ["));
-        assertTrue(rendered.contains("outputs: ["));
-        assertTrue(rendered.contains("body {"));
-        assertTrue(rendered.contains("negate fp32"));
+        assertTrue(rendered.contains("module {"));
+        assertTrue(rendered.contains("func.func @tensor_ops"));
+        assertTrue(rendered.contains("arith.negf"));
     }
 
     @Test
@@ -49,10 +47,8 @@ class TIRTextRendererTest {
         String rendered = new TIRTextRenderer().render(tirGraph);
 
         assertNotNull(rendered);
-        assertTrue(rendered.contains("TIRGraph {"));
-        assertTrue(rendered.contains("inputs: ["));
-        assertTrue(rendered.contains("outputs: ["));
-        assertTrue(rendered.contains("add fp32"));
+        assertTrue(rendered.contains("module {"));
+        assertTrue(rendered.contains("arith.addf"));
     }
 
     @Test
@@ -68,8 +64,8 @@ class TIRTextRendererTest {
         String toString = tirGraph.toString();
 
         assertNotNull(toString);
-        assertTrue(toString.contains("TIRGraph {"));
-        assertTrue(toString.contains("negate fp32"));
+        assertTrue(toString.contains("module {"));
+        assertTrue(toString.contains("arith.negf"));
     }
 
     @Test
@@ -85,7 +81,8 @@ class TIRTextRendererTest {
         String rendered = new TIRTextRenderer().render(tirGraph);
 
         assertNotNull(rendered);
-        assertTrue(rendered.contains("TIRGraph {"));
+        assertTrue(rendered.contains("module {"));
+        assertTrue(rendered.contains("arith.constant"));
         assertTrue(rendered.contains("5.0f"));
     }
 
@@ -102,8 +99,8 @@ class TIRTextRendererTest {
         System.out.println(rendered);
 
         assertNotNull(rendered);
-        assertTrue(rendered.contains("exp"));
-        assertTrue(rendered.contains("fp32"));
+        assertTrue(rendered.contains("math.exp"));
+        assertTrue(rendered.contains(": fp32"));
     }
 
     @Test
@@ -145,14 +142,14 @@ class TIRTextRendererTest {
         System.out.println(rendered);
         System.out.println("=======================");
 
-        // Verify key elements are present
-        assertTrue(rendered.contains("TIRGraph {"), "Should contain TIRGraph header");
-        assertTrue(rendered.contains("inputs:"), "Should contain inputs section");
-        assertTrue(rendered.contains("outputs:"), "Should contain outputs section");
-        assertTrue(rendered.contains("body {"), "Should contain body section");
-        assertTrue(rendered.contains("multiply fp32"), "Should contain multiply operations");
-        assertTrue(rendered.contains("add fp32"), "Should contain add operations");
-        assertTrue(rendered.contains("tanh fp32"), "Should contain tanh operation");
+        // Verify MLIR-style output
+        assertTrue(rendered.contains("module {"), "Should contain module");
+        assertTrue(rendered.contains("func.func @tensor_ops"), "Should contain function");
+        assertTrue(rendered.contains("tensor<5xfp32>"), "Should contain tensor type");
+        assertTrue(rendered.contains("arith.mulf"), "Should contain multiply operations");
+        assertTrue(rendered.contains("arith.addf"), "Should contain add operations");
+        assertTrue(rendered.contains("math.tanh"), "Should contain tanh operation");
+        assertTrue(rendered.contains("arith.constant"), "Should contain constant");
         assertTrue(rendered.contains("0.044715f"), "Should contain cubic coefficient");
         assertTrue(rendered.contains("0.7978846f"), "Should contain sqrt(2/pi) constant");
         assertTrue(rendered.contains("0.5f"), "Should contain 0.5 constant");

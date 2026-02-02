@@ -111,7 +111,7 @@ class ViewOpsTest {
         MemoryView<MemorySegment> view =
                 MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(3, 4));
         MemoryView<MemorySegment> transposed = view.transpose(0, 1);
-        assertFalse(transposed.isContiguous());
+        assertFalse(transposed.layout().isSuffixContiguous(0));
         Tensor input = Tensor.of(transposed);
 
         // Transposed tensor has non-row-major strides, so flatten requires copy in eager mode
@@ -194,7 +194,7 @@ class ViewOpsTest {
         // Shape (2, 2, 2) with stride (4, 1, 2) - NOT row-major order
         Layout layout = Layout.of(Shape.flat(2, 2, 2), Stride.flat(4, 1, 2));
         MemoryView<MemorySegment> view = MemoryView.of(memory, DataType.FP32, layout);
-        assertFalse(view.isContiguous());
+        assertFalse(view.layout().isSuffixContiguous(0));
         Tensor input = Tensor.of(view);
 
         // Non-row-major strides require copy in eager mode
@@ -304,8 +304,9 @@ class ViewOpsTest {
 
         assertEquals(nestedShape, result.shape());
 
-        // Verify the inferred strides match CuTe semantics
-        Stride expectedStride = Stride.of(Stride.of(4L, 2L), 1L);
+        // Verify the inferred strides - strides are preserved from original layout
+        // Original (2, 2, 2):(4, 1, 2) -> ((2, 2), 2):((4, 1), 2)
+        Stride expectedStride = Stride.of(Stride.of(4L, 1L), 2L);
         assertEquals(expectedStride, result.stride());
     }
 

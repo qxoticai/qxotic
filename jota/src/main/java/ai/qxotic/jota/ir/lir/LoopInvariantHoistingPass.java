@@ -125,8 +125,7 @@ public final class LoopInvariantHoistingPass implements LIRPass {
         // This handles ScalarLets created by inner loop processing that can be hoisted further
         List<ScalarLet> hoistedLets = new ArrayList<>();
         hoistedBody =
-                extractInvariantLets(
-                        hoistedBody, loop.indexName(), Set.<String>of(), hoistedLets);
+                extractInvariantLets(hoistedBody, loop.indexName(), Set.<String>of(), hoistedLets);
 
         // Clean up trivial ScalarLets (where value is now just a ScalarRef)
         hoistedBody = cleanupTrivialLets(hoistedBody);
@@ -276,10 +275,7 @@ public final class LoopInvariantHoistingPass implements LIRPass {
      * are added to the hoistedLets list and removed from the tree.
      */
     private LIRNode extractInvariantLets(
-            LIRNode node,
-            String loopIndex,
-            Set<String> blockedRefs,
-            List<ScalarLet> hoistedLets) {
+            LIRNode node, String loopIndex, Set<String> blockedRefs, List<ScalarLet> hoistedLets) {
         return switch (node) {
             case Block block -> {
                 List<LIRNode> newStmts = new ArrayList<>();

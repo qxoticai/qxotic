@@ -40,7 +40,7 @@ class ToOpsTest {
         MemoryView<MemorySegment> view =
                 MemoryHelpers.arange(context, DataType.FP32, 4).view(Shape.of(4));
         Tensor input = Tensor.of(view);
-        Tensor result = Tracer.trace(input, t -> t.to(Device.GPU));
+        Tensor result = IRTracer.trace(input, t -> t.to(Device.GPU));
         assertTrue(result.isLazy());
         assertEquals(Device.GPU, result.device());
     }

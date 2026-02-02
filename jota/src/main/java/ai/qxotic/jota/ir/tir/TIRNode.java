@@ -1,11 +1,11 @@
 package ai.qxotic.jota.ir.tir;
 
-import ai.qxotic.jota.Layout;
+import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.ir.base.IRNode;
 
 /**
- * Base interface for all IR-T (Tensor IR) nodes. IR-T represents purely semantic tensor operations
- * with shape and layout information.
+ * Base interface for all IR-T (Tensor IR) nodes. IR-T represents tensor operations with explicit
+ * shapes and data types. Layout is only carried by input and view nodes.
  */
 public sealed interface TIRNode extends IRNode
         permits TensorInput,
@@ -19,8 +19,8 @@ public sealed interface TIRNode extends IRNode
                 Contiguous,
                 IotaConstant {
 
-    /** Returns the layout of this node (shape + stride). */
-    Layout layout();
+    /** Returns the shape of this node. */
+    Shape shape();
 
     /** Accepts a visitor for traversing the IR-T graph. */
     default <T> T accept(TIRVisitor<T> visitor) {

@@ -16,6 +16,11 @@ public record ScalarBinary(BinaryOperator op, ScalarExpr left, ScalarExpr right)
 
     @Override
     public DataType dataType() {
-        return left.dataType();
+        // Logical operations return BOOL regardless of input types
+        return switch (op) {
+            case LOGICAL_AND, LOGICAL_OR, LOGICAL_XOR -> DataType.BOOL;
+            case LESS_THAN, EQUAL -> DataType.BOOL;
+            default -> left.dataType();
+        };
     }
 }

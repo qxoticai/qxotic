@@ -79,21 +79,25 @@ public class EagerTensorOps implements TensorOps {
 
     @Override
     public Tensor sqrt(Tensor x) {
+        assertFloatingPoint(x.dataType(), "sqrt");
         return unaryOp(x, UnaryOp.SQRT);
     }
 
     @Override
     public Tensor sin(Tensor x) {
+        assertFloatingPoint(x.dataType(), "sin");
         return unaryOp(x, UnaryOp.SIN);
     }
 
     @Override
     public Tensor cos(Tensor x) {
+        assertFloatingPoint(x.dataType(), "cos");
         return unaryOp(x, UnaryOp.COS);
     }
 
     @Override
     public Tensor tanh(Tensor x) {
+        assertFloatingPoint(x.dataType(), "tanh");
         return unaryOp(x, UnaryOp.TANH);
     }
 
@@ -133,7 +137,9 @@ public class EagerTensorOps implements TensorOps {
     @Override
     public Tensor contiguous(Tensor x) {
         MemoryView<?> sourceView = x.materialize();
-        if (sourceView.isContiguous()) {
+        // Check for row-major contiguity (isSuffixContiguous(0)), not just spanning a contiguous range
+        // A tensor can span a contiguous range but have non-row-major strides (e.g., transposed)
+        if (sourceView.layout().isSuffixContiguous(0)) {
             return x;
         }
         boolean primitive =
@@ -164,21 +170,28 @@ public class EagerTensorOps implements TensorOps {
 
     @Override
     public Tensor bitwiseNot(Tensor x) {
+        assertIntegral(x.dataType(), "bitwiseNot");
         return unaryOp(x, UnaryOp.BITWISE_NOT);
     }
 
     @Override
     public Tensor bitwiseAnd(Tensor a, Tensor b) {
+        assertIntegral(a.dataType(), "bitwiseAnd");
+        assertIntegral(b.dataType(), "bitwiseAnd");
         return binaryOp(a, b, BinaryOp.BITWISE_AND);
     }
 
     @Override
     public Tensor bitwiseOr(Tensor a, Tensor b) {
+        assertIntegral(a.dataType(), "bitwiseOr");
+        assertIntegral(b.dataType(), "bitwiseOr");
         return binaryOp(a, b, BinaryOp.BITWISE_OR);
     }
 
     @Override
     public Tensor bitwiseXor(Tensor a, Tensor b) {
+        assertIntegral(a.dataType(), "bitwiseXor");
+        assertIntegral(b.dataType(), "bitwiseXor");
         return binaryOp(a, b, BinaryOp.BITWISE_XOR);
     }
 
@@ -319,6 +332,12 @@ public class EagerTensorOps implements TensorOps {
 
     @Override
     public Tensor where(Tensor condition, Tensor trueValue, Tensor falseValue) {
+        assertBool(condition.dataType(), "where condition");
+        assert trueValue.dataType() == falseValue.dataType()
+                : "where requires true and false values to have the same type, got "
+                        + trueValue.dataType()
+                        + " and "
+                        + falseValue.dataType();
         throw new UnsupportedOperationException("Generic where op dispatch not yet implemented");
     }
 
@@ -603,6 +622,20 @@ public class EagerTensorOps implements TensorOps {
     }
 
     private record OutputBufferSpec(long byteOffset, long byteSize) {}
+
+    private static void assertIntegral(DataType dataType, String opName) {
+        assert dataType.isIntegral() && dataType != DataType.BOOL
+                : opName + " requires integral data type, got " + dataType;
+    }
+
+    private static void assertFloatingPoint(DataType dataType, String opName) {
+        assert dataType.isFloatingPoint()
+                : opName + " requires floating-point data type, got " + dataType;
+    }
+
+    private static void assertBool(DataType dataType, String opName) {
+        assert dataType == DataType.BOOL : opName + " requires BOOL data type, got " + dataType;
+    }
 
     private Tensor binaryOp(Tensor a, Tensor b, BinaryOp op) {
         MemoryView<?> viewA = a.materialize();

@@ -1,15 +1,20 @@
 package ai.qxotic.jota.ir.tir;
 
 import ai.qxotic.jota.DataType;
-import ai.qxotic.jota.Layout;
+import ai.qxotic.jota.Shape;
 import java.util.Objects;
 
 /** Cast operation node in IR-T. */
-public record CastOp(TIRNode input, DataType targetDataType) implements TIRNode {
+public record CastOp(TIRNode input, DataType targetDataType, Shape shape) implements TIRNode {
+
+    public CastOp(TIRNode input, DataType targetDataType) {
+        this(input, targetDataType, input.shape());
+    }
 
     public CastOp {
         Objects.requireNonNull(input);
         Objects.requireNonNull(targetDataType);
+        Objects.requireNonNull(shape);
     }
 
     @Override
@@ -18,8 +23,7 @@ public record CastOp(TIRNode input, DataType targetDataType) implements TIRNode 
     }
 
     @Override
-    public Layout layout() {
-        // Compute operations produce row-major outputs.
-        return Layout.rowMajor(input.layout().shape());
+    public Shape shape() {
+        return shape;
     }
 }

@@ -119,8 +119,7 @@ class LIRStandardPipelineTest {
 
         // Verify custom pass is in the list
         List<LIRPass> passes = pipeline.getPasses();
-        boolean foundCustom =
-                passes.stream().anyMatch(p -> p.name().equals("CustomTestPass"));
+        boolean foundCustom = passes.stream().anyMatch(p -> p.name().equals("CustomTestPass"));
         assertTrue(foundCustom, "Custom pass should be in pipeline");
     }
 
@@ -138,8 +137,7 @@ class LIRStandardPipelineTest {
 
         ScalarExpr init = ScalarLiteral.ofFloat(0.0f);
         ScalarExpr updated =
-                new ScalarBinary(
-                        BinaryOperator.ADD, new ScalarRef("acc", DataType.FP32), prod);
+                new ScalarBinary(BinaryOperator.ADD, new ScalarRef("acc", DataType.FP32), prod);
         StructuredFor loop =
                 new StructuredFor(
                         "i",

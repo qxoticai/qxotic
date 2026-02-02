@@ -306,7 +306,9 @@ class TIRInterpreterTest {
 
         TIRNode tensorInput = new TensorInput(0, DataType.FP32, input.layout());
         // Reduce along axis 1 (columns), keepDims=false -> output shape [2]
-        TIRNode sumOp = new ReductionOp(ReductionOperator.SUM, tensorInput, new int[] {1}, false);
+        TIRNode sumOp =
+                new ReductionOp(
+                        ReductionOperator.SUM, tensorInput, new int[] {1}, false, DataType.FP32);
         TIRGraph graph = new TIRGraph(List.of(tensorInput), List.of(sumOp));
 
         List<MemoryView<MemorySegment>> outputs =
@@ -322,7 +324,9 @@ class TIRInterpreterTest {
                 createFloatTensor(new float[] {1.0f, 5.0f, 3.0f, 4.0f, 2.0f, 6.0f}, Shape.of(2, 3));
 
         TIRNode tensorInput = new TensorInput(0, DataType.FP32, input.layout());
-        TIRNode maxOp = new ReductionOp(ReductionOperator.MAX, tensorInput, new int[] {1}, false);
+        TIRNode maxOp =
+                new ReductionOp(
+                        ReductionOperator.MAX, tensorInput, new int[] {1}, false, DataType.FP32);
         TIRGraph graph = new TIRGraph(List.of(tensorInput), List.of(maxOp));
 
         List<MemoryView<MemorySegment>> outputs =
@@ -338,7 +342,9 @@ class TIRInterpreterTest {
                 createFloatTensor(new float[] {1.0f, 5.0f, 3.0f, 4.0f, 2.0f, 6.0f}, Shape.of(2, 3));
 
         TIRNode tensorInput = new TensorInput(0, DataType.FP32, input.layout());
-        TIRNode minOp = new ReductionOp(ReductionOperator.MIN, tensorInput, new int[] {1}, false);
+        TIRNode minOp =
+                new ReductionOp(
+                        ReductionOperator.MIN, tensorInput, new int[] {1}, false, DataType.FP32);
         TIRGraph graph = new TIRGraph(List.of(tensorInput), List.of(minOp));
 
         List<MemoryView<MemorySegment>> outputs =
@@ -653,7 +659,8 @@ class TIRInterpreterTest {
         TIRNode exp_x = new UnaryOp(UnaryOperator.EXP, x);
 
         // sum(exp(x)) via reduction
-        TIRNode sum_exp = new ReductionOp(ReductionOperator.SUM, exp_x, new int[] {0}, false);
+        TIRNode sum_exp =
+                new ReductionOp(ReductionOperator.SUM, exp_x, new int[] {0}, false, DataType.FP32);
 
         // Broadcast sum back to original shape for division
         Layout broadcastLayout = Layout.of(Shape.of(3), Stride.zeros(Shape.of(3)));
@@ -701,7 +708,8 @@ class TIRInterpreterTest {
         TIRNode x = new TensorInput(0, DataType.FP32, input.layout());
 
         // mean = sum(x) / n
-        TIRNode sum_x = new ReductionOp(ReductionOperator.SUM, x, new int[] {0}, false);
+        TIRNode sum_x =
+                new ReductionOp(ReductionOperator.SUM, x, new int[] {0}, false, DataType.FP32);
         Layout scalarBroadcast = Layout.of(shape, Stride.zeros(shape));
         ViewKind broadcastKind = new ViewKind.Broadcast(Shape.scalar(), shape);
         TIRNode sum_broadcast = new ViewTransform(sum_x, broadcastKind, scalarBroadcast, false);
@@ -716,7 +724,8 @@ class TIRInterpreterTest {
 
         // var = sum((x - mean)^2) / n
         TIRNode sum_sq =
-                new ReductionOp(ReductionOperator.SUM, x_centered_sq, new int[] {0}, false);
+                new ReductionOp(
+                        ReductionOperator.SUM, x_centered_sq, new int[] {0}, false, DataType.FP32);
         TIRNode sum_sq_broadcast = new ViewTransform(sum_sq, broadcastKind, scalarBroadcast, false);
         TIRNode var = new BinaryOp(BinaryOperator.DIVIDE, sum_sq_broadcast, n_const);
 

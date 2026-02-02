@@ -1,6 +1,7 @@
 package ai.qxotic.jota.ir.tir;
 
-import ai.qxotic.jota.*;
+import ai.qxotic.jota.DataType;
+import ai.qxotic.jota.Shape;
 import java.util.Objects;
 
 /**
@@ -8,10 +9,15 @@ import java.util.Objects;
  * contiguous row-major layout. IR-L will decide whether to emit a no-op (if already contiguous) or
  * allocate+copy.
  */
-public record Contiguous(TIRNode input) implements TIRNode {
+public record Contiguous(TIRNode input, Shape shape) implements TIRNode {
+
+    public Contiguous(TIRNode input) {
+        this(input, input.shape());
+    }
 
     public Contiguous {
         Objects.requireNonNull(input);
+        Objects.requireNonNull(shape);
     }
 
     @Override
@@ -20,8 +26,7 @@ public record Contiguous(TIRNode input) implements TIRNode {
     }
 
     @Override
-    public Layout layout() {
-        Shape shape = input.layout().shape();
-        return Layout.of(shape, Stride.rowMajor(shape));
+    public Shape shape() {
+        return shape;
     }
 }

@@ -126,8 +126,8 @@ class HipMinMaxReductionTest {
         Tensor input = Tensor.of(deviceView);
         Tensor reduced =
                 min
-                        ? ai.qxotic.jota.tensor.Tracer.trace(input, t -> t.min(keepDims, axis))
-                        : ai.qxotic.jota.tensor.Tracer.trace(input, t -> t.max(keepDims, axis));
+                        ? ai.qxotic.jota.tensor.IRTracer.trace(input, t -> t.min(keepDims, axis))
+                        : ai.qxotic.jota.tensor.IRTracer.trace(input, t -> t.max(keepDims, axis));
         MemoryView<?> output = Environment.with(hipEnv, reduced::materialize);
         @SuppressWarnings("unchecked")
         MemoryView<HipDevicePtr> deviceOut = (MemoryView<HipDevicePtr>) output;

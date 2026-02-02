@@ -2,9 +2,9 @@ package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
-import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.TypeRules;
+import ai.qxotic.jota.Util;
 import ai.qxotic.jota.impl.ViewTransforms;
 import ai.qxotic.jota.ir.tir.BinaryOperator;
 import ai.qxotic.jota.ir.tir.CastOp;
@@ -74,21 +74,29 @@ final class IRTensorOps implements TensorOps {
 
     @Override
     public Tensor sqrt(Tensor x) {
+        IRTensor tensor = requireIRTensor(x);
+        requireFloatingPoint(tensor.dataType(), "sqrt");
         return unaryOp(x, UnaryOperator.SQRT);
     }
 
     @Override
     public Tensor sin(Tensor x) {
+        IRTensor tensor = requireIRTensor(x);
+        requireFloatingPoint(tensor.dataType(), "sin");
         return unaryOp(x, UnaryOperator.SIN);
     }
 
     @Override
     public Tensor cos(Tensor x) {
+        IRTensor tensor = requireIRTensor(x);
+        requireFloatingPoint(tensor.dataType(), "cos");
         return unaryOp(x, UnaryOperator.COS);
     }
 
     @Override
     public Tensor tanh(Tensor x) {
+        IRTensor tensor = requireIRTensor(x);
+        requireFloatingPoint(tensor.dataType(), "tanh");
         return unaryOp(x, UnaryOperator.TANH);
     }
 
@@ -99,22 +107,24 @@ final class IRTensorOps implements TensorOps {
 
     @Override
     public Tensor bitwiseNot(Tensor x) {
+        IRTensor tensor = requireIRTensor(x);
+        requireIntegral(tensor.dataType(), "bitwiseNot");
         return unaryOp(x, UnaryOperator.BITWISE_NOT);
     }
 
     @Override
     public Tensor bitwiseAnd(Tensor a, Tensor b) {
-        return binaryOp(a, b, BinaryOperator.BITWISE_AND, "bitwiseAnd");
+        return bitwiseBinaryOp(a, b, BinaryOperator.BITWISE_AND, "bitwiseAnd");
     }
 
     @Override
     public Tensor bitwiseOr(Tensor a, Tensor b) {
-        return binaryOp(a, b, BinaryOperator.BITWISE_OR, "bitwiseOr");
+        return bitwiseBinaryOp(a, b, BinaryOperator.BITWISE_OR, "bitwiseOr");
     }
 
     @Override
     public Tensor bitwiseXor(Tensor a, Tensor b) {
-        return binaryOp(a, b, BinaryOperator.BITWISE_XOR, "bitwiseXor");
+        return bitwiseBinaryOp(a, b, BinaryOperator.BITWISE_XOR, "bitwiseXor");
     }
 
     @Override
@@ -152,13 +162,22 @@ final class IRTensorOps implements TensorOps {
         IRTensor condTensor = requireIRTensor(condition);
         IRTensor aTensor = requireIRTensor(trueValue);
         IRTensor bTensor = requireIRTensor(falseValue);
-        Layout layout = requireCompatibleLayout(aTensor, bTensor);
+
+        // Validate condition is BOOL type
+        requireBool(condTensor.dataType(), "where condition");
+
+        // Validate true and false values have same type
+        requireSameType(aTensor, bTensor, "where");
+
+        Shape outputShape =
+                resolveWhereShape(condTensor.shape(), aTensor.shape(), bTensor.shape());
         ai.qxotic.jota.ir.tir.TernaryOp node =
                 new ai.qxotic.jota.ir.tir.TernaryOp(
                         ai.qxotic.jota.ir.tir.TernaryOperator.WHERE,
                         condTensor.node(),
                         aTensor.node(),
-                        bTensor.node());
+                        bTensor.node(),
+                        outputShape);
         return new IRTensor(node, aTensor.device());
     }
 
@@ -246,31 +265,31 @@ final class IRTensorOps implements TensorOps {
         if (tensor.layout().isSuffixContiguous(0)) {
             return tensor;
         }
-        TIRNode node = new Contiguous(tensor.node());
+        TIRNode node = new Contiguous(tensor.node(), tensor.shape());
         return new IRTensor(node, tensor.device());
     }
 
     @Override
     public Tensor cast(Tensor input, DataType targetType) {
         IRTensor tensor = requireIRTensor(input);
-        TIRNode node = new CastOp(tensor.node(), targetType);
+        TIRNode node = new CastOp(tensor.node(), targetType, tensor.shape());
         return new IRTensor(node, tensor.device());
     }
 
     private Tensor unaryOp(Tensor x, UnaryOperator op) {
         IRTensor tensor = requireIRTensor(x);
-        TIRNode node = new ai.qxotic.jota.ir.tir.UnaryOp(op, tensor.node());
+        TIRNode node = new ai.qxotic.jota.ir.tir.UnaryOp(op, tensor.node(), tensor.shape());
         return new IRTensor(node, tensor.device());
     }
 
     private Tensor binaryOp(Tensor a, Tensor b, BinaryOperator op, String opName) {
         IRTensor left = requireIRTensor(a);
         IRTensor right = requireIRTensor(b);
-        Layout layout = requireCompatibleLayout(left, right);
+        Shape outputShape = requireCompatibleShape(left, right);
         DataType targetType = TypeRules.promote(left.dataType(), right.dataType());
         TIRNode leftNode = maybeCast(left.node(), targetType);
         TIRNode rightNode = maybeCast(right.node(), targetType);
-        TIRNode node = new ai.qxotic.jota.ir.tir.BinaryOp(op, leftNode, rightNode);
+        TIRNode node = new ai.qxotic.jota.ir.tir.BinaryOp(op, leftNode, rightNode, outputShape);
         return new IRTensor(node, left.device());
     }
 
@@ -278,25 +297,33 @@ final class IRTensorOps implements TensorOps {
         IRTensor left = requireIRTensor(a);
         IRTensor right = requireIRTensor(b);
         requireSameType(left, right, opName);
-        Layout layout = requireCompatibleLayout(left, right);
+        Shape outputShape = requireCompatibleShape(left, right);
         TIRNode leftNode = left.node();
         TIRNode rightNode = right.node();
-        TIRNode node = new ai.qxotic.jota.ir.tir.BinaryOp(op, leftNode, rightNode);
+        TIRNode node = new ai.qxotic.jota.ir.tir.BinaryOp(op, leftNode, rightNode, outputShape);
         return new IRTensor(node, left.device());
     }
 
     private Tensor reduceAxes(
-            Tensor input, ReductionOp op, int[] axes, boolean keepDims, DataType accumulatorType) {
+            Tensor input, ReductionOp op, int[] _axes, boolean keepDims, DataType accumulatorType) {
         IRTensor tensor = requireIRTensor(input);
+        int rank = tensor.shape().rank();
+        // Wrap around axes
+        int[] axes = new int[_axes.length];
+        for (int i = 0; i < _axes.length; i++) {
+            axes[i] = Util.wrapAround(_axes[i], rank);
+        }
         ReductionOperator irtOp = mapReductionOp(op);
-        TIRNode node = new ai.qxotic.jota.ir.tir.ReductionOp(irtOp, tensor.node(), axes, keepDims);
+        // Determine accumulator type: use provided type or default to input type
+        DataType accType = (accumulatorType != null) ? accumulatorType : tensor.dataType();
+        Shape outputShape = reduceShape(tensor.shape(), axes, keepDims);
+        TIRNode node =
+                new ai.qxotic.jota.ir.tir.ReductionOp(
+                        irtOp, tensor.node(), axes, keepDims, accType, outputShape);
         return new IRTensor(node, tensor.device());
     }
 
     private int[] getAxes(int _axis, int... _axes) {
-        if (_axes.length == 0 && _axis < 0) {
-            return new int[0];
-        }
         int[] result = new int[_axes.length + 1];
         result[0] = _axis;
         System.arraycopy(_axes, 0, result, 1, _axes.length);
@@ -307,7 +334,7 @@ final class IRTensorOps implements TensorOps {
         if (node.dataType() == targetType) {
             return node;
         }
-        return new CastOp(node, targetType);
+        return new CastOp(node, targetType, node.shape());
     }
 
     private void requireSameType(IRTensor left, IRTensor right, String opName) {
@@ -321,28 +348,32 @@ final class IRTensorOps implements TensorOps {
         }
     }
 
-    private Layout requireCompatibleLayout(IRTensor left, IRTensor right) {
-        boolean leftIsScalar = left.layout().shape().isScalar();
-        boolean rightIsScalar = right.layout().shape().isScalar();
+    private Shape requireCompatibleShape(IRTensor left, IRTensor right) {
+        // Only true scalars (shape.isScalar()) can be broadcast, not arbitrary broadcasted tensors
+        boolean leftIsTrueScalar = left.shape().isScalar();
+        boolean rightIsTrueScalar = right.shape().isScalar();
 
-        if (leftIsScalar && rightIsScalar) {
-            return left.layout();
+        if (leftIsTrueScalar && rightIsTrueScalar) {
+            return left.shape();
         }
-        if (leftIsScalar && !rightIsScalar) {
-            return right.layout();
+        if (leftIsTrueScalar && !rightIsTrueScalar) {
+            return right.shape();
         }
-        if (!leftIsScalar && rightIsScalar) {
-            return left.layout();
+        if (!leftIsTrueScalar && rightIsTrueScalar) {
+            return left.shape();
         }
 
-        if (!left.layout().isCongruentWith(right.layout())) {
+        // Neither is a true scalar - shapes must be congruent
+        if (!left.shape().isCongruentWith(right.shape())) {
             throw new IllegalArgumentException(
-                    "Incompatible layouts: "
-                            + left.layout().shape()
+                    "Incompatible shapes: "
+                            + left.shape()
                             + " vs "
-                            + right.layout().shape());
+                            + right.shape()
+                            + ". Note: Only true scalar tensors (shape.isScalar() == true) can be broadcast, "
+                            + "not broadcasted tensors. Use Tensor.scalar(value) to create scalar values.");
         }
-        return left.layout();
+        return left.shape();
     }
 
     private IRTensor requireIRTensor(Tensor tensor) {
@@ -350,6 +381,107 @@ final class IRTensorOps implements TensorOps {
             return irtensor;
         }
         throw new IllegalArgumentException("Expected IRTensor, got: " + tensor.getClass());
+    }
+
+    private void requireIntegral(DataType dataType, String opName) {
+        if (!dataType.isIntegral() || dataType == DataType.BOOL) {
+            throw new IllegalArgumentException(
+                    opName + " requires integral data type, got " + dataType);
+        }
+    }
+
+    private void requireFloatingPoint(DataType dataType, String opName) {
+        if (!dataType.isFloatingPoint()) {
+            throw new IllegalArgumentException(
+                    opName + " requires floating-point data type, got " + dataType);
+        }
+    }
+
+    private void requireBool(DataType dataType, String opName) {
+        if (dataType != DataType.BOOL) {
+            throw new IllegalArgumentException(
+                    opName + " requires BOOL data type, got " + dataType);
+        }
+    }
+
+    private Tensor bitwiseBinaryOp(Tensor a, Tensor b, BinaryOperator op, String opName) {
+        IRTensor left = requireIRTensor(a);
+        IRTensor right = requireIRTensor(b);
+        requireSameType(left, right, opName);
+        requireIntegral(left.dataType(), opName);
+        Shape outputShape = requireCompatibleShape(left, right);
+        TIRNode leftNode = left.node();
+        TIRNode rightNode = right.node();
+        TIRNode node = new ai.qxotic.jota.ir.tir.BinaryOp(op, leftNode, rightNode, outputShape);
+        return new IRTensor(node, left.device());
+    }
+
+    private Shape resolveWhereShape(Shape condShape, Shape trueShape, Shape falseShape) {
+        Shape valueShape = requireCompatibleShape(trueShape, falseShape);
+        if (condShape.isScalar()) {
+            return valueShape;
+        }
+        if (valueShape.isScalar()) {
+            return condShape;
+        }
+        if (!condShape.isCongruentWith(valueShape)) {
+            throw new IllegalArgumentException(
+                    "Incompatible shapes in where(): condition shape "
+                            + condShape
+                            + " is not compatible with value shapes "
+                            + valueShape
+                            + ". Only true scalar tensors can be broadcast.");
+        }
+        return valueShape;
+    }
+
+    private Shape requireCompatibleShape(Shape left, Shape right) {
+        boolean leftIsTrueScalar = left.isScalar();
+        boolean rightIsTrueScalar = right.isScalar();
+        if (leftIsTrueScalar && rightIsTrueScalar) {
+            return left;
+        }
+        if (leftIsTrueScalar && !rightIsTrueScalar) {
+            return right;
+        }
+        if (!leftIsTrueScalar && rightIsTrueScalar) {
+            return left;
+        }
+        if (!left.isCongruentWith(right)) {
+            throw new IllegalArgumentException(
+                    "Incompatible shapes: "
+                            + left
+                            + " vs "
+                            + right
+                            + ". Note: Only true scalar tensors (shape.isScalar() == true) can be broadcast, "
+                            + "not broadcasted tensors. Use Tensor.scalar(value) to create scalar values.");
+        }
+        return left;
+    }
+
+    private Shape reduceShape(Shape inputShape, int[] axes, boolean keepDims) {
+        int inputRank = inputShape.rank();
+        boolean[] reduced = new boolean[inputRank];
+        for (int axis : axes) {
+            if (axis >= 0 && axis < inputRank) {
+                reduced[axis] = true;
+            }
+        }
+        if (keepDims) {
+            long[] dims = new long[inputRank];
+            for (int i = 0; i < inputRank; i++) {
+                dims[i] = reduced[i] ? 1 : inputShape.flatAt(i);
+            }
+            return Shape.flat(dims);
+        }
+        long[] dims = new long[inputRank - axes.length];
+        int idx = 0;
+        for (int i = 0; i < inputRank; i++) {
+            if (!reduced[i]) {
+                dims[idx++] = inputShape.flatAt(i);
+            }
+        }
+        return Shape.flat(dims);
     }
 
     private ReductionOperator mapReductionOp(ReductionOp op) {

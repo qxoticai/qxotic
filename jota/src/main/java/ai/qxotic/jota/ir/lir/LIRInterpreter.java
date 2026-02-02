@@ -21,7 +21,6 @@ public final class LIRInterpreter {
 
     private record ScalarValue(long rawBits, DataType dataType) {}
 
-
     /** Binds a buffer to the given id. */
     public void bindBuffer(int id, MemorySegment segment) {
         buffers.put(id, segment);
@@ -194,7 +193,6 @@ public final class LIRInterpreter {
         long valueBits = evaluateScalar(store.value());
         writeValue(buffer, offset, valueBits, store.buffer().dataType());
     }
-
 
     /** Evaluates an index expression and returns its value. */
     public long evaluateIndex(IndexExpr expr) {
