@@ -51,11 +51,20 @@ class JTokkitAdapter implements Tokenizer {
 
     private static Vocabulary createVocabulary(
             Map<String, Integer> mergeableRanks, Map<String, Integer> specialTokens) {
-        String[] tokens = new String[mergeableRanks.size()];
+        int maxMergeableIndex = mergeableRanks.values().stream()
+                .mapToInt(Integer::intValue)
+                .max()
+                .orElse(0);
+        int maxSpecialIndex = specialTokens.values().stream()
+                .mapToInt(Integer::intValue)
+                .max()
+                .orElse(0);
+        int maxIndex = Math.max(maxMergeableIndex, maxSpecialIndex);
+
+        String[] tokens = new String[maxIndex + 1];
         for (Map.Entry<String, Integer> entry : mergeableRanks.entrySet()) {
             tokens[entry.getValue()] = entry.getKey();
         }
-        assert Arrays.stream(tokens).noneMatch(Objects::isNull);
         return VocabularyWithSpecials.create(new VocabularyImpl(tokens), specialTokens);
     }
 

@@ -46,6 +46,7 @@ public class VocabularyImpl implements Vocabulary {
 
     private static Map<String, Integer> computeTokenMap(String[] vocabulary) {
         return IntStream.range(0, vocabulary.length)
+                .filter(i -> vocabulary[i] != null)
                 .boxed()
                 .collect(Collectors.toUnmodifiableMap(i -> vocabulary[i], i -> i));
     }
@@ -68,7 +69,7 @@ public class VocabularyImpl implements Vocabulary {
 
     @Override
     public boolean contains(int tokenId) {
-        return 0 <= tokenId && tokenId < size();
+        return 0 <= tokenId && tokenId < size() && tokens[tokenId] != null;
     }
 
     @Override
