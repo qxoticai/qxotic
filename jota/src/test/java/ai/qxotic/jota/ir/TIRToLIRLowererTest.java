@@ -440,7 +440,9 @@ class TIRToLIRLowererTest {
             // Build TIR graph
             Layout layout = Layout.rowMajor(size);
             TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
-            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, in0, new int[] {0}, false);
+            ReductionOp sum =
+                    new ReductionOp(
+                            ReductionOperator.SUM, in0, new int[] {0}, false, DataType.FP32);
 
             TIRGraph tirGraph = new TIRGraph(List.of(in0), sum);
 
@@ -481,7 +483,9 @@ class TIRToLIRLowererTest {
             // Build TIR graph
             Layout layout = Layout.rowMajor(size);
             TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
-            ReductionOp max = new ReductionOp(ReductionOperator.MAX, in0, new int[] {0}, false);
+            ReductionOp max =
+                    new ReductionOp(
+                            ReductionOperator.MAX, in0, new int[] {0}, false, DataType.FP32);
 
             TIRGraph tirGraph = new TIRGraph(List.of(in0), max);
 
@@ -520,7 +524,9 @@ class TIRToLIRLowererTest {
             // Build TIR graph
             Layout layout = Layout.rowMajor(size);
             TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
-            ReductionOp min = new ReductionOp(ReductionOperator.MIN, in0, new int[] {0}, false);
+            ReductionOp min =
+                    new ReductionOp(
+                            ReductionOperator.MIN, in0, new int[] {0}, false, DataType.FP32);
 
             TIRGraph tirGraph = new TIRGraph(List.of(in0), min);
 
@@ -559,7 +565,9 @@ class TIRToLIRLowererTest {
             // Build TIR graph
             Layout layout = Layout.rowMajor(size);
             TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
-            ReductionOp prod = new ReductionOp(ReductionOperator.PROD, in0, new int[] {0}, false);
+            ReductionOp prod =
+                    new ReductionOp(
+                            ReductionOperator.PROD, in0, new int[] {0}, false, DataType.FP32);
 
             TIRGraph tirGraph = new TIRGraph(List.of(in0), prod);
 
@@ -602,7 +610,9 @@ class TIRToLIRLowererTest {
             // Build TIR graph
             Layout layout = Layout.rowMajor(rows, cols);
             TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
-            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, in0, new int[] {0}, false);
+            ReductionOp sum =
+                    new ReductionOp(
+                            ReductionOperator.SUM, in0, new int[] {0}, false, DataType.FP32);
 
             TIRGraph tirGraph = new TIRGraph(List.of(in0), sum);
 
@@ -648,7 +658,9 @@ class TIRToLIRLowererTest {
             // Build TIR graph
             Layout layout = Layout.rowMajor(rows, cols);
             TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
-            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, in0, new int[] {1}, false);
+            ReductionOp sum =
+                    new ReductionOp(
+                            ReductionOperator.SUM, in0, new int[] {1}, false, DataType.FP32);
 
             TIRGraph tirGraph = new TIRGraph(List.of(in0), sum);
 
@@ -694,7 +706,9 @@ class TIRToLIRLowererTest {
             // Build TIR graph
             Layout layout = Layout.rowMajor(rows, cols);
             TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
-            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, in0, new int[] {0, 1}, false);
+            ReductionOp sum =
+                    new ReductionOp(
+                            ReductionOperator.SUM, in0, new int[] {0, 1}, false, DataType.FP32);
 
             TIRGraph tirGraph = new TIRGraph(List.of(in0), sum);
 
@@ -746,7 +760,9 @@ class TIRToLIRLowererTest {
             // Build TIR graph
             Layout layout = Layout.rowMajor(rows, cols);
             TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
-            ReductionOp max = new ReductionOp(ReductionOperator.MAX, in0, new int[] {0}, false);
+            ReductionOp max =
+                    new ReductionOp(
+                            ReductionOperator.MAX, in0, new int[] {0}, false, DataType.FP32);
 
             TIRGraph tirGraph = new TIRGraph(List.of(in0), max);
 
@@ -801,7 +817,9 @@ class TIRToLIRLowererTest {
             // Build TIR graph
             Layout layout = Layout.rowMajor(rows, cols);
             TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
-            ReductionOp min = new ReductionOp(ReductionOperator.MIN, in0, new int[] {1}, false);
+            ReductionOp min =
+                    new ReductionOp(
+                            ReductionOperator.MIN, in0, new int[] {1}, false, DataType.FP32);
 
             TIRGraph tirGraph = new TIRGraph(List.of(in0), min);
 
@@ -851,7 +869,9 @@ class TIRToLIRLowererTest {
             // Build TIR graph
             Layout layout = Layout.rowMajor(rows, cols);
             TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
-            ReductionOp max = new ReductionOp(ReductionOperator.MAX, in0, new int[] {0, 1}, false);
+            ReductionOp max =
+                    new ReductionOp(
+                            ReductionOperator.MAX, in0, new int[] {0, 1}, false, DataType.FP32);
 
             TIRGraph tirGraph = new TIRGraph(List.of(in0), max);
 
@@ -898,7 +918,9 @@ class TIRToLIRLowererTest {
             // Build TIR graph
             Layout layout = Layout.rowMajor(rows, cols);
             TensorInput in0 = new TensorInput(0, DataType.FP32, layout);
-            ReductionOp min = new ReductionOp(ReductionOperator.MIN, in0, new int[] {0, 1}, false);
+            ReductionOp min =
+                    new ReductionOp(
+                            ReductionOperator.MIN, in0, new int[] {0, 1}, false, DataType.FP32);
 
             TIRGraph tirGraph = new TIRGraph(List.of(in0), min);
 
@@ -1000,7 +1022,9 @@ class TIRToLIRLowererTest {
             BinaryOp mul = new BinaryOp(BinaryOperator.MULTIPLY, viewA, viewB);
 
             // Sum over axis 2 (K): (M, N, K) -> (M, N)
-            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false);
+            ReductionOp sum =
+                    new ReductionOp(
+                            ReductionOperator.SUM, mul, new int[] {2}, false, DataType.FP32);
 
             TIRGraph tirGraph = new TIRGraph(List.of(inA, inB), sum);
 
@@ -1086,7 +1110,9 @@ class TIRToLIRLowererTest {
             ViewTransform viewB = new ViewTransform(inB, kindB, layoutB3D, false);
 
             BinaryOp mul = new BinaryOp(BinaryOperator.MULTIPLY, viewA, viewB);
-            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false);
+            ReductionOp sum =
+                    new ReductionOp(
+                            ReductionOperator.SUM, mul, new int[] {2}, false, DataType.FP32);
 
             TIRGraph tirGraph = new TIRGraph(List.of(inA, inB), sum);
 
@@ -1160,7 +1186,9 @@ class TIRToLIRLowererTest {
             ViewTransform viewB = new ViewTransform(inB, kindB, layoutB3D, false);
 
             BinaryOp mul = new BinaryOp(BinaryOperator.MULTIPLY, viewA, viewB);
-            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false);
+            ReductionOp sum =
+                    new ReductionOp(
+                            ReductionOperator.SUM, mul, new int[] {2}, false, DataType.FP32);
 
             TIRGraph tirGraph = new TIRGraph(List.of(inA, inB), sum);
 
@@ -1252,7 +1280,9 @@ class TIRToLIRLowererTest {
             ViewTransform viewB = new ViewTransform(inB, kindB, layoutB3D, false);
 
             BinaryOp mul = new BinaryOp(BinaryOperator.MULTIPLY, viewA, viewB);
-            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false);
+            ReductionOp sum =
+                    new ReductionOp(
+                            ReductionOperator.SUM, mul, new int[] {2}, false, DataType.FP32);
 
             TIRGraph tirGraph = new TIRGraph(List.of(inA, inB), sum);
 
@@ -1337,7 +1367,9 @@ class TIRToLIRLowererTest {
             ViewTransform viewB = new ViewTransform(inB, kindB, layoutB3D, false);
 
             BinaryOp mul = new BinaryOp(BinaryOperator.MULTIPLY, viewA, viewB);
-            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false);
+            ReductionOp sum =
+                    new ReductionOp(
+                            ReductionOperator.SUM, mul, new int[] {2}, false, DataType.FP32);
 
             TIRGraph tirGraph = new TIRGraph(List.of(inA, inB), sum);
 
@@ -1419,7 +1451,9 @@ class TIRToLIRLowererTest {
             ViewTransform viewB = new ViewTransform(inB, kindB, layoutB3D, false);
 
             BinaryOp mul = new BinaryOp(BinaryOperator.MULTIPLY, viewA, viewB);
-            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false);
+            ReductionOp sum =
+                    new ReductionOp(
+                            ReductionOperator.SUM, mul, new int[] {2}, false, DataType.FP32);
 
             TIRGraph tirGraph = new TIRGraph(List.of(inA, inB), sum);
 
@@ -1498,7 +1532,9 @@ class TIRToLIRLowererTest {
 
             // Element-wise multiply and reduce
             BinaryOp mul = new BinaryOp(BinaryOperator.MULTIPLY, viewA, viewB);
-            ReductionOp sum = new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false);
+            ReductionOp sum =
+                    new ReductionOp(
+                            ReductionOperator.SUM, mul, new int[] {2}, false, DataType.FP32);
 
             // Both scalars are inputs (dynamic parameters)
             TIRGraph tirGraph = new TIRGraph(List.of(inA, inB), sum);
@@ -1575,7 +1611,8 @@ class TIRToLIRLowererTest {
         BinaryOp mul = new BinaryOp(BinaryOperator.MULTIPLY, viewA, viewB);
 
         // Sum over axis 2 (the contraction dimension K=3): (2, 5, 3) -> (2, 5)
-        ReductionOp sum = new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false);
+        ReductionOp sum =
+                new ReductionOp(ReductionOperator.SUM, mul, new int[] {2}, false, DataType.FP32);
 
         // Build TIR graph with no inputs (all constants)
         TIRGraph tirGraph = new TIRGraph(List.of(), sum);
@@ -1595,7 +1632,7 @@ class TIRToLIRLowererTest {
         ScalarConstant resultSc = (ScalarConstant) result;
 
         // Check shape: should be (2, 5)
-        assertEquals(Shape.flat(2, 5), resultSc.layout().shape());
+        assertEquals(Shape.flat(2, 5), resultSc.shape());
 
         // Check value: 2.0 * 3.0 * 3 = 18.0
         float expectedValue = 2.0f * 3.0f * 3; // a * b * K

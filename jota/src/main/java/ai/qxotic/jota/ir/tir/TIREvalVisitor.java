@@ -26,7 +26,7 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
     @Override
     public MemoryView<MemorySegment> visitUnaryOp(UnaryOp node) {
         MemoryView<MemorySegment> input = context.evaluate(node.input());
-        Layout layout = node.layout();
+        Layout layout = Layout.rowMajor(node.shape());
         DataType dtype = node.dataType();
         MemoryView<MemorySegment> output = context.allocateTemporary(dtype, layout);
         long size = layout.shape().size();
@@ -286,7 +286,7 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
     public MemoryView<MemorySegment> visitBinaryOp(BinaryOp node) {
         MemoryView<MemorySegment> left = context.evaluate(node.left());
         MemoryView<MemorySegment> right = context.evaluate(node.right());
-        Layout layout = node.layout();
+        Layout layout = Layout.rowMajor(node.shape());
         DataType dtype = node.dataType();
         MemoryView<MemorySegment> output = context.allocateTemporary(dtype, layout);
         long size = layout.shape().size();
@@ -707,7 +707,7 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
         MemoryView<MemorySegment> cond = context.evaluate(node.cond());
         MemoryView<MemorySegment> trueExpr = context.evaluate(node.trueExpr());
         MemoryView<MemorySegment> falseExpr = context.evaluate(node.falseExpr());
-        Layout layout = node.layout();
+        Layout layout = Layout.rowMajor(node.shape());
         DataType dtype = node.dataType();
         MemoryView<MemorySegment> output = context.allocateTemporary(dtype, layout);
         long size = layout.shape().size();
@@ -791,7 +791,7 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
     @Override
     public MemoryView<MemorySegment> visitCastOp(CastOp node) {
         MemoryView<MemorySegment> input = context.evaluate(node.input());
-        Layout layout = node.layout();
+        Layout layout = Layout.rowMajor(node.shape());
         DataType sourceDtype = node.input().dataType();
         DataType targetDtype = node.targetDataType();
         MemoryView<MemorySegment> output = context.allocateTemporary(targetDtype, layout);
@@ -915,7 +915,7 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
     public MemoryView<MemorySegment> visitReductionOp(ReductionOp node) {
         MemoryView<MemorySegment> input = context.evaluate(node.input());
         Layout inputLayout = input.layout();
-        Layout outputLayout = node.layout();
+        Layout outputLayout = Layout.rowMajor(node.shape());
         DataType dtype = node.dataType();
         MemoryView<MemorySegment> output = context.allocateTemporary(dtype, outputLayout);
 
@@ -1508,7 +1508,7 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
             return input;
         }
 
-        Layout layout = node.layout();
+        Layout layout = Layout.rowMajor(node.shape());
         DataType dtype = node.dataType();
         MemoryView<MemorySegment> output = context.allocateTemporary(dtype, layout);
 
@@ -1547,39 +1547,40 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
 
     @Override
     public MemoryView<MemorySegment> visitScalarConstant(ScalarConstant node) {
-        Layout layout = node.layout();
+        Layout layout = Layout.rowMajor(node.shape());
         DataType dtype = node.dataType();
         MemoryView<MemorySegment> output = context.allocateTemporary(dtype, layout);
-
-        long offset = Indexing.linearToOffset(output, 0);
-
-        if (dtype == DataType.FP32) {
-            memAccess.writeFloat(
-                    output.memory(), offset, Float.intBitsToFloat((int) node.rawBits()));
-        } else if (dtype == DataType.FP64) {
-            memAccess.writeDouble(output.memory(), offset, Double.longBitsToDouble(node.rawBits()));
-        } else if (dtype == DataType.FP16 || dtype == DataType.BF16) {
-            memAccess.writeShort(output.memory(), offset, (short) node.rawBits());
-        } else if (dtype == DataType.I8) {
-            memAccess.writeByte(output.memory(), offset, (byte) node.rawBits());
-        } else if (dtype == DataType.I16) {
-            memAccess.writeShort(output.memory(), offset, (short) node.rawBits());
-        } else if (dtype == DataType.I32) {
-            memAccess.writeInt(output.memory(), offset, (int) node.rawBits());
-        } else if (dtype == DataType.I64) {
-            memAccess.writeLong(output.memory(), offset, node.rawBits());
-        } else if (dtype == DataType.BOOL) {
-            memAccess.writeByte(output.memory(), offset, (byte) (node.rawBits() != 0 ? 1 : 0));
-        } else {
-            throw new UnsupportedOperationException("Unsupported data type: " + dtype);
+        long size = layout.shape().size();
+        for (long i = 0; i < size; i++) {
+            long offset = Indexing.linearToOffset(output, i);
+            if (dtype == DataType.FP32) {
+                memAccess.writeFloat(
+                        output.memory(), offset, Float.intBitsToFloat((int) node.rawBits()));
+            } else if (dtype == DataType.FP64) {
+                memAccess.writeDouble(
+                        output.memory(), offset, Double.longBitsToDouble(node.rawBits()));
+            } else if (dtype == DataType.FP16 || dtype == DataType.BF16) {
+                memAccess.writeShort(output.memory(), offset, (short) node.rawBits());
+            } else if (dtype == DataType.I8) {
+                memAccess.writeByte(output.memory(), offset, (byte) node.rawBits());
+            } else if (dtype == DataType.I16) {
+                memAccess.writeShort(output.memory(), offset, (short) node.rawBits());
+            } else if (dtype == DataType.I32) {
+                memAccess.writeInt(output.memory(), offset, (int) node.rawBits());
+            } else if (dtype == DataType.I64) {
+                memAccess.writeLong(output.memory(), offset, node.rawBits());
+            } else if (dtype == DataType.BOOL) {
+                memAccess.writeByte(output.memory(), offset, (byte) (node.rawBits() != 0 ? 1 : 0));
+            } else {
+                throw new UnsupportedOperationException("Unsupported data type: " + dtype);
+            }
         }
-
         return output;
     }
 
     @Override
     public MemoryView<MemorySegment> visitIotaConstant(IotaConstant node) {
-        Layout layout = node.layout();
+        Layout layout = Layout.rowMajor(node.shape());
         DataType dtype = node.dataType();
         long count = node.count();
         MemoryView<MemorySegment> output = context.allocateTemporary(dtype, layout);

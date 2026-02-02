@@ -167,12 +167,11 @@ public interface Layout {
      *
      * <p>Empty layouts (size == 0) are considered contiguous by convention.
      *
-     * @deprecated Use {@link #spansContiguousRange()} for CuTe semantics, or check
-     *     {@link #isSuffixContiguous(int)} for specific modes.
+     * @deprecated Use {@link #spansContiguousRange()} for CuTe semantics, or check {@link
+     *     #isSuffixContiguous(int)} for specific modes.
      */
     @Deprecated
     default boolean isContiguous() {
         return spansContiguousRange();
     }
-
 }

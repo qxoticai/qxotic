@@ -1,17 +1,22 @@
 package ai.qxotic.jota.ir.tir;
 
 import ai.qxotic.jota.DataType;
-import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import java.util.Objects;
 
 /** Binary operation node in IR-T. */
-public record BinaryOp(BinaryOperator op, TIRNode left, TIRNode right) implements TIRNode {
+public record BinaryOp(BinaryOperator op, TIRNode left, TIRNode right, Shape shape)
+        implements TIRNode {
+
+    public BinaryOp(BinaryOperator op, TIRNode left, TIRNode right) {
+        this(op, left, right, broadcastShapes(left.shape(), right.shape()));
+    }
 
     public BinaryOp {
         Objects.requireNonNull(op);
         Objects.requireNonNull(left);
         Objects.requireNonNull(right);
+        Objects.requireNonNull(shape);
     }
 
     @Override
@@ -23,16 +28,12 @@ public record BinaryOp(BinaryOperator op, TIRNode left, TIRNode right) implement
     }
 
     @Override
-    public Layout layout() {
-        // Compute broadcast shape from left and right operands
-        Shape leftShape = left.layout().shape();
-        Shape rightShape = right.layout().shape();
-        Shape broadcastShape = broadcastShapes(leftShape, rightShape);
-        return Layout.rowMajor(broadcastShape);
+    public Shape shape() {
+        return shape;
     }
 
     /** Computes the broadcast result shape following numpy broadcasting rules. */
-    private static Shape broadcastShapes(Shape a, Shape b) {
+    static Shape broadcastShapes(Shape a, Shape b) {
         int rankA = a.flatRank();
         int rankB = b.flatRank();
         int maxRank = Math.max(rankA, rankB);

@@ -29,10 +29,10 @@ class BooleanOpsTest extends AbstractMemoryTest {
         Tensor a = Tensor.of(aView);
         Tensor b = Tensor.of(bView);
 
-        Tensor notA = Tracer.trace(a, Tensor::logicalNot);
-        Tensor andTensor = Tracer.trace(a, b, Tensor::logicalAnd);
-        Tensor orTensor = Tracer.trace(a, b, Tensor::logicalOr);
-        Tensor xorTensor = Tracer.trace(a, b, Tensor::logicalXor);
+        Tensor notA = IRTracer.trace(a, Tensor::logicalNot);
+        Tensor andTensor = IRTracer.trace(a, b, Tensor::logicalAnd);
+        Tensor orTensor = IRTracer.trace(a, b, Tensor::logicalOr);
+        Tensor xorTensor = IRTracer.trace(a, b, Tensor::logicalXor);
 
         MemoryView<?> notOut = notA.materialize();
         MemoryView<?> andOut = andTensor.materialize();
@@ -69,7 +69,7 @@ class BooleanOpsTest extends AbstractMemoryTest {
             Tensor leftTensor = Tensor.of(left);
             Tensor rightTensor = Tensor.of(right);
 
-            Tensor equalTensor = Tracer.trace(leftTensor, rightTensor, Tensor::equal);
+            Tensor equalTensor = IRTracer.trace(leftTensor, rightTensor, Tensor::equal);
             MemoryView<?> equalOut = equalTensor.materialize();
             for (int i = 0; i < shape.size(); i++) {
                 assertEquals(1, readBool(equalOut, i));
@@ -80,7 +80,7 @@ class BooleanOpsTest extends AbstractMemoryTest {
                             ? boolPattern(shape, new byte[] {1, 1, 0, 0})
                             : MemoryHelpers.full(context, dataType, shape.size(), 2).view(shape);
             Tensor thresholdTensor = Tensor.of(threshold);
-            Tensor lessThanTensor = Tracer.trace(leftTensor, thresholdTensor, Tensor::lessThan);
+            Tensor lessThanTensor = IRTracer.trace(leftTensor, thresholdTensor, Tensor::lessThan);
             MemoryView<?> lessOut = lessThanTensor.materialize();
 
             if (dataType == DataType.BOOL) {
@@ -109,7 +109,7 @@ class BooleanOpsTest extends AbstractMemoryTest {
         Tensor falseTensor = Tensor.of(falseView);
 
         Tensor min =
-                Tracer.trace(
+                IRTracer.trace(
                         trueTensor,
                         falseTensor,
                         // Odd min function.
@@ -136,7 +136,7 @@ class BooleanOpsTest extends AbstractMemoryTest {
         Tensor trueTensor = Tensor.of(trueView);
         Tensor falseTensor = Tensor.of(falseView);
 
-        Tensor selected = Tracer.trace(condition, trueTensor, falseTensor, Tensor::where);
+        Tensor selected = IRTracer.trace(condition, trueTensor, falseTensor, Tensor::where);
         MemoryView<?> output = selected.materialize();
 
         assertEquals(0, readInt(output, 0));

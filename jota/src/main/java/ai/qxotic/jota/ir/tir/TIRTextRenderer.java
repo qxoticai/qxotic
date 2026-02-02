@@ -1,6 +1,7 @@
 package ai.qxotic.jota.ir.tir;
 
 import ai.qxotic.jota.DataType;
+import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.ir.TextRenderUtils;
 import java.util.IdentityHashMap;
 import java.util.Map;
@@ -28,20 +29,27 @@ public class TIRTextRenderer implements TIRVisitor<String> {
     private int nextOutputId;
     private final Map<TIRNode, String> nodeToVar;
     private boolean inGraphRenderMode;
+    private final boolean showViews;
 
     /** Creates a new renderer with default settings. */
     public TIRTextRenderer() {
-        this(2);
+        this(2, false);
     }
 
     /** Creates a new renderer with specified indent size. */
     public TIRTextRenderer(int indentSize) {
+        this(indentSize, false);
+    }
+
+    /** Creates a new renderer with specified indent size and view rendering option. */
+    public TIRTextRenderer(int indentSize, boolean showViews) {
         this.output = new StringBuilder();
         this.indentSize = indentSize;
         this.currentIndent = 0;
         this.nextVarId = 0;
         this.nodeToVar = new IdentityHashMap<>();
         this.inGraphRenderMode = false;
+        this.showViews = showViews;
     }
 
     /** Renders a TIRGraph to MLIR-style text. */
@@ -54,45 +62,40 @@ public class TIRTextRenderer implements TIRVisitor<String> {
         nodeToVar.clear();
         inGraphRenderMode = true;
 
-        appendLine("TIRGraph {");
-        increaseIndent();
-
-        appendLine("inputs: [");
-        increaseIndent();
+        // Build parameter list (inputs + outputs)
+        StringBuilder params = new StringBuilder();
         for (int i = 0; i < graph.inputs().size(); i++) {
             TIRNode input = graph.inputs().get(i);
             if (!nodeToVar.containsKey(input)) {
                 allocateInputVar(input);
             }
             String var = nodeToVar.get(input);
-            String suffix = (i < graph.inputs().size() - 1) ? "," : "";
-            appendLine(var + ": " + formatInput(input, i) + suffix);
+            params.append(var).append(": ").append(formatInput(input, i));
+            if (i < graph.inputs().size() - 1 || !graph.outputs().isEmpty()) {
+                params.append(", ");
+            }
         }
-        decreaseIndent();
-        appendLine("]");
-
-        appendLine("outputs: [");
-        increaseIndent();
         for (int i = 0; i < graph.outputs().size(); i++) {
             TIRNode outputNode = graph.outputs().get(i);
             if (!nodeToVar.containsKey(outputNode)) {
                 allocateOutputVar(outputNode);
             }
             String var = nodeToVar.get(outputNode);
-            String suffix = (i < graph.outputs().size() - 1) ? "," : "";
-            appendLine(var + ": " + formatOutput(outputNode, i) + suffix);
+            params.append(var).append(": ").append(formatOutput(outputNode, i));
+            if (i < graph.outputs().size() - 1) {
+                params.append(", ");
+            }
         }
-        decreaseIndent();
-        appendLine("]");
 
-        appendLine("body {");
+        appendLine("module {");
+        increaseIndent();
+        appendLine("func.func @tensor_ops(" + params + ") {");
         increaseIndent();
         for (TIRNode outputNode : graph.outputs()) {
             renderNodeForGraph(outputNode);
         }
         decreaseIndent();
         appendLine("}");
-
         decreaseIndent();
         appendLine("}");
 
@@ -133,29 +136,16 @@ public class TIRTextRenderer implements TIRVisitor<String> {
     }
 
     private void renderInputNodeForGraph(TensorInput node) {
-        String var = nodeToVar.get(node);
-        String inputDef =
-                var
-                        + " = input["
-                        + node.id()
-                        + "] "
-                        + formatDataType(node.dataType())
-                        + "["
-                        + node.layout()
-                        + "]";
-        appendLine(inputDef);
     }
 
     private void renderScalarConstantForGraph(ScalarConstant node) {
         String var = nodeToVar.get(node);
         String value = TextRenderUtils.formatScalarValue(node.rawBits(), node.dataType());
-        String typeLayout =
-                ai.qxotic.jota.ir.TextRenderUtils.formatTypeLayout(
-                        node.dataType(),
-                        node.layout().shape().toArray(),
-                        node.layout().stride().toArray(),
-                        true);
-        String scalarDef = var + " = " + value + " " + typeLayout;
+        String scalarDef =
+                var
+                        + " = arith.constant "
+                        + value
+                        + ai.qxotic.jota.ir.TextRenderUtils.formatOpTypeSuffix(node.dataType());
         appendLine(scalarDef);
     }
 
@@ -163,13 +153,13 @@ public class TIRTextRenderer implements TIRVisitor<String> {
         String var = nodeToVar.get(node);
         String iotaDef =
                 var
-                        + " = iota("
-                        + node.count()
-                        + ") "
+                        + " = tensor.generate(%i) { arith.index_cast %i : index to "
                         + formatDataType(node.dataType())
-                        + "["
-                        + node.layout()
-                        + "]";
+                        + " } : tensor<"
+                        + node.count()
+                        + "x"
+                        + formatDataType(node.dataType())
+                        + ">";
         appendLine(iotaDef);
     }
 
@@ -178,9 +168,15 @@ public class TIRTextRenderer implements TIRVisitor<String> {
             renderNodeForGraph(node.input());
         }
         String input = nodeToVar.get(node.input());
-        String op = TextRenderUtils.formatUnaryOp(node.op());
+        String op = formatUnaryOp(node.op());
         String var = nodeToVar.get(node);
-        String unaryDef = var + " = " + op + " " + formatDataType(node.dataType()) + " " + input;
+        String unaryDef =
+                var
+                        + " = "
+                        + op
+                        + " "
+                        + input
+                        + ai.qxotic.jota.ir.TextRenderUtils.formatOpTypeSuffix(node.dataType());
         appendLine(unaryDef);
     }
 
@@ -193,18 +189,17 @@ public class TIRTextRenderer implements TIRVisitor<String> {
         }
         String left = nodeToVar.get(node.left());
         String right = nodeToVar.get(node.right());
-        String op = TextRenderUtils.formatBinaryOp(node.op());
+        String op = formatBinaryOp(node.op());
         String var = nodeToVar.get(node);
         String binaryDef =
                 var
                         + " = "
                         + op
                         + " "
-                        + formatDataType(node.dataType())
-                        + " "
                         + left
                         + ", "
-                        + right;
+                        + right
+                        + ai.qxotic.jota.ir.TextRenderUtils.formatOpTypeSuffix(node.dataType());
         appendLine(binaryDef);
     }
 
@@ -221,20 +216,16 @@ public class TIRTextRenderer implements TIRVisitor<String> {
         String cond = nodeToVar.get(node.cond());
         String trueExpr = nodeToVar.get(node.trueExpr());
         String falseExpr = nodeToVar.get(node.falseExpr());
-        String op = TextRenderUtils.formatTernaryOp(node.op());
         String var = nodeToVar.get(node);
         String ternaryDef =
                 var
-                        + " = "
-                        + op
-                        + " "
-                        + formatDataType(node.dataType())
-                        + " "
+                        + " = arith.select "
                         + cond
                         + ", "
                         + trueExpr
                         + ", "
-                        + falseExpr;
+                        + falseExpr
+                        + ai.qxotic.jota.ir.TextRenderUtils.formatOpTypeSuffix(node.dataType());
         appendLine(ternaryDef);
     }
 
@@ -244,7 +235,15 @@ public class TIRTextRenderer implements TIRVisitor<String> {
         }
         String input = nodeToVar.get(node.input());
         String var = nodeToVar.get(node);
-        String castDef = var + " = cast " + formatDataType(node.targetDataType()) + " " + input;
+        String op = formatCastOp(node.input().dataType(), node.targetDataType());
+        String castDef =
+                var
+                        + " = "
+                        + op
+                        + " "
+                        + input
+                        + ai.qxotic.jota.ir.TextRenderUtils.formatOpTypeSuffix(
+                                node.targetDataType());
         appendLine(castDef);
     }
 
@@ -253,12 +252,12 @@ public class TIRTextRenderer implements TIRVisitor<String> {
             renderNodeForGraph(node.input());
         }
         String input = nodeToVar.get(node.input());
-        String op = TextRenderUtils.formatReductionOp(node.op());
+        String op = formatReductionOp(node.op());
         String var = nodeToVar.get(node);
         StringBuilder axesStr = new StringBuilder();
         for (int i = 0; i < node.axes().length; i++) {
             if (i > 0) {
-                axesStr.append(",");
+                axesStr.append(", ");
             }
             axesStr.append(node.axes()[i]);
         }
@@ -267,36 +266,84 @@ public class TIRTextRenderer implements TIRVisitor<String> {
                         + " = "
                         + op
                         + " "
-                        + formatDataType(node.dataType())
-                        + " "
                         + input
                         + " axes=["
                         + axesStr
-                        + "]"
-                        + (" keepDims=" + node.keepDims());
+                        + "] keepDims="
+                        + node.keepDims();
         appendLine(reductionDef);
+    }
+
+    private String formatUnaryOp(UnaryOperator op) {
+        return switch (op) {
+            case NEGATE -> "arith.negf";
+            case ABS -> "math.abs";
+            case EXP -> "math.exp";
+            case LOG -> "math.log";
+            case SQRT -> "math.sqrt";
+            case TANH -> "math.tanh";
+            case RECIPROCAL -> "arith.divf 1.0";
+            default -> "arith." + op.name().toLowerCase();
+        };
+    }
+
+    private String formatBinaryOp(BinaryOperator op) {
+        return switch (op) {
+            case ADD -> "arith.addf";
+            case SUBTRACT -> "arith.subf";
+            case MULTIPLY -> "arith.mulf";
+            case DIVIDE -> "arith.divf";
+            case MIN -> "arith.minf";
+            case MAX -> "arith.maxf";
+            case POW -> "math.powf";
+            default -> "arith." + op.name().toLowerCase();
+        };
+    }
+
+    private String formatCastOp(DataType source, DataType target) {
+        if (source.isFloatingPoint() && target.isIntegral()) {
+            return "arith.fptosi";
+        } else if (source.isIntegral() && target.isFloatingPoint()) {
+            return "arith.sitofp";
+        } else if (source.byteSize() == target.byteSize()) {
+            return "arith.bitcast";
+        } else {
+            return "arith.extf";
+        }
+    }
+
+    private String formatReductionOp(ReductionOperator op) {
+        return "tensor." + op.name().toLowerCase();
     }
 
     private void renderViewTransformForGraph(ViewTransform node) {
         if (!nodeToVar.containsKey(node.input())) {
             renderNodeForGraph(node.input());
         }
+        if (!showViews) {
+            if (!nodeToVar.containsKey(node)) {
+                nodeToVar.put(node, nodeToVar.get(node.input()));
+            }
+            return;
+        }
         String input = nodeToVar.get(node.input());
         String var = nodeToVar.get(node);
-        String viewDef =
-                var + " = " + node.hint() + " " + formatDataType(node.dataType()) + " " + input;
-        appendLine(viewDef);
+        appendLine(formatViewTransformOp(node, input, var));
     }
 
     private void renderContiguousForGraph(Contiguous node) {
         if (!nodeToVar.containsKey(node.input())) {
             renderNodeForGraph(node.input());
         }
+        if (!showViews) {
+            if (!nodeToVar.containsKey(node)) {
+                nodeToVar.put(node, nodeToVar.get(node.input()));
+            }
+            return;
+        }
         String input = nodeToVar.get(node.input());
         String var = nodeToVar.get(node);
-        String contiguousDef =
-                var + " = contiguous " + formatDataType(node.dataType()) + " " + input;
-        appendLine(contiguousDef);
+        appendLine(formatContiguousOp(node, input, var));
     }
 
     /** Renders a single TIRNode to a string. */
@@ -312,26 +359,114 @@ public class TIRTextRenderer implements TIRVisitor<String> {
 
     private String formatInput(TIRNode node, int id) {
         if (node instanceof TensorInput input) {
-            return ai.qxotic.jota.ir.TextRenderUtils.formatTypeLayout(
-                    input.dataType(),
-                    input.layout().shape().toArray(),
-                    input.layout().stride().toArray(),
-                    true); // element-based for TIR
+            long[] shape = input.layout().shape().toArray();
+            long[] stride = input.layout().stride().toArray();
+            boolean contiguous = ai.qxotic.jota.ir.TextRenderUtils.isContiguous(shape, stride);
+            return ai.qxotic.jota.ir.TextRenderUtils.formatTensorType(
+                    input.dataType(), shape, stride, contiguous);
         }
         return formatNodeType(node);
     }
 
     private String formatOutput(TIRNode node, int id) {
-        // Always show full layout with contiguity for outputs (for debugging)
-        return ai.qxotic.jota.ir.TextRenderUtils.formatTypeLayout(
-                node.dataType(),
-                node.layout().shape().toArray(),
-                node.layout().stride().toArray(),
-                true); // element-based for TIR
+        return formatTensorTypeForNode(node);
     }
 
     private String formatNodeType(TIRNode node) {
-        return formatDataType(node.dataType()) + "[" + node.layout() + "]";
+        return formatTensorTypeForNode(node);
+    }
+
+    private String formatTensorType(Layout layout, DataType dataType) {
+        long[] shape = layout.shape().toArray();
+        long[] stride = layout.stride().toArray();
+        boolean contiguous = ai.qxotic.jota.ir.TextRenderUtils.isContiguous(shape, stride);
+        return ai.qxotic.jota.ir.TextRenderUtils.formatTensorType(
+                dataType, shape, stride, contiguous);
+    }
+
+    private String formatTensorTypeForNode(TIRNode node) {
+        if (node instanceof TensorInput input) {
+            return formatTensorType(input.layout(), input.dataType());
+        }
+        if (node instanceof ViewTransform view) {
+            return formatTensorType(view.layout(), view.dataType());
+        }
+        long[] shape = node.shape().toArray();
+        return ai.qxotic.jota.ir.TextRenderUtils.formatTensorType(node.dataType(), shape, null, true);
+    }
+
+    private Layout layoutForNode(TIRNode node) {
+        if (node instanceof TensorInput input) {
+            return input.layout();
+        }
+        if (node instanceof ViewTransform view) {
+            return view.layout();
+        }
+        return Layout.rowMajor(node.shape());
+    }
+
+    private String formatViewTransformOp(ViewTransform node, String input, String var) {
+        String inputType = formatTensorType(layoutForNode(node.input()), node.dataType());
+        String outputType = formatTensorType(node.layout(), node.dataType());
+        String op =
+                switch (node.kind()) {
+                    case ViewKind.Transpose t ->
+                            "tensor.transpose "
+                                    + input
+                                    + " perm=["
+                                    + formatIntList(t.permutation())
+                                    + "]";
+                    case ViewKind.Reshape __ -> "tensor.reshape " + input;
+                    case ViewKind.Broadcast __ -> "tensor.broadcast " + input;
+                    case ViewKind.Expand __ -> "tensor.expand " + input;
+                    case ViewKind.Slice s ->
+                            "tensor.slice "
+                                    + input
+                                    + " axis="
+                                    + s.axis()
+                                    + " start="
+                                    + s.start()
+                                    + " step="
+                                    + s.step();
+                };
+        return var
+                + " = "
+                + op
+                + " : "
+                + inputType
+                + " to "
+                + outputType
+                + "  // layout=in"
+                + layoutForNode(node.input())
+                + ", out"
+                + node.layout();
+    }
+
+    private String formatContiguousOp(Contiguous node, String input, String var) {
+        String inputType = formatTensorType(layoutForNode(node.input()), node.dataType());
+        String outputType = formatTensorType(Layout.rowMajor(node.shape()), node.dataType());
+        return var
+                + " = tensor.contiguous "
+                + input
+                + " : "
+                + inputType
+                + " to "
+                + outputType
+                + "  // layout=in"
+                + layoutForNode(node.input())
+                + ", out"
+                + Layout.rowMajor(node.shape());
+    }
+
+    private String formatIntList(int[] values) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < values.length; i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(values[i]);
+        }
+        return sb.toString();
     }
 
     private String formatDataType(DataType dataType) {
@@ -391,16 +526,6 @@ public class TIRTextRenderer implements TIRVisitor<String> {
     @Override
     public String visitTensorInput(TensorInput node) {
         String var = allocateVar(node);
-        String inputDef =
-                var
-                        + " = input["
-                        + node.id()
-                        + "] "
-                        + formatDataType(node.dataType())
-                        + "["
-                        + node.layout()
-                        + "]";
-        appendLine(inputDef);
         return var;
     }
 
@@ -408,13 +533,11 @@ public class TIRTextRenderer implements TIRVisitor<String> {
     public String visitScalarConstant(ScalarConstant node) {
         String var = allocateVar(node);
         String value = TextRenderUtils.formatScalarValue(node.rawBits(), node.dataType());
-        String typeLayout =
-                ai.qxotic.jota.ir.TextRenderUtils.formatTypeLayout(
-                        node.dataType(),
-                        node.layout().shape().toArray(),
-                        node.layout().stride().toArray(),
-                        true);
-        String scalarDef = var + " = " + value + " " + typeLayout;
+        String scalarDef =
+                var
+                        + " = arith.constant "
+                        + value
+                        + ai.qxotic.jota.ir.TextRenderUtils.formatOpTypeSuffix(node.dataType());
         appendLine(scalarDef);
         return var;
     }
@@ -422,16 +545,15 @@ public class TIRTextRenderer implements TIRVisitor<String> {
     @Override
     public String visitIotaConstant(IotaConstant node) {
         String var = allocateVar(node);
-        String value = TextRenderUtils.formatFloat16((short) node.layout().shape().toArray()[0]);
         String iotaDef =
                 var
-                        + " = iota("
+                        + " = tensor.generate(%i) { arith.index_cast %i : index to "
+                        + TextRenderUtils.formatDataType(node.dataType())
+                        + " } : tensor<"
                         + node.count()
-                        + ") "
-                        + formatDataType(node.dataType())
-                        + "["
-                        + node.layout()
-                        + "]";
+                        + "x"
+                        + TextRenderUtils.formatDataType(node.dataType())
+                        + ">";
         appendLine(iotaDef);
         return var;
     }
@@ -439,9 +561,15 @@ public class TIRTextRenderer implements TIRVisitor<String> {
     @Override
     public String visitUnaryOp(UnaryOp node) {
         String input = node.input().accept(this);
-        String op = TextRenderUtils.formatUnaryOp(node.op());
+        String op = formatUnaryOp(node.op());
         String var = allocateVar(node);
-        String unaryDef = var + " = " + op + " " + formatDataType(node.dataType()) + " " + input;
+        String unaryDef =
+                var
+                        + " = "
+                        + op
+                        + " "
+                        + input
+                        + ai.qxotic.jota.ir.TextRenderUtils.formatOpTypeSuffix(node.dataType());
         appendLine(unaryDef);
         return var;
     }
@@ -450,18 +578,17 @@ public class TIRTextRenderer implements TIRVisitor<String> {
     public String visitBinaryOp(BinaryOp node) {
         String left = node.left().accept(this);
         String right = node.right().accept(this);
-        String op = TextRenderUtils.formatBinaryOp(node.op());
+        String op = formatBinaryOp(node.op());
         String var = allocateVar(node);
         String binaryDef =
                 var
                         + " = "
                         + op
                         + " "
-                        + formatDataType(node.dataType())
-                        + " "
                         + left
                         + ", "
-                        + right;
+                        + right
+                        + ai.qxotic.jota.ir.TextRenderUtils.formatOpTypeSuffix(node.dataType());
         appendLine(binaryDef);
         return var;
     }
@@ -471,20 +598,16 @@ public class TIRTextRenderer implements TIRVisitor<String> {
         String cond = node.cond().accept(this);
         String trueExpr = node.trueExpr().accept(this);
         String falseExpr = node.falseExpr().accept(this);
-        String op = TextRenderUtils.formatTernaryOp(node.op());
         String var = allocateVar(node);
         String ternaryDef =
                 var
-                        + " = "
-                        + op
-                        + " "
-                        + formatDataType(node.dataType())
-                        + " "
+                        + " = arith.select "
                         + cond
                         + ", "
                         + trueExpr
                         + ", "
-                        + falseExpr;
+                        + falseExpr
+                        + ai.qxotic.jota.ir.TextRenderUtils.formatOpTypeSuffix(node.dataType());
         appendLine(ternaryDef);
         return var;
     }
@@ -492,8 +615,16 @@ public class TIRTextRenderer implements TIRVisitor<String> {
     @Override
     public String visitCastOp(CastOp node) {
         String input = node.input().accept(this);
+        String op = formatCastOp(node.input().dataType(), node.targetDataType());
         String var = allocateVar(node);
-        String castDef = var + " = cast " + formatDataType(node.targetDataType()) + " " + input;
+        String castDef =
+                var
+                        + " = "
+                        + op
+                        + " "
+                        + input
+                        + ai.qxotic.jota.ir.TextRenderUtils.formatOpTypeSuffix(
+                                node.targetDataType());
         appendLine(castDef);
         return var;
     }
@@ -501,12 +632,12 @@ public class TIRTextRenderer implements TIRVisitor<String> {
     @Override
     public String visitReductionOp(ReductionOp node) {
         String input = node.input().accept(this);
-        String op = TextRenderUtils.formatReductionOp(node.op());
+        String op = formatReductionOp(node.op());
         String var = allocateVar(node);
         StringBuilder axesStr = new StringBuilder();
         for (int i = 0; i < node.axes().length; i++) {
             if (i > 0) {
-                axesStr.append(",");
+                axesStr.append(", ");
             }
             axesStr.append(node.axes()[i]);
         }
@@ -515,13 +646,10 @@ public class TIRTextRenderer implements TIRVisitor<String> {
                         + " = "
                         + op
                         + " "
-                        + formatDataType(node.dataType())
-                        + " "
                         + input
-                        + " axes=["
+                        + " dimensions=["
                         + axesStr
-                        + "]"
-                        + " keep_dims="
+                        + "] keepDims="
                         + node.keepDims();
         appendLine(reductionDef);
         return var;
@@ -531,9 +659,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
     public String visitViewTransform(ViewTransform node) {
         String input = node.input().accept(this);
         String var = allocateVar(node);
-        String viewDef =
-                var + " = " + node.hint() + " " + formatDataType(node.dataType()) + " " + input;
-        appendLine(viewDef);
+        appendLine(formatViewTransformOp(node, input, var));
         return var;
     }
 
@@ -541,9 +667,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
     public String visitContiguous(Contiguous node) {
         String input = node.input().accept(this);
         String var = allocateVar(node);
-        String contiguousDef =
-                var + " = contiguous " + formatDataType(node.dataType()) + " " + input;
-        appendLine(contiguousDef);
+        appendLine(formatContiguousOp(node, input, var));
         return var;
     }
 }

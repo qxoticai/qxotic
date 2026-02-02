@@ -46,7 +46,10 @@ public final class ViewTransforms {
         ViewKind kind = new ViewKind.Reshape(layout.shape(), newShape);
 
         // Fast path: data is contiguous in row-major order
-        if (spansContiguousRange(layout)) {
+        // Use isSuffixContiguous(0) to verify TRUE row-major contiguity,
+        // not just spanning a contiguous range (which includes column-major layouts)
+        // Scalars (rank 0) are always trivially contiguous
+        if (layout.shape().rank() == 0 || layout.isSuffixContiguous(0)) {
             return ViewTransformSpec.simple(kind, Layout.rowMajor(newShape), 0L);
         }
 
@@ -237,8 +240,8 @@ public final class ViewTransforms {
     /**
      * Returns true if the layout spans a contiguous memory range.
      *
-     * <p>Delegates to {@link Layout#spansContiguousRange()} for CuTe-style contiguity checking.
-     * A layout spans a contiguous range if all elements fit within a contiguous block of memory
+     * <p>Delegates to {@link Layout#spansContiguousRange()} for CuTe-style contiguity checking. A
+     * layout spans a contiguous range if all elements fit within a contiguous block of memory
      * without gaps: sum((dim_i - 1) * stride_i) == totalElements - 1.
      */
     private static boolean spansContiguousRange(Layout layout) {

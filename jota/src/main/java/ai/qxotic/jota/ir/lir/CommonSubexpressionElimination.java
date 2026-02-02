@@ -240,8 +240,7 @@ public final class CommonSubexpressionElimination implements LIRPass {
 
         @Override
         public LIRNode visitYield(Yield node) {
-            java.util.List<ScalarExpr> newValues =
-                    new java.util.ArrayList<>(node.values().size());
+            java.util.List<ScalarExpr> newValues = new java.util.ArrayList<>(node.values().size());
             boolean changed = false;
             for (ScalarExpr value : node.values()) {
                 ScalarExpr newValue = (ScalarExpr) value.accept(this);

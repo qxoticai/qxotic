@@ -35,7 +35,7 @@ class BitwiseOpsTest {
             MemoryView<MemorySegment> left =
                     MemoryHelpers.arange(context, dataType, shape.size()).view(shape);
             Tensor input = Tensor.of(left);
-            Tensor output = Tracer.trace(input, Tensor::bitwiseNot);
+            Tensor output = IRTracer.trace(input, Tensor::bitwiseNot);
             MemoryView<?> result = output.materialize();
 
             for (int i = 0; i < shape.size(); i++) {
@@ -57,9 +57,9 @@ class BitwiseOpsTest {
             Tensor a = Tensor.of(left);
             Tensor b = Tensor.of(right);
 
-            Tensor andTensor = Tracer.trace(a, b, Tensor::bitwiseAnd);
-            Tensor orTensor = Tracer.trace(a, b, Tensor::bitwiseOr);
-            Tensor xorTensor = Tracer.trace(a, b, Tensor::bitwiseXor);
+            Tensor andTensor = IRTracer.trace(a, b, Tensor::bitwiseAnd);
+            Tensor orTensor = IRTracer.trace(a, b, Tensor::bitwiseOr);
+            Tensor xorTensor = IRTracer.trace(a, b, Tensor::bitwiseXor);
 
             MemoryView<?> andOut = andTensor.materialize();
             MemoryView<?> orOut = orTensor.materialize();
@@ -91,14 +91,15 @@ class BitwiseOpsTest {
                 MemoryHelpers.full(context, DataType.BOOL, shape.size(), 1).view(shape);
         Tensor boolTensor = Tensor.of(boolView);
         assertThrows(
-                IllegalArgumentException.class, () -> Tracer.trace(boolTensor, Tensor::bitwiseNot));
+                IllegalArgumentException.class,
+                () -> IRTracer.trace(boolTensor, Tensor::bitwiseNot));
 
         MemoryView<MemorySegment> floatView =
                 MemoryHelpers.arange(context, DataType.FP32, shape.size()).view(shape);
         Tensor floatTensor = Tensor.of(floatView);
         assertThrows(
                 IllegalArgumentException.class,
-                () -> Tracer.trace(floatTensor, Tensor::bitwiseNot));
+                () -> IRTracer.trace(floatTensor, Tensor::bitwiseNot));
     }
 
     private long readIntegral(MemoryView<?> view, long index, DataType dataType) {

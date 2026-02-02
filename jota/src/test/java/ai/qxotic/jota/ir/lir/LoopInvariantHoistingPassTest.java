@@ -172,8 +172,7 @@ class LoopInvariantHoistingPassTest {
 
         ScalarExpr init = ScalarLiteral.ofFloat(0.0f);
         ScalarExpr updated =
-                new ScalarBinary(
-                        BinaryOperator.ADD, new ScalarRef("acc", DataType.FP32), product);
+                new ScalarBinary(BinaryOperator.ADD, new ScalarRef("acc", DataType.FP32), product);
         StructuredFor loop =
                 new StructuredFor(
                         "k",

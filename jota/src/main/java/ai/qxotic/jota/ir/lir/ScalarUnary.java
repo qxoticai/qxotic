@@ -14,6 +14,10 @@ public record ScalarUnary(UnaryOperator op, ScalarExpr input) implements ScalarE
 
     @Override
     public DataType dataType() {
-        return input.dataType();
+        // Logical operations return BOOL regardless of input type
+        return switch (op) {
+            case LOGICAL_NOT -> DataType.BOOL;
+            default -> input.dataType();
+        };
     }
 }

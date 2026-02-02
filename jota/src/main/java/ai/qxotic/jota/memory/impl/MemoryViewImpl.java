@@ -69,8 +69,6 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
         return dataType;
     }
 
-
-
     @Override
     public String toString() {
         return MemoryViewPrinter.toString(this);

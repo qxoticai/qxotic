@@ -60,6 +60,18 @@ public interface Tensor {
                 .orElse(false);
     }
 
+    /** Returns raw bits for scalar constants without materializing, if available. */
+    default java.util.OptionalLong scalarConstantBits() {
+        java.util.Optional<ConstantComputation> constant =
+                computation()
+                        .filter(ConstantComputation.class::isInstance)
+                        .map(ConstantComputation.class::cast);
+        if (constant.isPresent() && isScalar()) {
+            return java.util.OptionalLong.of(constant.get().rawBits());
+        }
+        return java.util.OptionalLong.empty();
+    }
+
     boolean isMaterialized();
 
     boolean isLazy();
@@ -303,11 +315,14 @@ public interface Tensor {
     }
 
     default Tensor bitwiseNot() {
+        requireIntegral(dataType(), "bitwiseNot");
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.BITWISE_NOT)
                 .orElseGet(() -> TensorOpsContext.require().bitwiseNot(this));
     }
 
     default Tensor bitwiseAnd(Tensor other) {
+        requireIntegral(dataType(), "bitwiseAnd");
+        requireIntegral(other.dataType(), "bitwiseAnd");
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.BITWISE_AND)
                 .orElseGet(
                         () ->
@@ -318,6 +333,8 @@ public interface Tensor {
     }
 
     default Tensor bitwiseOr(Tensor other) {
+        requireIntegral(dataType(), "bitwiseOr");
+        requireIntegral(other.dataType(), "bitwiseOr");
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.BITWISE_OR)
                 .orElseGet(
                         () ->
@@ -328,6 +345,8 @@ public interface Tensor {
     }
 
     default Tensor bitwiseXor(Tensor other) {
+        requireIntegral(dataType(), "bitwiseXor");
+        requireIntegral(other.dataType(), "bitwiseXor");
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.BITWISE_XOR)
                 .orElseGet(
                         () ->
@@ -394,6 +413,14 @@ public interface Tensor {
     }
 
     static Tensor where(Tensor condition, Tensor trueValue, Tensor falseValue) {
+        requireBool(condition.dataType(), "where condition");
+        if (trueValue.dataType() != falseValue.dataType()) {
+            throw new IllegalArgumentException(
+                    "where requires true and false values to have the same type, got "
+                            + trueValue.dataType()
+                            + " and "
+                            + falseValue.dataType());
+        }
         return TensorOpsContext.require().where(condition, trueValue, falseValue);
     }
 
@@ -450,6 +477,7 @@ public interface Tensor {
     }
 
     default Tensor sqrt() {
+        requireFloatingPoint("sqrt");
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.SQRT)
                 .orElseGet(() -> TensorOpsContext.require().sqrt(this));
     }
@@ -459,16 +487,19 @@ public interface Tensor {
     }
 
     default Tensor sin() {
+        requireFloatingPoint("sin");
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.SIN)
                 .orElseGet(() -> TensorOpsContext.require().sin(this));
     }
 
     default Tensor cos() {
+        requireFloatingPoint("cos");
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.COS)
                 .orElseGet(() -> TensorOpsContext.require().cos(this));
     }
 
     default Tensor tanh() {
+        requireFloatingPoint("tanh");
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.TANH)
                 .orElseGet(() -> TensorOpsContext.require().tanh(this));
     }
@@ -581,6 +612,20 @@ public interface Tensor {
 
     static Tensor of(MemoryView<?> view) {
         return new MaterializedTensor(view);
+    }
+
+    private static void requireIntegral(DataType dataType, String opName) {
+        if (!dataType.isIntegral() || dataType == DataType.BOOL) {
+            throw new IllegalArgumentException(
+                    opName + " requires integral data type, got " + dataType);
+        }
+    }
+
+    private static void requireBool(DataType dataType, String opName) {
+        if (dataType != DataType.BOOL) {
+            throw new IllegalArgumentException(
+                    opName + " requires BOOL data type, got " + dataType);
+        }
     }
 
     // ========== Tensor Creation Methods ==========

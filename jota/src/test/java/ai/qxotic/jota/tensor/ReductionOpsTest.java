@@ -45,7 +45,7 @@ class ReductionOpsTest extends AbstractMemoryTest {
             MemoryView<MemorySegment> view = range(dataType, shape);
 
             Tensor input = Tensor.of(view);
-            Tensor reduced = Tracer.trace(input, t -> t.max(1));
+            Tensor reduced = IRTracer.trace(input, t -> t.max(1));
             MemoryView<?> output = reduced.materialize();
             assertEquals(Shape.of(2), output.shape());
             assertValueEquals(
@@ -61,7 +61,7 @@ class ReductionOpsTest extends AbstractMemoryTest {
         for (DataType dataType : PRIMITIVE_TYPES) {
             MemoryView<MemorySegment> view = range(dataType, shape);
             Tensor input = Tensor.of(view);
-            Tensor reduced = Tracer.trace(input, t -> t.min(1));
+            Tensor reduced = IRTracer.trace(input, t -> t.min(1));
             MemoryView<?> output = reduced.materialize();
             assertEquals(Shape.of(2), output.shape());
             assertValueEquals(
@@ -75,7 +75,7 @@ class ReductionOpsTest extends AbstractMemoryTest {
     void keepsDimsWhenRequested() {
         MemoryView<MemorySegment> view = range(DataType.FP32, Shape.of(2, 3));
         Tensor input = Tensor.of(view);
-        Tensor reduced = Tracer.trace(input, t -> t.max(true, 1));
+        Tensor reduced = IRTracer.trace(input, t -> t.max(true, 1));
         MemoryView<?> output = reduced.materialize();
         assertEquals(Shape.of(2, 1), output.shape());
     }
@@ -84,7 +84,7 @@ class ReductionOpsTest extends AbstractMemoryTest {
     void reducesMultipleAxes() {
         MemoryView<MemorySegment> view = range(DataType.FP32, Shape.of(2, 2, 2));
         Tensor input = Tensor.of(view);
-        Tensor reduced = Tracer.trace(input, t -> t.min(1, 2));
+        Tensor reduced = IRTracer.trace(input, t -> t.min(1, 2));
         MemoryView<?> output = reduced.materialize();
         assertEquals(Shape.of(2), output.shape());
         assertValueEquals(DataType.FP32, 0.0f, readValue(output, 0, DataType.FP32));
@@ -95,7 +95,7 @@ class ReductionOpsTest extends AbstractMemoryTest {
     void reducesExpressionInputs() {
         MemoryView<MemorySegment> view = range(DataType.FP32, Shape.of(2, 3));
         Tensor input = Tensor.of(view);
-        Tensor reduced = Tracer.trace(input, t -> t.add(1f).max(1));
+        Tensor reduced = IRTracer.trace(input, t -> t.add(1f).max(1));
         MemoryView<?> output = reduced.materialize();
         assertValueEquals(DataType.FP32, 3.0f, readValue(output, 0, DataType.FP32));
         assertValueEquals(DataType.FP32, 6.0f, readValue(output, 1, DataType.FP32));

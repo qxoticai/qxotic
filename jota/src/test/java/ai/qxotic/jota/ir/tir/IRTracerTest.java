@@ -6,25 +6,21 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
-import ai.qxotic.jota.ir.lir.IndexSimplificationPass;
+import ai.qxotic.jota.ir.TIRToLIRLowerer;
+import ai.qxotic.jota.ir.lir.LIRGraph;
+import ai.qxotic.jota.ir.lir.LIRInterpreter;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.memory.impl.ContextFactory;
-import ai.qxotic.jota.Layout;
-import ai.qxotic.jota.Stride;
-import ai.qxotic.jota.ir.TIRToLIRLowerer;
-import ai.qxotic.jota.ir.lir.LIRGraph;
-import ai.qxotic.jota.ir.lir.LIRInterpreter;
-import ai.qxotic.jota.ir.tir.*;
 import ai.qxotic.jota.tensor.IRTracer;
 import ai.qxotic.jota.tensor.LazyComputation;
 import ai.qxotic.jota.tensor.Tensor;
 import java.lang.foreign.Arena;
-import java.lang.foreign.ValueLayout;
-import java.util.Map;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class IRTracerTest {
@@ -377,8 +373,7 @@ class IRTracerTest {
             for (int i = 0; i < M; i++) {
                 for (int j = 0; j < N; j++) {
                     float actual = output.getAtIndex(ValueLayout.JAVA_FLOAT, i * N + j);
-                    assertEquals(
-                            expected, actual, 1e-5f, "Mismatch at [" + i + "," + j + "]");
+                    assertEquals(expected, actual, 1e-5f, "Mismatch at [" + i + "," + j + "]");
                 }
             }
         }
@@ -390,8 +385,9 @@ class IRTracerTest {
         int K = 3;
         int N = 5;
 
-        // Create constant-filled tensors using Tensor.full()
-        // These are materialized tensors filled with constant values
+        // Create tensors with iota values [0, 1, 2, ...]
+        // aFilled = [[0, 1, 2], [3, 4, 5]] (M x K)
+        // bFilled = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9], [10, 11, 12, 13, 14]] (K x N)
         Tensor aFilled = Tensor.iota(M * K).view(Shape.of(M, K));
         Tensor bFilled = Tensor.iota(K * N).view(Shape.of(K, N));
 
@@ -417,43 +413,35 @@ class IRTracerTest {
                             return multiplied.sum(DataType.FP32, 2);
                         });
 
-        // Extract TIRGraph from lazy tensor
-        LazyComputation comp = result.computation().orElseThrow();
-        Map<String, Object> attrs = comp.attributes();
-        TIRGraph tirGraph = (TIRGraph) attrs.get("graph");
+        // Materialize the result
+        MemoryView<?> output = result.materialize();
 
-        // Apply constant folding - should fold entire matmul computation
-        TIRConstantFoldingPass foldingPass = new TIRConstantFoldingPass();
-        TIRGraph optimizedTir = foldingPass.run(tirGraph);
-
-        // Lower optimized TIR to LIR
-        TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
-        LIRGraph lirGraph = lowerer.lower(optimizedTir);
-        lirGraph = new IndexSimplificationPass().run(lirGraph);
-
-        // Execute with LIRInterpreter
-        // Scalar inputs are passed at runtime (not folded since they're graph inputs)
-        try (Arena arena = Arena.ofConfined()) {
-            MemorySegment output = arena.allocate(M * N * Float.BYTES);
-
-            // Execute - bind output buffer and scalar inputs
-            LIRInterpreter interpreter = new LIRInterpreter();
-            // Scalar inputs: id 0 = 2.0f, id 1 = 3.0f
-            interpreter.bindScalarInput(0, Float.floatToRawIntBits(2.0f), DataType.FP32);
-            interpreter.bindScalarInput(1, Float.floatToRawIntBits(3.0f), DataType.FP32);
-            // Output buffer at id 2
-            interpreter.bindBuffer(2, output);
-            interpreter.execute(lirGraph);
-
-            // Verify: each element should be 2.0 * 3.0 * K = 18.0
-            float expected = 2.0f * 3.0f * K;
-            for (int i = 0; i < M; i++) {
-                for (int j = 0; j < N; j++) {
-                    float actual = output.getAtIndex(ValueLayout.JAVA_FLOAT, i * N + j);
-                    assertEquals(
-                            expected, actual, 1e-5f, "Mismatch at [" + i + "," + j + "]");
-                }
-            }
-        }
+        // Verify the matmul result
+        // aFilled = [[0, 1, 2], [3, 4, 5]]
+        // bFilled = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9], [10, 11, 12, 13, 14]]
+        // bFilled.T = [[0, 5, 10], [1, 6, 11], [2, 7, 12], [3, 8, 13], [4, 9, 14]]
+        //
+        // For element [0,0]: dot([0, 1, 2], [0, 5, 10]) = 0*0 + 1*5 + 2*10 = 25
+        // For element [0,1]: dot([0, 1, 2], [1, 6, 11]) = 0*1 + 1*6 + 2*11 = 28
+        // For element [0,2]: dot([0, 1, 2], [2, 7, 12]) = 0*2 + 1*7 + 2*12 = 31
+        // For element [0,3]: dot([0, 1, 2], [3, 8, 13]) = 0*3 + 1*8 + 2*13 = 34
+        // For element [0,4]: dot([0, 1, 2], [4, 9, 14]) = 0*4 + 1*9 + 2*14 = 37
+        //
+        // For element [1,0]: dot([3, 4, 5], [0, 5, 10]) = 3*0 + 4*5 + 5*10 = 70
+        // For element [1,1]: dot([3, 4, 5], [1, 6, 11]) = 3*1 + 4*6 + 5*11 = 82
+        // For element [1,2]: dot([3, 4, 5], [2, 7, 12]) = 3*2 + 4*7 + 5*12 = 94
+        // For element [1,3]: dot([3, 4, 5], [3, 8, 13]) = 3*3 + 4*8 + 5*13 = 106
+        // For element [1,4]: dot([3, 4, 5], [4, 9, 14]) = 3*4 + 4*9 + 5*14 = 118
+        float delta = 0.001f;
+        assertEquals(25.0f, readFloat(output, 0), delta, "Mismatch at [0,0]");
+        assertEquals(28.0f, readFloat(output, 1), delta, "Mismatch at [0,1]");
+        assertEquals(31.0f, readFloat(output, 2), delta, "Mismatch at [0,2]");
+        assertEquals(34.0f, readFloat(output, 3), delta, "Mismatch at [0,3]");
+        assertEquals(37.0f, readFloat(output, 4), delta, "Mismatch at [0,4]");
+        assertEquals(70.0f, readFloat(output, 5), delta, "Mismatch at [1,0]");
+        assertEquals(82.0f, readFloat(output, 6), delta, "Mismatch at [1,1]");
+        assertEquals(94.0f, readFloat(output, 7), delta, "Mismatch at [1,2]");
+        assertEquals(106.0f, readFloat(output, 8), delta, "Mismatch at [1,3]");
+        assertEquals(118.0f, readFloat(output, 9), delta, "Mismatch at [1,4]");
     }
 }

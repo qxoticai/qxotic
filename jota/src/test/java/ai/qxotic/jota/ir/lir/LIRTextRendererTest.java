@@ -43,19 +43,15 @@ class LIRTextRendererTest {
         System.out.println(output);
         System.out.println("==================");
 
-        // Verify key elements are present (note: DataType uses lowercase like fp32)
-        assertTrue(output.contains("LIRGraph {"), "Should contain 'LIRGraph {'");
-        assertTrue(output.contains("inputs:"), "Should contain 'inputs:'");
-        assertTrue(output.contains("outputs:"), "Should contain 'outputs:'");
-        assertTrue(output.contains("body {"), "Should contain 'body {'");
-        assertTrue(
-                output.contains("for %i = 0 to 4 step 1"),
-                "Should contain structured for header");
-        assertTrue(output.contains("load fp32 %in0"), "Should contain 'load fp32 %in0'");
-        assertTrue(output.contains("load fp32 %in1"), "Should contain 'load fp32 %in1'");
-        assertTrue(output.contains("add fp32"), "Should contain 'add fp32'");
-        assertTrue(output.contains("store %out0"), "Should contain 'store %out0'");
-        assertTrue(output.contains("yield"), "Should contain yield");
+        // Verify MLIR-style output
+        assertTrue(output.contains("module {"), "Should contain 'module {'");
+        assertTrue(output.contains("func.func @kernel"), "Should contain function definition");
+        assertTrue(output.contains("%in0: memref<4xfp32>"), "Should contain input memref type");
+        assertTrue(output.contains("%out0: memref<4xfp32>"), "Should contain output memref type");
+        assertTrue(output.contains("scf.for %i = 0 to 4 step 1"), "Should contain scf.for loop");
+        assertTrue(output.contains("memref.load %in0[%i * 4]"), "Should contain memref.load");
+        assertTrue(output.contains("arith.addf"), "Should contain arith.addf");
+        assertTrue(output.contains("memref.store"), "Should contain memref.store");
     }
 
     @Test
@@ -78,8 +74,8 @@ class LIRTextRendererTest {
         LIRTextRenderer renderer = new LIRTextRenderer();
         String output = renderer.render(graph);
 
-        // Verify full operator name is used
-        assertTrue(output.contains("negate fp32"), "Should contain 'negate fp32'");
+        // Verify MLIR operator name
+        assertTrue(output.contains("arith.negf"), "Should contain 'arith.negf'");
     }
 
     @Test
@@ -109,16 +105,12 @@ class LIRTextRendererTest {
         System.out.println(output);
         System.out.println("========================================");
 
-        // Verify key elements are present
-        assertTrue(
-                output.contains("fp32[(2, 3):(12, 4)]") || output.contains("fp32[(4):(12)]"),
-                "Should contain buffer shape and strides");
-        assertTrue(output.contains("contiguous"), "Should contain contiguity keyword");
-        // Index multiplications render as "*" in offset expressions, not "multiply fp32"
+        // Verify MLIR memref type format
+        assertTrue(output.contains("memref<2x3xfp32>"), "Should contain memref type with shape");
+        assertTrue(output.contains("scf.parallel"), "Should contain scf.parallel loop");
         assertTrue(output.contains(" * "), "Should contain index multiplication operators");
-        // Index additions render as "+" in offset expressions, not "add fp32"
         assertTrue(output.contains(" + "), "Should contain index addition operators");
-        assertTrue(output.contains("store %out0"), "Should store to output");
+        assertTrue(output.contains("memref.store"), "Should store to output");
     }
 
     //    @Test
@@ -206,16 +198,15 @@ class LIRTextRendererTest {
         System.out.println(output);
         System.out.println("=======================");
 
-        // Verify key elements are present
+        // Verify MLIR-style output
         assertTrue(
-                output.contains("parallel.for %i in [0, 5)"),
-                "Should contain loop with correct bounds");
+                output.contains("scf.parallel (%i) = (0) to (5) step (1)"),
+                "Should contain scf.parallel loop");
         assertTrue(output.contains("0.044715f"), "Should contain cubic coefficient constant");
         assertTrue(output.contains("0.7978846f"), "Should contain sqrt(2/pi) constant");
-        assertTrue(output.contains("tanh fp32"), "Should contain tanh operation");
-        assertTrue(
-                output.contains("multiply fp32"), "Should contain multiply (full name) operations");
-        assertTrue(output.contains("add fp32"), "Should contain add operations");
-        assertTrue(output.contains("store %out0"), "Should store to output");
+        assertTrue(output.contains("math.tanh"), "Should contain math.tanh operation");
+        assertTrue(output.contains("arith.mulf"), "Should contain arith.mulf operations");
+        assertTrue(output.contains("arith.addf"), "Should contain arith.addf operations");
+        assertTrue(output.contains("memref.store"), "Should store to output");
     }
 }

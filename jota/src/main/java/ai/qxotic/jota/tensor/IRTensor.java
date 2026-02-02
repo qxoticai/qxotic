@@ -29,7 +29,13 @@ final class IRTensor implements Tensor {
 
     @Override
     public Layout layout() {
-        return node.layout();
+        if (node instanceof ai.qxotic.jota.ir.tir.TensorInput input) {
+            return input.layout();
+        }
+        if (node instanceof ai.qxotic.jota.ir.tir.ViewTransform view) {
+            return view.layout();
+        }
+        return Layout.rowMajor(node.shape());
     }
 
     @Override

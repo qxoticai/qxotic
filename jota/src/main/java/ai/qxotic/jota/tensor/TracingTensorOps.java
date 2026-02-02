@@ -554,36 +554,32 @@ final class TracingTensorOps implements TensorOps {
     }
 
     private Layout requireCompatibleLayout(TraceTensor left, TraceTensor right) {
-        boolean leftIsScalar = left.layout().shape().isScalar();
-        boolean rightIsScalar = right.layout().shape().isScalar();
+        // Only true scalars (shape.isScalar()) can be broadcast, not arbitrary broadcasted tensors
+        boolean leftIsTrueScalar = left.layout().shape().isScalar();
+        boolean rightIsTrueScalar = right.layout().shape().isScalar();
 
-        if (leftIsScalar && rightIsScalar) {
+        if (leftIsTrueScalar && rightIsTrueScalar) {
+            // Both are true scalars - return either
             return left.layout();
         }
-        if (leftIsScalar && !rightIsScalar) {
+        if (leftIsTrueScalar && !rightIsTrueScalar) {
+            // Left is scalar, right is not - broadcast left to right's shape
             return right.layout();
         }
-        if (!leftIsScalar && rightIsScalar) {
+        if (!leftIsTrueScalar && rightIsTrueScalar) {
+            // Right is scalar, left is not - broadcast right to left's shape
             return left.layout();
         }
 
+        // Neither is a true scalar - shapes must be congruent
         if (!left.layout().isCongruentWith(right.layout())) {
             throw new IllegalArgumentException(
-                    "Incompatible layouts: " + left.layout() + " vs " + right.layout());
-        }
-        // Handle broadcasts: if either layout has any zero strides (broadcast dimension),
-        // create a proper row-major layout for the output.
-        // This ensures that operations on broadcasted inputs produce fully materialized outputs.
-        boolean leftHasBroadcast = hasBroadcastDimension(left.layout());
-        boolean rightHasBroadcast = hasBroadcastDimension(right.layout());
-        if (leftHasBroadcast && !rightHasBroadcast) {
-            return right.layout();
-        }
-        if (rightHasBroadcast && !leftHasBroadcast) {
-            return left.layout();
-        }
-        if (leftHasBroadcast) {
-            return Layout.rowMajor(left.layout().shape());
+                    "Incompatible layouts: "
+                            + left.layout().shape()
+                            + " vs "
+                            + right.layout().shape()
+                            + ". Note: Only true scalar tensors (shape.isScalar() == true) can be broadcast, "
+                            + "not broadcasted tensors. Use Tensor.scalar(value) to create scalar values.");
         }
         return left.layout();
     }

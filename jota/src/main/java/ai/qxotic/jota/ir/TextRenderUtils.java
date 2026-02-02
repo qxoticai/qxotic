@@ -427,4 +427,142 @@ public final class TextRenderUtils {
         }
         return str;
     }
+
+    // ==================== MLIR-Type Formatting ====================
+
+    /**
+     * Formats a tensor type in MLIR syntax.
+     *
+     * <p>Examples:
+     *
+     * <ul>
+     *   <li>Scalar: {@code f32}
+     *   <li>Contiguous 1D: {@code tensor<5xf32>}
+     *   <li>Contiguous 2D: {@code tensor<2x3xf32>}
+     *   <li>Non-contiguous: {@code tensor<5xf32, strided<[8]>>}
+     * </ul>
+     *
+     * @param dataType the element data type
+     * @param shape the shape dimensions
+     * @param strides the strides in elements
+     * @param isContiguous whether the layout is contiguous
+     * @return MLIR tensor type string
+     */
+    public static String formatTensorType(
+            DataType dataType, long[] shape, long[] strides, boolean isContiguous) {
+        if (shape == null || shape.length == 0) {
+            return formatDataType(dataType);
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("tensor<");
+
+        for (int i = 0; i < shape.length; i++) {
+            if (i > 0) {
+                sb.append("x");
+            }
+            sb.append(shape[i]);
+        }
+
+        sb.append("x").append(formatDataType(dataType));
+
+        if (!isContiguous && strides != null) {
+            sb.append(", strided<[");
+            for (int i = 0; i < strides.length; i++) {
+                if (i > 0) {
+                    sb.append(", ");
+                }
+                sb.append(strides[i]);
+            }
+            sb.append("]>");
+        }
+
+        sb.append(">");
+        return sb.toString();
+    }
+
+    /**
+     * Formats a memref type in MLIR syntax (for LIR).
+     *
+     * <p>Examples:
+     *
+     * <ul>
+     *   <li>Contiguous 1D: {@code memref<5xf32>}
+     *   <li>Contiguous 2D: {@code memref<2x3xf32>}
+     *   <li>Non-contiguous: {@code memref<5xf32, strided<[8]>>}
+     * </ul>
+     *
+     * @param dataType the element data type
+     * @param shape the shape dimensions
+     * @param strides the strides in bytes
+     * @param elementSize the element size in bytes
+     * @return MLIR memref type string
+     */
+    public static String formatMemRefType(
+            DataType dataType,
+            long[] shape,
+            long[] strides,
+            int elementSize,
+            boolean isContiguous) {
+        if (shape == null || shape.length == 0) {
+            return formatDataType(dataType);
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("memref<");
+
+        for (int i = 0; i < shape.length; i++) {
+            if (i > 0) {
+                sb.append("x");
+            }
+            sb.append(shape[i]);
+        }
+
+        sb.append("x").append(formatDataType(dataType));
+
+        if (!isContiguous && strides != null) {
+            sb.append(", strided<[");
+            for (int i = 0; i < strides.length; i++) {
+                if (i > 0) {
+                    sb.append(", ");
+                }
+                sb.append(strides[i]);
+            }
+            sb.append("]>");
+        }
+
+        sb.append(">");
+        return sb.toString();
+    }
+
+    /**
+     * Formats an operation type suffix in MLIR syntax.
+     *
+     * @param dataType the result data type
+     * @return MLIR type suffix (e.g., ": f32")
+     */
+    public static String formatOpTypeSuffix(DataType dataType) {
+        return " : " + formatDataType(dataType);
+    }
+
+    /**
+     * Formats an operation with explicit result types in MLIR syntax.
+     *
+     * @param opName the operation name (e.g., "arith.addf")
+     * @param operands the operand strings
+     * @param dataType the result data type
+     * @return formatted MLIR operation
+     */
+    public static String formatMLIROp(String opName, String[] operands, DataType dataType) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(opName).append(" ");
+        for (int i = 0; i < operands.length; i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(operands[i]);
+        }
+        sb.append(" : ").append(formatDataType(dataType));
+        return sb.toString();
+    }
 }

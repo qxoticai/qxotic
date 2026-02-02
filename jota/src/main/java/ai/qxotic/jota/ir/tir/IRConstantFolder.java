@@ -16,7 +16,7 @@ public final class IRConstantFolder {
     /** Attempts to fold a unary operation on a scalar constant. Returns null if not foldable. */
     public static ScalarConstant foldUnary(UnaryOperator op, ScalarConstant input) {
         DataType dataType = input.dataType();
-        Shape shape = input.layout().shape();
+        Shape shape = input.shape();
 
         if (dataType == DataType.FP32) {
             float value = Float.intBitsToFloat((int) input.rawBits());
@@ -53,7 +53,7 @@ public final class IRConstantFolder {
     public static ScalarConstant foldBinary(
             BinaryOperator op, ScalarConstant left, ScalarConstant right) {
         DataType dataType = left.dataType();
-        Shape shape = left.layout().shape();
+        Shape shape = left.shape();
 
         // Both must have same dataType (caller should have promoted)
         if (left.dataType() != right.dataType()) {
@@ -100,7 +100,7 @@ public final class IRConstantFolder {
         }
 
         DataType srcType = input.dataType();
-        Shape shape = input.layout().shape();
+        Shape shape = input.shape();
 
         // Extract source value as double (for floats) or long (for ints)
         double floatValue;

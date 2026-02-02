@@ -117,12 +117,21 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
     }
 
     private BufferRef createBufferRef(TIRNode node) {
-        return BufferRef.of(nextId++, node.dataType(), node.layout());
+        return BufferRef.of(nextId++, node.dataType(), layoutForNode(node));
     }
 
     private BufferRef createOutputBufferRef(TIRNode node) {
-        // Outputs are always contiguous row-major
-        return BufferRef.of(nextId++, node.dataType(), Layout.rowMajor(node.layout().shape()));
+        return BufferRef.of(nextId++, node.dataType(), layoutForNode(node));
+    }
+
+    private Layout layoutForNode(TIRNode node) {
+        if (node instanceof TensorInput input) {
+            return input.layout();
+        }
+        if (node instanceof ViewTransform view) {
+            return view.layout();
+        }
+        return Layout.rowMajor(node.shape());
     }
 
     /** Computes byte strides from a layout and data type. */
@@ -138,12 +147,13 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
 
     /** Lowers a single output expression to LIR loop nest. */
     private LIRNode lowerOutput(TIRNode output, BufferRef outBuf) {
-        // Handle reductions specially
+        // Note: Reductions with post-operations are already materialized in identifyAndMaterializeReductions
+        // Pure reductions (output is directly a ReductionOp) are handled here
         if (output instanceof ReductionOp reduction) {
             return lowerReduction(reduction, outBuf);
         }
 
-        Layout outLayout = output.layout().flatten();
+        Layout outLayout = layoutForNode(output).flatten();
         int rank = outLayout.shape().flatRank();
 
         // Create loop index variables
@@ -181,7 +191,7 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
     /** Lowers a reduction operation to LIR with accumulators. */
     private LIRNode lowerReduction(ReductionOp reduction, BufferRef outBuf) {
         TIRNode input = reduction.input();
-        Layout inputLayout = input.layout().flatten();
+        Layout inputLayout = layoutForNode(input).flatten();
         int inputRank = inputLayout.shape().flatRank();
         int[] axes = reduction.axes();
         DataType dtype = reduction.dataType();
@@ -304,11 +314,16 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
     }
 
     private ScalarExpr combineAccumulator(ScalarExpr acc, ScalarExpr value, ReductionOperator op) {
+        // Cast value to accumulator type if needed
+        ScalarExpr castValue = value;
+        if (value.dataType() != acc.dataType()) {
+            castValue = new ScalarCast(value, acc.dataType());
+        }
         return switch (op) {
-            case SUM -> new ScalarBinary(BinaryOperator.ADD, acc, value);
-            case PROD -> new ScalarBinary(BinaryOperator.MULTIPLY, acc, value);
-            case MIN -> new ScalarBinary(BinaryOperator.MIN, acc, value);
-            case MAX -> new ScalarBinary(BinaryOperator.MAX, acc, value);
+            case SUM -> new ScalarBinary(BinaryOperator.ADD, acc, castValue);
+            case PROD -> new ScalarBinary(BinaryOperator.MULTIPLY, acc, castValue);
+            case MIN -> new ScalarBinary(BinaryOperator.MIN, acc, castValue);
+            case MAX -> new ScalarBinary(BinaryOperator.MAX, acc, castValue);
         };
     }
 
@@ -316,8 +331,8 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         return switch (op) {
             case SUM -> ScalarLiteral.ofRawBits(identityZeroBits(dtype), dtype);
             case PROD -> ScalarLiteral.ofRawBits(identityOneBits(dtype), dtype);
-            case MIN -> ScalarLiteral.ofRawBits(identityMaxBits(dtype), dtype);
-            case MAX -> ScalarLiteral.ofRawBits(identityMinBits(dtype), dtype);
+            case MIN -> ScalarLiteral.ofRawBits(identityMinBits(dtype), dtype);
+            case MAX -> ScalarLiteral.ofRawBits(identityMaxBits(dtype), dtype);
         };
     }
 
@@ -341,26 +356,13 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
 
     private long identityMaxBits(DataType dtype) {
         if (dtype == DataType.FP32) {
-            return Float.floatToRawIntBits(Float.POSITIVE_INFINITY);
-        } else if (dtype == DataType.FP64) {
-            return Double.doubleToRawLongBits(Double.POSITIVE_INFINITY);
-        } else if (dtype == DataType.I32) {
-            return Integer.MAX_VALUE;
-        } else if (dtype == DataType.I64) {
-            return Long.MAX_VALUE;
-        } else if (dtype == DataType.I8) {
-            return Byte.MAX_VALUE;
-        } else if (dtype == DataType.I16) {
-            return Short.MAX_VALUE;
-        }
-        return Long.MAX_VALUE;
-    }
-
-    private long identityMinBits(DataType dtype) {
-        if (dtype == DataType.FP32) {
             return Float.floatToRawIntBits(Float.NEGATIVE_INFINITY);
         } else if (dtype == DataType.FP64) {
             return Double.doubleToRawLongBits(Double.NEGATIVE_INFINITY);
+        } else if (dtype == DataType.FP16 || dtype == DataType.BF16) {
+            // For FP16/BF16, use short representation of -infinity
+            // In FP16, 0xFC00 represents negative infinity
+            return (long) 0xFC00;
         } else if (dtype == DataType.I32) {
             return Integer.MIN_VALUE;
         } else if (dtype == DataType.I64) {
@@ -373,13 +375,33 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         return Long.MIN_VALUE;
     }
 
+    private long identityMinBits(DataType dtype) {
+        if (dtype == DataType.FP32) {
+            return Float.floatToRawIntBits(Float.POSITIVE_INFINITY);
+        } else if (dtype == DataType.FP64) {
+            return Double.doubleToRawLongBits(Double.POSITIVE_INFINITY);
+        } else if (dtype == DataType.FP16 || dtype == DataType.BF16) {
+            // For FP16/BF16, use short representation of +infinity
+            // In FP16, 0x7C00 represents positive infinity
+            return 0x7C00;
+        } else if (dtype == DataType.I32) {
+            return Integer.MAX_VALUE;
+        } else if (dtype == DataType.I64) {
+            return Long.MAX_VALUE;
+        } else if (dtype == DataType.I8) {
+            return Byte.MAX_VALUE;
+        } else if (dtype == DataType.I16) {
+            return Short.MAX_VALUE;
+        }
+        return Long.MAX_VALUE;
+    }
+
     private LIRNode ensureYield(LIRNode body) {
         if (body instanceof Yield) {
             return body;
         }
         if (body instanceof Block block) {
-            if (!block.statements().isEmpty()
-                    && block.statements().getLast() instanceof Yield) {
+            if (!block.statements().isEmpty() && block.statements().getLast() instanceof Yield) {
                 return body;
             }
         }
@@ -456,10 +478,12 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
 
     @Override
     public ScalarExpr visitReductionOp(ReductionOp node) {
-        // Reductions are complex - they need accumulators
-        // For now, throw unsupported
+        // Reductions should have been handled in lowerOutput, not visited directly
+        // This can happen if a reduction is used in a context that requires scalar evaluation
+        // In such cases, we need to handle it - for now, throw a more helpful error
         throw new UnsupportedOperationException(
-                "ReductionOp lowering not yet implemented - requires separate handling");
+                "ReductionOp lowering not yet implemented - requires separate handling. " +
+                "Reductions with post-operations (e.g., .add(), .cast()) are not yet supported.");
     }
 
     @Override
@@ -546,7 +570,7 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
 
         // Now 'indices' are in IotaConstant's original flat space
         // Compute linear index from these coordinates using IotaConstant's layout
-        Layout iotaLayout = iotaConstant.layout().flatten();
+        Layout iotaLayout = Layout.rowMajor(iotaConstant.shape()).flatten();
         IndexExpr linearIdx = null;
         long stride = 1;
         // Compute row-major linear index: sum(idx[i] * stride[i])
@@ -699,7 +723,7 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         }
 
         // Compute linear index from loop indices
-        Layout layout = node.layout().flatten();
+        Layout layout = Layout.rowMajor(node.shape()).flatten();
         IndexExpr linearIdx = null;
         long stride = 1;
         for (int i = layout.shape().flatRank() - 1; i >= 0; i--) {

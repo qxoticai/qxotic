@@ -1,11 +1,14 @@
 package ai.qxotic.jota.tensor;
 
+import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.ir.tir.TIRGraph;
 import ai.qxotic.jota.ir.tir.TIRNode;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 /**
@@ -19,6 +22,30 @@ public final class IRTracer {
     /** Traces a single-input function to IR-T. */
     public static Tensor trace(Tensor input, Function<Tensor, Tensor> fn) {
         return trace(List.of(input), tensors -> fn.apply(tensors.get(0)));
+    }
+
+    /** Traces a two-input function to IR-T. */
+    public static Tensor trace(
+            Tensor left, Tensor right, BiFunction<Tensor, Tensor, Tensor> fn) {
+        Objects.requireNonNull(left, "left");
+        Objects.requireNonNull(right, "right");
+        Objects.requireNonNull(fn, "fn");
+        return trace(List.of(left, right), tensors -> fn.apply(tensors.get(0), tensors.get(1)));
+    }
+
+    /** Traces a three-input function to IR-T. */
+    public static Tensor trace(
+            Tensor first,
+            Tensor second,
+            Tensor third,
+            TriFunction<Tensor, Tensor, Tensor, Tensor> fn) {
+        Objects.requireNonNull(first, "first");
+        Objects.requireNonNull(second, "second");
+        Objects.requireNonNull(third, "third");
+        Objects.requireNonNull(fn, "fn");
+        return trace(
+                List.of(first, second, third),
+                tensors -> fn.apply(tensors.get(0), tensors.get(1), tensors.get(2)));
     }
 
     /** Traces a multi-input function to IR-T. */
@@ -46,26 +73,24 @@ public final class IRTracer {
             TIRNode node;
 
             if (input.isMaterialized() || input.computation().isEmpty()) {
+                // Materialized tensor - create a TensorInput
                 node = new ai.qxotic.jota.ir.tir.TensorInput(i, input.dataType(), input.layout());
             } else {
                 LazyComputation comp = input.computation().orElseThrow();
-                if (comp instanceof IRComputation irComp) {
-                    node = remapInputs(irComp.graph(), i, irComp.inputTensors());
-                } else if (comp instanceof RangeComputation range) {
-                    node =
-                            new ai.qxotic.jota.ir.tir.IotaConstant(
-                                    range.count(), input.dataType(), input.layout());
+                if (comp instanceof RangeComputation range) {
+                    // Iota constant - computed from loop index
+                    node = new ai.qxotic.jota.ir.tir.IotaConstant(
+                            range.count(), input.dataType(), Shape.flat(range.count()));
                 } else if (comp instanceof ConstantComputation constComp) {
-                    // Convert constant computation to ScalarConstant for proper folding
-                    node =
-                            ai.qxotic.jota.ir.tir.ScalarConstant.broadcast(
-                                    constComp.rawBits(),
-                                    constComp.dataType(),
-                                    input.layout().shape());
+                    // Constant value - inline as ScalarConstant
+                    node = ai.qxotic.jota.ir.tir.ScalarConstant.broadcast(
+                            constComp.rawBits(),
+                            constComp.dataType(),
+                            input.layout().shape());
                 } else {
-                    node =
-                            new ai.qxotic.jota.ir.tir.TensorInput(
-                                    i, input.dataType(), input.layout());
+                    // IRComputation or other - treat as buffer input
+                    // The computation will be executed first, and its result used as input
+                    node = new ai.qxotic.jota.ir.tir.TensorInput(i, input.dataType(), input.layout());
                 }
             }
 
@@ -75,15 +100,6 @@ public final class IRTracer {
         }
 
         return new TraceInputs(nodes, tensors, tensorMap);
-    }
-
-    private static TIRNode remapInputs(TIRGraph graph, int baseIndex, List<Tensor> originalInputs) {
-        TIRNode oldRoot = graph.outputs().get(0);
-        return remapNode(oldRoot, baseIndex);
-    }
-
-    private static TIRNode remapNode(TIRNode node, int indexOffset) {
-        return node.accept(new TIRNodeRemapper(indexOffset));
     }
 
     private record TraceInputs(

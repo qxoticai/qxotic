@@ -98,7 +98,7 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
         if (newInput == node.input()) {
             return node;
         }
-        return new UnaryOp(node.op(), newInput);
+        return new UnaryOp(node.op(), newInput, node.shape());
     }
 
     @Override
@@ -108,7 +108,7 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
         if (newLeft == node.left() && newRight == node.right()) {
             return node;
         }
-        return new BinaryOp(node.op(), newLeft, newRight);
+        return new BinaryOp(node.op(), newLeft, newRight, node.shape());
     }
 
     @Override
@@ -119,7 +119,7 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
         if (newCond == node.cond() && newTrue == node.trueExpr() && newFalse == node.falseExpr()) {
             return node;
         }
-        return new TernaryOp(node.op(), newCond, newTrue, newFalse);
+        return new TernaryOp(node.op(), newCond, newTrue, newFalse, node.shape());
     }
 
     @Override
@@ -128,7 +128,7 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
         if (newInput == node.input()) {
             return node;
         }
-        return new CastOp(newInput, node.targetDataType());
+        return new CastOp(newInput, node.targetDataType(), node.shape());
     }
 
     @Override
@@ -137,7 +137,8 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
         if (newInput == node.input()) {
             return node;
         }
-        return new ReductionOp(node.op(), newInput, node.axes(), node.keepDims());
+        return new ReductionOp(
+                node.op(), newInput, node.axes(), node.keepDims(), node.accumulatorType(), node.shape());
     }
 
     @Override
@@ -155,6 +156,6 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
         if (newInput == node.input()) {
             return node;
         }
-        return new Contiguous(newInput);
+        return new Contiguous(newInput, node.shape());
     }
 }
