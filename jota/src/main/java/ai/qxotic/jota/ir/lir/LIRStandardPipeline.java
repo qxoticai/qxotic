@@ -1,5 +1,6 @@
 package ai.qxotic.jota.ir.lir;
 
+import ai.qxotic.jota.ir.TIRToLIRLowerer;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -10,15 +11,8 @@ import java.util.List;
  * when lowering TIR to LIR. The passes are ordered to maximize optimization effectiveness:
  *
  * <ol>
- *   <li><b>CanonicalizationPass</b> - Normalizes commutative operations (enables CSE)
- *   <li><b>CommonSubexpressionElimination</b> - Eliminates redundant computations
- *   <li><b>LoopInvariantHoistingPass</b> - Hoists invariant code outside loops
- *   <li><b>ReductionLoopFoldingPass</b> - Folds reduction loops with invariant updates
- *   <li><b>IndexSimplificationPass</b> - Simplifies index expressions using algebraic rules and
- *       range information
- *   <li><b>CanonicalizationPass</b> - Re-canonicalize after transformations (optional second run)
- *   <li><b>CommonSubexpressionElimination</b> - Catch new CSE opportunities (optional second run)
- *   <li><b>DeadCodeEliminationPass</b> - Removes unused definitions (always last)
+ *   <li><b>LIRV2WorklistPass</b> - Unique-node DAG canonicalization and constant folding
+ *   <li><b>LIRV2WorklistPass</b> - Unique-node DAG canonicalization and constant folding
  * </ol>
  *
  * <p>Usage:
@@ -42,6 +36,7 @@ public class LIRStandardPipeline {
     private final List<LIRPass> passes;
     private int iterations = 1;
     private boolean verbose = false;
+    private final boolean timing = Boolean.getBoolean("jota.lir.timing");
 
     /** Creates a standard pipeline with default pass ordering. */
     public LIRStandardPipeline() {
@@ -56,19 +51,7 @@ public class LIRStandardPipeline {
     private List<LIRPass> createStandardPasses() {
         List<LIRPass> standardPasses = new ArrayList<>();
 
-        // Core optimization passes
-        standardPasses.add(new CanonicalizationPass());
-        standardPasses.add(new CommonSubexpressionElimination());
-        standardPasses.add(new LoopInvariantHoistingPass());
-        standardPasses.add(new ReductionLoopFoldingPass());
-        standardPasses.add(new IndexSimplificationPass());
-
-        // Second round of canonicalization and CSE to catch new opportunities
-        standardPasses.add(new CanonicalizationPass());
-        standardPasses.add(new CommonSubexpressionElimination());
-
-        // Dead code elimination always runs last
-        standardPasses.add(new DeadCodeEliminationPass());
+        // Core optimization passes (LIR v2 based)
 
         return standardPasses;
     }
@@ -141,7 +124,18 @@ public class LIRStandardPipeline {
 
             for (LIRPass pass : passes) {
                 LIRGraph previous = result;
+                long start = timing ? System.nanoTime() : 0L;
                 result = pass.run(result);
+                long elapsed = timing ? System.nanoTime() - start : 0L;
+
+                if (timing) {
+                    System.out.println(
+                            "LIR pass "
+                                    + pass.name()
+                                    + " took "
+                                    + (elapsed / 1_000_000.0)
+                                    + " ms");
+                }
 
                 if (verbose) {
                     System.out.println("After " + pass.name() + ":");

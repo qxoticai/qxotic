@@ -190,7 +190,6 @@ public final class ScratchVerificationPass {
                 collectBuffersFromScalar(store.value(), buffers);
             }
             case ScalarLet let -> collectBuffersFromScalar(let.value(), buffers);
-            case Loop loop -> collectBuffers(loop.body(), buffers);
             case StructuredFor sfor -> {
                 for (LoopIterArg arg : sfor.iterArgs()) {
                     collectBuffersFromScalar(arg.init(), buffers);
@@ -198,7 +197,6 @@ public final class ScratchVerificationPass {
                 collectBuffers(sfor.body(), buffers);
             }
             case TiledLoop tiled -> collectBuffers(tiled.body(), buffers);
-            case LoopNest nest -> collectBuffers(nest.body(), buffers);
             case Block block -> block.statements().forEach(s -> collectBuffers(s, buffers));
             case Yield yield -> yield.values().forEach(v -> collectBuffersFromScalar(v, buffers));
             default -> {}
@@ -230,7 +228,6 @@ public final class ScratchVerificationPass {
                 collectAccessedFromScalar(store.value(), accessed);
             }
             case ScalarLet let -> collectAccessedFromScalar(let.value(), accessed);
-            case Loop loop -> collectAccessedBuffers(loop.body(), accessed);
             case StructuredFor sfor -> {
                 for (LoopIterArg arg : sfor.iterArgs()) {
                     collectAccessedFromScalar(arg.init(), accessed);
@@ -238,7 +235,6 @@ public final class ScratchVerificationPass {
                 collectAccessedBuffers(sfor.body(), accessed);
             }
             case TiledLoop tiled -> collectAccessedBuffers(tiled.body(), accessed);
-            case LoopNest nest -> collectAccessedBuffers(nest.body(), accessed);
             case Block block ->
                     block.statements().forEach(s -> collectAccessedBuffers(s, accessed));
             case Yield yield -> yield.values().forEach(v -> collectAccessedFromScalar(v, accessed));
@@ -268,7 +264,6 @@ public final class ScratchVerificationPass {
         switch (node) {
             case Store store -> collectReadFromScalar(store.value(), read);
             case ScalarLet let -> collectReadFromScalar(let.value(), read);
-            case Loop loop -> collectReadBuffers(loop.body(), read);
             case StructuredFor sfor -> {
                 for (LoopIterArg arg : sfor.iterArgs()) {
                     collectReadFromScalar(arg.init(), read);
@@ -276,7 +271,6 @@ public final class ScratchVerificationPass {
                 collectReadBuffers(sfor.body(), read);
             }
             case TiledLoop tiled -> collectReadBuffers(tiled.body(), read);
-            case LoopNest nest -> collectReadBuffers(nest.body(), read);
             case Block block -> block.statements().forEach(s -> collectReadBuffers(s, read));
             case Yield yield -> yield.values().forEach(v -> collectReadFromScalar(v, read));
             default -> {}
@@ -397,10 +391,6 @@ public final class ScratchVerificationPass {
                 int i = idx[0]++;
                 recordUses(let.value(), targets, lastUse, i);
             }
-            case Loop loop -> {
-                idx[0]++;
-                computeLivenessRec(loop.body(), targets, firstDef, lastUse, idx);
-            }
             case StructuredFor sfor -> {
                 int i = idx[0]++;
                 for (LoopIterArg arg : sfor.iterArgs()) {
@@ -411,10 +401,6 @@ public final class ScratchVerificationPass {
             case TiledLoop tiled -> {
                 idx[0]++;
                 computeLivenessRec(tiled.body(), targets, firstDef, lastUse, idx);
-            }
-            case LoopNest nest -> {
-                idx[0]++;
-                computeLivenessRec(nest.body(), targets, firstDef, lastUse, idx);
             }
             case Block block ->
                     block.statements()

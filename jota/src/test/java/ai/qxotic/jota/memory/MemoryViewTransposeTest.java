@@ -63,7 +63,7 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
                 for (int j = 0; j < 3; j++) {
                     for (int k = 0; k < 4; k++) {
                         float value = i * 12 + j * 4 + k + 1; // 1-24
-                        assertTrue(view.isContiguous());
+                        assertTrue(view.isRowMajorContiguous());
                         context.memoryAccess()
                                 .writeFloat(
                                         view.memory(),
@@ -166,17 +166,17 @@ public class MemoryViewTransposeTest extends AbstractMemoryTest {
         MemoryView<B> view =
                 MemoryViewFactory.allocate(context.memoryAllocator(), DataType.FP32, shape);
 
-        // Original view should be contiguous
-        assertTrue(view.isContiguous());
+        // Original view should be row-major contiguous, span-contiguous, and non-overlapping
+        assertTrue(view.isRowMajorContiguous());
+        assertTrue(view.isSpanContiguous());
+        assertTrue(view.isNonOverlapping());
 
         // Transposed view may or may not be contiguous depending on implementation
         MemoryView<B> transposed = view.transpose(0, 1);
 
-        // For row-major storage, transposing typically makes it non-contiguous
-        // But this depends on the memory layout implementation
-        // So we just verify the behavior is consistent
-        if (view.isContiguous()) {
-            assertFalse(transposed.isContiguous());
-        }
+        // Transpose keeps a gapless span but is no longer row-major contiguous
+        assertFalse(transposed.isRowMajorContiguous());
+        assertTrue(transposed.isSpanContiguous());
+        assertTrue(transposed.isNonOverlapping());
     }
 }

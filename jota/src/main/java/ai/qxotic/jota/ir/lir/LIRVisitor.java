@@ -40,13 +40,9 @@ public interface LIRVisitor<T> {
     T visitStore(Store node);
 
     // Loops and control
-    T visitLoop(Loop node);
-
     T visitStructuredFor(StructuredFor node);
 
     T visitTiledLoop(TiledLoop node);
-
-    T visitLoopNest(LoopNest node);
 
     T visitBlock(Block node);
 

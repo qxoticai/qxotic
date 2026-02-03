@@ -33,6 +33,9 @@ public final class TIRValidationPass implements TIRPass {
             case TensorInput __ -> {
                 // Input is validated by construction.
             }
+            case ScalarInput __ -> {
+                // Scalar inputs are validated by construction.
+            }
             case ScalarConstant sc -> validateScalarConstant(sc);
             case IotaConstant ic -> validateIotaConstant(ic);
             case UnaryOp op -> {

@@ -22,7 +22,7 @@ final class StridedCopy {
             throw new IllegalArgumentException("Source and destination devices must match");
         }
 
-        if (src.isContiguous() && dst.isContiguous()) {
+        if (src.isRowMajorContiguous() && dst.isRowMajorContiguous()) {
             long bytes = src.shape().size() * src.dataType().byteSize();
             if (bytes == 0) {
                 return;

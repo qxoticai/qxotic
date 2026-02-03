@@ -16,7 +16,9 @@ public class IsContiguousTest extends MemoryTest {
     void testScalarIsContiguous() {
         MemoryView<float[]> scalar =
                 MemoryViewFactory.of(DataType.FP32, MemoryFactory.ofFloats(42), Layout.scalar());
-        assertTrue(scalar.isContiguous());
+        assertTrue(scalar.isRowMajorContiguous());
+        assertTrue(scalar.isSpanContiguous());
+        assertTrue(scalar.isNonOverlapping());
     }
 
     @Test
@@ -24,7 +26,9 @@ public class IsContiguousTest extends MemoryTest {
         MemoryView<float[]> v =
                 MemoryViewFactory.of(
                         DataType.FP32, MemoryFactory.ofFloats(new float[10]), Layout.rowMajor(10));
-        assertTrue(v.isContiguous(), "1D fresh view should be contiguous");
+        assertTrue(v.isRowMajorContiguous(), "1D fresh view should be row-major contiguous");
+        assertTrue(v.isSpanContiguous(), "1D fresh view should be span-contiguous");
+        assertTrue(v.isNonOverlapping(), "1D fresh view should be non-overlapping");
     }
 
     @Test
@@ -34,7 +38,10 @@ public class IsContiguousTest extends MemoryTest {
                         DataType.FP32,
                         MemoryFactory.ofFloats(new float[12]),
                         Layout.rowMajor(3, 4));
-        assertTrue(v.isContiguous(), "Fresh 2D row-major view should be contiguous");
+        assertTrue(
+                v.isRowMajorContiguous(), "Fresh 2D row-major view should be row-major contiguous");
+        assertTrue(v.isSpanContiguous(), "Fresh 2D row-major view should be span-contiguous");
+        assertTrue(v.isNonOverlapping(), "Fresh 2D row-major view should be non-overlapping");
     }
 
     @Test
@@ -45,7 +52,9 @@ public class IsContiguousTest extends MemoryTest {
                         MemoryFactory.ofFloats(new float[12]),
                         Layout.rowMajor(3, 4));
         MemoryView<float[]> flat = v.view(Shape.of(12));
-        assertTrue(flat.isContiguous(), "Reshape to 1D should remain contiguous");
+        assertTrue(flat.isRowMajorContiguous(), "Reshape to 1D should remain row-major contiguous");
+        assertTrue(flat.isSpanContiguous(), "Reshape to 1D should remain span-contiguous");
+        assertTrue(flat.isNonOverlapping(), "Reshape to 1D should remain non-overlapping");
     }
 
     @Test
@@ -56,8 +65,10 @@ public class IsContiguousTest extends MemoryTest {
                         MemoryFactory.ofFloats(new float[12]),
                         Layout.rowMajor(3, 4));
         MemoryView<float[]> t = v.transpose(0, 1);
-        // With CuTe semantics, transpose IS contiguous because it spans the same contiguous range
-        assertTrue(t.isContiguous(), "Transposed 2D view spans contiguous range [0-11]");
+        // Transpose is span-contiguous and non-overlapping, but not row-major contiguous
+        assertFalse(t.isRowMajorContiguous(), "Transpose should not be row-major contiguous");
+        assertTrue(t.isSpanContiguous(), "Transposed 2D view spans a contiguous range");
+        assertTrue(t.isNonOverlapping(), "Transpose should be non-overlapping");
     }
 
     @Test
@@ -68,7 +79,9 @@ public class IsContiguousTest extends MemoryTest {
                         MemoryFactory.ofFloats(new float[12]),
                         Layout.rowMajor(3, 4));
         MemoryView<float[]> t = v.transpose(0, 1).transpose(0, 1);
-        assertTrue(t.isContiguous(), "Double transpose gets back to contiguous layout");
+        assertTrue(t.isRowMajorContiguous(), "Double transpose gets back to row-major layout");
+        assertTrue(t.isSpanContiguous(), "Double transpose gets back to span-contiguous layout");
+        assertTrue(t.isNonOverlapping(), "Double transpose remains non-overlapping");
     }
 
     @Test
@@ -80,9 +93,12 @@ public class IsContiguousTest extends MemoryTest {
                         Layout.rowMajor(3, 4));
         // Take the second row; shape becomes (1, 4). This should remain contiguous.
         MemoryView<float[]> row = v.slice(0, 1, 2);
-        assertTrue(row.isContiguous(), "Slicing a single full row should be contiguous");
+        assertTrue(row.isSpanContiguous(), "Slicing a single full row should be span-contiguous");
+        assertTrue(row.isNonOverlapping(), "Slicing a single full row should be non-overlapping");
         // Optional: also check after reshape to 1D (length 4)
-        assertTrue(row.view(Shape.of(4)).isContiguous(), "Reshaped row should be contiguous");
+        assertTrue(
+                row.view(Shape.of(4)).isRowMajorContiguous(),
+                "Reshaped row should be row-major contiguous");
     }
 
     @Test
@@ -94,7 +110,11 @@ public class IsContiguousTest extends MemoryTest {
                         Layout.rowMajor(3, 6));
         // Take every other column: stride 2 along the last axis -> non-contiguous
         MemoryView<float[]> colStride2 = v.slice(-1, 0, 6, 2);
-        assertFalse(colStride2.isContiguous(), "Slicing with indexStride > 1 breaks contiguity");
+        assertFalse(
+                colStride2.isSpanContiguous(),
+                "Slicing with indexStride > 1 breaks span contiguity");
+        assertTrue(
+                colStride2.isNonOverlapping(), "Slicing with indexStride > 1 is non-overlapping");
     }
 
     @Test
@@ -108,8 +128,11 @@ public class IsContiguousTest extends MemoryTest {
         // layout -> non-contiguous
         MemoryView<float[]> midSingleton = v.slice(1, 1, 2);
         assertFalse(
-                midSingleton.isContiguous(),
-                "Slicing a middle axis to size 1 does not repack; should be non-contiguous");
+                midSingleton.isSpanContiguous(),
+                "Slicing a middle axis to size 1 does not repack; should be non-span-contiguous");
+        assertTrue(
+                midSingleton.isNonOverlapping(),
+                "Slicing a middle axis to size 1 is non-overlapping");
     }
 
     @Test
@@ -121,17 +144,29 @@ public class IsContiguousTest extends MemoryTest {
                         DataType.FP32,
                         MemoryFactory.ofFloats(new float[8]),
                         Layout.rowMajor(2, 1, 4));
-        assertTrue(fresh.isContiguous(), "Fresh compact (2,1,4) view should be contiguous");
+        assertTrue(
+                fresh.isRowMajorContiguous(),
+                "Fresh compact (2,1,4) view should be row-major contiguous");
+        assertTrue(
+                fresh.isSpanContiguous(), "Fresh compact (2,1,4) view should be span-contiguous");
+        assertTrue(
+                fresh.isNonOverlapping(), "Fresh compact (2,1,4) view should be non-overlapping");
     }
 
     @Test
     void testBroadcastExpandIsNotContiguous() {
         MemoryView<float[]> scalar =
                 MemoryViewFactory.of(DataType.FP32, MemoryFactory.ofFloats(42f), Layout.scalar());
-        assertTrue(scalar.isContiguous(), "Scalar should be contiguous");
+        assertTrue(scalar.isRowMajorContiguous(), "Scalar should be row-major contiguous");
+        assertTrue(scalar.isSpanContiguous(), "Scalar should be span-contiguous");
+        assertTrue(scalar.isNonOverlapping(), "Scalar should be non-overlapping");
         MemoryView<float[]> broadcast = scalar.broadcast(Shape.of(2, 3));
         assertFalse(
-                broadcast.isContiguous(),
-                "Broadcasted (expanded) view uses stride 0; should not be contiguous");
+                broadcast.isNonOverlapping(),
+                "Broadcasted (expanded) view uses stride 0; should overlap");
+        assertFalse(broadcast.isSpanContiguous(), "Broadcasted view should not be span-contiguous");
+        assertFalse(
+                broadcast.isRowMajorContiguous(),
+                "Broadcasted view should not be row-major contiguous");
     }
 }

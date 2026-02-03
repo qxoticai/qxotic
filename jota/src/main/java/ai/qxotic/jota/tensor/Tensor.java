@@ -687,6 +687,12 @@ public interface Tensor {
             throw new IllegalArgumentException("n must be non-negative, got: " + n);
         }
         Shape shape = Shape.flat(n);
+        TensorOps ops = TensorOpsContext.current();
+        if (ops instanceof IRTensorOps) {
+            return new IRTensor(
+                    new ai.qxotic.jota.ir.tir.IotaConstant(n, DataType.I64, shape),
+                    Device.defaultDevice());
+        }
         Layout layout = Layout.rowMajor(shape);
         RangeComputation computation = new RangeComputation(n, Device.defaultDevice());
         return lazy(computation, DataType.I64, layout, Device.defaultDevice());
@@ -703,6 +709,12 @@ public interface Tensor {
         Objects.requireNonNull(dataType, "dataType");
         if (dataType == DataType.BOOL || !(dataType.isIntegral() || dataType.isFloatingPoint())) {
             throw new IllegalArgumentException("Unsupported data type for arange: " + dataType);
+        }
+        TensorOps ops = TensorOpsContext.current();
+        if (ops instanceof IRTensorOps) {
+            return new IRTensor(
+                    new ai.qxotic.jota.ir.tir.IotaConstant(n, dataType, Shape.flat(n)),
+                    Device.defaultDevice());
         }
         return iota(n).cast(dataType);
     }

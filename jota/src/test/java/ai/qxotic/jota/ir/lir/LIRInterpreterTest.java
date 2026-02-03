@@ -14,11 +14,32 @@ import ai.qxotic.jota.tensor.Tensor;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class LIRInterpreterTest {
+
+    private static StructuredFor simpleLoop(String indexName, int upperBound, LIRNode body) {
+        return StructuredFor.simple(indexName, 0, upperBound, 1, ensureYield(body));
+    }
+
+    private static LIRNode ensureYield(LIRNode body) {
+        if (body instanceof Yield) {
+            return body;
+        }
+        if (body instanceof Block block) {
+            if (!block.statements().isEmpty()
+                    && block.statements().getLast() instanceof Yield) {
+                return body;
+            }
+            List<LIRNode> statements = new ArrayList<>(block.statements());
+            statements.add(new Yield(List.of()));
+            return new Block(statements);
+        }
+        return new Block(List.of(body, new Yield(List.of())));
+    }
 
     @Test
     void testSimpleElementwiseAdd() {
@@ -51,7 +72,7 @@ class LIRInterpreterTest {
             ScalarExpr sum = new ScalarBinary(BinaryOperator.ADD, v0, v1);
             Store store = new Store(out, offset, sum);
 
-            Loop loop = Loop.parallel("i", size, store);
+            StructuredFor loop = simpleLoop("i", size, store);
             LIRGraph graph = builder.build(loop);
 
             // Execute
@@ -93,7 +114,7 @@ class LIRInterpreterTest {
             ScalarExpr neg = new ScalarUnary(UnaryOperator.NEGATE, v0);
             Store store = new Store(out, offset, neg);
 
-            Loop loop = Loop.parallel("i", size, store);
+            StructuredFor loop = simpleLoop("i", size, store);
             LIRGraph graph = builder.build(loop);
 
             LIRInterpreter interpreter = new LIRInterpreter();
@@ -161,7 +182,7 @@ class LIRInterpreterTest {
 
             Store store = new Store(out, offset, gelu);
 
-            Loop loop = Loop.parallel("i", size, store);
+            StructuredFor loop = simpleLoop("i", size, store);
             LIRGraph graph = builder.build(loop);
 
             LIRInterpreter interpreter = new LIRInterpreter();
@@ -217,7 +238,7 @@ class LIRInterpreterTest {
             ScalarExpr select = new ScalarTernary(condVal, trueExpr, falseExpr);
             Store store = new Store(out, floatOffset, select);
 
-            Loop loop = Loop.parallel("i", size, store);
+            StructuredFor loop = simpleLoop("i", size, store);
             LIRGraph graph = builder.build(loop);
 
             LIRInterpreter interpreter = new LIRInterpreter();
@@ -264,7 +285,7 @@ class LIRInterpreterTest {
             ScalarExpr result = new ScalarBinary(BinaryOperator.MULTIPLY, sum, two);
             Store store = new Store(out, offset, result);
 
-            Loop loop = Loop.parallel("i", size, store);
+            StructuredFor loop = simpleLoop("i", size, store);
             LIRGraph graph = builder.build(loop);
 
             LIRInterpreter interpreter = new LIRInterpreter();
@@ -399,8 +420,8 @@ class LIRInterpreterTest {
             ScalarExpr v0 = new ScalarLoad(in0, offset);
             Store store = new Store(out, offset, v0);
 
-            Loop innerLoop = Loop.parallel("j", cols, store);
-            Loop outerLoop = Loop.parallel("i", rows, innerLoop);
+            StructuredFor innerLoop = simpleLoop("j", cols, store);
+            StructuredFor outerLoop = simpleLoop("i", rows, innerLoop);
 
             LIRGraph graph = builder.build(outerLoop);
 
@@ -442,7 +463,7 @@ class LIRInterpreterTest {
             ScalarExpr cast = new ScalarCast(v0, DataType.FP32);
             Store store = new Store(out, outOffset, cast);
 
-            Loop loop = Loop.parallel("i", size, store);
+            StructuredFor loop = simpleLoop("i", size, store);
             LIRGraph graph = builder.build(loop);
 
             LIRInterpreter interpreter = new LIRInterpreter();

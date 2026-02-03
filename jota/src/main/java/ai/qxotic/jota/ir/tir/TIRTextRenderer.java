@@ -135,8 +135,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
         }
     }
 
-    private void renderInputNodeForGraph(TensorInput node) {
-    }
+    private void renderInputNodeForGraph(TensorInput node) {}
 
     private void renderScalarConstantForGraph(ScalarConstant node) {
         String var = nodeToVar.get(node);
@@ -392,7 +391,8 @@ public class TIRTextRenderer implements TIRVisitor<String> {
             return formatTensorType(view.layout(), view.dataType());
         }
         long[] shape = node.shape().toArray();
-        return ai.qxotic.jota.ir.TextRenderUtils.formatTensorType(node.dataType(), shape, null, true);
+        return ai.qxotic.jota.ir.TextRenderUtils.formatTensorType(
+                node.dataType(), shape, null, true);
     }
 
     private Layout layoutForNode(TIRNode node) {
@@ -525,6 +525,12 @@ public class TIRTextRenderer implements TIRVisitor<String> {
 
     @Override
     public String visitTensorInput(TensorInput node) {
+        String var = allocateVar(node);
+        return var;
+    }
+
+    @Override
+    public String visitScalarInput(ScalarInput node) {
         String var = allocateVar(node);
         return var;
     }

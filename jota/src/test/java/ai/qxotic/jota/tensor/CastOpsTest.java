@@ -69,8 +69,7 @@ class CastOpsTest extends AbstractMemoryTest {
         Tensor input0 = Tensor.of(view);
         Tensor input1 = Tensor.of(view);
         // Materialize the reduction result first, then cast
-        Tensor sum =
-                IRTracer.trace(input0, input1, (t0, t1) -> t0.add(t1).sum(DataType.I32));
+        Tensor sum = IRTracer.trace(input0, input1, (t0, t1) -> t0.add(t1).sum(DataType.I32));
         Tensor output = IRTracer.trace(sum, s -> s.cast(DataType.FP32));
         MemoryView<?> result = output.materialize();
         assertEquals(Shape.scalar(), result.shape());

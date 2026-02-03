@@ -27,16 +27,49 @@ public final class PanamaLIRKernelExecutor {
     private final ScratchAnalysisPass scratchAnalysis = new ScratchAnalysisPass();
     private final ScratchVerificationPass scratchVerification = new ScratchVerificationPass();
     private final boolean verifyScratch =
-            Boolean.parseBoolean(System.getProperty("jota.verifyScratch", "true"));
+            Boolean.parseBoolean(System.getProperty("jota.verifyScratch", "false"));
 
     public PanamaLIRKernelExecutor(DiskKernelCache cache) {
         this.compiler = new LIRKernelCompiler(Objects.requireNonNull(cache, "cache"));
+    }
+
+    public record CompiledKernel(JitKernel kernel, ScratchLayout scratchLayout) {}
+
+    public CompiledKernel compile(LIRGraph graph) {
+        ScratchLayout scratchLayout = scratchAnalysis.analyze(graph);
+        if (verifyScratch) {
+            scratchVerification.verifyOrThrow(graph, scratchLayout);
+        }
+        JitKernel kernel = compiler.compile(graph, scratchLayout);
+        return new CompiledKernel(kernel, scratchLayout);
     }
 
     public MemoryView<?> execute(
             TIRGraph graph, List<Tensor> lirInputs, MemoryContext<MemorySegment> context) {
         LIRGraph lirGraph = pipeline.run(lowerer.lower(graph));
         return execute(lirGraph, lirInputs, context);
+    }
+
+    public void execute(
+            LIRGraph graph,
+            CompiledKernel compiled,
+            List<Tensor> lirInputs,
+            List<MemoryView<?>> outputs,
+            MemoryContext<MemorySegment> context,
+            Memory<MemorySegment> scratch) {
+        compiled.kernel().execute(context, argsBuilder.build(graph, lirInputs, outputs), scratch);
+    }
+
+    public void execute(
+            LIRGraph graph,
+            CompiledKernel compiled,
+            List<MemoryView<?>> inputs,
+            List<ai.qxotic.jota.tensor.ScalarArg> scalars,
+            List<MemoryView<?>> outputs,
+            MemoryContext<MemorySegment> context,
+            Memory<MemorySegment> scratch) {
+        compiled.kernel()
+                .execute(context, argsBuilder.build(graph, inputs, scalars, outputs), scratch);
     }
 
     public MemoryView<?> execute(

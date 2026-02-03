@@ -12,20 +12,22 @@ public final class ScratchAnalysisPass {
     /** Analyzes the graph and returns the scratch layout. */
     public ScratchLayout analyze(LIRGraph graph) {
         // Collect input/output buffers
-        Set<BufferRef> inputBuffers = new HashSet<>();
+        Set<BufferRef> inputBuffers = newIdentitySet();
         for (LIRInput input : graph.inputs()) {
             if (input instanceof BufferRef buf) {
                 inputBuffers.add(buf);
             }
         }
-        Set<BufferRef> outputBuffers = new HashSet<>(graph.outputs());
+        Set<BufferRef> outputBuffers = newIdentitySet();
+        outputBuffers.addAll(graph.outputs());
 
         // Find all buffers used in the body
-        Set<BufferRef> allBuffers = new HashSet<>();
+        Set<BufferRef> allBuffers = newIdentitySet();
         collectBuffers(graph.body(), allBuffers);
 
         // Intermediates = all buffers - inputs - outputs
-        Set<BufferRef> intermediates = new HashSet<>(allBuffers);
+        Set<BufferRef> intermediates = newIdentitySet();
+        intermediates.addAll(allBuffers);
         intermediates.removeAll(inputBuffers);
         intermediates.removeAll(outputBuffers);
 
@@ -45,7 +47,6 @@ public final class ScratchAnalysisPass {
                 collectBuffersFromScalar(store.value(), buffers);
             }
             case ScalarLet let -> collectBuffersFromScalar(let.value(), buffers);
-            case Loop loop -> collectBuffers(loop.body(), buffers);
             case StructuredFor sfor -> {
                 for (LoopIterArg arg : sfor.iterArgs()) {
                     collectBuffersFromScalar(arg.init(), buffers);
@@ -53,7 +54,6 @@ public final class ScratchAnalysisPass {
                 collectBuffers(sfor.body(), buffers);
             }
             case TiledLoop tiled -> collectBuffers(tiled.body(), buffers);
-            case LoopNest nest -> collectBuffers(nest.body(), buffers);
             case Block block -> block.statements().forEach(s -> collectBuffers(s, buffers));
             case Yield yield -> yield.values().forEach(v -> collectBuffersFromScalar(v, buffers));
             default -> {}
@@ -61,31 +61,44 @@ public final class ScratchAnalysisPass {
     }
 
     private void collectBuffersFromScalar(ScalarExpr expr, Set<BufferRef> buffers) {
-        switch (expr) {
-            case ScalarLoad load -> buffers.add(load.buffer());
-            case ScalarUnary u -> collectBuffersFromScalar(u.input(), buffers);
-            case ScalarBinary b -> {
-                collectBuffersFromScalar(b.left(), buffers);
-                collectBuffersFromScalar(b.right(), buffers);
+        collectBuffersFromScalarIter(expr, buffers);
+    }
+
+    private void collectBuffersFromScalarIter(ScalarExpr expr, Set<BufferRef> buffers) {
+        Deque<ScalarExpr> stack = new ArrayDeque<>();
+        Set<ScalarExpr> visited = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+        stack.add(expr);
+        while (!stack.isEmpty()) {
+            ScalarExpr current = stack.removeLast();
+            if (!visited.add(current)) {
+                continue;
             }
-            case ScalarTernary t -> {
-                collectBuffersFromScalar(t.condition(), buffers);
-                collectBuffersFromScalar(t.trueValue(), buffers);
-                collectBuffersFromScalar(t.falseValue(), buffers);
+            switch (current) {
+                case ScalarLoad load -> buffers.add(load.buffer());
+                case ScalarUnary u -> stack.add(u.input());
+                case ScalarBinary b -> {
+                    stack.add(b.left());
+                    stack.add(b.right());
+                }
+                case ScalarTernary t -> {
+                    stack.add(t.condition());
+                    stack.add(t.trueValue());
+                    stack.add(t.falseValue());
+                }
+                case ScalarCast c -> stack.add(c.input());
+                default -> {}
             }
-            case ScalarCast c -> collectBuffersFromScalar(c.input(), buffers);
-            default -> {}
         }
     }
 
     private Map<BufferRef, LivenessInterval> computeLiveness(LIRNode body, Set<BufferRef> targets) {
-        Map<BufferRef, Integer> firstDef = new HashMap<>();
-        Map<BufferRef, Integer> lastUse = new HashMap<>();
+        Map<BufferRef, Integer> firstDef = new IdentityHashMap<>();
+        Map<BufferRef, Integer> lastUse = new IdentityHashMap<>();
         int[] idx = {0};
 
         computeLivenessRec(body, targets, firstDef, lastUse, idx);
 
-        Map<BufferRef, LivenessInterval> result = new HashMap<>();
+        Map<BufferRef, LivenessInterval> result = new IdentityHashMap<>();
         for (BufferRef buf : targets) {
             int def = firstDef.getOrDefault(buf, 0);
             int use = lastUse.getOrDefault(buf, def);
@@ -112,10 +125,6 @@ public final class ScratchAnalysisPass {
                 int i = idx[0]++;
                 recordUses(let.value(), targets, lastUse, i);
             }
-            case Loop loop -> {
-                idx[0]++;
-                computeLivenessRec(loop.body(), targets, firstDef, lastUse, idx);
-            }
             case StructuredFor sfor -> {
                 int i = idx[0]++;
                 for (LoopIterArg arg : sfor.iterArgs()) {
@@ -126,10 +135,6 @@ public final class ScratchAnalysisPass {
             case TiledLoop tiled -> {
                 idx[0]++;
                 computeLivenessRec(tiled.body(), targets, firstDef, lastUse, idx);
-            }
-            case LoopNest nest -> {
-                idx[0]++;
-                computeLivenessRec(nest.body(), targets, firstDef, lastUse, idx);
             }
             case Block block ->
                     block.statements()
@@ -144,24 +149,38 @@ public final class ScratchAnalysisPass {
 
     private void recordUses(
             ScalarExpr expr, Set<BufferRef> targets, Map<BufferRef, Integer> lastUse, int idx) {
-        switch (expr) {
-            case ScalarLoad load -> {
-                if (targets.contains(load.buffer())) {
-                    lastUse.merge(load.buffer(), idx, Math::max);
+        recordUsesIter(expr, targets, lastUse, idx);
+    }
+
+    private void recordUsesIter(
+            ScalarExpr expr, Set<BufferRef> targets, Map<BufferRef, Integer> lastUse, int idx) {
+        Deque<ScalarExpr> stack = new ArrayDeque<>();
+        Set<ScalarExpr> visited = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+        stack.add(expr);
+        while (!stack.isEmpty()) {
+            ScalarExpr current = stack.removeLast();
+            if (!visited.add(current)) {
+                continue;
+            }
+            switch (current) {
+                case ScalarLoad load -> {
+                    if (targets.contains(load.buffer())) {
+                        lastUse.merge(load.buffer(), idx, Math::max);
+                    }
                 }
+                case ScalarUnary u -> stack.add(u.input());
+                case ScalarBinary b -> {
+                    stack.add(b.left());
+                    stack.add(b.right());
+                }
+                case ScalarTernary t -> {
+                    stack.add(t.condition());
+                    stack.add(t.trueValue());
+                    stack.add(t.falseValue());
+                }
+                case ScalarCast c -> stack.add(c.input());
+                default -> {}
             }
-            case ScalarUnary u -> recordUses(u.input(), targets, lastUse, idx);
-            case ScalarBinary b -> {
-                recordUses(b.left(), targets, lastUse, idx);
-                recordUses(b.right(), targets, lastUse, idx);
-            }
-            case ScalarTernary t -> {
-                recordUses(t.condition(), targets, lastUse, idx);
-                recordUses(t.trueValue(), targets, lastUse, idx);
-                recordUses(t.falseValue(), targets, lastUse, idx);
-            }
-            case ScalarCast c -> recordUses(c.input(), targets, lastUse, idx);
-            default -> {}
         }
     }
 
@@ -176,7 +195,7 @@ public final class ScratchAnalysisPass {
         // Free regions: size -> list of offsets
         TreeMap<Long, Deque<Long>> free = new TreeMap<>();
 
-        Map<BufferRef, Long> offsets = new HashMap<>();
+        Map<BufferRef, Long> offsets = new IdentityHashMap<>();
         long highWater = 0;
 
         for (BufferRef buf : sorted) {
@@ -201,6 +220,10 @@ public final class ScratchAnalysisPass {
         }
 
         return new ScratchLayout(offsets, highWater);
+    }
+
+    private static Set<BufferRef> newIdentitySet() {
+        return java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     }
 
     private long allocateFromFree(TreeMap<Long, Deque<Long>> free, long size) {

@@ -95,8 +95,7 @@ class ProductReductionOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = range(DataType.I32, Shape.of(2, 3));
         Tensor input = Tensor.of(view);
         Tensor reduced =
-                IRTracer.trace(
-                        input, t -> t.product(DataType.I32, 1).cast(DataType.FP32).add(1f));
+                IRTracer.trace(input, t -> t.product(DataType.I32, 1).cast(DataType.FP32).add(1f));
         MemoryView<?> output = reduced.materialize();
         assertEquals(Shape.of(2), output.shape());
         assertValueEquals(DataType.FP32, 1.0f, readValue(output, 0, DataType.FP32));
