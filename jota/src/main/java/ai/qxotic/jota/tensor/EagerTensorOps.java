@@ -137,7 +137,8 @@ public class EagerTensorOps implements TensorOps {
     @Override
     public Tensor contiguous(Tensor x) {
         MemoryView<?> sourceView = x.materialize();
-        // Check for row-major contiguity (isSuffixContiguous(0)), not just spanning a contiguous range
+        // Check for row-major contiguity (isSuffixContiguous(0)), not just spanning a contiguous
+        // range
         // A tensor can span a contiguous range but have non-row-major strides (e.g., transposed)
         if (sourceView.layout().isSuffixContiguous(0)) {
             return x;

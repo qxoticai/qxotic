@@ -20,7 +20,13 @@ public record ReductionOp(
             int[] axes,
             boolean keepDims,
             DataType accumulatorType) {
-        this(op, input, axes, keepDims, accumulatorType, reduceShape(input.shape(), axes, keepDims));
+        this(
+                op,
+                input,
+                axes,
+                keepDims,
+                accumulatorType,
+                reduceShape(input.shape(), axes, keepDims));
     }
 
     public ReductionOp {

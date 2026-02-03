@@ -5,6 +5,8 @@ public interface TIRVisitor<T> {
 
     T visitTensorInput(TensorInput node);
 
+    T visitScalarInput(ScalarInput node);
+
     T visitUnaryOp(UnaryOp node);
 
     T visitBinaryOp(BinaryOp node);

@@ -9,6 +9,7 @@ import ai.qxotic.jota.ir.base.IRNode;
  */
 public sealed interface TIRNode extends IRNode
         permits TensorInput,
+                ScalarInput,
                 ScalarConstant,
                 UnaryOp,
                 BinaryOp,
@@ -26,6 +27,7 @@ public sealed interface TIRNode extends IRNode
     default <T> T accept(TIRVisitor<T> visitor) {
         return switch (this) {
             case TensorInput n -> visitor.visitTensorInput(n);
+            case ScalarInput n -> visitor.visitScalarInput(n);
             case ScalarConstant n -> visitor.visitScalarConstant(n);
             case UnaryOp n -> visitor.visitUnaryOp(n);
             case BinaryOp n -> visitor.visitBinaryOp(n);

@@ -167,7 +167,12 @@ public final class TIRConstantFoldingPass implements TIRPass {
                 return node;
             }
             return new ReductionOp(
-                    node.op(), newInput, node.axes(), node.keepDims(), node.accumulatorType(), node.shape());
+                    node.op(),
+                    newInput,
+                    node.axes(),
+                    node.keepDims(),
+                    node.accumulatorType(),
+                    node.shape());
         }
 
         // ==================== Binary Folding ====================

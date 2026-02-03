@@ -54,6 +54,7 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
     private void collectInputs(TIRNode node, java.util.Set<TIRNode> inputs) {
         switch (node) {
             case TensorInput ti -> inputs.add(ti);
+            case ScalarInput si -> inputs.add(si);
             case UnaryOp op -> collectInputs(op.input(), inputs);
             case BinaryOp op -> {
                 collectInputs(op.left(), inputs);
@@ -79,6 +80,10 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
 
     @Override
     public TIRNode visitTensorInput(TensorInput node) {
+        return node;
+    }
+
+    public TIRNode visitScalarInput(ScalarInput node) {
         return node;
     }
 
@@ -138,7 +143,12 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
             return node;
         }
         return new ReductionOp(
-                node.op(), newInput, node.axes(), node.keepDims(), node.accumulatorType(), node.shape());
+                node.op(),
+                newInput,
+                node.axes(),
+                node.keepDims(),
+                node.accumulatorType(),
+                node.shape());
     }
 
     @Override

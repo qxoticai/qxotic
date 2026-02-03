@@ -9,6 +9,7 @@ import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.ir.TIRToLIRLowerer;
 import ai.qxotic.jota.ir.lir.LIRGraph;
 import ai.qxotic.jota.ir.lir.LIRInterpreter;
+import ai.qxotic.jota.ir.lir.LIRStandardPipeline;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
@@ -353,6 +354,7 @@ class IRTracerTest {
         // Lower optimized TIR to LIR
         TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
         LIRGraph lirGraph = lowerer.lower(optimizedTir);
+        lirGraph = new LIRStandardPipeline().run(lirGraph);
 
         // Execute with LIRInterpreter
         // Scalar inputs are passed at runtime (not folded since they're graph inputs)

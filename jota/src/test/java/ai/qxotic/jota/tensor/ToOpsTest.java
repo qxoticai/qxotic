@@ -1,9 +1,7 @@
 package ai.qxotic.jota.tensor;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
@@ -40,9 +38,9 @@ class ToOpsTest {
         MemoryView<MemorySegment> view =
                 MemoryHelpers.arange(context, DataType.FP32, 4).view(Shape.of(4));
         Tensor input = Tensor.of(view);
-        Tensor result = IRTracer.trace(input, t -> t.to(Device.GPU));
-        assertTrue(result.isLazy());
-        assertEquals(Device.GPU, result.device());
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> IRTracer.trace(input, t -> t.to(Device.GPU)));
     }
 
     @Test

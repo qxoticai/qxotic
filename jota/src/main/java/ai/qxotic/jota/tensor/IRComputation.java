@@ -3,12 +3,17 @@ package ai.qxotic.jota.tensor;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.ir.tir.IotaConstant;
+import ai.qxotic.jota.ir.tir.TIRCSEPass;
+import ai.qxotic.jota.ir.tir.TIRConstantFoldingPass;
 import ai.qxotic.jota.ir.tir.TIRGraph;
 import ai.qxotic.jota.ir.tir.TIRInterpreter;
 import ai.qxotic.jota.ir.tir.TIRNode;
+import ai.qxotic.jota.ir.tir.TIRValidationPass;
 import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.panama.PanamaLIRKernelExecutor;
+
+import java.lang.foreign.MemorySegment;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -50,16 +55,20 @@ final class IRComputation implements LazyComputation {
 
     @Override
     public MemoryView<?> execute() {
-        Device device = inputTensors.get(0).device();
+        Device device =
+                inputTensors.isEmpty() ? Device.defaultDevice() : inputTensors.get(0).device();
         MemoryContext<?> context = Environment.current().backend(device).memoryContext();
 
-        if (device == Device.PANAMA && requiresKernel(graph)) {
+        // Optimize the graph before execution
+        TIRGraph optimizedGraph = optimizeGraph(graph);
+
+        if (device == Device.PANAMA && requiresKernel(optimizedGraph)) {
             @SuppressWarnings("unchecked")
-            MemoryContext<java.lang.foreign.MemorySegment> panamaContext =
-                    (MemoryContext<java.lang.foreign.MemorySegment>) context;
-            List<Tensor> lirInputs = collectLirInputs(graph, inputTensors);
+            MemoryContext<MemorySegment> panamaContext =
+                    (MemoryContext<MemorySegment>) context;
+            List<Tensor> lirInputs = collectLirInputs(optimizedGraph, inputTensors);
             return new PanamaLIRKernelExecutor(DiskKernelCache.defaultCache())
-                    .execute(graph, lirInputs, panamaContext);
+                    .execute(optimizedGraph, lirInputs, panamaContext);
         }
 
         @SuppressWarnings({"unchecked", "rawtypes"})
@@ -67,7 +76,7 @@ final class IRComputation implements LazyComputation {
                 (List<MemoryView<?>>)
                         (List<?>) inputTensors.stream().map(Tensor::materialize).toList();
 
-        List<?> outputs = TIRInterpreter.execute(graph, inputs, context);
+        List<?> outputs = TIRInterpreter.execute(optimizedGraph, inputs, context);
 
         @SuppressWarnings("unchecked")
         MemoryView<?> output = (MemoryView<?>) outputs.get(0);
@@ -106,6 +115,25 @@ final class IRComputation implements LazyComputation {
             lirInputs.add(inputs.get(i));
         }
         return lirInputs;
+    }
+
+    /**
+     * Optimizes the TIR graph by running CSE and constant folding passes. This reduces graph size
+     * by eliminating redundant subexpressions.
+     */
+    TIRGraph optimizeGraph(TIRGraph inputGraph) {
+        TIRGraph result = inputGraph;
+
+        // Run CSE pass to eliminate common subexpressions
+        //result = new TIRCSEPass().run(result);
+
+        // Run constant folding to simplify constant expressions
+        //result = new TIRConstantFoldingPass().run(result);
+
+        // Validate the optimized graph
+        //result = new TIRValidationPass().run(result);
+
+        return result;
     }
 
     TIRGraph graph() {

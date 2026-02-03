@@ -6,6 +6,7 @@ import ai.qxotic.jota.ir.TextRenderUtils;
 import ai.qxotic.jota.ir.tir.BinaryOperator;
 import ai.qxotic.jota.ir.tir.UnaryOperator;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Map;
 
 /**
@@ -44,7 +45,7 @@ public class LIRTextRenderer implements LIRVisitor<String> {
         this.indentSize = indentSize;
         this.currentIndent = 0;
         this.nextVarId = 0;
-        this.exprToVar = new HashMap<>();
+        this.exprToVar = new IdentityHashMap<>();
         this.bufferIdToName = new HashMap<>();
         this.nextInputId = 0;
         this.nextOutputId = 0;
@@ -508,22 +509,6 @@ public class LIRTextRenderer implements LIRVisitor<String> {
     // ==================== Control Flow ====================
 
     @Override
-    public String visitLoop(Loop node) {
-        String bound = node.bound().accept(this);
-        String loopType =
-                node.isParallel()
-                        ? "scf.parallel (%i) = (0) to (%b) step (1)"
-                        : "scf.for %i = 0 to %b step 1";
-        loopType = loopType.replace("%i", "%" + node.indexName()).replace("%b", bound);
-        appendLine(loopType + " {");
-        increaseIndent();
-        node.body().accept(this);
-        decreaseIndent();
-        appendLine("}");
-        return "";
-    }
-
-    @Override
     public String visitStructuredFor(StructuredFor node) {
         String lb = node.lowerBound().accept(this);
         String ub = node.upperBound().accept(this);
@@ -600,24 +585,6 @@ public class LIRTextRenderer implements LIRVisitor<String> {
         appendLine("  }");
         decreaseIndent();
         appendLine("}");
-        return "";
-    }
-
-    @Override
-    public String visitLoopNest(LoopNest node) {
-        appendLine("// loop nest");
-        increaseIndent();
-        for (Loop loop : node.loops()) {
-            String bound = loop.bound().accept(this);
-            String loopType =
-                    loop.isParallel()
-                            ? "scf.parallel (%i) = (0) to (%b) step (1)"
-                            : "scf.for %i = 0 to %b step 1";
-            loopType = loopType.replace("%i", "%" + loop.indexName()).replace("%b", bound);
-            appendLine(loopType);
-        }
-        decreaseIndent();
-        node.body().accept(this);
         return "";
     }
 

@@ -44,10 +44,8 @@ public final class LIRInterpreter {
     /** Executes a single IR-L node. */
     public void executeNode(LIRNode node) {
         switch (node) {
-            case Loop loop -> executeLoop(loop);
             case StructuredFor structuredFor -> executeStructuredFor(structuredFor);
             case TiledLoop tiledLoop -> executeTiledLoop(tiledLoop);
-            case LoopNest loopNest -> executeLoopNest(loopNest);
             case Block block -> executeBlock(block);
             case Store store -> executeStore(store);
             case ScalarLet let -> executeScalarLet(let);
@@ -64,15 +62,6 @@ public final class LIRInterpreter {
         long valueBits = evaluateScalar(let.value());
         DataType dtype = let.value().dataType();
         scalarBindings.put(let.name(), new ScalarValue(valueBits, dtype));
-    }
-
-    private void executeLoop(Loop loop) {
-        long bound = evaluateIndex(loop.bound());
-        for (long i = 0; i < bound; i++) {
-            indexVars.put(loop.indexName(), i);
-            executeNode(loop.body());
-        }
-        indexVars.remove(loop.indexName());
     }
 
     private void executeStructuredFor(StructuredFor loop) {
@@ -160,25 +149,6 @@ public final class LIRInterpreter {
         }
         indexVars.remove(tiledLoop.outerName());
         indexVars.remove(tiledLoop.innerName());
-    }
-
-    private void executeLoopNest(LoopNest loopNest) {
-        executeNestedLoops(loopNest.loops(), 0, loopNest.body());
-    }
-
-    private void executeNestedLoops(java.util.List<Loop> loops, int depth, LIRNode body) {
-        if (depth >= loops.size()) {
-            executeNode(body);
-            return;
-        }
-
-        Loop loop = loops.get(depth);
-        long bound = evaluateIndex(loop.bound());
-        for (long i = 0; i < bound; i++) {
-            indexVars.put(loop.indexName(), i);
-            executeNestedLoops(loops, depth + 1, body);
-        }
-        indexVars.remove(loop.indexName());
     }
 
     private void executeBlock(Block block) {

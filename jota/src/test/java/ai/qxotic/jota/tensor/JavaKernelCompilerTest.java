@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Indexing;
+import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
@@ -129,7 +130,7 @@ class JavaKernelCompilerTest {
 
         float[] values = readFloatValues(output, 6);
         assertArrayEquals(new float[] {1, 10, 2, 17, 5, 26}, values, 0.0001f);
-        assertEquals(input.layout(), output.layout());
+        assertEquals(Layout.rowMajor(output.shape()), output.layout());
     }
 
     @Test

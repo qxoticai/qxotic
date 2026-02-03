@@ -169,16 +169,6 @@ public class LIRRewriter implements LIRVisitor<LIRNode> {
     // Loops and control flow
 
     @Override
-    public LIRNode visitLoop(Loop node) {
-        IndexExpr newBound = (IndexExpr) node.bound().accept(this);
-        LIRNode newBody = node.body().accept(this);
-        if (newBound == node.bound() && newBody == node.body()) {
-            return node;
-        }
-        return new Loop(node.indexName(), newBound, node.isParallel(), newBody);
-    }
-
-    @Override
     public LIRNode visitStructuredFor(StructuredFor node) {
         IndexExpr newLower = (IndexExpr) node.lowerBound().accept(this);
         IndexExpr newUpper = (IndexExpr) node.upperBound().accept(this);
@@ -218,24 +208,6 @@ public class LIRRewriter implements LIRVisitor<LIRNode> {
         }
         return new TiledLoop(
                 node.outerName(), node.innerName(), newTotalBound, node.tileSize(), newBody);
-    }
-
-    @Override
-    public LIRNode visitLoopNest(LoopNest node) {
-        List<Loop> newLoops = new ArrayList<>(node.loops().size());
-        boolean changed = false;
-        for (Loop loop : node.loops()) {
-            Loop newLoop = (Loop) visitLoop(loop);
-            newLoops.add(newLoop);
-            if (newLoop != loop) {
-                changed = true;
-            }
-        }
-        LIRNode newBody = node.body().accept(this);
-        if (!changed && newBody == node.body()) {
-            return node;
-        }
-        return new LoopNest(newLoops, newBody);
     }
 
     @Override

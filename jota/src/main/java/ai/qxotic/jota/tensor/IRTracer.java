@@ -1,5 +1,6 @@
 package ai.qxotic.jota.tensor;
 
+import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.ir.tir.TIRGraph;
 import ai.qxotic.jota.ir.tir.TIRNode;
@@ -25,8 +26,7 @@ public final class IRTracer {
     }
 
     /** Traces a two-input function to IR-T. */
-    public static Tensor trace(
-            Tensor left, Tensor right, BiFunction<Tensor, Tensor, Tensor> fn) {
+    public static Tensor trace(Tensor left, Tensor right, BiFunction<Tensor, Tensor, Tensor> fn) {
         Objects.requireNonNull(left, "left");
         Objects.requireNonNull(right, "right");
         Objects.requireNonNull(fn, "fn");
@@ -71,26 +71,33 @@ public final class IRTracer {
         for (int i = 0; i < inputs.size(); i++) {
             Tensor input = inputs.get(i);
             TIRNode node;
+            boolean scalarBroadcast = input.layout().stride().isAllZeros();
 
-            if (input.isMaterialized() || input.computation().isEmpty()) {
+            if (scalarBroadcast && input.device().root() == Device.CPU) {
+                node = new ai.qxotic.jota.ir.tir.ScalarInput(i, input.dataType(), input.shape());
+            } else if (input.isMaterialized() || input.computation().isEmpty()) {
                 // Materialized tensor - create a TensorInput
                 node = new ai.qxotic.jota.ir.tir.TensorInput(i, input.dataType(), input.layout());
             } else {
                 LazyComputation comp = input.computation().orElseThrow();
                 if (comp instanceof RangeComputation range) {
                     // Iota constant - computed from loop index
-                    node = new ai.qxotic.jota.ir.tir.IotaConstant(
-                            range.count(), input.dataType(), Shape.flat(range.count()));
+                    node =
+                            new ai.qxotic.jota.ir.tir.IotaConstant(
+                                    range.count(), input.dataType(), Shape.flat(range.count()));
                 } else if (comp instanceof ConstantComputation constComp) {
                     // Constant value - inline as ScalarConstant
-                    node = ai.qxotic.jota.ir.tir.ScalarConstant.broadcast(
-                            constComp.rawBits(),
-                            constComp.dataType(),
-                            input.layout().shape());
+                    node =
+                            ai.qxotic.jota.ir.tir.ScalarConstant.broadcast(
+                                    constComp.rawBits(),
+                                    constComp.dataType(),
+                                    input.layout().shape());
                 } else {
                     // IRComputation or other - treat as buffer input
                     // The computation will be executed first, and its result used as input
-                    node = new ai.qxotic.jota.ir.tir.TensorInput(i, input.dataType(), input.layout());
+                    node =
+                            new ai.qxotic.jota.ir.tir.TensorInput(
+                                    i, input.dataType(), input.layout());
                 }
             }
 

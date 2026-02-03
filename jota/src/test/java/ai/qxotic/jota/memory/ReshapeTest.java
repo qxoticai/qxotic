@@ -187,13 +187,49 @@ class ReshapeTest extends AbstractMemoryTest {
         // Condition: (2-1)*12 + (4-1)*1 + (3-1)*4 = 12+3+8 = 23 = 24-1 ✓
         MemoryView<float[]> permuted = view.permute(0, 2, 1); // Shape: (2, 4, 3)
         // With CuTe semantics, this IS contiguous because it spans a contiguous range
-        assertTrue(permuted.isContiguous());
+        assertTrue(permuted.isSpanContiguous());
+
+        assertThrows(IllegalArgumentException.class, () -> permuted.view(Shape.of(8, 3)));
 
         // CuTe semantics: reshape works, new shape gets row-major strides
-        MemoryView<float[]> reshaped = permuted.view(Shape.of(8, 3));
+        MemoryView<float[]> reshaped = permuted.viewCuTe(Shape.of(8, 3));
         assertEquals(Shape.of(8, 3), reshaped.shape());
-        assertTrue(reshaped.isContiguous());
+        assertTrue(reshaped.isSpanContiguous());
         assertSame(view.memory(), reshaped.memory());
+    }
+
+    @Test
+    void testViewCuTeAllowsSpanContiguousPermute() {
+        float[] floats = arange(2 * 3 * 4);
+        MemoryView<float[]> view =
+                MemoryViewFactory.of(
+                        DataType.FP32,
+                        MemoryFactory.ofFloats(floats),
+                        Layout.rowMajor(Shape.of(2, 3, 4)));
+
+        MemoryView<float[]> permuted = view.permute(0, 2, 1);
+        assertTrue(permuted.isSpanContiguous());
+        assertTrue(permuted.isNonOverlapping());
+
+        MemoryView<float[]> reshaped = permuted.viewCuTe(Shape.of(8, 3));
+        assertEquals(Shape.of(8, 3), reshaped.shape());
+        assertTrue(reshaped.isRowMajorContiguous());
+        assertSame(view.memory(), reshaped.memory());
+    }
+
+    @Test
+    void testViewCuTeRejectsNonSpanContiguous() {
+        float[] floats = arange(2 * 3 * 4);
+        MemoryView<float[]> view =
+                MemoryViewFactory.of(
+                        DataType.FP32,
+                        MemoryFactory.ofFloats(floats),
+                        Layout.rowMajor(Shape.of(2, 3, 4)));
+
+        MemoryView<float[]> sliced = view.slice(1, 0, 3, 2);
+        assertFalse(sliced.isSpanContiguous());
+
+        assertThrows(IllegalArgumentException.class, () -> sliced.viewCuTe(Shape.of(6, 2)));
     }
 
     @Test

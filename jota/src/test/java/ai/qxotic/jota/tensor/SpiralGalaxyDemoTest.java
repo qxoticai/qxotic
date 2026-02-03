@@ -47,7 +47,7 @@ class SpiralGalaxyDemoTest {
 
         MemoryView<?> output = image.materialize();
 
-        // writePPM(output, "target/spiral-galaxy.ppm");
+        writePPM(output, "target/spiral-galaxy.ppm");
 
         assertEquals(DataType.FP32, output.dataType());
         assertEquals(Shape.of(HEIGHT, WIDTH), output.shape());

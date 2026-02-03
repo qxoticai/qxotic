@@ -35,6 +35,15 @@ class TIRNodeRemapper implements TIRVisitor<TIRNode> {
     }
 
     @Override
+    public TIRNode visitScalarInput(ai.qxotic.jota.ir.tir.ScalarInput node) {
+        return cache.computeIfAbsent(
+                node,
+                n ->
+                        new ai.qxotic.jota.ir.tir.ScalarInput(
+                                node.id() + indexOffset, node.dataType(), node.shape()));
+    }
+
+    @Override
     public TIRNode visitScalarConstant(ai.qxotic.jota.ir.tir.ScalarConstant node) {
         return cache.computeIfAbsent(node, n -> n);
     }
@@ -113,8 +122,7 @@ class TIRNodeRemapper implements TIRVisitor<TIRNode> {
     @Override
     public TIRNode visitContiguous(ai.qxotic.jota.ir.tir.Contiguous node) {
         return cache.computeIfAbsent(
-                node,
-                n -> new ai.qxotic.jota.ir.tir.Contiguous(remap(node.input()), node.shape()));
+                node, n -> new ai.qxotic.jota.ir.tir.Contiguous(remap(node.input()), node.shape()));
     }
 
     private TIRNode remap(TIRNode node) {

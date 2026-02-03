@@ -24,6 +24,11 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
     }
 
     @Override
+    public MemoryView<MemorySegment> visitScalarInput(ScalarInput node) {
+        return context.getInput(node.id());
+    }
+
+    @Override
     public MemoryView<MemorySegment> visitUnaryOp(UnaryOp node) {
         MemoryView<MemorySegment> input = context.evaluate(node.input());
         Layout layout = Layout.rowMajor(node.shape());

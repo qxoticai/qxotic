@@ -140,18 +140,38 @@ public interface Layout {
      * <p>Empty layouts (size == 0) are considered contiguous by convention.
      */
     default boolean spansContiguousRange() {
+        return isSpanContiguous();
+    }
+
+    /**
+     * Returns true if this layout spans a gapless memory range.
+     *
+     * <p>This is a compactness check: the accessed offsets form a contiguous span, even if the
+     * iteration order is not row-major.
+     */
+    default boolean isSpanContiguous() {
         if (shape().hasZeroElements()) {
             return true;
         }
-        long span = 0;
         long totalElements = 1;
+        long minOffset = 0;
+        long maxOffset = 0;
         long[] strides = stride().toArray();
         for (int i = 0; i < shape().flatRank(); i++) {
             long dim = shape().flatAt(i);
-            span += (dim - 1) * strides[i];
+            if (dim <= 1) {
+                continue;
+            }
+            long strideValue = strides[i];
+            long span = (dim - 1) * strideValue;
+            if (strideValue >= 0) {
+                maxOffset += span;
+            } else {
+                minOffset += span;
+            }
             totalElements *= dim;
         }
-        return span == totalElements - 1;
+        return (maxOffset - minOffset) == totalElements - 1;
     }
 
     /**
@@ -173,5 +193,68 @@ public interface Layout {
     @Deprecated
     default boolean isContiguous() {
         return spansContiguousRange();
+    }
+
+    /** Returns true if this layout is contiguous in row-major order. */
+    default boolean isRowMajorContiguous() {
+        if (shape().hasZeroElements()) {
+            return true;
+        }
+        long expected = 1;
+        for (int i = shape().flatRank() - 1; i >= 0; i--) {
+            long dim = shape().flatAt(i);
+            if (dim <= 1) {
+                continue;
+            }
+            if (stride().flatAt(i) != expected) {
+                return false;
+            }
+            expected *= dim;
+        }
+        return true;
+    }
+
+    /** Returns true if this layout has no overlapping indices (no broadcast/aliasing). */
+    default boolean isNonOverlapping() {
+        if (shape().hasZeroElements()) {
+            return true;
+        }
+        int rank = shape().flatRank();
+        long[] dims = shape().toArray();
+        long[] strides = stride().toArray();
+
+        int count = 0;
+        for (int i = 0; i < rank; i++) {
+            if (dims[i] > 1) {
+                if (strides[i] == 0) {
+                    return false;
+                }
+                count++;
+            }
+        }
+        if (count <= 1) {
+            return true;
+        }
+
+        Integer[] order = new Integer[rank];
+        for (int i = 0; i < rank; i++) {
+            order[i] = i;
+        }
+        java.util.Arrays.sort(
+                order, (a, b) -> Long.compare(Math.abs(strides[a]), Math.abs(strides[b])));
+
+        long required = 1;
+        for (int idx : order) {
+            long dim = dims[idx];
+            if (dim <= 1) {
+                continue;
+            }
+            long strideAbs = Math.abs(strides[idx]);
+            if (strideAbs < required) {
+                return false;
+            }
+            required = strideAbs * dim;
+        }
+        return true;
     }
 }

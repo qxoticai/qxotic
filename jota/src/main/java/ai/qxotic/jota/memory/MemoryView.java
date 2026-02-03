@@ -40,6 +40,18 @@ public interface MemoryView<B> extends View {
         return layout().isContiguous();
     }
 
+    default boolean isSpanContiguous() {
+        return layout().isSpanContiguous();
+    }
+
+    default boolean isRowMajorContiguous() {
+        return layout().isRowMajorContiguous();
+    }
+
+    default boolean isNonOverlapping() {
+        return layout().isNonOverlapping();
+    }
+
     static boolean isWithinBounds(
             Layout layout, DataType dataType, Memory<?> memory, long byteOffset) {
         if (layout.shape().size() == 0) {
@@ -68,6 +80,14 @@ public interface MemoryView<B> extends View {
     }
 
     MemoryView<B> view(Shape newShape);
+
+    /**
+     * Reshapes a view using CuTe span-contiguous semantics.
+     *
+     * <p>This allows reshaping any span-contiguous, non-overlapping view even if the linear order
+     * changes. The result uses row-major strides for the new shape.
+     */
+    MemoryView<B> viewCuTe(Shape newShape);
 
     MemoryView<B> permute(int... permutationIndices);
 

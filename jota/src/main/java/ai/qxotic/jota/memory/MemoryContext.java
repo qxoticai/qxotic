@@ -62,7 +62,7 @@ public interface MemoryContext<B> extends AutoCloseable {
             return;
         }
 
-        if (src.isContiguous() && dst.isContiguous()) {
+        if (src.isRowMajorContiguous() && dst.isRowMajorContiguous()) {
             copyContiguous(srcContext, src, dstContext, dst);
             return;
         }

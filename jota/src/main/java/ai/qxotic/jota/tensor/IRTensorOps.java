@@ -169,8 +169,7 @@ final class IRTensorOps implements TensorOps {
         // Validate true and false values have same type
         requireSameType(aTensor, bTensor, "where");
 
-        Shape outputShape =
-                resolveWhereShape(condTensor.shape(), aTensor.shape(), bTensor.shape());
+        Shape outputShape = resolveWhereShape(condTensor.shape(), aTensor.shape(), bTensor.shape());
         ai.qxotic.jota.ir.tir.TernaryOp node =
                 new ai.qxotic.jota.ir.tir.TernaryOp(
                         ai.qxotic.jota.ir.tir.TernaryOperator.WHERE,

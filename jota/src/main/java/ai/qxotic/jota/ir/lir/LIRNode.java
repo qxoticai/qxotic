@@ -13,10 +13,8 @@ public sealed interface LIRNode extends IRNode
                 LIRInput,
                 Load,
                 Store,
-                Loop,
                 StructuredFor,
                 TiledLoop,
-                LoopNest,
                 Block,
                 Yield,
                 ScalarLet {
@@ -39,10 +37,8 @@ public sealed interface LIRNode extends IRNode
             case BufferRef n -> visitor.visitBufferRef(n);
             case Load n -> visitor.visitLoad(n);
             case Store n -> visitor.visitStore(n);
-            case Loop n -> visitor.visitLoop(n);
             case StructuredFor n -> visitor.visitStructuredFor(n);
             case TiledLoop n -> visitor.visitTiledLoop(n);
-            case LoopNest n -> visitor.visitLoopNest(n);
             case Block n -> visitor.visitBlock(n);
             case Yield n -> visitor.visitYield(n);
             case ScalarLet n -> visitor.visitScalarLet(n);

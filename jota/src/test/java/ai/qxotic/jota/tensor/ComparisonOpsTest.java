@@ -47,7 +47,8 @@ class ComparisonOpsTest {
 
             Tensor notEqual = IRTracer.trace(leftTensor, rightTensor, Tensor::notEqual);
             Tensor greaterThan = IRTracer.trace(leftTensor, rightTensor, Tensor::greaterThan);
-            Tensor lessThanOrEqual = IRTracer.trace(leftTensor, rightTensor, Tensor::lessThanOrEqual);
+            Tensor lessThanOrEqual =
+                    IRTracer.trace(leftTensor, rightTensor, Tensor::lessThanOrEqual);
             Tensor greaterThanOrEqual =
                     IRTracer.trace(leftTensor, rightTensor, Tensor::greaterThanOrEqual);
 
