@@ -5,7 +5,7 @@ import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.ir.lir.*;
 import ai.qxotic.jota.ir.tir.*;
-import ai.qxotic.jota.ir.lir.v2.LIRV2WorklistPass;
+import ai.qxotic.jota.ir.lir.LIRWorklistPass;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -18,7 +18,7 @@ import java.util.function.Supplier;
  * <p>TIR represents tensor operations semantically, while LIR makes loops and memory access
  * explicit.
  */
-public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
+public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
 
     private final Map<TIRNode, BufferRef> inputBuffers = new IdentityHashMap<>();
     private final Map<TIRNode, ai.qxotic.jota.ir.lir.ScalarInput> inputScalars =
@@ -26,14 +26,14 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
     private final Map<TIRNode, BufferRef> outputBuffers = new IdentityHashMap<>();
     private final List<LIRInput> allInputs = new ArrayList<>();
     private final List<BufferRef> allOutputs = new ArrayList<>();
-    private final IdentityHashMap<TIRNode, ScalarRef> scalarRefCache = new IdentityHashMap<>();
-    private final List<ScalarLet> scalarLets = new ArrayList<>();
+    private final IdentityHashMap<TIRNode, LIRExprNode> scalarCache = new IdentityHashMap<>();
     private int nextId = 0;
     private int nextScalarId = 0;
     private boolean scalarCachingEnabled = false;
+    private LIRExprGraph exprGraph;
 
     // Current loop indices for the output iteration
-    private final List<IndexVar> loopIndices = new ArrayList<>();
+    private final List<LIRExprNode> loopIndices = new ArrayList<>();
 
     /** Lowers a TIRGraph to an LIRGraph. */
     public LIRGraph lower(TIRGraph tirGraph) {
@@ -43,11 +43,11 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         allInputs.clear();
         allOutputs.clear();
         loopIndices.clear();
-        scalarRefCache.clear();
-        scalarLets.clear();
+        scalarCache.clear();
         scalarCachingEnabled = false;
         nextId = 0;
         nextScalarId = 0;
+        LIRExprGraph exprGraph = new LIRExprGraph();
 
         // Create inputs for materialized inputs
         // - IotaConstant: always virtual (computed from loop index)
@@ -95,18 +95,19 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         }
 
         // Generate loop body for each output
-        List<LIRNode> statements = new ArrayList<>();
+        List<LIRExprNode> statements = new ArrayList<>();
         for (int i = 0; i < tirGraph.outputs().size(); i++) {
             TIRNode output = tirGraph.outputs().get(i);
             BufferRef outBuf = allOutputs.get(i);
-            LIRNode stmt = lowerOutput(output, outBuf);
+            LIRExprNode stmt = lowerOutput(exprGraph, output, outBuf);
             statements.add(stmt);
         }
 
-        LIRNode body = statements.size() == 1 ? statements.getFirst() : new Block(statements);
+        LIRExprNode body =
+                statements.size() == 1 ? statements.getFirst() : exprGraph.block(statements);
 
-        LIRGraph graph = new LIRGraph(allInputs, allOutputs, body);
-        return new LIRV2WorklistPass().run(graph);
+        LIRGraph graph = new LIRGraph(exprGraph, allInputs, allOutputs, body);
+        return new LIRWorklistPass().run(graph);
     }
 
     /**
@@ -168,18 +169,21 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
     }
 
     /** Lowers a single output expression to LIR loop nest. */
-    private LIRNode lowerOutput(TIRNode output, BufferRef outBuf) {
+    private LIRExprNode lowerOutput(LIRExprGraph exprGraph, TIRNode output, BufferRef outBuf) {
+        this.exprGraph = exprGraph;
         // Pure reductions (output is directly a ReductionOp) are handled here
         if (output instanceof ReductionOp reduction) {
-            return lowerReduction(reduction, outBuf, null);
+            return lowerReduction(exprGraph, reduction, outBuf, null);
         }
 
         ReductionOp reductionRoot = findReductionRoot(output);
         if (reductionRoot != null) {
-            ScalarExpr postOpValue =
+            LIRExprNode postOpValue =
                     buildPostOpExpr(
-                            output, reductionRoot, new ScalarRef("acc0", reductionRoot.dataType()));
-            return lowerReduction(reductionRoot, outBuf, postOpValue);
+                            output,
+                            reductionRoot,
+                            exprGraph.scalarRef("acc0", reductionRoot.dataType()));
+            return lowerReduction(exprGraph, reductionRoot, outBuf, postOpValue);
         }
 
         Layout outLayout = layoutForNode(output).flatten();
@@ -188,80 +192,75 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         // Create loop index variables
         loopIndices.clear();
         for (int i = 0; i < rank; i++) {
-            loopIndices.add(new IndexVar("i" + i));
+            loopIndices.add(exprGraph.indexVar("i" + i));
         }
 
         // Compute the scalar expression for this output
         beginScalarCaching();
-        ScalarExpr value = output.accept(this);
-        List<ScalarLet> localLets = new ArrayList<>(scalarLets);
+        LIRExprNode value = output.accept(this);
         endScalarCaching();
 
         // Compute output offset
-        IndexExpr outOffset = computeOffset(loopIndices, outBuf.byteStrides());
+        LIRExprNode outOffset = computeOffset(loopIndices, outBuf.byteStrides());
 
         // Create the store
-        Store store = new Store(outBuf, outOffset, value);
-
-        LIRNode storeNode = store;
-        if (!localLets.isEmpty()) {
-            List<LIRNode> statements = new ArrayList<>(localLets.size() + 1);
-            statements.addAll(localLets);
-            statements.add(store);
-            storeNode = new Block(statements);
-        }
+        Store store = exprGraph.store(outBuf, outOffset, value);
+        LIRExprNode storeNode = store;
 
         // Wrap in nested loops (innermost first)
-        LIRNode body = ensureYield(storeNode);
+        LIRExprNode body = ensureYield(exprGraph, storeNode);
         for (int i = rank - 1; i >= 0; i--) {
             long bound = outLayout.shape().flatAt(i);
             body =
-                    new StructuredFor(
-                            loopIndices.get(i).name(),
-                            new IndexConst(0),
-                            new IndexConst(bound),
-                            new IndexConst(1),
+                    exprGraph.structuredFor(
+                            ((IVar) loopIndices.get(i)).name(),
+                            exprGraph.indexConst(0),
+                            exprGraph.indexConst(bound),
+                            exprGraph.indexConst(1),
                             List.of(),
-                            ensureYield(body));
+                            ensureYield(exprGraph, body));
         }
 
         return body;
     }
 
     private void beginScalarCaching() {
-        scalarRefCache.clear();
-        scalarLets.clear();
+        scalarCache.clear();
         nextScalarId = 0;
         scalarCachingEnabled = true;
     }
 
     private void endScalarCaching() {
         scalarCachingEnabled = false;
+        scalarCache.clear();
     }
 
-    private ScalarExpr cacheScalar(TIRNode node, Supplier<ScalarExpr> builder) {
+    private LIRExprNode cacheScalar(TIRNode node, Supplier<LIRExprNode> builder) {
         if (!scalarCachingEnabled) {
             return builder.get();
         }
-        ScalarRef cached = scalarRefCache.get(node);
+        LIRExprNode cached = scalarCache.get(node);
         if (cached != null) {
             return cached;
         }
-        ScalarExpr value = builder.get();
-        String name = "t" + nextScalarId++;
-        ScalarRef ref = new ScalarRef(name, value.dataType());
-        scalarLets.add(new ScalarLet(name, value));
-        scalarRefCache.put(node, ref);
-        return ref;
+        LIRExprNode value = builder.get();
+        scalarCache.put(node, value);
+        nextScalarId++;
+        return value;
     }
 
     /** Lowers a reduction operation to LIR with accumulators. */
-    private LIRNode lowerReduction(ReductionOp reduction, BufferRef outBuf) {
-        return lowerReduction(reduction, outBuf, null);
+    private LIRExprNode lowerReduction(
+            LIRExprGraph exprGraph, ReductionOp reduction, BufferRef outBuf) {
+        return lowerReduction(exprGraph, reduction, outBuf, null);
     }
 
-    private LIRNode lowerReduction(
-            ReductionOp reduction, BufferRef outBuf, ScalarExpr postOpValue) {
+    private LIRExprNode lowerReduction(
+            LIRExprGraph exprGraph,
+            ReductionOp reduction,
+            BufferRef outBuf,
+            LIRExprNode postOpValue) {
+        this.exprGraph = exprGraph;
         TIRNode input = reduction.input();
         Layout inputLayout = layoutForNode(input).flatten();
         int inputRank = inputLayout.shape().flatRank();
@@ -277,13 +276,13 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
 
         // Create index variables for all input dimensions
         loopIndices.clear();
-        List<IndexVar> outerIndices = new ArrayList<>();
-        List<IndexVar> innerIndices = new ArrayList<>();
+        List<LIRExprNode> outerIndices = new ArrayList<>();
+        List<LIRExprNode> innerIndices = new ArrayList<>();
         List<Long> outerBounds = new ArrayList<>();
         List<Long> innerBounds = new ArrayList<>();
 
         for (int i = 0; i < inputRank; i++) {
-            IndexVar idx = new IndexVar("i" + i);
+            LIRExprNode idx = exprGraph.indexVar("i" + i);
             loopIndices.add(idx);
             if (isReduced[i]) {
                 innerIndices.add(idx);
@@ -295,38 +294,38 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         }
 
         // Load value from input and update accumulator (loop-carried)
-        ScalarExpr inputValue = input.accept(this);
+        LIRExprNode inputValue = input.accept(this);
 
-        LIRNode reductionBody =
-                buildReductionLoop(innerIndices, innerBounds, dtype, op, inputValue);
+        LIRExprNode reductionBody =
+                buildReductionLoop(exprGraph, innerIndices, innerBounds, dtype, op, inputValue);
 
         // Read accumulator and store to output (apply post-ops if provided)
-        ScalarExpr read = new ScalarRef("acc0", dtype);
-        ScalarExpr storeValue = (postOpValue != null) ? postOpValue : read;
+        LIRExprNode read = exprGraph.scalarRef("acc0", dtype);
+        LIRExprNode storeValue = (postOpValue != null) ? postOpValue : read;
 
         // Compute output offset from outer indices only
-        IndexExpr outOffset;
+        LIRExprNode outOffset;
         if (outerIndices.isEmpty()) {
-            outOffset = new IndexConst(0);
+            outOffset = exprGraph.indexConst(0);
         } else {
             outOffset = computeOffset(outerIndices, outBuf.byteStrides());
         }
-        Store store = new Store(outBuf, outOffset, storeValue);
+        Store store = exprGraph.store(outBuf, outOffset, storeValue);
 
         // Combine: declare acc, reduction loops, store result
-        Block innerBlock = new Block(List.of(reductionBody, store));
+        Block innerBlock = exprGraph.block(List.of(reductionBody, store));
 
         // Wrap in outer loops (over non-reduced dimensions)
-        LIRNode body = innerBlock;
+        LIRExprNode body = innerBlock;
         for (int i = outerIndices.size() - 1; i >= 0; i--) {
             body =
-                    new StructuredFor(
-                            outerIndices.get(i).name(),
-                            new IndexConst(0),
-                            new IndexConst(outerBounds.get(i)),
-                            new IndexConst(1),
+                    exprGraph.structuredFor(
+                            ((IVar) outerIndices.get(i)).name(),
+                            exprGraph.indexConst(0),
+                            exprGraph.indexConst(outerBounds.get(i)),
+                            exprGraph.indexConst(1),
                             List.of(),
-                            ensureYield(body));
+                            ensureYield(exprGraph, body));
         }
 
         return body;
@@ -371,30 +370,30 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         }
     }
 
-    private ScalarExpr buildPostOpExpr(
-            TIRNode node, ReductionOp reduction, ScalarExpr reductionValue) {
+    private LIRExprNode buildPostOpExpr(
+            TIRNode node, ReductionOp reduction, LIRExprNode reductionValue) {
         if (node == reduction) {
             return reductionValue;
         }
         switch (node) {
             case UnaryOp op -> {
-                ScalarExpr input = buildPostOpExpr(op.input(), reduction, reductionValue);
-                return new ScalarUnary(op.op(), input);
+                LIRExprNode input = buildPostOpExpr(op.input(), reduction, reductionValue);
+                return exprGraph.scalarUnary(op.op(), input);
             }
             case BinaryOp op -> {
-                ScalarExpr left = buildPostOpExpr(op.left(), reduction, reductionValue);
-                ScalarExpr right = buildPostOpExpr(op.right(), reduction, reductionValue);
-                return new ScalarBinary(op.op(), left, right);
+                LIRExprNode left = buildPostOpExpr(op.left(), reduction, reductionValue);
+                LIRExprNode right = buildPostOpExpr(op.right(), reduction, reductionValue);
+                return exprGraph.scalarBinary(op.op(), left, right);
             }
             case TernaryOp op -> {
-                ScalarExpr cond = buildPostOpExpr(op.cond(), reduction, reductionValue);
-                ScalarExpr trueVal = buildPostOpExpr(op.trueExpr(), reduction, reductionValue);
-                ScalarExpr falseVal = buildPostOpExpr(op.falseExpr(), reduction, reductionValue);
-                return new ScalarTernary(cond, trueVal, falseVal);
+                LIRExprNode cond = buildPostOpExpr(op.cond(), reduction, reductionValue);
+                LIRExprNode trueVal = buildPostOpExpr(op.trueExpr(), reduction, reductionValue);
+                LIRExprNode falseVal = buildPostOpExpr(op.falseExpr(), reduction, reductionValue);
+                return exprGraph.scalarTernary(cond, trueVal, falseVal);
             }
             case CastOp op -> {
-                ScalarExpr input = buildPostOpExpr(op.input(), reduction, reductionValue);
-                return new ScalarCast(input, op.targetDataType());
+                LIRExprNode input = buildPostOpExpr(op.input(), reduction, reductionValue);
+                return exprGraph.scalarCast(input, op.targetDataType());
             }
             case ScalarConstant sc -> {
                 return visitScalarConstant(sc);
@@ -412,11 +411,11 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
                     throw new UnsupportedOperationException(
                             "Post-ops after reductions must be element-wise on the reduction result");
             case ai.qxotic.jota.ir.tir.ScalarInput si -> {
-                ScalarExpr scalar = inputScalars.get(si);
+                ai.qxotic.jota.ir.lir.ScalarInput scalar = inputScalars.get(si);
                 if (scalar == null) {
                     throw new IllegalStateException("Unknown ScalarInput: " + si.id());
                 }
-                return scalar;
+                return exprGraph.scalarInput(scalar.id(), scalar.dataType());
             }
             case IotaConstant __ ->
                     throw new UnsupportedOperationException(
@@ -424,16 +423,18 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         }
     }
 
-    private LIRNode buildReductionLoop(
-            List<IndexVar> innerIndices,
+    private LIRExprNode buildReductionLoop(
+            LIRExprGraph exprGraph,
+            List<LIRExprNode> innerIndices,
             List<Long> innerBounds,
             DataType dtype,
             ReductionOperator op,
-            ScalarExpr inputValue) {
+            LIRExprNode inputValue) {
         int depth = innerIndices.size();
         if (depth == 0) {
-            ScalarExpr combined = combineAccumulator(new ScalarRef("acc0", dtype), inputValue, op);
-            return new Yield(List.of(combined));
+            LIRExprNode combined =
+                    combineAccumulator(exprGraph, exprGraph.scalarRef("acc0", dtype), inputValue, op);
+            return exprGraph.yield(List.of(combined));
         }
 
         String[] accNames = new String[depth];
@@ -441,36 +442,41 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
             accNames[i] = "acc" + i;
         }
 
-        ScalarExpr identity = createIdentityLiteral(dtype, op);
+        LIRExprNode identity = createIdentityLiteral(exprGraph, dtype, op);
 
-        ScalarExpr combined =
-                combineAccumulator(new ScalarRef(accNames[depth - 1], dtype), inputValue, op);
-        LIRNode inner = new Yield(List.of(combined));
+        LIRExprNode combined =
+                combineAccumulator(
+                        exprGraph,
+                        exprGraph.scalarRef(accNames[depth - 1], dtype),
+                        inputValue,
+                        op);
+        LIRExprNode inner = exprGraph.yield(List.of(combined));
 
         for (int level = depth - 1; level >= 0; level--) {
             String accName = accNames[level];
-            ScalarExpr init = (level == 0) ? identity : new ScalarRef(accNames[level - 1], dtype);
+            LIRExprNode init =
+                    (level == 0)
+                            ? identity
+                            : exprGraph.scalarRef(accNames[level - 1], dtype);
 
-            LIRNode body;
+            Block body;
             if (level == depth - 1) {
-                body = inner;
+                body = ensureYield(exprGraph, inner);
             } else {
                 body =
-                        new Block(
+                        exprGraph.block(
                                 List.of(
                                         inner,
-                                        new Yield(
-                                                List.of(
-                                                        new ScalarRef(
-                                                                accNames[level + 1], dtype)))));
+                                        exprGraph.yield(
+                                                List.of(exprGraph.scalarRef(accNames[level + 1], dtype)))));
             }
 
             inner =
-                    new StructuredFor(
-                            innerIndices.get(level).name(),
-                            new IndexConst(0),
-                            new IndexConst(innerBounds.get(level)),
-                            new IndexConst(1),
+                    exprGraph.structuredFor(
+                            ((IVar) innerIndices.get(level)).name(),
+                            exprGraph.indexConst(0),
+                            exprGraph.indexConst(innerBounds.get(level)),
+                            exprGraph.indexConst(1),
                             List.of(new LoopIterArg(accName, dtype, init)),
                             body);
         }
@@ -478,26 +484,28 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         return inner;
     }
 
-    private ScalarExpr combineAccumulator(ScalarExpr acc, ScalarExpr value, ReductionOperator op) {
+    private LIRExprNode combineAccumulator(
+            LIRExprGraph exprGraph, LIRExprNode acc, LIRExprNode value, ReductionOperator op) {
         // Cast value to accumulator type if needed
-        ScalarExpr castValue = value;
+        LIRExprNode castValue = value;
         if (value.dataType() != acc.dataType()) {
-            castValue = new ScalarCast(value, acc.dataType());
+            castValue = exprGraph.scalarCast(value, acc.dataType());
         }
         return switch (op) {
-            case SUM -> new ScalarBinary(BinaryOperator.ADD, acc, castValue);
-            case PROD -> new ScalarBinary(BinaryOperator.MULTIPLY, acc, castValue);
-            case MIN -> new ScalarBinary(BinaryOperator.MIN, acc, castValue);
-            case MAX -> new ScalarBinary(BinaryOperator.MAX, acc, castValue);
+            case SUM -> exprGraph.scalarBinary(BinaryOperator.ADD, acc, castValue);
+            case PROD -> exprGraph.scalarBinary(BinaryOperator.MULTIPLY, acc, castValue);
+            case MIN -> exprGraph.scalarBinary(BinaryOperator.MIN, acc, castValue);
+            case MAX -> exprGraph.scalarBinary(BinaryOperator.MAX, acc, castValue);
         };
     }
 
-    private ScalarExpr createIdentityLiteral(DataType dtype, ReductionOperator op) {
+    private LIRExprNode createIdentityLiteral(
+            LIRExprGraph exprGraph, DataType dtype, ReductionOperator op) {
         return switch (op) {
-            case SUM -> ScalarLiteral.ofRawBits(identityZeroBits(dtype), dtype);
-            case PROD -> ScalarLiteral.ofRawBits(identityOneBits(dtype), dtype);
-            case MIN -> ScalarLiteral.ofRawBits(identityMinBits(dtype), dtype);
-            case MAX -> ScalarLiteral.ofRawBits(identityMaxBits(dtype), dtype);
+            case SUM -> exprGraph.scalarConst(identityZeroBits(dtype), dtype);
+            case PROD -> exprGraph.scalarConst(identityOneBits(dtype), dtype);
+            case MIN -> exprGraph.scalarConst(identityMinBits(dtype), dtype);
+            case MAX -> exprGraph.scalarConst(identityMaxBits(dtype), dtype);
         };
     }
 
@@ -561,39 +569,44 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         return Long.MAX_VALUE;
     }
 
-    private LIRNode ensureYield(LIRNode body) {
-        if (body instanceof Yield) {
-            return body;
-        }
+    private Block ensureYield(LIRExprGraph exprGraph, LIRExprNode body) {
         if (body instanceof Block block) {
             if (!block.statements().isEmpty() && block.statements().getLast() instanceof Yield) {
-                return body;
+                return block;
             }
         }
-        return new Block(List.of(body, Yield.empty()));
+        if (body instanceof Yield) {
+            return exprGraph.block(List.of(body));
+        }
+        return exprGraph.block(List.of(body, exprGraph.yield(List.of())));
     }
 
     /** Computes byte offset from indices and byte strides. */
-    private IndexExpr computeOffset(List<? extends IndexExpr> indices, long[] strides) {
+    private LIRExprNode computeOffset(List<? extends LIRExprNode> indices, long[] strides) {
         if (indices.isEmpty()) {
-            return new IndexConst(0);
+            return exprGraph.indexConst(0);
         }
 
-        IndexExpr offset = null;
+        LIRExprNode offset = null;
         for (int i = 0; i < indices.size(); i++) {
             if (strides[i] == 0) {
                 continue; // Broadcasting dimension - skip
             }
-            IndexExpr term = IndexBinary.multiply(indices.get(i), new IndexConst(strides[i]));
-            offset = (offset == null) ? term : IndexBinary.add(offset, term);
+            LIRExprNode term =
+                    exprGraph.indexBinary(
+                            IndexBinaryOp.MULTIPLY, indices.get(i), exprGraph.indexConst(strides[i]));
+            offset =
+                    (offset == null)
+                            ? term
+                            : exprGraph.indexBinary(IndexBinaryOp.ADD, offset, term);
         }
-        return offset != null ? offset : new IndexConst(0);
+        return offset != null ? offset : exprGraph.indexConst(0);
     }
 
     // ==================== TIR Visitor Methods ====================
 
     @Override
-    public ScalarExpr visitTensorInput(TensorInput node) {
+    public LIRExprNode visitTensorInput(TensorInput node) {
         return cacheScalar(
                 node,
                 () -> {
@@ -601,77 +614,77 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
                     if (buf == null) {
                         throw new IllegalStateException("Unknown TensorInput: " + node.id());
                     }
-                    IndexExpr offset = computeOffset(loopIndices, buf.byteStrides());
-                    return new ScalarLoad(buf, offset);
+                    LIRExprNode offset = computeOffset(loopIndices, buf.byteStrides());
+                    return exprGraph.scalarLoad(buf, offset, buf.dataType());
                 });
     }
 
     @Override
-    public ScalarExpr visitScalarInput(ai.qxotic.jota.ir.tir.ScalarInput node) {
-        ScalarExpr scalar = inputScalars.get(node);
+    public LIRExprNode visitScalarInput(ai.qxotic.jota.ir.tir.ScalarInput node) {
+        ai.qxotic.jota.ir.lir.ScalarInput scalar = inputScalars.get(node);
         if (scalar == null) {
             throw new IllegalStateException("Unknown ScalarInput: " + node.id());
         }
-        return scalar;
+        return exprGraph.scalarInput(scalar.id(), scalar.dataType());
     }
 
     @Override
-    public ScalarExpr visitScalarConstant(ScalarConstant node) {
+    public LIRExprNode visitScalarConstant(ScalarConstant node) {
         // Check if this scalar is an explicit input (dynamic parameter)
         ai.qxotic.jota.ir.lir.ScalarInput scalarInput = inputScalars.get(node);
         if (scalarInput != null) {
             // Scalar input - reference the scalar parameter directly (passed by value)
-            return scalarInput;
+            return exprGraph.scalarInput(scalarInput.id(), scalarInput.dataType());
         }
         // Not an input - inline as literal
-        return new ScalarLiteral(node.rawBits(), node.dataType());
+        return exprGraph.scalarConst(node.rawBits(), node.dataType());
     }
 
     @Override
-    public ScalarExpr visitUnaryOp(UnaryOp node) {
+    public LIRExprNode visitUnaryOp(UnaryOp node) {
         return cacheScalar(
                 node,
                 () -> {
-                    ScalarExpr input = node.input().accept(this);
-                    return new ScalarUnary(node.op(), input);
+                    LIRExprNode input = node.input().accept(this);
+                    return exprGraph.scalarUnary(node.op(), input);
                 });
     }
 
     @Override
-    public ScalarExpr visitBinaryOp(BinaryOp node) {
+    public LIRExprNode visitBinaryOp(BinaryOp node) {
         return cacheScalar(
                 node,
                 () -> {
-                    ScalarExpr left = node.left().accept(this);
-                    ScalarExpr right = node.right().accept(this);
-                    return new ScalarBinary(node.op(), left, right);
+                    LIRExprNode left = node.left().accept(this);
+                    LIRExprNode right = node.right().accept(this);
+                    return exprGraph.scalarBinary(node.op(), left, right);
                 });
     }
 
     @Override
-    public ScalarExpr visitTernaryOp(TernaryOp node) {
+    public LIRExprNode visitTernaryOp(TernaryOp node) {
         return cacheScalar(
                 node,
                 () -> {
-                    ScalarExpr cond = node.cond().accept(this);
-                    ScalarExpr trueVal = node.trueExpr().accept(this);
-                    ScalarExpr falseVal = node.falseExpr().accept(this);
-                    return new ScalarTernary(cond, trueVal, falseVal);
+                    LIRExprNode cond = node.cond().accept(this);
+                    LIRExprNode trueVal = node.trueExpr().accept(this);
+                    LIRExprNode falseVal = node.falseExpr().accept(this);
+                    return exprGraph.scalarTernary(cond, trueVal, falseVal);
                 });
     }
 
     @Override
-    public ScalarExpr visitCastOp(CastOp node) {
+    public LIRExprNode visitCastOp(CastOp node) {
         return cacheScalar(
                 node,
                 () -> {
-                    ScalarExpr input = node.input().accept(this);
-                    return new ScalarCast(input, node.targetDataType());
+                    LIRExprNode input = node.input().accept(this);
+                    return exprGraph.scalarCast(input, node.targetDataType());
                 });
     }
 
     @Override
-    public ScalarExpr visitReductionOp(ReductionOp node) {
+    public LIRExprNode visitReductionOp(ReductionOp node) {
         // Reductions should have been handled in lowerOutput, not visited directly
         // This can happen if a reduction is used in a context that requires scalar evaluation
         // In such cases, we need to handle it - for now, throw a more helpful error
@@ -681,7 +694,7 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
     }
 
     @Override
-    public ScalarExpr visitViewTransform(ViewTransform node) {
+    public LIRExprNode visitViewTransform(ViewTransform node) {
         return cacheScalar(
                 node,
                 () -> {
@@ -703,15 +716,15 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
                         baseNode = castOp.input();
                     }
 
-                    ScalarExpr result;
+                    LIRExprNode result;
                     if (baseNode instanceof TensorInput tensorInput) {
                         result = lowerTensorInputWithViewChain(tensorInput, chain, node);
                     } else if (baseNode instanceof ai.qxotic.jota.ir.tir.ScalarInput scalarInput) {
-                        ScalarExpr scalar = inputScalars.get(scalarInput);
+                        ai.qxotic.jota.ir.lir.ScalarInput scalar = inputScalars.get(scalarInput);
                         if (scalar == null) {
                             throw new IllegalStateException("Unknown ScalarInput: " + scalarInput.id());
                         }
-                        result = scalar;
+                        result = exprGraph.scalarInput(scalar.id(), scalar.dataType());
                     } else if (baseNode instanceof IotaConstant iotaConstant) {
                         result = lowerIotaConstantWithViewChain(iotaConstant, chain, node);
                     } else {
@@ -721,13 +734,13 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
 
                     // Apply cast if needed
                     if (castType != null && castType != result.dataType()) {
-                        return new ScalarCast(result, castType);
+                        return exprGraph.scalarCast(result, castType);
                     }
                     return result;
                 });
     }
 
-    private ScalarExpr lowerTensorInputWithViewChain(
+    private LIRExprNode lowerTensorInputWithViewChain(
             TensorInput tensorInput, List<ViewTransform> chain, ViewTransform node) {
         BufferRef buf = inputBuffers.get(tensorInput);
         if (buf == null) {
@@ -741,13 +754,13 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
             // Simple case: use the final view's strides directly
             Layout viewLayout = node.layout().flatten();
             long[] viewByteStrides = toByteStrides(viewLayout, node.dataType());
-            IndexExpr offset = computeOffset(loopIndices, viewByteStrides);
-            return new ScalarLoad(buf, offset);
+            LIRExprNode offset = computeOffset(loopIndices, viewByteStrides);
+            return exprGraph.scalarLoad(buf, offset, buf.dataType());
         }
 
         // Lazy indexing: compose index expressions by walking the chain in reverse
         // Start with output loop indices and transform back to input coordinates
-        List<IndexExpr> indices = new ArrayList<>(loopIndices);
+        List<LIRExprNode> indices = new ArrayList<>(loopIndices);
 
         // Apply transforms in REVERSE order (from output to input)
         for (int i = chain.size() - 1; i >= 0; i--) {
@@ -756,15 +769,15 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         }
 
         // Compute final offset using the BASE input's strides
-        IndexExpr offset = computeOffset(indices, buf.byteStrides());
-        return new ScalarLoad(buf, offset);
+        LIRExprNode offset = computeOffset(indices, buf.byteStrides());
+        return exprGraph.scalarLoad(buf, offset, buf.dataType());
     }
 
-    private ScalarExpr lowerIotaConstantWithViewChain(
+    private LIRExprNode lowerIotaConstantWithViewChain(
             IotaConstant iotaConstant, List<ViewTransform> chain, ViewTransform node) {
         // For IotaConstant, we compute the linear index from the inverse-transformed coordinates
         // Start with output loop indices and transform back to IotaConstant's original space
-        List<IndexExpr> indices = new ArrayList<>(loopIndices);
+        List<LIRExprNode> indices = new ArrayList<>(loopIndices);
 
         // Apply transforms in REVERSE order (from output to input)
         for (int i = chain.size() - 1; i >= 0; i--) {
@@ -775,27 +788,31 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         // Now 'indices' are in IotaConstant's original flat space
         // Compute linear index from these coordinates using IotaConstant's layout
         Layout iotaLayout = Layout.rowMajor(iotaConstant.shape()).flatten();
-        IndexExpr linearIdx = null;
+        LIRExprNode linearIdx = null;
         long stride = 1;
         // Compute row-major linear index: sum(idx[i] * stride[i])
         for (int i = indices.size() - 1; i >= 0; i--) {
-            IndexExpr term = IndexBinary.multiply(indices.get(i), new IndexConst(stride));
-            linearIdx = (linearIdx == null) ? term : IndexBinary.add(term, linearIdx);
+            LIRExprNode term =
+                    exprGraph.indexBinary(
+                            IndexBinaryOp.MULTIPLY, indices.get(i), exprGraph.indexConst(stride));
+            linearIdx =
+                    (linearIdx == null)
+                            ? term
+                            : exprGraph.indexBinary(IndexBinaryOp.ADD, term, linearIdx);
             stride *= (i < iotaLayout.shape().flatRank()) ? iotaLayout.shape().flatAt(i) : 1;
         }
 
         if (linearIdx == null) {
-            linearIdx = new IndexConst(0);
+            linearIdx = exprGraph.indexConst(0);
         }
 
         // Cast index to the output type
         DataType targetType = iotaConstant.dataType();
-        ScalarExpr indexValue = new ScalarFromIndex(linearIdx);
+        LIRExprNode indexValue = exprGraph.scalarFromIndex(linearIdx, DataType.I64);
         if (targetType == DataType.I64) {
             return indexValue;
-        } else {
-            return new ScalarCast(indexValue, targetType);
         }
+        return exprGraph.scalarCast(indexValue, targetType);
     }
 
     /**
@@ -804,12 +821,13 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
      * <p>For example, if the transform is Transpose([1, 0]) on shape (A, B) -> (B, A), the inverse
      * maps (i, j) in output space to (j, i) in input space.
      */
-    private List<IndexExpr> applyInverseTransform(ViewTransform vt, List<IndexExpr> outputIndices) {
+    private List<LIRExprNode> applyInverseTransform(
+            ViewTransform vt, List<LIRExprNode> outputIndices) {
         return switch (vt.kind()) {
             case ViewKind.Transpose transpose -> {
                 // Transpose: permute indices using inverse permutation
                 int[] invPerm = transpose.inverse();
-                List<IndexExpr> result = new ArrayList<>(outputIndices.size());
+                List<LIRExprNode> result = new ArrayList<>(outputIndices.size());
                 for (int j : invPerm) {
                     result.add(outputIndices.get(j));
                 }
@@ -820,7 +838,7 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
                 // First flatten output indices to linear index
                 Shape toShape = reshape.toShape();
                 Shape fromShape = reshape.fromShape();
-                IndexExpr linearIdx = flattenIndices(outputIndices, toShape);
+                LIRExprNode linearIdx = flattenIndices(outputIndices, toShape);
                 // Then decompose to input shape coordinates
                 yield unflattenIndex(linearIdx, fromShape);
             }
@@ -834,12 +852,12 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
                 int toRank = (int) toShape.flatRank();
                 int offset = toRank - fromRank;
 
-                List<IndexExpr> result = new ArrayList<>();
+                List<LIRExprNode> result = new ArrayList<>();
                 for (int i = 0; i < fromRank; i++) {
                     long fromDim = fromShape.flatAt(i);
                     if (fromDim == 1) {
                         // Broadcast dimension - input index is always 0
-                        result.add(new IndexConst(0));
+                        result.add(exprGraph.indexConst(0));
                     } else {
                         // Pass through
                         result.add(outputIndices.get(offset + i));
@@ -850,11 +868,11 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
             case ViewKind.Expand expand -> {
                 // Expand is similar to broadcast within same rank
                 Shape fromShape = expand.fromShape();
-                List<IndexExpr> result = new ArrayList<>();
+                List<LIRExprNode> result = new ArrayList<>();
                 for (int i = 0; i < fromShape.flatRank(); i++) {
                     long fromDim = fromShape.flatAt(i);
                     if (fromDim == 1) {
-                        result.add(new IndexConst(0));
+                        result.add(exprGraph.indexConst(0));
                     } else {
                         result.add(outputIndices.get(i));
                     }
@@ -864,12 +882,16 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
             case ViewKind.Slice slice -> {
                 // Slice: output index maps to input index with offset and step
                 // input_idx = start + output_idx * step
-                List<IndexExpr> result = new ArrayList<>(outputIndices);
-                IndexExpr outIdx = outputIndices.get(slice.axis());
-                IndexExpr inIdx =
-                        IndexBinary.add(
-                                new IndexConst(slice.start()),
-                                IndexBinary.multiply(outIdx, new IndexConst(slice.step())));
+                List<LIRExprNode> result = new ArrayList<>(outputIndices);
+                LIRExprNode outIdx = outputIndices.get(slice.axis());
+                LIRExprNode inIdx =
+                        exprGraph.indexBinary(
+                                IndexBinaryOp.ADD,
+                                exprGraph.indexConst(slice.start()),
+                                exprGraph.indexBinary(
+                                        IndexBinaryOp.MULTIPLY,
+                                        outIdx,
+                                        exprGraph.indexConst(slice.step())));
                 result.set(slice.axis(), inIdx);
                 yield result;
             }
@@ -877,27 +899,32 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
     }
 
     /** Flattens multi-dimensional indices to a linear index using row-major order. */
-    private IndexExpr flattenIndices(List<IndexExpr> indices, Shape shape) {
+    private LIRExprNode flattenIndices(List<LIRExprNode> indices, Shape shape) {
         if (indices.isEmpty()) {
-            return new IndexConst(0);
+            return exprGraph.indexConst(0);
         }
-        IndexExpr linear = null;
+        LIRExprNode linear = null;
         long stride = 1;
         for (int i = (int) shape.flatRank() - 1; i >= 0; i--) {
-            IndexExpr term = IndexBinary.multiply(indices.get(i), new IndexConst(stride));
-            linear = (linear == null) ? term : IndexBinary.add(term, linear);
+            LIRExprNode term =
+                    exprGraph.indexBinary(
+                            IndexBinaryOp.MULTIPLY, indices.get(i), exprGraph.indexConst(stride));
+            linear =
+                    (linear == null)
+                            ? term
+                            : exprGraph.indexBinary(IndexBinaryOp.ADD, term, linear);
             stride *= shape.flatAt(i);
         }
-        return linear != null ? linear : new IndexConst(0);
+        return linear != null ? linear : exprGraph.indexConst(0);
     }
 
     /** Decomposes a linear index into multi-dimensional indices using row-major order. */
-    private List<IndexExpr> unflattenIndex(IndexExpr linearIdx, Shape shape) {
+    private List<LIRExprNode> unflattenIndex(LIRExprNode linearIdx, Shape shape) {
         int rank = (int) shape.flatRank();
         if (rank == 0) {
             return List.of();
         }
-        List<IndexExpr> indices = new ArrayList<>(rank);
+        List<LIRExprNode> indices = new ArrayList<>(rank);
         // Compute strides (row-major)
         long[] strides = new long[rank];
         strides[rank - 1] = 1;
@@ -906,52 +933,64 @@ public class TIRToLIRLowerer implements TIRVisitor<ScalarExpr> {
         }
         // Decompose: idx[i] = (linear / stride[i]) % dim[i]
         for (int i = 0; i < rank; i++) {
-            IndexExpr divided = IndexBinary.divide(linearIdx, new IndexConst(strides[i]));
-            IndexExpr idx = IndexBinary.modulo(divided, new IndexConst(shape.flatAt(i)));
+            LIRExprNode divided =
+                    exprGraph.indexBinary(
+                            IndexBinaryOp.DIVIDE, linearIdx, exprGraph.indexConst(strides[i]));
+            LIRExprNode idx =
+                    exprGraph.indexBinary(
+                            IndexBinaryOp.MODULO,
+                            divided,
+                            exprGraph.indexConst(shape.flatAt(i)));
             indices.add(idx);
         }
         return indices;
     }
 
     @Override
-    public ScalarExpr visitContiguous(Contiguous node) {
+    public LIRExprNode visitContiguous(Contiguous node) {
         // Contiguous forces a copy, but at this level we just read the input
         return cacheScalar(node, () -> node.input().accept(this));
     }
 
     @Override
-    public ScalarExpr visitIotaConstant(IotaConstant node) {
+    public LIRExprNode visitIotaConstant(IotaConstant node) {
         // Iota returns the index value - need to compute the linear index
         return cacheScalar(
                 node,
                 () -> {
                     if (loopIndices.isEmpty()) {
-                        return ScalarLiteral.ofLong(0);
+                        return exprGraph.scalarConst(0L, DataType.I64);
                     }
 
                     // Compute linear index from loop indices
                     Layout layout = Layout.rowMajor(node.shape()).flatten();
-                    IndexExpr linearIdx = null;
+                    LIRExprNode linearIdx = null;
                     long stride = 1;
                     for (int i = layout.shape().flatRank() - 1; i >= 0; i--) {
-                        IndexExpr term =
-                                IndexBinary.multiply(loopIndices.get(i), new IndexConst(stride));
-                        linearIdx = (linearIdx == null) ? term : IndexBinary.add(term, linearIdx);
+                        LIRExprNode term =
+                                exprGraph.indexBinary(
+                                        IndexBinaryOp.MULTIPLY,
+                                        loopIndices.get(i),
+                                        exprGraph.indexConst(stride));
+                        linearIdx =
+                                (linearIdx == null)
+                                        ? term
+                                        : exprGraph.indexBinary(IndexBinaryOp.ADD, term, linearIdx);
                         stride *= layout.shape().flatAt(i);
                     }
 
                     // Cast index to the output type
                     if (linearIdx == null) {
-                        linearIdx = new IndexConst(0);
+                        linearIdx = exprGraph.indexConst(0);
                     }
 
                     // IndexExpr is I64, cast to target type if needed
                     DataType targetType = node.dataType();
-                    ScalarExpr indexValue = new ScalarFromIndex(linearIdx);
+                    LIRExprNode indexValue = exprGraph.scalarFromIndex(linearIdx, DataType.I64);
                     if (targetType == DataType.I64) {
                         return indexValue;
                     }
-                    return new ScalarCast(indexValue, targetType);
+                    return exprGraph.scalarCast(indexValue, targetType);
                 });
     }
 }

@@ -11,7 +11,6 @@ public sealed interface LIRNode extends IRNode
         permits IndexExpr,
                 ScalarExpr,
                 LIRInput,
-                Load,
                 Store,
                 StructuredFor,
                 TiledLoop,
@@ -35,7 +34,6 @@ public sealed interface LIRNode extends IRNode
             case ScalarFromIndex n -> visitor.visitScalarFromIndex(n);
             case ScalarRef n -> visitor.visitScalarRef(n);
             case BufferRef n -> visitor.visitBufferRef(n);
-            case Load n -> visitor.visitLoad(n);
             case Store n -> visitor.visitStore(n);
             case StructuredFor n -> visitor.visitStructuredFor(n);
             case TiledLoop n -> visitor.visitTiledLoop(n);

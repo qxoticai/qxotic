@@ -2,7 +2,7 @@ package ai.qxotic.jota.panama;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.ir.lir.*;
-import ai.qxotic.jota.ir.lir.v2.*;
+import ai.qxotic.jota.ir.lir.*;
 import ai.qxotic.jota.ir.lir.scratch.ScratchLayout;
 import ai.qxotic.jota.ir.tir.BinaryOperator;
 import ai.qxotic.jota.tensor.JitKernel;
@@ -239,7 +239,7 @@ final class LIRKernelCompiler {
         private final ScratchLayout scratchLayout;
         private final Map<ScalarInput, String> scalarInputs = new IdentityHashMap<>();
         private final Map<Integer, String> scalarInputNames = new HashMap<>();
-        private final Map<V2Node, String> tempNames = new IdentityHashMap<>();
+        private final Map<LIRExprNode, String> tempNames = new IdentityHashMap<>();
         private final Map<BufferRef, BufferVar> buffers = new IdentityHashMap<>();
         private final Map<BufferRef, ScratchBufferVar> scratchBuffers = new IdentityHashMap<>();
         private final Map<String, String> scalarNames = new IdentityHashMap<>();
@@ -249,8 +249,7 @@ final class LIRKernelCompiler {
         private final boolean generateStridedKernel;
         private int tempId;
         private int indentLevel;
-        private final LirV2Graph v2Graph = new LirV2Graph();
-        private final V2Builder v2Builder = new V2Builder(v2Graph);
+        private final LIRExprGraph exprGraph;
 
         private KernelSourceGenerator(
                 KernelCacheEntry entry,
@@ -261,8 +260,7 @@ final class LIRKernelCompiler {
             this.graph = graph;
             this.scratchLayout = scratchLayout;
             this.generateStridedKernel = generateStridedKernel;
-            v2Builder.collect(graph.body());
-            v2Graph.processWorklist();
+            this.exprGraph = graph.exprGraph();
         }
 
         static String generate(
@@ -513,52 +511,36 @@ final class LIRKernelCompiler {
             }
         }
 
-        private void emitNode(LIRNode node) {
+        private void emitNode(LIRExprNode node) {
             switch (node) {
                 case Block block -> {
-                    for (LIRNode stmt : block.statements()) {
+                    for (LIRExprNode stmt : block.statements()) {
                         emitNode(stmt);
-                    }
-                }
-                case ScalarLet let -> {
-                    String expr = emitScalar(let.value());
-                    String name = let.name();
-                    boolean inline =
-                            shouldInlineScalarLet(expr, name)
-                                    || let.value() instanceof ScalarLiteral
-                                    || let.value() instanceof ScalarRef
-                                    || let.value() instanceof ScalarInput
-                                    || let.value() instanceof ScalarFromIndex;
-                    if (inline) {
-                        scalarNames.put(name, expr);
-                    } else {
-                        scalarNames.put(name, name);
-                        addLine(javaType(let.value().dataType()) + " " + name + " = " + expr + ";");
                     }
                 }
                 case Store store -> emitStore(store);
                 case StructuredFor loop -> emitStructuredFor(loop);
                 case TiledLoop tiled -> emitTiledLoop(tiled);
                 case Yield yield -> emitYield(yield);
-                case Load ignored -> {}
                 default -> {}
             }
         }
 
         private void emitStructuredFor(StructuredFor loop) {
             String idx = loop.indexName();
-            String lb = emitIndex(loop.lowerBound());
-            String ub = emitIndex(loop.upperBound());
-            String step = emitIndex(loop.step());
+            String lb = emitIndexExpr(loop.lowerBound());
+            String ub = emitIndexExpr(loop.upperBound());
+            String step = emitIndexExpr(loop.step());
 
             // Check if this is a simple forward loop with step = 1
             boolean isSimpleForwardLoop =
-                    step.equals("1") || (loop.step() instanceof IndexConst ic && ic.value() == 1);
+                    step.equals("1")
+                            || (loop.step() instanceof IConst ic && ic.value() == 1);
 
             if (isSimpleForwardLoop) {
                 // Simplified loop without extra variables
                 for (LoopIterArg arg : loop.iterArgs()) {
-                    String initExpr = emitScalar(arg.init());
+                    String initExpr = emitScalarExpr(arg.init());
                     addLine(javaType(arg.dataType()) + " " + arg.name() + " = " + initExpr + ";");
                 }
 
@@ -588,7 +570,7 @@ final class LIRKernelCompiler {
                 addLine("long " + stepVar + " = " + step + ";");
 
                 for (LoopIterArg arg : loop.iterArgs()) {
-                    String initExpr = emitScalar(arg.init());
+                    String initExpr = emitScalarExpr(arg.init());
                     addLine(javaType(arg.dataType()) + " " + arg.name() + " = " + initExpr + ";");
                 }
 
@@ -620,19 +602,17 @@ final class LIRKernelCompiler {
         }
 
         private void emitStructuredBody(StructuredFor loop) {
-            LIRNode body = loop.body();
+            Block body = loop.body();
             Yield yield = extractYield(body);
-            if (body instanceof Block block) {
-                for (int i = 0; i < block.statements().size() - 1; i++) {
-                    emitNode(block.statements().get(i));
-                }
+            for (int i = 0; i < body.statements().size() - 1; i++) {
+                emitNode(body.statements().get(i));
             }
 
             List<String> nextNames = new ArrayList<>(loop.iterArgs().size());
             for (int i = 0; i < loop.iterArgs().size(); i++) {
                 LoopIterArg arg = loop.iterArgs().get(i);
                 String nextName = arg.name() + "_next" + tempId++;
-                String expr = emitScalar(yield.values().get(i));
+                String expr = emitScalarExpr(yield.values().get(i));
                 addLine(javaType(arg.dataType()) + " " + nextName + " = " + expr + ";");
                 nextNames.add(nextName);
             }
@@ -643,7 +623,7 @@ final class LIRKernelCompiler {
         }
 
         private void emitTiledLoop(TiledLoop tiled) {
-            String total = emitIndex(tiled.totalBound());
+            String total = emitIndexExpr(tiled.totalBound());
             long tile = tiled.tileSize();
             String outer = tiled.outerName();
             String inner = tiled.innerName();
@@ -697,12 +677,9 @@ final class LIRKernelCompiler {
             }
         }
 
-        private Yield extractYield(LIRNode body) {
-            if (body instanceof Yield yield) {
-                return yield;
-            }
-            if (body instanceof Block block && !block.statements().isEmpty()) {
-                LIRNode last = block.statements().getLast();
+        private Yield extractYield(Block body) {
+            if (!body.statements().isEmpty()) {
+                LIRExprNode last = body.statements().getLast();
                 if (last instanceof Yield yield) {
                     return yield;
                 }
@@ -712,88 +689,32 @@ final class LIRKernelCompiler {
 
         private void emitStore(Store store) {
             BufferVar buffer = requireBuffer(store.buffer());
-            V2Node valueNode = v2Builder.toScalar(store.value());
-            String value = emitScalarV2(valueNode);
+            String value = emitScalarExpr(store.value());
             DataType bufferType = store.buffer().dataType();
             DataType valueType = store.value().dataType();
-            V2Node offsetNode = v2Builder.toIndex(store.offset());
-            String offset = emitIndexWithStridesV2(store.buffer(), offsetNode);
+            String offset = emitIndexWithStridesExpr(store.buffer(), store.offset());
             addLine(writeValue(buffer, bufferType, offset, value, valueType));
         }
 
-        /**
-         * Emits a scalar expression. This is the original method that generates expression strings.
-         */
-        private String emitScalar(ScalarExpr expr) {
-            V2Node node = v2Builder.toScalar(expr);
-            return emitScalarV2(node);
-        }
-
-        /**
-         * Emits a scalar expression using compact SSA style. Trivial expressions are inlined,
-         * complex ones get variables.
-         */
-        private String emitScalarCompact(ScalarExpr expr) {
-            V2Node node = v2Builder.toScalar(expr);
-            return emitScalarCompactV2(node);
-        }
-
-        private String emitScalarCompactRecursive(ScalarExpr expr) {
-            return switch (expr) {
-                case ScalarLiteral lit -> scalarLiteral(lit);
-                case ScalarInput input -> requireScalarInput(input);
-                case ScalarRef ref -> ref.name();
-                case ScalarFromIndex sfi -> "(long) (" + emitIndex(sfi.index()) + ")";
-                case ScalarLoad load -> emitScalarLoadCompact(load);
-                case ScalarUnary unary -> emitUnaryCompact(unary);
-                case ScalarBinary binary -> emitBinaryCompact(binary);
-                case ScalarTernary ternary -> emitTernaryCompact(ternary);
-                case ScalarCast cast -> emitCastCompact(cast);
-            };
-        }
-
-        private boolean shouldAssignToVariable(ScalarExpr expr, String result) {
-            // Always assign these to variables for clarity
-            return switch (expr) {
-                case ScalarTernary t -> true; // Ternary ops are complex
-                case ScalarBinary b ->
-                        switch (b.op()) {
-                            case LESS_THAN, EQUAL -> true; // Comparisons
-                            case LOGICAL_AND, LOGICAL_OR, LOGICAL_XOR -> true; // Logical ops
-                            case MIN, MAX, POW -> true; // Complex math
-                            default -> result.length() > 40; // Long arithmetic chains
-                        };
-                case ScalarUnary u ->
-                        switch (u.op()) {
-                            case LOGICAL_NOT -> true; // Logical not
-                            default -> false; // Other unary ops can be inlined
-                        };
-                case ScalarCast c ->
-                        c.input().dataType() == DataType.BOOL
-                                || c.targetType() == DataType.BOOL; // Boolean casts
-                default -> false; // Literals, inputs, refs are simple
-            };
-        }
-
-        private String emitScalarV2(V2Node node) {
-            V2Node resolved = v2Graph.resolve(node);
+        private String emitScalarExpr(LIRExprNode node) {
+            LIRExprNode resolved = exprGraph.resolve(node);
             usedTypes.add(resolved.dataType());
-            if (resolved.kind() == V2Kind.S_REF
-                    || resolved.kind() == V2Kind.S_INPUT
-                    || resolved.kind() == V2Kind.S_LOAD
-                    || resolved.kind() == V2Kind.S_FROM_INDEX) {
-                return emitScalarV2Inline(resolved);
+            if (resolved.kind() == LIRExprKind.S_REF
+                    || resolved.kind() == LIRExprKind.S_INPUT
+                    || resolved.kind() == LIRExprKind.S_LOAD
+                    || resolved.kind() == LIRExprKind.S_FROM_INDEX) {
+                return emitScalarExprInline(resolved);
             }
             if (resolved.useCount() > 1
-                    && (resolved.kind() == V2Kind.S_UNARY
-                            || resolved.kind() == V2Kind.S_BINARY
-                            || resolved.kind() == V2Kind.S_TERNARY
-                            || resolved.kind() == V2Kind.S_CAST)) {
+                    && (resolved.kind() == LIRExprKind.S_UNARY
+                            || resolved.kind() == LIRExprKind.S_BINARY
+                            || resolved.kind() == LIRExprKind.S_TERNARY
+                            || resolved.kind() == LIRExprKind.S_CAST)) {
                 String cached = tempNames.get(resolved);
                 if (cached != null) {
                     return cached;
                 }
-                String expr = emitScalarV2Inline(resolved);
+                String expr = emitScalarExprInline(resolved);
                 if (!shouldMaterializeTemp(resolved, expr)) {
                     return expr;
                 }
@@ -805,10 +726,10 @@ final class LIRKernelCompiler {
                 tempNames.put(resolved, var);
                 return var;
             }
-            return emitScalarV2Inline(resolved);
+            return emitScalarExprInline(resolved);
         }
 
-        private String emitScalarV2Inline(V2Node resolved) {
+        private String emitScalarExprInline(LIRExprNode resolved) {
             return switch (resolved.kind()) {
                 case S_CONST ->
                         scalarLiteral(
@@ -820,18 +741,18 @@ final class LIRKernelCompiler {
                     String mapped = scalarNames.get(refName);
                     yield mapped != null ? mapped : refName;
                 }
-                case S_FROM_INDEX -> "(long) (" + emitIndexV2(((SFromIndex) resolved).indexExpr()) + ")";
-                case S_LOAD -> emitScalarLoadV2((SLoad) resolved);
-                case S_UNARY -> emitUnaryV2((SUnary) resolved);
-                case S_BINARY -> emitBinaryV2((SBinary) resolved);
-                case S_TERNARY -> emitTernaryV2((STernary) resolved);
-                case S_CAST -> emitCastV2((SCast) resolved);
+                case S_FROM_INDEX -> "(long) (" + emitIndexExpr(((SFromIndex) resolved).indexExpr()) + ")";
+                case S_LOAD -> emitScalarLoadExpr((SLoad) resolved);
+                case S_UNARY -> emitUnaryExpr((SUnary) resolved);
+                case S_BINARY -> emitBinaryExpr((SBinary) resolved);
+                case S_TERNARY -> emitTernaryExpr((STernary) resolved);
+                case S_CAST -> emitCastExpr((SCast) resolved);
                 case I_CONST, I_VAR, I_BINARY ->
                         throw new IllegalStateException("Expected scalar node, got " + resolved.kind());
             };
         }
 
-        private boolean shouldMaterializeTemp(V2Node node, String expr) {
+        private boolean shouldMaterializeTemp(LIRExprNode node, String expr) {
             if (expr.length() <= 40) {
                 return false;
             }
@@ -841,12 +762,12 @@ final class LIRKernelCompiler {
             };
         }
 
-        private String emitScalarCompactV2(V2Node node) {
-            return emitScalarV2(node);
+        private String emitScalarExprCompact(LIRExprNode node) {
+            return emitScalarExpr(node);
         }
 
-        private String emitScalarCompactRecursiveV2(V2Node node) {
-            V2Node resolved = v2Graph.resolve(node);
+        private String emitScalarExprCompactRecursive(LIRExprNode node) {
+            LIRExprNode resolved = exprGraph.resolve(node);
             return switch (resolved.kind()) {
                 case S_CONST ->
                         scalarLiteral(
@@ -854,18 +775,18 @@ final class LIRKernelCompiler {
                                         ((SConst) resolved).rawBits(), resolved.dataType()));
                 case S_INPUT -> requireScalarInputById(((SInput) resolved).inputId(), resolved.dataType());
                 case S_REF -> ((SRef) resolved).name();
-                case S_FROM_INDEX -> "(long) (" + emitIndexV2(((SFromIndex) resolved).indexExpr()) + ")";
-                case S_LOAD -> emitScalarLoadCompactV2((SLoad) resolved);
-                case S_UNARY -> emitUnaryCompactV2((SUnary) resolved);
-                case S_BINARY -> emitBinaryCompactV2((SBinary) resolved);
-                case S_TERNARY -> emitTernaryCompactV2((STernary) resolved);
-                case S_CAST -> emitCastCompactV2((SCast) resolved);
+                case S_FROM_INDEX -> "(long) (" + emitIndexExpr(((SFromIndex) resolved).indexExpr()) + ")";
+                case S_LOAD -> emitScalarLoadExprCompact((SLoad) resolved);
+                case S_UNARY -> emitUnaryExprCompact((SUnary) resolved);
+                case S_BINARY -> emitBinaryExprCompact((SBinary) resolved);
+                case S_TERNARY -> emitTernaryExprCompact((STernary) resolved);
+                case S_CAST -> emitCastExprCompact((SCast) resolved);
                 case I_CONST, I_VAR, I_BINARY ->
                         throw new IllegalStateException("Expected scalar node, got " + resolved.kind());
             };
         }
 
-        private boolean shouldAssignToVariableV2(V2Node node, String result) {
+        private boolean shouldAssignToVariableExpr(LIRExprNode node, String result) {
             return switch (node.kind()) {
                 case S_TERNARY -> true;
                 case S_BINARY ->
@@ -885,18 +806,18 @@ final class LIRKernelCompiler {
             };
         }
 
-        private String emitScalarLoadV2(SLoad load) {
+        private String emitScalarLoadExpr(SLoad load) {
             BufferVar buffer = requireBuffer(load.buffer());
-            String offset = emitIndexWithStridesV2(load.buffer(), load.offset());
+            String offset = emitIndexWithStridesExpr(load.buffer(), load.offset());
             return readValue(buffer, load.buffer().dataType(), offset);
         }
 
-        private String emitScalarLoadCompactV2(SLoad load) {
+        private String emitScalarLoadExprCompact(SLoad load) {
             String cached = tempNames.get(load);
             if (cached != null) {
                 return cached;
             }
-            String expr = emitScalarLoadV2(load);
+            String expr = emitScalarLoadExpr(load);
             if (expr.length() > 60) {
                 String var = nextTempName();
                 addLine(javaType(load.dataType()) + " " + var + " = " + expr + ";");
@@ -906,8 +827,8 @@ final class LIRKernelCompiler {
             return expr;
         }
 
-        private String emitUnaryV2(SUnary unary) {
-            String input = emitScalarV2(unary.input());
+        private String emitUnaryExpr(SUnary unary) {
+            String input = emitScalarExpr(unary.input());
             DataType type = unary.dataType();
             return switch (unary.op()) {
                 case NEGATE -> "-" + input;
@@ -929,12 +850,12 @@ final class LIRKernelCompiler {
             };
         }
 
-        private String emitUnaryCompactV2(SUnary unary) {
+        private String emitUnaryExprCompact(SUnary unary) {
             String cached = tempNames.get(unary);
             if (cached != null) {
                 return cached;
             }
-            String expr = emitUnaryV2(unary);
+            String expr = emitUnaryExpr(unary);
             if (expr.length() > 60) {
                 String var = nextTempName();
                 addLine(javaType(unary.dataType()) + " " + var + " = " + expr + ";");
@@ -944,13 +865,13 @@ final class LIRKernelCompiler {
             return expr;
         }
 
-        private String emitBinaryV2(SBinary binary) {
-            String left = emitScalarV2(binary.left());
-            String right = emitScalarV2(binary.right());
+        private String emitBinaryExpr(SBinary binary) {
+            String left = emitScalarExpr(binary.left());
+            String right = emitScalarExpr(binary.right());
             DataType type = binary.dataType();
             if (binary.op() == BinaryOperator.ADD) {
-                String l = maybeConvertForBinaryV2(binary.left(), left, type);
-                String r = maybeConvertForBinaryV2(binary.right(), right, type);
+                String l = maybeConvertForBinaryExpr(binary.left(), left, type);
+                String r = maybeConvertForBinaryExpr(binary.right(), right, type);
                 return "(" + l + " + " + r + ")";
             }
             if (binary.op() == BinaryOperator.SUBTRACT) {
@@ -1002,20 +923,20 @@ final class LIRKernelCompiler {
                 return castFor(type, "(" + left + " ^ " + right + ")");
             }
             if (binary.op() == BinaryOperator.EQUAL) {
-                return compareExprV2("==", binary.left(), binary.right(), type);
+                return compareExpr("==", binary.left(), binary.right(), type);
             }
             if (binary.op() == BinaryOperator.LESS_THAN) {
-                return compareExprV2("<", binary.left(), binary.right(), type);
+                return compareExpr("<", binary.left(), binary.right(), type);
             }
             throw new UnsupportedOperationException("Unsupported binary operator: " + binary.op());
         }
 
-        private String emitBinaryCompactV2(SBinary binary) {
+        private String emitBinaryExprCompact(SBinary binary) {
             String cached = tempNames.get(binary);
             if (cached != null) {
                 return cached;
             }
-            String expr = emitBinaryV2(binary);
+            String expr = emitBinaryExpr(binary);
             if (expr.length() > 60) {
                 String var = nextTempName();
                 addLine(javaType(binary.dataType()) + " " + var + " = " + expr + ";");
@@ -1025,46 +946,46 @@ final class LIRKernelCompiler {
             return expr;
         }
 
-        private String maybeConvertForBinaryV2(V2Node node, String exprStr, DataType targetType) {
+        private String maybeConvertForBinaryExpr(LIRExprNode node, String exprStr, DataType targetType) {
             if (node.dataType() == DataType.BOOL && targetType != DataType.BOOL) {
                 return "(" + exprStr + " ? 1 : 0)";
             }
             return exprStr;
         }
 
-        private String emitTernaryV2(STernary ternary) {
-            String cond = emitScalarV2(ternary.condition());
+        private String emitTernaryExpr(STernary ternary) {
+            String cond = emitScalarExpr(ternary.condition());
             if (ternary.condition().dataType() != DataType.BOOL) {
                 cond = cond + " != 0";
             }
-            String tVal = emitScalarV2(ternary.trueValue());
-            String fVal = emitScalarV2(ternary.falseValue());
+            String tVal = emitScalarExpr(ternary.trueValue());
+            String fVal = emitScalarExpr(ternary.falseValue());
             return "(" + cond + " ? " + tVal + " : " + fVal + ")";
         }
 
-        private String emitTernaryCompactV2(STernary ternary) {
+        private String emitTernaryExprCompact(STernary ternary) {
             String cached = tempNames.get(ternary);
             if (cached != null) {
                 return cached;
             }
-            String expr = emitTernaryV2(ternary);
+            String expr = emitTernaryExpr(ternary);
             String var = nextTempName();
             addLine(javaType(ternary.dataType()) + " " + var + " = " + expr + ";");
             tempNames.put(ternary, var);
             return var;
         }
 
-        private String emitCastV2(SCast cast) {
-            String input = emitScalarV2(cast.input());
+        private String emitCastExpr(SCast cast) {
+            String input = emitScalarExpr(cast.input());
             return castExpr(cast.input().dataType(), cast.targetType(), input);
         }
 
-        private String emitCastCompactV2(SCast cast) {
+        private String emitCastExprCompact(SCast cast) {
             String cached = tempNames.get(cast);
             if (cached != null) {
                 return cached;
             }
-            String expr = emitCastV2(cast);
+            String expr = emitCastExpr(cast);
             if (expr.length() > 60
                     || cast.input().dataType() == DataType.BOOL
                     || cast.targetType() == DataType.BOOL) {
@@ -1076,18 +997,18 @@ final class LIRKernelCompiler {
             return expr;
         }
 
-        private String emitIndexV2(V2Node node) {
-            V2Node resolved = v2Graph.resolve(node);
+        private String emitIndexExpr(LIRExprNode node) {
+            LIRExprNode resolved = exprGraph.resolve(node);
             return switch (resolved.kind()) {
                 case I_CONST -> Long.toString(((IConst) resolved).value());
                 case I_VAR -> ((IVar) resolved).name();
                 case I_BINARY ->
                         "("
-                                + emitIndexV2(((IBinary) resolved).left())
+                                + emitIndexExpr(((IBinary) resolved).left())
                                 + " "
                                 + indexOp(((IBinary) resolved).op())
                                 + " "
-                                + emitIndexV2(((IBinary) resolved).right())
+                                + emitIndexExpr(((IBinary) resolved).right())
                                 + ")";
                 case S_CONST,
                         S_INPUT,
@@ -1102,15 +1023,15 @@ final class LIRKernelCompiler {
             };
         }
 
-        private String emitIndexWithStridesV2(BufferRef buffer, V2Node node) {
+        private String emitIndexWithStridesExpr(BufferRef buffer, LIRExprNode node) {
             String[] strideVars = bufferStrideVars.get(buffer);
             long[] byteStrides = buffer.byteStrides();
-            return emitIndexWithStrideReplacementV2(node, byteStrides, strideVars);
+            return emitIndexWithStrideReplacementExpr(node, byteStrides, strideVars);
         }
 
-        private String emitIndexWithStrideReplacementV2(
-                V2Node node, long[] strides, String[] strideVars) {
-            V2Node resolved = v2Graph.resolve(node);
+        private String emitIndexWithStrideReplacementExpr(
+                LIRExprNode node, long[] strides, String[] strideVars) {
+            LIRExprNode resolved = exprGraph.resolve(node);
             return switch (resolved.kind()) {
                 case I_CONST -> {
                     long value = ((IConst) resolved).value();
@@ -1120,9 +1041,9 @@ final class LIRKernelCompiler {
                 case I_VAR -> ((IVar) resolved).name();
                 case I_BINARY -> {
                     String left =
-                            emitIndexWithStrideReplacementV2(((IBinary) resolved).left(), strides, strideVars);
+                            emitIndexWithStrideReplacementExpr(((IBinary) resolved).left(), strides, strideVars);
                     String right =
-                            emitIndexWithStrideReplacementV2(((IBinary) resolved).right(), strides, strideVars);
+                            emitIndexWithStrideReplacementExpr(((IBinary) resolved).right(), strides, strideVars);
                     yield "(" + left + " " + indexOp(((IBinary) resolved).op()) + " " + right + ")";
                 }
                 case S_CONST,
@@ -1138,11 +1059,11 @@ final class LIRKernelCompiler {
             };
         }
 
-        private String compareExprV2(String op, V2Node leftExpr, V2Node rightExpr, DataType resultType) {
+        private String compareExpr(String op, LIRExprNode leftExpr, LIRExprNode rightExpr, DataType resultType) {
             DataType leftType = leftExpr.dataType();
             DataType rightType = rightExpr.dataType();
-            String left = emitScalarV2(leftExpr);
-            String right = emitScalarV2(rightExpr);
+            String left = emitScalarExpr(leftExpr);
+            String right = emitScalarExpr(rightExpr);
 
             if (op.equals("<") && (leftType == DataType.BOOL || rightType == DataType.BOOL)) {
                 left = castExpr(leftType, DataType.I32, left);
@@ -1385,8 +1306,8 @@ final class LIRKernelCompiler {
         }
 
         private String emitIndex(IndexExpr expr) {
-            V2Node node = v2Builder.toIndex(expr);
-            return emitIndexV2(node);
+            LIRExprNode node = exprBuilder.toIndex(expr);
+            return emitIndexExpr(node);
         }
 
         private String indexOp(IndexBinary.IndexBinaryOp op) {

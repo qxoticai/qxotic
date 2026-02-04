@@ -1,4 +1,4 @@
-package ai.qxotic.jota.ir.lir.v2;
+package ai.qxotic.jota.ir.lir;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.ir.lir.*;
@@ -9,17 +9,17 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
-public final class V2Builder {
-    private final LirV2Graph graph;
-    private final Map<ScalarExpr, V2Node> scalarMap = new IdentityHashMap<>();
-    private final Map<IndexExpr, V2Node> indexMap = new IdentityHashMap<>();
-    private final Map<ExprKey, V2Node> scalarKeyMap = new HashMap<>();
-    private final Map<ExprKey, V2Node> indexKeyMap = new HashMap<>();
+public final class LIRExprBuilder {
+    private final LIRExprGraph graph;
+    private final Map<ScalarExpr, LIRExprNode> scalarMap = new IdentityHashMap<>();
+    private final Map<IndexExpr, LIRExprNode> indexMap = new IdentityHashMap<>();
+    private final Map<ExprKey, LIRExprNode> scalarKeyMap = new HashMap<>();
+    private final Map<ExprKey, LIRExprNode> indexKeyMap = new HashMap<>();
     private final Map<ScalarExpr, ExprKey> scalarKeyCache = new IdentityHashMap<>();
     private final Map<IndexExpr, ExprKey> indexKeyCache = new IdentityHashMap<>();
-    private final Deque<Map<String, V2Node>> scalarLetScopes = new ArrayDeque<>();
+    private final Deque<Map<String, LIRExprNode>> scalarLetScopes = new ArrayDeque<>();
 
-    public V2Builder(LirV2Graph graph) {
+    public LIRExprBuilder(LIRExprGraph graph) {
         this.graph = graph;
     }
 
@@ -62,30 +62,30 @@ public final class V2Builder {
                 popScope();
             }
             case ScalarLet let -> {
-                V2Node value = toScalar(let.value());
+                LIRExprNode value = toScalar(let.value());
                 defineLet(let.name(), value);
             }
             default -> {}
         }
     }
 
-    public V2Node toScalar(ScalarExpr expr) {
-        V2Node cached = scalarMap.get(expr);
+    public LIRExprNode toScalar(ScalarExpr expr) {
+        LIRExprNode cached = scalarMap.get(expr);
         if (cached != null) {
             return cached;
         }
         if (expr instanceof ScalarLoad load) {
-            V2Node node = graph.scalarLoad(load.buffer(), toIndex(load.offset()), load.dataType());
+            LIRExprNode node = graph.scalarLoad(load.buffer(), toIndex(load.offset()), load.dataType());
             scalarMap.put(expr, node);
             return node;
         }
         ExprKey key = scalarKeyFor(expr);
-        V2Node existing = scalarKeyMap.get(key);
+        LIRExprNode existing = scalarKeyMap.get(key);
         if (existing != null) {
             scalarMap.put(expr, existing);
             return existing;
         }
-        V2Node node = switch (expr) {
+        LIRExprNode node = switch (expr) {
             case ScalarLiteral literal -> graph.scalarConst(literal.rawBits(), literal.dataType());
             case ScalarInput input -> graph.scalarInput(input.id(), input.dataType());
             case ScalarUnary unary -> graph.scalarUnary(unary.op(), toScalar(unary.input()));
@@ -110,18 +110,18 @@ public final class V2Builder {
         return node;
     }
 
-    public V2Node toIndex(IndexExpr expr) {
-        V2Node cached = indexMap.get(expr);
+    public LIRExprNode toIndex(IndexExpr expr) {
+        LIRExprNode cached = indexMap.get(expr);
         if (cached != null) {
             return cached;
         }
         ExprKey key = indexKeyFor(expr);
-        V2Node existing = indexKeyMap.get(key);
+        LIRExprNode existing = indexKeyMap.get(key);
         if (existing != null) {
             indexMap.put(expr, existing);
             return existing;
         }
-        V2Node node = switch (expr) {
+        LIRExprNode node = switch (expr) {
             case IndexConst constant -> graph.indexConst(constant.value());
             case IndexVar var -> graph.indexVar(var.name());
             case IndexBinary binary ->
@@ -140,16 +140,16 @@ public final class V2Builder {
         scalarLetScopes.pop();
     }
 
-    private void defineLet(String name, V2Node value) {
+    private void defineLet(String name, LIRExprNode value) {
         if (scalarLetScopes.isEmpty()) {
             scalarLetScopes.push(new HashMap<>());
         }
         scalarLetScopes.peek().put(name, value);
     }
 
-    private V2Node lookupLet(String name, DataType dataType) {
-        for (Map<String, V2Node> scope : scalarLetScopes) {
-            V2Node value = scope.get(name);
+    private LIRExprNode lookupLet(String name, DataType dataType) {
+        for (Map<String, LIRExprNode> scope : scalarLetScopes) {
+            LIRExprNode value = scope.get(name);
             if (value != null) {
                 return value;
             }

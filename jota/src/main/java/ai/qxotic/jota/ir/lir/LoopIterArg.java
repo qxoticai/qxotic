@@ -4,7 +4,7 @@ import ai.qxotic.jota.DataType;
 import java.util.Objects;
 
 /** Loop-carried argument for structured loops. */
-public record LoopIterArg(String name, DataType dataType, ScalarExpr init) {
+public record LoopIterArg(String name, DataType dataType, LIRExprNode init) {
 
     public LoopIterArg {
         Objects.requireNonNull(name, "name cannot be null");

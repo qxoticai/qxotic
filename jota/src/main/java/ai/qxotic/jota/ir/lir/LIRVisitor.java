@@ -35,8 +35,6 @@ public interface LIRVisitor<T> {
     // Memory access
     T visitBufferRef(BufferRef node);
 
-    T visitLoad(Load node);
-
     T visitStore(Store node);
 
     // Loops and control

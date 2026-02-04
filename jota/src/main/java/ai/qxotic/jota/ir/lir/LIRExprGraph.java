@@ -1,9 +1,9 @@
-package ai.qxotic.jota.ir.lir.v2;
+package ai.qxotic.jota.ir.lir;
 
 import ai.qxotic.jota.BFloat16;
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.ir.lir.BufferRef;
-import ai.qxotic.jota.ir.lir.IndexBinary.IndexBinaryOp;
+import ai.qxotic.jota.ir.lir.IndexBinaryOp;
 import ai.qxotic.jota.ir.tir.BinaryOperator;
 import ai.qxotic.jota.ir.tir.UnaryOperator;
 import java.util.ArrayDeque;
@@ -12,13 +12,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
-public final class LirV2Graph {
-    private final Map<NodeKey, V2Node> uniqueNodes = new HashMap<>();
-    private final ArrayDeque<V2Node> worklist = new ArrayDeque<>();
+public final class LIRExprGraph {
+    private final Map<NodeKey, LIRExprNode> uniqueNodes = new HashMap<>();
+    private final ArrayDeque<LIRExprNode> worklist = new ArrayDeque<>();
     private int nextId;
 
-    public V2Node resolve(V2Node node) {
-        V2Node current = node;
+    public LIRExprNode resolve(LIRExprNode node) {
+        LIRExprNode current = node;
         while (current.replacement() != null) {
             current = current.replacement();
         }
@@ -27,16 +27,16 @@ public final class LirV2Graph {
 
     public void processWorklist() {
         while (!worklist.isEmpty()) {
-            V2Node node = resolve(worklist.removeFirst());
-            V2Node canonical = node.canonicalize(this);
+            LIRExprNode node = resolve(worklist.removeFirst());
+            LIRExprNode canonical = node.canonicalize(this);
             if (canonical != node) {
                 replace(node, canonical);
             }
         }
     }
 
-    private void replace(V2Node oldNode, V2Node newNode) {
-        V2Node canonicalNew = resolve(newNode);
+    private void replace(LIRExprNode oldNode, LIRExprNode newNode) {
+        LIRExprNode canonicalNew = resolve(newNode);
         if (oldNode == canonicalNew) {
             return;
         }
@@ -44,7 +44,7 @@ public final class LirV2Graph {
         Use use = oldNode.uses();
         while (use != null) {
             Use next = use.next;
-            V2Node user = use.user;
+            LIRExprNode user = use.user;
             int inputIndex = use.inputIndex;
             user.replaceInput(inputIndex, canonicalNew);
             canonicalNew.addUse(user, inputIndex);
@@ -55,12 +55,12 @@ public final class LirV2Graph {
         oldNode.setReplacement(canonicalNew);
     }
 
-    private void enqueue(V2Node node) {
+    private void enqueue(LIRExprNode node) {
         worklist.addLast(node);
     }
 
-    private V2Node registerNode(V2Node node) {
-        V2Node[] inputs = node.inputs();
+    private LIRExprNode registerNode(LIRExprNode node) {
+        LIRExprNode[] inputs = node.inputs();
         for (int i = 0; i < inputs.length; i++) {
             inputs[i].addUse(node, i);
         }
@@ -68,9 +68,9 @@ public final class LirV2Graph {
         return node;
     }
 
-    private V2Node addUnique(V2Node node) {
+    private LIRExprNode addUnique(LIRExprNode node) {
         NodeKey key = NodeKey.of(node);
-        V2Node existing = uniqueNodes.get(key);
+        LIRExprNode existing = uniqueNodes.get(key);
         if (existing != null) {
             return existing;
         }
@@ -78,26 +78,26 @@ public final class LirV2Graph {
         return registerNode(node);
     }
 
-    private V2Node addNode(V2Node node) {
+    private LIRExprNode addNode(LIRExprNode node) {
         return registerNode(node);
     }
 
-    SConst scalarConst(long rawBits, DataType dataType) {
+    public SConst scalarConst(long rawBits, DataType dataType) {
         return (SConst) addUnique(new SConst(nextId++, rawBits, dataType));
     }
 
-    SInput scalarInput(int inputId, DataType dataType) {
+    public SInput scalarInput(int inputId, DataType dataType) {
         return (SInput) addUnique(new SInput(nextId++, inputId, dataType));
     }
 
-    SUnary scalarUnary(UnaryOperator op, V2Node input) {
+    public SUnary scalarUnary(UnaryOperator op, LIRExprNode input) {
         DataType resultType = resultTypeUnary(op, input.dataType());
         return (SUnary) addUnique(new SUnary(nextId++, op, input, resultType));
     }
 
-    SBinary scalarBinary(BinaryOperator op, V2Node left, V2Node right) {
+    public SBinary scalarBinary(BinaryOperator op, LIRExprNode left, LIRExprNode right) {
         if (isCommutative(op) && left.id() > right.id()) {
-            V2Node tmp = left;
+            LIRExprNode tmp = left;
             left = right;
             right = tmp;
         }
@@ -105,46 +105,77 @@ public final class LirV2Graph {
         return (SBinary) addUnique(new SBinary(nextId++, op, left, right, resultType));
     }
 
-    STernary scalarTernary(V2Node cond, V2Node trueValue, V2Node falseValue) {
+    public STernary scalarTernary(LIRExprNode cond, LIRExprNode trueValue, LIRExprNode falseValue) {
         return (STernary)
                 addUnique(
                         new STernary(nextId++, cond, trueValue, falseValue, trueValue.dataType()));
     }
 
-    SCast scalarCast(V2Node input, DataType targetType) {
+    public SCast scalarCast(LIRExprNode input, DataType targetType) {
         return (SCast) addUnique(new SCast(nextId++, input, targetType));
     }
 
-    SLoad scalarLoad(BufferRef buffer, V2Node offset, DataType dataType) {
+    public SLoad scalarLoad(BufferRef buffer, LIRExprNode offset, DataType dataType) {
         return (SLoad) addNode(new SLoad(nextId++, buffer, offset, dataType));
     }
 
-    SFromIndex scalarFromIndex(V2Node indexExpr, DataType dataType) {
+    public SFromIndex scalarFromIndex(LIRExprNode indexExpr, DataType dataType) {
         return (SFromIndex) addUnique(new SFromIndex(nextId++, indexExpr, dataType));
     }
 
-    SRef scalarRef(String name, DataType dataType) {
+    public SRef scalarRef(String name, DataType dataType) {
         return (SRef) addUnique(new SRef(nextId++, name, dataType));
     }
 
-    IConst indexConst(long value) {
+    public IConst indexConst(long value) {
         return (IConst) addUnique(new IConst(nextId++, value));
     }
 
-    IVar indexVar(String name) {
+    public IVar indexVar(String name) {
         return (IVar) addUnique(new IVar(nextId++, name));
     }
 
-    IBinary indexBinary(IndexBinaryOp op, V2Node left, V2Node right) {
+    public IBinary indexBinary(IndexBinaryOp op, LIRExprNode left, LIRExprNode right) {
         if (isCommutative(op) && left.id() > right.id()) {
-            V2Node tmp = left;
+            LIRExprNode tmp = left;
             left = right;
             right = tmp;
         }
         return (IBinary) addUnique(new IBinary(nextId++, op, left, right));
     }
 
-    V2Node foldUnary(UnaryOperator op, SConst input) {
+    public Block block(java.util.List<LIRExprNode> statements) {
+        return (Block) addNode(new Block(nextId++, statements));
+    }
+
+    public Store store(BufferRef buffer, LIRExprNode offset, LIRExprNode value) {
+        return (Store) addNode(new Store(nextId++, buffer, offset, value));
+    }
+
+    public Yield yield(java.util.List<LIRExprNode> values) {
+        return (Yield) addNode(new Yield(nextId++, values));
+    }
+
+    public StructuredFor structuredFor(
+            String indexName,
+            LIRExprNode lowerBound,
+            LIRExprNode upperBound,
+            LIRExprNode step,
+            java.util.List<LoopIterArg> iterArgs,
+            Block body) {
+        return (StructuredFor)
+                addNode(
+                        new StructuredFor(
+                                nextId++, indexName, lowerBound, upperBound, step, iterArgs, body));
+    }
+
+    public TiledLoop tiledLoop(
+            String outerName, String innerName, LIRExprNode totalBound, long tileSize, Block body) {
+        return (TiledLoop)
+                addNode(new TiledLoop(nextId++, outerName, innerName, totalBound, tileSize, body));
+    }
+
+    LIRExprNode foldUnary(UnaryOperator op, SConst input) {
         DataType type = input.dataType();
         long bits = input.rawBits();
 
@@ -193,7 +224,7 @@ public final class LirV2Graph {
         return input;
     }
 
-    V2Node foldBinary(BinaryOperator op, SConst left, SConst right) {
+    LIRExprNode foldBinary(BinaryOperator op, SConst left, SConst right) {
         DataType type = left.dataType();
         long l = left.rawBits();
         long r = right.rawBits();
@@ -230,19 +261,19 @@ public final class LirV2Graph {
         };
     }
 
-    V2Node foldTernary(SConst condition, V2Node trueValue, V2Node falseValue) {
+    LIRExprNode foldTernary(SConst condition, LIRExprNode trueValue, LIRExprNode falseValue) {
         boolean cond = toBoolean(condition.rawBits(), condition.dataType());
         return cond ? trueValue : falseValue;
     }
 
-    V2Node foldCast(SConst input, DataType targetType) {
+    LIRExprNode foldCast(SConst input, DataType targetType) {
         if (input.dataType() == targetType) {
             return input;
         }
         return scalarConst(fromDouble(toDouble(input.rawBits(), input.dataType()), targetType), targetType);
     }
 
-    V2Node foldIndexBinary(IndexBinaryOp op, IConst left, IConst right) {
+    LIRExprNode foldIndexBinary(IndexBinaryOp op, IConst left, IConst right) {
         long l = left.value();
         long r = right.value();
         return switch (op) {
@@ -257,7 +288,7 @@ public final class LirV2Graph {
         };
     }
 
-    V2Node simplifyIndexBinary(IndexBinaryOp op, V2Node left, V2Node right) {
+    LIRExprNode simplifyIndexBinary(IndexBinaryOp op, LIRExprNode left, LIRExprNode right) {
         if (left instanceof IConst leftConst) {
             long l = leftConst.value();
             if (op == IndexBinaryOp.ADD && l == 0) {
@@ -302,7 +333,7 @@ public final class LirV2Graph {
         return indexBinary(op, left, right);
     }
 
-    V2Node simplifyBinary(BinaryOperator op, V2Node left, V2Node right) {
+    LIRExprNode simplifyBinary(BinaryOperator op, LIRExprNode left, LIRExprNode right) {
         if (left instanceof SConst leftConst) {
             if (isZero(leftConst) && op == BinaryOperator.ADD) {
                 return right;
@@ -618,13 +649,13 @@ public final class LirV2Graph {
     }
 
     private static final class NodeKey {
-        private final V2Kind kind;
+        private final LIRExprKind kind;
         private final DataType dataType;
         private final Object attr;
         private final int[] inputs;
         private final int hash;
 
-        private NodeKey(V2Kind kind, DataType dataType, Object attr, int[] inputs) {
+        private NodeKey(LIRExprKind kind, DataType dataType, Object attr, int[] inputs) {
             this.kind = kind;
             this.dataType = dataType;
             this.attr = attr;
@@ -632,7 +663,7 @@ public final class LirV2Graph {
             this.hash = computeHash(kind, dataType, attr, inputs);
         }
 
-        static NodeKey of(V2Node node) {
+        static NodeKey of(LIRExprNode node) {
             Object attr = switch (node.kind()) {
                 case S_CONST -> ((SConst) node).rawBits();
                 case S_INPUT -> ((SInput) node).inputId();
@@ -646,9 +677,10 @@ public final class LirV2Graph {
                 case I_CONST -> ((IConst) node).value();
                 case I_VAR -> ((IVar) node).name();
                 case I_BINARY -> ((IBinary) node).op();
+                case BLOCK, STORE, YIELD, STRUCTURED_FOR, TILED_LOOP -> null;
             };
 
-            int[] inputIds = Arrays.stream(node.inputs()).mapToInt(V2Node::id).toArray();
+            int[] inputIds = Arrays.stream(node.inputs()).mapToInt(LIRExprNode::id).toArray();
             return new NodeKey(node.kind(), node.dataType(), attr, inputIds);
         }
 
@@ -672,9 +704,9 @@ public final class LirV2Graph {
         }
 
         private static int computeHash(
-                V2Kind kind, DataType dataType, Object attr, int[] inputs) {
+                LIRExprKind kind, DataType dataType, Object attr, int[] inputs) {
             int result = kind.hashCode();
-            result = 31 * result + dataType.hashCode();
+            result = 31 * result + (dataType == null ? 0 : dataType.hashCode());
             result = 31 * result + (attr == null ? 0 : attr.hashCode());
             result = 31 * result + Arrays.hashCode(inputs);
             return result;

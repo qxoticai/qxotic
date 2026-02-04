@@ -1,16 +1,16 @@
-package ai.qxotic.jota.ir.lir.v2;
+package ai.qxotic.jota.ir.lir;
 
 import ai.qxotic.jota.DataType;
 
 public final class SCast extends ScalarNode {
     private final DataType targetType;
 
-    SCast(int id, V2Node input, DataType targetType) {
-        super(id, V2Kind.S_CAST, targetType, new V2Node[] {input}, true, false);
+    SCast(int id, LIRExprNode input, DataType targetType) {
+        super(id, LIRExprKind.S_CAST, targetType, new LIRExprNode[] {input}, true, false);
         this.targetType = targetType;
     }
 
-    public V2Node input() {
+    public LIRExprNode input() {
         return inputs()[0];
     }
 
@@ -19,8 +19,8 @@ public final class SCast extends ScalarNode {
     }
 
     @Override
-    public V2Node canonicalize(LirV2Graph graph) {
-        V2Node input = input();
+    public LIRExprNode canonicalize(LIRExprGraph graph) {
+        LIRExprNode input = input();
         if (input instanceof SConst constant) {
             return graph.foldCast(constant, targetType);
         }

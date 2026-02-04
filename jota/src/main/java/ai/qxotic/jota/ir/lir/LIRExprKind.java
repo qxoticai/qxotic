@@ -12,5 +12,10 @@ public enum LIRExprKind {
     S_REF,
     I_CONST,
     I_VAR,
-    I_BINARY
+    I_BINARY,
+    BLOCK,
+    STORE,
+    YIELD,
+    STRUCTURED_FOR,
+    TILED_LOOP
 }
