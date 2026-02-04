@@ -12,9 +12,10 @@ import java.util.Objects;
  * Container for an IR-L program. An IR-L graph consists of inputs (buffers or scalars), output
  * buffers, and a body that performs the computation.
  */
-public record LIRGraph(List<LIRInput> inputs, List<BufferRef> outputs, LIRNode body) {
+public record LIRGraph(LIRExprGraph exprGraph, List<LIRInput> inputs, List<BufferRef> outputs, LIRExprNode body) {
 
     public LIRGraph {
+        Objects.requireNonNull(exprGraph, "exprGraph cannot be null");
         Objects.requireNonNull(inputs, "inputs cannot be null");
         Objects.requireNonNull(outputs, "outputs cannot be null");
         Objects.requireNonNull(body, "body cannot be null");
@@ -44,6 +45,7 @@ public record LIRGraph(List<LIRInput> inputs, List<BufferRef> outputs, LIRNode b
 
     /** Builder for constructing IR-L graphs. */
     public static class Builder {
+        private final LIRExprGraph exprGraph = new LIRExprGraph();
         private final List<LIRInput> inputs = new ArrayList<>();
         private final List<BufferRef> outputs = new ArrayList<>();
         private int nextId = 0;
@@ -101,9 +103,13 @@ public record LIRGraph(List<LIRInput> inputs, List<BufferRef> outputs, LIRNode b
             return ref;
         }
 
+        public LIRExprGraph exprGraph() {
+            return exprGraph;
+        }
+
         /** Builds the IR-L graph with the given body. */
-        public LIRGraph build(LIRNode body) {
-            return new LIRGraph(inputs, outputs, body);
+        public LIRGraph build(LIRExprNode body) {
+            return new LIRGraph(exprGraph, inputs, outputs, body);
         }
     }
 

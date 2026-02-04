@@ -11,8 +11,8 @@ import java.util.List;
  * when lowering TIR to LIR. The passes are ordered to maximize optimization effectiveness:
  *
  * <ol>
- *   <li><b>LIRV2WorklistPass</b> - Unique-node DAG canonicalization and constant folding
- *   <li><b>LIRV2WorklistPass</b> - Unique-node DAG canonicalization and constant folding
+ *   <li><b>LIRWorklistPass</b> - Unique-node DAG canonicalization and constant folding
+ *   <li><b>LIRWorklistPass</b> - Unique-node DAG canonicalization and constant folding
  * </ol>
  *
  * <p>Usage:
@@ -28,7 +28,6 @@ import java.util.List;
  * LIRGraph optimized = pipeline.run(lirGraph);
  * }</pre>
  *
- * @see LIRPassManager
  * @see TIRToLIRLowerer
  */
 public class LIRStandardPipeline {
@@ -51,7 +50,7 @@ public class LIRStandardPipeline {
     private List<LIRPass> createStandardPasses() {
         List<LIRPass> standardPasses = new ArrayList<>();
 
-        // Core optimization passes (LIR v2 based)
+        // Core optimization passes (expression DAG based)
 
         return standardPasses;
     }

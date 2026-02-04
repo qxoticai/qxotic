@@ -7,11 +7,24 @@ import java.util.Objects;
  * in 0..(totalBound/tileSize): for innerName in outerName*tileSize..min((outerName+1)*tileSize,
  * totalBound): body
  */
-public record TiledLoop(
-        String outerName, String innerName, IndexExpr totalBound, long tileSize, LIRNode body)
-        implements LIRNode {
+public final class TiledLoop extends LIRExprNode {
+    private final String outerName;
+    private final String innerName;
+    private final long tileSize;
+    private final Block body;
 
-    public TiledLoop {
+    TiledLoop(
+            int id, String outerName, String innerName, LIRExprNode totalBound, long tileSize, Block body) {
+        super(
+                id,
+                LIRExprKind.TILED_LOOP,
+                null,
+                new LIRExprNode[] {
+                    Objects.requireNonNull(totalBound, "totalBound cannot be null"),
+                    Objects.requireNonNull(body, "body cannot be null")
+                },
+                false,
+                false);
         Objects.requireNonNull(outerName, "outerName cannot be null");
         if (outerName.isEmpty()) {
             throw new IllegalArgumentException("outerName cannot be empty");
@@ -24,16 +37,37 @@ public record TiledLoop(
             throw new IllegalArgumentException(
                     "outerName and innerName must be different: " + outerName);
         }
-        Objects.requireNonNull(totalBound, "totalBound cannot be null");
         if (tileSize <= 0) {
             throw new IllegalArgumentException("tileSize must be positive, got: " + tileSize);
         }
-        Objects.requireNonNull(body, "body cannot be null");
+        this.outerName = outerName;
+        this.innerName = innerName;
+        this.tileSize = tileSize;
+        this.body = body;
     }
 
-    /** Creates a tiled loop with constant total bound. */
-    public static TiledLoop of(
-            String outerName, String innerName, long totalBound, long tileSize, LIRNode body) {
-        return new TiledLoop(outerName, innerName, new IndexConst(totalBound), tileSize, body);
+    public String outerName() {
+        return outerName;
+    }
+
+    public String innerName() {
+        return innerName;
+    }
+
+    public LIRExprNode totalBound() {
+        return inputs()[0];
+    }
+
+    public long tileSize() {
+        return tileSize;
+    }
+
+    public Block body() {
+        return body;
+    }
+
+    @Override
+    public LIRExprNode canonicalize(LIRExprGraph graph) {
+        return this;
     }
 }

@@ -473,23 +473,6 @@ public class LIRTextRenderer implements LIRVisitor<String> {
     }
 
     @Override
-    public String visitLoad(Load node) {
-        String offset = node.offset().accept(this);
-        BufferRef buffer = node.buffer();
-        DataType dt = node.dataType();
-        String varName = "%" + nextVarId++;
-        appendLine(
-                varName
-                        + " = memref.load %"
-                        + bufferName(buffer)
-                        + "["
-                        + offset
-                        + "] : "
-                        + formatMemRefType(dt, buffer.layout()));
-        return varName;
-    }
-
-    @Override
     public String visitStore(Store node) {
         String offset = node.offset().accept(this);
         BufferRef buffer = node.buffer();

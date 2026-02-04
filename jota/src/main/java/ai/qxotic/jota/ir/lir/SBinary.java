@@ -1,4 +1,4 @@
-package ai.qxotic.jota.ir.lir.v2;
+package ai.qxotic.jota.ir.lir;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.ir.tir.BinaryOperator;
@@ -6,8 +6,8 @@ import ai.qxotic.jota.ir.tir.BinaryOperator;
 public final class SBinary extends ScalarNode {
     private final BinaryOperator op;
 
-    SBinary(int id, BinaryOperator op, V2Node left, V2Node right, DataType dataType) {
-        super(id, V2Kind.S_BINARY, dataType, new V2Node[] {left, right}, true, graphCommutative(op));
+    SBinary(int id, BinaryOperator op, LIRExprNode left, LIRExprNode right, DataType dataType) {
+        super(id, LIRExprKind.S_BINARY, dataType, new LIRExprNode[] {left, right}, true, graphCommutative(op));
         this.op = op;
     }
 
@@ -15,18 +15,18 @@ public final class SBinary extends ScalarNode {
         return op;
     }
 
-    public V2Node left() {
+    public LIRExprNode left() {
         return inputs()[0];
     }
 
-    public V2Node right() {
+    public LIRExprNode right() {
         return inputs()[1];
     }
 
     @Override
-    public V2Node canonicalize(LirV2Graph graph) {
-        V2Node left = left();
-        V2Node right = right();
+    public LIRExprNode canonicalize(LIRExprGraph graph) {
+        LIRExprNode left = left();
+        LIRExprNode right = right();
 
         if (isCommutative() && left.id() > right.id()) {
             return graph.scalarBinary(op, right, left);

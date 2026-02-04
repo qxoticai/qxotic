@@ -1,12 +1,10 @@
-package ai.qxotic.jota.ir.lir.v2;
-
-import ai.qxotic.jota.ir.lir.IndexBinary.IndexBinaryOp;
+package ai.qxotic.jota.ir.lir;
 
 public final class IBinary extends IndexNode {
     private final IndexBinaryOp op;
 
-    IBinary(int id, IndexBinaryOp op, V2Node left, V2Node right) {
-        super(id, V2Kind.I_BINARY, new V2Node[] {left, right}, true, isCommutative(op));
+    IBinary(int id, IndexBinaryOp op, LIRExprNode left, LIRExprNode right) {
+        super(id, LIRExprKind.I_BINARY, new LIRExprNode[] {left, right}, true, isCommutative(op));
         this.op = op;
     }
 
@@ -14,18 +12,18 @@ public final class IBinary extends IndexNode {
         return op;
     }
 
-    public V2Node left() {
+    public LIRExprNode left() {
         return inputs()[0];
     }
 
-    public V2Node right() {
+    public LIRExprNode right() {
         return inputs()[1];
     }
 
     @Override
-    public V2Node canonicalize(LirV2Graph graph) {
-        V2Node left = left();
-        V2Node right = right();
+    public LIRExprNode canonicalize(LIRExprGraph graph) {
+        LIRExprNode left = left();
+        LIRExprNode right = right();
 
         if (isCommutative() && left.id() > right.id()) {
             return graph.indexBinary(op, right, left);

@@ -6,52 +6,98 @@ import java.util.Objects;
 import java.util.Set;
 
 /** Structured loop with explicit bounds, step, and loop-carried values. */
-public record StructuredFor(
-        String indexName,
-        IndexExpr lowerBound,
-        IndexExpr upperBound,
-        IndexExpr step,
-        List<LoopIterArg> iterArgs,
-        LIRNode body)
-        implements LIRNode {
+public final class StructuredFor extends LIRExprNode {
+    private final String indexName;
+    private final List<LoopIterArg> iterArgs;
+    private final Block body;
+    private final int iterArgCount;
 
-    public StructuredFor {
+    StructuredFor(
+            int id,
+            String indexName,
+            LIRExprNode lowerBound,
+            LIRExprNode upperBound,
+            LIRExprNode step,
+            List<LoopIterArg> iterArgs,
+            Block body) {
+        super(
+                id,
+                LIRExprKind.STRUCTURED_FOR,
+                null,
+                buildInputs(lowerBound, upperBound, step, iterArgs, body),
+                false,
+                false);
         Objects.requireNonNull(indexName, "indexName cannot be null");
         if (indexName.isEmpty()) {
             throw new IllegalArgumentException("indexName cannot be empty");
         }
+        Objects.requireNonNull(iterArgs, "iterArgs cannot be null");
+        Objects.requireNonNull(body, "body cannot be null");
+        this.indexName = indexName;
+        this.iterArgs = List.copyOf(iterArgs);
+        this.body = body;
+        this.iterArgCount = iterArgs.size();
+
+        validateIterArgs(this.iterArgs);
+        validateYield(body, this.iterArgCount);
+    }
+
+    public String indexName() {
+        return indexName;
+    }
+
+    public LIRExprNode lowerBound() {
+        return inputs()[0];
+    }
+
+    public LIRExprNode upperBound() {
+        return inputs()[1];
+    }
+
+    public LIRExprNode step() {
+        return inputs()[2];
+    }
+
+    public List<LoopIterArg> iterArgs() {
+        return iterArgs;
+    }
+
+    public Block body() {
+        return body;
+    }
+
+    public int iterArgCount() {
+        return iterArgCount;
+    }
+
+    @Override
+    public LIRExprNode canonicalize(LIRExprGraph graph) {
+        return this;
+    }
+
+    private static LIRExprNode[] buildInputs(
+            LIRExprNode lowerBound,
+            LIRExprNode upperBound,
+            LIRExprNode step,
+            List<LoopIterArg> iterArgs,
+            Block body) {
         Objects.requireNonNull(lowerBound, "lowerBound cannot be null");
         Objects.requireNonNull(upperBound, "upperBound cannot be null");
         Objects.requireNonNull(step, "step cannot be null");
         Objects.requireNonNull(iterArgs, "iterArgs cannot be null");
-        iterArgs = List.copyOf(iterArgs);
         Objects.requireNonNull(body, "body cannot be null");
 
-        validateIterArgs(iterArgs);
-        validateYield(body, iterArgs.size());
-    }
-
-    /** Creates a loop with constant bounds and step. */
-    public static StructuredFor of(
-            String indexName,
-            long lowerBound,
-            long upperBound,
-            long step,
-            List<LoopIterArg> iterArgs,
-            LIRNode body) {
-        return new StructuredFor(
-                indexName,
-                new IndexConst(lowerBound),
-                new IndexConst(upperBound),
-                new IndexConst(step),
-                iterArgs,
-                body);
-    }
-
-    /** Creates a loop with constant bounds, step, and no iter args. */
-    public static StructuredFor simple(
-            String indexName, long lowerBound, long upperBound, long step, LIRNode body) {
-        return of(indexName, lowerBound, upperBound, step, List.of(), body);
+        int size = 3 + iterArgs.size() + 1;
+        LIRExprNode[] inputs = new LIRExprNode[size];
+        inputs[0] = lowerBound;
+        inputs[1] = upperBound;
+        inputs[2] = step;
+        int idx = 3;
+        for (LoopIterArg arg : iterArgs) {
+            inputs[idx++] = Objects.requireNonNull(arg.init(), "iter arg init cannot be null");
+        }
+        inputs[idx] = body;
+        return inputs;
     }
 
     private static void validateIterArgs(List<LoopIterArg> iterArgs) {
@@ -63,7 +109,7 @@ public record StructuredFor(
         }
     }
 
-    private static void validateYield(LIRNode body, int expectedArity) {
+    private static void validateYield(Block body, int expectedArity) {
         Yield yield = extractYield(body);
         if (yield.values().size() != expectedArity) {
             throw new IllegalArgumentException(
@@ -74,18 +120,13 @@ public record StructuredFor(
         }
     }
 
-    private static Yield extractYield(LIRNode body) {
-        if (body instanceof Yield yield) {
-            return yield;
+    private static Yield extractYield(Block body) {
+        if (body.statements().isEmpty()) {
+            throw new IllegalArgumentException("Loop body cannot be empty; yield required");
         }
-        if (body instanceof Block block) {
-            if (block.statements().isEmpty()) {
-                throw new IllegalArgumentException("Loop body cannot be empty; yield required");
-            }
-            LIRNode last = block.statements().getLast();
-            if (last instanceof Yield yield) {
-                return yield;
-            }
+        LIRExprNode last = body.statements().getLast();
+        if (last instanceof Yield yield) {
+            return yield;
         }
         throw new IllegalArgumentException("Structured loop body must end with Yield");
     }
