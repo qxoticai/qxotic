@@ -40,7 +40,7 @@ class ToOpsTest {
         Tensor input = Tensor.of(view);
         assertThrows(
                 UnsupportedOperationException.class,
-                () -> IRTracer.trace(input, t -> t.to(Device.GPU)));
+                () -> Tracer.trace(input, t -> t.to(Device.GPU)));
     }
 
     @Test

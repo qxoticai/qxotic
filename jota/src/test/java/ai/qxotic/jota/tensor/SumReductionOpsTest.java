@@ -45,7 +45,7 @@ class SumReductionOpsTest extends AbstractMemoryTest {
         for (SumCase sumCase : SUM_CASES) {
             MemoryView<MemorySegment> view = range(sumCase.inputType(), shape);
             Tensor input = Tensor.of(view);
-            Tensor reduced = IRTracer.trace(input, t -> t.sum(sumCase.accumulatorType(), 1));
+            Tensor reduced = Tracer.trace(input, t -> t.sum(sumCase.accumulatorType(), 1));
             MemoryView<?> output = reduced.materialize();
             assertEquals(Shape.of(2), output.shape());
             assertValueEquals(
@@ -64,7 +64,7 @@ class SumReductionOpsTest extends AbstractMemoryTest {
         Shape shape = Shape.of(2, 2, 2);
         MemoryView<MemorySegment> view = range(DataType.I32, shape);
         Tensor input = Tensor.of(view);
-        Tensor reduced = IRTracer.trace(input, t -> t.sum(DataType.I64, 1, 2));
+        Tensor reduced = Tracer.trace(input, t -> t.sum(DataType.I64, 1, 2));
         MemoryView<?> output = reduced.materialize();
         assertEquals(Shape.of(2), output.shape());
         assertValueEquals(DataType.I64, 6L, readValue(output, 0, DataType.I64));
@@ -75,7 +75,7 @@ class SumReductionOpsTest extends AbstractMemoryTest {
     void keepsDimsWhenRequested() {
         MemoryView<MemorySegment> view = range(DataType.FP32, Shape.of(2, 3));
         Tensor input = Tensor.of(view);
-        Tensor reduced = IRTracer.trace(input, t -> t.sum(DataType.FP32, true, 1));
+        Tensor reduced = Tracer.trace(input, t -> t.sum(DataType.FP32, true, 1));
         MemoryView<?> output = reduced.materialize();
         assertEquals(Shape.of(2, 1), output.shape());
     }
@@ -84,7 +84,7 @@ class SumReductionOpsTest extends AbstractMemoryTest {
     void reducesExpressionInputs() {
         MemoryView<MemorySegment> view = range(DataType.FP32, Shape.of(2, 3));
         Tensor input = Tensor.of(view);
-        Tensor reduced = IRTracer.trace(input, t -> t.add(1f).sum(DataType.FP32, 1));
+        Tensor reduced = Tracer.trace(input, t -> t.add(1f).sum(DataType.FP32, 1));
         MemoryView<?> output = reduced.materialize();
         assertValueEquals(DataType.FP32, 6.0f, readValue(output, 0, DataType.FP32));
         assertValueEquals(DataType.FP32, 15.0f, readValue(output, 1, DataType.FP32));
@@ -95,7 +95,7 @@ class SumReductionOpsTest extends AbstractMemoryTest {
         MemoryView<MemorySegment> view = range(DataType.I32, Shape.of(2, 3));
         Tensor input = Tensor.of(view);
         Tensor reduced =
-                IRTracer.trace(input, t -> t.sum(DataType.I32, 1).cast(DataType.FP32).add(1f));
+                Tracer.trace(input, t -> t.sum(DataType.I32, 1).cast(DataType.FP32).add(1f));
         MemoryView<?> output = reduced.materialize();
         assertEquals(Shape.of(2), output.shape());
         assertValueEquals(DataType.FP32, 4.0f, readValue(output, 0, DataType.FP32));
@@ -106,7 +106,7 @@ class SumReductionOpsTest extends AbstractMemoryTest {
     void wrapsNegativeAxis() {
         MemoryView<MemorySegment> view = range(DataType.I32, Shape.of(2, 3));
         Tensor input = Tensor.of(view);
-        Tensor reduced = IRTracer.trace(input, t -> t.sum(DataType.I64, -1));
+        Tensor reduced = Tracer.trace(input, t -> t.sum(DataType.I64, -1));
         MemoryView<?> output = reduced.materialize();
         assertEquals(Shape.of(2), output.shape());
         assertValueEquals(DataType.I64, 3L, readValue(output, 0, DataType.I64));
@@ -118,13 +118,13 @@ class SumReductionOpsTest extends AbstractMemoryTest {
         Shape shape = Shape.of(2, 3);
         MemoryView<MemorySegment> view = boolPattern(shape, new byte[] {1, 0, 1, 0, 1, 0});
         Tensor input = Tensor.of(view);
-        Tensor reducedI32 = IRTracer.trace(input, t -> t.sum(DataType.I32, 1));
+        Tensor reducedI32 = Tracer.trace(input, t -> t.sum(DataType.I32, 1));
         MemoryView<?> outputI32 = reducedI32.materialize();
         assertEquals(Shape.of(2), outputI32.shape());
         assertValueEquals(DataType.I32, 2, readValue(outputI32, 0, DataType.I32));
         assertValueEquals(DataType.I32, 1, readValue(outputI32, 1, DataType.I32));
 
-        Tensor reducedI64 = IRTracer.trace(input, t -> t.sum(DataType.I64, 1));
+        Tensor reducedI64 = Tracer.trace(input, t -> t.sum(DataType.I64, 1));
         MemoryView<?> outputI64 = reducedI64.materialize();
         assertEquals(Shape.of(2), outputI64.shape());
         assertValueEquals(DataType.I64, 2L, readValue(outputI64, 0, DataType.I64));
@@ -135,7 +135,7 @@ class SumReductionOpsTest extends AbstractMemoryTest {
     void reduces3dLastAxis() {
         MemoryView<MemorySegment> view = range(DataType.I32, Shape.of(2, 2, 3));
         Tensor input = Tensor.of(view);
-        Tensor reduced = IRTracer.trace(input, t -> t.sum(DataType.I64, -1));
+        Tensor reduced = Tracer.trace(input, t -> t.sum(DataType.I64, -1));
         MemoryView<?> output = reduced.materialize();
         assertEquals(Shape.of(2, 2), output.shape());
         assertValueEquals(DataType.I64, 3L, readValue(output, 0, DataType.I64));
@@ -148,7 +148,7 @@ class SumReductionOpsTest extends AbstractMemoryTest {
     void reduces3dFirstAxis() {
         MemoryView<MemorySegment> view = range(DataType.I32, Shape.of(2, 2, 3));
         Tensor input = Tensor.of(view);
-        Tensor reduced = IRTracer.trace(input, t -> t.sum(DataType.I64, 0));
+        Tensor reduced = Tracer.trace(input, t -> t.sum(DataType.I64, 0));
         MemoryView<?> output = reduced.materialize();
         assertEquals(Shape.of(2, 3), output.shape());
         assertValueEquals(DataType.I64, 6L, readValue(output, 0, DataType.I64));

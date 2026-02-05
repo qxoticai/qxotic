@@ -16,9 +16,9 @@ import java.util.function.Function;
  * Orchestrates IR-T tracing and creates IRComputation. Similar to Tracer but uses IR-T instead of
  * ExprNode.
  */
-public final class IRTracer {
+public final class Tracer {
 
-    private IRTracer() {}
+    private Tracer() {}
 
     /** Traces a single-input function to IR-T. */
     public static Tensor trace(Tensor input, Function<Tensor, Tensor> fn) {

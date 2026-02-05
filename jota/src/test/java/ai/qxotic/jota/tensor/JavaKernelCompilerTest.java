@@ -51,7 +51,7 @@ class JavaKernelCompilerTest {
     void compilesAndRunsNonTrivialKernel() {
         MemoryView<MemorySegment> input = range(Shape.of(2, 3));
         Tensor inputTensor = Tensor.of(input);
-        Tensor traced = IRTracer.trace(inputTensor, JavaKernelCompilerTest::tensorGelu);
+        Tensor traced = Tracer.trace(inputTensor, JavaKernelCompilerTest::tensorGelu);
 
         MemoryView<?> output = traced.materialize();
 
@@ -79,7 +79,7 @@ class JavaKernelCompilerTest {
         //        }
 
         for (int i = 0; i < 10; ++i) {
-            Tensor traced = IRTracer.trace(inputTensor, JavaKernelCompilerTest::tensorGelu);
+            Tensor traced = Tracer.trace(inputTensor, JavaKernelCompilerTest::tensorGelu);
             long startNanos = System.nanoTime();
             //            float[] out = new float[100_000_000];
             MemoryView<?> output = traced.materialize();
@@ -100,7 +100,7 @@ class JavaKernelCompilerTest {
     void canary() {
         Tensor tensor0 = Tensor.of(range(Shape.of(2, 3)));
         Tensor tensor1 = Tensor.of(range(Shape.of(2, 3)));
-        Tensor traced = IRTracer.trace(tensor0, tensor1, (t0, t1) -> t0.multiply(t1));
+        Tensor traced = Tracer.trace(tensor0, tensor1, (t0, t1) -> t0.multiply(t1));
 
         MemoryView<?> output = traced.materialize();
 
@@ -112,7 +112,7 @@ class JavaKernelCompilerTest {
     void compilesAndRunsContiguousKernel() {
         MemoryView<MemorySegment> input = range(Shape.of(2, 3));
         Tensor inputTensor = Tensor.of(input);
-        Tensor traced = IRTracer.trace(inputTensor, t -> t.add(t));
+        Tensor traced = Tracer.trace(inputTensor, t -> t.add(t));
 
         MemoryView<?> output = traced.materialize();
 
@@ -124,7 +124,7 @@ class JavaKernelCompilerTest {
     void compilesAndRunsStridedKernel() {
         MemoryView<MemorySegment> input = range(Shape.of(2, 3)).transpose(0, 1);
         Tensor inputTensor = Tensor.of(input);
-        Tensor traced = IRTracer.trace(inputTensor, t -> t.square().add(1f));
+        Tensor traced = Tracer.trace(inputTensor, t -> t.square().add(1f));
 
         MemoryView<?> output = traced.materialize();
 
@@ -137,7 +137,7 @@ class JavaKernelCompilerTest {
     void compilesAndRunsIntKernel() {
         MemoryView<MemorySegment> input = rangeInt(Shape.of(2, 2));
         Tensor inputTensor = Tensor.of(input);
-        Tensor traced = IRTracer.trace(inputTensor, t -> t.add(3).square());
+        Tensor traced = Tracer.trace(inputTensor, t -> t.add(3).square());
 
         MemoryView<?> output = traced.materialize();
 
@@ -148,7 +148,7 @@ class JavaKernelCompilerTest {
     @Test
     void kernelCacheIsPersisted() {
         MemoryView<MemorySegment> input = range(Shape.of(1, 4));
-        Tensor traced = IRTracer.trace(Tensor.of(input), t -> t.add(t));
+        Tensor traced = Tracer.trace(Tensor.of(input), t -> t.add(t));
 
         MemoryView<?> first = traced.materialize();
         assertNotNull(first);
@@ -165,7 +165,7 @@ class JavaKernelCompilerTest {
         MemoryView<MemorySegment> input1 = range(Shape.of(2, 2));
         MemoryView<MemorySegment> input2 = range(Shape.of(2, 2));
         Tensor traced =
-                IRTracer.trace(
+                Tracer.trace(
                         Tensor.of(input0),
                         Tensor.of(input1),
                         Tensor.of(input2),

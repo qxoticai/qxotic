@@ -169,11 +169,6 @@ public final class LIRExprGraph {
                                 nextId++, indexName, lowerBound, upperBound, step, iterArgs, body));
     }
 
-    public TiledLoop tiledLoop(
-            String outerName, String innerName, LIRExprNode totalBound, long tileSize, Block body) {
-        return (TiledLoop)
-                addNode(new TiledLoop(nextId++, outerName, innerName, totalBound, tileSize, body));
-    }
 
     LIRExprNode foldUnary(UnaryOperator op, SConst input) {
         DataType type = input.dataType();
@@ -677,7 +672,7 @@ public final class LIRExprGraph {
                 case I_CONST -> ((IConst) node).value();
                 case I_VAR -> ((IVar) node).name();
                 case I_BINARY -> ((IBinary) node).op();
-                case BLOCK, STORE, YIELD, STRUCTURED_FOR, TILED_LOOP -> null;
+                case BLOCK, STORE, YIELD, STRUCTURED_FOR -> null;
             };
 
             int[] inputIds = Arrays.stream(node.inputs()).mapToInt(LIRExprNode::id).toArray();

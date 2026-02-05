@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
-import ai.qxotic.jota.tensor.IRTracer;
+import ai.qxotic.jota.tensor.Tracer;
 import ai.qxotic.jota.tensor.LazyComputation;
 import ai.qxotic.jota.tensor.Tensor;
 import java.util.List;
@@ -16,7 +16,7 @@ class TIRTextRendererTest {
     @Test
     void testUnaryOpRendering() {
         Tensor input = Tensor.of(new float[] {1.0f, 2.0f, 3.0f});
-        Tensor result = IRTracer.trace(input, Tensor::negate);
+        Tensor result = Tracer.trace(input, Tensor::negate);
 
         LazyComputation comp = result.computation().orElseThrow();
         Object graph = comp.attributes().get("graph");
@@ -36,7 +36,7 @@ class TIRTextRendererTest {
         Tensor input1 = Tensor.of(new float[] {1.0f, 2.0f, 3.0f});
         Tensor input2 = Tensor.of(new float[] {4.0f, 5.0f, 6.0f});
         Tensor result =
-                IRTracer.trace(
+                Tracer.trace(
                         List.of(input1, input2), tensors -> tensors.get(0).add(tensors.get(1)));
 
         LazyComputation comp = result.computation().orElseThrow();
@@ -54,7 +54,7 @@ class TIRTextRendererTest {
     @Test
     void testTIRGraphToString() {
         Tensor input = Tensor.of(new float[] {1.0f, 2.0f, 3.0f});
-        Tensor result = IRTracer.trace(input, Tensor::negate);
+        Tensor result = Tracer.trace(input, Tensor::negate);
 
         LazyComputation comp = result.computation().orElseThrow();
         Object graph = comp.attributes().get("graph");
@@ -71,7 +71,7 @@ class TIRTextRendererTest {
     @Test
     void testScalarConstantRendering() {
         Tensor scalar = Tensor.full(10.0f, DataType.FP32, Shape.of(3));
-        Tensor result = IRTracer.trace(scalar, t -> t.add(5.0f));
+        Tensor result = Tracer.trace(scalar, t -> t.add(5.0f));
 
         LazyComputation comp = result.computation().orElseThrow();
         Object graph = comp.attributes().get("graph");

@@ -5,7 +5,7 @@ import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.ir.lir.*;
 import ai.qxotic.jota.ir.tir.*;
-import ai.qxotic.jota.ir.lir.LIRWorklistPass;
+import ai.qxotic.jota.ir.lir.LIRCanonicalizerPass;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -107,7 +107,7 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
                 statements.size() == 1 ? statements.getFirst() : exprGraph.block(statements);
 
         LIRGraph graph = new LIRGraph(exprGraph, allInputs, allOutputs, body);
-        return new LIRWorklistPass().run(graph);
+        return new LIRCanonicalizerPass().run(graph);
     }
 
     /**
@@ -728,8 +728,19 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
                     } else if (baseNode instanceof IotaConstant iotaConstant) {
                         result = lowerIotaConstantWithViewChain(iotaConstant, chain, node);
                     } else {
-                        // For other input types, delegate normally
-                        return node.input().accept(this);
+                        // For computed tensors, apply index remapping and evaluate input
+                        List<LIRExprNode> remapped = new ArrayList<>(loopIndices);
+                        for (int i = chain.size() - 1; i >= 0; i--) {
+                            ViewTransform vt = chain.get(i);
+                            remapped = applyInverseTransform(vt, remapped);
+                        }
+                        List<LIRExprNode> saved = new ArrayList<>(loopIndices);
+                        loopIndices.clear();
+                        loopIndices.addAll(remapped);
+                        LIRExprNode remappedResult = baseNode.accept(this);
+                        loopIndices.clear();
+                        loopIndices.addAll(saved);
+                        return remappedResult;
                     }
 
                     // Apply cast if needed
@@ -984,7 +995,7 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
                         linearIdx = exprGraph.indexConst(0);
                     }
 
-                    // IndexExpr is I64, cast to target type if needed
+                    // Index nodes are I64, cast to target type if needed
                     DataType targetType = node.dataType();
                     LIRExprNode indexValue = exprGraph.scalarFromIndex(linearIdx, DataType.I64);
                     if (targetType == DataType.I64) {

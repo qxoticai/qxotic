@@ -45,12 +45,12 @@ class ComparisonOpsTest {
             Tensor leftTensor = Tensor.of(left);
             Tensor rightTensor = Tensor.of(right);
 
-            Tensor notEqual = IRTracer.trace(leftTensor, rightTensor, Tensor::notEqual);
-            Tensor greaterThan = IRTracer.trace(leftTensor, rightTensor, Tensor::greaterThan);
+            Tensor notEqual = Tracer.trace(leftTensor, rightTensor, Tensor::notEqual);
+            Tensor greaterThan = Tracer.trace(leftTensor, rightTensor, Tensor::greaterThan);
             Tensor lessThanOrEqual =
-                    IRTracer.trace(leftTensor, rightTensor, Tensor::lessThanOrEqual);
+                    Tracer.trace(leftTensor, rightTensor, Tensor::lessThanOrEqual);
             Tensor greaterThanOrEqual =
-                    IRTracer.trace(leftTensor, rightTensor, Tensor::greaterThanOrEqual);
+                    Tracer.trace(leftTensor, rightTensor, Tensor::greaterThanOrEqual);
 
             MemoryView<?> notEqualOut = notEqual.materialize();
             MemoryView<?> greaterThanOut = greaterThan.materialize();
@@ -67,7 +67,7 @@ class ComparisonOpsTest {
             }
 
             Tensor flippedGreaterThan =
-                    IRTracer.trace(rightTensor, leftTensor, Tensor::greaterThan);
+                    Tracer.trace(rightTensor, leftTensor, Tensor::greaterThan);
             MemoryView<?> flippedGreaterOut = flippedGreaterThan.materialize();
             for (int i = 0; i < shape.size(); i++) {
                 int leftValue = dataType == DataType.BOOL ? (i % 2) : i;

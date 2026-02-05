@@ -85,7 +85,14 @@ public final class PanamaLIRKernelExecutor {
         // Compile kernel with scratch layout
         JitKernel kernel = compiler.compile(graph, scratchLayout);
 
-        return execute(graph, kernel, scratchLayout, lirInputs, context);
+        long startNanos = System.nanoTime();
+        try {
+            return execute(graph, kernel, scratchLayout, lirInputs, context);
+        } finally {
+            long elapsedNanos = System.nanoTime() - startNanos;
+            System.out.println("Kernel execution: " + (elapsedNanos / 1_000_000) + " ms");
+
+        }
     }
 
     public MemoryView<?> execute(
