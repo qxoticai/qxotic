@@ -40,58 +40,44 @@ public final class ScratchAnalysisPass {
         return assignOffsets(intermediates, liveness);
     }
 
-    private void collectBuffers(LIRNode node, Set<BufferRef> buffers) {
+    private void collectBuffers(LIRExprNode node, Set<BufferRef> buffers) {
         switch (node) {
             case Store store -> {
                 buffers.add(store.buffer());
-                collectBuffersFromScalar(store.value(), buffers);
+                collectBuffersFromExpr(store.value(), buffers);
             }
-            case ScalarLet let -> collectBuffersFromScalar(let.value(), buffers);
             case StructuredFor sfor -> {
                 for (LoopIterArg arg : sfor.iterArgs()) {
-                    collectBuffersFromScalar(arg.init(), buffers);
+                    collectBuffersFromExpr(arg.init(), buffers);
                 }
                 collectBuffers(sfor.body(), buffers);
             }
-            case TiledLoop tiled -> collectBuffers(tiled.body(), buffers);
             case Block block -> block.statements().forEach(s -> collectBuffers(s, buffers));
-            case Yield yield -> yield.values().forEach(v -> collectBuffersFromScalar(v, buffers));
+            case Yield yield -> yield.values().forEach(v -> collectBuffersFromExpr(v, buffers));
             default -> {}
         }
     }
 
-    private void collectBuffersFromScalar(ScalarExpr expr, Set<BufferRef> buffers) {
-        collectBuffersFromScalarIter(expr, buffers);
-    }
-
-    private void collectBuffersFromScalarIter(ScalarExpr expr, Set<BufferRef> buffers) {
-        Deque<ScalarExpr> stack = new ArrayDeque<>();
-        Set<ScalarExpr> visited = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private void collectBuffersFromExpr(LIRExprNode expr, Set<BufferRef> buffers) {
+        Deque<LIRExprNode> stack = new ArrayDeque<>();
+        Set<LIRExprNode> visited = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
         stack.add(expr);
         while (!stack.isEmpty()) {
-            ScalarExpr current = stack.removeLast();
+            LIRExprNode current = stack.removeLast();
             if (!visited.add(current)) {
                 continue;
             }
-            switch (current) {
-                case ScalarLoad load -> buffers.add(load.buffer());
-                case ScalarUnary u -> stack.add(u.input());
-                case ScalarBinary b -> {
-                    stack.add(b.left());
-                    stack.add(b.right());
-                }
-                case ScalarTernary t -> {
-                    stack.add(t.condition());
-                    stack.add(t.trueValue());
-                    stack.add(t.falseValue());
-                }
-                case ScalarCast c -> stack.add(c.input());
-                default -> {}
+            if (current instanceof SLoad load) {
+                buffers.add(load.buffer());
+            }
+            for (LIRExprNode input : current.inputs()) {
+                stack.add(input);
             }
         }
     }
 
-    private Map<BufferRef, LivenessInterval> computeLiveness(LIRNode body, Set<BufferRef> targets) {
+    private Map<BufferRef, LivenessInterval> computeLiveness(
+            LIRExprNode body, Set<BufferRef> targets) {
         Map<BufferRef, Integer> firstDef = new IdentityHashMap<>();
         Map<BufferRef, Integer> lastUse = new IdentityHashMap<>();
         int[] idx = {0};
@@ -108,7 +94,7 @@ public final class ScratchAnalysisPass {
     }
 
     private void computeLivenessRec(
-            LIRNode node,
+            LIRExprNode node,
             Set<BufferRef> targets,
             Map<BufferRef, Integer> firstDef,
             Map<BufferRef, Integer> lastUse,
@@ -121,20 +107,12 @@ public final class ScratchAnalysisPass {
                 }
                 recordUses(store.value(), targets, lastUse, i);
             }
-            case ScalarLet let -> {
-                int i = idx[0]++;
-                recordUses(let.value(), targets, lastUse, i);
-            }
             case StructuredFor sfor -> {
                 int i = idx[0]++;
                 for (LoopIterArg arg : sfor.iterArgs()) {
                     recordUses(arg.init(), targets, lastUse, i);
                 }
                 computeLivenessRec(sfor.body(), targets, firstDef, lastUse, idx);
-            }
-            case TiledLoop tiled -> {
-                idx[0]++;
-                computeLivenessRec(tiled.body(), targets, firstDef, lastUse, idx);
             }
             case Block block ->
                     block.statements()
@@ -148,38 +126,22 @@ public final class ScratchAnalysisPass {
     }
 
     private void recordUses(
-            ScalarExpr expr, Set<BufferRef> targets, Map<BufferRef, Integer> lastUse, int idx) {
-        recordUsesIter(expr, targets, lastUse, idx);
-    }
-
-    private void recordUsesIter(
-            ScalarExpr expr, Set<BufferRef> targets, Map<BufferRef, Integer> lastUse, int idx) {
-        Deque<ScalarExpr> stack = new ArrayDeque<>();
-        Set<ScalarExpr> visited = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+            LIRExprNode expr, Set<BufferRef> targets, Map<BufferRef, Integer> lastUse, int idx) {
+        Deque<LIRExprNode> stack = new ArrayDeque<>();
+        Set<LIRExprNode> visited = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
         stack.add(expr);
         while (!stack.isEmpty()) {
-            ScalarExpr current = stack.removeLast();
+            LIRExprNode current = stack.removeLast();
             if (!visited.add(current)) {
                 continue;
             }
-            switch (current) {
-                case ScalarLoad load -> {
-                    if (targets.contains(load.buffer())) {
-                        lastUse.merge(load.buffer(), idx, Math::max);
-                    }
+            if (current instanceof SLoad load) {
+                if (targets.contains(load.buffer())) {
+                    lastUse.merge(load.buffer(), idx, Math::max);
                 }
-                case ScalarUnary u -> stack.add(u.input());
-                case ScalarBinary b -> {
-                    stack.add(b.left());
-                    stack.add(b.right());
-                }
-                case ScalarTernary t -> {
-                    stack.add(t.condition());
-                    stack.add(t.trueValue());
-                    stack.add(t.falseValue());
-                }
-                case ScalarCast c -> stack.add(c.input());
-                default -> {}
+            }
+            for (LIRExprNode input : current.inputs()) {
+                stack.add(input);
             }
         }
     }

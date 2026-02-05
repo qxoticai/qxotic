@@ -2,7 +2,6 @@ package ai.qxotic.jota.panama;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.ir.lir.*;
-import ai.qxotic.jota.ir.lir.*;
 import ai.qxotic.jota.ir.lir.scratch.ScratchLayout;
 import ai.qxotic.jota.ir.tir.BinaryOperator;
 import ai.qxotic.jota.tensor.JitKernel;
@@ -110,33 +109,15 @@ final class LIRKernelCompiler {
     private KernelCacheKey buildCacheKey(
             LIRGraph graph, ScratchLayout scratchLayout, boolean needsStridedKernel) {
         String hash = hashLirGraph(graph, scratchLayout, needsStridedKernel);
-        return KernelCacheKey.of(hash + "-lir-v6");
+        return KernelCacheKey.of(hash + "-lir-v7");
     }
 
     private String hashLirGraph(
             LIRGraph graph, ScratchLayout scratchLayout, boolean needsStridedKernel) {
-        LIRTextRenderer renderer = new LIRTextRenderer();
-        StringBuilder text = new StringBuilder(renderer.render(graph));
-        // Include strided flag in hash to ensure cache invalidation
-        if (needsStridedKernel) {
-            text.append("\n// strided: true");
-        }
-        // Include scratch layout in hash to ensure cache invalidation
-        if (scratchLayout.requiresScratch()) {
-            text.append("\n// scratch: ").append(scratchLayout.totalByteSize());
-            scratchLayout
-                    .offsets()
-                    .forEach(
-                            (buf, offset) ->
-                                    text.append("\n// buf ")
-                                            .append(buf.id())
-                                            .append(": offset=")
-                                            .append(offset));
-        }
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] bytes = text.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            byte[] hashed = digest.digest(bytes);
+            updateGraphHash(digest, graph, scratchLayout, needsStridedKernel);
+            byte[] hashed = digest.digest();
             StringBuilder builder = new StringBuilder(hashed.length * 2);
             for (byte value : hashed) {
                 builder.append(String.format("%02x", value));
@@ -145,6 +126,141 @@ final class LIRKernelCompiler {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is not available", e);
         }
+    }
+
+    private void updateGraphHash(
+            MessageDigest digest,
+            LIRGraph graph,
+            ScratchLayout scratchLayout,
+            boolean needsStridedKernel) {
+        updateInt(digest, graph.inputs().size());
+        for (LIRInput input : graph.inputs()) {
+            if (input instanceof BufferRef buf) {
+                updateInt(digest, 1);
+                updateBufferRef(digest, buf);
+            } else if (input instanceof ScalarInput scalar) {
+                updateInt(digest, 2);
+                updateInt(digest, scalar.id());
+                updateLong(digest, hashDataType(scalar.dataType()));
+            } else {
+                updateInt(digest, 0);
+            }
+        }
+
+        updateInt(digest, graph.outputs().size());
+        for (BufferRef output : graph.outputs()) {
+            updateBufferRef(digest, output);
+        }
+
+        Map<LIRExprNode, Long> memo = new IdentityHashMap<>();
+        long bodyHash = hashNode(graph.exprGraph(), graph.body(), memo);
+        updateLong(digest, bodyHash);
+
+        updateBoolean(digest, needsStridedKernel);
+        if (scratchLayout.requiresScratch()) {
+            updateLong(digest, scratchLayout.totalByteSize());
+            List<Map.Entry<BufferRef, Long>> offsets =
+                    new ArrayList<>(scratchLayout.offsets().entrySet());
+            offsets.sort(java.util.Comparator.comparingInt(e -> e.getKey().id()));
+            updateInt(digest, offsets.size());
+            for (Map.Entry<BufferRef, Long> entry : offsets) {
+                updateBufferRef(digest, entry.getKey());
+                updateLong(digest, entry.getValue());
+            }
+        } else {
+            updateInt(digest, 0);
+        }
+    }
+
+    private long hashNode(
+            LIRExprGraph exprGraph, LIRExprNode node, Map<LIRExprNode, Long> memo) {
+        LIRExprNode resolved = exprGraph.resolve(node);
+        Long cached = memo.get(resolved);
+        if (cached != null) {
+            return cached;
+        }
+        long hash = 0x9e3779b97f4a7c15L;
+        hash = mix(hash, resolved.kind().ordinal());
+        hash = mix(hash, resolved.dataType() == null ? -1 : hashDataType(resolved.dataType()));
+        hash = mix(hash, resolved.useCount());
+        switch (resolved) {
+            case SConst sc -> hash = mix(hash, sc.rawBits());
+            case SInput si -> hash = mix(hash, si.inputId());
+            case SUnary su -> hash = mix(hash, su.op().ordinal());
+            case SBinary sb -> hash = mix(hash, sb.op().ordinal());
+            case STernary __ -> hash = mix(hash, 3);
+            case SCast sc -> hash = mix(hash, hashDataType(sc.targetType()));
+            case SLoad sl -> hash = mix(hash, hashBufferRef(sl.buffer()));
+            case SFromIndex __ -> hash = mix(hash, 5);
+            case SRef sr -> hash = mix(hash, sr.name().hashCode());
+            case IConst ic -> hash = mix(hash, ic.value());
+            case IVar iv -> hash = mix(hash, iv.name().hashCode());
+            case IBinary ib -> hash = mix(hash, ib.op().ordinal());
+            case Store store -> hash = mix(hash, hashBufferRef(store.buffer()));
+            case StructuredFor loop -> {
+                hash = mix(hash, loop.indexName().hashCode());
+                hash = mix(hash, loop.iterArgs().size());
+                for (LoopIterArg arg : loop.iterArgs()) {
+                    hash = mix(hash, arg.name().hashCode());
+                    hash = mix(hash, hashDataType(arg.dataType()));
+                    hash = mix(hash, hashNode(exprGraph, arg.init(), memo));
+                }
+            }
+            case Block block -> hash = mix(hash, block.statements().size());
+            case Yield yield -> hash = mix(hash, yield.values().size());
+            default -> {}
+        }
+        for (LIRExprNode input : resolved.inputs()) {
+            hash = mix(hash, hashNode(exprGraph, input, memo));
+        }
+        memo.put(resolved, hash);
+        return hash;
+    }
+
+    private long hashBufferRef(BufferRef buffer) {
+        long hash = 0x9e3779b97f4a7c15L;
+        hash = mix(hash, buffer.id());
+        hash = mix(hash, hashDataType(buffer.dataType()));
+        int rank = (int) buffer.layout().shape().flatRank();
+        hash = mix(hash, rank);
+        for (int i = 0; i < rank; i++) {
+            hash = mix(hash, buffer.layout().shape().flatAt(i));
+            hash = mix(hash, buffer.layout().stride().flatAt(i));
+        }
+        return hash;
+    }
+
+    private void updateBufferRef(MessageDigest digest, BufferRef buffer) {
+        updateLong(digest, hashBufferRef(buffer));
+    }
+
+    private void updateBoolean(MessageDigest digest, boolean value) {
+        digest.update((byte) (value ? 1 : 0));
+    }
+
+    private void updateInt(MessageDigest digest, int value) {
+        updateLong(digest, value);
+    }
+
+    private void updateLong(MessageDigest digest, long value) {
+        digest.update((byte) (value));
+        digest.update((byte) (value >>> 8));
+        digest.update((byte) (value >>> 16));
+        digest.update((byte) (value >>> 24));
+        digest.update((byte) (value >>> 32));
+        digest.update((byte) (value >>> 40));
+        digest.update((byte) (value >>> 48));
+        digest.update((byte) (value >>> 56));
+    }
+
+    private long hashDataType(DataType dataType) {
+        return dataType.name().hashCode();
+    }
+
+    private long mix(long hash, long value) {
+        long h = hash;
+        h ^= value + 0x9e3779b97f4a7c15L + (h << 6) + (h >>> 2);
+        return h;
     }
 
     private boolean needsStridedKernel(LIRGraph graph) {
@@ -520,7 +636,6 @@ final class LIRKernelCompiler {
                 }
                 case Store store -> emitStore(store);
                 case StructuredFor loop -> emitStructuredFor(loop);
-                case TiledLoop tiled -> emitTiledLoop(tiled);
                 case Yield yield -> emitYield(yield);
                 default -> {}
             }
@@ -622,54 +737,6 @@ final class LIRKernelCompiler {
             }
         }
 
-        private void emitTiledLoop(TiledLoop tiled) {
-            String total = emitIndexExpr(tiled.totalBound());
-            long tile = tiled.tileSize();
-            String outer = tiled.outerName();
-            String inner = tiled.innerName();
-            addLine(
-                    "for (long "
-                            + outer
-                            + " = 0; "
-                            + outer
-                            + " < "
-                            + total
-                            + "; "
-                            + outer
-                            + " += "
-                            + tile
-                            + ") {");
-            indentLevel++;
-            addLine(
-                    "long "
-                            + outer
-                            + "_end = Math.min("
-                            + outer
-                            + " + "
-                            + tile
-                            + ", "
-                            + total
-                            + ");");
-            addLine(
-                    "for (long "
-                            + inner
-                            + " = "
-                            + outer
-                            + "; "
-                            + inner
-                            + " < "
-                            + outer
-                            + "_end; "
-                            + inner
-                            + "++) {");
-            indentLevel++;
-            emitNode(tiled.body());
-            indentLevel--;
-            addLine("}");
-            indentLevel--;
-            addLine("}");
-        }
-
 
         private void emitYield(Yield yield) {
             if (!yield.values().isEmpty()) {
@@ -705,7 +772,7 @@ final class LIRKernelCompiler {
                     || resolved.kind() == LIRExprKind.S_FROM_INDEX) {
                 return emitScalarExprInline(resolved);
             }
-            if (resolved.useCount() > 1
+            if ((resolved.kind() == LIRExprKind.S_TERNARY || resolved.useCount() > 1)
                     && (resolved.kind() == LIRExprKind.S_UNARY
                             || resolved.kind() == LIRExprKind.S_BINARY
                             || resolved.kind() == LIRExprKind.S_TERNARY
@@ -731,77 +798,42 @@ final class LIRKernelCompiler {
 
         private String emitScalarExprInline(LIRExprNode resolved) {
             return switch (resolved.kind()) {
-                case S_CONST ->
-                        scalarLiteral(
-                                ScalarLiteral.ofRawBits(
-                                        ((SConst) resolved).rawBits(), resolved.dataType()));
+                case S_CONST -> scalarLiteral(((SConst) resolved).rawBits(), resolved.dataType());
                 case S_INPUT -> requireScalarInputById(((SInput) resolved).inputId(), resolved.dataType());
                 case S_REF -> {
                     String refName = ((SRef) resolved).name();
                     String mapped = scalarNames.get(refName);
                     yield mapped != null ? mapped : refName;
                 }
-                case S_FROM_INDEX -> "(long) (" + emitIndexExpr(((SFromIndex) resolved).indexExpr()) + ")";
+                case S_FROM_INDEX -> {
+                    String indexExpr = emitIndexExpr(((SFromIndex) resolved).indexExpr());
+                    if (resolved.dataType() == DataType.I64) {
+                        yield indexExpr;
+                    }
+                    yield castExpr(DataType.I64, resolved.dataType(), indexExpr);
+                }
                 case S_LOAD -> emitScalarLoadExpr((SLoad) resolved);
                 case S_UNARY -> emitUnaryExpr((SUnary) resolved);
                 case S_BINARY -> emitBinaryExpr((SBinary) resolved);
                 case S_TERNARY -> emitTernaryExpr((STernary) resolved);
                 case S_CAST -> emitCastExpr((SCast) resolved);
-                case I_CONST, I_VAR, I_BINARY ->
+                default ->
                         throw new IllegalStateException("Expected scalar node, got " + resolved.kind());
             };
         }
 
         private boolean shouldMaterializeTemp(LIRExprNode node, String expr) {
-            if (expr.length() <= 40) {
+            if (node.kind() == LIRExprKind.S_TERNARY) {
+                return true;
+            }
+            if (node.useCount() > 2) {
+                return true;
+            }
+            if (expr.length() <= 80) {
                 return false;
             }
             return switch (node.kind()) {
-                case S_UNARY, S_BINARY, S_TERNARY, S_CAST -> true;
-                default -> false;
-            };
-        }
-
-        private String emitScalarExprCompact(LIRExprNode node) {
-            return emitScalarExpr(node);
-        }
-
-        private String emitScalarExprCompactRecursive(LIRExprNode node) {
-            LIRExprNode resolved = exprGraph.resolve(node);
-            return switch (resolved.kind()) {
-                case S_CONST ->
-                        scalarLiteral(
-                                ScalarLiteral.ofRawBits(
-                                        ((SConst) resolved).rawBits(), resolved.dataType()));
-                case S_INPUT -> requireScalarInputById(((SInput) resolved).inputId(), resolved.dataType());
-                case S_REF -> ((SRef) resolved).name();
-                case S_FROM_INDEX -> "(long) (" + emitIndexExpr(((SFromIndex) resolved).indexExpr()) + ")";
-                case S_LOAD -> emitScalarLoadExprCompact((SLoad) resolved);
-                case S_UNARY -> emitUnaryExprCompact((SUnary) resolved);
-                case S_BINARY -> emitBinaryExprCompact((SBinary) resolved);
-                case S_TERNARY -> emitTernaryExprCompact((STernary) resolved);
-                case S_CAST -> emitCastExprCompact((SCast) resolved);
-                case I_CONST, I_VAR, I_BINARY ->
-                        throw new IllegalStateException("Expected scalar node, got " + resolved.kind());
-            };
-        }
-
-        private boolean shouldAssignToVariableExpr(LIRExprNode node, String result) {
-            return switch (node.kind()) {
-                case S_TERNARY -> true;
-                case S_BINARY ->
-                        switch (((SBinary) node).op()) {
-                            case LESS_THAN, EQUAL -> true;
-                            case LOGICAL_AND, LOGICAL_OR, LOGICAL_XOR -> true;
-                            case MIN, MAX, POW -> true;
-                            default -> result.length() > 40;
-                        };
-                case S_UNARY ->
-                        switch (((SUnary) node).op()) {
-                            case LOGICAL_NOT -> true;
-                            default -> false;
-                        };
-                case S_CAST -> ((SCast) node).targetType() == DataType.BOOL;
+                case S_UNARY, S_BINARY, S_CAST -> true;
                 default -> false;
             };
         }
@@ -810,21 +842,6 @@ final class LIRKernelCompiler {
             BufferVar buffer = requireBuffer(load.buffer());
             String offset = emitIndexWithStridesExpr(load.buffer(), load.offset());
             return readValue(buffer, load.buffer().dataType(), offset);
-        }
-
-        private String emitScalarLoadExprCompact(SLoad load) {
-            String cached = tempNames.get(load);
-            if (cached != null) {
-                return cached;
-            }
-            String expr = emitScalarLoadExpr(load);
-            if (expr.length() > 60) {
-                String var = nextTempName();
-                addLine(javaType(load.dataType()) + " " + var + " = " + expr + ";");
-                tempNames.put(load, var);
-                return var;
-            }
-            return expr;
         }
 
         private String emitUnaryExpr(SUnary unary) {
@@ -848,21 +865,6 @@ final class LIRKernelCompiler {
                                 : "!(" + input + " != 0)";
                 case BITWISE_NOT -> bitwiseNotFor(type, input);
             };
-        }
-
-        private String emitUnaryExprCompact(SUnary unary) {
-            String cached = tempNames.get(unary);
-            if (cached != null) {
-                return cached;
-            }
-            String expr = emitUnaryExpr(unary);
-            if (expr.length() > 60) {
-                String var = nextTempName();
-                addLine(javaType(unary.dataType()) + " " + var + " = " + expr + ";");
-                tempNames.put(unary, var);
-                return var;
-            }
-            return expr;
         }
 
         private String emitBinaryExpr(SBinary binary) {
@@ -931,21 +933,6 @@ final class LIRKernelCompiler {
             throw new UnsupportedOperationException("Unsupported binary operator: " + binary.op());
         }
 
-        private String emitBinaryExprCompact(SBinary binary) {
-            String cached = tempNames.get(binary);
-            if (cached != null) {
-                return cached;
-            }
-            String expr = emitBinaryExpr(binary);
-            if (expr.length() > 60) {
-                String var = nextTempName();
-                addLine(javaType(binary.dataType()) + " " + var + " = " + expr + ";");
-                tempNames.put(binary, var);
-                return var;
-            }
-            return expr;
-        }
-
         private String maybeConvertForBinaryExpr(LIRExprNode node, String exprStr, DataType targetType) {
             if (node.dataType() == DataType.BOOL && targetType != DataType.BOOL) {
                 return "(" + exprStr + " ? 1 : 0)";
@@ -963,38 +950,9 @@ final class LIRKernelCompiler {
             return "(" + cond + " ? " + tVal + " : " + fVal + ")";
         }
 
-        private String emitTernaryExprCompact(STernary ternary) {
-            String cached = tempNames.get(ternary);
-            if (cached != null) {
-                return cached;
-            }
-            String expr = emitTernaryExpr(ternary);
-            String var = nextTempName();
-            addLine(javaType(ternary.dataType()) + " " + var + " = " + expr + ";");
-            tempNames.put(ternary, var);
-            return var;
-        }
-
         private String emitCastExpr(SCast cast) {
             String input = emitScalarExpr(cast.input());
             return castExpr(cast.input().dataType(), cast.targetType(), input);
-        }
-
-        private String emitCastExprCompact(SCast cast) {
-            String cached = tempNames.get(cast);
-            if (cached != null) {
-                return cached;
-            }
-            String expr = emitCastExpr(cast);
-            if (expr.length() > 60
-                    || cast.input().dataType() == DataType.BOOL
-                    || cast.targetType() == DataType.BOOL) {
-                String var = nextTempName();
-                addLine(javaType(cast.targetType()) + " " + var + " = " + expr + ";");
-                tempNames.put(cast, var);
-                return var;
-            }
-            return expr;
         }
 
         private String emitIndexExpr(LIRExprNode node) {
@@ -1010,15 +968,7 @@ final class LIRKernelCompiler {
                                 + " "
                                 + emitIndexExpr(((IBinary) resolved).right())
                                 + ")";
-                case S_CONST,
-                        S_INPUT,
-                        S_UNARY,
-                        S_BINARY,
-                        S_TERNARY,
-                        S_CAST,
-                        S_LOAD,
-                        S_FROM_INDEX,
-                        S_REF ->
+                default ->
                         throw new IllegalStateException("Expected index node, got " + resolved.kind());
             };
         }
@@ -1046,15 +996,7 @@ final class LIRKernelCompiler {
                             emitIndexWithStrideReplacementExpr(((IBinary) resolved).right(), strides, strideVars);
                     yield "(" + left + " " + indexOp(((IBinary) resolved).op()) + " " + right + ")";
                 }
-                case S_CONST,
-                        S_INPUT,
-                        S_UNARY,
-                        S_BINARY,
-                        S_TERNARY,
-                        S_CAST,
-                        S_LOAD,
-                        S_FROM_INDEX,
-                        S_REF ->
+                default ->
                         throw new IllegalStateException("Expected index node, got " + resolved.kind());
             };
         }
@@ -1087,91 +1029,16 @@ final class LIRKernelCompiler {
             return "(" + expr + " ? 1 : 0)";
         }
 
-        private String emitScalarLoadCompact(ScalarLoad load) {
-            String expr = emitScalarLoad(load);
-            if (expr.length() > 60) {
-                String var = nextTempName();
-                addLine(javaType(load.dataType()) + " " + var + " = " + expr + ";");
-                return var;
-            }
-            return expr;
-        }
-
-        private String emitUnaryCompact(ScalarUnary unary) {
-            String expr = emitUnary(unary);
-            // Always assign logical not to variable for clarity
-            boolean needsVar = expr.length() > 60;
-            if (!needsVar) {
-                // Check if it's a logical not by looking at the expression pattern
-                needsVar = expr.startsWith("!") && expr.length() > 10;
-            }
-            if (needsVar) {
-                String var = nextTempName();
-                addLine(javaType(unary.dataType()) + " " + var + " = " + expr + ";");
-                return var;
-            }
-            return expr;
-        }
-
-        private String emitBinaryCompact(ScalarBinary binary) {
-            String expr = emitBinary(binary);
-            if (expr.length() > 60) {
-                String var = nextTempName();
-                addLine(javaType(binary.dataType()) + " " + var + " = " + expr + ";");
-                return var;
-            }
-            return expr;
-        }
-
-        private String emitTernaryCompact(ScalarTernary ternary) {
-            String expr = emitTernary(ternary);
-            String var = nextTempName();
-            addLine(javaType(ternary.dataType()) + " " + var + " = " + expr + ";");
-            return var;
-        }
-
-        private String emitCastCompact(ScalarCast cast) {
-            String expr = emitCast(cast);
-            if (expr.length() > 60
-                    || cast.input().dataType() == DataType.BOOL
-                    || cast.targetType() == DataType.BOOL) {
-                String var = nextTempName();
-                addLine(javaType(cast.targetType()) + " " + var + " = " + expr + ";");
-                return var;
-            }
-            return expr;
-        }
-
-        private String emitScalarLoad(ScalarLoad load) {
-            BufferVar buffer = requireBuffer(load.buffer());
-            String offset = emitIndexWithStrides(load.buffer(), load.offset());
-            return readValue(buffer, load.buffer().dataType(), offset);
-        }
-
-        /**
-         * Emits an index expression, replacing hardcoded stride constants with variable references.
-         */
-        private String emitIndexWithStrides(BufferRef buffer, IndexExpr expr) {
-            String[] strideVars = bufferStrideVars.get(buffer);
-            long[] byteStrides = buffer.byteStrides();
-            return emitIndexWithStrideReplacement(expr, byteStrides, strideVars);
-        }
-
-        /** Recursively emits an index expression, replacing stride constants with variables. */
-        private String emitIndexWithStrideReplacement(
-                IndexExpr expr, long[] strides, String[] strideVars) {
-            return switch (expr) {
-                case IndexConst c -> {
-                    // Check if this constant is a stride value
-                    String replacement = findStrideVariable(c.value(), strides, strideVars);
-                    yield replacement != null ? replacement : Long.toString(c.value());
-                }
-                case IndexVar v -> v.name();
-                case IndexBinary b -> {
-                    String left = emitIndexWithStrideReplacement(b.left(), strides, strideVars);
-                    String right = emitIndexWithStrideReplacement(b.right(), strides, strideVars);
-                    yield "(" + left + " " + indexOp(b.op()) + " " + right + ")";
-                }
+        private String indexOp(IndexBinaryOp op) {
+            return switch (op) {
+                case ADD -> "+";
+                case SUBTRACT -> "-";
+                case MULTIPLY -> "*";
+                case DIVIDE -> "/";
+                case MODULO -> "%";
+                case BITWISE_AND -> "&";
+                case SHIFT_LEFT -> "<<";
+                case SHIFT_RIGHT -> ">>";
             };
         }
 
@@ -1188,139 +1055,6 @@ final class LIRKernelCompiler {
                 }
             }
             return null;
-        }
-
-        private String emitUnary(ScalarUnary unary) {
-            String input = emitScalar(unary.input());
-            DataType type = unary.dataType();
-            return switch (unary.op()) {
-                case NEGATE -> "-" + input;
-                case ABS -> "Math.abs(" + input + ")";
-                case EXP -> castFloating(type, "Math.exp(" + input + ")");
-                case LOG -> castFloating(type, "Math.log(" + input + ")");
-                case SQRT -> castFloating(type, "Math.sqrt(" + input + ")");
-                case SQUARE -> input + " * " + input;
-                case SIN -> castFloating(type, "Math.sin(" + input + ")");
-                case COS -> castFloating(type, "Math.cos(" + input + ")");
-                case TAN -> castFloating(type, "Math.tan(" + input + ")");
-                case TANH -> castFloating(type, "Math.tanh(" + input + ")");
-                case RECIPROCAL -> reciprocalFor(type, input);
-                case LOGICAL_NOT ->
-                        unary.input().dataType() == DataType.BOOL
-                                ? "!(" + input + ")"
-                                : "!(" + input + " != 0)";
-                case BITWISE_NOT -> bitwiseNotFor(type, input);
-            };
-        }
-
-        private String emitBinary(ScalarBinary binary) {
-            String left = emitScalar(binary.left());
-            String right = emitScalar(binary.right());
-            DataType type = binary.dataType();
-            if (binary.op() == BinaryOperator.ADD) {
-                // Handle mixed types for addition (e.g., int + bool)
-                String l = maybeConvertForBinary(binary.left(), left, type);
-                String r = maybeConvertForBinary(binary.right(), right, type);
-                return "(" + l + " + " + r + ")";
-            }
-            if (binary.op() == BinaryOperator.SUBTRACT) {
-                return "(" + left + " - " + right + ")";
-            }
-            if (binary.op() == BinaryOperator.MULTIPLY) {
-                return "(" + left + " * " + right + ")";
-            }
-            if (binary.op() == BinaryOperator.DIVIDE) {
-                return "(" + left + " / " + right + ")";
-            }
-            if (binary.op() == BinaryOperator.MIN) {
-                return minExpr(type, left, right);
-            }
-            if (binary.op() == BinaryOperator.MAX) {
-                return maxExpr(type, left, right);
-            }
-            if (binary.op() == BinaryOperator.POW) {
-                return powExpr(type, left, right);
-            }
-            if (binary.op() == BinaryOperator.LOGICAL_AND) {
-                String l = binary.left().dataType() != DataType.BOOL ? "(" + left + " != 0)" : left;
-                String r =
-                        binary.right().dataType() != DataType.BOOL ? "(" + right + " != 0)" : right;
-                String result = "(" + l + " && " + r + ")";
-                return type == DataType.BOOL ? result : "(" + result + " ? 1 : 0)";
-            }
-            if (binary.op() == BinaryOperator.LOGICAL_OR) {
-                String l = binary.left().dataType() != DataType.BOOL ? "(" + left + " != 0)" : left;
-                String r =
-                        binary.right().dataType() != DataType.BOOL ? "(" + right + " != 0)" : right;
-                String result = "(" + l + " || " + r + ")";
-                return type == DataType.BOOL ? result : "(" + result + " ? 1 : 0)";
-            }
-            if (binary.op() == BinaryOperator.LOGICAL_XOR) {
-                String l = binary.left().dataType() != DataType.BOOL ? "(" + left + " != 0)" : left;
-                String r =
-                        binary.right().dataType() != DataType.BOOL ? "(" + right + " != 0)" : right;
-                String result = "(" + l + " ^ " + r + ")";
-                return type == DataType.BOOL ? result : "(" + result + " ? 1 : 0)";
-            }
-            if (binary.op() == BinaryOperator.BITWISE_AND) {
-                return castFor(type, "(" + left + " & " + right + ")");
-            }
-            if (binary.op() == BinaryOperator.BITWISE_OR) {
-                return castFor(type, "(" + left + " | " + right + ")");
-            }
-            if (binary.op() == BinaryOperator.BITWISE_XOR) {
-                return castFor(type, "(" + left + " ^ " + right + ")");
-            }
-            if (binary.op() == BinaryOperator.EQUAL) {
-                return compareExpr("==", binary.left(), binary.right(), type);
-            }
-            if (binary.op() == BinaryOperator.LESS_THAN) {
-                return compareExpr("<", binary.left(), binary.right(), type);
-            }
-            throw new UnsupportedOperationException("Unsupported binary operator: " + binary.op());
-        }
-
-        private String maybeConvertForBinary(ScalarExpr expr, String exprStr, DataType targetType) {
-            if (expr.dataType() == DataType.BOOL && targetType != DataType.BOOL) {
-                // Convert bool to int 0/1 for arithmetic
-                return "(" + exprStr + " ? 1 : 0)";
-            }
-            return exprStr;
-        }
-
-        private String emitTernary(ScalarTernary ternary) {
-            String cond = emitScalar(ternary.condition());
-            if (ternary.condition().dataType() != DataType.BOOL) {
-                cond = cond + " != 0";
-            }
-            String tVal = emitScalar(ternary.trueValue());
-            String fVal = emitScalar(ternary.falseValue());
-            return cond + " ? " + tVal + " : " + fVal;
-        }
-
-        private String emitCast(ScalarCast cast) {
-            DataType src = cast.input().dataType();
-            DataType dst = cast.targetType();
-            String input = emitScalar(cast.input());
-            return castExpr(src, dst, input);
-        }
-
-        private String emitIndex(IndexExpr expr) {
-            LIRExprNode node = exprBuilder.toIndex(expr);
-            return emitIndexExpr(node);
-        }
-
-        private String indexOp(IndexBinary.IndexBinaryOp op) {
-            return switch (op) {
-                case ADD -> "+";
-                case SUBTRACT -> "-";
-                case MULTIPLY -> "*";
-                case DIVIDE -> "/";
-                case MODULO -> "%";
-                case BITWISE_AND -> "&";
-                case SHIFT_LEFT -> "<<";
-                case SHIFT_RIGHT -> ">>";
-            };
         }
 
         private BufferVar requireBuffer(BufferRef ref) {
@@ -1633,64 +1367,15 @@ final class LIRKernelCompiler {
             throw new UnsupportedOperationException("Unsupported dtype: " + type);
         }
 
-        private boolean shouldInlineScalarLet(String expr, String name) {
-            if (expr.equals(name)) {
-                return true;
-            }
-            return isSimpleScalarExpr(expr);
-        }
-
-        private boolean isSimpleScalarExpr(String expr) {
-            if (expr.isEmpty()) {
-                return false;
-            }
-            int start = expr.startsWith("-") ? 1 : 0;
-            if (start >= expr.length()) {
-                return false;
-            }
-            boolean numeric = true;
-            boolean seenDot = false;
-            for (int i = start; i < expr.length(); i++) {
-                char c = expr.charAt(i);
-                if (c == '.') {
-                    if (seenDot) {
-                        numeric = false;
-                        break;
-                    }
-                    seenDot = true;
-                    continue;
-                }
-                if (c == 'f' || c == 'F' || c == 'd' || c == 'D') {
-                    continue;
-                }
-                if (!Character.isDigit(c)) {
-                    numeric = false;
-                    break;
-                }
-            }
-            if (numeric) {
-                return true;
-            }
-            for (int i = 0; i < expr.length(); i++) {
-                char c = expr.charAt(i);
-                if (!(Character.isLetterOrDigit(c) || c == '_')) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
         private String nextTempName() {
             String name;
             do {
-                name = "__t" + tempId++;
+                name = "t" + tempId++;
             } while (scalarNames.containsKey(name) || scalarInputNames.containsValue(name));
             return name;
         }
 
-        private String scalarLiteral(ScalarLiteral lit) {
-            long bits = lit.rawBits();
-            DataType type = lit.dataType();
+        private String scalarLiteral(long bits, DataType type) {
             if (type == DataType.FP32) {
                 float value = Float.intBitsToFloat((int) bits);
                 return formatFloatLiteral(value);
@@ -1839,6 +1524,7 @@ final class LIRKernelCompiler {
         }
 
         private String castExpr(DataType src, DataType dst, String input) {
+            input = stripRedundantCast(src, input);
             if (dst == src) {
                 return input;
             }
@@ -1893,39 +1579,28 @@ final class LIRKernelCompiler {
             return "(float) (" + expr + ")";
         }
 
-        private String compareExpr(
-                String op, ScalarExpr leftExpr, ScalarExpr rightExpr, DataType resultType) {
-            DataType leftType = leftExpr.dataType();
-            DataType rightType = rightExpr.dataType();
-            String left = emitScalar(leftExpr);
-            String right = emitScalar(rightExpr);
-
-            if (op.equals("<") && (leftType == DataType.BOOL || rightType == DataType.BOOL)) {
-                left = castExpr(leftType, DataType.I32, left);
-                right = castExpr(rightType, DataType.I32, right);
-                leftType = DataType.I32;
-                rightType = DataType.I32;
+        private String stripRedundantCast(DataType src, String input) {
+            String prefix = null;
+            if (src == DataType.I64) {
+                prefix = "(long) (";
+            } else if (src == DataType.I32) {
+                prefix = "(int) (";
+            } else if (src == DataType.I16) {
+                prefix = "(short) (";
+            } else if (src == DataType.I8) {
+                prefix = "(byte) (";
+            } else if (src == DataType.FP64) {
+                prefix = "(double) (";
+            } else if (src == DataType.FP32 || src == DataType.FP16 || src == DataType.BF16) {
+                prefix = "(float) (";
             }
-
-            if (leftType == DataType.BOOL && rightType != DataType.BOOL) {
-                left = castExpr(DataType.BOOL, rightType, left);
+            if (prefix == null) {
+                return input;
             }
-            if (rightType == DataType.BOOL && leftType != DataType.BOOL) {
-                right = castExpr(DataType.BOOL, leftType, right);
+            if (input.startsWith(prefix) && input.endsWith(")")) {
+                return input.substring(prefix.length(), input.length() - 1);
             }
-
-            // When both operands are BOOL, wrap them in parentheses to avoid precedence issues
-            // with != 0 conversions (e.g., "a != 0 == b != 0" should be "(a != 0) == (b != 0)")
-            if (leftType == DataType.BOOL && rightType == DataType.BOOL) {
-                left = "(" + left + ")";
-                right = "(" + right + ")";
-            }
-
-            String compare = "(" + left + " " + op + " " + right + ")";
-            if (resultType == DataType.BOOL) {
-                return compare;
-            }
-            return castExpr(DataType.BOOL, resultType, compare);
+            return input;
         }
 
         private void emitHelpers(StringBuilder source) {

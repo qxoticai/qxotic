@@ -3,51 +3,20 @@ package ai.qxotic.jota.examples;
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Indexing;
-import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
-import ai.qxotic.jota.ir.lir.Block;
-import ai.qxotic.jota.ir.lir.BufferRef;
-import ai.qxotic.jota.ir.lir.IndexBinary;
-import ai.qxotic.jota.ir.lir.IndexConst;
-import ai.qxotic.jota.ir.lir.IndexExpr;
-import ai.qxotic.jota.ir.lir.IndexVar;
-import ai.qxotic.jota.ir.lir.LIRGraph;
-import ai.qxotic.jota.ir.lir.LIRStandardPipeline;
-import ai.qxotic.jota.ir.lir.ScalarBinary;
-import ai.qxotic.jota.ir.lir.ScalarExpr;
-import ai.qxotic.jota.ir.lir.ScalarLet;
-import ai.qxotic.jota.ir.lir.ScalarLiteral;
-import ai.qxotic.jota.ir.lir.ScalarLoad;
-import ai.qxotic.jota.ir.lir.ScalarFromIndex;
-import ai.qxotic.jota.ir.lir.ScalarCast;
-import ai.qxotic.jota.ir.lir.ScalarRef;
-import ai.qxotic.jota.ir.lir.ScalarTernary;
-import ai.qxotic.jota.ir.lir.ScalarUnary;
-import ai.qxotic.jota.ir.lir.Store;
-import ai.qxotic.jota.ir.lir.StructuredFor;
-import ai.qxotic.jota.ir.lir.Yield;
-import ai.qxotic.jota.ir.lir.LoopIterArg;
-import ai.qxotic.jota.ir.lir.scratch.ScratchAnalysisPass;
-import ai.qxotic.jota.ir.lir.scratch.ScratchLayout;
-import ai.qxotic.jota.ir.tir.BinaryOperator;
-import ai.qxotic.jota.ir.tir.UnaryOperator;
 import ai.qxotic.jota.memory.MemoryAccess;
-import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryContext;
-import ai.qxotic.jota.memory.MemoryHelpers;
 import ai.qxotic.jota.memory.MemoryView;
-import ai.qxotic.jota.panama.PanamaLIRKernelExecutor;
-import ai.qxotic.jota.tensor.DiskKernelCache;
-import ai.qxotic.jota.tensor.IRTracer;
+import ai.qxotic.jota.tensor.Tracer;
 import ai.qxotic.jota.tensor.Tensor;
+import org.junit.jupiter.api.Test;
+
 import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.lang.foreign.MemorySegment;
 import java.util.List;
-
-import org.junit.jupiter.api.Test;
 
 /**
  * Mandelbrot set visualization using Jota's tensor API.
@@ -68,7 +37,7 @@ public class MandelbrotDemo {
     private static final float Y_MAX = 1.25f;
 
     // Maximum iterations before assuming point is in the set
-    private static final int MAX_ITER = 20;
+    private static final int MAX_ITER = 100;
 
     public static void main(String[] args) throws IOException {
 //        long tensorStart = System.currentTimeMillis();
@@ -78,7 +47,7 @@ public class MandelbrotDemo {
 
         long pureTensorStart = System.currentTimeMillis();
         Tensor pureIterations =
-                IRTracer.trace(List.of(), inputs -> computeMandelbrotPureTensor());
+                Tracer.trace(List.of(), inputs -> computeMandelbrotPureTensor());
         int[][] pureRgb = toRGB(pureIterations);
         long pureTensorElapsed = System.currentTimeMillis() - pureTensorStart;
 
@@ -120,62 +89,62 @@ public class MandelbrotDemo {
         return Tensor.iota(count, DataType.FP32).multiply(step).add(start);
     }
 
-    /**
-     * Computes the Mandelbrot set using tensorized operations.
-     *
-     * @return Tensor of shape [HEIGHT, WIDTH] containing iteration counts
-     */
-    private static Tensor computeMandelbrot() {
-        Shape shape = Shape.of(HEIGHT, WIDTH);
-
-        // Create coordinate grids
-        // real: 1D tensor of x coordinates, then broadcast to 2D
-        // imag: 1D tensor of y coordinates, then broadcast to 2D
-        Tensor real1D = linspace(X_MIN, X_MAX, WIDTH); // Shape: [WIDTH]
-        Tensor imag1D = linspace(Y_MIN, Y_MAX, HEIGHT); // Shape: [HEIGHT]
-
-        // Broadcast to 2D: cReal[h,w] = real1D[w], cImag[h,w] = imag1D[h]
-        // Real: expand to [1, WIDTH] then broadcast to [HEIGHT, WIDTH]
-        Tensor cReal = real1D.view(Shape.of(1, WIDTH)).broadcast(shape);
-        // Imag: expand to [HEIGHT, 1] then broadcast to [HEIGHT, WIDTH]
-        Tensor cImag = imag1D.view(Shape.of(HEIGHT, 1)).broadcast(shape);
-
-        MemoryContext<MemorySegment> context =
-                (MemoryContext<MemorySegment>) Environment.current().nativeBackend().memoryContext();
-
-        MemoryView<MemorySegment> cRealView =
-                (MemoryView<MemorySegment>) Tensor.of(cReal.materialize()).materialize();
-        MemoryView<MemorySegment> cImagView =
-                (MemoryView<MemorySegment>) Tensor.of(cImag.materialize()).materialize();
-
-        MemoryView<MemorySegment> zRealA = MemoryHelpers.zeros(context, DataType.FP32, shape);
-        MemoryView<MemorySegment> zImagA = MemoryHelpers.zeros(context, DataType.FP32, shape);
-        MemoryView<MemorySegment> iterationsView =
-                MemoryHelpers.zeros(context, DataType.FP32, shape);
-        MemoryView<MemorySegment> escapedView =
-                MemoryHelpers.zeros(context, DataType.BOOL, shape);
-
-        MandelbrotKernel kernel = MandelbrotKernel.compile(shape);
-        PanamaLIRKernelExecutor executor =
-                new PanamaLIRKernelExecutor(DiskKernelCache.defaultCache());
-        PanamaLIRKernelExecutor.CompiledKernel compiled = executor.compile(kernel.graph);
-        Memory<MemorySegment> scratch = null;
-        if (compiled.scratchLayout().requiresScratch()) {
-            scratch =
-                    context.memoryAllocator()
-                            .allocateMemory(compiled.scratchLayout().alignedTotalByteSize(), 64L);
-        }
-
-        List<MemoryView<?>> inputs =
-                List.of(zRealA, zImagA, cRealView, cImagView, escapedView, iterationsView);
-        List<MemoryView<?>> outputs =
-                List.of(zRealA, zImagA, escapedView, iterationsView);
-
-        executor.execute(
-                kernel.graph, compiled, inputs, List.of(), outputs, context, scratch);
-
-        return Tensor.of(iterationsView);
-    }
+//    /**
+//     * Computes the Mandelbrot set using tensorized operations.
+//     *
+//     * @return Tensor of shape [HEIGHT, WIDTH] containing iteration counts
+//     */
+//    private static Tensor computeMandelbrot() {
+//        Shape shape = Shape.of(HEIGHT, WIDTH);
+//
+//        // Create coordinate grids
+//        // real: 1D tensor of x coordinates, then broadcast to 2D
+//        // imag: 1D tensor of y coordinates, then broadcast to 2D
+//        Tensor real1D = linspace(X_MIN, X_MAX, WIDTH); // Shape: [WIDTH]
+//        Tensor imag1D = linspace(Y_MIN, Y_MAX, HEIGHT); // Shape: [HEIGHT]
+//
+//        // Broadcast to 2D: cReal[h,w] = real1D[w], cImag[h,w] = imag1D[h]
+//        // Real: expand to [1, WIDTH] then broadcast to [HEIGHT, WIDTH]
+//        Tensor cReal = real1D.view(Shape.of(1, WIDTH)).broadcast(shape);
+//        // Imag: expand to [HEIGHT, 1] then broadcast to [HEIGHT, WIDTH]
+//        Tensor cImag = imag1D.view(Shape.of(HEIGHT, 1)).broadcast(shape);
+//
+//        MemoryContext<MemorySegment> context =
+//                (MemoryContext<MemorySegment>) Environment.current().nativeBackend().memoryContext();
+//
+//        MemoryView<MemorySegment> cRealView =
+//                (MemoryView<MemorySegment>) Tensor.of(cReal.materialize()).materialize();
+//        MemoryView<MemorySegment> cImagView =
+//                (MemoryView<MemorySegment>) Tensor.of(cImag.materialize()).materialize();
+//
+//        MemoryView<MemorySegment> zRealA = MemoryHelpers.zeros(context, DataType.FP32, shape);
+//        MemoryView<MemorySegment> zImagA = MemoryHelpers.zeros(context, DataType.FP32, shape);
+//        MemoryView<MemorySegment> iterationsView =
+//                MemoryHelpers.zeros(context, DataType.FP32, shape);
+//        MemoryView<MemorySegment> escapedView =
+//                MemoryHelpers.zeros(context, DataType.BOOL, shape);
+//
+//        MandelbrotKernel kernel = MandelbrotKernel.compile(shape);
+//        PanamaLIRKernelExecutor executor =
+//                new PanamaLIRKernelExecutor(DiskKernelCache.defaultCache());
+//        PanamaLIRKernelExecutor.CompiledKernel compiled = executor.compile(kernel.graph);
+//        Memory<MemorySegment> scratch = null;
+//        if (compiled.scratchLayout().requiresScratch()) {
+//            scratch =
+//                    context.memoryAllocator()
+//                            .allocateMemory(compiled.scratchLayout().alignedTotalByteSize(), 64L);
+//        }
+//
+//        List<MemoryView<?>> inputs =
+//                List.of(zRealA, zImagA, cRealView, cImagView, escapedView, iterationsView);
+//        List<MemoryView<?>> outputs =
+//                List.of(zRealA, zImagA, escapedView, iterationsView);
+//
+//        executor.execute(
+//                kernel.graph, compiled, inputs, List.of(), outputs, context, scratch);
+//
+//        return Tensor.of(iterationsView);
+//    }
 
     /**
      * Computes Mandelbrot using pure tensor operations.
@@ -243,152 +212,155 @@ public class MandelbrotDemo {
             zImag = zImagNew;
         }
 
+        Tensor finalIter = Tensor.full((float) (MAX_ITER - 1), DataType.FP32, shape);
+        iterations = Tensor.where(escaped, iterations, finalIter);
+
         return iterations;
     }
-
-    private record MandelbrotKernel(LIRGraph graph, ScratchLayout scratchLayout) {
-        static MandelbrotKernel compile(Shape shape) {
-            LIRGraph graph = buildGraph(shape);
-            LIRGraph optimized = new LIRStandardPipeline().run(graph);
-            ScratchLayout scratchLayout = new ScratchAnalysisPass().analyze(optimized);
-            return new MandelbrotKernel(optimized, scratchLayout);
-        }
-
-        private static LIRGraph buildGraph(Shape shape) {
-            LIRGraph.Builder builder = LIRGraph.builder();
-            BufferRef zReal = builder.addContiguousInput(DataType.FP32, shape.toArray());
-            BufferRef zImag = builder.addContiguousInput(DataType.FP32, shape.toArray());
-            BufferRef cReal = builder.addContiguousInput(DataType.FP32, shape.toArray());
-            BufferRef cImag = builder.addContiguousInput(DataType.FP32, shape.toArray());
-            BufferRef escaped = builder.addContiguousInput(DataType.BOOL, shape.toArray());
-            BufferRef iterations = builder.addContiguousInput(DataType.FP32, shape.toArray());
-
-            BufferRef zRealOut = builder.addContiguousOutput(DataType.FP32, shape.toArray());
-            BufferRef zImagOut = builder.addContiguousOutput(DataType.FP32, shape.toArray());
-            BufferRef escapedOut = builder.addContiguousOutput(DataType.BOOL, shape.toArray());
-            BufferRef iterationsOut = builder.addContiguousOutput(DataType.FP32, shape.toArray());
-
-            IndexVar i0 = new IndexVar("i0");
-            IndexVar i1 = new IndexVar("i1");
-            IndexVar k = new IndexVar("k");
-
-            IndexExpr offZReal = offset2d(zReal, i0, i1);
-            IndexExpr offZImag = offset2d(zImag, i0, i1);
-            IndexExpr offCReal = offset2d(cReal, i0, i1);
-            IndexExpr offCImag = offset2d(cImag, i0, i1);
-            IndexExpr offEscaped = offset2d(escaped, i0, i1);
-            IndexExpr offIterations = offset2d(iterations, i0, i1);
-            IndexExpr offZRealOut = offset2d(zRealOut, i0, i1);
-            IndexExpr offZImagOut = offset2d(zImagOut, i0, i1);
-            IndexExpr offEscapedOut = offset2d(escapedOut, i0, i1);
-            IndexExpr offIterationsOut = offset2d(iterationsOut, i0, i1);
-
-            ScalarExpr zrInit = new ScalarLoad(zReal, offZReal);
-            ScalarExpr ziInit = new ScalarLoad(zImag, offZImag);
-            ScalarExpr cr = new ScalarLoad(cReal, offCReal);
-            ScalarExpr ci = new ScalarLoad(cImag, offCImag);
-            ScalarExpr escInit = new ScalarLoad(escaped, offEscaped);
-            ScalarExpr iterInit = new ScalarLoad(iterations, offIterations);
-
-            ScalarRef zr = new ScalarRef("zr", DataType.FP32);
-            ScalarRef zi = new ScalarRef("zi", DataType.FP32);
-            ScalarRef esc = new ScalarRef("esc", DataType.BOOL);
-            ScalarRef iter = new ScalarRef("iter", DataType.FP32);
-
-            ScalarExpr zr2 = new ScalarBinary(BinaryOperator.MULTIPLY, zr, zr);
-            ScalarExpr zi2 = new ScalarBinary(BinaryOperator.MULTIPLY, zi, zi);
-            ScalarExpr zrNewExpr =
-                    new ScalarBinary(
-                            BinaryOperator.ADD,
-                            new ScalarBinary(BinaryOperator.SUBTRACT, zr2, zi2),
-                            cr);
-            ScalarExpr ziMul = new ScalarBinary(BinaryOperator.MULTIPLY, zr, zi);
-            ScalarExpr ziNewExpr =
-                    new ScalarBinary(
-                            BinaryOperator.ADD,
-                            new ScalarBinary(
-                                    BinaryOperator.MULTIPLY,
-                                    ziMul,
-                                    ScalarLiteral.ofFloat(2.0f)),
-                            ci);
-
-            ScalarLet zrNewLet = new ScalarLet("zrNew", zrNewExpr);
-            ScalarLet ziNewLet = new ScalarLet("ziNew", ziNewExpr);
-            ScalarRef zrNew = new ScalarRef("zrNew", DataType.FP32);
-            ScalarRef ziNew = new ScalarRef("ziNew", DataType.FP32);
-
-            ScalarExpr mag2Expr =
-                    new ScalarBinary(
-                            BinaryOperator.ADD,
-                            new ScalarBinary(BinaryOperator.MULTIPLY, zrNew, zrNew),
-                            new ScalarBinary(BinaryOperator.MULTIPLY, ziNew, ziNew));
-            ScalarLet mag2Let = new ScalarLet("mag2", mag2Expr);
-            ScalarRef mag2 = new ScalarRef("mag2", DataType.FP32);
-
-            ScalarExpr hasEscapedExpr =
-                    new ScalarBinary(
-                            BinaryOperator.LESS_THAN, ScalarLiteral.ofFloat(4.0f), mag2);
-            ScalarLet hasEscapedLet = new ScalarLet("hasEscaped", hasEscapedExpr);
-            ScalarRef hasEscaped = new ScalarRef("hasEscaped", DataType.BOOL);
-
-            ScalarExpr notYetExpr = new ScalarUnary(UnaryOperator.LOGICAL_NOT, esc);
-            ScalarLet notYetLet = new ScalarLet("notYet", notYetExpr);
-            ScalarRef notYet = new ScalarRef("notYet", DataType.BOOL);
-
-            ScalarExpr justEscapedExpr =
-                    new ScalarBinary(BinaryOperator.LOGICAL_AND, hasEscaped, notYet);
-            ScalarLet justEscapedLet = new ScalarLet("justEscaped", justEscapedExpr);
-            ScalarRef justEscaped = new ScalarRef("justEscaped", DataType.BOOL);
-
-            ScalarExpr iterIndex = new ScalarFromIndex(k);
-            ScalarExpr iterValue = new ScalarCast(iterIndex, DataType.FP32);
-            ScalarExpr iterOut = new ScalarTernary(justEscaped, iterValue, iter);
-            ScalarExpr escOut = new ScalarTernary(justEscaped, ScalarLiteral.ofBool(true), esc);
-
-            Yield yield =
-                    new Yield(List.of(zrNew, ziNew, escOut, iterOut));
-            Block innerBody =
-                    Block.of(
-                            zrNewLet,
-                            ziNewLet,
-                            mag2Let,
-                            hasEscapedLet,
-                            notYetLet,
-                            justEscapedLet,
-                            yield);
-            StructuredFor iterLoop =
-                    StructuredFor.of(
-                            "k",
-                            0,
-                            MAX_ITER,
-                            1,
-                            List.of(
-                                    new LoopIterArg("zr", DataType.FP32, zrInit),
-                                    new LoopIterArg("zi", DataType.FP32, ziInit),
-                                    new LoopIterArg("esc", DataType.BOOL, escInit),
-                                    new LoopIterArg("iter", DataType.FP32, iterInit)),
-                            innerBody);
-
-            Store storeZReal = new Store(zRealOut, offZRealOut, zr);
-            Store storeZImag = new Store(zImagOut, offZImagOut, zi);
-            Store storeIterations = new Store(iterationsOut, offIterationsOut, iter);
-            Store storeEscaped = new Store(escapedOut, offEscapedOut, esc);
-
-            Block body = Block.of(iterLoop, storeZReal, storeZImag, storeIterations, storeEscaped);
-            StructuredFor inner = StructuredFor.of("i1", 0, WIDTH, 1, List.of(), body);
-            StructuredFor outer = StructuredFor.of("i0", 0, HEIGHT, 1, List.of(), inner);
-            return builder.build(outer);
-        }
-
-        private static IndexExpr offset2d(BufferRef buffer, IndexExpr i0, IndexExpr i1) {
-            Layout layout = buffer.layout().flatten();
-            long stride0 = layout.stride().flatAt(0) * buffer.dataType().byteSize();
-            long stride1 = layout.stride().flatAt(1) * buffer.dataType().byteSize();
-            IndexExpr term0 = IndexBinary.multiply(i0, IndexConst.of(stride0));
-            IndexExpr term1 = IndexBinary.multiply(i1, IndexConst.of(stride1));
-            return IndexBinary.add(term0, term1);
-        }
-    }
+//
+//    private record MandelbrotKernel(LIRGraph graph, ScratchLayout scratchLayout) {
+//        static MandelbrotKernel compile(Shape shape) {
+//            LIRGraph graph = buildGraph(shape);
+//            LIRGraph optimized = new LIRStandardPipeline().run(graph);
+//            ScratchLayout scratchLayout = new ScratchAnalysisPass().analyze(optimized);
+//            return new MandelbrotKernel(optimized, scratchLayout);
+//        }
+//
+//        private static LIRGraph buildGraph(Shape shape) {
+//            LIRGraph.Builder builder = LIRGraph.builder();
+//            BufferRef zReal = builder.addContiguousInput(DataType.FP32, shape.toArray());
+//            BufferRef zImag = builder.addContiguousInput(DataType.FP32, shape.toArray());
+//            BufferRef cReal = builder.addContiguousInput(DataType.FP32, shape.toArray());
+//            BufferRef cImag = builder.addContiguousInput(DataType.FP32, shape.toArray());
+//            BufferRef escaped = builder.addContiguousInput(DataType.BOOL, shape.toArray());
+//            BufferRef iterations = builder.addContiguousInput(DataType.FP32, shape.toArray());
+//
+//            BufferRef zRealOut = builder.addContiguousOutput(DataType.FP32, shape.toArray());
+//            BufferRef zImagOut = builder.addContiguousOutput(DataType.FP32, shape.toArray());
+//            BufferRef escapedOut = builder.addContiguousOutput(DataType.BOOL, shape.toArray());
+//            BufferRef iterationsOut = builder.addContiguousOutput(DataType.FP32, shape.toArray());
+//
+//            IndexVar i0 = new IndexVar("i0");
+//            IndexVar i1 = new IndexVar("i1");
+//            IndexVar k = new IndexVar("k");
+//
+//            IndexExpr offZReal = offset2d(zReal, i0, i1);
+//            IndexExpr offZImag = offset2d(zImag, i0, i1);
+//            IndexExpr offCReal = offset2d(cReal, i0, i1);
+//            IndexExpr offCImag = offset2d(cImag, i0, i1);
+//            IndexExpr offEscaped = offset2d(escaped, i0, i1);
+//            IndexExpr offIterations = offset2d(iterations, i0, i1);
+//            IndexExpr offZRealOut = offset2d(zRealOut, i0, i1);
+//            IndexExpr offZImagOut = offset2d(zImagOut, i0, i1);
+//            IndexExpr offEscapedOut = offset2d(escapedOut, i0, i1);
+//            IndexExpr offIterationsOut = offset2d(iterationsOut, i0, i1);
+//
+//            ScalarExpr zrInit = new ScalarLoad(zReal, offZReal);
+//            ScalarExpr ziInit = new ScalarLoad(zImag, offZImag);
+//            ScalarExpr cr = new ScalarLoad(cReal, offCReal);
+//            ScalarExpr ci = new ScalarLoad(cImag, offCImag);
+//            ScalarExpr escInit = new ScalarLoad(escaped, offEscaped);
+//            ScalarExpr iterInit = new ScalarLoad(iterations, offIterations);
+//
+//            ScalarRef zr = new ScalarRef("zr", DataType.FP32);
+//            ScalarRef zi = new ScalarRef("zi", DataType.FP32);
+//            ScalarRef esc = new ScalarRef("esc", DataType.BOOL);
+//            ScalarRef iter = new ScalarRef("iter", DataType.FP32);
+//
+//            ScalarExpr zr2 = new ScalarBinary(BinaryOperator.MULTIPLY, zr, zr);
+//            ScalarExpr zi2 = new ScalarBinary(BinaryOperator.MULTIPLY, zi, zi);
+//            ScalarExpr zrNewExpr =
+//                    new ScalarBinary(
+//                            BinaryOperator.ADD,
+//                            new ScalarBinary(BinaryOperator.SUBTRACT, zr2, zi2),
+//                            cr);
+//            ScalarExpr ziMul = new ScalarBinary(BinaryOperator.MULTIPLY, zr, zi);
+//            ScalarExpr ziNewExpr =
+//                    new ScalarBinary(
+//                            BinaryOperator.ADD,
+//                            new ScalarBinary(
+//                                    BinaryOperator.MULTIPLY,
+//                                    ziMul,
+//                                    ScalarLiteral.ofFloat(2.0f)),
+//                            ci);
+//
+//            ScalarLet zrNewLet = new ScalarLet("zrNew", zrNewExpr);
+//            ScalarLet ziNewLet = new ScalarLet("ziNew", ziNewExpr);
+//            ScalarRef zrNew = new ScalarRef("zrNew", DataType.FP32);
+//            ScalarRef ziNew = new ScalarRef("ziNew", DataType.FP32);
+//
+//            ScalarExpr mag2Expr =
+//                    new ScalarBinary(
+//                            BinaryOperator.ADD,
+//                            new ScalarBinary(BinaryOperator.MULTIPLY, zrNew, zrNew),
+//                            new ScalarBinary(BinaryOperator.MULTIPLY, ziNew, ziNew));
+//            ScalarLet mag2Let = new ScalarLet("mag2", mag2Expr);
+//            ScalarRef mag2 = new ScalarRef("mag2", DataType.FP32);
+//
+//            ScalarExpr hasEscapedExpr =
+//                    new ScalarBinary(
+//                            BinaryOperator.LESS_THAN, ScalarLiteral.ofFloat(4.0f), mag2);
+//            ScalarLet hasEscapedLet = new ScalarLet("hasEscaped", hasEscapedExpr);
+//            ScalarRef hasEscaped = new ScalarRef("hasEscaped", DataType.BOOL);
+//
+//            ScalarExpr notYetExpr = new ScalarUnary(UnaryOperator.LOGICAL_NOT, esc);
+//            ScalarLet notYetLet = new ScalarLet("notYet", notYetExpr);
+//            ScalarRef notYet = new ScalarRef("notYet", DataType.BOOL);
+//
+//            ScalarExpr justEscapedExpr =
+//                    new ScalarBinary(BinaryOperator.LOGICAL_AND, hasEscaped, notYet);
+//            ScalarLet justEscapedLet = new ScalarLet("justEscaped", justEscapedExpr);
+//            ScalarRef justEscaped = new ScalarRef("justEscaped", DataType.BOOL);
+//
+//            ScalarExpr iterIndex = new ScalarFromIndex(k);
+//            ScalarExpr iterValue = new ScalarCast(iterIndex, DataType.FP32);
+//            ScalarExpr iterOut = new ScalarTernary(justEscaped, iterValue, iter);
+//            ScalarExpr escOut = new ScalarTernary(justEscaped, ScalarLiteral.ofBool(true), esc);
+//
+//            Yield yield =
+//                    new Yield(List.of(zrNew, ziNew, escOut, iterOut));
+//            Block innerBody =
+//                    Block.of(
+//                            zrNewLet,
+//                            ziNewLet,
+//                            mag2Let,
+//                            hasEscapedLet,
+//                            notYetLet,
+//                            justEscapedLet,
+//                            yield);
+//            StructuredFor iterLoop =
+//                    StructuredFor.of(
+//                            "k",
+//                            0,
+//                            MAX_ITER,
+//                            1,
+//                            List.of(
+//                                    new LoopIterArg("zr", DataType.FP32, zrInit),
+//                                    new LoopIterArg("zi", DataType.FP32, ziInit),
+//                                    new LoopIterArg("esc", DataType.BOOL, escInit),
+//                                    new LoopIterArg("iter", DataType.FP32, iterInit)),
+//                            innerBody);
+//
+//            Store storeZReal = new Store(zRealOut, offZRealOut, zr);
+//            Store storeZImag = new Store(zImagOut, offZImagOut, zi);
+//            Store storeIterations = new Store(iterationsOut, offIterationsOut, iter);
+//            Store storeEscaped = new Store(escapedOut, offEscapedOut, esc);
+//
+//            Block body = Block.of(iterLoop, storeZReal, storeZImag, storeIterations, storeEscaped);
+//            StructuredFor inner = StructuredFor.of("i1", 0, WIDTH, 1, List.of(), body);
+//            StructuredFor outer = StructuredFor.of("i0", 0, HEIGHT, 1, List.of(), inner);
+//            return builder.build(outer);
+//        }
+//
+//        private static IndexExpr offset2d(BufferRef buffer, IndexExpr i0, IndexExpr i1) {
+//            Layout layout = buffer.layout().flatten();
+//            long stride0 = layout.stride().flatAt(0) * buffer.dataType().byteSize();
+//            long stride1 = layout.stride().flatAt(1) * buffer.dataType().byteSize();
+//            IndexExpr term0 = IndexBinary.multiply(i0, IndexConst.of(stride0));
+//            IndexExpr term1 = IndexBinary.multiply(i1, IndexConst.of(stride1));
+//            return IndexBinary.add(term0, term1);
+//        }
+//    }
 
     private static float[] computeMandelbrotJava() {
         float[] iterations = new float[HEIGHT * WIDTH];

@@ -1,7 +1,7 @@
 package ai.qxotic.jota.ir.lir;
 
 /** Worklist pass that canonicalizes the unified expression graph. */
-public final class LIRWorklistPass implements LIRPass {
+public final class LIRCanonicalizerPass implements LIRPass {
 
     @Override
     public LIRGraph run(LIRGraph graph) {

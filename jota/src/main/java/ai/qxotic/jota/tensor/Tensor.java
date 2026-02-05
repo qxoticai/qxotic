@@ -1124,10 +1124,10 @@ public interface Tensor {
     }
 
     default Tensor traceIR(Function<Tensor, Tensor> fn) {
-        return IRTracer.trace(this, fn);
+        return Tracer.trace(this, fn);
     }
 
     static Tensor traceIR(List<Tensor> inputs, Function<List<Tensor>, Tensor> fn) {
-        return IRTracer.trace(inputs, fn);
+        return Tracer.trace(inputs, fn);
     }
 }

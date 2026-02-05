@@ -16,6 +16,5 @@ public enum LIRExprKind {
     BLOCK,
     STORE,
     YIELD,
-    STRUCTURED_FOR,
-    TILED_LOOP
+    STRUCTURED_FOR
 }

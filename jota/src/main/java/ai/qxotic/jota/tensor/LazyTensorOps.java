@@ -218,16 +218,16 @@ final class LazyTensorOps implements TensorOps {
     }
 
     private Tensor traceUnary(Tensor x, Function<Tensor, Tensor> fn) {
-        return IRTracer.trace(x, fn);
+        return Tracer.trace(x, fn);
     }
 
     private Tensor traceBinary(Tensor a, Tensor b, BiFunction<Tensor, Tensor, Tensor> fn) {
-        return IRTracer.trace(List.of(a, b), tensors -> fn.apply(tensors.get(0), tensors.get(1)));
+        return Tracer.trace(List.of(a, b), tensors -> fn.apply(tensors.get(0), tensors.get(1)));
     }
 
     private Tensor traceTernary(
             Tensor a, Tensor b, Tensor c, TriFunction<Tensor, Tensor, Tensor, Tensor> fn) {
-        return IRTracer.trace(
+        return Tracer.trace(
                 List.of(a, b, c),
                 tensors -> fn.apply(tensors.get(0), tensors.get(1), tensors.get(2)));
     }

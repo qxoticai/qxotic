@@ -34,8 +34,8 @@ public class LIRStandardPipeline {
 
     private final List<LIRPass> passes;
     private int iterations = 1;
-    private boolean verbose = false;
-    private final boolean timing = Boolean.getBoolean("jota.lir.timing");
+    private boolean verbose = true;
+    private final boolean timing = true; // Boolean.getBoolean("jota.lir.timing");
 
     /** Creates a standard pipeline with default pass ordering. */
     public LIRStandardPipeline() {
@@ -51,7 +51,8 @@ public class LIRStandardPipeline {
         List<LIRPass> standardPasses = new ArrayList<>();
 
         // Core optimization passes (expression DAG based)
-
+        standardPasses.add(new LIRCanonicalizerPass());
+        standardPasses.add(new LIRCSEPass());
         return standardPasses;
     }
 

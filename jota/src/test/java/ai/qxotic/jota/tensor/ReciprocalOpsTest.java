@@ -34,7 +34,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
         for (DataType dataType : floatingTypes) {
             if (dataType == DataType.FP32) {
                 Tensor input = Tensor.of(new float[] {1.0f, 2.0f, 4.0f, 8.0f}, shape);
-                Tensor result = IRTracer.trace(input, Tensor::reciprocal);
+                Tensor result = Tracer.trace(input, Tensor::reciprocal);
                 MemoryView<?> output = result.materialize();
 
                 assertEquals(DataType.FP32, output.dataType());
@@ -45,7 +45,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
                 assertEquals(0.125f, readFloat(output, 3), 0.0001f);
             } else if (dataType == DataType.FP64) {
                 Tensor input = Tensor.of(new double[] {1.0, 2.0, 4.0, 8.0}, shape);
-                Tensor result = IRTracer.trace(input, Tensor::reciprocal);
+                Tensor result = Tracer.trace(input, Tensor::reciprocal);
                 MemoryView<?> output = result.materialize();
 
                 assertEquals(DataType.FP64, output.dataType());
@@ -61,7 +61,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
     @Test
     void reciprocalWithFloatInput() {
         Tensor input = Tensor.of(new float[] {1.0f, 2.0f, 0.5f, 4.0f});
-        Tensor result = IRTracer.trace(input, Tensor::reciprocal);
+        Tensor result = Tracer.trace(input, Tensor::reciprocal);
         MemoryView<?> output = result.materialize();
 
         assertEquals(DataType.FP32, output.dataType());
@@ -75,7 +75,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
     @Test
     void reciprocalWithDoubleInput() {
         Tensor input = Tensor.of(new double[] {1.0, 2.0, 4.0});
-        Tensor result = IRTracer.trace(input, Tensor::reciprocal);
+        Tensor result = Tracer.trace(input, Tensor::reciprocal);
         MemoryView<?> output = result.materialize();
 
         assertEquals(DataType.FP64, output.dataType());
@@ -88,7 +88,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
     @Test
     void reciprocalWithNegativeValues() {
         Tensor input = Tensor.of(new float[] {-1.0f, -2.0f, -4.0f});
-        Tensor result = IRTracer.trace(input, Tensor::reciprocal);
+        Tensor result = Tracer.trace(input, Tensor::reciprocal);
         MemoryView<?> output = result.materialize();
 
         assertEquals(-1.0f, readFloat(output, 0), 0.0001f);
@@ -100,7 +100,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
     void reciprocalWithSmallValues() {
         Shape shape = Shape.of(2, 2);
         Tensor input = Tensor.of(new float[] {0.1f, 0.01f, 0.25f, 0.5f}, shape);
-        Tensor result = IRTracer.trace(input, Tensor::reciprocal);
+        Tensor result = Tracer.trace(input, Tensor::reciprocal);
         MemoryView<?> output = result.materialize();
 
         assertEquals(10.0f, readFloat(output, 0), 0.001f);
@@ -112,7 +112,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
     @Test
     void reciprocalWithScalar() {
         Tensor input = Tensor.of(new float[] {5.0f});
-        Tensor result = IRTracer.trace(input, Tensor::reciprocal);
+        Tensor result = Tracer.trace(input, Tensor::reciprocal);
         MemoryView<?> output = result.materialize();
 
         assertEquals(Shape.of(1), output.shape());
@@ -122,7 +122,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
     @Test
     void reciprocalWithScalar2() {
         Tensor input = Tensor.of(new float[] {5.0f}).view(Shape.scalar());
-        Tensor result = IRTracer.trace(input, Tensor::reciprocal);
+        Tensor result = Tracer.trace(input, Tensor::reciprocal);
         MemoryView<?> output = result.materialize();
 
         assertEquals(Shape.scalar(), output.shape());
@@ -132,7 +132,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
     @Test
     void reciprocalWithScalar3() {
         Tensor input = Tensor.scalar(5.0f);
-        Tensor result = IRTracer.trace(input, Tensor::reciprocal);
+        Tensor result = Tracer.trace(input, Tensor::reciprocal);
         MemoryView<?> output = result.materialize();
 
         assertEquals(Shape.scalar(), output.shape());
@@ -168,7 +168,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
     void reciprocalWithTargetDataType() {
         Shape shape = Shape.of(2, 2);
         Tensor input = Tensor.of(new float[] {1.0f, 2.0f, 4.0f, 8.0f}, shape);
-        Tensor result = IRTracer.trace(input, t -> t.reciprocal(DataType.FP64));
+        Tensor result = Tracer.trace(input, t -> t.reciprocal(DataType.FP64));
         MemoryView<?> output = result.materialize();
 
         assertEquals(DataType.FP64, output.dataType());
@@ -182,7 +182,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
     @Test
     void reciprocalWithTargetDataTypeFromFP32ToFP64() {
         Tensor input = Tensor.of(new float[] {2.0f, 4.0f});
-        Tensor result = IRTracer.trace(input, t -> t.reciprocal(DataType.FP64));
+        Tensor result = Tracer.trace(input, t -> t.reciprocal(DataType.FP64));
         MemoryView<?> output = result.materialize();
 
         assertEquals(DataType.FP64, output.dataType());
@@ -212,7 +212,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
     void reciprocalInComplexExpression() {
         Shape shape = Shape.of(2, 2);
         Tensor input = Tensor.of(new float[] {1.0f, 2.0f, 4.0f, 8.0f}, shape);
-        Tensor result = IRTracer.trace(input, t -> t.reciprocal().add(1.0f));
+        Tensor result = Tracer.trace(input, t -> t.reciprocal().add(1.0f));
         MemoryView<?> output = result.materialize();
 
         assertEquals(2.0f, readFloat(output, 0), 0.0001f);
@@ -224,7 +224,7 @@ class ReciprocalOpsTest extends AbstractMemoryTest {
     @Test
     void reciprocalChainedWithOtherOperations() {
         Tensor input = Tensor.of(new float[] {2.0f, 4.0f, 8.0f});
-        Tensor result = IRTracer.trace(input, t -> t.reciprocal().multiply(2.0f).add(1.0f));
+        Tensor result = Tracer.trace(input, t -> t.reciprocal().multiply(2.0f).add(1.0f));
         MemoryView<?> output = result.materialize();
 
         assertEquals(2.0f, readFloat(output, 0), 0.0001f);
