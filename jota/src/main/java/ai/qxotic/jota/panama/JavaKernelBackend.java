@@ -3,8 +3,6 @@ package ai.qxotic.jota.panama;
 import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.tensor.DiskKernelCache;
 import ai.qxotic.jota.tensor.ExecutionStream;
-import ai.qxotic.jota.tensor.ExpressionGraph;
-import ai.qxotic.jota.tensor.GraphHasher;
 import ai.qxotic.jota.tensor.JitKernel;
 import ai.qxotic.jota.tensor.KernelArgs;
 import ai.qxotic.jota.tensor.KernelBackend;
@@ -13,7 +11,6 @@ import ai.qxotic.jota.tensor.KernelCacheKey;
 import ai.qxotic.jota.tensor.KernelExecutable;
 import ai.qxotic.jota.tensor.KernelProgram;
 import ai.qxotic.jota.tensor.LaunchConfig;
-import ai.qxotic.jota.tensor.LaunchHints;
 import java.io.IOException;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -100,16 +97,6 @@ public final class JavaKernelBackend implements KernelBackend {
                         : compile(program, cacheKey);
         executableCache.put(cacheKey, created);
         return created;
-    }
-
-    @Override
-    public LaunchConfig chooseLaunch(ExpressionGraph graph, LaunchHints hints) {
-        return new LaunchConfig(1, 1, 1, 1, 1, 1, 0, false);
-    }
-
-    @Override
-    public KernelCacheKey cacheKey(ExpressionGraph graph) {
-        return GraphHasher.hash(graph);
     }
 
     @Override

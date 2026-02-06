@@ -65,6 +65,26 @@ public class MandelbrotDemo {
                         + MAX_ITER
                         + ")");
 
+        pureTensorStart = System.currentTimeMillis();
+        pureIterations =
+                Tracer.trace(List.of(), inputs -> computeMandelbrotPureTensor());
+        pureRgb = toRGB(pureIterations);
+        pureTensorElapsed = System.currentTimeMillis() - pureTensorStart;
+
+        System.out.println(
+                "Tensor runtime: "
+                        //+ tensorElapsed
+                        + "ms, Pure Tensor runtime: "
+                        + pureTensorElapsed
+                        + "ms"
+                        + " ("
+                        + WIDTH
+                        + "x"
+                        + HEIGHT
+                        + ", MAX_ITER="
+                        + MAX_ITER
+                        + ")");
+
         // Write output image
         String filename = "mandelbrot.ppm";
         writePPM(filename, pureRgb, WIDTH, HEIGHT);

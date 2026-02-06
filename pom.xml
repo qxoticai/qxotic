@@ -16,6 +16,7 @@
         <module>tokenizers</module>
         <module>safetensors</module>
         <module>json</module>
+        <module>examples</module>
 
         <!-- deprecated -->
         <module>scratch</module>

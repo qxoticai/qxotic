@@ -2,9 +2,11 @@ package ai.qxotic.jota.panama;
 
 import ai.qxotic.jota.BFloat16;
 import ai.qxotic.jota.DataType;
+import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.ir.lir.LIRGraph;
 import ai.qxotic.jota.ir.lir.LIRInput;
 import ai.qxotic.jota.ir.lir.ScalarInput;
+import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.tensor.KernelArgs;
 import ai.qxotic.jota.tensor.ScalarArg;
@@ -13,9 +15,9 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.List;
 
-final class LIRKernelArgsBuilder {
+public final class LIRKernelArgsBuilder {
 
-    KernelArgs build(LIRGraph graph, List<Tensor> inputs, List<MemoryView<?>> outputs) {
+    public KernelArgs build(LIRGraph graph, List<Tensor> inputs, List<MemoryView<?>> outputs) {
         if (graph.inputs().size() != inputs.size()) {
             throw new IllegalArgumentException(
                     "Expected " + graph.inputs().size() + " inputs but got " + inputs.size());
@@ -38,7 +40,7 @@ final class LIRKernelArgsBuilder {
         return args;
     }
 
-    KernelArgs build(
+    public KernelArgs build(
             LIRGraph graph,
             List<MemoryView<?>> buffers,
             List<ScalarArg> scalars,
@@ -89,10 +91,31 @@ final class LIRKernelArgsBuilder {
         }
 
         MemoryView<?> view = tensor.tryGetMaterialized().orElseGet(tensor::materialize);
-        if (!(view.memory().base() instanceof MemorySegment segment)) {
-            throw new IllegalArgumentException("Scalar input requires MemorySegment backing");
-        }
+        MemorySegment segment;
         long offset = view.byteOffset();
+        if (view.memory().base() instanceof MemorySegment memSegment) {
+            segment = memSegment;
+        } else {
+            @SuppressWarnings("unchecked")
+            MemoryContext<MemorySegment> hostContext =
+                    (MemoryContext<MemorySegment>) Environment.current().nativeBackend().memoryContext();
+            @SuppressWarnings("unchecked")
+            MemoryContext<Object> srcContext =
+                    (MemoryContext<Object>)
+                            Environment.current().backend(view.memory().device()).memoryContext();
+            @SuppressWarnings("unchecked")
+            MemoryView<Object> srcView = (MemoryView<Object>) view;
+            MemoryView<MemorySegment> hostView =
+                    MemoryView.of(
+                            hostContext
+                                    .memoryAllocator()
+                                    .allocateMemory(view.dataType(), view.shape()),
+                            view.dataType(),
+                            view.layout());
+            MemoryContext.copy(srcContext, srcView, hostContext, hostView);
+            segment = hostView.memory().base();
+            offset = hostView.byteOffset();
+        }
         if (type == DataType.FP32) {
             return Float.floatToRawIntBits(segment.get(ValueLayout.JAVA_FLOAT_UNALIGNED, offset));
         }

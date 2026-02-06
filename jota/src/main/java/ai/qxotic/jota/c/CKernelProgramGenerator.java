@@ -1,4 +1,4 @@
-package ai.qxotic.jota.hip;
+package ai.qxotic.jota.c;
 
 import ai.qxotic.jota.BFloat16;
 import ai.qxotic.jota.DataType;
@@ -13,13 +13,14 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
-final class HipKernelProgramGenerator {
+final class CKernelProgramGenerator {
+
     KernelProgram generate(LIRGraph graph, ScratchLayout scratchLayout, KernelCacheKey key) {
-        String kernelName = "hip_lir_" + key.value().substring(0, 12);
+        String kernelName = "c_lir_" + key.value().substring(0, 12);
         String source = LirKernelSourceGenerator.generate(graph, scratchLayout, kernelName);
         return new KernelProgram(
                 KernelProgram.Kind.SOURCE,
-                KernelProgram.Language.HIP,
+                KernelProgram.Language.NATIVE,
                 source,
                 kernelName,
                 java.util.Map.of());
@@ -38,7 +39,6 @@ final class HipKernelProgramGenerator {
         private final List<String> lines = new ArrayList<>();
         private int tempId;
         private int indentLevel;
-        private boolean parallelEnabled;
 
         private LirKernelSourceGenerator(
                 LIRGraph graph, ScratchLayout scratchLayout, String kernelName) {
@@ -56,29 +56,15 @@ final class HipKernelProgramGenerator {
 
         private String generate() {
             StringBuilder source = new StringBuilder();
-            source.append("#include <hip/hip_runtime.h>\n");
-            source.append("#include <hip/hip_fp16.h>\n");
-            source.append("#include <hip/hip_bfloat16.h>\n");
             source.append("#include <stdint.h>\n");
+            source.append("#include <stddef.h>\n");
+            source.append("#include <string.h>\n");
             source.append("#include <math.h>\n\n");
             emitHelpers(source);
-
-            source.append("extern \"C\" __global__ void ")
-                    .append(kernelName)
-                    .append("(")
-                    .append(kernelSignature())
-                    .append(") {\n");
+            source.append("void ").append(kernelName).append("(void **buffers, uint64_t *scalars, uint64_t scratch_ptr) {\n");
             indentLevel = 1;
-            emitProlog(source);
-            lines.clear();
-            parallelEnabled = false;
-            if (!emitParallelTopLevel(graph.body())) {
-                addLine("if (blockIdx.x == 0 && threadIdx.x == 0) {");
-                indentLevel++;
-                emitNode(graph.body());
-                indentLevel--;
-                addLine("}");
-            }
+            emitProlog();
+            emitNode(graph.body());
             for (String line : lines) {
                 source.append(line);
             }
@@ -86,149 +72,187 @@ final class HipKernelProgramGenerator {
             return source.toString();
         }
 
-        private boolean emitParallelTopLevel(LIRExprNode body) {
-            StructuredFor loop = null;
-            if (body instanceof StructuredFor structuredFor) {
-                loop = structuredFor;
-            } else if (body instanceof Block block
-                    && block.statements().size() == 1
-                    && block.statements().getFirst() instanceof StructuredFor structuredFor) {
-                loop = structuredFor;
-            }
-            if (loop == null) {
-                return false;
-            }
-            return emitParallelLoopNest(loop);
-        }
-
-        private boolean emitParallelLoopNest(StructuredFor loop) {
-            List<StructuredFor> loops = new ArrayList<>();
-            StructuredFor current = loop;
-            while (true) {
-                if (!current.iterArgs().isEmpty()) {
-                    return false;
-                }
-                if (!isConstZero(current.lowerBound()) || !isConstOne(current.step())) {
-                    return false;
-                }
-                loops.add(current);
-                LIRExprNode body = current.body();
-                if (body instanceof Block block
-                        && block.statements().size() == 1
-                        && block.statements().getFirst() instanceof StructuredFor nested) {
-                    current = nested;
-                    continue;
-                }
-                break;
-            }
-
-            Block innermostBody = current.body();
-            Yield yield = extractYield(innermostBody);
-            if (!yield.values().isEmpty()) {
-                return false;
-            }
-
-            parallelEnabled = true;
-            String linear = nextTempName();
-            addLine(
-                    "long long "
-                            + linear
-                            + " = (long long)blockIdx.x * (long long)blockDim.x + (long long)threadIdx.x;");
-            String total = nextTempName();
-            addLine("long long " + total + " = 1;");
-
-            List<String> extents = new ArrayList<>(loops.size());
-            for (StructuredFor forLoop : loops) {
-                String extent = nextTempName();
-                String ub = emitIndexExpr(forLoop.upperBound());
-                addLine("long long " + extent + " = (long long)" + ub + ";");
-                addLine(total + " *= " + extent + ";");
-                extents.add(extent);
-            }
-
-            addLine("if (" + linear + " < " + total + ") {");
-            indentLevel++;
-            String temp = nextTempName();
-            addLine("long long " + temp + " = " + linear + ";");
-            for (int i = loops.size() - 1; i >= 0; i--) {
-                StructuredFor forLoop = loops.get(i);
-                String extent = extents.get(i);
-                String idxName = forLoop.indexName();
-                addLine("long long " + idxName + " = " + temp + " % " + extent + ";");
-                addLine(temp + " = " + temp + " / " + extent + ";");
-            }
-
-            int limit = innermostBody.statements().size() - 1;
-            for (int i = 0; i < limit; i++) {
-                emitNode(innermostBody.statements().get(i));
-            }
-            indentLevel--;
-            addLine("}");
-            return true;
-        }
-
         private void emitHelpers(StringBuilder source) {
-            source.append("static inline __device__ __half jota_half_from_float(float v) { return __float2half(v); }\n");
-            source.append("static inline __device__ float jota_half_to_float(__half v) { return __half2float(v); }\n");
-            source.append(
-                    "static inline __device__ __half jota_half_from_bits(uint16_t bits) { return *reinterpret_cast<__half*>(&bits); }\n");
-            source.append(
-                    "static inline __device__ hip_bfloat16 jota_bf16_from_float(float v) { return hip_bfloat16(v); }\n");
-            source.append(
-                    "static inline __device__ float jota_bf16_to_float(hip_bfloat16 v) { return float(v); }\n");
-            source.append(
-                    "static inline __device__ hip_bfloat16 jota_bf16_from_bits(uint16_t bits) { return *reinterpret_cast<hip_bfloat16*>(&bits); }\n\n");
+            source.append("#if defined(__FLT16_MANT_DIG__) || defined(__SIZEOF_FLOAT16__)\n");
+            source.append("#define JOTA_HAS_FP16 1\n");
+            source.append("typedef _Float16 jota_fp16;\n");
+            source.append("#else\n");
+            source.append("#define JOTA_HAS_FP16 0\n");
+            source.append("typedef uint16_t jota_fp16;\n");
+            source.append("#endif\n\n");
+
+            source.append("#if defined(__BF16_MANT_DIG__) || defined(__SIZEOF_BFLOAT16__)\n");
+            source.append("#define JOTA_HAS_BF16 1\n");
+            source.append("typedef __bf16 jota_bf16;\n");
+            source.append("#else\n");
+            source.append("#define JOTA_HAS_BF16 0\n");
+            source.append("typedef uint16_t jota_bf16;\n");
+            source.append("#endif\n\n");
+
+            source.append("static inline uint16_t jota_fp16_bits_from_float(float f) {\n");
+            source.append("  uint32_t x; memcpy(&x, &f, sizeof(x));\n");
+            source.append("  uint32_t sign = (x >> 16) & 0x8000u;\n");
+            source.append("  int32_t exp = ((x >> 23) & 0xFF) - 127 + 15;\n");
+            source.append("  uint32_t mant = x & 0x7FFFFFu;\n");
+            source.append("  if (exp <= 0) {\n");
+            source.append("    if (exp < -10) return (uint16_t)sign;\n");
+            source.append("    mant |= 0x800000u;\n");
+            source.append("    uint32_t shift = (uint32_t)(14 - exp);\n");
+            source.append("    uint32_t rounded = mant >> shift;\n");
+            source.append("    uint32_t rem = mant & ((1u << shift) - 1u);\n");
+            source.append("    if (rem > (1u << (shift - 1)) || (rem == (1u << (shift - 1)) && (rounded & 1u))) rounded++;\n");
+            source.append("    return (uint16_t)(sign | rounded);\n");
+            source.append("  }\n");
+            source.append("  if (exp >= 31) {\n");
+            source.append("    return (uint16_t)(sign | 0x7C00u | (mant ? 1u : 0u));\n");
+            source.append("  }\n");
+            source.append("  uint32_t half = ((uint32_t)exp << 10) | (mant >> 13);\n");
+            source.append("  uint32_t rem = mant & 0x1FFFu;\n");
+            source.append("  if (rem > 0x1000u || (rem == 0x1000u && (half & 1u))) half++;\n");
+            source.append("  return (uint16_t)(sign | half);\n");
+            source.append("}\n\n");
+
+            source.append("static inline float jota_fp16_bits_to_float(uint16_t h) {\n");
+            source.append("  uint32_t sign = ((uint32_t)h & 0x8000u) << 16;\n");
+            source.append("  uint32_t exp = (h >> 10) & 0x1Fu;\n");
+            source.append("  uint32_t mant = h & 0x3FFu;\n");
+            source.append("  uint32_t out;\n");
+            source.append("  if (exp == 0) {\n");
+            source.append("    if (mant == 0) {\n");
+            source.append("      out = sign;\n");
+            source.append("    } else {\n");
+            source.append("      exp = 1;\n");
+            source.append("      while ((mant & 0x400u) == 0) { mant <<= 1; exp--; }\n");
+            source.append("      mant &= 0x3FFu;\n");
+            source.append("      out = sign | ((exp + 127 - 15) << 23) | (mant << 13);\n");
+            source.append("    }\n");
+            source.append("  } else if (exp == 31) {\n");
+            source.append("    out = sign | 0x7F800000u | (mant << 13);\n");
+            source.append("  } else {\n");
+            source.append("    out = sign | ((exp + 127 - 15) << 23) | (mant << 13);\n");
+            source.append("  }\n");
+            source.append("  float f; memcpy(&f, &out, sizeof(f)); return f;\n");
+            source.append("}\n\n");
+
+            source.append("static inline uint16_t jota_bf16_bits_from_float(float f) {\n");
+            source.append("  uint32_t x; memcpy(&x, &f, sizeof(x));\n");
+            source.append("  uint32_t lsb = (x >> 16) & 1u;\n");
+            source.append("  uint32_t rounded = x + 0x7FFFu + lsb;\n");
+            source.append("  return (uint16_t)(rounded >> 16);\n");
+            source.append("}\n\n");
+
+            source.append("static inline float jota_bf16_bits_to_float(uint16_t bits) {\n");
+            source.append("  uint32_t x = ((uint32_t)bits) << 16;\n");
+            source.append("  float f; memcpy(&f, &x, sizeof(f)); return f;\n");
+            source.append("}\n\n");
+
+            source.append("static inline jota_fp16 jota_fp16_from_bits(uint16_t bits) {\n");
+            source.append("#if JOTA_HAS_FP16\n");
+            source.append("  jota_fp16 v; memcpy(&v, &bits, sizeof(bits)); return v;\n");
+            source.append("#else\n");
+            source.append("  return bits;\n");
+            source.append("#endif\n");
+            source.append("}\n\n");
+
+            source.append("static inline uint16_t jota_fp16_to_bits(jota_fp16 v) {\n");
+            source.append("#if JOTA_HAS_FP16\n");
+            source.append("  uint16_t bits; memcpy(&bits, &v, sizeof(bits)); return bits;\n");
+            source.append("#else\n");
+            source.append("  return v;\n");
+            source.append("#endif\n");
+            source.append("}\n\n");
+
+            source.append("static inline float jota_fp16_to_float(jota_fp16 v) {\n");
+            source.append("#if JOTA_HAS_FP16\n");
+            source.append("  return (float)v;\n");
+            source.append("#else\n");
+            source.append("  return jota_fp16_bits_to_float(v);\n");
+            source.append("#endif\n");
+            source.append("}\n\n");
+
+            source.append("static inline jota_fp16 jota_fp16_from_float(float v) {\n");
+            source.append("#if JOTA_HAS_FP16\n");
+            source.append("  return (jota_fp16)v;\n");
+            source.append("#else\n");
+            source.append("  return jota_fp16_bits_from_float(v);\n");
+            source.append("#endif\n");
+            source.append("}\n\n");
+
+            source.append("static inline jota_bf16 jota_bf16_from_bits(uint16_t bits) {\n");
+            source.append("#if JOTA_HAS_BF16\n");
+            source.append("  jota_bf16 v; memcpy(&v, &bits, sizeof(bits)); return v;\n");
+            source.append("#else\n");
+            source.append("  return bits;\n");
+            source.append("#endif\n");
+            source.append("}\n\n");
+
+            source.append("static inline uint16_t jota_bf16_to_bits(jota_bf16 v) {\n");
+            source.append("#if JOTA_HAS_BF16\n");
+            source.append("  uint16_t bits; memcpy(&bits, &v, sizeof(bits)); return bits;\n");
+            source.append("#else\n");
+            source.append("  return v;\n");
+            source.append("#endif\n");
+            source.append("}\n\n");
+
+            source.append("static inline float jota_bf16_to_float(jota_bf16 v) {\n");
+            source.append("#if JOTA_HAS_BF16\n");
+            source.append("  return (float)v;\n");
+            source.append("#else\n");
+            source.append("  return jota_bf16_bits_to_float(v);\n");
+            source.append("#endif\n");
+            source.append("}\n\n");
+
+            source.append("static inline jota_bf16 jota_bf16_from_float(float v) {\n");
+            source.append("#if JOTA_HAS_BF16\n");
+            source.append("  return (jota_bf16)v;\n");
+            source.append("#else\n");
+            source.append("  return jota_bf16_bits_from_float(v);\n");
+            source.append("#endif\n");
+            source.append("}\n\n");
+
+            source.append("#if JOTA_HAS_FP16\n");
+            source.append("#define JOTA_FP16_BIN(op,a,b) ((jota_fp16)((a) op (b)))\n");
+            source.append("#else\n");
+            source.append("#define JOTA_FP16_BIN(op,a,b) (jota_fp16_from_float(jota_fp16_to_float(a) op jota_fp16_to_float(b)))\n");
+            source.append("#endif\n");
+
+            source.append("#if JOTA_HAS_BF16\n");
+            source.append("#define JOTA_BF16_BIN(op,a,b) ((jota_bf16)((a) op (b)))\n");
+            source.append("#else\n");
+            source.append("#define JOTA_BF16_BIN(op,a,b) (jota_bf16_from_float(jota_bf16_to_float(a) op jota_bf16_to_float(b)))\n");
+            source.append("#endif\n\n");
         }
 
-        private String kernelSignature() {
-            StringBuilder signature = new StringBuilder();
-            int argIndex = 0;
+        private void emitProlog() {
+            int bufferIndex = 0;
+            int scalarIndex = 0;
             for (LIRInput input : graph.inputs()) {
                 if (input instanceof BufferRef buffer) {
-                    String cType = typeName(buffer.dataType());
-                    signature.append("const ").append(cType).append(" *input").append(argIndex);
-                } else if (input instanceof ScalarInput scalar) {
-                    signature.append(scalarParamType(scalar.dataType()))
-                            .append(" ")
-                            .append(scalarParamName(argIndex, scalar.dataType()));
-                }
-                signature.append(", ");
-                argIndex++;
-            }
-            for (int i = 0; i < graph.outputs().size(); i++) {
-                BufferRef buffer = graph.outputs().get(i);
-                String cType = typeName(buffer.dataType());
-                signature.append(cType).append(" *output").append(i).append(", ");
-            }
-            signature.append("uint64_t scratch_ptr");
-            return signature.toString();
-        }
-
-        private void emitProlog(StringBuilder source) {
-            int argIndex = 0;
-            for (LIRInput input : graph.inputs()) {
-                if (input instanceof BufferRef buffer) {
-                    String name = "input" + argIndex;
+                    String name = "input" + bufferIndex;
+                    addLine("uint8_t *" + name + " = (uint8_t *)buffers[" + bufferIndex + "];");
                     buffers.put(buffer, new BufferVar(name, buffer.dataType(), buffer.byteStrides()));
+                    bufferIndex++;
                 } else if (input instanceof ScalarInput scalar) {
-                    String name = "scalar" + argIndex;
-                    String paramName = scalarParamName(argIndex, scalar.dataType());
+                    String name = "scalar" + scalarIndex;
                     scalarInputs.put(scalar, name);
                     scalarInputNames.put(scalar.id(), name);
+                    String bitsExpr = "scalars[" + scalarIndex + "]";
                     if (scalar.dataType() == DataType.FP16) {
-                        addLine("__half " + name + " = jota_half_from_bits(" + paramName + ");");
+                        addLine("jota_fp16 " + name + " = jota_fp16_from_bits((uint16_t)" + bitsExpr + ");");
                     } else if (scalar.dataType() == DataType.BF16) {
-                        addLine("hip_bfloat16 " + name + " = jota_bf16_from_bits(" + paramName + ");");
+                        addLine("jota_bf16 " + name + " = jota_bf16_from_bits((uint16_t)" + bitsExpr + ");");
                     } else {
-                        addLine(typeName(scalar.dataType()) + " " + name + " = " + paramName + ";");
+                        addLine(typeName(scalar.dataType()) + " " + name + " = (" + typeName(scalar.dataType()) + ")" + bitsExpr + ";");
                     }
+                    scalarIndex++;
                 }
-                argIndex++;
             }
 
             for (int i = 0; i < graph.outputs().size(); i++) {
                 BufferRef buffer = graph.outputs().get(i);
-                buffers.put(buffer, new BufferVar("output" + i, buffer.dataType(), buffer.byteStrides()));
+                String name = "output" + i;
+                addLine("uint8_t *" + name + " = (uint8_t *)buffers[" + (bufferIndex + i) + "];" );
+                buffers.put(buffer, new BufferVar(name, buffer.dataType(), buffer.byteStrides()));
             }
 
             addLine("uint8_t *scratch = (uint8_t *)(uintptr_t)scratch_ptr;");
@@ -239,14 +263,7 @@ final class HipKernelProgramGenerator {
                     long offset = entry.getValue();
                     String name = "scratch" + slotId++;
                     scratchBuffers.put(buf, new ScratchBufferVar(name, buf.dataType(), offset));
-                    addLine(typeName(buf.dataType())
-                            + " *"
-                            + name
-                            + " = ("
-                            + typeName(buf.dataType())
-                            + " *)(scratch + "
-                            + offset
-                            + "LL);");
+                    addLine("uint8_t *" + name + " = scratch + " + offset + "LL;");
                 }
             }
         }
@@ -279,18 +296,7 @@ final class HipKernelProgramGenerator {
                     String initExpr = emitScalarExpr(arg.init());
                     addLine(typeName(arg.dataType()) + " " + arg.name() + " = " + initExpr + ";");
                 }
-                addLine(
-                        "for (long long "
-                                + idx
-                                + " = "
-                                + lb
-                                + "; "
-                                + idx
-                                + " < "
-                                + ub
-                                + "; "
-                                + idx
-                                + "++) {");
+                addLine("for (long long " + idx + " = " + lb + "; " + idx + " < " + ub + "; " + idx + "++) {");
                 indentLevel++;
                 emitStructuredBody(loop);
                 indentLevel--;
@@ -371,16 +377,6 @@ final class HipKernelProgramGenerator {
             throw new IllegalStateException("Structured loop body must end with Yield");
         }
 
-        private boolean isConstZero(LIRExprNode node) {
-            LIRExprNode resolved = exprGraph.resolve(node);
-            return resolved instanceof IConst ic && ic.value() == 0;
-        }
-
-        private boolean isConstOne(LIRExprNode node) {
-            LIRExprNode resolved = exprGraph.resolve(node);
-            return resolved instanceof IConst ic && ic.value() == 1;
-        }
-
         private void emitStore(Store store) {
             BufferVar buffer = requireBuffer(store.buffer());
             String value = emitScalarExpr(store.value());
@@ -412,9 +408,6 @@ final class HipKernelProgramGenerator {
                     return expr;
                 }
                 String var = nextTempName();
-                if (var.equals(expr)) {
-                    return expr;
-                }
                 addLine(typeName(resolved.dataType()) + " " + var + " = " + expr + ";");
                 tempNames.put(resolved, var);
                 return var;
@@ -489,70 +482,38 @@ final class HipKernelProgramGenerator {
             String left = emitScalarExpr(binary.left());
             String right = emitScalarExpr(binary.right());
             DataType type = binary.dataType();
-            if (binary.op() == BinaryOperator.ADD) {
-                String l = maybeConvertForBinaryExpr(binary.left(), left, type);
-                String r = maybeConvertForBinaryExpr(binary.right(), right, type);
-                return binaryArithmetic(type, "+", l, r);
-            }
-            if (binary.op() == BinaryOperator.SUBTRACT) {
-                return binaryArithmetic(type, "-", left, right);
-            }
-            if (binary.op() == BinaryOperator.MULTIPLY) {
-                return binaryArithmetic(type, "*", left, right);
-            }
-            if (binary.op() == BinaryOperator.DIVIDE) {
-                return binaryArithmetic(type, "/", left, right);
-            }
-            if (binary.op() == BinaryOperator.MIN) {
-                return minExpr(type, left, right);
-            }
-            if (binary.op() == BinaryOperator.MAX) {
-                return maxExpr(type, left, right);
-            }
-            if (binary.op() == BinaryOperator.POW) {
-                return powExpr(type, left, right);
-            }
-            if (binary.op() == BinaryOperator.LOGICAL_AND) {
-                String l = binary.left().dataType() != DataType.BOOL ? "(" + left + " != 0)" : left;
-                String r = binary.right().dataType() != DataType.BOOL ? "(" + right + " != 0)" : right;
-                String result = "(" + l + " && " + r + ")";
-                return type == DataType.BOOL ? result : "(" + result + " ? 1 : 0)";
-            }
-            if (binary.op() == BinaryOperator.LOGICAL_OR) {
-                String l = binary.left().dataType() != DataType.BOOL ? "(" + left + " != 0)" : left;
-                String r = binary.right().dataType() != DataType.BOOL ? "(" + right + " != 0)" : right;
-                String result = "(" + l + " || " + r + ")";
-                return type == DataType.BOOL ? result : "(" + result + " ? 1 : 0)";
-            }
-            if (binary.op() == BinaryOperator.LOGICAL_XOR) {
-                String l = binary.left().dataType() != DataType.BOOL ? "(" + left + " != 0)" : left;
-                String r = binary.right().dataType() != DataType.BOOL ? "(" + right + " != 0)" : right;
-                String result = "(" + l + " ^ " + r + ")";
-                return type == DataType.BOOL ? result : "(" + result + " ? 1 : 0)";
-            }
-            if (binary.op() == BinaryOperator.BITWISE_AND) {
-                return castExpr(type, type, "(" + left + " & " + right + ")");
-            }
-            if (binary.op() == BinaryOperator.BITWISE_OR) {
-                return castExpr(type, type, "(" + left + " | " + right + ")");
-            }
-            if (binary.op() == BinaryOperator.BITWISE_XOR) {
-                return castExpr(type, type, "(" + left + " ^ " + right + ")");
-            }
-            if (binary.op() == BinaryOperator.EQUAL) {
-                return compareExpr("==", binary.left(), binary.right(), type);
-            }
-            if (binary.op() == BinaryOperator.LESS_THAN) {
-                return compareExpr("<", binary.left(), binary.right(), type);
-            }
-            throw new UnsupportedOperationException("Unsupported binary operator: " + binary.op());
+            return switch (binary.op()) {
+                case ADD -> binaryArithmetic(type, "+", left, right);
+                case SUBTRACT -> binaryArithmetic(type, "-", left, right);
+                case MULTIPLY -> binaryArithmetic(type, "*", left, right);
+                case DIVIDE -> binaryArithmetic(type, "/", left, right);
+                case MIN -> minExpr(type, left, right);
+                case MAX -> maxExpr(type, left, right);
+                case POW -> powExpr(type, left, right);
+                case LOGICAL_AND -> logicalExpr("&&", binary, left, right);
+                case LOGICAL_OR -> logicalExpr("||", binary, left, right);
+                case LOGICAL_XOR -> logicalXorExpr(binary, left, right);
+                case BITWISE_AND -> "(" + left + " & " + right + ")";
+                case BITWISE_OR -> "(" + left + " | " + right + ")";
+                case BITWISE_XOR -> "(" + left + " ^ " + right + ")";
+                case EQUAL -> compareExpr("==", binary.left(), binary.right(), type);
+                case LESS_THAN -> compareExpr("<", binary.left(), binary.right(), type);
+            };
         }
 
-        private String maybeConvertForBinaryExpr(LIRExprNode node, String exprStr, DataType targetType) {
-            if (node.dataType() == DataType.BOOL && targetType != DataType.BOOL) {
-                return "(" + exprStr + " ? 1 : 0)";
-            }
-            return exprStr;
+        private String logicalExpr(
+                String op, SBinary binary, String left, String right) {
+            String l = binary.left().dataType() != DataType.BOOL ? "(" + left + " != 0)" : left;
+            String r = binary.right().dataType() != DataType.BOOL ? "(" + right + " != 0)" : right;
+            String result = "(" + l + " " + op + " " + r + ")";
+            return binary.dataType() == DataType.BOOL ? result : "(" + result + " ? 1 : 0)";
+        }
+
+        private String logicalXorExpr(SBinary binary, String left, String right) {
+            String l = binary.left().dataType() != DataType.BOOL ? "(" + left + " != 0)" : left;
+            String r = binary.right().dataType() != DataType.BOOL ? "(" + right + " != 0)" : right;
+            String result = "(" + l + " ^ " + r + ")";
+            return binary.dataType() == DataType.BOOL ? result : "(" + result + " ? 1 : 0)";
         }
 
         private String emitTernaryExpr(STernary ternary) {
@@ -611,10 +572,8 @@ final class HipKernelProgramGenerator {
 
             if (leftType == DataType.BOOL && rightType != DataType.BOOL) {
                 left = castExpr(leftType, rightType, left);
-                leftType = rightType;
             } else if (rightType == DataType.BOOL && leftType != DataType.BOOL) {
                 right = castExpr(rightType, leftType, right);
-                rightType = leftType;
             }
 
             String expr = "(" + left + " " + op + " " + right + ")";
@@ -658,21 +617,29 @@ final class HipKernelProgramGenerator {
         }
 
         private String nextTempName() {
-            String name;
-            do {
-                name = "t" + tempId++;
-            } while (scalarInputNames.containsValue(name));
-            return name;
+            return "t" + tempId++;
         }
 
         private String readValue(BufferVar buffer, DataType type, String offset) {
-            String ptr = "((uint8_t*)" + buffer.name + " + " + offset + ")";
-            return "*((" + typeName(type) + "*)" + ptr + ")";
+            String ptr = "(" + buffer.name + " + " + offset + ")";
+            if (type == DataType.FP16) {
+                return "jota_fp16_from_bits(*(uint16_t*)" + ptr + ")";
+            }
+            if (type == DataType.BF16) {
+                return "jota_bf16_from_bits(*(uint16_t*)" + ptr + ")";
+            }
+            return "*(" + typeName(type) + " *)" + ptr;
         }
 
         private String writeValue(
                 BufferVar buffer, DataType type, String offset, String value, DataType valueType) {
-            String ptr = "((uint8_t*)" + buffer.name + " + " + offset + ")";
+            String ptr = "(" + buffer.name + " + " + offset + ")";
+            if (type == DataType.FP16) {
+                return "*(uint16_t*)" + ptr + " = jota_fp16_to_bits(" + castExpr(valueType, DataType.FP16, value) + ");";
+            }
+            if (type == DataType.BF16) {
+                return "*(uint16_t*)" + ptr + " = jota_bf16_to_bits(" + castExpr(valueType, DataType.BF16, value) + ");";
+            }
             String castValue = castExpr(valueType, type, value);
             if (type == DataType.BOOL) {
                 if (valueType == DataType.BOOL) {
@@ -681,7 +648,7 @@ final class HipKernelProgramGenerator {
                     castValue = "(" + value + " != 0 ? 1 : 0)";
                 }
             }
-            return "*((" + typeName(type) + "*)" + ptr + ") = " + castValue + ";";
+            return "*(" + typeName(type) + " *)" + ptr + " = " + castValue + ";";
         }
 
         private String scalarLiteral(long bits, DataType type) {
@@ -695,7 +662,7 @@ final class HipKernelProgramGenerator {
             }
             if (type == DataType.FP16) {
                 float value = Float.float16ToFloat((short) bits);
-                return "jota_half_from_float(" + formatFloatLiteral(value) + ")";
+                return "jota_fp16_from_float(" + formatFloatLiteral(value) + ")";
             }
             if (type == DataType.BF16) {
                 float value = BFloat16.toFloat((short) bits);
@@ -761,7 +728,7 @@ final class HipKernelProgramGenerator {
                 return "(" + expr + " != 0 ? 1 : 0)";
             }
             if (target == DataType.FP16) {
-                return "jota_half_from_float(" + toFloatExpr(source, expr) + ")";
+                return "jota_fp16_from_float(" + toFloatExpr(source, expr) + ")";
             }
             if (target == DataType.BF16) {
                 return "jota_bf16_from_float(" + toFloatExpr(source, expr) + ")";
@@ -780,7 +747,7 @@ final class HipKernelProgramGenerator {
 
         private String toFloatExpr(DataType source, String expr) {
             if (source == DataType.FP16) {
-                return "jota_half_to_float(" + expr + ")";
+                return "jota_fp16_to_float(" + expr + ")";
             }
             if (source == DataType.BF16) {
                 return "jota_bf16_to_float(" + expr + ")";
@@ -814,15 +781,21 @@ final class HipKernelProgramGenerator {
         }
 
         private String negateExpr(DataType type, String expr) {
-            if (type == DataType.FP16 || type == DataType.BF16) {
-                return castExpr(DataType.FP32, type, "-" + toFloatExpr(type, expr));
+            if (type == DataType.FP16) {
+                return "JOTA_FP16_BIN(-, 0, " + expr + ")";
+            }
+            if (type == DataType.BF16) {
+                return "JOTA_BF16_BIN(-, 0, " + expr + ")";
             }
             return "-" + expr;
         }
 
         private String absExpr(DataType type, String expr) {
-            if (type == DataType.FP16 || type == DataType.BF16) {
-                return castExpr(DataType.FP32, type, "fabsf(" + toFloatExpr(type, expr) + ")");
+            if (type == DataType.FP16) {
+                return "jota_fp16_from_float(fabsf(" + toFloatExpr(type, expr) + "))";
+            }
+            if (type == DataType.BF16) {
+                return "jota_bf16_from_float(fabsf(" + toFloatExpr(type, expr) + "))";
             }
             if (type == DataType.FP32) {
                 return "fabsf(" + expr + ")";
@@ -837,16 +810,21 @@ final class HipKernelProgramGenerator {
         }
 
         private String squareExpr(DataType type, String expr) {
-            if (type == DataType.FP16 || type == DataType.BF16) {
-                String f = toFloatExpr(type, expr);
-                return castExpr(DataType.FP32, type, "(" + f + " * " + f + ")");
+            if (type == DataType.FP16) {
+                return "JOTA_FP16_BIN(*, " + expr + ", " + expr + ")";
+            }
+            if (type == DataType.BF16) {
+                return "JOTA_BF16_BIN(*, " + expr + ", " + expr + ")";
             }
             return "(" + expr + " * " + expr + ")";
         }
 
         private String reciprocalExpr(DataType type, String expr) {
-            if (type == DataType.FP16 || type == DataType.BF16) {
-                return castExpr(DataType.FP32, type, "(1.0f / " + toFloatExpr(type, expr) + ")");
+            if (type == DataType.FP16) {
+                return "jota_fp16_from_float(1.0f / " + toFloatExpr(type, expr) + ")";
+            }
+            if (type == DataType.BF16) {
+                return "jota_bf16_from_float(1.0f / " + toFloatExpr(type, expr) + ")";
             }
             if (type == DataType.FP64) {
                 return "(1.0 / " + expr + ")";
@@ -856,8 +834,11 @@ final class HipKernelProgramGenerator {
 
         private String floatUnaryExpr(
                 DataType type, String fp64Fn, String fp32Fn, String expr) {
-            if (type == DataType.FP16 || type == DataType.BF16) {
-                return castExpr(DataType.FP32, type, fp32Fn + "(" + toFloatExpr(type, expr) + ")");
+            if (type == DataType.FP16) {
+                return "jota_fp16_from_float(" + fp32Fn + "(" + toFloatExpr(type, expr) + "))";
+            }
+            if (type == DataType.BF16) {
+                return "jota_bf16_from_float(" + fp32Fn + "(" + toFloatExpr(type, expr) + "))";
             }
             if (type == DataType.FP64) {
                 return fp64Fn + "(" + expr + ")";
@@ -869,19 +850,21 @@ final class HipKernelProgramGenerator {
         }
 
         private String binaryArithmetic(DataType type, String op, String left, String right) {
-            if (type == DataType.FP16 || type == DataType.BF16) {
-                String l = toFloatExpr(type, left);
-                String r = toFloatExpr(type, right);
-                return castExpr(DataType.FP32, type, "(" + l + " " + op + " " + r + ")");
+            if (type == DataType.FP16) {
+                return "JOTA_FP16_BIN(" + op + ", " + left + ", " + right + ")";
+            }
+            if (type == DataType.BF16) {
+                return "JOTA_BF16_BIN(" + op + ", " + left + ", " + right + ")";
             }
             return "(" + left + " " + op + " " + right + ")";
         }
 
         private String minExpr(DataType type, String left, String right) {
-            if (type == DataType.FP16 || type == DataType.BF16) {
-                String l = toFloatExpr(type, left);
-                String r = toFloatExpr(type, right);
-                return castExpr(DataType.FP32, type, "fminf(" + l + ", " + r + ")");
+            if (type == DataType.FP16) {
+                return "jota_fp16_from_float(fminf(" + toFloatExpr(type, left) + ", " + toFloatExpr(type, right) + "))";
+            }
+            if (type == DataType.BF16) {
+                return "jota_bf16_from_float(fminf(" + toFloatExpr(type, left) + ", " + toFloatExpr(type, right) + "))";
             }
             if (type == DataType.FP64) {
                 return "fmin(" + left + ", " + right + ")";
@@ -893,10 +876,11 @@ final class HipKernelProgramGenerator {
         }
 
         private String maxExpr(DataType type, String left, String right) {
-            if (type == DataType.FP16 || type == DataType.BF16) {
-                String l = toFloatExpr(type, left);
-                String r = toFloatExpr(type, right);
-                return castExpr(DataType.FP32, type, "fmaxf(" + l + ", " + r + ")");
+            if (type == DataType.FP16) {
+                return "jota_fp16_from_float(fmaxf(" + toFloatExpr(type, left) + ", " + toFloatExpr(type, right) + "))";
+            }
+            if (type == DataType.BF16) {
+                return "jota_bf16_from_float(fmaxf(" + toFloatExpr(type, left) + ", " + toFloatExpr(type, right) + "))";
             }
             if (type == DataType.FP64) {
                 return "fmax(" + left + ", " + right + ")";
@@ -908,10 +892,11 @@ final class HipKernelProgramGenerator {
         }
 
         private String powExpr(DataType type, String left, String right) {
-            if (type == DataType.FP16 || type == DataType.BF16) {
-                String l = toFloatExpr(type, left);
-                String r = toFloatExpr(type, right);
-                return castExpr(DataType.FP32, type, "powf(" + l + ", " + r + ")");
+            if (type == DataType.FP16) {
+                return "jota_fp16_from_float(powf(" + toFloatExpr(type, left) + ", " + toFloatExpr(type, right) + "))";
+            }
+            if (type == DataType.BF16) {
+                return "jota_bf16_from_float(powf(" + toFloatExpr(type, left) + ", " + toFloatExpr(type, right) + "))";
             }
             if (type == DataType.FP64) {
                 return "pow(" + left + ", " + right + ")";
@@ -920,20 +905,6 @@ final class HipKernelProgramGenerator {
                 return "powf(" + left + ", " + right + ")";
             }
             throw new UnsupportedOperationException("pow requires floating-point type");
-        }
-
-        private String scalarParamType(DataType type) {
-            if (type == DataType.FP16 || type == DataType.BF16) {
-                return "uint16_t";
-            }
-            return typeName(type);
-        }
-
-        private String scalarParamName(int index, DataType type) {
-            if (type == DataType.FP16 || type == DataType.BF16) {
-                return "scalar" + index + "_bits";
-            }
-            return "scalar" + index;
         }
 
         private String typeName(DataType dataType) {
@@ -953,10 +924,10 @@ final class HipKernelProgramGenerator {
                 return "int64_t";
             }
             if (dataType == DataType.FP16) {
-                return "__half";
+                return "jota_fp16";
             }
             if (dataType == DataType.BF16) {
-                return "hip_bfloat16";
+                return "jota_bf16";
             }
             if (dataType == DataType.FP32) {
                 return "float";
@@ -964,7 +935,7 @@ final class HipKernelProgramGenerator {
             if (dataType == DataType.FP64) {
                 return "double";
             }
-            throw new UnsupportedOperationException("Unsupported HIP data type: " + dataType);
+            throw new UnsupportedOperationException("Unsupported C data type: " + dataType);
         }
 
         private void addLine(String line) {

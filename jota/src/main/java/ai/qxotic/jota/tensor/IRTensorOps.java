@@ -24,32 +24,32 @@ final class IRTensorOps implements TensorOps {
 
     @Override
     public Tensor add(Tensor a, Tensor b) {
-        return binaryOp(a, b, BinaryOperator.ADD, "add");
+        return binaryOp(a, b, BinaryOperator.ADD);
     }
 
     @Override
     public Tensor subtract(Tensor a, Tensor b) {
-        return binaryOp(a, b, BinaryOperator.SUBTRACT, "subtract");
+        return binaryOp(a, b, BinaryOperator.SUBTRACT);
     }
 
     @Override
     public Tensor multiply(Tensor a, Tensor b) {
-        return binaryOp(a, b, BinaryOperator.MULTIPLY, "multiply");
+        return binaryOp(a, b, BinaryOperator.MULTIPLY);
     }
 
     @Override
     public Tensor divide(Tensor a, Tensor b) {
-        return binaryOp(a, b, BinaryOperator.DIVIDE, "divide");
+        return binaryOp(a, b, BinaryOperator.DIVIDE);
     }
 
     @Override
     public Tensor min(Tensor a, Tensor b) {
-        return binaryOp(a, b, BinaryOperator.MIN, "min");
+        return binaryOp(a, b, BinaryOperator.MIN);
     }
 
     @Override
     public Tensor max(Tensor a, Tensor b) {
-        return binaryOp(a, b, BinaryOperator.MAX, "max");
+        return binaryOp(a, b, BinaryOperator.MAX);
     }
 
     @Override
@@ -149,12 +149,12 @@ final class IRTensorOps implements TensorOps {
 
     @Override
     public Tensor equal(Tensor a, Tensor b) {
-        return binaryOp(a, b, BinaryOperator.EQUAL, "equal");
+        return binaryOp(a, b, BinaryOperator.EQUAL);
     }
 
     @Override
     public Tensor lessThan(Tensor a, Tensor b) {
-        return binaryOp(a, b, BinaryOperator.LESS_THAN, "lessThan");
+        return binaryOp(a, b, BinaryOperator.LESS_THAN);
     }
 
     @Override
@@ -183,13 +183,15 @@ final class IRTensorOps implements TensorOps {
     @Override
     public Tensor sum(
             Tensor x, DataType accumulatorType, boolean keepDims, int _axis, int... _axes) {
-        return reduceAxes(x, ReductionOp.SUM, getAxes(_axis, _axes), keepDims, accumulatorType);
+        return reduceAxes(
+                x, ReductionOperator.SUM, getAxes(_axis, _axes), keepDims, accumulatorType);
     }
 
     @Override
     public Tensor product(
             Tensor x, DataType accumulatorType, boolean keepDims, int _axis, int... _axes) {
-        return reduceAxes(x, ReductionOp.PROD, getAxes(_axis, _axes), keepDims, accumulatorType);
+        return reduceAxes(
+                x, ReductionOperator.PROD, getAxes(_axis, _axes), keepDims, accumulatorType);
     }
 
     @Override
@@ -201,12 +203,12 @@ final class IRTensorOps implements TensorOps {
 
     @Override
     public Tensor max(Tensor x, boolean keepDims, int _axis, int... _axes) {
-        return reduceAxes(x, ReductionOp.MAX, getAxes(_axis, _axes), keepDims, null);
+        return reduceAxes(x, ReductionOperator.MAX, getAxes(_axis, _axes), keepDims, null);
     }
 
     @Override
     public Tensor min(Tensor x, boolean keepDims, int _axis, int... _axes) {
-        return reduceAxes(x, ReductionOp.MIN, getAxes(_axis, _axes), keepDims, null);
+        return reduceAxes(x, ReductionOperator.MIN, getAxes(_axis, _axes), keepDims, null);
     }
 
     @Override
@@ -281,7 +283,7 @@ final class IRTensorOps implements TensorOps {
         return new IRTensor(node, tensor.device());
     }
 
-    private Tensor binaryOp(Tensor a, Tensor b, BinaryOperator op, String opName) {
+    private Tensor binaryOp(Tensor a, Tensor b, BinaryOperator op) {
         IRTensor left = requireIRTensor(a);
         IRTensor right = requireIRTensor(b);
         Shape outputShape = requireCompatibleShape(left, right);
@@ -304,7 +306,11 @@ final class IRTensorOps implements TensorOps {
     }
 
     private Tensor reduceAxes(
-            Tensor input, ReductionOp op, int[] _axes, boolean keepDims, DataType accumulatorType) {
+            Tensor input,
+            ReductionOperator op,
+            int[] _axes,
+            boolean keepDims,
+            DataType accumulatorType) {
         IRTensor tensor = requireIRTensor(input);
         int rank = tensor.shape().rank();
         // Wrap around axes
@@ -312,13 +318,12 @@ final class IRTensorOps implements TensorOps {
         for (int i = 0; i < _axes.length; i++) {
             axes[i] = Util.wrapAround(_axes[i], rank);
         }
-        ReductionOperator irtOp = mapReductionOp(op);
         // Determine accumulator type: use provided type or default to input type
         DataType accType = (accumulatorType != null) ? accumulatorType : tensor.dataType();
         Shape outputShape = reduceShape(tensor.shape(), axes, keepDims);
         TIRNode node =
                 new ai.qxotic.jota.ir.tir.ReductionOp(
-                        irtOp, tensor.node(), axes, keepDims, accType, outputShape);
+                        op, tensor.node(), axes, keepDims, accType, outputShape);
         return new IRTensor(node, tensor.device());
     }
 
@@ -483,17 +488,4 @@ final class IRTensorOps implements TensorOps {
         return Shape.flat(dims);
     }
 
-    private ReductionOperator mapReductionOp(ReductionOp op) {
-        if (op == ReductionOp.SUM) {
-            return ReductionOperator.SUM;
-        } else if (op == ReductionOp.PROD) {
-            return ReductionOperator.PROD;
-        } else if (op == ReductionOp.MIN) {
-            return ReductionOperator.MIN;
-        } else if (op == ReductionOp.MAX) {
-            return ReductionOperator.MAX;
-        } else {
-            throw new IllegalArgumentException("Unknown reduction op: " + op);
-        }
-    }
 }

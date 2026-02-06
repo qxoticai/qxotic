@@ -6,7 +6,7 @@ import ai.qxotic.jota.memory.MemoryAccessChecks;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
-final class PanamaMemoryAccess implements MemoryAccess<MemorySegment> {
+public final class PanamaMemoryAccess implements MemoryAccess<MemorySegment> {
 
     private static final PanamaMemoryAccess INSTANCE = new PanamaMemoryAccess();
 

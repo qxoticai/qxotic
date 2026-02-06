@@ -25,6 +25,7 @@ public interface Device {
 
     // Engines
     Device PANAMA = CPU.child("panama"); // MemorySegment-backed memory
+    Device C = CPU.child("c");
 
     Device CUDA = GPU.child("cuda");
     Device HIP = GPU.child("hip");
