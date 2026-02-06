@@ -26,13 +26,13 @@ public final class PanamaBackend implements Backend {
 
     public PanamaBackend(MemoryContext<MemorySegment> context, DiskKernelCache cache) {
         this.context = Objects.requireNonNull(context, "context");
-        this.computeEngine = new JavaComputeEngine(context, cache);
+        this.computeEngine = new PanamaLirComputeEngine(context, cache);
         KernelBackend backend = new JavaKernelBackend(context, cache);
         Path programRoot =
                 Path.of("__kernels").resolve(Device.PANAMA.leafName()).resolve("programs");
         KernelProgramStore sourceStore = new FileKernelProgramStore(programRoot.resolve("source"));
         KernelProgramStore binaryStore = new FileKernelProgramStore(programRoot.resolve("binary"));
-        this.kernelService = new KernelService(backend, null, sourceStore, binaryStore);
+        this.kernelService = new KernelService(backend, sourceStore, binaryStore);
     }
 
     @Override

@@ -9,9 +9,9 @@ import ai.qxotic.jota.ir.tir.TIRGraph;
 import ai.qxotic.jota.ir.tir.TIRInterpreter;
 import ai.qxotic.jota.ir.tir.TIRNode;
 import ai.qxotic.jota.ir.tir.TIRValidationPass;
+import ai.qxotic.jota.backend.Backend;
 import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
-import ai.qxotic.jota.panama.PanamaLIRKernelExecutor;
 
 import java.lang.foreign.MemorySegment;
 import java.util.List;
@@ -57,18 +57,20 @@ final class IRComputation implements LazyComputation {
     public MemoryView<?> execute() {
         Device device =
                 inputTensors.isEmpty() ? Device.defaultDevice() : inputTensors.get(0).device();
-        MemoryContext<?> context = Environment.current().backend(device).memoryContext();
+        Backend backend = Environment.current().backend(device);
+        MemoryContext<?> context = backend.memoryContext();
+        ComputeBackend computeBackend = Environment.current().engineFor(device).backendFor(device);
 
         // Optimize the graph before execution
         TIRGraph optimizedGraph = optimizeGraph(graph);
 
-        if (device == Device.PANAMA && requiresKernel(optimizedGraph)) {
-            @SuppressWarnings("unchecked")
-            MemoryContext<MemorySegment> panamaContext =
-                    (MemoryContext<MemorySegment>) context;
+        if (requiresKernel(optimizedGraph)) {
             List<Tensor> lirInputs = collectLirInputs(optimizedGraph, inputTensors);
-            return new PanamaLIRKernelExecutor(DiskKernelCache.defaultCache())
-                    .execute(optimizedGraph, lirInputs, panamaContext);
+            if (computeBackend == null) {
+                throw new UnsupportedOperationException(
+                        "LIR execution required for device " + device + " but backend is missing");
+            }
+            return computeBackend.execute(optimizedGraph, lirInputs);
         }
 
         @SuppressWarnings({"unchecked", "rawtypes"})

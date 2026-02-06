@@ -4,13 +4,11 @@ import ai.qxotic.jota.tensor.KernelBackend;
 import ai.qxotic.jota.tensor.KernelCacheKey;
 import ai.qxotic.jota.tensor.KernelExecutable;
 import ai.qxotic.jota.tensor.KernelProgram;
-import ai.qxotic.jota.tensor.KernelProgramGenerator;
 import java.util.Objects;
 import java.util.Optional;
 
 public record KernelService(
         KernelBackend backend,
-        KernelProgramGenerator generator,
         KernelProgramStore sourceStore,
         KernelProgramStore binaryStore) {
 
@@ -18,10 +16,6 @@ public record KernelService(
         Objects.requireNonNull(backend, "backend");
         Objects.requireNonNull(sourceStore, "sourceStore");
         Objects.requireNonNull(binaryStore, "binaryStore");
-    }
-
-    public Optional<KernelProgramGenerator> generatorOptional() {
-        return Optional.ofNullable(generator);
     }
 
     public KernelExecutable register(KernelProgram program, KernelCacheKey key) {

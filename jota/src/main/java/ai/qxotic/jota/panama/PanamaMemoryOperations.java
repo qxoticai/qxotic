@@ -6,7 +6,7 @@ import ai.qxotic.jota.memory.MemoryOperations;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
-final class PanamaMemoryOperations implements MemoryOperations<MemorySegment> {
+public final class PanamaMemoryOperations implements MemoryOperations<MemorySegment> {
 
     private static final PanamaMemoryOperations INSTANCE = new PanamaMemoryOperations();
 

@@ -1,4 +1,4 @@
-package ai.qxotic.jota.hip;
+package ai.qxotic.jota.c;
 
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.backend.Backend;
@@ -8,25 +8,26 @@ import ai.qxotic.jota.backend.KernelService;
 import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.tensor.ComputeEngine;
 import ai.qxotic.jota.tensor.KernelBackend;
+import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Optional;
 
-public final class HipBackend implements Backend {
+public final class CBackend implements Backend {
 
-    private final HipMemoryContext context;
+    private final CMemoryContext context;
     private final ComputeEngine computeEngine;
     private final KernelService kernelService;
 
-    public HipBackend() {
-        this(HipMemoryContext.instance());
+    public CBackend() {
+        this(new CMemoryContext());
     }
 
-    public HipBackend(HipMemoryContext context) {
+    public CBackend(CMemoryContext context) {
         this.context = Objects.requireNonNull(context, "context");
-        this.computeEngine = new HipComputeEngine(context);
-        KernelBackend backend = new HipKernelBackend();
-        Path programRoot = Path.of("__kernels").resolve(Device.HIP.leafName()).resolve("programs");
+        this.computeEngine = new CComputeEngine(context);
+        KernelBackend backend = new CKernelBackend();
+        Path programRoot = Path.of("__kernels").resolve(Device.C.leafName()).resolve("programs");
         KernelProgramStore sourceStore = new FileKernelProgramStore(programRoot.resolve("source"));
         KernelProgramStore binaryStore = new FileKernelProgramStore(programRoot.resolve("binary"));
         this.kernelService = new KernelService(backend, sourceStore, binaryStore);
@@ -38,7 +39,7 @@ public final class HipBackend implements Backend {
     }
 
     @Override
-    public MemoryContext<?> memoryContext() {
+    public MemoryContext<MemorySegment> memoryContext() {
         return context;
     }
 

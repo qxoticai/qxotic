@@ -3,6 +3,8 @@ package ai.qxotic.jota;
 import ai.qxotic.jota.backend.Backend;
 import ai.qxotic.jota.backend.BackendRegistry;
 import ai.qxotic.jota.backend.DefaultBackendRegistry;
+import ai.qxotic.jota.c.CBackend;
+import ai.qxotic.jota.c.CNative;
 import ai.qxotic.jota.hip.HipBackend;
 import ai.qxotic.jota.hip.HipRuntime;
 import ai.qxotic.jota.memory.MemoryContext;
@@ -103,6 +105,9 @@ public final class Environment {
 
     private static BackendRegistry buildDefaultBackends() {
         DefaultBackendRegistry registry = DefaultBackendRegistry.withNative(new PanamaBackend());
+        if (CNative.isAvailable()) {
+            registry.register(new CBackend());
+        }
         if (HipRuntime.isAvailable()) {
             registry.register(new HipBackend());
         }

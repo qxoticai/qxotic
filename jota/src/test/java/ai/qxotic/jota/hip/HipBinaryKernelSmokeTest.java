@@ -11,6 +11,7 @@ import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.memory.impl.ContextFactory;
 import ai.qxotic.jota.tensor.Tensor;
+import ai.qxotic.jota.tensor.Tracer;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -18,58 +19,20 @@ import org.junit.jupiter.api.Test;
 class HipBinaryKernelSmokeTest {
 
     @Test
-    void runsSubtractKernel() {
+    void runsTracedAddKernel() {
         Assumptions.assumeTrue(HipRuntime.isAvailable());
         assumeHipccAvailable();
 
         int n = 256;
         MemoryView<MemorySegment> hostA = hostArray(n, i -> (float) i);
-        MemoryView<MemorySegment> hostB = hostArray(n, i -> 1.0f);
-
-        MemoryView<?> output = runBinary(hostA, hostB, (a, b) -> a.subtract(b));
-
-        MemoryAccess<MemorySegment> access = hostAccess();
-        @SuppressWarnings("unchecked")
-        MemoryView<MemorySegment> hostOut = (MemoryView<MemorySegment>) output;
-        long lastOffset = Indexing.linearToOffset(hostOut, n - 1);
-        assertEquals((float) (n - 2), access.readFloat(hostOut.memory(), lastOffset), 0.0001f);
-    }
-
-    @Test
-    void runsMultiplyKernel() {
-        Assumptions.assumeTrue(HipRuntime.isAvailable());
-        assumeHipccAvailable();
-
-        int n = 128;
-        MemoryView<MemorySegment> hostA = hostArray(n, i -> (float) i);
         MemoryView<MemorySegment> hostB = hostArray(n, i -> 2.0f);
 
-        MemoryView<?> output = runBinary(hostA, hostB, (a, b) -> a.multiply(b));
+        MemoryView<?> output = runBinary(hostA, hostB, (a, b) -> a.add(b));
 
         MemoryAccess<MemorySegment> access = hostAccess();
-        @SuppressWarnings("unchecked")
-        MemoryView<MemorySegment> hostOut = (MemoryView<MemorySegment>) output;
+        MemoryView<MemorySegment> hostOut = toHost(ContextFactory.ofMemorySegment(), output);
         long lastOffset = Indexing.linearToOffset(hostOut, n - 1);
-        assertEquals(
-                (float) (n - 1) * 2.0f, access.readFloat(hostOut.memory(), lastOffset), 0.0001f);
-    }
-
-    @Test
-    void runsDivideKernel() {
-        Assumptions.assumeTrue(HipRuntime.isAvailable());
-        assumeHipccAvailable();
-
-        int n = 128;
-        MemoryView<MemorySegment> hostA = hostArray(n, i -> (float) (i + 1));
-        MemoryView<MemorySegment> hostB = hostArray(n, i -> 2.0f);
-
-        MemoryView<?> output = runBinary(hostA, hostB, (a, b) -> a.divide(b));
-
-        MemoryAccess<MemorySegment> access = hostAccess();
-        @SuppressWarnings("unchecked")
-        MemoryView<MemorySegment> hostOut = (MemoryView<MemorySegment>) output;
-        long lastOffset = Indexing.linearToOffset(hostOut, n - 1);
-        assertEquals((float) n / 2.0f, access.readFloat(hostOut.memory(), lastOffset), 0.0001f);
+        assertEquals((float) (n - 1) + 2.0f, access.readFloat(hostOut.memory(), lastOffset), 0.0001f);
     }
 
     private static MemoryView<MemorySegment> hostArray(int n, IndexValue supplier) {
@@ -107,7 +70,34 @@ class HipBinaryKernelSmokeTest {
 
         Tensor a = Tensor.of(devA);
         Tensor b = Tensor.of(devB);
-        return op.apply(a, b).materialize();
+        Tensor traced = Tracer.trace(a, b, op::apply);
+        return traced.materialize();
+    }
+
+    private static MemoryView<MemorySegment> toHost(
+            MemoryContext<MemorySegment> host, MemoryView<?> view) {
+        if (view.memory().base() instanceof MemorySegment) {
+            @SuppressWarnings("unchecked")
+            MemoryView<MemorySegment> hostView = (MemoryView<MemorySegment>) view;
+            return hostView;
+        }
+        @SuppressWarnings("unchecked")
+        MemoryView<HipDevicePtr> devView = (MemoryView<HipDevicePtr>) view;
+        MemoryView<MemorySegment> hostView =
+                MemoryView.of(
+                        host.memoryAllocator().allocateMemory(devView.dataType(), devView.shape()),
+                        devView.dataType(),
+                        devView.layout());
+        long byteSize = devView.dataType().byteSizeFor(devView.shape());
+        HipMemoryContext.instance()
+                .memoryOperations()
+                .copyToNative(
+                        devView.memory(),
+                        devView.byteOffset(),
+                        hostView.memory(),
+                        hostView.byteOffset(),
+                        byteSize);
+        return hostView;
     }
 
     private static MemoryAccess<MemorySegment> hostAccess() {

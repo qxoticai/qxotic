@@ -4,40 +4,41 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Layout;
-import ai.qxotic.jota.Shape;
-import ai.qxotic.jota.Stride;
+import ai.qxotic.jota.ir.TIRToLIRLowerer;
+import ai.qxotic.jota.ir.lir.LIRGraph;
+import ai.qxotic.jota.ir.lir.LIRStandardPipeline;
+import ai.qxotic.jota.ir.lir.scratch.ScratchAnalysisPass;
+import ai.qxotic.jota.ir.lir.scratch.ScratchLayout;
+import ai.qxotic.jota.ir.lir.scratch.ScratchVerificationPass;
+import ai.qxotic.jota.ir.tir.TIRGraph;
+import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
+import ai.qxotic.jota.panama.LIRKernelArgsBuilder;
 import ai.qxotic.jota.tensor.ComputeBackend;
 import ai.qxotic.jota.tensor.ExecutionStream;
-import ai.qxotic.jota.tensor.ExpressionGraph;
 import ai.qxotic.jota.tensor.KernelArgs;
-import ai.qxotic.jota.tensor.KernelArgsBuilder;
 import ai.qxotic.jota.tensor.KernelCacheKey;
-import ai.qxotic.jota.tensor.KernelHarness;
-import ai.qxotic.jota.tensor.KernelInterpreter;
+import ai.qxotic.jota.tensor.KernelExecutable;
 import ai.qxotic.jota.tensor.KernelProgram;
-import ai.qxotic.jota.tensor.KernelProgramGenerator;
 import ai.qxotic.jota.tensor.LaunchConfig;
-import ai.qxotic.jota.tensor.LaunchHints;
-import ai.qxotic.jota.tensor.ReductionOp;
 import ai.qxotic.jota.tensor.Tensor;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.List;
 
-final class HipComputeBackend implements ComputeBackend {
-
-    private static final String ENV_HSACO = "HIP_HSACO_PATH";
-    private static final String ENV_KERNEL = "HIP_KERNEL_NAME";
+public final class HipComputeBackend implements ai.qxotic.jota.tensor.ComputeBackend {
 
     private final Device device;
-    private final KernelProgramGenerator generator = new HipKernelProgramGenerator();
+    private final HipKernelProgramGenerator generator = new HipKernelProgramGenerator();
     private final HipKernelBackend backend = new HipKernelBackend();
-    private final KernelArgsBuilder argsBuilder = new KernelArgsBuilder();
-    private final KernelHarness harness = new KernelHarness(generator, backend, argsBuilder);
-    private final HipReductionKernelGenerator reductionGenerator =
-            new HipReductionKernelGenerator();
+    private final LIRKernelArgsBuilder lirArgsBuilder = new LIRKernelArgsBuilder();
+    private final TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+    private final LIRStandardPipeline pipeline = new LIRStandardPipeline();
+    private final ScratchAnalysisPass scratchAnalysis = new ScratchAnalysisPass();
+    private final ScratchVerificationPass scratchVerification = new ScratchVerificationPass();
+    private final boolean verifyScratch =
+            Boolean.parseBoolean(System.getProperty("jota.verifyScratch", "false"));
 
     HipComputeBackend(Device device) {
         this.device = device;
@@ -49,171 +50,41 @@ final class HipComputeBackend implements ComputeBackend {
     }
 
     @Override
-    public MemoryView<?> execute(ExpressionGraph graph, List<Tensor> inputs) {
+    public MemoryView<?> execute(TIRGraph graph, List<Tensor> inputs) {
         if (!HipRuntime.isAvailable()) {
             throw new IllegalStateException("HIP runtime not available");
         }
-        String hsacoPath = System.getenv(ENV_HSACO);
-        String kernelName = System.getenv(ENV_KERNEL);
-        DataType rootType = graph.root().dataType();
-        Layout layout = graph.root().layout();
-        Shape shape = layout.shape();
-        if (!layout.stride().equals(Stride.rowMajor(shape))) {
-            throw new UnsupportedOperationException("HIP backend requires row-major layout");
-        }
-        if (graph.reductionRoot().isPresent()) {
-            return executeReduction(graph, inputs);
-        }
-        return executeElementwise(graph, inputs, hsacoPath, kernelName, rootType, shape);
-    }
-
-    private MemoryView<?> executeReduction(ExpressionGraph graph, List<Tensor> inputs) {
-        ExpressionGraph.ReductionInfo reduction =
-                graph.reductionRoot()
-                        .orElseThrow(
-                                () ->
-                                        new IllegalStateException(
-                                                "Expected reduction root for HIP sum execution"));
-        if (reduction.op() != ReductionOp.SUM
-                && reduction.op() != ReductionOp.MIN
-                && reduction.op() != ReductionOp.MAX) {
-            throw new UnsupportedOperationException(
-                    "HIP backend reduction supports sum/min/max only, got: "
-                            + reduction.op().name());
-        }
-        if (graph.root().dataType() != DataType.FP32 && graph.root().dataType() != DataType.FP64) {
-            return executeReductionHost(graph, inputs);
-        }
-
-        ExpressionGraph inputGraph =
-                new ExpressionGraph(reduction.input(), graph.inputs(), graph.inputTensorMap());
-        MemoryView<?> inputView = execute(inputGraph, inputs);
-        HipMemoryContext hipContext = HipMemoryContext.instance();
-        MemoryView<HipDevicePtr> deviceInput =
-                inputView.memory().device().equals(Device.HIP)
-                        ? castDevice(inputView)
-                        : toDevice(hipContext, inputView);
-
-        if (!deviceInput.layout().stride().equals(Stride.rowMajor(deviceInput.shape()))) {
-            return executeReductionHost(graph, inputs);
-        }
-        if (deviceInput.dataType() != graph.root().dataType()) {
-            return executeReductionHost(graph, inputs);
-        }
-
-        Layout layout = graph.root().layout();
-        Shape shape = layout.shape();
-        long outSize = shape.size();
-        if (outSize > Integer.MAX_VALUE) {
-            throw new UnsupportedOperationException("HIP backend supports int32 sizes only");
-        }
-        MemoryView<HipDevicePtr> devOut =
-                MemoryView.of(
-                        hipContext
-                                .memoryAllocator()
-                                .allocateMemory(graph.root().dataType(), outSize),
-                        graph.root().dataType(),
-                        Layout.rowMajor(shape));
-
-        HipReductionKernelGenerator.KernelProgramSpec spec =
-                reductionGenerator.generate(reduction, deviceInput.shape());
-        KernelProgram program =
-                new KernelProgram(
-                        KernelProgram.Kind.SOURCE,
-                        KernelProgram.Language.HIP,
-                        spec.source(),
-                        spec.name(),
-                        java.util.Map.of());
-        KernelCacheKey key = backend.cacheKey(graph);
-        KernelArgs args = new KernelArgs().addBuffer(deviceInput).addBuffer(devOut);
-        LaunchConfig config = backend.chooseLaunch(graph, LaunchHints.ELEMENTWISE);
-        ExecutionStream stream = new ExecutionStream(graph.root().device(), 0L, true);
-        harness.execute(program, key, args, config, stream);
-
-        if (shouldReturnHostOutput()) {
-            return toHost(hipContext, devOut);
-        }
-        return devOut;
-    }
-
-    private MemoryView<?> executeReductionHost(ExpressionGraph graph, List<Tensor> inputs) {
-        MemoryContext<MemorySegment> hostContext =
-                (MemoryContext<MemorySegment>)
-                        Environment.current().nativeBackend().memoryContext();
-        List<MemoryView<MemorySegment>> hostInputs = new ArrayList<>(inputs.size());
-        for (int i = 0; i < graph.inputs().size(); i++) {
-            Tensor inputTensor = inputs.get(i);
-            MemoryView<?> view =
-                    inputTensor.tryGetMaterialized().orElseGet(inputTensor::materialize);
-            MemoryView<MemorySegment> hostView = toHost(hostContext, view);
-            hostInputs.add(hostView);
-        }
-        @SuppressWarnings("unchecked")
-        MemoryView<MemorySegment>[] inputArray =
-                hostInputs.toArray(size -> (MemoryView<MemorySegment>[]) new MemoryView[size]);
-
-        Layout layout = graph.root().layout();
-        Shape shape = layout.shape();
-        MemoryView<MemorySegment> hostOutput =
-                MemoryView.of(
-                        hostContext
-                                .memoryAllocator()
-                                .allocateMemory(graph.root().dataType(), shape),
-                        graph.root().dataType(),
-                        layout);
-        KernelInterpreter.execute(graph, inputArray, hostOutput);
-
-        if (shouldReturnHostOutput()) {
-            return hostOutput;
-        }
-        HipMemoryContext hipContext = HipMemoryContext.instance();
-        return toDevice(hipContext, hostOutput);
-    }
-
-    private MemoryView<?> executeElementwise(
-            ExpressionGraph graph,
-            List<Tensor> inputs,
-            String hsacoPath,
-            String kernelName,
-            DataType rootType,
-            Shape shape) {
-        long n = shape.size();
-        if (n > Integer.MAX_VALUE) {
-            throw new UnsupportedOperationException("HIP backend supports int32 sizes only");
+        LIRGraph lirGraph = pipeline.run(lowerer.lower(graph));
+        ScratchLayout scratchLayout = scratchAnalysis.analyze(lirGraph);
+        if (verifyScratch) {
+            scratchVerification.verifyOrThrow(lirGraph, scratchLayout);
         }
 
         HipMemoryContext hipContext = HipMemoryContext.instance();
-        MemoryView<HipDevicePtr> devOut =
-                MemoryView.of(
-                        hipContext.memoryAllocator().allocateMemory(rootType, n),
-                        rootType,
-                        Layout.rowMajor(shape));
+        List<MemoryView<?>> outputs = allocateOutputs(lirGraph, hipContext);
 
-        KernelProgram program;
-        if (hsacoPath != null && !hsacoPath.isBlank()) {
-            byte[] hsaco = HipKernelSourceLoader.load(hsacoPath);
-            if (kernelName == null || kernelName.isBlank()) {
-                throw new UnsupportedOperationException("Missing kernel name for HIP execution");
-            }
-            program =
-                    new KernelProgram(
-                            KernelProgram.Kind.BINARY,
-                            KernelProgram.Language.HIP,
-                            hsaco,
-                            kernelName,
-                            java.util.Map.of());
-        } else {
-            program = generator.generate(graph);
+        Memory<HipDevicePtr> scratch = null;
+        if (scratchLayout.requiresScratch()) {
+            scratch =
+                    hipContext
+                            .memoryAllocator()
+                            .allocateMemory(scratchLayout.alignedTotalByteSize(), 64L);
         }
-        KernelCacheKey key = backend.cacheKey(graph);
-        KernelArgs args = argsBuilder.build(graph, inputs, devOut);
-        LaunchConfig config = backend.chooseLaunch(graph, LaunchHints.ELEMENTWISE);
-        ExecutionStream stream = new ExecutionStream(graph.root().device(), 0L, true);
-        harness.execute(program, key, args, config, stream);
+
+        KernelCacheKey key = backend.cacheKey(lirGraph, scratchLayout);
+        KernelProgram program = generator.generate(lirGraph, scratchLayout, key);
+        KernelArgs args = lirArgsBuilder.build(lirGraph, inputs, outputs);
+        long scratchPtr = scratch == null ? 0L : scratch.base().address();
+        args.addScalarBits(scratchPtr, DataType.I64);
+        LaunchConfig config = chooseLirLaunchConfig(lirGraph);
+        ExecutionStream stream = new ExecutionStream(Device.HIP, 0L, true);
+        KernelExecutable exec = backend.getOrCompile(program, key);
+        exec.launch(config, args, stream);
+
         if (shouldReturnHostOutput()) {
-            return toHost(hipContext, devOut);
+            return toHost(hipContext, castDevice(outputs.getFirst()));
         }
-        return devOut;
+        return outputs.getFirst();
     }
 
     private static MemoryView<HipDevicePtr> toDevice(
@@ -290,5 +161,30 @@ final class HipComputeBackend implements ComputeBackend {
                                 Layout.rowMajor(view.shape()));
         MemoryContext.copy(hipContext, view, hostContext, hostView);
         return hostView;
+    }
+
+    private static List<MemoryView<?>> allocateOutputs(
+            LIRGraph graph, HipMemoryContext context) {
+        List<MemoryView<?>> outputs = new ArrayList<>(graph.outputs().size());
+        for (var output : graph.outputs()) {
+            Memory<HipDevicePtr> memory =
+                    context.memoryAllocator().allocateMemory(output.dataType(), output.shape());
+            outputs.add(MemoryView.of(memory, 0, output.dataType(), output.layout()));
+        }
+        return outputs;
+    }
+
+    private static LaunchConfig chooseLirLaunchConfig(LIRGraph graph) {
+        long workSize = 1L;
+        if (!graph.outputs().isEmpty()) {
+            workSize = graph.outputs().getFirst().size();
+        }
+        int threads = 256;
+        long blocksLong = (workSize + threads - 1) / threads;
+        if (blocksLong < 1) {
+            blocksLong = 1;
+        }
+        int blocks = blocksLong > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) blocksLong;
+        return new LaunchConfig(blocks, 1, 1, threads, 1, 1, 0, false);
     }
 }

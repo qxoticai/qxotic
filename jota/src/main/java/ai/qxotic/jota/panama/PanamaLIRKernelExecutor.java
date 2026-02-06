@@ -91,7 +91,6 @@ public final class PanamaLIRKernelExecutor {
         } finally {
             long elapsedNanos = System.nanoTime() - startNanos;
             System.out.println("Kernel execution: " + (elapsedNanos / 1_000_000) + " ms");
-
         }
     }
 

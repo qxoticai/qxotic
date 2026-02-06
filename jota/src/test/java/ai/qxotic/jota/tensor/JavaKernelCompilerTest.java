@@ -10,6 +10,7 @@ import ai.qxotic.jota.memory.MemoryContext;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.memory.impl.ContextFactory;
 import ai.qxotic.jota.memory.impl.MemoryViewFactory;
+import ai.qxotic.jota.testutil.TestKernels;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.concurrent.TimeUnit;
@@ -21,12 +22,6 @@ class JavaKernelCompilerTest {
 
     @AutoClose
     private final MemoryContext<MemorySegment> context = ContextFactory.ofMemorySegment();
-
-    private static float gelu(float value) {
-        float cubic = value * value * value;
-        float inner = (cubic * 0.044715f + value) * 0.79788456f;
-        return ((float) Math.tanh(inner) + 1.0f) * value * 0.5f;
-    }
 
     private static Tensor tensorGelu(Tensor value) {
         Tensor cubic = value.multiply(value).multiply(value);
@@ -56,13 +51,13 @@ class JavaKernelCompilerTest {
         MemoryView<?> output = traced.materialize();
 
         float[] values = readFloatValues(output, 6);
-        float[] expected = map(new float[] {0, 1, 2, 3, 4, 5}, JavaKernelCompilerTest::gelu);
+        float[] expected = map(new float[] {0, 1, 2, 3, 4, 5}, TestKernels::gelu);
         assertArrayEquals(expected, values, 0.0001f);
     }
 
     static float[] pepe(float[] in, float[] out) {
         for (int i = 0; i < 100_000_000; ++i) {
-            out[i] = gelu(in[i]);
+            out[i] = TestKernels.gelu(in[i]);
         }
         return out;
     }
@@ -91,7 +86,7 @@ class JavaKernelCompilerTest {
             float[] values =
                     //                Arrays.copyOf(out, 6); //
                     readFloatValues(output, 6);
-            float[] expected = map(new float[] {0, 1, 2, 3, 4, 5}, JavaKernelCompilerTest::gelu);
+            float[] expected = map(new float[] {0, 1, 2, 3, 4, 5}, TestKernels::gelu);
             assertArrayEquals(expected, values, 0.0001f);
         }
     }

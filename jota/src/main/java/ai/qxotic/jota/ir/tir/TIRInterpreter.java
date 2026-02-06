@@ -57,6 +57,9 @@ public final class TIRInterpreter {
                     } else if (dtype == DataType.I64) {
                         long value = memAccess.readLong(arenaOutput.memory(), offset);
                         memAccess.writeLong(persistentOutput.memory(), persistentOffset, value);
+                    } else if (dtype == DataType.FP16 || dtype == DataType.BF16) {
+                        short value = memAccess.readShort(arenaOutput.memory(), offset);
+                        memAccess.writeShort(persistentOutput.memory(), persistentOffset, value);
                     } else {
                         throw new UnsupportedOperationException(
                                 "Output copy not implemented for dtype: " + dtype);

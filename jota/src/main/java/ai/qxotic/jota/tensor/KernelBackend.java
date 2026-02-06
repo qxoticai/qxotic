@@ -7,10 +7,6 @@ public interface KernelBackend {
 
     KernelExecutable getOrCompile(KernelProgram program, KernelCacheKey cacheKey);
 
-    LaunchConfig chooseLaunch(ExpressionGraph graph, LaunchHints hints);
-
-    KernelCacheKey cacheKey(ExpressionGraph graph);
-
     KernelExecutableCache cache();
 
     interface KernelExecutableCache {

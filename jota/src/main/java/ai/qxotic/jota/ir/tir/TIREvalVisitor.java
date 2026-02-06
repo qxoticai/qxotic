@@ -374,9 +374,8 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case BITWISE_XOR ->
                                 throw new UnsupportedOperationException(
                                         "BITWISE_XOR not supported for FP32");
-                        case EQUAL, LESS_THAN ->
-                                throw new UnsupportedOperationException(
-                                        "Comparison operations should use BOOL output");
+                        case EQUAL -> a == b ? 1.0f : 0.0f;
+                        case LESS_THAN -> a < b ? 1.0f : 0.0f;
                     };
             memAccess.writeFloat(output.memory(), Indexing.linearToOffset(output, i), result);
         }
@@ -418,9 +417,8 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case BITWISE_XOR ->
                                 throw new UnsupportedOperationException(
                                         "BITWISE_XOR not supported for FP64");
-                        case EQUAL, LESS_THAN ->
-                                throw new UnsupportedOperationException(
-                                        "Comparison operations should use BOOL output");
+                        case EQUAL -> a == b ? 1.0 : 0.0;
+                        case LESS_THAN -> a < b ? 1.0 : 0.0;
                     };
             memAccess.writeDouble(output.memory(), Indexing.linearToOffset(output, i), result);
         }
@@ -464,9 +462,8 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case BITWISE_XOR ->
                                 throw new UnsupportedOperationException(
                                         "BITWISE_XOR not supported for FP16");
-                        case EQUAL, LESS_THAN ->
-                                throw new UnsupportedOperationException(
-                                        "Comparison operations should use BOOL output");
+                        case EQUAL -> a == b ? 1.0f : 0.0f;
+                        case LESS_THAN -> a < b ? 1.0f : 0.0f;
                     };
             short resultBits = Float.floatToFloat16(result);
             memAccess.writeShort(output.memory(), Indexing.linearToOffset(output, i), resultBits);
@@ -511,9 +508,8 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case BITWISE_XOR ->
                                 throw new UnsupportedOperationException(
                                         "BITWISE_XOR not supported for BF16");
-                        case EQUAL, LESS_THAN ->
-                                throw new UnsupportedOperationException(
-                                        "Comparison operations should use BOOL output");
+                        case EQUAL -> a == b ? 1.0f : 0.0f;
+                        case LESS_THAN -> a < b ? 1.0f : 0.0f;
                     };
             short resultBits = BFloat16.fromFloat(result);
             memAccess.writeShort(output.memory(), Indexing.linearToOffset(output, i), resultBits);
@@ -551,9 +547,8 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                                         "LOGICAL_XOR not supported for I8");
                         case POW ->
                                 throw new UnsupportedOperationException("POW not supported for I8");
-                        case EQUAL, LESS_THAN ->
-                                throw new UnsupportedOperationException(
-                                        "Comparison operations should use BOOL output");
+                        case EQUAL -> (byte) (a == b ? 1 : 0);
+                        case LESS_THAN -> (byte) (a < b ? 1 : 0);
                     };
             memAccess.writeByte(output.memory(), Indexing.linearToOffset(output, i), result);
         }
@@ -591,9 +586,8 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case POW ->
                                 throw new UnsupportedOperationException(
                                         "POW not supported for I16");
-                        case EQUAL, LESS_THAN ->
-                                throw new UnsupportedOperationException(
-                                        "Comparison operations should use BOOL output");
+                        case EQUAL -> (short) (a == b ? 1 : 0);
+                        case LESS_THAN -> (short) (a < b ? 1 : 0);
                     };
             memAccess.writeShort(output.memory(), Indexing.linearToOffset(output, i), result);
         }
@@ -631,9 +625,8 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case POW ->
                                 throw new UnsupportedOperationException(
                                         "POW not supported for I32");
-                        case EQUAL, LESS_THAN ->
-                                throw new UnsupportedOperationException(
-                                        "Comparison operations should use BOOL output");
+                        case EQUAL -> a == b ? 1 : 0;
+                        case LESS_THAN -> a < b ? 1 : 0;
                     };
             memAccess.writeInt(output.memory(), Indexing.linearToOffset(output, i), result);
         }
@@ -671,9 +664,8 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case POW ->
                                 throw new UnsupportedOperationException(
                                         "POW not supported for I64");
-                        case EQUAL, LESS_THAN ->
-                                throw new UnsupportedOperationException(
-                                        "Comparison operations should use BOOL output");
+                        case EQUAL -> a == b ? 1L : 0L;
+                        case LESS_THAN -> a < b ? 1L : 0L;
                     };
             memAccess.writeLong(output.memory(), Indexing.linearToOffset(output, i), result);
         }
@@ -699,9 +691,10 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case BITWISE_AND, BITWISE_OR, BITWISE_XOR ->
                                 throw new UnsupportedOperationException(
                                         op + " not supported for BOOL");
-                        case EQUAL, LESS_THAN ->
-                                throw new UnsupportedOperationException(
-                                        "Comparison operations should use BOOL output");
+                        case EQUAL ->
+                                (byte) (((a != 0) == (b != 0)) ? 1 : 0);
+                        case LESS_THAN ->
+                                (byte) (((a != 0 ? 1 : 0) < (b != 0 ? 1 : 0)) ? 1 : 0);
                     };
             memAccess.writeByte(output.memory(), Indexing.linearToOffset(output, i), result);
         }
