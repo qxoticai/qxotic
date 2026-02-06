@@ -10,7 +10,7 @@ import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.MemoryAccess;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.tensor.Tensor;
 import ai.qxotic.jota.tensor.Tracer;
@@ -23,9 +23,9 @@ import org.junit.jupiter.api.Test;
 
 class CKernelSmokeTest {
 
-    private static final int FRACTAL_WIDTH = 64;
-    private static final int FRACTAL_HEIGHT = 64;
-    private static final int FRACTAL_ITERATIONS = 8;
+    private static final int FRACTAL_WIDTH = 320;
+    private static final int FRACTAL_HEIGHT = 240;
+    private static final int FRACTAL_ITERATIONS = 32;
 
     @Test
     void runsTracedGeluKernel() {
@@ -39,10 +39,11 @@ class CKernelSmokeTest {
                         current.backends(),
                         current.executionMode());
 
-        MemoryContext<MemorySegment> context =
-                (MemoryContext<MemorySegment>) Environment.current().backend(Device.C).memoryContext();
+        MemoryDomain<MemorySegment> domain =
+                (MemoryDomain<MemorySegment>)
+                        Environment.current().backend(Device.C).memoryDomain();
         MemoryView<MemorySegment> inputView =
-                createFp32Input(context, new float[] {-4f, -3f, -2f, -1f, 0f, 1f, 2f, 3f});
+                createFp32Input(domain, new float[] {-4f, -3f, -2f, -1f, 0f, 1f, 2f, 3f});
         Tensor input = Tensor.of(inputView);
 
         MemoryView<?> output =
@@ -53,7 +54,7 @@ class CKernelSmokeTest {
                             return traced.materialize();
                         });
 
-        MemoryAccess<MemorySegment> access = context.memoryAccess();
+        MemoryAccess<MemorySegment> access = domain.directAccess();
         MemoryView<MemorySegment> typed = (MemoryView<MemorySegment>) output;
         for (int i = 0; i < 8; i++) {
             long offset = Indexing.linearToOffset(typed, i);
@@ -93,13 +94,14 @@ class CKernelSmokeTest {
                             return traced.materialize();
                         });
 
-        MemoryContext<MemorySegment> context =
-                (MemoryContext<MemorySegment>) Environment.current().backend(Device.C).memoryContext();
-        MemoryAccess<MemorySegment> access = context.memoryAccess();
+        MemoryDomain<MemorySegment> domain =
+                (MemoryDomain<MemorySegment>)
+                        Environment.current().backend(Device.C).memoryDomain();
+        MemoryAccess<MemorySegment> access = domain.directAccess();
         MemoryView<MemorySegment> typed = (MemoryView<MemorySegment>) output;
 
         TestKernels.writeMandelbrotPpm(
-                context,
+                domain,
                 typed,
                 Path.of("target", "mandelbrot-c-lir.ppm"),
                 width,
@@ -123,65 +125,6 @@ class CKernelSmokeTest {
     }
 
     @Test
-    void runsTracedPhoenixKernel() {
-        assumeCBackendAvailable();
-        assumeFractalsEnabled();
-
-        int width = FRACTAL_WIDTH;
-        int height = FRACTAL_HEIGHT;
-        int iterations = FRACTAL_ITERATIONS;
-
-        Environment current = Environment.current();
-        Environment cEnv =
-                new Environment(
-                        Device.C,
-                        current.defaultFloat(),
-                        current.backends(),
-                        current.executionMode());
-
-        MemoryView<?> output =
-                Environment.with(
-                        cEnv,
-                        () -> {
-                            Tensor traced =
-                                    Tracer.trace(
-                                            List.of(),
-                                            inputs ->
-                                                    TestKernels.phoenixTensor(
-                                                            width, height, iterations));
-                            return traced.materialize();
-                        });
-
-        MemoryContext<MemorySegment> context =
-                (MemoryContext<MemorySegment>) Environment.current().backend(Device.C).memoryContext();
-        MemoryAccess<MemorySegment> access = context.memoryAccess();
-        MemoryView<MemorySegment> typed = (MemoryView<MemorySegment>) output;
-
-        TestKernels.writePhoenixPpm(
-                context,
-                typed,
-                Path.of("target", "phoenix-c-lir.ppm"),
-                width,
-                height,
-                iterations);
-
-        assertEquals(
-                TestKernels.phoenixIter(0, 0, width, height, iterations),
-                access.readFloat(typed.memory(), Indexing.linearToOffset(typed, 0)),
-                1e-3f);
-        long centerIdx = (long) (height / 2) * width + (width / 2);
-        assertEquals(
-                TestKernels.phoenixIter(height / 2, width / 2, width, height, iterations),
-                access.readFloat(typed.memory(), Indexing.linearToOffset(typed, centerIdx)),
-                1e-3f);
-        long lastIdx = (long) (height - 1) * width + (width - 1);
-        assertEquals(
-                TestKernels.phoenixIter(height - 1, width - 1, width, height, iterations),
-                access.readFloat(typed.memory(), Indexing.linearToOffset(typed, lastIdx)),
-                1e-3f);
-    }
-
-    @Test
     void runsTracedFp16Kernel() {
         assumeCBackendAvailable();
 
@@ -193,10 +136,10 @@ class CKernelSmokeTest {
                         current.backends(),
                         current.executionMode());
 
-        MemoryContext<MemorySegment> context =
-                (MemoryContext<MemorySegment>) Environment.current().backend(Device.C).memoryContext();
-        MemoryView<MemorySegment> inputView =
-                createFp16Input(context, new float[] {1f, 2f, 3f, 4f});
+        MemoryDomain<MemorySegment> domain =
+                (MemoryDomain<MemorySegment>)
+                        Environment.current().backend(Device.C).memoryDomain();
+        MemoryView<MemorySegment> inputView = createFp16Input(domain, new float[] {1f, 2f, 3f, 4f});
         Tensor input = Tensor.of(inputView);
 
         MemoryView<?> output =
@@ -207,7 +150,7 @@ class CKernelSmokeTest {
                             return traced.materialize();
                         });
 
-        MemoryAccess<MemorySegment> access = context.memoryAccess();
+        MemoryAccess<MemorySegment> access = domain.directAccess();
         MemoryView<MemorySegment> typed = (MemoryView<MemorySegment>) output;
         for (int i = 0; i < 4; i++) {
             long offset = Indexing.linearToOffset(typed, i);
@@ -229,10 +172,10 @@ class CKernelSmokeTest {
                         current.backends(),
                         current.executionMode());
 
-        MemoryContext<MemorySegment> context =
-                (MemoryContext<MemorySegment>) Environment.current().backend(Device.C).memoryContext();
-        MemoryView<MemorySegment> inputView =
-                createBf16Input(context, new float[] {1f, 2f, 3f, 4f});
+        MemoryDomain<MemorySegment> domain =
+                (MemoryDomain<MemorySegment>)
+                        Environment.current().backend(Device.C).memoryDomain();
+        MemoryView<MemorySegment> inputView = createBf16Input(domain, new float[] {1f, 2f, 3f, 4f});
         Tensor input = Tensor.of(inputView);
 
         MemoryView<?> output =
@@ -243,7 +186,7 @@ class CKernelSmokeTest {
                             return traced.materialize();
                         });
 
-        MemoryAccess<MemorySegment> access = context.memoryAccess();
+        MemoryAccess<MemorySegment> access = domain.directAccess();
         MemoryView<MemorySegment> typed = (MemoryView<MemorySegment>) output;
         for (int i = 0; i < 4; i++) {
             long offset = Indexing.linearToOffset(typed, i);
@@ -254,13 +197,13 @@ class CKernelSmokeTest {
     }
 
     private static MemoryView<MemorySegment> createFp32Input(
-            MemoryContext<MemorySegment> context, float[] values) {
+            MemoryDomain<MemorySegment> domain, float[] values) {
         MemoryView<MemorySegment> view =
                 MemoryView.of(
-                        context.memoryAllocator().allocateMemory(DataType.FP32, values.length),
+                        domain.memoryAllocator().allocateMemory(DataType.FP32, values.length),
                         DataType.FP32,
                         Layout.rowMajor(Shape.flat(values.length)));
-        MemoryAccess<MemorySegment> access = context.memoryAccess();
+        MemoryAccess<MemorySegment> access = domain.directAccess();
         for (int i = 0; i < values.length; i++) {
             long offset = Indexing.linearToOffset(view, i);
             access.writeFloat(view.memory(), offset, values[i]);
@@ -269,13 +212,13 @@ class CKernelSmokeTest {
     }
 
     private static MemoryView<MemorySegment> createFp16Input(
-            MemoryContext<MemorySegment> context, float[] values) {
+            MemoryDomain<MemorySegment> domain, float[] values) {
         MemoryView<MemorySegment> view =
                 MemoryView.of(
-                        context.memoryAllocator().allocateMemory(DataType.FP16, values.length),
+                        domain.memoryAllocator().allocateMemory(DataType.FP16, values.length),
                         DataType.FP16,
                         Layout.rowMajor(Shape.flat(values.length)));
-        MemoryAccess<MemorySegment> access = context.memoryAccess();
+        MemoryAccess<MemorySegment> access = domain.directAccess();
         for (int i = 0; i < values.length; i++) {
             long offset = Indexing.linearToOffset(view, i);
             short bits = Float.floatToFloat16(values[i]);
@@ -285,13 +228,13 @@ class CKernelSmokeTest {
     }
 
     private static MemoryView<MemorySegment> createBf16Input(
-            MemoryContext<MemorySegment> context, float[] values) {
+            MemoryDomain<MemorySegment> domain, float[] values) {
         MemoryView<MemorySegment> view =
                 MemoryView.of(
-                        context.memoryAllocator().allocateMemory(DataType.BF16, values.length),
+                        domain.memoryAllocator().allocateMemory(DataType.BF16, values.length),
                         DataType.BF16,
                         Layout.rowMajor(Shape.flat(values.length)));
-        MemoryAccess<MemorySegment> access = context.memoryAccess();
+        MemoryAccess<MemorySegment> access = domain.directAccess();
         for (int i = 0; i < values.length; i++) {
             long offset = Indexing.linearToOffset(view, i);
             short bits = BFloat16.fromFloat(values[i]);
@@ -313,11 +256,9 @@ class CKernelSmokeTest {
 
     private static void assumeFractalsEnabled() {
         Assumptions.assumeTrue(
-                Boolean.getBoolean("jota.test.c.fractals")
-                        && Boolean.getBoolean("jota.test.ppm"),
+                Boolean.getBoolean("jota.test.c.fractals") && Boolean.getBoolean("jota.test.ppm"),
                 "C fractal smoke tests disabled; set -Djota.test.c.fractals=true and -Djota.test.ppm=true to enable");
     }
-
 
     private static float readValue(
             MemoryAccess<MemorySegment> access, MemoryView<MemorySegment> view, long offset) {

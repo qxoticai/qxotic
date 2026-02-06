@@ -8,7 +8,7 @@ import ai.qxotic.jota.ir.lir.scratch.ScratchLayout;
 import ai.qxotic.jota.ir.lir.scratch.ScratchVerificationPass;
 import ai.qxotic.jota.ir.tir.TIRGraph;
 import ai.qxotic.jota.memory.Memory;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.tensor.DiskKernelCache;
 import ai.qxotic.jota.tensor.JitKernel;
@@ -45,9 +45,9 @@ public final class PanamaLIRKernelExecutor {
     }
 
     public MemoryView<?> execute(
-            TIRGraph graph, List<Tensor> lirInputs, MemoryContext<MemorySegment> context) {
+            TIRGraph graph, List<Tensor> lirInputs, MemoryDomain<MemorySegment> memoryDomain) {
         LIRGraph lirGraph = pipeline.run(lowerer.lower(graph));
-        return execute(lirGraph, lirInputs, context);
+        return execute(lirGraph, lirInputs, memoryDomain);
     }
 
     public void execute(
@@ -55,9 +55,10 @@ public final class PanamaLIRKernelExecutor {
             CompiledKernel compiled,
             List<Tensor> lirInputs,
             List<MemoryView<?>> outputs,
-            MemoryContext<MemorySegment> context,
+            MemoryDomain<MemorySegment> memoryDomain,
             Memory<MemorySegment> scratch) {
-        compiled.kernel().execute(context, argsBuilder.build(graph, lirInputs, outputs), scratch);
+        compiled.kernel()
+                .execute(memoryDomain, argsBuilder.build(graph, lirInputs, outputs), scratch);
     }
 
     public void execute(
@@ -66,14 +67,14 @@ public final class PanamaLIRKernelExecutor {
             List<MemoryView<?>> inputs,
             List<ai.qxotic.jota.tensor.ScalarArg> scalars,
             List<MemoryView<?>> outputs,
-            MemoryContext<MemorySegment> context,
+            MemoryDomain<MemorySegment> memoryDomain,
             Memory<MemorySegment> scratch) {
         compiled.kernel()
-                .execute(context, argsBuilder.build(graph, inputs, scalars, outputs), scratch);
+                .execute(memoryDomain, argsBuilder.build(graph, inputs, scalars, outputs), scratch);
     }
 
     public MemoryView<?> execute(
-            LIRGraph graph, List<Tensor> lirInputs, MemoryContext<MemorySegment> context) {
+            LIRGraph graph, List<Tensor> lirInputs, MemoryDomain<MemorySegment> memoryDomain) {
         // Analyze scratch requirements
         ScratchLayout scratchLayout = scratchAnalysis.analyze(graph);
 
@@ -84,24 +85,17 @@ public final class PanamaLIRKernelExecutor {
 
         // Compile kernel with scratch layout
         JitKernel kernel = compiler.compile(graph, scratchLayout);
-
-        long startNanos = System.nanoTime();
-        try {
-            return execute(graph, kernel, scratchLayout, lirInputs, context);
-        } finally {
-            long elapsedNanos = System.nanoTime() - startNanos;
-            System.out.println("Kernel execution: " + (elapsedNanos / 1_000_000) + " ms");
-        }
+        return execute(graph, kernel, scratchLayout, lirInputs, memoryDomain);
     }
 
     public MemoryView<?> execute(
             LIRGraph graph,
             JitKernel kernel,
             List<Tensor> lirInputs,
-            MemoryContext<MemorySegment> context) {
+            MemoryDomain<MemorySegment> memoryDomain) {
         // For backwards compatibility - analyze scratch if not provided
         ScratchLayout scratchLayout = scratchAnalysis.analyze(graph);
-        return execute(graph, kernel, scratchLayout, lirInputs, context);
+        return execute(graph, kernel, scratchLayout, lirInputs, memoryDomain);
     }
 
     public MemoryView<?> execute(
@@ -109,34 +103,36 @@ public final class PanamaLIRKernelExecutor {
             JitKernel kernel,
             ScratchLayout scratchLayout,
             List<Tensor> lirInputs,
-            MemoryContext<MemorySegment> context) {
-        List<MemoryView<?>> outputs = allocateOutputs(graph, context);
+            MemoryDomain<MemorySegment> memoryDomain) {
+        List<MemoryView<?>> outputs = allocateOutputs(graph, memoryDomain);
 
         // Allocate scratch if needed
         Memory<MemorySegment> scratch = null;
         if (scratchLayout.requiresScratch()) {
-            scratch = allocateScratch(context, scratchLayout.alignedTotalByteSize());
+            scratch = allocateScratch(memoryDomain, scratchLayout.alignedTotalByteSize());
         }
 
         // Execute kernel with scratch
-        kernel.execute(context, argsBuilder.build(graph, lirInputs, outputs), scratch);
+        kernel.execute(memoryDomain, argsBuilder.build(graph, lirInputs, outputs), scratch);
 
         return outputs.getFirst();
     }
 
     private List<MemoryView<?>> allocateOutputs(
-            LIRGraph graph, MemoryContext<MemorySegment> context) {
+            LIRGraph graph, MemoryDomain<MemorySegment> memoryDomain) {
         List<MemoryView<?>> outputs = new ArrayList<>(graph.outputs().size());
         for (var output : graph.outputs()) {
             Memory<MemorySegment> memory =
-                    context.memoryAllocator().allocateMemory(output.dataType(), output.shape());
+                    memoryDomain
+                            .memoryAllocator()
+                            .allocateMemory(output.dataType(), output.shape());
             outputs.add(MemoryView.of(memory, 0, output.dataType(), output.layout()));
         }
         return outputs;
     }
 
     private Memory<MemorySegment> allocateScratch(
-            MemoryContext<MemorySegment> context, long byteSize) {
-        return context.memoryAllocator().allocateMemory(byteSize, 64L);
+            MemoryDomain<MemorySegment> memoryDomain, long byteSize) {
+        return memoryDomain.memoryAllocator().allocateMemory(byteSize, 64L);
     }
 }

@@ -6,10 +6,10 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.MemoryAccess;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryHelpers;
 import ai.qxotic.jota.memory.MemoryView;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import ai.qxotic.jota.tensor.ScalarArg;
 import java.lang.foreign.MemorySegment;
 import java.util.List;
@@ -19,12 +19,12 @@ class LIRInterpreterTest {
 
     @Test
     void executesElementwiseAdd() {
-        MemoryContext<MemorySegment> context = ContextFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> domain = DomainFactory.ofMemorySegment();
         MemoryView<MemorySegment> left =
-                MemoryHelpers.arange(context, DataType.FP32, 4).view(Shape.flat(4));
+                MemoryHelpers.arange(domain, DataType.FP32, 4).view(Shape.flat(4));
         MemoryView<MemorySegment> right =
-                MemoryHelpers.full(context, DataType.FP32, Shape.flat(4), 2.0f);
-        MemoryView<MemorySegment> out = MemoryHelpers.zeros(context, DataType.FP32, Shape.flat(4));
+                MemoryHelpers.full(domain, DataType.FP32, Shape.flat(4), 2.0f);
+        MemoryView<MemorySegment> out = MemoryHelpers.zeros(domain, DataType.FP32, Shape.flat(4));
 
         LIRGraph.Builder builder = LIRGraph.builder();
         BufferRef leftBuf = builder.addContiguousInput(DataType.FP32, 4);
@@ -37,7 +37,8 @@ class LIRInterpreterTest {
         LIRExprNode offset = graph.indexBinary(IndexBinaryOp.MULTIPLY, i, graph.indexConst(stride));
         LIRExprNode leftVal = graph.scalarLoad(leftBuf, offset, DataType.FP32);
         LIRExprNode rightVal = graph.scalarLoad(rightBuf, offset, DataType.FP32);
-        LIRExprNode sum = graph.scalarBinary(ai.qxotic.jota.ir.tir.BinaryOperator.ADD, leftVal, rightVal);
+        LIRExprNode sum =
+                graph.scalarBinary(ai.qxotic.jota.ir.tir.BinaryOperator.ADD, leftVal, rightVal);
         LIRExprNode store = graph.store(outBuf, offset, sum);
         Block body = graph.block(List.of(store, graph.yield(List.of())));
         LIRExprNode loop =
@@ -50,21 +51,20 @@ class LIRInterpreterTest {
                         body);
 
         LIRGraph lir = builder.build(loop);
-        new LIRInterpreter()
-                .execute(lir, List.of(left, right), List.of(), List.of(out), context);
+        new LIRInterpreter().execute(lir, List.of(left, right), List.of(), List.of(out), domain);
 
-        assertEquals(2.0f, readFloat(context, out, 0), 0.0001f);
-        assertEquals(3.0f, readFloat(context, out, 1), 0.0001f);
-        assertEquals(4.0f, readFloat(context, out, 2), 0.0001f);
-        assertEquals(5.0f, readFloat(context, out, 3), 0.0001f);
+        assertEquals(2.0f, readFloat(domain, out, 0), 0.0001f);
+        assertEquals(3.0f, readFloat(domain, out, 1), 0.0001f);
+        assertEquals(4.0f, readFloat(domain, out, 2), 0.0001f);
+        assertEquals(5.0f, readFloat(domain, out, 3), 0.0001f);
     }
 
     @Test
     void executesReductionWithIterArgs() {
-        MemoryContext<MemorySegment> context = ContextFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> domain = DomainFactory.ofMemorySegment();
         MemoryView<MemorySegment> input =
-                MemoryHelpers.arange(context, DataType.FP32, 4).view(Shape.flat(4));
-        MemoryView<MemorySegment> out = MemoryHelpers.zeros(context, DataType.FP32, Shape.flat(1));
+                MemoryHelpers.arange(domain, DataType.FP32, 4).view(Shape.flat(4));
+        MemoryView<MemorySegment> out = MemoryHelpers.zeros(domain, DataType.FP32, Shape.flat(1));
 
         LIRGraph.Builder builder = LIRGraph.builder();
         BufferRef inputBuf = builder.addContiguousInput(DataType.FP32, 4);
@@ -87,25 +87,28 @@ class LIRInterpreterTest {
                         graph.indexConst(0),
                         graph.indexConst(4),
                         graph.indexConst(1),
-                        List.of(new LoopIterArg("acc", DataType.FP32, graph.scalarConst(0L, DataType.FP32))),
+                        List.of(
+                                new LoopIterArg(
+                                        "acc",
+                                        DataType.FP32,
+                                        graph.scalarConst(0L, DataType.FP32))),
                         body);
 
         LIRExprNode store = graph.store(outBuf, graph.indexConst(0), accRef);
         LIRExprNode root = graph.block(List.of(loop, store));
 
         LIRGraph lir = builder.build(root);
-        new LIRInterpreter()
-                .execute(lir, List.of(input), List.of(), List.of(out), context);
+        new LIRInterpreter().execute(lir, List.of(input), List.of(), List.of(out), domain);
 
-        assertEquals(6.0f, readFloat(context, out, 0), 0.0001f);
+        assertEquals(6.0f, readFloat(domain, out, 0), 0.0001f);
     }
 
     @Test
     void supportsScalarInputs() {
-        MemoryContext<MemorySegment> context = ContextFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> domain = DomainFactory.ofMemorySegment();
         MemoryView<MemorySegment> input =
-                MemoryHelpers.arange(context, DataType.FP32, 3).view(Shape.flat(3));
-        MemoryView<MemorySegment> out = MemoryHelpers.zeros(context, DataType.FP32, Shape.flat(3));
+                MemoryHelpers.arange(domain, DataType.FP32, 3).view(Shape.flat(3));
+        MemoryView<MemorySegment> out = MemoryHelpers.zeros(domain, DataType.FP32, Shape.flat(3));
 
         LIRGraph.Builder builder = LIRGraph.builder();
         BufferRef inputBuf = builder.addContiguousInput(DataType.FP32, 3);
@@ -133,17 +136,22 @@ class LIRInterpreterTest {
 
         LIRGraph lir = builder.build(loop);
         new LIRInterpreter()
-                .execute(lir, List.of(input), List.of(ScalarArg.ofFloat(10.0f)), List.of(out), context);
+                .execute(
+                        lir,
+                        List.of(input),
+                        List.of(ScalarArg.ofFloat(10.0f)),
+                        List.of(out),
+                        domain);
 
-        assertEquals(10.0f, readFloat(context, out, 0), 0.0001f);
-        assertEquals(11.0f, readFloat(context, out, 1), 0.0001f);
-        assertEquals(12.0f, readFloat(context, out, 2), 0.0001f);
+        assertEquals(10.0f, readFloat(domain, out, 0), 0.0001f);
+        assertEquals(11.0f, readFloat(domain, out, 1), 0.0001f);
+        assertEquals(12.0f, readFloat(domain, out, 2), 0.0001f);
     }
 
     private float readFloat(
-            MemoryContext<MemorySegment> context, MemoryView<?> view, long linearIndex) {
+            MemoryDomain<MemorySegment> domain, MemoryView<?> view, long linearIndex) {
         MemoryView<MemorySegment> typedView = (MemoryView<MemorySegment>) view;
-        MemoryAccess<MemorySegment> access = context.memoryAccess();
+        MemoryAccess<MemorySegment> access = domain.directAccess();
         long offset = Indexing.linearToOffset(typedView, linearIndex);
         return access.readFloat(typedView.memory(), offset);
     }

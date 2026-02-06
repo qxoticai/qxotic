@@ -691,10 +691,8 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case BITWISE_AND, BITWISE_OR, BITWISE_XOR ->
                                 throw new UnsupportedOperationException(
                                         op + " not supported for BOOL");
-                        case EQUAL ->
-                                (byte) (((a != 0) == (b != 0)) ? 1 : 0);
-                        case LESS_THAN ->
-                                (byte) (((a != 0 ? 1 : 0) < (b != 0 ? 1 : 0)) ? 1 : 0);
+                        case EQUAL -> (byte) (((a != 0) == (b != 0)) ? 1 : 0);
+                        case LESS_THAN -> (byte) (((a != 0 ? 1 : 0) < (b != 0 ? 1 : 0)) ? 1 : 0);
                     };
             memAccess.writeByte(output.memory(), Indexing.linearToOffset(output, i), result);
         }

@@ -5,11 +5,11 @@ import ai.qxotic.jota.memory.*;
 import java.nio.ByteBuffer;
 import java.util.Objects;
 
-class ByteBufferContext implements MemoryContext<ByteBuffer> {
+class ByteBufferDomain implements MemoryDomain<ByteBuffer> {
 
     private final MemoryAllocator<ByteBuffer> memoryAllocator;
 
-    ByteBufferContext(MemoryAllocator<ByteBuffer> memoryAllocator) {
+    ByteBufferDomain(MemoryAllocator<ByteBuffer> memoryAllocator) {
         this.memoryAllocator = Objects.requireNonNull(memoryAllocator);
     }
 
@@ -24,7 +24,7 @@ class ByteBufferContext implements MemoryContext<ByteBuffer> {
     }
 
     @Override
-    public MemoryAccess<ByteBuffer> memoryAccess() {
+    public MemoryAccess<ByteBuffer> directAccess() {
         return ByteBufferMemoryAccess.instance();
     }
 
@@ -43,7 +43,7 @@ class ByteBufferContext implements MemoryContext<ByteBuffer> {
         return new StringBuilder("Context{ByteBuffer, device=")
                 .append(device())
                 .append(", directAccess=")
-                .append(memoryAccess() != null)
+                .append(directAccess() != null)
                 .append('}')
                 .toString();
     }

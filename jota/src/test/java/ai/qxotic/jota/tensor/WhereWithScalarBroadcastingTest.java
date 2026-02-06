@@ -7,7 +7,7 @@ import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.MemoryAccess;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;
@@ -24,8 +24,8 @@ import org.junit.jupiter.api.Test;
 class WhereWithScalarBroadcastingTest {
 
     @SuppressWarnings("unchecked")
-    private static final MemoryContext<MemorySegment> CONTEXT =
-            (MemoryContext<MemorySegment>) Environment.current().nativeBackend().memoryContext();
+    private static final MemoryDomain<MemorySegment> CONTEXT =
+            (MemoryDomain<MemorySegment>) Environment.current().nativeBackend().memoryDomain();
 
     @Test
     void whereWithScalarFalseValue() {
@@ -196,7 +196,7 @@ class WhereWithScalarBroadcastingTest {
         @SuppressWarnings("unchecked")
         MemoryView<MemorySegment> typedView = (MemoryView<MemorySegment>) view;
         long offset = Indexing.linearToOffset(typedView, linearIndex);
-        MemoryAccess<MemorySegment> access = CONTEXT.memoryAccess();
+        MemoryAccess<MemorySegment> access = CONTEXT.directAccess();
         return access.readFloat(typedView.memory(), offset);
     }
 }

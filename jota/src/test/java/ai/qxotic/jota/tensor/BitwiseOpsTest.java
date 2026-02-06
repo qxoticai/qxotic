@@ -7,10 +7,10 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.MemoryAccess;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryHelpers;
 import ai.qxotic.jota.memory.MemoryView;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import java.lang.foreign.MemorySegment;
 import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
@@ -21,11 +21,11 @@ class BitwiseOpsTest {
     private static final List<DataType> INTEGRAL_TYPES =
             List.of(DataType.I8, DataType.I16, DataType.I32, DataType.I64);
 
-    private static MemoryContext<MemorySegment> context;
+    private static MemoryDomain<MemorySegment> domain;
 
     @BeforeAll
-    static void setUpContext() {
-        context = ContextFactory.ofMemorySegment();
+    static void setUpDomain() {
+        domain = DomainFactory.ofMemorySegment();
     }
 
     @Test
@@ -33,7 +33,7 @@ class BitwiseOpsTest {
         Shape shape = Shape.of(4);
         for (DataType dataType : INTEGRAL_TYPES) {
             MemoryView<MemorySegment> left =
-                    MemoryHelpers.arange(context, dataType, shape.size()).view(shape);
+                    MemoryHelpers.arange(domain, dataType, shape.size()).view(shape);
             Tensor input = Tensor.of(left);
             Tensor output = Tracer.trace(input, Tensor::bitwiseNot);
             MemoryView<?> result = output.materialize();
@@ -51,9 +51,9 @@ class BitwiseOpsTest {
         Shape shape = Shape.of(4);
         for (DataType dataType : INTEGRAL_TYPES) {
             MemoryView<MemorySegment> left =
-                    MemoryHelpers.arange(context, dataType, shape.size()).view(shape);
+                    MemoryHelpers.arange(domain, dataType, shape.size()).view(shape);
             MemoryView<MemorySegment> right =
-                    MemoryHelpers.full(context, dataType, shape.size(), 3).view(shape);
+                    MemoryHelpers.full(domain, dataType, shape.size(), 3).view(shape);
             Tensor a = Tensor.of(left);
             Tensor b = Tensor.of(right);
 
@@ -88,14 +88,13 @@ class BitwiseOpsTest {
     void bitwiseOpsRejectBoolAndFloat() {
         Shape shape = Shape.of(2);
         MemoryView<MemorySegment> boolView =
-                MemoryHelpers.full(context, DataType.BOOL, shape.size(), 1).view(shape);
+                MemoryHelpers.full(domain, DataType.BOOL, shape.size(), 1).view(shape);
         Tensor boolTensor = Tensor.of(boolView);
         assertThrows(
-                IllegalArgumentException.class,
-                () -> Tracer.trace(boolTensor, Tensor::bitwiseNot));
+                IllegalArgumentException.class, () -> Tracer.trace(boolTensor, Tensor::bitwiseNot));
 
         MemoryView<MemorySegment> floatView =
-                MemoryHelpers.arange(context, DataType.FP32, shape.size()).view(shape);
+                MemoryHelpers.arange(domain, DataType.FP32, shape.size()).view(shape);
         Tensor floatTensor = Tensor.of(floatView);
         assertThrows(
                 IllegalArgumentException.class,
@@ -106,7 +105,7 @@ class BitwiseOpsTest {
         long offset = Indexing.linearToOffset(view, index);
         @SuppressWarnings("unchecked")
         MemoryView<MemorySegment> castView = (MemoryView<MemorySegment>) view;
-        MemoryAccess<MemorySegment> access = context.memoryAccess();
+        MemoryAccess<MemorySegment> access = domain.directAccess();
         if (dataType == DataType.I8) {
             return access.readByte(castView.memory(), offset);
         }

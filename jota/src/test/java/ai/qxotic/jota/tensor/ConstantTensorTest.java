@@ -12,29 +12,30 @@ import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.ExecutionMode;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
-import ai.qxotic.jota.backend.Backend;
 import ai.qxotic.jota.backend.DefaultBackendRegistry;
+import ai.qxotic.jota.backend.DeviceRuntime;
 import ai.qxotic.jota.memory.MemoryAccess;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.memory.MemoryViewPrinter;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 class ConstantTensorTest {
 
-    private static ComputeEngine dummyEngine() {
+    private static ComputeEngine dummyBackend() {
         return new ComputeEngine() {
             @Override
-            public ComputeBackend backendFor(Device device) {
-                throw new UnsupportedOperationException("No backend for " + device);
+            public Device device() {
+                return Device.PANAMA;
             }
 
             @Override
-            public KernelCache cache() {
-                return DiskKernelCache.defaultCache();
+            public MemoryView<?> execute(
+                    ai.qxotic.jota.ir.tir.TIRGraph graph, java.util.List<Tensor> inputs) {
+                throw new UnsupportedOperationException("No backend execution in this test");
             }
         };
     }
@@ -50,12 +51,12 @@ class ConstantTensorTest {
     }
 
     @ParameterizedTest
-    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingF32")
-    <B> void materializesBroadcastedFloat(MemoryContext<B> context) {
+    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF32")
+    <B> void materializesBroadcastedFloat(MemoryDomain<B> domain) {
         DefaultBackendRegistry registry = new DefaultBackendRegistry();
-        registry.register(new StubBackend<>(context, dummyEngine()));
+        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
-                new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
+                new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
         Environment.with(
                 environment,
@@ -67,7 +68,7 @@ class ConstantTensorTest {
                     assertEquals(DataType.FP32, view.dataType());
                     assertTrue(view.isBroadcasted());
 
-                    MemoryAccess<B> access = context.memoryAccess();
+                    MemoryAccess<B> access = domain.directAccess();
                     @SuppressWarnings("unchecked")
                     MemoryView<B> typedView = (MemoryView<B>) view;
                     long firstOffset = Indexing.linearToOffset(view, 0);
@@ -79,12 +80,12 @@ class ConstantTensorTest {
     }
 
     @ParameterizedTest
-    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingI64")
-    <B> void materializesBroadcastedLong(MemoryContext<B> context) {
+    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingI64")
+    <B> void materializesBroadcastedLong(MemoryDomain<B> domain) {
         DefaultBackendRegistry registry = new DefaultBackendRegistry();
-        registry.register(new StubBackend<>(context, dummyEngine()));
+        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
-                new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
+                new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
         Environment.with(
                 environment,
@@ -96,7 +97,7 @@ class ConstantTensorTest {
                     assertEquals(DataType.I64, view.dataType());
                     assertTrue(view.isBroadcasted());
 
-                    MemoryAccess<B> access = context.memoryAccess();
+                    MemoryAccess<B> access = domain.directAccess();
                     @SuppressWarnings("unchecked")
                     MemoryView<B> typedView = (MemoryView<B>) view;
                     long firstOffset = Indexing.linearToOffset(view, 0);
@@ -121,12 +122,12 @@ class ConstantTensorTest {
     }
 
     @ParameterizedTest
-    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingF64")
-    <B> void materializesScalarDouble(MemoryContext<B> context) {
+    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF64")
+    <B> void materializesScalarDouble(MemoryDomain<B> domain) {
         DefaultBackendRegistry registry = new DefaultBackendRegistry();
-        registry.register(new StubBackend<>(context, dummyEngine()));
+        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
-                new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
+                new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
         Environment.with(
                 environment,
@@ -140,7 +141,7 @@ class ConstantTensorTest {
                     assertEquals(DataType.FP64, view.dataType());
                     assertFalse(view.isBroadcasted());
 
-                    MemoryAccess<B> access = context.memoryAccess();
+                    MemoryAccess<B> access = domain.directAccess();
                     @SuppressWarnings("unchecked")
                     MemoryView<B> typedView = (MemoryView<B>) view;
                     long offset = Indexing.linearToOffset(view, 0);
@@ -150,12 +151,12 @@ class ConstantTensorTest {
     }
 
     @ParameterizedTest
-    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingI64")
-    <B> void materializesScalarLong(MemoryContext<B> context) {
+    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingI64")
+    <B> void materializesScalarLong(MemoryDomain<B> domain) {
         DefaultBackendRegistry registry = new DefaultBackendRegistry();
-        registry.register(new StubBackend<>(context, dummyEngine()));
+        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
-                new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
+                new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
         Environment.with(
                 environment,
@@ -169,7 +170,7 @@ class ConstantTensorTest {
                     assertEquals(DataType.I64, view.dataType());
                     assertFalse(view.isBroadcasted());
 
-                    MemoryAccess<B> access = context.memoryAccess();
+                    MemoryAccess<B> access = domain.directAccess();
                     @SuppressWarnings("unchecked")
                     MemoryView<B> typedView = (MemoryView<B>) view;
                     long offset = Indexing.linearToOffset(view, 0);
@@ -179,18 +180,18 @@ class ConstantTensorTest {
     }
 
     @ParameterizedTest
-    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#allContexts")
-    <B> void scalarUsesEnvironmentDefaultDevice(MemoryContext<B> context) {
+    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#allDomains")
+    <B> void scalarUsesEnvironmentDefaultDevice(MemoryDomain<B> domain) {
         DefaultBackendRegistry registry = new DefaultBackendRegistry();
-        registry.register(new StubBackend<>(context, dummyEngine()));
+        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
-                new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
+                new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
         Environment.with(
                 environment,
                 () -> {
                     Tensor tensor = Tensor.scalar(1.0f);
-                    assertEquals(context.device(), tensor.device());
+                    assertEquals(domain.device(), tensor.device());
                     return null;
                 });
     }
@@ -218,12 +219,12 @@ class ConstantTensorTest {
     }
 
     @ParameterizedTest
-    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingF32")
-    <B> void materializesZeros(MemoryContext<B> context) {
+    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF32")
+    <B> void materializesZeros(MemoryDomain<B> domain) {
         DefaultBackendRegistry registry = new DefaultBackendRegistry();
-        registry.register(new StubBackend<>(context, dummyEngine()));
+        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
-                new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
+                new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
         Environment.with(
                 environment,
@@ -234,7 +235,7 @@ class ConstantTensorTest {
                     assertEquals(Shape.of(2, 3), view.shape());
                     assertTrue(view.isBroadcasted());
 
-                    MemoryAccess<B> access = context.memoryAccess();
+                    MemoryAccess<B> access = domain.directAccess();
                     @SuppressWarnings("unchecked")
                     MemoryView<B> typedView = (MemoryView<B>) view;
                     long offset = Indexing.linearToOffset(view, 0);
@@ -266,12 +267,12 @@ class ConstantTensorTest {
     }
 
     @ParameterizedTest
-    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingF32")
-    <B> void materializesOnes(MemoryContext<B> context) {
+    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF32")
+    <B> void materializesOnes(MemoryDomain<B> domain) {
         DefaultBackendRegistry registry = new DefaultBackendRegistry();
-        registry.register(new StubBackend<>(context, dummyEngine()));
+        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
-                new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
+                new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
         Environment.with(
                 environment,
@@ -282,7 +283,7 @@ class ConstantTensorTest {
                     assertEquals(Shape.of(2, 3), view.shape());
                     assertTrue(view.isBroadcasted());
 
-                    MemoryAccess<B> access = context.memoryAccess();
+                    MemoryAccess<B> access = domain.directAccess();
                     @SuppressWarnings("unchecked")
                     MemoryView<B> typedView = (MemoryView<B>) view;
                     long offset = Indexing.linearToOffset(view, 0);
@@ -339,12 +340,12 @@ class ConstantTensorTest {
     }
 
     @ParameterizedTest
-    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingF32")
-    <B> void materializesFull(MemoryContext<B> context) {
+    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF32")
+    <B> void materializesFull(MemoryDomain<B> domain) {
         DefaultBackendRegistry registry = new DefaultBackendRegistry();
-        registry.register(new StubBackend<>(context, dummyEngine()));
+        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
-                new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
+                new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
         Environment.with(
                 environment,
@@ -355,7 +356,7 @@ class ConstantTensorTest {
                     assertEquals(Shape.of(2, 3), view.shape());
                     assertTrue(view.isBroadcasted());
 
-                    MemoryAccess<B> access = context.memoryAccess();
+                    MemoryAccess<B> access = domain.directAccess();
                     @SuppressWarnings("unchecked")
                     MemoryView<B> typedView = (MemoryView<B>) view;
                     long firstOffset = Indexing.linearToOffset(view, 0);
@@ -369,12 +370,12 @@ class ConstantTensorTest {
     // ========== Array creation tests ==========
 
     @ParameterizedTest
-    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingF32")
-    <B> void ofFloatArray(MemoryContext<B> context) {
+    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF32")
+    <B> void ofFloatArray(MemoryDomain<B> domain) {
         DefaultBackendRegistry registry = new DefaultBackendRegistry();
-        registry.register(new StubBackend<>(context, dummyEngine()));
+        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
-                new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
+                new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
         Environment.with(
                 environment,
@@ -387,7 +388,7 @@ class ConstantTensorTest {
                     assertEquals(Shape.flat(4), tensor.shape());
 
                     MemoryView<?> view = tensor.materialize();
-                    MemoryAccess<B> access = context.memoryAccess();
+                    MemoryAccess<B> access = domain.directAccess();
                     @SuppressWarnings("unchecked")
                     MemoryView<B> typedView = (MemoryView<B>) view;
 
@@ -401,12 +402,12 @@ class ConstantTensorTest {
     }
 
     @ParameterizedTest
-    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingF32")
-    <B> void ofFloatArrayWithShape(MemoryContext<B> context) {
+    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF32")
+    <B> void ofFloatArrayWithShape(MemoryDomain<B> domain) {
         DefaultBackendRegistry registry = new DefaultBackendRegistry();
-        registry.register(new StubBackend<>(context, dummyEngine()));
+        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
-                new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
+                new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
         Environment.with(
                 environment,
@@ -421,12 +422,12 @@ class ConstantTensorTest {
     }
 
     @ParameterizedTest
-    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingF64")
-    <B> void ofDoubleArray(MemoryContext<B> context) {
+    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF64")
+    <B> void ofDoubleArray(MemoryDomain<B> domain) {
         DefaultBackendRegistry registry = new DefaultBackendRegistry();
-        registry.register(new StubBackend<>(context, dummyEngine()));
+        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
-                new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
+                new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
         Environment.with(
                 environment,
@@ -439,7 +440,7 @@ class ConstantTensorTest {
                     assertEquals(Shape.flat(3), tensor.shape());
 
                     MemoryView<?> view = tensor.materialize();
-                    MemoryAccess<B> access = context.memoryAccess();
+                    MemoryAccess<B> access = domain.directAccess();
                     @SuppressWarnings("unchecked")
                     MemoryView<B> typedView = (MemoryView<B>) view;
 
@@ -453,12 +454,12 @@ class ConstantTensorTest {
     }
 
     @ParameterizedTest
-    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingI32")
-    <B> void ofIntArray(MemoryContext<B> context) {
+    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingI32")
+    <B> void ofIntArray(MemoryDomain<B> domain) {
         DefaultBackendRegistry registry = new DefaultBackendRegistry();
-        registry.register(new StubBackend<>(context, dummyEngine()));
+        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
-                new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
+                new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
         Environment.with(
                 environment,
@@ -471,7 +472,7 @@ class ConstantTensorTest {
                     assertEquals(Shape.flat(4), tensor.shape());
 
                     MemoryView<?> view = tensor.materialize();
-                    MemoryAccess<B> access = context.memoryAccess();
+                    MemoryAccess<B> access = domain.directAccess();
                     @SuppressWarnings("unchecked")
                     MemoryView<B> typedView = (MemoryView<B>) view;
 
@@ -484,12 +485,12 @@ class ConstantTensorTest {
     }
 
     @ParameterizedTest
-    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#contextsSupportingI64")
-    <B> void ofLongArray(MemoryContext<B> context) {
+    @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingI64")
+    <B> void ofLongArray(MemoryDomain<B> domain) {
         DefaultBackendRegistry registry = new DefaultBackendRegistry();
-        registry.register(new StubBackend<>(context, dummyEngine()));
+        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
-                new Environment(context.device(), DataType.FP32, registry, ExecutionMode.EAGER);
+                new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
         Environment.with(
                 environment,
@@ -502,7 +503,7 @@ class ConstantTensorTest {
                     assertEquals(Shape.flat(3), tensor.shape());
 
                     MemoryView<?> view = tensor.materialize();
-                    MemoryAccess<B> access = context.memoryAccess();
+                    MemoryAccess<B> access = domain.directAccess();
                     @SuppressWarnings("unchecked")
                     MemoryView<B> typedView = (MemoryView<B>) view;
 
@@ -528,8 +529,8 @@ class ConstantTensorTest {
         Tensor reciprocal1 = scalar.reciprocal();
         Tensor reciprocal =
                 TensorOpsContext.with(
-                        new EagerTensorOps(ContextFactory.ofMemorySegment()), scalar::reciprocal);
-        MemoryAccess access = Environment.current().panamaContext().memoryAccess();
+                        new EagerTensorOps(DomainFactory.ofMemorySegment()), scalar::reciprocal);
+        MemoryAccess access = Environment.current().panamaMemoryDomain().directAccess();
         System.out.println(MemoryViewPrinter.toString(reciprocal1.materialize(), access));
     }
 
@@ -624,32 +625,32 @@ class ConstantTensorTest {
                 .orElseThrow(() -> new AssertionError("Expected ConstantComputation"));
     }
 
-    private static final class StubBackend<B> implements Backend {
-        private final MemoryContext<B> context;
-        private final ComputeEngine engine;
+    private static final class StubDeviceRuntime<B> implements DeviceRuntime {
+        private final MemoryDomain<B> memoryDomain;
+        private final ComputeEngine computeEngine;
 
-        private StubBackend(MemoryContext<B> context, ComputeEngine engine) {
-            this.context = context;
-            this.engine = engine;
+        private StubDeviceRuntime(MemoryDomain<B> memoryDomain, ComputeEngine computeEngine) {
+            this.memoryDomain = memoryDomain;
+            this.computeEngine = computeEngine;
         }
 
         @Override
         public Device device() {
-            return context.device();
+            return memoryDomain.device();
         }
 
         @Override
-        public MemoryContext<?> memoryContext() {
-            return context;
+        public MemoryDomain<?> memoryDomain() {
+            return memoryDomain;
         }
 
         @Override
         public ComputeEngine computeEngine() {
-            return engine;
+            return computeEngine;
         }
 
         @Override
-        public java.util.Optional<ai.qxotic.jota.backend.KernelService> kernels() {
+        public java.util.Optional<ai.qxotic.jota.backend.KernelService> kernelService() {
             return java.util.Optional.empty();
         }
     }

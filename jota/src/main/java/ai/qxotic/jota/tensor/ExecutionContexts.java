@@ -6,7 +6,7 @@ import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.Memory;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
@@ -31,39 +31,40 @@ public final class ExecutionContexts {
 
     public static ExecutionContext forDevice(Device device, KernelRegistry registry) {
         Objects.requireNonNull(device, "device");
-        MemoryContext<?> context = Environment.current().backend(device).memoryContext();
-        return forContext(context, registry);
+        MemoryDomain<?> memoryDomain = Environment.current().backend(device).memoryDomain();
+        return forContext(memoryDomain, registry);
     }
 
-    public static ExecutionContext forContext(MemoryContext<?> context, KernelRegistry registry) {
-        Objects.requireNonNull(context, "context");
+    public static ExecutionContext forContext(
+            MemoryDomain<?> memoryDomain, KernelRegistry registry) {
+        Objects.requireNonNull(memoryDomain, "memoryDomain");
         Objects.requireNonNull(registry, "registry");
-        return new DefaultExecutionContext(context, registry);
+        return new DefaultExecutionContext(memoryDomain, registry);
     }
 
     private static final class DefaultExecutionContext implements ExecutionContext {
-        private final MemoryContext<?> context;
+        private final MemoryDomain<?> memoryDomain;
         private final KernelRegistry registry;
         private final ScratchAllocator scratch;
         private final ComputeStream stream;
 
-        private DefaultExecutionContext(MemoryContext<?> context, KernelRegistry registry) {
-            this.context = context;
+        private DefaultExecutionContext(MemoryDomain<?> memoryDomain, KernelRegistry registry) {
+            this.memoryDomain = memoryDomain;
             this.registry = registry;
-            this.scratch = new DefaultScratchAllocator(context);
+            this.scratch = new DefaultScratchAllocator(memoryDomain);
             this.stream = new ImmediateComputeStream();
         }
 
         @Override
         public Device device() {
-            return context.device();
+            return memoryDomain.device();
         }
 
         @Override
         public Tensor allocateOutput(Shape shape, DataType dtype) {
             Objects.requireNonNull(shape, "shape");
             Objects.requireNonNull(dtype, "dtype");
-            Memory<?> memory = context.memoryAllocator().allocateMemory(dtype, shape);
+            Memory<?> memory = memoryDomain.memoryAllocator().allocateMemory(dtype, shape);
             MemoryView<?> view = MemoryView.of(memory, dtype, Layout.rowMajor(shape));
             return Tensor.of(view);
         }
@@ -78,7 +79,7 @@ public final class ExecutionContexts {
                         "Layout shape mismatch: expected " + shape + " but got " + layout.shape());
             }
             OutputBufferSpec spec = computeOutputSpec(layout, dtype);
-            Memory<?> memory = context.memoryAllocator().allocateMemory(spec.byteSize);
+            Memory<?> memory = memoryDomain.memoryAllocator().allocateMemory(spec.byteSize);
             MemoryView<?> view = MemoryView.of(memory, spec.byteOffset, dtype, layout);
             return Tensor.of(view);
         }
@@ -130,30 +131,30 @@ public final class ExecutionContexts {
     }
 
     private static final class DefaultScratchAllocator implements ScratchAllocator {
-        private final MemoryContext<?> context;
+        private final MemoryDomain<?> memoryDomain;
 
-        private DefaultScratchAllocator(MemoryContext<?> context) {
-            this.context = context;
+        private DefaultScratchAllocator(MemoryDomain<?> memoryDomain) {
+            this.memoryDomain = memoryDomain;
         }
 
         @Override
         public Tensor allocate(Shape shape, DataType dtype) {
             Objects.requireNonNull(shape, "shape");
             Objects.requireNonNull(dtype, "dtype");
-            Memory<?> memory = context.memoryAllocator().allocateMemory(dtype, shape);
+            Memory<?> memory = memoryDomain.memoryAllocator().allocateMemory(dtype, shape);
             MemoryView<?> view = MemoryView.of(memory, dtype, Layout.rowMajor(shape));
             return Tensor.of(view);
         }
 
         @Override
         public MemorySegment allocateBytes(long size) {
-            Memory<?> memory = context.memoryAllocator().allocateMemory(size);
+            Memory<?> memory = memoryDomain.memoryAllocator().allocateMemory(size);
             Object base = memory.base();
             if (base instanceof MemorySegment segment) {
                 return segment;
             }
             throw new UnsupportedOperationException(
-                    "Scratch byte allocation not supported for device " + context.device());
+                    "Scratch byte allocation not supported for device " + memoryDomain.device());
         }
     }
 

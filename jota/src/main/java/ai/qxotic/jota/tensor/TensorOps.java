@@ -4,13 +4,13 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.impl.ViewTransforms;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import java.util.Arrays;
 import java.util.stream.IntStream;
 
 public interface TensorOps {
 
-    MemoryContext<?> context();
+    MemoryDomain<?> memoryDomain();
 
     // === Elementwise - Binary ===
 

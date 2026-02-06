@@ -3,19 +3,19 @@ package ai.qxotic.jota.memory.impl;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryAllocator;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryOperations;
 
-class DoublesContext implements MemoryContext<double[]> {
+class DoublesDomain implements MemoryDomain<double[]> {
 
     private static final Device DOUBLES = Device.CPU.child("doubles");
-    private static final DoublesContext INSTANCE = new DoublesContext();
+    private static final DoublesDomain INSTANCE = new DoublesDomain();
 
-    static MemoryContext<double[]> instance() {
+    static MemoryDomain<double[]> instance() {
         return INSTANCE;
     }
 
-    private DoublesContext() {}
+    private DoublesDomain() {}
 
     @Override
     public Device device() {
@@ -28,7 +28,7 @@ class DoublesContext implements MemoryContext<double[]> {
     }
 
     @Override
-    public MemoryAccess<double[]> memoryAccess() {
+    public MemoryAccess<double[]> directAccess() {
         return DoublesMemoryAccess.instance();
     }
 
@@ -47,7 +47,7 @@ class DoublesContext implements MemoryContext<double[]> {
         return new StringBuilder("Context{double[], device=")
                 .append(device())
                 .append(", directAccess=")
-                .append(memoryAccess() != null)
+                .append(directAccess() != null)
                 .append('}')
                 .toString();
     }

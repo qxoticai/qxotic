@@ -172,8 +172,7 @@ final class LIRKernelCompiler {
         }
     }
 
-    private long hashNode(
-            LIRExprGraph exprGraph, LIRExprNode node, Map<LIRExprNode, Long> memo) {
+    private long hashNode(LIRExprGraph exprGraph, LIRExprNode node, Map<LIRExprNode, Long> memo) {
         LIRExprNode resolved = exprGraph.resolve(node);
         Long cached = memo.get(resolved);
         if (cached != null) {
@@ -399,7 +398,7 @@ final class LIRKernelCompiler {
             source.append("import ai.qxotic.jota.BFloat16;\n");
             source.append("import ai.qxotic.jota.memory.Memory;\n");
             source.append("import ai.qxotic.jota.memory.MemoryAccess;\n");
-            source.append("import ai.qxotic.jota.memory.MemoryContext;\n");
+            source.append("import ai.qxotic.jota.memory.MemoryDomain;\n");
             source.append("import ai.qxotic.jota.memory.MemoryView;\n");
             source.append("import ai.qxotic.jota.tensor.KernelArgs;\n");
             source.append("import ai.qxotic.jota.tensor.JitKernel;\n");
@@ -429,9 +428,9 @@ final class LIRKernelCompiler {
             source.append("  @Override\n");
             source.append("  @SuppressWarnings(\"unchecked\")\n");
             source.append(
-                    "  public void execute(MemoryContext<MemorySegment> context, KernelArgs args) {\n");
+                    "  public void execute(MemoryDomain<MemorySegment> memoryDomain, KernelArgs args) {\n");
             source.append(
-                    "    MemoryAccess<MemorySegment> access = (MemoryAccess<MemorySegment>) context.memoryAccess();\n");
+                    "    MemoryAccess<MemorySegment> access = (MemoryAccess<MemorySegment>) memoryDomain.directAccess();\n");
             emitInputs(source);
             emitOutputs(source);
 
@@ -447,10 +446,10 @@ final class LIRKernelCompiler {
             source.append("  @Override\n");
             source.append("  @SuppressWarnings(\"unchecked\")\n");
             source.append(
-                    "  public void execute(MemoryContext<MemorySegment> context, KernelArgs args, "
+                    "  public void execute(MemoryDomain<MemorySegment> memoryDomain, KernelArgs args, "
                             + "Memory<MemorySegment> scratch) {\n");
             source.append(
-                    "    MemoryAccess<MemorySegment> access = (MemoryAccess<MemorySegment>) context.memoryAccess();\n");
+                    "    MemoryAccess<MemorySegment> access = (MemoryAccess<MemorySegment>) memoryDomain.directAccess();\n");
             source.append("    MemorySegment scratchBase = scratch.base();\n");
             emitInputs(source);
             emitOutputs(source);
@@ -467,7 +466,7 @@ final class LIRKernelCompiler {
         private void emitExecuteWithoutScratchStub(StringBuilder source) {
             source.append("  @Override\n");
             source.append(
-                    "  public void execute(MemoryContext<MemorySegment> context, KernelArgs args) {\n");
+                    "  public void execute(MemoryDomain<MemorySegment> memoryDomain, KernelArgs args) {\n");
             source.append(
                     "    throw new UnsupportedOperationException(\"This kernel requires scratch memory\");\n");
             source.append("  }\n");
@@ -649,8 +648,7 @@ final class LIRKernelCompiler {
 
             // Check if this is a simple forward loop with step = 1
             boolean isSimpleForwardLoop =
-                    step.equals("1")
-                            || (loop.step() instanceof IConst ic && ic.value() == 1);
+                    step.equals("1") || (loop.step() instanceof IConst ic && ic.value() == 1);
 
             if (isSimpleForwardLoop) {
                 // Simplified loop without extra variables
@@ -737,7 +735,6 @@ final class LIRKernelCompiler {
             }
         }
 
-
         private void emitYield(Yield yield) {
             if (!yield.values().isEmpty()) {
                 throw new IllegalStateException("Yield should be handled by StructuredFor");
@@ -799,7 +796,8 @@ final class LIRKernelCompiler {
         private String emitScalarExprInline(LIRExprNode resolved) {
             return switch (resolved.kind()) {
                 case S_CONST -> scalarLiteral(((SConst) resolved).rawBits(), resolved.dataType());
-                case S_INPUT -> requireScalarInputById(((SInput) resolved).inputId(), resolved.dataType());
+                case S_INPUT ->
+                        requireScalarInputById(((SInput) resolved).inputId(), resolved.dataType());
                 case S_REF -> {
                     String refName = ((SRef) resolved).name();
                     String mapped = scalarNames.get(refName);
@@ -818,7 +816,8 @@ final class LIRKernelCompiler {
                 case S_TERNARY -> emitTernaryExpr((STernary) resolved);
                 case S_CAST -> emitCastExpr((SCast) resolved);
                 default ->
-                        throw new IllegalStateException("Expected scalar node, got " + resolved.kind());
+                        throw new IllegalStateException(
+                                "Expected scalar node, got " + resolved.kind());
             };
         }
 
@@ -933,7 +932,8 @@ final class LIRKernelCompiler {
             throw new UnsupportedOperationException("Unsupported binary operator: " + binary.op());
         }
 
-        private String maybeConvertForBinaryExpr(LIRExprNode node, String exprStr, DataType targetType) {
+        private String maybeConvertForBinaryExpr(
+                LIRExprNode node, String exprStr, DataType targetType) {
             if (node.dataType() == DataType.BOOL && targetType != DataType.BOOL) {
                 return "(" + exprStr + " ? 1 : 0)";
             }
@@ -969,7 +969,8 @@ final class LIRKernelCompiler {
                                 + emitIndexExpr(((IBinary) resolved).right())
                                 + ")";
                 default ->
-                        throw new IllegalStateException("Expected index node, got " + resolved.kind());
+                        throw new IllegalStateException(
+                                "Expected index node, got " + resolved.kind());
             };
         }
 
@@ -991,17 +992,21 @@ final class LIRKernelCompiler {
                 case I_VAR -> ((IVar) resolved).name();
                 case I_BINARY -> {
                     String left =
-                            emitIndexWithStrideReplacementExpr(((IBinary) resolved).left(), strides, strideVars);
+                            emitIndexWithStrideReplacementExpr(
+                                    ((IBinary) resolved).left(), strides, strideVars);
                     String right =
-                            emitIndexWithStrideReplacementExpr(((IBinary) resolved).right(), strides, strideVars);
+                            emitIndexWithStrideReplacementExpr(
+                                    ((IBinary) resolved).right(), strides, strideVars);
                     yield "(" + left + " " + indexOp(((IBinary) resolved).op()) + " " + right + ")";
                 }
                 default ->
-                        throw new IllegalStateException("Expected index node, got " + resolved.kind());
+                        throw new IllegalStateException(
+                                "Expected index node, got " + resolved.kind());
             };
         }
 
-        private String compareExpr(String op, LIRExprNode leftExpr, LIRExprNode rightExpr, DataType resultType) {
+        private String compareExpr(
+                String op, LIRExprNode leftExpr, LIRExprNode rightExpr, DataType resultType) {
             DataType leftType = leftExpr.dataType();
             DataType rightType = rightExpr.dataType();
             String left = emitScalarExpr(leftExpr);

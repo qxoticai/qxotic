@@ -4,13 +4,13 @@ import ai.qxotic.jota.Device;
 import java.util.Set;
 
 public interface BackendRegistry {
-    void register(Backend backend);
+    void register(DeviceRuntime deviceRuntime);
 
-    Backend backend(Device device);
+    DeviceRuntime backend(Device device);
 
     boolean hasBackend(Device device);
 
-    Backend nativeBackend();
+    DeviceRuntime nativeBackend();
 
     Set<Device> devices();
 }

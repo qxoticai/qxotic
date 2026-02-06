@@ -8,7 +8,7 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;
@@ -16,8 +16,8 @@ import org.junit.jupiter.api.Test;
 class UsabilityExamplesTest {
 
     @SuppressWarnings("unchecked")
-    private static final MemoryContext<MemorySegment> CONTEXT =
-            (MemoryContext<MemorySegment>) Environment.current().nativeBackend().memoryContext();
+    private static final MemoryDomain<MemorySegment> CONTEXT =
+            (MemoryDomain<MemorySegment>) Environment.current().nativeBackend().memoryDomain();
 
     @Test
     void elementwiseChainMaterializes() {
@@ -93,20 +93,20 @@ class UsabilityExamplesTest {
         @SuppressWarnings("unchecked")
         MemoryView<MemorySegment> typedView = (MemoryView<MemorySegment>) view;
         long offset = Indexing.linearToOffset(typedView, linearIndex);
-        return CONTEXT.memoryAccess().readLong(typedView.memory(), offset);
+        return CONTEXT.directAccess().readLong(typedView.memory(), offset);
     }
 
     private static float readFloat(MemoryView<?> view, long linearIndex) {
         @SuppressWarnings("unchecked")
         MemoryView<MemorySegment> typedView = (MemoryView<MemorySegment>) view;
         long offset = Indexing.linearToOffset(typedView, linearIndex);
-        return CONTEXT.memoryAccess().readFloat(typedView.memory(), offset);
+        return CONTEXT.directAccess().readFloat(typedView.memory(), offset);
     }
 
     private static byte readByte(MemoryView<?> view, long linearIndex) {
         @SuppressWarnings("unchecked")
         MemoryView<MemorySegment> typedView = (MemoryView<MemorySegment>) view;
         long offset = Indexing.linearToOffset(typedView, linearIndex);
-        return CONTEXT.memoryAccess().readByte(typedView.memory(), offset);
+        return CONTEXT.directAccess().readByte(typedView.memory(), offset);
     }
 }

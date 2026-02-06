@@ -8,7 +8,7 @@ import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.Stride;
 import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAccess;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
 import java.util.List;
 import java.util.Map;
@@ -50,17 +50,17 @@ record ConstantComputation(long rawBits, DataType dataType, Shape shape, Device 
 
     @Override
     public MemoryView<?> execute() {
-        MemoryContext<?> context = Environment.current().backend(device).memoryContext();
-        return allocateAndFill(context);
+        MemoryDomain<?> memoryDomain = Environment.current().backend(device).memoryDomain();
+        return allocateAndFill(memoryDomain);
     }
 
     @SuppressWarnings("unchecked")
-    private <B> MemoryView<B> allocateAndFill(MemoryContext<B> context) {
+    private <B> MemoryView<B> allocateAndFill(MemoryDomain<B> memoryDomain) {
         // Allocate single element
-        Memory<B> memory = context.memoryAllocator().allocateMemory(dataType, 1);
+        Memory<B> memory = memoryDomain.memoryAllocator().allocateMemory(dataType, 1);
 
         // Write the scalar value
-        MemoryAccess<B> access = context.memoryAccess();
+        MemoryAccess<B> access = memoryDomain.directAccess();
         if (access == null) {
             throw new UnsupportedOperationException(
                     "Cannot materialize constant on device without MemoryAccess: " + device);

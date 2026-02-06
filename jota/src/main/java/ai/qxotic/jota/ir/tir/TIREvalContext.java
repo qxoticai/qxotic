@@ -2,11 +2,8 @@ package ai.qxotic.jota.ir.tir;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Layout;
-import ai.qxotic.jota.memory.Memory;
-import ai.qxotic.jota.memory.MemoryAccess;
-import ai.qxotic.jota.memory.MemoryContext;
-import ai.qxotic.jota.memory.MemoryView;
-import ai.qxotic.jota.memory.ScopedMemoryAllocatorArena;
+import ai.qxotic.jota.memory.*;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.panama.PanamaFactory;
 import java.lang.foreign.MemorySegment;
 import java.util.HashMap;
@@ -32,14 +29,14 @@ public final class TIREvalContext implements AutoCloseable {
     }
 
     @SuppressWarnings("unchecked")
-    public static TIREvalContext create(List<MemoryView<?>> inputs, MemoryContext<?> context) {
+    public static TIREvalContext create(List<MemoryView<?>> inputs, MemoryDomain<?> memoryDomain) {
         Map<Integer, MemoryView<MemorySegment>> inputMap = new HashMap<>();
         for (int i = 0; i < inputs.size(); i++) {
             inputMap.put(i, (MemoryView<MemorySegment>) inputs.get(i));
         }
 
         MemoryAccess<MemorySegment> memAccess =
-                (MemoryAccess<MemorySegment>) context.memoryAccess();
+                (MemoryAccess<MemorySegment>) memoryDomain.directAccess();
         ScopedMemoryAllocatorArena<MemorySegment> arena = PanamaFactory.createArena();
 
         return new TIREvalContext(arena, inputMap, new HashMap<>(), memAccess);

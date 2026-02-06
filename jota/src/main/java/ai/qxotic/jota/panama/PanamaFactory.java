@@ -1,25 +1,20 @@
 package ai.qxotic.jota.panama;
 
-import ai.qxotic.jota.memory.Memory;
-import ai.qxotic.jota.memory.MemoryAccess;
-import ai.qxotic.jota.memory.MemoryAllocator;
-import ai.qxotic.jota.memory.MemoryContext;
-import ai.qxotic.jota.memory.MemoryOperations;
-import ai.qxotic.jota.memory.ScopedMemoryAllocator;
-import ai.qxotic.jota.memory.ScopedMemoryAllocatorArena;
+import ai.qxotic.jota.memory.*;
+import ai.qxotic.jota.memory.MemoryDomain;
 import java.lang.foreign.MemorySegment;
 
 public final class PanamaFactory {
 
     private PanamaFactory() {}
 
-    public static MemoryContext<MemorySegment> createContext() {
-        return createContext(createArena());
+    public static MemoryDomain<MemorySegment> createDomain() {
+        return createDomain(createArena());
     }
 
-    public static MemoryContext<MemorySegment> createContext(
+    public static MemoryDomain<MemorySegment> createDomain(
             MemoryAllocator<MemorySegment> allocator) {
-        return new PanamaContext(allocator);
+        return new PanamaDomain(allocator);
     }
 
     public static ScopedMemoryAllocator<MemorySegment> scopedAllocator() {
@@ -42,7 +37,7 @@ public final class PanamaFactory {
         return PanamaMemoryAccess.instance();
     }
 
-    public static MemoryOperations<MemorySegment> mempryOperations() {
+    public static MemoryOperations<MemorySegment> memoryOperations() {
         return PanamaMemoryOperations.instance();
     }
 

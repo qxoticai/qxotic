@@ -1,14 +1,14 @@
 package ai.qxotic.jota;
 
-import ai.qxotic.jota.backend.Backend;
 import ai.qxotic.jota.backend.BackendRegistry;
 import ai.qxotic.jota.backend.DefaultBackendRegistry;
-import ai.qxotic.jota.c.CBackend;
+import ai.qxotic.jota.backend.DeviceRuntime;
+import ai.qxotic.jota.c.CDeviceRuntime;
 import ai.qxotic.jota.c.CNative;
-import ai.qxotic.jota.hip.HipBackend;
+import ai.qxotic.jota.hip.HipDeviceRuntime;
 import ai.qxotic.jota.hip.HipRuntime;
-import ai.qxotic.jota.memory.MemoryContext;
-import ai.qxotic.jota.panama.PanamaBackend;
+import ai.qxotic.jota.memory.MemoryDomain;
+import ai.qxotic.jota.panama.PanamaDeviceRuntime;
 import ai.qxotic.jota.tensor.ComputeEngine;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
@@ -47,8 +47,8 @@ public final class Environment {
     }
 
     @SuppressWarnings("unchecked")
-    public MemoryContext<MemorySegment> panamaContext() {
-        return (MemoryContext<MemorySegment>) backends.nativeBackend().memoryContext();
+    public MemoryDomain<MemorySegment> panamaMemoryDomain() {
+        return (MemoryDomain<MemorySegment>) backends.nativeBackend().memoryDomain();
     }
 
     public static Environment global() {
@@ -87,15 +87,15 @@ public final class Environment {
         return backends;
     }
 
-    public Backend backend(Device device) {
+    public DeviceRuntime backend(Device device) {
         return backends.backend(device);
     }
 
-    public Backend nativeBackend() {
+    public DeviceRuntime nativeBackend() {
         return backends.nativeBackend();
     }
 
-    public ComputeEngine engineFor(Device device) {
+    public ComputeEngine computeBackendFor(Device device) {
         return backends.backend(device).computeEngine();
     }
 
@@ -104,12 +104,13 @@ public final class Environment {
     }
 
     private static BackendRegistry buildDefaultBackends() {
-        DefaultBackendRegistry registry = DefaultBackendRegistry.withNative(new PanamaBackend());
+        DefaultBackendRegistry registry =
+                DefaultBackendRegistry.withNative(new PanamaDeviceRuntime());
         if (CNative.isAvailable()) {
-            registry.register(new CBackend());
+            registry.register(new CDeviceRuntime());
         }
         if (HipRuntime.isAvailable()) {
-            registry.register(new HipBackend());
+            registry.register(new HipDeviceRuntime());
         }
         //        if (WebGPUSupport.hasGpuAdapter()) {
         //            registry.register(WebGPUWBackend.create());

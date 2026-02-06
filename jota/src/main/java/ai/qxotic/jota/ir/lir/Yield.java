@@ -12,8 +12,7 @@ public final class Yield extends LIRExprNode {
                 id,
                 LIRExprKind.YIELD,
                 null,
-                Objects.requireNonNull(values, "values cannot be null")
-                        .toArray(new LIRExprNode[0]),
+                Objects.requireNonNull(values, "values cannot be null").toArray(new LIRExprNode[0]),
                 false,
                 false);
         for (LIRExprNode value : values) {

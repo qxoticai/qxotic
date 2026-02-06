@@ -6,9 +6,9 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import ai.qxotic.jota.memory.impl.MemoryViewFactory;
 import ai.qxotic.jota.testutil.TestKernels;
 import java.lang.foreign.MemorySegment;
@@ -20,8 +20,7 @@ import org.junit.jupiter.api.Test;
 
 class JavaKernelCompilerTest {
 
-    @AutoClose
-    private final MemoryContext<MemorySegment> context = ContextFactory.ofMemorySegment();
+    @AutoClose private final MemoryDomain<MemorySegment> domain = DomainFactory.ofMemorySegment();
 
     private static Tensor tensorGelu(Tensor value) {
         Tensor cubic = value.multiply(value).multiply(value);
@@ -174,7 +173,7 @@ class JavaKernelCompilerTest {
 
     private MemoryView<MemorySegment> range(Shape shape) {
         int size = Math.toIntExact(shape.size());
-        var memory = context.memoryAllocator().allocateMemory(DataType.FP32, shape);
+        var memory = domain.memoryAllocator().allocateMemory(DataType.FP32, shape);
         MemorySegment segment = memory.base();
         for (int i = 0; i < size; i++) {
             long offset = (long) i * DataType.FP32.byteSize();
@@ -185,7 +184,7 @@ class JavaKernelCompilerTest {
 
     private MemoryView<MemorySegment> rangeInt(Shape shape) {
         int size = Math.toIntExact(shape.size());
-        var memory = context.memoryAllocator().allocateMemory(DataType.I32, shape);
+        var memory = domain.memoryAllocator().allocateMemory(DataType.I32, shape);
         MemorySegment segment = memory.base();
         for (int i = 0; i < size; i++) {
             long offset = (long) i * DataType.I32.byteSize();

@@ -5,7 +5,6 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.ir.lir.*;
 import ai.qxotic.jota.ir.lir.scratch.ScratchLayout;
 import ai.qxotic.jota.ir.tir.BinaryOperator;
-import ai.qxotic.jota.ir.tir.UnaryOperator;
 import ai.qxotic.jota.tensor.KernelCacheKey;
 import ai.qxotic.jota.tensor.KernelProgram;
 import java.util.ArrayList;
@@ -168,8 +167,10 @@ final class HipKernelProgramGenerator {
         }
 
         private void emitHelpers(StringBuilder source) {
-            source.append("static inline __device__ __half jota_half_from_float(float v) { return __float2half(v); }\n");
-            source.append("static inline __device__ float jota_half_to_float(__half v) { return __half2float(v); }\n");
+            source.append(
+                    "static inline __device__ __half jota_half_from_float(float v) { return __float2half(v); }\n");
+            source.append(
+                    "static inline __device__ float jota_half_to_float(__half v) { return __half2float(v); }\n");
             source.append(
                     "static inline __device__ __half jota_half_from_bits(uint16_t bits) { return *reinterpret_cast<__half*>(&bits); }\n");
             source.append(
@@ -188,7 +189,8 @@ final class HipKernelProgramGenerator {
                     String cType = typeName(buffer.dataType());
                     signature.append("const ").append(cType).append(" *input").append(argIndex);
                 } else if (input instanceof ScalarInput scalar) {
-                    signature.append(scalarParamType(scalar.dataType()))
+                    signature
+                            .append(scalarParamType(scalar.dataType()))
                             .append(" ")
                             .append(scalarParamName(argIndex, scalar.dataType()));
                 }
@@ -209,7 +211,8 @@ final class HipKernelProgramGenerator {
             for (LIRInput input : graph.inputs()) {
                 if (input instanceof BufferRef buffer) {
                     String name = "input" + argIndex;
-                    buffers.put(buffer, new BufferVar(name, buffer.dataType(), buffer.byteStrides()));
+                    buffers.put(
+                            buffer, new BufferVar(name, buffer.dataType(), buffer.byteStrides()));
                 } else if (input instanceof ScalarInput scalar) {
                     String name = "scalar" + argIndex;
                     String paramName = scalarParamName(argIndex, scalar.dataType());
@@ -218,7 +221,12 @@ final class HipKernelProgramGenerator {
                     if (scalar.dataType() == DataType.FP16) {
                         addLine("__half " + name + " = jota_half_from_bits(" + paramName + ");");
                     } else if (scalar.dataType() == DataType.BF16) {
-                        addLine("hip_bfloat16 " + name + " = jota_bf16_from_bits(" + paramName + ");");
+                        addLine(
+                                "hip_bfloat16 "
+                                        + name
+                                        + " = jota_bf16_from_bits("
+                                        + paramName
+                                        + ");");
                     } else {
                         addLine(typeName(scalar.dataType()) + " " + name + " = " + paramName + ";");
                     }
@@ -228,7 +236,9 @@ final class HipKernelProgramGenerator {
 
             for (int i = 0; i < graph.outputs().size(); i++) {
                 BufferRef buffer = graph.outputs().get(i);
-                buffers.put(buffer, new BufferVar("output" + i, buffer.dataType(), buffer.byteStrides()));
+                buffers.put(
+                        buffer,
+                        new BufferVar("output" + i, buffer.dataType(), buffer.byteStrides()));
             }
 
             addLine("uint8_t *scratch = (uint8_t *)(uintptr_t)scratch_ptr;");
@@ -239,14 +249,15 @@ final class HipKernelProgramGenerator {
                     long offset = entry.getValue();
                     String name = "scratch" + slotId++;
                     scratchBuffers.put(buf, new ScratchBufferVar(name, buf.dataType(), offset));
-                    addLine(typeName(buf.dataType())
-                            + " *"
-                            + name
-                            + " = ("
-                            + typeName(buf.dataType())
-                            + " *)(scratch + "
-                            + offset
-                            + "LL);");
+                    addLine(
+                            typeName(buf.dataType())
+                                    + " *"
+                                    + name
+                                    + " = ("
+                                    + typeName(buf.dataType())
+                                    + " *)(scratch + "
+                                    + offset
+                                    + "LL);");
                 }
             }
         }
@@ -425,7 +436,8 @@ final class HipKernelProgramGenerator {
         private String emitScalarExprInline(LIRExprNode resolved) {
             return switch (resolved.kind()) {
                 case S_CONST -> scalarLiteral(((SConst) resolved).rawBits(), resolved.dataType());
-                case S_INPUT -> requireScalarInputById(((SInput) resolved).inputId(), resolved.dataType());
+                case S_INPUT ->
+                        requireScalarInputById(((SInput) resolved).inputId(), resolved.dataType());
                 case S_REF -> ((SRef) resolved).name();
                 case S_FROM_INDEX -> {
                     String indexExpr = emitIndexExpr(((SFromIndex) resolved).indexExpr());
@@ -439,7 +451,9 @@ final class HipKernelProgramGenerator {
                 case S_BINARY -> emitBinaryExpr((SBinary) resolved);
                 case S_TERNARY -> emitTernaryExpr((STernary) resolved);
                 case S_CAST -> emitCastExpr((SCast) resolved);
-                default -> throw new IllegalStateException("Expected scalar node, got " + resolved.kind());
+                default ->
+                        throw new IllegalStateException(
+                                "Expected scalar node, got " + resolved.kind());
             };
         }
 
@@ -480,7 +494,10 @@ final class HipKernelProgramGenerator {
                 case TAN -> floatUnaryExpr(type, "tan", "tanf", input);
                 case TANH -> floatUnaryExpr(type, "tanh", "tanhf", input);
                 case RECIPROCAL -> reciprocalExpr(type, input);
-                case LOGICAL_NOT -> type == DataType.BOOL ? "(" + input + " ? 0 : 1)" : "(" + input + " == 0 ? 1 : 0)";
+                case LOGICAL_NOT ->
+                        type == DataType.BOOL
+                                ? "(" + input + " ? 0 : 1)"
+                                : "(" + input + " == 0 ? 1 : 0)";
                 case BITWISE_NOT -> "(~(" + input + "))";
             };
         }
@@ -514,19 +531,22 @@ final class HipKernelProgramGenerator {
             }
             if (binary.op() == BinaryOperator.LOGICAL_AND) {
                 String l = binary.left().dataType() != DataType.BOOL ? "(" + left + " != 0)" : left;
-                String r = binary.right().dataType() != DataType.BOOL ? "(" + right + " != 0)" : right;
+                String r =
+                        binary.right().dataType() != DataType.BOOL ? "(" + right + " != 0)" : right;
                 String result = "(" + l + " && " + r + ")";
                 return type == DataType.BOOL ? result : "(" + result + " ? 1 : 0)";
             }
             if (binary.op() == BinaryOperator.LOGICAL_OR) {
                 String l = binary.left().dataType() != DataType.BOOL ? "(" + left + " != 0)" : left;
-                String r = binary.right().dataType() != DataType.BOOL ? "(" + right + " != 0)" : right;
+                String r =
+                        binary.right().dataType() != DataType.BOOL ? "(" + right + " != 0)" : right;
                 String result = "(" + l + " || " + r + ")";
                 return type == DataType.BOOL ? result : "(" + result + " ? 1 : 0)";
             }
             if (binary.op() == BinaryOperator.LOGICAL_XOR) {
                 String l = binary.left().dataType() != DataType.BOOL ? "(" + left + " != 0)" : left;
-                String r = binary.right().dataType() != DataType.BOOL ? "(" + right + " != 0)" : right;
+                String r =
+                        binary.right().dataType() != DataType.BOOL ? "(" + right + " != 0)" : right;
                 String result = "(" + l + " ^ " + r + ")";
                 return type == DataType.BOOL ? result : "(" + result + " ? 1 : 0)";
             }
@@ -548,7 +568,8 @@ final class HipKernelProgramGenerator {
             throw new UnsupportedOperationException("Unsupported binary operator: " + binary.op());
         }
 
-        private String maybeConvertForBinaryExpr(LIRExprNode node, String exprStr, DataType targetType) {
+        private String maybeConvertForBinaryExpr(
+                LIRExprNode node, String exprStr, DataType targetType) {
             if (node.dataType() == DataType.BOOL && targetType != DataType.BOOL) {
                 return "(" + exprStr + " ? 1 : 0)";
             }
@@ -583,11 +604,14 @@ final class HipKernelProgramGenerator {
                                 + " "
                                 + emitIndexExpr(((IBinary) resolved).right())
                                 + ")";
-                default -> throw new IllegalStateException("Expected index node, got " + resolved.kind());
+                default ->
+                        throw new IllegalStateException(
+                                "Expected index node, got " + resolved.kind());
             };
         }
 
-        private String compareExpr(String op, LIRExprNode leftExpr, LIRExprNode rightExpr, DataType resultType) {
+        private String compareExpr(
+                String op, LIRExprNode leftExpr, LIRExprNode rightExpr, DataType resultType) {
             DataType leftType = leftExpr.dataType();
             DataType rightType = rightExpr.dataType();
             String left = emitScalarExpr(leftExpr);
@@ -854,8 +878,7 @@ final class HipKernelProgramGenerator {
             return "(1.0f / " + expr + ")";
         }
 
-        private String floatUnaryExpr(
-                DataType type, String fp64Fn, String fp32Fn, String expr) {
+        private String floatUnaryExpr(DataType type, String fp64Fn, String fp32Fn, String expr) {
             if (type == DataType.FP16 || type == DataType.BF16) {
                 return castExpr(DataType.FP32, type, fp32Fn + "(" + toFloatExpr(type, expr) + ")");
             }

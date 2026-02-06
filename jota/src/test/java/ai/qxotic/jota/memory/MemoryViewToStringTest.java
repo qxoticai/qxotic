@@ -13,13 +13,13 @@ import org.junit.jupiter.params.provider.MethodSource;
 class MemoryViewToStringTest extends AbstractMemoryTest {
 
     @ParameterizedTest
-    @MethodSource("contextsSupportingF32")
-    <B> void metadataOnlyIncludesLayoutAndMemory(MemoryContext<B> context) {
-        MemoryAccess<B> memoryAccess = context.memoryAccess();
+    @MethodSource("domainsSupportingF32")
+    <B> void metadataOnlyIncludesLayoutAndMemory(MemoryDomain<B> domain) {
+        MemoryAccess<B> memoryAccess = domain.directAccess();
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.of(2, 3);
-        MemoryView<B> view = MemoryHelpers.arange(context, DataType.FP32, shape.size()).view(shape);
+        MemoryView<B> view = MemoryHelpers.arange(domain, DataType.FP32, shape.size()).view(shape);
 
         String text = view.toString();
         assertTrue(text.startsWith("MemoryView{"));
@@ -29,26 +29,26 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextsSupportingF32")
-    <B> void valuesIncludeElision(MemoryContext<B> context) {
-        MemoryAccess<B> memoryAccess = context.memoryAccess();
+    @MethodSource("domainsSupportingF32")
+    <B> void valuesIncludeElision(MemoryDomain<B> domain) {
+        MemoryAccess<B> memoryAccess = domain.directAccess();
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.of(10, 10);
-        MemoryView<B> view = MemoryHelpers.arange(context, DataType.FP32, shape.size()).view(shape);
+        MemoryView<B> view = MemoryHelpers.arange(domain, DataType.FP32, shape.size()).view(shape);
 
         String text = view.toString(memoryAccess);
         assertTrue(text.contains("..."));
     }
 
     @ParameterizedTest
-    @MethodSource("contextsSupportingF32")
-    <B> void valuesOnlyOmitsMetadata(MemoryContext<B> context) {
-        MemoryAccess<B> memoryAccess = context.memoryAccess();
+    @MethodSource("domainsSupportingF32")
+    <B> void valuesOnlyOmitsMetadata(MemoryDomain<B> domain) {
+        MemoryAccess<B> memoryAccess = domain.directAccess();
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.of(2, 2);
-        MemoryView<B> view = MemoryHelpers.arange(context, DataType.FP32, shape.size()).view(shape);
+        MemoryView<B> view = MemoryHelpers.arange(domain, DataType.FP32, shape.size()).view(shape);
 
         String text = view.toString(memoryAccess, ViewPrintOptions.valuesOnly());
         assertFalse(text.contains("MemoryView{"));
@@ -56,13 +56,13 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextsSupportingF32")
-    <B> void scalarValuesPrintInline(MemoryContext<B> context) {
-        MemoryAccess<B> memoryAccess = context.memoryAccess();
+    @MethodSource("domainsSupportingF32")
+    <B> void scalarValuesPrintInline(MemoryDomain<B> domain) {
+        MemoryAccess<B> memoryAccess = domain.directAccess();
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.scalar();
-        MemoryView<B> view = MemoryHelpers.arange(context, DataType.FP32, shape.size()).view(shape);
+        MemoryView<B> view = MemoryHelpers.arange(domain, DataType.FP32, shape.size()).view(shape);
 
         String text = view.toString(memoryAccess, ViewPrintOptions.valuesOnly());
         assertTrue(text.startsWith("["));
@@ -70,33 +70,33 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextsSupportingBool")
-    <B> void booleanScalarPrintsCorrectly(MemoryContext<B> context) {
-        MemoryAccess<B> memoryAccess = context.memoryAccess();
+    @MethodSource("domainsSupportingBool")
+    <B> void booleanScalarPrintsCorrectly(MemoryDomain<B> domain) {
+        MemoryAccess<B> memoryAccess = domain.directAccess();
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.scalar();
 
         // Test true
-        MemoryView<B> trueView = MemoryHelpers.full(context, DataType.BOOL, shape, 1);
+        MemoryView<B> trueView = MemoryHelpers.full(domain, DataType.BOOL, shape, 1);
         String trueText = trueView.toString(memoryAccess, ViewPrintOptions.valuesOnly());
         assertTrue(trueText.contains("true"));
 
         // Test false
-        MemoryView<B> falseView = MemoryHelpers.full(context, DataType.BOOL, shape, 0);
+        MemoryView<B> falseView = MemoryHelpers.full(domain, DataType.BOOL, shape, 0);
         String falseText = falseView.toString(memoryAccess, ViewPrintOptions.valuesOnly());
         assertTrue(falseText.contains("false"));
     }
 
     @ParameterizedTest
-    @MethodSource("contextsSupportingBool")
-    <B> void boolean1DArrayPrintsCorrectly(MemoryContext<B> context) {
-        MemoryAccess<B> memoryAccess = context.memoryAccess();
+    @MethodSource("domainsSupportingBool")
+    <B> void boolean1DArrayPrintsCorrectly(MemoryDomain<B> domain) {
+        MemoryAccess<B> memoryAccess = domain.directAccess();
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.of(5);
         // Create array: [true, false, true, true, false]
-        MemoryView<B> view = MemoryHelpers.zeros(context, DataType.BOOL, shape);
+        MemoryView<B> view = MemoryHelpers.zeros(domain, DataType.BOOL, shape);
         memoryAccess.writeByte(view.memory(), view.byteOffset() + 0, (byte) 1);
         memoryAccess.writeByte(view.memory(), view.byteOffset() + 1, (byte) 0);
         memoryAccess.writeByte(view.memory(), view.byteOffset() + 2, (byte) 1);
@@ -111,16 +111,16 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextsSupportingBool")
-    <B> void boolean2DArrayPrintsCorrectly(MemoryContext<B> context) {
-        MemoryAccess<B> memoryAccess = context.memoryAccess();
+    @MethodSource("domainsSupportingBool")
+    <B> void boolean2DArrayPrintsCorrectly(MemoryDomain<B> domain) {
+        MemoryAccess<B> memoryAccess = domain.directAccess();
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.of(2, 3);
         // Create 2x3 array:
         // [[true, false, true],
         //  [false, true, false]]
-        MemoryView<B> view = MemoryHelpers.zeros(context, DataType.BOOL, shape);
+        MemoryView<B> view = MemoryHelpers.zeros(domain, DataType.BOOL, shape);
         memoryAccess.writeByte(view.memory(), view.byteOffset() + 0, (byte) 1);
         memoryAccess.writeByte(view.memory(), view.byteOffset() + 1, (byte) 0);
         memoryAccess.writeByte(view.memory(), view.byteOffset() + 2, (byte) 1);
@@ -137,13 +137,13 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextsSupportingBool")
-    <B> void booleanMetadataIncludesBoolType(MemoryContext<B> context) {
-        MemoryAccess<B> memoryAccess = context.memoryAccess();
+    @MethodSource("domainsSupportingBool")
+    <B> void booleanMetadataIncludesBoolType(MemoryDomain<B> domain) {
+        MemoryAccess<B> memoryAccess = domain.directAccess();
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.of(3);
-        MemoryView<B> view = MemoryHelpers.ones(context, DataType.BOOL, shape);
+        MemoryView<B> view = MemoryHelpers.ones(domain, DataType.BOOL, shape);
 
         String text = view.toString();
         assertTrue(text.startsWith("MemoryView{"));
@@ -152,13 +152,13 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextsSupportingBool")
-    <B> void booleanAllTruesPrintsCorrectly(MemoryContext<B> context) {
-        MemoryAccess<B> memoryAccess = context.memoryAccess();
+    @MethodSource("domainsSupportingBool")
+    <B> void booleanAllTruesPrintsCorrectly(MemoryDomain<B> domain) {
+        MemoryAccess<B> memoryAccess = domain.directAccess();
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.of(4);
-        MemoryView<B> view = MemoryHelpers.ones(context, DataType.BOOL, shape);
+        MemoryView<B> view = MemoryHelpers.ones(domain, DataType.BOOL, shape);
 
         String text = view.toString(memoryAccess, ViewPrintOptions.valuesOnly());
         // Count occurrences of "true"
@@ -169,13 +169,13 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextsSupportingBool")
-    <B> void booleanAllFalsesPrintsCorrectly(MemoryContext<B> context) {
-        MemoryAccess<B> memoryAccess = context.memoryAccess();
+    @MethodSource("domainsSupportingBool")
+    <B> void booleanAllFalsesPrintsCorrectly(MemoryDomain<B> domain) {
+        MemoryAccess<B> memoryAccess = domain.directAccess();
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.of(4);
-        MemoryView<B> view = MemoryHelpers.zeros(context, DataType.BOOL, shape);
+        MemoryView<B> view = MemoryHelpers.zeros(domain, DataType.BOOL, shape);
 
         String text = view.toString(memoryAccess, ViewPrintOptions.valuesOnly());
         // Count occurrences of "false"
@@ -186,13 +186,13 @@ class MemoryViewToStringTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextsSupportingBool")
-    <B> void booleanLargeArrayIncludesElision(MemoryContext<B> context) {
-        MemoryAccess<B> memoryAccess = context.memoryAccess();
+    @MethodSource("domainsSupportingBool")
+    <B> void booleanLargeArrayIncludesElision(MemoryDomain<B> domain) {
+        MemoryAccess<B> memoryAccess = domain.directAccess();
         Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
         Shape shape = Shape.of(100);
-        MemoryView<B> view = MemoryHelpers.ones(context, DataType.BOOL, shape);
+        MemoryView<B> view = MemoryHelpers.ones(domain, DataType.BOOL, shape);
 
         String text = view.toString(memoryAccess);
         // Should have elision marker

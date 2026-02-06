@@ -3,7 +3,7 @@ package ai.qxotic.jota.memory;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import ai.qxotic.jota.*;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.BeforeAll;
@@ -11,48 +11,48 @@ import org.junit.jupiter.api.Test;
 
 class MemoryCopyTest extends AbstractMemoryTest {
 
-    private static MemoryContext<MemorySegment> context;
+    private static MemoryDomain<MemorySegment> domain;
 
     @BeforeAll
-    static void setupContext() {
-        context = ContextFactory.ofMemorySegment();
+    static void setupDomain() {
+        domain = DomainFactory.ofMemorySegment();
     }
 
     @Test
-    void copiesStridedViewsWithinContextForAllTypes() {
+    void copiesStridedViewsWithinDomainForAllTypes() {
         for (DataType dataType : PRIMITIVE_DATA_TYPES) {
             MemoryView<MemorySegment> base = range(dataType, Shape.of(2, 3));
             MemoryView<MemorySegment> src = base.transpose(0, 1);
             MemoryView<MemorySegment> dst =
                     MemoryView.of(
-                            context.memoryAllocator().allocateMemory(dataType, src.shape()),
+                            domain.memoryAllocator().allocateMemory(dataType, src.shape()),
                             dataType,
                             src.layout());
 
-            context.copy(src, dst);
+            domain.copy(src, dst);
             assertCopyMatches(src, dst, dataType);
         }
     }
 
     @Test
-    void contextCopiesAcrossViewsForAllTypes() {
+    void domainCopiesAcrossViewsForAllTypes() {
         for (DataType dataType : PRIMITIVE_DATA_TYPES) {
             MemoryView<MemorySegment> src = range(dataType, Shape.of(2, 2));
             MemoryView<MemorySegment> dst =
                     MemoryView.of(
-                            context.memoryAllocator().allocateMemory(dataType, src.shape()),
+                            domain.memoryAllocator().allocateMemory(dataType, src.shape()),
                             dataType,
                             src.layout());
-            MemoryContext.copy(context, src, context, dst);
+            MemoryDomain.copy(domain, src, domain, dst);
             assertCopyMatches(src, dst, dataType);
         }
     }
 
     private MemoryView<MemorySegment> range(DataType dataType, Shape shape) {
         if (dataType == DataType.BOOL) {
-            return MemoryHelpers.full(context, dataType, shape.size(), 1).view(shape);
+            return MemoryHelpers.full(domain, dataType, shape.size(), 1).view(shape);
         }
-        return MemoryHelpers.arange(context, dataType, shape.size()).view(shape);
+        return MemoryHelpers.arange(domain, dataType, shape.size()).view(shape);
     }
 
     private void assertCopyMatches(MemoryView<?> src, MemoryView<?> dst, DataType dataType) {

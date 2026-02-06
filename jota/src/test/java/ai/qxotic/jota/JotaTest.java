@@ -3,7 +3,7 @@ package ai.qxotic.jota;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import ai.qxotic.jota.memory.*;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import ai.qxotic.jota.memory.impl.MemoryFactory;
 import ai.qxotic.jota.memory.impl.MemoryViewFactory;
 import java.util.Arrays;
@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 
 public class JotaTest {
 
-    @AutoClose MemoryContext<float[]> context = ContextFactory.ofFloats();
+    @AutoClose MemoryDomain<float[]> domain = DomainFactory.ofFloats();
 
     public static MemoryView<float[]> ofFloatsVector(float... floats) {
         return MemoryViewFactory.of(
@@ -61,10 +61,10 @@ public class JotaTest {
     @Test
     void testCreate() {
         MemoryView<float[]> view = range(2 * 3);
-        MemoryAccess<float[]> memoryAccess1 = context.memoryAccess();
+        MemoryAccess<float[]> memoryAccess1 = domain.directAccess();
         System.out.println(MemoryViewPrinter.toString(view, memoryAccess1));
         view = view.view(Shape.of(2, 3)).permute(1, 0);
-        MemoryAccess<float[]> memoryAccess = context.memoryAccess();
+        MemoryAccess<float[]> memoryAccess = domain.directAccess();
         System.out.println(MemoryViewPrinter.toString(view, memoryAccess));
     }
 }

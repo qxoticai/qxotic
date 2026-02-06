@@ -9,7 +9,7 @@ final class StridedCopy {
 
     private StridedCopy() {}
 
-    static <B> void copy(MemoryContext<B> context, MemoryView<B> src, MemoryView<B> dst) {
+    static <B> void copy(MemoryDomain<B> domain, MemoryView<B> src, MemoryView<B> dst) {
         if (src.dataType() != dst.dataType()) {
             throw new IllegalArgumentException(
                     "Data type mismatch: " + src.dataType() + " vs " + dst.dataType());
@@ -27,17 +27,17 @@ final class StridedCopy {
             if (bytes == 0) {
                 return;
             }
-            context.memoryOperations()
+            domain.memoryOperations()
                     .copy(src.memory(), src.byteOffset(), dst.memory(), dst.byteOffset(), bytes);
             return;
         }
 
-        MemoryAccess<B> access = context.memoryAccess();
+        MemoryAccess<B> access = domain.directAccess();
         if (access == null) {
             throw new IllegalStateException("MemoryAccess is required for strided copies");
         }
 
-        if (context.device() == ai.qxotic.jota.Device.PANAMA
+        if (domain.device() == ai.qxotic.jota.Device.PANAMA
                 && src.memory().base() instanceof MemorySegment
                 && dst.memory().base() instanceof MemorySegment) {
             copyWithMemorySegment(

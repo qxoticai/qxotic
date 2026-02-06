@@ -7,14 +7,14 @@ import ai.qxotic.jota.memory.impl.MemoryViewFactory;
 import java.util.Arrays;
 
 interface Operations<B> {
-    MemoryContext<B> of(DataType dataType);
+    MemoryDomain<B> of(DataType dataType);
 
     void map(MemoryView<B> in, UnaryOp op, MemoryView<B> out);
 
     default MemoryView<B> cast(MemoryView<B> in, DataType dataType) {
         Shape shape = in.shape();
-        MemoryContext<B> context = of(dataType);
-        MemoryAllocator<B> allocator = context.memoryAllocator();
+        MemoryDomain<B> domain = of(dataType);
+        MemoryAllocator<B> allocator = domain.memoryAllocator();
         MemoryView<B> view = MemoryViewFactory.allocate(allocator, dataType, shape);
         map(in, UnaryOp.CAST, view);
         return view;
@@ -23,8 +23,8 @@ interface Operations<B> {
     default MemoryView<B> map(MemoryView<B> in, UnaryOp op) {
         DataType dataType = in.dataType();
         Shape shape = in.shape();
-        MemoryContext<B> context = of(dataType);
-        MemoryAllocator<B> allocator = context.memoryAllocator();
+        MemoryDomain<B> domain = of(dataType);
+        MemoryAllocator<B> allocator = domain.memoryAllocator();
         MemoryView<B> view = MemoryViewFactory.allocate(allocator, dataType, shape);
         map(in, op, view);
         return view;
@@ -41,8 +41,8 @@ interface Operations<B> {
         }
         DataType dataType = left.dataType();
         Shape shape = left.shape();
-        MemoryContext<B> context = of(dataType);
-        MemoryAllocator<B> allocator = context.memoryAllocator();
+        MemoryDomain<B> domain = of(dataType);
+        MemoryAllocator<B> allocator = domain.memoryAllocator();
         MemoryView<B> view = MemoryViewFactory.allocate(allocator, dataType, shape);
         zip2(left, op, right, view);
         return view;
@@ -53,8 +53,8 @@ interface Operations<B> {
     default MemoryView<B> reduce(MemoryView<B> in, BinaryOp op, boolean keepDims, int... _axes) {
         Shape shape = reduceShape(in.shape(), keepDims, _axes);
         DataType dataType = in.dataType();
-        MemoryContext<B> context = of(dataType);
-        MemoryAllocator<B> allocator = context.memoryAllocator();
+        MemoryDomain<B> domain = of(dataType);
+        MemoryAllocator<B> allocator = domain.memoryAllocator();
         MemoryView<B> view = MemoryViewFactory.allocate(allocator, dataType, shape);
         reduce(in, op, view, keepDims, _axes);
         return view;

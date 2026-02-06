@@ -1,7 +1,7 @@
 package ai.qxotic.jota.backend;
 
 import ai.qxotic.jota.Device;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.tensor.ComputeEngine;
 import ai.qxotic.jota.tensor.KernelCacheKey;
 import ai.qxotic.jota.tensor.KernelExecutable;
@@ -9,17 +9,17 @@ import ai.qxotic.jota.tensor.KernelProgram;
 import java.util.Objects;
 import java.util.Optional;
 
-public interface Backend {
+public interface DeviceRuntime {
     Device device();
 
-    MemoryContext<?> memoryContext();
+    MemoryDomain<?> memoryDomain();
 
     ComputeEngine computeEngine();
 
-    Optional<KernelService> kernels();
+    Optional<KernelService> kernelService();
 
     default boolean supportsKernels() {
-        return kernels().isPresent();
+        return kernelService().isPresent();
     }
 
     default KernelCacheKey keyFor(KernelProgram program) {
@@ -45,7 +45,7 @@ public interface Backend {
     }
 
     private KernelService requireKernels() {
-        Optional<KernelService> service = kernels();
+        Optional<KernelService> service = kernelService();
         if (service.isEmpty()) {
             throw new UnsupportedOperationException(
                     "Backend does not support kernels: " + device());

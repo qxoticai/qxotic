@@ -5,9 +5,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
-import ai.qxotic.jota.tensor.Tracer;
 import ai.qxotic.jota.tensor.LazyComputation;
 import ai.qxotic.jota.tensor.Tensor;
+import ai.qxotic.jota.tensor.Tracer;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 

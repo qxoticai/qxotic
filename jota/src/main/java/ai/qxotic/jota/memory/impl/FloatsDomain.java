@@ -3,19 +3,19 @@ package ai.qxotic.jota.memory.impl;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryAllocator;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryOperations;
 
-class FloatsContext implements MemoryContext<float[]> {
+class FloatsDomain implements MemoryDomain<float[]> {
 
     private static final Device FLOATS = Device.CPU.child("floats");
-    private static final FloatsContext INSTANCE = new FloatsContext();
+    private static final FloatsDomain INSTANCE = new FloatsDomain();
 
-    static MemoryContext<float[]> instance() {
+    static MemoryDomain<float[]> instance() {
         return INSTANCE;
     }
 
-    private FloatsContext() {}
+    private FloatsDomain() {}
 
     @Override
     public Device device() {
@@ -28,7 +28,7 @@ class FloatsContext implements MemoryContext<float[]> {
     }
 
     @Override
-    public MemoryAccess<float[]> memoryAccess() {
+    public MemoryAccess<float[]> directAccess() {
         return FloatsMemoryAccess.instance();
     }
 
@@ -47,7 +47,7 @@ class FloatsContext implements MemoryContext<float[]> {
         return new StringBuilder("Context{float[], device=")
                 .append(device())
                 .append(", directAccess=")
-                .append(memoryAccess() != null)
+                .append(directAccess() != null)
                 .append('}')
                 .toString();
     }

@@ -2,18 +2,13 @@ package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Environment;
+import ai.qxotic.jota.backend.DeviceRuntime;
 import ai.qxotic.jota.ir.tir.IotaConstant;
-import ai.qxotic.jota.ir.tir.TIRCSEPass;
-import ai.qxotic.jota.ir.tir.TIRConstantFoldingPass;
 import ai.qxotic.jota.ir.tir.TIRGraph;
 import ai.qxotic.jota.ir.tir.TIRInterpreter;
 import ai.qxotic.jota.ir.tir.TIRNode;
-import ai.qxotic.jota.ir.tir.TIRValidationPass;
-import ai.qxotic.jota.backend.Backend;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
-
-import java.lang.foreign.MemorySegment;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -57,20 +52,20 @@ final class IRComputation implements LazyComputation {
     public MemoryView<?> execute() {
         Device device =
                 inputTensors.isEmpty() ? Device.defaultDevice() : inputTensors.get(0).device();
-        Backend backend = Environment.current().backend(device);
-        MemoryContext<?> context = backend.memoryContext();
-        ComputeBackend computeBackend = Environment.current().engineFor(device).backendFor(device);
+        DeviceRuntime deviceRuntime = Environment.current().backend(device);
+        MemoryDomain<?> domain = deviceRuntime.memoryDomain();
+        ComputeEngine computeEngine = Environment.current().computeBackendFor(device);
 
         // Optimize the graph before execution
         TIRGraph optimizedGraph = optimizeGraph(graph);
 
         if (requiresKernel(optimizedGraph)) {
             List<Tensor> lirInputs = collectLirInputs(optimizedGraph, inputTensors);
-            if (computeBackend == null) {
+            if (computeEngine == null) {
                 throw new UnsupportedOperationException(
                         "LIR execution required for device " + device + " but backend is missing");
             }
-            return computeBackend.execute(optimizedGraph, lirInputs);
+            return computeEngine.execute(optimizedGraph, lirInputs);
         }
 
         @SuppressWarnings({"unchecked", "rawtypes"})
@@ -78,7 +73,7 @@ final class IRComputation implements LazyComputation {
                 (List<MemoryView<?>>)
                         (List<?>) inputTensors.stream().map(Tensor::materialize).toList();
 
-        List<?> outputs = TIRInterpreter.execute(optimizedGraph, inputs, context);
+        List<?> outputs = TIRInterpreter.execute(optimizedGraph, inputs, domain);
 
         @SuppressWarnings("unchecked")
         MemoryView<?> output = (MemoryView<?>) outputs.get(0);
@@ -127,13 +122,13 @@ final class IRComputation implements LazyComputation {
         TIRGraph result = inputGraph;
 
         // Run CSE pass to eliminate common subexpressions
-        //result = new TIRCSEPass().run(result);
+        // result = new TIRCSEPass().run(result);
 
         // Run constant folding to simplify constant expressions
-        //result = new TIRConstantFoldingPass().run(result);
+        // result = new TIRConstantFoldingPass().run(result);
 
         // Validate the optimized graph
-        //result = new TIRValidationPass().run(result);
+        // result = new TIRValidationPass().run(result);
 
         return result;
     }

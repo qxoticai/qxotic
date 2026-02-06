@@ -8,9 +8,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 public record KernelService(
-        KernelBackend backend,
-        KernelProgramStore sourceStore,
-        KernelProgramStore binaryStore) {
+        KernelBackend backend, KernelProgramStore sourceStore, KernelProgramStore binaryStore) {
 
     public KernelService {
         Objects.requireNonNull(backend, "backend");

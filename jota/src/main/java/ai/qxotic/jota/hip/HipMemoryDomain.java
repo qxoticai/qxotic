@@ -3,18 +3,18 @@ package ai.qxotic.jota.hip;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryAllocator;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryOperations;
 
-public final class HipMemoryContext implements MemoryContext<HipDevicePtr> {
+public final class HipMemoryDomain implements MemoryDomain<HipDevicePtr> {
 
-    private static final HipMemoryContext INSTANCE = new HipMemoryContext();
+    private static final HipMemoryDomain INSTANCE = new HipMemoryDomain();
 
-    public static HipMemoryContext instance() {
+    public static HipMemoryDomain instance() {
         return INSTANCE;
     }
 
-    private HipMemoryContext() {}
+    private HipMemoryDomain() {}
 
     @Override
     public Device device() {
@@ -27,7 +27,7 @@ public final class HipMemoryContext implements MemoryContext<HipDevicePtr> {
     }
 
     @Override
-    public MemoryAccess<HipDevicePtr> memoryAccess() {
+    public MemoryAccess<HipDevicePtr> directAccess() {
         return null;
     }
 
@@ -43,10 +43,10 @@ public final class HipMemoryContext implements MemoryContext<HipDevicePtr> {
 
     @Override
     public String toString() {
-        return "HipMemoryContext{HipDevicePtr, device="
+        return "HipMemoryDomain{HipDevicePtr, device="
                 + device()
                 + ", directAccess="
-                + (memoryAccess() != null)
+                + (directAccess() != null)
                 + '}';
     }
 }

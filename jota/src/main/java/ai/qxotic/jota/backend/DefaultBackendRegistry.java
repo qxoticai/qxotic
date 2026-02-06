@@ -8,36 +8,36 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class DefaultBackendRegistry implements BackendRegistry {
 
-    private final Map<Device, Backend> backends = new ConcurrentHashMap<>();
-    private volatile Backend nativeBackend;
+    private final Map<Device, DeviceRuntime> backends = new ConcurrentHashMap<>();
+    private volatile DeviceRuntime nativeDeviceRuntime;
 
-    public static DefaultBackendRegistry withNative(Backend backend) {
+    public static DefaultBackendRegistry withNative(DeviceRuntime deviceRuntime) {
         DefaultBackendRegistry registry = new DefaultBackendRegistry();
-        registry.registerNative(backend);
+        registry.registerNative(deviceRuntime);
         return registry;
     }
 
     @Override
-    public void register(Backend backend) {
-        Objects.requireNonNull(backend, "backend");
-        backends.put(backend.device(), backend);
-        if (nativeBackend == null && backend.device().equals(Device.PANAMA)) {
-            nativeBackend = backend;
+    public void register(DeviceRuntime deviceRuntime) {
+        Objects.requireNonNull(deviceRuntime, "backend");
+        backends.put(deviceRuntime.device(), deviceRuntime);
+        if (nativeDeviceRuntime == null && deviceRuntime.device().equals(Device.PANAMA)) {
+            nativeDeviceRuntime = deviceRuntime;
         }
     }
 
-    public void registerNative(Backend backend) {
-        register(backend);
-        nativeBackend = backend;
+    public void registerNative(DeviceRuntime deviceRuntime) {
+        register(deviceRuntime);
+        nativeDeviceRuntime = deviceRuntime;
     }
 
     @Override
-    public Backend backend(Device device) {
-        Backend backend = backends.get(device);
-        if (backend == null) {
+    public DeviceRuntime backend(Device device) {
+        DeviceRuntime deviceRuntime = backends.get(device);
+        if (deviceRuntime == null) {
             throw new IllegalStateException("No backend registered for " + device);
         }
-        return backend;
+        return deviceRuntime;
     }
 
     @Override
@@ -46,12 +46,12 @@ public final class DefaultBackendRegistry implements BackendRegistry {
     }
 
     @Override
-    public Backend nativeBackend() {
-        Backend backend = nativeBackend;
-        if (backend == null) {
+    public DeviceRuntime nativeBackend() {
+        DeviceRuntime deviceRuntime = nativeDeviceRuntime;
+        if (deviceRuntime == null) {
             throw new IllegalStateException("No native backend registered");
         }
-        return backend;
+        return deviceRuntime;
     }
 
     @Override

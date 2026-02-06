@@ -56,10 +56,12 @@ final class CKernelCompiler {
         ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true);
         try {
             Process process = builder.start();
-            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            String output =
+                    new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
             int code = process.waitFor();
             if (code != 0) {
-                throw new IllegalStateException("C kernel compilation failed (exit " + code + ")\n" + output);
+                throw new IllegalStateException(
+                        "C kernel compilation failed (exit " + code + ")\n" + output);
             }
         } catch (IOException | InterruptedException e) {
             Thread.currentThread().interrupt();

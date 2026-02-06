@@ -75,7 +75,9 @@ public final class LIRCSEPass implements LIRPass {
                 LIRExprNode step = exprGraph.resolve(loop.step());
 
                 boolean changed =
-                        lower != loop.lowerBound() || upper != loop.upperBound() || step != loop.step();
+                        lower != loop.lowerBound()
+                                || upper != loop.upperBound()
+                                || step != loop.step();
 
                 List<LoopIterArg> iterArgs = loop.iterArgs();
                 List<LoopIterArg> updatedArgs = null;
