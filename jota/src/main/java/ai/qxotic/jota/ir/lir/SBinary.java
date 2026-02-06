@@ -7,7 +7,13 @@ public final class SBinary extends ScalarNode {
     private final BinaryOperator op;
 
     SBinary(int id, BinaryOperator op, LIRExprNode left, LIRExprNode right, DataType dataType) {
-        super(id, LIRExprKind.S_BINARY, dataType, new LIRExprNode[] {left, right}, true, graphCommutative(op));
+        super(
+                id,
+                LIRExprKind.S_BINARY,
+                dataType,
+                new LIRExprNode[] {left, right},
+                true,
+                graphCommutative(op));
         this.op = op;
     }
 
@@ -55,7 +61,8 @@ public final class SBinary extends ScalarNode {
                     BITWISE_AND,
                     BITWISE_OR,
                     BITWISE_XOR,
-                    EQUAL -> true;
+                    EQUAL ->
+                    true;
             default -> false;
         };
     }

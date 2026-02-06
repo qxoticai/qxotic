@@ -45,10 +45,14 @@ public final class LIRTextRenderer {
             String var = allocateVar();
             if (input instanceof BufferRef buf) {
                 bufferIdToVar.put(buf.id(), var);
-                params.append(var).append(": ").append(formatMemRefType(buf.dataType(), buf.layout()));
+                params.append(var)
+                        .append(": ")
+                        .append(formatMemRefType(buf.dataType(), buf.layout()));
             } else if (input instanceof ScalarInput scalar) {
                 scalarIdToVar.put(scalar.id(), var);
-                params.append(var).append(": ").append(TextRenderUtils.formatDataType(scalar.dataType()));
+                params.append(var)
+                        .append(": ")
+                        .append(TextRenderUtils.formatDataType(scalar.dataType()));
             }
             if (i < graph.inputs().size() - 1 || !graph.outputs().isEmpty()) {
                 params.append(", ");
@@ -131,7 +135,8 @@ public final class LIRTextRenderer {
                         if (i > 0) {
                             header.append(", ");
                         }
-                        header.append(TextRenderUtils.formatDataType(loop.iterArgs().get(i).dataType()));
+                        header.append(
+                                TextRenderUtils.formatDataType(loop.iterArgs().get(i).dataType()));
                     }
                     header.append(")");
                 }
@@ -183,7 +188,9 @@ public final class LIRTextRenderer {
             case S_CONST -> {
                 String var = allocateVar();
                 nodeToVar.put(resolved, var);
-                String value = TextRenderUtils.formatScalarValue(((SConst) resolved).rawBits(), resolved.dataType());
+                String value =
+                        TextRenderUtils.formatScalarValue(
+                                ((SConst) resolved).rawBits(), resolved.dataType());
                 appendLine(
                         var
                                 + " = arith.constant "
@@ -281,7 +288,8 @@ public final class LIRTextRenderer {
                                 + TextRenderUtils.formatOpTypeSuffix(cast.targetType()));
                 yield var;
             }
-            default -> throw new IllegalStateException("Expected scalar node, got " + resolved.kind());
+            default ->
+                    throw new IllegalStateException("Expected scalar node, got " + resolved.kind());
         };
     }
 
@@ -317,7 +325,8 @@ public final class LIRTextRenderer {
                                 + " : index");
                 yield var;
             }
-            default -> throw new IllegalStateException("Expected index node, got " + resolved.kind());
+            default ->
+                    throw new IllegalStateException("Expected index node, got " + resolved.kind());
         };
     }
 
@@ -381,7 +390,8 @@ public final class LIRTextRenderer {
             strides[i] = layout.stride().flatAt(i) * byteSize;
         }
         boolean contiguous = TextRenderUtils.isContiguous(shape, strides, (int) byteSize);
-        return TextRenderUtils.formatMemRefType(dataType, shape, strides, (int) byteSize, contiguous);
+        return TextRenderUtils.formatMemRefType(
+                dataType, shape, strides, (int) byteSize, contiguous);
     }
 
     private String bufferVar(BufferRef buffer) {

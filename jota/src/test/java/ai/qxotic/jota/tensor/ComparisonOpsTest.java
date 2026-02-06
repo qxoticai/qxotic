@@ -5,10 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryHelpers;
 import ai.qxotic.jota.memory.MemoryView;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.List;
@@ -29,11 +29,11 @@ class ComparisonOpsTest {
                     DataType.FP32,
                     DataType.FP64);
 
-    private static MemoryContext<MemorySegment> context;
+    private static MemoryDomain<MemorySegment> domain;
 
     @BeforeAll
-    static void setUpContext() {
-        context = ContextFactory.ofMemorySegment();
+    static void setUpDomain() {
+        domain = DomainFactory.ofMemorySegment();
     }
 
     @Test
@@ -47,8 +47,7 @@ class ComparisonOpsTest {
 
             Tensor notEqual = Tracer.trace(leftTensor, rightTensor, Tensor::notEqual);
             Tensor greaterThan = Tracer.trace(leftTensor, rightTensor, Tensor::greaterThan);
-            Tensor lessThanOrEqual =
-                    Tracer.trace(leftTensor, rightTensor, Tensor::lessThanOrEqual);
+            Tensor lessThanOrEqual = Tracer.trace(leftTensor, rightTensor, Tensor::lessThanOrEqual);
             Tensor greaterThanOrEqual =
                     Tracer.trace(leftTensor, rightTensor, Tensor::greaterThanOrEqual);
 
@@ -66,8 +65,7 @@ class ComparisonOpsTest {
                 assertEquals(leftValue >= rightValue ? 1 : 0, readBool(greaterThanOrEqualOut, i));
             }
 
-            Tensor flippedGreaterThan =
-                    Tracer.trace(rightTensor, leftTensor, Tensor::greaterThan);
+            Tensor flippedGreaterThan = Tracer.trace(rightTensor, leftTensor, Tensor::greaterThan);
             MemoryView<?> flippedGreaterOut = flippedGreaterThan.materialize();
             for (int i = 0; i < shape.size(); i++) {
                 int leftValue = dataType == DataType.BOOL ? (i % 2) : i;
@@ -81,20 +79,20 @@ class ComparisonOpsTest {
         if (dataType == DataType.BOOL) {
             return boolPattern(shape);
         }
-        return MemoryHelpers.arange(context, dataType, shape.size()).view(shape);
+        return MemoryHelpers.arange(domain, dataType, shape.size()).view(shape);
     }
 
     private MemoryView<MemorySegment> fullZeros(DataType dataType, Shape shape) {
-        return MemoryHelpers.full(context, dataType, shape.size(), 0).view(shape);
+        return MemoryHelpers.full(domain, dataType, shape.size(), 0).view(shape);
     }
 
     private MemoryView<MemorySegment> boolPattern(Shape shape) {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.full(context, DataType.BOOL, shape.size(), 0).view(shape);
+                MemoryHelpers.full(domain, DataType.BOOL, shape.size(), 0).view(shape);
         for (int i = 0; i < shape.size(); i++) {
             long offset = view.byteOffset() + (long) i * DataType.BOOL.byteSize();
             byte value = (byte) (i % 2);
-            context.memoryAccess().writeByte(view.memory(), offset, value);
+            domain.directAccess().writeByte(view.memory(), offset, value);
         }
         return view;
     }

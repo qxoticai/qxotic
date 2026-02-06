@@ -18,16 +18,16 @@ import org.junit.jupiter.params.provider.MethodSource;
 class IndexingMemoryViewTest extends AbstractMemoryTest {
 
     @ParameterizedTest
-    @MethodSource("contextsSupportingF32")
-    <B> void linearToOffsetRowMajorMatchesPhysicalIndex(MemoryContext<B> context) {
-        MemoryAccess<B> memoryAccess = context.memoryAccess();
+    @MethodSource("domainsSupportingF32")
+    <B> void linearToOffsetRowMajorMatchesPhysicalIndex(MemoryDomain<B> domain) {
+        MemoryAccess<B> memoryAccess = domain.directAccess();
         if (memoryAccess == null) {
             return;
         }
 
         Shape shape = Shape.of(2, 3);
         Layout layout = Layout.rowMajor(shape);
-        MemoryView<B> base = MemoryHelpers.arange(context, DataType.FP32, shape.size());
+        MemoryView<B> base = MemoryHelpers.arange(domain, DataType.FP32, shape.size());
         MemoryView<B> view = MemoryView.of(base.memory(), 0L, DataType.FP32, layout);
 
         for (long linear = 0; linear < shape.size(); linear++) {
@@ -41,9 +41,9 @@ class IndexingMemoryViewTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextsSupportingF32")
-    <B> void linearToOffsetColumnMajorUsesLayout(MemoryContext<B> context) {
-        MemoryAccess<B> memoryAccess = context.memoryAccess();
+    @MethodSource("domainsSupportingF32")
+    <B> void linearToOffsetColumnMajorUsesLayout(MemoryDomain<B> domain) {
+        MemoryAccess<B> memoryAccess = domain.directAccess();
         if (memoryAccess == null) {
             return;
         }
@@ -51,7 +51,7 @@ class IndexingMemoryViewTest extends AbstractMemoryTest {
         Shape shape = Shape.of(2, 3);
         Layout layout = Layout.columnMajor(shape);
         long byteOffset = DataType.FP32.byteSize() * 2;
-        MemoryView<B> base = MemoryHelpers.arange(context, DataType.FP32, shape.size() + 2);
+        MemoryView<B> base = MemoryHelpers.arange(domain, DataType.FP32, shape.size() + 2);
         MemoryView<B> view = MemoryView.of(base.memory(), byteOffset, DataType.FP32, layout);
 
         for (long linear = 0; linear < shape.size(); linear++) {

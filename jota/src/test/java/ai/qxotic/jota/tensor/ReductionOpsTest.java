@@ -7,10 +7,10 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.AbstractMemoryTest;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryHelpers;
 import ai.qxotic.jota.memory.MemoryView;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.List;
@@ -31,11 +31,11 @@ class ReductionOpsTest extends AbstractMemoryTest {
                     DataType.FP32,
                     DataType.FP64);
 
-    private static MemoryContext<MemorySegment> context;
+    private static MemoryDomain<MemorySegment> memoryDomain;
 
     @BeforeAll
-    static void setUpContext() {
-        context = ContextFactory.ofMemorySegment();
+    static void setUpDomain() {
+        memoryDomain = DomainFactory.ofMemorySegment();
     }
 
     @Test
@@ -103,9 +103,9 @@ class ReductionOpsTest extends AbstractMemoryTest {
 
     private MemoryView<MemorySegment> range(DataType dataType, Shape shape) {
         if (dataType == DataType.BOOL) {
-            return MemoryHelpers.full(context, dataType, shape.size(), 1).view(shape);
+            return MemoryHelpers.full(memoryDomain, dataType, shape.size(), 1).view(shape);
         }
-        return MemoryHelpers.arange(context, dataType, shape.size()).view(shape);
+        return MemoryHelpers.arange(memoryDomain, dataType, shape.size()).view(shape);
     }
 
     private Object readValue(MemoryView<?> view, long linearIndex, DataType dataType) {

@@ -12,15 +12,15 @@ import org.junit.jupiter.params.provider.MethodSource;
 class MemoryViewIndexOrderTest extends AbstractMemoryTest {
 
     @ParameterizedTest
-    @MethodSource("contextsSupportingF32")
-    <B> void rowMajorCoordinatesMatchLinearOrder(MemoryContext<B> context) {
-        MemoryAccess<B> memoryAccess = context.memoryAccess();
+    @MethodSource("domainsSupportingF32")
+    <B> void rowMajorCoordinatesMatchLinearOrder(MemoryDomain<B> domain) {
+        MemoryAccess<B> memoryAccess = domain.directAccess();
         if (memoryAccess == null) {
             return;
         }
 
         Shape shape = Shape.of(2, 3);
-        MemoryView<B> base = MemoryHelpers.arange(context, DataType.FP32, shape.size());
+        MemoryView<B> base = MemoryHelpers.arange(domain, DataType.FP32, shape.size());
         MemoryView<B> view =
                 MemoryView.of(base.memory(), 0L, DataType.FP32, Layout.rowMajor(shape));
 
@@ -35,15 +35,15 @@ class MemoryViewIndexOrderTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextsSupportingF32")
-    <B> void columnMajorCoordinatesMatchColumnOrder(MemoryContext<B> context) {
-        MemoryAccess<B> memoryAccess = context.memoryAccess();
+    @MethodSource("domainsSupportingF32")
+    <B> void columnMajorCoordinatesMatchColumnOrder(MemoryDomain<B> domain) {
+        MemoryAccess<B> memoryAccess = domain.directAccess();
         if (memoryAccess == null) {
             return;
         }
 
         Shape shape = Shape.of(2, 3);
-        MemoryView<B> base = MemoryHelpers.arange(context, DataType.FP32, shape.size());
+        MemoryView<B> base = MemoryHelpers.arange(domain, DataType.FP32, shape.size());
         MemoryView<B> view = MemoryView.of(base.memory(), DataType.FP32, Layout.columnMajor(shape));
 
         for (long i = 0; i < shape.size(0); i++) {
@@ -57,15 +57,15 @@ class MemoryViewIndexOrderTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextsSupportingF32")
-    <B> void rowMajorCoordinatesMatchLinearOrder3d(MemoryContext<B> context) {
-        MemoryAccess<B> memoryAccess = context.memoryAccess();
+    @MethodSource("domainsSupportingF32")
+    <B> void rowMajorCoordinatesMatchLinearOrder3d(MemoryDomain<B> domain) {
+        MemoryAccess<B> memoryAccess = domain.directAccess();
         if (memoryAccess == null) {
             return;
         }
 
         Shape shape = Shape.of(2, 3, 4);
-        MemoryView<B> base = MemoryHelpers.arange(context, DataType.FP32, shape.size());
+        MemoryView<B> base = MemoryHelpers.arange(domain, DataType.FP32, shape.size());
         MemoryView<B> view = MemoryView.of(base.memory(), DataType.FP32, Layout.rowMajor(shape));
 
         for (long i = 0; i < shape.size(0); i++) {
@@ -81,15 +81,15 @@ class MemoryViewIndexOrderTest extends AbstractMemoryTest {
     }
 
     @ParameterizedTest
-    @MethodSource("contextsSupportingF32")
-    <B> void columnMajorCoordinatesMatchColumnOrder3d(MemoryContext<B> context) {
-        MemoryAccess<B> memoryAccess = context.memoryAccess();
+    @MethodSource("domainsSupportingF32")
+    <B> void columnMajorCoordinatesMatchColumnOrder3d(MemoryDomain<B> domain) {
+        MemoryAccess<B> memoryAccess = domain.directAccess();
         if (memoryAccess == null) {
             return;
         }
 
         Shape shape = Shape.of(2, 3, 4);
-        MemoryView<B> base = MemoryHelpers.arange(context, DataType.FP32, shape.size());
+        MemoryView<B> base = MemoryHelpers.arange(domain, DataType.FP32, shape.size());
         MemoryView<B> view =
                 MemoryView.of(base.memory(), 0L, DataType.FP32, Layout.columnMajor(shape));
 

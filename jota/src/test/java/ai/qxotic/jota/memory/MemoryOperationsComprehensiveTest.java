@@ -3,7 +3,7 @@ package ai.qxotic.jota.memory;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import ai.qxotic.jota.DataType;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import ai.qxotic.jota.memory.impl.MemoryAccessFactory;
 import ai.qxotic.jota.memory.impl.MemoryAllocatorFactory;
 import ai.qxotic.jota.memory.impl.MemoryFactory;
@@ -21,23 +21,23 @@ class MemoryOperationsComprehensiveTest {
         DataType.I8, DataType.I16, DataType.I32, DataType.I64, DataType.FP32, DataType.FP64
     };
 
-    static Stream<MemoryContext<?>> allContexts() {
+    static Stream<MemoryDomain<?>> allDomains() {
         return Stream.concat(
-                AbstractMemoryTest.onHeapContexts(),
+                AbstractMemoryTest.onHeapDomains(),
                 Stream.of(
-                        ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
-                        ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                        ContextFactory.ofMemorySegment()));
+                        DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
+                        DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
+                        DomainFactory.ofMemorySegment()));
     }
 
     @ParameterizedTest
-    @MethodSource("allContexts")
-    <B> void copyCopiesValues(MemoryContext<B> context) {
-        try (context) {
-            MemoryAccess<B> memoryAccess = context.memoryAccess();
+    @MethodSource("allDomains")
+    <B> void copyCopiesValues(MemoryDomain<B> domain) {
+        try (domain) {
+            MemoryAccess<B> memoryAccess = domain.directAccess();
             Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
-            MemoryAllocator<B> allocator = context.memoryAllocator();
+            MemoryAllocator<B> allocator = domain.memoryAllocator();
             DataType dataType = dataTypeFor(allocator);
             long byteSize = dataType.byteSizeFor(ELEMENT_COUNT);
 
@@ -48,7 +48,7 @@ class MemoryOperationsComprehensiveTest {
                 writeValue(memoryAccess, src, dataType, i);
             }
 
-            context.memoryOperations().copy(src, 0, dst, 0, byteSize);
+            domain.memoryOperations().copy(src, 0, dst, 0, byteSize);
 
             for (int i = 0; i < ELEMENT_COUNT; i++) {
                 assertValue(memoryAccess, dst, dataType, i);
@@ -57,14 +57,14 @@ class MemoryOperationsComprehensiveTest {
     }
 
     @ParameterizedTest
-    @MethodSource("allContexts")
-    <B> void fillWritesExpectedValues(MemoryContext<B> context) {
-        try (context) {
-            MemoryAccess<B> memoryAccess = context.memoryAccess();
+    @MethodSource("allDomains")
+    <B> void fillWritesExpectedValues(MemoryDomain<B> domain) {
+        try (domain) {
+            MemoryAccess<B> memoryAccess = domain.directAccess();
             Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
-            MemoryAllocator<B> allocator = context.memoryAllocator();
-            MemoryOperations<B> memoryOperations = context.memoryOperations();
+            MemoryAllocator<B> allocator = domain.memoryAllocator();
+            MemoryOperations<B> memoryOperations = domain.memoryOperations();
 
             for (DataType dataType : DATA_TYPES) {
                 Memory<B> memory = allocateMemory(allocator, dataType);
@@ -85,14 +85,14 @@ class MemoryOperationsComprehensiveTest {
     }
 
     @ParameterizedTest
-    @MethodSource("allContexts")
-    <B> void copyToNativeCopiesValues(MemoryContext<B> context) {
-        try (context) {
-            MemoryAccess<B> memoryAccess = context.memoryAccess();
+    @MethodSource("allDomains")
+    <B> void copyToNativeCopiesValues(MemoryDomain<B> domain) {
+        try (domain) {
+            MemoryAccess<B> memoryAccess = domain.directAccess();
             Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
-            MemoryOperations<B> memoryOperations = context.memoryOperations();
-            MemoryAllocator<B> allocator = context.memoryAllocator();
+            MemoryOperations<B> memoryOperations = domain.memoryOperations();
+            MemoryAllocator<B> allocator = domain.memoryAllocator();
             MemoryAccess<MemorySegment> nativeAccess = MemoryAccessFactory.ofMemorySegment();
 
             for (DataType dataType : DATA_TYPES) {
@@ -117,14 +117,14 @@ class MemoryOperationsComprehensiveTest {
     }
 
     @ParameterizedTest
-    @MethodSource("allContexts")
-    <B> void copyFromNativeCopiesValues(MemoryContext<B> context) {
-        try (context) {
-            MemoryAccess<B> memoryAccess = context.memoryAccess();
+    @MethodSource("allDomains")
+    <B> void copyFromNativeCopiesValues(MemoryDomain<B> domain) {
+        try (domain) {
+            MemoryAccess<B> memoryAccess = domain.directAccess();
             Assumptions.assumeTrue(memoryAccess != null, "memory access required");
 
-            MemoryOperations<B> memoryOperations = context.memoryOperations();
-            MemoryAllocator<B> allocator = context.memoryAllocator();
+            MemoryOperations<B> memoryOperations = domain.memoryOperations();
+            MemoryAllocator<B> allocator = domain.memoryAllocator();
             MemoryAccess<MemorySegment> nativeAccess = MemoryAccessFactory.ofMemorySegment();
 
             for (DataType dataType : DATA_TYPES) {

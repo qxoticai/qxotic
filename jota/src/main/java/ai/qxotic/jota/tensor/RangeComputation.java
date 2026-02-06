@@ -3,7 +3,7 @@ package ai.qxotic.jota.tensor;
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Environment;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryHelpers;
 import ai.qxotic.jota.memory.MemoryView;
 import java.util.List;
@@ -37,8 +37,8 @@ record RangeComputation(long count, Device device) implements LazyComputation {
 
     @Override
     public MemoryView<?> execute() {
-        MemoryContext<?> context = Environment.current().backend(device).memoryContext();
-        return MemoryHelpers.arange(context, DataType.I64, count);
+        MemoryDomain<?> memoryDomain = Environment.current().backend(device).memoryDomain();
+        return MemoryHelpers.arange(memoryDomain, DataType.I64, count);
     }
 
     private static final class RangeOp implements Op {

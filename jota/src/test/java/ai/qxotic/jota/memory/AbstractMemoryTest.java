@@ -2,7 +2,7 @@ package ai.qxotic.jota.memory;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Indexing;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import ai.qxotic.jota.memory.impl.MemoryAllocatorFactory;
 import java.util.List;
 import java.util.function.Supplier;
@@ -28,84 +28,84 @@ public abstract class AbstractMemoryTest {
     static final List<DataType> FLOATING_POINTS_DATA_TYPES =
             List.of(DataType.FP16, DataType.BF16, DataType.FP32, DataType.FP64);
 
-    public static Stream<MemoryContext<?>> onHeapContexts() {
+    public static Stream<MemoryDomain<?>> onHeapDomains() {
         return suppliedBy(
-                ContextFactory::ofBytes,
-                ContextFactory::ofShorts,
-                ContextFactory::ofInts,
-                ContextFactory::ofLongs,
-                ContextFactory::ofFloats,
-                ContextFactory::ofDoubles);
+                DomainFactory::ofBytes,
+                DomainFactory::ofShorts,
+                DomainFactory::ofInts,
+                DomainFactory::ofLongs,
+                DomainFactory::ofFloats,
+                DomainFactory::ofDoubles);
     }
 
-    public static Stream<MemoryContext<?>> nativeContexts() {
+    public static Stream<MemoryDomain<?>> nativeDomains() {
         return suppliedBy(
-                () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                ContextFactory::ofMemorySegment);
+                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
+                DomainFactory::ofMemorySegment);
     }
 
-    public static Stream<MemoryContext<?>> allContexts() {
-        return Stream.concat(onHeapContexts(), nativeContexts());
+    public static Stream<MemoryDomain<?>> allDomains() {
+        return Stream.concat(onHeapDomains(), nativeDomains());
     }
 
-    public static Stream<MemoryContext<?>> contextsSupportingF32() {
+    public static Stream<MemoryDomain<?>> domainsSupportingF32() {
         return suppliedBy(
-                ContextFactory::ofBytes,
-                ContextFactory::ofFloats,
-                () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
-                () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                ContextFactory::ofMemorySegment);
+                DomainFactory::ofBytes,
+                DomainFactory::ofFloats,
+                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
+                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
+                DomainFactory::ofMemorySegment);
     }
 
-    public static Stream<MemoryContext<?>> contextsSupportingF64() {
+    public static Stream<MemoryDomain<?>> domainsSupportingF64() {
         return suppliedBy(
-                ContextFactory::ofBytes,
-                ContextFactory::ofDoubles,
-                () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
-                () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                ContextFactory::ofMemorySegment);
+                DomainFactory::ofBytes,
+                DomainFactory::ofDoubles,
+                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
+                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
+                DomainFactory::ofMemorySegment);
     }
 
-    public static Stream<MemoryContext<?>> contextsSupportingI8() {
+    public static Stream<MemoryDomain<?>> domainsSupportingI8() {
         return suppliedBy(
-                ContextFactory::ofBytes,
-                () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
-                () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                ContextFactory::ofMemorySegment);
+                DomainFactory::ofBytes,
+                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
+                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
+                DomainFactory::ofMemorySegment);
     }
 
-    public static Stream<MemoryContext<?>> contextsSupportingI16() {
+    public static Stream<MemoryDomain<?>> domainsSupportingI16() {
         return suppliedBy(
-                ContextFactory::ofBytes,
-                ContextFactory::ofShorts,
-                () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
-                () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                ContextFactory::ofMemorySegment);
+                DomainFactory::ofBytes,
+                DomainFactory::ofShorts,
+                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
+                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
+                DomainFactory::ofMemorySegment);
     }
 
-    public static Stream<MemoryContext<?>> contextsSupportingI32() {
+    public static Stream<MemoryDomain<?>> domainsSupportingI32() {
         return suppliedBy(
-                ContextFactory::ofInts,
-                () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
-                () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                ContextFactory::ofMemorySegment);
+                DomainFactory::ofInts,
+                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
+                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
+                DomainFactory::ofMemorySegment);
     }
 
-    public static Stream<MemoryContext<?>> contextsSupportingI64() {
+    public static Stream<MemoryDomain<?>> domainsSupportingI64() {
         return suppliedBy(
-                ContextFactory::ofLongs,
-                () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
-                () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                ContextFactory::ofMemorySegment);
+                DomainFactory::ofLongs,
+                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
+                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
+                DomainFactory::ofMemorySegment);
     }
 
-    public static Stream<MemoryContext<?>> contextsSupportingBool() {
+    public static Stream<MemoryDomain<?>> domainsSupportingBool() {
         return suppliedBy(
-                ContextFactory::ofBooleans,
-                ContextFactory::ofBytes,
-                () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
-                () -> ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
-                ContextFactory::ofMemorySegment);
+                DomainFactory::ofBooleans,
+                DomainFactory::ofBytes,
+                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false)),
+                () -> DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true)),
+                DomainFactory::ofMemorySegment);
     }
 
     @SafeVarargs

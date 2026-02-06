@@ -130,11 +130,7 @@ public class LIRStandardPipeline {
 
                 if (timing) {
                     System.out.println(
-                            "LIR pass "
-                                    + pass.name()
-                                    + " took "
-                                    + (elapsed / 1_000_000.0)
-                                    + " ms");
+                            "LIR pass " + pass.name() + " took " + (elapsed / 1_000_000.0) + " ms");
                 }
 
                 if (verbose) {

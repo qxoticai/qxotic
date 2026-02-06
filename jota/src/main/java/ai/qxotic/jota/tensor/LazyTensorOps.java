@@ -4,7 +4,7 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.impl.ViewTransforms;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -12,8 +12,8 @@ import java.util.function.Function;
 final class LazyTensorOps implements TensorOps {
 
     @Override
-    public MemoryContext<?> context() {
-        throw new UnsupportedOperationException("Lazy ops do not expose a memory context");
+    public MemoryDomain<?> memoryDomain() {
+        throw new UnsupportedOperationException("Lazy ops do not expose a memory domain");
     }
 
     @Override

@@ -7,9 +7,9 @@ import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.MemoryAccess;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import ai.qxotic.jota.tensor.Tensor;
 import ai.qxotic.jota.tensor.Tracer;
 import java.lang.foreign.MemorySegment;
@@ -24,37 +24,36 @@ class HipUnaryKernelSmokeTest {
         assumeHipccAvailable();
 
         int n = 256;
-        MemoryContext<MemorySegment> host = ContextFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> host = DomainFactory.ofMemorySegment();
         var hostMem = host.memoryAllocator().allocateMemory(DataType.FP32, n);
         MemoryView<MemorySegment> hostView =
                 MemoryView.of(hostMem, DataType.FP32, Layout.rowMajor(Shape.flat(n)));
 
-        MemoryAccess<MemorySegment> access = host.memoryAccess();
+        MemoryAccess<MemorySegment> access = host.directAccess();
         for (int i = 0; i < n; i++) {
             long offset = Indexing.linearToOffset(hostView, i);
             access.writeFloat(hostView.memory(), offset, i);
         }
 
-        HipMemoryContext hipContext = HipMemoryContext.instance();
+        HipMemoryDomain hipDomain = HipMemoryDomain.instance();
         MemoryView<HipDevicePtr> dev =
                 MemoryView.of(
-                        hipContext.memoryAllocator().allocateMemory(DataType.FP32, n),
+                        hipDomain.memoryAllocator().allocateMemory(DataType.FP32, n),
                         DataType.FP32,
                         Layout.rowMajor(Shape.flat(n)));
-        MemoryContext.copy(host, hostView, hipContext, dev);
+        MemoryDomain.copy(host, hostView, hipDomain, dev);
 
         Tensor traced = Tracer.trace(Tensor.of(dev), Tensor::sqrt);
         MemoryView<?> output = traced.materialize();
 
-        MemoryView<MemorySegment> hostOut = toHost(host, hipContext, output);
+        MemoryView<MemorySegment> hostOut = toHost(host, hipDomain, output);
         long lastOffset = Indexing.linearToOffset(hostOut, n - 1);
         assertEquals(
                 (float) Math.sqrt(n - 1), access.readFloat(hostOut.memory(), lastOffset), 0.0001f);
     }
+
     private static MemoryView<MemorySegment> toHost(
-            MemoryContext<MemorySegment> host,
-            HipMemoryContext device,
-            MemoryView<?> view) {
+            MemoryDomain<MemorySegment> host, HipMemoryDomain device, MemoryView<?> view) {
         if (view.memory().base() instanceof MemorySegment) {
             @SuppressWarnings("unchecked")
             MemoryView<MemorySegment> hostView = (MemoryView<MemorySegment>) view;

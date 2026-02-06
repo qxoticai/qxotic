@@ -2,8 +2,6 @@ package ai.qxotic.jota.ir.lir;
 
 import ai.qxotic.jota.BFloat16;
 import ai.qxotic.jota.DataType;
-import ai.qxotic.jota.ir.lir.BufferRef;
-import ai.qxotic.jota.ir.lir.IndexBinaryOp;
 import ai.qxotic.jota.ir.tir.BinaryOperator;
 import ai.qxotic.jota.ir.tir.UnaryOperator;
 import java.util.ArrayDeque;
@@ -169,7 +167,6 @@ public final class LIRExprGraph {
                                 nextId++, indexName, lowerBound, upperBound, step, iterArgs, body));
     }
 
-
     LIRExprNode foldUnary(UnaryOperator op, SConst input) {
         DataType type = input.dataType();
         long bits = input.rawBits();
@@ -249,7 +246,8 @@ public final class LIRExprGraph {
                     scalarConst(fromDouble(toDouble(l, type) - toDouble(r, type), type), type);
             case MULTIPLY ->
                     scalarConst(fromDouble(toDouble(l, type) * toDouble(r, type), type), type);
-            case DIVIDE -> scalarConst(fromDouble(toDouble(l, type) / toDouble(r, type), type), type);
+            case DIVIDE ->
+                    scalarConst(fromDouble(toDouble(l, type) / toDouble(r, type), type), type);
             case POW ->
                     scalarConst(
                             fromDouble(Math.pow(toDouble(l, type), toDouble(r, type)), type), type);
@@ -265,7 +263,8 @@ public final class LIRExprGraph {
         if (input.dataType() == targetType) {
             return input;
         }
-        return scalarConst(fromDouble(toDouble(input.rawBits(), input.dataType()), targetType), targetType);
+        return scalarConst(
+                fromDouble(toDouble(input.rawBits(), input.dataType()), targetType), targetType);
     }
 
     LIRExprNode foldIndexBinary(IndexBinaryOp op, IConst left, IConst right) {
@@ -340,14 +339,10 @@ public final class LIRExprGraph {
                 return right;
             }
             if (op == BinaryOperator.LOGICAL_OR && leftConst.dataType() == DataType.BOOL) {
-                return toBoolean(leftConst.rawBits(), DataType.BOOL)
-                        ? leftConst
-                        : right;
+                return toBoolean(leftConst.rawBits(), DataType.BOOL) ? leftConst : right;
             }
             if (op == BinaryOperator.LOGICAL_AND && leftConst.dataType() == DataType.BOOL) {
-                return toBoolean(leftConst.rawBits(), DataType.BOOL)
-                        ? right
-                        : leftConst;
+                return toBoolean(leftConst.rawBits(), DataType.BOOL) ? right : leftConst;
             }
         }
 
@@ -368,14 +363,10 @@ public final class LIRExprGraph {
                 return left;
             }
             if (op == BinaryOperator.LOGICAL_OR && rightConst.dataType() == DataType.BOOL) {
-                return toBoolean(rightConst.rawBits(), DataType.BOOL)
-                        ? rightConst
-                        : left;
+                return toBoolean(rightConst.rawBits(), DataType.BOOL) ? rightConst : left;
             }
             if (op == BinaryOperator.LOGICAL_AND && rightConst.dataType() == DataType.BOOL) {
-                return toBoolean(rightConst.rawBits(), DataType.BOOL)
-                        ? left
-                        : rightConst;
+                return toBoolean(rightConst.rawBits(), DataType.BOOL) ? left : rightConst;
             }
         }
 
@@ -394,7 +385,8 @@ public final class LIRExprGraph {
                     BITWISE_AND,
                     BITWISE_OR,
                     BITWISE_XOR,
-                    EQUAL -> true;
+                    EQUAL ->
+                    true;
             default -> false;
         };
     }
@@ -571,12 +563,10 @@ public final class LIRExprGraph {
                     Float.intBitsToFloat((int) left), Float.intBitsToFloat((int) right));
         }
         if (type == DataType.FP64) {
-            return Double.compare(
-                    Double.longBitsToDouble(left), Double.longBitsToDouble(right));
+            return Double.compare(Double.longBitsToDouble(left), Double.longBitsToDouble(right));
         }
         if (type == DataType.BF16) {
-            return Float.compare(
-                    BFloat16.toFloat((short) left), BFloat16.toFloat((short) right));
+            return Float.compare(BFloat16.toFloat((short) left), BFloat16.toFloat((short) right));
         }
         throw new IllegalArgumentException("Unsupported data type: " + type);
     }
@@ -659,21 +649,22 @@ public final class LIRExprGraph {
         }
 
         static NodeKey of(LIRExprNode node) {
-            Object attr = switch (node.kind()) {
-                case S_CONST -> ((SConst) node).rawBits();
-                case S_INPUT -> ((SInput) node).inputId();
-                case S_UNARY -> ((SUnary) node).op();
-                case S_BINARY -> ((SBinary) node).op();
-                case S_TERNARY -> null;
-                case S_CAST -> ((SCast) node).targetType();
-                case S_LOAD -> ((SLoad) node).buffer();
-                case S_FROM_INDEX -> null;
-                case S_REF -> ((SRef) node).name();
-                case I_CONST -> ((IConst) node).value();
-                case I_VAR -> ((IVar) node).name();
-                case I_BINARY -> ((IBinary) node).op();
-                case BLOCK, STORE, YIELD, STRUCTURED_FOR -> null;
-            };
+            Object attr =
+                    switch (node.kind()) {
+                        case S_CONST -> ((SConst) node).rawBits();
+                        case S_INPUT -> ((SInput) node).inputId();
+                        case S_UNARY -> ((SUnary) node).op();
+                        case S_BINARY -> ((SBinary) node).op();
+                        case S_TERNARY -> null;
+                        case S_CAST -> ((SCast) node).targetType();
+                        case S_LOAD -> ((SLoad) node).buffer();
+                        case S_FROM_INDEX -> null;
+                        case S_REF -> ((SRef) node).name();
+                        case I_CONST -> ((IConst) node).value();
+                        case I_VAR -> ((IVar) node).name();
+                        case I_BINARY -> ((IBinary) node).op();
+                        case BLOCK, STORE, YIELD, STRUCTURED_FOR -> null;
+                    };
 
             int[] inputIds = Arrays.stream(node.inputs()).mapToInt(LIRExprNode::id).toArray();
             return new NodeKey(node.kind(), node.dataType(), attr, inputIds);

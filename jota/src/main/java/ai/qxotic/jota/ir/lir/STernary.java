@@ -3,8 +3,19 @@ package ai.qxotic.jota.ir.lir;
 import ai.qxotic.jota.DataType;
 
 public final class STernary extends ScalarNode {
-    STernary(int id, LIRExprNode condition, LIRExprNode trueValue, LIRExprNode falseValue, DataType dataType) {
-        super(id, LIRExprKind.S_TERNARY, dataType, new LIRExprNode[] {condition, trueValue, falseValue}, true, false);
+    STernary(
+            int id,
+            LIRExprNode condition,
+            LIRExprNode trueValue,
+            LIRExprNode falseValue,
+            DataType dataType) {
+        super(
+                id,
+                LIRExprKind.S_TERNARY,
+                dataType,
+                new LIRExprNode[] {condition, trueValue, falseValue},
+                true,
+                false);
     }
 
     public LIRExprNode condition() {

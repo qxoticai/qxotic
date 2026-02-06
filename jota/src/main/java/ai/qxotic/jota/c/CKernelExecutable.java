@@ -45,7 +45,8 @@ final class CKernelExecutable implements KernelExecutable {
                             if (entry.kind() != KernelArgs.Kind.SCALAR) {
                                 return false;
                             }
-                            if (index == lastIndex && entry.dataType() == ai.qxotic.jota.DataType.I64) {
+                            if (index == lastIndex
+                                    && entry.dataType() == ai.qxotic.jota.DataType.I64) {
                                 return false;
                             }
                             return true;
@@ -60,7 +61,8 @@ final class CKernelExecutable implements KernelExecutable {
             return 0L;
         }
         KernelArgs.Entry last = entries.getLast();
-        if (last.kind() == KernelArgs.Kind.SCALAR && last.dataType() == ai.qxotic.jota.DataType.I64) {
+        if (last.kind() == KernelArgs.Kind.SCALAR
+                && last.dataType() == ai.qxotic.jota.DataType.I64) {
             return (long) last.value();
         }
         return 0L;

@@ -6,7 +6,7 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.*;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.BeforeAll;
@@ -14,11 +14,11 @@ import org.junit.jupiter.api.Test;
 
 class BooleanOpsTest extends AbstractMemoryTest {
 
-    private static MemoryContext<MemorySegment> context;
+    private static MemoryDomain<MemorySegment> domain;
 
     @BeforeAll
-    static void setUpContext() {
-        context = ContextFactory.ofMemorySegment();
+    static void setUpDomain() {
+        domain = DomainFactory.ofMemorySegment();
     }
 
     @Test
@@ -78,7 +78,7 @@ class BooleanOpsTest extends AbstractMemoryTest {
             MemoryView<MemorySegment> threshold =
                     dataType == DataType.BOOL
                             ? boolPattern(shape, new byte[] {1, 1, 0, 0})
-                            : MemoryHelpers.full(context, dataType, shape.size(), 2).view(shape);
+                            : MemoryHelpers.full(domain, dataType, shape.size(), 2).view(shape);
             Tensor thresholdTensor = Tensor.of(threshold);
             Tensor lessThanTensor = Tracer.trace(leftTensor, thresholdTensor, Tensor::lessThan);
             MemoryView<?> lessOut = lessThanTensor.materialize();
@@ -101,9 +101,9 @@ class BooleanOpsTest extends AbstractMemoryTest {
     void fusedWhere() {
         Shape shape = Shape.of(4);
         MemoryView<MemorySegment> trueView =
-                MemoryHelpers.arange(context, DataType.I32, shape.size()).view(shape);
+                MemoryHelpers.arange(domain, DataType.I32, shape.size()).view(shape);
         MemoryView<MemorySegment> falseView =
-                MemoryHelpers.full(context, DataType.I32, shape.size(), 2).view(shape);
+                MemoryHelpers.full(domain, DataType.I32, shape.size(), 2).view(shape);
 
         Tensor trueTensor = Tensor.of(trueView);
         Tensor falseTensor = Tensor.of(falseView);
@@ -128,9 +128,9 @@ class BooleanOpsTest extends AbstractMemoryTest {
         Shape shape = Shape.of(4);
         MemoryView<MemorySegment> conditionView = boolPattern(shape, new byte[] {1, 0, 1, 0});
         MemoryView<MemorySegment> trueView =
-                MemoryHelpers.arange(context, DataType.I32, shape.size()).view(shape);
+                MemoryHelpers.arange(domain, DataType.I32, shape.size()).view(shape);
         MemoryView<MemorySegment> falseView =
-                MemoryHelpers.full(context, DataType.I32, shape.size(), -1).view(shape);
+                MemoryHelpers.full(domain, DataType.I32, shape.size(), -1).view(shape);
 
         Tensor condition = Tensor.of(conditionView);
         Tensor trueTensor = Tensor.of(trueView);
@@ -149,13 +149,13 @@ class BooleanOpsTest extends AbstractMemoryTest {
         if (dataType == DataType.BOOL) {
             return boolPattern(shape, new byte[] {0, 1, 0, 1});
         }
-        return MemoryHelpers.arange(context, dataType, shape.size()).view(shape);
+        return MemoryHelpers.arange(domain, dataType, shape.size()).view(shape);
     }
 
     private MemoryView<MemorySegment> boolPattern(Shape shape, byte[] values) {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.full(context, DataType.BOOL, shape.size(), 0).view(shape);
-        MemoryAccess<MemorySegment> access = context.memoryAccess();
+                MemoryHelpers.full(domain, DataType.BOOL, shape.size(), 0).view(shape);
+        MemoryAccess<MemorySegment> access = domain.directAccess();
         for (int i = 0; i < values.length; i++) {
             long offset = view.byteOffset() + (long) i * DataType.BOOL.byteSize();
             access.writeByte(view.memory(), offset, values[i]);

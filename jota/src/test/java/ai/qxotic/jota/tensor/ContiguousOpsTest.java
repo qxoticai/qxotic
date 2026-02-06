@@ -10,10 +10,10 @@ import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAccess;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryHelpers;
 import ai.qxotic.jota.memory.MemoryView;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import java.lang.foreign.MemorySegment;
 import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
@@ -33,29 +33,29 @@ class ContiguousOpsTest {
                     DataType.FP32,
                     DataType.FP64);
 
-    private static MemoryContext<MemorySegment> context;
+    private static MemoryDomain<MemorySegment> domain;
 
     @BeforeAll
-    static void setUpContext() {
-        context = ContextFactory.ofMemorySegment();
+    static void setUpDomain() {
+        domain = DomainFactory.ofMemorySegment();
     }
 
     @Test
     void contiguousReturnsSameTensorForContiguousInput() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 4).view(Shape.of(4));
+                MemoryHelpers.arange(domain, DataType.FP32, 4).view(Shape.of(4));
         Tensor input = Tensor.of(view);
-        Tensor result = TensorOpsContext.with(new EagerTensorOps(context), input::contiguous);
+        Tensor result = TensorOpsContext.with(new EagerTensorOps(domain), input::contiguous);
         assertSame(input, result);
     }
 
     @Test
     void contiguousMaterializesStridedView() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 6).view(Shape.of(2, 3));
+                MemoryHelpers.arange(domain, DataType.FP32, 6).view(Shape.of(2, 3));
         MemoryView<MemorySegment> transposed = view.transpose(0, 1);
         Tensor input = Tensor.of(transposed);
-        Tensor output = TensorOpsContext.with(new EagerTensorOps(context), input::contiguous);
+        Tensor output = TensorOpsContext.with(new EagerTensorOps(domain), input::contiguous);
         MemoryView<?> materialized = output.materialize();
         assertTrue(materialized.isContiguous());
         Layout expected = Layout.rowMajor(transposed.layout().shape());
@@ -68,11 +68,11 @@ class ContiguousOpsTest {
         for (DataType dataType : PRIMITIVE_TYPES) {
             MemoryView<MemorySegment> view =
                     dataType == DataType.BOOL
-                            ? MemoryHelpers.full(context, dataType, shape.size(), 1).view(shape)
-                            : MemoryHelpers.arange(context, dataType, shape.size()).view(shape);
+                            ? MemoryHelpers.full(domain, dataType, shape.size(), 1).view(shape)
+                            : MemoryHelpers.arange(domain, dataType, shape.size()).view(shape);
             MemoryView<MemorySegment> transposed = view.transpose(0, 1);
             Tensor input = Tensor.of(transposed);
-            Tensor output = TensorOpsContext.with(new EagerTensorOps(context), input::contiguous);
+            Tensor output = TensorOpsContext.with(new EagerTensorOps(domain), input::contiguous);
             MemoryView<?> materialized = output.materialize();
             assertTrue(materialized.isContiguous(), "Expected contiguous for " + dataType);
             assertValuesEqual(transposed, materialized, dataType);
@@ -81,7 +81,7 @@ class ContiguousOpsTest {
 
     private void assertValuesEqual(
             MemoryView<MemorySegment> source, MemoryView<?> target, DataType dataType) {
-        MemoryAccess<MemorySegment> access = context.memoryAccess();
+        MemoryAccess<MemorySegment> access = domain.directAccess();
         long size = source.shape().size();
         for (int i = 0; i < size; i++) {
             long srcOffset = Indexing.linearToOffset(source, i);

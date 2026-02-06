@@ -5,12 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
-import ai.qxotic.jota.memory.AbstractMemoryTest;
-import ai.qxotic.jota.memory.MemoryAccess;
-import ai.qxotic.jota.memory.MemoryContext;
-import ai.qxotic.jota.memory.MemoryHelpers;
-import ai.qxotic.jota.memory.MemoryView;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.*;
+import ai.qxotic.jota.memory.MemoryDomain;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.BeforeAll;
@@ -18,11 +15,11 @@ import org.junit.jupiter.api.Test;
 
 class CastOpsTest extends AbstractMemoryTest {
 
-    private static MemoryContext<MemorySegment> context;
+    private static MemoryDomain<MemorySegment> domain;
 
     @BeforeAll
-    static void setUpContext() {
-        context = ContextFactory.ofMemorySegment();
+    static void setUpDomain() {
+        domain = DomainFactory.ofMemorySegment();
     }
 
     @Test
@@ -92,8 +89,8 @@ class CastOpsTest extends AbstractMemoryTest {
 
     private MemoryView<MemorySegment> boolPattern(Shape shape, byte[] values) {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.full(context, DataType.BOOL, shape.size(), 0).view(shape);
-        MemoryAccess<MemorySegment> access = context.memoryAccess();
+                MemoryHelpers.full(domain, DataType.BOOL, shape.size(), 0).view(shape);
+        MemoryAccess<MemorySegment> access = domain.directAccess();
         for (int i = 0; i < values.length; i++) {
             long offset = view.byteOffset() + (long) i * DataType.BOOL.byteSize();
             access.writeByte(view.memory(), offset, values[i]);
@@ -103,8 +100,8 @@ class CastOpsTest extends AbstractMemoryTest {
 
     private MemoryView<MemorySegment> intPattern(Shape shape, int[] values) {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.full(context, DataType.I32, shape.size(), 0).view(shape);
-        MemoryAccess<MemorySegment> access = context.memoryAccess();
+                MemoryHelpers.full(domain, DataType.I32, shape.size(), 0).view(shape);
+        MemoryAccess<MemorySegment> access = domain.directAccess();
         for (int i = 0; i < values.length; i++) {
             long offset = view.byteOffset() + (long) i * DataType.I32.byteSize();
             access.writeInt(view.memory(), offset, values[i]);
@@ -114,8 +111,8 @@ class CastOpsTest extends AbstractMemoryTest {
 
     private MemoryView<MemorySegment> floatPattern(Shape shape, float[] values) {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.full(context, DataType.FP32, shape.size(), 0f).view(shape);
-        MemoryAccess<MemorySegment> access = context.memoryAccess();
+                MemoryHelpers.full(domain, DataType.FP32, shape.size(), 0f).view(shape);
+        MemoryAccess<MemorySegment> access = domain.directAccess();
         for (int i = 0; i < values.length; i++) {
             long offset = view.byteOffset() + (long) i * DataType.FP32.byteSize();
             access.writeFloat(view.memory(), offset, values[i]);

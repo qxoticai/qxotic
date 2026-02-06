@@ -5,11 +5,11 @@ import ai.qxotic.jota.memory.*;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
 
-final class PanamaContext implements MemoryContext<MemorySegment> {
+final class PanamaDomain implements MemoryDomain<MemorySegment> {
 
     private final MemoryAllocator<MemorySegment> memoryAllocator;
 
-    PanamaContext(MemoryAllocator<MemorySegment> memoryAllocator) {
+    PanamaDomain(MemoryAllocator<MemorySegment> memoryAllocator) {
         assert memoryAllocator.device().belongsTo(Device.PANAMA);
         this.memoryAllocator = Objects.requireNonNull(memoryAllocator);
     }
@@ -25,7 +25,7 @@ final class PanamaContext implements MemoryContext<MemorySegment> {
     }
 
     @Override
-    public MemoryAccess<MemorySegment> memoryAccess() {
+    public MemoryAccess<MemorySegment> directAccess() {
         return PanamaMemoryAccess.instance();
     }
 
@@ -46,7 +46,7 @@ final class PanamaContext implements MemoryContext<MemorySegment> {
         return new StringBuilder("Context{MemorySegment, device=")
                 .append(device())
                 .append(", directAccess=")
-                .append(memoryAccess() != null)
+                .append(directAccess() != null)
                 .append('}')
                 .toString();
     }

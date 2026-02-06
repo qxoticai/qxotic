@@ -1,6 +1,6 @@
 package ai.qxotic.jota.panama;
 
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.tensor.DiskKernelCache;
 import ai.qxotic.jota.tensor.ExecutionStream;
 import ai.qxotic.jota.tensor.JitKernel;
@@ -12,6 +12,7 @@ import ai.qxotic.jota.tensor.KernelExecutable;
 import ai.qxotic.jota.tensor.KernelProgram;
 import ai.qxotic.jota.tensor.LaunchConfig;
 import java.io.IOException;
+import java.lang.foreign.MemorySegment;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
@@ -29,13 +30,12 @@ import javax.tools.ToolProvider;
 
 public final class JavaKernelBackend implements KernelBackend {
 
-    private final MemoryContext<java.lang.foreign.MemorySegment> context;
+    private final MemoryDomain<MemorySegment> memoryDomain;
     private final DiskKernelCache cache;
     private final KernelExecutableCache executableCache = new InMemoryKernelCache();
 
-    public JavaKernelBackend(
-            MemoryContext<java.lang.foreign.MemorySegment> context, DiskKernelCache cache) {
-        this.context = Objects.requireNonNull(context, "context");
+    public JavaKernelBackend(MemoryDomain<MemorySegment> memoryDomain, DiskKernelCache cache) {
+        this.memoryDomain = Objects.requireNonNull(memoryDomain, "memoryDomain");
         this.cache = Objects.requireNonNull(cache, "cache");
     }
 
@@ -108,7 +108,7 @@ public final class JavaKernelBackend implements KernelBackend {
         return new KernelExecutable() {
             @Override
             public void launch(LaunchConfig config, KernelArgs args, ExecutionStream stream) {
-                kernel.execute(context, args);
+                kernel.execute(memoryDomain, args);
             }
 
             @Override

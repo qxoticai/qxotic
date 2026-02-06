@@ -4,8 +4,6 @@ import ai.qxotic.jota.BFloat16;
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.ir.lir.*;
 import ai.qxotic.jota.ir.lir.scratch.ScratchLayout;
-import ai.qxotic.jota.ir.tir.BinaryOperator;
-import ai.qxotic.jota.ir.tir.UnaryOperator;
 import ai.qxotic.jota.tensor.KernelCacheKey;
 import ai.qxotic.jota.tensor.KernelProgram;
 import java.util.ArrayList;
@@ -61,7 +59,9 @@ final class CKernelProgramGenerator {
             source.append("#include <string.h>\n");
             source.append("#include <math.h>\n\n");
             emitHelpers(source);
-            source.append("void ").append(kernelName).append("(void **buffers, uint64_t *scalars, uint64_t scratch_ptr) {\n");
+            source.append("void ")
+                    .append(kernelName)
+                    .append("(void **buffers, uint64_t *scalars, uint64_t scratch_ptr) {\n");
             indentLevel = 1;
             emitProlog();
             emitNode(graph.body());
@@ -100,7 +100,8 @@ final class CKernelProgramGenerator {
             source.append("    uint32_t shift = (uint32_t)(14 - exp);\n");
             source.append("    uint32_t rounded = mant >> shift;\n");
             source.append("    uint32_t rem = mant & ((1u << shift) - 1u);\n");
-            source.append("    if (rem > (1u << (shift - 1)) || (rem == (1u << (shift - 1)) && (rounded & 1u))) rounded++;\n");
+            source.append(
+                    "    if (rem > (1u << (shift - 1)) || (rem == (1u << (shift - 1)) && (rounded & 1u))) rounded++;\n");
             source.append("    return (uint16_t)(sign | rounded);\n");
             source.append("  }\n");
             source.append("  if (exp >= 31) {\n");
@@ -213,13 +214,15 @@ final class CKernelProgramGenerator {
             source.append("#if JOTA_HAS_FP16\n");
             source.append("#define JOTA_FP16_BIN(op,a,b) ((jota_fp16)((a) op (b)))\n");
             source.append("#else\n");
-            source.append("#define JOTA_FP16_BIN(op,a,b) (jota_fp16_from_float(jota_fp16_to_float(a) op jota_fp16_to_float(b)))\n");
+            source.append(
+                    "#define JOTA_FP16_BIN(op,a,b) (jota_fp16_from_float(jota_fp16_to_float(a) op jota_fp16_to_float(b)))\n");
             source.append("#endif\n");
 
             source.append("#if JOTA_HAS_BF16\n");
             source.append("#define JOTA_BF16_BIN(op,a,b) ((jota_bf16)((a) op (b)))\n");
             source.append("#else\n");
-            source.append("#define JOTA_BF16_BIN(op,a,b) (jota_bf16_from_float(jota_bf16_to_float(a) op jota_bf16_to_float(b)))\n");
+            source.append(
+                    "#define JOTA_BF16_BIN(op,a,b) (jota_bf16_from_float(jota_bf16_to_float(a) op jota_bf16_to_float(b)))\n");
             source.append("#endif\n\n");
         }
 
@@ -230,7 +233,8 @@ final class CKernelProgramGenerator {
                 if (input instanceof BufferRef buffer) {
                     String name = "input" + bufferIndex;
                     addLine("uint8_t *" + name + " = (uint8_t *)buffers[" + bufferIndex + "];");
-                    buffers.put(buffer, new BufferVar(name, buffer.dataType(), buffer.byteStrides()));
+                    buffers.put(
+                            buffer, new BufferVar(name, buffer.dataType(), buffer.byteStrides()));
                     bufferIndex++;
                 } else if (input instanceof ScalarInput scalar) {
                     String name = "scalar" + scalarIndex;
@@ -238,11 +242,29 @@ final class CKernelProgramGenerator {
                     scalarInputNames.put(scalar.id(), name);
                     String bitsExpr = "scalars[" + scalarIndex + "]";
                     if (scalar.dataType() == DataType.FP16) {
-                        addLine("jota_fp16 " + name + " = jota_fp16_from_bits((uint16_t)" + bitsExpr + ");");
+                        addLine(
+                                "jota_fp16 "
+                                        + name
+                                        + " = jota_fp16_from_bits((uint16_t)"
+                                        + bitsExpr
+                                        + ");");
                     } else if (scalar.dataType() == DataType.BF16) {
-                        addLine("jota_bf16 " + name + " = jota_bf16_from_bits((uint16_t)" + bitsExpr + ");");
+                        addLine(
+                                "jota_bf16 "
+                                        + name
+                                        + " = jota_bf16_from_bits((uint16_t)"
+                                        + bitsExpr
+                                        + ");");
                     } else {
-                        addLine(typeName(scalar.dataType()) + " " + name + " = (" + typeName(scalar.dataType()) + ")" + bitsExpr + ";");
+                        addLine(
+                                typeName(scalar.dataType())
+                                        + " "
+                                        + name
+                                        + " = ("
+                                        + typeName(scalar.dataType())
+                                        + ")"
+                                        + bitsExpr
+                                        + ";");
                     }
                     scalarIndex++;
                 }
@@ -251,7 +273,7 @@ final class CKernelProgramGenerator {
             for (int i = 0; i < graph.outputs().size(); i++) {
                 BufferRef buffer = graph.outputs().get(i);
                 String name = "output" + i;
-                addLine("uint8_t *" + name + " = (uint8_t *)buffers[" + (bufferIndex + i) + "];" );
+                addLine("uint8_t *" + name + " = (uint8_t *)buffers[" + (bufferIndex + i) + "];");
                 buffers.put(buffer, new BufferVar(name, buffer.dataType(), buffer.byteStrides()));
             }
 
@@ -296,7 +318,18 @@ final class CKernelProgramGenerator {
                     String initExpr = emitScalarExpr(arg.init());
                     addLine(typeName(arg.dataType()) + " " + arg.name() + " = " + initExpr + ";");
                 }
-                addLine("for (long long " + idx + " = " + lb + "; " + idx + " < " + ub + "; " + idx + "++) {");
+                addLine(
+                        "for (long long "
+                                + idx
+                                + " = "
+                                + lb
+                                + "; "
+                                + idx
+                                + " < "
+                                + ub
+                                + "; "
+                                + idx
+                                + "++) {");
                 indentLevel++;
                 emitStructuredBody(loop);
                 indentLevel--;
@@ -418,7 +451,8 @@ final class CKernelProgramGenerator {
         private String emitScalarExprInline(LIRExprNode resolved) {
             return switch (resolved.kind()) {
                 case S_CONST -> scalarLiteral(((SConst) resolved).rawBits(), resolved.dataType());
-                case S_INPUT -> requireScalarInputById(((SInput) resolved).inputId(), resolved.dataType());
+                case S_INPUT ->
+                        requireScalarInputById(((SInput) resolved).inputId(), resolved.dataType());
                 case S_REF -> ((SRef) resolved).name();
                 case S_FROM_INDEX -> {
                     String indexExpr = emitIndexExpr(((SFromIndex) resolved).indexExpr());
@@ -432,7 +466,9 @@ final class CKernelProgramGenerator {
                 case S_BINARY -> emitBinaryExpr((SBinary) resolved);
                 case S_TERNARY -> emitTernaryExpr((STernary) resolved);
                 case S_CAST -> emitCastExpr((SCast) resolved);
-                default -> throw new IllegalStateException("Expected scalar node, got " + resolved.kind());
+                default ->
+                        throw new IllegalStateException(
+                                "Expected scalar node, got " + resolved.kind());
             };
         }
 
@@ -473,7 +509,10 @@ final class CKernelProgramGenerator {
                 case TAN -> floatUnaryExpr(type, "tan", "tanf", input);
                 case TANH -> floatUnaryExpr(type, "tanh", "tanhf", input);
                 case RECIPROCAL -> reciprocalExpr(type, input);
-                case LOGICAL_NOT -> type == DataType.BOOL ? "(" + input + " ? 0 : 1)" : "(" + input + " == 0 ? 1 : 0)";
+                case LOGICAL_NOT ->
+                        type == DataType.BOOL
+                                ? "(" + input + " ? 0 : 1)"
+                                : "(" + input + " == 0 ? 1 : 0)";
                 case BITWISE_NOT -> "(~(" + input + "))";
             };
         }
@@ -501,8 +540,7 @@ final class CKernelProgramGenerator {
             };
         }
 
-        private String logicalExpr(
-                String op, SBinary binary, String left, String right) {
+        private String logicalExpr(String op, SBinary binary, String left, String right) {
             String l = binary.left().dataType() != DataType.BOOL ? "(" + left + " != 0)" : left;
             String r = binary.right().dataType() != DataType.BOOL ? "(" + right + " != 0)" : right;
             String result = "(" + l + " " + op + " " + r + ")";
@@ -544,11 +582,14 @@ final class CKernelProgramGenerator {
                                 + " "
                                 + emitIndexExpr(((IBinary) resolved).right())
                                 + ")";
-                default -> throw new IllegalStateException("Expected index node, got " + resolved.kind());
+                default ->
+                        throw new IllegalStateException(
+                                "Expected index node, got " + resolved.kind());
             };
         }
 
-        private String compareExpr(String op, LIRExprNode leftExpr, LIRExprNode rightExpr, DataType resultType) {
+        private String compareExpr(
+                String op, LIRExprNode leftExpr, LIRExprNode rightExpr, DataType resultType) {
             DataType leftType = leftExpr.dataType();
             DataType rightType = rightExpr.dataType();
             String left = emitScalarExpr(leftExpr);
@@ -635,10 +676,18 @@ final class CKernelProgramGenerator {
                 BufferVar buffer, DataType type, String offset, String value, DataType valueType) {
             String ptr = "(" + buffer.name + " + " + offset + ")";
             if (type == DataType.FP16) {
-                return "*(uint16_t*)" + ptr + " = jota_fp16_to_bits(" + castExpr(valueType, DataType.FP16, value) + ");";
+                return "*(uint16_t*)"
+                        + ptr
+                        + " = jota_fp16_to_bits("
+                        + castExpr(valueType, DataType.FP16, value)
+                        + ");";
             }
             if (type == DataType.BF16) {
-                return "*(uint16_t*)" + ptr + " = jota_bf16_to_bits(" + castExpr(valueType, DataType.BF16, value) + ");";
+                return "*(uint16_t*)"
+                        + ptr
+                        + " = jota_bf16_to_bits("
+                        + castExpr(valueType, DataType.BF16, value)
+                        + ");";
             }
             String castValue = castExpr(valueType, type, value);
             if (type == DataType.BOOL) {
@@ -832,8 +881,7 @@ final class CKernelProgramGenerator {
             return "(1.0f / " + expr + ")";
         }
 
-        private String floatUnaryExpr(
-                DataType type, String fp64Fn, String fp32Fn, String expr) {
+        private String floatUnaryExpr(DataType type, String fp64Fn, String fp32Fn, String expr) {
             if (type == DataType.FP16) {
                 return "jota_fp16_from_float(" + fp32Fn + "(" + toFloatExpr(type, expr) + "))";
             }
@@ -861,10 +909,18 @@ final class CKernelProgramGenerator {
 
         private String minExpr(DataType type, String left, String right) {
             if (type == DataType.FP16) {
-                return "jota_fp16_from_float(fminf(" + toFloatExpr(type, left) + ", " + toFloatExpr(type, right) + "))";
+                return "jota_fp16_from_float(fminf("
+                        + toFloatExpr(type, left)
+                        + ", "
+                        + toFloatExpr(type, right)
+                        + "))";
             }
             if (type == DataType.BF16) {
-                return "jota_bf16_from_float(fminf(" + toFloatExpr(type, left) + ", " + toFloatExpr(type, right) + "))";
+                return "jota_bf16_from_float(fminf("
+                        + toFloatExpr(type, left)
+                        + ", "
+                        + toFloatExpr(type, right)
+                        + "))";
             }
             if (type == DataType.FP64) {
                 return "fmin(" + left + ", " + right + ")";
@@ -877,10 +933,18 @@ final class CKernelProgramGenerator {
 
         private String maxExpr(DataType type, String left, String right) {
             if (type == DataType.FP16) {
-                return "jota_fp16_from_float(fmaxf(" + toFloatExpr(type, left) + ", " + toFloatExpr(type, right) + "))";
+                return "jota_fp16_from_float(fmaxf("
+                        + toFloatExpr(type, left)
+                        + ", "
+                        + toFloatExpr(type, right)
+                        + "))";
             }
             if (type == DataType.BF16) {
-                return "jota_bf16_from_float(fmaxf(" + toFloatExpr(type, left) + ", " + toFloatExpr(type, right) + "))";
+                return "jota_bf16_from_float(fmaxf("
+                        + toFloatExpr(type, left)
+                        + ", "
+                        + toFloatExpr(type, right)
+                        + "))";
             }
             if (type == DataType.FP64) {
                 return "fmax(" + left + ", " + right + ")";
@@ -893,10 +957,18 @@ final class CKernelProgramGenerator {
 
         private String powExpr(DataType type, String left, String right) {
             if (type == DataType.FP16) {
-                return "jota_fp16_from_float(powf(" + toFloatExpr(type, left) + ", " + toFloatExpr(type, right) + "))";
+                return "jota_fp16_from_float(powf("
+                        + toFloatExpr(type, left)
+                        + ", "
+                        + toFloatExpr(type, right)
+                        + "))";
             }
             if (type == DataType.BF16) {
-                return "jota_bf16_from_float(powf(" + toFloatExpr(type, left) + ", " + toFloatExpr(type, right) + "))";
+                return "jota_bf16_from_float(powf("
+                        + toFloatExpr(type, left)
+                        + ", "
+                        + toFloatExpr(type, right)
+                        + "))";
             }
             if (type == DataType.FP64) {
                 return "pow(" + left + ", " + right + ")";

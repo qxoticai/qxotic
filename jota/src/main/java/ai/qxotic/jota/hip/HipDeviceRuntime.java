@@ -1,33 +1,32 @@
-package ai.qxotic.jota.c;
+package ai.qxotic.jota.hip;
 
 import ai.qxotic.jota.Device;
-import ai.qxotic.jota.backend.Backend;
+import ai.qxotic.jota.backend.DeviceRuntime;
 import ai.qxotic.jota.backend.FileKernelProgramStore;
 import ai.qxotic.jota.backend.KernelProgramStore;
 import ai.qxotic.jota.backend.KernelService;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.tensor.ComputeEngine;
 import ai.qxotic.jota.tensor.KernelBackend;
-import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Optional;
 
-public final class CBackend implements Backend {
+public final class HipDeviceRuntime implements DeviceRuntime {
 
-    private final CMemoryContext context;
+    private final HipMemoryDomain memoryDomain;
     private final ComputeEngine computeEngine;
     private final KernelService kernelService;
 
-    public CBackend() {
-        this(new CMemoryContext());
+    public HipDeviceRuntime() {
+        this(HipMemoryDomain.instance());
     }
 
-    public CBackend(CMemoryContext context) {
-        this.context = Objects.requireNonNull(context, "context");
-        this.computeEngine = new CComputeEngine(context);
-        KernelBackend backend = new CKernelBackend();
-        Path programRoot = Path.of("__kernels").resolve(Device.C.leafName()).resolve("programs");
+    public HipDeviceRuntime(HipMemoryDomain memoryDomain) {
+        this.memoryDomain = Objects.requireNonNull(memoryDomain, "memoryDomain");
+        this.computeEngine = new HipComputeEngine(memoryDomain.device());
+        KernelBackend backend = new HipKernelBackend();
+        Path programRoot = Path.of("__kernels").resolve(Device.HIP.leafName()).resolve("programs");
         KernelProgramStore sourceStore = new FileKernelProgramStore(programRoot.resolve("source"));
         KernelProgramStore binaryStore = new FileKernelProgramStore(programRoot.resolve("binary"));
         this.kernelService = new KernelService(backend, sourceStore, binaryStore);
@@ -35,12 +34,12 @@ public final class CBackend implements Backend {
 
     @Override
     public Device device() {
-        return context.device();
+        return memoryDomain.device();
     }
 
     @Override
-    public MemoryContext<MemorySegment> memoryContext() {
-        return context;
+    public MemoryDomain<?> memoryDomain() {
+        return memoryDomain;
     }
 
     @Override
@@ -49,7 +48,7 @@ public final class CBackend implements Backend {
     }
 
     @Override
-    public Optional<KernelService> kernels() {
+    public Optional<KernelService> kernelService() {
         return Optional.of(kernelService);
     }
 }

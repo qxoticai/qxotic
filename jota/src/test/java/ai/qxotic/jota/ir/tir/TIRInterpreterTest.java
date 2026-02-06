@@ -8,7 +8,7 @@ import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.Stride;
 import ai.qxotic.jota.memory.*;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import ai.qxotic.jota.memory.impl.MemoryViewFactory;
 import java.lang.foreign.MemorySegment;
 import java.util.List;
@@ -17,13 +17,13 @@ import org.junit.jupiter.api.Test;
 
 class TIRInterpreterTest {
 
-    private static MemoryContext<MemorySegment> context;
-    private static MemoryAccess<MemorySegment> memAccess;
+    private static MemoryDomain<MemorySegment> memoryDomain;
+    private static MemoryAccess<MemorySegment> memoryAccess;
 
     @BeforeAll
     static void setUp() {
-        context = ContextFactory.ofMemorySegment();
-        memAccess = context.memoryAccess();
+        memoryDomain = DomainFactory.ofMemorySegment();
+        memoryAccess = memoryDomain.directAccess();
     }
 
     // ==================== Unary Operations ====================
@@ -37,7 +37,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput), List.of(negateOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         assertEquals(1, outputs.size());
         assertFloatEquals(new float[] {1.0f, -2.0f, 3.0f}, outputs.get(0));
@@ -52,7 +52,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput), List.of(absOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         assertFloatEquals(new float[] {1.0f, 2.0f, 3.0f}, outputs.get(0));
     }
@@ -66,7 +66,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput), List.of(expOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         assertFloatEquals(
                 new float[] {1.0f, (float) Math.E, (float) Math.exp(2.0)}, outputs.get(0));
@@ -81,7 +81,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput), List.of(sqrtOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         assertFloatEquals(new float[] {1.0f, 2.0f, 3.0f, 4.0f}, outputs.get(0));
     }
@@ -95,7 +95,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput), List.of(recipOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         assertFloatEquals(new float[] {1.0f, 0.5f, 0.25f, 0.2f}, outputs.get(0));
     }
@@ -113,7 +113,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput1, tensorInput2), List.of(addOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input1, input2), context);
+                TIRInterpreter.execute(graph, List.of(input1, input2), memoryDomain);
 
         assertFloatEquals(new float[] {5.0f, 7.0f, 9.0f}, outputs.get(0));
     }
@@ -129,7 +129,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput1, tensorInput2), List.of(subOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input1, input2), context);
+                TIRInterpreter.execute(graph, List.of(input1, input2), memoryDomain);
 
         assertFloatEquals(new float[] {9.0f, 15.0f, 20.0f}, outputs.get(0));
     }
@@ -145,7 +145,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput1, tensorInput2), List.of(mulOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input1, input2), context);
+                TIRInterpreter.execute(graph, List.of(input1, input2), memoryDomain);
 
         assertFloatEquals(new float[] {10.0f, 18.0f, 28.0f}, outputs.get(0));
     }
@@ -161,7 +161,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput1, tensorInput2), List.of(divOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input1, input2), context);
+                TIRInterpreter.execute(graph, List.of(input1, input2), memoryDomain);
 
         assertFloatEquals(new float[] {5.0f, 5.0f, 6.0f}, outputs.get(0));
     }
@@ -177,7 +177,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput1, tensorInput2), List.of(minOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input1, input2), context);
+                TIRInterpreter.execute(graph, List.of(input1, input2), memoryDomain);
 
         assertFloatEquals(new float[] {1.0f, 4.0f, 3.0f}, outputs.get(0));
     }
@@ -193,7 +193,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput1, tensorInput2), List.of(maxOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input1, input2), context);
+                TIRInterpreter.execute(graph, List.of(input1, input2), memoryDomain);
 
         assertFloatEquals(new float[] {2.0f, 5.0f, 6.0f}, outputs.get(0));
     }
@@ -210,7 +210,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput), List.of(addOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         assertFloatEquals(new float[] {11.0f, 12.0f, 13.0f}, outputs.get(0));
     }
@@ -225,7 +225,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput), List.of(mulOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         assertFloatEquals(new float[] {2.0f, 4.0f, 6.0f, 8.0f}, outputs.get(0));
     }
@@ -241,7 +241,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput), List.of(castOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         assertEquals(DataType.FP64, outputs.get(0).dataType());
         assertDoubleEquals(new double[] {1.5, 2.5, 3.5}, outputs.get(0));
@@ -256,7 +256,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput), List.of(castOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         assertEquals(DataType.I32, outputs.get(0).dataType());
         assertIntEquals(new int[] {1, 2, -3}, outputs.get(0));
@@ -271,7 +271,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput), List.of(castOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         assertEquals(DataType.FP32, outputs.get(0).dataType());
         assertFloatEquals(new float[] {1.0f, 2.0f, 3.0f, 4.0f}, outputs.get(0));
@@ -292,7 +292,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(condInput, trueInput, falseInput), List.of(whereOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(cond, trueVal, falseVal), context);
+                TIRInterpreter.execute(graph, List.of(cond, trueVal, falseVal), memoryDomain);
 
         assertFloatEquals(new float[] {1.0f, 20.0f, 3.0f, 40.0f}, outputs.get(0));
     }
@@ -312,7 +312,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput), List.of(sumOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         assertEquals(Shape.of(2), outputs.get(0).shape());
         assertFloatEquals(new float[] {6.0f, 15.0f}, outputs.get(0)); // 1+2+3=6, 4+5+6=15
@@ -330,7 +330,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput), List.of(maxOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         assertEquals(Shape.of(2), outputs.get(0).shape());
         assertFloatEquals(new float[] {5.0f, 6.0f}, outputs.get(0));
@@ -348,7 +348,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput), List.of(minOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         assertEquals(Shape.of(2), outputs.get(0).shape());
         assertFloatEquals(new float[] {1.0f, 2.0f}, outputs.get(0));
@@ -361,7 +361,8 @@ class TIRInterpreterTest {
         TIRNode iota = IotaConstant.of(5, DataType.FP32);
         TIRGraph graph = new TIRGraph(List.of(), List.of(iota));
 
-        List<MemoryView<MemorySegment>> outputs = TIRInterpreter.execute(graph, List.of(), context);
+        List<MemoryView<MemorySegment>> outputs =
+                TIRInterpreter.execute(graph, List.of(), memoryDomain);
 
         assertEquals(Shape.of(5), outputs.get(0).shape());
         assertFloatEquals(new float[] {0.0f, 1.0f, 2.0f, 3.0f, 4.0f}, outputs.get(0));
@@ -372,7 +373,8 @@ class TIRInterpreterTest {
         TIRNode iota = IotaConstant.of(4, DataType.I32);
         TIRGraph graph = new TIRGraph(List.of(), List.of(iota));
 
-        List<MemoryView<MemorySegment>> outputs = TIRInterpreter.execute(graph, List.of(), context);
+        List<MemoryView<MemorySegment>> outputs =
+                TIRInterpreter.execute(graph, List.of(), memoryDomain);
 
         assertEquals(DataType.I32, outputs.get(0).dataType());
         assertIntEquals(new int[] {0, 1, 2, 3}, outputs.get(0));
@@ -394,7 +396,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput), List.of(addOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         assertFloatEquals(new float[] {6.0f, 7.0f, 8.0f}, outputs.get(0));
     }
@@ -415,7 +417,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput1, tensorInput2), List.of(addOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input1, input2), context);
+                TIRInterpreter.execute(graph, List.of(input1, input2), memoryDomain);
 
         assertEquals(Shape.of(2, 3), outputs.get(0).shape());
         assertFloatEquals(new float[] {11.0f, 22.0f, 33.0f, 44.0f, 55.0f, 66.0f}, outputs.get(0));
@@ -434,7 +436,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput1, tensorInput2), List.of(addOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input1, input2), context);
+                TIRInterpreter.execute(graph, List.of(input1, input2), memoryDomain);
 
         assertIntEquals(new int[] {11, 22, 33, 44}, outputs.get(0));
     }
@@ -448,7 +450,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput), List.of(negateOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         assertIntEquals(new int[] {-1, 2, -3, 4}, outputs.get(0));
     }
@@ -470,7 +472,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(inputA, inputB, inputC), List.of(mulOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(a, b, c), context);
+                TIRInterpreter.execute(graph, List.of(a, b, c), memoryDomain);
 
         // (1+4)*2=10, (2+5)*2=14, (3+6)*2=18
         assertFloatEquals(new float[] {10.0f, 14.0f, 18.0f}, outputs.get(0));
@@ -486,7 +488,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput), List.of(sqrtOp, negateOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         assertEquals(2, outputs.size());
         assertFloatEquals(new float[] {1.0f, 2.0f, 3.0f}, outputs.get(0));
@@ -504,7 +506,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(tensorInput), List.of(expOp));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         assertDoubleEquals(new double[] {1.0, Math.E, Math.exp(2.0)}, outputs.get(0));
     }
@@ -552,7 +554,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(x), List.of(gelu));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         // Expected GELU values (computed externally)
         float[] expected = new float[inputData.length];
@@ -586,7 +588,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(x), List.of(sigmoid));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         float[] expected = new float[inputData.length];
         for (int i = 0; i < inputData.length; i++) {
@@ -617,7 +619,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(x), List.of(silu));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         float[] expected = new float[inputData.length];
         for (int i = 0; i < inputData.length; i++) {
@@ -642,7 +644,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(x), List.of(relu));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         assertFloatEquals(new float[] {0.0f, 0.0f, 0.0f, 1.0f, 2.0f}, outputs.get(0));
     }
@@ -673,7 +675,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(x), List.of(softmax));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         // Compute expected softmax
         double[] exp = new double[3];
@@ -740,7 +742,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(x), List.of(normalized));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         // Compute expected normalized values
         double meanVal = 0;
@@ -801,7 +803,7 @@ class TIRInterpreterTest {
         TIRGraph graph = new TIRGraph(List.of(x), List.of(result));
 
         List<MemoryView<MemorySegment>> outputs =
-                TIRInterpreter.execute(graph, List.of(input), context);
+                TIRInterpreter.execute(graph, List.of(input), memoryDomain);
 
         float[] expected = new float[inputData.length];
         for (int i = 0; i < inputData.length; i++) {
@@ -825,9 +827,9 @@ class TIRInterpreterTest {
 
     private MemoryView<?> createFloatTensor(float[] data, Shape shape) {
         Memory<MemorySegment> memory =
-                context.memoryAllocator().allocateMemory(DataType.FP32, shape);
+                memoryDomain.memoryAllocator().allocateMemory(DataType.FP32, shape);
         for (int i = 0; i < data.length; i++) {
-            memAccess.writeFloat(memory, i * 4L, data[i]);
+            memoryAccess.writeFloat(memory, i * 4L, data[i]);
         }
         return MemoryViewFactory.of(DataType.FP32, memory, Layout.rowMajor(shape));
     }
@@ -835,9 +837,9 @@ class TIRInterpreterTest {
     private MemoryView<?> createDoubleTensor(double[] data) {
         Shape shape = Shape.of(data.length);
         Memory<MemorySegment> memory =
-                context.memoryAllocator().allocateMemory(DataType.FP64, shape);
+                memoryDomain.memoryAllocator().allocateMemory(DataType.FP64, shape);
         for (int i = 0; i < data.length; i++) {
-            memAccess.writeDouble(memory, i * 8L, data[i]);
+            memoryAccess.writeDouble(memory, i * 8L, data[i]);
         }
         return MemoryViewFactory.of(DataType.FP64, memory, Layout.rowMajor(shape));
     }
@@ -845,9 +847,9 @@ class TIRInterpreterTest {
     private MemoryView<?> createIntTensor(int[] data) {
         Shape shape = Shape.of(data.length);
         Memory<MemorySegment> memory =
-                context.memoryAllocator().allocateMemory(DataType.I32, shape);
+                memoryDomain.memoryAllocator().allocateMemory(DataType.I32, shape);
         for (int i = 0; i < data.length; i++) {
-            memAccess.writeInt(memory, i * 4L, data[i]);
+            memoryAccess.writeInt(memory, i * 4L, data[i]);
         }
         return MemoryViewFactory.of(DataType.I32, memory, Layout.rowMajor(shape));
     }
@@ -855,9 +857,9 @@ class TIRInterpreterTest {
     private MemoryView<?> createBoolTensor(boolean[] data) {
         Shape shape = Shape.of(data.length);
         Memory<MemorySegment> memory =
-                context.memoryAllocator().allocateMemory(DataType.BOOL, shape);
+                memoryDomain.memoryAllocator().allocateMemory(DataType.BOOL, shape);
         for (int i = 0; i < data.length; i++) {
-            memAccess.writeByte(memory, i, (byte) (data[i] ? 1 : 0));
+            memoryAccess.writeByte(memory, i, (byte) (data[i] ? 1 : 0));
         }
         return MemoryViewFactory.of(DataType.BOOL, memory, Layout.rowMajor(shape));
     }
@@ -867,15 +869,15 @@ class TIRInterpreterTest {
     }
 
     private float readFloat(MemoryView<MemorySegment> view, long linearIndex) {
-        return memAccess.readFloat(view.memory(), Indexing.linearToOffset(view, linearIndex));
+        return memoryAccess.readFloat(view.memory(), Indexing.linearToOffset(view, linearIndex));
     }
 
     private double readDouble(MemoryView<MemorySegment> view, long linearIndex) {
-        return memAccess.readDouble(view.memory(), Indexing.linearToOffset(view, linearIndex));
+        return memoryAccess.readDouble(view.memory(), Indexing.linearToOffset(view, linearIndex));
     }
 
     private int readInt(MemoryView<MemorySegment> view, long linearIndex) {
-        return memAccess.readInt(view.memory(), Indexing.linearToOffset(view, linearIndex));
+        return memoryAccess.readInt(view.memory(), Indexing.linearToOffset(view, linearIndex));
     }
 
     private void assertFloatEquals(float[] expected, MemoryView<MemorySegment> actual) {

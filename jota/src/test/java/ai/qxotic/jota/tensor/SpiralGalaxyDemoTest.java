@@ -8,7 +8,7 @@ import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.MemoryAccess;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
 import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
@@ -26,8 +26,8 @@ class SpiralGalaxyDemoTest {
     private static final float FALLOFF = 2.5f;
 
     @SuppressWarnings("unchecked")
-    private static final MemoryContext<MemorySegment> CONTEXT =
-            (MemoryContext<MemorySegment>) Environment.current().nativeBackend().memoryContext();
+    private static final MemoryDomain<MemorySegment> CONTEXT =
+            (MemoryDomain<MemorySegment>) Environment.current().nativeBackend().memoryDomain();
 
     @Test
     void rendersSpiralGalaxyField() throws IOException {
@@ -83,13 +83,13 @@ class SpiralGalaxyDemoTest {
         @SuppressWarnings("unchecked")
         MemoryView<MemorySegment> typedView = (MemoryView<MemorySegment>) view;
         long offset = Indexing.linearToOffset(typedView, linearIndex);
-        return CONTEXT.memoryAccess().readFloat(typedView.memory(), offset);
+        return CONTEXT.directAccess().readFloat(typedView.memory(), offset);
     }
 
     private static void writePPM(MemoryView<?> view, String filename) throws IOException {
         @SuppressWarnings("unchecked")
         MemoryView<MemorySegment> typedView = (MemoryView<MemorySegment>) view;
-        MemoryAccess<MemorySegment> access = CONTEXT.memoryAccess();
+        MemoryAccess<MemorySegment> access = CONTEXT.directAccess();
         try (PrintStream out =
                 new PrintStream(new BufferedOutputStream(new FileOutputStream(filename)))) {
             out.println("P3");

@@ -7,52 +7,48 @@ import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.ir.TIRToLIRLowerer;
 import ai.qxotic.jota.ir.tir.TIRGraph;
-import ai.qxotic.jota.memory.Memory;
-import ai.qxotic.jota.memory.MemoryAccess;
-import ai.qxotic.jota.memory.MemoryContext;
-import ai.qxotic.jota.memory.MemoryHelpers;
-import ai.qxotic.jota.memory.MemoryView;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.*;
+import ai.qxotic.jota.memory.MemoryDomain;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import ai.qxotic.jota.tensor.LazyComputation;
 import ai.qxotic.jota.tensor.Tensor;
 import ai.qxotic.jota.tensor.Tracer;
+import ai.qxotic.jota.testutil.TestKernels;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
 import java.util.List;
-import ai.qxotic.jota.testutil.TestKernels;
 import org.junit.jupiter.api.Test;
 
 class LIRInterpreterTraceTest {
 
     private static final int MANDEL_WIDTH = 320;
     private static final int MANDEL_HEIGHT = 240;
-    private static final int MANDEL_ITER = 20;
+    private static final int MANDEL_ITER = 32;
 
     @Test
     void interpretsTracedGelu() {
-        MemoryContext<MemorySegment> context = ContextFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> domain = DomainFactory.ofMemorySegment();
         MemoryView<MemorySegment> input =
-                MemoryHelpers.arange(context, DataType.FP32, 4).view(Shape.flat(4));
+                MemoryHelpers.arange(domain, DataType.FP32, 4).view(Shape.flat(4));
         Tensor inputTensor = Tensor.of(input);
 
         Tensor traced = Tracer.trace(inputTensor, Tensor::gelu);
         TIRGraph tirGraph = extractGraph(traced);
 
         LIRGraph lirGraph = new LIRStandardPipeline().run(new TIRToLIRLowerer().lower(tirGraph));
-        MemoryView<MemorySegment> output = allocateOutput(context, lirGraph.outputs().getFirst());
+        MemoryView<MemorySegment> output = allocateOutput(domain, lirGraph.outputs().getFirst());
 
-        new LIRInterpreter()
-                .execute(lirGraph, List.of(input), List.of(), List.of(output), context);
+        new LIRInterpreter().execute(lirGraph, List.of(input), List.of(), List.of(output), domain);
 
-        assertEquals(TestKernels.gelu(0.0f), readFloat(context, output, 0), 1e-4f);
-        assertEquals(TestKernels.gelu(1.0f), readFloat(context, output, 1), 1e-4f);
-        assertEquals(TestKernels.gelu(2.0f), readFloat(context, output, 2), 1e-4f);
-        assertEquals(TestKernels.gelu(3.0f), readFloat(context, output, 3), 1e-4f);
+        assertEquals(TestKernels.gelu(0.0f), readFloat(domain, output, 0), 1e-4f);
+        assertEquals(TestKernels.gelu(1.0f), readFloat(domain, output, 1), 1e-4f);
+        assertEquals(TestKernels.gelu(2.0f), readFloat(domain, output, 2), 1e-4f);
+        assertEquals(TestKernels.gelu(3.0f), readFloat(domain, output, 3), 1e-4f);
     }
 
     @Test
     void interpretsTracedMandelbrot() {
-        MemoryContext<MemorySegment> context = ContextFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> domain = DomainFactory.ofMemorySegment();
         Tensor traced =
                 Tracer.trace(
                         List.of(),
@@ -62,12 +58,12 @@ class LIRInterpreterTraceTest {
         TIRGraph tirGraph = extractGraph(traced);
 
         LIRGraph lirGraph = new LIRStandardPipeline().run(new TIRToLIRLowerer().lower(tirGraph));
-        MemoryView<MemorySegment> output = allocateOutput(context, lirGraph.outputs().getFirst());
+        MemoryView<MemorySegment> output = allocateOutput(domain, lirGraph.outputs().getFirst());
 
-        new LIRInterpreter().execute(lirGraph, List.of(), List.of(), List.of(output), context);
+        new LIRInterpreter().execute(lirGraph, List.of(), List.of(), List.of(output), domain);
 
         TestKernels.writeMandelbrotPpm(
-                context,
+                domain,
                 output,
                 Path.of("target", "mandelbrot-lir.ppm"),
                 MANDEL_WIDTH,
@@ -76,67 +72,27 @@ class LIRInterpreterTraceTest {
 
         assertEquals(
                 TestKernels.mandelbrotIter(0, 0, MANDEL_WIDTH, MANDEL_HEIGHT, MANDEL_ITER),
-                readFloat(context, output, 0),
+                readFloat(domain, output, 0),
                 1e-3f);
         assertEquals(
                 TestKernels.mandelbrotIter(
-                        MANDEL_HEIGHT / 2, MANDEL_WIDTH / 2, MANDEL_WIDTH, MANDEL_HEIGHT, MANDEL_ITER),
+                        MANDEL_HEIGHT / 2,
+                        MANDEL_WIDTH / 2,
+                        MANDEL_WIDTH,
+                        MANDEL_HEIGHT,
+                        MANDEL_ITER),
                 readFloat(
-                        context,
-                        output,
-                        (MANDEL_HEIGHT / 2L) * MANDEL_WIDTH + (MANDEL_WIDTH / 2L)),
+                        domain, output, (MANDEL_HEIGHT / 2L) * MANDEL_WIDTH + (MANDEL_WIDTH / 2L)),
                 1e-3f);
         assertEquals(
                 TestKernels.mandelbrotIter(
-                        MANDEL_HEIGHT - 1, MANDEL_WIDTH - 1, MANDEL_WIDTH, MANDEL_HEIGHT, MANDEL_ITER),
+                        MANDEL_HEIGHT - 1,
+                        MANDEL_WIDTH - 1,
+                        MANDEL_WIDTH,
+                        MANDEL_HEIGHT,
+                        MANDEL_ITER),
                 readFloat(
-                        context,
-                        output,
-                        (long) (MANDEL_HEIGHT - 1) * MANDEL_WIDTH + (MANDEL_WIDTH - 1)),
-                1e-3f);
-    }
-
-    @Test
-    void interpretsTracedPhoenix() {
-        MemoryContext<MemorySegment> context = ContextFactory.ofMemorySegment();
-        Tensor traced =
-                Tracer.trace(
-                        List.of(),
-                        inputs ->
-                                TestKernels.phoenixTensor(
-                                        MANDEL_WIDTH, MANDEL_HEIGHT, MANDEL_ITER));
-        TIRGraph tirGraph = extractGraph(traced);
-
-        LIRGraph lirGraph = new LIRStandardPipeline().run(new TIRToLIRLowerer().lower(tirGraph));
-        MemoryView<MemorySegment> output = allocateOutput(context, lirGraph.outputs().getFirst());
-
-        new LIRInterpreter().execute(lirGraph, List.of(), List.of(), List.of(output), context);
-
-        TestKernels.writePhoenixPpm(
-                context,
-                output,
-                Path.of("target", "phoenix-lir.ppm"),
-                MANDEL_WIDTH,
-                MANDEL_HEIGHT,
-                MANDEL_ITER);
-
-        assertEquals(
-                TestKernels.phoenixIter(0, 0, MANDEL_WIDTH, MANDEL_HEIGHT, MANDEL_ITER),
-                readFloat(context, output, 0),
-                1e-3f);
-        assertEquals(
-                TestKernels.phoenixIter(
-                        MANDEL_HEIGHT / 2, MANDEL_WIDTH / 2, MANDEL_WIDTH, MANDEL_HEIGHT, MANDEL_ITER),
-                readFloat(
-                        context,
-                        output,
-                        (MANDEL_HEIGHT / 2L) * MANDEL_WIDTH + (MANDEL_WIDTH / 2L)),
-                1e-3f);
-        assertEquals(
-                TestKernels.phoenixIter(
-                        MANDEL_HEIGHT - 1, MANDEL_WIDTH - 1, MANDEL_WIDTH, MANDEL_HEIGHT, MANDEL_ITER),
-                readFloat(
-                        context,
+                        domain,
                         output,
                         (long) (MANDEL_HEIGHT - 1) * MANDEL_WIDTH + (MANDEL_WIDTH - 1)),
                 1e-3f);
@@ -152,16 +108,16 @@ class LIRInterpreterTraceTest {
     }
 
     private MemoryView<MemorySegment> allocateOutput(
-            MemoryContext<MemorySegment> context, BufferRef buffer) {
+            MemoryDomain<MemorySegment> domain, BufferRef buffer) {
         Memory<MemorySegment> memory =
-                context.memoryAllocator().allocateMemory(buffer.dataType(), buffer.layout().shape());
+                domain.memoryAllocator().allocateMemory(buffer.dataType(), buffer.layout().shape());
         return MemoryView.of(memory, buffer.dataType(), buffer.layout());
     }
 
     private float readFloat(
-            MemoryContext<MemorySegment> context, MemoryView<?> view, long linearIndex) {
+            MemoryDomain<MemorySegment> domain, MemoryView<?> view, long linearIndex) {
         MemoryView<MemorySegment> typedView = (MemoryView<MemorySegment>) view;
-        MemoryAccess<MemorySegment> access = context.memoryAccess();
+        MemoryAccess<MemorySegment> access = domain.directAccess();
         long offset = Indexing.linearToOffset(typedView, linearIndex);
         return access.readFloat(typedView.memory(), offset);
     }

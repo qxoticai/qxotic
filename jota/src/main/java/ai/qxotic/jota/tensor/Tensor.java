@@ -3,10 +3,10 @@ package ai.qxotic.jota.tensor;
 import ai.qxotic.jota.*;
 import ai.qxotic.jota.impl.ViewTransforms;
 import ai.qxotic.jota.memory.Memory;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryOperations;
 import ai.qxotic.jota.memory.MemoryView;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import ai.qxotic.jota.memory.impl.MemoryFactory;
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
@@ -910,9 +910,9 @@ public interface Tensor {
             throw new IllegalArgumentException(
                     "array length " + data.length + " does not match shape size " + shape.size());
         }
-        MemoryContext<?> context =
-                Environment.current().backend(Device.defaultDevice()).memoryContext();
-        MemoryView<?> view = copyFloatArray(context, data, shape);
+        MemoryDomain<?> memoryDomain =
+                Environment.current().backend(Device.defaultDevice()).memoryDomain();
+        MemoryView<?> view = copyFloatArray(memoryDomain, data, shape);
         return of(view);
     }
 
@@ -938,9 +938,9 @@ public interface Tensor {
             throw new IllegalArgumentException(
                     "array length " + data.length + " does not match shape size " + shape.size());
         }
-        MemoryContext<?> context =
-                Environment.current().backend(Device.defaultDevice()).memoryContext();
-        MemoryView<?> view = copyDoubleArray(context, data, shape);
+        MemoryDomain<?> memoryDomain =
+                Environment.current().backend(Device.defaultDevice()).memoryDomain();
+        MemoryView<?> view = copyDoubleArray(memoryDomain, data, shape);
         return of(view);
     }
 
@@ -966,9 +966,9 @@ public interface Tensor {
             throw new IllegalArgumentException(
                     "array length " + data.length + " does not match shape size " + shape.size());
         }
-        MemoryContext<?> context =
-                Environment.current().backend(Device.defaultDevice()).memoryContext();
-        MemoryView<?> view = copyIntArray(context, data, shape);
+        MemoryDomain<?> memoryDomain =
+                Environment.current().backend(Device.defaultDevice()).memoryDomain();
+        MemoryView<?> view = copyIntArray(memoryDomain, data, shape);
         return of(view);
     }
 
@@ -994,9 +994,9 @@ public interface Tensor {
             throw new IllegalArgumentException(
                     "array length " + data.length + " does not match shape size " + shape.size());
         }
-        MemoryContext<?> context =
-                Environment.current().backend(Device.defaultDevice()).memoryContext();
-        MemoryView<?> view = copyLongArray(context, data, shape);
+        MemoryDomain<?> memoryDomain =
+                Environment.current().backend(Device.defaultDevice()).memoryDomain();
+        MemoryView<?> view = copyLongArray(memoryDomain, data, shape);
         return of(view);
     }
 
@@ -1022,23 +1022,22 @@ public interface Tensor {
             throw new IllegalArgumentException(
                     "array length " + data.length + " does not match shape size " + shape.size());
         }
-        MemoryContext<?> context =
-                Environment.current().backend(Device.defaultDevice()).memoryContext();
-        MemoryView<?> view = copyBooleanArray(context, data, shape);
+        MemoryDomain<?> memoryDomain =
+                Environment.current().backend(Device.defaultDevice()).memoryDomain();
+        MemoryView<?> view = copyBooleanArray(memoryDomain, data, shape);
         return of(view);
     }
 
     private static <B> MemoryView<B> copyFloatArray(
-            MemoryContext<B> context, float[] data, Shape shape) {
-        Memory<B> dst = context.memoryAllocator().allocateMemory(DataType.FP32, data.length);
+            MemoryDomain<B> memoryDomain, float[] data, Shape shape) {
+        Memory<B> dst = memoryDomain.memoryAllocator().allocateMemory(DataType.FP32, data.length);
         Memory<MemorySegment> src = MemoryFactory.ofMemorySegment(MemorySegment.ofArray(data));
-        MemoryOperations<MemorySegment> srcOps =
-                ContextFactory.ofMemorySegment().memoryOperations();
+        MemoryOperations<MemorySegment> srcOps = DomainFactory.ofMemorySegment().memoryOperations();
         MemoryOperations.copy(
                 srcOps,
                 src,
                 0,
-                context.memoryOperations(),
+                memoryDomain.memoryOperations(),
                 dst,
                 0,
                 (long) data.length * Float.BYTES);
@@ -1046,16 +1045,15 @@ public interface Tensor {
     }
 
     private static <B> MemoryView<B> copyDoubleArray(
-            MemoryContext<B> context, double[] data, Shape shape) {
-        Memory<B> dst = context.memoryAllocator().allocateMemory(DataType.FP64, data.length);
+            MemoryDomain<B> memoryDomain, double[] data, Shape shape) {
+        Memory<B> dst = memoryDomain.memoryAllocator().allocateMemory(DataType.FP64, data.length);
         Memory<MemorySegment> src = MemoryFactory.ofMemorySegment(MemorySegment.ofArray(data));
-        MemoryOperations<MemorySegment> srcOps =
-                ContextFactory.ofMemorySegment().memoryOperations();
+        MemoryOperations<MemorySegment> srcOps = DomainFactory.ofMemorySegment().memoryOperations();
         MemoryOperations.copy(
                 srcOps,
                 src,
                 0,
-                context.memoryOperations(),
+                memoryDomain.memoryOperations(),
                 dst,
                 0,
                 (long) data.length * Double.BYTES);
@@ -1063,16 +1061,15 @@ public interface Tensor {
     }
 
     private static <B> MemoryView<B> copyIntArray(
-            MemoryContext<B> context, int[] data, Shape shape) {
-        Memory<B> dst = context.memoryAllocator().allocateMemory(DataType.I32, data.length);
+            MemoryDomain<B> memoryDomain, int[] data, Shape shape) {
+        Memory<B> dst = memoryDomain.memoryAllocator().allocateMemory(DataType.I32, data.length);
         Memory<MemorySegment> src = MemoryFactory.ofMemorySegment(MemorySegment.ofArray(data));
-        MemoryOperations<MemorySegment> srcOps =
-                ContextFactory.ofMemorySegment().memoryOperations();
+        MemoryOperations<MemorySegment> srcOps = DomainFactory.ofMemorySegment().memoryOperations();
         MemoryOperations.copy(
                 srcOps,
                 src,
                 0,
-                context.memoryOperations(),
+                memoryDomain.memoryOperations(),
                 dst,
                 0,
                 (long) data.length * Integer.BYTES);
@@ -1080,16 +1077,15 @@ public interface Tensor {
     }
 
     private static <B> MemoryView<B> copyLongArray(
-            MemoryContext<B> context, long[] data, Shape shape) {
-        Memory<B> dst = context.memoryAllocator().allocateMemory(DataType.I64, data.length);
+            MemoryDomain<B> memoryDomain, long[] data, Shape shape) {
+        Memory<B> dst = memoryDomain.memoryAllocator().allocateMemory(DataType.I64, data.length);
         Memory<MemorySegment> src = MemoryFactory.ofMemorySegment(MemorySegment.ofArray(data));
-        MemoryOperations<MemorySegment> srcOps =
-                ContextFactory.ofMemorySegment().memoryOperations();
+        MemoryOperations<MemorySegment> srcOps = DomainFactory.ofMemorySegment().memoryOperations();
         MemoryOperations.copy(
                 srcOps,
                 src,
                 0,
-                context.memoryOperations(),
+                memoryDomain.memoryOperations(),
                 dst,
                 0,
                 (long) data.length * Long.BYTES);
@@ -1097,20 +1093,19 @@ public interface Tensor {
     }
 
     private static <B> MemoryView<B> copyBooleanArray(
-            MemoryContext<B> context, boolean[] data, Shape shape) {
-        Memory<B> dst = context.memoryAllocator().allocateMemory(DataType.BOOL, data.length);
+            MemoryDomain<B> memoryDomain, boolean[] data, Shape shape) {
+        Memory<B> dst = memoryDomain.memoryAllocator().allocateMemory(DataType.BOOL, data.length);
         byte[] bytes = new byte[data.length];
         for (int i = 0; i < data.length; i++) {
             bytes[i] = data[i] ? (byte) 1 : 0;
         }
         Memory<MemorySegment> src = MemoryFactory.ofMemorySegment(MemorySegment.ofArray(bytes));
-        MemoryOperations<MemorySegment> srcOps =
-                ContextFactory.ofMemorySegment().memoryOperations();
+        MemoryOperations<MemorySegment> srcOps = DomainFactory.ofMemorySegment().memoryOperations();
         MemoryOperations.copy(
                 srcOps,
                 src,
                 0,
-                context.memoryOperations(),
+                memoryDomain.memoryOperations(),
                 dst,
                 0,
                 (long) data.length * Byte.BYTES);

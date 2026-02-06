@@ -1,8 +1,8 @@
 package ai.qxotic.jota;
 
 import ai.qxotic.jota.memory.MemoryAccess;
-import ai.qxotic.jota.tensor.Tracer;
 import ai.qxotic.jota.tensor.Tensor;
+import ai.qxotic.jota.tensor.Tracer;
 
 public class Canary {
     static void main() {
@@ -11,7 +11,7 @@ public class Canary {
                 Tracer.trace(x, Tensor.scalar(2f), (a, b) -> a.add(b).add(Tensor.scalar(3.14f)));
         // Trigger execution
         var out = result.materialize();
-        MemoryAccess access = Environment.current().panamaContext().memoryAccess();
+        MemoryAccess access = Environment.current().panamaMemoryDomain().directAccess();
         System.out.println(out.toString(access));
     }
 }

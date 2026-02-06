@@ -6,13 +6,13 @@ import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Layout;
 import java.lang.foreign.MemorySegment;
 
-public interface MemoryContext<B> extends AutoCloseable {
+public interface MemoryDomain<B> extends AutoCloseable {
     Device device();
 
     MemoryAllocator<B> memoryAllocator();
 
     /** Optional capability, can be null for opaque memory implementations e.g. GPUs. */
-    MemoryAccess<B> memoryAccess();
+    MemoryAccess<B> directAccess();
 
     MemoryOperations<B> memoryOperations();
 
@@ -28,11 +28,11 @@ public interface MemoryContext<B> extends AutoCloseable {
     }
 
     /**
-     * Checks if this context can allocate memory for the given DataType. Delegates to the
-     * underlying memory allocator.
+     * Checks if this domain can allocate memory for the given DataType. Delegates to the underlying
+     * memory allocator.
      *
      * @param dataType the data type to check
-     * @return true if this context can allocate the given DataType
+     * @return true if this domain can allocate the given DataType
      * @see MemoryAllocator#supportsDataType(DataType)
      */
     default boolean supportsDataType(DataType dataType) {
@@ -44,9 +44,9 @@ public interface MemoryContext<B> extends AutoCloseable {
     }
 
     static <S, D> void copy(
-            MemoryContext<S> srcContext,
+            MemoryDomain<S> srcContext,
             MemoryView<S> src,
-            MemoryContext<D> dstContext,
+            MemoryDomain<D> dstContext,
             MemoryView<D> dst) {
         if (src.dataType() != dst.dataType()) {
             throw new IllegalArgumentException(
@@ -67,7 +67,7 @@ public interface MemoryContext<B> extends AutoCloseable {
             return;
         }
 
-        MemoryContext<MemorySegment> nativeContext = nativeContext();
+        MemoryDomain<MemorySegment> nativeContext = nativeContext();
         MemoryView<S> srcContig = contiguousCopy(srcContext, src);
         MemoryView<MemorySegment> nativeContig =
                 allocateContiguous(nativeContext, src.dataType(), src.shape().size());
@@ -80,34 +80,34 @@ public interface MemoryContext<B> extends AutoCloseable {
     }
 
     private static <S, D> void copySameDevice(
-            MemoryContext<S> context, MemoryView<S> src, MemoryView<D> dst) {
-        if (srcContextDevice(context).equals(dst.memory().device())) {
+            MemoryDomain<S> domain, MemoryView<S> src, MemoryView<D> dst) {
+        if (srcContextDevice(domain).equals(dst.memory().device())) {
             @SuppressWarnings("unchecked")
             MemoryView<S> castDst = (MemoryView<S>) dst;
-            StridedCopy.copy(context, src, castDst);
+            StridedCopy.copy(domain, src, castDst);
             return;
         }
         throw new IllegalArgumentException("Source and destination devices must match");
     }
 
-    private static <B> MemoryView<B> contiguousCopy(MemoryContext<B> context, MemoryView<B> src) {
-        MemoryView<B> dst = allocateContiguous(context, src.dataType(), src.shape().size());
-        StridedCopy.copy(context, src, dst);
+    private static <B> MemoryView<B> contiguousCopy(MemoryDomain<B> domain, MemoryView<B> src) {
+        MemoryView<B> dst = allocateContiguous(domain, src.dataType(), src.shape().size());
+        StridedCopy.copy(domain, src, dst);
         return dst;
     }
 
     private static <B> MemoryView<B> allocateContiguous(
-            MemoryContext<B> context, DataType dataType, long elementCount) {
+            MemoryDomain<B> domain, DataType dataType, long elementCount) {
         return MemoryView.of(
-                context.memoryAllocator().allocateMemory(dataType, elementCount),
+                domain.memoryAllocator().allocateMemory(dataType, elementCount),
                 dataType,
                 Layout.rowMajor(elementCount));
     }
 
     private static <S, D> void copyContiguous(
-            MemoryContext<S> srcContext,
+            MemoryDomain<S> srcContext,
             MemoryView<S> src,
-            MemoryContext<D> dstContext,
+            MemoryDomain<D> dstContext,
             MemoryView<D> dst) {
         long bytes = src.shape().size() * src.dataType().byteSize();
         if (bytes == 0) {
@@ -125,12 +125,12 @@ public interface MemoryContext<B> extends AutoCloseable {
     }
 
     @SuppressWarnings("unchecked")
-    private static MemoryContext<MemorySegment> nativeContext() {
-        return (MemoryContext<MemorySegment>) Environment.current().nativeBackend().memoryContext();
+    private static MemoryDomain<MemorySegment> nativeContext() {
+        return (MemoryDomain<MemorySegment>) Environment.current().nativeBackend().memoryDomain();
     }
 
-    private static <B> Device srcContextDevice(MemoryContext<B> context) {
-        return context.device();
+    private static <B> Device srcContextDevice(MemoryDomain<B> domain) {
+        return domain.device();
     }
 
     @Override

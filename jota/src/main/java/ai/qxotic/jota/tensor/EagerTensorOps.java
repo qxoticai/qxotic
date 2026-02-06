@@ -10,21 +10,21 @@ import ai.qxotic.jota.impl.ViewTransforms;
 import ai.qxotic.jota.ir.tir.ViewKind;
 import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAccess;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
 import java.util.Objects;
 
 public class EagerTensorOps implements TensorOps {
 
-    private final MemoryContext<?> context;
+    private final MemoryDomain<?> domain;
 
-    public EagerTensorOps(MemoryContext<?> context) {
-        this.context = Objects.requireNonNull(context);
+    public EagerTensorOps(MemoryDomain<?> domain) {
+        this.domain = Objects.requireNonNull(domain);
     }
 
     @Override
-    public MemoryContext<?> context() {
-        return context;
+    public MemoryDomain<?> memoryDomain() {
+        return domain;
     }
 
     @Override
@@ -113,11 +113,11 @@ public class EagerTensorOps implements TensorOps {
             return x;
         }
         MemoryView<?> sourceView = x.materialize();
-        MemoryContext<?> sourceContext = Environment.current().backend(x.device()).memoryContext();
-        MemoryContext<?> targetContext = Environment.current().backend(device).memoryContext();
+        MemoryDomain<?> sourceContext = Environment.current().backend(x.device()).memoryDomain();
+        MemoryDomain<?> targetContext = Environment.current().backend(device).memoryDomain();
         if (!targetContext.supportsDataType(sourceView.dataType())) {
             throw new IllegalArgumentException(
-                    "Target context does not support data type: " + sourceView.dataType());
+                    "Target domain does not support data type: " + sourceView.dataType());
         }
         if (!sourceContext.device().equals(targetContext.device()) && !sourceView.isContiguous()) {
             throw new IllegalArgumentException(
@@ -161,11 +161,11 @@ public class EagerTensorOps implements TensorOps {
         OutputBufferSpec outputSpec = computeOutputSpec(layout, sourceView.dataType());
         MemoryView<?> targetView =
                 MemoryView.of(
-                        context.memoryAllocator().allocateMemory(outputSpec.byteSize),
+                        domain.memoryAllocator().allocateMemory(outputSpec.byteSize),
                         outputSpec.byteOffset,
                         sourceView.dataType(),
                         layout);
-        copyBetweenContexts(context, sourceView, context, targetView);
+        copyBetweenContexts(domain, sourceView, domain, targetView);
         return Tensor.of(targetView);
     }
 
@@ -519,7 +519,7 @@ public class EagerTensorOps implements TensorOps {
     private MemoryView<?> allocate(DataType dtype, Shape shape) {
         Layout layout = Layout.rowMajor(shape);
         return MemoryView.of(
-                context.memoryAllocator().allocateMemory(dtype.byteSizeFor(shape)), dtype, layout);
+                domain.memoryAllocator().allocateMemory(dtype.byteSizeFor(shape)), dtype, layout);
     }
 
     private Tensor unaryOp(Tensor x, UnaryOp op) {
@@ -575,7 +575,7 @@ public class EagerTensorOps implements TensorOps {
     }
 
     private MemoryAccess<Object> requireMemoryAccess() {
-        MemoryAccess<?> access = context.memoryAccess();
+        MemoryAccess<?> access = domain.directAccess();
         if (access == null) {
             throw new IllegalStateException("Eager ops require MemoryAccess");
         }
@@ -585,19 +585,19 @@ public class EagerTensorOps implements TensorOps {
     }
 
     private static void copyBetweenContexts(
-            MemoryContext<?> sourceContext,
+            MemoryDomain<?> sourceContext,
             MemoryView<?> sourceView,
-            MemoryContext<?> targetContext,
+            MemoryDomain<?> targetContext,
             MemoryView<?> targetView) {
         @SuppressWarnings("unchecked")
-        MemoryContext<Object> source = (MemoryContext<Object>) sourceContext;
+        MemoryDomain<Object> source = (MemoryDomain<Object>) sourceContext;
         @SuppressWarnings("unchecked")
         MemoryView<Object> src = (MemoryView<Object>) sourceView;
         @SuppressWarnings("unchecked")
-        MemoryContext<Object> target = (MemoryContext<Object>) targetContext;
+        MemoryDomain<Object> target = (MemoryDomain<Object>) targetContext;
         @SuppressWarnings("unchecked")
         MemoryView<Object> dst = (MemoryView<Object>) targetView;
-        MemoryContext.copy(source, src, target, dst);
+        MemoryDomain.copy(source, src, target, dst);
     }
 
     private static OutputBufferSpec computeOutputSpec(Layout layout, DataType dataType) {

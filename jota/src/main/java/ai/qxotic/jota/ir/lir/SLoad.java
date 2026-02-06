@@ -1,7 +1,6 @@
 package ai.qxotic.jota.ir.lir;
 
 import ai.qxotic.jota.DataType;
-import ai.qxotic.jota.ir.lir.BufferRef;
 
 public final class SLoad extends ScalarNode {
     private final BufferRef buffer;

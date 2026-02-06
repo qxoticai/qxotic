@@ -3,13 +3,13 @@ package ai.qxotic.jota.c;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryAllocator;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryOperations;
 import ai.qxotic.jota.panama.PanamaMemoryAccess;
 import ai.qxotic.jota.panama.PanamaMemoryOperations;
 import java.lang.foreign.MemorySegment;
 
-final class CMemoryContext implements MemoryContext<MemorySegment> {
+final class CMemoryDomain implements MemoryDomain<MemorySegment> {
 
     private final MemoryAllocator<MemorySegment> allocator = new CMemoryAllocator();
 
@@ -24,7 +24,7 @@ final class CMemoryContext implements MemoryContext<MemorySegment> {
     }
 
     @Override
-    public MemoryAccess<MemorySegment> memoryAccess() {
+    public MemoryAccess<MemorySegment> directAccess() {
         return PanamaMemoryAccess.instance();
     }
 

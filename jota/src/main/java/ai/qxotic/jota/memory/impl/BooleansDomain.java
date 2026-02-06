@@ -3,19 +3,19 @@ package ai.qxotic.jota.memory.impl;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryAllocator;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryOperations;
 
-class BooleansContext implements MemoryContext<boolean[]> {
+class BooleansDomain implements MemoryDomain<boolean[]> {
 
     private static final Device BOOLEANS = Device.CPU.child("booleans");
-    private static final BooleansContext INSTANCE = new BooleansContext();
+    private static final BooleansDomain INSTANCE = new BooleansDomain();
 
-    static MemoryContext<boolean[]> instance() {
+    static MemoryDomain<boolean[]> instance() {
         return INSTANCE;
     }
 
-    private BooleansContext() {}
+    private BooleansDomain() {}
 
     @Override
     public Device device() {
@@ -28,7 +28,7 @@ class BooleansContext implements MemoryContext<boolean[]> {
     }
 
     @Override
-    public MemoryAccess<boolean[]> memoryAccess() {
+    public MemoryAccess<boolean[]> directAccess() {
         return BooleansMemoryAccess.instance();
     }
 
@@ -47,7 +47,7 @@ class BooleansContext implements MemoryContext<boolean[]> {
         return new StringBuilder("Context{boolean[], device=")
                 .append(device())
                 .append(", directAccess=")
-                .append(memoryAccess() != null)
+                .append(directAccess() != null)
                 .append('}')
                 .toString();
     }

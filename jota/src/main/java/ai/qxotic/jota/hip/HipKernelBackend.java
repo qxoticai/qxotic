@@ -4,10 +4,7 @@ import ai.qxotic.jota.Device;
 import ai.qxotic.jota.ir.lir.LIRGraph;
 import ai.qxotic.jota.ir.lir.LIRTextRenderer;
 import ai.qxotic.jota.ir.lir.scratch.ScratchLayout;
-import ai.qxotic.jota.tensor.KernelBackend;
-import ai.qxotic.jota.tensor.KernelCacheKey;
-import ai.qxotic.jota.tensor.KernelExecutable;
-import ai.qxotic.jota.tensor.KernelProgram;
+import ai.qxotic.jota.tensor.*;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -40,10 +37,7 @@ final class HipKernelBackend implements KernelBackend {
         HipKernelExecutable exec = new HipKernelExecutable(module.function(spec.kernelName()));
         return new KernelExecutable() {
             @Override
-            public void launch(
-                    ai.qxotic.jota.tensor.LaunchConfig config,
-                    ai.qxotic.jota.tensor.KernelArgs args,
-                    ai.qxotic.jota.tensor.ExecutionStream stream) {
+            public void launch(LaunchConfig config, KernelArgs args, ExecutionStream stream) {
                 exec.launch(config, args, stream);
             }
 
@@ -64,10 +58,7 @@ final class HipKernelBackend implements KernelBackend {
         HipKernelExecutable exec = new HipKernelExecutable(module.function(program.entryPoint()));
         return new KernelExecutable() {
             @Override
-            public void launch(
-                    ai.qxotic.jota.tensor.LaunchConfig config,
-                    ai.qxotic.jota.tensor.KernelArgs args,
-                    ai.qxotic.jota.tensor.ExecutionStream stream) {
+            public void launch(LaunchConfig config, KernelArgs args, ExecutionStream stream) {
                 exec.launch(config, args, stream);
             }
 
@@ -96,7 +87,8 @@ final class HipKernelBackend implements KernelBackend {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             digest.update(new LIRTextRenderer().render(graph).getBytes(StandardCharsets.UTF_8));
-            digest.update(Long.toString(scratchLayout.totalByteSize()).getBytes(StandardCharsets.UTF_8));
+            digest.update(
+                    Long.toString(scratchLayout.totalByteSize()).getBytes(StandardCharsets.UTF_8));
             scratchLayout.offsets().entrySet().stream()
                     .sorted(Comparator.comparingInt(entry -> entry.getKey().id()))
                     .forEach(
@@ -200,13 +192,15 @@ final class HipKernelBackend implements KernelBackend {
             hipcc = "hipcc";
         }
         ProcessBuilder builder =
-                new ProcessBuilder(hipcc, "--genco", "-O2", source.toString(), "-o", hsaco.toString());
+                new ProcessBuilder(
+                        hipcc, "--genco", "-O2", source.toString(), "-o", hsaco.toString());
         builder.inheritIO();
         try {
             Process process = builder.start();
             int code = process.waitFor();
             if (code != 0) {
-                throw new IllegalStateException("HIP kernel compilation failed (exit " + code + ")");
+                throw new IllegalStateException(
+                        "HIP kernel compilation failed (exit " + code + ")");
             }
         } catch (IOException e) {
             throw new IllegalStateException("HIP kernel compilation failed", e);

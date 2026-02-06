@@ -1,17 +1,14 @@
 package ai.qxotic.jota;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 import ai.qxotic.jota.backend.DefaultBackendRegistry;
+import ai.qxotic.jota.backend.DeviceRuntime;
 import ai.qxotic.jota.backend.KernelService;
-import ai.qxotic.jota.memory.impl.ContextFactory;
-import ai.qxotic.jota.tensor.ComputeBackend;
+import ai.qxotic.jota.memory.MemoryDomain;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import ai.qxotic.jota.tensor.ComputeEngine;
-import ai.qxotic.jota.tensor.DiskKernelCache;
-import ai.qxotic.jota.tensor.KernelCache;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class EnvironmentTest {
@@ -51,53 +48,55 @@ class EnvironmentTest {
     @Test
     void registryExposesRegisteredDevices() {
         DefaultBackendRegistry registry = new DefaultBackendRegistry();
-        registry.register(new StubBackend(ContextFactory.ofBytes(), dummyEngine()));
-        registry.register(new StubBackend(ContextFactory.ofMemorySegment(), dummyEngine()));
+        registry.register(new StubDeviceRuntime(DomainFactory.ofBytes(), dummyBackend()));
+        registry.register(new StubDeviceRuntime(DomainFactory.ofMemorySegment(), dummyBackend()));
 
         assertTrue(registry.devices().contains(Device.PANAMA));
     }
 
-    private ComputeEngine dummyEngine() {
+    private ComputeEngine dummyBackend() {
         return new ComputeEngine() {
             @Override
-            public ComputeBackend backendFor(Device device) {
-                throw new UnsupportedOperationException("No backend for " + device);
+            public Device device() {
+                return Device.PANAMA;
             }
 
             @Override
-            public KernelCache cache() {
-                return DiskKernelCache.defaultCache();
+            public ai.qxotic.jota.memory.MemoryView<?> execute(
+                    ai.qxotic.jota.ir.tir.TIRGraph graph,
+                    java.util.List<ai.qxotic.jota.tensor.Tensor> inputs) {
+                throw new UnsupportedOperationException("No backend execution in this test");
             }
         };
     }
 
-    private static final class StubBackend implements ai.qxotic.jota.backend.Backend {
-        private final ai.qxotic.jota.memory.MemoryContext<?> context;
-        private final ComputeEngine engine;
+    private static final class StubDeviceRuntime implements DeviceRuntime {
+        private final MemoryDomain<?> memoryDomain;
+        private final ComputeEngine computeEngine;
 
-        private StubBackend(ai.qxotic.jota.memory.MemoryContext<?> context, ComputeEngine engine) {
-            this.context = context;
-            this.engine = engine;
+        private StubDeviceRuntime(MemoryDomain<?> domain, ComputeEngine computeEngine) {
+            this.memoryDomain = domain;
+            this.computeEngine = computeEngine;
         }
 
         @Override
         public Device device() {
-            return context.device();
+            return memoryDomain.device();
         }
 
         @Override
-        public ai.qxotic.jota.memory.MemoryContext<?> memoryContext() {
-            return context;
+        public MemoryDomain<?> memoryDomain() {
+            return memoryDomain;
         }
 
         @Override
         public ComputeEngine computeEngine() {
-            return engine;
+            return computeEngine;
         }
 
         @Override
-        public java.util.Optional<KernelService> kernels() {
-            return java.util.Optional.empty();
+        public Optional<KernelService> kernelService() {
+            return Optional.empty();
         }
     }
 }

@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import ai.qxotic.jota.memory.impl.MemoryAllocatorFactory;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
@@ -27,44 +27,44 @@ class MemoryOperationsAutoBufferTest {
 
     private static final int MIN_BUFFER_SIZE = 4 << 10; // 4K
 
-    // Native contexts
-    @AutoClose MemoryContext<MemorySegment> nativeContext = ContextFactory.ofMemorySegment();
+    // Native domains
+    @AutoClose MemoryDomain<MemorySegment> nativeDomain = DomainFactory.ofMemorySegment();
 
     @AutoClose
-    MemoryContext<ByteBuffer> bufferContext =
-            ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false));
+    MemoryDomain<ByteBuffer> bufferDomain =
+            DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(false));
 
     @AutoClose
-    MemoryContext<ByteBuffer> directBufferContext =
-            ContextFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true));
+    MemoryDomain<ByteBuffer> directBufferDomain =
+            DomainFactory.ofByteBuffer(MemoryAllocatorFactory.ofByteBuffer(true));
 
-    // Primitive array contexts
-    @AutoClose MemoryContext<byte[]> byteContext = ContextFactory.ofBytes();
+    // Primitive array domains
+    @AutoClose MemoryDomain<byte[]> byteDomain = DomainFactory.ofBytes();
 
-    @AutoClose MemoryContext<short[]> shortContext = ContextFactory.ofShorts();
+    @AutoClose MemoryDomain<short[]> shortDomain = DomainFactory.ofShorts();
 
-    @AutoClose MemoryContext<int[]> intContext = ContextFactory.ofInts();
+    @AutoClose MemoryDomain<int[]> intDomain = DomainFactory.ofInts();
 
-    @AutoClose MemoryContext<long[]> longContext = ContextFactory.ofLongs();
+    @AutoClose MemoryDomain<long[]> longDomain = DomainFactory.ofLongs();
 
-    @AutoClose MemoryContext<float[]> floatContext = ContextFactory.ofFloats();
+    @AutoClose MemoryDomain<float[]> floatDomain = DomainFactory.ofFloats();
 
-    @AutoClose MemoryContext<double[]> doubleContext = ContextFactory.ofDoubles();
+    @AutoClose MemoryDomain<double[]> doubleDomain = DomainFactory.ofDoubles();
 
     // ========== Zero and small copies ==========
 
     @Test
     void copyZeroBytes() {
-        Memory<float[]> src = floatContext.memoryAllocator().allocateMemory(16);
-        Memory<MemorySegment> dst = nativeContext.memoryAllocator().allocateMemory(16);
+        Memory<float[]> src = floatDomain.memoryAllocator().allocateMemory(16);
+        Memory<MemorySegment> dst = nativeDomain.memoryAllocator().allocateMemory(16);
 
         assertDoesNotThrow(
                 () ->
                         MemoryOperations.copy(
-                                floatContext.memoryOperations(),
+                                floatDomain.memoryOperations(),
                                 src,
                                 0,
-                                nativeContext.memoryOperations(),
+                                nativeDomain.memoryOperations(),
                                 dst,
                                 0,
                                 0));
@@ -72,40 +72,40 @@ class MemoryOperationsAutoBufferTest {
 
     @Test
     void copySingleByte() {
-        Memory<MemorySegment> src = nativeContext.memoryAllocator().allocateMemory(1);
-        Memory<ByteBuffer> dst = bufferContext.memoryAllocator().allocateMemory(1);
+        Memory<MemorySegment> src = nativeDomain.memoryAllocator().allocateMemory(1);
+        Memory<ByteBuffer> dst = bufferDomain.memoryAllocator().allocateMemory(1);
 
-        nativeContext.memoryAccess().writeByte(src, 0, (byte) 0x42);
+        nativeDomain.directAccess().writeByte(src, 0, (byte) 0x42);
 
         MemoryOperations.copy(
-                nativeContext.memoryOperations(),
+                nativeDomain.memoryOperations(),
                 src,
                 0,
-                bufferContext.memoryOperations(),
+                bufferDomain.memoryOperations(),
                 dst,
                 0,
                 1);
 
-        assertEquals((byte) 0x42, bufferContext.memoryAccess().readByte(dst, 0));
+        assertEquals((byte) 0x42, bufferDomain.directAccess().readByte(dst, 0));
     }
 
     @Test
     void copySingleFloat() {
-        Memory<float[]> src = floatContext.memoryAllocator().allocateMemory(Float.BYTES);
-        Memory<MemorySegment> dst = nativeContext.memoryAllocator().allocateMemory(Float.BYTES);
+        Memory<float[]> src = floatDomain.memoryAllocator().allocateMemory(Float.BYTES);
+        Memory<MemorySegment> dst = nativeDomain.memoryAllocator().allocateMemory(Float.BYTES);
 
-        floatContext.memoryAccess().writeFloat(src, 0, 3.14159f);
+        floatDomain.directAccess().writeFloat(src, 0, 3.14159f);
 
         MemoryOperations.copy(
-                floatContext.memoryOperations(),
+                floatDomain.memoryOperations(),
                 src,
                 0,
-                nativeContext.memoryOperations(),
+                nativeDomain.memoryOperations(),
                 dst,
                 0,
                 Float.BYTES);
 
-        assertEquals(3.14159f, nativeContext.memoryAccess().readFloat(dst, 0), 0.00001f);
+        assertEquals(3.14159f, nativeDomain.directAccess().readFloat(dst, 0), 0.00001f);
     }
 
     // ========== Copies smaller than minimum buffer (4K) ==========
@@ -113,20 +113,20 @@ class MemoryOperationsAutoBufferTest {
     @ParameterizedTest
     @ValueSource(ints = {64, 256, 512, 1024, 2048, 4095})
     void copyBelowMinBufferSize(int byteSize) {
-        Memory<MemorySegment> src = nativeContext.memoryAllocator().allocateMemory(byteSize);
-        Memory<ByteBuffer> dst = directBufferContext.memoryAllocator().allocateMemory(byteSize);
+        Memory<MemorySegment> src = nativeDomain.memoryAllocator().allocateMemory(byteSize);
+        Memory<ByteBuffer> dst = directBufferDomain.memoryAllocator().allocateMemory(byteSize);
 
         // Write pattern to source
         int floatCount = byteSize / Float.BYTES;
         for (int i = 0; i < floatCount; i++) {
-            nativeContext.memoryAccess().writeFloat(src, (long) i * Float.BYTES, i * 1.5f);
+            nativeDomain.directAccess().writeFloat(src, (long) i * Float.BYTES, i * 1.5f);
         }
 
         MemoryOperations.copy(
-                nativeContext.memoryOperations(),
+                nativeDomain.memoryOperations(),
                 src,
                 0,
-                directBufferContext.memoryOperations(),
+                directBufferDomain.memoryOperations(),
                 dst,
                 0,
                 byteSize);
@@ -135,7 +135,7 @@ class MemoryOperationsAutoBufferTest {
         for (int i = 0; i < floatCount; i++) {
             assertEquals(
                     i * 1.5f,
-                    directBufferContext.memoryAccess().readFloat(dst, (long) i * Float.BYTES),
+                    directBufferDomain.directAccess().readFloat(dst, (long) i * Float.BYTES),
                     0.00001f,
                     "Mismatch at float index " + i);
         }
@@ -146,19 +146,19 @@ class MemoryOperationsAutoBufferTest {
     @Test
     void copyExactly4K() {
         int byteSize = MIN_BUFFER_SIZE;
-        Memory<MemorySegment> src = nativeContext.memoryAllocator().allocateMemory(byteSize);
-        Memory<float[]> dst = floatContext.memoryAllocator().allocateMemory(byteSize);
+        Memory<MemorySegment> src = nativeDomain.memoryAllocator().allocateMemory(byteSize);
+        Memory<float[]> dst = floatDomain.memoryAllocator().allocateMemory(byteSize);
 
         int floatCount = byteSize / Float.BYTES;
         for (int i = 0; i < floatCount; i++) {
-            nativeContext.memoryAccess().writeFloat(src, (long) i * Float.BYTES, i + 0.25f);
+            nativeDomain.directAccess().writeFloat(src, (long) i * Float.BYTES, i + 0.25f);
         }
 
         MemoryOperations.copy(
-                nativeContext.memoryOperations(),
+                nativeDomain.memoryOperations(),
                 src,
                 0,
-                floatContext.memoryOperations(),
+                floatDomain.memoryOperations(),
                 dst,
                 0,
                 byteSize);
@@ -166,7 +166,7 @@ class MemoryOperationsAutoBufferTest {
         for (int i = 0; i < floatCount; i++) {
             assertEquals(
                     i + 0.25f,
-                    floatContext.memoryAccess().readFloat(dst, (long) i * Float.BYTES),
+                    floatDomain.directAccess().readFloat(dst, (long) i * Float.BYTES),
                     0.00001f);
         }
     }
@@ -176,20 +176,20 @@ class MemoryOperationsAutoBufferTest {
     @ParameterizedTest
     @ValueSource(ints = {4097, 8192, 16384, 32768, 65536})
     void copyAboveMinBufferSize(int byteSize) {
-        Memory<MemorySegment> src = nativeContext.memoryAllocator().allocateMemory(byteSize);
-        Memory<ByteBuffer> dst = directBufferContext.memoryAllocator().allocateMemory(byteSize);
+        Memory<MemorySegment> src = nativeDomain.memoryAllocator().allocateMemory(byteSize);
+        Memory<ByteBuffer> dst = directBufferDomain.memoryAllocator().allocateMemory(byteSize);
 
         // Write distinct pattern
         int intCount = byteSize / Integer.BYTES;
         for (int i = 0; i < intCount; i++) {
-            nativeContext.memoryAccess().writeInt(src, (long) i * Integer.BYTES, i * 7 + 13);
+            nativeDomain.directAccess().writeInt(src, (long) i * Integer.BYTES, i * 7 + 13);
         }
 
         MemoryOperations.copy(
-                nativeContext.memoryOperations(),
+                nativeDomain.memoryOperations(),
                 src,
                 0,
-                directBufferContext.memoryOperations(),
+                directBufferDomain.memoryOperations(),
                 dst,
                 0,
                 byteSize);
@@ -197,7 +197,7 @@ class MemoryOperationsAutoBufferTest {
         for (int i = 0; i < intCount; i++) {
             assertEquals(
                     i * 7 + 13,
-                    directBufferContext.memoryAccess().readInt(dst, (long) i * Integer.BYTES),
+                    directBufferDomain.directAccess().readInt(dst, (long) i * Integer.BYTES),
                     "Mismatch at int index " + i);
         }
     }
@@ -207,20 +207,20 @@ class MemoryOperationsAutoBufferTest {
     @Test
     void copyOneMegabyte() {
         int byteSize = 1 << 20; // 1 MB
-        Memory<MemorySegment> src = nativeContext.memoryAllocator().allocateMemory(byteSize);
-        Memory<ByteBuffer> dst = directBufferContext.memoryAllocator().allocateMemory(byteSize);
+        Memory<MemorySegment> src = nativeDomain.memoryAllocator().allocateMemory(byteSize);
+        Memory<ByteBuffer> dst = directBufferDomain.memoryAllocator().allocateMemory(byteSize);
 
         // Write pattern at boundaries and middle
         long[] checkpoints = {0, 1000, byteSize / 2, byteSize - Long.BYTES};
         for (int i = 0; i < checkpoints.length; i++) {
-            nativeContext.memoryAccess().writeLong(src, checkpoints[i], 0xDEADBEEF_CAFEBABEL + i);
+            nativeDomain.directAccess().writeLong(src, checkpoints[i], 0xDEADBEEF_CAFEBABEL + i);
         }
 
         MemoryOperations.copy(
-                nativeContext.memoryOperations(),
+                nativeDomain.memoryOperations(),
                 src,
                 0,
-                directBufferContext.memoryOperations(),
+                directBufferDomain.memoryOperations(),
                 dst,
                 0,
                 byteSize);
@@ -228,7 +228,7 @@ class MemoryOperationsAutoBufferTest {
         for (int i = 0; i < checkpoints.length; i++) {
             assertEquals(
                     0xDEADBEEF_CAFEBABEL + i,
-                    directBufferContext.memoryAccess().readLong(dst, checkpoints[i]),
+                    directBufferDomain.directAccess().readLong(dst, checkpoints[i]),
                     "Mismatch at checkpoint " + i);
         }
     }
@@ -236,20 +236,20 @@ class MemoryOperationsAutoBufferTest {
     @Test
     void copyFourMegabytes() {
         int byteSize = 4 << 20; // 4 MB
-        Memory<MemorySegment> src = nativeContext.memoryAllocator().allocateMemory(byteSize);
-        Memory<MemorySegment> dst = nativeContext.memoryAllocator().allocateMemory(byteSize);
+        Memory<MemorySegment> src = nativeDomain.memoryAllocator().allocateMemory(byteSize);
+        Memory<MemorySegment> dst = nativeDomain.memoryAllocator().allocateMemory(byteSize);
 
         // Write sequential longs
         int longCount = byteSize / Long.BYTES;
         for (int i = 0; i < longCount; i += 1000) { // Sample every 1000th
-            nativeContext.memoryAccess().writeLong(src, (long) i * Long.BYTES, i);
+            nativeDomain.directAccess().writeLong(src, (long) i * Long.BYTES, i);
         }
 
         MemoryOperations.copy(
-                nativeContext.memoryOperations(),
+                nativeDomain.memoryOperations(),
                 src,
                 0,
-                nativeContext.memoryOperations(),
+                nativeDomain.memoryOperations(),
                 dst,
                 0,
                 byteSize);
@@ -257,7 +257,7 @@ class MemoryOperationsAutoBufferTest {
         for (int i = 0; i < longCount; i += 1000) {
             assertEquals(
                     i,
-                    nativeContext.memoryAccess().readLong(dst, (long) i * Long.BYTES),
+                    nativeDomain.directAccess().readLong(dst, (long) i * Long.BYTES),
                     "Mismatch at long index " + i);
         }
     }
@@ -267,22 +267,22 @@ class MemoryOperationsAutoBufferTest {
     @Test
     void copyWithSourceOffset() {
         int byteSize = 8192;
-        Memory<MemorySegment> src = nativeContext.memoryAllocator().allocateMemory(byteSize);
-        Memory<float[]> dst = floatContext.memoryAllocator().allocateMemory(byteSize / 2);
+        Memory<MemorySegment> src = nativeDomain.memoryAllocator().allocateMemory(byteSize);
+        Memory<float[]> dst = floatDomain.memoryAllocator().allocateMemory(byteSize / 2);
 
         // Write to second half of source
         int floatCount = byteSize / 2 / Float.BYTES;
         for (int i = 0; i < floatCount; i++) {
-            nativeContext
-                    .memoryAccess()
+            nativeDomain
+                    .directAccess()
                     .writeFloat(src, byteSize / 2 + (long) i * Float.BYTES, i * 2.5f);
         }
 
         MemoryOperations.copy(
-                nativeContext.memoryOperations(),
+                nativeDomain.memoryOperations(),
                 src,
                 byteSize / 2, // source offset
-                floatContext.memoryOperations(),
+                floatDomain.memoryOperations(),
                 dst,
                 0,
                 byteSize / 2);
@@ -290,7 +290,7 @@ class MemoryOperationsAutoBufferTest {
         for (int i = 0; i < floatCount; i++) {
             assertEquals(
                     i * 2.5f,
-                    floatContext.memoryAccess().readFloat(dst, (long) i * Float.BYTES),
+                    floatDomain.directAccess().readFloat(dst, (long) i * Float.BYTES),
                     0.00001f);
         }
     }
@@ -298,19 +298,19 @@ class MemoryOperationsAutoBufferTest {
     @Test
     void copyWithDestOffset() {
         int byteSize = 8192;
-        Memory<MemorySegment> src = nativeContext.memoryAllocator().allocateMemory(byteSize / 2);
-        Memory<ByteBuffer> dst = directBufferContext.memoryAllocator().allocateMemory(byteSize);
+        Memory<MemorySegment> src = nativeDomain.memoryAllocator().allocateMemory(byteSize / 2);
+        Memory<ByteBuffer> dst = directBufferDomain.memoryAllocator().allocateMemory(byteSize);
 
         int intCount = byteSize / 2 / Integer.BYTES;
         for (int i = 0; i < intCount; i++) {
-            nativeContext.memoryAccess().writeInt(src, (long) i * Integer.BYTES, i + 100);
+            nativeDomain.directAccess().writeInt(src, (long) i * Integer.BYTES, i + 100);
         }
 
         MemoryOperations.copy(
-                nativeContext.memoryOperations(),
+                nativeDomain.memoryOperations(),
                 src,
                 0,
-                directBufferContext.memoryOperations(),
+                directBufferDomain.memoryOperations(),
                 dst,
                 byteSize / 2, // dest offset
                 byteSize / 2);
@@ -318,8 +318,8 @@ class MemoryOperationsAutoBufferTest {
         for (int i = 0; i < intCount; i++) {
             assertEquals(
                     i + 100,
-                    directBufferContext
-                            .memoryAccess()
+                    directBufferDomain
+                            .directAccess()
                             .readInt(dst, byteSize / 2 + (long) i * Integer.BYTES));
         }
     }
@@ -328,22 +328,22 @@ class MemoryOperationsAutoBufferTest {
     void copyWithBothOffsets() {
         int totalSize = 16384;
         int copySize = 4096;
-        Memory<MemorySegment> src = nativeContext.memoryAllocator().allocateMemory(totalSize);
-        Memory<ByteBuffer> dst = directBufferContext.memoryAllocator().allocateMemory(totalSize);
+        Memory<MemorySegment> src = nativeDomain.memoryAllocator().allocateMemory(totalSize);
+        Memory<ByteBuffer> dst = directBufferDomain.memoryAllocator().allocateMemory(totalSize);
 
         // Write to middle of source
         int srcOffset = 4096;
         int dstOffset = 8192;
         int longCount = copySize / Long.BYTES;
         for (int i = 0; i < longCount; i++) {
-            nativeContext.memoryAccess().writeLong(src, srcOffset + (long) i * Long.BYTES, i * 17L);
+            nativeDomain.directAccess().writeLong(src, srcOffset + (long) i * Long.BYTES, i * 17L);
         }
 
         MemoryOperations.copy(
-                nativeContext.memoryOperations(),
+                nativeDomain.memoryOperations(),
                 src,
                 srcOffset,
-                directBufferContext.memoryOperations(),
+                directBufferDomain.memoryOperations(),
                 dst,
                 dstOffset,
                 copySize);
@@ -351,18 +351,18 @@ class MemoryOperationsAutoBufferTest {
         for (int i = 0; i < longCount; i++) {
             assertEquals(
                     i * 17L,
-                    directBufferContext
-                            .memoryAccess()
+                    directBufferDomain
+                            .directAccess()
                             .readLong(dst, dstOffset + (long) i * Long.BYTES));
         }
     }
 
-    // ========== Cross-context combinations ==========
+    // ========== Cross-domain combinations ==========
 
-    static Stream<Arguments> contextPairs() {
-        // Only include pairs where we can set up and verify data using byte-capable contexts
+    static Stream<Arguments> domainPairs() {
+        // Only include pairs where we can set up and verify data using byte-capable domains
         return Stream.of(
-                // byte[] <-> other byte-capable contexts
+                // byte[] <-> other byte-capable domains
                 Arguments.of("byte[] -> MemorySegment", "bytes", "native"),
                 Arguments.of("MemorySegment -> byte[]", "native", "bytes"),
                 Arguments.of("byte[] -> ByteBuffer", "bytes", "buffer"),
@@ -380,12 +380,12 @@ class MemoryOperationsAutoBufferTest {
     }
 
     @ParameterizedTest(name = "{0}")
-    @MethodSource("contextPairs")
-    void copyBetweenContextPairs(String name, String srcType, String dstType) {
+    @MethodSource("domainPairs")
+    void copyBetweenDomainPairs(String name, String srcType, String dstType) {
         int byteSize = 8192; // 8K - requires chunking with 4K buffer
 
-        MemoryContext<?> srcCtx = getContext(srcType);
-        MemoryContext<?> dstCtx = getContext(dstType);
+        MemoryDomain<?> srcCtx = getDomain(srcType);
+        MemoryDomain<?> dstCtx = getDomain(dstType);
 
         Memory<?> src = srcCtx.memoryAllocator().allocateMemory(byteSize);
         Memory<?> dst = dstCtx.memoryAllocator().allocateMemory(byteSize);
@@ -403,9 +403,9 @@ class MemoryOperationsAutoBufferTest {
         }
     }
 
-    // ========== Primitive array context tests (use native context for setup/verify) ==========
+    // ========== Primitive array domain tests (use native domain for setup/verify) ==========
 
-    static Stream<Arguments> primitiveContexts() {
+    static Stream<Arguments> primitiveDomains() {
         return Stream.of(
                 Arguments.of("short[]", "shorts"),
                 Arguments.of("int[]", "ints"),
@@ -415,90 +415,90 @@ class MemoryOperationsAutoBufferTest {
     }
 
     @ParameterizedTest(name = "MemorySegment -> {0}")
-    @MethodSource("primitiveContexts")
-    void copyFromNativeToPrimitiveContext(String name, String type) {
+    @MethodSource("primitiveDomains")
+    void copyFromNativeToPrimitiveDomain(String name, String type) {
         int byteSize = 8192;
 
-        MemoryContext<?> primitiveCtx = getContext(type);
-        Memory<MemorySegment> src = nativeContext.memoryAllocator().allocateMemory(byteSize);
+        MemoryDomain<?> primitiveCtx = getDomain(type);
+        Memory<MemorySegment> src = nativeDomain.memoryAllocator().allocateMemory(byteSize);
         Memory<?> dst = primitiveCtx.memoryAllocator().allocateMemory(byteSize);
 
         // Write pattern to native
         for (int i = 0; i < byteSize; i += 64) {
-            nativeContext.memoryAccess().writeByte(src, i, (byte) ((i / 64) & 0xFF));
+            nativeDomain.directAccess().writeByte(src, i, (byte) ((i / 64) & 0xFF));
         }
 
         // Copy native -> primitive
-        copyUntyped(nativeContext, src, 0, primitiveCtx, dst, 0, byteSize);
+        copyUntyped(nativeDomain, src, 0, primitiveCtx, dst, 0, byteSize);
 
         // Copy primitive -> new native buffer to verify
-        Memory<MemorySegment> verify = nativeContext.memoryAllocator().allocateMemory(byteSize);
-        copyUntyped(primitiveCtx, dst, 0, nativeContext, verify, 0, byteSize);
+        Memory<MemorySegment> verify = nativeDomain.memoryAllocator().allocateMemory(byteSize);
+        copyUntyped(primitiveCtx, dst, 0, nativeDomain, verify, 0, byteSize);
 
         for (int i = 0; i < byteSize; i += 64) {
             assertEquals(
                     (byte) ((i / 64) & 0xFF),
-                    nativeContext.memoryAccess().readByte(verify, i),
+                    nativeDomain.directAccess().readByte(verify, i),
                     "Mismatch at offset " + i);
         }
     }
 
     @ParameterizedTest(name = "{0} -> MemorySegment")
-    @MethodSource("primitiveContexts")
-    void copyFromPrimitiveContextToNative(String name, String type) {
+    @MethodSource("primitiveDomains")
+    void copyFromPrimitiveDomainToNative(String name, String type) {
         int byteSize = 8192;
 
-        MemoryContext<?> primitiveCtx = getContext(type);
+        MemoryDomain<?> primitiveCtx = getDomain(type);
 
         // Write to native first, copy to primitive, then copy back and verify
-        Memory<MemorySegment> initial = nativeContext.memoryAllocator().allocateMemory(byteSize);
+        Memory<MemorySegment> initial = nativeDomain.memoryAllocator().allocateMemory(byteSize);
         Memory<?> primitive = primitiveCtx.memoryAllocator().allocateMemory(byteSize);
-        Memory<MemorySegment> dst = nativeContext.memoryAllocator().allocateMemory(byteSize);
+        Memory<MemorySegment> dst = nativeDomain.memoryAllocator().allocateMemory(byteSize);
 
         // Write pattern
         for (int i = 0; i < byteSize; i += 64) {
-            nativeContext.memoryAccess().writeByte(initial, i, (byte) ((i / 64 + 50) & 0xFF));
+            nativeDomain.directAccess().writeByte(initial, i, (byte) ((i / 64 + 50) & 0xFF));
         }
 
         // Copy native -> primitive -> native
-        copyUntyped(nativeContext, initial, 0, primitiveCtx, primitive, 0, byteSize);
-        copyUntyped(primitiveCtx, primitive, 0, nativeContext, dst, 0, byteSize);
+        copyUntyped(nativeDomain, initial, 0, primitiveCtx, primitive, 0, byteSize);
+        copyUntyped(primitiveCtx, primitive, 0, nativeDomain, dst, 0, byteSize);
 
         for (int i = 0; i < byteSize; i += 64) {
             assertEquals(
                     (byte) ((i / 64 + 50) & 0xFF),
-                    nativeContext.memoryAccess().readByte(dst, i),
+                    nativeDomain.directAccess().readByte(dst, i),
                     "Mismatch at offset " + i);
         }
     }
 
     @ParameterizedTest(name = "{0} -> {0} (same type)")
-    @MethodSource("primitiveContexts")
-    void copyWithinSamePrimitiveContextType(String name, String type) {
+    @MethodSource("primitiveDomains")
+    void copyWithinSamePrimitiveDomainType(String name, String type) {
         int byteSize = 8192;
 
-        MemoryContext<?> ctx = getContext(type);
+        MemoryDomain<?> ctx = getDomain(type);
         Memory<?> src = ctx.memoryAllocator().allocateMemory(byteSize);
         Memory<?> dst = ctx.memoryAllocator().allocateMemory(byteSize);
 
         // Set up via native
-        Memory<MemorySegment> setup = nativeContext.memoryAllocator().allocateMemory(byteSize);
+        Memory<MemorySegment> setup = nativeDomain.memoryAllocator().allocateMemory(byteSize);
         for (int i = 0; i < byteSize; i += 64) {
-            nativeContext.memoryAccess().writeByte(setup, i, (byte) ((i / 64 + 100) & 0xFF));
+            nativeDomain.directAccess().writeByte(setup, i, (byte) ((i / 64 + 100) & 0xFF));
         }
-        copyUntyped(nativeContext, setup, 0, ctx, src, 0, byteSize);
+        copyUntyped(nativeDomain, setup, 0, ctx, src, 0, byteSize);
 
-        // Copy within same context type
+        // Copy within same domain type
         copyUntyped(ctx, src, 0, ctx, dst, 0, byteSize);
 
         // Verify via native
-        Memory<MemorySegment> verify = nativeContext.memoryAllocator().allocateMemory(byteSize);
-        copyUntyped(ctx, dst, 0, nativeContext, verify, 0, byteSize);
+        Memory<MemorySegment> verify = nativeDomain.memoryAllocator().allocateMemory(byteSize);
+        copyUntyped(ctx, dst, 0, nativeDomain, verify, 0, byteSize);
 
         for (int i = 0; i < byteSize; i += 64) {
             assertEquals(
                     (byte) ((i / 64 + 100) & 0xFF),
-                    nativeContext.memoryAccess().readByte(verify, i),
+                    nativeDomain.directAccess().readByte(verify, i),
                     "Mismatch at offset " + i);
         }
     }
@@ -509,43 +509,43 @@ class MemoryOperationsAutoBufferTest {
     void copyNonAlignedSize() {
         // Copy 4099 bytes - just over 4K, not aligned
         int byteSize = 4099;
-        Memory<MemorySegment> src = nativeContext.memoryAllocator().allocateMemory(byteSize);
-        Memory<ByteBuffer> dst = directBufferContext.memoryAllocator().allocateMemory(byteSize);
+        Memory<MemorySegment> src = nativeDomain.memoryAllocator().allocateMemory(byteSize);
+        Memory<ByteBuffer> dst = directBufferDomain.memoryAllocator().allocateMemory(byteSize);
 
         // Write bytes at start and end
-        nativeContext.memoryAccess().writeByte(src, 0, (byte) 0xAB);
-        nativeContext.memoryAccess().writeByte(src, byteSize - 1, (byte) 0xCD);
+        nativeDomain.directAccess().writeByte(src, 0, (byte) 0xAB);
+        nativeDomain.directAccess().writeByte(src, byteSize - 1, (byte) 0xCD);
 
         MemoryOperations.copy(
-                nativeContext.memoryOperations(),
+                nativeDomain.memoryOperations(),
                 src,
                 0,
-                directBufferContext.memoryOperations(),
+                directBufferDomain.memoryOperations(),
                 dst,
                 0,
                 byteSize);
 
-        assertEquals((byte) 0xAB, directBufferContext.memoryAccess().readByte(dst, 0));
-        assertEquals((byte) 0xCD, directBufferContext.memoryAccess().readByte(dst, byteSize - 1));
+        assertEquals((byte) 0xAB, directBufferDomain.directAccess().readByte(dst, 0));
+        assertEquals((byte) 0xCD, directBufferDomain.directAccess().readByte(dst, byteSize - 1));
     }
 
     @Test
     void copyPrimeNumberBytes() {
         // 7919 is prime - tests odd chunking
         int byteSize = 7919;
-        Memory<MemorySegment> src = nativeContext.memoryAllocator().allocateMemory(byteSize);
-        Memory<ByteBuffer> dst = bufferContext.memoryAllocator().allocateMemory(byteSize);
+        Memory<MemorySegment> src = nativeDomain.memoryAllocator().allocateMemory(byteSize);
+        Memory<ByteBuffer> dst = bufferDomain.memoryAllocator().allocateMemory(byteSize);
 
         // Write pattern
         for (int i = 0; i < byteSize; i += 100) {
-            nativeContext.memoryAccess().writeByte(src, i, (byte) (i % 256));
+            nativeDomain.directAccess().writeByte(src, i, (byte) (i % 256));
         }
 
         MemoryOperations.copy(
-                nativeContext.memoryOperations(),
+                nativeDomain.memoryOperations(),
                 src,
                 0,
-                bufferContext.memoryOperations(),
+                bufferDomain.memoryOperations(),
                 dst,
                 0,
                 byteSize);
@@ -553,7 +553,7 @@ class MemoryOperationsAutoBufferTest {
         for (int i = 0; i < byteSize; i += 100) {
             assertEquals(
                     (byte) (i % 256),
-                    bufferContext.memoryAccess().readByte(dst, i),
+                    bufferDomain.directAccess().readByte(dst, i),
                     "At offset " + i);
         }
     }
@@ -563,18 +563,18 @@ class MemoryOperationsAutoBufferTest {
     @Test
     void copyFailsWhenSourceOffsetNotAlignedToGranularity() {
         // int[] has 4-byte granularity, offset 2 is not aligned
-        Memory<int[]> src = intContext.memoryAllocator().allocateMemory(32);
-        Memory<MemorySegment> dst = nativeContext.memoryAllocator().allocateMemory(32);
+        Memory<int[]> src = intDomain.memoryAllocator().allocateMemory(32);
+        Memory<MemorySegment> dst = nativeDomain.memoryAllocator().allocateMemory(32);
 
         IllegalArgumentException ex =
                 assertThrows(
                         IllegalArgumentException.class,
                         () ->
                                 MemoryOperations.copy(
-                                        intContext.memoryOperations(),
+                                        intDomain.memoryOperations(),
                                         src,
                                         2, // not aligned to 4
-                                        nativeContext.memoryOperations(),
+                                        nativeDomain.memoryOperations(),
                                         dst,
                                         0,
                                         16));
@@ -586,18 +586,18 @@ class MemoryOperationsAutoBufferTest {
     @Test
     void copyFailsWhenDestOffsetNotAlignedToGranularity() {
         // long[] has 8-byte granularity, offset 4 is not aligned
-        Memory<MemorySegment> src = nativeContext.memoryAllocator().allocateMemory(32);
-        Memory<long[]> dst = longContext.memoryAllocator().allocateMemory(32);
+        Memory<MemorySegment> src = nativeDomain.memoryAllocator().allocateMemory(32);
+        Memory<long[]> dst = longDomain.memoryAllocator().allocateMemory(32);
 
         IllegalArgumentException ex =
                 assertThrows(
                         IllegalArgumentException.class,
                         () ->
                                 MemoryOperations.copy(
-                                        nativeContext.memoryOperations(),
+                                        nativeDomain.memoryOperations(),
                                         src,
                                         0,
-                                        longContext.memoryOperations(),
+                                        longDomain.memoryOperations(),
                                         dst,
                                         4, // not aligned to 8
                                         16));
@@ -609,18 +609,18 @@ class MemoryOperationsAutoBufferTest {
     @Test
     void copyFailsWhenByteSizeNotMultipleOfSourceGranularity() {
         // float[] has 4-byte granularity, size 10 is not a multiple of 4
-        Memory<float[]> src = floatContext.memoryAllocator().allocateMemory(32);
-        Memory<MemorySegment> dst = nativeContext.memoryAllocator().allocateMemory(32);
+        Memory<float[]> src = floatDomain.memoryAllocator().allocateMemory(32);
+        Memory<MemorySegment> dst = nativeDomain.memoryAllocator().allocateMemory(32);
 
         IllegalArgumentException ex =
                 assertThrows(
                         IllegalArgumentException.class,
                         () ->
                                 MemoryOperations.copy(
-                                        floatContext.memoryOperations(),
+                                        floatDomain.memoryOperations(),
                                         src,
                                         0,
-                                        nativeContext.memoryOperations(),
+                                        nativeDomain.memoryOperations(),
                                         dst,
                                         0,
                                         10)); // not a multiple of 4
@@ -633,18 +633,18 @@ class MemoryOperationsAutoBufferTest {
     void copyFailsWhenByteSizeNotMultipleOfDestGranularity() {
         // int[] has 4-byte granularity, double[] has 8-byte granularity
         // size 12 is multiple of 4 but not of 8
-        Memory<int[]> src = intContext.memoryAllocator().allocateMemory(32);
-        Memory<double[]> dst = doubleContext.memoryAllocator().allocateMemory(32);
+        Memory<int[]> src = intDomain.memoryAllocator().allocateMemory(32);
+        Memory<double[]> dst = doubleDomain.memoryAllocator().allocateMemory(32);
 
         IllegalArgumentException ex =
                 assertThrows(
                         IllegalArgumentException.class,
                         () ->
                                 MemoryOperations.copy(
-                                        intContext.memoryOperations(),
+                                        intDomain.memoryOperations(),
                                         src,
                                         0,
-                                        doubleContext.memoryOperations(),
+                                        doubleDomain.memoryOperations(),
                                         dst,
                                         0,
                                         12)); // multiple of 4 but not 8
@@ -656,34 +656,34 @@ class MemoryOperationsAutoBufferTest {
     @Test
     void copySucceedsWithAlignedOffsetsAndSize() {
         // All aligned: int[] (4-byte granularity), offset 8, size 16
-        Memory<int[]> src = intContext.memoryAllocator().allocateMemory(32);
-        Memory<MemorySegment> dst = nativeContext.memoryAllocator().allocateMemory(32);
+        Memory<int[]> src = intDomain.memoryAllocator().allocateMemory(32);
+        Memory<MemorySegment> dst = nativeDomain.memoryAllocator().allocateMemory(32);
 
         assertDoesNotThrow(
                 () ->
                         MemoryOperations.copy(
-                                intContext.memoryOperations(),
+                                intDomain.memoryOperations(),
                                 src,
                                 8, // aligned to 4
-                                nativeContext.memoryOperations(),
+                                nativeDomain.memoryOperations(),
                                 dst,
                                 4, // aligned to 1 (native)
                                 16)); // multiple of 4
     }
 
     @Test
-    void copyBetweenLargeGranularityContextsWithProperAlignment() {
+    void copyBetweenLargeGranularityDomainsWithProperAlignment() {
         // long[] (8-byte) to double[] (8-byte): offset and size must be multiples of 8
-        Memory<long[]> src = longContext.memoryAllocator().allocateMemory(64);
-        Memory<double[]> dst = doubleContext.memoryAllocator().allocateMemory(64);
+        Memory<long[]> src = longDomain.memoryAllocator().allocateMemory(64);
+        Memory<double[]> dst = doubleDomain.memoryAllocator().allocateMemory(64);
 
         assertDoesNotThrow(
                 () ->
                         MemoryOperations.copy(
-                                longContext.memoryOperations(),
+                                longDomain.memoryOperations(),
                                 src,
                                 16, // multiple of 8
-                                doubleContext.memoryOperations(),
+                                doubleDomain.memoryOperations(),
                                 dst,
                                 8, // multiple of 8
                                 24)); // multiple of 8
@@ -692,18 +692,18 @@ class MemoryOperationsAutoBufferTest {
     @Test
     void copyFailsWithOddSourceOffsetOnShortArray() {
         // short[] has 2-byte granularity
-        Memory<short[]> src = shortContext.memoryAllocator().allocateMemory(32);
-        Memory<MemorySegment> dst = nativeContext.memoryAllocator().allocateMemory(32);
+        Memory<short[]> src = shortDomain.memoryAllocator().allocateMemory(32);
+        Memory<MemorySegment> dst = nativeDomain.memoryAllocator().allocateMemory(32);
 
         IllegalArgumentException ex =
                 assertThrows(
                         IllegalArgumentException.class,
                         () ->
                                 MemoryOperations.copy(
-                                        shortContext.memoryOperations(),
+                                        shortDomain.memoryOperations(),
                                         src,
                                         3, // not aligned to 2
-                                        nativeContext.memoryOperations(),
+                                        nativeDomain.memoryOperations(),
                                         dst,
                                         0,
                                         16));
@@ -714,18 +714,18 @@ class MemoryOperationsAutoBufferTest {
     @Test
     void copyFailsWithOddByteSizeToShortArray() {
         // short[] has 2-byte granularity, size 15 is odd
-        Memory<MemorySegment> src = nativeContext.memoryAllocator().allocateMemory(32);
-        Memory<short[]> dst = shortContext.memoryAllocator().allocateMemory(32);
+        Memory<MemorySegment> src = nativeDomain.memoryAllocator().allocateMemory(32);
+        Memory<short[]> dst = shortDomain.memoryAllocator().allocateMemory(32);
 
         IllegalArgumentException ex =
                 assertThrows(
                         IllegalArgumentException.class,
                         () ->
                                 MemoryOperations.copy(
-                                        nativeContext.memoryOperations(),
+                                        nativeDomain.memoryOperations(),
                                         src,
                                         0,
-                                        shortContext.memoryOperations(),
+                                        shortDomain.memoryOperations(),
                                         dst,
                                         0,
                                         15)); // odd, not multiple of 2
@@ -736,9 +736,9 @@ class MemoryOperationsAutoBufferTest {
     @Test
     void copyWithBufferAlsoRespectsGranularity() {
         // Test the overload that takes an explicit buffer
-        Memory<long[]> src = longContext.memoryAllocator().allocateMemory(64);
-        Memory<double[]> dst = doubleContext.memoryAllocator().allocateMemory(64);
-        Memory<MemorySegment> buffer = nativeContext.memoryAllocator().allocateMemory(4096);
+        Memory<long[]> src = longDomain.memoryAllocator().allocateMemory(64);
+        Memory<double[]> dst = doubleDomain.memoryAllocator().allocateMemory(64);
+        Memory<MemorySegment> buffer = nativeDomain.memoryAllocator().allocateMemory(4096);
 
         // Should fail: size 12 is not multiple of 8
         IllegalArgumentException ex =
@@ -746,10 +746,10 @@ class MemoryOperationsAutoBufferTest {
                         IllegalArgumentException.class,
                         () ->
                                 MemoryOperations.copy(
-                                        longContext.memoryOperations(),
+                                        longDomain.memoryOperations(),
                                         src,
                                         0,
-                                        doubleContext.memoryOperations(),
+                                        doubleDomain.memoryOperations(),
                                         dst,
                                         0,
                                         12, // not multiple of 8
@@ -760,37 +760,37 @@ class MemoryOperationsAutoBufferTest {
 
     // ========== Helpers ==========
 
-    private MemoryContext<?> getContext(String type) {
+    private MemoryDomain<?> getDomain(String type) {
         return switch (type) {
-            case "bytes" -> byteContext;
-            case "shorts" -> shortContext;
-            case "ints" -> intContext;
-            case "longs" -> longContext;
-            case "floats" -> floatContext;
-            case "doubles" -> doubleContext;
-            case "native" -> nativeContext;
-            case "buffer" -> bufferContext;
-            case "direct" -> directBufferContext;
-            default -> throw new IllegalArgumentException("Unknown context: " + type);
+            case "bytes" -> byteDomain;
+            case "shorts" -> shortDomain;
+            case "ints" -> intDomain;
+            case "longs" -> longDomain;
+            case "floats" -> floatDomain;
+            case "doubles" -> doubleDomain;
+            case "native" -> nativeDomain;
+            case "buffer" -> bufferDomain;
+            case "direct" -> directBufferDomain;
+            default -> throw new IllegalArgumentException("Unknown domain: " + type);
         };
     }
 
     @SuppressWarnings("unchecked")
-    private static <B> void writeByte(MemoryContext<B> ctx, Memory<?> mem, long offset, byte v) {
-        ctx.memoryAccess().writeByte((Memory<B>) mem, offset, v);
+    private static <B> void writeByte(MemoryDomain<B> ctx, Memory<?> mem, long offset, byte v) {
+        ctx.directAccess().writeByte((Memory<B>) mem, offset, v);
     }
 
     @SuppressWarnings("unchecked")
-    private static <B> byte readByte(MemoryContext<B> ctx, Memory<?> mem, long offset) {
-        return ctx.memoryAccess().readByte((Memory<B>) mem, offset);
+    private static <B> byte readByte(MemoryDomain<B> ctx, Memory<?> mem, long offset) {
+        return ctx.directAccess().readByte((Memory<B>) mem, offset);
     }
 
     @SuppressWarnings("unchecked")
     private static <S, D> void copyUntyped(
-            MemoryContext<S> srcCtx,
+            MemoryDomain<S> srcCtx,
             Memory<?> src,
             long srcOffset,
-            MemoryContext<D> dstCtx,
+            MemoryDomain<D> dstCtx,
             Memory<?> dst,
             long dstOffset,
             long byteSize) {

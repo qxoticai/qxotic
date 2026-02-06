@@ -12,36 +12,37 @@ import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.ExecutionMode;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
-import ai.qxotic.jota.backend.Backend;
 import ai.qxotic.jota.backend.DefaultBackendRegistry;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.backend.DeviceRuntime;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryHelpers;
 import ai.qxotic.jota.memory.MemoryView;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;
 
 class ExecutionModeTest {
 
-    private static final MemoryContext<float[]> CONTEXT = ContextFactory.ofFloats();
+    private static final MemoryDomain<float[]> CONTEXT = DomainFactory.ofFloats();
 
-    private static final ComputeEngine ENGINE =
+    private static final ComputeEngine COMPUTE_BACKEND =
             new ComputeEngine() {
                 @Override
-                public ComputeBackend backendFor(Device device) {
-                    throw new UnsupportedOperationException("No backend for " + device);
+                public Device device() {
+                    return Device.PANAMA;
                 }
 
                 @Override
-                public KernelCache cache() {
-                    return DiskKernelCache.defaultCache();
+                public MemoryView<?> execute(
+                        ai.qxotic.jota.ir.tir.TIRGraph graph, java.util.List<Tensor> inputs) {
+                    throw new UnsupportedOperationException("No backend execution in this test");
                 }
             };
 
     @Test
     void eagerModeSelectsEagerOps() {
         DefaultBackendRegistry registry = new DefaultBackendRegistry();
-        registry.register(new StubBackend(CONTEXT, ENGINE));
+        registry.register(new StubDeviceRuntime(CONTEXT, COMPUTE_BACKEND));
         Environment environment =
                 new Environment(CONTEXT.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
@@ -50,7 +51,7 @@ class ExecutionModeTest {
                 () -> {
                     TensorOps ops = TensorOpsContext.require();
                     assertInstanceOf(EagerTensorOps.class, ops);
-                    assertSame(CONTEXT, ops.context());
+                    assertSame(CONTEXT, ops.memoryDomain());
                     return null;
                 });
     }
@@ -58,7 +59,7 @@ class ExecutionModeTest {
     @Test
     void lazyModeReturnsLazyTensor() {
         DefaultBackendRegistry registry = new DefaultBackendRegistry();
-        registry.register(new StubBackend(CONTEXT, ENGINE));
+        registry.register(new StubDeviceRuntime(CONTEXT, COMPUTE_BACKEND));
         Environment environment =
                 new Environment(Device.PANAMA, DataType.FP32, registry, ExecutionMode.LAZY);
 
@@ -77,12 +78,12 @@ class ExecutionModeTest {
 
     @Test
     void eagerOpsMaterializeScalarSqrt() {
-        MemoryContext<MemorySegment> segmentContext = ContextFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> segmentDomain = DomainFactory.ofMemorySegment();
         DefaultBackendRegistry registry = new DefaultBackendRegistry();
-        registry.register(new StubBackend(segmentContext, ENGINE));
+        registry.register(new StubDeviceRuntime(segmentDomain, COMPUTE_BACKEND));
         Environment environment =
                 new Environment(
-                        segmentContext.device(), DataType.FP32, registry, ExecutionMode.EAGER);
+                        segmentDomain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
 
         Environment.with(
                 environment,
@@ -99,7 +100,7 @@ class ExecutionModeTest {
                     assertEquals(DataType.FP32, output.dataType());
                     assertEquals(Shape.scalar(), output.shape());
                     assertEquals(
-                            (float) Math.sqrt(Math.PI), readFloat(segmentContext, output), 0.0001f);
+                            (float) Math.sqrt(Math.PI), readFloat(segmentDomain, output), 0.0001f);
                     return null;
                 });
     }
@@ -108,39 +109,39 @@ class ExecutionModeTest {
         return MemoryHelpers.arange(CONTEXT, DataType.FP32, shape.size()).view(shape);
     }
 
-    private static float readFloat(MemoryContext<MemorySegment> context, MemoryView<?> view) {
+    private static float readFloat(MemoryDomain<MemorySegment> domain, MemoryView<?> view) {
         @SuppressWarnings("unchecked")
         MemoryView<MemorySegment> typedView = (MemoryView<MemorySegment>) view;
         long offset = Indexing.linearToOffset(typedView, 0);
-        return context.memoryAccess().readFloat(typedView.memory(), offset);
+        return domain.directAccess().readFloat(typedView.memory(), offset);
     }
 
-    private static final class StubBackend implements Backend {
-        private final MemoryContext<?> context;
-        private final ComputeEngine engine;
+    private static final class StubDeviceRuntime implements DeviceRuntime {
+        private final MemoryDomain<?> memoryDomain;
+        private final ComputeEngine computeEngine;
 
-        private StubBackend(MemoryContext<?> context, ComputeEngine engine) {
-            this.context = context;
-            this.engine = engine;
+        private StubDeviceRuntime(MemoryDomain<?> memoryDomain, ComputeEngine computeEngine) {
+            this.memoryDomain = memoryDomain;
+            this.computeEngine = computeEngine;
         }
 
         @Override
         public Device device() {
-            return context.device();
+            return memoryDomain.device();
         }
 
         @Override
-        public MemoryContext<?> memoryContext() {
-            return context;
+        public MemoryDomain<?> memoryDomain() {
+            return memoryDomain;
         }
 
         @Override
         public ComputeEngine computeEngine() {
-            return engine;
+            return computeEngine;
         }
 
         @Override
-        public java.util.Optional<ai.qxotic.jota.backend.KernelService> kernels() {
+        public java.util.Optional<ai.qxotic.jota.backend.KernelService> kernelService() {
             return java.util.Optional.empty();
         }
     }

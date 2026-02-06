@@ -1,10 +1,13 @@
 package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.Device;
+import ai.qxotic.jota.ir.tir.TIRGraph;
+import ai.qxotic.jota.memory.MemoryView;
+import java.util.List;
 
 public interface ComputeEngine {
 
-    ComputeBackend backendFor(Device device);
+    Device device();
 
-    KernelCache cache();
+    MemoryView<?> execute(TIRGraph graph, List<Tensor> inputs);
 }

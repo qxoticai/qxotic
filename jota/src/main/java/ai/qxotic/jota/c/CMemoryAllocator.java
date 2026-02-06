@@ -15,8 +15,7 @@ final class CMemoryAllocator implements MemoryAllocator<MemorySegment>, MemoryAr
 
     private static final Unsafe UNSAFE = initializeUnsafe();
 
-    private final Set<CMemory> allocations =
-            Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private final Set<CMemory> allocations = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     @Override
     public Device device() {

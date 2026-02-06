@@ -3,29 +3,29 @@ package ai.qxotic.jota.hip;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import ai.qxotic.jota.DataType;
+import ai.qxotic.jota.Device;
+import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.MemoryAccess;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import ai.qxotic.jota.tensor.Tensor;
 import ai.qxotic.jota.tensor.Tracer;
-import ai.qxotic.jota.Environment;
-import ai.qxotic.jota.Device;
+import ai.qxotic.jota.testutil.TestKernels;
+import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
 import java.util.List;
-import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
-import ai.qxotic.jota.testutil.TestKernels;
 
 class HipKernelSmokeTest {
 
-    private static final int FRACTAL_WIDTH = 64;
-    private static final int FRACTAL_HEIGHT = 64;
-    private static final int FRACTAL_ITERATIONS = 8;
+    private static final int FRACTAL_WIDTH = 320;
+    private static final int FRACTAL_HEIGHT = 240;
+    private static final int FRACTAL_ITERATIONS = 32;
 
     @Test
     void launchesVecAddKernel() throws Exception {
@@ -41,7 +41,7 @@ class HipKernelSmokeTest {
             b[i] = n - i;
         }
 
-        MemoryContext<MemorySegment> host = ContextFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> host = DomainFactory.ofMemorySegment();
         var hostMemA = host.memoryAllocator().allocateMemory(DataType.FP32, n);
         var hostMemB = host.memoryAllocator().allocateMemory(DataType.FP32, n);
         MemoryView<MemorySegment> hostA =
@@ -49,14 +49,14 @@ class HipKernelSmokeTest {
         MemoryView<MemorySegment> hostB =
                 MemoryView.of(hostMemB, DataType.FP32, Layout.rowMajor(Shape.flat(n)));
 
-        MemoryAccess<MemorySegment> hostAccess = host.memoryAccess();
+        MemoryAccess<MemorySegment> hostAccess = host.directAccess();
         for (int i = 0; i < n; i++) {
             long offset = Indexing.linearToOffset(hostA, i);
             hostAccess.writeFloat(hostA.memory(), offset, a[i]);
             hostAccess.writeFloat(hostB.memory(), offset, b[i]);
         }
 
-        HipMemoryContext device = HipMemoryContext.instance();
+        HipMemoryDomain device = HipMemoryDomain.instance();
         MemoryView<HipDevicePtr> devA =
                 MemoryView.of(
                         device.memoryAllocator().allocateMemory(DataType.FP32, n),
@@ -86,7 +86,7 @@ class HipKernelSmokeTest {
         @SuppressWarnings("unchecked")
         MemoryView<MemorySegment> hostView = (MemoryView<MemorySegment>) output;
 
-        MemoryAccess<MemorySegment> access = host.memoryAccess();
+        MemoryAccess<MemorySegment> access = host.directAccess();
         for (int i = 0; i < n; i++) {
             long offset = Indexing.linearToOffset(hostView, i);
             float value = access.readFloat(hostView.memory(), offset);
@@ -106,17 +106,17 @@ class HipKernelSmokeTest {
             values[i] = i * 0.25f - 2.0f;
         }
 
-        MemoryContext<MemorySegment> host = ContextFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> host = DomainFactory.ofMemorySegment();
         var hostMem = host.memoryAllocator().allocateMemory(DataType.FP32, n);
         MemoryView<MemorySegment> hostInput =
                 MemoryView.of(hostMem, DataType.FP32, Layout.rowMajor(Shape.flat(n)));
-        MemoryAccess<MemorySegment> hostAccess = host.memoryAccess();
+        MemoryAccess<MemorySegment> hostAccess = host.directAccess();
         for (int i = 0; i < n; i++) {
             long offset = Indexing.linearToOffset(hostInput, i);
             hostAccess.writeFloat(hostInput.memory(), offset, values[i]);
         }
 
-        HipMemoryContext device = HipMemoryContext.instance();
+        HipMemoryDomain device = HipMemoryDomain.instance();
         MemoryView<HipDevicePtr> devInput =
                 MemoryView.of(
                         device.memoryAllocator().allocateMemory(DataType.FP32, n),
@@ -124,14 +124,15 @@ class HipKernelSmokeTest {
                         Layout.rowMajor(Shape.flat(n)));
         long byteSize = (long) n * Float.BYTES;
         device.memoryOperations()
-                .copyFromNative(hostInput.memory(), hostInput.byteOffset(), devInput.memory(), 0, byteSize);
+                .copyFromNative(
+                        hostInput.memory(), hostInput.byteOffset(), devInput.memory(), 0, byteSize);
 
         Tensor inputTensor = Tensor.of(devInput);
         Tensor traced = Tracer.trace(inputTensor, t -> t.multiply(2.0f).add(1.0f));
         MemoryView<?> output = traced.materialize();
 
         MemoryView<MemorySegment> hostOutput = toHost(host, device, output);
-        MemoryAccess<MemorySegment> access = host.memoryAccess();
+        MemoryAccess<MemorySegment> access = host.directAccess();
         for (int i = 0; i < n; i++) {
             long offset = Indexing.linearToOffset(hostOutput, i);
             float value = access.readFloat(hostOutput.memory(), offset);
@@ -171,10 +172,10 @@ class HipKernelSmokeTest {
                             return traced.materialize();
                         });
 
-        MemoryContext<MemorySegment> host = ContextFactory.ofMemorySegment();
-        HipMemoryContext device = HipMemoryContext.instance();
+        MemoryDomain<MemorySegment> host = DomainFactory.ofMemorySegment();
+        HipMemoryDomain device = HipMemoryDomain.instance();
         MemoryView<MemorySegment> hostOutput = toHost(host, device, output);
-        MemoryAccess<MemorySegment> access = host.memoryAccess();
+        MemoryAccess<MemorySegment> access = host.directAccess();
 
         TestKernels.writeMandelbrotPpm(
                 host,
@@ -191,71 +192,12 @@ class HipKernelSmokeTest {
         long centerIdx = (long) (height / 2) * width + (width / 2);
         assertEquals(
                 TestKernels.mandelbrotIter(height / 2, width / 2, width, height, iterations),
-                access.readFloat(hostOutput.memory(), Indexing.linearToOffset(hostOutput, centerIdx)),
+                access.readFloat(
+                        hostOutput.memory(), Indexing.linearToOffset(hostOutput, centerIdx)),
                 1e-3f);
         long lastIdx = (long) (height - 1) * width + (width - 1);
         assertEquals(
                 TestKernels.mandelbrotIter(height - 1, width - 1, width, height, iterations),
-                access.readFloat(hostOutput.memory(), Indexing.linearToOffset(hostOutput, lastIdx)),
-                1e-3f);
-    }
-
-    @Test
-    void launchesLirPhoenixKernel() throws Exception {
-        Assumptions.assumeTrue(HipRuntime.isAvailable());
-        assumeHipccAvailable();
-        assumeFractalsEnabled();
-
-        int width = FRACTAL_WIDTH;
-        int height = FRACTAL_HEIGHT;
-        int iterations = FRACTAL_ITERATIONS;
-
-        Environment current = Environment.current();
-        Environment hipEnv =
-                new Environment(
-                        Device.HIP,
-                        current.defaultFloat(),
-                        current.backends(),
-                        current.executionMode());
-
-        MemoryView<?> output =
-                Environment.with(
-                        hipEnv,
-                        () -> {
-                            Tensor traced =
-                                    Tracer.trace(
-                                            List.of(),
-                                            inputs ->
-                                                    TestKernels.phoenixTensor(
-                                                            width, height, iterations));
-                            return traced.materialize();
-                        });
-
-        MemoryContext<MemorySegment> host = ContextFactory.ofMemorySegment();
-        HipMemoryContext device = HipMemoryContext.instance();
-        MemoryView<MemorySegment> hostOutput = toHost(host, device, output);
-        MemoryAccess<MemorySegment> access = host.memoryAccess();
-
-        TestKernels.writePhoenixPpm(
-                host,
-                hostOutput,
-                Path.of("target", "phoenix-hip-lir.ppm"),
-                width,
-                height,
-                iterations);
-
-        assertEquals(
-                TestKernels.phoenixIter(0, 0, width, height, iterations),
-                access.readFloat(hostOutput.memory(), Indexing.linearToOffset(hostOutput, 0)),
-                1e-3f);
-        long centerIdx = (long) (height / 2) * width + (width / 2);
-        assertEquals(
-                TestKernels.phoenixIter(height / 2, width / 2, width, height, iterations),
-                access.readFloat(hostOutput.memory(), Indexing.linearToOffset(hostOutput, centerIdx)),
-                1e-3f);
-        long lastIdx = (long) (height - 1) * width + (width - 1);
-        assertEquals(
-                TestKernels.phoenixIter(height - 1, width - 1, width, height, iterations),
                 access.readFloat(hostOutput.memory(), Indexing.linearToOffset(hostOutput, lastIdx)),
                 1e-3f);
     }
@@ -271,17 +213,17 @@ class HipKernelSmokeTest {
             values[i] = i - 4.0f;
         }
 
-        MemoryContext<MemorySegment> host = ContextFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> host = DomainFactory.ofMemorySegment();
         var hostMem = host.memoryAllocator().allocateMemory(DataType.FP32, n);
         MemoryView<MemorySegment> hostInput =
                 MemoryView.of(hostMem, DataType.FP32, Layout.rowMajor(Shape.flat(n)));
-        MemoryAccess<MemorySegment> hostAccess = host.memoryAccess();
+        MemoryAccess<MemorySegment> hostAccess = host.directAccess();
         for (int i = 0; i < n; i++) {
             long offset = Indexing.linearToOffset(hostInput, i);
             hostAccess.writeFloat(hostInput.memory(), offset, values[i]);
         }
 
-        HipMemoryContext device = HipMemoryContext.instance();
+        HipMemoryDomain device = HipMemoryDomain.instance();
         MemoryView<HipDevicePtr> devInput =
                 MemoryView.of(
                         device.memoryAllocator().allocateMemory(DataType.FP32, n),
@@ -289,7 +231,8 @@ class HipKernelSmokeTest {
                         Layout.rowMajor(Shape.flat(n)));
         long byteSize = (long) n * Float.BYTES;
         device.memoryOperations()
-                .copyFromNative(hostInput.memory(), hostInput.byteOffset(), devInput.memory(), 0, byteSize);
+                .copyFromNative(
+                        hostInput.memory(), hostInput.byteOffset(), devInput.memory(), 0, byteSize);
 
         Tensor traced = Tracer.trace(Tensor.of(devInput), Tensor::gelu);
         MemoryView<?> output = traced.materialize();
@@ -303,9 +246,7 @@ class HipKernelSmokeTest {
     }
 
     private static MemoryView<MemorySegment> toHost(
-            MemoryContext<MemorySegment> host,
-            HipMemoryContext device,
-            MemoryView<?> view) {
+            MemoryDomain<MemorySegment> host, HipMemoryDomain device, MemoryView<?> view) {
         if (view.memory().base() instanceof MemorySegment) {
             @SuppressWarnings("unchecked")
             MemoryView<MemorySegment> hostView = (MemoryView<MemorySegment>) view;
@@ -341,8 +282,7 @@ class HipKernelSmokeTest {
 
     private static void assumeFractalsEnabled() {
         Assumptions.assumeTrue(
-                Boolean.getBoolean("jota.test.hip.fractals")
-                        && Boolean.getBoolean("jota.test.ppm"),
+                Boolean.getBoolean("jota.test.hip.fractals") && Boolean.getBoolean("jota.test.ppm"),
                 "HIP fractal smoke tests disabled; set -Djota.test.hip.fractals=true and -Djota.test.ppm=true to enable");
     }
 }

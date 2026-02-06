@@ -4,8 +4,8 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.ir.lir.*;
-import ai.qxotic.jota.ir.tir.*;
 import ai.qxotic.jota.ir.lir.LIRCanonicalizerPass;
+import ai.qxotic.jota.ir.tir.*;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -433,7 +433,8 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
         int depth = innerIndices.size();
         if (depth == 0) {
             LIRExprNode combined =
-                    combineAccumulator(exprGraph, exprGraph.scalarRef("acc0", dtype), inputValue, op);
+                    combineAccumulator(
+                            exprGraph, exprGraph.scalarRef("acc0", dtype), inputValue, op);
             return exprGraph.yield(List.of(combined));
         }
 
@@ -446,18 +447,13 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
 
         LIRExprNode combined =
                 combineAccumulator(
-                        exprGraph,
-                        exprGraph.scalarRef(accNames[depth - 1], dtype),
-                        inputValue,
-                        op);
+                        exprGraph, exprGraph.scalarRef(accNames[depth - 1], dtype), inputValue, op);
         LIRExprNode inner = exprGraph.yield(List.of(combined));
 
         for (int level = depth - 1; level >= 0; level--) {
             String accName = accNames[level];
             LIRExprNode init =
-                    (level == 0)
-                            ? identity
-                            : exprGraph.scalarRef(accNames[level - 1], dtype);
+                    (level == 0) ? identity : exprGraph.scalarRef(accNames[level - 1], dtype);
 
             Block body;
             if (level == depth - 1) {
@@ -468,7 +464,9 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
                                 List.of(
                                         inner,
                                         exprGraph.yield(
-                                                List.of(exprGraph.scalarRef(accNames[level + 1], dtype)))));
+                                                List.of(
+                                                        exprGraph.scalarRef(
+                                                                accNames[level + 1], dtype)))));
             }
 
             inner =
@@ -594,7 +592,9 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
             }
             LIRExprNode term =
                     exprGraph.indexBinary(
-                            IndexBinaryOp.MULTIPLY, indices.get(i), exprGraph.indexConst(strides[i]));
+                            IndexBinaryOp.MULTIPLY,
+                            indices.get(i),
+                            exprGraph.indexConst(strides[i]));
             offset =
                     (offset == null)
                             ? term
@@ -722,7 +722,8 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
                     } else if (baseNode instanceof ai.qxotic.jota.ir.tir.ScalarInput scalarInput) {
                         ai.qxotic.jota.ir.lir.ScalarInput scalar = inputScalars.get(scalarInput);
                         if (scalar == null) {
-                            throw new IllegalStateException("Unknown ScalarInput: " + scalarInput.id());
+                            throw new IllegalStateException(
+                                    "Unknown ScalarInput: " + scalarInput.id());
                         }
                         result = exprGraph.scalarInput(scalar.id(), scalar.dataType());
                     } else if (baseNode instanceof IotaConstant iotaConstant) {
@@ -949,9 +950,7 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
                             IndexBinaryOp.DIVIDE, linearIdx, exprGraph.indexConst(strides[i]));
             LIRExprNode idx =
                     exprGraph.indexBinary(
-                            IndexBinaryOp.MODULO,
-                            divided,
-                            exprGraph.indexConst(shape.flatAt(i)));
+                            IndexBinaryOp.MODULO, divided, exprGraph.indexConst(shape.flatAt(i)));
             indices.add(idx);
         }
         return indices;

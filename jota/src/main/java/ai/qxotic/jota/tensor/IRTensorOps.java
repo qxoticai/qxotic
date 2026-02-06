@@ -13,13 +13,13 @@ import ai.qxotic.jota.ir.tir.ReductionOperator;
 import ai.qxotic.jota.ir.tir.TIRNode;
 import ai.qxotic.jota.ir.tir.UnaryOperator;
 import ai.qxotic.jota.ir.tir.ViewTransform;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 
 final class IRTensorOps implements TensorOps {
 
     @Override
-    public MemoryContext<?> context() {
-        throw new UnsupportedOperationException("IR-T ops do not expose a memory context");
+    public MemoryDomain<?> memoryDomain() {
+        throw new UnsupportedOperationException("IR-T ops do not expose a memory domain");
     }
 
     @Override
@@ -487,5 +487,4 @@ final class IRTensorOps implements TensorOps {
         }
         return Shape.flat(dims);
     }
-
 }

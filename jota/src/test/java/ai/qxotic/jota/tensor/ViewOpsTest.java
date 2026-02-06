@@ -7,29 +7,29 @@ import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.Stride;
 import ai.qxotic.jota.memory.Memory;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryHelpers;
 import ai.qxotic.jota.memory.MemoryView;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 class ViewOpsTest {
 
-    private static MemoryContext<MemorySegment> context;
+    private static MemoryDomain<MemorySegment> domain;
     private static TensorOps ops;
 
     @BeforeAll
-    static void setUpContext() {
-        context = ContextFactory.ofMemorySegment();
-        ops = new EagerTensorOps(context);
+    static void setUpDomain() {
+        domain = DomainFactory.ofMemorySegment();
+        ops = new EagerTensorOps(domain);
     }
 
     @Test
     void viewBasicReshape() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         Tensor result = TensorOpsContext.with(ops, () -> input.view(Shape.of(4, 3)));
@@ -41,7 +41,7 @@ class ViewOpsTest {
     @Test
     void viewFlatten() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 24).view(Shape.of(2, 3, 4));
+                MemoryHelpers.arange(domain, DataType.FP32, 24).view(Shape.of(2, 3, 4));
         Tensor input = Tensor.of(view);
 
         Tensor result = TensorOpsContext.with(ops, () -> input.view(Shape.of(24)));
@@ -52,7 +52,7 @@ class ViewOpsTest {
     @Test
     void viewAddDimensions() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(12));
+                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(12));
         Tensor input = Tensor.of(view);
 
         Tensor result = TensorOpsContext.with(ops, () -> input.view(Shape.of(2, 2, 3)));
@@ -63,7 +63,7 @@ class ViewOpsTest {
     @Test
     void viewWithSingletonDimensions() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 6).view(Shape.of(2, 3));
+                MemoryHelpers.arange(domain, DataType.FP32, 6).view(Shape.of(2, 3));
         Tensor input = Tensor.of(view);
 
         Tensor result = TensorOpsContext.with(ops, () -> input.view(Shape.of(1, 2, 3, 1)));
@@ -74,7 +74,7 @@ class ViewOpsTest {
     @Test
     void viewSharesMemory() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         Tensor result = TensorOpsContext.with(ops, () -> input.view(Shape.of(4, 3)));
@@ -88,7 +88,7 @@ class ViewOpsTest {
     @Test
     void viewThrowsOnSizeMismatch() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         IllegalArgumentException ex =
@@ -109,7 +109,7 @@ class ViewOpsTest {
     @Test
     void viewTransposedRequiresCopyToFlatten() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         MemoryView<MemorySegment> transposed = view.transpose(0, 1);
         assertFalse(transposed.layout().isSuffixContiguous(0));
         Tensor input = Tensor.of(transposed);
@@ -133,7 +133,7 @@ class ViewOpsTest {
     @Test
     void viewSlicedWithStrideRequiresCopy() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         MemoryView<MemorySegment> sliced = view.slice(1, 0, 4, 2);
         assertFalse(sliced.isContiguous());
         Tensor input = Tensor.of(sliced);
@@ -150,7 +150,7 @@ class ViewOpsTest {
     @Test
     void viewAllowsCompatibleNonContiguousReshape() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         MemoryView<MemorySegment> slicedRows = view.slice(0, 0, 3, 2);
         assertFalse(slicedRows.isContiguous());
         Tensor input = Tensor.of(slicedRows);
@@ -162,7 +162,7 @@ class ViewOpsTest {
 
     @Test
     void viewScalarToVector() {
-        MemoryView<MemorySegment> view = MemoryHelpers.arange(context, DataType.FP32, 1);
+        MemoryView<MemorySegment> view = MemoryHelpers.arange(domain, DataType.FP32, 1);
         Tensor input = Tensor.of(view);
 
         Tensor result = TensorOpsContext.with(ops, () -> input.view(Shape.of(1)));
@@ -173,7 +173,7 @@ class ViewOpsTest {
     @Test
     void viewPreservesDataType() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP64, 6).view(Shape.of(2, 3));
+                MemoryHelpers.arange(domain, DataType.FP64, 6).view(Shape.of(2, 3));
         Tensor input = Tensor.of(view);
 
         Tensor result = TensorOpsContext.with(ops, () -> input.view(Shape.of(3, 2)));
@@ -189,7 +189,7 @@ class ViewOpsTest {
      */
     @Test
     void viewNonStandardStrideRequiresCopy() {
-        Memory<MemorySegment> memory = context.memoryAllocator().allocateMemory(DataType.FP32, 8);
+        Memory<MemorySegment> memory = domain.memoryAllocator().allocateMemory(DataType.FP32, 8);
 
         // Shape (2, 2, 2) with stride (4, 1, 2) - NOT row-major order
         Layout layout = Layout.of(Shape.flat(2, 2, 2), Stride.flat(4, 1, 2));
@@ -214,7 +214,7 @@ class ViewOpsTest {
      */
     @Test
     void viewNonStandardStrideAllowsAnyCompatibleReshape() {
-        Memory<MemorySegment> memory = context.memoryAllocator().allocateMemory(DataType.FP32, 8);
+        Memory<MemorySegment> memory = domain.memoryAllocator().allocateMemory(DataType.FP32, 8);
 
         // Shape (2, 2, 2) with stride (4, 1, 2) spans [0-7] contiguously
         // Condition: (2-1)*4 + (2-1)*1 + (2-1)*2 = 7 = 8-1 ✓
@@ -241,7 +241,7 @@ class ViewOpsTest {
      */
     @Test
     void viewContiguousNonTrivialShape() {
-        Memory<MemorySegment> memory = context.memoryAllocator().allocateMemory(DataType.FP32, 8);
+        Memory<MemorySegment> memory = domain.memoryAllocator().allocateMemory(DataType.FP32, 8);
 
         // Shape (2, 2, 2) with standard row-major stride (4, 2, 1)
         Layout layout = Layout.of(Shape.flat(2, 2, 2), Stride.flat(4, 2, 1));
@@ -267,7 +267,7 @@ class ViewOpsTest {
      */
     @Test
     void viewToNestedShape() {
-        Memory<MemorySegment> memory = context.memoryAllocator().allocateMemory(DataType.FP32, 8);
+        Memory<MemorySegment> memory = domain.memoryAllocator().allocateMemory(DataType.FP32, 8);
 
         // Standard contiguous (2, 2, 2) tensor
         Layout layout = Layout.of(Shape.flat(2, 2, 2), Stride.flat(4, 2, 1));
@@ -291,7 +291,7 @@ class ViewOpsTest {
      */
     @Test
     void viewNonStandardStrideToNestedShapeInfersCorrectStrides() {
-        Memory<MemorySegment> memory = context.memoryAllocator().allocateMemory(DataType.FP32, 8);
+        Memory<MemorySegment> memory = domain.memoryAllocator().allocateMemory(DataType.FP32, 8);
 
         // Original: (2, 2, 2):(4, 1, 2) - non-standard strides but spans [0-7]
         Layout original = Layout.of(Shape.flat(2, 2, 2), Stride.flat(4, 1, 2));
@@ -320,7 +320,7 @@ class ViewOpsTest {
      */
     @Test
     void viewWithHolesRequiresCopy() {
-        Memory<MemorySegment> memory = context.memoryAllocator().allocateMemory(DataType.FP32, 8);
+        Memory<MemorySegment> memory = domain.memoryAllocator().allocateMemory(DataType.FP32, 8);
 
         // Shape (4,) with stride (2) - accesses every other element: {0, 2, 4, 6}
         Layout layout = Layout.of(Shape.flat(4), Stride.flat(2));
@@ -344,7 +344,7 @@ class ViewOpsTest {
      */
     @Test
     void viewWithInterleavedAccessRequiresCopy() {
-        Memory<MemorySegment> memory = context.memoryAllocator().allocateMemory(DataType.FP32, 8);
+        Memory<MemorySegment> memory = domain.memoryAllocator().allocateMemory(DataType.FP32, 8);
 
         // Shape (2, 2) with stride (4, 2) - interleaved access: {0, 2, 4, 6}
         Layout layout = Layout.of(Shape.flat(2, 2), Stride.flat(4, 2));
@@ -367,7 +367,7 @@ class ViewOpsTest {
      */
     @Test
     void viewWithGapsRequiresCopy() {
-        Memory<MemorySegment> memory = context.memoryAllocator().allocateMemory(DataType.FP32, 8);
+        Memory<MemorySegment> memory = domain.memoryAllocator().allocateMemory(DataType.FP32, 8);
 
         // Shape (2, 2) with stride (3, 1) - accesses {0, 1, 3, 4}, missing 2
         Layout layout = Layout.of(Shape.flat(2, 2), Stride.flat(3, 1));
@@ -391,7 +391,7 @@ class ViewOpsTest {
      */
     @Test
     void viewWithSparseAccessRequiresCopy() {
-        Memory<MemorySegment> memory = context.memoryAllocator().allocateMemory(DataType.FP32, 16);
+        Memory<MemorySegment> memory = domain.memoryAllocator().allocateMemory(DataType.FP32, 16);
 
         // Shape (2, 2) with stride (6, 3) - sparse access: {0, 3, 6, 9}
         Layout layout = Layout.of(Shape.flat(2, 2), Stride.flat(6, 3));
@@ -415,7 +415,7 @@ class ViewOpsTest {
     @Test
     void viewWithStridedSliceRequiresCopy() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(4, 3));
+                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(4, 3));
 
         // Take every other row: rows 0 and 2
         MemoryView<MemorySegment> sliced = view.slice(0, 0, 4, 2); // shape (2, 3), stride (6, 1)
@@ -440,7 +440,7 @@ class ViewOpsTest {
     @Test
     void viewWithColumnSliceRequiresCopy() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
 
         // Take every other column: columns 0 and 2
         MemoryView<MemorySegment> sliced = view.slice(1, 0, 4, 2); // shape (3, 2), stride (4, 2)
@@ -463,7 +463,7 @@ class ViewOpsTest {
      */
     @Test
     void viewWithBroadcastedDimensionRequiresCopy() {
-        Memory<MemorySegment> memory = context.memoryAllocator().allocateMemory(DataType.FP32, 4);
+        Memory<MemorySegment> memory = domain.memoryAllocator().allocateMemory(DataType.FP32, 4);
 
         // Shape (2, 4) with stride (0, 1) - first dim is broadcasted
         // Accesses: {0, 1, 2, 3, 0, 1, 2, 3} - duplicates!
@@ -487,7 +487,7 @@ class ViewOpsTest {
     @Test
     void reshapeReturnsViewWhenPossible() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         Tensor result = TensorOpsContext.with(ops, () -> input.reshape(Shape.of(4, 3)));
@@ -500,7 +500,7 @@ class ViewOpsTest {
     /** Tests that reshape copies data when view is not possible (strided slice with holes). */
     @Test
     void reshapeCopiesWhenViewNotPossible() {
-        Memory<MemorySegment> memory = context.memoryAllocator().allocateMemory(DataType.FP32, 8);
+        Memory<MemorySegment> memory = domain.memoryAllocator().allocateMemory(DataType.FP32, 8);
 
         // Shape (4,) with stride (2) - has holes at odd offsets
         Layout layout = Layout.of(Shape.flat(4), Stride.flat(2));
@@ -521,7 +521,7 @@ class ViewOpsTest {
     @Test
     void reshapeCopiesTransposedTensor() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         MemoryView<MemorySegment> transposed = view.transpose(0, 1); // (4, 3):(1, 4)
         Tensor input = Tensor.of(transposed);
 
@@ -541,7 +541,7 @@ class ViewOpsTest {
     @Test
     void reshapeCopiesSlicedTensorWithGaps() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(4, 3));
+                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(4, 3));
 
         // Take every other row: rows 0 and 2 - has gap at row 1
         MemoryView<MemorySegment> sliced = view.slice(0, 0, 4, 2); // (2, 3):(6, 1)
@@ -560,7 +560,7 @@ class ViewOpsTest {
     @Test
     void reshapeThrowsOnSizeMismatch() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         assertThrows(
@@ -573,7 +573,7 @@ class ViewOpsTest {
     @Test
     void viewThrowsWhenNewShapeTooLarge() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         // 12 elements -> 20 elements (too large)
@@ -587,7 +587,7 @@ class ViewOpsTest {
     @Test
     void viewThrowsWhenNewShapeTooSmall() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         // 12 elements -> 6 elements (too small)
@@ -601,7 +601,7 @@ class ViewOpsTest {
     @Test
     void viewThrowsWhenFlatteningToWrongSize() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         // 12 elements -> 10 elements
@@ -615,7 +615,7 @@ class ViewOpsTest {
     @Test
     void reshapeThrowsWhenNewShapeTooLarge() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         // 12 elements -> 24 elements (too large)
@@ -629,7 +629,7 @@ class ViewOpsTest {
     @Test
     void reshapeThrowsWhenNewShapeTooSmall() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         // 12 elements -> 4 elements (too small)
@@ -643,7 +643,7 @@ class ViewOpsTest {
     @Test
     void reshapeThrowsWhenFlatteningToWrongSize() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 12).view(Shape.of(3, 4));
+                MemoryHelpers.arange(domain, DataType.FP32, 12).view(Shape.of(3, 4));
         Tensor input = Tensor.of(view);
 
         // 12 elements -> 15 elements
@@ -657,7 +657,7 @@ class ViewOpsTest {
     @Test
     void viewThrowsWithNestedShapeSizeMismatch() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 8).view(Shape.of(2, 4));
+                MemoryHelpers.arange(domain, DataType.FP32, 8).view(Shape.of(2, 4));
         Tensor input = Tensor.of(view);
 
         // 8 elements -> nested shape with 12 elements
@@ -672,7 +672,7 @@ class ViewOpsTest {
     @Test
     void reshapeThrowsWithNestedShapeSizeMismatch() {
         MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(context, DataType.FP32, 8).view(Shape.of(2, 4));
+                MemoryHelpers.arange(domain, DataType.FP32, 8).view(Shape.of(2, 4));
         Tensor input = Tensor.of(view);
 
         // 8 elements -> nested shape with 6 elements

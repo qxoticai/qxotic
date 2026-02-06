@@ -7,10 +7,10 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.AbstractMemoryTest;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryHelpers;
 import ai.qxotic.jota.memory.MemoryView;
-import ai.qxotic.jota.memory.impl.ContextFactory;
+import ai.qxotic.jota.memory.impl.DomainFactory;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.List;
@@ -31,11 +31,11 @@ class ProductReductionOpsTest extends AbstractMemoryTest {
                     new ProductCase(DataType.BF16, DataType.FP32),
                     new ProductCase(DataType.FP64, DataType.FP64));
 
-    private static MemoryContext<MemorySegment> context;
+    private static MemoryDomain<MemorySegment> domain;
 
     @BeforeAll
-    static void setUpContext() {
-        context = ContextFactory.ofMemorySegment();
+    static void setUpDomain() {
+        domain = DomainFactory.ofMemorySegment();
     }
 
     @Test
@@ -44,8 +44,7 @@ class ProductReductionOpsTest extends AbstractMemoryTest {
         for (ProductCase productCase : PRODUCT_CASES) {
             MemoryView<MemorySegment> view = range(productCase.inputType(), shape);
             Tensor input = Tensor.of(view);
-            Tensor reduced =
-                    Tracer.trace(input, t -> t.product(productCase.accumulatorType(), 1));
+            Tensor reduced = Tracer.trace(input, t -> t.product(productCase.accumulatorType(), 1));
             MemoryView<?> output = reduced.materialize();
             assertEquals(Shape.of(2), output.shape());
             assertValueEquals(
@@ -136,9 +135,9 @@ class ProductReductionOpsTest extends AbstractMemoryTest {
 
     private MemoryView<MemorySegment> range(DataType dataType, Shape shape) {
         if (dataType == DataType.BOOL) {
-            return MemoryHelpers.full(context, dataType, shape.size(), 1).view(shape);
+            return MemoryHelpers.full(domain, dataType, shape.size(), 1).view(shape);
         }
-        return MemoryHelpers.arange(context, dataType, shape.size()).view(shape);
+        return MemoryHelpers.arange(domain, dataType, shape.size()).view(shape);
     }
 
     private Object readValue(MemoryView<?> view, long linearIndex, DataType dataType) {

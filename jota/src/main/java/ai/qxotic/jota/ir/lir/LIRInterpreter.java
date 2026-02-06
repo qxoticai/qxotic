@@ -3,7 +3,7 @@ package ai.qxotic.jota.ir.lir;
 import ai.qxotic.jota.BFloat16;
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.memory.MemoryAccess;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.tensor.ScalarArg;
 import java.util.ArrayList;
@@ -21,14 +21,14 @@ public final class LIRInterpreter {
             List<MemoryView<?>> buffers,
             List<ScalarArg> scalars,
             List<MemoryView<?>> outputs,
-            MemoryContext<?> context) {
+            MemoryDomain<?> memoryDomain) {
         Objects.requireNonNull(graph, "graph");
         Objects.requireNonNull(buffers, "buffers");
         Objects.requireNonNull(scalars, "scalars");
         Objects.requireNonNull(outputs, "outputs");
-        Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(memoryDomain, "memoryDomain");
 
-        Bindings bindings = Bindings.from(graph, buffers, scalars, outputs, context);
+        Bindings bindings = Bindings.from(graph, buffers, scalars, outputs, memoryDomain);
         executeNode(graph.body(), new Env(), bindings);
     }
 
@@ -280,10 +280,8 @@ public final class LIRInterpreter {
             case SUBTRACT -> castFromBinary(left, right, type, (l, r) -> l - r, (l, r) -> l - r);
             case MULTIPLY -> castFromBinary(left, right, type, (l, r) -> l * r, (l, r) -> l * r);
             case DIVIDE -> castFromBinary(left, right, type, (l, r) -> l / r, (l, r) -> l / r);
-            case MIN ->
-                    castFromBinary(left, right, type, Math::min, (l, r) -> l < r ? l : r);
-            case MAX ->
-                    castFromBinary(left, right, type, Math::max, (l, r) -> l > r ? l : r);
+            case MIN -> castFromBinary(left, right, type, Math::min, (l, r) -> l < r ? l : r);
+            case MAX -> castFromBinary(left, right, type, Math::max, (l, r) -> l > r ? l : r);
             case POW -> castFromDouble(Math.pow(toDouble(left), toDouble(right)), type);
             case LOGICAL_AND -> castFromBool(toBoolean(left) && toBoolean(right), type);
             case LOGICAL_OR -> castFromBool(toBoolean(left) || toBoolean(right), type);
@@ -393,7 +391,9 @@ public final class LIRInterpreter {
         if (value.type == DataType.FP64) {
             return Double.longBitsToDouble(value.bits);
         }
-        if (value.type == DataType.FP32 || value.type == DataType.FP16 || value.type == DataType.BF16) {
+        if (value.type == DataType.FP32
+                || value.type == DataType.FP16
+                || value.type == DataType.BF16) {
             return Float.intBitsToFloat((int) value.bits);
         }
         if (value.type == DataType.BOOL) {
@@ -575,7 +575,7 @@ public final class LIRInterpreter {
                 List<MemoryView<?>> buffers,
                 List<ScalarArg> scalars,
                 List<MemoryView<?>> outputs,
-                MemoryContext<?> context) {
+                MemoryDomain<?> memoryDomain) {
             Map<BufferRef, MemoryView<?>> bufferMap = new HashMap<>();
             Map<Integer, ScalarValue> scalarMap = new HashMap<>();
             int bufferIndex = 0;
@@ -595,9 +595,7 @@ public final class LIRInterpreter {
                                         + " but got "
                                         + scalar.dataType());
                     }
-                    scalarMap.put(
-                            scalarInput.id(),
-                            fromScalarArg(scalar, scalarInput.dataType()));
+                    scalarMap.put(scalarInput.id(), fromScalarArg(scalar, scalarInput.dataType()));
                 } else {
                     if (bufferIndex >= buffers.size()) {
                         throw new IllegalArgumentException(
@@ -618,13 +616,17 @@ public final class LIRInterpreter {
 
             if (outputs.size() != graph.outputs().size()) {
                 throw new IllegalArgumentException(
-                        "Expected " + graph.outputs().size() + " outputs but got " + outputs.size());
+                        "Expected "
+                                + graph.outputs().size()
+                                + " outputs but got "
+                                + outputs.size());
             }
             for (int i = 0; i < graph.outputs().size(); i++) {
                 bufferMap.put(graph.outputs().get(i), outputs.get(i));
             }
 
-            return new Bindings(graph.exprGraph(), context.memoryAccess(), bufferMap, scalarMap);
+            return new Bindings(
+                    graph.exprGraph(), memoryDomain.directAccess(), bufferMap, scalarMap);
         }
 
         MemoryView<?> buffer(BufferRef ref) {

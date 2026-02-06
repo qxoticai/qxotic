@@ -12,7 +12,8 @@ import java.util.Objects;
  * Container for an IR-L program. An IR-L graph consists of inputs (buffers or scalars), output
  * buffers, and a body that performs the computation.
  */
-public record LIRGraph(LIRExprGraph exprGraph, List<LIRInput> inputs, List<BufferRef> outputs, LIRExprNode body) {
+public record LIRGraph(
+        LIRExprGraph exprGraph, List<LIRInput> inputs, List<BufferRef> outputs, LIRExprNode body) {
 
     public LIRGraph {
         Objects.requireNonNull(exprGraph, "exprGraph cannot be null");

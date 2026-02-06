@@ -2,7 +2,7 @@ package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.ExecutionMode;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import java.util.Collections;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -37,9 +37,9 @@ final class EnvironmentOps {
             }
             synchronized (this) {
                 if (eagerOps == null) {
-                    MemoryContext<?> context =
-                            environment.backend(environment.defaultDevice()).memoryContext();
-                    eagerOps = new EagerTensorOps(context);
+                    MemoryDomain<?> domain =
+                            environment.backend(environment.defaultDevice()).memoryDomain();
+                    eagerOps = new EagerTensorOps(domain);
                 }
                 return eagerOps;
             }

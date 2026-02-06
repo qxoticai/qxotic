@@ -6,7 +6,7 @@ import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.ir.lir.LIRGraph;
 import ai.qxotic.jota.ir.lir.LIRInput;
 import ai.qxotic.jota.ir.lir.ScalarInput;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.tensor.KernelArgs;
 import ai.qxotic.jota.tensor.ScalarArg;
@@ -97,12 +97,13 @@ public final class LIRKernelArgsBuilder {
             segment = memSegment;
         } else {
             @SuppressWarnings("unchecked")
-            MemoryContext<MemorySegment> hostContext =
-                    (MemoryContext<MemorySegment>) Environment.current().nativeBackend().memoryContext();
+            MemoryDomain<MemorySegment> hostContext =
+                    (MemoryDomain<MemorySegment>)
+                            Environment.current().nativeBackend().memoryDomain();
             @SuppressWarnings("unchecked")
-            MemoryContext<Object> srcContext =
-                    (MemoryContext<Object>)
-                            Environment.current().backend(view.memory().device()).memoryContext();
+            MemoryDomain<Object> srcContext =
+                    (MemoryDomain<Object>)
+                            Environment.current().backend(view.memory().device()).memoryDomain();
             @SuppressWarnings("unchecked")
             MemoryView<Object> srcView = (MemoryView<Object>) view;
             MemoryView<MemorySegment> hostView =
@@ -112,7 +113,7 @@ public final class LIRKernelArgsBuilder {
                                     .allocateMemory(view.dataType(), view.shape()),
                             view.dataType(),
                             view.layout());
-            MemoryContext.copy(srcContext, srcView, hostContext, hostView);
+            MemoryDomain.copy(srcContext, srcView, hostContext, hostView);
             segment = hostView.memory().base();
             offset = hostView.byteOffset();
         }

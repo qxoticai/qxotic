@@ -4,7 +4,7 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAccess;
-import ai.qxotic.jota.memory.MemoryContext;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.panama.PanamaFactory;
 import java.lang.foreign.MemorySegment;
@@ -16,9 +16,9 @@ public final class TIRInterpreter {
     private TIRInterpreter() {}
 
     public static List<MemoryView<MemorySegment>> execute(
-            TIRGraph graph, List<MemoryView<?>> inputs, MemoryContext<?> context) {
+            TIRGraph graph, List<MemoryView<?>> inputs, MemoryDomain<?> memoryDomain) {
 
-        try (TIREvalContext evalContext = TIREvalContext.create(inputs, context)) {
+        try (TIREvalContext evalContext = TIREvalContext.create(inputs, memoryDomain)) {
             List<MemoryView<MemorySegment>> arenaOutputs = new ArrayList<>();
 
             for (TIRNode outputNode : graph.outputs()) {
@@ -28,7 +28,7 @@ public final class TIRInterpreter {
 
             List<MemoryView<MemorySegment>> persistentOutputs = new ArrayList<>();
             MemoryAccess<MemorySegment> memAccess =
-                    (MemoryAccess<MemorySegment>) context.memoryAccess();
+                    (MemoryAccess<MemorySegment>) memoryDomain.directAccess();
 
             for (MemoryView<MemorySegment> arenaOutput : arenaOutputs) {
                 DataType dtype = arenaOutput.dataType();
