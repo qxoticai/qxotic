@@ -156,7 +156,7 @@ class HipKernelSmokeTest {
                 new Environment(
                         Device.HIP,
                         current.defaultFloat(),
-                        current.backends(),
+                        current.runtimes(),
                         current.executionMode());
 
         MemoryView<?> output =

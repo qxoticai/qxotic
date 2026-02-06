@@ -11,7 +11,7 @@ public class Canary {
                 Tracer.trace(x, Tensor.scalar(2f), (a, b) -> a.add(b).add(Tensor.scalar(3.14f)));
         // Trigger execution
         var out = result.materialize();
-        MemoryAccess access = Environment.current().panamaMemoryDomain().directAccess();
+        MemoryAccess access = Environment.current().nativeMemoryDomain().directAccess();
         System.out.println(out.toString(access));
     }
 }

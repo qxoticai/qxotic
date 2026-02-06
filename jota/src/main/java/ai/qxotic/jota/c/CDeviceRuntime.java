@@ -1,11 +1,11 @@
 package ai.qxotic.jota.c;
 
 import ai.qxotic.jota.Device;
-import ai.qxotic.jota.backend.DeviceRuntime;
-import ai.qxotic.jota.backend.FileKernelProgramStore;
-import ai.qxotic.jota.backend.KernelProgramStore;
-import ai.qxotic.jota.backend.KernelService;
 import ai.qxotic.jota.memory.MemoryDomain;
+import ai.qxotic.jota.runtime.DeviceRuntime;
+import ai.qxotic.jota.runtime.FileKernelProgramStore;
+import ai.qxotic.jota.runtime.KernelProgramStore;
+import ai.qxotic.jota.runtime.KernelService;
 import ai.qxotic.jota.tensor.ComputeEngine;
 import ai.qxotic.jota.tensor.KernelBackend;
 import java.lang.foreign.MemorySegment;

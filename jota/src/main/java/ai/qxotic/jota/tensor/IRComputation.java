@@ -2,13 +2,13 @@ package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Environment;
-import ai.qxotic.jota.backend.DeviceRuntime;
 import ai.qxotic.jota.ir.tir.IotaConstant;
 import ai.qxotic.jota.ir.tir.TIRGraph;
 import ai.qxotic.jota.ir.tir.TIRInterpreter;
 import ai.qxotic.jota.ir.tir.TIRNode;
 import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
+import ai.qxotic.jota.runtime.DeviceRuntime;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -52,9 +52,9 @@ final class IRComputation implements LazyComputation {
     public MemoryView<?> execute() {
         Device device =
                 inputTensors.isEmpty() ? Device.defaultDevice() : inputTensors.get(0).device();
-        DeviceRuntime deviceRuntime = Environment.current().backend(device);
+        DeviceRuntime deviceRuntime = Environment.current().runtimeFor(device);
         MemoryDomain<?> domain = deviceRuntime.memoryDomain();
-        ComputeEngine computeEngine = Environment.current().computeBackendFor(device);
+        ComputeEngine computeEngine = Environment.current().computeEngineFor(device);
 
         // Optimize the graph before execution
         TIRGraph optimizedGraph = optimizeGraph(graph);

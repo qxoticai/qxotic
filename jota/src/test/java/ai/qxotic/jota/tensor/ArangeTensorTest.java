@@ -18,7 +18,7 @@ class ArangeTensorTest {
 
     @SuppressWarnings("unchecked")
     private static final MemoryDomain<MemorySegment> CONTEXT =
-            (MemoryDomain<MemorySegment>) Environment.current().nativeBackend().memoryDomain();
+            (MemoryDomain<MemorySegment>) Environment.current().nativeRuntime().memoryDomain();
 
     @Test
     void iotaDefaultsToI64() {

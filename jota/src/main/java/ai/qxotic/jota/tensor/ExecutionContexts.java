@@ -31,7 +31,7 @@ public final class ExecutionContexts {
 
     public static ExecutionContext forDevice(Device device, KernelRegistry registry) {
         Objects.requireNonNull(device, "device");
-        MemoryDomain<?> memoryDomain = Environment.current().backend(device).memoryDomain();
+        MemoryDomain<?> memoryDomain = Environment.current().runtimeFor(device).memoryDomain();
         return forContext(memoryDomain, registry);
     }
 

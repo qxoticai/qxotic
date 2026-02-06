@@ -1,4 +1,4 @@
-package ai.qxotic.jota.backend;
+package ai.qxotic.jota.runtime;
 
 import ai.qxotic.jota.Device;
 import java.util.Map;
@@ -6,21 +6,21 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-public final class DefaultBackendRegistry implements BackendRegistry {
+public final class DefaultRuntimeRegistry implements RuntimeRegistry {
 
-    private final Map<Device, DeviceRuntime> backends = new ConcurrentHashMap<>();
+    private final Map<Device, DeviceRuntime> runtimes = new ConcurrentHashMap<>();
     private volatile DeviceRuntime nativeDeviceRuntime;
 
-    public static DefaultBackendRegistry withNative(DeviceRuntime deviceRuntime) {
-        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+    public static DefaultRuntimeRegistry withNative(DeviceRuntime deviceRuntime) {
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.registerNative(deviceRuntime);
         return registry;
     }
 
     @Override
     public void register(DeviceRuntime deviceRuntime) {
-        Objects.requireNonNull(deviceRuntime, "backend");
-        backends.put(deviceRuntime.device(), deviceRuntime);
+        Objects.requireNonNull(deviceRuntime, "deviceRuntime");
+        runtimes.put(deviceRuntime.device(), deviceRuntime);
         if (nativeDeviceRuntime == null && deviceRuntime.device().equals(Device.PANAMA)) {
             nativeDeviceRuntime = deviceRuntime;
         }
@@ -32,8 +32,8 @@ public final class DefaultBackendRegistry implements BackendRegistry {
     }
 
     @Override
-    public DeviceRuntime backend(Device device) {
-        DeviceRuntime deviceRuntime = backends.get(device);
+    public DeviceRuntime runtimeFor(Device device) {
+        DeviceRuntime deviceRuntime = runtimes.get(device);
         if (deviceRuntime == null) {
             throw new IllegalStateException("No backend registered for " + device);
         }
@@ -41,12 +41,12 @@ public final class DefaultBackendRegistry implements BackendRegistry {
     }
 
     @Override
-    public boolean hasBackend(Device device) {
-        return backends.containsKey(device);
+    public boolean hasRuntime(Device device) {
+        return runtimes.containsKey(device);
     }
 
     @Override
-    public DeviceRuntime nativeBackend() {
+    public DeviceRuntime nativeRuntime() {
         DeviceRuntime deviceRuntime = nativeDeviceRuntime;
         if (deviceRuntime == null) {
             throw new IllegalStateException("No native backend registered");
@@ -56,6 +56,6 @@ public final class DefaultBackendRegistry implements BackendRegistry {
 
     @Override
     public Set<Device> devices() {
-        return Set.copyOf(backends.keySet());
+        return Set.copyOf(runtimes.keySet());
     }
 }

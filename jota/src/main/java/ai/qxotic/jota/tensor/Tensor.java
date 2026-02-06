@@ -911,7 +911,7 @@ public interface Tensor {
                     "array length " + data.length + " does not match shape size " + shape.size());
         }
         MemoryDomain<?> memoryDomain =
-                Environment.current().backend(Device.defaultDevice()).memoryDomain();
+                Environment.current().runtimeFor(Device.defaultDevice()).memoryDomain();
         MemoryView<?> view = copyFloatArray(memoryDomain, data, shape);
         return of(view);
     }
@@ -939,7 +939,7 @@ public interface Tensor {
                     "array length " + data.length + " does not match shape size " + shape.size());
         }
         MemoryDomain<?> memoryDomain =
-                Environment.current().backend(Device.defaultDevice()).memoryDomain();
+                Environment.current().runtimeFor(Device.defaultDevice()).memoryDomain();
         MemoryView<?> view = copyDoubleArray(memoryDomain, data, shape);
         return of(view);
     }
@@ -967,7 +967,7 @@ public interface Tensor {
                     "array length " + data.length + " does not match shape size " + shape.size());
         }
         MemoryDomain<?> memoryDomain =
-                Environment.current().backend(Device.defaultDevice()).memoryDomain();
+                Environment.current().runtimeFor(Device.defaultDevice()).memoryDomain();
         MemoryView<?> view = copyIntArray(memoryDomain, data, shape);
         return of(view);
     }
@@ -995,7 +995,7 @@ public interface Tensor {
                     "array length " + data.length + " does not match shape size " + shape.size());
         }
         MemoryDomain<?> memoryDomain =
-                Environment.current().backend(Device.defaultDevice()).memoryDomain();
+                Environment.current().runtimeFor(Device.defaultDevice()).memoryDomain();
         MemoryView<?> view = copyLongArray(memoryDomain, data, shape);
         return of(view);
     }
@@ -1023,7 +1023,7 @@ public interface Tensor {
                     "array length " + data.length + " does not match shape size " + shape.size());
         }
         MemoryDomain<?> memoryDomain =
-                Environment.current().backend(Device.defaultDevice()).memoryDomain();
+                Environment.current().runtimeFor(Device.defaultDevice()).memoryDomain();
         MemoryView<?> view = copyBooleanArray(memoryDomain, data, shape);
         return of(view);
     }

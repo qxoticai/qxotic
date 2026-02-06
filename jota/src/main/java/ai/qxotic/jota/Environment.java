@@ -1,14 +1,14 @@
 package ai.qxotic.jota;
 
-import ai.qxotic.jota.backend.BackendRegistry;
-import ai.qxotic.jota.backend.DefaultBackendRegistry;
-import ai.qxotic.jota.backend.DeviceRuntime;
 import ai.qxotic.jota.c.CDeviceRuntime;
 import ai.qxotic.jota.c.CNative;
 import ai.qxotic.jota.hip.HipDeviceRuntime;
 import ai.qxotic.jota.hip.HipRuntime;
 import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.panama.PanamaDeviceRuntime;
+import ai.qxotic.jota.runtime.DefaultRuntimeRegistry;
+import ai.qxotic.jota.runtime.DeviceRuntime;
+import ai.qxotic.jota.runtime.RuntimeRegistry;
 import ai.qxotic.jota.tensor.ComputeEngine;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
@@ -23,22 +23,22 @@ public final class Environment {
             new Environment(
                     Device.PANAMA,
                     DataTypeImpl.defaultFloatValue(),
-                    buildDefaultBackends(),
+                    buildDefaultRuntimes(),
                     ExecutionMode.LAZY);
 
     private final Device defaultDevice;
     private final DataType defaultFloat;
-    private final BackendRegistry backends;
+    private final RuntimeRegistry backends;
     private final ExecutionMode executionMode;
 
     public Environment(
             Device defaultDevice,
             DataType defaultFloat,
-            BackendRegistry backends,
+            RuntimeRegistry runtimes,
             ExecutionMode executionMode) {
         this.defaultDevice = Objects.requireNonNull(defaultDevice, "defaultDevice");
         this.defaultFloat = Objects.requireNonNull(defaultFloat, "defaultFloat");
-        this.backends = Objects.requireNonNull(backends, "backends");
+        this.backends = Objects.requireNonNull(runtimes, "runtimes");
         this.executionMode = Objects.requireNonNull(executionMode, "executionMode");
     }
 
@@ -47,8 +47,8 @@ public final class Environment {
     }
 
     @SuppressWarnings("unchecked")
-    public MemoryDomain<MemorySegment> panamaMemoryDomain() {
-        return (MemoryDomain<MemorySegment>) backends.nativeBackend().memoryDomain();
+    public MemoryDomain<MemorySegment> nativeMemoryDomain() {
+        return (MemoryDomain<MemorySegment>) backends.nativeRuntime().memoryDomain();
     }
 
     public static Environment global() {
@@ -83,38 +83,35 @@ public final class Environment {
         return defaultFloat;
     }
 
-    public BackendRegistry backends() {
+    public RuntimeRegistry runtimes() {
         return backends;
     }
 
-    public DeviceRuntime backend(Device device) {
-        return backends.backend(device);
+    public DeviceRuntime runtimeFor(Device device) {
+        return backends.runtimeFor(device);
     }
 
-    public DeviceRuntime nativeBackend() {
-        return backends.nativeBackend();
+    public DeviceRuntime nativeRuntime() {
+        return backends.nativeRuntime();
     }
 
-    public ComputeEngine computeBackendFor(Device device) {
-        return backends.backend(device).computeEngine();
+    public ComputeEngine computeEngineFor(Device device) {
+        return backends.runtimeFor(device).computeEngine();
     }
 
     public ExecutionMode executionMode() {
         return executionMode;
     }
 
-    private static BackendRegistry buildDefaultBackends() {
-        DefaultBackendRegistry registry =
-                DefaultBackendRegistry.withNative(new PanamaDeviceRuntime());
+    private static RuntimeRegistry buildDefaultRuntimes() {
+        DefaultRuntimeRegistry registry =
+                DefaultRuntimeRegistry.withNative(new PanamaDeviceRuntime());
         if (CNative.isAvailable()) {
             registry.register(new CDeviceRuntime());
         }
         if (HipRuntime.isAvailable()) {
             registry.register(new HipDeviceRuntime());
         }
-        //        if (WebGPUSupport.hasGpuAdapter()) {
-        //            registry.register(WebGPUWBackend.create());
-        //        }
         return registry;
     }
 }

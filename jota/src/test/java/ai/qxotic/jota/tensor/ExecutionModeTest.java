@@ -12,12 +12,12 @@ import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.ExecutionMode;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
-import ai.qxotic.jota.backend.DefaultBackendRegistry;
-import ai.qxotic.jota.backend.DeviceRuntime;
 import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryHelpers;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.memory.impl.DomainFactory;
+import ai.qxotic.jota.runtime.DefaultRuntimeRegistry;
+import ai.qxotic.jota.runtime.DeviceRuntime;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;
 
@@ -41,7 +41,7 @@ class ExecutionModeTest {
 
     @Test
     void eagerModeSelectsEagerOps() {
-        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.register(new StubDeviceRuntime(CONTEXT, COMPUTE_BACKEND));
         Environment environment =
                 new Environment(CONTEXT.device(), DataType.FP32, registry, ExecutionMode.EAGER);
@@ -58,7 +58,7 @@ class ExecutionModeTest {
 
     @Test
     void lazyModeReturnsLazyTensor() {
-        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.register(new StubDeviceRuntime(CONTEXT, COMPUTE_BACKEND));
         Environment environment =
                 new Environment(Device.PANAMA, DataType.FP32, registry, ExecutionMode.LAZY);
@@ -79,7 +79,7 @@ class ExecutionModeTest {
     @Test
     void eagerOpsMaterializeScalarSqrt() {
         MemoryDomain<MemorySegment> segmentDomain = DomainFactory.ofMemorySegment();
-        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.register(new StubDeviceRuntime(segmentDomain, COMPUTE_BACKEND));
         Environment environment =
                 new Environment(
@@ -141,7 +141,7 @@ class ExecutionModeTest {
         }
 
         @Override
-        public java.util.Optional<ai.qxotic.jota.backend.KernelService> kernelService() {
+        public java.util.Optional<ai.qxotic.jota.runtime.KernelService> kernelService() {
             return java.util.Optional.empty();
         }
     }
