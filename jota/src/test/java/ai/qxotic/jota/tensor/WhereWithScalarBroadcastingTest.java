@@ -25,7 +25,7 @@ class WhereWithScalarBroadcastingTest {
 
     @SuppressWarnings("unchecked")
     private static final MemoryDomain<MemorySegment> CONTEXT =
-            (MemoryDomain<MemorySegment>) Environment.current().nativeBackend().memoryDomain();
+            (MemoryDomain<MemorySegment>) Environment.current().nativeRuntime().memoryDomain();
 
     @Test
     void whereWithScalarFalseValue() {
@@ -158,32 +158,9 @@ class WhereWithScalarBroadcastingTest {
 
             // Debug: print intermediate state
             MemoryView<?> escView = escaped.materialize();
-            int escapedCount = 0;
-            for (int j = 0; j < 6; j++) {
-                if (readFloat(escView, j) > 0.5f) escapedCount++;
-            }
-            System.out.println(
-                    "Iteration "
-                            + i
-                            + " (threshold="
-                            + threshold
-                            + "): escapedCount="
-                            + escapedCount);
         }
 
         MemoryView<?> view = iterations.materialize();
-        System.out.println("Final iterations:");
-        for (int j = 0; j < 6; j++) {
-            System.out.println("  [" + j + "] = " + readFloat(view, j));
-        }
-
-        // values = [10, 5, 3, 2, 1, 0.5]
-        // threshold progression: 8, 6, 4, 2, 0
-        // i=0 (threshold=8): 10 > 8, so element 0 escapes at iteration 0
-        // i=1 (threshold=6): 5 < 6, nothing new
-        // i=2 (threshold=4): 5 > 4, so element 1 escapes at iteration 2
-        // i=3 (threshold=2): 3 > 2, so element 2 escapes at iteration 3
-        // i=4 (threshold=0): 2,1,0.5 > 0, so elements 3,4,5 escape at iteration 4
         assertEquals(0.0f, readFloat(view, 0), 0.001f); // escaped at i=0
         assertEquals(2.0f, readFloat(view, 1), 0.001f); // escaped at i=2
         assertEquals(3.0f, readFloat(view, 2), 0.001f); // escaped at i=3

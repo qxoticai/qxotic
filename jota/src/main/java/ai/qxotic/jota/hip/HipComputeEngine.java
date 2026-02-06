@@ -90,7 +90,7 @@ public final class HipComputeEngine implements ComputeEngine {
         @SuppressWarnings("unchecked")
         MemoryDomain<Object> srcContext =
                 (MemoryDomain<Object>)
-                        Environment.current().backend(view.memory().device()).memoryDomain();
+                        Environment.current().runtimeFor(view.memory().device()).memoryDomain();
         @SuppressWarnings("unchecked")
         MemoryView<Object> srcView = (MemoryView<Object>) view;
         MemoryView<HipDevicePtr> dst =
@@ -126,7 +126,7 @@ public final class HipComputeEngine implements ComputeEngine {
         @SuppressWarnings("unchecked")
         MemoryDomain<Object> srcContext =
                 (MemoryDomain<Object>)
-                        Environment.current().backend(view.memory().device()).memoryDomain();
+                        Environment.current().runtimeFor(view.memory().device()).memoryDomain();
         @SuppressWarnings("unchecked")
         MemoryView<Object> srcView = (MemoryView<Object>) view;
         MemoryDomain.copy(srcContext, srcView, hostContext, dst);
@@ -141,7 +141,7 @@ public final class HipComputeEngine implements ComputeEngine {
     private static MemoryView<?> toHost(HipMemoryDomain hipContext, MemoryView<HipDevicePtr> view) {
         @SuppressWarnings("unchecked")
         MemoryDomain<Object> hostContext =
-                (MemoryDomain<Object>) Environment.current().nativeBackend().memoryDomain();
+                (MemoryDomain<Object>) Environment.current().nativeRuntime().memoryDomain();
         @SuppressWarnings("unchecked")
         MemoryView<Object> hostView =
                 (MemoryView<Object>)

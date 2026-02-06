@@ -38,7 +38,7 @@ final class EnvironmentOps {
             synchronized (this) {
                 if (eagerOps == null) {
                     MemoryDomain<?> domain =
-                            environment.backend(environment.defaultDevice()).memoryDomain();
+                            environment.runtimeFor(environment.defaultDevice()).memoryDomain();
                     eagerOps = new EagerTensorOps(domain);
                 }
                 return eagerOps;

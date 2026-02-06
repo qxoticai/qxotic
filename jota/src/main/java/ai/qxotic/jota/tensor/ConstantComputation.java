@@ -50,7 +50,7 @@ record ConstantComputation(long rawBits, DataType dataType, Shape shape, Device 
 
     @Override
     public MemoryView<?> execute() {
-        MemoryDomain<?> memoryDomain = Environment.current().backend(device).memoryDomain();
+        MemoryDomain<?> memoryDomain = Environment.current().runtimeFor(device).memoryDomain();
         return allocateAndFill(memoryDomain);
     }
 

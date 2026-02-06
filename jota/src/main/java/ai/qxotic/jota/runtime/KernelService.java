@@ -1,4 +1,4 @@
-package ai.qxotic.jota.backend;
+package ai.qxotic.jota.runtime;
 
 import ai.qxotic.jota.tensor.KernelBackend;
 import ai.qxotic.jota.tensor.KernelCacheKey;

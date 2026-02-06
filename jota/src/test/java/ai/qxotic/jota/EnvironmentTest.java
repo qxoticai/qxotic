@@ -2,12 +2,16 @@ package ai.qxotic.jota;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import ai.qxotic.jota.backend.DefaultBackendRegistry;
-import ai.qxotic.jota.backend.DeviceRuntime;
-import ai.qxotic.jota.backend.KernelService;
+import ai.qxotic.jota.ir.tir.TIRGraph;
 import ai.qxotic.jota.memory.MemoryDomain;
+import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.memory.impl.DomainFactory;
+import ai.qxotic.jota.runtime.DefaultRuntimeRegistry;
+import ai.qxotic.jota.runtime.DeviceRuntime;
+import ai.qxotic.jota.runtime.KernelService;
 import ai.qxotic.jota.tensor.ComputeEngine;
+import ai.qxotic.jota.tensor.Tensor;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
@@ -24,7 +28,7 @@ class EnvironmentTest {
                 new Environment(
                         Device.PANAMA,
                         DataType.FP64,
-                        Environment.global().backends(),
+                        Environment.global().runtimes(),
                         ExecutionMode.LAZY);
 
         Environment.with(
@@ -47,14 +51,14 @@ class EnvironmentTest {
 
     @Test
     void registryExposesRegisteredDevices() {
-        DefaultBackendRegistry registry = new DefaultBackendRegistry();
-        registry.register(new StubDeviceRuntime(DomainFactory.ofBytes(), dummyBackend()));
-        registry.register(new StubDeviceRuntime(DomainFactory.ofMemorySegment(), dummyBackend()));
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
+        registry.register(new StubDeviceRuntime(DomainFactory.ofBytes(), dummyRuntime()));
+        registry.register(new StubDeviceRuntime(DomainFactory.ofMemorySegment(), dummyRuntime()));
 
         assertTrue(registry.devices().contains(Device.PANAMA));
     }
 
-    private ComputeEngine dummyBackend() {
+    private ComputeEngine dummyRuntime() {
         return new ComputeEngine() {
             @Override
             public Device device() {
@@ -62,9 +66,7 @@ class EnvironmentTest {
             }
 
             @Override
-            public ai.qxotic.jota.memory.MemoryView<?> execute(
-                    ai.qxotic.jota.ir.tir.TIRGraph graph,
-                    java.util.List<ai.qxotic.jota.tensor.Tensor> inputs) {
+            public MemoryView<?> execute(TIRGraph graph, List<Tensor> inputs) {
                 throw new UnsupportedOperationException("No backend execution in this test");
             }
         };

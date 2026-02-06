@@ -36,12 +36,12 @@ class CKernelSmokeTest {
                 new Environment(
                         Device.C,
                         current.defaultFloat(),
-                        current.backends(),
+                        current.runtimes(),
                         current.executionMode());
 
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>)
-                        Environment.current().backend(Device.C).memoryDomain();
+                        Environment.current().runtimeFor(Device.C).memoryDomain();
         MemoryView<MemorySegment> inputView =
                 createFp32Input(domain, new float[] {-4f, -3f, -2f, -1f, 0f, 1f, 2f, 3f});
         Tensor input = Tensor.of(inputView);
@@ -78,7 +78,7 @@ class CKernelSmokeTest {
                 new Environment(
                         Device.C,
                         current.defaultFloat(),
-                        current.backends(),
+                        current.runtimes(),
                         current.executionMode());
 
         MemoryView<?> output =
@@ -96,7 +96,7 @@ class CKernelSmokeTest {
 
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>)
-                        Environment.current().backend(Device.C).memoryDomain();
+                        Environment.current().runtimeFor(Device.C).memoryDomain();
         MemoryAccess<MemorySegment> access = domain.directAccess();
         MemoryView<MemorySegment> typed = (MemoryView<MemorySegment>) output;
 
@@ -133,12 +133,12 @@ class CKernelSmokeTest {
                 new Environment(
                         Device.C,
                         current.defaultFloat(),
-                        current.backends(),
+                        current.runtimes(),
                         current.executionMode());
 
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>)
-                        Environment.current().backend(Device.C).memoryDomain();
+                        Environment.current().runtimeFor(Device.C).memoryDomain();
         MemoryView<MemorySegment> inputView = createFp16Input(domain, new float[] {1f, 2f, 3f, 4f});
         Tensor input = Tensor.of(inputView);
 
@@ -169,12 +169,12 @@ class CKernelSmokeTest {
                 new Environment(
                         Device.C,
                         current.defaultFloat(),
-                        current.backends(),
+                        current.runtimes(),
                         current.executionMode());
 
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>)
-                        Environment.current().backend(Device.C).memoryDomain();
+                        Environment.current().runtimeFor(Device.C).memoryDomain();
         MemoryView<MemorySegment> inputView = createBf16Input(domain, new float[] {1f, 2f, 3f, 4f});
         Tensor input = Tensor.of(inputView);
 

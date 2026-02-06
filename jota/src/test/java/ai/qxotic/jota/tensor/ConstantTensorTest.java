@@ -12,13 +12,13 @@ import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.ExecutionMode;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
-import ai.qxotic.jota.backend.DefaultBackendRegistry;
-import ai.qxotic.jota.backend.DeviceRuntime;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.memory.MemoryViewPrinter;
 import ai.qxotic.jota.memory.impl.DomainFactory;
+import ai.qxotic.jota.runtime.DefaultRuntimeRegistry;
+import ai.qxotic.jota.runtime.DeviceRuntime;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -53,7 +53,7 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF32")
     <B> void materializesBroadcastedFloat(MemoryDomain<B> domain) {
-        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
                 new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
@@ -82,7 +82,7 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingI64")
     <B> void materializesBroadcastedLong(MemoryDomain<B> domain) {
-        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
                 new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
@@ -124,7 +124,7 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF64")
     <B> void materializesScalarDouble(MemoryDomain<B> domain) {
-        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
                 new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
@@ -153,7 +153,7 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingI64")
     <B> void materializesScalarLong(MemoryDomain<B> domain) {
-        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
                 new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
@@ -182,7 +182,7 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#allDomains")
     <B> void scalarUsesEnvironmentDefaultDevice(MemoryDomain<B> domain) {
-        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
                 new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
@@ -221,7 +221,7 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF32")
     <B> void materializesZeros(MemoryDomain<B> domain) {
-        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
                 new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
@@ -269,7 +269,7 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF32")
     <B> void materializesOnes(MemoryDomain<B> domain) {
-        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
                 new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
@@ -342,7 +342,7 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF32")
     <B> void materializesFull(MemoryDomain<B> domain) {
-        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
                 new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
@@ -372,7 +372,7 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF32")
     <B> void ofFloatArray(MemoryDomain<B> domain) {
-        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
                 new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
@@ -404,7 +404,7 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF32")
     <B> void ofFloatArrayWithShape(MemoryDomain<B> domain) {
-        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
                 new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
@@ -424,7 +424,7 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF64")
     <B> void ofDoubleArray(MemoryDomain<B> domain) {
-        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
                 new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
@@ -456,7 +456,7 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingI32")
     <B> void ofIntArray(MemoryDomain<B> domain) {
-        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
                 new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
@@ -487,7 +487,7 @@ class ConstantTensorTest {
     @ParameterizedTest
     @MethodSource("ai.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingI64")
     <B> void ofLongArray(MemoryDomain<B> domain) {
-        DefaultBackendRegistry registry = new DefaultBackendRegistry();
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment =
                 new Environment(domain.device(), DataType.FP32, registry, ExecutionMode.EAGER);
@@ -530,7 +530,7 @@ class ConstantTensorTest {
         Tensor reciprocal =
                 TensorOpsContext.with(
                         new EagerTensorOps(DomainFactory.ofMemorySegment()), scalar::reciprocal);
-        MemoryAccess access = Environment.current().panamaMemoryDomain().directAccess();
+        MemoryAccess access = Environment.current().nativeMemoryDomain().directAccess();
         System.out.println(MemoryViewPrinter.toString(reciprocal1.materialize(), access));
     }
 
@@ -650,7 +650,7 @@ class ConstantTensorTest {
         }
 
         @Override
-        public java.util.Optional<ai.qxotic.jota.backend.KernelService> kernelService() {
+        public java.util.Optional<ai.qxotic.jota.runtime.KernelService> kernelService() {
             return java.util.Optional.empty();
         }
     }

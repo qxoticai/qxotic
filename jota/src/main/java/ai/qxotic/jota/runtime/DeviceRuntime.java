@@ -1,4 +1,4 @@
-package ai.qxotic.jota.backend;
+package ai.qxotic.jota.runtime;
 
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.MemoryDomain;
@@ -34,21 +34,21 @@ public interface DeviceRuntime {
     default KernelExecutable registerKernel(KernelProgram program, KernelCacheKey key) {
         Objects.requireNonNull(program, "program");
         Objects.requireNonNull(key, "key");
-        KernelService kernels = requireKernels();
+        KernelService kernels = requireKernelService();
         return kernels.register(program, key);
     }
 
     default Optional<KernelProgram> loadRegisteredKernel(KernelCacheKey key) {
         Objects.requireNonNull(key, "key");
-        KernelService kernels = requireKernels();
+        KernelService kernels = requireKernelService();
         return kernels.loadRegisteredKernel(key);
     }
 
-    private KernelService requireKernels() {
+    private KernelService requireKernelService() {
         Optional<KernelService> service = kernelService();
         if (service.isEmpty()) {
             throw new UnsupportedOperationException(
-                    "Backend does not support kernels: " + device());
+                    "Runtime does not support kernels: " + device());
         }
         return service.get();
     }

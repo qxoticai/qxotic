@@ -19,10 +19,10 @@ public interface JitKernel {
      * throw an exception from this method and override {@link #execute(MemoryDomain, KernelArgs,
      * Memory)} instead.
      *
-     * @param domain the memory domain for device operations
+     * @param memoryDomain the memory domain for device operations
      * @param args kernel arguments (inputs, outputs, scalars)
      */
-    void execute(MemoryDomain<MemorySegment> domain, KernelArgs args);
+    void execute(MemoryDomain<MemorySegment> memoryDomain, KernelArgs args);
 
     /**
      * Executes the kernel with optional scratch memory.
