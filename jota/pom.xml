@@ -7,104 +7,17 @@
     <parent>
         <groupId>ai.qxotic</groupId>
         <artifactId>qxotic-parent</artifactId>
-        <version>${qxotic.version}</version>
+        <version>0.1-SNAPSHOT</version>
     </parent>
 
-    <artifactId>jota</artifactId>
-    <name>Java Open Tensor Algebra</name>
+    <artifactId>jota-modules</artifactId>
+    <packaging>pom</packaging>
+    <name>Jota Modules</name>
 
-    <properties>
-        <maven.compiler.source>25</maven.compiler.source>
-        <maven.compiler.target>25</maven.compiler.target>
-    </properties>
-
-    <dependencies>
-        <dependency>
-            <groupId>org.jcuda</groupId>
-            <artifactId>jcuda</artifactId>
-            <version>12.6.0</version>
-        </dependency>
-
-        <dependency>
-            <groupId>org.jcuda</groupId>
-            <artifactId>jcublas</artifactId>
-            <version>12.6.0</version>
-        </dependency>
-
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
-
-    <profiles>
-        <profile>
-            <id>hip</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>exec-maven-plugin</artifactId>
-                        <version>3.4.1</version>
-                        <executions>
-                            <execution>
-                                <id>check-hipcc</id>
-                                <phase>validate</phase>
-                                <goals>
-                                    <goal>exec</goal>
-                                </goals>
-                                <configuration>
-                                    <executable>hipcc</executable>
-                                    <arguments>
-                                        <argument>--version</argument>
-                                    </arguments>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <id>check-java-home</id>
-                                <phase>validate</phase>
-                                <goals>
-                                    <goal>exec</goal>
-                                </goals>
-                                <configuration>
-                                    <executable>bash</executable>
-                                    <arguments>
-                                        <argument>-c</argument>
-                                        <argument>test -n "$JAVA_HOME" || { echo "JAVA_HOME must be set for HIP JNI build" >&amp;2; exit 1; }</argument>
-                                    </arguments>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <id>build-hip-jni</id>
-                                <phase>generate-test-sources</phase>
-                                <goals>
-                                    <goal>exec</goal>
-                                </goals>
-                                <configuration>
-                                    <executable>bash</executable>
-                                    <arguments>
-                                        <argument>native/hip/build.sh</argument>
-                                    </arguments>
-                                    <environmentVariables>
-                                        <JAVA_HOME>${env.JAVA_HOME}</JAVA_HOME>
-                                        <ROCM_PATH>${env.ROCM_PATH}</ROCM_PATH>
-                                    </environmentVariables>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                    <plugin>
-                        <artifactId>maven-surefire-plugin</artifactId>
-                        <configuration>
-                            <environmentVariables>
-                                <LD_LIBRARY_PATH>${project.basedir}/native/hip/build:${env.ROCM_PATH}/lib:/opt/rocm/lib:${env.LD_LIBRARY_PATH}</LD_LIBRARY_PATH>
-                            </environmentVariables>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-    </profiles>
-
+    <modules>
+        <module>jota-core</module>
+        <module>jota-runtime-java-aot</module>
+        <module>jota-runtime-c</module>
+        <module>jota-runtime-hip</module>
+    </modules>
 </project>

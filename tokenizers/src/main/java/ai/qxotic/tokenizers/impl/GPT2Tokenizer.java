@@ -35,7 +35,7 @@ public class GPT2Tokenizer extends AbstractTokenizer {
             TextSplitter preTokenizer,
             List<IntPair> mergeRanks) {
         super(vocabulary, normalizer, preTokenizer);
-        this.merges = HashMap.newHashMap(mergeRanks.size());
+        this.merges = new HashMap<>(mergeRanks.size());
         for (int rank = 0; rank < mergeRanks.size(); rank++) {
             IntPair pair = mergeRanks.get(rank);
             int leftIndex = pair.left();

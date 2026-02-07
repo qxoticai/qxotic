@@ -6,31 +6,31 @@
 
     <parent>
         <groupId>ai.qxotic</groupId>
-        <artifactId>qxotic-parent</artifactId>
+        <artifactId>jota-modules</artifactId>
         <version>0.1-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>safetensors</artifactId>
-    <name>Qxotic Safetensors</name>
+    <artifactId>jota-runtime-java-aot</artifactId>
+    <name>Jota Java AOT Runtime</name>
 
     <properties>
-        <maven.compiler.source>11</maven.compiler.source>
-        <maven.compiler.target>11</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>ai.qxotic</groupId>
+            <artifactId>jota-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
-
-        <dependency>
-            <groupId>ai.qxotic</groupId>
-            <artifactId>json</artifactId>
-        </dependency>
-
     </dependencies>
 
+    <build/>
 </project>
