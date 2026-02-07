@@ -1,0 +1,102 @@
+package ai.qxotic.jota.runtime;
+
+import ai.qxotic.jota.Device;
+import ai.qxotic.jota.memory.MemoryDomain;
+import ai.qxotic.jota.tensor.ComputeEngine;
+import ai.qxotic.jota.tensor.ExecutionStream;
+import ai.qxotic.jota.tensor.KernelArgs;
+import ai.qxotic.jota.tensor.KernelCacheKey;
+import ai.qxotic.jota.tensor.KernelExecutable;
+import ai.qxotic.jota.tensor.KernelProgram;
+import ai.qxotic.jota.tensor.LaunchConfig;
+import java.util.Objects;
+import java.util.Optional;
+
+public interface DeviceRuntime {
+    Device device();
+
+    MemoryDomain<?> memoryDomain();
+
+    ComputeEngine computeEngine();
+
+    Optional<KernelService> kernelService();
+
+    default boolean supportsKernels() {
+        return kernelService().isPresent();
+    }
+
+    default KernelCacheKey keyFor(KernelProgram program) {
+        return KernelProgramHasher.keyFor(program);
+    }
+
+    default KernelExecutable registerKernel(KernelProgram program) {
+        Objects.requireNonNull(program, "program");
+        return registerKernel(program, keyFor(program));
+    }
+
+    default KernelExecutable registerKernel(KernelProgram program, KernelCacheKey key) {
+        Objects.requireNonNull(program, "program");
+        Objects.requireNonNull(key, "key");
+        KernelService kernels = requireKernelService();
+        return kernels.register(program, key);
+    }
+
+    default KernelExecutable registerKernel(String name, KernelProgram program) {
+        Objects.requireNonNull(name, "name");
+        Objects.requireNonNull(program, "program");
+        return registerKernel(name, program, keyFor(program));
+    }
+
+    default KernelExecutable registerKernel(
+            String name, KernelProgram program, KernelCacheKey key) {
+        Objects.requireNonNull(name, "name");
+        Objects.requireNonNull(program, "program");
+        Objects.requireNonNull(key, "key");
+        KernelService kernels = requireKernelService();
+        return kernels.register(name, program, key);
+    }
+
+    default Optional<KernelProgram> loadRegisteredKernel(KernelCacheKey key) {
+        Objects.requireNonNull(key, "key");
+        KernelService kernels = requireKernelService();
+        return kernels.loadRegisteredKernel(key);
+    }
+
+    default Optional<KernelProgram> loadRegisteredKernel(String name) {
+        Objects.requireNonNull(name, "name");
+        KernelService kernels = requireKernelService();
+        return kernels.loadRegisteredKernel(name);
+    }
+
+    default Optional<KernelExecutable> loadRegisteredExecutable(String name) {
+        Objects.requireNonNull(name, "name");
+        KernelService kernels = requireKernelService();
+        return kernels.loadRegisteredExecutable(name);
+    }
+
+    default void launchKernel(String name, Object... args) {
+        launchKernel(name, LaunchConfig.auto(), args);
+    }
+
+    default void launchKernel(String name, LaunchConfig config, Object... args) {
+        Objects.requireNonNull(name, "name");
+        Objects.requireNonNull(config, "config");
+        KernelExecutable exec =
+                loadRegisteredExecutable(name)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalArgumentException(
+                                                "No kernel registered with name: " + name));
+        KernelArgs kernelArgs = KernelArgs.fromVarargs(args);
+        exec.launch(config, kernelArgs, new ExecutionStream(device(), null, true));
+    }
+
+    private KernelService requireKernelService() {
+        Optional<KernelService> service = kernelService();
+        if (service.isEmpty()) {
+            throw new UnsupportedOperationException(
+                    "Runtime does not support kernels: " + device());
+        }
+        return service.get();
+    }
+}
