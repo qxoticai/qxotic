@@ -515,6 +515,9 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
                     0,
                     batchSize,
                     t -> kernelOps.copyTo(weights.tokenEmbeddings.row(tokens[t]), state.x.row(t)));
+            if (TraceDebug.enabled() && batchSize > 0) {
+                TraceDebug.vector("x_embed", -1, position, state.x.row(0));
+            }
             // For Granite models.
             if (!Float.isNaN(config.embeddingScale)) {
                 Parallel.parallelFor(
@@ -542,6 +545,9 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
                                         weights.rmsAttentionWeights[li],
                                         config.rmsNormEps,
                                         state.xb.row(t)));
+                if (TraceDebug.enabled() && batchSize > 0) {
+                    TraceDebug.vector("xb", li, position, state.xb.row(0));
+                }
 
                 // qkv matmuls for this position
                 kernelOps.matrixMultiply(
@@ -565,6 +571,11 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
                         state.xb,
                         weights.valueWeights[li],
                         state.value);
+                if (TraceDebug.enabled() && batchSize > 0) {
+                    TraceDebug.vector("q_pre", li, position, state.query.row(0));
+                    TraceDebug.vector("k_pre", li, position, state.key.row(0));
+                    TraceDebug.vector("v_pre", li, position, state.value.row(0));
+                }
 
                 // Bias correction.
                 if (weights.queryBias != null && weights.queryBias[li] != null) {
@@ -665,6 +676,10 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
                                         config.numberOfKeyValueHeads,
                                         headSize,
                                         state.key.row(t)));
+                if (TraceDebug.enabled() && batchSize > 0) {
+                    TraceDebug.vector("q", li, position, state.query.row(0));
+                    TraceDebug.vector("k", li, position, state.key.row(0));
+                }
 
                 // save key,value at this time step (position) to our kv cache
                 // int loff = li * config.seq_len * kvDim; // kv cache layer offset for convenience
@@ -714,6 +729,10 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
                                     state.valueCache[li],
                                     state.attentionScores.row(t),
                                     state.attention_out.row(t)));
+            if (TraceDebug.enabled() && batchSize > 0) {
+                int ti = batchIndex >= 0 ? batchIndex : 0;
+                TraceDebug.vector("attn_out", li, position + ti, state.attention_out.row(ti));
+            }
 
             // final matmul to get the output of the attention
             if (batchIndex >= 0) {
@@ -881,6 +900,10 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
                     batchSize,
                     batchIndex,
                     t -> kernelOps.add(state.x.row(t), state.xb.row(t), state.x.row(t)));
+            if (TraceDebug.enabled() && batchSize > 0) {
+                int ti = batchIndex >= 0 ? batchIndex : 0;
+                TraceDebug.vector("x", li, position + ti, state.x.row(ti));
+            }
         }
 
         // Only compute logits for the latest batch.
@@ -898,6 +921,9 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
                 weights.classifierWeights, /*config.vocabularySize, dim,*/
                 state.x.row(latestBatch),
                 state.logits);
+        if (TraceDebug.enabled()) {
+            TraceDebug.vector("logits", config.numberOfLayers, position + latestBatch, state.logits);
+        }
 
         // For Granite models.
         if (!Float.isNaN(config.logitScale)) {

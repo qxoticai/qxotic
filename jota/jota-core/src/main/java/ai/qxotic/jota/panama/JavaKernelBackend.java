@@ -17,6 +17,7 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -135,12 +136,15 @@ public final class JavaKernelBackend implements KernelBackend {
                 compiler.getStandardFileManager(diagnostics, Locale.ROOT, null)) {
             Iterable<? extends JavaFileObject> units =
                     fileManager.getJavaFileObjects(sourceFile.toFile());
-            List<String> options =
-                    List.of(
-                            "-classpath",
-                            System.getProperty("java.class.path"),
-                            "-d",
-                            classOutputDir.toString());
+            List<String> options = new ArrayList<>();
+            options.add("-classpath");
+            options.add(System.getProperty("java.class.path"));
+            options.add("-d");
+            options.add(classOutputDir.toString());
+            if (ModuleLayer.boot().findModule("jdk.incubator.vector").isPresent()) {
+                options.add("--add-modules");
+                options.add("jdk.incubator.vector");
+            }
             JavaCompiler.CompilationTask task =
                     compiler.getTask(null, fileManager, diagnostics, options, null, units);
             Boolean success = task.call();

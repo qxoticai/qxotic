@@ -66,6 +66,11 @@ final class LIRKernelCompiler {
         }
     }
 
+    KernelCacheKey cacheKeyFor(LIRGraph graph, ScratchLayout scratchLayout) {
+        boolean needsStridedKernel = needsStridedKernel(graph);
+        return buildCacheKey(graph, scratchLayout, needsStridedKernel);
+    }
+
     private void compileSource(KernelCacheEntry entry) throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         if (compiler == null) {
