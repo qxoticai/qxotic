@@ -44,6 +44,9 @@ final class CKernelCompiler {
         List<String> command = new java.util.ArrayList<>();
         command.add(compiler);
         command.addAll(sharedFlags());
+        if (openMpEnabled()) {
+            command.add("-fopenmp");
+        }
         command.add("-O2");
         command.add("-std=gnu17");
         command.add(source.toAbsolutePath().toString());
@@ -101,6 +104,14 @@ final class CKernelCompiler {
 
     private static boolean isWindows() {
         return System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
+    }
+
+    private static boolean openMpEnabled() {
+        String override = System.getProperty("ai.qxotic.jota.c.openmp");
+        if (override != null) {
+            return Boolean.parseBoolean(override);
+        }
+        return !isMac() && !isWindows();
     }
 
     private static String hashLirGraph(LIRGraph graph, ScratchLayout scratchLayout) {

@@ -2,6 +2,7 @@ package ai.qxotic.model.llm;
 
 import ai.qxotic.model.llm.generic.ChatMLFormat;
 import ai.qxotic.model.llm.llama.Llama;
+import ai.qxotic.model.llm.llama.TraceDebug;
 import ai.qxotic.tokenizers.IntSequence;
 import java.util.List;
 import java.util.Scanner;
@@ -150,6 +151,7 @@ public class RunInteractive {
             final int[] tokens = new int[nTokens];
             for (int i = 0; i < nTokens; i++) {
                 tokens[i] = promptTokens.intAt(promptIndex + i);
+                TraceDebug.token("ingest", position + i, tokens[i]);
             }
             // Force-pick token from prompt.
             model.ingestTokens(weights, state, tokens);
@@ -168,6 +170,7 @@ public class RunInteractive {
             // Compute logits from previous token.
             model.computeLogits(weights, state);
             int generatedToken = sampler.applyAsInt(state);
+            TraceDebug.token("produce", position, generatedToken);
             // Ingest generated token.
             model.ingestTokens(weights, state, new int[] {generatedToken});
             generatedTokens.add(generatedToken);

@@ -12,11 +12,14 @@ import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.tensor.DiskKernelCache;
 import ai.qxotic.jota.tensor.JavaKernel;
+import ai.qxotic.jota.tensor.KernelCacheKey;
 import ai.qxotic.jota.tensor.Tensor;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 public final class PanamaLIRKernelExecutor {
 
@@ -28,6 +31,8 @@ public final class PanamaLIRKernelExecutor {
     private final ScratchVerificationPass scratchVerification = new ScratchVerificationPass();
     private final boolean verifyScratch =
             Boolean.parseBoolean(System.getProperty("jota.verifyScratch", "false"));
+    private final ConcurrentMap<KernelCacheKey, CompiledKernel> compiledKernelCache =
+            new ConcurrentHashMap<>();
 
     public PanamaLIRKernelExecutor(DiskKernelCache cache) {
         this.compiler = new LIRKernelCompiler(Objects.requireNonNull(cache, "cache"));
@@ -40,8 +45,13 @@ public final class PanamaLIRKernelExecutor {
         if (verifyScratch) {
             scratchVerification.verifyOrThrow(graph, scratchLayout);
         }
-        JavaKernel kernel = compiler.compile(graph, scratchLayout);
-        return new CompiledKernel(kernel, scratchLayout);
+        KernelCacheKey key = compiler.cacheKeyFor(graph, scratchLayout);
+        return compiledKernelCache.computeIfAbsent(
+                key,
+                __ -> {
+                    JavaKernel kernel = compiler.compile(graph, scratchLayout);
+                    return new CompiledKernel(kernel, scratchLayout);
+                });
     }
 
     public MemoryView<?> execute(
@@ -75,17 +85,8 @@ public final class PanamaLIRKernelExecutor {
 
     public MemoryView<?> execute(
             LIRGraph graph, List<Tensor> lirInputs, MemoryDomain<MemorySegment> memoryDomain) {
-        // Analyze scratch requirements
-        ScratchLayout scratchLayout = scratchAnalysis.analyze(graph);
-
-        // Verify scratch layout if enabled
-        if (verifyScratch) {
-            scratchVerification.verifyOrThrow(graph, scratchLayout);
-        }
-
-        // Compile kernel with scratch layout
-        JavaKernel kernel = compiler.compile(graph, scratchLayout);
-        return execute(graph, kernel, scratchLayout, lirInputs, memoryDomain);
+        CompiledKernel compiled = compile(graph);
+        return execute(graph, compiled.kernel(), compiled.scratchLayout(), lirInputs, memoryDomain);
     }
 
     public MemoryView<?> execute(
