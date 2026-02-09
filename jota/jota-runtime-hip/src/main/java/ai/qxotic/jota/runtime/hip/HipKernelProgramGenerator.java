@@ -18,7 +18,7 @@ final class HipKernelProgramGenerator {
         String source = LirKernelSourceGenerator.generate(graph, scratchLayout, kernelName);
         return new KernelProgram(
                 KernelProgram.Kind.SOURCE,
-                KernelProgram.Language.HIP,
+                KernelProgram.HIP,
                 source,
                 kernelName,
                 java.util.Map.of());

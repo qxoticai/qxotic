@@ -2835,7 +2835,7 @@ public final class Llama32Cli {
                                         runtime.registerKernel(
                                                 SWIGLU_KERNEL_NAME,
                                                 KernelProgram.source(
-                                                        KernelProgram.Language.JAVA,
+                                                        KernelProgram.JAVA,
                                                         SWIGLU_KERNEL_SOURCE,
                                                         "LlamaSwigluKernel")));
             } catch (RuntimeException ex) {

@@ -40,7 +40,7 @@ public final class FileKernelProgramStore implements KernelProgramStore {
             Files.createDirectories(dir);
             Properties props = new Properties();
             props.setProperty("kind", program.kind().name());
-            props.setProperty("language", program.language().name());
+            props.setProperty("language", program.language());
             props.setProperty("entryPoint", program.entryPoint());
             for (Map.Entry<String, String> entry : program.options().entrySet()) {
                 props.setProperty("option." + entry.getKey(), entry.getValue());
@@ -76,8 +76,7 @@ public final class FileKernelProgramStore implements KernelProgramStore {
             throw new IllegalStateException("Failed to read kernel program metadata " + key, e);
         }
         KernelProgram.Kind kind = KernelProgram.Kind.valueOf(props.getProperty("kind"));
-        KernelProgram.Language language =
-                KernelProgram.Language.valueOf(props.getProperty("language"));
+        String language = props.getProperty("language");
         String entryPoint = props.getProperty("entryPoint");
         Map<String, String> options = readOptions(props);
         Object payload;
