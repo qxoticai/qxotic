@@ -26,7 +26,7 @@ class KernelServiceTest {
         KernelProgram program =
                 new KernelProgram(
                         KernelProgram.Kind.SOURCE,
-                        KernelProgram.Language.NATIVE,
+                        KernelProgram.C,
                         "void custom() {}",
                         "custom",
                         Map.of());
@@ -50,7 +50,7 @@ class KernelServiceTest {
         KernelProgram program =
                 new KernelProgram(
                         KernelProgram.Kind.SOURCE,
-                        KernelProgram.Language.NATIVE,
+                        KernelProgram.C,
                         "void custom() {}",
                         "custom",
                         Map.of());

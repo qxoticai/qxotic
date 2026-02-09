@@ -172,7 +172,7 @@ public final class JavaKernelBackend implements KernelBackend {
     }
 
     private static void ensureJavaProgram(KernelProgram program) {
-        if (program.language() != KernelProgram.Language.JAVA) {
+        if (!KernelProgram.JAVA.equals(program.language())) {
             throw new UnsupportedOperationException("Java backend expects JAVA programs");
         }
     }

@@ -46,7 +46,7 @@ class HipCustomKernelLaunchTest {
                 """;
 
         runtime.registerKernel(
-                "gemv", KernelProgram.source(KernelProgram.Language.HIP, source, "gemv"));
+                "gemv", KernelProgram.source(KernelProgram.HIP, source, "gemv"));
 
         int M = 3, N = 4;
 

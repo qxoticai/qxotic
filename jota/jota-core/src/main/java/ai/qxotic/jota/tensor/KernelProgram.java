@@ -5,10 +5,17 @@ import java.util.Objects;
 
 public record KernelProgram(
         Kind kind,
-        Language language,
+        String language,
         Object payload,
         String entryPoint,
         Map<String, String> options) {
+
+    // Language constants
+    public static final String JAVA = "java";
+    public static final String C = "c";
+    public static final String HIP = "hip";
+    public static final String CUDA = "cuda";
+    public static final String OPENCL = "opencl";
 
     public KernelProgram {
         Objects.requireNonNull(kind, "kind");
@@ -23,29 +30,21 @@ public record KernelProgram(
         BINARY
     }
 
-    public enum Language {
-        CUDA,
-        HIP,
-        OPENCL,
-        JAVA,
-        NATIVE
-    }
-
-    public static KernelProgram source(Language language, String source, String entryPoint) {
+    public static KernelProgram source(String language, String source, String entryPoint) {
         return new KernelProgram(Kind.SOURCE, language, source, entryPoint, Map.of());
     }
 
     public static KernelProgram source(
-            Language language, String source, String entryPoint, Map<String, String> options) {
+            String language, String source, String entryPoint, Map<String, String> options) {
         return new KernelProgram(Kind.SOURCE, language, source, entryPoint, options);
     }
 
-    public static KernelProgram binary(Language language, byte[] binary, String entryPoint) {
+    public static KernelProgram binary(String language, byte[] binary, String entryPoint) {
         return new KernelProgram(Kind.BINARY, language, binary, entryPoint, Map.of());
     }
 
     public static KernelProgram binary(
-            Language language, byte[] binary, String entryPoint, Map<String, String> options) {
+            String language, byte[] binary, String entryPoint, Map<String, String> options) {
         return new KernelProgram(Kind.BINARY, language, binary, entryPoint, options);
     }
 }

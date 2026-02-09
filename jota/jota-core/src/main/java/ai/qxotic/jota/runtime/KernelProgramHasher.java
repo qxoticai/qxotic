@@ -14,7 +14,7 @@ public final class KernelProgramHasher {
     public static KernelCacheKey keyFor(KernelProgram program) {
         MessageDigest digest = sha256();
         update(digest, program.kind().name());
-        update(digest, program.language().name());
+        update(digest, program.language());
         update(digest, program.entryPoint());
         for (Map.Entry<String, String> entry : program.options().entrySet()) {
             update(digest, entry.getKey());
