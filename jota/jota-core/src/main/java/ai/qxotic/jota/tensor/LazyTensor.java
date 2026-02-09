@@ -90,8 +90,10 @@ final class LazyTensor implements Tensor {
                         .append(device.name());
         if (computation instanceof ConstantComputation constant) {
             builder.append(", constant=").append(constant.value());
+        } else if (computation instanceof RangeComputation) {
+            builder.append(", op=range");
         } else {
-            builder.append(", op=").append(computation.operation().name());
+            builder.append(", op=ir-graph");
         }
         builder.append(")");
         return builder.toString();

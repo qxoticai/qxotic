@@ -6,13 +6,11 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.ExecutionMode;
-import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
-import ai.qxotic.jota.panama.PanamaDeviceRuntime;
-import ai.qxotic.jota.runtime.DeviceRuntime;
+import ai.qxotic.jota.runtime.panama.PanamaDeviceRuntime;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -444,7 +442,8 @@ class CustomKernelLaunchTest {
     void tensorVarargMustBeContiguous() {
         Tensor broadcast = Tensor.full(5.0f, Shape.flat(4));
         IllegalArgumentException ex =
-                assertThrows(IllegalArgumentException.class, () -> KernelArgs.fromVarargs(broadcast));
+                assertThrows(
+                        IllegalArgumentException.class, () -> KernelArgs.fromVarargs(broadcast));
         assertTrue(ex.getMessage().contains("row-major contiguous"));
     }
 
@@ -573,8 +572,7 @@ class CustomKernelLaunchTest {
 
         runtime.registerKernel(
                 "bad_scalar_read",
-                KernelProgram.source(
-                        KernelProgram.Language.JAVA, source, "BadScalarReadKernel"));
+                KernelProgram.source(KernelProgram.Language.JAVA, source, "BadScalarReadKernel"));
 
         MemoryView<?> buf = allocate(DataType.FP32, Shape.flat(4));
         assertThrows(Exception.class, () -> runtime.launchKernel("bad_scalar_read", buf));
@@ -606,8 +604,7 @@ class CustomKernelLaunchTest {
 
         runtime.registerKernel(
                 "bad_buffer_read",
-                KernelProgram.source(
-                        KernelProgram.Language.JAVA, source, "BadBufferReadKernel"));
+                KernelProgram.source(KernelProgram.Language.JAVA, source, "BadBufferReadKernel"));
 
         assertThrows(Exception.class, () -> runtime.launchKernel("bad_buffer_read", 42));
     }
@@ -644,8 +641,7 @@ class CustomKernelLaunchTest {
         MemoryView<MemorySegment> v = (MemoryView<MemorySegment>) view;
         MemoryAccess<MemorySegment> access = domain().directAccess();
         for (int i = 0; i < expected.length; i++) {
-            float actual =
-                    access.readFloat(v.memory(), v.byteOffset() + (long) i * Float.BYTES);
+            float actual = access.readFloat(v.memory(), v.byteOffset() + (long) i * Float.BYTES);
             assertEquals(expected[i], actual, 0.0001f, "mismatch at index " + i);
         }
     }

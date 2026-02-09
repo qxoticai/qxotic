@@ -1,4 +1,4 @@
-package ai.qxotic.jota.panama;
+package ai.qxotic.jota.runtime.panama;
 
 import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.tensor.DiskKernelCache;
@@ -56,7 +56,8 @@ public final class JavaKernelBackend implements KernelBackend {
                 compileSource(sourceFile, entry.classOutputDir());
             } else {
                 byte[] classBytes = requireBinary(program.payload());
-                Path classFile = classFileFor(entry.classOutputDir(), entry.packageName(), className);
+                Path classFile =
+                        classFileFor(entry.classOutputDir(), entry.packageName(), className);
                 Files.createDirectories(classFile.getParent());
                 Files.write(classFile, classBytes);
             }
@@ -160,8 +161,7 @@ public final class JavaKernelBackend implements KernelBackend {
 
     private JavaKernel loadKernel(Path classOutputDir, String packageName, String className) {
         try {
-            URLClassLoader loader =
-                    new URLClassLoader(new URL[] {classOutputDir.toUri().toURL()});
+            URLClassLoader loader = new URLClassLoader(new URL[] {classOutputDir.toUri().toURL()});
             String fqcn = packageName + "." + className;
             Class<?> clazz = Class.forName(fqcn, true, loader);
             Object instance = clazz.getDeclaredConstructor().newInstance();

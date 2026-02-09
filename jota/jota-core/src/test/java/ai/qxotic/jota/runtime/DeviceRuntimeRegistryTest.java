@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import ai.qxotic.jota.Device;
-import ai.qxotic.jota.panama.PanamaDeviceRuntime;
+import ai.qxotic.jota.runtime.panama.PanamaDeviceRuntime;
 import org.junit.jupiter.api.Test;
 
 class DeviceRuntimeRegistryTest {

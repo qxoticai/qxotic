@@ -13,9 +13,5 @@ public interface ExecutionContext {
 
     ScratchAllocator scratch();
 
-    ComputeStream stream();
-
     void barrier();
-
-    KernelRegistry kernels();
 }

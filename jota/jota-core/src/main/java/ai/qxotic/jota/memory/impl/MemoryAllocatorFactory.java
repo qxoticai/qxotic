@@ -3,7 +3,7 @@ package ai.qxotic.jota.memory.impl;
 import ai.qxotic.jota.memory.MemoryAllocator;
 import ai.qxotic.jota.memory.ScopedMemoryAllocator;
 import ai.qxotic.jota.memory.ScopedMemoryAllocatorArena;
-import ai.qxotic.jota.panama.PanamaFactory;
+import ai.qxotic.jota.runtime.panama.PanamaFactory;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;

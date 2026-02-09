@@ -1443,7 +1443,8 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
 
     private MemoryView<MemorySegment> copyToContiguous(MemoryView<MemorySegment> input) {
         // Match eager contiguous() semantics: require row-major suffix contiguity,
-        // not just spanning a contiguous byte range (broadcast/transpose views may fail linear access).
+        // not just spanning a contiguous byte range (broadcast/transpose views may fail linear
+        // access).
         if (input.layout().isSuffixContiguous(0)) {
             return input;
         }

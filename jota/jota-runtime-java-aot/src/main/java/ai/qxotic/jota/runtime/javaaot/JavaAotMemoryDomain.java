@@ -5,8 +5,8 @@ import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryAllocator;
 import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryOperations;
-import ai.qxotic.jota.panama.PanamaMemoryAccess;
-import ai.qxotic.jota.panama.PanamaMemoryOperations;
+import ai.qxotic.jota.runtime.panama.PanamaMemoryAccess;
+import ai.qxotic.jota.runtime.panama.PanamaMemoryOperations;
 import java.lang.foreign.MemorySegment;
 
 final class JavaAotMemoryDomain implements MemoryDomain<MemorySegment> {

@@ -15,7 +15,7 @@ import ai.qxotic.jota.ir.tir.TIRGraph;
 import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
-import ai.qxotic.jota.panama.LIRKernelArgsBuilder;
+import ai.qxotic.jota.runtime.panama.LIRKernelArgsBuilder;
 import ai.qxotic.jota.tensor.*;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;

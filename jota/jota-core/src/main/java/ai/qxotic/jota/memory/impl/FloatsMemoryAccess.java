@@ -3,11 +3,8 @@ package ai.qxotic.jota.memory.impl;
 import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryAccessChecks;
-import sun.misc.Unsafe;
 
 final class FloatsMemoryAccess implements MemoryAccess<float[]> {
-
-    private static final Unsafe UNSAFE = UnsafeAccess.get();
 
     private static final FloatsMemoryAccess INSTANCE = new FloatsMemoryAccess();
 

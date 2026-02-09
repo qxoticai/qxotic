@@ -57,7 +57,10 @@ final class Sampler {
         }
         @SuppressWarnings({"rawtypes", "unchecked"})
         MemoryAccess access =
-                Environment.current().runtimeFor(logitsView.memory().device()).memoryDomain().directAccess();
+                Environment.current()
+                        .runtimeFor(logitsView.memory().device())
+                        .memoryDomain()
+                        .directAccess();
         if (access == null) {
             throw new IllegalStateException("No direct memory access for logits view");
         }

@@ -5,6 +5,7 @@ import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryAllocator;
 import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryOperations;
+import ai.qxotic.jota.memory.MemoryView;
 
 public final class HipMemoryDomain implements MemoryDomain<HipDevicePtr> {
 
@@ -34,6 +35,24 @@ public final class HipMemoryDomain implements MemoryDomain<HipDevicePtr> {
     @Override
     public MemoryOperations<HipDevicePtr> memoryOperations() {
         return HipMemoryOperations.instance();
+    }
+
+    @Override
+    public void copy(MemoryView<HipDevicePtr> src, MemoryView<HipDevicePtr> dst) {
+        if (src.isRowMajorContiguous() && dst.isRowMajorContiguous()) {
+            long bytes = src.shape().size() * src.dataType().byteSize();
+            if (bytes > 0) {
+                memoryOperations()
+                        .copy(
+                                src.memory(),
+                                src.byteOffset(),
+                                dst.memory(),
+                                dst.byteOffset(),
+                                bytes);
+            }
+            return;
+        }
+        HipStridedCopy.copy(src, dst);
     }
 
     @Override

@@ -1,4 +1,4 @@
-package ai.qxotic.jota.panama;
+package ai.qxotic.jota.runtime.panama;
 
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.memory.Memory;

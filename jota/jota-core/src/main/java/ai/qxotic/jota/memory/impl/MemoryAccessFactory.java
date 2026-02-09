@@ -1,7 +1,7 @@
 package ai.qxotic.jota.memory.impl;
 
 import ai.qxotic.jota.memory.MemoryAccess;
-import ai.qxotic.jota.panama.PanamaFactory;
+import ai.qxotic.jota.runtime.panama.PanamaFactory;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 

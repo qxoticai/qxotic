@@ -48,10 +48,10 @@ final class Llama3ChatFormat {
         return b.build();
     }
 
-    IntSequence encodeMessage(Llama32Cli.Message message) {
+    IntSequence encodeMessage(MessageLike message) {
         IntSequence.Builder b = IntSequence.newBuilder();
-        b.addAll(encodeHeader(message.role));
-        b.addAll(tokenizer.encode(message.text.strip()));
+        b.addAll(encodeHeader(message.role()));
+        b.addAll(tokenizer.encode(message.text().strip()));
         b.add(endOfTurn);
         return b.build();
     }
@@ -79,5 +79,11 @@ final class Llama3ChatFormat {
         Role(String name) {
             this.name = name;
         }
+    }
+
+    interface MessageLike {
+        Role role();
+
+        String text();
     }
 }

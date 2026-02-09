@@ -4,7 +4,7 @@ import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.memory.*;
 import ai.qxotic.jota.memory.MemoryDomain;
-import ai.qxotic.jota.panama.PanamaFactory;
+import ai.qxotic.jota.runtime.panama.PanamaFactory;
 import java.lang.foreign.MemorySegment;
 import java.util.HashMap;
 import java.util.List;

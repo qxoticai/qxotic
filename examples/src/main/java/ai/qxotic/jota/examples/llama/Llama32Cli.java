@@ -88,10 +88,7 @@ public final class Llama32Cli {
             if (run > 1 && options.benchmarkPauseMs > 0) {
                 System.out.printf(
                         "benchmark pause before run %d/%d: %d ms (pid=%d)%n",
-                        run,
-                        runs,
-                        options.benchmarkPauseMs,
-                        ProcessHandle.current().pid());
+                        run, runs, options.benchmarkPauseMs, ProcessHandle.current().pid());
                 try {
                     Thread.sleep(options.benchmarkPauseMs);
                 } catch (InterruptedException ex) {
@@ -130,7 +127,8 @@ public final class Llama32Cli {
             for (int token : promptTokens) {
                 if (options.trace) {
                     System.out.printf(
-                            "TRACE tensor token phase=ingest pos=%d id=%d%n", model.position, token);
+                            "TRACE tensor token phase=ingest pos=%d id=%d%n",
+                            model.position, token);
                 }
                 logits = model.forward(token, scratch);
             }
@@ -150,7 +148,8 @@ public final class Llama32Cli {
                 long samplingElapsedNs = System.nanoTime() - samplingStartNs;
                 if (options.trace) {
                     System.out.printf(
-                            "TRACE tensor token phase=produce pos=%d id=%d%n", model.position, next);
+                            "TRACE tensor token phase=produce pos=%d id=%d%n",
+                            model.position, next);
                 }
                 generatedCount++;
                 if (generatedCount == TIMING_WARMUP_TOKENS + 1) {
@@ -583,7 +582,7 @@ public final class Llama32Cli {
         private static final String GEMV_KERNEL_SOURCE =
                 """
                 package ai.qxotic.jota.tensor.jit;
-                
+
                 import java.util.stream.IntStream;
                 import ai.qxotic.jota.memory.MemoryAccess;
                 import ai.qxotic.jota.memory.MemoryDomain;
@@ -1667,6 +1666,7 @@ public final class Llama32Cli {
                     prefetch,
                     functionName);
         }
+
         private static final boolean TRACE = Boolean.getBoolean("ai.qxotic.trace");
         private static final int TRACE_TOKEN_LIMIT =
                 Integer.getInteger("ai.qxotic.trace.tokenLimit", 8);
@@ -1686,6 +1686,7 @@ public final class Llama32Cli {
             DOWN,
             LOGITS
         }
+
         private final LlamaConfig cfg;
         private final LlamaWeights w;
         private final DeviceRuntime runtime;
@@ -1781,7 +1782,8 @@ public final class Llama32Cli {
                             C_GEMV_LOGITS_KERNEL_SOURCE,
                             "llama_gemv_logits_avx2");
             this.stream = new ExecutionStream(runtime.device(), null, true);
-            this.cStream = cRuntime != null ? new ExecutionStream(cRuntime.device(), null, true) : null;
+            this.cStream =
+                    cRuntime != null ? new ExecutionStream(cRuntime.device(), null, true) : null;
             int kvDim = cfg.nKvHeads * cfg.headDim;
             this.keyCache = new MemoryView<?>[cfg.nLayers];
             this.valueCache = new MemoryView<?>[cfg.nLayers];
@@ -1789,18 +1791,18 @@ public final class Llama32Cli {
             for (int i = 0; i < cfg.nLayers; i++) {
                 this.keyCache[i] =
                         MemoryView.of(
-                                this.domain.memoryAllocator()
+                                this.domain
+                                        .memoryAllocator()
                                         .allocateMemory(
-                                                DataType.FP32,
-                                                Shape.of(cfg.contextLength, kvDim)),
+                                                DataType.FP32, Shape.of(cfg.contextLength, kvDim)),
                                 DataType.FP32,
                                 Layout.rowMajor(Shape.of(cfg.contextLength, kvDim)));
                 this.valueCache[i] =
                         MemoryView.of(
-                                this.domain.memoryAllocator()
+                                this.domain
+                                        .memoryAllocator()
                                         .allocateMemory(
-                                                DataType.FP32,
-                                                Shape.of(kvDim, cfg.contextLength)),
+                                                DataType.FP32, Shape.of(kvDim, cfg.contextLength)),
                                 DataType.FP32,
                                 Layout.rowMajor(Shape.of(kvDim, cfg.contextLength)));
             }
@@ -1908,9 +1910,14 @@ public final class Llama32Cli {
                 long offLogits = alignUp(offBytes, PAGE_BYTES);
                 offBytes = offLogits + logitsBytes;
 
-                Memory<?> scratchMemory = domain.memoryAllocator().allocateMemory(offBytes, PAGE_BYTES);
+                Memory<?> scratchMemory =
+                        domain.memoryAllocator().allocateMemory(offBytes, PAGE_BYTES);
                 this.xBuf =
-                        MemoryView.of(scratchMemory, offX, DataType.FP32, Layout.rowMajor(Shape.of(1, cfg.dim)));
+                        MemoryView.of(
+                                scratchMemory,
+                                offX,
+                                DataType.FP32,
+                                Layout.rowMajor(Shape.of(1, cfg.dim)));
                 this.xTmpBuf =
                         MemoryView.of(
                                 scratchMemory,
@@ -1918,7 +1925,11 @@ public final class Llama32Cli {
                                 DataType.FP32,
                                 Layout.rowMajor(Shape.of(1, cfg.dim)));
                 this.xbBuf =
-                        MemoryView.of(scratchMemory, offXb, DataType.FP32, Layout.rowMajor(Shape.of(1, cfg.dim)));
+                        MemoryView.of(
+                                scratchMemory,
+                                offXb,
+                                DataType.FP32,
+                                Layout.rowMajor(Shape.of(1, cfg.dim)));
                 this.ffInBuf =
                         MemoryView.of(
                                 scratchMemory,
@@ -1926,15 +1937,35 @@ public final class Llama32Cli {
                                 DataType.FP32,
                                 Layout.rowMajor(Shape.of(1, cfg.dim)));
                 this.qPreBuf =
-                        MemoryView.of(scratchMemory, offQPre, DataType.FP32, Layout.rowMajor(Shape.of(1, cfg.dim)));
+                        MemoryView.of(
+                                scratchMemory,
+                                offQPre,
+                                DataType.FP32,
+                                Layout.rowMajor(Shape.of(1, cfg.dim)));
                 this.kPreBuf =
-                        MemoryView.of(scratchMemory, offKPre, DataType.FP32, Layout.rowMajor(Shape.of(1, kvDim)));
+                        MemoryView.of(
+                                scratchMemory,
+                                offKPre,
+                                DataType.FP32,
+                                Layout.rowMajor(Shape.of(1, kvDim)));
                 this.vPreBuf =
-                        MemoryView.of(scratchMemory, offVPre, DataType.FP32, Layout.rowMajor(Shape.of(1, kvDim)));
+                        MemoryView.of(
+                                scratchMemory,
+                                offVPre,
+                                DataType.FP32,
+                                Layout.rowMajor(Shape.of(1, kvDim)));
                 this.qRotBuf =
-                        MemoryView.of(scratchMemory, offQRot, DataType.FP32, Layout.rowMajor(Shape.of(1, cfg.dim)));
+                        MemoryView.of(
+                                scratchMemory,
+                                offQRot,
+                                DataType.FP32,
+                                Layout.rowMajor(Shape.of(1, cfg.dim)));
                 this.kRotBuf =
-                        MemoryView.of(scratchMemory, offKRot, DataType.FP32, Layout.rowMajor(Shape.of(1, kvDim)));
+                        MemoryView.of(
+                                scratchMemory,
+                                offKRot,
+                                DataType.FP32,
+                                Layout.rowMajor(Shape.of(1, kvDim)));
                 this.attnScoresBuf =
                         MemoryView.of(
                                 scratchMemory,
@@ -1948,9 +1979,17 @@ public final class Llama32Cli {
                                 DataType.FP32,
                                 Layout.rowMajor(Shape.of(1, cfg.nHeads * cfg.headDim)));
                 this.ffnGateBuf =
-                        MemoryView.of(scratchMemory, offFfnGate, DataType.FP32, Layout.rowMajor(Shape.of(1, cfg.ffnDim)));
+                        MemoryView.of(
+                                scratchMemory,
+                                offFfnGate,
+                                DataType.FP32,
+                                Layout.rowMajor(Shape.of(1, cfg.ffnDim)));
                 this.ffnUpBuf =
-                        MemoryView.of(scratchMemory, offFfnUp, DataType.FP32, Layout.rowMajor(Shape.of(1, cfg.ffnDim)));
+                        MemoryView.of(
+                                scratchMemory,
+                                offFfnUp,
+                                DataType.FP32,
+                                Layout.rowMajor(Shape.of(1, cfg.ffnDim)));
                 this.ffnHiddenBuf =
                         MemoryView.of(
                                 scratchMemory,
@@ -1958,7 +1997,11 @@ public final class Llama32Cli {
                                 DataType.FP32,
                                 Layout.rowMajor(Shape.of(1, cfg.ffnDim)));
                 this.ffnDownBuf =
-                        MemoryView.of(scratchMemory, offFfnDown, DataType.FP32, Layout.rowMajor(Shape.of(1, cfg.dim)));
+                        MemoryView.of(
+                                scratchMemory,
+                                offFfnDown,
+                                DataType.FP32,
+                                Layout.rowMajor(Shape.of(1, cfg.dim)));
                 this.logitsBuf =
                         MemoryView.of(
                                 scratchMemory,
@@ -2222,12 +2265,16 @@ public final class Llama32Cli {
                     || !value.layout().isSuffixContiguous(0)
                     || !out.layout().isSuffixContiguous(0)
                     || !scoreRow.layout().isSuffixContiguous(0)) {
-                throw new IllegalStateException("attention requires suffix-contiguous FP32 layouts");
+                throw new IllegalStateException(
+                        "attention requires suffix-contiguous FP32 layouts");
             }
 
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current().runtimeFor(qView.memory().device()).memoryDomain().directAccess();
+                    Environment.current()
+                            .runtimeFor(qView.memory().device())
+                            .memoryDomain()
+                            .directAccess();
             if (access == null) {
                 throw new IllegalStateException("attention requires direct memory access");
             }
@@ -2256,14 +2303,17 @@ public final class Llama32Cli {
                     for (int t = 0; t < length; t++) {
                         long qHeadBase = qBase + (long) headOffset * Float.BYTES;
                         long kHeadBase =
-                                keyBase + (long) t * keyRowStrideBytes + (long) kvHeadOffset * Float.BYTES;
+                                keyBase
+                                        + (long) t * keyRowStrideBytes
+                                        + (long) kvHeadOffset * Float.BYTES;
                         float dot = 0f;
                         for (int d = 0; d < headDim; d++) {
                             float qv =
                                     access.readFloat(
                                             qView.memory(), qHeadBase + (long) d * Float.BYTES);
                             float kv =
-                                    access.readFloat(key.memory(), kHeadBase + (long) d * Float.BYTES);
+                                    access.readFloat(
+                                            key.memory(), kHeadBase + (long) d * Float.BYTES);
                             dot += qv * kv;
                         }
                         float scaled = dot * invScale;
@@ -2279,7 +2329,8 @@ public final class Llama32Cli {
                     double sumExp = 0d;
                     for (int t = 0; t < length; t++) {
                         float score =
-                                access.readFloat(scoreRow.memory(), scoreBase + (long) t * Float.BYTES);
+                                access.readFloat(
+                                        scoreRow.memory(), scoreBase + (long) t * Float.BYTES);
                         float e = (float) Math.exp(score - maxScore);
                         access.writeFloat(scoreRow.memory(), scoreBase + (long) t * Float.BYTES, e);
                         sumExp += e;
@@ -2287,7 +2338,8 @@ public final class Llama32Cli {
                     float invSum = (float) (1.0d / sumExp);
                     for (int t = 0; t < length; t++) {
                         float e =
-                                access.readFloat(scoreRow.memory(), scoreBase + (long) t * Float.BYTES);
+                                access.readFloat(
+                                        scoreRow.memory(), scoreBase + (long) t * Float.BYTES);
                         access.writeFloat(
                                 scoreRow.memory(), scoreBase + (long) t * Float.BYTES, e * invSum);
                     }
@@ -2297,8 +2349,7 @@ public final class Llama32Cli {
                     long outHeadBase = outBase + (long) headOffset * Float.BYTES;
                     for (int d = 0; d < headDim; d++) {
                         long valueRowBase =
-                                valueBase
-                                        + (long) (kvHeadOffset + d) * valueRowStrideBytes;
+                                valueBase + (long) (kvHeadOffset + d) * valueRowStrideBytes;
                         float accVal = 0f;
                         for (int t = 0; t < length; t++) {
                             float p =
@@ -2309,7 +2360,8 @@ public final class Llama32Cli {
                                             value.memory(), valueRowBase + (long) t * Float.BYTES);
                             accVal += p * vv;
                         }
-                        access.writeFloat(out.memory(), outHeadBase + (long) d * Float.BYTES, accVal);
+                        access.writeFloat(
+                                out.memory(), outHeadBase + (long) d * Float.BYTES, accVal);
                     }
                     pvMatmulNs += (System.nanoTime() - t0);
                 }
@@ -2329,7 +2381,8 @@ public final class Llama32Cli {
             }
         }
 
-        private void projectQkvInto(Tensor x, Tensor wq, Tensor wk, Tensor wv, DecodeScratch scratch) {
+        private void projectQkvInto(
+                Tensor x, Tensor wq, Tensor wk, Tensor wv, DecodeScratch scratch) {
             boolean fast =
                     projectQkvWithGemvKernelInto(
                             x, wq, wk, wv, scratch.qPreBuf, scratch.kPreBuf, scratch.vPreBuf);
@@ -2419,13 +2472,16 @@ public final class Llama32Cli {
             }
         }
 
-        private boolean projectDownWithGemvKernelInto(Tensor x, Tensor weightOutIn, MemoryView<?> outBuffer) {
+        private boolean projectDownWithGemvKernelInto(
+                Tensor x, Tensor weightOutIn, MemoryView<?> outBuffer) {
             if ((gemvDownKernel == null && cGemvDownKernel == null)
                     || x.dataType() != DataType.FP32
                     || weightOutIn.dataType() != DataType.FP32) {
                 return false;
             }
-            if (x.shape().rank() != 2 || x.shape().size(0) != 1 || x.shape().size(1) != cfg.ffnDim) {
+            if (x.shape().rank() != 2
+                    || x.shape().size(0) != 1
+                    || x.shape().size(1) != cfg.ffnDim) {
                 return false;
             }
             if (weightOutIn.shape().rank() != 2
@@ -2551,7 +2607,8 @@ public final class Llama32Cli {
             return true;
         }
 
-        private boolean applySwigluInto(MemoryView<?> gateView, MemoryView<?> upView, MemoryView<?> out) {
+        private boolean applySwigluInto(
+                MemoryView<?> gateView, MemoryView<?> upView, MemoryView<?> out) {
             if (swigluKernel == null
                     || gateView.dataType() != DataType.FP32
                     || upView.dataType() != DataType.FP32) {
@@ -2672,8 +2729,7 @@ public final class Llama32Cli {
                 return null;
             }
             try {
-                return runtime
-                        .loadRegisteredExecutable(GEMV_KERNEL_NAME)
+                return runtime.loadRegisteredExecutable(GEMV_KERNEL_NAME)
                         .orElseGet(
                                 () ->
                                         runtime.registerKernel(
@@ -2696,8 +2752,7 @@ public final class Llama32Cli {
                 return null;
             }
             try {
-                return runtime
-                        .loadRegisteredExecutable(GEMV2_KERNEL_NAME)
+                return runtime.loadRegisteredExecutable(GEMV2_KERNEL_NAME)
                         .orElseGet(
                                 () ->
                                         runtime.registerKernel(
@@ -2717,8 +2772,7 @@ public final class Llama32Cli {
                 return null;
             }
             try {
-                return runtime
-                        .loadRegisteredExecutable(kernelName)
+                return runtime.loadRegisteredExecutable(kernelName)
                         .orElseGet(
                                 () ->
                                         runtime.registerKernel(
@@ -2737,8 +2791,7 @@ public final class Llama32Cli {
                 return null;
             }
             try {
-                return runtime
-                        .loadRegisteredExecutable(GEMV3_KERNEL_NAME)
+                return runtime.loadRegisteredExecutable(GEMV3_KERNEL_NAME)
                         .orElseGet(
                                 () ->
                                         runtime.registerKernel(
@@ -2757,8 +2810,7 @@ public final class Llama32Cli {
                 return null;
             }
             try {
-                return runtime
-                        .loadRegisteredExecutable(GEMV_DOWN_KERNEL_NAME)
+                return runtime.loadRegisteredExecutable(GEMV_DOWN_KERNEL_NAME)
                         .orElseGet(
                                 () ->
                                         runtime.registerKernel(
@@ -2777,8 +2829,7 @@ public final class Llama32Cli {
                 return null;
             }
             try {
-                return runtime
-                        .loadRegisteredExecutable(SWIGLU_KERNEL_NAME)
+                return runtime.loadRegisteredExecutable(SWIGLU_KERNEL_NAME)
                         .orElseGet(
                                 () ->
                                         runtime.registerKernel(
@@ -2802,7 +2853,10 @@ public final class Llama32Cli {
             }
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current().runtimeFor(table.memory().device()).memoryDomain().directAccess();
+                    Environment.current()
+                            .runtimeFor(table.memory().device())
+                            .memoryDomain()
+                            .directAccess();
             if (access == null) {
                 throw new IllegalStateException("embedding path requires direct memory access");
             }
@@ -2827,7 +2881,10 @@ public final class Llama32Cli {
             }
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current().runtimeFor(inView.memory().device()).memoryDomain().directAccess();
+                    Environment.current()
+                            .runtimeFor(inView.memory().device())
+                            .memoryDomain()
+                            .directAccess();
             if (access == null) {
                 throw new IllegalStateException("rmsNormInto requires direct memory access");
             }
@@ -2847,7 +2904,8 @@ public final class Llama32Cli {
             }
         }
 
-        private static void addInto(MemoryView<?> a, MemoryView<?> b, MemoryView<?> out, int length) {
+        private static void addInto(
+                MemoryView<?> a, MemoryView<?> b, MemoryView<?> out, int length) {
             if (a.dataType() != DataType.FP32
                     || b.dataType() != DataType.FP32
                     || out.dataType() != DataType.FP32
@@ -2858,7 +2916,10 @@ public final class Llama32Cli {
             }
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current().runtimeFor(a.memory().device()).memoryDomain().directAccess();
+                    Environment.current()
+                            .runtimeFor(a.memory().device())
+                            .memoryDomain()
+                            .directAccess();
             if (access == null) {
                 throw new IllegalStateException("addInto requires direct memory access");
             }
@@ -2872,7 +2933,8 @@ public final class Llama32Cli {
             }
         }
 
-        private void projectWithDirectLoopInto(Tensor x, Tensor weightOutIn, MemoryView<?> outBuffer) {
+        private void projectWithDirectLoopInto(
+                Tensor x, Tensor weightOutIn, MemoryView<?> outBuffer) {
             MemoryView<?> a = weightOutIn.materialize();
             MemoryView<?> xv = x.materialize();
             if (a.dataType() != DataType.FP32
@@ -2887,7 +2949,10 @@ public final class Llama32Cli {
             int n = Math.toIntExact(weightOutIn.shape().size(1));
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current().runtimeFor(a.memory().device()).memoryDomain().directAccess();
+                    Environment.current()
+                            .runtimeFor(a.memory().device())
+                            .memoryDomain()
+                            .directAccess();
             if (access == null) {
                 throw new IllegalStateException("project fallback requires direct memory access");
             }
@@ -2906,7 +2971,8 @@ public final class Llama32Cli {
             }
         }
 
-        private void applySwigluDirectInto(MemoryView<?> gate, MemoryView<?> up, MemoryView<?> out) {
+        private void applySwigluDirectInto(
+                MemoryView<?> gate, MemoryView<?> up, MemoryView<?> out) {
             if (gate.dataType() != DataType.FP32
                     || up.dataType() != DataType.FP32
                     || out.dataType() != DataType.FP32
@@ -2917,7 +2983,10 @@ public final class Llama32Cli {
             }
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current().runtimeFor(gate.memory().device()).memoryDomain().directAccess();
+                    Environment.current()
+                            .runtimeFor(gate.memory().device())
+                            .memoryDomain()
+                            .directAccess();
             if (access == null) {
                 throw new IllegalStateException("swiglu fallback requires direct memory access");
             }
@@ -2932,7 +3001,8 @@ public final class Llama32Cli {
             }
         }
 
-        private void writeKeyValueCache(int layer, int position, int kvDim, Tensor key, Tensor value) {
+        private void writeKeyValueCache(
+                int layer, int position, int kvDim, Tensor key, Tensor value) {
             MemoryView<?> keyView = key.materialize();
             MemoryView<?> valueView = value.materialize();
             MemoryView<?> keyDst = keyCache[layer];
@@ -2950,7 +3020,10 @@ public final class Llama32Cli {
 
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current().runtimeFor(keyView.memory().device()).memoryDomain().directAccess();
+                    Environment.current()
+                            .runtimeFor(keyView.memory().device())
+                            .memoryDomain()
+                            .directAccess();
             if (access == null) {
                 throw new IllegalStateException("KV cache write requires direct memory access");
             }
@@ -2963,8 +3036,10 @@ public final class Llama32Cli {
             for (int i = 0; i < kvDim; i++) {
                 float kv = access.readFloat(keyView.memory(), keySrcBase + (long) i * Float.BYTES);
                 access.writeFloat(keyDst.memory(), keyDstBase + (long) i * Float.BYTES, kv);
-                float vv = access.readFloat(valueView.memory(), valueSrcBase + (long) i * Float.BYTES);
-                access.writeFloat(valueDst.memory(), valueColBase + (long) i * valueRowStrideBytes, vv);
+                float vv =
+                        access.readFloat(valueView.memory(), valueSrcBase + (long) i * Float.BYTES);
+                access.writeFloat(
+                        valueDst.memory(), valueColBase + (long) i * valueRowStrideBytes, vv);
             }
         }
 
@@ -2981,7 +3056,10 @@ public final class Llama32Cli {
             }
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current().runtimeFor(inView.memory().device()).memoryDomain().directAccess();
+                    Environment.current()
+                            .runtimeFor(inView.memory().device())
+                            .memoryDomain()
+                            .directAccess();
             if (access == null) {
                 return x;
             }
@@ -2993,8 +3071,14 @@ public final class Llama32Cli {
                 for (int i = 0; i < half; i++) {
                     int even = base + (i << 1);
                     int odd = even + 1;
-                    float re = access.readFloat(inView.memory(), inView.byteOffset() + (long) even * Float.BYTES);
-                    float im = access.readFloat(inView.memory(), inView.byteOffset() + (long) odd * Float.BYTES);
+                    float re =
+                            access.readFloat(
+                                    inView.memory(),
+                                    inView.byteOffset() + (long) even * Float.BYTES);
+                    float im =
+                            access.readFloat(
+                                    inView.memory(),
+                                    inView.byteOffset() + (long) odd * Float.BYTES);
                     float c = cos[i];
                     float s = sin[i];
                     access.writeFloat(
@@ -3088,7 +3172,8 @@ public final class Llama32Cli {
             if (view.dataType() != DataType.FP32) {
                 return;
             }
-            MemoryDomain domain = Environment.current().runtimeFor(view.memory().device()).memoryDomain();
+            MemoryDomain domain =
+                    Environment.current().runtimeFor(view.memory().device()).memoryDomain();
             MemoryAccess access = domain.directAccess();
             if (access == null) {
                 return;
@@ -3107,7 +3192,6 @@ public final class Llama32Cli {
             sum += access.readFloat(view.memory(), lastOff);
             touchSink += sum;
         }
-
     }
 
     private static final class RopeTables {
@@ -3206,13 +3290,23 @@ public final class Llama32Cli {
         }
     }
 
-    static final class Message {
+    static final class Message implements Llama3ChatFormat.MessageLike {
         final Llama3ChatFormat.Role role;
         final String text;
 
         Message(Llama3ChatFormat.Role role, String text) {
             this.role = role;
             this.text = text;
+        }
+
+        @Override
+        public Llama3ChatFormat.Role role() {
+            return role;
+        }
+
+        @Override
+        public String text() {
+            return text;
         }
     }
 }

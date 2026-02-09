@@ -35,11 +35,6 @@ record ConstantComputation(long rawBits, DataType dataType, Shape shape, Device 
     }
 
     @Override
-    public Op operation() {
-        return ConstantOp.INSTANCE;
-    }
-
-    @Override
     public List<Tensor> inputs() {
         return List.of();
     }
@@ -67,17 +62,20 @@ record ConstantComputation(long rawBits, DataType dataType, Shape shape, Device 
         } else {
             @SuppressWarnings("unchecked")
             MemoryDomain<MemorySegment> hostDomain =
-                    (MemoryDomain<MemorySegment>) Environment.current().nativeRuntime().memoryDomain();
+                    (MemoryDomain<MemorySegment>)
+                            Environment.current().nativeRuntime().memoryDomain();
             MemoryAccess<MemorySegment> hostAccess = hostDomain.directAccess();
             if (hostAccess == null) {
                 throw new UnsupportedOperationException(
                         "Cannot materialize constant: no direct host MemoryAccess available");
             }
-            Memory<MemorySegment> hostMemory = hostDomain.memoryAllocator().allocateMemory(dataType, 1);
+            Memory<MemorySegment> hostMemory =
+                    hostDomain.memoryAllocator().allocateMemory(dataType, 1);
             writeValue(hostAccess, hostMemory, 0, rawBits, dataType);
             MemoryView<MemorySegment> hostScalar =
                     MemoryView.of(hostMemory, dataType, Layout.rowMajor(Shape.scalar()));
-            MemoryView<B> deviceScalar = MemoryView.of(memory, dataType, Layout.rowMajor(Shape.scalar()));
+            MemoryView<B> deviceScalar =
+                    MemoryView.of(memory, dataType, Layout.rowMajor(Shape.scalar()));
             MemoryDomain.copy(hostDomain, hostScalar, memoryDomain, deviceScalar);
         }
 
@@ -168,22 +166,6 @@ record ConstantComputation(long rawBits, DataType dataType, Shape shape, Device 
             access.writeLong(memory, offset, rawBits);
         } else {
             throw new IllegalArgumentException("Unsupported data type for constant: " + dataType);
-        }
-    }
-
-    private static final class ConstantOp implements Op {
-        private static final ConstantOp INSTANCE = new ConstantOp();
-
-        private ConstantOp() {}
-
-        @Override
-        public String name() {
-            return "constant";
-        }
-
-        @Override
-        public OpKind kind() {
-            return OpKind.SPECIAL;
         }
     }
 }

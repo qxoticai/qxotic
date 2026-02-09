@@ -3,8 +3,6 @@ package ai.qxotic.jota.runtime.hip;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import ai.qxotic.jota.DataType;
-import ai.qxotic.jota.Device;
-import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
