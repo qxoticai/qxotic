@@ -6,7 +6,7 @@ import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
-import ai.qxotic.jota.panama.PanamaFactory;
+import ai.qxotic.jota.runtime.panama.PanamaFactory;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.List;

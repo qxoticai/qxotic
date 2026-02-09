@@ -1,11 +1,11 @@
 package ai.qxotic.jota;
 
 import ai.qxotic.jota.memory.MemoryDomain;
-import ai.qxotic.jota.panama.PanamaDeviceRuntime;
 import ai.qxotic.jota.runtime.DefaultRuntimeRegistry;
 import ai.qxotic.jota.runtime.DeviceRuntime;
 import ai.qxotic.jota.runtime.RuntimeDiagnostic;
 import ai.qxotic.jota.runtime.RuntimeRegistry;
+import ai.qxotic.jota.runtime.panama.PanamaDeviceRuntime;
 import ai.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
 import ai.qxotic.jota.runtime.spi.RuntimeProbe;
 import ai.qxotic.jota.tensor.ComputeEngine;
@@ -30,7 +30,7 @@ public final class Environment {
 
     private final Device defaultDevice;
     private final DataType defaultFloat;
-    private final RuntimeRegistry backends;
+    private final RuntimeRegistry runtimes;
     private final ExecutionMode executionMode;
 
     public Environment(
@@ -40,7 +40,7 @@ public final class Environment {
             ExecutionMode executionMode) {
         this.defaultDevice = Objects.requireNonNull(defaultDevice, "defaultDevice");
         this.defaultFloat = Objects.requireNonNull(defaultFloat, "defaultFloat");
-        this.backends = Objects.requireNonNull(runtimes, "runtimes");
+        this.runtimes = Objects.requireNonNull(runtimes, "runtimes");
         this.executionMode = Objects.requireNonNull(executionMode, "executionMode");
     }
 
@@ -50,7 +50,7 @@ public final class Environment {
 
     @SuppressWarnings("unchecked")
     public MemoryDomain<MemorySegment> nativeMemoryDomain() {
-        return (MemoryDomain<MemorySegment>) backends.nativeRuntime().memoryDomain();
+        return (MemoryDomain<MemorySegment>) runtimes.nativeRuntime().memoryDomain();
     }
 
     public static Environment global() {
@@ -86,19 +86,19 @@ public final class Environment {
     }
 
     public RuntimeRegistry runtimes() {
-        return backends;
+        return runtimes;
     }
 
     public DeviceRuntime runtimeFor(Device device) {
-        return backends.runtimeFor(device);
+        return runtimes.runtimeFor(device);
     }
 
     public DeviceRuntime nativeRuntime() {
-        return backends.nativeRuntime();
+        return runtimes.nativeRuntime();
     }
 
     public ComputeEngine computeEngineFor(Device device) {
-        return backends.runtimeFor(device).computeEngine();
+        return runtimes.runtimeFor(device).computeEngine();
     }
 
     public ExecutionMode executionMode() {
@@ -106,7 +106,7 @@ public final class Environment {
     }
 
     public List<RuntimeDiagnostic> runtimeDiagnostics() {
-        return backends.diagnostics();
+        return runtimes.diagnostics();
     }
 
     private static RuntimeRegistry buildDefaultRuntimes() {

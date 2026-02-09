@@ -3,14 +3,12 @@ package ai.qxotic.jota.runtime.c;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import ai.qxotic.jota.DataType;
-import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.MemoryAccess;
 import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.tensor.KernelProgram;
-import ai.qxotic.jota.tensor.LaunchConfig;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
@@ -91,20 +89,16 @@ class CCustomKernelLaunchTest {
             MemoryDomain<MemorySegment> domain, MemoryView<MemorySegment> view, float... values) {
         MemoryAccess<MemorySegment> access = domain.directAccess();
         for (int i = 0; i < values.length; i++) {
-            access.writeFloat(
-                    view.memory(), view.byteOffset() + (long) i * Float.BYTES, values[i]);
+            access.writeFloat(view.memory(), view.byteOffset() + (long) i * Float.BYTES, values[i]);
         }
     }
 
     private static void assertFloats(
-            MemoryDomain<MemorySegment> domain,
-            MemoryView<MemorySegment> view,
-            float... expected) {
+            MemoryDomain<MemorySegment> domain, MemoryView<MemorySegment> view, float... expected) {
         MemoryAccess<MemorySegment> access = domain.directAccess();
         for (int i = 0; i < expected.length; i++) {
             float actual =
-                    access.readFloat(
-                            view.memory(), view.byteOffset() + (long) i * Float.BYTES);
+                    access.readFloat(view.memory(), view.byteOffset() + (long) i * Float.BYTES);
             assertEquals(expected[i], actual, 0.0001f, "mismatch at index " + i);
         }
     }

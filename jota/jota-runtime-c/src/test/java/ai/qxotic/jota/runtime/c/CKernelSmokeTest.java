@@ -14,6 +14,7 @@ import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
 import ai.qxotic.jota.tensor.Tensor;
 import ai.qxotic.jota.tensor.Tracer;
+import ai.qxotic.jota.testutil.TestKernels;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
 import java.util.List;

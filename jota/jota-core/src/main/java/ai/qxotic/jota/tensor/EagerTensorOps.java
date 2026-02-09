@@ -358,7 +358,7 @@ public class EagerTensorOps implements TensorOps {
 
     @Override
     public Tensor mean(Tensor x, int axis, boolean keepDims) {
-        return reductionOp(x, ReductionOp.MEAN, axis, keepDims);
+        throw new UnsupportedOperationException("mean() not yet implemented");
     }
 
     @Override
@@ -973,10 +973,5 @@ public class EagerTensorOps implements TensorOps {
 
     private Tensor scalarOp(Tensor a, Number scalar, BinaryOp op) {
         throw new UnsupportedOperationException("Generic scalar op dispatch not yet implemented");
-    }
-
-    private Tensor reductionOp(Tensor x, ReductionOp op, int axis, boolean keepDims) {
-        throw new UnsupportedOperationException(
-                "Generic reduction op dispatch not yet implemented");
     }
 }

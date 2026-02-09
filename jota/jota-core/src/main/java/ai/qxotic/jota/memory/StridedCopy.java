@@ -1,7 +1,11 @@
 package ai.qxotic.jota.memory;
 
 import ai.qxotic.jota.DataType;
+import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Indexing;
+import ai.qxotic.jota.Shape;
+import ai.qxotic.jota.memory.impl.MemoryFactory;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
@@ -34,7 +38,8 @@ final class StridedCopy {
 
         MemoryAccess<B> access = domain.directAccess();
         if (access == null) {
-            throw new IllegalStateException("MemoryAccess is required for strided copies");
+            copyViaHost(domain, src, dst);
+            return;
         }
 
         if (domain.device() == ai.qxotic.jota.Device.PANAMA
@@ -50,6 +55,52 @@ final class StridedCopy {
         }
 
         copyWithAccess(access, src, dst, src.dataType());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <B> void copyViaHost(
+            MemoryDomain<B> domain, MemoryView<B> src, MemoryView<B> dst) {
+        DataType dtype = src.dataType();
+        Shape shape = src.shape();
+        MemoryDomain<MemorySegment> hostDomain =
+                (MemoryDomain<MemorySegment>) Environment.current().nativeRuntime().memoryDomain();
+        MemoryOperations<B> deviceOps = domain.memoryOperations();
+        MemoryAccess<MemorySegment> hostAccess = hostDomain.directAccess();
+
+        try (Arena arena = Arena.ofConfined()) {
+            // Mirror src on host, preserving strides so offsets remain valid.
+            MemoryView<MemorySegment> hostSrc;
+            if (src.isRowMajorContiguous()) {
+                long bytes = shape.size() * dtype.byteSize();
+                Memory<MemorySegment> mem = MemoryFactory.ofMemorySegment(arena.allocate(bytes));
+                deviceOps.copyToNative(src.memory(), src.byteOffset(), mem, 0, bytes);
+                hostSrc = MemoryView.rowMajor(mem, dtype, shape);
+            } else {
+                long bytes = src.memory().byteSize();
+                Memory<MemorySegment> mem = MemoryFactory.ofMemorySegment(arena.allocate(bytes));
+                deviceOps.copyToNative(src.memory(), 0, mem, 0, bytes);
+                hostSrc = MemoryView.of(mem, src.byteOffset(), dtype, src.layout());
+            }
+
+            // Mirror dst on host and perform strided copy there.
+            if (dst.isRowMajorContiguous()) {
+                long bytes = shape.size() * dtype.byteSize();
+                Memory<MemorySegment> mem = MemoryFactory.ofMemorySegment(arena.allocate(bytes));
+                MemoryView<MemorySegment> hostDst = MemoryView.rowMajor(mem, dtype, shape);
+                copyWithMemorySegment(
+                        hostSrc.memory().base(), hostSrc, hostDst.memory().base(), hostDst, dtype);
+                deviceOps.copyFromNative(mem, 0, dst.memory(), dst.byteOffset(), bytes);
+            } else {
+                long bytes = dst.memory().byteSize();
+                Memory<MemorySegment> mem = MemoryFactory.ofMemorySegment(arena.allocate(bytes));
+                deviceOps.copyToNative(dst.memory(), 0, mem, 0, bytes);
+                MemoryView<MemorySegment> hostDst =
+                        MemoryView.of(mem, dst.byteOffset(), dtype, dst.layout());
+                copyWithMemorySegment(
+                        hostSrc.memory().base(), hostSrc, hostDst.memory().base(), hostDst, dtype);
+                deviceOps.copyFromNative(mem, 0, dst.memory(), 0, bytes);
+            }
+        }
     }
 
     private static <B> void copyWithAccess(

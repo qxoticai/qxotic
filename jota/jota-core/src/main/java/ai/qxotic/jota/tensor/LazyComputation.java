@@ -7,8 +7,6 @@ import java.util.Map;
 public sealed interface LazyComputation
         permits ConstantComputation, RangeComputation, IRComputation {
 
-    Op operation();
-
     List<Tensor> inputs();
 
     Map<String, Object> attributes();

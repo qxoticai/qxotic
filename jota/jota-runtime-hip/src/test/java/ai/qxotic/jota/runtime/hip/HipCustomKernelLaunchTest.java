@@ -3,8 +3,6 @@ package ai.qxotic.jota.runtime.hip;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import ai.qxotic.jota.DataType;
-import ai.qxotic.jota.Device;
-import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
 import ai.qxotic.jota.memory.MemoryAccess;
@@ -73,8 +71,7 @@ class HipCustomKernelLaunchTest {
         copyToDevice(device, hostX, devX);
 
         // Launch: one thread per row
-        runtime.launchKernel(
-                "gemv", LaunchConfig.grid(1).block(M), devA, devX, devY, M, N);
+        runtime.launchKernel("gemv", LaunchConfig.grid(1).block(M), devA, devX, devY, M, N);
 
         // Copy result back
         MemoryView<MemorySegment> hostY = allocateHost(host, DataType.FP32, Shape.flat(M));
@@ -99,43 +96,34 @@ class HipCustomKernelLaunchTest {
     }
 
     private static void writeFloats(
-            MemoryDomain<MemorySegment> host,
-            MemoryView<MemorySegment> view,
-            float... values) {
+            MemoryDomain<MemorySegment> host, MemoryView<MemorySegment> view, float... values) {
         MemoryAccess<MemorySegment> access = host.directAccess();
         for (int i = 0; i < values.length; i++) {
-            access.writeFloat(
-                    view.memory(), view.byteOffset() + (long) i * Float.BYTES, values[i]);
+            access.writeFloat(view.memory(), view.byteOffset() + (long) i * Float.BYTES, values[i]);
         }
     }
 
     private static void copyToDevice(
-            HipMemoryDomain device,
-            MemoryView<MemorySegment> src,
-            MemoryView<HipDevicePtr> dst) {
+            HipMemoryDomain device, MemoryView<MemorySegment> src, MemoryView<HipDevicePtr> dst) {
         long bytes = src.dataType().byteSizeFor(src.shape());
         device.memoryOperations()
                 .copyFromNative(src.memory(), src.byteOffset(), dst.memory(), 0, bytes);
     }
 
     private static void copyToHost(
-            HipMemoryDomain device,
-            MemoryView<HipDevicePtr> src,
-            MemoryView<MemorySegment> dst) {
+            HipMemoryDomain device, MemoryView<HipDevicePtr> src, MemoryView<MemorySegment> dst) {
         long bytes = src.dataType().byteSizeFor(src.shape());
         device.memoryOperations()
-                .copyToNative(src.memory(), src.byteOffset(), dst.memory(), dst.byteOffset(), bytes);
+                .copyToNative(
+                        src.memory(), src.byteOffset(), dst.memory(), dst.byteOffset(), bytes);
     }
 
     private static void assertFloats(
-            MemoryDomain<MemorySegment> host,
-            MemoryView<MemorySegment> view,
-            float... expected) {
+            MemoryDomain<MemorySegment> host, MemoryView<MemorySegment> view, float... expected) {
         MemoryAccess<MemorySegment> access = host.directAccess();
         for (int i = 0; i < expected.length; i++) {
             float actual =
-                    access.readFloat(
-                            view.memory(), view.byteOffset() + (long) i * Float.BYTES);
+                    access.readFloat(view.memory(), view.byteOffset() + (long) i * Float.BYTES);
             assertEquals(expected[i], actual, 0.0001f, "mismatch at index " + i);
         }
     }

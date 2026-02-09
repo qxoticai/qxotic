@@ -1,4 +1,4 @@
-package ai.qxotic.jota.panama;
+package ai.qxotic.jota.runtime.panama;
 
 import ai.qxotic.jota.ir.TIRToLIRLowerer;
 import ai.qxotic.jota.ir.lir.LIRGraph;

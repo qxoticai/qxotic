@@ -144,7 +144,10 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
     }
 
     private BufferRef createOutputBufferRef(TIRNode node) {
-        return BufferRef.of(nextId++, node.dataType(), layoutForNode(node));
+        // Outputs are always fresh allocations, so use row-major layout.
+        // This avoids pathological strides from transpose/slice operations being
+        // baked into the output buffer, which would waste memory.
+        return BufferRef.of(nextId++, node.dataType(), Layout.rowMajor(node.shape()));
     }
 
     private Layout layoutForNode(TIRNode node) {

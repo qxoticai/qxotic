@@ -84,7 +84,7 @@ public interface MemoryDomain<B> extends AutoCloseable {
         if (srcContextDevice(domain).equals(dst.memory().device())) {
             @SuppressWarnings("unchecked")
             MemoryView<S> castDst = (MemoryView<S>) dst;
-            StridedCopy.copy(domain, src, castDst);
+            domain.copy(src, castDst);
             return;
         }
         throw new IllegalArgumentException("Source and destination devices must match");

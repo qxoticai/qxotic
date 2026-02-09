@@ -21,11 +21,6 @@ record RangeComputation(long count, Device device) implements LazyComputation {
     }
 
     @Override
-    public Op operation() {
-        return RangeOp.INSTANCE;
-    }
-
-    @Override
     public List<Tensor> inputs() {
         return List.of();
     }
@@ -39,21 +34,5 @@ record RangeComputation(long count, Device device) implements LazyComputation {
     public MemoryView<?> execute() {
         MemoryDomain<?> memoryDomain = Environment.current().runtimeFor(device).memoryDomain();
         return MemoryHelpers.arange(memoryDomain, DataType.I64, count);
-    }
-
-    private static final class RangeOp implements Op {
-        private static final RangeOp INSTANCE = new RangeOp();
-
-        private RangeOp() {}
-
-        @Override
-        public String name() {
-            return "range";
-        }
-
-        @Override
-        public OpKind kind() {
-            return OpKind.SPECIAL;
-        }
     }
 }

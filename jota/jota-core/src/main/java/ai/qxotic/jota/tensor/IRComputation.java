@@ -24,21 +24,6 @@ final class IRComputation implements LazyComputation {
     }
 
     @Override
-    public Op operation() {
-        return new Op() {
-            @Override
-            public String name() {
-                return "ir-graph";
-            }
-
-            @Override
-            public OpKind kind() {
-                return OpKind.SPECIAL;
-            }
-        };
-    }
-
-    @Override
     public List<Tensor> inputs() {
         return inputTensors;
     }

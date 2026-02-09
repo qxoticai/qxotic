@@ -13,46 +13,30 @@ import java.util.Objects;
 
 public final class ExecutionContexts {
 
-    private static final KernelRegistry GLOBAL_REGISTRY = new DefaultKernelRegistry();
-
     private ExecutionContexts() {}
 
     public static ExecutionContext defaultContext() {
         return forDevice(Environment.current().defaultDevice());
     }
 
-    public static KernelRegistry globalRegistry() {
-        return GLOBAL_REGISTRY;
-    }
-
     public static ExecutionContext forDevice(Device device) {
-        return forDevice(device, GLOBAL_REGISTRY);
-    }
-
-    public static ExecutionContext forDevice(Device device, KernelRegistry registry) {
         Objects.requireNonNull(device, "device");
         MemoryDomain<?> memoryDomain = Environment.current().runtimeFor(device).memoryDomain();
-        return forContext(memoryDomain, registry);
+        return forContext(memoryDomain);
     }
 
-    public static ExecutionContext forContext(
-            MemoryDomain<?> memoryDomain, KernelRegistry registry) {
+    public static ExecutionContext forContext(MemoryDomain<?> memoryDomain) {
         Objects.requireNonNull(memoryDomain, "memoryDomain");
-        Objects.requireNonNull(registry, "registry");
-        return new DefaultExecutionContext(memoryDomain, registry);
+        return new DefaultExecutionContext(memoryDomain);
     }
 
     private static final class DefaultExecutionContext implements ExecutionContext {
         private final MemoryDomain<?> memoryDomain;
-        private final KernelRegistry registry;
         private final ScratchAllocator scratch;
-        private final ComputeStream stream;
 
-        private DefaultExecutionContext(MemoryDomain<?> memoryDomain, KernelRegistry registry) {
+        private DefaultExecutionContext(MemoryDomain<?> memoryDomain) {
             this.memoryDomain = memoryDomain;
-            this.registry = registry;
             this.scratch = new DefaultScratchAllocator(memoryDomain);
-            this.stream = new ImmediateComputeStream();
         }
 
         @Override
@@ -90,19 +74,8 @@ public final class ExecutionContexts {
         }
 
         @Override
-        public ComputeStream stream() {
-            return stream;
-        }
-
-        @Override
         public void barrier() {
-            ComputeStream.Event event = stream.record();
-            stream.waitFor(event);
-        }
-
-        @Override
-        public KernelRegistry kernels() {
-            return registry;
+            // Synchronous execution - nothing to barrier
         }
 
         private OutputBufferSpec computeOutputSpec(Layout layout, DataType dataType) {
@@ -155,31 +128,6 @@ public final class ExecutionContexts {
             }
             throw new UnsupportedOperationException(
                     "Scratch byte allocation not supported for device " + memoryDomain.device());
-        }
-    }
-
-    private static final class ImmediateComputeStream implements ComputeStream {
-        @Override
-        public void enqueue(Runnable task) {
-            Objects.requireNonNull(task, "task");
-            task.run();
-        }
-
-        @Override
-        public void waitFor(Event event) {}
-
-        @Override
-        public Event record() {
-            return ImmediateEvent.INSTANCE;
-        }
-
-        @Override
-        public boolean isComplete() {
-            return true;
-        }
-
-        private enum ImmediateEvent implements Event {
-            INSTANCE
         }
     }
 }
