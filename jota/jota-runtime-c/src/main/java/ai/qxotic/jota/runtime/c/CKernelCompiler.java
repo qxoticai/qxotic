@@ -55,6 +55,9 @@ final class CKernelCompiler {
         if (!isWindows()) {
             command.add("-lm");
         }
+        if (!isMac() && !isWindows()) {
+            command.add("-ldl");
+        }
 
         ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true);
         try {
