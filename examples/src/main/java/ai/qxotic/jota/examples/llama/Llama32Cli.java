@@ -2735,7 +2735,7 @@ public final class Llama32Cli {
                                         runtime.registerKernel(
                                                 GEMV_KERNEL_NAME,
                                                 KernelProgram.source(
-                                                        KernelProgram.Language.JAVA,
+                                                        KernelProgram.JAVA,
                                                         GEMV_KERNEL_SOURCE,
                                                         "LlamaGemvKernel")));
             } catch (RuntimeException ex) {
@@ -2758,7 +2758,7 @@ public final class Llama32Cli {
                                         runtime.registerKernel(
                                                 GEMV2_KERNEL_NAME,
                                                 KernelProgram.source(
-                                                        KernelProgram.Language.JAVA,
+                                                        KernelProgram.JAVA,
                                                         GEMV2_KERNEL_SOURCE,
                                                         "LlamaGemv2Kernel")));
             } catch (RuntimeException ex) {
@@ -2778,7 +2778,7 @@ public final class Llama32Cli {
                                         runtime.registerKernel(
                                                 kernelName,
                                                 KernelProgram.source(
-                                                        KernelProgram.Language.NATIVE,
+                                                        KernelProgram.C,
                                                         kernelSource,
                                                         entryPoint)));
             } catch (RuntimeException ex) {
@@ -2797,7 +2797,7 @@ public final class Llama32Cli {
                                         runtime.registerKernel(
                                                 GEMV3_KERNEL_NAME,
                                                 KernelProgram.source(
-                                                        KernelProgram.Language.JAVA,
+                                                        KernelProgram.JAVA,
                                                         GEMV3_KERNEL_SOURCE,
                                                         "LlamaGemv3Kernel")));
             } catch (RuntimeException ex) {
@@ -2816,7 +2816,7 @@ public final class Llama32Cli {
                                         runtime.registerKernel(
                                                 GEMV_DOWN_KERNEL_NAME,
                                                 KernelProgram.source(
-                                                        KernelProgram.Language.JAVA,
+                                                        KernelProgram.JAVA,
                                                         GEMV_DOWN_KERNEL_SOURCE,
                                                         "LlamaGemvDownKernel")));
             } catch (RuntimeException ex) {
