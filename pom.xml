@@ -6,7 +6,7 @@
 
     <groupId>ai.qxotic</groupId>
     <artifactId>qxotic-parent</artifactId>
-    <version>${qxotic.version}</version>
+    <version>0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>Quixotic AI parent</name>
 
