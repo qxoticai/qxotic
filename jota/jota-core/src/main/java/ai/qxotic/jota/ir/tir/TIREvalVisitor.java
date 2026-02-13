@@ -1631,7 +1631,7 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
 
         int axis = node.axis();
         int inputRank = input.shape().rank();
-        int normalizedAxis = axis < 0 ? axis + inputRank : axis;
+        int normalizedAxis = Util.wrapAround(axis, inputRank);
 
         long outputSize = node.shape().size();
 

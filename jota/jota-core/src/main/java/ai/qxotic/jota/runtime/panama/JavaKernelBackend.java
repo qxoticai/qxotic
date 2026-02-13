@@ -11,6 +11,7 @@ import ai.qxotic.jota.tensor.KernelCacheKey;
 import ai.qxotic.jota.tensor.KernelExecutable;
 import ai.qxotic.jota.tensor.KernelProgram;
 import ai.qxotic.jota.tensor.LaunchConfig;
+import java.io.File;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.net.URL;
@@ -18,6 +19,7 @@ import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -139,7 +141,7 @@ public final class JavaKernelBackend implements KernelBackend {
                     fileManager.getJavaFileObjects(sourceFile.toFile());
             List<String> options = new ArrayList<>();
             options.add("-classpath");
-            options.add(System.getProperty("java.class.path"));
+            options.add(compilerClassPath());
             options.add("-d");
             options.add(classOutputDir.toString());
             if (ModuleLayer.boot().findModule("jdk.incubator.vector").isPresent()) {
@@ -157,6 +159,48 @@ public final class JavaKernelBackend implements KernelBackend {
 
     private static Path classFileFor(Path classOutputDir, String packageName, String className) {
         return classOutputDir.resolve(packageName.replace('.', '/')).resolve(className + ".class");
+    }
+
+    private static String compilerClassPath() {
+        LinkedHashSet<String> entries = new LinkedHashSet<>();
+        addSplitClassPath(entries, System.getProperty("java.class.path"));
+        addSplitClassPath(entries, System.getProperty("surefire.test.class.path"));
+        collectClassLoaderPaths(Thread.currentThread().getContextClassLoader(), entries);
+        collectClassLoaderPaths(JavaKernelBackend.class.getClassLoader(), entries);
+        return String.join(File.pathSeparator, entries);
+    }
+
+    private static void addSplitClassPath(LinkedHashSet<String> entries, String classPath) {
+        if (classPath == null || classPath.isBlank()) {
+            return;
+        }
+        for (String part : classPath.split(java.util.regex.Pattern.quote(File.pathSeparator))) {
+            if (part != null && !part.isBlank()) {
+                entries.add(part);
+            }
+        }
+    }
+
+    private static void collectClassLoaderPaths(ClassLoader loader, LinkedHashSet<String> entries) {
+        ClassLoader cursor = loader;
+        while (cursor != null) {
+            if (cursor instanceof URLClassLoader urlClassLoader) {
+                for (URL url : urlClassLoader.getURLs()) {
+                    if (!"file".equalsIgnoreCase(url.getProtocol())) {
+                        continue;
+                    }
+                    try {
+                        String path = Path.of(url.toURI()).toString();
+                        if (!path.isBlank()) {
+                            entries.add(path);
+                        }
+                    } catch (Exception ignored) {
+                        // best-effort classpath assembly
+                    }
+                }
+            }
+            cursor = cursor.getParent();
+        }
     }
 
     private JavaKernel loadKernel(Path classOutputDir, String packageName, String className) {

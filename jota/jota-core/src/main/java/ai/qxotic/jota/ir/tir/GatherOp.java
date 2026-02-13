@@ -2,6 +2,7 @@ package ai.qxotic.jota.ir.tir;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Shape;
+import ai.qxotic.jota.Util;
 import java.util.Objects;
 
 /**
@@ -23,11 +24,7 @@ public record GatherOp(TIRNode input, TIRNode indices, int axis, Shape shape) im
 
         // Validate axis is within bounds
         int inputRank = input.shape().rank();
-        int normalizedAxis = axis < 0 ? axis + inputRank : axis;
-        if (normalizedAxis < 0 || normalizedAxis >= inputRank) {
-            throw new IllegalArgumentException(
-                    "Gather axis " + axis + " is out of bounds for input rank " + inputRank);
-        }
+        Util.wrapAround(axis, inputRank);
 
         // Validate indices data type is integral
         DataType indicesType = indices.dataType();
@@ -63,9 +60,7 @@ public record GatherOp(TIRNode input, TIRNode indices, int axis, Shape shape) im
     public static Shape computeOutputShape(Shape inputShape, Shape indicesShape, int axis) {
         int inputRank = inputShape.rank();
         int indicesRank = indicesShape.rank();
-
-        // Normalize axis
-        int normalizedAxis = axis < 0 ? axis + inputRank : axis;
+        int normalizedAxis = Util.wrapAround(axis, inputRank);
 
         // Output rank = inputRank - 1 (remove gathered axis) + indicesRank (add indices dimensions)
         int outputRank = inputRank - 1 + indicesRank;

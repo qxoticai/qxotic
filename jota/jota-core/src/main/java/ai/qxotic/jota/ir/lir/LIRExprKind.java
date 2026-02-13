@@ -13,6 +13,7 @@ public enum LIRExprKind {
     I_CONST,
     I_VAR,
     I_BINARY,
+    I_FROM_SCALAR,
     BLOCK,
     STORE,
     YIELD,

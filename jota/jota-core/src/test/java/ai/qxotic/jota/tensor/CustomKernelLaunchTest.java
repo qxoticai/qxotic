@@ -156,8 +156,7 @@ class CustomKernelLaunchTest {
                 """;
 
         runtime.registerKernel(
-                "negate",
-                KernelProgram.source(KernelProgram.JAVA, source, "NegateKernel"));
+                "negate", KernelProgram.source(KernelProgram.JAVA, source, "NegateKernel"));
 
         Tensor input = Tensor.of(new float[] {1f, -2f, 3f, -4f});
         MemoryView<?> out = allocate(DataType.FP32, Shape.flat(4));
@@ -452,8 +451,7 @@ class CustomKernelLaunchTest {
         // GEMV using Tensor inputs and MemoryView output
         runtime.registerKernel(
                 "gemv_t",
-                KernelProgram.source(
-                        KernelProgram.JAVA, GEMV_KERNEL_SOURCE, "GemvTensorKernel"));
+                KernelProgram.source(KernelProgram.JAVA, GEMV_KERNEL_SOURCE, "GemvTensorKernel"));
 
         int M = 2, N = 3;
         Tensor A = Tensor.of(new float[] {1, 2, 3, 4, 5, 6}, Shape.of(M, N));
@@ -532,8 +530,7 @@ class CustomKernelLaunchTest {
                 """;
 
         runtime.registerKernel(
-                "mismatch",
-                KernelProgram.source(KernelProgram.JAVA, source, "MismatchKernel"));
+                "mismatch", KernelProgram.source(KernelProgram.JAVA, source, "MismatchKernel"));
 
         MemoryView<?> buf = allocate(DataType.FP32, Shape.flat(4));
 

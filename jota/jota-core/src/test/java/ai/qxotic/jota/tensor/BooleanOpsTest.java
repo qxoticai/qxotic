@@ -113,7 +113,7 @@ class BooleanOpsTest extends AbstractMemoryTest {
                         trueTensor,
                         falseTensor,
                         // Odd min function.
-                        (t, f) -> Tensor.where(t.lessThan(f), t, f));
+                        (t, f) -> t.lessThan(f).select(t, f));
 
         MemoryView<?> output = min.materialize();
 
@@ -136,7 +136,7 @@ class BooleanOpsTest extends AbstractMemoryTest {
         Tensor trueTensor = Tensor.of(trueView);
         Tensor falseTensor = Tensor.of(falseView);
 
-        Tensor selected = Tracer.trace(condition, trueTensor, falseTensor, Tensor::where);
+        Tensor selected = Tracer.trace(condition, trueTensor, falseTensor, Tensor::select);
         MemoryView<?> output = selected.materialize();
 
         assertEquals(0, readInt(output, 0));

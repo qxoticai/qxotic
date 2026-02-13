@@ -142,6 +142,10 @@ public final class LIRExprGraph {
         return (IBinary) addUnique(new IBinary(nextId++, op, left, right));
     }
 
+    public IFromScalar indexFromScalar(LIRExprNode scalarExpr) {
+        return (IFromScalar) addUnique(new IFromScalar(nextId++, scalarExpr));
+    }
+
     public Block block(java.util.List<LIRExprNode> statements) {
         return (Block) addNode(new Block(nextId++, statements));
     }
@@ -663,6 +667,7 @@ public final class LIRExprGraph {
                         case I_CONST -> ((IConst) node).value();
                         case I_VAR -> ((IVar) node).name();
                         case I_BINARY -> ((IBinary) node).op();
+                        case I_FROM_SCALAR -> null;
                         case BLOCK, STORE, YIELD, STRUCTURED_FOR -> null;
                     };
 

@@ -6,6 +6,7 @@ import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
+import ai.qxotic.jota.Util;
 import ai.qxotic.jota.impl.ViewTransforms;
 import ai.qxotic.jota.ir.tir.ViewKind;
 import ai.qxotic.jota.memory.Memory;
@@ -386,12 +387,7 @@ public class EagerTensorOps implements TensorOps {
         }
 
         int inputRank = inputView.shape().rank();
-        int normalizedAxis = axis < 0 ? axis + inputRank : axis;
-
-        if (normalizedAxis < 0 || normalizedAxis >= inputRank) {
-            throw new IllegalArgumentException(
-                    "Gather axis " + axis + " is out of bounds for input rank " + inputRank);
-        }
+        int normalizedAxis = Util.wrapAround(axis, inputRank);
 
         // Compute output shape
         Shape outputShape =

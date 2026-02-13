@@ -38,7 +38,7 @@ class WhereWithScalarBroadcastingTest {
         Tensor trueValue = Tensor.scalar(100.0f);
         Tensor falseValue = Tensor.scalar(0.0f); // scalar that will be broadcast
 
-        Tensor result = Tensor.where(condition, trueValue, falseValue);
+        Tensor result = condition.select(trueValue, falseValue);
         MemoryView<?> view = result.materialize();
 
         // Expected: [0,0,0,100,100,100]
@@ -61,7 +61,7 @@ class WhereWithScalarBroadcastingTest {
         Tensor trueValue = Tensor.scalar(-1.0f); // scalar that will be broadcast
         Tensor falseValue = values;
 
-        Tensor result = Tensor.where(condition, trueValue, falseValue);
+        Tensor result = condition.select(trueValue, falseValue);
         MemoryView<?> view = result.materialize();
 
         // Expected: [-1,-1,-1,3,4,5]
@@ -84,7 +84,7 @@ class WhereWithScalarBroadcastingTest {
         Tensor trueValue = Tensor.scalar(1.0f);
         Tensor falseValue = Tensor.scalar(0.0f);
 
-        Tensor result = Tensor.where(condition, trueValue, falseValue);
+        Tensor result = condition.select(trueValue, falseValue);
         MemoryView<?> view = result.materialize();
 
         // Expected: [0,0,0,1,1,1]
@@ -115,7 +115,7 @@ class WhereWithScalarBroadcastingTest {
 
             // Use scalar for new value (will be broadcast)
             Tensor newValue = Tensor.scalar((float) i);
-            iterations = Tensor.where(shouldUpdate, newValue, iterations);
+            iterations = shouldUpdate.select(newValue, iterations);
         }
 
         MemoryView<?> view = iterations.materialize();
@@ -151,10 +151,10 @@ class WhereWithScalarBroadcastingTest {
 
             // Use scalars for values (will be broadcast)
             Tensor iterValue = Tensor.scalar((float) i);
-            iterations = Tensor.where(justEscaped, iterValue, iterations);
+            iterations = justEscaped.select(iterValue, iterations);
 
             Tensor one = Tensor.scalar(1.0f);
-            escaped = Tensor.where(justEscaped, one, escaped);
+            escaped = justEscaped.select(one, escaped);
 
             // Debug: print intermediate state
             MemoryView<?> escView = escaped.materialize();

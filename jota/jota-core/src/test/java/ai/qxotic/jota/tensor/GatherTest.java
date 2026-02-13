@@ -478,9 +478,6 @@ class GatherTest {
 
         Tensor result = embeddingTable.gather(indicesTensor, 0);
 
-        // Result should be materialized (current implementation uses eager evaluation)
-        assertTrue(result.isMaterialized());
-
         // Verify the values are correct
         MemoryView<?> view = result.materialize();
         float[] expected = {3, 4, 5, 0, 1, 2};

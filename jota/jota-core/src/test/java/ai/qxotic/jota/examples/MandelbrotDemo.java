@@ -159,7 +159,7 @@ public class MandelbrotDemo {
             Tensor justEscaped = hasEscaped.logicalAnd(notYetEscaped);
 
             Tensor iterValue = Tensor.full((float) i, DataType.FP32, shape);
-            iterations = Tensor.where(justEscaped, iterValue, iterations);
+            iterations = justEscaped.select(iterValue, iterations);
 
             escaped = escaped.logicalOr(hasEscaped);
 
@@ -168,7 +168,7 @@ public class MandelbrotDemo {
         }
 
         Tensor finalIter = Tensor.full((float) (MAX_ITER - 1), DataType.FP32, shape);
-        iterations = Tensor.where(escaped, iterations, finalIter);
+        iterations = escaped.select(iterations, finalIter);
 
         return iterations;
     }

@@ -3,6 +3,7 @@ package ai.qxotic.jota.ir;
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
+import ai.qxotic.jota.Util;
 import ai.qxotic.jota.ir.lir.*;
 import ai.qxotic.jota.ir.lir.LIRCanonicalizerPass;
 import ai.qxotic.jota.ir.tir.*;
@@ -705,11 +706,56 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
 
     @Override
     public LIRExprNode visitGatherOp(GatherOp node) {
-        // Gather requires special handling similar to reductions
-        // For now, throw an exception - it will be evaluated via interpreter
-        throw new UnsupportedOperationException(
-                "GatherOp lowering to LIR not yet implemented. "
-                        + "Use eager evaluation (EagerTensorOps) for gather operations.");
+        return cacheScalar(
+                node,
+                () -> {
+                    int inputRank = (int) node.input().shape().flatRank();
+                    int outputRank = (int) node.shape().flatRank();
+                    int indicesRank = (int) node.indices().shape().flatRank();
+                    int axis = Util.wrapAround(node.axis(), inputRank);
+                    if (loopIndices.size() != outputRank) {
+                        throw new IllegalStateException(
+                                "Expected "
+                                        + outputRank
+                                        + " loop indices for gather output, got "
+                                        + loopIndices.size());
+                    }
+
+                    List<LIRExprNode> indicesCoords = new ArrayList<>(indicesRank);
+                    for (int i = 0; i < indicesRank; i++) {
+                        indicesCoords.add(loopIndices.get(axis + i));
+                    }
+
+                    LIRExprNode gatheredIndexScalar =
+                            evaluateAtIndices(node.indices(), indicesCoords);
+                    LIRExprNode gatheredIndex = exprGraph.indexFromScalar(gatheredIndexScalar);
+
+                    List<LIRExprNode> inputCoords = new ArrayList<>(inputRank);
+                    for (int i = 0; i < axis; i++) {
+                        inputCoords.add(loopIndices.get(i));
+                    }
+                    inputCoords.add(gatheredIndex);
+                    for (int i = axis + 1; i < inputRank; i++) {
+                        inputCoords.add(loopIndices.get(indicesRank + i - 1));
+                    }
+
+                    return evaluateAtIndices(node.input(), inputCoords);
+                });
+    }
+
+    private LIRExprNode evaluateAtIndices(TIRNode node, List<LIRExprNode> indices) {
+        List<LIRExprNode> savedIndices = new ArrayList<>(loopIndices);
+        boolean savedCaching = scalarCachingEnabled;
+        loopIndices.clear();
+        loopIndices.addAll(indices);
+        scalarCachingEnabled = false;
+        try {
+            return node.accept(this);
+        } finally {
+            loopIndices.clear();
+            loopIndices.addAll(savedIndices);
+            scalarCachingEnabled = savedCaching;
+        }
     }
 
     @Override

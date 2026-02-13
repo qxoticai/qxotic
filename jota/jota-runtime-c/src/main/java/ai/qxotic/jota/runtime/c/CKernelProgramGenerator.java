@@ -17,11 +17,7 @@ final class CKernelProgramGenerator {
         String kernelName = "c_lir_" + key.value().substring(0, 12);
         String source = LirKernelSourceGenerator.generate(graph, scratchLayout, kernelName);
         return new KernelProgram(
-                KernelProgram.Kind.SOURCE,
-                KernelProgram.C,
-                source,
-                kernelName,
-                java.util.Map.of());
+                KernelProgram.Kind.SOURCE, KernelProgram.C, source, kernelName, java.util.Map.of());
     }
 
     private static final class LirKernelSourceGenerator {
