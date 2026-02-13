@@ -2,13 +2,12 @@ package ai.qxotic.jota.tensor;
 
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Environment;
-import ai.qxotic.jota.ir.tir.IotaConstant;
+import ai.qxotic.jota.ir.tir.ScheduledProgram;
+import ai.qxotic.jota.ir.tir.TIRCSEPass;
+import ai.qxotic.jota.ir.tir.TIRConstantFoldingPass;
 import ai.qxotic.jota.ir.tir.TIRGraph;
-import ai.qxotic.jota.ir.tir.TIRInterpreter;
-import ai.qxotic.jota.ir.tir.TIRNode;
-import ai.qxotic.jota.memory.MemoryDomain;
+import ai.qxotic.jota.ir.tir.TIRSchedulePass;
 import ai.qxotic.jota.memory.MemoryView;
-import ai.qxotic.jota.runtime.DeviceRuntime;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -37,63 +36,19 @@ final class IRComputation implements LazyComputation {
     public MemoryView<?> execute() {
         Device device =
                 inputTensors.isEmpty() ? Device.defaultDevice() : inputTensors.get(0).device();
-        DeviceRuntime deviceRuntime = Environment.current().runtimeFor(device);
-        MemoryDomain<?> domain = deviceRuntime.memoryDomain();
         ComputeEngine computeEngine = Environment.current().computeEngineFor(device);
 
         // Optimize the graph before execution
         TIRGraph optimizedGraph = optimizeGraph(graph);
+        ScheduledProgram schedule = new TIRSchedulePass().run(optimizedGraph);
 
-        if (computeEngine != null
-                && (requiresKernel(optimizedGraph) || domain.directAccess() == null)) {
-            List<Tensor> lirInputs = collectLirInputs(optimizedGraph, inputTensors);
-            return computeEngine.execute(optimizedGraph, lirInputs);
+        if (!schedule.steps().isEmpty() && computeEngine == null) {
+            throw new IllegalStateException(
+                    "No compute engine available for scheduled lazy execution on device "
+                            + device.name());
         }
 
-        @SuppressWarnings({"unchecked", "rawtypes"})
-        List<MemoryView<?>> inputs =
-                (List<MemoryView<?>>)
-                        (List<?>) inputTensors.stream().map(Tensor::materialize).toList();
-
-        List<?> outputs = TIRInterpreter.execute(optimizedGraph, inputs, domain);
-
-        @SuppressWarnings("unchecked")
-        MemoryView<?> output = (MemoryView<?>) outputs.get(0);
-
-        return output;
-    }
-
-    private static boolean requiresKernel(TIRGraph graph) {
-        for (TIRNode output : graph.outputs()) {
-            if (containsComputeNode(output)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean containsComputeNode(TIRNode node) {
-        return switch (node) {
-            case ai.qxotic.jota.ir.tir.UnaryOp __ -> true;
-            case ai.qxotic.jota.ir.tir.BinaryOp __ -> true;
-            case ai.qxotic.jota.ir.tir.TernaryOp __ -> true;
-            case ai.qxotic.jota.ir.tir.ReductionOp __ -> true;
-            case ai.qxotic.jota.ir.tir.CastOp __ -> true;
-            case ai.qxotic.jota.ir.tir.ViewTransform vt -> containsComputeNode(vt.input());
-            case ai.qxotic.jota.ir.tir.Contiguous contig -> containsComputeNode(contig.input());
-            default -> false;
-        };
-    }
-
-    private static List<Tensor> collectLirInputs(TIRGraph graph, List<Tensor> inputs) {
-        List<Tensor> lirInputs = new java.util.ArrayList<>();
-        for (int i = 0; i < graph.inputs().size(); i++) {
-            if (graph.inputs().get(i) instanceof IotaConstant) {
-                continue;
-            }
-            lirInputs.add(inputs.get(i));
-        }
-        return lirInputs;
+        return new ScheduledExecutor().execute(schedule, computeEngine, inputTensors);
     }
 
     /**
@@ -104,10 +59,10 @@ final class IRComputation implements LazyComputation {
         TIRGraph result = inputGraph;
 
         // Run CSE pass to eliminate common subexpressions
-        // result = new TIRCSEPass().run(result);
+        result = new TIRCSEPass().run(result);
 
         // Run constant folding to simplify constant expressions
-        // result = new TIRConstantFoldingPass().run(result);
+        result = new TIRConstantFoldingPass().run(result);
 
         // Validate the optimized graph
         // result = new TIRValidationPass().run(result);

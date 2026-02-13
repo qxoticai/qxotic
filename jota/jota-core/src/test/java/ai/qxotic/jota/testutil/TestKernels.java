@@ -67,14 +67,14 @@ public final class TestKernels {
             Tensor justEscaped = hasEscaped.logicalAnd(notYetEscaped);
 
             Tensor iterValue = Tensor.full((float) i, DataType.FP32, shape);
-            iters = Tensor.where(justEscaped, iterValue, iters);
+            iters = justEscaped.select(iterValue, iters);
             escaped = escaped.logicalOr(hasEscaped);
             zReal = zRealNew;
             zImag = zImagNew;
         }
 
         Tensor finalIter = Tensor.full((float) (iterations - 1), DataType.FP32, shape);
-        return Tensor.where(escaped, iters, finalIter);
+        return escaped.select(iters, finalIter);
     }
 
     public static float mandelbrotIter(int row, int col, int width, int height, int iterations) {

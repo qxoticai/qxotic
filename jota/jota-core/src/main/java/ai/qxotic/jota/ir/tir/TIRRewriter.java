@@ -27,7 +27,7 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
         List<TIRNode> newOutputs = new ArrayList<>(graph.outputs().size());
         boolean changed = false;
         for (TIRNode output : graph.outputs()) {
-            TIRNode newOutput = output.accept(this);
+            TIRNode newOutput = rewriteChild(output);
             newOutputs.add(newOutput);
             if (newOutput != output) {
                 changed = true;
@@ -103,7 +103,7 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
 
     @Override
     public TIRNode visitUnaryOp(UnaryOp node) {
-        TIRNode newInput = node.input().accept(this);
+        TIRNode newInput = rewriteChild(node.input());
         if (newInput == node.input()) {
             return node;
         }
@@ -112,8 +112,8 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
 
     @Override
     public TIRNode visitBinaryOp(BinaryOp node) {
-        TIRNode newLeft = node.left().accept(this);
-        TIRNode newRight = node.right().accept(this);
+        TIRNode newLeft = rewriteChild(node.left());
+        TIRNode newRight = rewriteChild(node.right());
         if (newLeft == node.left() && newRight == node.right()) {
             return node;
         }
@@ -122,9 +122,9 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
 
     @Override
     public TIRNode visitTernaryOp(TernaryOp node) {
-        TIRNode newCond = node.cond().accept(this);
-        TIRNode newTrue = node.trueExpr().accept(this);
-        TIRNode newFalse = node.falseExpr().accept(this);
+        TIRNode newCond = rewriteChild(node.cond());
+        TIRNode newTrue = rewriteChild(node.trueExpr());
+        TIRNode newFalse = rewriteChild(node.falseExpr());
         if (newCond == node.cond() && newTrue == node.trueExpr() && newFalse == node.falseExpr()) {
             return node;
         }
@@ -133,7 +133,7 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
 
     @Override
     public TIRNode visitCastOp(CastOp node) {
-        TIRNode newInput = node.input().accept(this);
+        TIRNode newInput = rewriteChild(node.input());
         if (newInput == node.input()) {
             return node;
         }
@@ -142,7 +142,7 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
 
     @Override
     public TIRNode visitReductionOp(ReductionOp node) {
-        TIRNode newInput = node.input().accept(this);
+        TIRNode newInput = rewriteChild(node.input());
         if (newInput == node.input()) {
             return node;
         }
@@ -157,8 +157,8 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
 
     @Override
     public TIRNode visitGatherOp(GatherOp node) {
-        TIRNode newInput = node.input().accept(this);
-        TIRNode newIndices = node.indices().accept(this);
+        TIRNode newInput = rewriteChild(node.input());
+        TIRNode newIndices = rewriteChild(node.indices());
         if (newInput == node.input() && newIndices == node.indices()) {
             return node;
         }
@@ -167,7 +167,7 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
 
     @Override
     public TIRNode visitViewTransform(ViewTransform node) {
-        TIRNode newInput = node.input().accept(this);
+        TIRNode newInput = rewriteChild(node.input());
         if (newInput == node.input()) {
             return node;
         }
@@ -176,10 +176,14 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
 
     @Override
     public TIRNode visitContiguous(Contiguous node) {
-        TIRNode newInput = node.input().accept(this);
+        TIRNode newInput = rewriteChild(node.input());
         if (newInput == node.input()) {
             return node;
         }
         return new Contiguous(newInput, node.shape());
+    }
+
+    protected TIRNode rewriteChild(TIRNode node) {
+        return node.accept(this);
     }
 }

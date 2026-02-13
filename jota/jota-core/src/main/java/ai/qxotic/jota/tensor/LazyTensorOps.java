@@ -194,12 +194,8 @@ final class LazyTensorOps implements TensorOps {
 
     @Override
     public Tensor gather(Tensor input, Tensor indices, int axis) {
-        // Gather is not traceable through standard tracer because it needs special handling
-        // Fall back to eager execution by materializing and using EagerTensorOps
-        // This ensures we don't recursively call LazyTensorOps
-        return new EagerTensorOps(
-                        ai.qxotic.jota.Environment.current().nativeRuntime().memoryDomain())
-                .gather(input, indices, axis);
+        return traceBinary(
+                input, indices, (t0, t1) -> TensorOpsContext.require().gather(t0, t1, axis));
     }
 
     @Override

@@ -325,6 +325,14 @@ public final class LIRTextRenderer {
                                 + " : index");
                 yield var;
             }
+            case I_FROM_SCALAR -> {
+                IFromScalar fromScalar = (IFromScalar) resolved;
+                String scalar = renderScalarValue(fromScalar.scalarExpr());
+                String var = allocateVar();
+                nodeToVar.put(resolved, var);
+                appendLine(var + " = arith.index_cast " + scalar + " : index");
+                yield var;
+            }
             default ->
                     throw new IllegalStateException("Expected index node, got " + resolved.kind());
         };

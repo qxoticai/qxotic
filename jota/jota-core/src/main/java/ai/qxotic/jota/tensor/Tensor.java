@@ -10,10 +10,8 @@ import ai.qxotic.jota.memory.impl.DomainFactory;
 import ai.qxotic.jota.memory.impl.MemoryFactory;
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.Function;
 
 public interface Tensor {
 
@@ -420,8 +418,8 @@ public interface Tensor {
         return lessThan(other).logicalNot();
     }
 
-    static Tensor where(Tensor condition, Tensor trueValue, Tensor falseValue) {
-        requireBool(condition.dataType(), "where condition");
+    default Tensor select(Tensor trueValue, Tensor falseValue) {
+        requireBool(dataType(), "where condition");
         if (trueValue.dataType() != falseValue.dataType()) {
             throw new IllegalArgumentException(
                     "where requires true and false values to have the same type, got "
@@ -429,7 +427,7 @@ public interface Tensor {
                             + " and "
                             + falseValue.dataType());
         }
-        return TensorOpsContext.require().where(condition, trueValue, falseValue);
+        return TensorOpsContext.require().where(this, trueValue, falseValue);
     }
 
     default Tensor sum(DataType accumulatorType) {
@@ -1149,13 +1147,5 @@ public interface Tensor {
     default Tensor realize() {
         materialize();
         return this;
-    }
-
-    default Tensor traceIR(Function<Tensor, Tensor> fn) {
-        return Tracer.trace(this, fn);
-    }
-
-    static Tensor traceIR(List<Tensor> inputs, Function<List<Tensor>, Tensor> fn) {
-        return Tracer.trace(inputs, fn);
     }
 }

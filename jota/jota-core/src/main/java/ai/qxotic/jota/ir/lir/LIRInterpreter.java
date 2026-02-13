@@ -190,6 +190,11 @@ public final class LIRInterpreter {
                             case SHIFT_RIGHT -> left >> right;
                         };
                     }
+                    case I_FROM_SCALAR -> {
+                        IFromScalar fromScalar = (IFromScalar) resolved;
+                        ScalarValue scalar = evalScalar(fromScalar.scalarExpr(), env, bindings);
+                        yield toLong(scalar);
+                    }
                     default ->
                             throw new IllegalStateException(
                                     "Expected index node, got " + resolved.kind());

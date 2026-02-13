@@ -8,16 +8,20 @@ import ai.qxotic.jota.tensor.JavaKernel;
 import ai.qxotic.jota.tensor.KernelCache;
 import ai.qxotic.jota.tensor.KernelCacheEntry;
 import ai.qxotic.jota.tensor.KernelCacheKey;
+import java.io.File;
 import java.io.IOException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -84,7 +88,7 @@ final class LIRKernelCompiler {
             List<String> options =
                     List.of(
                             "-classpath",
-                            System.getProperty("java.class.path"),
+                            compilerClassPath(),
                             "-d",
                             entry.classOutputDir().toString());
             JavaCompiler.CompilationTask task =
@@ -108,6 +112,49 @@ final class LIRKernelCompiler {
             return (JavaKernel) instance;
         } catch (Exception e) {
             throw new IllegalStateException("Failed to load kernel " + entry.className(), e);
+        }
+    }
+
+    private static String compilerClassPath() {
+        LinkedHashSet<String> entries = new LinkedHashSet<>();
+        addSplitClassPath(entries, System.getProperty("java.class.path"));
+        addSplitClassPath(entries, System.getProperty("surefire.test.class.path"));
+        collectClassLoaderPaths(Thread.currentThread().getContextClassLoader(), entries);
+        collectClassLoaderPaths(LIRKernelCompiler.class.getClassLoader(), entries);
+        return String.join(File.pathSeparator, entries);
+    }
+
+    private static void addSplitClassPath(LinkedHashSet<String> entries, String classPath) {
+        if (classPath == null || classPath.isBlank()) {
+            return;
+        }
+        for (String part : classPath.split(java.util.regex.Pattern.quote(File.pathSeparator))) {
+            if (part != null && !part.isBlank()) {
+                entries.add(part);
+            }
+        }
+    }
+
+    private static void collectClassLoaderPaths(ClassLoader loader, LinkedHashSet<String> entries) {
+        ClassLoader cursor = loader;
+        while (cursor != null) {
+            if (cursor instanceof URLClassLoader urlClassLoader) {
+                for (URL url : urlClassLoader.getURLs()) {
+                    if (!"file".equalsIgnoreCase(url.getProtocol())) {
+                        continue;
+                    }
+                    try {
+                        Path path = Paths.get(url.toURI());
+                        String pathString = path.toString();
+                        if (!pathString.isBlank()) {
+                            entries.add(pathString);
+                        }
+                    } catch (Exception ignored) {
+                        // best-effort classpath assembly
+                    }
+                }
+            }
+            cursor = cursor.getParent();
         }
     }
 
@@ -200,6 +247,7 @@ final class LIRKernelCompiler {
             case IConst ic -> hash = mix(hash, ic.value());
             case IVar iv -> hash = mix(hash, iv.name().hashCode());
             case IBinary ib -> hash = mix(hash, ib.op().ordinal());
+            case IFromScalar __ -> hash = mix(hash, 7);
             case Store store -> hash = mix(hash, hashBufferRef(store.buffer()));
             case StructuredFor loop -> {
                 hash = mix(hash, loop.indexName().hashCode());
@@ -973,6 +1021,7 @@ final class LIRKernelCompiler {
                                 + " "
                                 + emitIndexExpr(((IBinary) resolved).right())
                                 + ")";
+                case I_FROM_SCALAR -> emitIndexFromScalarExpr((IFromScalar) resolved);
                 default ->
                         throw new IllegalStateException(
                                 "Expected index node, got " + resolved.kind());
@@ -1004,10 +1053,23 @@ final class LIRKernelCompiler {
                                     ((IBinary) resolved).right(), strides, strideVars);
                     yield "(" + left + " " + indexOp(((IBinary) resolved).op()) + " " + right + ")";
                 }
+                case I_FROM_SCALAR -> emitIndexFromScalarExpr((IFromScalar) resolved);
                 default ->
                         throw new IllegalStateException(
                                 "Expected index node, got " + resolved.kind());
             };
+        }
+
+        private String emitIndexFromScalarExpr(IFromScalar fromScalar) {
+            String scalarExpr = emitScalarExpr(fromScalar.scalarExpr());
+            DataType sourceType = fromScalar.scalarExpr().dataType();
+            if (sourceType == DataType.BOOL) {
+                return "(" + scalarExpr + " ? 1L : 0L)";
+            }
+            if (sourceType == DataType.I64) {
+                return scalarExpr;
+            }
+            return "(long) (" + scalarExpr + ")";
         }
 
         private String compareExpr(
