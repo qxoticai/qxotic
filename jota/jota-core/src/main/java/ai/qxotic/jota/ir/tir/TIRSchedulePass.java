@@ -36,54 +36,23 @@ public final class TIRSchedulePass {
         TIRNode output = graph.outputs().getFirst();
         List<TIRNode> topo = collectTopo(output);
         List<TIRNode> roots = stepRoots(output, topo);
-        List<KernelStep> steps = new ArrayList<>();
+        List<KernelStep> steps = new ArrayList<>(roots.size());
         Map<TIRNode, ValueId> producedValues = new IdentityHashMap<>();
 
         int nextValueId = 0;
-        for (int i = 0; i < roots.size(); ) {
-            int best = i;
-            TIRStepGraphBuilder.Result bestResult = null;
-
-            for (int j = i; j < roots.size(); j++) {
-                if (!canFuseRange(roots, i, j)) {
-                    break;
-                }
-
-                TIRNode candidateRoot = roots.get(j);
-                TIRStepGraphBuilder.Result candidate =
-                        TIRStepGraphBuilder.build(candidateRoot, producedValues);
-                if (countReductions(candidate.graph().outputs().getFirst()) > 1) {
-                    break;
-                }
-
-                try {
-                    loweringSupportChecker.verifyOrThrow(candidate.graph(), describe(candidateRoot));
-                } catch (UnsupportedOperationException ex) {
-                    break;
-                }
-
-                best = j;
-                bestResult = candidate;
+        for (TIRNode root : roots) {
+            TIRStepGraphBuilder.Result result = TIRStepGraphBuilder.build(root, producedValues);
+            if (countReductions(result.graph().outputs().getFirst()) > 1) {
+                throw new UnsupportedOperationException(
+                        "Unsupported scheduled kernel for "
+                                + root.getClass().getSimpleName()
+                                + ": more than one reduction in kernel");
             }
-
-            if (bestResult == null) {
-                TIRNode root = roots.get(i);
-                TIRStepGraphBuilder.Result fallback = TIRStepGraphBuilder.build(root, producedValues);
-                if (countReductions(fallback.graph().outputs().getFirst()) > 1) {
-                    throw new UnsupportedOperationException(
-                            "Unsupported scheduled kernel for "
-                                    + root.getClass().getSimpleName()
-                                    + ": more than one reduction in fused kernel");
-                }
-                loweringSupportChecker.verifyOrThrow(fallback.graph(), describe(root));
-                bestResult = fallback;
-                best = i;
-            }
+            loweringSupportChecker.verifyOrThrow(result.graph(), describe(root));
 
             ValueId out = new ValueId(nextValueId++);
-            steps.add(new KernelStep(bestResult.graph(), bestResult.inputs(), out));
-            producedValues.put(roots.get(best), out);
-            i = best + 1;
+            steps.add(new KernelStep(result.graph(), result.inputs(), out));
+            producedValues.put(root, out);
         }
 
         ScheduledOutputRef scheduledOutput = resolveOutputRef(output, producedValues);
@@ -141,28 +110,6 @@ public final class TIRSchedulePass {
                 + " "
                 + node.shape()
                 + ")";
-    }
-
-    private static boolean canFuseRange(List<TIRNode> roots, int startInclusive, int endInclusive) {
-        TIRNode candidateRoot = roots.get(endInclusive);
-        for (int i = startInclusive; i < endInclusive; i++) {
-            if (!isAncestor(roots.get(i), candidateRoot)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean isAncestor(TIRNode ancestor, TIRNode node) {
-        if (ancestor == node) {
-            return true;
-        }
-        for (TIRNode input : TIRNodeUtils.inputsOf(node)) {
-            if (isAncestor(ancestor, input)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static int countReductions(TIRNode root) {
