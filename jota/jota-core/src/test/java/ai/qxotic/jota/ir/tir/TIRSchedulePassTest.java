@@ -22,13 +22,16 @@ class TIRSchedulePassTest {
 
         ScheduledProgram schedule = new TIRSchedulePass().run(graph);
 
-        assertEquals(1, schedule.steps().size(), "Expected fused kernel for simple elementwise chain");
-        KernelStep step = schedule.steps().getFirst();
+        assertEquals(2, schedule.steps().size(), "Expected one kernel per compute stage");
+        KernelStep first = schedule.steps().get(0);
+        KernelStep second = schedule.steps().get(1);
 
-        assertTrue(step.inputs().contains(new ScheduleInputRef.TensorInputRef(0)));
-        assertTrue(step.inputs().contains(new ScheduleInputRef.TensorInputRef(1)));
+        assertTrue(first.inputs().contains(new ScheduleInputRef.TensorInputRef(0)));
+        assertTrue(first.inputs().contains(new ScheduleInputRef.TensorInputRef(1)));
+        assertTrue(second.inputs().contains(new ScheduleInputRef.ProducedValueRef(first.output())));
+        assertTrue(second.inputs().contains(new ScheduleInputRef.TensorInputRef(1)));
         assertEquals(
-                new ScheduledOutputRef.ValueOutput(step.output()),
+                new ScheduledOutputRef.ValueOutput(second.output()),
                 schedule.output(),
                 "Final output should come from last kernel step");
     }
