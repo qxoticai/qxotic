@@ -327,26 +327,11 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
             MemoryView<MemorySegment> right,
             MemoryView<MemorySegment> output,
             long size) {
-        // Debug: Print first few values for MULTIPLY operations on broadcasted tensors
-        boolean debug = op == BinaryOperator.MULTIPLY && size == 30; // (2,5,3) = 30 elements
         for (long i = 0; i < size; i++) {
             long leftOffset = Indexing.linearToOffset(left, i);
             long rightOffset = Indexing.linearToOffset(right, i);
             float a = memAccess.readFloat(left.memory(), leftOffset);
             float b = memAccess.readFloat(right.memory(), rightOffset);
-            if (debug && i < 6) {
-                System.out.println(
-                        "DEBUG MULTIPLY i="
-                                + i
-                                + ": leftOffset="
-                                + leftOffset
-                                + " a="
-                                + a
-                                + ", rightOffset="
-                                + rightOffset
-                                + " b="
-                                + b);
-            }
             float result =
                     switch (op) {
                         case ADD -> a + b;
@@ -1002,9 +987,6 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
             Shape outputShape,
             int[] axes) {
         long outputSize = outputShape.size();
-        // Debug for matmul test case: input (2,5,3), output (2,5), reducing axis 2
-        boolean debug =
-                op == ReductionOperator.SUM && outputSize == 10 && axes.length == 1 && axes[0] == 2;
 
         for (long outIdx = 0; outIdx < outputSize; outIdx++) {
             float acc =
@@ -1015,36 +997,11 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case MAX -> -Float.MAX_VALUE;
                     };
 
-            if (debug && outIdx == 0) {
-                System.out.println(
-                        "DEBUG REDUCTION: inputShape="
-                                + inputShape
-                                + ", outputShape="
-                                + outputShape
-                                + ", axes=["
-                                + axes[0]
-                                + "], outIdx="
-                                + outIdx);
-            }
-
-            int k = 0;
             for (long[] inCoord :
                     iterateReduction(
                             inputShape, axes, Indexing.linearToCoord(outputShape, outIdx))) {
                 long inOffset = Indexing.coordToOffset(input, inCoord);
                 float value = memAccess.readFloat(input.memory(), inOffset);
-                if (debug && outIdx == 0 && k < 3) {
-                    System.out.println(
-                            "DEBUG REDUCTION outIdx=0, k="
-                                    + k
-                                    + ": inCoord="
-                                    + java.util.Arrays.toString(inCoord)
-                                    + ", inOffset="
-                                    + inOffset
-                                    + ", value="
-                                    + value);
-                }
-                k++;
                 acc =
                         switch (op) {
                             case SUM -> acc + value;
@@ -1052,10 +1009,6 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                             case MIN -> Math.min(acc, value);
                             case MAX -> Math.max(acc, value);
                         };
-            }
-
-            if (debug && outIdx == 0) {
-                System.out.println("DEBUG REDUCTION outIdx=0: final acc=" + acc);
             }
 
             long outOffset = Indexing.linearToOffset(output, outIdx);

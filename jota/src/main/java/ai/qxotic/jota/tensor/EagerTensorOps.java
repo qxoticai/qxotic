@@ -1,13 +1,14 @@
 package ai.qxotic.jota.tensor;
 
+import ai.qxotic.jota.BFloat16;
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Environment;
 import ai.qxotic.jota.Indexing;
 import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.Shape;
-import ai.qxotic.jota.Util;
 import ai.qxotic.jota.impl.ViewTransforms;
+import ai.qxotic.jota.ir.tir.GatherOp;
 import ai.qxotic.jota.ir.tir.ViewKind;
 import ai.qxotic.jota.memory.Memory;
 import ai.qxotic.jota.memory.MemoryAccess;
@@ -80,25 +81,25 @@ public class EagerTensorOps implements TensorOps {
 
     @Override
     public Tensor sqrt(Tensor x) {
-        assertFloatingPoint(x.dataType(), "sqrt");
+        TensorTypeSemantics.requireFloatingPoint(x.dataType(), "sqrt");
         return unaryOp(x, UnaryOp.SQRT);
     }
 
     @Override
     public Tensor sin(Tensor x) {
-        assertFloatingPoint(x.dataType(), "sin");
+        TensorTypeSemantics.requireFloatingPoint(x.dataType(), "sin");
         return unaryOp(x, UnaryOp.SIN);
     }
 
     @Override
     public Tensor cos(Tensor x) {
-        assertFloatingPoint(x.dataType(), "cos");
+        TensorTypeSemantics.requireFloatingPoint(x.dataType(), "cos");
         return unaryOp(x, UnaryOp.COS);
     }
 
     @Override
     public Tensor tanh(Tensor x) {
-        assertFloatingPoint(x.dataType(), "tanh");
+        TensorTypeSemantics.requireFloatingPoint(x.dataType(), "tanh");
         return unaryOp(x, UnaryOp.TANH);
     }
 
@@ -172,29 +173,23 @@ public class EagerTensorOps implements TensorOps {
 
     @Override
     public Tensor bitwiseNot(Tensor x) {
-        assertIntegral(x.dataType(), "bitwiseNot");
+        TensorTypeSemantics.requireIntegral(x.dataType(), "bitwiseNot");
         return unaryOp(x, UnaryOp.BITWISE_NOT);
     }
 
     @Override
     public Tensor bitwiseAnd(Tensor a, Tensor b) {
-        assertIntegral(a.dataType(), "bitwiseAnd");
-        assertIntegral(b.dataType(), "bitwiseAnd");
-        return binaryOp(a, b, BinaryOp.BITWISE_AND);
+        return bitwiseBinaryOp(a, b, BinaryOp.BITWISE_AND, "bitwiseAnd");
     }
 
     @Override
     public Tensor bitwiseOr(Tensor a, Tensor b) {
-        assertIntegral(a.dataType(), "bitwiseOr");
-        assertIntegral(b.dataType(), "bitwiseOr");
-        return binaryOp(a, b, BinaryOp.BITWISE_OR);
+        return bitwiseBinaryOp(a, b, BinaryOp.BITWISE_OR, "bitwiseOr");
     }
 
     @Override
     public Tensor bitwiseXor(Tensor a, Tensor b) {
-        assertIntegral(a.dataType(), "bitwiseXor");
-        assertIntegral(b.dataType(), "bitwiseXor");
-        return binaryOp(a, b, BinaryOp.BITWISE_XOR);
+        return bitwiseBinaryOp(a, b, BinaryOp.BITWISE_XOR, "bitwiseXor");
     }
 
     @Override
@@ -225,9 +220,7 @@ public class EagerTensorOps implements TensorOps {
     private Tensor logicalBinaryOp(Tensor a, Tensor b, LogicalBinaryFunc func) {
         MemoryView<?> viewA = a.materialize();
         MemoryView<?> viewB = b.materialize();
-        if (viewA.dataType() != DataType.BOOL || viewB.dataType() != DataType.BOOL) {
-            throw new IllegalArgumentException("Logical ops require BOOL tensors");
-        }
+        TensorTypeSemantics.requireBooleanPair(viewA.dataType(), viewB.dataType(), "logical op");
         Shape resultShape = viewA.shape();
         if (!viewA.shape().equals(viewB.shape())) {
             throw new IllegalArgumentException(
@@ -266,11 +259,11 @@ public class EagerTensorOps implements TensorOps {
     private Tensor compareOp(Tensor a, Tensor b, BinaryOp op) {
         MemoryView<?> viewA = a.materialize();
         MemoryView<?> viewB = b.materialize();
-        DataType dtype = viewA.dataType();
-        if (dtype != viewB.dataType()) {
-            throw new IllegalArgumentException(
-                    "Type mismatch: " + dtype + " vs " + viewB.dataType());
-        }
+        DataType dtype =
+                TensorTypeSemantics.promoteForComparison(
+                        viewA.dataType(), viewB.dataType(), op.name());
+        MemoryView<?> left = castIfNeeded(viewA, dtype);
+        MemoryView<?> right = castIfNeeded(viewB, dtype);
         Shape resultShape = viewA.shape();
         if (!viewA.shape().equals(viewB.shape())) {
             throw new IllegalArgumentException(
@@ -280,14 +273,14 @@ public class EagerTensorOps implements TensorOps {
         MemoryView<?> output = allocate(DataType.BOOL, resultShape);
         long size = resultShape.size();
         @SuppressWarnings("unchecked")
-        Memory<Object> memA = (Memory<Object>) viewA.memory();
+        Memory<Object> memA = (Memory<Object>) left.memory();
         @SuppressWarnings("unchecked")
-        Memory<Object> memB = (Memory<Object>) viewB.memory();
+        Memory<Object> memB = (Memory<Object>) right.memory();
         @SuppressWarnings("unchecked")
         Memory<Object> memOut = (Memory<Object>) output.memory();
         for (long i = 0; i < size; i++) {
-            long offA = Indexing.linearToOffset(viewA, i);
-            long offB = Indexing.linearToOffset(viewB, i);
+            long offA = Indexing.linearToOffset(left, i);
+            long offB = Indexing.linearToOffset(right, i);
             long offOut = Indexing.linearToOffset(output, i);
             boolean result = applyCompareOp(access, memA, offA, memB, offB, dtype, op);
             access.writeByte(memOut, offOut, (byte) (result ? 1 : 0));
@@ -323,6 +316,14 @@ public class EagerTensorOps implements TensorOps {
             float a = access.readFloat(memA, offA);
             float b = access.readFloat(memB, offB);
             return ConstantFolder.evalCompare(a, b, op);
+        } else if (dtype == DataType.FP16) {
+            float a = Float.float16ToFloat(access.readShort(memA, offA));
+            float b = Float.float16ToFloat(access.readShort(memB, offB));
+            return ConstantFolder.evalCompare(a, b, op);
+        } else if (dtype == DataType.BF16) {
+            float a = BFloat16.toFloat(access.readShort(memA, offA));
+            float b = BFloat16.toFloat(access.readShort(memB, offB));
+            return ConstantFolder.evalCompare(a, b, op);
         } else if (dtype == DataType.FP64) {
             double a = access.readDouble(memA, offA);
             double b = access.readDouble(memB, offB);
@@ -334,44 +335,78 @@ public class EagerTensorOps implements TensorOps {
 
     @Override
     public Tensor where(Tensor condition, Tensor trueValue, Tensor falseValue) {
-        assertBool(condition.dataType(), "where condition");
-        assert trueValue.dataType() == falseValue.dataType()
-                : "where requires true and false values to have the same type, got "
-                        + trueValue.dataType()
-                        + " and "
-                        + falseValue.dataType();
-        throw new UnsupportedOperationException("Generic where op dispatch not yet implemented");
+        TensorTypeSemantics.requireBool(condition.dataType(), "where condition");
+        if (trueValue.dataType() != falseValue.dataType()) {
+            throw new IllegalArgumentException(
+                    "where requires true and false values to have the same type, got "
+                            + trueValue.dataType()
+                            + " and "
+                            + falseValue.dataType());
+        }
+
+        MemoryView<?> conditionView = condition.materialize();
+        MemoryView<?> trueView = trueValue.materialize();
+        MemoryView<?> falseView = falseValue.materialize();
+
+        Shape outputShape =
+                TensorSemantics.resolveWhereShape(
+                        conditionView.shape(), trueView.shape(), falseView.shape());
+        DataType outputType = trueView.dataType();
+        MemoryView<?> output = allocate(outputType, outputShape);
+        MemoryAccess<Object> access = requireMemoryAccess();
+
+        long outputSize = outputShape.size();
+        for (long outLinear = 0; outLinear < outputSize; outLinear++) {
+            long[] outCoord = Indexing.linearToCoord(outputShape, outLinear);
+            long conditionOffset = coordForWhereInput(conditionView, outCoord);
+            long trueOffset = coordForWhereInput(trueView, outCoord);
+            long falseOffset = coordForWhereInput(falseView, outCoord);
+            long outOffset = Indexing.linearToOffset(output, outLinear);
+
+            @SuppressWarnings("unchecked")
+            Memory<Object> conditionMemory = (Memory<Object>) conditionView.memory();
+            boolean cond = access.readByte(conditionMemory, conditionOffset) != 0;
+            if (cond) {
+                copyValue(access, trueView, trueOffset, output, outOffset, outputType);
+            } else {
+                copyValue(access, falseView, falseOffset, output, outOffset, outputType);
+            }
+        }
+
+        return Tensor.of(output);
     }
 
     @Override
     public Tensor sum(
             Tensor x, DataType accumulatorType, boolean keepDims, int _axis, int... _axes) {
-        throw new UnsupportedOperationException(
-                "Generic reduction op dispatch not yet implemented");
+        return reduce(x, ReductionOpKind.SUM, accumulatorType, keepDims, _axis, _axes);
     }
 
     @Override
     public Tensor product(
             Tensor x, DataType accumulatorType, boolean keepDims, int _axis, int... _axes) {
-        throw new UnsupportedOperationException(
-                "Generic reduction op dispatch not yet implemented");
+        return reduce(x, ReductionOpKind.PRODUCT, accumulatorType, keepDims, _axis, _axes);
     }
 
     @Override
     public Tensor mean(Tensor x, int axis, boolean keepDims) {
-        throw new UnsupportedOperationException("mean() not yet implemented");
+        DataType dtype = x.dataType();
+        TensorTypeSemantics.requireFloatingPoint(dtype, "mean");
+        Tensor sum = sum(x, dtype, keepDims, axis);
+        int rank = x.shape().rank();
+        int normalizedAxis = TensorSemantics.normalizeAxis(rank, axis);
+        long count = x.shape().flatAt(normalizedAxis);
+        return sum.divide(Tensor.scalar((double) count, dtype));
     }
 
     @Override
     public Tensor max(Tensor x, boolean keepDims, int _axis, int... _axes) {
-        throw new UnsupportedOperationException(
-                "Generic reduction op dispatch not yet implemented");
+        return reduce(x, ReductionOpKind.MAX, null, keepDims, _axis, _axes);
     }
 
     @Override
     public Tensor min(Tensor x, boolean keepDims, int _axis, int... _axes) {
-        throw new UnsupportedOperationException(
-                "Generic reduction op dispatch not yet implemented");
+        return reduce(x, ReductionOpKind.MIN, null, keepDims, _axis, _axes);
     }
 
     @Override
@@ -387,12 +422,12 @@ public class EagerTensorOps implements TensorOps {
         }
 
         int inputRank = inputView.shape().rank();
-        int normalizedAxis = Util.wrapAround(axis, inputRank);
+        int normalizedAxis = TensorSemantics.normalizeAxis(inputRank, axis);
 
         // Compute output shape
         Shape outputShape =
-                ai.qxotic.jota.ir.tir.GatherOp.computeOutputShape(
-                        inputView.shape(), indicesView.shape(), axis);
+                GatherOp.computeOutputShape(
+                        inputView.shape(), indicesView.shape(), normalizedAxis);
 
         DataType dtype = inputView.dataType();
         Layout outputLayout = Layout.rowMajor(outputShape);
@@ -733,8 +768,12 @@ public class EagerTensorOps implements TensorOps {
             MemoryAccess<Object> access, Memory<Object> memory, long offset, DataType type) {
         if (type == DataType.BOOL || type == DataType.I8) {
             return access.readByte(memory, offset);
-        } else if (type == DataType.I16 || type == DataType.FP16 || type == DataType.BF16) {
+        } else if (type == DataType.I16) {
             return access.readShort(memory, offset);
+        } else if (type == DataType.FP16) {
+            return Float.float16ToFloat(access.readShort(memory, offset));
+        } else if (type == DataType.BF16) {
+            return BFloat16.toFloat(access.readShort(memory, offset));
         } else if (type == DataType.I32) {
             return access.readInt(memory, offset);
         } else if (type == DataType.FP32) {
@@ -769,7 +808,11 @@ public class EagerTensorOps implements TensorOps {
         } else if (type == DataType.FP64) {
             access.writeDouble(memory, offset, value);
         } else if (type == DataType.FP16 || type == DataType.BF16) {
-            access.writeShort(memory, offset, (short) Float.floatToFloat16((float) value));
+            short bits =
+                    type == DataType.FP16
+                            ? Float.floatToFloat16((float) value)
+                            : BFloat16.fromFloat((float) value);
+            access.writeShort(memory, offset, bits);
         } else {
             throw new UnsupportedOperationException("Unsupported data type: " + type);
         }
@@ -883,21 +926,132 @@ public class EagerTensorOps implements TensorOps {
 
     private record OutputBufferSpec(long byteOffset, long byteSize) {}
 
-    private static void assertIntegral(DataType dataType, String opName) {
-        assert dataType.isIntegral() && dataType != DataType.BOOL
-                : opName + " requires integral data type, got " + dataType;
+    private Tensor reduce(
+            Tensor x,
+            ReductionOpKind kind,
+            DataType accumulatorType,
+            boolean keepDims,
+            int _axis,
+            int... _axes) {
+        MemoryView<?> inputView = x.materialize();
+        int[] axes = TensorSemantics.normalizeReductionAxes(inputView.shape().rank(), _axis, _axes);
+        Shape outputShape = TensorSemantics.reduceShape(inputView.shape(), axes, keepDims);
+        boolean[] reducedMask = TensorSemantics.reductionMask(inputView.shape().rank(), axes);
+        DataType outputType =
+                kind == ReductionOpKind.SUM || kind == ReductionOpKind.PRODUCT
+                        ? TensorTypeSemantics.resolveReductionAccumulator(
+                                inputView.dataType(), accumulatorType, kind.name().toLowerCase())
+                        : inputView.dataType();
+        MemoryView<?> output = allocate(outputType, outputShape);
+        MemoryAccess<Object> access = requireMemoryAccess();
+        long outputSize = outputShape.size();
+        if (outputSize == 0) {
+            return Tensor.of(output);
+        }
+
+        boolean[] initialized = new boolean[Math.toIntExact(outputSize)];
+        long inputSize = inputView.shape().size();
+        for (long inLinear = 0; inLinear < inputSize; inLinear++) {
+            long[] inCoord = Indexing.linearToCoord(inputView.shape(), inLinear);
+            long[] outCoord = TensorSemantics.projectReducedCoord(inCoord, reducedMask, keepDims);
+            long outLinear = Indexing.coordToLinear(outputShape, outCoord);
+            int outIndex = Math.toIntExact(outLinear);
+            long inOffset = Indexing.linearToOffset(inputView, inLinear);
+            long outOffset = Indexing.linearToOffset(output, outLinear);
+
+            if (!initialized[outIndex]) {
+                double inputValue = readAsDoubleFromView(access, inputView, inOffset);
+                writeFromDoubleToView(access, output, outOffset, inputValue);
+                initialized[outIndex] = true;
+                continue;
+            }
+
+            double accValue = readAsDoubleFromView(access, output, outOffset);
+            double inputValue = readAsDoubleFromView(access, inputView, inOffset);
+            double nextValue =
+                    switch (kind) {
+                        case SUM -> accValue + inputValue;
+                        case PRODUCT -> accValue * inputValue;
+                        case MIN -> Math.min(accValue, inputValue);
+                        case MAX -> Math.max(accValue, inputValue);
+                    };
+            writeFromDoubleToView(access, output, outOffset, nextValue);
+        }
+
+        return Tensor.of(output);
     }
 
-    private static void assertFloatingPoint(DataType dataType, String opName) {
-        assert dataType.isFloatingPoint()
-                : opName + " requires floating-point data type, got " + dataType;
+    private double readAsDoubleFromView(MemoryAccess<Object> access, MemoryView<?> view, long offset) {
+        @SuppressWarnings("unchecked")
+        Memory<Object> memory = (Memory<Object>) view.memory();
+        return readAsDouble(access, memory, offset, view.dataType());
     }
 
-    private static void assertBool(DataType dataType, String opName) {
-        assert dataType == DataType.BOOL : opName + " requires BOOL data type, got " + dataType;
+    private void writeFromDoubleToView(
+            MemoryAccess<Object> access, MemoryView<?> view, long offset, double value) {
+        @SuppressWarnings("unchecked")
+        Memory<Object> memory = (Memory<Object>) view.memory();
+        writeFromDouble(access, memory, offset, view.dataType(), value);
+    }
+
+    private static long coordForWhereInput(MemoryView<?> view, long[] outCoord) {
+        if (view.shape().isScalar()) {
+            return Indexing.linearToOffset(view, 0);
+        }
+        if (view.shape().rank() != outCoord.length) {
+            throw new IllegalArgumentException(
+                    "where shape mismatch: expected rank "
+                            + outCoord.length
+                            + " but got "
+                            + view.shape().rank());
+        }
+        return Indexing.coordToOffset(view, outCoord);
+    }
+
+    private enum ReductionOpKind {
+        SUM,
+        PRODUCT,
+        MIN,
+        MAX
     }
 
     private Tensor binaryOp(Tensor a, Tensor b, BinaryOp op) {
+        MemoryView<?> viewA = a.materialize();
+        MemoryView<?> viewB = b.materialize();
+        DataType dtype =
+                TensorTypeSemantics.promoteForArithmetic(
+                        viewA.dataType(), viewB.dataType(), op.name());
+        MemoryView<?> left = castIfNeeded(viewA, dtype);
+        MemoryView<?> right = castIfNeeded(viewB, dtype);
+        Shape resultShape = viewA.shape();
+        if (!viewA.shape().equals(viewB.shape())) {
+            throw new IllegalArgumentException(
+                    "Shape mismatch: " + viewA.shape() + " vs " + viewB.shape());
+        }
+        MemoryAccess<Object> access = requireMemoryAccess();
+        MemoryView<?> output = allocate(dtype, resultShape);
+        long size = resultShape.size();
+        @SuppressWarnings("unchecked")
+        Memory<Object> memA = (Memory<Object>) left.memory();
+        @SuppressWarnings("unchecked")
+        Memory<Object> memB = (Memory<Object>) right.memory();
+        @SuppressWarnings("unchecked")
+        Memory<Object> memOut = (Memory<Object>) output.memory();
+        for (long i = 0; i < size; i++) {
+            long offA = Indexing.linearToOffset(left, i);
+            long offB = Indexing.linearToOffset(right, i);
+            long offOut = Indexing.linearToOffset(output, i);
+            applyBinaryOp(access, memA, offA, memB, offB, memOut, offOut, dtype, op);
+        }
+        return Tensor.of(output);
+    }
+
+    private Tensor bitwiseBinaryOp(Tensor a, Tensor b, BinaryOp op, String opName) {
+        TensorTypeSemantics.requireSameIntegralType(a.dataType(), b.dataType(), opName);
+        return binaryOpSameType(a, b, op);
+    }
+
+    private Tensor binaryOpSameType(Tensor a, Tensor b, BinaryOp op) {
         MemoryView<?> viewA = a.materialize();
         MemoryView<?> viewB = b.materialize();
         DataType dtype = viewA.dataType();
@@ -926,6 +1080,13 @@ public class EagerTensorOps implements TensorOps {
             applyBinaryOp(access, memA, offA, memB, offB, memOut, offOut, dtype, op);
         }
         return Tensor.of(output);
+    }
+
+    private MemoryView<?> castIfNeeded(MemoryView<?> view, DataType targetType) {
+        if (view.dataType() == targetType) {
+            return view;
+        }
+        return cast(Tensor.of(view), targetType).materialize();
     }
 
     private void applyBinaryOp(
@@ -958,6 +1119,14 @@ public class EagerTensorOps implements TensorOps {
             float a = access.readFloat(memA, offA);
             float b = access.readFloat(memB, offB);
             access.writeFloat(memOut, offOut, ConstantFolder.evalFloat(a, b, op));
+        } else if (dtype == DataType.FP16) {
+            float a = Float.float16ToFloat(access.readShort(memA, offA));
+            float b = Float.float16ToFloat(access.readShort(memB, offB));
+            access.writeShort(memOut, offOut, Float.floatToFloat16(ConstantFolder.evalFloat(a, b, op)));
+        } else if (dtype == DataType.BF16) {
+            float a = BFloat16.toFloat(access.readShort(memA, offA));
+            float b = BFloat16.toFloat(access.readShort(memB, offB));
+            access.writeShort(memOut, offOut, BFloat16.fromFloat(ConstantFolder.evalFloat(a, b, op)));
         } else if (dtype == DataType.FP64) {
             double a = access.readDouble(memA, offA);
             double b = access.readDouble(memB, offB);
@@ -965,9 +1134,5 @@ public class EagerTensorOps implements TensorOps {
         } else {
             throw new UnsupportedOperationException("Unsupported type: " + dtype);
         }
-    }
-
-    private Tensor scalarOp(Tensor a, Number scalar, BinaryOp op) {
-        throw new UnsupportedOperationException("Generic scalar op dispatch not yet implemented");
     }
 }

@@ -41,7 +41,7 @@ public final class MnistDemoServer {
     }
 
     private static Device configureBackend() {
-        String backend = System.getProperty("jota.backend", "hip");
+        String backend = System.getProperty("jota.backend", "panama");
         Environment current = Environment.global();
         Device device =
                 backend == null || backend.isBlank()

@@ -2,6 +2,8 @@ package ai.qxotic.jota.runtime.hip;
 
 import ai.qxotic.jota.tensor.ExecutionStream;
 import ai.qxotic.jota.tensor.KernelArgs;
+import ai.qxotic.jota.tensor.KernelArgs.Kind;
+import ai.qxotic.jota.memory.MemoryView;
 
 final class HipKernelParams {
 
@@ -9,7 +11,28 @@ final class HipKernelParams {
 
     static long pack(KernelArgs args) {
         HipRuntime.requireAvailable();
+        validateBuffers(args);
         return packNative(args);
+    }
+
+    private static void validateBuffers(KernelArgs args) {
+        for (int i = 0; i < args.entries().size(); i++) {
+            var entry = args.entry(i);
+            if (entry.kind() != Kind.BUFFER) {
+                continue;
+            }
+            MemoryView<?> view = (MemoryView<?>) entry.value();
+            Object base = view.memory().base();
+            if (!(base instanceof HipDevicePtr) && !(base instanceof Number)) {
+                throw new UnsupportedOperationException(
+                        "KernelArgs buffer base is not device-addressable for HIP at index "
+                                + i
+                                + ": baseClass="
+                                + base.getClass().getName()
+                                + ", device="
+                                + view.memory().device());
+            }
+        }
     }
 
     static long streamHandle(ExecutionStream stream) {

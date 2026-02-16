@@ -184,12 +184,12 @@ final class LazyTensorOps implements TensorOps {
 
     @Override
     public Tensor max(Tensor x, boolean keepDims, int _axis, int... _axes) {
-        return traceUnary(x, t -> TensorOpsContext.require().max(t));
+        return traceUnary(x, t -> TensorOpsContext.require().max(t, keepDims, _axis, _axes));
     }
 
     @Override
     public Tensor min(Tensor x, boolean keepDims, int _axis, int... _axes) {
-        return traceUnary(x, t -> TensorOpsContext.require().min(t));
+        return traceUnary(x, t -> TensorOpsContext.require().min(t, keepDims, _axis, _axes));
     }
 
     @Override

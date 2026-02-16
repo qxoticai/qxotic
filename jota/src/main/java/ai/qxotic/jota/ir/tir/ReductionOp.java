@@ -2,6 +2,7 @@ package ai.qxotic.jota.ir.tir;
 
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Shape;
+import ai.qxotic.jota.Util;
 import java.util.Objects;
 
 /** Reduction operation node in IR-T. */
@@ -49,11 +50,10 @@ public record ReductionOp(
 
     private static Shape reduceShape(Shape inputShape, int[] axes, boolean keepDims) {
         int rank = inputShape.rank();
+        int[] normalizedAxes = normalizeAxes(rank, axes);
         boolean[] reduced = new boolean[rank];
-        for (int axis : axes) {
-            if (axis >= 0 && axis < rank) {
-                reduced[axis] = true;
-            }
+        for (int axis : normalizedAxes) {
+            reduced[axis] = true;
         }
         if (keepDims) {
             long[] dims = new long[rank];
@@ -62,7 +62,7 @@ public record ReductionOp(
             }
             return Shape.flat(dims);
         }
-        long[] dims = new long[rank - axes.length];
+        long[] dims = new long[rank - normalizedAxes.length];
         int idx = 0;
         for (int i = 0; i < rank; i++) {
             if (!reduced[i]) {
@@ -70,5 +70,26 @@ public record ReductionOp(
             }
         }
         return Shape.flat(dims);
+    }
+
+    private static int[] normalizeAxes(int rank, int[] axes) {
+        boolean[] seen = new boolean[rank];
+        int uniqueCount = 0;
+        for (int axis : axes) {
+            int normalized = Util.wrapAround(axis, rank);
+            if (!seen[normalized]) {
+                seen[normalized] = true;
+                uniqueCount++;
+            }
+        }
+
+        int[] normalizedAxes = new int[uniqueCount];
+        int idx = 0;
+        for (int i = 0; i < rank; i++) {
+            if (seen[i]) {
+                normalizedAxes[idx++] = i;
+            }
+        }
+        return normalizedAxes;
     }
 }

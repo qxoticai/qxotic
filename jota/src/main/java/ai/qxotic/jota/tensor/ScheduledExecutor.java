@@ -1,10 +1,15 @@
 package ai.qxotic.jota.tensor;
 
+import ai.qxotic.jota.Device;
+import ai.qxotic.jota.Environment;
+import ai.qxotic.jota.Layout;
 import ai.qxotic.jota.ir.tir.KernelStep;
 import ai.qxotic.jota.ir.tir.ScheduleInputRef;
 import ai.qxotic.jota.ir.tir.ScheduledOutputRef;
 import ai.qxotic.jota.ir.tir.ScheduledProgram;
 import ai.qxotic.jota.ir.tir.ValueId;
+import ai.qxotic.jota.memory.Memory;
+import ai.qxotic.jota.memory.MemoryDomain;
 import ai.qxotic.jota.memory.MemoryView;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -27,9 +32,14 @@ final class ScheduledExecutor {
         }
 
         Map<ValueId, MemoryView<?>> produced = new HashMap<>();
-        for (KernelStep step : program.steps()) {
+        for (int i = 0; i < program.steps().size(); i++) {
+            KernelStep step = program.steps().get(i);
             List<Tensor> stepInputs = resolveStepInputs(step.inputs(), graphInputs, produced);
             MemoryView<?> output = computeEngine.execute(step.graph(), stepInputs);
+            boolean isIntermediate = i < program.steps().size() - 1;
+            if (isIntermediate) {
+                output = ensureDeviceView(output, computeEngine.device());
+            }
             produced.put(step.output(), output);
         }
 
@@ -80,5 +90,27 @@ final class ScheduledExecutor {
             throw new IllegalStateException("Missing produced value for " + id);
         }
         return view;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static MemoryView<?> ensureDeviceView(MemoryView<?> view, Device targetDevice) {
+        if (view.memory().device().equals(targetDevice)) {
+            return view;
+        }
+
+        MemoryDomain<Object> srcDomain =
+                (MemoryDomain<Object>) Environment.current().runtimeFor(view.memory().device()).memoryDomain();
+        MemoryDomain<Object> dstDomain =
+                (MemoryDomain<Object>) Environment.current().runtimeFor(targetDevice).memoryDomain();
+        MemoryView<Object> srcView = (MemoryView<Object>) view;
+        Memory<Object> dstMemory = dstDomain.memoryAllocator().allocateMemory(view.dataType(), view.shape());
+        MemoryView<Object> dstView =
+                (MemoryView<Object>)
+                        MemoryView.of(
+                                dstMemory,
+                                view.dataType(),
+                                Layout.rowMajor(view.shape()));
+        MemoryDomain.copy(srcDomain, srcView, dstDomain, dstView);
+        return dstView;
     }
 }

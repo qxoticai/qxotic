@@ -81,4 +81,25 @@ class TypeRulesTest {
                 IllegalArgumentException.class,
                 () -> TypeRules.promote(DataType.I32, DataType.Q4_0));
     }
+
+    @Test
+    void rejectsBoolNumericPromotion() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> TypeRules.promote(DataType.BOOL, DataType.I8));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> TypeRules.promote(DataType.BOOL, DataType.FP32));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> TypeRules.promote(DataType.BOOL, DataType.BOOL));
+    }
+
+    @Test
+    void comparisonPromotionAllowsBoolBoolOnly() {
+        assertEquals(DataType.BOOL, TypeRules.promoteForComparison(DataType.BOOL, DataType.BOOL));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> TypeRules.promoteForComparison(DataType.BOOL, DataType.I32));
+    }
 }
