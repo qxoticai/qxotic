@@ -2,6 +2,7 @@ package ai.qxotic.format.gguf;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
@@ -386,6 +387,84 @@ public class BuilderTest extends GGUFTest {
                         .collect(Collectors.toSet());
 
         assertEquals(expectedKeys, builder.getMetadataKeys());
+    }
+
+    @Test
+    public void testTypeTransitionScalarToArraySameKey() {
+        Builder builder = Builder.newBuilder().putString("k", "v");
+        assertEquals(MetadataValueType.STRING, builder.getType("k"));
+        assertNull(builder.getComponentType("k"));
+
+        builder.putArrayOfInteger("k", new int[] {1, 2, 3});
+        assertEquals(MetadataValueType.ARRAY, builder.getType("k"));
+        assertEquals(MetadataValueType.INT32, builder.getComponentType("k"));
+        assertArrayEquals(new int[] {1, 2, 3}, builder.getValue(int[].class, "k"));
+    }
+
+    @Test
+    public void testTypeTransitionArrayToScalarSameKey() {
+        Builder builder = Builder.newBuilder().putArrayOfInteger("k", new int[] {1, 2, 3});
+        assertEquals(MetadataValueType.ARRAY, builder.getType("k"));
+        assertEquals(MetadataValueType.INT32, builder.getComponentType("k"));
+
+        builder.putString("k", "v");
+        assertEquals(MetadataValueType.STRING, builder.getType("k"));
+        assertNull(builder.getComponentType("k"));
+        assertEquals("v", builder.getValue(String.class, "k"));
+    }
+
+    @Test
+    public void testRemoveReinsertDifferentKindRoundTrip() throws IOException {
+        Builder builder = Builder.newBuilder().putArrayOfInteger("k", new int[] {1, 2});
+        builder.removeKey("k");
+        builder.putString("k", "v");
+
+        GGUF gguf = readFromBytes(writeToBytes(builder.build()));
+        assertEquals(MetadataValueType.STRING, gguf.getType("k"));
+        assertNull(gguf.getComponentType("k"));
+        assertEquals("v", gguf.getValue(String.class, "k"));
+
+        Builder builder2 = Builder.newBuilder().putString("k", "v");
+        builder2.removeKey("k");
+        builder2.putArrayOfLong("k", new long[] {7L, 8L});
+
+        GGUF gguf2 = readFromBytes(writeToBytes(builder2.build()));
+        assertEquals(MetadataValueType.ARRAY, gguf2.getType("k"));
+        assertEquals(MetadataValueType.INT64, gguf2.getComponentType("k"));
+        assertArrayEquals(new long[] {7L, 8L}, gguf2.getValue(long[].class, "k"));
+    }
+
+    @Test
+    public void testEmptyArraysAllTypesRoundTrip() throws IOException {
+        GGUF gguf =
+                Builder.newBuilder()
+                        .putArrayOfString("string", new String[0])
+                        .putArrayOfBoolean("bool", new boolean[0])
+                        .putArrayOfByte("int8", new byte[0])
+                        .putArrayOfUnsignedByte("uint8", new byte[0])
+                        .putArrayOfShort("int16", new short[0])
+                        .putArrayOfUnsignedShort("uint16", new short[0])
+                        .putArrayOfInteger("int32", new int[0])
+                        .putArrayOfUnsignedInteger("uint32", new int[0])
+                        .putArrayOfLong("int64", new long[0])
+                        .putArrayOfUnsignedLong("uint64", new long[0])
+                        .putArrayOfFloat("float32", new float[0])
+                        .putArrayOfDouble("float64", new double[0])
+                        .build();
+
+        GGUF read = readFromBytes(writeToBytes(gguf));
+        for (String key : gguf.getMetadataKeys()) {
+            assertEquals(MetadataValueType.ARRAY, read.getType(key));
+            assertNotNull(read.getComponentType(key));
+            assertEquals(0, java.lang.reflect.Array.getLength(read.getValue(Object.class, key)));
+        }
+    }
+
+    @Test
+    public void testArrayOfStringWithNullElementFailsOnWrite() {
+        assertThrows(
+                NullPointerException.class,
+                () -> Builder.newBuilder().putArrayOfString("s", new String[] {"ok", null}).build());
     }
 
     @Test
