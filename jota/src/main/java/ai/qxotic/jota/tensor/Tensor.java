@@ -321,14 +321,13 @@ public interface Tensor {
     }
 
     default Tensor bitwiseNot() {
-        requireIntegral(dataType(), "bitwiseNot");
+        TensorTypeSemantics.requireIntegral(dataType(), "bitwiseNot");
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.BITWISE_NOT)
                 .orElseGet(() -> TensorOpsContext.require().bitwiseNot(this));
     }
 
     default Tensor bitwiseAnd(Tensor other) {
-        requireIntegral(dataType(), "bitwiseAnd");
-        requireIntegral(other.dataType(), "bitwiseAnd");
+        TensorTypeSemantics.requireSameIntegralType(dataType(), other.dataType(), "bitwiseAnd");
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.BITWISE_AND)
                 .orElseGet(
                         () ->
@@ -339,8 +338,7 @@ public interface Tensor {
     }
 
     default Tensor bitwiseOr(Tensor other) {
-        requireIntegral(dataType(), "bitwiseOr");
-        requireIntegral(other.dataType(), "bitwiseOr");
+        TensorTypeSemantics.requireSameIntegralType(dataType(), other.dataType(), "bitwiseOr");
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.BITWISE_OR)
                 .orElseGet(
                         () ->
@@ -351,8 +349,7 @@ public interface Tensor {
     }
 
     default Tensor bitwiseXor(Tensor other) {
-        requireIntegral(dataType(), "bitwiseXor");
-        requireIntegral(other.dataType(), "bitwiseXor");
+        TensorTypeSemantics.requireSameIntegralType(dataType(), other.dataType(), "bitwiseXor");
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.BITWISE_XOR)
                 .orElseGet(
                         () ->
@@ -419,7 +416,7 @@ public interface Tensor {
     }
 
     default Tensor select(Tensor trueValue, Tensor falseValue) {
-        requireBool(dataType(), "where condition");
+        TensorTypeSemantics.requireBool(dataType(), "where condition");
         if (trueValue.dataType() != falseValue.dataType()) {
             throw new IllegalArgumentException(
                     "where requires true and false values to have the same type, got "
@@ -508,7 +505,7 @@ public interface Tensor {
     }
 
     default Tensor sqrt() {
-        requireFloatingPoint("sqrt");
+        TensorTypeSemantics.requireFloatingPoint(dataType(), "sqrt");
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.SQRT)
                 .orElseGet(() -> TensorOpsContext.require().sqrt(this));
     }
@@ -518,40 +515,40 @@ public interface Tensor {
     }
 
     default Tensor sin() {
-        requireFloatingPoint("sin");
+        TensorTypeSemantics.requireFloatingPoint(dataType(), "sin");
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.SIN)
                 .orElseGet(() -> TensorOpsContext.require().sin(this));
     }
 
     default Tensor cos() {
-        requireFloatingPoint("cos");
+        TensorTypeSemantics.requireFloatingPoint(dataType(), "cos");
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.COS)
                 .orElseGet(() -> TensorOpsContext.require().cos(this));
     }
 
     default Tensor tanh() {
-        requireFloatingPoint("tanh");
+        TensorTypeSemantics.requireFloatingPoint(dataType(), "tanh");
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.TANH)
                 .orElseGet(() -> TensorOpsContext.require().tanh(this));
     }
 
     default Tensor relu() {
-        requireFloatingPoint("relu");
+        TensorTypeSemantics.requireFloatingPoint(dataType(), "relu");
         return max(Tensor.full(0f, dataType(), shape()));
     }
 
     default Tensor sigmoid() {
-        requireFloatingPoint("sigmoid");
+        TensorTypeSemantics.requireFloatingPoint(dataType(), "sigmoid");
         return negate().exp().add(Tensor.scalar(1, dataType())).reciprocal();
     }
 
     default Tensor silu() {
-        requireFloatingPoint("silu");
+        TensorTypeSemantics.requireFloatingPoint(dataType(), "silu");
         return multiply(sigmoid()); // x * sigmoid(x)
     }
 
     default Tensor gelu() {
-        requireFloatingPoint("gelu");
+        TensorTypeSemantics.requireFloatingPoint(dataType(), "gelu");
         // GELU(x) ≈ 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
         DataType dt = dataType();
         Tensor cubic = multiply(this).multiply(this);
@@ -563,13 +560,6 @@ public interface Tensor {
                 .add(Tensor.scalar(1, dt))
                 .multiply(this)
                 .multiply(Tensor.scalar(0.5, dt));
-    }
-
-    private void requireFloatingPoint(String op) {
-        if (!dataType().isFloatingPoint()) {
-            throw new IllegalArgumentException(
-                    op + " requires floating-point tensor, got " + dataType());
-        }
     }
 
     /**
@@ -625,10 +615,7 @@ public interface Tensor {
     }
 
     default Tensor reciprocal() {
-        if (!dataType().isFloatingPoint()) {
-            throw new IllegalArgumentException(
-                    "reciprocal requires floating-point tensor, got " + dataType());
-        }
+        TensorTypeSemantics.requireFloatingPoint(dataType(), "reciprocal");
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.RECIPROCAL)
                 .orElseGet(() -> TensorOpsContext.require().reciprocal(this));
     }
@@ -643,20 +630,6 @@ public interface Tensor {
 
     static Tensor of(MemoryView<?> view) {
         return new MaterializedTensor(view);
-    }
-
-    private static void requireIntegral(DataType dataType, String opName) {
-        if (!dataType.isIntegral() || dataType == DataType.BOOL) {
-            throw new IllegalArgumentException(
-                    opName + " requires integral data type, got " + dataType);
-        }
-    }
-
-    private static void requireBool(DataType dataType, String opName) {
-        if (dataType != DataType.BOOL) {
-            throw new IllegalArgumentException(
-                    opName + " requires BOOL data type, got " + dataType);
-        }
     }
 
     // ========== Tensor Creation Methods ==========

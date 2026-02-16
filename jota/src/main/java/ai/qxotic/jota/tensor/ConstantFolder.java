@@ -3,7 +3,6 @@ package ai.qxotic.jota.tensor;
 import ai.qxotic.jota.DataType;
 import ai.qxotic.jota.Device;
 import ai.qxotic.jota.Shape;
-import ai.qxotic.jota.TypeRules;
 import ai.qxotic.jota.ir.tir.BinaryOperator;
 import ai.qxotic.jota.ir.tir.IRConstantFolder;
 import ai.qxotic.jota.ir.tir.ScalarConstant;
@@ -96,7 +95,9 @@ final class ConstantFolder {
         if (leftConst.isPresent() && rightConst.isPresent()) {
             ConstantComputation lc = leftConst.get();
             ConstantComputation rc = rightConst.get();
-            DataType resultType = TypeRules.promote(lc.dataType(), rc.dataType());
+            DataType resultType =
+                    TensorTypeSemantics.promoteForArithmetic(
+                            lc.dataType(), rc.dataType(), op.name());
             Number result = evalBinary(lc.value(), rc.value(), resultType, op);
             // Use the larger shape to preserve broadcasting semantics
             Shape resultShape = lc.shape().size() >= rc.shape().size() ? lc.shape() : rc.shape();
@@ -322,13 +323,17 @@ final class ConstantFolder {
         }
         ConstantComputation lc = leftConst.get();
         ConstantComputation rc = rightConst.get();
-        DataType commonType = TypeRules.promote(lc.dataType(), rc.dataType());
+        DataType commonType =
+                TensorTypeSemantics.promoteForComparison(
+                        lc.dataType(), rc.dataType(), op.name());
         boolean result = evalCompare(lc.value(), rc.value(), commonType, op);
         return Optional.of(Tensor.scalar(result ? 1L : 0L, DataType.BOOL));
     }
 
     static boolean evalCompare(Number a, Number b, DataType type, BinaryOp op) {
         return switch (type) {
+            case DataType t when t == DataType.BOOL ->
+                    evalCompare((byte) (a.longValue() != 0 ? 1 : 0), (byte) (b.longValue() != 0 ? 1 : 0), op);
             case DataType t when t == DataType.I8 -> evalCompare(a.byteValue(), b.byteValue(), op);
             case DataType t when t == DataType.I16 ->
                     evalCompare(a.shortValue(), b.shortValue(), op);

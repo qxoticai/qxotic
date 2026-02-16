@@ -65,6 +65,36 @@ class MatmulOpsTest {
     }
 
     @Test
+    void matmulHandlesNonContiguousInputInLazyMode() {
+        MemoryView<MemorySegment> output = runMatmulNonContiguousLeft(ExecutionMode.LAZY);
+        assertEquals(Shape.of(2, 2), output.shape());
+        assertClose(readFloat(output, 0), 35f);
+        assertClose(readFloat(output, 1), 44f);
+        assertClose(readFloat(output, 2), 44f);
+        assertClose(readFloat(output, 3), 56f);
+    }
+
+    @Test
+    void matmulHandlesNonContiguousInputInEagerMode() {
+        MemoryView<MemorySegment> output = runMatmulNonContiguousLeft(ExecutionMode.EAGER);
+        assertEquals(Shape.of(2, 2), output.shape());
+        assertClose(readFloat(output, 0), 35f);
+        assertClose(readFloat(output, 1), 44f);
+        assertClose(readFloat(output, 2), 44f);
+        assertClose(readFloat(output, 3), 56f);
+    }
+
+    @Test
+    void tracedMatmulHandlesNonContiguousInputInLazyMode() {
+        MemoryView<MemorySegment> output = runTracedMatmulNonContiguousLeft(ExecutionMode.LAZY);
+        assertEquals(Shape.of(2, 2), output.shape());
+        assertClose(readFloat(output, 0), 35f);
+        assertClose(readFloat(output, 1), 44f);
+        assertClose(readFloat(output, 2), 44f);
+        assertClose(readFloat(output, 3), 56f);
+    }
+
+    @Test
     void vectorTimesMatrixIsRejected() {
         assertMatmulFails(
                 ExecutionMode.LAZY,
@@ -215,6 +245,42 @@ class MatmulOpsTest {
                     Tensor a = Tensor.iota(12, DataType.FP32).add(1f).view(Shape.of(2, 2, 3));
                     Tensor b = Tensor.iota(12, DataType.FP32).add(1f).view(Shape.of(2, 3, 2));
                     return (MemoryView<MemorySegment>) a.batchedMatmul(b).materialize();
+                });
+    }
+
+    @SuppressWarnings("unchecked")
+    private MemoryView<MemorySegment> runMatmulNonContiguousLeft(ExecutionMode mode) {
+        Environment env =
+                new Environment(
+                        Device.PANAMA, DataType.FP32, Environment.current().runtimes(), mode);
+        return Environment.with(
+                env,
+                () -> {
+                    Tensor a =
+                            Tensor.iota(6, DataType.FP32)
+                                    .add(1f)
+                                    .view(Shape.of(3, 2))
+                                    .transpose(-2, -1);
+                    Tensor b = Tensor.iota(6, DataType.FP32).add(1f).view(Shape.of(3, 2));
+                    return (MemoryView<MemorySegment>) a.matmul(b).materialize();
+                });
+    }
+
+    @SuppressWarnings("unchecked")
+    private MemoryView<MemorySegment> runTracedMatmulNonContiguousLeft(ExecutionMode mode) {
+        Environment env =
+                new Environment(
+                        Device.PANAMA, DataType.FP32, Environment.current().runtimes(), mode);
+        return Environment.with(
+                env,
+                () -> {
+                    Tensor a =
+                            Tensor.iota(6, DataType.FP32)
+                                    .add(1f)
+                                    .view(Shape.of(3, 2))
+                                    .transpose(-2, -1);
+                    Tensor b = Tensor.iota(6, DataType.FP32).add(1f).view(Shape.of(3, 2));
+                    return (MemoryView<MemorySegment>) Tracer.trace(a, b, Tensor::matmul).materialize();
                 });
     }
 

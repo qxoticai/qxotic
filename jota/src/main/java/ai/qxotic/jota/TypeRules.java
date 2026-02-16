@@ -19,15 +19,16 @@ public final class TypeRules {
     private TypeRules() {}
 
     /**
-     * Returns the common type for binary operations.
+     * Returns the common type for numeric binary operations.
      *
      * <p>Promotion rules:
      *
      * <ul>
-     *   <li>Same type → that type
+     *   <li>Same numeric type → that type
      *   <li>Integral: I8 &lt; I16 &lt; I32 &lt; I64 (wider wins)
      *   <li>Float: FP16 &lt; FP32 &lt; FP64, BF16 &lt; FP32 &lt; FP64 (wider wins)
      *   <li>FP16 + BF16 → Error (incompatible 16-bit formats)
+     *   <li>BOOL is not numeric-promotable
      *   <li>Lossless int→float: I8 &lt; FP16/BF16/FP32/FP64, I16 &lt; FP32/FP64, I32 &lt; FP64
      *   <li>I64 + Float → Error (no float can represent all I64 values)
      *   <li>Quantized types → Error (require explicit cast)
@@ -38,6 +39,11 @@ public final class TypeRules {
     public static DataType promote(DataType left, DataType right) {
         Objects.requireNonNull(left, "left");
         Objects.requireNonNull(right, "right");
+
+        if (left == DataType.BOOL || right == DataType.BOOL) {
+            throw new IllegalArgumentException(
+                    "BOOL cannot be promoted with numeric types: " + left + " vs " + right);
+        }
 
         if (left == right) {
             return left;
@@ -60,6 +66,22 @@ public final class TypeRules {
 
         // Mixed float/integral → check for lossless promotion
         return promoteIntegralToFloat(left, right);
+    }
+
+    /**
+     * Returns the common type for comparison operations.
+     *
+     * <p>Special case: BOOL and BOOL compares as BOOL. All other cases follow numeric promotion
+     * rules.
+     */
+    public static DataType promoteForComparison(DataType left, DataType right) {
+        Objects.requireNonNull(left, "left");
+        Objects.requireNonNull(right, "right");
+
+        if (left == DataType.BOOL && right == DataType.BOOL) {
+            return DataType.BOOL;
+        }
+        return promote(left, right);
     }
 
     private static DataType promoteFloat(DataType left, DataType right) {

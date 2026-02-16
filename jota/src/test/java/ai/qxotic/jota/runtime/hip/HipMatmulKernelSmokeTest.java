@@ -68,6 +68,30 @@ class HipMatmulKernelSmokeTest {
     }
 
     @Test
+    void materializesTransposedInputCorrectly() {
+        assumeHipAvailable();
+        Environment hipEnv = hipEnvironment();
+
+        MemoryView<?> transposed =
+                Environment.with(
+                        hipEnv,
+                        () ->
+                                Tensor.iota(6, DataType.FP32)
+                                        .add(1f)
+                                        .view(Shape.of(3, 2))
+                                        .transpose(-2, -1)
+                                        .materialize());
+
+        assertEquals(Shape.of(2, 3), transposed.shape());
+        assertClose(readFp32(transposed, 0), 1f);
+        assertClose(readFp32(transposed, 1), 3f);
+        assertClose(readFp32(transposed, 2), 5f);
+        assertClose(readFp32(transposed, 3), 2f);
+        assertClose(readFp32(transposed, 4), 4f);
+        assertClose(readFp32(transposed, 5), 6f);
+    }
+
+    @Test
     void matmulHandlesNonContiguousInput() {
         assumeHipAvailable();
         Environment hipEnv = hipEnvironment();
@@ -86,6 +110,15 @@ class HipMatmulKernelSmokeTest {
                         });
 
         assertEquals(Shape.of(2, 2), output.shape());
+        System.out.println(
+                "HIP noncontig matmul out="
+                        + readFp32(output, 0)
+                        + ","
+                        + readFp32(output, 1)
+                        + ","
+                        + readFp32(output, 2)
+                        + ","
+                        + readFp32(output, 3));
         assertClose(readFp32(output, 0), 35f);
         assertClose(readFp32(output, 1), 44f);
         assertClose(readFp32(output, 2), 44f);
