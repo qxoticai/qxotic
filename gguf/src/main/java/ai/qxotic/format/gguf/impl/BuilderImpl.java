@@ -13,7 +13,7 @@ final class BuilderImpl extends AbstractBuilder {
 
     private int version = DEFAULT_VERSION;
     private Map<String, Object> metadata = new LinkedHashMap<>();
-    private Map<String, MetadataValueType> metadataTypes = new LinkedHashMap<>();
+    private Map<String, TypeDescriptor> metadataTypes = new LinkedHashMap<>();
     private Map<String, TensorEntry> tensorInfos = new LinkedHashMap<>();
 
     BuilderImpl() {}
@@ -36,15 +36,16 @@ final class BuilderImpl extends AbstractBuilder {
                                 LinkedHashMap::new));
     }
 
-    private static Map<String, MetadataValueType> reconstructTypes(GGUF gguf) {
-        Map<String, MetadataValueType> metadataTypes = new HashMap<>();
+    private static Map<String, TypeDescriptor> reconstructTypes(GGUF gguf) {
+        Map<String, TypeDescriptor> metadataTypes = new LinkedHashMap<>();
         for (String key : gguf.getMetadataKeys()) {
             MetadataValueType valueType = gguf.getType(key);
             assert valueType != null;
-            metadataTypes.put(key, valueType);
-            if (valueType == MetadataValueType.ARRAY) {
-                metadataTypes.put(key + "[]", gguf.getComponentType(key));
-            }
+            metadataTypes.put(
+                    key,
+                    valueType == MetadataValueType.ARRAY
+                            ? TypeDescriptor.array(gguf.getComponentType(key))
+                            : TypeDescriptor.scalar(valueType));
         }
         return metadataTypes;
     }
@@ -74,7 +75,7 @@ final class BuilderImpl extends AbstractBuilder {
         return this;
     }
 
-    BuilderImpl setMetadataTypes(Map<String, MetadataValueType> newMetadataTypes) {
+    BuilderImpl setMetadataTypes(Map<String, TypeDescriptor> newMetadataTypes) {
         this.metadataTypes = newMetadataTypes;
         return this;
     }
@@ -113,8 +114,9 @@ final class BuilderImpl extends AbstractBuilder {
     }
 
     private long sizeOfTaggedValue(String key, Object value) {
-        MetadataValueType valueType = this.metadataTypes.get(key);
-        Objects.requireNonNull(valueType);
+        TypeDescriptor descriptor = this.metadataTypes.get(key);
+        Objects.requireNonNull(descriptor);
+        MetadataValueType valueType = descriptor.type();
         long totalSize = Integer.BYTES; // gguf_metadata_value_type: uint32_t type;
         switch (valueType) {
             case UINT8: // fall-through
@@ -142,7 +144,11 @@ final class BuilderImpl extends AbstractBuilder {
 
     private long sizeOfArray(String key, Object arrayValue) {
         assert arrayValue.getClass().isArray();
-        MetadataValueType componentType = this.metadataTypes.get(key + "[]");
+        TypeDescriptor descriptor = this.metadataTypes.get(key);
+        if (descriptor == null) {
+            throw new IllegalArgumentException("no metadata type for key '" + key + "'");
+        }
+        MetadataValueType componentType = descriptor.componentType();
         if (componentType == MetadataValueType.ARRAY) {
             throw new IllegalArgumentException(
                     "array of arrays not supported for key '" + key + "'");
@@ -252,23 +258,20 @@ final class BuilderImpl extends AbstractBuilder {
 
     @Override
     public MetadataValueType getType(String key) {
-        return this.metadataTypes.get(key);
+        TypeDescriptor descriptor = this.metadataTypes.get(key);
+        return descriptor == null ? null : descriptor.type();
     }
 
     @Override
     public MetadataValueType getComponentType(String key) {
-        if (!this.metadata.containsKey(key)) {
-            return null;
-        }
-        return this.metadataTypes.get(key + "[]");
+        TypeDescriptor descriptor = this.metadataTypes.get(key);
+        return descriptor == null ? null : descriptor.componentType();
     }
 
     @Override
     public Builder removeKey(String key) {
         this.metadata.remove(key);
-        if (this.metadataTypes.remove(key) == MetadataValueType.ARRAY) {
-            this.metadataTypes.remove(key + "[]");
-        }
+        this.metadataTypes.remove(key);
         return this;
     }
 
@@ -324,7 +327,7 @@ final class BuilderImpl extends AbstractBuilder {
             case ARRAY:
                 throw new IllegalArgumentException("use putKeyArrayOf instead");
         }
-        metadataTypes.put(key, valueType);
+        metadataTypes.put(key, TypeDescriptor.scalar(valueType));
         return this;
     }
 
@@ -363,8 +366,7 @@ final class BuilderImpl extends AbstractBuilder {
             case ARRAY:
                 throw new UnsupportedOperationException("array of arrays");
         }
-        metadataTypes.put(key, MetadataValueType.ARRAY);
-        metadataTypes.put(key + "[]", componentType);
+        metadataTypes.put(key, TypeDescriptor.array(componentType));
         return this;
     }
 

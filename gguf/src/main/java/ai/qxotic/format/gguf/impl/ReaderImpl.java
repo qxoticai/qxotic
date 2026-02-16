@@ -24,7 +24,7 @@ final class ReaderImpl {
     private int version;
     private int alignment;
     private Map<String, Object> metadata;
-    private Map<String, MetadataValueType> metadataTypes;
+    private Map<String, TypeDescriptor> metadataTypes;
     private long totalBytesRead;
 
     private final ByteBuffer BB_8 = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.nativeOrder());
@@ -165,10 +165,16 @@ final class ReaderImpl {
             // The value.
             Object value = readMetadataValueOfType(byteChannel, key, valueType);
             assert !metadata.containsKey(key);
-            assert !metadataTypes.containsKey(key);
+            assert valueType == MetadataValueType.ARRAY
+                    ? metadataTypes.containsKey(key)
+                    : !metadataTypes.containsKey(key);
 
             metadata.put(key, value);
-            metadataTypes.put(key, valueType);
+            if (valueType == MetadataValueType.ARRAY) {
+                assert metadataTypes.containsKey(key);
+            } else {
+                metadataTypes.put(key, TypeDescriptor.scalar(valueType));
+            }
         }
 
         return tensorCount;
@@ -178,8 +184,11 @@ final class ReaderImpl {
         // Any value type is valid, including arrays.
         MetadataValueType componentType =
                 readMetadataValueType(byteChannel); // gguf_metadata_value_type type;
-        // Record the component type.
-        this.metadataTypes.put(key + "[]", componentType);
+        if (componentType == MetadataValueType.ARRAY) {
+            throw new GGUFFormatException("Cannot read array of arrays");
+        }
+        // Record the array descriptor.
+        this.metadataTypes.put(key, TypeDescriptor.array(componentType));
         // Number of elements, not bytes.
         int len = Math.toIntExact(readLong(byteChannel)); // uint64_t len;
         // The array of values.
@@ -237,8 +246,6 @@ final class ReaderImpl {
                     strings[i] = readString(byteChannel);
                 }
                 return strings;
-            case ARRAY:
-                throw new GGUFFormatException("Cannot read array of arrays");
             default:
                 throw new GGUFFormatException("Found array of unknown type " + componentType);
         }
@@ -335,7 +342,7 @@ final class ReaderImpl {
             return alignment;
         }
         assert !metadataTypes.containsKey(ALIGNMENT_KEY)
-                || metadataTypes.get(ALIGNMENT_KEY) == MetadataValueType.UINT32;
+                || metadataTypes.get(ALIGNMENT_KEY).type() == MetadataValueType.UINT32;
         alignment = (int) metadata.getOrDefault(ALIGNMENT_KEY, ALIGNMENT_DEFAULT_VALUE);
         assert Integer.bitCount(alignment) == 1 : "alignment must be a power of two";
         assert alignment > 0;

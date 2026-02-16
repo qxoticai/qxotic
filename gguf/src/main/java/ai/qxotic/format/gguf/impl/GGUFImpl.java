@@ -9,14 +9,14 @@ final class GGUFImpl implements GGUF {
     private final int version;
     private final long tensorDataOffset;
     private final Map<String, Object> metadata;
-    private final Map<String, MetadataValueType> metadataTypes;
+    private final Map<String, TypeDescriptor> metadataTypes;
     private final Map<String, TensorEntry> tensorInfos;
 
     GGUFImpl(
             int version,
             long tensorDataOffset,
             Map<String, Object> metadata,
-            Map<String, MetadataValueType> metadataTypes,
+            Map<String, TypeDescriptor> metadataTypes,
             Map<String, TensorEntry> tensorInfos) {
         this.version = version;
         this.tensorDataOffset = tensorDataOffset;
@@ -70,15 +70,14 @@ final class GGUFImpl implements GGUF {
 
     @Override
     public MetadataValueType getType(String key) {
-        return this.metadataTypes.get(key);
+        TypeDescriptor descriptor = this.metadataTypes.get(key);
+        return descriptor == null ? null : descriptor.type();
     }
 
     @Override
     public MetadataValueType getComponentType(String key) {
-        if (!this.metadata.containsKey(key)) {
-            return null;
-        }
-        return this.metadataTypes.get(key + "[]");
+        TypeDescriptor descriptor = this.metadataTypes.get(key);
+        return descriptor == null ? null : descriptor.componentType();
     }
 
     @Override
