@@ -30,7 +30,13 @@ final class WriterImpl {
         // Always align, even if there are no tensors.
         writer.writePaddingForAlignment(byteChannel);
 
-        assert writer.totalBytesWritten == gguf.getTensorDataOffset();
+        if (writer.totalBytesWritten != gguf.getTensorDataOffset()) {
+            throw new IllegalStateException(
+                    "tensorDataOffset mismatch: wrote "
+                            + writer.totalBytesWritten
+                            + " expected "
+                            + gguf.getTensorDataOffset());
+        }
     }
 
     private void writeFully(WritableByteChannel byteChannel, ByteBuffer byteBuffer)
@@ -91,17 +97,35 @@ final class WriterImpl {
         // The name of the tensor. It is a standard GGUF string, with the caveat that
         // it must be at most 64 bytes long.
         String name = tensorEntry.name();
-        assert name.length() <= 64;
+        if (name.length() > 64) {
+            throw new IllegalArgumentException(
+                    "Tensor name too long (>64): " + name.length() + " for tensor '" + name + "'");
+        }
         writeString(byteChannel, name); // gguf_string_t name;
         // The number of shape in the tensor.
         // Currently at most 4, but this may change in the future.
         int n_dimensions = tensorEntry.shape().length;
-        assert n_dimensions <= 4;
+        if (n_dimensions > 4) {
+            throw new IllegalArgumentException(
+                    "Tensor has too many dimensions: "
+                            + n_dimensions
+                            + " for tensor '"
+                            + name
+                            + "'");
+        }
         writeInt(byteChannel, n_dimensions); // uint32_t n_dimensions;
         // The shape of the tensor.
         long[] dimensions = tensorEntry.shape(); // uint64_t shape[n_dimensions];
         for (int i = 0; i < n_dimensions; ++i) {
-            assert dimensions[i] > 0;
+            if (dimensions[i] <= 0) {
+                throw new IllegalArgumentException(
+                        "Tensor dimension must be > 0 at index "
+                                + i
+                                + " for tensor '"
+                                + name
+                                + "' but was "
+                                + dimensions[i]);
+            }
             writeLong(byteChannel, dimensions[i]);
         }
         // The type of the tensor.
@@ -115,7 +139,16 @@ final class WriterImpl {
         // Must be a multiple of `ALIGNMENT`.
         long offset = tensorEntry.offset();
         writeLong(byteChannel, offset); // uint64_t offset;
-        assert offset % gguf.getAlignment() == 0;
+        if (offset % gguf.getAlignment() != 0) {
+            throw new IllegalArgumentException(
+                    "Tensor offset "
+                            + offset
+                            + " is not aligned to "
+                            + gguf.getAlignment()
+                            + " for tensor '"
+                            + name
+                            + "'");
+        }
         // return new GGUFTensorEntry(name, dimensions, ggmlType, offset);
     }
 
@@ -156,20 +189,28 @@ final class WriterImpl {
             // a `.`.
             // - It must be at most 2^16-1/65535 bytes long.
             // Any keys that do not follow these rules are invalid.
-            assert key.length() < (1 << 16);
-            assert key.codePoints()
+            if (key.length() >= (1 << 16)) {
+                throw new IllegalArgumentException("Metadata key too long: " + key.length());
+            }
+            if (!key.codePoints()
                     .allMatch(
                             cp ->
                                     ('a' <= cp && cp <= 'z')
                                             || ('0' <= cp && cp <= '9')
                                             || cp == '_'
-                                            || cp == '.');
+                                            || cp == '.')) {
+                throw new IllegalArgumentException("Invalid metadata key format: " + key);
+            }
             writeString(byteChannel, key);
             Object value = gguf.getValue(Object.class, key);
-            assert value != null;
+            if (value == null) {
+                throw new IllegalStateException("Missing metadata value for key: " + key);
+            }
 
             MetadataValueType valueType = gguf.getType(key);
-            assert valueType != null;
+            if (valueType == null) {
+                throw new IllegalStateException("Missing metadata type for key: " + key);
+            }
 
             if (valueType == MetadataValueType.ARRAY) {
                 MetadataValueType componentType = gguf.getComponentType(key);

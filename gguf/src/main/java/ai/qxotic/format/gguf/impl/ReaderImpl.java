@@ -37,7 +37,9 @@ final class ReaderImpl {
         Map<String, TensorEntry> tensorInfos = new LinkedHashMap<>(tensorCount);
         for (int i = 0; i < tensorCount; ++i) {
             TensorEntry ti = readTensorInfo(byteChannel);
-            assert !tensorInfos.containsKey(ti.name());
+            if (tensorInfos.containsKey(ti.name())) {
+                throw new GGUFFormatException("Duplicate tensor name: " + ti.name());
+            }
             tensorInfos.put(ti.name(), ti);
         }
         // Padding to the nearest multiple of `ALIGNMENT`.
@@ -71,11 +73,15 @@ final class ReaderImpl {
         // The name of the tensor. It is a standard GGUF string, with the caveat that
         // it must be at most 64 bytes long.
         String name = readString(byteChannel); // gguf_string_t name;
-        assert name.length() <= 64;
+        if (name.length() > 64) {
+            throw new GGUFFormatException("Tensor name too long (>64): " + name.length());
+        }
         // The number of shape in the tensor.
         // Currently at most 4, but this may change in the future.
         int n_dimensions = readInt(byteChannel); // uint32_t n_dimensions;
-        assert n_dimensions <= 4;
+        if (n_dimensions > 4) {
+            throw new GGUFFormatException("Tensor has too many dimensions: " + n_dimensions);
+        }
         // The shape of the tensor.
         long[] dimensions = new long[n_dimensions]; // uint64_t shape[n_dimensions];
         for (int i = 0; i < n_dimensions; ++i) {
@@ -90,7 +96,10 @@ final class ReaderImpl {
         // file to make it easier to read the data.
         // Must be a multiple of `ALIGNMENT`.
         long offset = readLong(byteChannel); // uint64_t offset;
-        assert offset % getAlignment() == 0;
+        if (offset % getAlignment() != 0) {
+            throw new GGUFFormatException(
+                    "Tensor offset " + offset + " is not aligned to " + getAlignment());
+        }
         return TensorEntry.create(name, dimensions, ggmlType, offset);
     }
 
@@ -149,14 +158,18 @@ final class ReaderImpl {
             // - It must be at most 2^16-1/65535 bytes long.
             // Any keys that do not follow these rules are invalid.
             String key = readString(byteChannel); // gguf_string_t key;
-            assert key.length() < (1 << 16);
-            assert key.codePoints()
+            if (key.length() >= (1 << 16)) {
+                throw new GGUFFormatException("Metadata key too long: " + key.length());
+            }
+            if (!key.codePoints()
                     .allMatch(
                             cp ->
                                     ('a' <= cp && cp <= 'z')
                                             || ('0' <= cp && cp <= '9')
                                             || cp == '_'
-                                            || cp == '.');
+                                            || cp == '.')) {
+                throw new GGUFFormatException("Invalid metadata key format: " + key);
+            }
 
             // The type of the value.
             // Must be one of the `gguf_metadata_value_type` values.
@@ -164,15 +177,21 @@ final class ReaderImpl {
                     readMetadataValueType(byteChannel); // gguf_metadata_value_type value_type;
             // The value.
             Object value = readMetadataValueOfType(byteChannel, key, valueType);
-            assert !metadata.containsKey(key);
-            assert valueType == MetadataValueType.ARRAY
-                    ? metadataTypes.containsKey(key)
-                    : !metadataTypes.containsKey(key);
+            if (metadata.containsKey(key)) {
+                throw new GGUFFormatException("Duplicate metadata key: " + key);
+            }
+            boolean descriptorExists = metadataTypes.containsKey(key);
+            if (valueType == MetadataValueType.ARRAY) {
+                if (!descriptorExists) {
+                    throw new GGUFFormatException("Missing array type descriptor for key: " + key);
+                }
+            } else if (descriptorExists) {
+                throw new GGUFFormatException(
+                        "Unexpected type descriptor for non-array key: " + key);
+            }
 
             metadata.put(key, value);
-            if (valueType == MetadataValueType.ARRAY) {
-                assert metadataTypes.containsKey(key);
-            } else {
+            if (valueType != MetadataValueType.ARRAY) {
                 metadataTypes.put(key, TypeDescriptor.scalar(valueType));
             }
         }
@@ -341,11 +360,19 @@ final class ReaderImpl {
         if (alignment != 0) {
             return alignment;
         }
-        assert !metadataTypes.containsKey(ALIGNMENT_KEY)
-                || metadataTypes.get(ALIGNMENT_KEY).type() == MetadataValueType.UINT32;
+        if (metadataTypes.containsKey(ALIGNMENT_KEY)
+                && metadataTypes.get(ALIGNMENT_KEY).type() != MetadataValueType.UINT32) {
+            throw new GGUFFormatException(
+                    "general.alignment must be UINT32 but was "
+                            + metadataTypes.get(ALIGNMENT_KEY).type());
+        }
         alignment = (int) metadata.getOrDefault(ALIGNMENT_KEY, ALIGNMENT_DEFAULT_VALUE);
-        assert Integer.bitCount(alignment) == 1 : "alignment must be a power of two";
-        assert alignment > 0;
+        if (Integer.bitCount(alignment) != 1) {
+            throw new GGUFFormatException("alignment must be a power of two but was " + alignment);
+        }
+        if (alignment <= 0) {
+            throw new GGUFFormatException("alignment must be > 0 but was " + alignment);
+        }
         return alignment;
     }
 }

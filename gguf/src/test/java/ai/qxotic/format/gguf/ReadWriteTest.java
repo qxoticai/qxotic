@@ -171,6 +171,19 @@ public class ReadWriteTest extends GGUFTest {
     }
 
     @Test
+    public void testInvalidMetadataKeyFormatFails() {
+        byte[] ggufBytes = rawGguf(0, new byte[][] {metadataString("Bad.Key", "v")});
+        assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
+    }
+
+    @Test
+    public void testTooLongMetadataKeyFails() {
+        String tooLongKey = "a".repeat(1 << 16);
+        byte[] ggufBytes = rawGguf(0, new byte[][] {metadataString(tooLongKey, "v")});
+        assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
+    }
+
+    @Test
     public void testInvalidArrayComponentType() throws IOException {
         byte[] ggufBytes =
                 writeToBytes(
@@ -225,7 +238,7 @@ public class ReadWriteTest extends GGUFTest {
                         new byte[][] {
                             metadataString("dup", "first"), metadataString("dup", "second")
                         });
-        assertThrows(AssertionError.class, () -> readFromBytes(ggufBytes));
+        assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
     }
 
     @Test
@@ -238,7 +251,7 @@ public class ReadWriteTest extends GGUFTest {
                             tensorInfo("dup", new long[] {1}, GGMLType.F32, 0),
                             tensorInfo("dup", new long[] {2}, GGMLType.F32, 32)
                         });
-        assertThrows(AssertionError.class, () -> readFromBytes(ggufBytes));
+        assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
     }
 
     @Test
@@ -309,19 +322,19 @@ public class ReadWriteTest extends GGUFTest {
     @Test
     public void testAlignmentWrongTypeFailsWhenRequested() throws IOException {
         byte[] ggufBytes = rawGguf(0, new byte[][] {metadataString("general.alignment", "bad")});
-        assertThrows(AssertionError.class, () -> readFromBytes(ggufBytes));
+        assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
     }
 
     @Test
     public void testAlignmentZeroFailsWhileReading() {
         byte[] ggufBytes = rawGguf(0, new byte[][] {metadataInt("general.alignment", 0)});
-        assertThrows(AssertionError.class, () -> readFromBytes(ggufBytes));
+        assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
     }
 
     @Test
     public void testAlignmentNonPowerOfTwoFailsWhileReading() {
         byte[] ggufBytes = rawGguf(0, new byte[][] {metadataInt("general.alignment", 3)});
-        assertThrows(AssertionError.class, () -> readFromBytes(ggufBytes));
+        assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
     }
 
     @Test
@@ -332,7 +345,7 @@ public class ReadWriteTest extends GGUFTest {
                         1,
                         new byte[0][],
                         new byte[][] {tensorInfo(longName, new long[] {1}, GGMLType.F32, 0)});
-        assertThrows(AssertionError.class, () -> readFromBytes(ggufBytes));
+        assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
     }
 
     @Test
@@ -344,7 +357,7 @@ public class ReadWriteTest extends GGUFTest {
                         new byte[][] {
                             tensorInfo("t", new long[] {1, 2, 3, 4, 5}, GGMLType.F32, 0)
                         });
-        assertThrows(AssertionError.class, () -> readFromBytes(ggufBytes));
+        assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
     }
 
     @Test
@@ -354,7 +367,7 @@ public class ReadWriteTest extends GGUFTest {
                         1,
                         new byte[0][],
                         new byte[][] {tensorInfo("t", new long[] {1}, GGMLType.F32, 1)});
-        assertThrows(AssertionError.class, () -> readFromBytes(ggufBytes));
+        assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
     }
 
     private static byte[] rawGguf(int tensorCount, byte[][] metadataEntries) {
