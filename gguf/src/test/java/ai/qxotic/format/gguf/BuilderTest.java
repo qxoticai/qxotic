@@ -464,7 +464,10 @@ public class BuilderTest extends GGUFTest {
     public void testArrayOfStringWithNullElementFailsOnWrite() {
         assertThrows(
                 NullPointerException.class,
-                () -> Builder.newBuilder().putArrayOfString("s", new String[] {"ok", null}).build());
+                () ->
+                        Builder.newBuilder()
+                                .putArrayOfString("s", new String[] {"ok", null})
+                                .build());
     }
 
     @Test

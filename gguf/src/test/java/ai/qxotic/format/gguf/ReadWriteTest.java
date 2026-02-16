@@ -8,10 +8,10 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.Channels;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
@@ -223,8 +223,7 @@ public class ReadWriteTest extends GGUFTest {
                 rawGguf(
                         0,
                         new byte[][] {
-                            metadataString("dup", "first"),
-                            metadataString("dup", "second")
+                            metadataString("dup", "first"), metadataString("dup", "second")
                         });
         assertThrows(AssertionError.class, () -> readFromBytes(ggufBytes));
     }
@@ -244,8 +243,7 @@ public class ReadWriteTest extends GGUFTest {
 
     @Test
     public void testInvalidBooleanEncodingTreatsNonZeroAsTrue() throws IOException {
-        byte[] ggufBytes =
-                rawGguf(0, new byte[][] {metadataBoolRaw("flag", (byte) 2)});
+        byte[] ggufBytes = rawGguf(0, new byte[][] {metadataBoolRaw("flag", (byte) 2)});
         GGUF gguf = readFromBytes(ggufBytes);
         assertEquals(MetadataValueType.BOOL, gguf.getType("flag"));
         assertTrue(gguf.getValue(boolean.class, "flag"));
@@ -281,7 +279,11 @@ public class ReadWriteTest extends GGUFTest {
 
     @Test
     public void testTruncatedTensorInfoThrows() throws IOException {
-        byte[] full = rawGguf(1, new byte[0][], new byte[][] {tensorInfo("w", new long[] {2, 3}, GGMLType.F32, 0)});
+        byte[] full =
+                rawGguf(
+                        1,
+                        new byte[0][],
+                        new byte[][] {tensorInfo("w", new long[] {2, 3}, GGMLType.F32, 0)});
         byte[] truncated = java.util.Arrays.copyOf(full, full.length - 1);
         assertThrows(IOException.class, () -> readFromBytes(truncated));
     }
@@ -298,7 +300,8 @@ public class ReadWriteTest extends GGUFTest {
                 rawGguf(
                         0,
                         new byte[][] {
-                            metadataArrayHeaderWithLength("arr", MetadataValueType.INT32, Long.MAX_VALUE)
+                            metadataArrayHeaderWithLength(
+                                    "arr", MetadataValueType.INT32, Long.MAX_VALUE)
                         });
         assertThrows(ArithmeticException.class, () -> readFromBytes(ggufBytes));
     }
@@ -324,7 +327,11 @@ public class ReadWriteTest extends GGUFTest {
     @Test
     public void testTensorNameLongerThan64Fails() {
         String longName = "a".repeat(65);
-        byte[] ggufBytes = rawGguf(1, new byte[0][], new byte[][] {tensorInfo(longName, new long[] {1}, GGMLType.F32, 0)});
+        byte[] ggufBytes =
+                rawGguf(
+                        1,
+                        new byte[0][],
+                        new byte[][] {tensorInfo(longName, new long[] {1}, GGMLType.F32, 0)});
         assertThrows(AssertionError.class, () -> readFromBytes(ggufBytes));
     }
 
@@ -334,13 +341,19 @@ public class ReadWriteTest extends GGUFTest {
                 rawGguf(
                         1,
                         new byte[0][],
-                        new byte[][] {tensorInfo("t", new long[] {1, 2, 3, 4, 5}, GGMLType.F32, 0)});
+                        new byte[][] {
+                            tensorInfo("t", new long[] {1, 2, 3, 4, 5}, GGMLType.F32, 0)
+                        });
         assertThrows(AssertionError.class, () -> readFromBytes(ggufBytes));
     }
 
     @Test
     public void testTensorWithMisalignedOffsetFails() {
-        byte[] ggufBytes = rawGguf(1, new byte[0][], new byte[][] {tensorInfo("t", new long[] {1}, GGMLType.F32, 1)});
+        byte[] ggufBytes =
+                rawGguf(
+                        1,
+                        new byte[0][],
+                        new byte[][] {tensorInfo("t", new long[] {1}, GGMLType.F32, 1)});
         assertThrows(AssertionError.class, () -> readFromBytes(ggufBytes));
     }
 
