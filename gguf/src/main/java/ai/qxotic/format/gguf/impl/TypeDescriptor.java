@@ -2,13 +2,19 @@ package ai.qxotic.format.gguf.impl;
 
 import ai.qxotic.format.gguf.MetadataValueType;
 
+/**
+ * Describes the type of a metadata value, including component type for arrays.
+ *
+ * <p>Type descriptors are cached and reused for efficiency.
+ */
 final class TypeDescriptor {
-    private static final MetadataValueType[] VALUES = MetadataValueType.values();
-    private static final TypeDescriptor[] SCALARS = new TypeDescriptor[VALUES.length];
-    private static final TypeDescriptor[] ARRAYS = new TypeDescriptor[VALUES.length];
+    private static final TypeDescriptor[] SCALARS =
+            new TypeDescriptor[MetadataValueType.values().length];
+    private static final TypeDescriptor[] ARRAYS =
+            new TypeDescriptor[MetadataValueType.values().length];
 
     static {
-        for (MetadataValueType valueType : VALUES) {
+        for (MetadataValueType valueType : MetadataValueType.values()) {
             if (valueType == MetadataValueType.ARRAY) {
                 continue;
             }

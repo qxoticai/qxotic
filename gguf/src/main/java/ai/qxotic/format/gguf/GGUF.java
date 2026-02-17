@@ -18,7 +18,7 @@ import java.util.Set;
  * manage tensor information. GGUF is a binary format that includes both model weights and
  * associated configuration data.
  *
- * @see <a href="https://github.com/ggerganov/ggml/blob/master/docs/gguf.md">GGUF format
+ * @see <a href="https://github.com/ggml-org/ggml/blob/master/docs/gguf.md">GGUF format
  *     specification</a>
  */
 public interface GGUF {
@@ -213,7 +213,7 @@ public interface GGUF {
      * Reads a GGUF file from a path.
      *
      * @param modelPath the path to the GGUF file
-     * @return a new GGUF instance containing the medatada
+     * @return a new GGUF instance containing the metadata
      * @throws IOException if an I/O error occurs during reading
      */
     static GGUF read(Path modelPath) throws IOException {

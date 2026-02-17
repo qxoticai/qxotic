@@ -6,7 +6,7 @@ import ai.qxotic.format.gguf.TensorEntry;
 import java.lang.reflect.Array;
 
 /** Provides formatting for GGUF instances with simple parameter-based control. */
-class GGUFFormatter {
+final class GGUFFormatter {
 
     /**
      * Formats the GGUF with control over what to display.

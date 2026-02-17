@@ -9,7 +9,7 @@ package ai.qxotic.format.gguf;
  *   <li>Invalid magic number
  *   <li>Unsupported version
  *   <li>Invalid metadata types
- *   <li>Nested arrays (not supported by spec)
+ *   <li>Nested arrays (not supported by this implementation)
  * </ul>
  */
 public class GGUFFormatException extends RuntimeException {

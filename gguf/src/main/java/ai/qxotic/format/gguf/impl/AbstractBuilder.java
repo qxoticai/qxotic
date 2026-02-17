@@ -3,6 +3,10 @@ package ai.qxotic.format.gguf.impl;
 import ai.qxotic.format.gguf.Builder;
 import ai.qxotic.format.gguf.MetadataValueType;
 
+/**
+ * Base implementation of {@link Builder} providing type-safe put methods for scalar and array
+ * values.
+ */
 abstract class AbstractBuilder implements Builder {
 
     protected abstract BuilderImpl putValue(String key, MetadataValueType valueType, Object value);
