@@ -140,7 +140,7 @@ public final class TensorEntry {
      */
     @Override
     public String toString() {
-        return "TensorInfo{"
+        return "TensorEntry{"
                 + "name="
                 + name
                 + ", shape="

@@ -7,7 +7,7 @@ import java.util.Set;
 /**
  * Builder interface for the GGUF format.
  *
- * @see <a href="https://github.com/ggerganov/ggml/blob/master/docs/gguf.md">GGUF format
+ * @see <a href="https://github.com/ggml-org/ggml/blob/master/docs/gguf.md">GGUF format
  *     specification</a>
  */
 public interface Builder extends Cloneable {

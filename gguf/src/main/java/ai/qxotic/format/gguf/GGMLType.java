@@ -1,135 +1,444 @@
 package ai.qxotic.format.gguf;
 
-import java.util.Arrays;
-
+/**
+ * GGML tensor data types.
+ *
+ * <p>Each type defines how tensor data is encoded in memory. Types fall into three categories:
+ *
+ * <ul>
+ *   <li><b>Primitive types</b> - F32, F16, BF16, I8, I16, I32, I64, F64
+ *   <li><b>Legacy quantization</b> - Q4_0, Q4_1, Q5_0, Q5_1, Q8_0, Q8_1
+ *   <li><b>K-quantization</b> - Q2_K through Q8_K, IQ series, TQ series, MXFP4
+ * </ul>
+ *
+ * <p>Quantized types store elements in blocks. Each block has:
+ *
+ * <ul>
+ *   <li>A fixed number of elements ({@link #getElementsPerBlock()})
+ *   <li>A fixed byte size ({@link #getBlockByteSize()})
+ *   <li>Optional scale factors and metadata
+ * </ul>
+ *
+ * @see <a href="https://github.com/ggml-org/ggml/blob/master/include/ggml.h">GGML Header</a>
+ */
 public enum GGMLType {
-    F32(Float.BYTES),
-    F16(GGMLType.FLOAT16_BYTES),
-    Q4_0(GGMLType.FLOAT16_BYTES + 16 * Byte.BYTES, GGMLType.QK4_0),
-    Q4_1(2 * GGMLType.FLOAT16_BYTES + 16 * Byte.BYTES, GGMLType.QK4_1),
 
-    Q4_2(Integer.MAX_VALUE, 1, false, true), // support has been removed
-    Q4_3(Integer.MAX_VALUE, 1, false, true), // support has been removed
+    // ============================================================
+    // Primitive Types (elements per block = 1)
+    // ============================================================
 
-    Q5_0(GGMLType.FLOAT16_BYTES + 4 + 16, GGMLType.QK5_0),
-    Q5_1(2 * GGMLType.FLOAT16_BYTES + 4 + 16, GGMLType.QK5_1),
-    Q8_0(GGMLType.FLOAT16_BYTES + 32 * Byte.BYTES, GGMLType.QK8_0),
-    Q8_1(2 * GGMLType.FLOAT16_BYTES + 32 * Byte.BYTES, GGMLType.QK8_1),
-    // k-quantizations
-    Q2_K(16 + 64 + 4, GGMLType.QK_K),
-    Q3_K(32 + 64 + 12 + 2, GGMLType.QK_K),
-    Q4_K(
-            2 * GGMLType.FLOAT16_BYTES + ((GGMLType.QK_K / 16) / 8 * 6) + GGMLType.QK_K / 2,
-            GGMLType.QK_K),
-    Q5_K(
-            2 * GGMLType.FLOAT16_BYTES
-                    + ((GGMLType.QK_K / 16) / 8 * 6)
-                    + GGMLType.QK_K / 8
-                    + GGMLType.QK_K / 2,
-            GGMLType.QK_K),
-    Q6_K(
-            GGMLType.QK_K / 2 + GGMLType.QK_K / 4 + GGMLType.QK_K / 16 + GGMLType.FLOAT16_BYTES,
-            GGMLType.QK_K),
-    Q8_K(4 + 256 + 32, GGMLType.QK_K),
+    /**
+     * 32-bit IEEE 754 single-precision floating point. Elements per block: 1, Block byte size: 4
+     * bytes.
+     */
+    F32(4, 1),
 
-    IQ2_XXS(2 + 64, GGMLType.QK_K),
-    IQ2_XS(2 + 64 + 8, GGMLType.QK_K),
-    IQ3_XXS(2 + 96, GGMLType.QK_K),
-    IQ1_S(2 + 32 + 16, GGMLType.QK_K),
-    IQ4_NL(2 + 16, GGMLType.QK4_NL),
-    IQ3_S(2 + 64 + 8 + 32 + 4, GGMLType.QK_K),
-    IQ2_S(2 + 64 + 8 + 8, GGMLType.QK_K),
-    IQ4_XS(2 + 2 + 4 + 128, GGMLType.QK_K),
+    /**
+     * 16-bit IEEE 754-2008 half-precision floating point (FP16). Elements per block: 1, Block byte
+     * size: 2 bytes.
+     */
+    F16(2, 1),
 
-    I8(Byte.BYTES),
-    I16(Short.BYTES),
-    I32(Integer.BYTES),
-    I64(Long.BYTES),
-    F64(Double.BYTES),
-    IQ1_M(32 + 16 + 8, GGMLType.QK_K),
-    BF16(GGMLType.BFLOAT16_BYTES),
-    Q4_0_4_4(GGMLType.FLOAT16_BYTES + 16 * Byte.BYTES, GGMLType.QK4_0, true, true),
-    Q4_0_4_8(GGMLType.FLOAT16_BYTES + 16 * Byte.BYTES, GGMLType.QK4_0, true, true),
-    Q4_0_8_8(GGMLType.FLOAT16_BYTES + 16 * Byte.BYTES, GGMLType.QK4_0, true, true),
-    TQ1_0(51 + 4 + 2, GGMLType.QK_K),
-    TQ2_0(64 + 2, GGMLType.QK_K),
-    IQ4_NL_4_4(2 + 16, GGMLType.QK4_NL, true, true),
-    IQ4_NL_4_8(2 + 16, GGMLType.QK4_NL, true, true),
-    IQ4_NL_8_8(2 + 16, GGMLType.QK4_NL, true, true),
-    MXFP4(Byte.BYTES + 16, GGMLType.QK_MXFP4);
+    /**
+     * 4-bit quantization with block-wise scale. Each 32-element block stores: 1 scale (FP16) + 32 ×
+     * 4-bit weights packed into 16 bytes. Elements per block: 32, Block byte size: 18 bytes (4.5
+     * bpw).
+     */
+    Q4_0(18, 32),
 
-    private static final int FLOAT16_BYTES = 2;
-    private static final int BFLOAT16_BYTES = 2;
+    /**
+     * 4-bit quantization with block-wise scale and minimum. Each 32-element block stores: 1 scale
+     * (FP16) + 1 min (FP16) + 32 × 4-bit weights. Elements per block: 32, Block byte size: 20 bytes
+     * (5.0 bpw).
+     */
+    Q4_1(20, 32),
 
-    private static final GGMLType[] VALUES = values();
+    /**
+     * @deprecated Support has been removed from GGML.
+     */
+    @Deprecated
+    Q4_2(Integer.MAX_VALUE, 1),
 
+    /**
+     * @deprecated Support has been removed from GGML.
+     */
+    @Deprecated
+    Q4_3(Integer.MAX_VALUE, 1),
+
+    /**
+     * 5-bit quantization with block-wise scale. Each 32-element block stores: 1 scale (FP16) + 32 ×
+     * 5-bit weights. The 5th bits are stored separately as a 32-bit bitmask (4 bytes). Elements per
+     * block: 32, Block byte size: 22 bytes (5.5 bpw).
+     */
+    Q5_0(22, 32),
+
+    /**
+     * 5-bit quantization with block-wise scale and minimum. Each 32-element block stores: 1 scale
+     * (FP16) + 1 min (FP16) + 32 × 5-bit weights. Elements per block: 32, Block byte size: 24 bytes
+     * (6.0 bpw).
+     */
+    Q5_1(24, 32),
+
+    /**
+     * 8-bit quantization with block-wise scale. Each 32-element block stores: 1 scale (FP16) + 32 ×
+     * 8-bit weights. Elements per block: 32, Block byte size: 34 bytes (8.5 bpw).
+     */
+    Q8_0(34, 32),
+
+    /**
+     * 8-bit quantization with block-wise scale and sum (for dot product optimization). Each
+     * 32-element block stores: 1 scale (FP16) + 1 sum (FP16) + 32 × 8-bit weights. Elements per
+     * block: 32, Block byte size: 36 bytes (9.0 bpw).
+     */
+    Q8_1(36, 32),
+
+    // ============================================================
+    // K-Quantization Types (elements per block = 256)
+    // ============================================================
+
+    /**
+     * 2-bit K-quantization with super-block structure. Each 256-element super-block stores scales
+     * and 2-bit quantized values. Elements per block: 256, Block byte size: 84 bytes (2.625 bpw).
+     */
+    Q2_K(84, 256),
+
+    /**
+     * 3-bit K-quantization with super-block structure. Elements per block: 256, Block byte size:
+     * 110 bytes (3.4375 bpw).
+     */
+    Q3_K(110, 256),
+
+    /**
+     * 4-bit K-quantization with super-block structure. Elements per block: 256, Block byte size:
+     * 144 bytes (4.5 bpw).
+     */
+    Q4_K(144, 256),
+
+    /**
+     * 5-bit K-quantization with super-block structure. Elements per block: 256, Block byte size:
+     * 176 bytes (5.5 bpw).
+     */
+    Q5_K(176, 256),
+
+    /**
+     * 6-bit K-quantization with super-block structure. Elements per block: 256, Block byte size:
+     * 210 bytes (6.5625 bpw).
+     */
+    Q6_K(210, 256),
+
+    /**
+     * 8-bit K-quantization with super-block structure (used for quantizing intermediate results).
+     * Elements per block: 256, Block byte size: 292 bytes (9.125 bpw).
+     */
+    Q8_K(292, 256),
+
+    // ============================================================
+    // I-Quant (Inference-Optimized Quantization) Types
+    // ============================================================
+
+    /**
+     * Important Quantization 2-bit, extra-extra-small. Uses lookup tables for very compact 2-bit
+     * representation. Elements per block: 256, Block byte size: 66 bytes (2.0625 bpw).
+     */
+    IQ2_XXS(66, 256),
+
+    /**
+     * Important Quantization 2-bit, extra-small. Elements per block: 256, Block byte size: 74 bytes
+     * (2.3125 bpw).
+     */
+    IQ2_XS(74, 256),
+
+    /**
+     * Important Quantization 3-bit, extra-extra-small. Elements per block: 256, Block byte size: 98
+     * bytes (3.0625 bpw).
+     */
+    IQ3_XXS(98, 256),
+
+    /**
+     * Important Quantization 1-bit, small. Elements per block: 256, Block byte size: 50 bytes
+     * (1.5625 bpw).
+     */
+    IQ1_S(50, 256),
+
+    /**
+     * Important Quantization 4-bit, non-linear. Uses a 32-element block like Q4_0 but with
+     * non-linear quantization. Elements per block: 32, Block byte size: 18 bytes (4.5 bpw).
+     */
+    IQ4_NL(18, 32),
+
+    /**
+     * Important Quantization 3-bit, small. Elements per block: 256, Block byte size: 110 bytes
+     * (3.4375 bpw).
+     */
+    IQ3_S(110, 256),
+
+    /**
+     * Important Quantization 2-bit, small. Elements per block: 256, Block byte size: 82 bytes
+     * (2.5625 bpw).
+     */
+    IQ2_S(82, 256),
+
+    /**
+     * Important Quantization 4-bit, extra-small. Elements per block: 256, Block byte size: 136
+     * bytes (4.25 bpw).
+     */
+    IQ4_XS(136, 256),
+
+    // ============================================================
+    // Integer Types
+    // ============================================================
+
+    /** 8-bit signed integer. Elements per block: 1, Block byte size: 1 byte. */
+    I8(1, 1),
+
+    /** 16-bit signed integer. Elements per block: 1, Block byte size: 2 bytes. */
+    I16(2, 1),
+
+    /** 32-bit signed integer. Elements per block: 1, Block byte size: 4 bytes. */
+    I32(4, 1),
+
+    /** 64-bit signed integer. Elements per block: 1, Block byte size: 8 bytes. */
+    I64(8, 1),
+
+    /**
+     * 64-bit IEEE 754 double-precision floating point. Elements per block: 1, Block byte size: 8
+     * bytes.
+     */
+    F64(8, 1),
+
+    /**
+     * Important Quantization 1-bit, medium. Elements per block: 256, Block byte size: 56 bytes
+     * (1.75 bpw).
+     */
+    IQ1_M(56, 256),
+
+    /**
+     * 16-bit Google Brain bfloat16 (Brain Floating Point). Has the same exponent range as FP32 but
+     * reduced mantissa precision. Elements per block: 1, Block byte size: 2 bytes.
+     */
+    BF16(2, 1),
+
+    /**
+     * @deprecated Support has been removed from GGUF files.
+     */
+    @Deprecated
+    Q4_0_4_4(18, 32),
+
+    /**
+     * @deprecated Support has been removed from GGUF files.
+     */
+    @Deprecated
+    Q4_0_4_8(18, 32),
+
+    /**
+     * @deprecated Support has been removed from GGUF files.
+     */
+    @Deprecated
+    Q4_0_8_8(18, 32),
+
+    /**
+     * Ternary Quantization 1-bit. Stores weights as {-1, 0, +1} values. Elements per block: 256,
+     * Block byte size: 54 bytes (1.6875 bpw).
+     */
+    TQ1_0(54, 256),
+
+    /**
+     * Ternary Quantization 2-bit. Elements per block: 256, Block byte size: 66 bytes (2.0625 bpw).
+     */
+    TQ2_0(66, 256),
+
+    /**
+     * @deprecated Support has been removed from GGUF files.
+     */
+    @Deprecated
+    IQ4_NL_4_4(18, 32),
+
+    /**
+     * @deprecated Support has been removed from GGUF files.
+     */
+    @Deprecated
+    IQ4_NL_4_8(18, 32),
+
+    /**
+     * @deprecated Support has been removed from GGUF files.
+     */
+    @Deprecated
+    IQ4_NL_8_8(18, 32),
+
+    /**
+     * Microscaling Format 4-bit (MXFP4) with E8M0 shared exponent. Uses 1-byte E8M0 exponent + 16
+     * bytes of 4-bit weights. Elements per block: 32, Block byte size: 17 bytes (4.25 bpw).
+     */
+    MXFP4(17, 32);
+
+    // ============================================================
+    // Fields
+    // ============================================================
+
+    /** Size in bytes for all elements in a block. */
     private final int blockByteSize;
-    private final int elementsPerBlock;
-    private final boolean isQuantized;
-    private final boolean isDeprecated;
 
+    /** Number of elements per block. */
+    private final int elementsPerBlock;
+
+    // ============================================================
+    // Constructor
+    // ============================================================
+
+    GGMLType(int blockByteSize, int elementsPerBlock) {
+        if (blockByteSize <= 0) {
+            throw new IllegalArgumentException("blockByteSize must be positive: " + blockByteSize);
+        }
+        if (elementsPerBlock <= 0) {
+            throw new IllegalArgumentException(
+                    "elementsPerBlock must be positive: " + elementsPerBlock);
+        }
+        if (!isPowerOf2(elementsPerBlock)) {
+            throw new IllegalArgumentException(
+                    "elementsPerBlock must be a power of 2: " + elementsPerBlock);
+        }
+        this.blockByteSize = blockByteSize;
+        this.elementsPerBlock = elementsPerBlock;
+    }
+
+    // ============================================================
+    // Public API
+    // ============================================================
+
+    /**
+     * Returns the GGML type ID (equivalent to ordinal in the {@code ggml_type} enum).
+     *
+     * @return the type ID (0-based index)
+     */
+    public int getId() {
+        return ordinal();
+    }
+
+    /**
+     * Returns the size in bytes for all elements in a block.
+     *
+     * @return the block byte size
+     */
     public int getBlockByteSize() {
         return blockByteSize;
     }
 
+    /**
+     * Returns the number of elements per block.
+     *
+     * <p>For primitive types (F32, F16, I8, etc.), this returns 1. For quantized types, this is
+     * typically 32 or 256.
+     *
+     * @return the number of elements per block
+     */
     public int getElementsPerBlock() {
         return elementsPerBlock;
     }
 
+    /**
+     * Returns whether this type is a quantized format. Quantized types have more than one element
+     * per block.
+     *
+     * @return {@code true} if this is a quantized type
+     */
     public boolean isQuantized() {
-        return isQuantized;
+        return elementsPerBlock > 1;
     }
 
-    public boolean isDeprecated() {
-        return isDeprecated;
+    /**
+     * Returns the effective bits per weight (BPW) for this type.
+     *
+     * <p>BPW is calculated as: {@code (blockByteSize * 8) / elementsPerBlock}
+     *
+     * <p>Examples:
+     *
+     * <ul>
+     *   <li>F32: 32 bpw
+     *   <li>Q4_0: 4.5 bpw
+     *   <li>IQ2_XXS: 2.0625 bpw
+     * </ul>
+     *
+     * @return the bits per weight
+     */
+    public double getBitsPerWeight() {
+        return (blockByteSize * 8.0) / elementsPerBlock;
     }
 
+    /**
+     * Returns the GGMLType for the given type ID.
+     *
+     * @param id the GGML type ID (0-based index)
+     * @return the corresponding GGMLType
+     * @throws ArrayIndexOutOfBoundsException if the ID is invalid
+     */
     public static GGMLType fromId(int id) {
-        return VALUES[id];
+        GGMLType[] values = values();
+        if (id < 0 || id >= values.length) {
+            throw new ArrayIndexOutOfBoundsException("Unknown GGML type ID: " + id);
+        }
+        return values[id];
     }
 
+    /**
+     * Calculates the byte size required to store a tensor of this type with the given shape.
+     *
+     * @param shape the tensor dimensions
+     * @return the byte size required
+     * @throws ArithmeticException if the result overflows
+     * @throws IllegalArgumentException if element count is not a multiple of elements per block
+     */
     public long byteSizeForShape(long[] shape) {
-        long elementCount = Arrays.stream(shape).reduce(1L, Math::multiplyExact);
+        long elementCount = 1;
+        for (long dim : shape) {
+            elementCount = Math.multiplyExact(elementCount, dim);
+        }
         return byteSizeFor(elementCount);
     }
 
+    /**
+     * Calculates the byte size required to store the given number of elements.
+     *
+     * @param numberOfElements the total number of elements
+     * @return the byte size required
+     * @throws ArithmeticException if the result overflows
+     * @throws IllegalArgumentException if element count is not a multiple of elements per block
+     */
     public long byteSizeFor(long numberOfElements) {
-        long t = Math.multiplyExact(numberOfElements, getBlockByteSize());
-        assert t % getElementsPerBlock() == 0;
-        return t / getElementsPerBlock();
+        if (numberOfElements % elementsPerBlock != 0) {
+            throw new IllegalArgumentException(
+                    "Number of elements ("
+                            + numberOfElements
+                            + ") must be a multiple of elements per block ("
+                            + elementsPerBlock
+                            + ")");
+        }
+        long blocks = numberOfElements / elementsPerBlock;
+        return Math.multiplyExact(blocks, blockByteSize);
     }
 
-    private static final int QK_K = 256;
-    private static final int QK4_0 = 32;
-    private static final int QK4_1 = 32;
-    private static final int QK5_0 = 32;
-    private static final int QK5_1 = 32;
-    private static final int QK8_0 = 32;
-    private static final int QK8_1 = 32;
-    private static final int QK4_NL = 32;
-    private static final int QK_MXFP4 = 32;
-
-    GGMLType(int blockByteSize) {
-        this(blockByteSize, 1, false, false);
+    /**
+     * Calculates the number of elements that can be stored in the given byte size.
+     *
+     * @param byteSize the available byte size
+     * @return the number of elements that can be stored
+     * @throws IllegalArgumentException if byte size is not a multiple of block byte size
+     */
+    public long elementsForByteSize(long byteSize) {
+        if (byteSize % blockByteSize != 0) {
+            throw new IllegalArgumentException(
+                    "Byte size ("
+                            + byteSize
+                            + ") must be a multiple of block byte size ("
+                            + blockByteSize
+                            + ")");
+        }
+        long blocks = byteSize / blockByteSize;
+        return blocks * elementsPerBlock;
     }
 
-    GGMLType(int blockByteSize, int elementsPerBlock) {
-        this(blockByteSize, elementsPerBlock, true, false);
-    }
-
-    GGMLType(int blockByteSize, int elementsPerBlock, boolean isQuantized) {
-        this(blockByteSize, elementsPerBlock, isQuantized, false);
-    }
-
-    GGMLType(int blockByteSize, int elementsPerBlock, boolean isQuantized, boolean isDeprecated) {
-        assert elementsPerBlock > 0;
-        assert blockByteSize > 0;
-        assert isPowerOf2(elementsPerBlock);
-        this.blockByteSize = blockByteSize;
-        this.elementsPerBlock = elementsPerBlock;
-        this.isQuantized = isQuantized;
-        this.isDeprecated = isDeprecated;
-    }
+    // ============================================================
+    // Private Helpers
+    // ============================================================
 
     private static boolean isPowerOf2(int n) {
         return n > 0 && (n & (n - 1)) == 0;
