@@ -6,17 +6,41 @@ import ai.qxotic.format.safetensors.Safetensors;
 import ai.qxotic.format.safetensors.SafetensorsFormatException;
 import ai.qxotic.format.safetensors.TensorEntry;
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 class ReaderImpl {
     static final String METADATA_KEY = "__metadata__";
     static final int HEADER_SIZE_BYTES = 8;
-    static final int ALIGNMENT_DEFAULT_VALUE = 32;
-    static final String ALIGNMENT_KEY = "__alignment__";
+    static final int ALIGNMENT_DEFAULT_VALUE = AlignmentSupport.DEFAULT_VALUE;
+    static final String ALIGNMENT_KEY = AlignmentSupport.KEY;
+    private static final long MAX_SIZE_T = 281474976710655L;
+    private static final String DTYPE_FIELD = "dtype";
+    private static final String SHAPE_FIELD = "shape";
+    private static final String OFFSETS_FIELD = "data_offsets";
+    private static final Set<String> TENSOR_FIELDS =
+            Set.of(DTYPE_FIELD, SHAPE_FIELD, OFFSETS_FIELD);
+
+    private static final class ParsedHeader {
+        final Map<String, String> metadata;
+        final Map<String, TensorEntry> tensors;
+
+        ParsedHeader(Map<String, String> metadata, Map<String, TensorEntry> tensors) {
+            this.metadata = metadata;
+            this.tensors = tensors;
+        }
+    }
 
     static Safetensors read(ReadableByteChannel channel) throws IOException {
         // Read header size
@@ -46,170 +70,209 @@ class ReaderImpl {
 
         // Parse JSON header
         String headerJson = StandardCharsets.UTF_8.decode(headerBuffer).toString();
-        Map<String, Object> header;
+        Map<?, ?> header;
         try {
-            header = (Map<String, Object>) JSON.parse(headerJson);
+            header = requireObject(JSON.parse(headerJson), "Header JSON must be an object");
         } catch (JSON.ParseException e) {
             throw new SafetensorsFormatException("Invalid JSON in header: " + e.getMessage(), e);
         }
 
-        // Extract metadata
-        Map<String, String> metadata = new LinkedHashMap<>();
-        Object metadataObj = header.get(METADATA_KEY);
-        if (metadataObj != null) {
-            if (!(metadataObj instanceof Map)) {
-                throw new SafetensorsFormatException("__metadata__ must be an object");
-            }
-            Map<String, Object> metadataMap = (Map<String, Object>) metadataObj;
-            for (Map.Entry<String, Object> entry : metadataMap.entrySet()) {
-                if (!(entry.getValue() instanceof String)) {
-                    throw new SafetensorsFormatException(
-                            "__metadata__ values must be strings, got "
-                                    + entry.getValue().getClass().getSimpleName()
-                                    + " for key: "
-                                    + entry.getKey());
-                }
-                metadata.put(entry.getKey(), (String) entry.getValue());
-            }
-        }
+        ParsedHeader parsedHeader = parseHeader(header);
 
-        // Extract tensors
-        Map<String, TensorEntry> tensors = new LinkedHashMap<>();
         long dataOffset = HEADER_SIZE_BYTES + headerSize;
 
-        for (Map.Entry<String, Object> entry : header.entrySet()) {
-            String tensorName = entry.getKey();
-            if (METADATA_KEY.equals(tensorName)) {
-                continue;
-            }
-            TensorEntry tensorEntry = load(entry);
-            tensors.put(tensorName, tensorEntry);
-        }
-
         // Validate no overlaps in byte buffer
-        validateTensors(tensors.values());
+        validateTensors(parsedHeader.tensors.values());
 
-        return new SafetensorsImpl(dataOffset, metadata, tensors);
+        return new SafetensorsImpl(dataOffset, parsedHeader.metadata, parsedHeader.tensors);
     }
 
-    private static void validateTensorSchema(String tensorName, Map<String, Object> tensorEntry) {
-        // Validate dtype field
-        Object dtypeObj = tensorEntry.get("dtype");
-        if (dtypeObj == null) {
-            throw new SafetensorsFormatException("Missing dtype for tensor: " + tensorName);
-        }
-        if (!(dtypeObj instanceof String)) {
-            throw new SafetensorsFormatException(
-                    "dtype must be a string for tensor: "
-                            + tensorName
-                            + ", got "
-                            + dtypeObj.getClass().getSimpleName());
-        }
+    private static ParsedHeader parseHeader(Map<?, ?> header) {
+        Map<String, String> metadata = new LinkedHashMap<>();
+        Map<String, TensorEntry> tensors = new LinkedHashMap<>();
 
-        // Validate shape field
-        Object shapeObj = tensorEntry.get("shape");
-        if (shapeObj == null) {
-            throw new SafetensorsFormatException("Missing shape for tensor: " + tensorName);
-        }
-        if (!(shapeObj instanceof List)) {
-            throw new SafetensorsFormatException(
-                    "shape must be an array for tensor: "
-                            + tensorName
-                            + ", got "
-                            + shapeObj.getClass().getSimpleName());
-        }
-        List<?> shapeList = (List<?>) shapeObj;
-        for (int i = 0; i < shapeList.size(); i++) {
-            if (!(shapeList.get(i) instanceof Number)) {
-                throw new SafetensorsFormatException(
-                        "shape[" + i + "] must be a number for tensor: " + tensorName);
+        for (Map.Entry<?, ?> entry : header.entrySet()) {
+            String key = requireString(entry.getKey(), "Header keys must be strings");
+            if (METADATA_KEY.equals(key)) {
+                parseMetadata(entry.getValue(), metadata);
+            } else {
+                tensors.put(key, parseTensor(key, entry.getValue()));
             }
         }
 
-        // Validate data_offsets field
-        Object offsetsObj = tensorEntry.get("data_offsets");
-        if (offsetsObj == null) {
-            throw new SafetensorsFormatException("Missing data_offsets for tensor: " + tensorName);
-        }
-        if (!(offsetsObj instanceof List)) {
-            throw new SafetensorsFormatException(
-                    "data_offsets must be an array for tensor: "
-                            + tensorName
-                            + ", got "
-                            + offsetsObj.getClass().getSimpleName());
-        }
-        List<?> offsetsList = (List<?>) offsetsObj;
-        if (offsetsList.size() != 2) {
-            throw new SafetensorsFormatException(
-                    "data_offsets must have exactly 2 elements for tensor: "
-                            + tensorName
-                            + ", got "
-                            + offsetsList.size());
-        }
-        if (!(offsetsList.get(0) instanceof Number)) {
-            throw new SafetensorsFormatException(
-                    "data_offsets[0] must be a number for tensor: " + tensorName);
-        }
-        if (!(offsetsList.get(1) instanceof Number)) {
-            throw new SafetensorsFormatException(
-                    "data_offsets[1] must be a number for tensor: " + tensorName);
-        }
+        return new ParsedHeader(metadata, tensors);
     }
 
-    private static TensorEntry load(Map.Entry<String, Object> entry) {
-        String tensorName = entry.getKey();
-        if (!(entry.getValue() instanceof Map)) {
-            throw new SafetensorsFormatException(
-                    "Tensor entry must be a JSON object: " + tensorName);
+    private static void parseMetadata(Object metadataObj, Map<String, String> metadata) {
+        Map<?, ?> metadataMap = requireObject(metadataObj, "__metadata__ must be an object");
+        for (Map.Entry<?, ?> entry : metadataMap.entrySet()) {
+            String key = requireString(entry.getKey(), "__metadata__ keys must be strings");
+            String value =
+                    requireString(
+                            entry.getValue(),
+                            "__metadata__ values must be strings for key: " + key);
+            metadata.put(key, value);
         }
-        Map<String, Object> tensorEntry = (Map<String, Object>) entry.getValue();
+        AlignmentSupport.validateHeaderMetadata(metadata);
+    }
 
-        // Validate schema first
-        validateTensorSchema(tensorName, tensorEntry);
+    private static TensorEntry parseTensor(String tensorName, Object tensorObj) {
+        Map<?, ?> tensorMap =
+                requireObject(
+                        tensorObj, "Tensor entry must be an object " + tensorContext(tensorName));
 
-        // Parse dtype (already validated as String)
-        String dtypeString = (String) tensorEntry.get("dtype");
-        DType dtype;
-        try {
-            dtype = DType.valueOf(dtypeString);
-        } catch (IllegalArgumentException e) {
-            throw new SafetensorsFormatException(
-                    "Unknown dtype '" + dtypeString + "' for tensor: " + tensorName);
-        }
+        validateTensorFields(tensorName, tensorMap);
 
-        // Parse shape (already validated as List<Number>)
-        List<?> shapeList = (List<?>) tensorEntry.get("shape");
-        long[] shape =
-                shapeList.stream()
-                        .map(n -> ((Number) n).longValue())
-                        .mapToLong(Long::longValue)
-                        .toArray();
+        DType dtype = parseDType(tensorName, tensorMap.get(DTYPE_FIELD));
 
-        // Parse data_offsets (already validated as List<Number> with 2 elements)
-        List<?> offsetsList = (List<?>) tensorEntry.get("data_offsets");
-        long begin = ((Number) offsetsList.get(0)).longValue();
-        long end = ((Number) offsetsList.get(1)).longValue();
-
-        if (begin < 0 || end < 0) {
-            throw new SafetensorsFormatException("Negative offsets for tensor: " + tensorName);
-        }
-        if (begin > end) {
-            throw new SafetensorsFormatException(
-                    "Invalid offsets: begin > end for tensor: " + tensorName);
-        }
+        long[] shape = parseShape(tensorName, tensorMap.get(SHAPE_FIELD));
+        long[] offsets = parseDataOffsets(tensorName, tensorMap.get(OFFSETS_FIELD));
+        long begin = offsets[0];
+        long end = offsets[1];
+        validateOffsets(tensorName, begin, end);
 
         long size = end - begin;
         long expectedSize = dtype.byteSizeForShape(shape);
         if (expectedSize != size) {
             throw new SafetensorsFormatException(
-                    "Size mismatch for tensor "
-                            + tensorName
+                    "Size mismatch "
+                            + tensorContext(tensorName)
                             + ": expected "
                             + expectedSize
                             + " bytes, got "
                             + size);
         }
+
         return TensorEntry.create(tensorName, dtype, shape, begin);
+    }
+
+    private static void validateOffsets(String tensorName, long begin, long end) {
+        if (begin < 0 || end < 0 || begin > end) {
+            throw new SafetensorsFormatException("Invalid offsets " + tensorContext(tensorName));
+        }
+    }
+
+    private static void validateTensorFields(String tensorName, Map<?, ?> tensorMap) {
+        if (!tensorMap.keySet().containsAll(TENSOR_FIELDS)) {
+            throw new SafetensorsFormatException(
+                    "Missing required tensor fields " + tensorContext(tensorName));
+        }
+        if (tensorMap.size() != TENSOR_FIELDS.size()) {
+            throw new SafetensorsFormatException("Unknown fields " + tensorContext(tensorName));
+        }
+    }
+
+    private static DType parseDType(String tensorName, Object dtypeObj) {
+        String dtypeString =
+                requireString(dtypeObj, "dtype must be a string " + tensorContext(tensorName));
+        try {
+            return DType.valueOf(dtypeString);
+        } catch (IllegalArgumentException e) {
+            throw new SafetensorsFormatException(
+                    "Invalid or unsupported dtype '"
+                            + dtypeString
+                            + "' "
+                            + tensorContext(tensorName));
+        }
+    }
+
+    private static long[] parseShape(String tensorName, Object shapeObj) {
+        return parseLongArray(shapeObj, SHAPE_FIELD, tensorName, -1);
+    }
+
+    private static long[] parseDataOffsets(String tensorName, Object offsetsObj) {
+        return parseLongArray(offsetsObj, OFFSETS_FIELD, tensorName, 2);
+    }
+
+    private static long[] parseLongArray(
+            Object value, String field, String tensorName, int expectedSizeOrNegative) {
+        List<?> list = requireList(value, field + " must be an array " + tensorContext(tensorName));
+        if (expectedSizeOrNegative >= 0 && list.size() != expectedSizeOrNegative) {
+            throw new SafetensorsFormatException(
+                    field
+                            + " must have exactly "
+                            + expectedSizeOrNegative
+                            + " values "
+                            + tensorContext(tensorName));
+        }
+        long[] result = new long[list.size()];
+        for (int i = 0; i < list.size(); i++) {
+            result[i] = parseSizeT(list.get(i), field + "[" + i + "]", tensorName);
+        }
+        return result;
+    }
+
+    private static long parseSizeT(Object value, String field, String tensorName) {
+        long parsed = parseIntegerNumber(value, field, tensorName);
+
+        if (parsed < 0 || parsed > MAX_SIZE_T) {
+            throw new SafetensorsFormatException(
+                    field + " out of range " + tensorContext(tensorName));
+        }
+        return parsed;
+    }
+
+    private static long parseIntegerNumber(Object value, String field, String tensorName) {
+        if (!(value instanceof Number)) {
+            throw new SafetensorsFormatException(
+                    field + " must be a number " + tensorContext(tensorName));
+        }
+
+        if (value instanceof BigDecimal) {
+            try {
+                return ((BigDecimal) value).toBigIntegerExact().longValueExact();
+            } catch (ArithmeticException e) {
+                throw new SafetensorsFormatException(
+                        field + " must be an integer " + tensorContext(tensorName));
+            }
+        }
+        if (value instanceof BigInteger) {
+            BigInteger big = (BigInteger) value;
+            if (big.compareTo(BigInteger.valueOf(Long.MIN_VALUE)) < 0
+                    || big.compareTo(BigInteger.valueOf(Long.MAX_VALUE)) > 0) {
+                throw new SafetensorsFormatException(
+                        field + " out of range " + tensorContext(tensorName));
+            }
+            return big.longValue();
+        }
+        if (value instanceof Double || value instanceof Float) {
+            double d = ((Number) value).doubleValue();
+            if (!Double.isFinite(d)
+                    || d != Math.rint(d)
+                    || d < Long.MIN_VALUE
+                    || d > Long.MAX_VALUE) {
+                throw new SafetensorsFormatException(
+                        field + " must be an integer " + tensorContext(tensorName));
+            }
+            return (long) d;
+        }
+
+        return ((Number) value).longValue();
+    }
+
+    private static Map<?, ?> requireObject(Object value, String message) {
+        if (!(value instanceof Map)) {
+            throw new SafetensorsFormatException(message);
+        }
+        return (Map<?, ?>) value;
+    }
+
+    private static List<?> requireList(Object value, String message) {
+        if (!(value instanceof List)) {
+            throw new SafetensorsFormatException(message);
+        }
+        return (List<?>) value;
+    }
+
+    private static String requireString(Object value, String message) {
+        if (!(value instanceof String)) {
+            throw new SafetensorsFormatException(message);
+        }
+        return (String) value;
+    }
+
+    private static String tensorContext(String tensorName) {
+        return "for tensor '" + tensorName + "'";
     }
 
     private static void validateTensors(Collection<TensorEntry> tensors) {

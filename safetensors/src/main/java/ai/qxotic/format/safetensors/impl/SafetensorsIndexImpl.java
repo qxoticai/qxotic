@@ -16,6 +16,10 @@ import java.util.Map;
 public final class SafetensorsIndexImpl implements SafetensorsIndex {
     private static final String MODEL_SAFETENSORS = "model.safetensors";
     private static final String SAFETENSORS_INDEX = "model.safetensors.index.json";
+    private static final String WEIGHT_MAP = "weight_map";
+    private static final String INDEX_ROOT_ERROR = "Index JSON must be an object";
+    private static final String WEIGHT_MAP_TYPE_ERROR =
+            "'" + WEIGHT_MAP + "' keys and values must be strings in " + SAFETENSORS_INDEX;
 
     private final Path rootPath;
     private final Map<String, Path> tensorIndex;
@@ -63,8 +67,7 @@ public final class SafetensorsIndexImpl implements SafetensorsIndex {
                 loadSingleFile(singleFile, tensorIndex);
             }
         } else if (Files.isRegularFile(path) && path.toString().endsWith(".safetensors")) {
-            rootPath =
-                    path.getParent() != null ? path.getParent() : path.toAbsolutePath().getParent();
+            rootPath = resolveRootPath(path);
             loadSingleFile(path, tensorIndex);
         } else {
             throw new IOException("Path must be a directory or .safetensors file: " + path);
@@ -75,40 +78,19 @@ public final class SafetensorsIndexImpl implements SafetensorsIndex {
 
     private static void loadSharded(Path rootPath, Path indexPath, Map<String, Path> tensorIndex)
             throws IOException {
-        Map<String, Object> index;
+        Map<String, String> weightMap;
         try {
-            index = (Map<String, Object>) JSON.parse(Files.readString(indexPath));
-        } catch (JSON.ParseException e) {
+            Map<?, ?> index =
+                    requireObject(JSON.parse(Files.readString(indexPath)), INDEX_ROOT_ERROR);
+            weightMap = parseWeightMap(index.get(WEIGHT_MAP));
+        } catch (JSON.ParseException | SafetensorsFormatException e) {
             throw new SafetensorsFormatException(
                     "Invalid JSON in " + SAFETENSORS_INDEX + ": " + e.getMessage(), e);
         }
 
-        // Validate and extract weight_map
-        Object weightMapObj = index.get("weight_map");
-        if (weightMapObj == null) {
-            throw new SafetensorsFormatException("Missing 'weight_map' in " + SAFETENSORS_INDEX);
-        }
-        if (!(weightMapObj instanceof Map)) {
-            throw new SafetensorsFormatException(
-                    "'weight_map' must be an object in "
-                            + SAFETENSORS_INDEX
-                            + ", got "
-                            + weightMapObj.getClass().getSimpleName());
-        }
-
-        Map<?, ?> weightMapRaw = (Map<?, ?>) weightMapObj;
-        for (Map.Entry<?, ?> entry : weightMapRaw.entrySet()) {
-            if (!(entry.getKey() instanceof String)) {
-                throw new SafetensorsFormatException(
-                        "'weight_map' keys must be strings in " + SAFETENSORS_INDEX);
-            }
-            if (!(entry.getValue() instanceof String)) {
-                throw new SafetensorsFormatException(
-                        "'weight_map' values must be strings in " + SAFETENSORS_INDEX);
-            }
-
-            String tensorName = (String) entry.getKey();
-            String fileName = (String) entry.getValue();
+        for (Map.Entry<String, String> entry : weightMap.entrySet()) {
+            String tensorName = entry.getKey();
+            String fileName = entry.getValue();
             Path filePath = rootPath.resolve(fileName);
 
             if (!Files.exists(filePath)) {
@@ -126,5 +108,36 @@ public final class SafetensorsIndexImpl implements SafetensorsIndex {
         for (TensorEntry info : st.getTensors()) {
             tensorIndex.put(info.name(), filePath);
         }
+    }
+
+    private static Map<String, String> parseWeightMap(Object value) {
+        Map<?, ?> raw =
+                requireObject(value, "Missing '" + WEIGHT_MAP + "' in " + SAFETENSORS_INDEX);
+        Map<String, String> weightMap = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : raw.entrySet()) {
+            String key = requireString(entry.getKey(), WEIGHT_MAP_TYPE_ERROR);
+            String file = requireString(entry.getValue(), WEIGHT_MAP_TYPE_ERROR);
+            weightMap.put(key, file);
+        }
+        return weightMap;
+    }
+
+    private static Path resolveRootPath(Path safetensorsPath) {
+        Path parent = safetensorsPath.getParent();
+        return parent != null ? parent : safetensorsPath.toAbsolutePath().getParent();
+    }
+
+    private static Map<?, ?> requireObject(Object value, String message) {
+        if (!(value instanceof Map)) {
+            throw new SafetensorsFormatException(message);
+        }
+        return (Map<?, ?>) value;
+    }
+
+    private static String requireString(Object value, String message) {
+        if (!(value instanceof String)) {
+            throw new SafetensorsFormatException(message);
+        }
+        return (String) value;
     }
 }

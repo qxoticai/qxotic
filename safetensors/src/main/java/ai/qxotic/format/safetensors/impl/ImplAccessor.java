@@ -28,11 +28,19 @@ public final class ImplAccessor {
     }
 
     public static int defaultAlignment() {
-        return ReaderImpl.ALIGNMENT_DEFAULT_VALUE;
+        return AlignmentSupport.DEFAULT_VALUE;
     }
 
     public static String alignmentKey() {
-        return ReaderImpl.ALIGNMENT_KEY;
+        return AlignmentSupport.KEY;
+    }
+
+    public static boolean isValidAlignment(int alignment) {
+        return AlignmentSupport.isValid(alignment);
+    }
+
+    public static int parseAlignment(String alignment) {
+        return AlignmentSupport.parse(alignment);
     }
 
     public static void write(Safetensors safetensors, WritableByteChannel byteChannel)

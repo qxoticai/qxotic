@@ -50,9 +50,9 @@ class SafetensorsFormatter {
             String key = entry.getKey();
             String value = entry.getValue();
             sb.append("    ")
-                    .append(JSON.stringify(key))
+                    .append(JSON.stringify(key, false))
                     .append(" : ")
-                    .append(JSON.stringify(value));
+                    .append(JSON.stringify(value, false));
             sb.append('\n');
         }
 

@@ -15,10 +15,21 @@ package ai.qxotic.format.safetensors;
  */
 public class SafetensorsFormatException extends RuntimeException {
 
+    /**
+     * Creates a format exception with message.
+     *
+     * @param message error description
+     */
     public SafetensorsFormatException(String message) {
         super(message);
     }
 
+    /**
+     * Creates a format exception with message and cause.
+     *
+     * @param message error description
+     * @param cause root cause
+     */
     public SafetensorsFormatException(String message, Throwable cause) {
         super(message, cause);
     }

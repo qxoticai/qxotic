@@ -26,11 +26,7 @@ final class SafetensorsImpl implements Safetensors {
 
     @Override
     public int getAlignment() {
-        String alignment = this.metadata.get(ImplAccessor.alignmentKey());
-        if (alignment == null) {
-            return ImplAccessor.defaultAlignment();
-        }
-        return Integer.parseInt(alignment);
+        return AlignmentSupport.parseMetadataAlignment(this.metadata);
     }
 
     @Override
@@ -46,5 +42,10 @@ final class SafetensorsImpl implements Safetensors {
     @Override
     public TensorEntry getTensor(String tensorName) {
         return tensors.get(tensorName);
+    }
+
+    @Override
+    public String toString() {
+        return ImplAccessor.toString(this, true, true);
     }
 }

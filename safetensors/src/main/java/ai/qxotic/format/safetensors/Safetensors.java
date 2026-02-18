@@ -11,30 +11,39 @@ import java.util.Collection;
 import java.util.Map;
 
 /**
- * Interface for reading Safetensors format metadata.
+ * Interface for reading and writing Safetensors headers (metadata + tensor entries).
  *
- * <p>Safetensors is a format for storing tensor metadata and data. This interface provides access
- * to metadata and tensor information without reading the actual tensor data.
+ * <p>This API works on headers only. It reads and writes metadata plus tensor descriptors ({@link
+ * TensorEntry}) and does not read or write tensor payload bytes.
  *
  * <p>Format specification:
  *
  * <ul>
  *   <li>8 bytes: header size (N) as unsigned little-endian 64-bit integer
  *   <li>N bytes: JSON UTF-8 header (must start with '{', may have trailing 0x20 padding)
- *   <li>Rest: tensor data buffer
+ *   <li>Rest: tensor payload bytes
  * </ul>
+ *
+ * <p>Duplicate JSON keys in headers follow the underlying JSON parser policy (last key wins).
  *
  * @see <a href="https://github.com/huggingface/safetensors">Safetensors specification</a>
  */
 public interface Safetensors {
 
     /**
-     * Returns the byte offset where tensor data begins. This is always 8 + header size.
+     * Returns the byte offset where tensor payload begins. This is always {@code 8 + headerSize}.
      *
-     * @return byte offset to start of tensor data buffer
+     * @return byte offset to start of tensor payload bytes
      */
     long getTensorDataOffset();
 
+    /**
+     * Returns tensor alignment in bytes.
+     *
+     * <p>If {@code __alignment__} is not present in metadata, this is the default alignment.
+     *
+     * @return alignment in bytes
+     */
     int getAlignment();
 
     /**
@@ -71,7 +80,7 @@ public interface Safetensors {
 
     /**
      * Reads safetensors metadata from a channel. Only reads the header (8 bytes + N bytes JSON),
-     * not tensor data.
+     * not tensor payload data.
      *
      * @param channel the channel to read from
      * @return safetensors metadata
@@ -95,7 +104,7 @@ public interface Safetensors {
     }
 
     /**
-     * Writes Safetensors metadata to a {@link WritableByteChannel}.
+     * Writes a Safetensors header to a {@link WritableByteChannel}.
      *
      * @param safetensors the Safetensors instance to write
      * @param byteChannel the channel to write to
@@ -106,7 +115,7 @@ public interface Safetensors {
     }
 
     /**
-     * Writes a Safetensors instance to a file at the specified path.
+     * Writes a Safetensors header to a file at the specified path.
      *
      * @param safetensors the Safetensors instance to write
      * @param modelPath the path where the Safetensors file should be written
