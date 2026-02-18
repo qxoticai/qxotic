@@ -1,10 +1,12 @@
-package scripts;
-
+///usr/bin/env jbang "$0" "$@" ; exit $?
 //DEPS ai.qxotic:safetensors:0.1-SNAPSHOT
-//DEPS info.picocli:picocli:4.7.6
-//DEPS info.picocli:picocli-codegen:4.7.6
+//DEPS ai.qxotic:json:0.1-SNAPSHOT
+//DEPS info.picocli:picocli:4.7.7
+//DEPS info.picocli:picocli-codegen:4.7.7
 //JAVAC_OPTIONS -proc:full
 //NATIVE_OPTIONS --no-fallback -H:+ReportExceptionStackTraces
+
+package scripts;
 
 import ai.qxotic.format.json.JSON;
 import ai.qxotic.format.safetensors.Safetensors;
@@ -12,6 +14,7 @@ import ai.qxotic.format.safetensors.TensorEntry;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.net.URL;
+import java.net.URLConnection;
 import java.nio.channels.Channels;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -22,6 +25,10 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
@@ -41,6 +48,10 @@ import picocli.CommandLine.Parameters;
         })
 class safetensors implements Callable<Integer> {
 
+    private static final int BUFFER_SIZE = 1 << 16;
+    private static final int CONNECT_TIMEOUT_MS = 10_000;
+    private static final int READ_TIMEOUT_MS = 120_000;
+    private static final String USER_AGENT = "qxotic-safetensors-script/1.0";
     private static final String SINGLE_FILE = "model.safetensors";
     private static final String INDEX_FILE = "model.safetensors.index.json";
     private static final String WEIGHT_MAP = "weight_map";
@@ -70,14 +81,16 @@ class safetensors implements Callable<Integer> {
             return 1;
         }
 
-        if (isRepoReference(source, HF)) {
-            return readRepo(normalizeRepoId(source, HF), HF, options);
-        }
-        if (isRepoReference(source, MODELSCOPE)) {
-            return readRepo(normalizeRepoId(source, MODELSCOPE), MODELSCOPE, options);
+        if (isExistingLocalPath(source)) {
+            return readSource(source, options);
         }
 
-        return readAnySource(source, options);
+        RepoRef repo = detectRepo(source);
+        if (repo != null) {
+            return readRepo(repo.repoId, repo.site, options);
+        }
+
+        return readSource(source, options);
     }
 
     private static void printQuickHelp() {
@@ -95,6 +108,14 @@ class safetensors implements Callable<Integer> {
         @Option(names = "--no-tensors", description = "Do not include tensor entries")
         boolean noTensors;
 
+        @Option(names = "--no-weight-map", description = "Do not include index weight_map")
+        boolean noWeightMap;
+
+        @Option(
+                names = "--no-extras",
+                description = "Hide injected fields (alignment, tensor_data_offset)")
+        boolean noExtras;
+
         @Option(names = "--no-summary", description = "Do not include index summary")
         boolean noSummary;
 
@@ -104,6 +125,14 @@ class safetensors implements Callable<Integer> {
 
         boolean includeTensors() {
             return !noTensors;
+        }
+
+        boolean includeWeightMap() {
+            return !noWeightMap;
+        }
+
+        boolean includeExtras() {
+            return !noExtras;
         }
 
         boolean includeSummary() {
@@ -140,7 +169,7 @@ class safetensors implements Callable<Integer> {
 
         @Override
         public Integer call() throws Exception {
-            return readAnySource(url, options);
+            return readSource(url, options);
         }
     }
 
@@ -151,12 +180,12 @@ class safetensors implements Callable<Integer> {
 
         @Override
         public Integer call() throws Exception {
-            return readAnySource(file, options);
+            return readSource(file, options);
         }
     }
 
-    private static Integer readAnySource(String source, OutputOptions options) throws Exception {
-        if (!source.contains("://")) {
+    private static Integer readSource(String source, OutputOptions options) throws Exception {
+        if (!hasScheme(source)) {
             Path path = Path.of(source);
             if (Files.isDirectory(path)) {
                 return readLocalDirectory(path, options);
@@ -164,7 +193,7 @@ class safetensors implements Callable<Integer> {
         }
 
         URL url = toUrl(source);
-        if (source.toLowerCase().endsWith(".index.json")) {
+        if (isIndexFile(source)) {
             return readIndex(url, options, null, null);
         }
         return readSingle(url, options, null);
@@ -172,12 +201,12 @@ class safetensors implements Callable<Integer> {
 
     private static Integer readLocalDirectory(Path directory, OutputOptions options) throws Exception {
         Path single = directory.resolve(SINGLE_FILE);
-        if (Files.exists(single)) {
+        if (Files.isRegularFile(single)) {
             return readSingle(single.toUri().toURL(), options, single.toString());
         }
 
         Path index = directory.resolve(INDEX_FILE);
-        if (Files.exists(index)) {
+        if (Files.isRegularFile(index)) {
             return readIndex(index.toUri().toURL(), options, null, null);
         }
 
@@ -194,11 +223,12 @@ class safetensors implements Callable<Integer> {
         URL single = site.resolve(repoId, SINGLE_FILE);
         try {
             return readSingle(single, options, site.label + ":" + repoId + ":" + SINGLE_FILE);
-        } catch (IOException e) {
+        } catch (IOException singleErr) {
             URL index = site.resolve(repoId, INDEX_FILE);
             try {
                 return readIndex(index, options, repoId, site);
             } catch (IOException indexErr) {
+                indexErr.addSuppressed(singleErr);
                 throw new IOException(
                         "Could not read '"
                                 + SINGLE_FILE
@@ -214,12 +244,10 @@ class safetensors implements Callable<Integer> {
     }
 
     private static Integer readSingle(URL url, OutputOptions options, String name) throws Exception {
-        System.err.println("Reading: " + (name == null ? url : name + " -> " + url));
-        try (var channel = Channels.newChannel(new BufferedInputStream(url.openStream(), 1 << 16))) {
-            Safetensors st = Safetensors.read(channel);
-            System.out.println(JSON.stringify(toJson(st, options, name), true));
-            return 0;
-        }
+        System.err.println("Reading: " + displayName(url, name));
+        Safetensors st = readSafetensors(url);
+        printJson(toJson(st, options, name));
+        return 0;
     }
 
     private static Integer readIndex(URL indexUrl, OutputOptions options, String repoId, RepoSite site)
@@ -230,22 +258,14 @@ class safetensors implements Callable<Integer> {
         Map<String, String> weightMap = parseWeightMap(index.get(WEIGHT_MAP));
 
         LinkedHashSet<String> shardNames = new LinkedHashSet<>(weightMap.values());
-        List<Object> shardObjects = new ArrayList<>(shardNames.size());
-
-        int i = 1;
-        for (String shard : shardNames) {
-            URL shardUrl = repoId == null ? new URL(indexUrl, shard) : site.resolve(repoId, shard);
-            System.err.println("Reading shard " + i + "/" + shardNames.size() + ": " + shardUrl);
-            try (var channel =
-                    Channels.newChannel(new BufferedInputStream(shardUrl.openStream(), 1 << 16))) {
-                shardObjects.add(toJson(Safetensors.read(channel), options, shard));
-            }
-            i++;
-        }
+        List<String> shardList = new ArrayList<>(shardNames);
+        List<Object> shardObjects = readShardsInParallel(indexUrl, repoId, site, options, shardList);
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("source", indexUrl.toString());
-        out.put(WEIGHT_MAP, weightMap);
+        if (options.includeWeightMap()) {
+            out.put(WEIGHT_MAP, weightMap);
+        }
         if (options.includeSummary()) {
             out.put(
                     "summary",
@@ -253,8 +273,60 @@ class safetensors implements Callable<Integer> {
         }
         out.put("shards", shardObjects);
 
-        System.out.println(JSON.stringify(out, true));
+        printJson(out);
         return 0;
+    }
+
+    private static List<Object> readShardsInParallel(
+            URL indexUrl, String repoId, RepoSite site, OutputOptions options, List<String> shards)
+            throws Exception {
+        if (shards.isEmpty()) {
+            return new ArrayList<>();
+        }
+        int workers = Math.min(shards.size(), Math.max(1, Runtime.getRuntime().availableProcessors()));
+        ExecutorService pool = Executors.newFixedThreadPool(workers);
+        try {
+            List<Callable<Map<String, Object>>> tasks = new ArrayList<>(shards.size());
+            for (int i = 0; i < shards.size(); i++) {
+                final int shardIndex = i + 1;
+                final String shardName = shards.get(i);
+                tasks.add(
+                        () -> {
+                            URL shardUrl =
+                                    repoId == null
+                                            ? new URL(indexUrl, shardName)
+                                            : site.resolve(repoId, shardName);
+                            System.err.println(
+                                    "Reading shard "
+                                            + shardIndex
+                                            + "/"
+                                            + shards.size()
+                                            + ": "
+                                            + shardUrl);
+                            return toJson(readSafetensors(shardUrl), options, shardName);
+                        });
+            }
+
+            List<Future<Map<String, Object>>> futures = pool.invokeAll(tasks);
+            List<Object> shardObjects = new ArrayList<>(futures.size());
+            for (int i = 0; i < futures.size(); i++) {
+                try {
+                    shardObjects.add(futures.get(i).get());
+                } catch (ExecutionException e) {
+                    Throwable cause = e.getCause();
+                    if (cause instanceof Exception) {
+                        throw (Exception) cause;
+                    }
+                    throw new IOException("Failed reading shard: " + shards.get(i), cause);
+                }
+            }
+            return shardObjects;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while reading shards", e);
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     private static Map<String, Object> toJson(Safetensors st, OutputOptions options, String name) {
@@ -262,27 +334,30 @@ class safetensors implements Callable<Integer> {
         if (name != null) {
             out.put("name", name);
         }
-        out.put("tensor_data_offset", st.getTensorDataOffset());
-        out.put("alignment", st.getAlignment());
+        if (options.includeExtras()) {
+            out.put("tensor_data_offset", st.getTensorDataOffset());
+            out.put("alignment", st.getAlignment());
+        }
 
         if (options.includeMetadata()) {
             out.put("__metadata__", st.getMetadata());
         }
         if (options.includeTensors()) {
-            out.put("tensors", tensorMap(st));
+            out.put("tensors", tensorObjects(st));
         }
         return out;
     }
 
-    private static Map<String, Object> tensorMap(Safetensors st) {
-        Map<String, Object> tensors = new LinkedHashMap<>();
-        for (TensorEntry t : st.getTensors()) {
-            tensors.put(
-                    t.name(),
-                    Map.of(
-                            "dtype", t.dtype().toString(),
-                            "shape", toList(t.shape()),
-                            "data_offsets", List.of(t.byteOffset(), t.byteOffset() + t.byteSize())));
+    private static List<Map<String, Object>> tensorObjects(Safetensors st) {
+        List<TensorEntry> entries = new ArrayList<>(st.getTensors());
+        List<Map<String, Object>> tensors = new ArrayList<>(entries.size());
+        for (TensorEntry t : entries) {
+            Map<String, Object> tensor = new LinkedHashMap<>();
+            tensor.put("name", t.name());
+            tensor.put("dtype", t.dtype().toString());
+            tensor.put("shape", toList(t.shape()));
+            tensor.put("data_offsets", List.of(t.byteOffset(), t.byteOffset() + t.byteSize()));
+            tensors.add(tensor);
         }
         return tensors;
     }
@@ -296,9 +371,7 @@ class safetensors implements Callable<Integer> {
     }
 
     private static Map<String, Object> readJsonObject(URL url) throws Exception {
-        try (var in = new BufferedInputStream(url.openStream(), 1 << 16)) {
-            return JSON.parseObject(new String(in.readAllBytes(), StandardCharsets.UTF_8));
-        }
+        return JSON.parseObject(readUtf8(url));
     }
 
     private static Map<String, String> parseWeightMap(Object value) {
@@ -306,7 +379,7 @@ class safetensors implements Callable<Integer> {
             throw new IllegalArgumentException("Index JSON must contain object field 'weight_map'");
         }
         Map<?, ?> raw = (Map<?, ?>) value;
-        Map<String, String> out = new LinkedHashMap<>();
+        Map<String, String> out = new LinkedHashMap<>(raw.size());
         for (Map.Entry<?, ?> e : raw.entrySet()) {
             if (!(e.getKey() instanceof String) || !(e.getValue() instanceof String)) {
                 throw new IllegalArgumentException("'weight_map' keys/values must be strings");
@@ -317,17 +390,14 @@ class safetensors implements Callable<Integer> {
     }
 
     private static URL toUrl(String source) throws Exception {
-        return source.contains("://") ? new URL(source) : new URL("file", "", source);
+        return hasScheme(source) ? new URL(source) : Path.of(source).toUri().toURL();
     }
 
     private static boolean isRepoReference(String value, RepoSite site) {
-        if (!value.startsWith(site.prefix)) {
-            return !value.contains("://") && value.split("/").length == 2;
+        if (value.startsWith(site.prefix)) {
+            return !containsResolvedFilePath(value, site) && !looksLikeFileName(value);
         }
-        return !value.contains("/" + site.resolveSegment + "/")
-                && !value.contains("/" + site.treeSegment + "/")
-                && !value.endsWith(".safetensors")
-                && !value.endsWith(".index.json");
+        return !hasScheme(value) && looksLikeRepoId(value);
     }
 
     private static String normalizeRepoId(String value, RepoSite site) {
@@ -340,6 +410,26 @@ class safetensors implements Callable<Integer> {
             throw new IllegalArgumentException("Expected repo id: org/repo");
         }
         return parts[0] + "/" + parts[1];
+    }
+
+    private static RepoRef detectRepo(String source) {
+        if (isRepoReference(source, HF)) {
+            return new RepoRef(HF, normalizeRepoId(source, HF));
+        }
+        if (isRepoReference(source, MODELSCOPE)) {
+            return new RepoRef(MODELSCOPE, normalizeRepoId(source, MODELSCOPE));
+        }
+        return null;
+    }
+
+    private static final class RepoRef {
+        final RepoSite site;
+        final String repoId;
+
+        RepoRef(RepoSite site, String repoId) {
+            this.site = site;
+            this.repoId = repoId;
+        }
     }
 
     private static final class RepoSite {
@@ -360,6 +450,159 @@ class safetensors implements Callable<Integer> {
         URL resolve(String repoId, String fileName) throws Exception {
             return new URL(prefix + repoId + "/" + resolveSegment + "/" + branch + "/" + fileName);
         }
+    }
+
+    private static Safetensors readSafetensors(URL url) throws IOException {
+        try (var in = openBuffered(url); var channel = Channels.newChannel(in)) {
+            return Safetensors.read(channel);
+        }
+    }
+
+    private static String readUtf8(URL url) throws IOException {
+        try (var in = openBuffered(url)) {
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    private static BufferedInputStream openBuffered(URL url) throws IOException {
+        URLConnection connection = url.openConnection();
+        connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
+        connection.setReadTimeout(READ_TIMEOUT_MS);
+        connection.setUseCaches(false);
+        connection.setRequestProperty("User-Agent", USER_AGENT);
+        return new BufferedInputStream(connection.getInputStream(), BUFFER_SIZE);
+    }
+
+    private static void printJson(Object value) {
+        String pretty = JSON.stringify(value, true);
+        System.out.println(compactTensors(pretty));
+    }
+
+    private static String compactTensors(String prettyJson) {
+        StringBuilder out = new StringBuilder(prettyJson.length());
+        String[] lines = prettyJson.split("\\R", -1);
+
+        boolean inTensorsArray = false;
+        StringBuilder tensor = null;
+        String tensorIndent = "";
+        int depth = 0;
+
+        for (String line : lines) {
+            String trimmed = line.trim();
+
+            if (tensor != null) {
+                if (!trimmed.isEmpty()) {
+                    if (tensor.length() > 0) {
+                        tensor.append(' ');
+                    }
+                    tensor.append(trimmed);
+                }
+                depth += countChar(trimmed, '{') - countChar(trimmed, '}');
+                if (depth == 0) {
+                    out.append(tensorIndent).append(tensor).append('\n');
+                    tensor = null;
+                }
+                continue;
+            }
+
+            if (!inTensorsArray && isTensorArrayStart(trimmed)) {
+                inTensorsArray = true;
+                out.append(line).append('\n');
+                continue;
+            }
+
+            if (inTensorsArray) {
+                if (trimmed.equals("]") || trimmed.equals("],")) {
+                    inTensorsArray = false;
+                    out.append(line).append('\n');
+                    continue;
+                }
+                if (trimmed.startsWith("{")) {
+                    tensor = new StringBuilder();
+                    tensorIndent = line.substring(0, line.indexOf(trimmed));
+                    tensor.append(trimmed);
+                    depth = countChar(trimmed, '{') - countChar(trimmed, '}');
+                    if (depth == 0) {
+                        out.append(tensorIndent).append(tensor).append('\n');
+                        tensor = null;
+                    }
+                    continue;
+                }
+            }
+
+            out.append(line).append('\n');
+        }
+
+        return out.toString();
+    }
+
+    private static int countChar(String value, char ch) {
+        int count = 0;
+        for (int i = 0; i < value.length(); i++) {
+            if (value.charAt(i) == ch) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static boolean isTensorArrayStart(String trimmedLine) {
+        if (!trimmedLine.startsWith("\"tensors\"")) {
+            return false;
+        }
+        int colon = trimmedLine.indexOf(':');
+        if (colon < 0) {
+            return false;
+        }
+        for (int i = colon + 1; i < trimmedLine.length(); i++) {
+            char c = trimmedLine.charAt(i);
+            if (!Character.isWhitespace(c)) {
+                return c == '[' && i == trimmedLine.length() - 1;
+            }
+        }
+        return false;
+    }
+
+    private static String displayName(URL url, String name) {
+        return name == null ? url.toString() : name + " -> " + url;
+    }
+
+    private static boolean hasScheme(String value) {
+        return value.contains("://");
+    }
+
+    private static boolean isIndexFile(String value) {
+        return endsWithIgnoreCase(value, ".index.json");
+    }
+
+    private static boolean isExistingLocalPath(String value) {
+        if (hasScheme(value)) {
+            return false;
+        }
+        try {
+            return Files.exists(Path.of(value));
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    private static boolean looksLikeRepoId(String value) {
+        String[] parts = value.split("/", -1);
+        return parts.length == 2 && !parts[0].isEmpty() && !parts[1].isEmpty();
+    }
+
+    private static boolean looksLikeFileName(String value) {
+        return endsWithIgnoreCase(value, ".safetensors") || endsWithIgnoreCase(value, ".index.json");
+    }
+
+    private static boolean endsWithIgnoreCase(String value, String suffix) {
+        return value.length() >= suffix.length()
+                && value.regionMatches(true, value.length() - suffix.length(), suffix, 0, suffix.length());
+    }
+
+    private static boolean containsResolvedFilePath(String value, RepoSite site) {
+        return value.contains("/" + site.resolveSegment + "/")
+                || value.contains("/" + site.treeSegment + "/");
     }
 
     public static void main(String... args) {

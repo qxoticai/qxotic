@@ -3,6 +3,7 @@ package ai.qxotic.format.safetensors;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -33,6 +34,35 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
         Builder builder = Builder.newBuilder();
         assertThrows(NullPointerException.class, () -> builder.putMetadataKey("key", null));
         assertThrows(NullPointerException.class, () -> builder.putMetadataKey(null, "value"));
+    }
+
+    @Test
+    public void testPublicApiNullContracts(@TempDir Path tempDir) throws IOException {
+        Safetensors st = Builder.newBuilder().build();
+        Path out = tempDir.resolve("x.safetensors");
+
+        assertThrows(NullPointerException.class, () -> Safetensors.read((Path) null));
+        assertThrows(
+                NullPointerException.class,
+                () -> Safetensors.read((java.nio.channels.ReadableByteChannel) null));
+        assertThrows(NullPointerException.class, () -> Safetensors.write(null, out));
+        assertThrows(NullPointerException.class, () -> Safetensors.write(st, (Path) null));
+        assertThrows(
+                NullPointerException.class,
+                () -> Safetensors.write(st, (java.nio.channels.WritableByteChannel) null));
+        assertThrows(
+                NullPointerException.class,
+                () -> TensorEntry.create(null, DType.F32, new long[] {1}, 0));
+        assertThrows(
+                NullPointerException.class, () -> TensorEntry.create("t", null, new long[] {1}, 0));
+        assertThrows(NullPointerException.class, () -> TensorEntry.create("t", DType.F32, null, 0));
+        assertThrows(
+                NullPointerException.class,
+                () -> TensorEntry.create("t", DType.F32, new long[] {1}, 0).absoluteOffset(null));
+        assertThrows(NullPointerException.class, () -> DType.totalNumberOfElements(null));
+
+        // sanity check: non-null writable channel still works
+        Safetensors.write(st, Channels.newChannel(new ByteArrayOutputStream()));
     }
 
     @Test

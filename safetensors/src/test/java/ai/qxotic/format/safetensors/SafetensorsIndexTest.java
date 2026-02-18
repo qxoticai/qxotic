@@ -12,6 +12,11 @@ import org.junit.jupiter.api.io.TempDir;
 public class SafetensorsIndexTest extends SafetensorsTest {
 
     @Test
+    public void testLoadRejectsNullRoot() {
+        assertThrows(NullPointerException.class, () -> SafetensorsIndex.load(null));
+    }
+
+    @Test
     public void testLoadSingleFile(@TempDir Path tempDir) throws IOException {
         // Create a single safetensors file
         Path modelFile = tempDir.resolve("model.safetensors");

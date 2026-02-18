@@ -46,6 +46,25 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
         assertEqualsSafetensors(expected, rebuilt, true);
     }
 
+    @Test
+    public void testFromSafetensorsRejectsNull() {
+        assertThrows(NullPointerException.class, () -> Builder.newBuilder((Safetensors) null));
+    }
+
+    @Test
+    public void testSetMetadataRejectsNulls() {
+        Builder builder = Builder.newBuilder();
+        assertThrows(NullPointerException.class, () -> builder.setMetadata(null));
+
+        Map<String, String> withNullKey = new LinkedHashMap<>();
+        withNullKey.put(null, "v");
+        assertThrows(NullPointerException.class, () -> builder.setMetadata(withNullKey));
+
+        Map<String, String> withNullValue = new LinkedHashMap<>();
+        withNullValue.put("k", null);
+        assertThrows(NullPointerException.class, () -> builder.setMetadata(withNullValue));
+    }
+
     static Builder putMetadata(Builder builder) {
         return builder.putMetadataKey("format", "pt")
                 .putMetadataKey("model_type", "llama")

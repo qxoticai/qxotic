@@ -4,6 +4,7 @@ import ai.qxotic.format.safetensors.impl.ImplAccessor;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Collection;
+import java.util.Objects;
 
 /**
  * Index for locating tensors across one or more safetensors files.
@@ -40,6 +41,7 @@ public interface SafetensorsIndex {
      * @throws IOException if I/O error or missing required files
      */
     static SafetensorsIndex load(Path rootPath) throws IOException {
+        Objects.requireNonNull(rootPath, "rootPath");
         return ImplAccessor.loadIndex(rootPath);
     }
 }
