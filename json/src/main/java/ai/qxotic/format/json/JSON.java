@@ -3,9 +3,12 @@ package ai.qxotic.format.json;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Beautiful, minimal JSON parser and printer. RFC 8259 compliant, elegant, and fast. */
 public final class JSON {
@@ -23,15 +26,72 @@ public final class JSON {
 
     /** Parse JSON string into Java objects. */
     public static Object parse(CharSequence json) {
-        return parse(json, ParseOptions.create());
+        return parse(json, ParseOptions.defaults());
     }
 
     /** Parse JSON with custom options. */
     public static Object parse(CharSequence json, ParseOptions options) {
+        requireJsonInput(json);
+        if (options == null) {
+            throw new IllegalArgumentException("options must not be null");
+        }
         Parser p = new Parser(json, options);
         Object result = p.parseValue();
         p.expectEnd();
         return result;
+    }
+
+    /** Returns true if input is valid JSON. */
+    public static boolean isValid(CharSequence json) {
+        if (json == null) {
+            return false;
+        }
+        try {
+            parse(json);
+            return true;
+        } catch (ParseException e) {
+            return false;
+        }
+    }
+
+    /** Parse JSON and require an object root. */
+    public static Map<String, Object> parseObject(CharSequence json) {
+        return parseObject(json, ParseOptions.defaults());
+    }
+
+    /** Parse JSON with custom options and require an object root. */
+    public static Map<String, Object> parseObject(CharSequence json, ParseOptions options) {
+        return castObject(requireRootType(parse(json, options), Map.class, "object"));
+    }
+
+    /** Parse JSON and require an array root. */
+    public static List<Object> parseArray(CharSequence json) {
+        return parseArray(json, ParseOptions.defaults());
+    }
+
+    /** Parse JSON with custom options and require an array root. */
+    public static List<Object> parseArray(CharSequence json, ParseOptions options) {
+        return castArray(requireRootType(parse(json, options), List.class, "array"));
+    }
+
+    /** Parse JSON and require a string root. */
+    public static String parseString(CharSequence json) {
+        return parseString(json, ParseOptions.defaults());
+    }
+
+    /** Parse JSON with custom options and require a string root. */
+    public static String parseString(CharSequence json, ParseOptions options) {
+        return (String) requireRootType(parse(json, options), String.class, "string");
+    }
+
+    /** Parse JSON and require a number root. */
+    public static Number parseNumber(CharSequence json) {
+        return parseNumber(json, ParseOptions.defaults());
+    }
+
+    /** Parse JSON with custom options and require a number root. */
+    public static Number parseNumber(CharSequence json, ParseOptions options) {
+        return (Number) requireRootType(parse(json, options), Number.class, "number");
     }
 
     /** Convert Java object to compact JSON string. */
@@ -39,11 +99,40 @@ public final class JSON {
         return stringify(value, false);
     }
 
+    /** Convert Java object to pretty JSON string. */
+    public static String stringifyPretty(Object value) {
+        return stringify(value, true);
+    }
+
     /** Convert to JSON with optional pretty-printing. */
     public static String stringify(Object value, boolean pretty) {
         StringBuilder sb = new StringBuilder();
-        print(sb, value, pretty, 0);
+        Set<Object> visiting = Collections.newSetFromMap(new IdentityHashMap<>());
+        print(sb, value, pretty, 0, visiting);
         return sb.toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> castObject(Object value) {
+        return (Map<String, Object>) value;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Object> castArray(Object value) {
+        return (List<Object>) value;
+    }
+
+    private static void requireJsonInput(CharSequence json) {
+        if (json == null) {
+            throw new IllegalArgumentException("json must not be null");
+        }
+    }
+
+    private static Object requireRootType(Object value, Class<?> rootType, String typeName) {
+        if (!rootType.isInstance(value)) {
+            throw new ParseException("Expected JSON " + typeName + " at root");
+        }
+        return value;
     }
 
     // === Parser ===
@@ -52,16 +141,24 @@ public final class JSON {
         private final CharSequence input;
         private final ParseOptions options;
         private int pos;
-        private int line = 1;
-        private int col = 1;
-        private int depth = 0;
+        private int depth;
+
+        private static final class LineColumn {
+            final int line;
+            final int column;
+
+            LineColumn(int line, int column) {
+                this.line = line;
+                this.column = column;
+            }
+        }
 
         Parser(CharSequence input, ParseOptions options) {
             this.input = input;
             this.options = options;
         }
 
-        Object parseValue() {
+        private Object parseValue() {
             skipSpace();
             char ch = peek();
 
@@ -83,47 +180,39 @@ public final class JSON {
                 case 'n':
                     expect("null");
                     return NULL;
-                case '-':
-                case '0':
-                case '1':
-                case '2':
-                case '3':
-                case '4':
-                case '5':
-                case '6':
-                case '7':
-                case '8':
-                case '9':
-                    return parseNumber();
                 case ']':
-                    next();
                     throw error("Expected value");
                 case '}':
                 case ',':
-                    next();
                     throw error("Unexpected character");
                 default:
-                    next();
+                    if (ch == '-' || isDigit(ch)) {
+                        return parseNumber();
+                    }
                     throw error("Unexpected character");
             }
         }
 
-        String parseString() {
+        private String parseString() {
             expect('"');
             StringBuilder sb = new StringBuilder();
 
             while (true) {
                 char ch = next();
-                if (ch == '"') break;
-                if (ch == '\\') parseEscape(sb);
-                else if (isValidUnescaped(ch)) sb.append(ch);
-                else throw error("Control character must be escaped");
+                if (ch == '"') {
+                    return sb.toString();
+                }
+                if (ch == '\\') {
+                    appendEscapedChar(sb);
+                } else if (ch < 0x20) {
+                    throw error("Control character must be escaped");
+                } else {
+                    sb.append(ch);
+                }
             }
-
-            return sb.toString();
         }
 
-        void parseEscape(StringBuilder sb) {
+        private void appendEscapedChar(StringBuilder sb) {
             char ch = next();
             switch (ch) {
                 case '"':
@@ -151,15 +240,15 @@ public final class JSON {
                     sb.append('\t');
                     break;
                 case 'u':
-                    parseUnicode(sb);
+                    appendUnicodeEscape(sb);
                     break;
                 default:
                     throw error("Invalid escape sequence");
             }
         }
 
-        void parseUnicode(StringBuilder sb) {
-            int code = parseHex(4);
+        private void appendUnicodeEscape(StringBuilder sb) {
+            int code = parseHex4();
 
             if (Character.isHighSurrogate((char) code)) {
                 if (pos + 6 > input.length()
@@ -168,102 +257,102 @@ public final class JSON {
                     throw error("Lone surrogate");
                 }
                 pos += 2; // Skip backslash-u
-                int low = parseHex(4);
+                int low = parseHex4();
                 if (!Character.isLowSurrogate((char) low)) {
                     throw error("Unexpected character after high surrogate");
                 }
                 sb.append((char) code).append((char) low);
-            } else if (Character.isLowSurrogate((char) code)) {
-                throw error("Lone surrogate");
             } else {
-                sb.appendCodePoint(code);
+                if (Character.isLowSurrogate((char) code)) {
+                    throw error("Lone surrogate");
+                }
+                sb.append((char) code);
             }
         }
 
-        int parseHex(int digits) {
-            if (pos + digits > input.length()) {
+        private int parseHex4() {
+            if (pos + 4 > input.length()) {
                 throw error("Incomplete Unicode escape");
             }
 
             int result = 0;
-            for (int i = 0; i < digits; i++) {
-                char ch = input.charAt(pos++);
-                col++;
+            for (int i = 0; i < 4; i++) {
+                char ch = next();
                 int digit = Character.digit(ch, 16);
-                if (digit < 0) throw error("Invalid hex digit");
+                if (digit < 0) {
+                    throw error("Invalid hex digit");
+                }
                 result = (result << 4) | digit;
             }
             return result;
         }
 
-        List<Object> parseArray() {
+        private List<Object> parseArray() {
             enterDepth();
             try {
                 List<Object> list = new ArrayList<>();
 
-                while (true) {
-                    skipSpace();
-                    char ch = peek();
-                    if (ch == ']') break;
-                    if (ch == '\0') throw error("Expected ']'");
-
-                    if (!list.isEmpty()) {
-                        skipSpace();
-                        expect(',');
-                    }
-
-                    list.add(parseValue());
+                skipSpace();
+                if (peek() == ']') {
+                    next();
+                    return list;
                 }
 
-                skipSpace();
-                expect(']');
+                while (true) {
+                    list.add(parseValue());
+                    if (!consumeCommaOrEnd(']')) {
+                        break;
+                    }
+                }
                 return list;
             } finally {
                 exitDepth();
             }
         }
 
-        Map<String, Object> parseObject() {
+        private Map<String, Object> parseObject() {
             enterDepth();
             try {
                 Map<String, Object> map = new LinkedHashMap<>();
 
+                skipSpace();
+                if (peek() == '}') {
+                    next();
+                    return map;
+                }
+
                 while (true) {
-                    skipSpace();
-                    char ch = peek();
-                    if (ch == '}') break;
-                    if (ch == '\0') throw error("Expected '}'");
-
-                    if (!map.isEmpty()) {
-                        skipSpace();
-                        expect(',');
-                    }
-
-                    skipSpace();
                     String key = parseString();
                     skipSpace();
                     expect(':');
                     map.put(key, parseValue());
+                    if (!consumeCommaOrEnd('}')) {
+                        break;
+                    }
                 }
-
-                skipSpace();
-                expect('}');
                 return map;
             } finally {
                 exitDepth();
             }
         }
 
-        Number parseNumber() {
+        private Number parseNumber() {
             int start = pos;
+            boolean hasFraction = false;
+            boolean hasExponent = false;
 
             // Sign
-            if (peek() == '-') next();
-            else if (peek() == '+') throw error("Unexpected '+'");
+            if (peek() == '-') {
+                next();
+            } else if (peek() == '+') {
+                throw error("Unexpected '+'");
+            }
 
             // Integer part
             if (!isDigit(peek())) {
-                if (peek() == '.') throw error("Unexpected '.'");
+                if (peek() == '.') {
+                    throw error("Unexpected '.'");
+                }
                 throw error("Expected digit");
             }
 
@@ -272,52 +361,68 @@ public final class JSON {
                 throw error("Leading zeros not allowed");
             }
 
-            while (isDigit(peek())) next();
+            while (isDigit(peek())) {
+                next();
+            }
 
             // Fraction
             if (peek() == '.') {
+                hasFraction = true;
                 next();
-                if (!isDigit(peek())) throw error("Expected digit after decimal point");
-                while (isDigit(peek())) next();
+                if (!isDigit(peek())) {
+                    throw error("Expected digit after decimal point");
+                }
+                while (isDigit(peek())) {
+                    next();
+                }
             }
 
             // Exponent
             if (peek() == 'e' || peek() == 'E') {
+                hasExponent = true;
                 next();
-                if (peek() == '+' || peek() == '-') next();
-                if (!isDigit(peek())) throw error("exponent missing digits");
-                while (isDigit(peek())) next();
+                if (peek() == '+' || peek() == '-') {
+                    next();
+                }
+                if (!isDigit(peek())) {
+                    throw error("exponent missing digits");
+                }
+                while (isDigit(peek())) {
+                    next();
+                }
             }
 
-            String numStr = input.subSequence(start, pos).toString();
-            boolean isDecimal =
-                    numStr.contains(".") || numStr.contains("e") || numStr.contains("E");
+            String numberLexeme = input.subSequence(start, pos).toString();
+            boolean isDecimal = hasFraction || hasExponent;
 
             if (!isDecimal) {
-                if (numStr.equals("-0")) return new BigDecimal("-0");
+                if (numberLexeme.equals("-0")) {
+                    return new BigDecimal("-0");
+                }
                 try {
-                    return Long.parseLong(numStr);
+                    return Long.parseLong(numberLexeme);
                 } catch (NumberFormatException e) {
-                    return new BigInteger(numStr);
+                    return new BigInteger(numberLexeme);
                 }
-            } else {
-                if (options.shouldUseBigDecimal()) {
-                    try {
-                        BigDecimal bd = new BigDecimal(numStr);
-                        if (bd.compareTo(BigDecimal.ZERO) == 0) {
-                            bd = bd.stripTrailingZeros();
-                        }
-                        return bd;
-                    } catch (NumberFormatException e) {
-                        throw error("Invalid number", e);
-                    }
-                } else {
-                    try {
-                        return Double.parseDouble(numStr);
-                    } catch (NumberFormatException e) {
-                        throw error("Invalid number", e);
-                    }
-                }
+            }
+
+            if (options.shouldUseBigDecimal()) {
+                return parseBigDecimal(numberLexeme);
+            }
+
+            try {
+                return Double.parseDouble(numberLexeme);
+            } catch (NumberFormatException e) {
+                throw error("Invalid number", e);
+            }
+        }
+
+        private Number parseBigDecimal(String numberLexeme) {
+            try {
+                BigDecimal bd = new BigDecimal(numberLexeme);
+                return bd.compareTo(BigDecimal.ZERO) == 0 ? bd.stripTrailingZeros() : bd;
+            } catch (NumberFormatException e) {
+                throw error("Invalid number", e);
             }
         }
 
@@ -326,11 +431,7 @@ public final class JSON {
         private void skipSpace() {
             while (pos < input.length()) {
                 char ch = input.charAt(pos);
-                if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') {
-                    if (ch == '\n') {
-                        line++;
-                        col = 1;
-                    } else col++;
+                if (isWhitespace(ch)) {
                     pos++;
                 } else {
                     break;
@@ -343,24 +444,29 @@ public final class JSON {
         }
 
         private char next() {
-            if (pos >= input.length()) throw error("Unexpected end of input");
-            char ch = input.charAt(pos++);
-            if (ch == '\n') {
-                line++;
-                col = 1;
-            } else col++;
-            return ch;
+            if (pos >= input.length()) {
+                throw error("Unexpected end of input");
+            }
+            return input.charAt(pos++);
         }
 
         private void expect(char ch) {
-            if (pos >= input.length()) throw error("Expected '" + ch + "'");
-            if (next() != ch) throw error("Expected '" + ch + "'");
+            if (pos >= input.length()) {
+                throw error("Expected '" + ch + "'");
+            }
+            if (next() != ch) {
+                throw error("Expected '" + ch + "'");
+            }
         }
 
         private void expect(String str) {
             for (int i = 0; i < str.length(); i++) {
-                if (pos >= input.length()) throw error("Expected '" + str + "'");
-                if (next() != str.charAt(i)) throw error("Expected '" + str + "'");
+                if (pos >= input.length()) {
+                    throw error("Expected '" + str + "'");
+                }
+                if (next() != str.charAt(i)) {
+                    throw error("Expected '" + str + "'");
+                }
             }
         }
 
@@ -369,9 +475,31 @@ public final class JSON {
             if (pos < input.length()) throw error("Expected end of input");
         }
 
+        private boolean consumeCommaOrEnd(char end) {
+            skipSpace();
+            char ch = peek();
+            if (ch == ',') {
+                next();
+                skipSpace();
+                if (peek() == end) {
+                    throw error("Expected value");
+                }
+                return true;
+            }
+            if (ch == end) {
+                next();
+                return false;
+            }
+            if (ch == '\0') {
+                throw error("Expected '" + end + "'");
+            }
+            throw error("Expected ',' or '" + end + "'");
+        }
+
         private void enterDepth() {
-            if (++depth > options.getMaxParsingDepth())
+            if (++depth > options.getMaxParsingDepth()) {
                 throw error("Maximum parsing depth exceeded");
+            }
         }
 
         private void exitDepth() {
@@ -379,57 +507,89 @@ public final class JSON {
         }
 
         private ParseException error(String msg) {
-            int errorCol = col > 1 ? col - 1 : 1;
-            return new ParseException(msg, line, errorCol);
+            LineColumn lc = lineColumnAt(pos);
+            return new ParseException(msg, pos, lc.line, lc.column, input);
         }
 
         private ParseException error(String msg, Throwable cause) {
-            return new ParseException(msg, line, col, cause);
+            LineColumn lc = lineColumnAt(pos);
+            return new ParseException(msg, pos, lc.line, lc.column, input, cause);
+        }
+
+        private LineColumn lineColumnAt(int index) {
+            int line = 1;
+            int column = 1;
+            int end = Math.min(index, input.length());
+            for (int i = 0; i < end; i++) {
+                char ch = input.charAt(i);
+                if (ch == '\n') {
+                    line++;
+                    column = 1;
+                } else {
+                    column++;
+                }
+            }
+            return new LineColumn(line, column);
         }
 
         private static boolean isDigit(char ch) {
             return ch >= '0' && ch <= '9';
         }
 
-        private static boolean isValidUnescaped(int cp) {
-            return (cp >= 0x20 && cp <= 0x21)
-                    || (cp >= 0x23 && cp <= 0x5B)
-                    || (cp >= 0x5D && cp <= 0x10FFFF);
+        private static boolean isWhitespace(char ch) {
+            return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r';
         }
     }
 
     // === Printer ===
 
-    private static void print(StringBuilder sb, Object value, boolean pretty, int indent) {
+    private static void print(
+            StringBuilder sb, Object value, boolean pretty, int indent, Set<Object> visiting) {
         if (value == null || value == NULL) {
             sb.append("null");
-        } else if (value instanceof Boolean) {
-            sb.append(value);
-        } else if (value instanceof Number) {
-            printNumber(sb, (Number) value);
-        } else if (value instanceof CharSequence) {
-            printString(sb, (CharSequence) value);
-        } else if (value instanceof List) {
-            printArray(sb, (List<?>) value, pretty, indent);
-        } else if (value instanceof Map) {
-            printObject(sb, (Map<?, ?>) value, pretty, indent);
-        } else {
-            throw new IllegalArgumentException("Cannot serialize: " + value.getClass());
+            return;
         }
+        if (value instanceof Boolean) {
+            sb.append(value);
+            return;
+        }
+        if (value instanceof Number) {
+            printNumber(sb, (Number) value);
+            return;
+        }
+        if (value instanceof CharSequence) {
+            printString(sb, (CharSequence) value);
+            return;
+        }
+        if (value instanceof List) {
+            printArray(sb, (List<?>) value, pretty, indent, visiting);
+            return;
+        }
+        if (value instanceof Map) {
+            printObject(sb, (Map<?, ?>) value, pretty, indent, visiting);
+            return;
+        }
+        throw new IllegalArgumentException("Cannot serialize: " + value.getClass());
     }
 
     private static void printNumber(StringBuilder sb, Number num) {
-        if (num instanceof Float || num instanceof Double) {
+        if (num instanceof Double || num instanceof Float) {
             double d = num.doubleValue();
             if (Double.isNaN(d) || Double.isInfinite(d)) {
                 throw new IllegalArgumentException("Cannot serialize NaN/Infinity");
             }
-            if (d == (long) d) sb.append((long) d);
-            else sb.append(d);
+            if (d == (long) d) {
+                sb.append((long) d);
+            } else {
+                sb.append(d);
+            }
         } else if (num instanceof BigDecimal) {
             BigDecimal bd = (BigDecimal) num;
-            if (bd.compareTo(BigDecimal.ZERO) == 0 && bd.signum() < 0) sb.append("-0");
-            else sb.append(bd.stripTrailingZeros().toPlainString());
+            if (bd.compareTo(BigDecimal.ZERO) == 0 && bd.signum() < 0) {
+                sb.append("-0");
+            } else {
+                sb.append(bd.stripTrailingZeros().toPlainString());
+            }
         } else {
             sb.append(num);
         }
@@ -465,8 +625,11 @@ public final class JSON {
                     sb.append("\\t");
                     break;
                 default:
-                    if (ch >= 0x20 && ch != 0x7F) sb.append(ch);
-                    else appendUnicode(sb, ch);
+                    if (ch >= 0x20 && ch != 0x7F) {
+                        sb.append(ch);
+                    } else {
+                        appendUnicode(sb, ch);
+                    }
                     break;
             }
         }
@@ -476,36 +639,76 @@ public final class JSON {
     private static void appendUnicode(StringBuilder sb, int cp) {
         sb.append("\\u");
         String hex = Integer.toHexString(cp);
-        for (int i = hex.length(); i < 4; i++) sb.append('0');
+        for (int i = hex.length(); i < 4; i++) {
+            sb.append('0');
+        }
         sb.append(hex);
     }
 
-    private static void printArray(StringBuilder sb, List<?> list, boolean pretty, int indent) {
-        sb.append('[');
-        boolean first = true;
-        for (Object elem : list) {
-            if (!first) sb.append(',');
-            if (pretty) sb.append('\n').append("  ".repeat(indent + 1));
-            print(sb, elem, pretty, indent + 1);
-            first = false;
+    private static void printArray(
+            StringBuilder sb, List<?> list, boolean pretty, int indent, Set<Object> visiting) {
+        enterContainer(list, visiting);
+        try {
+            sb.append('[');
+            boolean first = true;
+            for (Object elem : list) {
+                if (!first) {
+                    sb.append(',');
+                }
+                appendPrettyIndent(sb, pretty, indent + 1);
+                print(sb, elem, pretty, indent + 1, visiting);
+                first = false;
+            }
+            appendPrettyIndent(sb, pretty && !first, indent);
+            sb.append(']');
+        } finally {
+            exitContainer(list, visiting);
         }
-        if (pretty && !first) sb.append('\n').append("  ".repeat(indent));
-        sb.append(']');
     }
 
-    private static void printObject(StringBuilder sb, Map<?, ?> map, boolean pretty, int indent) {
-        sb.append('{');
-        boolean first = true;
-        for (Map.Entry<?, ?> entry : map.entrySet()) {
-            if (!first) sb.append(',');
-            if (pretty) sb.append('\n').append("  ".repeat(indent + 1));
-            printString(sb, (CharSequence) entry.getKey());
-            sb.append(pretty ? " : " : ":");
-            print(sb, entry.getValue(), pretty, indent + 1);
-            first = false;
+    private static void printObject(
+            StringBuilder sb, Map<?, ?> map, boolean pretty, int indent, Set<Object> visiting) {
+        enterContainer(map, visiting);
+        try {
+            sb.append('{');
+            boolean first = true;
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                if (!first) {
+                    sb.append(',');
+                }
+                appendPrettyIndent(sb, pretty, indent + 1);
+                Object key = entry.getKey();
+                if (!(key instanceof CharSequence)) {
+                    throw new IllegalArgumentException(
+                            "JSON object keys must be strings, got: "
+                                    + (key == null ? "null" : key.getClass().getName()));
+                }
+                printString(sb, (CharSequence) key);
+                sb.append(pretty ? " : " : ":");
+                print(sb, entry.getValue(), pretty, indent + 1, visiting);
+                first = false;
+            }
+            appendPrettyIndent(sb, pretty && !first, indent);
+            sb.append('}');
+        } finally {
+            exitContainer(map, visiting);
         }
-        if (pretty && !first) sb.append('\n').append("  ".repeat(indent));
-        sb.append('}');
+    }
+
+    private static void enterContainer(Object container, Set<Object> visiting) {
+        if (!visiting.add(container)) {
+            throw new IllegalArgumentException("Cannot serialize cyclic structure");
+        }
+    }
+
+    private static void exitContainer(Object container, Set<Object> visiting) {
+        visiting.remove(container);
+    }
+
+    private static void appendPrettyIndent(StringBuilder sb, boolean enabled, int indent) {
+        if (enabled) {
+            sb.append('\n').append("  ".repeat(indent));
+        }
     }
 
     // === ParseOptions ===
@@ -516,8 +719,19 @@ public final class JSON {
 
         private ParseOptions() {}
 
-        public static ParseOptions create() {
+        /** Create default parse options (BigDecimal for decimals, depth 1000). */
+        public static ParseOptions defaults() {
             return new ParseOptions();
+        }
+
+        /** Create options configured for BigDecimal decimal parsing. */
+        public static ParseOptions bigDecimal() {
+            return defaults().useBigDecimalForFloats();
+        }
+
+        /** Create options configured for Double decimal parsing. */
+        public static ParseOptions doublePrecision() {
+            return defaults().useDoubleForFloats();
         }
 
         public ParseOptions useBigDecimalForFloats() {
@@ -531,8 +745,9 @@ public final class JSON {
         }
 
         public ParseOptions maxParsingDepth(int depth) {
-            if (depth <= 0)
+            if (depth <= 0) {
                 throw new IllegalArgumentException("Maximum parsing depth must be positive");
+            }
             this.maxDepth = depth;
             return this;
         }
@@ -549,31 +764,75 @@ public final class JSON {
     // === ParseException ===
 
     public static final class ParseException extends RuntimeException {
+        private final int position;
         private final int line;
         private final int column;
 
         public ParseException(String message) {
             super(message);
+            this.position = -1;
             this.line = -1;
             this.column = -1;
         }
 
         public ParseException(String message, Throwable cause) {
             super(message, cause);
+            this.position = -1;
             this.line = -1;
             this.column = -1;
         }
 
         public ParseException(String message, int line, int column) {
             super("Line " + line + ", Column " + column + ": " + message);
+            this.position = -1;
             this.line = line;
             this.column = column;
         }
 
         public ParseException(String message, int line, int column, Throwable cause) {
             super("Line " + line + ", Column " + column + ": " + message, cause);
+            this.position = -1;
             this.line = line;
             this.column = column;
+        }
+
+        public ParseException(String message, int position, int line, int column) {
+            super(formatMessage(message, line, column, null, position));
+            this.position = position;
+            this.line = line;
+            this.column = column;
+        }
+
+        public ParseException(String message, int position, int line, int column, Throwable cause) {
+            super(formatMessage(message, line, column, null, position), cause);
+            this.position = position;
+            this.line = line;
+            this.column = column;
+        }
+
+        public ParseException(
+                String message, int position, int line, int column, CharSequence input) {
+            super(formatMessage(message, line, column, input, position));
+            this.position = position;
+            this.line = line;
+            this.column = column;
+        }
+
+        public ParseException(
+                String message,
+                int position,
+                int line,
+                int column,
+                CharSequence input,
+                Throwable cause) {
+            super(formatMessage(message, line, column, input, position), cause);
+            this.position = position;
+            this.line = line;
+            this.column = column;
+        }
+
+        public int getPosition() {
+            return position;
         }
 
         public int getLine() {
@@ -582,6 +841,36 @@ public final class JSON {
 
         public int getColumn() {
             return column;
+        }
+
+        private static String formatMessage(
+                String message, int line, int column, CharSequence input, int position) {
+            String base = "Line " + line + ", Column " + column + ": " + message;
+            if (input == null || position < 0) {
+                return base;
+            }
+
+            int start = position;
+            while (start > 0) {
+                char ch = input.charAt(start - 1);
+                if (ch == '\n' || ch == '\r') {
+                    break;
+                }
+                start--;
+            }
+
+            int end = position;
+            while (end < input.length()) {
+                char ch = input.charAt(end);
+                if (ch == '\n' || ch == '\r') {
+                    break;
+                }
+                end++;
+            }
+
+            String lineText = input.subSequence(start, end).toString();
+            int caret = Math.max(0, Math.min(position - start, lineText.length()));
+            return base + "\n" + lineText + "\n" + " ".repeat(caret) + "^";
         }
     }
 }

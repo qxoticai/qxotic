@@ -73,7 +73,7 @@ class JSONRoundTripTest {
 
         String json = JSON.stringify(special, false);
         List<?> parsed =
-                (List<?>) JSON.parse(json, JSON.ParseOptions.create().useBigDecimalForFloats());
+                (List<?>) JSON.parse(json, JSON.ParseOptions.defaults().useBigDecimalForFloats());
         assertTrue(deepEquals(special, parsed));
     }
 
@@ -92,7 +92,7 @@ class JSONRoundTripTest {
     @Test
     void testNegativeZeroRoundTrip() {
         String json = JSON.stringify(new BigDecimal("-0"), false);
-        Object parsed = JSON.parse(json, JSON.ParseOptions.create().useBigDecimalForFloats());
+        Object parsed = JSON.parse(json, JSON.ParseOptions.defaults().useBigDecimalForFloats());
         // BigDecimal("-0") prints as "0", which parses as Long(0) in default mode
         // Even with useBigDecimalForFloats(), integers return Long
         assertEquals(0L, parsed);
@@ -104,7 +104,7 @@ class JSONRoundTripTest {
         original.put("zero", new BigDecimal("-0"));
 
         String json = JSON.stringify(original, false);
-        Object parsed = JSON.parse(json, JSON.ParseOptions.create().useBigDecimalForFloats());
+        Object parsed = JSON.parse(json, JSON.ParseOptions.defaults().useBigDecimalForFloats());
         assertTrue(deepEquals(original, parsed));
     }
 
@@ -120,7 +120,7 @@ class JSONRoundTripTest {
     void testDecimalRoundTrip() {
         BigDecimal bd = new BigDecimal("123.456789");
         String json = JSON.stringify(bd, false);
-        Object parsed = JSON.parse(json, JSON.ParseOptions.create().useBigDecimalForFloats());
+        Object parsed = JSON.parse(json, JSON.ParseOptions.defaults().useBigDecimalForFloats());
         assertEquals(bd, parsed);
     }
 
@@ -237,7 +237,7 @@ class JSONRoundTripTest {
         original.put("decimal", new BigDecimal("3.14"));
         String json = JSON.stringify(original, false);
         Map<?, ?> parsed =
-                (Map<?, ?>) JSON.parse(json, JSON.ParseOptions.create().useBigDecimalForFloats());
+                (Map<?, ?>) JSON.parse(json, JSON.ParseOptions.defaults().useBigDecimalForFloats());
         assertTrue(deepEquals(original, parsed));
     }
 

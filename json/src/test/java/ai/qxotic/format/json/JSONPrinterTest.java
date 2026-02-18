@@ -35,6 +35,15 @@ class JSONPrinterTest {
     }
 
     @Test
+    void testStringifyPrettyShortcut() {
+        Map<String, Object> obj = new LinkedHashMap<>();
+        obj.put("name", "John");
+        String json = JSON.stringifyPretty(obj);
+        assertTrue(json.contains("\n"));
+        assertTrue(json.contains("\"name\" : \"John\""));
+    }
+
+    @Test
     void testPrettyPrintArray() {
         List<Object> arr = Arrays.asList(1, 2, 3);
         String json = JSON.stringify(arr, true);
@@ -93,6 +102,19 @@ class JSONPrinterTest {
     void testFloatPrint() {
         assertEquals("1.5", JSON.stringify(1.5f, false));
         assertEquals("2", JSON.stringify(2.0f, false));
+    }
+
+    @Test
+    void testGeneralNumberPolymorphism() {
+        Number asFloat = Float.valueOf(1.25f);
+        Number asDouble = Double.valueOf(2.5d);
+        Number asInteger = Integer.valueOf(7);
+        Number asLong = Long.valueOf(9L);
+
+        assertEquals("1.25", JSON.stringify(asFloat, false));
+        assertEquals("2.5", JSON.stringify(asDouble, false));
+        assertEquals("7", JSON.stringify(asInteger, false));
+        assertEquals("9", JSON.stringify(asLong, false));
     }
 
     @Test
@@ -199,5 +221,38 @@ class JSONPrinterTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> JSON.stringify(Float.NEGATIVE_INFINITY, false));
+    }
+
+    @Test
+    void testRejectCyclicList() {
+        List<Object> list = new ArrayList<>();
+        list.add("x");
+        list.add(list);
+
+        IllegalArgumentException e =
+                assertThrows(IllegalArgumentException.class, () -> JSON.stringify(list, false));
+        assertTrue(e.getMessage().contains("cyclic"));
+    }
+
+    @Test
+    void testRejectCyclicMap() {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("self", map);
+
+        IllegalArgumentException e =
+                assertThrows(IllegalArgumentException.class, () -> JSON.stringify(map, true));
+        assertTrue(e.getMessage().contains("cyclic"));
+    }
+
+    @Test
+    void testAllowSharedReferenceWithoutCycle() {
+        List<Object> child = new ArrayList<>();
+        child.add(1L);
+
+        List<Object> root = new ArrayList<>();
+        root.add(child);
+        root.add(child);
+
+        assertEquals("[[1],[1]]", JSON.stringify(root, false));
     }
 }
