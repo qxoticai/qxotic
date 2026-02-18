@@ -387,8 +387,7 @@ public class BuilderTest extends GGUFTest {
 
         // Test getString with default throws ClassCastException for non-string
         assertThrows(
-                ClassCastException.class,
-                () -> gguf.getString("llama.context_length", "default"));
+                ClassCastException.class, () -> gguf.getString("llama.context_length", "default"));
 
         // Test round-trip
         GGUF read = readFromBytes(writeToBytes(gguf));
