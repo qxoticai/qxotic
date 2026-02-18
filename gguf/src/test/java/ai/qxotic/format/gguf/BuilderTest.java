@@ -346,6 +346,57 @@ public class BuilderTest extends GGUFTest {
     }
 
     @Test
+    public void testGetStringShortcut() throws IOException {
+        GGUF gguf =
+                Builder.newBuilder()
+                        .putString("general.name", "my-model")
+                        .putString("general.description", "A test model")
+                        .putInteger("llama.context_length", 4096)
+                        .build();
+
+        // Test getString returns correct value
+        assertEquals("my-model", gguf.getString("general.name"));
+        assertEquals("A test model", gguf.getString("general.description"));
+
+        // Test getString returns null for missing key
+        assertNull(gguf.getString("missing.key"));
+
+        // Test getString throws ClassCastException for non-string value
+        assertThrows(ClassCastException.class, () -> gguf.getString("llama.context_length"));
+
+        // Test round-trip
+        GGUF read = readFromBytes(writeToBytes(gguf));
+        assertEquals("my-model", read.getString("general.name"));
+        assertNull(read.getString("missing.key"));
+    }
+
+    @Test
+    public void testGetStringOrDefaultShortcut() throws IOException {
+        GGUF gguf =
+                Builder.newBuilder()
+                        .putString("general.name", "my-model")
+                        .putInteger("llama.context_length", 4096)
+                        .build();
+
+        // Test getString with default returns value when key exists
+        assertEquals("my-model", gguf.getString("general.name", "default"));
+
+        // Test getString with default returns default when key missing
+        assertEquals("default", gguf.getString("missing.key", "default"));
+        assertEquals("", gguf.getString("missing.key", ""));
+
+        // Test getString with default throws ClassCastException for non-string
+        assertThrows(
+                ClassCastException.class,
+                () -> gguf.getString("llama.context_length", "default"));
+
+        // Test round-trip
+        GGUF read = readFromBytes(writeToBytes(gguf));
+        assertEquals("my-model", read.getString("general.name", "default"));
+        assertEquals("default", read.getString("missing.key", "default"));
+    }
+
+    @Test
     public void testPutRemoveTensors() {
         Builder builder =
                 Builder.newBuilder()
