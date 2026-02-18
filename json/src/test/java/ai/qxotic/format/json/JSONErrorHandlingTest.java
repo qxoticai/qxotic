@@ -21,6 +21,20 @@ class JSONErrorHandlingTest {
     }
 
     @Test
+    void testErrorHasAbsolutePosition() {
+        JSON.ParseException e =
+                assertThrows(JSON.ParseException.class, () -> JSON.parse("{\"a\":,}"));
+        assertEquals(5, e.getPosition());
+    }
+
+    @Test
+    void testManualParseExceptionHasUnknownPosition() {
+        JSON.ParseException e =
+                assertThrows(JSON.ParseException.class, () -> JSON.parseArray("{\"a\":1}"));
+        assertEquals(-1, e.getPosition());
+    }
+
+    @Test
     void testErrorMessageContainsLocation() {
         JSON.ParseException e = assertThrows(JSON.ParseException.class, () -> JSON.parse("[1,2,]"));
         String message = e.getMessage();
@@ -158,6 +172,14 @@ class JSONErrorHandlingTest {
                 assertThrows(JSON.ParseException.class, () -> JSON.parse("{\"key\": 123"));
         assertTrue(e.getMessage().contains("Line"));
         assertTrue(e.getMessage().contains("Column"));
+    }
+
+    @Test
+    void testErrorMessageIncludesCaretSnippet() {
+        JSON.ParseException e =
+                assertThrows(JSON.ParseException.class, () -> JSON.parse("{\"key\":,}"));
+        assertTrue(e.getMessage().contains("^"));
+        assertTrue(e.getMessage().contains("\"key\":"));
     }
 
     @Test

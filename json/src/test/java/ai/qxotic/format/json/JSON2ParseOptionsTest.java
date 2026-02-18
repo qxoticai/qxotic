@@ -11,7 +11,7 @@ class JSON2ParseOptionsTest {
 
     @Test
     void testDefaultOptionsReturnsDoubleForFloats() {
-        Object result = JSON.parse("3.14", JSON.ParseOptions.create().useDoubleForFloats());
+        Object result = JSON.parse("3.14", JSON.ParseOptions.defaults().useDoubleForFloats());
         assertTrue(
                 result instanceof Double, "Expected Double, got: " + result.getClass().getName());
         assertEquals(3.14, result);
@@ -19,7 +19,7 @@ class JSON2ParseOptionsTest {
 
     @Test
     void testUseBigDecimalForFloats() {
-        Object result = JSON.parse("3.14", JSON.ParseOptions.create().useBigDecimalForFloats());
+        Object result = JSON.parse("3.14", JSON.ParseOptions.defaults().useBigDecimalForFloats());
         assertTrue(
                 result instanceof BigDecimal,
                 "Expected BigDecimal, got: " + result.getClass().getName());
@@ -35,7 +35,7 @@ class JSON2ParseOptionsTest {
 
     @Test
     void testIntegersReturnLongRegardlessOfOptions() {
-        Object result = JSON.parse("42", JSON.ParseOptions.create().useBigDecimalForFloats());
+        Object result = JSON.parse("42", JSON.ParseOptions.defaults().useBigDecimalForFloats());
         assertTrue(result instanceof Long, "Expected Long, got: " + result.getClass().getName());
     }
 
@@ -49,19 +49,19 @@ class JSON2ParseOptionsTest {
 
     @Test
     void testNegativeZeroInDoubleMode() {
-        Object result = JSON.parse("-0", JSON.ParseOptions.create().useBigDecimalForFloats());
+        Object result = JSON.parse("-0", JSON.ParseOptions.defaults().useBigDecimalForFloats());
         assertTrue(result instanceof BigDecimal);
     }
 
     @Test
     void testDefaultMaxParsingDepth() {
-        JSON.ParseOptions options = JSON.ParseOptions.create();
+        JSON.ParseOptions options = JSON.ParseOptions.defaults();
         assertEquals(1000, options.getMaxParsingDepth());
     }
 
     @Test
     void testCustomMaxParsingDepth() {
-        JSON.ParseOptions options = JSON.ParseOptions.create().maxParsingDepth(100);
+        JSON.ParseOptions options = JSON.ParseOptions.defaults().maxParsingDepth(100);
         assertEquals(100, options.getMaxParsingDepth());
     }
 
@@ -69,11 +69,11 @@ class JSON2ParseOptionsTest {
     void testMaxParsingDepthTooLowThrows() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> JSON.ParseOptions.create().maxParsingDepth(0));
+                () -> JSON.ParseOptions.defaults().maxParsingDepth(0));
 
         assertThrows(
                 IllegalArgumentException.class,
-                () -> JSON.ParseOptions.create().maxParsingDepth(-1));
+                () -> JSON.ParseOptions.defaults().maxParsingDepth(-1));
     }
 
     @Test
@@ -94,7 +94,7 @@ class JSON2ParseOptionsTest {
                         () ->
                                 JSON.parse(
                                         sb.toString(),
-                                        JSON.ParseOptions.create().maxParsingDepth(50)));
+                                        JSON.ParseOptions.defaults().maxParsingDepth(50)));
         assertTrue(e.getMessage().contains("Maximum parsing depth exceeded"));
     }
 
@@ -110,7 +110,7 @@ class JSON2ParseOptionsTest {
             sb.append("}");
         }
 
-        Object result = JSON.parse(sb.toString(), JSON.ParseOptions.create().maxParsingDepth(50));
+        Object result = JSON.parse(sb.toString(), JSON.ParseOptions.defaults().maxParsingDepth(50));
         assertNotNull(result);
     }
 
@@ -132,7 +132,7 @@ class JSON2ParseOptionsTest {
                         () ->
                                 JSON.parse(
                                         sb.toString(),
-                                        JSON.ParseOptions.create().maxParsingDepth(25)));
+                                        JSON.ParseOptions.defaults().maxParsingDepth(25)));
         assertTrue(e.getMessage().contains("Maximum parsing depth exceeded"));
     }
 
@@ -141,7 +141,7 @@ class JSON2ParseOptionsTest {
         Object result =
                 JSON.parse(
                         "3.14",
-                        JSON.ParseOptions.create().useBigDecimalForFloats().maxParsingDepth(500));
+                        JSON.ParseOptions.defaults().useBigDecimalForFloats().maxParsingDepth(500));
 
         assertTrue(result instanceof BigDecimal);
     }
@@ -165,20 +165,20 @@ class JSON2ParseOptionsTest {
 
     @Test
     void testExponentWithBigDecimal() {
-        Object result = JSON.parse("1.5e10", JSON.ParseOptions.create().useBigDecimalForFloats());
+        Object result = JSON.parse("1.5e10", JSON.ParseOptions.defaults().useBigDecimalForFloats());
         assertTrue(result instanceof BigDecimal);
     }
 
     @Test
     void testExponentWithDouble() {
-        Object result = JSON.parse("1.5e10", JSON.ParseOptions.create().useDoubleForFloats());
+        Object result = JSON.parse("1.5e10", JSON.ParseOptions.defaults().useDoubleForFloats());
         assertTrue(
                 result instanceof Double, "Expected Double, got: " + result.getClass().getName());
     }
 
     @Test
     void testZeroWithBigDecimal() {
-        Object result = JSON.parse("0.0", JSON.ParseOptions.create().useBigDecimalForFloats());
+        Object result = JSON.parse("0.0", JSON.ParseOptions.defaults().useBigDecimalForFloats());
         assertTrue(result instanceof BigDecimal);
         assertEquals(new BigDecimal("0"), result);
     }
@@ -186,7 +186,7 @@ class JSON2ParseOptionsTest {
     @Test
     void testPrecisionPreservedInBigDecimalMode() {
         String json = "0.123456789012345678901234567890";
-        Object result = JSON.parse(json, JSON.ParseOptions.create().useBigDecimalForFloats());
+        Object result = JSON.parse(json, JSON.ParseOptions.defaults().useBigDecimalForFloats());
         assertTrue(result instanceof BigDecimal);
         assertEquals(new BigDecimal("0.123456789012345678901234567890"), result);
     }
@@ -195,7 +195,7 @@ class JSON2ParseOptionsTest {
     void testSimpleObjectWithOptions() {
         String json = "{\"name\":\"John\",\"value\":3.14}";
         Map<?, ?> result =
-                (Map<?, ?>) JSON.parse(json, JSON.ParseOptions.create().useBigDecimalForFloats());
+                (Map<?, ?>) JSON.parse(json, JSON.ParseOptions.defaults().useBigDecimalForFloats());
 
         assertEquals("John", result.get("name"));
         assertEquals(new BigDecimal("3.14"), result.get("value"));
@@ -205,7 +205,7 @@ class JSON2ParseOptionsTest {
     void testSimpleArrayWithOptions() {
         String json = "[1, 2.5, 3]";
         List<?> result =
-                (List<?>) JSON.parse(json, JSON.ParseOptions.create().useBigDecimalForFloats());
+                (List<?>) JSON.parse(json, JSON.ParseOptions.defaults().useBigDecimalForFloats());
 
         assertEquals(1L, result.get(0));
         assertEquals(new BigDecimal("2.5"), result.get(1));
@@ -214,15 +214,42 @@ class JSON2ParseOptionsTest {
 
     @Test
     void testStaticCreateMethod() {
-        JSON.ParseOptions options = JSON.ParseOptions.create();
+        JSON.ParseOptions options = JSON.ParseOptions.defaults();
         assertNotNull(options);
         assertEquals(1000, options.getMaxParsingDepth());
     }
 
     @Test
+    void testDefaultsFactoryMethod() {
+        JSON.ParseOptions options = JSON.ParseOptions.defaults();
+        assertNotNull(options);
+        assertEquals(1000, options.getMaxParsingDepth());
+        assertTrue(options.shouldUseBigDecimal());
+    }
+
+    @Test
+    void testBigDecimalPreset() {
+        JSON.ParseOptions options = JSON.ParseOptions.bigDecimal();
+        assertTrue(options.shouldUseBigDecimal());
+    }
+
+    @Test
+    void testDoublePrecisionPreset() {
+        JSON.ParseOptions options = JSON.ParseOptions.doublePrecision();
+        assertFalse(options.shouldUseBigDecimal());
+    }
+
+    @Test
+    void testNullOptionsRejected() {
+        IllegalArgumentException e =
+                assertThrows(IllegalArgumentException.class, () -> JSON.parse("3.14", null));
+        assertTrue(e.getMessage().contains("options must not be null"));
+    }
+
+    @Test
     void testChainedOptions() {
         JSON.ParseOptions options =
-                JSON.ParseOptions.create()
+                JSON.ParseOptions.defaults()
                         .useBigDecimalForFloats()
                         .maxParsingDepth(200)
                         .useBigDecimalForFloats();

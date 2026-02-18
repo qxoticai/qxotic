@@ -94,7 +94,7 @@ class JSONNumberTest {
 
     @Test
     void testExponentNegative() {
-        Object parsed = JSON.parse("1E-2", JSON.ParseOptions.create().useBigDecimalForFloats());
+        Object parsed = JSON.parse("1E-2", JSON.ParseOptions.defaults().useBigDecimalForFloats());
         assertTrue(parsed instanceof BigDecimal);
     }
 

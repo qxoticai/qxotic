@@ -49,7 +49,7 @@ class JSONEdgeCaseTests {
         assertEquals(new BigDecimal("1E-307"), JSON.parse("1e-307"));
 
         // Test with BigDecimal mode
-        Object parsed = JSON.parse("1e308", JSON.ParseOptions.create().useBigDecimalForFloats());
+        Object parsed = JSON.parse("1e308", JSON.ParseOptions.defaults().useBigDecimalForFloats());
         assertTrue(parsed instanceof BigDecimal);
         assertEquals(0, new BigDecimal("1E+308").compareTo((BigDecimal) parsed));
     }
@@ -69,11 +69,11 @@ class JSONEdgeCaseTests {
     @Test
     void testNumberTrailingDecimalZerosPreservedInBigDecimalMode() {
         // In BigDecimal mode, trailing zeros should be preserved except for zero values
-        Object parsed = JSON.parse("1.500", JSON.ParseOptions.create().useBigDecimalForFloats());
+        Object parsed = JSON.parse("1.500", JSON.ParseOptions.defaults().useBigDecimalForFloats());
         assertTrue(parsed instanceof BigDecimal);
         assertEquals(new BigDecimal("1.500"), parsed);
 
-        parsed = JSON.parse("1.500e2", JSON.ParseOptions.create().useBigDecimalForFloats());
+        parsed = JSON.parse("1.500e2", JSON.ParseOptions.defaults().useBigDecimalForFloats());
         assertTrue(parsed instanceof BigDecimal);
         assertEquals(new BigDecimal("150.0"), parsed);
     }
@@ -81,7 +81,7 @@ class JSONEdgeCaseTests {
     @Test
     void testNumberVeryPreciseDecimal() {
         String precise = "0.1234567890123456789012345678901234567890";
-        Object parsed = JSON.parse(precise, JSON.ParseOptions.create().useBigDecimalForFloats());
+        Object parsed = JSON.parse(precise, JSON.ParseOptions.defaults().useBigDecimalForFloats());
         assertTrue(parsed instanceof BigDecimal);
         assertEquals(new BigDecimal(precise), parsed);
     }
@@ -245,7 +245,7 @@ class JSONEdgeCaseTests {
                         () ->
                                 JSON.parse(
                                         sb.toString(),
-                                        JSON.ParseOptions.create().maxParsingDepth(100)));
+                                        JSON.ParseOptions.defaults().maxParsingDepth(100)));
         assertNotNull(e.getMessage());
     }
 
@@ -255,7 +255,7 @@ class JSONEdgeCaseTests {
         IllegalArgumentException e =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> JSON.ParseOptions.create().maxParsingDepth(0));
+                        () -> JSON.ParseOptions.defaults().maxParsingDepth(0));
         assertTrue(e.getMessage().contains("Maximum parsing depth must be positive"));
     }
 
@@ -265,7 +265,7 @@ class JSONEdgeCaseTests {
         IllegalArgumentException e =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> JSON.ParseOptions.create().maxParsingDepth(-1));
+                        () -> JSON.ParseOptions.defaults().maxParsingDepth(-1));
         assertTrue(e.getMessage().contains("Maximum parsing depth must be positive"));
     }
 
@@ -370,7 +370,7 @@ class JSONEdgeCaseTests {
     @Test
     void testParseOptionsChaining() {
         JSON.ParseOptions options =
-                JSON.ParseOptions.create()
+                JSON.ParseOptions.defaults()
                         .useBigDecimalForFloats()
                         .maxParsingDepth(500)
                         .useDoubleForFloats(); // Should override BigDecimal
@@ -455,7 +455,7 @@ class JSONEdgeCaseTests {
         original.put("bigdecimal", new BigDecimal("1234567890.12345678901234567890"));
 
         String json = JSON.stringify(original, false);
-        Object parsed = JSON.parse(json, JSON.ParseOptions.create().useBigDecimalForFloats());
+        Object parsed = JSON.parse(json, JSON.ParseOptions.defaults().useBigDecimalForFloats());
 
         // Compare values
         Map<?, ?> parsedMap = (Map<?, ?>) parsed;

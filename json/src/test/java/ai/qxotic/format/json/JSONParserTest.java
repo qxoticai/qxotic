@@ -186,4 +186,74 @@ class JSONParserTest {
         assertEquals(true, JSON.parse("true"));
         assertSame(JSON.NULL, JSON.parse("null"));
     }
+
+    @Test
+    void testParseObjectTyped() {
+        Map<String, Object> obj = JSON.parseObject("{\"name\":\"John\",\"age\":30}");
+        assertEquals("John", obj.get("name"));
+        assertEquals(30L, obj.get("age"));
+    }
+
+    @Test
+    void testParseArrayTyped() {
+        List<Object> arr = JSON.parseArray("[1,\"two\",true]");
+        assertEquals(3, arr.size());
+        assertEquals(1L, arr.get(0));
+        assertEquals("two", arr.get(1));
+        assertEquals(true, arr.get(2));
+    }
+
+    @Test
+    void testParseObjectTypedRejectsNonObjectRoot() {
+        JSON.ParseException e =
+                assertThrows(JSON.ParseException.class, () -> JSON.parseObject("[1,2,3]"));
+        assertTrue(e.getMessage().contains("Expected JSON object at root"));
+    }
+
+    @Test
+    void testParseArrayTypedRejectsNonArrayRoot() {
+        JSON.ParseException e =
+                assertThrows(JSON.ParseException.class, () -> JSON.parseArray("{\"a\":1}"));
+        assertTrue(e.getMessage().contains("Expected JSON array at root"));
+    }
+
+    @Test
+    void testParseStringTyped() {
+        assertEquals("hello", JSON.parseString("\"hello\""));
+    }
+
+    @Test
+    void testParseStringTypedRejectsNonStringRoot() {
+        JSON.ParseException e =
+                assertThrows(JSON.ParseException.class, () -> JSON.parseString("123"));
+        assertTrue(e.getMessage().contains("Expected JSON string at root"));
+    }
+
+    @Test
+    void testParseNumberTyped() {
+        assertEquals(123L, JSON.parseNumber("123"));
+        assertEquals(3.14, JSON.parseNumber("3.14").doubleValue());
+    }
+
+    @Test
+    void testParseNumberTypedRejectsNonNumberRoot() {
+        JSON.ParseException e =
+                assertThrows(JSON.ParseException.class, () -> JSON.parseNumber("true"));
+        assertTrue(e.getMessage().contains("Expected JSON number at root"));
+    }
+
+    @Test
+    void testParseRejectsNullInput() {
+        IllegalArgumentException e =
+                assertThrows(IllegalArgumentException.class, () -> JSON.parse((CharSequence) null));
+        assertTrue(e.getMessage().contains("json must not be null"));
+    }
+
+    @Test
+    void testIsValid() {
+        assertTrue(JSON.isValid("{\"a\":1}"));
+        assertTrue(JSON.isValid("[1,2,3]"));
+        assertFalse(JSON.isValid("{\"a\":}"));
+        assertFalse(JSON.isValid(null));
+    }
 }
