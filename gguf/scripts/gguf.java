@@ -1,7 +1,7 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
 //DEPS ai.qxotic:gguf:0.1-SNAPSHOT
-//DEPS info.picocli:picocli:4.7.6
-//DEPS info.picocli:picocli-codegen:4.7.6
+//DEPS info.picocli:picocli:4.7.7
+//DEPS info.picocli:picocli-codegen:4.7.7
 //JAVAC_OPTIONS -proc:full
 //NATIVE_OPTIONS --no-fallback -H:+ReportExceptionStackTraces
 
