@@ -77,11 +77,16 @@ public final class TensorEntry {
      * @return the GGML data type
      */
     public GGMLType ggmlType() {
-        return ggmlType;
+        return this.ggmlType;
     }
 
+    /**
+     * Alias for {@link #ggmlType()}.
+     *
+     * @return the GGML data type
+     */
     public GGMLType type() {
-        return ggmlType();
+        return this.ggmlType;
     }
 
     /**
@@ -91,7 +96,18 @@ public final class TensorEntry {
      * @return the byte offset of the tensor data
      */
     public long offset() {
-        return offset;
+        return this.offset;
+    }
+
+    /**
+     * Returns the byte size required to store this tensor's data.
+     *
+     * <p>This is a convenience method equivalent to {@code ggmlType().byteSizeForShape(shape())}.
+     *
+     * @return the byte size of the tensor data
+     */
+    public long byteSize() {
+        return this.ggmlType.byteSizeForShape(this.shape);
     }
 
     /**
