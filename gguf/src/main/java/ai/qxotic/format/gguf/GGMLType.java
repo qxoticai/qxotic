@@ -137,50 +137,51 @@ public enum GGMLType {
     // ============================================================
 
     /**
-     * Importance-weighted quantization 2-bit, extra-extra-small. Uses lookup tables for very compact 2-bit
-     * representation. Elements per block: 256, Block byte size: 66 bytes (2.0625 bpw).
+     * Importance-weighted quantization 2-bit, extra-extra-small. Uses lookup tables for very
+     * compact 2-bit representation. Elements per block: 256, Block byte size: 66 bytes (2.0625
+     * bpw).
      */
     IQ2_XXS(66, 256),
 
     /**
-     * Importance-weighted quantization 2-bit, extra-small. Elements per block: 256, Block byte size: 74 bytes
-     * (2.3125 bpw).
+     * Importance-weighted quantization 2-bit, extra-small. Elements per block: 256, Block byte
+     * size: 74 bytes (2.3125 bpw).
      */
     IQ2_XS(74, 256),
 
     /**
-     * Importance-weighted quantization 3-bit, extra-extra-small. Elements per block: 256, Block byte size: 98
-     * bytes (3.0625 bpw).
+     * Importance-weighted quantization 3-bit, extra-extra-small. Elements per block: 256, Block
+     * byte size: 98 bytes (3.0625 bpw).
      */
     IQ3_XXS(98, 256),
 
     /**
-     * Importance-weighted quantization 1-bit, small. Elements per block: 256, Block byte size: 50 bytes
-     * (1.5625 bpw).
+     * Importance-weighted quantization 1-bit, small. Elements per block: 256, Block byte size: 50
+     * bytes (1.5625 bpw).
      */
     IQ1_S(50, 256),
 
     /**
-     * Importance-weighted quantization 4-bit, non-linear. Uses a 32-element block like Q4_0 but with
-     * non-linear quantization. Elements per block: 32, Block byte size: 18 bytes (4.5 bpw).
+     * Importance-weighted quantization 4-bit, non-linear. Uses a 32-element block like Q4_0 but
+     * with non-linear quantization. Elements per block: 32, Block byte size: 18 bytes (4.5 bpw).
      */
     IQ4_NL(18, 32),
 
     /**
-     * Importance-weighted quantization 3-bit, small. Elements per block: 256, Block byte size: 110 bytes
-     * (3.4375 bpw).
+     * Importance-weighted quantization 3-bit, small. Elements per block: 256, Block byte size: 110
+     * bytes (3.4375 bpw).
      */
     IQ3_S(110, 256),
 
     /**
-     * Importance-weighted quantization 2-bit, small. Elements per block: 256, Block byte size: 82 bytes
-     * (2.5625 bpw).
+     * Importance-weighted quantization 2-bit, small. Elements per block: 256, Block byte size: 82
+     * bytes (2.5625 bpw).
      */
     IQ2_S(82, 256),
 
     /**
-     * Importance-weighted quantization 4-bit, extra-small. Elements per block: 256, Block byte size: 136
-     * bytes (4.25 bpw).
+     * Importance-weighted quantization 4-bit, extra-small. Elements per block: 256, Block byte
+     * size: 136 bytes (4.25 bpw).
      */
     IQ4_XS(136, 256),
 
@@ -207,8 +208,8 @@ public enum GGMLType {
     F64(8, 1),
 
     /**
-     * Importance-weighted quantization 1-bit, medium. Elements per block: 256, Block byte size: 56 bytes
-     * (1.75 bpw).
+     * Importance-weighted quantization 1-bit, medium. Elements per block: 256, Block byte size: 56
+     * bytes (1.75 bpw).
      */
     IQ1_M(56, 256),
 

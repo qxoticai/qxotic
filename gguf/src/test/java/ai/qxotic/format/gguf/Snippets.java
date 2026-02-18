@@ -15,10 +15,10 @@ import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 
 /**
- * Code snippets for GGUF documentation.
- * Snippet markers use pymdownx.snippets format: [start:name] / [end:name]
- * 
- * These methods are not tests - they exist to ensure snippets compile.
+ * Code snippets for GGUF documentation. Snippet markers use pymdownx.snippets format: [start:name]
+ * / [end:name]
+ *
+ * <p>These methods are not tests - they exist to ensure snippets compile.
  */
 @SuppressWarnings("unused")
 class Snippets {
@@ -68,11 +68,15 @@ class Snippets {
 
     // --8<-- [start:read-from-huggingface]
     static GGUF readFromHuggingFace(String user, String repo, String filename) throws IOException {
-        URL url = new URL("https://huggingface.co/%s/%s/resolve/main/%s".formatted(user, repo, filename));
+        URL url =
+                new URL(
+                        "https://huggingface.co/%s/%s/resolve/main/%s"
+                                .formatted(user, repo, filename));
         try (var channel = Channels.newChannel(new BufferedInputStream(url.openStream()))) {
             return GGUF.read(channel);
         }
     }
+
     // --8<-- [end:read-from-huggingface]
 
     void basicInfo() throws IOException {
@@ -125,7 +129,12 @@ class Snippets {
         GGUF gguf = GGUF.read(Path.of("model.gguf"));
         // --8<-- [start:tensor-access]
         for (TensorEntry tensor : gguf.getTensors()) {
-            System.out.println(tensor.name() + ": " + tensor.ggmlType() + " " + Arrays.toString(tensor.shape()));
+            System.out.println(
+                    tensor.name()
+                            + ": "
+                            + tensor.ggmlType()
+                            + " "
+                            + Arrays.toString(tensor.shape()));
         }
         // --8<-- [end:tensor-access]
     }
@@ -149,7 +158,7 @@ class Snippets {
         long byteSize = tensor.byteSize();
 
         try (var raf = new RandomAccessFile("model.gguf", "r");
-             var channel = raf.getChannel()) {
+                var channel = raf.getChannel()) {
             var buffer = channel.map(FileChannel.MapMode.READ_ONLY, absoluteOffset, byteSize);
             buffer.order(ByteOrder.nativeOrder());
             // buffer now contains the raw tensor data
@@ -186,10 +195,11 @@ class Snippets {
     void writeChannel() throws IOException {
         GGUF gguf = GGUF.read(Path.of("model.gguf"));
         // --8<-- [start:write-channel]
-        try (WritableByteChannel channel = Files.newByteChannel(
-                Path.of("output.gguf"),
-                StandardOpenOption.CREATE,
-                StandardOpenOption.WRITE)) {
+        try (WritableByteChannel channel =
+                Files.newByteChannel(
+                        Path.of("output.gguf"),
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.WRITE)) {
             GGUF.write(gguf, channel);
         }
         // --8<-- [end:write-channel]
@@ -197,12 +207,18 @@ class Snippets {
 
     void builderCreate() throws IOException {
         // --8<-- [start:builder-create]
-        Builder builder = Builder.newBuilder()
-                .putString("general.name", "my-model")
-                .putString("general.architecture", "llama")
-                .putInteger("llama.context_length", 4096)
-                .putFloat("llama.rope.freq_base", 10000.0f)
-                .putTensor(TensorEntry.create("token_embd.weight", new long[]{32000, 4096}, GGMLType.F16, 0));
+        Builder builder =
+                Builder.newBuilder()
+                        .putString("general.name", "my-model")
+                        .putString("general.architecture", "llama")
+                        .putInteger("llama.context_length", 4096)
+                        .putFloat("llama.rope.freq_base", 10000.0f)
+                        .putTensor(
+                                TensorEntry.create(
+                                        "token_embd.weight",
+                                        new long[] {32000, 4096},
+                                        GGMLType.F16,
+                                        0));
 
         GGUF newGguf = builder.build();
         GGUF.write(newGguf, Path.of("model.gguf"));
@@ -212,9 +228,10 @@ class Snippets {
     void builderModify() throws IOException {
         // --8<-- [start:builder-modify]
         GGUF existing = GGUF.read(Path.of("model.gguf"));
-        Builder builder = Builder.newBuilder(existing)
-                .putString("general.description", "Modified model")
-                .removeKey("old_key");
+        Builder builder =
+                Builder.newBuilder(existing)
+                        .putString("general.description", "Modified model")
+                        .removeKey("old_key");
 
         GGUF modified = builder.build();
         // --8<-- [end:builder-modify]
@@ -222,9 +239,8 @@ class Snippets {
 
     void builderAlignment() {
         // --8<-- [start:builder-alignment]
-        Builder builder = Builder.newBuilder()
-                .setAlignment(64)
-                .putString("general.name", "aligned-model");
+        Builder builder =
+                Builder.newBuilder().setAlignment(64).putString("general.name", "aligned-model");
         // --8<-- [end:builder-alignment]
     }
 }

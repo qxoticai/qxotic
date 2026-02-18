@@ -39,7 +39,7 @@ This library lets you read and write GGUF files from Java. It handles the format
 === "Mill"
 
     ```scala
-    ivy"ai.qxotic::gguf:0.1-SNAPSHOT"
+    mvn"ai.qxotic:gguf:0.1-SNAPSHOT"
     ```
 
 ## Reading GGUF Files

@@ -100,6 +100,27 @@ public final class TensorEntry {
     }
 
     /**
+     * Returns the absolute byte offset where this tensor's data begins in the GGUF file.
+     *
+     * <p>This is a convenience method equivalent to {@code gguf.getTensorDataOffset() +
+     * this.offset()}.
+     *
+     * <p>Example usage when reading tensor data:
+     *
+     * <pre>{@code
+     * TensorEntry tensor = gguf.getTensor("weights");
+     * long absoluteOffset = tensor.absoluteOffset(gguf);
+     * // Use absoluteOffset to read from file channel
+     * }</pre>
+     *
+     * @param gguf the GGUF instance containing this tensor
+     * @return the absolute byte offset in the file
+     */
+    public long absoluteOffset(GGUF gguf) {
+        return gguf.getTensorDataOffset() + this.offset;
+    }
+
+    /**
      * Returns the byte size required to store this tensor's data.
      *
      * <p>This is a convenience method equivalent to {@code ggmlType().byteSizeForShape(shape())}.
