@@ -1,7 +1,9 @@
 package ai.qxotic.format.gguf;
 
 import ai.qxotic.format.gguf.impl.ImplAccessor;
+import java.io.BufferedInputStream;
 import java.io.IOException;
+import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.WritableByteChannel;
 import java.nio.file.Files;
@@ -246,7 +248,7 @@ public interface GGUF {
      */
     static GGUF read(Path modelPath) throws IOException {
         try (ReadableByteChannel byteChannel =
-                Files.newByteChannel(modelPath, StandardOpenOption.READ)) {
+                Channels.newChannel(new BufferedInputStream(Files.newInputStream(modelPath)))) {
             return read(byteChannel);
         }
     }
