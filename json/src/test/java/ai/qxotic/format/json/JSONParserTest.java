@@ -244,9 +244,7 @@ class JSONParserTest {
 
     @Test
     void testParseRejectsNullInput() {
-        IllegalArgumentException e =
-                assertThrows(IllegalArgumentException.class, () -> JSON.parse((CharSequence) null));
-        assertTrue(e.getMessage().contains("json must not be null"));
+        assertThrows(NullPointerException.class, () -> JSON.parse((CharSequence) null));
     }
 
     @Test
@@ -254,6 +252,6 @@ class JSONParserTest {
         assertTrue(JSON.isValid("{\"a\":1}"));
         assertTrue(JSON.isValid("[1,2,3]"));
         assertFalse(JSON.isValid("{\"a\":}"));
-        assertFalse(JSON.isValid(null));
+        assertThrows(NullPointerException.class, () -> JSON.isValid((CharSequence) null));
     }
 }

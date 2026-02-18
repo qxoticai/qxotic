@@ -8,10 +8,13 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /** Beautiful, minimal JSON parser and printer. RFC 8259 compliant, elegant, and fast. */
 public final class JSON {
+
+    private JSON() {}
 
     /** JSON null distinct from Java null. */
     public static final Object NULL =
@@ -24,87 +27,137 @@ public final class JSON {
 
     // === Public API ===
 
-    /** Parse JSON string into Java objects. */
+    /** Parse JSON into Java values using default options. */
     public static Object parse(CharSequence json) {
-        return parse(json, ParseOptions.defaults());
+        return parse(json, options());
     }
 
-    /** Parse JSON with custom options. */
+    /** Create mutable default parse options. */
+    public static ParseOptions options() {
+        return ParseOptions.defaults();
+    }
+
+    /**
+     * Parse JSON into Java values with custom options.
+     *
+     * @throws NullPointerException when {@code json} or {@code options} is null
+     */
     public static Object parse(CharSequence json, ParseOptions options) {
-        requireJsonInput(json);
-        if (options == null) {
-            throw new IllegalArgumentException("options must not be null");
-        }
+        Objects.requireNonNull(json, "json");
+        Objects.requireNonNull(options, "options");
         Parser p = new Parser(json, options);
         Object result = p.parseValue();
         p.expectEnd();
         return result;
     }
 
-    /** Returns true if input is valid JSON. */
+    /** Return true when input is valid JSON with default options. */
     public static boolean isValid(CharSequence json) {
-        if (json == null) {
-            return false;
-        }
+        return isValid(json, options());
+    }
+
+    /**
+     * Return true when input is valid JSON for the given options.
+     *
+     * @throws NullPointerException when {@code json} or {@code options} is null
+     */
+    public static boolean isValid(CharSequence json, ParseOptions options) {
+        Objects.requireNonNull(json, "json");
+        Objects.requireNonNull(options, "options");
         try {
-            parse(json);
+            parse(json, options);
             return true;
         } catch (ParseException e) {
             return false;
         }
     }
 
-    /** Parse JSON and require an object root. */
-    public static Map<String, Object> parseObject(CharSequence json) {
-        return parseObject(json, ParseOptions.defaults());
+    /** Return true when value is the JSON null sentinel ({@link #NULL}). */
+    public static boolean isNull(Object value) {
+        return value == NULL;
     }
 
-    /** Parse JSON with custom options and require an object root. */
+    /** Parse JSON and require an object root. */
+    public static Map<String, Object> parseObject(CharSequence json) {
+        return parseObject(json, options());
+    }
+
+    /**
+     * Parse JSON with custom options and require an object root.
+     *
+     * @throws NullPointerException when {@code json} or {@code options} is null
+     */
     public static Map<String, Object> parseObject(CharSequence json, ParseOptions options) {
         return castObject(requireRootType(parse(json, options), Map.class, "object"));
     }
 
     /** Parse JSON and require an array root. */
     public static List<Object> parseArray(CharSequence json) {
-        return parseArray(json, ParseOptions.defaults());
+        return parseArray(json, options());
     }
 
-    /** Parse JSON with custom options and require an array root. */
+    /**
+     * Parse JSON with custom options and require an array root.
+     *
+     * @throws NullPointerException when {@code json} or {@code options} is null
+     */
     public static List<Object> parseArray(CharSequence json, ParseOptions options) {
         return castArray(requireRootType(parse(json, options), List.class, "array"));
     }
 
     /** Parse JSON and require a string root. */
     public static String parseString(CharSequence json) {
-        return parseString(json, ParseOptions.defaults());
+        return parseString(json, options());
     }
 
-    /** Parse JSON with custom options and require a string root. */
+    /**
+     * Parse JSON with custom options and require a string root.
+     *
+     * @throws NullPointerException when {@code json} or {@code options} is null
+     */
     public static String parseString(CharSequence json, ParseOptions options) {
         return (String) requireRootType(parse(json, options), String.class, "string");
     }
 
     /** Parse JSON and require a number root. */
     public static Number parseNumber(CharSequence json) {
-        return parseNumber(json, ParseOptions.defaults());
+        return parseNumber(json, options());
     }
 
-    /** Parse JSON with custom options and require a number root. */
+    /**
+     * Parse JSON with custom options and require a number root.
+     *
+     * @throws NullPointerException when {@code json} or {@code options} is null
+     */
     public static Number parseNumber(CharSequence json, ParseOptions options) {
         return (Number) requireRootType(parse(json, options), Number.class, "number");
     }
 
-    /** Convert Java object to compact JSON string. */
+    /** Parse JSON and require a boolean root. */
+    public static boolean parseBoolean(CharSequence json) {
+        return parseBoolean(json, options());
+    }
+
+    /**
+     * Parse JSON with custom options and require a boolean root.
+     *
+     * @throws NullPointerException when {@code json} or {@code options} is null
+     */
+    public static boolean parseBoolean(CharSequence json, ParseOptions options) {
+        return (Boolean) requireRootType(parse(json, options), Boolean.class, "boolean");
+    }
+
+    /** Serialize Java value to compact JSON. */
     public static String stringify(Object value) {
         return stringify(value, false);
     }
 
-    /** Convert Java object to pretty JSON string. */
+    /** Serialize Java value to pretty JSON. */
     public static String stringifyPretty(Object value) {
         return stringify(value, true);
     }
 
-    /** Convert to JSON with optional pretty-printing. */
+    /** Serialize Java value to JSON, optionally pretty-printed. */
     public static String stringify(Object value, boolean pretty) {
         StringBuilder sb = new StringBuilder();
         Set<Object> visiting = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -120,12 +173,6 @@ public final class JSON {
     @SuppressWarnings("unchecked")
     private static List<Object> castArray(Object value) {
         return (List<Object>) value;
-    }
-
-    private static void requireJsonInput(CharSequence json) {
-        if (json == null) {
-            throw new IllegalArgumentException("json must not be null");
-        }
     }
 
     private static Object requireRootType(Object value, Class<?> rootType, String typeName) {
@@ -325,7 +372,11 @@ public final class JSON {
                     String key = parseString();
                     skipSpace();
                     expect(':');
-                    map.put(key, parseValue());
+                    Object value = parseValue();
+                    if (options.failOnDuplicateKeys() && map.containsKey(key)) {
+                        throw error("Duplicate key: '" + key + "'");
+                    }
+                    map.put(key, value);
                     if (!consumeCommaOrEnd('}')) {
                         break;
                     }
@@ -406,7 +457,7 @@ public final class JSON {
                 }
             }
 
-            if (options.shouldUseBigDecimal()) {
+            if (options.decimalsAsBigDecimal()) {
                 return parseBigDecimal(numberLexeme);
             }
 
@@ -497,7 +548,7 @@ public final class JSON {
         }
 
         private void enterDepth() {
-            if (++depth > options.getMaxParsingDepth()) {
+            if (++depth > options.maxDepth()) {
                 throw error("Maximum parsing depth exceeded");
             }
         }
@@ -714,37 +765,38 @@ public final class JSON {
     // === ParseOptions ===
 
     public static final class ParseOptions {
-        private boolean useBigDecimal = true;
-        private int maxDepth = 1000;
+        /** Default maximum object/array nesting depth. */
+        public static final int DEFAULT_MAX_DEPTH = 1000;
+
+        private boolean decimalsAsBigDecimal = true;
+        private int maxDepth = DEFAULT_MAX_DEPTH;
+        private boolean failOnDuplicateKeys;
 
         private ParseOptions() {}
 
-        /** Create default parse options (BigDecimal for decimals, depth 1000). */
+        /** Create default parse options. */
         public static ParseOptions defaults() {
             return new ParseOptions();
         }
 
-        /** Create options configured for BigDecimal decimal parsing. */
-        public static ParseOptions bigDecimal() {
-            return defaults().useBigDecimalForFloats();
+        /** Create strict parse options that reject duplicate object keys. */
+        public static ParseOptions strict() {
+            return defaults().failOnDuplicateKeys(true);
         }
 
-        /** Create options configured for Double decimal parsing. */
-        public static ParseOptions doublePrecision() {
-            return defaults().useDoubleForFloats();
+        /** Create fast parse options that decode decimals as {@code Double}. */
+        public static ParseOptions fast() {
+            return defaults().decimalsAsBigDecimal(false);
         }
 
-        public ParseOptions useBigDecimalForFloats() {
-            this.useBigDecimal = true;
+        /** Set whether decimals parse as {@code BigDecimal} (true) or {@code Double} (false). */
+        public ParseOptions decimalsAsBigDecimal(boolean enabled) {
+            this.decimalsAsBigDecimal = enabled;
             return this;
         }
 
-        public ParseOptions useDoubleForFloats() {
-            this.useBigDecimal = false;
-            return this;
-        }
-
-        public ParseOptions maxParsingDepth(int depth) {
+        /** Set maximum object/array nesting depth. Must be positive. */
+        public ParseOptions maxDepth(int depth) {
             if (depth <= 0) {
                 throw new IllegalArgumentException("Maximum parsing depth must be positive");
             }
@@ -752,12 +804,25 @@ public final class JSON {
             return this;
         }
 
-        public boolean shouldUseBigDecimal() {
-            return useBigDecimal;
+        /** Set whether duplicate object keys are rejected. */
+        public ParseOptions failOnDuplicateKeys(boolean enabled) {
+            this.failOnDuplicateKeys = enabled;
+            return this;
         }
 
-        public int getMaxParsingDepth() {
+        /** Return whether decimals parse as {@code BigDecimal}. */
+        public boolean decimalsAsBigDecimal() {
+            return decimalsAsBigDecimal;
+        }
+
+        /** Return maximum object/array nesting depth. */
+        public int maxDepth() {
             return maxDepth;
+        }
+
+        /** Return whether duplicate object keys are rejected. */
+        public boolean failOnDuplicateKeys() {
+            return failOnDuplicateKeys;
         }
     }
 
@@ -782,43 +847,12 @@ public final class JSON {
             this.column = -1;
         }
 
-        public ParseException(String message, int line, int column) {
-            super("Line " + line + ", Column " + column + ": " + message);
-            this.position = -1;
-            this.line = line;
-            this.column = column;
-        }
-
-        public ParseException(String message, int line, int column, Throwable cause) {
-            super("Line " + line + ", Column " + column + ": " + message, cause);
-            this.position = -1;
-            this.line = line;
-            this.column = column;
-        }
-
-        public ParseException(String message, int position, int line, int column) {
-            super(formatMessage(message, line, column, null, position));
-            this.position = position;
-            this.line = line;
-            this.column = column;
-        }
-
-        public ParseException(String message, int position, int line, int column, Throwable cause) {
-            super(formatMessage(message, line, column, null, position), cause);
-            this.position = position;
-            this.line = line;
-            this.column = column;
-        }
-
-        public ParseException(
+        private ParseException(
                 String message, int position, int line, int column, CharSequence input) {
-            super(formatMessage(message, line, column, input, position));
-            this.position = position;
-            this.line = line;
-            this.column = column;
+            this(message, position, line, column, input, null);
         }
 
-        public ParseException(
+        private ParseException(
                 String message,
                 int position,
                 int line,

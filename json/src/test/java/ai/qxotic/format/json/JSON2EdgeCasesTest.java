@@ -19,7 +19,7 @@ class JSON2EdgeCasesTest {
         // Test large decimal with BigDecimal mode
         String largeDec = "12345678901234567890.12345678901234567890";
         Object bdParsed =
-                JSON.parse(largeDec, JSON.ParseOptions.defaults().useBigDecimalForFloats());
+                JSON.parse(largeDec, JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
         assertTrue(bdParsed instanceof BigDecimal);
         assertEquals(new BigDecimal(largeDec), bdParsed);
     }
@@ -118,13 +118,13 @@ class JSON2EdgeCasesTest {
     @Test
     void testNegativeZero() {
         // Test with BigDecimal mode
-        Object parsed = JSON.parse("-0", JSON.ParseOptions.defaults().useBigDecimalForFloats());
+        Object parsed = JSON.parse("-0", JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
         assertTrue(parsed instanceof BigDecimal);
         assertEquals(0, ((BigDecimal) parsed).compareTo(BigDecimal.ZERO));
         String stringified = JSON.stringify(parsed);
         assertEquals("0", stringified);
 
-        parsed = JSON.parse("-0.0", JSON.ParseOptions.defaults().useBigDecimalForFloats());
+        parsed = JSON.parse("-0.0", JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
         assertTrue(parsed instanceof BigDecimal);
         stringified = JSON.stringify(parsed);
         // stripTrailingZeros() removes .0

@@ -78,7 +78,7 @@ class JSONPerformanceSecurityTest {
         assertNotNull(e.getMessage());
 
         // Should work with increased max depth
-        JSON.ParseOptions options = JSON.ParseOptions.defaults().maxParsingDepth(2000);
+        JSON.ParseOptions options = JSON.ParseOptions.defaults().maxDepth(2000);
         result = JSON.parse(sb2.toString(), options);
         assertNotNull(result);
     }
@@ -288,7 +288,7 @@ class JSONPerformanceSecurityTest {
     void testParseOptionsMemorySafety() {
         // Test that ParseOptions doesn't cause memory issues
         JSON.ParseOptions options =
-                JSON.ParseOptions.defaults().useBigDecimalForFloats().maxParsingDepth(5000);
+                JSON.ParseOptions.defaults().decimalsAsBigDecimal(true).maxDepth(5000);
 
         // Large structure with increased depth
         StringBuilder sb = new StringBuilder();

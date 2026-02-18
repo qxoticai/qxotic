@@ -615,8 +615,7 @@ class JSONTestSuiteComplianceTest {
                         JSON.ParseException.class,
                         () ->
                                 JSON.parse(
-                                        sb.toString(),
-                                        JSON.ParseOptions.defaults().maxParsingDepth(100)));
+                                        sb.toString(), JSON.ParseOptions.defaults().maxDepth(100)));
         assertNotNull(e.getMessage());
     }
 }
