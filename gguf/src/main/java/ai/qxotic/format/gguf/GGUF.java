@@ -146,6 +146,34 @@ public interface GGUF {
     }
 
     /**
+     * Gets a string value for the given key.
+     *
+     * <p>This is a convenience method equivalent to {@code getValue(String.class, key)}.
+     *
+     * @param key the metadata key
+     * @return the string value, or null if the key doesn't exist
+     * @throws ClassCastException if the value is not a string
+     */
+    default String getString(String key) {
+        return getValue(String.class, key);
+    }
+
+    /**
+     * Gets a string value for the given key, or returns the default value if the key is not found.
+     *
+     * <p>This is a convenience method equivalent to {@code getValueOrDefault(String.class, key,
+     * defaultValue)}.
+     *
+     * @param key the metadata key
+     * @param defaultValue the default value to return if key is not found
+     * @return the string value, or defaultValue if the key doesn't exist
+     * @throws ClassCastException if the value is not a string
+     */
+    default String getString(String key, String defaultValue) {
+        return getValueOrDefault(String.class, key, defaultValue);
+    }
+
+    /**
      * Checks if a metadata key exists.
      *
      * @param key the metadata key to check
