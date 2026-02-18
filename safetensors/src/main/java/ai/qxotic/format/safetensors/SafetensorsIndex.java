@@ -8,8 +8,7 @@ import java.util.Collection;
 /**
  * Index for locating tensors across one or more safetensors files.
  *
- * <p>Handles both single-file and sharded models transparently. For sharded models, uses lazy
- * loading to parse files only when accessed.
+ * <p>Handles both single-file and sharded models transparently.
  */
 public interface SafetensorsIndex {
     /** Returns the model root directory. */
@@ -31,12 +30,12 @@ public interface SafetensorsIndex {
     Collection<String> getTensorNames();
 
     /**
-     * Loads a safetensors model directory.
+     * Loads a Safetensors index from a directory or a single {@code .safetensors} file.
      *
-     * <p>For single-file models, parses the file immediately. For sharded models, only parses the
-     * index.json and loads individual files lazily on access.
+     * <p>For single-file models, scans tensor names from the file. For sharded models, reads the
+     * index.json and maps tensor names to shard paths.
      *
-     * @param rootPath the model root directory
+     * @param rootPath model directory or single {@code .safetensors} file path
      * @return the index
      * @throws IOException if I/O error or missing required files
      */

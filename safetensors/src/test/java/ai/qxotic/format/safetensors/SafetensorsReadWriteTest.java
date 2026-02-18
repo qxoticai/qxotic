@@ -53,6 +53,51 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
     }
 
     @Test
+    public void testTensorAbsoluteOffset() throws IOException {
+        // Create a Safetensors with tensor data offset
+        Safetensors st =
+                Builder.newBuilder()
+                        .putMetadataKey("format", "pt")
+                        .putTensor(TensorEntry.create("tensor1", DType.F32, new long[] {1}, 0))
+                        .putTensor(TensorEntry.create("tensor2", DType.F32, new long[] {1}, 128))
+                        .build();
+
+        TensorEntry tensor1 = st.getTensor("tensor1");
+        TensorEntry tensor2 = st.getTensor("tensor2");
+
+        // absoluteOffset = tensorDataOffset + tensor.byteOffset()
+        long expectedAbsolute1 = st.getTensorDataOffset() + tensor1.byteOffset();
+        long expectedAbsolute2 = st.getTensorDataOffset() + tensor2.byteOffset();
+
+        assertEquals(expectedAbsolute1, tensor1.absoluteOffset(st));
+        assertEquals(expectedAbsolute2, tensor2.absoluteOffset(st));
+
+        // Verify absolute offset is correct by checking offset difference
+        assertEquals(
+                tensor2.byteOffset() - tensor1.byteOffset(),
+                tensor2.absoluteOffset(st) - tensor1.absoluteOffset(st));
+    }
+
+    @Test
+    public void testTensorAbsoluteOffsetRoundTrip() throws IOException {
+        // Build and write Safetensors
+        Safetensors original =
+                Builder.newBuilder()
+                        .putMetadataKey("key", "value")
+                        .putTensor(TensorEntry.create("weights", DType.F32, new long[] {100}, 0))
+                        .build();
+
+        // Write and read back
+        Safetensors read = readFromBytes(writeToBytes(original));
+
+        TensorEntry tensor = read.getTensor("weights");
+
+        // absoluteOffset should work correctly on deserialized Safetensors
+        long expectedAbsolute = read.getTensorDataOffset() + tensor.byteOffset();
+        assertEquals(expectedAbsolute, tensor.absoluteOffset(read));
+    }
+
+    @Test
     public void testPutNullTensor() {
         Builder builder = Builder.newBuilder();
         assertThrows(NullPointerException.class, () -> builder.putTensor(null));
@@ -236,11 +281,207 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
         assertThrows(SafetensorsFormatException.class, () -> readFromBytes(bytes));
     }
 
+    @Test
+    public void testTensorEntryMustBeObject() {
+        String json = "{\"tensor\":123}";
+        assertThrows(
+                SafetensorsFormatException.class,
+                () -> readFromBytes(createSafetensorsBytes(json)));
+    }
+
+    @Test
+    public void testDataOffsetsBeginGreaterThanEndRejected() {
+        String json = "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[10],\"data_offsets\":[40,0]}}";
+        assertThrows(
+                SafetensorsFormatException.class,
+                () -> readFromBytes(createSafetensorsBytes(json)));
+    }
+
+    @Test
+    public void testEmptyHeaderIsValid() throws IOException {
+        Safetensors st = readFromBytes(createSafetensorsBytes("{}"));
+        assertTrue(st.getMetadata().isEmpty());
+        assertTrue(st.getTensors().isEmpty());
+    }
+
+    @Test
+    public void testUnknownTensorFieldRejected() {
+        String json =
+                "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[10],\"data_offsets\":[0,40],\"extra\":1}}";
+        assertThrows(
+                SafetensorsFormatException.class,
+                () -> readFromBytes(createSafetensorsBytes(json)));
+    }
+
+    @Test
+    public void testMissingTensorFieldsRejected() {
+        String missingDType = "{\"tensor\":{\"shape\":[10],\"data_offsets\":[0,40]}}";
+        String missingShape = "{\"tensor\":{\"dtype\":\"F32\",\"data_offsets\":[0,40]}}";
+        String missingOffsets = "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[10]}}";
+
+        assertThrows(
+                SafetensorsFormatException.class,
+                () -> readFromBytes(createSafetensorsBytes(missingDType)));
+        assertThrows(
+                SafetensorsFormatException.class,
+                () -> readFromBytes(createSafetensorsBytes(missingShape)));
+        assertThrows(
+                SafetensorsFormatException.class,
+                () -> readFromBytes(createSafetensorsBytes(missingOffsets)));
+    }
+
+    @Test
+    public void testUnsupportedDTypeRejected() {
+        String json = "{\"tensor\":{\"dtype\":\"F128\",\"shape\":[10],\"data_offsets\":[0,40]}}";
+        assertThrows(
+                SafetensorsFormatException.class,
+                () -> readFromBytes(createSafetensorsBytes(json)));
+    }
+
+    @Test
+    public void testNonIntegerNumericValuesRejected() {
+        String nonIntegerShape =
+                "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[10.5],\"data_offsets\":[0,40]}}";
+        String nonIntegerOffsets =
+                "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[10],\"data_offsets\":[0,40.5]}}";
+
+        assertThrows(
+                SafetensorsFormatException.class,
+                () -> readFromBytes(createSafetensorsBytes(nonIntegerShape)));
+        assertThrows(
+                SafetensorsFormatException.class,
+                () -> readFromBytes(createSafetensorsBytes(nonIntegerOffsets)));
+    }
+
+    @Test
+    public void testSizeTBoundsRejected() {
+        String negativeShape =
+                "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[-1],\"data_offsets\":[0,40]}}";
+        String tooLargeShape =
+                "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[281474976710656],\"data_offsets\":[0,40]}}";
+        String negativeOffset =
+                "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[10],\"data_offsets\":[-1,40]}}";
+        String tooLargeOffset =
+                "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[10],\"data_offsets\":[0,281474976710656]}}";
+
+        assertThrows(
+                SafetensorsFormatException.class,
+                () -> readFromBytes(createSafetensorsBytes(negativeShape)));
+        assertThrows(
+                SafetensorsFormatException.class,
+                () -> readFromBytes(createSafetensorsBytes(tooLargeShape)));
+        assertThrows(
+                SafetensorsFormatException.class,
+                () -> readFromBytes(createSafetensorsBytes(negativeOffset)));
+        assertThrows(
+                SafetensorsFormatException.class,
+                () -> readFromBytes(createSafetensorsBytes(tooLargeOffset)));
+    }
+
+    @Test
+    public void testMetadataMustBeStringMap() {
+        String metadataNotObject =
+                "{\"__metadata__\":\"bad\",\"tensor\":{\"dtype\":\"F32\",\"shape\":[10],\"data_offsets\":[0,40]}}";
+        String metadataNonStringValue =
+                "{\"__metadata__\":{\"x\":1},\"tensor\":{\"dtype\":\"F32\",\"shape\":[10],\"data_offsets\":[0,40]}}";
+
+        assertThrows(
+                SafetensorsFormatException.class,
+                () -> readFromBytes(createSafetensorsBytes(metadataNotObject)));
+        assertThrows(
+                SafetensorsFormatException.class,
+                () -> readFromBytes(createSafetensorsBytes(metadataNonStringValue)));
+    }
+
+    @Test
+    public void testMetadataInvalidAlignmentRejected() {
+        String metadataInvalidAlignment =
+                "{\"__metadata__\":{\"__alignment__\":\"abc\"},\"tensor\":{\"dtype\":\"F32\",\"shape\":[10],\"data_offsets\":[0,40]}}";
+        String metadataNonPowerOfTwoAlignment =
+                "{\"__metadata__\":{\"__alignment__\":\"3\"},\"tensor\":{\"dtype\":\"F32\",\"shape\":[10],\"data_offsets\":[0,40]}}";
+        String metadataZeroAlignment =
+                "{\"__metadata__\":{\"__alignment__\":\"0\"},\"tensor\":{\"dtype\":\"F32\",\"shape\":[10],\"data_offsets\":[0,40]}}";
+
+        assertThrows(
+                SafetensorsFormatException.class,
+                () -> readFromBytes(createSafetensorsBytes(metadataInvalidAlignment)));
+        assertThrows(
+                SafetensorsFormatException.class,
+                () -> readFromBytes(createSafetensorsBytes(metadataNonPowerOfTwoAlignment)));
+        assertThrows(
+                SafetensorsFormatException.class,
+                () -> readFromBytes(createSafetensorsBytes(metadataZeroAlignment)));
+    }
+
+    @Test
+    public void testHeaderDoesNotPersistDefaultAlignment() throws IOException {
+        Safetensors st = Builder.newBuilder().setAlignment(32).build();
+        String header = readHeaderJson(writeToBytes(st));
+        assertFalse(header.contains("\"__alignment__\""));
+    }
+
+    @Test
+    public void testHeaderPersistsCustomAlignment() throws IOException {
+        Safetensors st = Builder.newBuilder().setAlignment(64).build();
+        String header = readHeaderJson(writeToBytes(st));
+        assertTrue(header.contains("\"__alignment__\""));
+        assertTrue(header.contains("\"64\""));
+    }
+
+    @Test
+    public void testToStringIncludesMetadataAndTensors() {
+        Safetensors st =
+                Builder.newBuilder()
+                        .putMetadataKey("format", "pt")
+                        .putTensor(TensorEntry.create("weight", DType.F32, new long[] {2, 2}, 0))
+                        .build();
+
+        String text = st.toString();
+        assertTrue(text.contains("Safetensors {"));
+        assertTrue(text.contains("\"__metadata__\""));
+        assertTrue(text.contains("format"));
+        assertTrue(text.contains("weight"));
+        assertTrue(text.contains("F32"));
+    }
+
+    @Test
+    public void testDuplicateMetadataKeyLastWins() throws IOException {
+        String json =
+                "{"
+                        + "\"__metadata__\":{\"format\":\"pt\",\"format\":\"tf\"},"
+                        + "\"tensor\":{\"dtype\":\"F32\",\"shape\":[10],\"data_offsets\":[0,40]}"
+                        + "}";
+
+        Safetensors st = readFromBytes(createSafetensorsBytes(json));
+        assertEquals("tf", st.getMetadata().get("format"));
+    }
+
+    @Test
+    public void testDuplicateTensorKeyLastWins() throws IOException {
+        String json =
+                "{"
+                        + "\"tensor\":{\"dtype\":\"F32\",\"shape\":[1],\"data_offsets\":[0,4]},"
+                        + "\"tensor\":{\"dtype\":\"F32\",\"shape\":[10],\"data_offsets\":[0,40]}"
+                        + "}";
+
+        Safetensors st = readFromBytes(createSafetensorsBytes(json));
+        TensorEntry tensor = st.getTensor("tensor");
+        assertArrayEquals(new long[] {10}, tensor.shape());
+        assertEquals(40, tensor.byteSize());
+    }
+
     private byte[] createSafetensorsBytes(String json) {
         byte[] headerBytes = json.getBytes(StandardCharsets.UTF_8);
         byte[] bytes = new byte[8 + headerBytes.length];
         ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).putLong(headerBytes.length);
         System.arraycopy(headerBytes, 0, bytes, 8, headerBytes.length);
         return bytes;
+    }
+
+    private String readHeaderJson(byte[] safetensorsBytes) {
+        int headerSize =
+                Math.toIntExact(
+                        ByteBuffer.wrap(safetensorsBytes).order(ByteOrder.LITTLE_ENDIAN).getLong());
+        return new String(safetensorsBytes, 8, headerSize, StandardCharsets.UTF_8);
     }
 }

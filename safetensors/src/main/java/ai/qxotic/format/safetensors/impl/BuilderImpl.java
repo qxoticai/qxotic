@@ -4,9 +4,12 @@ import ai.qxotic.format.safetensors.Builder;
 import ai.qxotic.format.safetensors.DType;
 import ai.qxotic.format.safetensors.Safetensors;
 import ai.qxotic.format.safetensors.TensorEntry;
-import java.util.*;
-import java.util.function.Function;
-import java.util.stream.Collectors;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 final class BuilderImpl implements Builder {
 
@@ -22,15 +25,14 @@ final class BuilderImpl implements Builder {
     }
 
     private static Map<String, TensorEntry> fromCollection(Collection<TensorEntry> tensors) {
-        return tensors.stream()
-                .collect(
-                        Collectors.toMap(
-                                TensorEntry::name,
-                                Function.identity(),
-                                (a, b) -> {
-                                    throw new IllegalArgumentException("duplicated tensor names");
-                                },
-                                LinkedHashMap::new));
+        Map<String, TensorEntry> map = new LinkedHashMap<>();
+        for (TensorEntry tensor : tensors) {
+            TensorEntry previous = map.put(tensor.name(), tensor);
+            if (previous != null) {
+                throw new IllegalArgumentException("duplicated tensor name: " + tensor.name());
+            }
+        }
+        return map;
     }
 
     @Override
@@ -58,10 +60,15 @@ final class BuilderImpl implements Builder {
     }
 
     private BuilderImpl setTensors(Map<String, TensorEntry> newTensorEntries) {
-        // Must preserve insertion order.
-        assert newTensorEntries instanceof LinkedHashMap;
-        assert newTensorEntries.entrySet().stream()
-                .allMatch(e -> e.getKey().equals(e.getValue().name()));
+        if (!(newTensorEntries instanceof LinkedHashMap)) {
+            throw new IllegalArgumentException("tensor map must preserve insertion order");
+        }
+        boolean namesMatch =
+                newTensorEntries.entrySet().stream()
+                        .allMatch(e -> e.getKey().equals(e.getValue().name()));
+        if (!namesMatch) {
+            throw new IllegalArgumentException("tensor map keys must match tensor names");
+        }
         this.tensorEntries = newTensorEntries;
         return this;
     }
@@ -123,18 +130,17 @@ final class BuilderImpl implements Builder {
 
     private Map<String, TensorEntry> computeTensorOffsets() {
         long tensorOffset = 0;
-        Map<String, TensorEntry> newTensorEntries = new LinkedHashMap<>();
+        Map<String, TensorEntry> reindexed = new LinkedHashMap<>();
         for (Map.Entry<String, TensorEntry> entry : tensorEntries.entrySet()) {
             // Add padding, tensor start must be aligned.
             tensorOffset += WriterImpl.padding(tensorOffset, getAlignment());
             String name = entry.getKey();
             TensorEntry tensorEntry = entry.getValue();
             DType dType = tensorEntry.dtype();
-            newTensorEntries.put(
-                    name, TensorEntry.create(name, dType, tensorEntry.shape(), tensorOffset));
+            reindexed.put(name, TensorEntry.create(name, dType, tensorEntry.shape(), tensorOffset));
             long byteSize = dType.byteSizeForShape(tensorEntry.shape());
             tensorOffset += byteSize;
         }
-        return newTensorEntries;
+        return reindexed;
     }
 }

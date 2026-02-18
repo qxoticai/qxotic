@@ -234,6 +234,41 @@ public class SafetensorsIndexTest extends SafetensorsTest {
     }
 
     @Test
+    public void testIndexRootMustBeObject(@TempDir Path tempDir) throws IOException {
+        Files.writeString(tempDir.resolve("model.safetensors.index.json"), "[]");
+        assertThrows(SafetensorsFormatException.class, () -> SafetensorsIndex.load(tempDir));
+    }
+
+    @Test
+    public void testDuplicateWeightMapKeyLastWins(@TempDir Path tempDir) throws IOException {
+        Path shard1 = tempDir.resolve("model-00001-of-00002.safetensors");
+        Path shard2 = tempDir.resolve("model-00002-of-00002.safetensors");
+
+        Safetensors st1 =
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("other", DType.F32, new long[] {1}, 0))
+                        .build();
+        Safetensors st2 =
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("target", DType.F32, new long[] {1}, 0))
+                        .build();
+        Safetensors.write(st1, shard1);
+        Safetensors.write(st2, shard2);
+
+        String indexJson =
+                "{"
+                        + "\"weight_map\":{"
+                        + "\"target\":\"model-00001-of-00002.safetensors\","
+                        + "\"target\":\"model-00002-of-00002.safetensors\""
+                        + "}"
+                        + "}";
+        Files.writeString(tempDir.resolve("model.safetensors.index.json"), indexJson);
+
+        SafetensorsIndex index = SafetensorsIndex.load(tempDir);
+        assertEquals(shard2, index.getSafetensorsPath("target"));
+    }
+
+    @Test
     public void testEmptySafetensors(@TempDir Path tempDir) throws IOException {
         // Create empty safetensors file (no tensors)
         Path modelFile = tempDir.resolve("model.safetensors");

@@ -21,6 +21,15 @@ public final class TensorEntry {
         this.byteOffset = byteOffset;
     }
 
+    /**
+     * Creates a tensor entry.
+     *
+     * @param name tensor name
+     * @param dtype tensor data type
+     * @param shape tensor shape (empty array means scalar)
+     * @param offset byte offset relative to tensor data section start
+     * @return immutable tensor entry
+     */
     public static TensorEntry create(String name, DType dtype, long[] shape, long offset) {
         return new TensorEntry(
                 Objects.requireNonNull(name),
@@ -29,22 +38,60 @@ public final class TensorEntry {
                 offset);
     }
 
+    /**
+     * @return tensor name
+     */
     public String name() {
         return name;
     }
 
+    /**
+     * @return tensor data type
+     */
     public DType dtype() {
         return dtype;
     }
 
+    /**
+     * Returns tensor shape.
+     *
+     * @return defensive copy of the shape array
+     */
     public long[] shape() {
         return shape.clone();
     }
 
+    /**
+     * @return byte offset relative to the tensor data section start
+     */
     public long byteOffset() {
         return byteOffset;
     }
 
+    /**
+     * Returns the absolute byte offset where this tensor's data begins in the safetensors file.
+     *
+     * <p>This is a convenience method equivalent to {@code safetensors.getTensorDataOffset() +
+     * this.byteOffset()}.
+     *
+     * <p>Example usage when reading tensor data:
+     *
+     * <pre>{@code
+     * TensorEntry tensor = safetensors.getTensor("weights");
+     * long absoluteOffset = tensor.absoluteOffset(safetensors);
+     * // Use absoluteOffset to read from file channel
+     * }</pre>
+     *
+     * @param safetensors the Safetensors instance containing this tensor
+     * @return the absolute byte offset in the file
+     */
+    public long absoluteOffset(Safetensors safetensors) {
+        return safetensors.getTensorDataOffset() + this.byteOffset;
+    }
+
+    /**
+     * @return total number of elements implied by {@link #shape()}
+     */
     public long totalNumberOfElements() {
         return DType.totalNumberOfElements(shape);
     }
@@ -67,7 +114,7 @@ public final class TensorEntry {
 
     @Override
     public String toString() {
-        return "TensorInfo{"
+        return "TensorEntry{"
                 + "name="
                 + name
                 + ", dtype="
@@ -81,6 +128,9 @@ public final class TensorEntry {
                 + '}';
     }
 
+    /**
+     * @return tensor payload size in bytes
+     */
     public long byteSize() {
         return dtype.byteSizeForShape(shape);
     }

@@ -6,13 +6,14 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Builder interface for the Safetensors format.
+ * Builder interface for Safetensors headers.
  *
- * @see <a href="https://github.com/ggerganov/ggml/blob/master/docs/gguf.md">GGUF format
- *     specification</a>
+ * <p>Builds {@link Safetensors} instances containing metadata and tensor entries.
+ *
+ * @see <a href="https://github.com/huggingface/safetensors">Safetensors specification</a>
  */
 public interface Builder extends Cloneable {
-    /** Creates a new {@link Builder} from an existing GGUF instance. */
+    /** Creates a new {@link Builder} from an existing Safetensors instance. */
     static Builder newBuilder(Safetensors safetensors) {
         return ImplAccessor.newBuilder(safetensors);
     }
@@ -22,31 +23,36 @@ public interface Builder extends Cloneable {
         return ImplAccessor.newBuilder();
     }
 
-    /** Builds a GGUF instance with automatic tensor offset computation. */
+    /** Builds a Safetensors instance with automatic tensor offset computation. */
     default Safetensors build() {
         return build(true);
     }
 
     /**
-     * Builds a GGUF instance.
+     * Builds a Safetensors instance.
      *
      * @param recomputeTensorOffsets if true, tensor offsets will be automatically re-computed,
      *     packed in the same order and respecting the alignment
+     * @return immutable {@link Safetensors} view of the current builder content
      */
     Safetensors build(boolean recomputeTensorOffsets);
 
-    /** Creates and returns a copy of this object. */
+    /**
+     * Creates a deep copy of this builder.
+     *
+     * @return cloned builder with independent metadata and tensor maps
+     */
     Builder clone();
 
     /**
-     * Sets the alignment value for tensor data.
+     * Sets the alignment value for tensor payload.
      *
      * @throws IllegalArgumentException if alignment is not a power of 2
      */
     default Builder setAlignment(int newAlignment) {
-        if (newAlignment < 0 || Integer.bitCount(newAlignment) != 1) {
+        if (!ImplAccessor.isValidAlignment(newAlignment)) {
             throw new IllegalArgumentException(
-                    "alignment must be a power of 2 but was " + newAlignment);
+                    "alignment must be a positive power of 2 but was " + newAlignment);
         }
         if (newAlignment == ImplAccessor.defaultAlignment()) {
             removeMetadataKey(ImplAccessor.alignmentKey());
@@ -56,28 +62,60 @@ public interface Builder extends Cloneable {
         return this;
     }
 
-    /** Gets the current alignment value or the default if not set. */
+    /**
+     * Returns the current alignment.
+     *
+     * <p>If {@code __alignment__} is absent from metadata, returns the default value.
+     *
+     * @return alignment in bytes
+     * @throws IllegalArgumentException if metadata contains an invalid alignment value
+     */
     default int getAlignment() {
         String alignment = getMetadataValue(ImplAccessor.alignmentKey());
         if (alignment != null) {
-            return Integer.parseInt(alignment);
+            return ImplAccessor.parseAlignment(alignment);
         }
         return ImplAccessor.defaultAlignment();
     }
 
-    /** Adds or updates a tensor. */
+    /**
+     * Adds or replaces a tensor entry by name.
+     *
+     * @param tensorEntry tensor descriptor to store
+     * @return this builder
+     */
     Builder putTensor(TensorEntry tensorEntry);
 
-    /** Update __metadata__. */
+    /**
+     * Replaces the complete {@code __metadata__} map.
+     *
+     * @param metadata new metadata map (string keys and values)
+     * @return this builder
+     */
     Builder setMetadata(Map<String, String> metadata);
 
-    /** Removes a tensor by name. */
+    /**
+     * Removes a tensor by name.
+     *
+     * @param tensorName tensor name
+     * @return this builder
+     */
     Builder removeTensor(String tensorName);
 
-    /** Checks if a tensor exists by name. */
+    /**
+     * Checks whether a tensor exists.
+     *
+     * @param tensorName tensor name
+     * @return true if present
+     */
     boolean containsTensor(String tensorName);
 
-    /** Gets tensor information by name. */
+    /**
+     * Returns tensor information by name.
+     *
+     * @param tensorName tensor name
+     * @return tensor entry, or null if absent
+     */
     TensorEntry getTensor(String tensorName);
 
     /**
@@ -87,17 +125,40 @@ public interface Builder extends Cloneable {
      */
     Collection<TensorEntry> getTensors();
 
-    /** Gets all metadata keys, order is preserved. */
+    /**
+     * Returns all metadata as an unmodifiable map, preserving insertion order.
+     *
+     * @return metadata map
+     */
     Map<String, String> getMetadata();
 
+    /**
+     * Adds or replaces one metadata key/value pair.
+     *
+     * @param key metadata key
+     * @param value metadata value
+     * @return this builder
+     */
     Builder putMetadataKey(String key, String value);
 
+    /**
+     * Returns one metadata value.
+     *
+     * @param key metadata key
+     * @return value, or null if absent
+     */
     String getMetadataValue(String key);
 
+    /**
+     * Removes one metadata key.
+     *
+     * @param key metadata key
+     * @return this builder
+     */
     Builder removeMetadataKey(String key);
 
     /**
-     * Returns a set of all metadata keys present in the GGUF metadata, order is preserved.
+     * Returns a set of all metadata keys, order is preserved.
      *
      * @return a set containing all metadata keys
      */

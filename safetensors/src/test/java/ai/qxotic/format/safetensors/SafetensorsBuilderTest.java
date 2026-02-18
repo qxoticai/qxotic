@@ -160,6 +160,9 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
         assertThrows(IllegalArgumentException.class, () -> builder.setAlignment(-1));
         assertThrows(IllegalArgumentException.class, () -> builder.setAlignment(3));
         assertThrows(IllegalArgumentException.class, () -> builder.setAlignment(100));
+
+        builder.putMetadataKey("__alignment__", "abc");
+        assertThrows(IllegalArgumentException.class, builder::getAlignment);
     }
 
     @Test

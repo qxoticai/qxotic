@@ -33,6 +33,14 @@ public enum DType {
 
     private final int size;
 
+    /**
+     * Java primitive carrier type usually used to represent this dtype in memory.
+     *
+     * <p>For types without native Java support (for example F16/BF16), this is the closest
+     * primitive storage type.
+     *
+     * @return Java class used as primitive carrier
+     */
     public Class<?> javaType() {
         return javaType;
     }
@@ -44,18 +52,42 @@ public enum DType {
         this.javaType = javaType;
     }
 
+    /**
+     * @return number of bytes per element
+     */
     public int size() {
         return size;
     }
 
+    /**
+     * Computes payload byte size for a flat element count.
+     *
+     * @param numElements number of elements
+     * @return byte size
+     * @throws ArithmeticException on overflow
+     */
     public long byteSizeFor(long numElements) {
         return Math.multiplyExact(numElements, (long) size);
     }
 
+    /**
+     * Computes payload byte size for a tensor shape.
+     *
+     * @param shape tensor shape
+     * @return byte size
+     * @throws ArithmeticException on overflow
+     */
     public long byteSizeForShape(long[] shape) {
         return byteSizeFor(totalNumberOfElements(shape));
     }
 
+    /**
+     * Computes total number of elements for a tensor shape.
+     *
+     * @param shape tensor shape
+     * @return element count
+     * @throws ArithmeticException on overflow
+     */
     public static long totalNumberOfElements(long[] shape) {
         return Arrays.stream(shape).reduce(1L, Math::multiplyExact);
     }

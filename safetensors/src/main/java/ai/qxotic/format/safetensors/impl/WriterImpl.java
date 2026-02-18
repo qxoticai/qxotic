@@ -8,11 +8,15 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.WritableByteChannel;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 final class WriterImpl {
-    private final ByteBuffer BB_8 = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.nativeOrder());
+    private final ByteBuffer headerSizeBuffer =
+            ByteBuffer.allocate(Long.BYTES).order(ByteOrder.LITTLE_ENDIAN);
 
     private final Safetensors safetensors;
     private long totalBytesWritten;
@@ -40,15 +44,38 @@ final class WriterImpl {
         writer.writeBytes(byteChannel, headerBytes);
         // Always align, even if there are no tensors.
         writer.writePaddingWithSpaces(byteChannel, paddingSpaces);
-        assert writer.totalBytesWritten == safetensors.getTensorDataOffset();
+        if (writer.totalBytesWritten != safetensors.getTensorDataOffset()) {
+            throw new IllegalStateException("header size mismatch while writing safetensors");
+        }
     }
 
     private static byte[] getHeaderBytes(
             Map<String, String> metadata, Collection<TensorEntry> tensorEntries) {
-        Map<String, Object> json = toJSON(metadata, tensorEntries);
-        String header = JSON.stringify(json);
+        Map<String, Object> json = new LinkedHashMap<>();
+        if (metadata != null && !metadata.isEmpty()) {
+            json.put(ReaderImpl.METADATA_KEY, metadata);
+        }
+        for (TensorEntry entry : tensorEntries) {
+            long start = entry.byteOffset();
+            long end = start + entry.byteSize();
+            json.put(
+                    entry.name(),
+                    Map.of(
+                            "dtype", entry.dtype().toString(),
+                            "shape", toList(entry.shape()),
+                            "data_offsets", List.of(start, end)));
+        }
+        String header = JSON.stringify(json, false);
         byte[] headerBytes = header.getBytes(StandardCharsets.UTF_8);
         return headerBytes;
+    }
+
+    private static List<Long> toList(long[] values) {
+        List<Long> list = new java.util.ArrayList<>(values.length);
+        for (long value : values) {
+            list.add(value);
+        }
+        return list;
     }
 
     private void writeFully(WritableByteChannel byteChannel, ByteBuffer byteBuffer)
@@ -73,28 +100,7 @@ final class WriterImpl {
     }
 
     private void writeLong(WritableByteChannel byteChannel, long value) throws IOException {
-        writeFully(byteChannel, BB_8.clear().putLong(value).flip());
-    }
-
-    private static Map<String, Object> toJSON(
-            Map<String, String> metadata, Collection<TensorEntry> tensorEntries) {
-        Map<String, Object> json = new LinkedHashMap<>();
-        if (!metadata.isEmpty()) {
-            json.put(ReaderImpl.METADATA_KEY, metadata);
-        }
-        for (TensorEntry tensorEntry : tensorEntries) {
-            List<Long> shape =
-                    Arrays.stream(tensorEntry.shape()).boxed().collect(Collectors.toList());
-            long startOffset = tensorEntry.byteOffset();
-            long endOffset = startOffset + tensorEntry.byteSize();
-            json.put(
-                    tensorEntry.name(),
-                    Map.of(
-                            "dtype", tensorEntry.dtype().toString(),
-                            "shape", shape,
-                            "data_offsets", List.of(startOffset, endOffset)));
-        }
-        return json;
+        writeFully(byteChannel, headerSizeBuffer.clear().putLong(value).flip());
     }
 
     static long padding(long position, long alignment) {
