@@ -37,8 +37,15 @@ final class BuilderImpl implements Builder {
 
     @Override
     public BuilderImpl setMetadata(Map<String, String> newMetadata) {
+        Objects.requireNonNull(newMetadata, "metadata");
         // Must preserve insertion order.
-        this.metadata = new LinkedHashMap<>(newMetadata);
+        LinkedHashMap<String, String> copy = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : newMetadata.entrySet()) {
+            String key = Objects.requireNonNull(entry.getKey(), "metadata key");
+            String value = Objects.requireNonNull(entry.getValue(), "metadata value");
+            copy.put(key, value);
+        }
+        this.metadata = copy;
         return this;
     }
 
@@ -75,7 +82,7 @@ final class BuilderImpl implements Builder {
 
     @Override
     public BuilderImpl putTensor(TensorEntry tensorEntry) {
-        Objects.requireNonNull(tensorEntry);
+        Objects.requireNonNull(tensorEntry, "tensorEntry");
         this.tensorEntries.put(tensorEntry.name(), tensorEntry);
         return this;
     }
@@ -108,7 +115,8 @@ final class BuilderImpl implements Builder {
 
     @Override
     public Builder putMetadataKey(String key, String value) {
-        this.metadata.put(Objects.requireNonNull(key), Objects.requireNonNull(value));
+        this.metadata.put(
+                Objects.requireNonNull(key, "key"), Objects.requireNonNull(value, "value"));
         return this;
     }
 

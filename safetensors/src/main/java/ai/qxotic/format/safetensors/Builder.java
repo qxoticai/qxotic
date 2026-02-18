@@ -3,6 +3,7 @@ package ai.qxotic.format.safetensors;
 import ai.qxotic.format.safetensors.impl.ImplAccessor;
 import java.util.Collection;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -15,6 +16,7 @@ import java.util.Set;
 public interface Builder extends Cloneable {
     /** Creates a new {@link Builder} from an existing Safetensors instance. */
     static Builder newBuilder(Safetensors safetensors) {
+        Objects.requireNonNull(safetensors, "safetensors");
         return ImplAccessor.newBuilder(safetensors);
     }
 

@@ -32,9 +32,9 @@ public final class TensorEntry {
      */
     public static TensorEntry create(String name, DType dtype, long[] shape, long offset) {
         return new TensorEntry(
-                Objects.requireNonNull(name),
-                Objects.requireNonNull(dtype),
-                Objects.requireNonNull(shape),
+                Objects.requireNonNull(name, "name"),
+                Objects.requireNonNull(dtype, "dtype"),
+                Objects.requireNonNull(shape, "shape"),
                 offset);
     }
 
@@ -86,6 +86,7 @@ public final class TensorEntry {
      * @return the absolute byte offset in the file
      */
     public long absoluteOffset(Safetensors safetensors) {
+        Objects.requireNonNull(safetensors, "safetensors");
         return safetensors.getTensorDataOffset() + this.byteOffset;
     }
 

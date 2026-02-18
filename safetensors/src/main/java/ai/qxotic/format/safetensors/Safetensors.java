@@ -1,7 +1,9 @@
 package ai.qxotic.format.safetensors;
 
 import ai.qxotic.format.safetensors.impl.ImplAccessor;
+import java.io.BufferedInputStream;
 import java.io.IOException;
+import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.WritableByteChannel;
 import java.nio.file.Files;
@@ -9,6 +11,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Collection;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Interface for reading and writing Safetensors headers (metadata + tensor entries).
@@ -87,6 +90,7 @@ public interface Safetensors {
      * @throws IOException if I/O error or format violation
      */
     static Safetensors read(ReadableByteChannel channel) throws IOException {
+        Objects.requireNonNull(channel, "channel");
         return ImplAccessor.read(channel);
     }
 
@@ -98,7 +102,12 @@ public interface Safetensors {
      * @throws IOException if I/O error or format violation
      */
     static Safetensors read(Path path) throws IOException {
-        try (ReadableByteChannel channel = Files.newByteChannel(path, StandardOpenOption.READ)) {
+        Objects.requireNonNull(path, "path");
+        try (ReadableByteChannel channel =
+                Channels.newChannel(
+                        new BufferedInputStream(
+                                Files.newInputStream(path, StandardOpenOption.READ), 1 << 16))) {
+            // Files.newByteChannel(path, StandardOpenOption.READ)) {
             return read(channel);
         }
     }
@@ -111,6 +120,8 @@ public interface Safetensors {
      * @throws IOException if an I/O error occurs during writing
      */
     static void write(Safetensors safetensors, WritableByteChannel byteChannel) throws IOException {
+        Objects.requireNonNull(safetensors, "safetensors");
+        Objects.requireNonNull(byteChannel, "byteChannel");
         ImplAccessor.write(safetensors, byteChannel);
     }
 
@@ -122,6 +133,8 @@ public interface Safetensors {
      * @throws IOException if an I/O error occurs during writing
      */
     static void write(Safetensors safetensors, Path modelPath) throws IOException {
+        Objects.requireNonNull(safetensors, "safetensors");
+        Objects.requireNonNull(modelPath, "modelPath");
         try (WritableByteChannel byteChannel =
                 Files.newByteChannel(
                         modelPath, StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW)) {

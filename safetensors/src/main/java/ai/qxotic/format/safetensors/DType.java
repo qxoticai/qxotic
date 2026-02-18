@@ -1,6 +1,7 @@
 package ai.qxotic.format.safetensors;
 
 import java.util.Arrays;
+import java.util.Objects;
 
 /** Data types supported by the Safetensors format. */
 public enum DType {
@@ -89,6 +90,7 @@ public enum DType {
      * @throws ArithmeticException on overflow
      */
     public static long totalNumberOfElements(long[] shape) {
+        Objects.requireNonNull(shape, "shape");
         return Arrays.stream(shape).reduce(1L, Math::multiplyExact);
     }
 }
