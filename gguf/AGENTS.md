@@ -7,7 +7,7 @@ GGUF (GGML Universal Format) is a Java library for reading and writing GGUF file
 ### Key Features
 
 - Read GGUF files from paths, channels, or URLs
-- Type-safe metadata access with automatic casting
+- Type-safe metadata access
 - Tensor information with offset/size calculations
 - Builder API for creating and modifying GGUF files
 - Support for all GGML quantization types (Q4_0, Q8_0, Q2_K, etc.)

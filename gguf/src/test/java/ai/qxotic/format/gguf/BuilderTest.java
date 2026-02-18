@@ -359,6 +359,51 @@ public class BuilderTest extends GGUFTest {
     }
 
     @Test
+    public void testTensorAbsoluteOffset() throws IOException {
+        // Create a GGUF with tensor data offset
+        GGUF gguf =
+                Builder.newBuilder()
+                        .putString("general.name", "test")
+                        .putTensor(TensorEntry.create("tensor1", new long[] {1}, GGMLType.F32, 0))
+                        .putTensor(TensorEntry.create("tensor2", new long[] {1}, GGMLType.F32, 128))
+                        .build();
+
+        TensorEntry tensor1 = gguf.getTensor("tensor1");
+        TensorEntry tensor2 = gguf.getTensor("tensor2");
+
+        // absoluteOffset = tensorDataOffset + tensor.offset()
+        long expectedAbsolute1 = gguf.getTensorDataOffset() + tensor1.offset();
+        long expectedAbsolute2 = gguf.getTensorDataOffset() + tensor2.offset();
+
+        assertEquals(expectedAbsolute1, tensor1.absoluteOffset(gguf));
+        assertEquals(expectedAbsolute2, tensor2.absoluteOffset(gguf));
+
+        // Verify absolute offset is correct by checking offset difference
+        assertEquals(
+                tensor2.offset() - tensor1.offset(),
+                tensor2.absoluteOffset(gguf) - tensor1.absoluteOffset(gguf));
+    }
+
+    @Test
+    public void testTensorAbsoluteOffsetRoundTrip() throws IOException {
+        // Build and write GGUF
+        GGUF original =
+                Builder.newBuilder()
+                        .putString("key", "value")
+                        .putTensor(TensorEntry.create("weights", new long[] {100}, GGMLType.F32, 0))
+                        .build();
+
+        // Write and read back
+        GGUF read = readFromBytes(writeToBytes(original));
+
+        TensorEntry tensor = read.getTensor("weights");
+
+        // absoluteOffset should work correctly on deserialized GGUF
+        long expectedAbsolute = read.getTensorDataOffset() + tensor.offset();
+        assertEquals(expectedAbsolute, tensor.absoluteOffset(read));
+    }
+
+    @Test
     public void testBuilderKeys() {
         Builder builder = Builder.newBuilder().putString("foo", "bar");
         assertFalse(builder.containsKey("absent"));
