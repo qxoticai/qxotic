@@ -1,3 +1,3 @@
-module ai.qxotic.json {
-    exports ai.qxotic.format.json;
+module com.qxotic.json {
+    exports com.qxotic.format.json;
 }
