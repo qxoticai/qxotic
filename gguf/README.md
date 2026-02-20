@@ -1,6 +1,6 @@
 # GGUF
 
-[![Maven Central](https://img.shields.io/maven-central/v/ai.qxotic/gguf)](https://search.maven.org/artifact/ai.qxotic/gguf)
+[![Maven Central](https://img.shields.io/maven-central/v/com.qxotic/gguf)](https://search.maven.org/artifact/com.qxotic/gguf)
 [![Java](https://img.shields.io/badge/Java-11+-blue)](https://openjdk.org/projects/jdk/11/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
@@ -28,7 +28,7 @@ A pure Java library for reading and writing [GGUF](https://github.com/ggml-org/g
 
 ```xml
 <dependency>
-    <groupId>ai.qxotic</groupId>
+    <groupId>com.qxotic</groupId>
     <artifactId>gguf</artifactId>
     <version>0.1-SNAPSHOT</version>
 </dependency>

@@ -31,10 +31,7 @@ theme:
     - content.code.annotate
     - navigation.top
     - navigation.footer
-
-extra_css:
-  - stylesheets/gruvbox.css
-  - stylesheets/syntax.css
+    - toc.follow
 
 markdown_extensions:
   - pymdownx.snippets:

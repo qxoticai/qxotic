@@ -1,3 +1,3 @@
-module ai.qxotic.gguf {
-    exports ai.qxotic.format.gguf;
+module com.qxotic.gguf {
+    exports com.qxotic.format.gguf;
 }
