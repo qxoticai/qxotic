@@ -1,6 +1,6 @@
 HIP JNI stub build
 
-This builds a minimal JNI library for `ai.qxotic.jota.hip.HipRuntime`.
+This builds a minimal JNI library for `com.qxotic.jota.hip.HipRuntime`.
 It does not link against HIP yet; functions throw UnsupportedOperationException.
 
 Build:
