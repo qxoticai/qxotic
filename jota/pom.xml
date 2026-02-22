@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>ai.qxotic</groupId>
+        <groupId>com.qxotic</groupId>
         <artifactId>qxotic-parent</artifactId>
         <version>0.1-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
@@ -32,7 +32,21 @@
         </dependency>
     </dependencies>
 
-    <build/>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- Exclude C and HIP backend tests from default run - use profiles to run them -->
+                    <excludes>
+                        <exclude>**/runtime/c/*Test.java</exclude>
+                        <exclude>**/runtime/hip/*Test.java</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 
     <profiles>
         <!-- C Runtime Profile: mvn compile -Pc or mvn test -Pc -->
@@ -85,6 +99,8 @@
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-surefire-plugin</artifactId>
                         <configuration>
+                            <!-- Override default excludes -->
+                            <excludes combine.self="override"></excludes>
                             <includes>
                                 <include>**/CBackendAvailabilityTest.java</include>
                                 <include>**/CKernelSmokeTest.java</include>
@@ -167,6 +183,8 @@
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-surefire-plugin</artifactId>
                         <configuration>
+                            <!-- Override default excludes -->
+                            <excludes combine.self="override"></excludes>
                             <includes>
                                 <include>**/Hip*Test.java</include>
                                 <include>**/MemoryOperationsCrossContextTest.java</include>
