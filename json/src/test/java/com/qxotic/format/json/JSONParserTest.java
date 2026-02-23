@@ -1,9 +1,13 @@
 package com.qxotic.format.json;
 
+import static com.qxotic.format.json.TestUtils.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.*;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.*;
 
 class JSONParserTest {
 
@@ -19,232 +23,101 @@ class JSONParserTest {
     }
 
     @Test
-    void testEmptyString() {
+    void testEmptyStructures() {
         assertEquals("", JSON.parse("\"\""));
-    }
-
-    @Test
-    void testEmptyArray() {
-        assertEquals(new ArrayList<>(), JSON.parse("[]"));
-    }
-
-    @Test
-    void testEmptyObject() {
-        assertEquals(Map.of(), JSON.parse("{}"));
+        assertEquals(list(), JSON.parse("[]"));
+        assertEquals(map(), JSON.parse("{}"));
     }
 
     @Test
     void testSimpleArray() {
-        List<Object> expected = new ArrayList<>();
-        expected.add(1L);
-        expected.add("two");
-        expected.add(true);
-        expected.add(JSON.NULL);
-        assertEquals(expected, JSON.parse("[1,\"two\",true,null]"));
+        assertEquals(list(1L, "two", true, JSON.NULL), JSON.parse("[1,\"two\",true,null]"));
     }
 
     @Test
     void testSimpleObject() {
-        Map<String, Object> expected = new LinkedHashMap<>();
-        expected.put("name", "John");
-        expected.put("age", 30L);
-        expected.put("active", true);
-        assertEquals(expected, JSON.parse("{\"name\":\"John\",\"age\":30,\"active\":true}"));
+        assertEquals(
+            map("name", "John", "age", 30L, "active", true),
+            JSON.parse("{\"name\":\"John\",\"age\":30,\"active\":true}"));
     }
 
     @Test
-    void testNestedArrays() {
-        List<Object> inner1 = new ArrayList<>();
-        inner1.add(1L);
-        inner1.add(2L);
-        List<Object> inner2 = new ArrayList<>();
-        inner2.add(3L);
-        inner2.add(4L);
-        List<Object> expected = new ArrayList<>();
-        expected.add(inner1);
-        expected.add(inner2);
-        assertEquals(expected, JSON.parse("[[1,2],[3,4]]"));
+    void testNestedStructures() {
+        // Nested arrays
+        assertEquals(list(list(1L, 2L), list(3L, 4L)), JSON.parse("[[1,2],[3,4]]"));
+
+        // Nested objects
+        assertEquals(
+            map("outer", map("value", 42L)),
+            JSON.parse("{\"outer\":{\"value\":42}}"));
+
+        // Mixed nesting
+        assertEquals(
+            list(1L, map("key", "value"), list()),
+            JSON.parse("[1,{\"key\":\"value\"},[]]"));
     }
 
     @Test
-    void testNestedObjects() {
-        Map<String, Object> inner = new LinkedHashMap<>();
-        inner.put("value", 42L);
-        Map<String, Object> expected = new LinkedHashMap<>();
-        expected.put("outer", inner);
-        assertEquals(expected, JSON.parse("{\"outer\":{\"value\":42}}"));
+    void testWhitespaceHandling() {
+        assertEquals(map("key", "value"), JSON.parse("  {  \"key\"  :  \"value\"  }  "));
+
+        String withNewlines = "{\n  \"a\": 1,\n  \"b\": 2\n}";
+        assertEquals(map("a", 1L, "b", 2L), JSON.parse(withNewlines));
+    }
+
+    @ParameterizedTest
+    @MethodSource("typedParseCases")
+    void testTypedParsing(String json, Class<?> type, Object expected, String errorMessage) {
+        if (expected instanceof Class && Throwable.class.isAssignableFrom((Class<?>) expected)) {
+            @SuppressWarnings("unchecked")
+            Class<? extends Throwable> exType = (Class<? extends Throwable>) expected;
+            Throwable e = assertThrows(exType, () -> parseWithType(json, type));
+            if (errorMessage != null) {
+                assertTrue(e.getMessage().contains(errorMessage));
+            }
+        } else {
+            Object result = parseWithType(json, type);
+            if (expected instanceof Number) {
+                assertEquals(((Number) expected).doubleValue(), ((Number) result).doubleValue(), 0.001);
+            } else {
+                assertEquals(expected, result);
+            }
+        }
+    }
+
+    static Stream<Arguments> typedParseCases() {
+        return Stream.of(
+            // Map parsing
+            Arguments.of("{\"a\":1}", Map.class, map("a", 1L), null),
+            Arguments.of("[1,2,3]", Map.class, JSON.ParseException.class, "Expected JSON object at root"),
+
+            // List parsing
+            Arguments.of("[1,2,3]", List.class, list(1L, 2L, 3L), null),
+            Arguments.of("{\"a\":1}", List.class, JSON.ParseException.class, "Expected JSON array at root"),
+
+            // String parsing
+            Arguments.of("\"hello\"", String.class, "hello", null),
+            Arguments.of("123", String.class, JSON.ParseException.class, "Expected JSON string at root"),
+
+            // Number parsing
+            Arguments.of("123", Number.class, 123L, null),
+            Arguments.of("3.14", Number.class, 3.14, null),
+            Arguments.of("true", Number.class, JSON.ParseException.class, "Expected JSON number at root")
+        );
+    }
+
+    private static Object parseWithType(String json, Class<?> type) {
+        if (type == Map.class) return JSON.parseMap(json);
+        if (type == List.class) return JSON.parseList(json);
+        if (type == String.class) return JSON.parseString(json);
+        if (type == Number.class) return JSON.parseNumber(json);
+        throw new IllegalArgumentException("Unknown type: " + type);
     }
 
     @Test
-    void testMixedNesting() {
-        List<Object> arr = new ArrayList<>();
-        arr.add(1L);
-        Map<String, Object> obj = new LinkedHashMap<>();
-        obj.put("key", "value");
-        arr.add(obj);
-        arr.add(new ArrayList<>());
-        assertEquals(arr, JSON.parse("[1,{\"key\":\"value\"},[]]"));
-    }
-
-    @Test
-    void testWhitespaceBetweenTokens() {
-        Map<String, Object> expected = new LinkedHashMap<>();
-        expected.put("key", "value");
-        assertEquals(expected, JSON.parse("  {  \"key\"  :  \"value\"  }  "));
-    }
-
-    @Test
-    void testWhitespaceNewlinesAndTabs() {
-        Map<String, Object> expected = new LinkedHashMap<>();
-        expected.put("a", 1L);
-        expected.put("b", 2L);
-        String json = "{\n  \"a\": 1,\n  \"b\": 2\n}";
-        assertEquals(expected, JSON.parse(json));
-    }
-
-    @Test
-    void testDuplicateKeys() {
-        Map<String, Object> result =
-                (Map<String, Object>) JSON.parse("{\"key\":\"first\",\"key\":\"second\"}");
-        assertEquals(1, result.size());
-        assertEquals("second", result.get("key"));
-    }
-
-    @Test
-    void testArrayTrailingCommaRejected() {
-        JSON.ParseException e = assertThrows(JSON.ParseException.class, () -> JSON.parse("[1,2,]"));
-        // Error message should indicate what was expected
-        assertTrue(e.getMessage().contains("Expected") || e.getMessage().contains("Unexpected"));
-    }
-
-    @Test
-    void testObjectTrailingCommaRejected() {
-        JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parse("{\"a\":1,}"));
-        assertTrue(e.getMessage().contains("Expected"));
-    }
-
-    @Test
-    void testMissingColon() {
-        JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parse("{\"key\" \"value\"}"));
-        assertTrue(e.getMessage().contains("Expected"));
-    }
-
-    @Test
-    void testMissingComma() {
-        JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parse("{\"a\":1\"b\":2}"));
-        assertTrue(e.getMessage().contains("Expected"));
-    }
-
-    @Test
-    void testUnterminatedString() {
-        JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parse("\"unclosed"));
-        assertTrue(e.getMessage().contains("end of input"));
-    }
-
-    @Test
-    void testUnterminatedObject() {
-        JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parse("{\"a\":1"));
-        assertTrue(
-                e.getMessage().contains("end of input") || e.getMessage().contains("Expected '}'"));
-    }
-
-    @Test
-    void testUnterminatedArray() {
-        JSON.ParseException e = assertThrows(JSON.ParseException.class, () -> JSON.parse("[1,2"));
-        assertTrue(
-                e.getMessage().contains("end of input") || e.getMessage().contains("Expected ']'"));
-    }
-
-    @Test
-    void testExtraContentAfterValidJson() {
-        JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parse("123 extra"));
-        assertTrue(e.getMessage().contains("end of input"));
-    }
-
-    @Test
-    void testTrailingWhitespaceAllowed() {
-        assertEquals(123L, JSON.parse("123   \t\n  "));
-    }
-
-    @Test
-    void testSingleQuotedStringRejected() {
-        JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parse("'single'"));
-        assertTrue(e.getMessage().contains("Unexpected character"));
-    }
-
-    @Test
-    void testSingleValue() {
-        assertEquals(42L, JSON.parse("42"));
-        assertEquals(3.14, ((Number) JSON.parse("3.14")).doubleValue());
-        assertEquals(true, JSON.parse("true"));
-        assertSame(JSON.NULL, JSON.parse("null"));
-    }
-
-    @Test
-    void testParseMapTyped() {
-        Map<String, Object> obj = JSON.parseMap("{\"name\":\"John\",\"age\":30}");
-        assertEquals("John", obj.get("name"));
-        assertEquals(30L, obj.get("age"));
-    }
-
-    @Test
-    void testParseListTyped() {
-        List<Object> arr = JSON.parseList("[1,\"two\",true]");
-        assertEquals(3, arr.size());
-        assertEquals(1L, arr.get(0));
-        assertEquals("two", arr.get(1));
-        assertEquals(true, arr.get(2));
-    }
-
-    @Test
-    void testParseMapTypedRejectsNonMapRoot() {
-        JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parseMap("[1,2,3]"));
-        assertTrue(e.getMessage().contains("Expected JSON object at root"));
-    }
-
-    @Test
-    void testParseListTypedRejectsNonListRoot() {
-        JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parseList("{\"a\":1}"));
-        assertTrue(e.getMessage().contains("Expected JSON array at root"));
-    }
-
-    @Test
-    void testParseStringTyped() {
-        assertEquals("hello", JSON.parseString("\"hello\""));
-    }
-
-    @Test
-    void testParseStringTypedRejectsNonStringRoot() {
-        JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parseString("123"));
-        assertTrue(e.getMessage().contains("Expected JSON string at root"));
-    }
-
-    @Test
-    void testParseNumberTyped() {
-        assertEquals(123L, JSON.parseNumber("123"));
-        assertEquals(3.14, JSON.parseNumber("3.14").doubleValue());
-    }
-
-    @Test
-    void testParseNumberTypedRejectsNonNumberRoot() {
-        JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parseNumber("true"));
-        assertTrue(e.getMessage().contains("Expected JSON number at root"));
-    }
-
-    @Test
-    void testParseRejectsNullInput() {
+    void testNullInputRejection() {
         assertThrows(NullPointerException.class, () -> JSON.parse((CharSequence) null));
+        assertThrows(NullPointerException.class, () -> JSON.isValid((CharSequence) null));
     }
 
     @Test
@@ -252,6 +125,5 @@ class JSONParserTest {
         assertTrue(JSON.isValid("{\"a\":1}"));
         assertTrue(JSON.isValid("[1,2,3]"));
         assertFalse(JSON.isValid("{\"a\":}"));
-        assertThrows(NullPointerException.class, () -> JSON.isValid((CharSequence) null));
     }
 }

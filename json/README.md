@@ -87,3 +87,30 @@ Print:
 ## More docs
 
 See `docs/index.md` for full API examples (snippet-backed from compile-checked test code).
+
+## Benchmarks
+
+Performance benchmarks are available in the `benchmarks/` directory, comparing against Jackson.
+
+### Quick Start
+
+```bash
+cd benchmarks
+mvn clean package
+java -jar target/json-benchmarks.jar
+```
+
+### Run specific benchmarks
+
+```bash
+# Only parsing benchmarks
+java -jar target/json-benchmarks.jar ".*Parse.*"
+
+# Only small JSON
+java -jar target/json-benchmarks.jar ".*Small.*"
+
+# Faster run with fewer iterations
+java -jar target/json-benchmarks.jar -f 1 -wi 2 -i 3
+```
+
+See `benchmarks/README.md` for detailed benchmark documentation.

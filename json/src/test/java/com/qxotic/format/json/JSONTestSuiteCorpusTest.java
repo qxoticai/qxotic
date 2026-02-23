@@ -34,16 +34,35 @@ class JSONTestSuiteCorpusTest {
 
     private static final String PROP_PATH = "json.testsuite.path";
     private static final String ENV_PATH = "JSON_TEST_SUITE_PATH";
-    private static final Path DEFAULT_PATH = Paths.get("/tmp/JSONTestSuite");
+    private static final Path DEFAULT_PATH = Paths.get(System.getProperty("user.home"), ".cache", "qxotic", "json", "JSONTestSuite");
 
     @Test
     void runJsonTestSuiteCorpus() throws IOException {
         Path suiteRoot = resolveSuiteRoot();
         Path parsingDir = suiteRoot.resolve("test_parsing");
 
+        if (!Files.isDirectory(parsingDir)) {
+            System.err.println("\n" + "=".repeat(70));
+            System.err.println("WARNING: JSONTestSuite corpus not found");
+            System.err.println("=".repeat(70));
+            System.err.println();
+            System.err.println("The JSONTestSuite test corpus is required to run these tests.");
+            System.err.println();
+            System.err.println("To download it, run:");
+            System.err.println();
+            System.err.println("  mkdir -p ~/.cache/qxotic/json");
+            System.err.println("  git clone https://github.com/nst/JSONTestSuite.git ~/.cache/qxotic/json/JSONTestSuite");
+            System.err.println();
+            System.err.println("Or set a custom path using:");
+            System.err.println("  - System property: -Djson.testsuite.path=/path/to/JSONTestSuite");
+            System.err.println("  - Environment variable: JSON_TEST_SUITE_PATH=/path/to/JSONTestSuite");
+            System.err.println("=".repeat(70));
+            System.err.println();
+        }
+
         Assumptions.assumeTrue(
                 Files.isDirectory(parsingDir),
-                () -> "JSONTestSuite not found. Expected directory: " + parsingDir);
+                () -> "JSONTestSuite not found at: " + suiteRoot);
 
         List<Path> files;
         try (Stream<Path> stream = Files.list(parsingDir)) {
