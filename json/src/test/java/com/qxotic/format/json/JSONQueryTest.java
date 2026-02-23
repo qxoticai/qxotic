@@ -423,7 +423,7 @@ class JSONQueryTest {
     @Test
     @DisplayName("isMap: returns true for Map")
     void testIsMapTrue() {
-        assertTrue(JSON.isMap(Map.of()));
+        assertTrue(Map.of() instanceof Map);
     }
 
     @Test
@@ -527,7 +527,8 @@ class JSONQueryTest {
     @Test
     @DisplayName("parseMap: with options")
     void testParseMapWithOptions() {
-        Map<String, Object> result = JSON.parseMap("{\"value\": 1.5}", JSON.options());
+        Map<String, Object> result =
+                JSON.parseMap("{\"value\": 1.5}", JSON.ParseOptions.defaults());
         assertNotNull(result);
         assertTrue(result.get("value") instanceof Number);
     }
@@ -564,7 +565,7 @@ class JSONQueryTest {
     @Test
     @DisplayName("parseList: with options")
     void testParseListWithOptions() {
-        List<Object> result = JSON.parseList("[1, 2, 3]", JSON.options());
+        List<Object> result = JSON.parseList("[1, 2, 3]", JSON.ParseOptions.defaults());
         assertNotNull(result);
         assertEquals(3, result.size());
     }

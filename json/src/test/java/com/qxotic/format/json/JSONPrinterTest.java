@@ -38,7 +38,7 @@ class JSONPrinterTest {
     void testStringifyPrettyShortcut() {
         Map<String, Object> obj = new LinkedHashMap<>();
         obj.put("name", "John");
-        String json = JSON.stringifyPretty(obj);
+        String json = JSON.stringify(obj, true);
         assertTrue(json.contains("\n"));
         assertTrue(json.contains("\"name\" : \"John\""));
     }

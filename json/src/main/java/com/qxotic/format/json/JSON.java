@@ -28,19 +28,10 @@ public final class JSON {
 
     /** Parse JSON into Java values using default options. */
     public static Object parse(CharSequence json) {
-        return parse(json, options());
+        return parse(json, ParseOptions.defaults());
     }
 
-    /** Create mutable default parse options. */
-    public static ParseOptions options() {
-        return ParseOptions.defaults();
-    }
-
-    /**
-     * Parse JSON into Java values with custom options.
-     *
-     * @throws NullPointerException when {@code json} or {@code options} is null
-     */
+    /** Parse JSON into Java values with custom options. */
     public static Object parse(CharSequence json, ParseOptions options) {
         Objects.requireNonNull(json, "json");
         Objects.requireNonNull(options, "options");
@@ -52,14 +43,10 @@ public final class JSON {
 
     /** Return true when input is valid JSON with default options. */
     public static boolean isValid(CharSequence json) {
-        return isValid(json, options());
+        return isValid(json, ParseOptions.defaults());
     }
 
-    /**
-     * Return true when input is valid JSON for the given options.
-     *
-     * @throws NullPointerException when {@code json} or {@code options} is null
-     */
+    /** Return true when input is valid JSON for the given options. */
     public static boolean isValid(CharSequence json, ParseOptions options) {
         Objects.requireNonNull(json, "json");
         Objects.requireNonNull(options, "options");
@@ -71,117 +58,51 @@ public final class JSON {
         }
     }
 
-    /** Return true when value is the JSON null sentinel ({@link #NULL}). */
-    public static boolean isNull(Object value) {
-        return value == NULL;
+    /** Parse JSON and require a Map (object) root. */
+    public static Map<String, Object> parseMap(CharSequence json) {
+        return parseMap(json, ParseOptions.defaults());
     }
 
-    /** Parse JSON and require an object root. */
-    public static Map<String, Object> parseObject(CharSequence json) {
-        return parseObject(json, options());
+    /** Parse JSON with custom options and require a Map (object) root. */
+    public static Map<String, Object> parseMap(CharSequence json, ParseOptions options) {
+        return castMap(requireRootType(parse(json, options), Map.class, "object"));
     }
 
-    /**
-     * Parse JSON with custom options and require an object root.
-     *
-     * @throws NullPointerException when {@code json} or {@code options} is null
-     */
-    public static Map<String, Object> parseObject(CharSequence json, ParseOptions options) {
-        return castObject(requireRootType(parse(json, options), Map.class, "object"));
+    /** Parse JSON and require a List (array) root. */
+    public static List<Object> parseList(CharSequence json) {
+        return parseList(json, ParseOptions.defaults());
     }
 
-    /** Parse JSON and require an array root. */
-    public static List<Object> parseArray(CharSequence json) {
-        return parseArray(json, options());
-    }
-
-    /**
-     * Parse JSON with custom options and require an array root.
-     *
-     * @throws NullPointerException when {@code json} or {@code options} is null
-     */
-    public static List<Object> parseArray(CharSequence json, ParseOptions options) {
-        return castArray(requireRootType(parse(json, options), List.class, "array"));
+    /** Parse JSON with custom options and require a List (array) root. */
+    public static List<Object> parseList(CharSequence json, ParseOptions options) {
+        return castList(requireRootType(parse(json, options), List.class, "array"));
     }
 
     /** Parse JSON and require a string root. */
     public static String parseString(CharSequence json) {
-        return parseString(json, options());
-    }
-
-    /**
-     * Parse JSON with custom options and require a string root.
-     *
-     * @throws NullPointerException when {@code json} or {@code options} is null
-     */
-    public static String parseString(CharSequence json, ParseOptions options) {
-        return (String) requireRootType(parse(json, options), String.class, "string");
+        return (String)
+                requireRootType(parse(json, ParseOptions.defaults()), String.class, "string");
     }
 
     /** Parse JSON and require a number root. */
     public static Number parseNumber(CharSequence json) {
-        return parseNumber(json, options());
+        return parseNumber(json, ParseOptions.defaults());
     }
 
-    /**
-     * Parse JSON with custom options and require a number root.
-     *
-     * @throws NullPointerException when {@code json} or {@code options} is null
-     */
+    /** Parse JSON with custom options and require a number root. */
     public static Number parseNumber(CharSequence json, ParseOptions options) {
         return (Number) requireRootType(parse(json, options), Number.class, "number");
     }
 
     /** Parse JSON and require a boolean root. */
     public static boolean parseBoolean(CharSequence json) {
-        return parseBoolean(json, options());
-    }
-
-    /**
-     * Parse JSON with custom options and require a boolean root.
-     *
-     * @throws NullPointerException when {@code json} or {@code options} is null
-     */
-    public static boolean parseBoolean(CharSequence json, ParseOptions options) {
-        return (Boolean) requireRootType(parse(json, options), Boolean.class, "boolean");
-    }
-
-    // === Renamed Parsing Methods (Java terminology) ===
-
-    /** Parse JSON and require a Map (object) root. Alias for {@link #parseObject}. */
-    public static Map<String, Object> parseMap(CharSequence json) {
-        return parseObject(json);
-    }
-
-    /**
-     * Parse JSON with custom options and require a Map (object) root. Alias for {@link
-     * #parseObject}.
-     */
-    public static Map<String, Object> parseMap(CharSequence json, ParseOptions options) {
-        return parseObject(json, options);
-    }
-
-    /** Parse JSON and require a List (array) root. Alias for {@link #parseArray}. */
-    public static List<Object> parseList(CharSequence json) {
-        return parseArray(json);
-    }
-
-    /**
-     * Parse JSON with custom options and require a List (array) root. Alias for {@link
-     * #parseArray}.
-     */
-    public static List<Object> parseList(CharSequence json, ParseOptions options) {
-        return parseArray(json, options);
+        return (Boolean)
+                requireRootType(parse(json, ParseOptions.defaults()), Boolean.class, "boolean");
     }
 
     /** Serialize Java value to compact JSON. */
     public static String stringify(Object value) {
         return stringify(value, false);
-    }
-
-    /** Serialize Java value to pretty JSON. */
-    public static String stringifyPretty(Object value) {
-        return stringify(value, true);
     }
 
     /** Serialize Java value to JSON, optionally pretty-printed. */
@@ -193,12 +114,12 @@ public final class JSON {
     }
 
     @SuppressWarnings("unchecked")
-    private static Map<String, Object> castObject(Object value) {
+    private static Map<String, Object> castMap(Object value) {
         return (Map<String, Object>) value;
     }
 
     @SuppressWarnings("unchecked")
-    private static List<Object> castArray(Object value) {
+    private static List<Object> castList(Object value) {
         return (List<Object>) value;
     }
 
@@ -216,20 +137,20 @@ public final class JSON {
         private final ParseOptions options;
         private int pos;
         private int depth;
-
-        private static final class LineColumn {
-            final int line;
-            final int column;
-
-            LineColumn(int line, int column) {
-                this.line = line;
-                this.column = column;
-            }
-        }
+        private final HashMap<String, String> stringInterner = new HashMap<>();
 
         Parser(CharSequence input, ParseOptions options) {
             this.input = input;
             this.options = options;
+        }
+
+        private String intern(String s) {
+            String existing = stringInterner.get(s);
+            if (existing != null) {
+                return existing;
+            }
+            stringInterner.put(s, s);
+            return s;
         }
 
         private Object parseValue() {
@@ -419,7 +340,7 @@ public final class JSON {
         private Map<String, Object> parseObject() {
             enterDepth();
             try {
-                Map<String, Object> map = new LinkedHashMap<>();
+                Map<String, Object> map = new HashMap<>(16); // new LinkedHashMap<>(16);
 
                 skipSpace();
                 if (peek() == '}') {
@@ -428,7 +349,7 @@ public final class JSON {
                 }
 
                 while (true) {
-                    String key = parseString();
+                    String key = intern(parseString());
                     skipSpace();
                     expect(':');
                     Object value = parseValue();
@@ -617,16 +538,16 @@ public final class JSON {
         }
 
         private ParseException error(String msg) {
-            LineColumn lc = lineColumnAt(pos);
-            return new ParseException(msg, pos, lc.line, lc.column, input);
+            int[] lc = lineColumnAt(pos);
+            return new ParseException(msg, pos, lc[0], lc[1], input);
         }
 
         private ParseException error(String msg, Throwable cause) {
-            LineColumn lc = lineColumnAt(pos);
-            return new ParseException(msg, pos, lc.line, lc.column, input, cause);
+            int[] lc = lineColumnAt(pos);
+            return new ParseException(msg, pos, lc[0], lc[1], input, cause);
         }
 
-        private LineColumn lineColumnAt(int index) {
+        private int[] lineColumnAt(int index) {
             int line = 1;
             int column = 1;
             int end = Math.min(index, input.length());
@@ -639,7 +560,7 @@ public final class JSON {
                     column++;
                 }
             }
-            return new LineColumn(line, column);
+            return new int[] {line, column};
         }
 
         private static boolean isDigit(char ch) {
@@ -838,16 +759,6 @@ public final class JSON {
             return new ParseOptions();
         }
 
-        /** Create strict parse options that reject duplicate object keys. */
-        public static ParseOptions strict() {
-            return defaults().failOnDuplicateKeys(true);
-        }
-
-        /** Create fast parse options that decode decimals as {@code Double}. */
-        public static ParseOptions fast() {
-            return defaults().decimalsAsBigDecimal(false);
-        }
-
         /** Set whether decimals parse as {@code BigDecimal} (true) or {@code Double} (false). */
         public ParseOptions decimalsAsBigDecimal(boolean enabled) {
             this.decimalsAsBigDecimal = enabled;
@@ -970,59 +881,39 @@ public final class JSON {
     // === Query Methods - Navigate through Map keys with varargs ===
 
     /**
-     * Query a String value by navigating through object keys. Returns empty if path doesn't exist
-     * or type doesn't match.
-     */
-    public static Optional<String> queryString(Object root, String... keys) {
-        Object value = navigate(root, keys);
-        return value instanceof String ? Optional.of((String) value) : Optional.empty();
-    }
-
-    /**
-     * Query a Map value by navigating through object keys. Returns empty if path doesn't exist or
-     * type doesn't match.
-     */
-    @SuppressWarnings("unchecked")
-    public static Optional<Map<String, Object>> queryMap(Object root, String... keys) {
-        Object value = navigate(root, keys);
-        return value instanceof Map ? Optional.of((Map<String, Object>) value) : Optional.empty();
-    }
-
-    /**
-     * Query a List value by navigating through object keys. Returns empty if path doesn't exist or
-     * type doesn't match.
-     */
-    @SuppressWarnings("unchecked")
-    public static Optional<List<Object>> queryList(Object root, String... keys) {
-        Object value = navigate(root, keys);
-        return value instanceof List ? Optional.of((List<Object>) value) : Optional.empty();
-    }
-
-    /**
-     * Query a Boolean value by navigating through object keys. Returns empty if path doesn't exist
-     * or type doesn't match.
-     */
-    public static Optional<Boolean> queryBoolean(Object root, String... keys) {
-        Object value = navigate(root, keys);
-        return value instanceof Boolean ? Optional.of((Boolean) value) : Optional.empty();
-    }
-
-    /**
-     * Query a Number value by navigating through object keys. Returns empty if path doesn't exist
-     * or type doesn't match.
-     */
-    public static Optional<Number> queryNumber(Object root, String... keys) {
-        Object value = navigate(root, keys);
-        return value instanceof Number ? Optional.of((Number) value) : Optional.empty();
-    }
-
-    /**
      * Query any value by navigating through object keys. Returns Optional.of(JSON.NULL) for
      * explicit null values. Returns empty if path doesn't exist.
      */
     public static Optional<Object> query(Object root, String... keys) {
         Object value = navigate(root, keys);
         return value != null ? Optional.of(value) : Optional.empty();
+    }
+
+    /** Query a String value by navigating through object keys. */
+    public static Optional<String> queryString(Object root, String... keys) {
+        return query(root, keys).filter(v -> v instanceof String).map(v -> (String) v);
+    }
+
+    /** Query a Map value by navigating through object keys. */
+    @SuppressWarnings("unchecked")
+    public static Optional<Map<String, Object>> queryMap(Object root, String... keys) {
+        return query(root, keys).filter(v -> v instanceof Map).map(v -> (Map<String, Object>) v);
+    }
+
+    /** Query a List value by navigating through object keys. */
+    @SuppressWarnings("unchecked")
+    public static Optional<List<Object>> queryList(Object root, String... keys) {
+        return query(root, keys).filter(v -> v instanceof List).map(v -> (List<Object>) v);
+    }
+
+    /** Query a Boolean value by navigating through object keys. */
+    public static Optional<Boolean> queryBoolean(Object root, String... keys) {
+        return query(root, keys).filter(v -> v instanceof Boolean).map(v -> (Boolean) v);
+    }
+
+    /** Query a Number value by navigating through object keys. */
+    public static Optional<Number> queryNumber(Object root, String... keys) {
+        return query(root, keys).filter(v -> v instanceof Number).map(v -> (Number) v);
     }
 
     /**
@@ -1054,28 +945,28 @@ public final class JSON {
 
     // === Type Check Methods ===
 
-    /** Return true if value is a Map (JSON object). */
     public static boolean isMap(Object value) {
         return value instanceof Map;
     }
 
-    /** Return true if value is a List (JSON array). */
     public static boolean isList(Object value) {
         return value instanceof List;
     }
 
-    /** Return true if value is a String. */
     public static boolean isString(Object value) {
         return value instanceof String;
     }
 
-    /** Return true if value is a Number. */
     public static boolean isNumber(Object value) {
         return value instanceof Number;
     }
 
-    /** Return true if value is a Boolean. */
     public static boolean isBoolean(Object value) {
         return value instanceof Boolean;
+    }
+
+    /** Return true when value is the JSON null sentinel ({@link #NULL}). */
+    public static boolean isNull(Object value) {
+        return value == NULL;
     }
 }

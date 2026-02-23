@@ -9,7 +9,7 @@ class JSONApiSimplificationTest {
 
     @Test
     void testOptionsShortcutMatchesDefaults() {
-        JSON.ParseOptions options = JSON.options();
+        JSON.ParseOptions options = JSON.ParseOptions.defaults();
         assertTrue(options.decimalsAsBigDecimal());
         assertEquals(1000, options.maxDepth());
         assertFalse(options.failOnDuplicateKeys());
@@ -17,8 +17,8 @@ class JSONApiSimplificationTest {
 
     @Test
     void testOptionsPresets() {
-        JSON.ParseOptions strict = JSON.ParseOptions.strict();
-        JSON.ParseOptions fast = JSON.ParseOptions.fast();
+        JSON.ParseOptions strict = JSON.ParseOptions.defaults().failOnDuplicateKeys(true);
+        JSON.ParseOptions fast = JSON.ParseOptions.defaults().decimalsAsBigDecimal(false);
 
         assertTrue(strict.failOnDuplicateKeys());
         assertTrue(strict.decimalsAsBigDecimal());
@@ -46,14 +46,17 @@ class JSONApiSimplificationTest {
 
     @Test
     void testTypedParseRespectsOptions() {
-        boolean valid = JSON.isValid("{\"a\":1,\"a\":2}", JSON.options().failOnDuplicateKeys(true));
+        boolean valid =
+                JSON.isValid(
+                        "{\"a\":1,\"a\":2}",
+                        JSON.ParseOptions.defaults().failOnDuplicateKeys(true));
         assertFalse(valid);
     }
 
     @Test
     void testJsonNullHelper() {
         Object parsed = JSON.parse("null");
-        assertTrue(JSON.isNull(parsed));
-        assertFalse(JSON.isNull(null));
+        assertTrue(parsed == JSON.NULL);
+        assertFalse(null == JSON.NULL);
     }
 }
