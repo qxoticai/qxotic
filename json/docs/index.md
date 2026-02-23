@@ -5,7 +5,7 @@ Strict, minimal JSON parser and printer for Java. RFC 8259 compliant, zero depen
 ## Features
 
 - **RFC 8259 compliant**: Strict parsing, no deviations
-- **Type-safe APIs**: `parseObject()`, `parseArray()`, typed root parsing
+- **Type-safe APIs**: `parseMap()`, `parseList()`, typed root parsing
 - **Precise decimals**: `BigDecimal` by default, optional `Double`
 - **Detailed errors**: Line/column positions with source context
 - **Zero dependencies**: Single class, no external requirements
@@ -23,7 +23,6 @@ JSON (JavaScript Object Notation) is a lightweight data interchange format. This
     This library provides **parsing and serialization only**. It does **not**:
     - Schema validation (beyond JSON syntax)
     - Streaming/chunked parsing
-    - JSONPath or query operations
     - Custom type adapters
 
 ## Quick Start
@@ -34,7 +33,7 @@ import java.util.Map;
 import java.util.List;
 
 // Parse JSON string
-Map<String, Object> config = JSON.parseObject("{"host":"localhost","port":8080}");
+Map<String, Object> config = JSON.parseMap("{"host":"localhost","port":8080}");
 
 String host = (String) config.get("host");
 Long port = (Long) config.get("port");
@@ -53,7 +52,7 @@ JSON objects become `Map<String, Object>`:
 
 ```java
 // {"name": "alice", "age": 30}
-Map<String, Object> person = JSON.parseObject(json);
+Map<String, Object> person = JSON.parseMap(json);
 String name = (String) person.get("name");
 Long age = (Long) person.get("age");
 ```
@@ -66,7 +65,7 @@ JSON arrays become `List<Object>`:
 
 ```java
 // [1, 2, 3]
-List<Object> numbers = JSON.parseArray(json);
+List<Object> numbers = JSON.parseList(json);
 Long first = (Long) numbers.get(0);
 ```
 
@@ -126,7 +125,7 @@ Boolean active = JSON.parseBoolean("true");
 JSON `null` becomes a special sentinel value `JSON.NULL` (not Java `null`):
 
 ```java
-Map<String, Object> obj = JSON.parseObject("{"value":null}");
+Map<String, Object> obj = JSON.parseMap("{"value":null}");
 Object value = obj.get("value");
 
 // Check for JSON null
@@ -189,6 +188,14 @@ if (missing == null) {
 
 ```java
 --8<-- "json/src/test/java/com/qxotic/format/json/Snippets.java:parse-typed-root"
+```
+
+### Query Methods
+
+Navigate nested structures safely with type-safe query methods:
+
+```java
+--8<-- "json/src/test/java/com/qxotic/format/json/Snippets.java:query-methods"
 ```
 
 ### Object Access Patterns

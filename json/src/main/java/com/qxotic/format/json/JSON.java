@@ -269,8 +269,40 @@ public final class JSON {
 
         private String parseString() {
             expect('"');
+            int start = pos;
+
+            // Fast path: scan for end of string or escape sequence
+            while (pos < input.length()) {
+                char ch = input.charAt(pos);
+                if (ch == '"') {
+                    // No escapes found - use substring directly
+                    String result = input.subSequence(start, pos).toString();
+                    pos++; // Skip closing quote
+                    return result;
+                }
+                if (ch == '\\') {
+                    // Escapes found - use StringBuilder
+                    break;
+                }
+                if (ch < 0x20) {
+                    throw error("Control character must be escaped");
+                }
+                pos++;
+            }
+
+            // Slow path: has escape sequences
+            return parseStringWithEscapes(start);
+        }
+
+        private String parseStringWithEscapes(int start) {
             StringBuilder sb = new StringBuilder();
 
+            // Copy chars before first escape
+            for (int i = start; i < pos; i++) {
+                sb.append(input.charAt(i));
+            }
+
+            // Process escapes
             while (true) {
                 char ch = next();
                 if (ch == '"') {

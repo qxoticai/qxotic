@@ -180,7 +180,7 @@ class JSONRoundTripTest {
     }
 
     @Test
-    void testPrettyPrintArrayRoundTrip() {
+    void testPrettyPrintListRoundTrip() {
         List<Object> original = Arrays.asList(1, 2, 3);
         String json = JSON.stringify(original, true);
         Object parsed = JSON.parse(json);

@@ -188,15 +188,15 @@ class JSONParserTest {
     }
 
     @Test
-    void testParseObjectTyped() {
-        Map<String, Object> obj = JSON.parseObject("{\"name\":\"John\",\"age\":30}");
+    void testParseMapTyped() {
+        Map<String, Object> obj = JSON.parseMap("{\"name\":\"John\",\"age\":30}");
         assertEquals("John", obj.get("name"));
         assertEquals(30L, obj.get("age"));
     }
 
     @Test
-    void testParseArrayTyped() {
-        List<Object> arr = JSON.parseArray("[1,\"two\",true]");
+    void testParseListTyped() {
+        List<Object> arr = JSON.parseList("[1,\"two\",true]");
         assertEquals(3, arr.size());
         assertEquals(1L, arr.get(0));
         assertEquals("two", arr.get(1));
@@ -204,16 +204,16 @@ class JSONParserTest {
     }
 
     @Test
-    void testParseObjectTypedRejectsNonObjectRoot() {
+    void testParseMapTypedRejectsNonMapRoot() {
         JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parseObject("[1,2,3]"));
+                assertThrows(JSON.ParseException.class, () -> JSON.parseMap("[1,2,3]"));
         assertTrue(e.getMessage().contains("Expected JSON object at root"));
     }
 
     @Test
-    void testParseArrayTypedRejectsNonArrayRoot() {
+    void testParseListTypedRejectsNonListRoot() {
         JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parseArray("{\"a\":1}"));
+                assertThrows(JSON.ParseException.class, () -> JSON.parseList("{\"a\":1}"));
         assertTrue(e.getMessage().contains("Expected JSON array at root"));
     }
 

@@ -26,7 +26,7 @@ Strict JSON parser/printer for Java.
 import com.qxotic.format.json.JSON;
 import java.util.Map;
 
-Map<String, Object> obj = JSON.parseObject("{\"name\":\"alice\",\"age\":30}");
+Map<String, Object> obj = JSON.parseMap("{\"name\":\"alice\",\"age\":30}");
 String compact = JSON.stringify(obj);
 String pretty = JSON.stringifyPretty(obj);
 ```
@@ -37,8 +37,10 @@ Parse:
 
 - `JSON.parse(CharSequence)`
 - `JSON.parse(CharSequence, ParseOptions)`
-- `JSON.parseObject(...)`
-- `JSON.parseArray(...)`
+- `JSON.parseMap(...)`
+- `JSON.parseList(...)`
+- `JSON.query(...)` / `JSON.queryString(...)` / `JSON.queryMap(...)` / `JSON.queryList(...)` / `JSON.queryNumber(...)` / `JSON.queryBoolean(...)`
+- `JSON.isMap(...)` / `JSON.isList(...)` / `JSON.isString(...)` / `JSON.isNumber(...)` / `JSON.isBoolean(...)`
 - `JSON.parseString(...)`
 - `JSON.parseNumber(...)`
 - `JSON.parseBoolean(...)`
