@@ -2,15 +2,11 @@ package com.qxotic.format.gguf.snippets;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.TensorEntry;
-import java.io.IOException;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Snippets for validation.
- */
+/** Snippets for validation. */
 @SuppressWarnings("unused")
 public class ValidationSnippets {
 
@@ -23,6 +19,7 @@ public class ValidationSnippets {
             return false;
         }
     }
+
     // --8<-- [end:quick-validate]
 
     // --8<-- [start:comprehensive-validate]

@@ -10,9 +10,7 @@ import java.nio.channels.SeekableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-/**
- * Snippets for reading GGUF files.
- */
+/** Snippets for reading GGUF files. */
 @SuppressWarnings("unused")
 public class ReadingSnippets {
 
@@ -21,6 +19,7 @@ public class ReadingSnippets {
         Path path = Path.of("model.gguf");
         GGUF gguf = GGUF.read(path);
     }
+
     // --8<-- [end:read-path]
 
     // --8<-- [start:read-channel]
@@ -30,12 +29,13 @@ public class ReadingSnippets {
             GGUF gguf = GGUF.read(channel);
         }
     }
+
     // --8<-- [end:read-channel]
 
     // --8<-- [start:read-url]
     void readFromUrl() throws IOException {
         URL url = new URL("https://huggingface.co/user/repo/resolve/main/model.gguf");
-        try (ReadableByteChannel channel = 
+        try (ReadableByteChannel channel =
                 Channels.newChannel(new BufferedInputStream(url.openStream()))) {
             GGUF gguf = GGUF.read(channel);
         }

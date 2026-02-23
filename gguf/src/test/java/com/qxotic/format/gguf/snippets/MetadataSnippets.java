@@ -2,12 +2,9 @@ package com.qxotic.format.gguf.snippets;
 
 import com.qxotic.format.gguf.GGUF;
 import java.io.IOException;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 
-/**
- * Snippets for metadata access.
- */
+/** Snippets for metadata access. */
 @SuppressWarnings("unused")
 public class MetadataSnippets {
 
@@ -18,6 +15,7 @@ public class MetadataSnippets {
         int alignment = gguf.getAlignment();
         boolean hasTensor = gguf.containsTensor("token_embd.weight");
     }
+
     // --8<-- [end:basic-info]
 
     // --8<-- [start:metadata-access]
@@ -27,17 +25,15 @@ public class MetadataSnippets {
         int contextLength = gguf.getValue(int.class, "llama.context_length");
         String[] tokens = gguf.getValue(String[].class, "tokenizer.ggml.tokens");
     }
+
     // --8<-- [end:metadata-access]
 
     // --8<-- [start:metadata-or-default]
     void accessWithDefault() throws IOException {
         GGUF gguf = GGUF.read(Paths.get("model.gguf"));
-        int contextLength = gguf.getValueOrDefault(
-            int.class, 
-            "llama.context_length", 
-            4096
-        );
+        int contextLength = gguf.getValueOrDefault(int.class, "llama.context_length", 4096);
     }
+
     // --8<-- [end:metadata-or-default]
 
     // --8<-- [start:metadata-check]
@@ -47,6 +43,7 @@ public class MetadataSnippets {
             String author = gguf.getValue(String.class, "general.author");
         }
     }
+
     // --8<-- [end:metadata-check]
 
     // --8<-- [start:metadata-keys]
@@ -56,6 +53,7 @@ public class MetadataSnippets {
             System.out.println(key);
         }
     }
+
     // --8<-- [end:metadata-keys]
 
     // --8<-- [start:metadata-arrays]

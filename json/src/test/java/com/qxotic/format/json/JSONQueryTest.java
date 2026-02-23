@@ -4,12 +4,10 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.*;
 import java.util.Optional;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
-/**
- * Comprehensive tests for the new query API and type check methods.
- */
+/** Comprehensive tests for the new query API and type check methods. */
 class JSONQueryTest {
 
     // ============== Query String Tests ==============
@@ -175,7 +173,8 @@ class JSONQueryTest {
     @Test
     @DisplayName("queryList: list of objects")
     void testQueryListOfObjects() {
-        Map<String, Object> data = JSON.parseMap("{\"users\": [{\"name\": \"Alice\"}, {\"name\": \"Bob\"}]}");
+        Map<String, Object> data =
+                JSON.parseMap("{\"users\": [{\"name\": \"Alice\"}, {\"name\": \"Bob\"}]}");
         Optional<List<Object>> result = JSON.queryList(data, "users");
         assertTrue(result.isPresent());
         assertEquals(2, result.get().size());
@@ -220,7 +219,8 @@ class JSONQueryTest {
     @Test
     @DisplayName("queryBoolean: nested access")
     void testQueryBooleanNested() {
-        Map<String, Object> data = JSON.parseMap("{\"user\": {\"settings\": {\"notifications\": true}}}");
+        Map<String, Object> data =
+                JSON.parseMap("{\"user\": {\"settings\": {\"notifications\": true}}}");
         Optional<Boolean> result = JSON.queryBoolean(data, "user", "settings", "notifications");
         assertTrue(result.isPresent());
         assertTrue(result.get());
@@ -601,16 +601,17 @@ class JSONQueryTest {
     @Test
     @DisplayName("query: complex nested structure")
     void testComplexStructure() {
-        String json = "{" +
-                "\"company\": {" +
-                "    \"name\": \"Acme Corp\"," +
-                "    \"employees\": [" +
-                "        {\"id\": 1, \"name\": \"Alice\", \"active\": true, \"salary\": 50000.50}," +
-                "        {\"id\": 2, \"name\": \"Bob\", \"active\": false, \"salary\": 60000.00}" +
-                "    ]," +
-                "    \"metadata\": null," +
-                "    \"settings\": {\"debug\": true, \"version\": 1.5}" +
-                "}}";
+        String json =
+                "{"
+                        + "\"company\": {"
+                        + "    \"name\": \"Acme Corp\","
+                        + "    \"employees\": ["
+                        + "        {\"id\": 1, \"name\": \"Alice\", \"active\": true, \"salary\": 50000.50},"
+                        + "        {\"id\": 2, \"name\": \"Bob\", \"active\": false, \"salary\": 60000.00}"
+                        + "    ],"
+                        + "    \"metadata\": null,"
+                        + "    \"settings\": {\"debug\": true, \"version\": 1.5}"
+                        + "}}";
 
         Map<String, Object> data = JSON.parseMap(json);
 
@@ -636,27 +637,33 @@ class JSONQueryTest {
     @Test
     @DisplayName("query: null root throws NullPointerException")
     void testNullRoot() {
-        assertThrows(NullPointerException.class, () -> {
-            JSON.queryString(null, "key");
-        });
+        assertThrows(
+                NullPointerException.class,
+                () -> {
+                    JSON.queryString(null, "key");
+                });
     }
 
     @Test
     @DisplayName("query: null key throws NullPointerException")
     void testNullKey() {
         Map<String, Object> data = Map.of("key", "value");
-        assertThrows(NullPointerException.class, () -> {
-            JSON.queryString(data, (String) null);
-        });
+        assertThrows(
+                NullPointerException.class,
+                () -> {
+                    JSON.queryString(data, (String) null);
+                });
     }
 
     @Test
     @DisplayName("query: null in varargs throws NullPointerException")
     void testNullInVarargs() {
         Map<String, Object> data = JSON.parseMap("{\"a\": {\"b\": 1}}");
-        assertThrows(NullPointerException.class, () -> {
-            JSON.queryString(data, "a", null, "b");
-        });
+        assertThrows(
+                NullPointerException.class,
+                () -> {
+                    JSON.queryString(data, "a", null, "b");
+                });
     }
 
     // ============== Integration with Existing API Tests ==============
@@ -681,7 +688,9 @@ class JSONQueryTest {
     @Test
     @DisplayName("type checks work with parsed data")
     void testTypeChecksWithParsedData() {
-        Map<String, Object> data = JSON.parseMap("{\"str\": \"text\", \"num\": 42, \"bool\": true, \"obj\": {}, \"arr\": []}");
+        Map<String, Object> data =
+                JSON.parseMap(
+                        "{\"str\": \"text\", \"num\": 42, \"bool\": true, \"obj\": {}, \"arr\": []}");
 
         assertTrue(JSON.isString(data.get("str")));
         assertTrue(JSON.isNumber(data.get("num")));
@@ -714,7 +723,8 @@ class JSONQueryTest {
     @Test
     @DisplayName("query: large number")
     void testLargeNumber() {
-        Map<String, Object> data = JSON.parseMap("{\"big\": 9223372036854775807}"); // Long.MAX_VALUE
+        Map<String, Object> data =
+                JSON.parseMap("{\"big\": 9223372036854775807}"); // Long.MAX_VALUE
         Optional<Number> result = JSON.queryNumber(data, "big");
         assertTrue(result.isPresent());
         assertEquals(9223372036854775807L, result.get().longValue());
@@ -739,9 +749,10 @@ class JSONQueryTest {
     void testQueryChain() {
         Map<String, Object> data = JSON.parseMap("{\"user\": {\"age\": 25}}");
 
-        boolean isAdult = JSON.queryNumber(data, "user", "age")
-                .filter(age -> age.intValue() >= 18)
-                .isPresent();
+        boolean isAdult =
+                JSON.queryNumber(data, "user", "age")
+                        .filter(age -> age.intValue() >= 18)
+                        .isPresent();
 
         assertTrue(isAdult);
     }
@@ -749,20 +760,25 @@ class JSONQueryTest {
     @Test
     @DisplayName("query: functional composition")
     void testFunctionalComposition() {
-        Map<String, Object> data = JSON.parseMap("{\"users\": [{\"name\": \"Alice\"}, {\"name\": \"Bob\"}]}");
+        Map<String, Object> data =
+                JSON.parseMap("{\"users\": [{\"name\": \"Alice\"}, {\"name\": \"Bob\"}]}");
 
-        List<String> names = JSON.queryList(data, "users")
-                .map(list -> {
-                    List<String> result = new ArrayList<>();
-                    for (Object obj : list) {
-                        if (obj instanceof Map) {
-                            Optional<String> name = JSON.queryString((Map<String, Object>) obj, "name");
-                            name.ifPresent(result::add);
-                        }
-                    }
-                    return result;
-                })
-                .orElse(List.of());
+        List<String> names =
+                JSON.queryList(data, "users")
+                        .map(
+                                list -> {
+                                    List<String> result = new ArrayList<>();
+                                    for (Object obj : list) {
+                                        if (obj instanceof Map) {
+                                            Optional<String> name =
+                                                    JSON.queryString(
+                                                            (Map<String, Object>) obj, "name");
+                                            name.ifPresent(result::add);
+                                        }
+                                    }
+                                    return result;
+                                })
+                        .orElse(List.of());
 
         assertEquals(List.of("Alice", "Bob"), names);
     }
