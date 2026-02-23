@@ -3,10 +3,10 @@ package ai.llm4j.test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import ai.qxotic.model.llm.ChatFormat;
-import ai.qxotic.model.llm.llama.Llama3ChatFormat;
-import ai.qxotic.tokenizers.IntSequence;
-import ai.qxotic.tokenizers.Tokenizer;
+import com.qxotic.model.llm.ChatFormat;
+import com.qxotic.model.llm.llama.Llama3ChatFormat;
+import com.qxotic.tokenizers.IntSequence;
+import com.qxotic.tokenizers.Tokenizer;
 import java.util.List;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.params.ParameterizedTest;

@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>ai.qxotic</groupId>
+        <groupId>com.qxotic</groupId>
         <artifactId>qxotic-parent</artifactId>
         <version>0.1-SNAPSHOT</version>
 <!--        <version>${qxotic.version}</version>-->
@@ -21,27 +21,16 @@
 
     <dependencies>
         <dependency>
-            <groupId>ai.qxotic</groupId>
-            <artifactId>jota-core</artifactId>
-            <version>${project.version}</version>
+            <groupId>com.qxotic</groupId>
+            <artifactId>jota</artifactId>
         </dependency>
         <dependency>
-            <groupId>ai.qxotic</groupId>
-            <artifactId>jota-runtime-c</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>ai.qxotic</groupId>
-            <artifactId>jota-runtime-hip</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>ai.qxotic</groupId>
+            <groupId>com.qxotic</groupId>
             <artifactId>gguf</artifactId>
         </dependency>
         <dependency>
-            <groupId>ai.qxotic</groupId>
-            <artifactId>tokenizers</artifactId>
+            <groupId>com.qxotic</groupId>
+            <artifactId>tokenizers-api</artifactId>
         </dependency>
     </dependencies>
 
@@ -60,11 +49,6 @@
             <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
                 <configuration>
-                    <archive>
-                        <manifest>
-                            <mainClass>ai.qxotic.jota.examples.mnist.MnistDemoServer</mainClass>
-                        </manifest>
-                    </archive>
                     <descriptorRefs>
                         <descriptorRef>jar-with-dependencies</descriptorRef>
                     </descriptorRefs>

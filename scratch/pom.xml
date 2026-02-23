@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>ai.qxotic</groupId>
+        <groupId>com.qxotic</groupId>
         <artifactId>qxotic-parent</artifactId>
         <version>0.1-SNAPSHOT</version>
     </parent>
@@ -42,22 +42,22 @@
         </dependency>
 
         <dependency>
-            <groupId>ai.qxotic</groupId>
+            <groupId>com.qxotic</groupId>
             <artifactId>gguf</artifactId>
         </dependency>
 
         <dependency>
-            <groupId>ai.qxotic</groupId>
+            <groupId>com.qxotic</groupId>
             <artifactId>safetensors</artifactId>
         </dependency>
 
         <dependency>
-            <groupId>ai.qxotic</groupId>
-            <artifactId>tokenizers</artifactId>
+            <groupId>com.qxotic</groupId>
+            <artifactId>tokenizers-api</artifactId>
         </dependency>
 
         <dependency>
-            <groupId>ai.qxotic</groupId>
+            <groupId>com.qxotic</groupId>
             <artifactId>span</artifactId>
         </dependency>
 
@@ -109,7 +109,7 @@
                     </descriptorRefs>
                     <archive>
                         <manifest>
-                            <mainClass>ai.qxotic.model.llm.generic.Main</mainClass>
+                            <mainClass>com.qxotic.model.llm.generic.Main</mainClass>
                         </manifest>
                     </archive>
                 </configuration>
@@ -139,7 +139,7 @@
                             </execution>
                         </executions>
                         <configuration>
-                            <mainClass>ai.qxotic.model.llm.generic.Main</mainClass>
+                            <mainClass>com.qxotic.model.llm.generic.Main</mainClass>
                             <imageName>llm4j-cli</imageName>
                             <buildArgs>
                                 <!-- enables additional compiler optimizations -->
@@ -149,7 +149,7 @@
                                 <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
                                 <buildArg>-H:+VectorAPISupport</buildArg>
                                 <buildArg>-H:+ForeignAPISupport</buildArg>
-                                <buildArg>--initialize-at-build-time=ai.qxotic.model.llm.llama.PanamaKernelOps</buildArg>
+                                <buildArg>--initialize-at-build-time=com.qxotic.model.llm.llama.PanamaKernelOps</buildArg>
                             </buildArgs>
                             <environment>
                                 <!--<variable1>value1</variable1>-->
