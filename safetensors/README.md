@@ -31,7 +31,7 @@ This keeps the API small and predictable.
 
 ```xml
 <dependency>
-    <groupId>ai.qxotic</groupId>
+    <groupId>com.qxotic</groupId>
     <artifactId>safetensors</artifactId>
     <version>0.1-SNAPSHOT</version>
 </dependency>

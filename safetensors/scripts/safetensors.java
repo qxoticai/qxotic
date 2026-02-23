@@ -1,6 +1,6 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
-//DEPS ai.qxotic:safetensors:0.1-SNAPSHOT
-//DEPS ai.qxotic:json:0.1-SNAPSHOT
+//DEPS com.qxotic:safetensors:0.1-SNAPSHOT
+//DEPS com.qxotic:json:0.1-SNAPSHOT
 //DEPS info.picocli:picocli:4.7.7
 //DEPS info.picocli:picocli-codegen:4.7.7
 //JAVAC_OPTIONS -proc:full
@@ -8,9 +8,9 @@
 
 package scripts;
 
-import ai.qxotic.format.json.JSON;
-import ai.qxotic.format.safetensors.Safetensors;
-import ai.qxotic.format.safetensors.TensorEntry;
+import com.qxotic.format.json.JSON;
+import com.qxotic.format.safetensors.Safetensors;
+import com.qxotic.format.safetensors.TensorEntry;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.net.URL;
@@ -284,27 +284,14 @@ class safetensors implements Callable<Integer> {
             return new ArrayList<>();
         }
         int workers = Math.min(shards.size(), Math.max(1, Runtime.getRuntime().availableProcessors()));
+        int totalShards = shards.size();
         ExecutorService pool = Executors.newFixedThreadPool(workers);
         try {
             List<Callable<Map<String, Object>>> tasks = new ArrayList<>(shards.size());
             for (int i = 0; i < shards.size(); i++) {
                 final int shardIndex = i + 1;
                 final String shardName = shards.get(i);
-                tasks.add(
-                        () -> {
-                            URL shardUrl =
-                                    repoId == null
-                                            ? new URL(indexUrl, shardName)
-                                            : site.resolve(repoId, shardName);
-                            System.err.println(
-                                    "Reading shard "
-                                            + shardIndex
-                                            + "/"
-                                            + shards.size()
-                                            + ": "
-                                            + shardUrl);
-                            return toJson(readSafetensors(shardUrl), options, shardName);
-                        });
+                tasks.add(() -> readShard(indexUrl, repoId, site, options, shardName, shardIndex, totalShards));
             }
 
             List<Future<Map<String, Object>>> futures = pool.invokeAll(tasks);
@@ -313,11 +300,7 @@ class safetensors implements Callable<Integer> {
                 try {
                     shardObjects.add(futures.get(i).get());
                 } catch (ExecutionException e) {
-                    Throwable cause = e.getCause();
-                    if (cause instanceof Exception) {
-                        throw (Exception) cause;
-                    }
-                    throw new IOException("Failed reading shard: " + shards.get(i), cause);
+                    throw unwrapShardFailure(e, shards.get(i));
                 }
             }
             return shardObjects;
@@ -325,8 +308,35 @@ class safetensors implements Callable<Integer> {
             Thread.currentThread().interrupt();
             throw new IOException("Interrupted while reading shards", e);
         } finally {
-            pool.shutdownNow();
+            pool.shutdown();
         }
+    }
+
+    private static Map<String, Object> readShard(
+            URL indexUrl,
+            String repoId,
+            RepoSite site,
+            OutputOptions options,
+            String shardName,
+            int shardIndex,
+            int totalShards)
+            throws Exception {
+        URL shardUrl = resolveShardUrl(indexUrl, repoId, site, shardName);
+        System.err.println("Reading shard " + shardIndex + "/" + totalShards + ": " + shardUrl);
+        return toJson(readSafetensors(shardUrl), options, shardName);
+    }
+
+    private static URL resolveShardUrl(URL indexUrl, String repoId, RepoSite site, String shardName)
+            throws Exception {
+        return repoId == null ? new URL(indexUrl, shardName) : site.resolve(repoId, shardName);
+    }
+
+    private static Exception unwrapShardFailure(ExecutionException error, String shardName) {
+        Throwable cause = error.getCause();
+        if (cause instanceof Exception) {
+            return (Exception) cause;
+        }
+        return new IOException("Failed reading shard: " + shardName, cause);
     }
 
     private static Map<String, Object> toJson(Safetensors st, OutputOptions options, String name) {
@@ -371,7 +381,7 @@ class safetensors implements Callable<Integer> {
     }
 
     private static Map<String, Object> readJsonObject(URL url) throws Exception {
-        return JSON.parseObject(readUtf8(url));
+        return JSON.parseMap(readUtf8(url));
     }
 
     private static Map<String, String> parseWeightMap(Object value) {

@@ -1,5 +1,5 @@
-module ai.qxotic.safetensors {
-    requires ai.qxotic.json;
+module com.qxotic.safetensors {
+    requires com.qxotic.json;
 
-    exports ai.qxotic.format.safetensors;
+    exports com.qxotic.format.safetensors;
 }
