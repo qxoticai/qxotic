@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>ai.qxotic</groupId>
+    <groupId>com.qxotic</groupId>
     <artifactId>qxotic-parent</artifactId>
     <version>0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
@@ -13,7 +13,9 @@
     <modules>
         <module>gguf</module>
         <module>jota</module>
-        <module>tokenizers</module>
+        <module>tokenizers-api</module>
+        <module>tokenizers-hf</module>
+        <module>tokenizers-gguf</module>
         <module>safetensors</module>
         <module>json</module>
         <module>examples</module>
@@ -48,37 +50,49 @@
             </dependency>
 
             <dependency>
-                <groupId>ai.qxotic</groupId>
+                <groupId>com.qxotic</groupId>
                 <artifactId>gguf</artifactId>
                 <version>${qxotic.version}</version>
             </dependency>
 
             <dependency>
-                <groupId>ai.qxotic</groupId>
+                <groupId>com.qxotic</groupId>
                 <artifactId>safetensors</artifactId>
                 <version>${qxotic.version}</version>
             </dependency>
 
             <dependency>
-                <groupId>ai.qxotic</groupId>
+                <groupId>com.qxotic</groupId>
                 <artifactId>json</artifactId>
                 <version>${qxotic.version}</version>
             </dependency>
 
             <dependency>
-                <groupId>ai.qxotic</groupId>
+                <groupId>com.qxotic</groupId>
                 <artifactId>jota</artifactId>
                 <version>${qxotic.version}</version>
             </dependency>
 
             <dependency>
-                <groupId>ai.qxotic</groupId>
-                <artifactId>tokenizers</artifactId>
+                <groupId>com.qxotic</groupId>
+                <artifactId>tokenizers-api</artifactId>
                 <version>${qxotic.version}</version>
             </dependency>
 
             <dependency>
-                <groupId>ai.qxotic</groupId>
+                <groupId>com.qxotic</groupId>
+                <artifactId>tokenizers-hf</artifactId>
+                <version>${qxotic.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.qxotic</groupId>
+                <artifactId>tokenizers-gguf</artifactId>
+                <version>${qxotic.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.qxotic</groupId>
                 <artifactId>span</artifactId>
                 <version>${qxotic.version}</version>
             </dependency>

@@ -3,9 +3,9 @@ package ai.llm4j.test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import ai.qxotic.model.llm.llama.Timer;
-import ai.qxotic.tokenizers.IntSequence;
-import ai.qxotic.tokenizers.Tokenizer;
+import com.qxotic.model.llm.llama.Timer;
+import com.qxotic.tokenizers.IntSequence;
+import com.qxotic.tokenizers.Tokenizer;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
