@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>ai.qxotic</groupId>
+        <groupId>com.qxotic</groupId>
         <artifactId>qxotic-parent</artifactId>
         <version>0.1-SNAPSHOT</version>
     </parent>
@@ -21,7 +21,7 @@
 
     <dependencies>
         <dependency>
-            <groupId>ai.qxotic</groupId>
+            <groupId>com.qxotic</groupId>
             <artifactId>json</artifactId>
         </dependency>
 

@@ -4,6 +4,9 @@ repo_url: https://github.com/qxoticai/llama4j
 repo_name: qxoticai/llama4j
 edit_uri: edit/main/safetensors/docs/
 
+nav:
+  - Overview: index.md
+
 theme:
   name: material
   font:
@@ -31,6 +34,7 @@ theme:
     - content.code.annotate
     - navigation.top
     - navigation.footer
+    - toc.follow
 
 markdown_extensions:
   - pymdownx.snippets:
