@@ -106,11 +106,11 @@ class Snippets {
     void parseOptionsBasic() {
         // --8<-- [start:parse-options-basic]
         // Default options: BigDecimal for decimals, max depth 1000
-        JSON.ParseOptions defaults = JSON.options();
+        JSON.ParseOptions defaults = JSON.ParseOptions.defaults();
 
         // Customize options
         JSON.ParseOptions options =
-                JSON.options()
+                JSON.ParseOptions.defaults()
                         .decimalsAsBigDecimal(false) // Use Double instead
                         .maxDepth(100) // Limit nesting
                         .failOnDuplicateKeys(true); // Reject duplicate keys
@@ -126,7 +126,7 @@ class Snippets {
         // precise is BigDecimal
 
         // Alternative: use Double (faster, potential precision loss)
-        JSON.ParseOptions doubleMode = JSON.options().decimalsAsBigDecimal(false);
+        JSON.ParseOptions doubleMode = JSON.ParseOptions.defaults().decimalsAsBigDecimal(false);
         Number approx = JSON.parseNumber("0.1", doubleMode);
         // approx is Double
         // --8<-- [end:parse-options-decimals]
@@ -138,7 +138,7 @@ class Snippets {
         String nested = "[[[[[[[[[[1]]]]]]]]]]";
 
         // Limit depth to prevent stack overflow on malicious input
-        JSON.ParseOptions shallow = JSON.options().maxDepth(10);
+        JSON.ParseOptions shallow = JSON.ParseOptions.defaults().maxDepth(10);
 
         try {
             JSON.parse(nested, shallow);
@@ -157,7 +157,7 @@ class Snippets {
         // defaultBehavior.get("a") == 2
 
         // Strict mode: reject duplicates
-        JSON.ParseOptions strict = JSON.options().failOnDuplicateKeys(true);
+        JSON.ParseOptions strict = JSON.ParseOptions.defaults().failOnDuplicateKeys(true);
         try {
             JSON.parse(json, strict);
         } catch (JSON.ParseException e) {
@@ -225,7 +225,7 @@ class Snippets {
         // {"name":"alice","active":true,"count":42,"tags":["a","b","c"]}
 
         // Pretty-printed
-        String pretty = JSON.stringifyPretty(data);
+        String pretty = JSON.stringify(data, true);
         // --8<-- [end:stringify-basic]
     }
 
@@ -236,7 +236,7 @@ class Snippets {
                         "model", Map.of("name", "llama", "size", 7),
                         "training", Map.of("epochs", 100, "lr", 0.001));
 
-        String pretty = JSON.stringifyPretty(config);
+        String pretty = JSON.stringify(config, true);
         // {
         //   "model" : {
         //     "name" : "llama",
