@@ -2,7 +2,6 @@ package com.qxotic.format.gguf;
 
 import java.io.BufferedInputStream;
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -62,7 +61,8 @@ class Snippets {
     // --8<-- [start:read-from-huggingface]
 
     static GGUF readFromHuggingFace(String user, String repo, String filename) throws IOException {
-        URL url = new URL(String.format("https://hf.co/%s/%s/resolve/main/%s", user, repo, filename));
+        URL url =
+                new URL(String.format("https://hf.co/%s/%s/resolve/main/%s", user, repo, filename));
         try (var channel = Channels.newChannel(new BufferedInputStream(url.openStream()))) {
             return GGUF.read(channel);
         }
@@ -109,7 +109,7 @@ class Snippets {
         // Use getValueOrDefault to provide a fallback when key is missing
         int contextLength = gguf.getValueOrDefault(int.class, "llama.context_length", 4096);
         String architecture = gguf.getValueOrDefault(String.class, "general.architecture", "llama");
-        
+
         // Convenience method for strings
         String name = gguf.getStringOrDefault("general.name", "unknown-model");
         // --8<-- [end:metadata-or-default]
@@ -138,7 +138,11 @@ class Snippets {
         // --8<-- [start:tensor-access]
         for (TensorEntry tensor : gguf.getTensors()) {
             System.out.println(
-                    tensor.name() + ": " + tensor.ggmlType() + " " + Arrays.toString(tensor.shape()));
+                    tensor.name()
+                            + ": "
+                            + tensor.ggmlType()
+                            + " "
+                            + Arrays.toString(tensor.shape()));
         }
         // --8<-- [end:tensor-access]
     }
@@ -190,7 +194,8 @@ class Snippets {
         long absoluteOffset = tensor.absoluteOffset(gguf);
         long byteSize = tensor.byteSize();
 
-        ByteBuffer buffer = ByteBuffer.allocate(Math.toIntExact(byteSize)).order(ByteOrder.nativeOrder());
+        ByteBuffer buffer =
+                ByteBuffer.allocate(Math.toIntExact(byteSize)).order(ByteOrder.nativeOrder());
 
         try (var channel = Files.newByteChannel(modelPath, StandardOpenOption.READ)) {
             channel.position(absoluteOffset);
@@ -272,8 +277,11 @@ class Snippets {
         GGUF gguf = GGUF.read(Path.of("model.gguf"));
         TensorEntry tensor = gguf.getTensor("token_embd.weight");
 
-        try (FileChannel channel = FileChannel.open(Path.of("output.gguf"),
-                StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
+        try (FileChannel channel =
+                FileChannel.open(
+                        Path.of("output.gguf"),
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.WRITE)) {
             // Write GGUF metadata first
             GGUF.write(gguf, channel);
 
@@ -307,9 +315,10 @@ class Snippets {
     void builderModify() throws IOException {
         // --8<-- [start:builder-modify]
         GGUF existing = GGUF.read(Path.of("model.gguf"));
-        Builder builder = Builder.newBuilder(existing)
-                .putString("general.description", "Modified model")
-                .removeKey("old_key");
+        Builder builder =
+                Builder.newBuilder(existing)
+                        .putString("general.description", "Modified model")
+                        .removeKey("old_key");
 
         GGUF modified = builder.build();
         // --8<-- [end:builder-modify]
@@ -319,9 +328,10 @@ class Snippets {
         // --8<-- [start:builder-alignment]
         GGUF gguf = GGUF.read(Path.of("model.gguf"));
         int alignment = gguf.getAlignment();
-        Builder builder = Builder.newBuilder()
-                .setAlignment(16 * (1 << 10)) // 16KB
-                .putString("general.name", "aligned-model");
+        Builder builder =
+                Builder.newBuilder()
+                        .setAlignment(16 * (1 << 10)) // 16KB
+                        .putString("general.name", "aligned-model");
         // --8<-- [end:builder-alignment]
     }
 }

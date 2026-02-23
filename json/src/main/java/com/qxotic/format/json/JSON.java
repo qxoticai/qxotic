@@ -153,7 +153,10 @@ public final class JSON {
         return parseObject(json);
     }
 
-    /** Parse JSON with custom options and require a Map (object) root. Alias for {@link #parseObject}. */
+    /**
+     * Parse JSON with custom options and require a Map (object) root. Alias for {@link
+     * #parseObject}.
+     */
     public static Map<String, Object> parseMap(CharSequence json, ParseOptions options) {
         return parseObject(json, options);
     }
@@ -163,7 +166,10 @@ public final class JSON {
         return parseArray(json);
     }
 
-    /** Parse JSON with custom options and require a List (array) root. Alias for {@link #parseArray}. */
+    /**
+     * Parse JSON with custom options and require a List (array) root. Alias for {@link
+     * #parseArray}.
+     */
     public static List<Object> parseList(CharSequence json, ParseOptions options) {
         return parseArray(json, options);
     }
@@ -932,8 +938,8 @@ public final class JSON {
     // === Query Methods - Navigate through Map keys with varargs ===
 
     /**
-     * Query a String value by navigating through object keys.
-     * Returns empty if path doesn't exist or type doesn't match.
+     * Query a String value by navigating through object keys. Returns empty if path doesn't exist
+     * or type doesn't match.
      */
     public static Optional<String> queryString(Object root, String... keys) {
         Object value = navigate(root, keys);
@@ -941,8 +947,8 @@ public final class JSON {
     }
 
     /**
-     * Query a Map value by navigating through object keys.
-     * Returns empty if path doesn't exist or type doesn't match.
+     * Query a Map value by navigating through object keys. Returns empty if path doesn't exist or
+     * type doesn't match.
      */
     @SuppressWarnings("unchecked")
     public static Optional<Map<String, Object>> queryMap(Object root, String... keys) {
@@ -951,8 +957,8 @@ public final class JSON {
     }
 
     /**
-     * Query a List value by navigating through object keys.
-     * Returns empty if path doesn't exist or type doesn't match.
+     * Query a List value by navigating through object keys. Returns empty if path doesn't exist or
+     * type doesn't match.
      */
     @SuppressWarnings("unchecked")
     public static Optional<List<Object>> queryList(Object root, String... keys) {
@@ -961,8 +967,8 @@ public final class JSON {
     }
 
     /**
-     * Query a Boolean value by navigating through object keys.
-     * Returns empty if path doesn't exist or type doesn't match.
+     * Query a Boolean value by navigating through object keys. Returns empty if path doesn't exist
+     * or type doesn't match.
      */
     public static Optional<Boolean> queryBoolean(Object root, String... keys) {
         Object value = navigate(root, keys);
@@ -970,8 +976,8 @@ public final class JSON {
     }
 
     /**
-     * Query a Number value by navigating through object keys.
-     * Returns empty if path doesn't exist or type doesn't match.
+     * Query a Number value by navigating through object keys. Returns empty if path doesn't exist
+     * or type doesn't match.
      */
     public static Optional<Number> queryNumber(Object root, String... keys) {
         Object value = navigate(root, keys);
@@ -979,9 +985,8 @@ public final class JSON {
     }
 
     /**
-     * Query any value by navigating through object keys.
-     * Returns Optional.of(JSON.NULL) for explicit null values.
-     * Returns empty if path doesn't exist.
+     * Query any value by navigating through object keys. Returns Optional.of(JSON.NULL) for
+     * explicit null values. Returns empty if path doesn't exist.
      */
     public static Optional<Object> query(Object root, String... keys) {
         Object value = navigate(root, keys);
@@ -989,10 +994,9 @@ public final class JSON {
     }
 
     /**
-     * Navigate through nested Maps using the provided keys.
-     * Returns null if navigation fails (missing key, wrong type, etc.)
-     * Returns JSON.NULL for explicit null values.
-     * With 0 keys, returns root directly (acts as cast).
+     * Navigate through nested Maps using the provided keys. Returns null if navigation fails
+     * (missing key, wrong type, etc.) Returns JSON.NULL for explicit null values. With 0 keys,
+     * returns root directly (acts as cast).
      */
     private static Object navigate(Object root, String... keys) {
         Objects.requireNonNull(root, "root");
@@ -1042,5 +1046,4 @@ public final class JSON {
     public static boolean isBoolean(Object value) {
         return value instanceof Boolean;
     }
-
 }

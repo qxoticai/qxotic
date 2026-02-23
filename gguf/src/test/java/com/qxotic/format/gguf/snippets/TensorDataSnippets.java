@@ -11,9 +11,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 
-/**
- * Snippets for reading tensor data.
- */
+/** Snippets for reading tensor data. */
 @SuppressWarnings("unused")
 public class TensorDataSnippets {
 
@@ -23,13 +21,14 @@ public class TensorDataSnippets {
         TensorEntry tensor = gguf.getTensor("weights");
         ByteBuffer buffer = ByteBuffer.allocate((int) tensor.byteSize());
 
-        try (FileChannel channel = FileChannel.open(
-                Paths.get("model.gguf"), StandardOpenOption.READ)) {
+        try (FileChannel channel =
+                FileChannel.open(Paths.get("model.gguf"), StandardOpenOption.READ)) {
             channel.position(tensor.absoluteOffset(gguf));
             channel.read(buffer);
             buffer.flip();
         }
     }
+
     // --8<-- [end:read-tensor-bytebuffer]
 
     // --8<-- [start:read-tensor-mmap]
@@ -38,14 +37,15 @@ public class TensorDataSnippets {
         TensorEntry tensor = gguf.getTensor("weights");
 
         try (RandomAccessFile raf = new RandomAccessFile("model.gguf", "r");
-             FileChannel channel = raf.getChannel()) {
-            MappedByteBuffer buffer = channel.map(
-                FileChannel.MapMode.READ_ONLY,
-                tensor.absoluteOffset(gguf),
-                tensor.byteSize()
-            );
+                FileChannel channel = raf.getChannel()) {
+            MappedByteBuffer buffer =
+                    channel.map(
+                            FileChannel.MapMode.READ_ONLY,
+                            tensor.absoluteOffset(gguf),
+                            tensor.byteSize());
         }
     }
+
     // --8<-- [end:read-tensor-mmap]
 
     // --8<-- [start:read-all-tensors]
