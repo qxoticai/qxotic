@@ -88,9 +88,9 @@ public final class ModelTextSplitters {
      */
     public static Splitter createSplitter(TestDataManager.TestModel model) {
         return switch (model) {
-            case GEMMA_3_1B -> createGemmaSplitter();
-            case QWEN3_0_6B -> RegexSplitter.create(QWEN2_PATTERN);
-            case MISTRAL_SMALL_3_1 -> RegexSplitter.create(LLAMA3_PATTERN);
+            case QWEN3_0_6B, QWEN2_5_0_5B -> RegexSplitter.create(QWEN2_PATTERN);
+            case GEMMA_3_4B_UNSLOTH -> createGemmaSplitter();
+            case MISTRAL_3_3B_BARTOWSKI -> RegexSplitter.create(LLAMA3_PATTERN);
         };
     }
 

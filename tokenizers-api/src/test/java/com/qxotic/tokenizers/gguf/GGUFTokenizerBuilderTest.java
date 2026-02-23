@@ -10,11 +10,9 @@ import com.qxotic.tokenizers.gguf.TestDataManager.TestModel;
 import com.qxotic.tokenizers.gguf.TestDataManager.TokenizerMetadata;
 import com.qxotic.tokenizers.impl.*;
 import java.io.IOException;
-import java.nio.file.Path;
 import java.util.*;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -28,11 +26,10 @@ import org.junit.jupiter.params.provider.EnumSource;
 public class GGUFTokenizerBuilderTest {
 
     private static TestDataManager dataManager;
-    @TempDir static Path tempDir;
 
     @BeforeAll
     static void setUp() {
-        dataManager = new TestDataManager(tempDir.resolve("gguf-metadata-cache"));
+        dataManager = new TestDataManager();
     }
 
     /** Builds a vocabulary from GGUF metadata and verifies basic operations. */
