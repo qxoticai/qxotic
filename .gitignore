@@ -1,7 +1,9 @@
-# Compiled class file
+# === Java ===
+
+# Compiled class files
 *.class
 
-# Log file
+# Log files
 *.log
 
 # BlueJ files
@@ -10,7 +12,7 @@
 # Mobile Tools for Java (J2ME)
 .mtj.tmp/
 
-# Package Files #
+# Package Files
 *.jar
 *.war
 *.nar
@@ -19,21 +21,106 @@
 *.tar.gz
 *.rar
 
-# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+# Virtual machine crash logs
 hs_err_pid*
 replay_pid*
 
-*/target
+# === Maven ===
+target/
+!**/src/**/target/
 
-# mill
+# === Mill Build System ===
 .bsp/
 out/
+.mill-version.bak
+build/
+
+# === IDE/Editor ===
+
+# IntelliJ IDEA
 .idea/
+*.iws
+*.iml
+*.ipr
 
-# no models in the repo
-*.gguf
+# Eclipse
+.settings/
+.classpath
+.project
+.factorypath
+.apt_generated/
+bin/
+
+# VS Code
+.vscode/
+
+# Kate Editor
+*.kate-swp
+
+# Emacs/Vim
+*~
+.*.swp
+.*.swo
+
+# === Python ===
+
+# Virtual Environments
+.venv/
 venv/
+ENV/
+env/
+.conda/
+*.pyc
+__pycache__/
+*.pyo
 
-# no cache kernels
-*/__kernels
+# Python tools
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+
+# === Generated Files ===
+
+# Documentation
+site/
+mkdocs/site/
+
+# Dump files
+dump*.json
+
+# Temp files
+*.tmp
+*.temp
+*.cache
+
+# Generated images
+*.ppm
+*.pbm
+*.pgm
+
+# Native binaries
+*.bin
+*.so
+*.dll
+*.dylib
+*.exe
+
+# === Native Kernel Libraries ===
 __kernels/
+
+# === OS Files ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === Project-specific ===
+
+# No models in the repo
+*.gguf
+
+# Claude/opencode cache
+.claude/
+.opencode/
+
+# Raytracer output
+raytrace*.ppm
