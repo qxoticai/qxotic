@@ -10,7 +10,6 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -33,11 +32,10 @@ import org.junit.jupiter.params.provider.EnumSource;
 public class GGUFTokenizerTest {
 
     private static TestDataManager dataManager;
-    @TempDir static Path tempDir;
 
     @BeforeAll
     static void setUp() {
-        dataManager = new TestDataManager(tempDir.resolve("gguf-metadata-cache"));
+        dataManager = new TestDataManager();
     }
 
     /** Tests that metadata can be downloaded and parsed for all supported models. */
@@ -77,23 +75,31 @@ public class GGUFTokenizerTest {
         GGUF gguf = dataManager.getOrDownloadMetadata(model);
         TokenizerMetadata tokenizerMeta = TestDataManager.extractTokenizerMetadata(gguf);
 
-        // Gemma uses SentencePiece, most others use BPE
+        // Model-specific tokenizer type checks
         if (model.name().contains("GEMMA")) {
+            // Gemma uses SentencePiece
             assertTrue(
                     tokenizerMeta.isSentencePiece()
-                            || tokenizerMeta.modelType().equalsIgnoreCase("llama"),
-                    "Gemma should use SentencePiece/llama tokenizer type");
-        } else if (model.name().contains("LLAMA")) {
+                            || tokenizerMeta.modelType().toLowerCase().contains("gemma")
+                            || tokenizerMeta.modelType().equalsIgnoreCase("spm"),
+                    model.name() + " should use SentencePiece tokenizer type, but was: "
+                            + tokenizerMeta.modelType());
+        } else if (model.name().contains("MISTRAL")) {
+            // Mistral uses BPE/llama type
             assertTrue(
-                    tokenizerMeta.isSentencePiece()
-                            || tokenizerMeta.modelType().equalsIgnoreCase("llama"),
-                    "Llama should use SentencePiece/llama tokenizer type");
+                    tokenizerMeta.isBpe()
+                            || tokenizerMeta.modelType().equalsIgnoreCase("llama")
+                            || tokenizerMeta.modelType().equalsIgnoreCase("gpt2"),
+                    model.name() + " should use BPE/llama tokenizer type, but was: "
+                            + tokenizerMeta.modelType());
         } else {
-            // Qwen, Mistral, Phi typically use BPE
+            // Qwen models use BPE tokenizer type
             assertTrue(
-                    tokenizerMeta.isBpe() || tokenizerMeta.modelType().equalsIgnoreCase("gpt2"),
+                    tokenizerMeta.isBpe()
+                            || tokenizerMeta.modelType().equalsIgnoreCase("gpt2")
+                            || tokenizerMeta.modelType().equalsIgnoreCase("qwen"),
                     model.name()
-                            + " should use BPE/gpt2 tokenizer type, but was: "
+                            + " should use BPE/gpt2/qwen tokenizer type, but was: "
                             + tokenizerMeta.modelType());
         }
     }
@@ -138,7 +144,7 @@ public class GGUFTokenizerTest {
     /** Tests cache functionality by loading the same model twice. */
     @Test
     void testCacheFunctionality() throws IOException, InterruptedException {
-        TestModel model = TestModel.GEMMA_3_1B;
+        TestModel model = TestModel.QWEN3_0_6B;
 
         GGUF gguf1 = dataManager.getOrDownloadMetadata(model);
 

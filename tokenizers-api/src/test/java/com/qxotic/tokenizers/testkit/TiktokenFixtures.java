@@ -98,6 +98,9 @@ public final class TiktokenFixtures {
 
     private static final java.util.Map<String, java.util.Map<String, Integer>>
             MERGEABLE_RANKS_CACHE = new HashMap<>();
+    
+    // Cache for tokenizer instances to avoid recreating them for each test
+    private static final java.util.Map<String, Tokenizer> TOKENIZER_CACHE = new HashMap<>();
 
     public static List<EncodingFixture> encodings() {
         return ENCODINGS;
@@ -108,31 +111,51 @@ public final class TiktokenFixtures {
     }
 
     public static Tokenizer createJtokkitTokenizer(String encodingName) {
-        EncodingFixture fixture = encoding(encodingName);
-        java.util.Map<String, Integer> ranks =
-                loadMergeableRanks(fixture.fileName(), fixture.hash());
-        return Tiktoken.createFromTiktoken(
-                fixture.name(), ranks, Pattern.compile(fixture.pattern()), fixture.specialTokens());
+        return TOKENIZER_CACHE.computeIfAbsent(
+                encodingName,
+                name -> {
+                    EncodingFixture fixture = encoding(name);
+                    java.util.Map<String, Integer> ranks =
+                            loadMergeableRanks(fixture.fileName(), fixture.hash());
+                    return Tiktoken.createFromTiktoken(
+                            fixture.name(),
+                            ranks,
+                            Pattern.compile(fixture.pattern()),
+                            fixture.specialTokens());
+                });
     }
+
+    private static Tokenizer CLASSIC_R50K_TOKENIZER = null;
 
     public static Tokenizer createClassicR50kTokenizer() {
-        EncodingFixture fixture = encoding("r50k_base");
-        java.util.Map<String, Integer> ranks =
-                loadMergeableRanks(fixture.fileName(), fixture.hash());
-        return ClassicBPE.classicFromTiktoken(
-                ranks,
-                fixture.specialTokens(),
-                Normalizer.IDENTITY,
-                RegexSplitter.create(fixture.pattern()));
+        if (CLASSIC_R50K_TOKENIZER == null) {
+            EncodingFixture fixture = encoding("r50k_base");
+            java.util.Map<String, Integer> ranks =
+                    loadMergeableRanks(fixture.fileName(), fixture.hash());
+            CLASSIC_R50K_TOKENIZER =
+                    ClassicBPE.classicFromTiktoken(
+                            ranks,
+                            fixture.specialTokens(),
+                            Normalizer.IDENTITY,
+                            RegexSplitter.create(fixture.pattern()));
+        }
+        return CLASSIC_R50K_TOKENIZER;
     }
 
+    private static List<NamedTokenizer> ALL_JTOKKIT_TOKENIZERS = null;
+
     public static List<NamedTokenizer> createAllJtokkitTokenizers() {
-        return ENCODINGS.stream()
-                .map(
-                        e ->
-                                new NamedTokenizer(
-                                        "jtokkit-" + e.name(), createJtokkitTokenizer(e.name())))
-                .toList();
+        if (ALL_JTOKKIT_TOKENIZERS == null) {
+            ALL_JTOKKIT_TOKENIZERS =
+                    ENCODINGS.stream()
+                            .map(
+                                    e ->
+                                            new NamedTokenizer(
+                                                    "jtokkit-" + e.name(),
+                                                    createJtokkitTokenizer(e.name())))
+                            .toList();
+        }
+        return ALL_JTOKKIT_TOKENIZERS;
     }
 
     private static java.util.Map<String, Integer> loadMergeableRanks(

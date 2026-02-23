@@ -34,20 +34,17 @@ public class TestDataManager {
     private final Path cachePath;
     private final Map<String, GGUF> loadedMetadata;
 
-    /** Predefined small models for testing. */
+    /** Predefined models for testing (publicly accessible, no auth required). */
     public enum TestModel {
-        GEMMA_3_1B("bartowski", "google_gemma-3-1b-it-GGUF", "google_gemma-3-1b-it-Q4_K_M.gguf"),
+        // Qwen models - excellent quality, permissive license, publicly accessible
         QWEN3_0_6B("Qwen", "Qwen3-0.6B-GGUF", "Qwen3-0.6B-Q8_0.gguf"),
-        MISTRAL_SMALL_3_1(
-                "bartowski",
-                "mistralai_Mistral-Small-3.1-24B-Instruct-2503-GGUF",
-                "mistralai_Mistral-Small-3.1-24B-Instruct-2503-Q4_K_M.gguf"),
-    // Note: Llama 3.2 requires Hugging Face authentication
-    // LLAMA_3_2_1B("bartowski", "meta-llama_Llama-3.2-1B-Instruct-GGUF",
-    //         "Llama-3.2-1B-Instruct-Q4_K_M.gguf"),
-    // Note: Phi-4 requires Hugging Face authentication
-    // PHI_4_MINI("bartowski", "microsoft_Phi-4-mini-instruct-GGUF",
-    //         "Phi-4-Mini-Instruct-Q4_K_M.gguf"),
+        QWEN2_5_0_5B("Qwen", "Qwen2.5-0.5B-Instruct-GGUF", "qwen2.5-0.5b-instruct-q4_k_m.gguf"),
+        
+        // Gemma 3 from unsloth (potentially publicly accessible)
+        GEMMA_3_4B_UNSLOTH("unsloth", "gemma-3-4b-it-GGUF", "gemma-3-4b-it-Q4_K_M.gguf"),
+        
+        // Ministral from bartowski (potentially publicly accessible)
+        MISTRAL_3_3B_BARTOWSKI("bartowski", "mistralai_Ministral-3-3B-Instruct-2512-GGUF", "mistralai_Ministral-3-3B-Instruct-2512-Q4_K_M.gguf"),
     ;
 
         private final String org;
