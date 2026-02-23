@@ -20,7 +20,7 @@ class Snippets {
     void quickStart() {
         // --8<-- [start:quick-start]
         // Parse JSON string
-        Map<String, Object> config = JSON.parseObject("{\"host\":\"localhost\",\"port\":8080}");
+        Map<String, Object> config = JSON.parseMap("{\"host\":\"localhost\",\"port\":8080}");
 
         String host = (String) config.get("host");
         Long port = (Long) config.get("port");
@@ -47,14 +47,14 @@ class Snippets {
     void parseTypedRoot() {
         // --8<-- [start:parse-typed-root]
         // Require specific root type - throws if mismatch
-        Map<String, Object> obj = JSON.parseObject("{\"x\":1,\"y\":2}");
-        List<Object> arr = JSON.parseArray("[1, 2, 3]");
+        Map<String, Object> obj = JSON.parseMap("{\"x\":1,\"y\":2}");
+        List<Object> arr = JSON.parseList("[1, 2, 3]");
         String str = JSON.parseString("\"hello world\"");
         Number num = JSON.parseNumber("3.14159");
         boolean bool = JSON.parseBoolean("true");
 
         // Generic typed parse
-        Map<?, ?> alsoObj = JSON.parseObject("{\"status\":\"ok\"}");
+        Map<?, ?> alsoObj = JSON.parseMap("{\"status\":\"ok\"}");
         // --8<-- [end:parse-typed-root]
     }
 
@@ -67,7 +67,7 @@ class Snippets {
                         + "\"vocab\": [32000, 32001, 32002]"
                         + "}";
 
-        Map<String, Object> root = JSON.parseObject(json);
+        Map<String, Object> root = JSON.parseMap(json);
 
         String model = (String) root.get("model");
 
@@ -89,7 +89,7 @@ class Snippets {
         // Use in guards
         String userInput = getUserInput();
         if (JSON.isValid(userInput)) {
-            Map<String, Object> data = JSON.parseObject(userInput);
+            Map<String, Object> data = JSON.parseMap(userInput);
             process(data);
         }
         // --8<-- [end:parse-validation]
@@ -153,7 +153,7 @@ class Snippets {
         String json = "{\"a\":1,\"a\":2}";
 
         // Default: last key wins
-        Map<String, Object> defaultBehavior = JSON.parseObject(json);
+        Map<String, Object> defaultBehavior = JSON.parseMap(json);
         // defaultBehavior.get("a") == 2
 
         // Strict mode: reject duplicates
@@ -170,8 +170,7 @@ class Snippets {
 
     void dataModel() {
         // --8<-- [start:data-model]
-        Map<String, Object> obj =
-                JSON.parseObject("{\"int\":42,\"decimal\":3.14,\"big\":9999999999}");
+        Map<String, Object> obj = JSON.parseMap("{\"int\":42,\"decimal\":3.14,\"big\":9999999999}");
 
         // Integer fits in long
         Long intVal = (Long) obj.get("int");
@@ -184,7 +183,7 @@ class Snippets {
 
         // Null handling
         String jsonWithNull = "{\"value\":null}";
-        Map<String, Object> withNull = JSON.parseObject(jsonWithNull);
+        Map<String, Object> withNull = JSON.parseMap(jsonWithNull);
         Object n = withNull.get("value");
         // n == JSON.NULL (not Java null!)
         // --8<-- [end:data-model]
@@ -192,7 +191,7 @@ class Snippets {
 
     void nullHandling() {
         // --8<-- [start:null-handling]
-        Map<String, Object> obj = JSON.parseObject("{\"present\":null}");
+        Map<String, Object> obj = JSON.parseMap("{\"present\":null}");
         obj.put("absent", null); // Simulating missing key
 
         Object present = obj.get("present");
@@ -254,7 +253,7 @@ class Snippets {
     void roundTrip() {
         // --8<-- [start:round-trip]
         // Parse
-        Map<String, Object> original = JSON.parseObject("{\"x\":1,\"y\":2}");
+        Map<String, Object> original = JSON.parseMap("{\"x\":1,\"y\":2}");
 
         // Modify
         original.put("z", 3);
@@ -263,7 +262,7 @@ class Snippets {
         String json = JSON.stringify(original);
 
         // Parse again
-        Map<String, Object> parsed = JSON.parseObject(json);
+        Map<String, Object> parsed = JSON.parseMap(json);
         // --8<-- [end:round-trip]
     }
 
@@ -297,8 +296,8 @@ class Snippets {
         assertThrows(() -> JSON.parse("{\"a\"}")); // Expected ':'
 
         // Type mismatches
-        assertThrows(() -> JSON.parseObject("[]")); // Expected JSON object at root
-        assertThrows(() -> JSON.parseArray("{}")); // Expected JSON array at root
+        assertThrows(() -> JSON.parseMap("[]")); // Expected JSON object at root
+        assertThrows(() -> JSON.parseList("{}")); // Expected JSON array at root
         // --8<-- [end:error-types]
     }
 
@@ -346,7 +345,7 @@ class Snippets {
                         + "\"llama.embedding_length\": 4096"
                         + "}";
 
-        Map<String, Object> meta = JSON.parseObject(metadataJson);
+        Map<String, Object> meta = JSON.parseMap(metadataJson);
 
         String name = (String) meta.get("general.name");
         Long contextLength = (Long) meta.get("llama.context_length");
@@ -359,11 +358,11 @@ class Snippets {
         // --8<-- [start:unicode]
         // Unicode in strings
         Map<String, Object> obj =
-                JSON.parseObject("{\"emoji\":\"" + "\uD83C\uDF0D" + "\",\"jp\":\"こんにちは\"}");
+                JSON.parseMap("{\"emoji\":\"" + "\uD83C\uDF0D" + "\",\"jp\":\"こんにちは\"}");
 
         // Round-trips correctly
         String encoded = JSON.stringify(obj);
-        Map<String, Object> decoded = JSON.parseObject(encoded);
+        Map<String, Object> decoded = JSON.parseMap(encoded);
 
         // Escape sequences
         String withEscape = JSON.parseString("\"Hello\\nWorld\""); // "Hello\nWorld"

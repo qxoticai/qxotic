@@ -30,7 +30,7 @@ class JSONErrorHandlingTest {
     @Test
     void testManualParseExceptionHasUnknownPosition() {
         JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parseArray("{\"a\":1}"));
+                assertThrows(JSON.ParseException.class, () -> JSON.parseList("{\"a\":1}"));
         assertEquals(-1, e.getPosition());
     }
 

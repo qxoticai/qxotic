@@ -44,7 +44,7 @@ class JSONPrinterTest {
     }
 
     @Test
-    void testPrettyPrintArray() {
+    void testPrettyPrintList() {
         List<Object> arr = Arrays.asList(1, 2, 3);
         String json = JSON.stringify(arr, true);
         assertTrue(json.contains("["));

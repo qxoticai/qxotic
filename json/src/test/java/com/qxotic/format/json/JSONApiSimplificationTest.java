@@ -39,8 +39,8 @@ class JSONApiSimplificationTest {
     }
 
     @Test
-    void testTypedParseForObjects() {
-        Map<?, ?> map = JSON.parseObject("{\"a\":1}");
+    void testTypedParseForMaps() {
+        Map<?, ?> map = JSON.parseMap("{\"a\":1}");
         assertEquals(1L, map.get("a"));
     }
 

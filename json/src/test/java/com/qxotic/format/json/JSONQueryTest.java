@@ -669,18 +669,18 @@ class JSONQueryTest {
     // ============== Integration with Existing API Tests ==============
 
     @Test
-    @DisplayName("query works with parseObject (deprecated but functional)")
-    void testQueryWithParseObject() {
-        Map<String, Object> data = JSON.parseObject("{\"name\": \"Alice\"}");
+    @DisplayName("query works with parseMap")
+    void testQueryWithParseMap() {
+        Map<String, Object> data = JSON.parseMap("{\"name\": \"Alice\"}");
         Optional<String> result = JSON.queryString(data, "name");
         assertTrue(result.isPresent());
         assertEquals("Alice", result.get());
     }
 
     @Test
-    @DisplayName("query works with parseArray (deprecated but functional)")
-    void testQueryWithParseArray() {
-        List<Object> data = JSON.parseArray("[{\"name\": \"Alice\"}]");
+    @DisplayName("query works with parseList")
+    void testQueryWithParseList() {
+        List<Object> data = JSON.parseList("[{\"name\": \"Alice\"}]");
         assertEquals(1, data.size());
         assertTrue(data.get(0) instanceof Map);
     }
