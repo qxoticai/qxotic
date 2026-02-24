@@ -1,6 +1,7 @@
 package com.qxotic.tokenizers.gguf;
 
 import com.qxotic.format.gguf.GGUF;
+
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -26,9 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class TestDataManager {
 
     private static final String CACHE_DIR =
-            System.getProperty("user.home") + "/.cache/qxotic-tokenizers/gguf-metadata";
-    private static final int DOWNLOAD_BUFFER_SIZE = 8192;
-    private static final int MAX_METADATA_SIZE = 10 * 1024 * 1024; // 10MB max for metadata
+            System.getProperty("user.home") + "/.cache/qxotic/tokenizers/gguf-metadata";
 
     private final HttpClient httpClient;
     private final Path cachePath;
@@ -39,10 +38,10 @@ public class TestDataManager {
         // Qwen models - excellent quality, permissive license, publicly accessible
         QWEN3_0_6B("Qwen", "Qwen3-0.6B-GGUF", "Qwen3-0.6B-Q8_0.gguf"),
         QWEN2_5_0_5B("Qwen", "Qwen2.5-0.5B-Instruct-GGUF", "qwen2.5-0.5b-instruct-q4_k_m.gguf"),
-        
+
         // Gemma 3 from unsloth (potentially publicly accessible)
         GEMMA_3_4B_UNSLOTH("unsloth", "gemma-3-4b-it-GGUF", "gemma-3-4b-it-Q4_K_M.gguf"),
-        
+
         // Ministral from bartowski (potentially publicly accessible)
         MISTRAL_3_3B_BARTOWSKI("bartowski", "mistralai_Ministral-3-3B-Instruct-2512-GGUF", "mistralai_Ministral-3-3B-Instruct-2512-Q4_K_M.gguf"),
     ;
