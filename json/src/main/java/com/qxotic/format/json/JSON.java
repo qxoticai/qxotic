@@ -593,11 +593,11 @@ public final class JSON {
             return;
         }
         if (value instanceof List) {
-            printArray(sb, (List<?>) value, pretty, indent, visiting);
+            printList(sb, (List<?>) value, pretty, indent, visiting);
             return;
         }
         if (value instanceof Map) {
-            printObject(sb, (Map<?, ?>) value, pretty, indent, visiting);
+            printMap(sb, (Map<?, ?>) value, pretty, indent, visiting);
             return;
         }
         throw new IllegalArgumentException("Cannot serialize: " + value.getClass());
@@ -627,6 +627,24 @@ public final class JSON {
     }
 
     private static void printString(StringBuilder sb, CharSequence str) {
+        // Fast path: check if string needs any escaping
+        boolean needsEscape = false;
+        for (int i = 0; i < str.length(); i++) {
+            char ch = str.charAt(i);
+            if (ch < 0x20 || ch == '"' || ch == '\\' || ch >= 0x7F) {
+                needsEscape = true;
+                break;
+            }
+        }
+        
+        if (!needsEscape) {
+            // Fast path: no escaping needed
+            sb.ensureCapacity(str.length() + 2);
+            sb.append('"').append(str).append('"');
+            return;
+        }
+        
+        // Slow path: process escapes
         sb.append('"');
         for (int i = 0; i < str.length(); i++) {
             char ch = str.charAt(i);
@@ -676,7 +694,7 @@ public final class JSON {
         sb.append(hex);
     }
 
-    private static void printArray(
+    private static void printList(
             StringBuilder sb, List<?> list, boolean pretty, int indent, Set<Object> visiting) {
         enterContainer(list, visiting);
         try {
@@ -697,7 +715,7 @@ public final class JSON {
         }
     }
 
-    private static void printObject(
+    private static void printMap(
             StringBuilder sb, Map<?, ?> map, boolean pretty, int indent, Set<Object> visiting) {
         enterContainer(map, visiting);
         try {
