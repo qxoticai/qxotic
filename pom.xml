@@ -13,9 +13,7 @@
     <modules>
         <module>gguf</module>
         <module>jota</module>
-        <module>tokenizers-api</module>
-        <module>tokenizers-hf</module>
-        <module>tokenizers-gguf</module>
+        <module>tokenizers</module>
         <module>safetensors</module>
         <module>json</module>
         <module>examples</module>
@@ -75,19 +73,7 @@
 
             <dependency>
                 <groupId>com.qxotic</groupId>
-                <artifactId>tokenizers-api</artifactId>
-                <version>${qxotic.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>com.qxotic</groupId>
-                <artifactId>tokenizers-hf</artifactId>
-                <version>${qxotic.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>com.qxotic</groupId>
-                <artifactId>tokenizers-gguf</artifactId>
+                <artifactId>tokenizers</artifactId>
                 <version>${qxotic.version}</version>
             </dependency>
 
