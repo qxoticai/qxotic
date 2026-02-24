@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Collection;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -226,6 +227,30 @@ public interface GGUF {
      */
     default boolean containsTensor(String tensorName) {
         return getTensor(tensorName) != null;
+    }
+
+    /**
+     * Returns the absolute byte offset where the tensor's data begins in the GGUF file.
+     *
+     * <p>This is a convenience method equivalent to {@code getTensorDataOffset() +
+     * tensor.offset()}.
+     *
+     * <p>Example usage when reading tensor data:
+     *
+     * <pre>{@code
+     * GGUF gguf = GGUF.read(path);
+     * TensorEntry tensor = gguf.getTensor("weights");
+     * long absoluteOffset = gguf.absoluteOffset(tensor);
+     * // Use absoluteOffset to read from file channel
+     * }</pre>
+     *
+     * @param tensor the tensor entry
+     * @return the absolute byte offset in the file
+     * @throws NullPointerException if tensor is null
+     */
+    default long absoluteOffset(TensorEntry tensor) {
+        Objects.requireNonNull(tensor, "tensor");
+        return getTensorDataOffset() + tensor.offset();
     }
 
     /**

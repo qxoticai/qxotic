@@ -100,27 +100,6 @@ public final class TensorEntry {
     }
 
     /**
-     * Returns the absolute byte offset where this tensor's data begins in the GGUF file.
-     *
-     * <p>This is a convenience method equivalent to {@code gguf.getTensorDataOffset() +
-     * this.offset()}.
-     *
-     * <p>Example usage when reading tensor data:
-     *
-     * <pre>{@code
-     * TensorEntry tensor = gguf.getTensor("weights");
-     * long absoluteOffset = tensor.absoluteOffset(gguf);
-     * // Use absoluteOffset to read from file channel
-     * }</pre>
-     *
-     * @param gguf the GGUF instance containing this tensor
-     * @return the absolute byte offset in the file
-     */
-    public long absoluteOffset(GGUF gguf) {
-        return gguf.getTensorDataOffset() + this.offset;
-    }
-
-    /**
      * Returns the byte size required to store this tensor's data.
      *
      * <p>This is a convenience method equivalent to {@code ggmlType().byteSizeForShape(shape())}.
@@ -188,5 +167,25 @@ public final class TensorEntry {
                 + "0x"
                 + Long.toHexString(offset)
                 + '}';
+    }
+
+    /**
+     * Creates a copy of this tensor entry with a different offset.
+     *
+     * <p>This is useful when rearranging tensors in a GGUF file. All other properties
+     * (name, shape, ggmlType) remain unchanged.
+     *
+     * <p>Example usage:
+     *
+     * <pre>{@code
+     * TensorEntry original = gguf.getTensor("weights");
+     * TensorEntry moved = original.withOffset(1024);
+     * }</pre>
+     *
+     * @param newOffset the new byte offset relative to the tensor data section start
+     * @return a new TensorEntry with the same name, shape, and ggmlType but different offset
+     */
+    public TensorEntry withOffset(long newOffset) {
+        return new TensorEntry(this.name, this.shape, this.ggmlType, newOffset);
     }
 }

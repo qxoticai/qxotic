@@ -426,13 +426,13 @@ public class BuilderTest extends GGUFTest {
         long expectedAbsolute1 = gguf.getTensorDataOffset() + tensor1.offset();
         long expectedAbsolute2 = gguf.getTensorDataOffset() + tensor2.offset();
 
-        assertEquals(expectedAbsolute1, tensor1.absoluteOffset(gguf));
-        assertEquals(expectedAbsolute2, tensor2.absoluteOffset(gguf));
+        assertEquals(expectedAbsolute1, gguf.absoluteOffset(tensor1));
+        assertEquals(expectedAbsolute2, gguf.absoluteOffset(tensor2));
 
         // Verify absolute offset is correct by checking offset difference
         assertEquals(
                 tensor2.offset() - tensor1.offset(),
-                tensor2.absoluteOffset(gguf) - tensor1.absoluteOffset(gguf));
+                gguf.absoluteOffset(tensor2) - gguf.absoluteOffset(tensor1));
     }
 
     @Test
@@ -451,7 +451,7 @@ public class BuilderTest extends GGUFTest {
 
         // absoluteOffset should work correctly on deserialized GGUF
         long expectedAbsolute = read.getTensorDataOffset() + tensor.offset();
-        assertEquals(expectedAbsolute, tensor.absoluteOffset(read));
+        assertEquals(expectedAbsolute, read.absoluteOffset(tensor));
     }
 
     @Test
