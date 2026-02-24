@@ -32,13 +32,13 @@ class JSONEdgeCaseTests {
         // Just above Long.MAX_VALUE should be BigInteger
         String aboveMax = "9223372036854775808"; // Long.MAX_VALUE + 1
         Object parsed = JSON.parse(aboveMax);
-        assertTrue(parsed instanceof BigInteger);
+        assertInstanceOf(BigInteger.class, parsed);
         assertEquals(new BigInteger(aboveMax), parsed);
 
         // Just below Long.MIN_VALUE should be BigInteger
         String belowMin = "-9223372036854775809"; // Long.MIN_VALUE - 1
         parsed = JSON.parse(belowMin);
-        assertTrue(parsed instanceof BigInteger);
+        assertInstanceOf(BigInteger.class, parsed);
         assertEquals(new BigInteger(belowMin), parsed);
     }
 
@@ -51,7 +51,7 @@ class JSONEdgeCaseTests {
         // Test with BigDecimal mode
         Object parsed =
                 JSON.parse("1e308", JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, new BigDecimal("1E+308").compareTo((BigDecimal) parsed));
     }
 
@@ -72,11 +72,11 @@ class JSONEdgeCaseTests {
         // In BigDecimal mode, trailing zeros should be preserved except for zero values
         Object parsed =
                 JSON.parse("1.500", JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(new BigDecimal("1.500"), parsed);
 
         parsed = JSON.parse("1.500e2", JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(new BigDecimal("150.0"), parsed);
     }
 
@@ -85,7 +85,7 @@ class JSONEdgeCaseTests {
         String precise = "0.1234567890123456789012345678901234567890";
         Object parsed =
                 JSON.parse(precise, JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(new BigDecimal(precise), parsed);
     }
 
@@ -157,7 +157,7 @@ class JSONEdgeCaseTests {
         List<Object> expected = Arrays.asList(1L, "two", true, JSON.NULL, new BigDecimal("3.14"));
         Object parsed = JSON.parse("[1, \"two\", true, null, 3.14]");
         // Compare content, not exact List implementation
-        assertTrue(parsed instanceof List);
+        assertInstanceOf(List.class, parsed);
         List<?> parsedList = (List<?>) parsed;
         assertEquals(expected.size(), parsedList.size());
         for (int i = 0; i < expected.size(); i++) {
@@ -230,13 +230,9 @@ class JSONEdgeCaseTests {
         // Test with depth 200 (should parse with default max depth 1000)
         int depth = 200;
         StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < depth; i++) {
-            sb.append("[");
-        }
+        sb.append("[".repeat(depth));
         sb.append("null");
-        for (int i = 0; i < depth; i++) {
-            sb.append("]");
-        }
+        sb.append("]".repeat(depth));
 
         Object result = JSON.parse(sb.toString());
         assertNotNull(result);
@@ -349,7 +345,7 @@ class JSONEdgeCaseTests {
         // Should be valid JSON
         Object parsed = JSON.parse(pretty);
         // Compare content
-        assertTrue(parsed instanceof Map);
+        assertInstanceOf(Map.class, parsed);
         Map<?, ?> parsedMap = (Map<?, ?>) parsed;
         assertEquals(obj.size(), parsedMap.size());
         for (Map.Entry<String, Object> entry : obj.entrySet()) {
@@ -378,7 +374,7 @@ class JSONEdgeCaseTests {
                         .decimalsAsBigDecimal(false); // Should override BigDecimal
 
         Object parsed = JSON.parse("3.14", options);
-        assertTrue(parsed instanceof Double);
+        assertInstanceOf(Double.class, parsed);
         assertEquals(3.14, (Double) parsed, 0.001);
     }
 
@@ -386,7 +382,7 @@ class JSONEdgeCaseTests {
     void testParseOptionsDefaultIsBigDecimal() {
         // Default should be BigDecimal for floats
         Object parsed = JSON.parse("3.14");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(new BigDecimal("3.14"), parsed);
     }
 
@@ -408,7 +404,7 @@ class JSONEdgeCaseTests {
         String json = JSON.stringify(original, false);
         Object parsed = JSON.parse(json);
         // Compare content
-        assertTrue(parsed instanceof Map);
+        assertInstanceOf(Map.class, parsed);
         Map<?, ?> parsedMap = (Map<?, ?>) parsed;
         assertEquals(original.size(), parsedMap.size());
         for (Map.Entry<String, Object> entry : original.entrySet()) {

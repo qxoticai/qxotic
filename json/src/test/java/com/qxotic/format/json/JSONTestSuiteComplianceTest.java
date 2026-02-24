@@ -294,12 +294,12 @@ class JSONTestSuiteComplianceTest {
         // Very small numbers with huge negative exponents are valid
         // Should parse as BigDecimal with appropriate scale
         Object parsed = JSON.parse("1e-999");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         BigDecimal bd = (BigDecimal) parsed;
         assertEquals(0, bd.compareTo(new BigDecimal("1E-999")));
 
         parsed = JSON.parse("1.5e-500");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         bd = (BigDecimal) parsed;
         assertEquals(0, bd.compareTo(new BigDecimal("1.5E-500")));
     }
@@ -308,12 +308,12 @@ class JSONTestSuiteComplianceTest {
     void testY_number_double_huge_pos_exp() {
         // Very large numbers with huge positive exponents are valid
         Object parsed = JSON.parse("1e999");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         BigDecimal bd = (BigDecimal) parsed;
         assertEquals(0, bd.compareTo(new BigDecimal("1E+999")));
 
         parsed = JSON.parse("1.5e500");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         bd = (BigDecimal) parsed;
         assertEquals(0, bd.compareTo(new BigDecimal("1.5E+500")));
     }
@@ -322,15 +322,15 @@ class JSONTestSuiteComplianceTest {
     void testY_number_0e1() {
         // 0 with exponent is valid
         Object parsed = JSON.parse("0e1");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(BigDecimal.ZERO));
 
         parsed = JSON.parse("0E10");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(BigDecimal.ZERO));
 
         parsed = JSON.parse("0e-10");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(BigDecimal.ZERO));
     }
 
@@ -338,15 +338,15 @@ class JSONTestSuiteComplianceTest {
     void testY_number_1e0() {
         // 1e0 is valid (exponent of zero)
         Object parsed = JSON.parse("1e0");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(new BigDecimal("1")));
 
         parsed = JSON.parse("1E0");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(new BigDecimal("1")));
 
         parsed = JSON.parse("1.5e0");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(new BigDecimal("1.5")));
     }
 
@@ -426,7 +426,7 @@ class JSONTestSuiteComplianceTest {
         try {
             Object parsed = JSON.parse(huge);
             // If accepted, should be BigInteger
-            assertTrue(parsed instanceof BigInteger);
+            assertInstanceOf(BigInteger.class, parsed);
             assertEquals(new BigInteger(huge), parsed);
         } catch (JSON.ParseException e) {
             // Also acceptable to reject due to implementation limits
@@ -441,7 +441,7 @@ class JSONTestSuiteComplianceTest {
         try {
             Object parsed = JSON.parse(huge);
             // If accepted, should be BigInteger
-            assertTrue(parsed instanceof BigInteger);
+            assertInstanceOf(BigInteger.class, parsed);
             assertEquals(new BigInteger(huge), parsed);
         } catch (JSON.ParseException e) {
             // Also acceptable to reject due to implementation limits
@@ -541,9 +541,7 @@ class JSONTestSuiteComplianceTest {
     void testVeryLongString() {
         // Test long string parsing (should not crash)
         StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < 1000; i++) {
-            sb.append("test ");
-        }
+        sb.append("test ".repeat(1000));
         String longString = sb.toString();
 
         String json = "\"" + longString.replace("\"", "\\\"").replace("\\", "\\\\") + "\"";
@@ -568,15 +566,15 @@ class JSONTestSuiteComplianceTest {
     void testNumberLeadingZeroInExponent() {
         // Leading zeros in exponent are allowed
         Object parsed = JSON.parse("1e01");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(new BigDecimal("1E+1")));
 
         parsed = JSON.parse("1e001");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(new BigDecimal("1E+1")));
 
         parsed = JSON.parse("1.5e-01");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(new BigDecimal("1.5E-1")));
     }
 
@@ -597,13 +595,9 @@ class JSONTestSuiteComplianceTest {
         // Build JSON at default max depth (1000) - but use 200 to avoid stack overflow
         int depth = 200;
         StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < depth; i++) {
-            sb.append("[");
-        }
+        sb.append("[".repeat(depth));
         sb.append("1");
-        for (int i = 0; i < depth; i++) {
-            sb.append("]");
-        }
+        sb.append("]".repeat(depth));
 
         // Should parse successfully with default max depth (1000)
         Object result = JSON.parse(sb.toString());

@@ -37,8 +37,8 @@ class JSONParserTest {
     @Test
     void testSimpleObject() {
         assertEquals(
-            map("name", "John", "age", 30L, "active", true),
-            JSON.parse("{\"name\":\"John\",\"age\":30,\"active\":true}"));
+                map("name", "John", "age", 30L, "active", true),
+                JSON.parse("{\"name\":\"John\",\"age\":30,\"active\":true}"));
     }
 
     @Test
@@ -47,14 +47,11 @@ class JSONParserTest {
         assertEquals(list(list(1L, 2L), list(3L, 4L)), JSON.parse("[[1,2],[3,4]]"));
 
         // Nested objects
-        assertEquals(
-            map("outer", map("value", 42L)),
-            JSON.parse("{\"outer\":{\"value\":42}}"));
+        assertEquals(map("outer", map("value", 42L)), JSON.parse("{\"outer\":{\"value\":42}}"));
 
         // Mixed nesting
         assertEquals(
-            list(1L, map("key", "value"), list()),
-            JSON.parse("[1,{\"key\":\"value\"},[]]"));
+                list(1L, map("key", "value"), list()), JSON.parse("[1,{\"key\":\"value\"},[]]"));
     }
 
     @Test
@@ -78,7 +75,8 @@ class JSONParserTest {
         } else {
             Object result = parseWithType(json, type);
             if (expected instanceof Number) {
-                assertEquals(((Number) expected).doubleValue(), ((Number) result).doubleValue(), 0.001);
+                assertEquals(
+                        ((Number) expected).doubleValue(), ((Number) result).doubleValue(), 0.001);
             } else {
                 assertEquals(expected, result);
             }
@@ -87,23 +85,38 @@ class JSONParserTest {
 
     static Stream<Arguments> typedParseCases() {
         return Stream.of(
-            // Map parsing
-            Arguments.of("{\"a\":1}", Map.class, map("a", 1L), null),
-            Arguments.of("[1,2,3]", Map.class, JSON.ParseException.class, "Expected JSON object at root"),
+                // Map parsing
+                Arguments.of("{\"a\":1}", Map.class, map("a", 1L), null),
+                Arguments.of(
+                        "[1,2,3]",
+                        Map.class,
+                        JSON.ParseException.class,
+                        "Expected JSON object at root"),
 
-            // List parsing
-            Arguments.of("[1,2,3]", List.class, list(1L, 2L, 3L), null),
-            Arguments.of("{\"a\":1}", List.class, JSON.ParseException.class, "Expected JSON array at root"),
+                // List parsing
+                Arguments.of("[1,2,3]", List.class, list(1L, 2L, 3L), null),
+                Arguments.of(
+                        "{\"a\":1}",
+                        List.class,
+                        JSON.ParseException.class,
+                        "Expected JSON array at root"),
 
-            // String parsing
-            Arguments.of("\"hello\"", String.class, "hello", null),
-            Arguments.of("123", String.class, JSON.ParseException.class, "Expected JSON string at root"),
+                // String parsing
+                Arguments.of("\"hello\"", String.class, "hello", null),
+                Arguments.of(
+                        "123",
+                        String.class,
+                        JSON.ParseException.class,
+                        "Expected JSON string at root"),
 
-            // Number parsing
-            Arguments.of("123", Number.class, 123L, null),
-            Arguments.of("3.14", Number.class, 3.14, null),
-            Arguments.of("true", Number.class, JSON.ParseException.class, "Expected JSON number at root")
-        );
+                // Number parsing
+                Arguments.of("123", Number.class, 123L, null),
+                Arguments.of("3.14", Number.class, 3.14, null),
+                Arguments.of(
+                        "true",
+                        Number.class,
+                        JSON.ParseException.class,
+                        "Expected JSON number at root"));
     }
 
     private static Object parseWithType(String json, Class<?> type) {

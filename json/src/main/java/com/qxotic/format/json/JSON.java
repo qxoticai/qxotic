@@ -636,14 +636,14 @@ public final class JSON {
                 break;
             }
         }
-        
+
         if (!needsEscape) {
             // Fast path: no escaping needed
             sb.ensureCapacity(str.length() + 2);
             sb.append('"').append(str).append('"');
             return;
         }
-        
+
         // Slow path: process escapes
         sb.append('"');
         for (int i = 0; i < str.length(); i++) {

@@ -78,7 +78,7 @@ class JSON2ComparisonTest {
     @Test
     void testJSON2PreservesNegativeZero() {
         Object parsed = JSON.parse("-0");
-        assertTrue(parsed instanceof Number);
+        assertInstanceOf(Number.class, parsed);
 
         String stringified = JSON.stringify(parsed);
         assertEquals("0", stringified);

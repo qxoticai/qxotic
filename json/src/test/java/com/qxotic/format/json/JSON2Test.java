@@ -20,7 +20,7 @@ class JSON2Test {
         assertEquals(0.01, ((Number) JSON.parse("1E-2")).doubleValue(), 0.0001);
 
         Object big = JSON.parse("9999999999999999999999999999999999999999");
-        assertTrue(big instanceof BigInteger);
+        assertInstanceOf(BigInteger.class, big);
     }
 
     @Test

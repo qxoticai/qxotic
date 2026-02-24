@@ -4,7 +4,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -18,13 +22,11 @@ class JSONPerformanceSecurityTest {
         // Very long string (100KB) should parse without OOM
         StringBuilder sb = new StringBuilder();
         sb.append("\"");
-        for (int i = 0; i < 100000; i++) {
-            sb.append("x");
-        }
+        sb.append("x".repeat(100000));
         sb.append("\"");
 
         Object parsed = JSON.parse(sb.toString());
-        assertTrue(parsed instanceof String);
+        assertInstanceOf(String.class, parsed);
         String result = (String) parsed;
         assertEquals(100000, result.length());
 
@@ -38,7 +40,7 @@ class JSONPerformanceSecurityTest {
         sb.append("]");
 
         parsed = JSON.parse(sb.toString());
-        assertTrue(parsed instanceof List);
+        assertInstanceOf(List.class, parsed);
         List<?> list = (List<?>) parsed;
         assertEquals(10000, list.size());
     }
@@ -48,38 +50,21 @@ class JSONPerformanceSecurityTest {
         // Test near maximum depth (default 1000)
         // Use smaller depth to avoid Java recursion limits
         int depth = 200;
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < depth; i++) {
-            sb.append("[");
-        }
-        sb.append("null");
-        for (int i = 0; i < depth; i++) {
-            sb.append("]");
-        }
-
+        String sb = "[".repeat(depth) + "null" + "]".repeat(depth);
         // Should parse successfully at default max depth (1000)
-        Object result = JSON.parse(sb.toString());
+        Object result = JSON.parse(sb);
         assertNotNull(result);
 
         // Should fail if we exceed max depth
         // Use 1200 to exceed default 1000 but not cause Java stack overflow
         int exceededDepth = 1200;
-        StringBuilder sb2 = new StringBuilder();
-        for (int i = 0; i < exceededDepth; i++) {
-            sb2.append("[");
-        }
-        sb2.append("null");
-        for (int i = 0; i < exceededDepth; i++) {
-            sb2.append("]");
-        }
-
-        JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parse(sb2.toString()));
+        String sb2 = "[".repeat(exceededDepth) + "null" + "]".repeat(exceededDepth);
+        JSON.ParseException e = assertThrows(JSON.ParseException.class, () -> JSON.parse(sb2));
         assertNotNull(e.getMessage());
 
         // Should work with increased max depth
         JSON.ParseOptions options = JSON.ParseOptions.defaults().maxDepth(2000);
-        result = JSON.parse(sb2.toString(), options);
+        result = JSON.parse(sb2, options);
         assertNotNull(result);
     }
 
@@ -87,16 +72,8 @@ class JSONPerformanceSecurityTest {
     void testNestedObjectsDepth() {
         // Deep nested objects
         int depth = 500;
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < depth; i++) {
-            sb.append("{\"a\":");
-        }
-        sb.append("null");
-        for (int i = 0; i < depth; i++) {
-            sb.append("}");
-        }
-
-        Object result = JSON.parse(sb.toString());
+        String sb = "{\"a\":".repeat(depth) + "null" + "}".repeat(depth);
+        Object result = JSON.parse(sb);
         assertNotNull(result);
     }
 
@@ -104,10 +81,10 @@ class JSONPerformanceSecurityTest {
     void testMaliciousLargeExponent() {
         // Very large exponents should be handled safely
         Object parsed = JSON.parse("1e999999");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
 
         parsed = JSON.parse("1e-999999");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
 
         // Test overflow behavior
         try {
@@ -115,7 +92,7 @@ class JSONPerformanceSecurityTest {
                     JSON.parse(
                             "999999999999999999999999999999999999999999999999999999999999999999999999999999999999");
             // Should be BigInteger
-            assertTrue(parsed instanceof BigInteger);
+            assertInstanceOf(BigInteger.class, parsed);
         } catch (JSON.ParseException e) {
             // Also acceptable to reject
             assertNotNull(e.getMessage());
@@ -128,16 +105,10 @@ class JSONPerformanceSecurityTest {
         // This is more of a smoke test - actual performance testing would require timing
 
         // Create pathological input with many escapes
-        StringBuilder sb = new StringBuilder();
-        sb.append("\"");
-        for (int i = 0; i < 10000; i++) {
-            sb.append("\\u");
-        }
-        sb.append("\"");
+        String sb = "\"" + "\\u".repeat(10000) + "\"";
 
         // Should throw ParseException quickly, not hang
-        JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parse(sb.toString()));
+        JSON.ParseException e = assertThrows(JSON.ParseException.class, () -> JSON.parse(sb));
         assertNotNull(e.getMessage());
     }
 
@@ -156,7 +127,7 @@ class JSONPerformanceSecurityTest {
             sb.append("]");
 
             Object parsed = JSON.parse(sb.toString());
-            assertTrue(parsed instanceof List);
+            assertInstanceOf(List.class, parsed);
             List<?> list = (List<?>) parsed;
             assertEquals(1000, list.size());
         }
@@ -169,7 +140,7 @@ class JSONPerformanceSecurityTest {
         // This should either parse (if implementation accepts) or throw
         try {
             Object parsed = JSON.parse(beyondRange);
-            assertTrue(parsed instanceof String);
+            assertInstanceOf(String.class, parsed);
         } catch (JSON.ParseException e) {
             assertNotNull(e.getMessage());
         }
@@ -204,7 +175,7 @@ class JSONPerformanceSecurityTest {
 
         // Round-trip should work
         Object parsed = JSON.parse(json);
-        assertTrue(parsed instanceof Map);
+        assertInstanceOf(Map.class, parsed);
     }
 
     @Test
@@ -306,17 +277,5 @@ class JSONPerformanceSecurityTest {
 
         Object parsed = JSON.parse(sb.toString(), options);
         assertNotNull(parsed);
-    }
-}
-
-class AtomicInteger {
-    private int value = 0;
-
-    public synchronized void incrementAndGet() {
-        value++;
-    }
-
-    public synchronized int get() {
-        return value;
     }
 }
