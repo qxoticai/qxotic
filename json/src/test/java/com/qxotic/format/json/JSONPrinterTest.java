@@ -40,21 +40,21 @@ class JSONPrinterTest {
 
     static Stream<Arguments> numberPrintCases() {
         return Stream.of(
-            Arguments.of(123L, "123"),
-            Arguments.of(-456L, "-456"),
-            Arguments.of(new BigInteger("9999999999999999999999999999999999999999"), 
-                "9999999999999999999999999999999999999999"),
-            Arguments.of(new BigDecimal("123.456"), "123.456"),
-            Arguments.of(new BigDecimal("1.5000"), "1.5"),
-            Arguments.of(1.5, "1.5"),
-            Arguments.of(2.0, "2"),
-            Arguments.of(1.5f, "1.5"),
-            Arguments.of(2.0f, "2"),
-            Arguments.of(Float.valueOf(1.25f), "1.25"),
-            Arguments.of(Double.valueOf(2.5d), "2.5"),
-            Arguments.of(Integer.valueOf(7), "7"),
-            Arguments.of(Long.valueOf(9L), "9")
-        );
+                Arguments.of(123L, "123"),
+                Arguments.of(-456L, "-456"),
+                Arguments.of(
+                        new BigInteger("9999999999999999999999999999999999999999"),
+                        "9999999999999999999999999999999999999999"),
+                Arguments.of(new BigDecimal("123.456"), "123.456"),
+                Arguments.of(new BigDecimal("1.5000"), "1.5"),
+                Arguments.of(1.5, "1.5"),
+                Arguments.of(2.0, "2"),
+                Arguments.of(1.5f, "1.5"),
+                Arguments.of(2.0f, "2"),
+                Arguments.of(Float.valueOf(1.25f), "1.25"),
+                Arguments.of(Double.valueOf(2.5d), "2.5"),
+                Arguments.of(Integer.valueOf(7), "7"),
+                Arguments.of(Long.valueOf(9L), "9"));
     }
 
     @Test

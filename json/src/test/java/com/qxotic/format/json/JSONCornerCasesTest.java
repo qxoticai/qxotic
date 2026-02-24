@@ -13,16 +13,12 @@ class JSONCornerCasesTest {
     void testDeepNesting() {
         int depth = 50;
         StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < depth; i++) {
-            sb.append("{\"a\":");
-        }
+        sb.append("{\"a\":".repeat(depth));
         sb.append("1");
-        for (int i = 0; i < depth; i++) {
-            sb.append("}");
-        }
+        sb.append("}".repeat(depth));
         Object result = JSON.parse(sb.toString());
         for (int i = 0; i < depth; i++) {
-            assertTrue(result instanceof Map);
+            assertInstanceOf(Map.class, result);
             result = ((Map<?, ?>) result).get("a");
         }
         assertEquals(1L, result);
@@ -61,9 +57,7 @@ class JSONCornerCasesTest {
     @Test
     void testLargeString() {
         StringBuilder sb = new StringBuilder("\"");
-        for (int i = 0; i < 1000; i++) {
-            sb.append('x');
-        }
+        sb.append("x".repeat(1000));
         sb.append("\"");
         String result = (String) JSON.parse(sb.toString());
         assertEquals(1000, result.length());
@@ -72,9 +66,7 @@ class JSONCornerCasesTest {
     @Test
     void testVeryLargeNumber() {
         StringBuilder sb = new StringBuilder("1");
-        for (int i = 0; i < 500; i++) {
-            sb.append("0");
-        }
+        sb.append("0".repeat(500));
         Object result = JSON.parse(sb.toString());
         assertTrue(result instanceof BigInteger || result instanceof BigDecimal);
     }
@@ -95,7 +87,7 @@ class JSONCornerCasesTest {
     void testComplexMixedNesting() {
         String json = "{\"a\":[1,2,{\"b\":[3,4,{\"c\":5}]},6],\"d\":{\"e\":{\"f\":7}}}";
         Object result = JSON.parse(json);
-        assertTrue(result instanceof Map);
+        assertInstanceOf(Map.class, result);
     }
 
     @Test
@@ -129,9 +121,9 @@ class JSONCornerCasesTest {
         assertSame(JSON.NULL, result.get(2));
         assertEquals("str", result.get(3));
         assertSame(JSON.NULL, result.get(4));
-        assertTrue(result.get(5) instanceof List);
+        assertInstanceOf(List.class, result.get(5));
         assertSame(JSON.NULL, result.get(6));
-        assertTrue(result.get(7) instanceof Map);
+        assertInstanceOf(Map.class, result.get(7));
     }
 
     @Test
@@ -171,7 +163,7 @@ class JSONCornerCasesTest {
         List<?> result = (List<?>) JSON.parse(json);
         assertEquals(6, result.size());
         for (Object o : result) {
-            assertTrue(o instanceof BigDecimal);
+            assertInstanceOf(BigDecimal.class, o);
         }
     }
 
@@ -181,7 +173,7 @@ class JSONCornerCasesTest {
         List<?> result = (List<?>) JSON.parse(json);
         assertEquals(7, result.size());
         for (Object o : result) {
-            assertTrue(o instanceof BigDecimal);
+            assertInstanceOf(BigDecimal.class, o);
         }
     }
 
@@ -235,7 +227,7 @@ class JSONCornerCasesTest {
     void testStringifiedNumber() {
         String json = "12345678901234567890";
         Object result = JSON.parse(json);
-        assertTrue(result instanceof BigInteger);
+        assertInstanceOf(BigInteger.class, result);
         assertEquals(new BigInteger("12345678901234567890"), result);
     }
 
@@ -243,6 +235,6 @@ class JSONCornerCasesTest {
     void testPreciseDecimal() {
         String json = "0.123456789012345678901234567890";
         Object result = JSON.parse(json);
-        assertTrue(result instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, result);
     }
 }

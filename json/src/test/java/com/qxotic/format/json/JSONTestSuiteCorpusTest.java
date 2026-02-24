@@ -1,7 +1,6 @@
 package com.qxotic.format.json;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -20,7 +19,7 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 /**
- * Runs the upstream JSONTestSuite corpus (https://github.com/nst/JSONTestSuite).
+ * Runs the upstream JSONTestSuite corpus (<a href="https://github.com/nst/JSONTestSuite">...</a>).
  *
  * <p>Configuration (first non-empty wins):
  *
@@ -34,7 +33,8 @@ class JSONTestSuiteCorpusTest {
 
     private static final String PROP_PATH = "json.testsuite.path";
     private static final String ENV_PATH = "JSON_TEST_SUITE_PATH";
-    private static final Path DEFAULT_PATH = Paths.get(System.getProperty("user.home"), ".cache", "qxotic", "json", "JSONTestSuite");
+    private static final Path DEFAULT_PATH =
+            Paths.get(System.getProperty("user.home"), ".cache", "qxotic", "json", "JSONTestSuite");
 
     @Test
     void runJsonTestSuiteCorpus() throws IOException {
@@ -51,18 +51,19 @@ class JSONTestSuiteCorpusTest {
             System.err.println("To download it, run:");
             System.err.println();
             System.err.println("  mkdir -p ~/.cache/qxotic/json");
-            System.err.println("  git clone https://github.com/nst/JSONTestSuite.git ~/.cache/qxotic/json/JSONTestSuite");
+            System.err.println(
+                    "  git clone https://github.com/nst/JSONTestSuite.git ~/.cache/qxotic/json/JSONTestSuite");
             System.err.println();
             System.err.println("Or set a custom path using:");
             System.err.println("  - System property: -Djson.testsuite.path=/path/to/JSONTestSuite");
-            System.err.println("  - Environment variable: JSON_TEST_SUITE_PATH=/path/to/JSONTestSuite");
+            System.err.println(
+                    "  - Environment variable: JSON_TEST_SUITE_PATH=/path/to/JSONTestSuite");
             System.err.println("=".repeat(70));
             System.err.println();
         }
 
         Assumptions.assumeTrue(
-                Files.isDirectory(parsingDir),
-                () -> "JSONTestSuite not found at: " + suiteRoot);
+                Files.isDirectory(parsingDir), () -> "JSONTestSuite not found at: " + suiteRoot);
 
         List<Path> files;
         try (Stream<Path> stream = Files.list(parsingDir)) {
@@ -154,7 +155,7 @@ class JSONTestSuiteCorpusTest {
                         iRejected,
                         iUndecodable));
 
-        assertTrue(yFailed == 0, () -> "Some y_ files were rejected:\n" + failures);
+        assertEquals(0, yFailed, () -> "Some y_ files were rejected:\n" + failures);
         assertFalse(nFailed > 0, () -> "Some n_ files were accepted:\n" + failures);
     }
 

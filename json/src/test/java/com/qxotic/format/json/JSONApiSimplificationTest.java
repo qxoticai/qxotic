@@ -56,7 +56,7 @@ class JSONApiSimplificationTest {
     @Test
     void testJsonNullHelper() {
         Object parsed = JSON.parse("null");
-        assertTrue(parsed == JSON.NULL);
-        assertFalse(null == JSON.NULL);
+        assertSame(JSON.NULL, parsed);
+        assertNotNull(JSON.NULL);
     }
 }

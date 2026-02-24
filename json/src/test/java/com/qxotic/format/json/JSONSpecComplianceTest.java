@@ -97,7 +97,7 @@ class JSONSpecComplianceTest {
 
         // Negative zero is allowed (parses as BigDecimal)
         Object parsed = JSON.parse("-0");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(BigDecimal.ZERO));
     }
 
@@ -410,13 +410,13 @@ class JSONSpecComplianceTest {
 
         Object parsed = JSON.parse(example);
         assertNotNull(parsed);
-        assertTrue(parsed instanceof Map);
+        assertInstanceOf(Map.class, parsed);
 
         // Should be able to stringify it back
         String stringified = JSON.stringify(parsed, false);
         Object reparsed = JSON.parse(stringified);
         // Compare structure (may have different number types)
-        assertTrue(reparsed instanceof Map);
+        assertInstanceOf(Map.class, reparsed);
     }
 
     @Test

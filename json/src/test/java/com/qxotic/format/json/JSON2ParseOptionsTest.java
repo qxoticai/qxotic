@@ -13,16 +13,17 @@ class JSON2ParseOptionsTest {
     void testDefaultOptionsReturnsDoubleForFloats() {
         Object result =
                 JSON.parse("3.14", JSON.ParseOptions.defaults().decimalsAsBigDecimal(false));
-        assertTrue(
-                result instanceof Double, "Expected Double, got: " + result.getClass().getName());
+        assertInstanceOf(
+                Double.class, result, "Expected Double, got: " + result.getClass().getName());
         assertEquals(3.14, result);
     }
 
     @Test
     void testUseBigDecimalForFloats() {
         Object result = JSON.parse("3.14", JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
-        assertTrue(
-                result instanceof BigDecimal,
+        assertInstanceOf(
+                BigDecimal.class,
+                result,
                 "Expected BigDecimal, got: " + result.getClass().getName());
         assertEquals(new BigDecimal("3.14"), result);
     }
@@ -30,28 +31,29 @@ class JSON2ParseOptionsTest {
     @Test
     void testIntegersAlwaysReturnLong() {
         Object result = JSON.parse("42");
-        assertTrue(result instanceof Long, "Expected Long, got: " + result.getClass().getName());
+        assertInstanceOf(Long.class, result, "Expected Long, got: " + result.getClass().getName());
         assertEquals(42L, result);
     }
 
     @Test
     void testIntegersReturnLongRegardlessOfOptions() {
         Object result = JSON.parse("42", JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
-        assertTrue(result instanceof Long, "Expected Long, got: " + result.getClass().getName());
+        assertInstanceOf(Long.class, result, "Expected Long, got: " + result.getClass().getName());
     }
 
     @Test
     void testLargeIntegersReturnBigInteger() {
         Object result = JSON.parse("9999999999999999999999999999999999999999");
-        assertTrue(
-                result instanceof BigInteger,
+        assertInstanceOf(
+                BigInteger.class,
+                result,
                 "Expected BigInteger, got: " + result.getClass().getName());
     }
 
     @Test
     void testNegativeZeroInDoubleMode() {
         Object result = JSON.parse("-0", JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
-        assertTrue(result instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, result);
     }
 
     @Test
@@ -79,13 +81,9 @@ class JSON2ParseOptionsTest {
     void testMaxParsingDepthExceededThrows() {
         StringBuilder sb = new StringBuilder();
         int depth = 51;
-        for (int i = 0; i < depth; i++) {
-            sb.append("{\"a\":");
-        }
+        sb.append("{\"a\":".repeat(depth));
         sb.append("1");
-        for (int i = 0; i < depth; i++) {
-            sb.append("}");
-        }
+        sb.append("}".repeat(depth));
 
         JSON.ParseException e =
                 assertThrows(
@@ -98,13 +96,9 @@ class JSON2ParseOptionsTest {
     void testMaxParsingDepthNotExceeded() {
         StringBuilder sb = new StringBuilder();
         int depth = 10;
-        for (int i = 0; i < depth; i++) {
-            sb.append("{\"a\":");
-        }
+        sb.append("{\"a\":".repeat(depth));
         sb.append("1");
-        for (int i = 0; i < depth; i++) {
-            sb.append("}");
-        }
+        sb.append("}".repeat(depth));
 
         Object result = JSON.parse(sb.toString(), JSON.ParseOptions.defaults().maxDepth(50));
         assertNotNull(result);
@@ -114,13 +108,9 @@ class JSON2ParseOptionsTest {
     void testNestedArraysWithDepthLimit() {
         StringBuilder sb = new StringBuilder();
         int depth = 26;
-        for (int i = 0; i < depth; i++) {
-            sb.append("[");
-        }
+        sb.append("[".repeat(depth));
         sb.append("1");
-        for (int i = 0; i < depth; i++) {
-            sb.append("]");
-        }
+        sb.append("]".repeat(depth));
 
         JSON.ParseException e =
                 assertThrows(
@@ -136,20 +126,16 @@ class JSON2ParseOptionsTest {
                         "3.14",
                         JSON.ParseOptions.defaults().decimalsAsBigDecimal(true).maxDepth(500));
 
-        assertTrue(result instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, result);
     }
 
     @Test
     void testDefaultParseStillUsesDefaultMaxDepth() {
         StringBuilder sb = new StringBuilder();
         int depth = 1001;
-        for (int i = 0; i < depth; i++) {
-            sb.append("{\"a\":");
-        }
+        sb.append("{\"a\":".repeat(depth));
         sb.append("1");
-        for (int i = 0; i < depth; i++) {
-            sb.append("}");
-        }
+        sb.append("}".repeat(depth));
 
         JSON.ParseException e =
                 assertThrows(JSON.ParseException.class, () -> JSON.parse(sb.toString()));
@@ -160,21 +146,21 @@ class JSON2ParseOptionsTest {
     void testExponentWithBigDecimal() {
         Object result =
                 JSON.parse("1.5e10", JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
-        assertTrue(result instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, result);
     }
 
     @Test
     void testExponentWithDouble() {
         Object result =
                 JSON.parse("1.5e10", JSON.ParseOptions.defaults().decimalsAsBigDecimal(false));
-        assertTrue(
-                result instanceof Double, "Expected Double, got: " + result.getClass().getName());
+        assertInstanceOf(
+                Double.class, result, "Expected Double, got: " + result.getClass().getName());
     }
 
     @Test
     void testZeroWithBigDecimal() {
         Object result = JSON.parse("0.0", JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
-        assertTrue(result instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, result);
         assertEquals(new BigDecimal("0"), result);
     }
 
@@ -182,7 +168,7 @@ class JSON2ParseOptionsTest {
     void testPrecisionPreservedInBigDecimalMode() {
         String json = "0.123456789012345678901234567890";
         Object result = JSON.parse(json, JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
-        assertTrue(result instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, result);
         assertEquals(new BigDecimal("0.123456789012345678901234567890"), result);
     }
 

@@ -36,15 +36,17 @@ public final class TestUtils {
     public static void assertRoundTrip(Object value, boolean pretty) {
         String json = JSON.stringify(value, pretty);
         Object parsed = JSON.parse(json);
-        assertTrue(deepEquals(value, parsed),
-            "Round-trip failed for: " + value + " -> " + json + " -> " + parsed);
+        assertTrue(
+                deepEquals(value, parsed),
+                "Round-trip failed for: " + value + " -> " + json + " -> " + parsed);
     }
 
     /** Asserts that parsing throws with expected message substring. */
     public static void assertParseThrows(String json, String expectedMessage) {
         JSON.ParseException e = assertThrows(JSON.ParseException.class, () -> JSON.parse(json));
-        assertTrue(e.getMessage().contains(expectedMessage),
-            "Expected message containing '" + expectedMessage + "' but got: " + e.getMessage());
+        assertTrue(
+                e.getMessage().contains(expectedMessage),
+                "Expected message containing '" + expectedMessage + "' but got: " + e.getMessage());
     }
 
     /** Deep equals for JSON values. */

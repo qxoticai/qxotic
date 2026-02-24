@@ -306,7 +306,7 @@ class JSONQueryTest {
         Map<String, Object> data = JSON.parseMap("{\"name\": \"Alice\"}");
         Optional<Object> result = JSON.query(data, "name");
         assertTrue(result.isPresent());
-        assertTrue(result.get() instanceof String);
+        assertInstanceOf(String.class, result.get());
         assertEquals("Alice", result.get());
     }
 
@@ -316,7 +316,7 @@ class JSONQueryTest {
         Map<String, Object> data = JSON.parseMap("{\"user\": {\"name\": \"Alice\"}}");
         Optional<Object> result = JSON.query(data, "user");
         assertTrue(result.isPresent());
-        assertTrue(result.get() instanceof Map);
+        assertInstanceOf(Map.class, result.get());
     }
 
     @Test
@@ -325,7 +325,7 @@ class JSONQueryTest {
         Map<String, Object> data = JSON.parseMap("{\"items\": [1, 2, 3]}");
         Optional<Object> result = JSON.query(data, "items");
         assertTrue(result.isPresent());
-        assertTrue(result.get() instanceof List);
+        assertInstanceOf(List.class, result.get());
     }
 
     @Test
@@ -423,7 +423,7 @@ class JSONQueryTest {
     @Test
     @DisplayName("isMap: returns true for Map")
     void testIsMapTrue() {
-        assertTrue(Map.of() instanceof Map);
+        assertInstanceOf(Map.class, Map.of());
     }
 
     @Test
@@ -530,7 +530,7 @@ class JSONQueryTest {
         Map<String, Object> result =
                 JSON.parseMap("{\"value\": 1.5}", JSON.ParseOptions.defaults());
         assertNotNull(result);
-        assertTrue(result.get("value") instanceof Number);
+        assertInstanceOf(Number.class, result.get("value"));
     }
 
     @Test
@@ -558,7 +558,7 @@ class JSONQueryTest {
         List<Object> result = JSON.parseList("[{\"name\": \"Alice\"}, {\"name\": \"Bob\"}]");
         assertNotNull(result);
         assertEquals(2, result.size());
-        assertTrue(result.get(0) instanceof Map);
+        assertInstanceOf(Map.class, result.get(0));
         assertEquals("Alice", ((Map<?, ?>) result.get(0)).get("name"));
     }
 
@@ -580,9 +580,7 @@ class JSONQueryTest {
             json.append("\"level").append(i).append("\": {");
         }
         json.append("\"value\": \"found\"");
-        for (int i = 0; i < 10; i++) {
-            json.append("}");
-        }
+        json.append("}".repeat(10));
         json.append("}");
 
         Map<String, Object> data = JSON.parseMap(json.toString());
@@ -683,7 +681,7 @@ class JSONQueryTest {
     void testQueryWithParseList() {
         List<Object> data = JSON.parseList("[{\"name\": \"Alice\"}]");
         assertEquals(1, data.size());
-        assertTrue(data.get(0) instanceof Map);
+        assertInstanceOf(Map.class, data.get(0));
     }
 
     @Test

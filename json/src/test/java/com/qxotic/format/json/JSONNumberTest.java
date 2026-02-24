@@ -18,13 +18,13 @@ class JSONNumberTest {
     @Test
     void testNegativeZero() {
         Object parsed = JSON.parse("-0");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
     }
 
     @Test
     void testNegativeZeroWithDecimal() {
         Object parsed = JSON.parse("-0.0");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
     }
 
     @Test
@@ -70,7 +70,7 @@ class JSONNumberTest {
     @Test
     void testSimpleDecimal() {
         Object parsed = JSON.parse("0.5");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(new BigDecimal("0.5"), parsed);
     }
 
@@ -83,25 +83,25 @@ class JSONNumberTest {
     @Test
     void testExponentPositive() {
         Object parsed = JSON.parse("1e10");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
     }
 
     @Test
     void testExponentUppercase() {
         Object parsed = JSON.parse("1E10");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
     }
 
     @Test
     void testExponentNegative() {
         Object parsed = JSON.parse("1E-2", JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
     }
 
     @Test
     void testExponentPositiveSign() {
         Object parsed = JSON.parse("1e+2");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
     }
 
     @Test
@@ -113,13 +113,13 @@ class JSONNumberTest {
     @Test
     void testDecimalWithExponent() {
         Object parsed = JSON.parse("123.456e789");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
     }
 
     @Test
     void testLargeInteger() {
         Object parsed = JSON.parse("9999999999999999999999999999999999999999");
-        assertTrue(parsed instanceof BigInteger);
+        assertInstanceOf(BigInteger.class, parsed);
         assertEquals(new BigInteger("9999999999999999999999999999999999999999"), parsed);
     }
 
@@ -127,52 +127,52 @@ class JSONNumberTest {
     void testLargeDecimal() {
         String json = "12345678901234567890.12345678901234567890";
         Object parsed = JSON.parse(json);
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
     }
 
     @Test
     void testFractionalNumberWithTrailingZeros() {
         Object parsed = JSON.parse("1.500");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(new BigDecimal("1.5")));
     }
 
     @Test
     void testIntegerWithExponent() {
         Object parsed = JSON.parse("1000E2");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
     }
 
     @Test
     void testSmallFraction() {
         Object parsed = JSON.parse("0.000001");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(new BigDecimal("0.000001"), parsed);
     }
 
     @Test
     void testLargeExponent() {
         Object parsed = JSON.parse("1e308");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
     }
 
     @Test
     void testNegativeExponent() {
         Object parsed = JSON.parse("1e-307");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
     }
 
     @Test
     void testZeroWithExponent() {
         Object parsed = JSON.parse("0e10");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(new BigDecimal("0"), parsed);
     }
 
     @Test
     void testNegativeLargeInteger() {
         Object parsed = JSON.parse("-9999999999999999999999999999999999999999");
-        assertTrue(parsed instanceof BigInteger);
+        assertInstanceOf(BigInteger.class, parsed);
         assertEquals(new BigInteger("-9999999999999999999999999999999999999999"), parsed);
     }
 
@@ -208,20 +208,20 @@ class JSONNumberTest {
     @Test
     void testZeroWithDecimalPoint() {
         Object parsed = JSON.parse("0.0");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
     }
 
     @Test
     void testNegativeDecimal() {
         Object parsed = JSON.parse("-1.5");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(new BigDecimal("-1.5"), parsed);
     }
 
     @Test
     void testNegativeExponentValue() {
         Object parsed = JSON.parse("-1e10");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
     }
 
     // ===== Extreme value tests =====
@@ -230,12 +230,12 @@ class JSONNumberTest {
     void testExtremePositiveExponent() {
         // Very large positive exponents
         Object parsed = JSON.parse("1e999");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         BigDecimal bd = (BigDecimal) parsed;
         assertEquals(0, bd.compareTo(new BigDecimal("1E+999")));
 
         parsed = JSON.parse("1.5e500");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         bd = (BigDecimal) parsed;
         assertEquals(0, bd.compareTo(new BigDecimal("1.5E+500")));
     }
@@ -244,12 +244,12 @@ class JSONNumberTest {
     void testExtremeNegativeExponent() {
         // Very small numbers with large negative exponents
         Object parsed = JSON.parse("1e-999");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         BigDecimal bd = (BigDecimal) parsed;
         assertEquals(0, bd.compareTo(new BigDecimal("1E-999")));
 
         parsed = JSON.parse("1.5e-500");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         bd = (BigDecimal) parsed;
         assertEquals(0, bd.compareTo(new BigDecimal("1.5E-500")));
     }
@@ -259,13 +259,13 @@ class JSONNumberTest {
         // Numbers with many decimal places
         String highPrecision = "0.123456789012345678901234567890123456789012345678901234567890";
         Object parsed = JSON.parse(highPrecision);
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(new BigDecimal(highPrecision), parsed);
 
         // Many digits after decimal
         String manyDigits = "1." + "0".repeat(100) + "1";
         parsed = JSON.parse(manyDigits);
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(new BigDecimal(manyDigits), parsed);
     }
 
@@ -273,24 +273,24 @@ class JSONNumberTest {
     void testScientificNotationEdgeCases() {
         // Zero exponent
         Object parsed = JSON.parse("1e0");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(new BigDecimal("1")));
 
         parsed = JSON.parse("1.5e0");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(new BigDecimal("1.5")));
 
         // Leading zeros in exponent
         parsed = JSON.parse("1e01");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(new BigDecimal("1E+1")));
 
         parsed = JSON.parse("1e001");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(new BigDecimal("1E+1")));
 
         parsed = JSON.parse("1.5e-01");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(new BigDecimal("1.5E-1")));
     }
 
@@ -310,7 +310,7 @@ class JSONNumberTest {
         // Just above Long.MAX_VALUE (should be BigInteger)
         BigInteger aboveMax = BigInteger.valueOf(Long.MAX_VALUE).add(BigInteger.ONE);
         parsed = JSON.parse(aboveMax.toString());
-        assertTrue(parsed instanceof BigInteger);
+        assertInstanceOf(BigInteger.class, parsed);
         assertEquals(aboveMax, parsed);
 
         // Just above Long.MIN_VALUE
@@ -325,7 +325,7 @@ class JSONNumberTest {
         // Just below Long.MIN_VALUE (should be BigInteger)
         BigInteger belowMin = BigInteger.valueOf(Long.MIN_VALUE).subtract(BigInteger.ONE);
         parsed = JSON.parse(belowMin.toString());
-        assertTrue(parsed instanceof BigInteger);
+        assertInstanceOf(BigInteger.class, parsed);
         assertEquals(belowMin, parsed);
     }
 
@@ -333,28 +333,24 @@ class JSONNumberTest {
     void testVeryLargeBigIntegers() {
         // Extremely large integers (hundreds of digits)
         StringBuilder hugeNumber = new StringBuilder();
-        for (int i = 0; i < 100; i++) {
-            hugeNumber.append("9");
-        }
+        hugeNumber.append("9".repeat(100));
 
         String hugeStr = hugeNumber.toString();
         Object parsed = JSON.parse(hugeStr);
-        assertTrue(parsed instanceof BigInteger);
+        assertInstanceOf(BigInteger.class, parsed);
         assertEquals(new BigInteger(hugeStr), parsed);
 
         // Negative version
         parsed = JSON.parse("-" + hugeStr);
-        assertTrue(parsed instanceof BigInteger);
+        assertInstanceOf(BigInteger.class, parsed);
         assertEquals(new BigInteger("-" + hugeStr), parsed);
 
         // Mixed digits
         hugeNumber = new StringBuilder();
-        for (int i = 0; i < 50; i++) {
-            hugeNumber.append("1234567890");
-        }
+        hugeNumber.append("1234567890".repeat(50));
         hugeStr = hugeNumber.toString();
         parsed = JSON.parse(hugeStr);
-        assertTrue(parsed instanceof BigInteger);
+        assertInstanceOf(BigInteger.class, parsed);
         assertEquals(new BigInteger(hugeStr), parsed);
     }
 
@@ -363,7 +359,7 @@ class JSONNumberTest {
         // Complex numbers with both exponent and high precision
         String complex = "12345678901234567890.12345678901234567890e100";
         Object parsed = JSON.parse(complex);
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
 
         // Verify it parses to correct value
         BigDecimal expected =
@@ -380,23 +376,23 @@ class JSONNumberTest {
         assertEquals(0L, JSON.parse("0"));
 
         Object parsed = JSON.parse("0.0");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(BigDecimal.ZERO));
 
         parsed = JSON.parse("0e0");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(BigDecimal.ZERO));
 
         parsed = JSON.parse("0e10");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(BigDecimal.ZERO));
 
         parsed = JSON.parse("0e-10");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(BigDecimal.ZERO));
 
         parsed = JSON.parse("0.000");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(BigDecimal.ZERO));
     }
 
@@ -404,23 +400,23 @@ class JSONNumberTest {
     void testNegativeZeroEdgeCases() {
         // Negative zero variations
         Object parsed = JSON.parse("-0");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         BigDecimal negZero = (BigDecimal) parsed;
         // Note: BigDecimal("-0").equals(BigDecimal("0")) is true
         assertEquals(0, negZero.compareTo(BigDecimal.ZERO));
 
         parsed = JSON.parse("-0.0");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         negZero = (BigDecimal) parsed;
         assertEquals(0, negZero.compareTo(BigDecimal.ZERO));
 
         parsed = JSON.parse("-0e0");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         negZero = (BigDecimal) parsed;
         assertEquals(0, negZero.compareTo(BigDecimal.ZERO));
 
         parsed = JSON.parse("-0e10");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
         negZero = (BigDecimal) parsed;
         assertEquals(0, negZero.compareTo(BigDecimal.ZERO));
     }
@@ -429,14 +425,14 @@ class JSONNumberTest {
     void testExponentWithManyDigits() {
         // Exponents with many digits
         Object parsed = JSON.parse("1e1234");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
 
         parsed = JSON.parse("1e-1234");
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
 
         // Very large exponent value (but not too large)
         String hugeExp = "1e" + "9".repeat(5); // 1e99999
         parsed = JSON.parse(hugeExp);
-        assertTrue(parsed instanceof BigDecimal);
+        assertInstanceOf(BigDecimal.class, parsed);
     }
 }
