@@ -56,10 +56,8 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
         assertThrows(
                 NullPointerException.class, () -> TensorEntry.create("t", null, new long[] {1}, 0));
         assertThrows(NullPointerException.class, () -> TensorEntry.create("t", DType.F32, null, 0));
-        assertThrows(
-                NullPointerException.class,
-                () -> TensorEntry.create("t", DType.F32, new long[] {1}, 0).absoluteOffset(null));
-        assertThrows(NullPointerException.class, () -> DType.totalNumberOfElements(null));
+        assertThrows(NullPointerException.class, () -> st.absoluteOffset(null));
+
 
         // sanity check: non-null writable channel still works
         Safetensors.write(st, Channels.newChannel(new ByteArrayOutputStream()));
@@ -99,13 +97,13 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
         long expectedAbsolute1 = st.getTensorDataOffset() + tensor1.byteOffset();
         long expectedAbsolute2 = st.getTensorDataOffset() + tensor2.byteOffset();
 
-        assertEquals(expectedAbsolute1, tensor1.absoluteOffset(st));
-        assertEquals(expectedAbsolute2, tensor2.absoluteOffset(st));
+        assertEquals(expectedAbsolute1, st.absoluteOffset(tensor1));
+        assertEquals(expectedAbsolute2, st.absoluteOffset(tensor2));
 
         // Verify absolute offset is correct by checking offset difference
         assertEquals(
                 tensor2.byteOffset() - tensor1.byteOffset(),
-                tensor2.absoluteOffset(st) - tensor1.absoluteOffset(st));
+                st.absoluteOffset(tensor2) - st.absoluteOffset(tensor1));
     }
 
     @Test
@@ -124,7 +122,7 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
 
         // absoluteOffset should work correctly on deserialized Safetensors
         long expectedAbsolute = read.getTensorDataOffset() + tensor.byteOffset();
-        assertEquals(expectedAbsolute, tensor.absoluteOffset(read));
+        assertEquals(expectedAbsolute, read.absoluteOffset(tensor));
     }
 
     @Test

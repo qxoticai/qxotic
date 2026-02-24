@@ -69,32 +69,15 @@ public final class TensorEntry {
     }
 
     /**
-     * Returns the absolute byte offset where this tensor's data begins in the safetensors file.
+     * Returns the total number of elements in this tensor.
      *
-     * <p>This is a convenience method equivalent to {@code safetensors.getTensorDataOffset() +
-     * this.byteOffset()}.
+     * <p>Computes the product of all dimensions in the shape. An empty shape (scalar)
+     * returns 1. Throws {@link ArithmeticException} on overflow.
      *
-     * <p>Example usage when reading tensor data:
-     *
-     * <pre>{@code
-     * TensorEntry tensor = safetensors.getTensor("weights");
-     * long absoluteOffset = tensor.absoluteOffset(safetensors);
-     * // Use absoluteOffset to read from file channel
-     * }</pre>
-     *
-     * @param safetensors the Safetensors instance containing this tensor
-     * @return the absolute byte offset in the file
-     */
-    public long absoluteOffset(Safetensors safetensors) {
-        Objects.requireNonNull(safetensors, "safetensors");
-        return safetensors.getTensorDataOffset() + this.byteOffset;
-    }
-
-    /**
-     * @return total number of elements implied by {@link #shape()}
+     * @return total number of elements
      */
     public long totalNumberOfElements() {
-        return DType.totalNumberOfElements(shape);
+        return Arrays.stream(shape).reduce(1L, Math::multiplyExact);
     }
 
     @Override
@@ -134,5 +117,25 @@ public final class TensorEntry {
      */
     public long byteSize() {
         return dtype.byteSizeForShape(shape);
+    }
+
+    /**
+     * Creates a copy of this tensor entry with a different byte offset.
+     *
+     * <p>This is useful when rearranging tensors in a safetensors file. All other properties
+     * (name, dtype, shape) remain unchanged.
+     *
+     * <p>Example usage:
+     *
+     * <pre>{@code
+     * TensorEntry original = safetensors.getTensor("weights");
+     * TensorEntry moved = original.withOffset(1024);
+     * }</pre>
+     *
+     * @param newOffset the new byte offset relative to the tensor data section start
+     * @return a new TensorEntry with the same name, dtype, and shape but different offset
+     */
+    public TensorEntry withOffset(long newOffset) {
+        return new TensorEntry(this.name, this.dtype, this.shape, newOffset);
     }
 }

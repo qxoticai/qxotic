@@ -79,18 +79,8 @@ public enum DType {
      * @throws ArithmeticException on overflow
      */
     public long byteSizeForShape(long[] shape) {
-        return byteSizeFor(totalNumberOfElements(shape));
-    }
-
-    /**
-     * Computes total number of elements for a tensor shape.
-     *
-     * @param shape tensor shape
-     * @return element count
-     * @throws ArithmeticException on overflow
-     */
-    public static long totalNumberOfElements(long[] shape) {
         Objects.requireNonNull(shape, "shape");
-        return Arrays.stream(shape).reduce(1L, Math::multiplyExact);
+        long numElements = Arrays.stream(shape).reduce(1L, Math::multiplyExact);
+        return byteSizeFor(numElements);
     }
 }

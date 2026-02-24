@@ -82,6 +82,30 @@ public interface Safetensors {
     }
 
     /**
+     * Returns the absolute byte offset where the tensor's data begins in the safetensors file.
+     *
+     * <p>This is a convenience method equivalent to {@code getTensorDataOffset() +
+     * tensor.byteOffset()}.
+     *
+     * <p>Example usage when reading tensor data:
+     *
+     * <pre>{@code
+     * Safetensors st = Safetensors.read(path);
+     * TensorEntry tensor = st.getTensor("weights");
+     * long absoluteOffset = st.absoluteOffset(tensor);
+     * // Use absoluteOffset to read from file channel
+     * }</pre>
+     *
+     * @param tensor the tensor entry
+     * @return the absolute byte offset in the file
+     * @throws NullPointerException if tensor is null
+     */
+    default long absoluteOffset(TensorEntry tensor) {
+        Objects.requireNonNull(tensor, "tensor");
+        return getTensorDataOffset() + tensor.byteOffset();
+    }
+
+    /**
      * Reads safetensors metadata from a channel. Only reads the header (8 bytes + N bytes JSON),
      * not tensor payload data.
      *
