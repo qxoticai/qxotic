@@ -1,6 +1,8 @@
 package com.qxotic.jota;
 
 import com.qxotic.jota.impl.LayoutFactory;
+import java.util.Arrays;
+import java.util.Comparator;
 
 public interface Layout {
     Shape shape();
@@ -240,8 +242,7 @@ public interface Layout {
         for (int i = 0; i < rank; i++) {
             order[i] = i;
         }
-        java.util.Arrays.sort(
-                order, (a, b) -> Long.compare(Math.abs(strides[a]), Math.abs(strides[b])));
+        Arrays.sort(order, Comparator.comparingLong(a -> Math.abs(strides[a])));
 
         long required = 1;
         for (int idx : order) {
