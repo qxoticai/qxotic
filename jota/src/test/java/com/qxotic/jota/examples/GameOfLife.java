@@ -208,7 +208,7 @@ public class GameOfLife {
             Tensor birth = isAlive.logicalNot().logicalAnd(n3);
 
             // New grid = survive OR birth
-            Tensor newGrid = survive.select(one, birth.select(one, zero));
+            Tensor newGrid = survive.where(one, birth.where(one, zero));
 
             // Materialize to get next state
             gridData = tensorToFloatArray(newGrid);

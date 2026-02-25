@@ -156,7 +156,7 @@ static void throwUnsupported(JNIEnv *env, const char *message) {
   }
 }
 
-JNIEXPORT jlong JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_createStream
+JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_createStream
   (JNIEnv *env, jclass cls) {
   (void)cls;
   hipStream_t stream;
@@ -170,7 +170,7 @@ JNIEXPORT jlong JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_createStream
 #endif
 }
 
-JNIEXPORT jint JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_nativeDeviceCount
+JNIEXPORT jint JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_nativeDeviceCount
   (JNIEnv *env, jclass cls) {
   (void)cls;
 #if __has_include(<hip/hip_runtime_api.h>)
@@ -187,7 +187,7 @@ JNIEXPORT jint JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_nativeDeviceCo
 #endif
 }
 
-JNIEXPORT void JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_destroyStream
+JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_destroyStream
   (JNIEnv *env, jclass cls, jlong handle) {
   (void)cls;
 #if __has_include(<hip/hip_runtime_api.h>)
@@ -200,7 +200,7 @@ JNIEXPORT void JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_destroyStream
 #endif
 }
 
-JNIEXPORT jlong JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_loadModule
+JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_loadModule
   (JNIEnv *env, jclass cls, jbyteArray hsaco) {
   (void)cls;
 #if __has_include(<hip/hip_runtime_api.h>)
@@ -226,7 +226,7 @@ JNIEXPORT jlong JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_loadModule
 #endif
 }
 
-JNIEXPORT void JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_unloadModule
+JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_unloadModule
   (JNIEnv *env, jclass cls, jlong moduleHandle) {
   (void)cls;
 #if __has_include(<hip/hip_runtime_api.h>)
@@ -239,7 +239,7 @@ JNIEXPORT void JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_unloadModule
 #endif
 }
 
-JNIEXPORT jlong JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_getFunction
+JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_getFunction
   (JNIEnv *env, jclass cls, jlong moduleHandle, jstring name) {
   (void)cls;
 #if __has_include(<hip/hip_runtime_api.h>)
@@ -266,7 +266,7 @@ JNIEXPORT jlong JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_getFunction
 #endif
 }
 
-JNIEXPORT void JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_launchKernel
+JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_launchKernel
   (JNIEnv *env, jclass cls, jlong functionHandle, jint gridDimX, jint gridDimY, jint gridDimZ,
    jint blockDimX, jint blockDimY, jint blockDimZ, jint sharedMemBytes, jlong streamHandle,
    jlong argsHandle) {
@@ -304,7 +304,7 @@ JNIEXPORT void JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_launchKernel
 #endif
 }
 
-JNIEXPORT jlong JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_malloc
+JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_malloc
   (JNIEnv *env, jclass cls, jlong byteSize) {
   (void)cls;
 #if __has_include(<hip/hip_runtime_api.h>)
@@ -319,7 +319,7 @@ JNIEXPORT jlong JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_malloc
 #endif
 }
 
-JNIEXPORT void JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_free
+JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_free
   (JNIEnv *env, jclass cls, jlong devicePtr) {
   (void)cls;
 #if __has_include(<hip/hip_runtime_api.h>)
@@ -334,7 +334,7 @@ JNIEXPORT void JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_free
 #endif
 }
 
-JNIEXPORT void JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_memcpyHtoD
+JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_memcpyHtoD
   (JNIEnv *env, jclass cls, jlong dstPtr, jlong dstOffset, jlong srcAddress, jlong byteSize) {
   (void)cls;
 #if __has_include(<hip/hip_runtime_api.h>)
@@ -351,7 +351,7 @@ JNIEXPORT void JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_memcpyHtoD
 #endif
 }
 
-JNIEXPORT void JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_memcpyDtoH
+JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_memcpyDtoH
   (JNIEnv *env, jclass cls, jlong dstAddress, jlong srcPtr, jlong srcOffset, jlong byteSize) {
   (void)cls;
 #if __has_include(<hip/hip_runtime_api.h>)
@@ -368,7 +368,7 @@ JNIEXPORT void JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_memcpyDtoH
 #endif
 }
 
-JNIEXPORT void JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_memcpyDtoD
+JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_memcpyDtoD
   (JNIEnv *env, jclass cls, jlong dstPtr, jlong dstOffset, jlong srcPtr, jlong srcOffset, jlong byteSize) {
   (void)cls;
 #if __has_include(<hip/hip_runtime_api.h>)
@@ -386,7 +386,7 @@ JNIEXPORT void JNICALL Java_ai_qxotic_jota_runtime_hip_HipRuntime_memcpyDtoD
 #endif
 }
 
-JNIEXPORT jlong JNICALL Java_ai_qxotic_jota_runtime_hip_HipKernelParams_packNative
+JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_hip_HipKernelParams_packNative
   (JNIEnv *env, jclass cls, jobject args) {
   (void)cls;
   if (args == NULL) {
@@ -443,12 +443,12 @@ JNIEXPORT jlong JNICALL Java_ai_qxotic_jota_runtime_hip_HipKernelParams_packNati
     return 0;
   }
 
-  jclass entryClass = findClass(env, "ai/qxotic/jota/tensor/KernelArgs$Entry");
+  jclass entryClass = findClass(env, "com/qxotic/jota/tensor/KernelArgs$Entry");
   if (entryClass == NULL) {
     freeArgsPack(pack);
     return 0;
   }
-  jmethodID kindMid = getMethod(env, entryClass, "kind", "()Lai/qxotic/jota/tensor/KernelArgs$Kind;");
+  jmethodID kindMid = getMethod(env, entryClass, "kind", "()Lcom/qxotic/jota/tensor/KernelArgs$Kind;");
   if (kindMid == NULL) {
     freeArgsPack(pack);
     return 0;
@@ -458,13 +458,13 @@ JNIEXPORT jlong JNICALL Java_ai_qxotic_jota_runtime_hip_HipKernelParams_packNati
     freeArgsPack(pack);
     return 0;
   }
-  jmethodID dataTypeMid = getMethod(env, entryClass, "dataType", "()Lai/qxotic/jota/DataType;");
+  jmethodID dataTypeMid = getMethod(env, entryClass, "dataType", "()Lcom/qxotic/jota/DataType;");
   if (dataTypeMid == NULL) {
     freeArgsPack(pack);
     return 0;
   }
 
-  jclass kindClass = findClass(env, "ai/qxotic/jota/tensor/KernelArgs$Kind");
+  jclass kindClass = findClass(env, "com/qxotic/jota/tensor/KernelArgs$Kind");
   if (kindClass == NULL) {
     freeArgsPack(pack);
     return 0;
@@ -480,7 +480,7 @@ JNIEXPORT jlong JNICALL Java_ai_qxotic_jota_runtime_hip_HipKernelParams_packNati
     freeArgsPack(pack);
     return 0;
   }
-  jclass hipDevicePtrClass = findClass(env, "ai/qxotic/jota/runtime/hip/HipDevicePtr");
+  jclass hipDevicePtrClass = findClass(env, "com/qxotic/jota/runtime/hip/HipDevicePtr");
   if (hipDevicePtrClass == NULL) {
     freeArgsPack(pack);
     return 0;
@@ -495,7 +495,7 @@ JNIEXPORT jlong JNICALL Java_ai_qxotic_jota_runtime_hip_HipKernelParams_packNati
     freeArgsPack(pack);
     return 0;
   }
-  jclass dataTypeClass = findClass(env, "ai/qxotic/jota/DataType");
+  jclass dataTypeClass = findClass(env, "com/qxotic/jota/DataType");
   if (dataTypeClass == NULL) {
     freeArgsPack(pack);
     return 0;
@@ -506,18 +506,18 @@ JNIEXPORT jlong JNICALL Java_ai_qxotic_jota_runtime_hip_HipKernelParams_packNati
     return 0;
   }
 
-  jclass memoryViewClass = findClass(env, "ai/qxotic/jota/memory/MemoryView");
+  jclass memoryViewClass = findClass(env, "com/qxotic/jota/memory/MemoryView");
   if (memoryViewClass == NULL) {
     freeArgsPack(pack);
     return 0;
   }
-  jmethodID memoryMid = getMethod(env, memoryViewClass, "memory", "()Lai/qxotic/jota/memory/Memory;");
+  jmethodID memoryMid = getMethod(env, memoryViewClass, "memory", "()Lcom/qxotic/jota/memory/Memory;");
   if (memoryMid == NULL) {
     freeArgsPack(pack);
     return 0;
   }
 
-  jclass memoryClass = findClass(env, "ai/qxotic/jota/memory/Memory");
+  jclass memoryClass = findClass(env, "com/qxotic/jota/memory/Memory");
   if (memoryClass == NULL) {
     freeArgsPack(pack);
     return 0;
@@ -806,7 +806,7 @@ JNIEXPORT jlong JNICALL Java_ai_qxotic_jota_runtime_hip_HipKernelParams_packNati
   return (jlong)(uintptr_t)pack;
 }
 
-JNIEXPORT void JNICALL Java_ai_qxotic_jota_runtime_hip_HipKernelParams_releaseNative
+JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_hip_HipKernelParams_releaseNative
   (JNIEnv *env, jclass cls, jlong handle) {
   (void)env;
   (void)cls;

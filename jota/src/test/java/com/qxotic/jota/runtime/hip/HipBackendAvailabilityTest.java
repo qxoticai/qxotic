@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.runtime.RuntimeDiagnostic;
+import com.qxotic.jota.testutil.ExternalToolChecks;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
@@ -13,12 +14,13 @@ class HipBackendAvailabilityTest {
 
     @Test
     void hipBackendMustBeAvailableInHipProfile() {
-        String details = diagnosticsSummary();
+        boolean hipccAvailable = isHipccAvailable();
+        String details = diagnosticsSummary(hipccAvailable);
         assertTrue(HipRuntime.isAvailable(), "HIP JNI runtime not available\n" + details);
         assertTrue(
                 Environment.current().runtimes().hasRuntime(Device.HIP),
                 "HIP runtime is not registered\n" + details);
-        assertTrue(isHipccAvailable(), "hipcc not available\n" + details);
+        assertTrue(hipccAvailable, "hipcc not available\n" + details);
 
         int deviceCount = HipRuntime.deviceCount();
         assertTrue(deviceCount > 0, "HIP reported no visible device\n" + details);
@@ -26,6 +28,10 @@ class HipBackendAvailabilityTest {
     }
 
     private static String diagnosticsSummary() {
+        return diagnosticsSummary(isHipccAvailable());
+    }
+
+    private static String diagnosticsSummary(boolean hipccAvailable) {
         String hipDiagnostics =
                 Environment.current().runtimeDiagnostics().stream()
                         .filter(d -> d.device().equals(Device.HIP))
@@ -41,7 +47,7 @@ class HipBackendAvailabilityTest {
                 + "\nHIP runtime registered="
                 + Environment.current().runtimes().hasRuntime(Device.HIP)
                 + "\nhipcc available="
-                + isHipccAvailable();
+                + hipccAvailable;
     }
 
     private static String formatDiagnostic(RuntimeDiagnostic d) {
@@ -64,12 +70,6 @@ class HipBackendAvailabilityTest {
     }
 
     private static boolean isHipccAvailable() {
-        try {
-            Process process = new ProcessBuilder("hipcc", "--version").start();
-            int code = process.waitFor();
-            return code == 0;
-        } catch (Exception e) {
-            return false;
-        }
+        return ExternalToolChecks.hasVersionCommand("hipcc");
     }
 }

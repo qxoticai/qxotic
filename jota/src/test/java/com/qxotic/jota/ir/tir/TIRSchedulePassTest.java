@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 class TIRSchedulePassTest {
 
     @Test
-    void schedulesSimpleChainIntoKernelSteps() {
+    void schedulesSimpleChainIntoSingleKernelStepWhenSupported() {
         Layout layout = Layout.rowMajor(Shape.of(4, 4));
         TensorInput x = new TensorInput(0, DataType.FP32, layout);
         TensorInput y = new TensorInput(1, DataType.FP32, layout);
@@ -22,18 +22,15 @@ class TIRSchedulePassTest {
 
         ScheduledProgram schedule = new TIRSchedulePass().run(graph);
 
-        assertEquals(2, schedule.steps().size(), "Expected one kernel per compute stage");
-        KernelStep first = schedule.steps().get(0);
-        KernelStep second = schedule.steps().get(1);
+        assertEquals(1, schedule.steps().size(), "Expected fused single kernel");
+        KernelStep step = schedule.steps().getFirst();
 
-        assertTrue(first.inputs().contains(new ScheduleInputRef.TensorInputRef(0)));
-        assertTrue(first.inputs().contains(new ScheduleInputRef.TensorInputRef(1)));
-        assertTrue(second.inputs().contains(new ScheduleInputRef.ProducedValueRef(first.output())));
-        assertTrue(second.inputs().contains(new ScheduleInputRef.TensorInputRef(1)));
+        assertTrue(step.inputs().contains(new ScheduleInputRef.TensorInputRef(0)));
+        assertTrue(step.inputs().contains(new ScheduleInputRef.TensorInputRef(1)));
         assertEquals(
-                new ScheduledOutputRef.ValueOutput(second.output()),
+                new ScheduledOutputRef.ValueOutput(step.output()),
                 schedule.output(),
-                "Final output should come from last kernel step");
+                "Final output should come from fused kernel step");
     }
 
     @Test

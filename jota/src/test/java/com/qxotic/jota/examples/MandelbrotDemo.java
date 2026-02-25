@@ -44,11 +44,7 @@ public class MandelbrotDemo {
 
         Environment current = Environment.current();
         Environment backendEnv =
-                new Environment(
-                        backend,
-                        current.defaultFloat(),
-                        current.runtimes(),
-                        current.executionMode());
+                new Environment(backend, current.defaultFloat(), current.runtimes());
 
         long start = System.currentTimeMillis();
         int[][] rgb =
@@ -159,7 +155,7 @@ public class MandelbrotDemo {
             Tensor justEscaped = hasEscaped.logicalAnd(notYetEscaped);
 
             Tensor iterValue = Tensor.full((float) i, DataType.FP32, shape);
-            iterations = justEscaped.select(iterValue, iterations);
+            iterations = justEscaped.where(iterValue, iterations);
 
             escaped = escaped.logicalOr(hasEscaped);
 
@@ -168,7 +164,7 @@ public class MandelbrotDemo {
         }
 
         Tensor finalIter = Tensor.full((float) (MAX_ITER - 1), DataType.FP32, shape);
-        iterations = escaped.select(iterations, finalIter);
+        iterations = escaped.where(iterations, finalIter);
 
         return iterations;
     }

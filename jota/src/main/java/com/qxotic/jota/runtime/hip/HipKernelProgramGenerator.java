@@ -1,6 +1,5 @@
 package com.qxotic.jota.runtime.hip;
 
-import com.qxotic.jota.BFloat16;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.ir.lir.*;
 import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
@@ -60,7 +59,6 @@ final class HipKernelProgramGenerator {
             source.append("#include <hip/hip_bfloat16.h>\n");
             source.append("#include <stdint.h>\n");
             source.append("#include <math.h>\n\n");
-            emitHelpers(source);
 
             source.append("extern \"C\" __global__ void ")
                     .append(kernelName)
@@ -166,21 +164,6 @@ final class HipKernelProgramGenerator {
             return true;
         }
 
-        private void emitHelpers(StringBuilder source) {
-            source.append(
-                    "static inline __device__ __half jota_half_from_float(float v) { return __float2half(v); }\n");
-            source.append(
-                    "static inline __device__ float jota_half_to_float(__half v) { return __half2float(v); }\n");
-            source.append(
-                    "static inline __device__ __half jota_half_from_bits(uint16_t bits) { return *reinterpret_cast<__half*>(&bits); }\n");
-            source.append(
-                    "static inline __device__ hip_bfloat16 jota_bf16_from_float(float v) { return hip_bfloat16(v); }\n");
-            source.append(
-                    "static inline __device__ float jota_bf16_to_float(hip_bfloat16 v) { return float(v); }\n");
-            source.append(
-                    "static inline __device__ hip_bfloat16 jota_bf16_from_bits(uint16_t bits) { return *reinterpret_cast<hip_bfloat16*>(&bits); }\n\n");
-        }
-
         private String kernelSignature() {
             StringBuilder signature = new StringBuilder();
             int argIndex = 0;
@@ -218,18 +201,7 @@ final class HipKernelProgramGenerator {
                     String paramName = scalarParamName(argIndex, scalar.dataType());
                     scalarInputs.put(scalar, name);
                     scalarInputNames.put(scalar.id(), name);
-                    if (scalar.dataType() == DataType.FP16) {
-                        addLine("__half " + name + " = jota_half_from_bits(" + paramName + ");");
-                    } else if (scalar.dataType() == DataType.BF16) {
-                        addLine(
-                                "hip_bfloat16 "
-                                        + name
-                                        + " = jota_bf16_from_bits("
-                                        + paramName
-                                        + ");");
-                    } else {
-                        addLine(typeName(scalar.dataType()) + " " + name + " = " + paramName + ";");
-                    }
+                    addLine(typeName(scalar.dataType()) + " " + name + " = " + paramName + ";");
                 }
                 argIndex++;
             }
@@ -719,11 +691,13 @@ final class HipKernelProgramGenerator {
             }
             if (type == DataType.FP16) {
                 float value = Float.float16ToFloat((short) bits);
-                return "jota_half_from_float(" + formatFloatLiteral(value) + ")";
+                return "((__half)" + formatFloatLiteral(value) + ")";
             }
             if (type == DataType.BF16) {
-                float value = BFloat16.toFloat((short) bits);
-                return "jota_bf16_from_float(" + formatFloatLiteral(value) + ")";
+                int bf16Bits = ((int) bits) & 0xFFFF;
+                int fp32Bits = bf16Bits << 16;
+                float value = Float.intBitsToFloat(fp32Bits);
+                return "((hip_bfloat16)" + formatFloatLiteral(value) + ")";
             }
             if (type == DataType.I8) {
                 return "(int8_t)" + bits + "LL";
@@ -785,10 +759,10 @@ final class HipKernelProgramGenerator {
                 return "(" + expr + " != 0 ? 1 : 0)";
             }
             if (target == DataType.FP16) {
-                return "jota_half_from_float(" + toFloatExpr(source, expr) + ")";
+                return "((__half)(" + toFloatExpr(source, expr) + "))";
             }
             if (target == DataType.BF16) {
-                return "jota_bf16_from_float(" + toFloatExpr(source, expr) + ")";
+                return "((hip_bfloat16)(" + toFloatExpr(source, expr) + "))";
             }
             if (target == DataType.FP32) {
                 return toFloatExpr(source, expr);
@@ -804,10 +778,10 @@ final class HipKernelProgramGenerator {
 
         private String toFloatExpr(DataType source, String expr) {
             if (source == DataType.FP16) {
-                return "jota_half_to_float(" + expr + ")";
+                return "(float)(" + expr + ")";
             }
             if (source == DataType.BF16) {
-                return "jota_bf16_to_float(" + expr + ")";
+                return "(float)(" + expr + ")";
             }
             if (source == DataType.FP32) {
                 return expr;
@@ -946,16 +920,10 @@ final class HipKernelProgramGenerator {
         }
 
         private String scalarParamType(DataType type) {
-            if (type == DataType.FP16 || type == DataType.BF16) {
-                return "uint16_t";
-            }
             return typeName(type);
         }
 
         private String scalarParamName(int index, DataType type) {
-            if (type == DataType.FP16 || type == DataType.BF16) {
-                return "scalar" + index + "_bits";
-            }
             return "scalar" + index;
         }
 

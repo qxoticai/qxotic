@@ -3,6 +3,7 @@ package com.qxotic.jota.ir.tir;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -73,7 +74,9 @@ public final class TIRCSEPass implements TIRPass {
 
     private static final class CSERewriter extends TIRRewriter {
         private final Map<ExprKey, TIRNode> exprCache = new HashMap<>();
-        private final Map<TIRNode, TIRNode> replacementMap = new HashMap<>();
+        private final Map<TIRNode, TIRNode> replacementMap = new IdentityHashMap<>();
+        private final Map<ScalarConstantKey, ScalarConstant> scalarConstants = new HashMap<>();
+        private final Map<IotaConstantKey, IotaConstant> iotaConstants = new HashMap<>();
 
         @Override
         public TIRGraph rewrite(TIRGraph graph) {
@@ -129,9 +132,28 @@ public final class TIRCSEPass implements TIRPass {
                     replacementMap.put(node, node);
                 }
             } else {
-                // Nodes that don't participate in CSE (inputs, constants)
-                replacementMap.put(node, node);
+                canonicalizeLeaf(node);
             }
+        }
+
+        private void canonicalizeLeaf(TIRNode node) {
+            if (node instanceof ScalarConstant constant) {
+                ScalarConstantKey key =
+                        new ScalarConstantKey(
+                                constant.rawBits(), constant.dataType(), constant.shape());
+                ScalarConstant existing = scalarConstants.putIfAbsent(key, constant);
+                replacementMap.put(node, existing != null ? existing : constant);
+                return;
+            }
+            if (node instanceof IotaConstant constant) {
+                IotaConstantKey key =
+                        new IotaConstantKey(
+                                constant.count(), constant.dataType(), constant.shape());
+                IotaConstant existing = iotaConstants.putIfAbsent(key, constant);
+                replacementMap.put(node, existing != null ? existing : constant);
+                return;
+            }
+            replacementMap.put(node, node);
         }
 
         private ExprKey createKey(TIRNode node) {
@@ -197,10 +219,9 @@ public final class TIRCSEPass implements TIRPass {
 
         @Override
         public TIRNode visitUnaryOp(UnaryOp node) {
-            TIRNode newInput = node.input().accept(this);
+            TIRNode newInput = rewriteChild(node.input());
             TIRNode result = getReplacement(node);
             if (result == node) {
-                // Not replaced - need to create new node with rewritten input
                 if (newInput == node.input()) {
                     return node;
                 }
@@ -211,11 +232,10 @@ public final class TIRCSEPass implements TIRPass {
 
         @Override
         public TIRNode visitBinaryOp(BinaryOp node) {
-            TIRNode newLeft = node.left().accept(this);
-            TIRNode newRight = node.right().accept(this);
+            TIRNode newLeft = rewriteChild(node.left());
+            TIRNode newRight = rewriteChild(node.right());
             TIRNode result = getReplacement(node);
             if (result == node) {
-                // Not replaced - need to create new node with rewritten inputs
                 if (newLeft == node.left() && newRight == node.right()) {
                     return node;
                 }
@@ -226,12 +246,11 @@ public final class TIRCSEPass implements TIRPass {
 
         @Override
         public TIRNode visitTernaryOp(TernaryOp node) {
-            TIRNode newCond = node.cond().accept(this);
-            TIRNode newTrue = node.trueExpr().accept(this);
-            TIRNode newFalse = node.falseExpr().accept(this);
+            TIRNode newCond = rewriteChild(node.cond());
+            TIRNode newTrue = rewriteChild(node.trueExpr());
+            TIRNode newFalse = rewriteChild(node.falseExpr());
             TIRNode result = getReplacement(node);
             if (result == node) {
-                // Not replaced
                 if (newCond == node.cond()
                         && newTrue == node.trueExpr()
                         && newFalse == node.falseExpr()) {
@@ -244,7 +263,7 @@ public final class TIRCSEPass implements TIRPass {
 
         @Override
         public TIRNode visitCastOp(CastOp node) {
-            TIRNode newInput = node.input().accept(this);
+            TIRNode newInput = rewriteChild(node.input());
             TIRNode result = getReplacement(node);
             if (result == node) {
                 if (newInput == node.input()) {
@@ -257,7 +276,7 @@ public final class TIRCSEPass implements TIRPass {
 
         @Override
         public TIRNode visitReductionOp(ReductionOp node) {
-            TIRNode newInput = node.input().accept(this);
+            TIRNode newInput = rewriteChild(node.input());
             TIRNode result = getReplacement(node);
             if (result == node) {
                 if (newInput == node.input()) {
@@ -276,7 +295,7 @@ public final class TIRCSEPass implements TIRPass {
 
         @Override
         public TIRNode visitViewTransform(ViewTransform node) {
-            TIRNode newInput = node.input().accept(this);
+            TIRNode newInput = rewriteChild(node.input());
             if (newInput == node.input()) {
                 return node;
             }
@@ -286,13 +305,17 @@ public final class TIRCSEPass implements TIRPass {
 
         @Override
         public TIRNode visitContiguous(Contiguous node) {
-            TIRNode newInput = node.input().accept(this);
+            TIRNode newInput = rewriteChild(node.input());
             if (newInput == node.input()) {
                 return node;
             }
             return new Contiguous(newInput, node.shape());
         }
     }
+
+    private record ScalarConstantKey(long rawBits, DataType dataType, Shape shape) {}
+
+    private record IotaConstantKey(long count, DataType dataType, Shape shape) {}
 
     /** Key for reduction operations that includes all reduction parameters. */
     private record ReductionKey(

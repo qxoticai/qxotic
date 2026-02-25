@@ -121,10 +121,10 @@ public interface TensorOps {
                 x, accumulatorType, false, axes[0], Arrays.copyOfRange(axes, 1, axes.length));
     }
 
-    Tensor mean(Tensor x, int axis, boolean keepDims);
+    Tensor mean(Tensor x, int _axis, boolean keepDims);
 
-    default Tensor mean(Tensor x, int axis) {
-        return mean(x, axis, false);
+    default Tensor mean(Tensor x, int _axis) {
+        return mean(x, _axis, false);
     }
 
     Tensor max(Tensor x, boolean keepDims, int _axis, int... _axes);

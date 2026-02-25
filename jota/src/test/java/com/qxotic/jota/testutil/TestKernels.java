@@ -67,14 +67,14 @@ public final class TestKernels {
             Tensor justEscaped = hasEscaped.logicalAnd(notYetEscaped);
 
             Tensor iterValue = Tensor.full((float) i, DataType.FP32, shape);
-            iters = justEscaped.select(iterValue, iters);
+            iters = justEscaped.where(iterValue, iters);
             escaped = escaped.logicalOr(hasEscaped);
             zReal = zRealNew;
             zImag = zImagNew;
         }
 
         Tensor finalIter = Tensor.full((float) (iterations - 1), DataType.FP32, shape);
-        return escaped.select(iters, finalIter);
+        return escaped.where(iters, finalIter);
     }
 
     public static float mandelbrotIter(int row, int col, int width, int height, int iterations) {
@@ -139,7 +139,7 @@ public final class TestKernels {
         try {
             Files.createDirectories(path.getParent());
             try (OutputStream stream = new BufferedOutputStream(Files.newOutputStream(path))) {
-                writeAscii(stream, "P3\n");
+                writeAscii(stream, "P6\n");
                 writeAscii(stream, width + " " + height + "\n");
                 writeAscii(stream, "255\n");
 
@@ -150,12 +150,10 @@ public final class TestKernels {
                         long offset = Indexing.linearToOffset(view, idx);
                         float iter = access.readFloat(view.memory(), offset);
                         int[] rgb = mandelbrotColor(iter, iterations);
-                        writeAscii(stream, rgb[0] + " " + rgb[1] + " " + rgb[2]);
-                        if (w < width - 1) {
-                            writeAscii(stream, " ");
-                        }
+                        stream.write(rgb[0]);
+                        stream.write(rgb[1]);
+                        stream.write(rgb[2]);
                     }
-                    writeAscii(stream, "\n");
                 }
             }
         } catch (IOException e) {

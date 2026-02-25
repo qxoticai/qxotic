@@ -9,6 +9,7 @@ import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.tensor.KernelProgram;
+import com.qxotic.jota.testutil.ExternalToolChecks;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
@@ -103,12 +104,6 @@ class CCustomKernelLaunchTest {
     }
 
     private static void assumeGccAvailable() {
-        try {
-            Process process = new ProcessBuilder("gcc", "--version").start();
-            int code = process.waitFor();
-            Assumptions.assumeTrue(code == 0, "gcc not available");
-        } catch (Exception e) {
-            Assumptions.assumeTrue(false, "gcc not available");
-        }
+        Assumptions.assumeTrue(ExternalToolChecks.hasVersionCommand("gcc"), "gcc not available");
     }
 }

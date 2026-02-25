@@ -12,7 +12,16 @@ import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.stream.IntStream;
 
+/**
+ * Lazy tensor API.
+ *
+ * <p>Tensor operations build a graph and return new lazy tensors. Computation happens when {@link
+ * #materialize()} is called. Methods that expose reduction axes use the wrap-around naming
+ * convention: parameters named {@code _axis}/{@code _axes} are interpreted with wrap-around
+ * semantics (negative indices allowed).
+ */
 public interface Tensor {
 
     DataType dataType();
@@ -83,11 +92,14 @@ public interface Tensor {
     default Tensor add(Tensor other) {
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.ADD)
                 .orElseGet(
-                        () ->
-                                TensorOpsContext.require()
-                                        .add(
-                                                broadcastLeftScalar(this, other),
-                                                broadcastRightScalar(this, other)));
+                        () -> {
+                            Tensor left = broadcastLeftScalar(this, other);
+                            Tensor right = broadcastRightScalar(this, other);
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().add(left, right);
+                            }
+                            return Tracer.trace(left, right, (a, b) -> a.add(b));
+                        });
     }
 
     default Tensor add(int scalar) {
@@ -109,11 +121,14 @@ public interface Tensor {
     default Tensor subtract(Tensor other) {
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.SUBTRACT)
                 .orElseGet(
-                        () ->
-                                TensorOpsContext.require()
-                                        .subtract(
-                                                broadcastLeftScalar(this, other),
-                                                broadcastRightScalar(this, other)));
+                        () -> {
+                            Tensor left = broadcastLeftScalar(this, other);
+                            Tensor right = broadcastRightScalar(this, other);
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().subtract(left, right);
+                            }
+                            return Tracer.trace(left, right, (a, b) -> a.subtract(b));
+                        });
     }
 
     default Tensor subtract(int scalar) {
@@ -135,11 +150,14 @@ public interface Tensor {
     default Tensor multiply(Tensor other) {
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.MULTIPLY)
                 .orElseGet(
-                        () ->
-                                TensorOpsContext.require()
-                                        .multiply(
-                                                broadcastLeftScalar(this, other),
-                                                broadcastRightScalar(this, other)));
+                        () -> {
+                            Tensor left = broadcastLeftScalar(this, other);
+                            Tensor right = broadcastRightScalar(this, other);
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().multiply(left, right);
+                            }
+                            return Tracer.trace(left, right, (a, b) -> a.multiply(b));
+                        });
     }
 
     default Tensor multiply(int scalar) {
@@ -161,11 +179,14 @@ public interface Tensor {
     default Tensor divide(Tensor other) {
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.DIVIDE)
                 .orElseGet(
-                        () ->
-                                TensorOpsContext.require()
-                                        .divide(
-                                                broadcastLeftScalar(this, other),
-                                                broadcastRightScalar(this, other)));
+                        () -> {
+                            Tensor left = broadcastLeftScalar(this, other);
+                            Tensor right = broadcastRightScalar(this, other);
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().divide(left, right);
+                            }
+                            return Tracer.trace(left, right, (a, b) -> a.divide(b));
+                        });
     }
 
     default Tensor divide(int scalar) {
@@ -187,75 +208,143 @@ public interface Tensor {
     default Tensor min(Tensor other) {
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.MIN)
                 .orElseGet(
-                        () ->
-                                TensorOpsContext.require()
-                                        .min(
-                                                broadcastLeftScalar(this, other),
-                                                broadcastRightScalar(this, other)));
+                        () -> {
+                            Tensor left = broadcastLeftScalar(this, other);
+                            Tensor right = broadcastRightScalar(this, other);
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().min(left, right);
+                            }
+                            return Tracer.trace(left, right, (a, b) -> a.min(b));
+                        });
     }
 
+    /**
+     * Reduces all axes with minimum.
+     *
+     * <p>This is lazy and only executes on {@link #materialize()}.
+     */
     default Tensor min() {
-        return TensorOpsContext.require().min(this);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().min(this);
+        }
+        return Tracer.trace(this, Tensor::min);
     }
 
+    /**
+     * Reduces selected axes with minimum.
+     *
+     * <p>Parameters {@code _axis}/{@code _axes} use wrap-around axis semantics.
+     */
     default Tensor min(int _axis, int... _axes) {
-        return TensorOpsContext.require().min(this, _axis, _axes);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().min(this, _axis, _axes);
+        }
+        return Tracer.trace(this, t -> t.min(_axis, _axes));
     }
 
+    /**
+     * Reduces selected axes with minimum.
+     *
+     * <p>Parameters {@code _axis}/{@code _axes} use wrap-around axis semantics.
+     */
     default Tensor min(boolean keepDims, int _axis, int... _axes) {
-        return TensorOpsContext.require().min(this, keepDims, _axis, _axes);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().min(this, keepDims, _axis, _axes);
+        }
+        return Tracer.trace(this, t -> t.min(keepDims, _axis, _axes));
     }
 
     default Tensor max(Tensor other) {
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.MAX)
                 .orElseGet(
-                        () ->
-                                TensorOpsContext.require()
-                                        .max(
-                                                broadcastLeftScalar(this, other),
-                                                broadcastRightScalar(this, other)));
+                        () -> {
+                            Tensor left = broadcastLeftScalar(this, other);
+                            Tensor right = broadcastRightScalar(this, other);
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().max(left, right);
+                            }
+                            return Tracer.trace(left, right, (a, b) -> a.max(b));
+                        });
     }
 
+    /**
+     * Reduces all axes with maximum.
+     *
+     * <p>This is lazy and only executes on {@link #materialize()}.
+     */
     default Tensor max() {
-        return TensorOpsContext.require().max(this);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().max(this);
+        }
+        return Tracer.trace(this, Tensor::max);
     }
 
+    /**
+     * Reduces selected axes with maximum.
+     *
+     * <p>Parameters {@code _axis}/{@code _axes} use wrap-around axis semantics.
+     */
     default Tensor max(int _axis, int... _axes) {
-        return TensorOpsContext.require().max(this, _axis, _axes);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().max(this, _axis, _axes);
+        }
+        return Tracer.trace(this, t -> t.max(_axis, _axes));
     }
 
+    /**
+     * Reduces selected axes with maximum.
+     *
+     * <p>Parameters {@code _axis}/{@code _axes} use wrap-around axis semantics.
+     */
     default Tensor max(boolean keepDims, int _axis, int... _axes) {
-        return TensorOpsContext.require().max(this, keepDims, _axis, _axes);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().max(this, keepDims, _axis, _axes);
+        }
+        return Tracer.trace(this, t -> t.max(keepDims, _axis, _axes));
     }
 
     default Tensor any() {
         if (dataType() != DataType.BOOL) {
             throw new IllegalArgumentException("expected BOOL");
         }
-        return TensorOpsContext.require().max(this);
+        Tensor reduced = sum(DataType.I32).cast(DataType.I32);
+        return reduced.greaterThan(Tensor.scalar(0L, DataType.I32));
     }
 
     default Tensor all() {
         if (dataType() != DataType.BOOL) {
             throw new IllegalArgumentException("expected BOOL");
         }
-        return TensorOpsContext.require().min(this);
+        Tensor reduced = sum(DataType.I32).cast(DataType.I32);
+        return reduced.equal(Tensor.scalar(shape().size(), DataType.I32));
     }
 
     default Tensor matmul(Tensor other) {
-        return TensorOpsContext.require().matmul(this, other);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().matmul(this, other);
+        }
+        return Tracer.trace(this, other, (a, b) -> a.matmul(b));
     }
 
     default Tensor batchedMatmul(Tensor other) {
-        return TensorOpsContext.require().batchedMatmul(this, other);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().batchedMatmul(this, other);
+        }
+        return Tracer.trace(this, other, (a, b) -> a.batchedMatmul(b));
     }
 
     default Tensor to(Device device) {
-        return TensorOpsContext.require().to(this, device);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().to(this, device);
+        }
+        return Tracer.trace(this, t -> t.to(device));
     }
 
     default Tensor contiguous() {
-        return TensorOpsContext.require().contiguous(this);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().contiguous(this);
+        }
+        return Tracer.trace(this, Tensor::contiguous);
     }
 
     /**
@@ -271,28 +360,71 @@ public interface Tensor {
      */
     default Tensor view(Shape newShape) {
         ViewTransforms.ViewTransformSpec spec = ViewTransforms.view(layout(), newShape);
-        return TensorOpsContext.require().viewTransform(this, spec);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().viewTransform(this, spec);
+        }
+        return Tracer.trace(this, t -> Tracer.requireIROps().viewTransform(t, spec));
+    }
+
+    /**
+     * Convenience overload for {@link #view(Shape)} with optional {@code -1} inference.
+     *
+     * <p>Rules:
+     *
+     * <ul>
+     *   <li>At most one dimension may be {@code -1}
+     *   <li>All other dimensions must be {@code >= 0}
+     *   <li>The inferred size must divide total element count exactly
+     *   <li>{@code view()} (no dims) is allowed only for one-element tensors and produces scalar
+     *       shape {@code ()}
+     * </ul>
+     */
+    default Tensor view(long... dims) {
+        Objects.requireNonNull(dims, "dims");
+        long total = shape().size();
+
+        if (dims.length == 0) {
+            if (total != 1) {
+                throw new IllegalArgumentException(
+                        "view() without dims requires exactly one element, got size=" + total);
+            }
+            return view(Shape.scalar());
+        }
+
+        return view(Shape.resolveShape(total, dims));
     }
 
     default Tensor broadcast(Shape targetShape) {
         ViewTransforms.ViewTransformSpec spec = ViewTransforms.broadcast(layout(), targetShape);
-        return TensorOpsContext.require().viewTransform(this, spec);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().viewTransform(this, spec);
+        }
+        return Tracer.trace(this, t -> Tracer.requireIROps().viewTransform(t, spec));
     }
 
     default Tensor expand(Shape targetShape) {
         ViewTransforms.ViewTransformSpec spec = ViewTransforms.expand(layout(), targetShape);
-        return TensorOpsContext.require().viewTransform(this, spec);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().viewTransform(this, spec);
+        }
+        return Tracer.trace(this, t -> Tracer.requireIROps().viewTransform(t, spec));
     }
 
     default Tensor transpose(int axis0, int axis1) {
         ViewTransforms.ViewTransformSpec spec = ViewTransforms.transpose(layout(), axis0, axis1);
-        return TensorOpsContext.require().viewTransform(this, spec);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().viewTransform(this, spec);
+        }
+        return Tracer.trace(this, t -> Tracer.requireIROps().viewTransform(t, spec));
     }
 
     default Tensor permute(int... permutationIndices) {
         ViewTransforms.ViewTransformSpec spec =
                 ViewTransforms.permute(layout(), permutationIndices);
-        return TensorOpsContext.require().viewTransform(this, spec);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().viewTransform(this, spec);
+        }
+        return Tracer.trace(this, t -> Tracer.requireIROps().viewTransform(t, spec));
     }
 
     default Tensor slice(int axis, long start, long end) {
@@ -302,7 +434,258 @@ public interface Tensor {
     default Tensor slice(int axis, long start, long end, long indexStride) {
         ViewTransforms.ViewTransformSpec spec =
                 ViewTransforms.slice(layout(), dataType(), axis, start, end, indexStride);
-        return TensorOpsContext.require().viewTransform(this, spec);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().viewTransform(this, spec);
+        }
+        return Tracer.trace(this, t -> Tracer.requireIROps().viewTransform(t, spec));
+    }
+
+    /**
+     * Repeats this tensor along each axis.
+     *
+     * <p>Strict semantics: {@code repeats.length} must equal tensor rank and each repeat factor
+     * must be {@code >= 1}. This method does not prepend dimensions or flatten implicitly.
+     */
+    default Tensor repeat(long... repeats) {
+        Objects.requireNonNull(repeats, "repeats");
+        Shape modeShape = shape().flattenModes();
+        int rank = modeShape.rank();
+        if (repeats.length == 0) {
+            throw new IllegalArgumentException("repeat requires at least one repeat factor");
+        }
+        if (repeats.length != rank) {
+            throw new IllegalArgumentException(
+                    "repeat expects "
+                            + rank
+                            + " repeat factors, got "
+                            + repeats.length
+                            + " for shape "
+                            + shape()
+                            + " (mode shape "
+                            + modeShape
+                            + ")");
+        }
+
+        long[] dims = modeShape.toArray();
+        boolean identity = true;
+        int expandedRank = 0;
+        for (int i = 0; i < rank; i++) {
+            if (repeats[i] < 1) {
+                throw new IllegalArgumentException(
+                        "repeat factors must be >= 1, got " + repeats[i] + " at axis " + i);
+            }
+            if (repeats[i] != 1) {
+                identity = false;
+                expandedRank++;
+            }
+            expandedRank++;
+        }
+        if (identity) {
+            return this;
+        }
+
+        long[] unsqueezed = new long[expandedRank];
+        long[] expanded = new long[expandedRank];
+        long[] out = new long[rank];
+        Tensor base = view(modeShape);
+
+        int j = 0;
+        for (int i = 0; i < rank; i++) {
+            long dim = dims[i];
+            long repeat = repeats[i];
+            out[i] = Math.multiplyExact(dim, repeat);
+            if (repeat == 1) {
+                unsqueezed[j] = dim;
+                expanded[j] = dim;
+                j++;
+                continue;
+            }
+            unsqueezed[j] = 1;
+            expanded[j] = repeat;
+            j++;
+            unsqueezed[j] = dim;
+            expanded[j] = dim;
+            j++;
+        }
+
+        return base.view(Shape.flat(unsqueezed))
+                .broadcast(Shape.flat(expanded))
+                .view(Shape.flat(out));
+    }
+
+    /**
+     * Repeats each element along one axis.
+     *
+     * <p>For example, {@code [a,b,c].repeatInterleave(2, 0)} produces {@code [a,a,b,b,c,c]}.
+     */
+    default Tensor repeatInterleave(long repeats, int _axis) {
+        if (repeats < 1) {
+            throw new IllegalArgumentException("repeatInterleave repeats must be >= 1");
+        }
+        if (repeats == 1) {
+            return this;
+        }
+
+        Shape modeShape = shape().flattenModes();
+        int rank = modeShape.rank();
+        int axis = TensorSemantics.normalizeAxis(rank, _axis);
+        long[] dims = modeShape.toArray();
+        Tensor base = view(modeShape);
+
+        long axisSize = dims[axis];
+        long outAxisSize = Math.multiplyExact(axisSize, repeats);
+        Tensor indexTensor =
+                Tensor.iota(axisSize, DataType.I32)
+                        .view(Shape.of(axisSize, 1))
+                        .broadcast(Shape.of(axisSize, repeats))
+                        .view(Shape.of(outAxisSize));
+
+        return base.gather(indexTensor, axis);
+    }
+
+    /**
+     * Concatenates tensors along an existing axis.
+     *
+     * <p>Strict semantics: all tensors must have the same dtype, device, rank, and equal sizes on
+     * non-concatenated axes. No implicit broadcasting or rank padding is performed.
+     */
+    static Tensor concat(int _axis, Tensor first, Tensor second, Tensor... rest) {
+        Objects.requireNonNull(first, "first");
+        Objects.requireNonNull(second, "second");
+        Objects.requireNonNull(rest, "rest");
+
+        Shape firstShape = first.shape().flattenModes();
+        int rank = firstShape.rank();
+        int axis = TensorSemantics.normalizeAxis(rank, _axis);
+
+        Tensor acc = asModeTensor(first, firstShape);
+        Shape secondModeShape = second.shape().flattenModes();
+        acc = concatPair(axis, acc, asModeTensor(second, secondModeShape));
+        for (Tensor next : rest) {
+            Objects.requireNonNull(next, "concat tensor");
+            Shape nextModeShape = next.shape().flattenModes();
+            acc = concatPair(axis, acc, asModeTensor(next, nextModeShape));
+        }
+        return acc;
+    }
+
+    /**
+     * Stacks tensors along a new axis.
+     *
+     * <p>Strict semantics: all tensors must have the same dtype, device and shape. No implicit
+     * broadcasting or rank padding is performed.
+     */
+    static Tensor stack(int _axis, Tensor first, Tensor second, Tensor... rest) {
+        Objects.requireNonNull(first, "first");
+        Objects.requireNonNull(second, "second");
+        Objects.requireNonNull(rest, "rest");
+
+        Shape firstShape = first.shape().flattenModes();
+        int axis = TensorSemantics.normalizeAxis(firstShape.rank() + 1, _axis);
+        Shape firstExpanded = insertAxisShape(firstShape, axis, 1L);
+
+        Tensor[] expanded = new Tensor[2 + rest.length];
+        expanded[0] = asModeTensor(first, firstShape).view(firstExpanded);
+        Shape secondShape = second.shape().flattenModes();
+        expanded[1] =
+                asModeTensor(second, secondShape).view(insertAxisShape(secondShape, axis, 1L));
+        for (int i = 0; i < rest.length; i++) {
+            Tensor next = Objects.requireNonNull(rest[i], "stack tensor");
+            Shape nextShape = next.shape().flattenModes();
+            expanded[i + 2] =
+                    asModeTensor(next, nextShape).view(insertAxisShape(nextShape, axis, 1L));
+        }
+
+        Tensor acc = concat(axis, expanded[0], expanded[1]);
+        for (int i = 2; i < expanded.length; i++) {
+            acc = concat(axis, acc, expanded[i]);
+        }
+        return acc;
+    }
+
+    private static Tensor asModeTensor(Tensor tensor, Shape modeShape) {
+        return tensor.shape().equals(modeShape) ? tensor : tensor.view(modeShape);
+    }
+
+    private static Shape insertAxisShape(Shape base, int axis, long insertedSize) {
+        long[] dims = base.toArray();
+        long[] out = new long[dims.length + 1];
+        for (int i = 0, j = 0; i < out.length; i++) {
+            if (i == axis) {
+                out[i] = insertedSize;
+            } else {
+                out[i] = dims[j++];
+            }
+        }
+        return Shape.flat(out);
+    }
+
+    private static Tensor concatPair(int axis, Tensor left, Tensor right) {
+        if (left.dataType() != right.dataType()) {
+            throw new IllegalArgumentException(
+                    "concat requires matching dtypes, got "
+                            + left.dataType()
+                            + " and "
+                            + right.dataType());
+        }
+        if (left.device() != right.device()) {
+            throw new IllegalArgumentException(
+                    "concat requires matching devices, got "
+                            + left.device()
+                            + " and "
+                            + right.device());
+        }
+
+        Shape leftShape = left.shape();
+        Shape rightShape = right.shape();
+        if (leftShape.rank() != rightShape.rank()) {
+            throw new IllegalArgumentException(
+                    "concat requires equal ranks, got " + leftShape + " and " + rightShape);
+        }
+
+        long[] leftDims = leftShape.toArray();
+        long[] rightDims = rightShape.toArray();
+        for (int i = 0; i < leftDims.length; i++) {
+            if (i == axis) {
+                continue;
+            }
+            if (leftDims[i] != rightDims[i]) {
+                throw new IllegalArgumentException(
+                        "concat dimension mismatch at axis "
+                                + i
+                                + ": "
+                                + leftDims[i]
+                                + " vs "
+                                + rightDims[i]);
+            }
+        }
+
+        long leftAxis = leftDims[axis];
+        long rightAxis = rightDims[axis];
+        long outAxis = Math.addExact(leftAxis, rightAxis);
+
+        long[] outDims = leftDims.clone();
+        outDims[axis] = outAxis;
+        Shape outShape = Shape.flat(outDims);
+
+        Tensor idx = Tensor.iota(outAxis, DataType.I32);
+        Tensor leftCount = Tensor.scalar(leftAxis, DataType.I32);
+        Tensor zeroI32 = Tensor.scalar(0L, DataType.I32);
+        Tensor leftMask = idx.lessThan(leftCount);
+
+        Tensor leftIdx = leftMask.where(idx, zeroI32);
+        Tensor rightIdx = leftMask.where(zeroI32, idx.subtract(leftCount));
+
+        Tensor leftPart = left.gather(leftIdx, axis);
+        Tensor rightPart = right.gather(rightIdx, axis);
+
+        long[] maskDims = new long[leftDims.length];
+        Arrays.fill(maskDims, 1L);
+        maskDims[axis] = outAxis;
+        Tensor axisCoord =
+                Tensor.iota(outAxis, DataType.I32).view(Shape.flat(maskDims)).broadcast(outShape);
+        Tensor mask = axisCoord.lessThan(leftCount);
+        return mask.where(leftPart, rightPart);
     }
 
     /**
@@ -317,86 +700,128 @@ public interface Tensor {
      * @throws IllegalArgumentException if the total number of elements doesn't match
      */
     default Tensor reshape(Shape newShape) {
-        return TensorOpsContext.require().reshape(this, newShape);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().reshape(this, newShape);
+        }
+        return Tracer.trace(this, t -> Tracer.requireIROps().reshape(t, newShape));
     }
 
     default Tensor bitwiseNot() {
         TensorTypeSemantics.requireIntegral(dataType(), "bitwiseNot");
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.BITWISE_NOT)
-                .orElseGet(() -> TensorOpsContext.require().bitwiseNot(this));
+                .orElseGet(
+                        () -> {
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().bitwiseNot(this);
+                            }
+                            return Tracer.trace(this, Tensor::bitwiseNot);
+                        });
     }
 
     default Tensor bitwiseAnd(Tensor other) {
         TensorTypeSemantics.requireSameIntegralType(dataType(), other.dataType(), "bitwiseAnd");
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.BITWISE_AND)
                 .orElseGet(
-                        () ->
-                                TensorOpsContext.require()
-                                        .bitwiseAnd(
-                                                broadcastLeftScalar(this, other),
-                                                broadcastRightScalar(this, other)));
+                        () -> {
+                            Tensor left = broadcastLeftScalar(this, other);
+                            Tensor right = broadcastRightScalar(this, other);
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().bitwiseAnd(left, right);
+                            }
+                            return Tracer.trace(left, right, (a, b) -> a.bitwiseAnd(b));
+                        });
     }
 
     default Tensor bitwiseOr(Tensor other) {
         TensorTypeSemantics.requireSameIntegralType(dataType(), other.dataType(), "bitwiseOr");
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.BITWISE_OR)
                 .orElseGet(
-                        () ->
-                                TensorOpsContext.require()
-                                        .bitwiseOr(
-                                                broadcastLeftScalar(this, other),
-                                                broadcastRightScalar(this, other)));
+                        () -> {
+                            Tensor left = broadcastLeftScalar(this, other);
+                            Tensor right = broadcastRightScalar(this, other);
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().bitwiseOr(left, right);
+                            }
+                            return Tracer.trace(left, right, (a, b) -> a.bitwiseOr(b));
+                        });
     }
 
     default Tensor bitwiseXor(Tensor other) {
         TensorTypeSemantics.requireSameIntegralType(dataType(), other.dataType(), "bitwiseXor");
         return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.BITWISE_XOR)
                 .orElseGet(
-                        () ->
-                                TensorOpsContext.require()
-                                        .bitwiseXor(
-                                                broadcastLeftScalar(this, other),
-                                                broadcastRightScalar(this, other)));
+                        () -> {
+                            Tensor left = broadcastLeftScalar(this, other);
+                            Tensor right = broadcastRightScalar(this, other);
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().bitwiseXor(left, right);
+                            }
+                            return Tracer.trace(left, right, (a, b) -> a.bitwiseXor(b));
+                        });
     }
 
     default Tensor logicalNot() {
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.LOGICAL_NOT)
-                .orElseGet(() -> TensorOpsContext.require().logicalNot(this));
+                .orElseGet(
+                        () -> {
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().logicalNot(this);
+                            }
+                            return Tracer.trace(this, Tensor::logicalNot);
+                        });
     }
 
     default Tensor logicalAnd(Tensor other) {
-        return TensorOpsContext.require()
-                .logicalAnd(broadcastLeftScalar(this, other), broadcastRightScalar(this, other));
+        Tensor left = broadcastLeftScalar(this, other);
+        Tensor right = broadcastRightScalar(this, other);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().logicalAnd(left, right);
+        }
+        return Tracer.trace(left, right, (a, b) -> a.logicalAnd(b));
     }
 
     default Tensor logicalOr(Tensor other) {
-        return TensorOpsContext.require()
-                .logicalOr(broadcastLeftScalar(this, other), broadcastRightScalar(this, other));
+        Tensor left = broadcastLeftScalar(this, other);
+        Tensor right = broadcastRightScalar(this, other);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().logicalOr(left, right);
+        }
+        return Tracer.trace(left, right, (a, b) -> a.logicalOr(b));
     }
 
     default Tensor logicalXor(Tensor other) {
-        return TensorOpsContext.require()
-                .logicalXor(broadcastLeftScalar(this, other), broadcastRightScalar(this, other));
+        Tensor left = broadcastLeftScalar(this, other);
+        Tensor right = broadcastRightScalar(this, other);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().logicalXor(left, right);
+        }
+        return Tracer.trace(left, right, (a, b) -> a.logicalXor(b));
     }
 
     default Tensor equal(Tensor other) {
         return ConstantFolder.tryFoldCompareOp(this, other, BinaryOp.EQUAL)
                 .orElseGet(
-                        () ->
-                                TensorOpsContext.require()
-                                        .equal(
-                                                broadcastLeftScalar(this, other),
-                                                broadcastRightScalar(this, other)));
+                        () -> {
+                            Tensor left = broadcastLeftScalar(this, other);
+                            Tensor right = broadcastRightScalar(this, other);
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().equal(left, right);
+                            }
+                            return Tracer.trace(left, right, (a, b) -> a.equal(b));
+                        });
     }
 
     default Tensor lessThan(Tensor other) {
         return ConstantFolder.tryFoldCompareOp(this, other, BinaryOp.LESS_THAN)
                 .orElseGet(
-                        () ->
-                                TensorOpsContext.require()
-                                        .lessThan(
-                                                broadcastLeftScalar(this, other),
-                                                broadcastRightScalar(this, other)));
+                        () -> {
+                            Tensor left = broadcastLeftScalar(this, other);
+                            Tensor right = broadcastRightScalar(this, other);
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().lessThan(left, right);
+                            }
+                            return Tracer.trace(left, right, (a, b) -> a.lessThan(b));
+                        });
     }
 
     default Tensor notEqual(Tensor other) {
@@ -415,7 +840,15 @@ public interface Tensor {
         return lessThan(other).logicalNot();
     }
 
-    default Tensor select(Tensor trueValue, Tensor falseValue) {
+    /**
+     * Elementwise conditional selection.
+     *
+     * <p>For each element, returns the corresponding value from {@code trueValue} when this tensor
+     * (the condition) is true, otherwise from {@code falseValue}. The condition must be BOOL.
+     *
+     * <p>This is lazy and only executes on {@link #materialize()}.
+     */
+    default Tensor where(Tensor trueValue, Tensor falseValue) {
         TensorTypeSemantics.requireBool(dataType(), "where condition");
         if (trueValue.dataType() != falseValue.dataType()) {
             throw new IllegalArgumentException(
@@ -424,31 +857,124 @@ public interface Tensor {
                             + " and "
                             + falseValue.dataType());
         }
-        return TensorOpsContext.require().where(this, trueValue, falseValue);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().where(this, trueValue, falseValue);
+        }
+        return Tracer.trace(this, trueValue, falseValue, (c, t, f) -> c.where(t, f));
     }
 
+    /**
+     * Reduces all axes with sum.
+     *
+     * <p>This is lazy and only executes on {@link #materialize()}.
+     */
     default Tensor sum(DataType accumulatorType) {
-        return TensorOpsContext.require().sum(this, accumulatorType);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().sum(this, accumulatorType);
+        }
+        return Tracer.trace(this, t -> t.sum(accumulatorType));
     }
 
+    /**
+     * Reduces selected axes with sum.
+     *
+     * <p>Parameters {@code _axis}/{@code _axes} use wrap-around axis semantics.
+     */
     default Tensor sum(DataType accumulatorType, int _axis, int... _axes) {
-        return TensorOpsContext.require().sum(this, accumulatorType, _axis, _axes);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().sum(this, accumulatorType, _axis, _axes);
+        }
+        return Tracer.trace(this, t -> t.sum(accumulatorType, _axis, _axes));
     }
 
+    /**
+     * Reduces selected axes with sum.
+     *
+     * <p>Parameters {@code _axis}/{@code _axes} use wrap-around axis semantics.
+     */
     default Tensor sum(DataType accumulatorType, boolean keepDims, int _axis, int... _axes) {
-        return TensorOpsContext.require().sum(this, accumulatorType, keepDims, _axis, _axes);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().sum(this, accumulatorType, keepDims, _axis, _axes);
+        }
+        return Tracer.trace(this, t -> t.sum(accumulatorType, keepDims, _axis, _axes));
     }
 
+    /**
+     * Reduces all axes with product.
+     *
+     * <p>This is lazy and only executes on {@link #materialize()}.
+     */
     default Tensor product(DataType accumulatorType) {
-        return TensorOpsContext.require().product(this, accumulatorType);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().product(this, accumulatorType);
+        }
+        return Tracer.trace(this, t -> t.product(accumulatorType));
     }
 
+    /**
+     * Reduces selected axes with product.
+     *
+     * <p>Parameters {@code _axis}/{@code _axes} use wrap-around axis semantics.
+     */
     default Tensor product(DataType accumulatorType, int _axis, int... _axes) {
-        return TensorOpsContext.require().product(this, accumulatorType, _axis, _axes);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().product(this, accumulatorType, _axis, _axes);
+        }
+        return Tracer.trace(this, t -> t.product(accumulatorType, _axis, _axes));
     }
 
+    /**
+     * Reduces selected axes with product.
+     *
+     * <p>Parameters {@code _axis}/{@code _axes} use wrap-around axis semantics.
+     */
     default Tensor product(DataType accumulatorType, boolean keepDims, int _axis, int... _axes) {
-        return TensorOpsContext.require().product(this, accumulatorType, keepDims, _axis, _axes);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().product(this, accumulatorType, keepDims, _axis, _axes);
+        }
+        return Tracer.trace(this, t -> t.product(accumulatorType, keepDims, _axis, _axes));
+    }
+
+    /**
+     * Reduces all axes with arithmetic mean.
+     *
+     * <p>Requires floating-point input. This is lazy and only executes on {@link #materialize()}.
+     */
+    default Tensor mean() {
+        TensorTypeSemantics.requireFloatingPoint(dataType(), "mean");
+        int rank = shape().rank();
+        if (rank == 0) {
+            return this;
+        }
+        int[] axes = IntStream.range(0, rank).toArray();
+        return mean(false, axes[0], Arrays.copyOfRange(axes, 1, axes.length));
+    }
+
+    /**
+     * Reduces selected axes with arithmetic mean.
+     *
+     * <p>Requires floating-point input. Parameters {@code _axis}/{@code _axes} use wrap-around axis
+     * semantics.
+     */
+    default Tensor mean(int _axis, int... _axes) {
+        return mean(false, _axis, _axes);
+    }
+
+    /**
+     * Reduces selected axes with arithmetic mean.
+     *
+     * <p>Requires floating-point input. Parameters {@code _axis}/{@code _axes} use wrap-around axis
+     * semantics.
+     */
+    default Tensor mean(boolean keepDims, int _axis, int... _axes) {
+        TensorTypeSemantics.requireFloatingPoint(dataType(), "mean");
+        int[] axes = TensorSemantics.normalizeReductionAxes(shape().rank(), _axis, _axes);
+        long count = 1L;
+        for (int axis : axes) {
+            count *= shape().flatAt(axis);
+        }
+        Tensor reduced = sum(dataType(), keepDims, _axis, _axes);
+        return reduced.divide(Tensor.scalar((double) count, dataType()));
     }
 
     /**
@@ -463,7 +989,10 @@ public interface Tensor {
      * @return the gathered tensor
      */
     default Tensor gather(Tensor indices, int axis) {
-        return TensorOpsContext.require().gather(this, indices, axis);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().gather(this, indices, axis);
+        }
+        return Tracer.trace(this, indices, (input, idx) -> input.gather(idx, axis));
     }
 
     /**
@@ -481,33 +1010,69 @@ public interface Tensor {
             return this;
         }
         return ConstantFolder.tryFoldCast(this, targetType)
-                .orElseGet(() -> TensorOpsContext.require().cast(this, targetType));
+                .orElseGet(
+                        () -> {
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().cast(this, targetType);
+                            }
+                            return Tracer.trace(this, t -> t.cast(targetType));
+                        });
     }
 
     default Tensor negate() {
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.NEGATE)
-                .orElseGet(() -> TensorOpsContext.require().negate(this));
+                .orElseGet(
+                        () -> {
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().negate(this);
+                            }
+                            return Tracer.trace(this, Tensor::negate);
+                        });
     }
 
     default Tensor abs() {
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.ABS)
-                .orElseGet(() -> TensorOpsContext.require().abs(this));
+                .orElseGet(
+                        () -> {
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().abs(this);
+                            }
+                            return Tracer.trace(this, Tensor::abs);
+                        });
     }
 
     default Tensor exp() {
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.EXP)
-                .orElseGet(() -> TensorOpsContext.require().exp(this));
+                .orElseGet(
+                        () -> {
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().exp(this);
+                            }
+                            return Tracer.trace(this, Tensor::exp);
+                        });
     }
 
     default Tensor log() {
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.LOG)
-                .orElseGet(() -> TensorOpsContext.require().log(this));
+                .orElseGet(
+                        () -> {
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().log(this);
+                            }
+                            return Tracer.trace(this, Tensor::log);
+                        });
     }
 
     default Tensor sqrt() {
         TensorTypeSemantics.requireFloatingPoint(dataType(), "sqrt");
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.SQRT)
-                .orElseGet(() -> TensorOpsContext.require().sqrt(this));
+                .orElseGet(
+                        () -> {
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().sqrt(this);
+                            }
+                            return Tracer.trace(this, Tensor::sqrt);
+                        });
     }
 
     default Tensor square() {
@@ -517,19 +1082,37 @@ public interface Tensor {
     default Tensor sin() {
         TensorTypeSemantics.requireFloatingPoint(dataType(), "sin");
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.SIN)
-                .orElseGet(() -> TensorOpsContext.require().sin(this));
+                .orElseGet(
+                        () -> {
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().sin(this);
+                            }
+                            return Tracer.trace(this, Tensor::sin);
+                        });
     }
 
     default Tensor cos() {
         TensorTypeSemantics.requireFloatingPoint(dataType(), "cos");
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.COS)
-                .orElseGet(() -> TensorOpsContext.require().cos(this));
+                .orElseGet(
+                        () -> {
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().cos(this);
+                            }
+                            return Tracer.trace(this, Tensor::cos);
+                        });
     }
 
     default Tensor tanh() {
         TensorTypeSemantics.requireFloatingPoint(dataType(), "tanh");
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.TANH)
-                .orElseGet(() -> TensorOpsContext.require().tanh(this));
+                .orElseGet(
+                        () -> {
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().tanh(this);
+                            }
+                            return Tracer.trace(this, Tensor::tanh);
+                        });
     }
 
     default Tensor relu() {
@@ -617,7 +1200,13 @@ public interface Tensor {
     default Tensor reciprocal() {
         TensorTypeSemantics.requireFloatingPoint(dataType(), "reciprocal");
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.RECIPROCAL)
-                .orElseGet(() -> TensorOpsContext.require().reciprocal(this));
+                .orElseGet(
+                        () -> {
+                            if (Tracer.isTracing()) {
+                                return Tracer.requireIROps().reciprocal(this);
+                            }
+                            return Tracer.trace(this, Tensor::reciprocal);
+                        });
     }
 
     default Tensor reciprocal(DataType dataType) {
@@ -691,8 +1280,7 @@ public interface Tensor {
             throw new IllegalArgumentException("n must be non-negative, got: " + n);
         }
         Shape shape = Shape.flat(n);
-        TensorOps ops = TensorOpsContext.current();
-        if (ops instanceof IRTensorOps) {
+        if (Tracer.isTracing()) {
             return new IRTensor(
                     new com.qxotic.jota.ir.tir.IotaConstant(n, DataType.I64, shape),
                     Device.defaultDevice());
@@ -712,10 +1300,9 @@ public interface Tensor {
     static Tensor iota(long n, DataType dataType) {
         Objects.requireNonNull(dataType, "dataType");
         if (dataType == DataType.BOOL || !(dataType.isIntegral() || dataType.isFloatingPoint())) {
-            throw new IllegalArgumentException("Unsupported data type for arange: " + dataType);
+            throw new IllegalArgumentException("Unsupported data type for iota: " + dataType);
         }
-        TensorOps ops = TensorOpsContext.current();
-        if (ops instanceof IRTensorOps) {
+        if (Tracer.isTracing()) {
             return new IRTensor(
                     new com.qxotic.jota.ir.tir.IotaConstant(n, dataType, Shape.flat(n)),
                     Device.defaultDevice());
@@ -854,7 +1441,7 @@ public interface Tensor {
         Objects.requireNonNull(device, "device");
         Layout layout = Layout.of(shape, Stride.zeros(shape));
 
-        if (TensorOpsContext.current() instanceof IRTensorOps) {
+        if (Tracer.isTracing()) {
             return createIRScalarConstant(value, dataType, shape, device);
         }
 

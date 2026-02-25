@@ -1,7 +1,6 @@
 package com.qxotic.jota.tensor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jota.DataType;
@@ -45,8 +44,11 @@ class ContiguousOpsTest {
         MemoryView<MemorySegment> view =
                 MemoryHelpers.arange(domain, DataType.FP32, 4).view(Shape.of(4));
         Tensor input = Tensor.of(view);
-        Tensor result = TensorOpsContext.with(new EagerTensorOps(domain), input::contiguous);
-        assertSame(input, result);
+        Tensor result = input.contiguous();
+        MemoryView<?> materialized = result.materialize();
+        assertTrue(materialized.isContiguous());
+        Layout expected = Layout.rowMajor(view.layout().shape());
+        assertEquals(expected, materialized.layout());
     }
 
     @Test
@@ -55,7 +57,7 @@ class ContiguousOpsTest {
                 MemoryHelpers.arange(domain, DataType.FP32, 6).view(Shape.of(2, 3));
         MemoryView<MemorySegment> transposed = view.transpose(0, 1);
         Tensor input = Tensor.of(transposed);
-        Tensor output = TensorOpsContext.with(new EagerTensorOps(domain), input::contiguous);
+        Tensor output = input.contiguous();
         MemoryView<?> materialized = output.materialize();
         assertTrue(materialized.isContiguous());
         Layout expected = Layout.rowMajor(transposed.layout().shape());
@@ -72,7 +74,7 @@ class ContiguousOpsTest {
                             : MemoryHelpers.arange(domain, dataType, shape.size()).view(shape);
             MemoryView<MemorySegment> transposed = view.transpose(0, 1);
             Tensor input = Tensor.of(transposed);
-            Tensor output = TensorOpsContext.with(new EagerTensorOps(domain), input::contiguous);
+            Tensor output = input.contiguous();
             MemoryView<?> materialized = output.materialize();
             assertTrue(materialized.isContiguous(), "Expected contiguous for " + dataType);
             assertValuesEqual(transposed, materialized, dataType);

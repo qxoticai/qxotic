@@ -7,10 +7,12 @@ import com.qxotic.jota.Layout;
 import com.qxotic.jota.ir.TIRToLIRLowerer;
 import com.qxotic.jota.ir.lir.LIRGraph;
 import com.qxotic.jota.ir.lir.LIRStandardPipeline;
+import com.qxotic.jota.ir.lir.LIRTextRenderer;
 import com.qxotic.jota.ir.lir.scratch.ScratchAnalysisPass;
 import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
 import com.qxotic.jota.ir.lir.scratch.ScratchVerificationPass;
 import com.qxotic.jota.ir.tir.TIRGraph;
+import com.qxotic.jota.ir.tir.TIRTextRenderer;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
@@ -26,12 +28,12 @@ public final class HipComputeEngine implements ComputeEngine {
     private final HipKernelProgramGenerator generator = new HipKernelProgramGenerator();
     private final HipKernelBackend backend = new HipKernelBackend();
     private final LIRKernelArgsBuilder lirArgsBuilder = new LIRKernelArgsBuilder();
-    private final TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
     private final LIRStandardPipeline pipeline = new LIRStandardPipeline();
     private final ScratchAnalysisPass scratchAnalysis = new ScratchAnalysisPass();
     private final ScratchVerificationPass scratchVerification = new ScratchVerificationPass();
     private final boolean verifyScratch =
             Boolean.parseBoolean(System.getProperty("jota.verifyScratch", "false"));
+    private final boolean logKernelIr = Boolean.getBoolean("jota.kernel.ir.log");
 
     HipComputeEngine(Device device) {
         this.device = device;
@@ -47,6 +49,7 @@ public final class HipComputeEngine implements ComputeEngine {
         if (!HipRuntime.isAvailable()) {
             throw new IllegalStateException("HIP runtime not available");
         }
+        TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
         LIRGraph lirGraph = pipeline.run(lowerer.lower(graph));
         ScratchLayout scratchLayout = scratchAnalysis.analyze(lirGraph);
         if (verifyScratch) {
@@ -65,6 +68,7 @@ public final class HipComputeEngine implements ComputeEngine {
         }
 
         KernelCacheKey key = backend.cacheKey(lirGraph, scratchLayout);
+        logKernelIr(key, graph, lirGraph);
         KernelProgram program = generator.generate(lirGraph, scratchLayout, key);
         KernelArgs args = lirArgsBuilder.build(lirGraph, inputs, outputs);
         long scratchPtr = scratch == null ? 0L : scratch.base().address();
@@ -78,6 +82,16 @@ public final class HipComputeEngine implements ComputeEngine {
             return toHost(hipContext, castDevice(outputs.getFirst()));
         }
         return outputs.getFirst();
+    }
+
+    private void logKernelIr(KernelCacheKey key, TIRGraph tirGraph, LIRGraph lirGraph) {
+        if (!logKernelIr) {
+            return;
+        }
+        System.out.println("[jota-ir] BEGIN HIP kernel key=" + key.value());
+        System.out.println("[jota-ir] TIR:\n" + new TIRTextRenderer().render(tirGraph));
+        System.out.println("[jota-ir] LIR:\n" + new LIRTextRenderer().render(lirGraph));
+        System.out.println("[jota-ir] END HIP kernel key=" + key.value());
     }
 
     private static MemoryView<HipDevicePtr> toDevice(

@@ -13,8 +13,15 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 
 final class CKernelCompiler {
+
+    private static final boolean KERNEL_LOG = Boolean.getBoolean("jota.kernel.log");
+    private static final long COMPILE_TIMEOUT_SECONDS =
+            Long.getLong("com.qxotic.jota.c.compile.timeout.seconds", 10L);
+    private static final String OPT_LEVEL =
+            System.getProperty("com.qxotic.jota.c.compile.opt", "1").trim();
 
     KernelCacheKey cacheKey(LIRGraph graph, ScratchLayout scratchLayout) {
         String hash = hashLirGraph(graph, scratchLayout);
@@ -29,14 +36,41 @@ final class CKernelCompiler {
         Path baseDir = Path.of("__kernels", "c", key.value());
         Path sourcePath = baseDir.resolve(kernelName + ".c");
         Path soPath = baseDir.resolve(sharedLibraryName(kernelName));
+        log("C kernel compile key=" + key.value() + " entry=" + kernelName);
         try {
             Files.createDirectories(baseDir);
-            Files.writeString(sourcePath, program.payload().toString(), StandardCharsets.UTF_8);
+            writeIfChanged(sourcePath, program.payload().toString());
         } catch (IOException e) {
             throw new IllegalStateException("Failed to write C kernel source", e);
         }
-        compileSource(sourcePath, soPath);
+        if (needsCompile(sourcePath, soPath)) {
+            compileSource(sourcePath, soPath);
+        } else {
+            log("C kernel reuse key=" + key.value() + " entry=" + kernelName);
+        }
         return new CKernelSpec(soPath, kernelName);
+    }
+
+    private static boolean needsCompile(Path source, Path soPath) {
+        if (!Files.exists(soPath)) {
+            return true;
+        }
+        try {
+            return Files.getLastModifiedTime(source).toMillis()
+                    > Files.getLastModifiedTime(soPath).toMillis();
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to stat C kernel files", e);
+        }
+    }
+
+    private static void writeIfChanged(Path path, String content) throws IOException {
+        if (Files.exists(path)) {
+            String existing = Files.readString(path);
+            if (existing.equals(content)) {
+                return;
+            }
+        }
+        Files.writeString(path, content, StandardCharsets.UTF_8);
     }
 
     private static void compileSource(Path source, Path soPath) {
@@ -47,7 +81,7 @@ final class CKernelCompiler {
         if (openMpEnabled()) {
             command.add("-fopenmp");
         }
-        command.add("-O2");
+        command.add("-O" + OPT_LEVEL);
         command.add("-std=gnu17");
         command.add(source.toAbsolutePath().toString());
         command.add("-o");
@@ -59,18 +93,26 @@ final class CKernelCompiler {
             command.add("-ldl");
         }
 
-        ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true);
+        ProcessBuilder builder =
+                new ProcessBuilder(command)
+                        .redirectErrorStream(true)
+                        .redirectOutput(ProcessBuilder.Redirect.DISCARD);
         try {
             Process process = builder.start();
-            String output =
-                    new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            int code = process.waitFor();
-            if (code != 0) {
+            if (!process.waitFor(COMPILE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                process.waitFor(1, TimeUnit.SECONDS);
                 throw new IllegalStateException(
-                        "C kernel compilation failed (exit " + code + ")\n" + output);
+                        "C kernel compilation timed out after " + COMPILE_TIMEOUT_SECONDS + "s");
             }
-        } catch (IOException | InterruptedException e) {
+            int code = process.exitValue();
+            if (code != 0) {
+                throw new IllegalStateException("C kernel compilation failed (exit " + code + ")");
+            }
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            throw new IllegalStateException("C kernel compilation failed", e);
+        } catch (IOException e) {
             throw new IllegalStateException("C kernel compilation failed", e);
         }
     }
@@ -142,6 +184,12 @@ final class CKernelCompiler {
             return builder.toString();
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is not available", e);
+        }
+    }
+
+    private static void log(String message) {
+        if (KERNEL_LOG) {
+            System.out.println("[jota-kernel] " + message);
         }
     }
 }

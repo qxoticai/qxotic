@@ -23,12 +23,13 @@ import org.junit.jupiter.api.Test;
 
 class HipKernelSmokeTest {
 
-    private static final int FRACTAL_WIDTH = 320;
-    private static final int FRACTAL_HEIGHT = 240;
-    private static final int FRACTAL_ITERATIONS = 32;
+    private static final int FRACTAL_WIDTH = 640;
+    private static final int FRACTAL_HEIGHT = 480;
+    private static final int FRACTAL_ITERATIONS = 100;
 
     @Test
     void launchesVecAddKernel() throws Exception {
+        assumeNotFractalOnlyRun();
         HipTestAssumptions.assumeHipReady();
 
         int n = 1024;
@@ -94,6 +95,7 @@ class HipKernelSmokeTest {
 
     @Test
     void launchesLirKernel() throws Exception {
+        assumeNotFractalOnlyRun();
         HipTestAssumptions.assumeHipReady();
 
         int n = 32;
@@ -148,11 +150,7 @@ class HipKernelSmokeTest {
 
         Environment current = Environment.current();
         Environment hipEnv =
-                new Environment(
-                        Device.HIP,
-                        current.defaultFloat(),
-                        current.runtimes(),
-                        current.executionMode());
+                new Environment(Device.HIP, current.defaultFloat(), current.runtimes());
 
         MemoryView<?> output =
                 Environment.with(
@@ -199,6 +197,7 @@ class HipKernelSmokeTest {
 
     @Test
     void launchesLirGeluKernel() throws Exception {
+        assumeNotFractalOnlyRun();
         HipTestAssumptions.assumeHipReady();
 
         int n = 8;
@@ -268,6 +267,12 @@ class HipKernelSmokeTest {
         Assumptions.assumeTrue(
                 Boolean.getBoolean("jota.test.hip.fractals") && Boolean.getBoolean("jota.test.ppm"),
                 "HIP fractal smoke tests disabled; set -Djota.test.hip.fractals=true and -Djota.test.ppm=true to enable");
+    }
+
+    private static void assumeNotFractalOnlyRun() {
+        Assumptions.assumeFalse(
+                Boolean.getBoolean("jota.test.hip.fractals") && Boolean.getBoolean("jota.test.ppm"),
+                "Skipping non-fractal HIP smoke tests in fractal-only run");
     }
 
     // HIP runtime/device assumptions are centralized in HipTestAssumptions.

@@ -1,6 +1,5 @@
 package com.qxotic.jota.runtime.c;
 
-import com.qxotic.jota.BFloat16;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.ir.lir.*;
 import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
@@ -54,7 +53,6 @@ final class CKernelProgramGenerator {
             source.append("#include <stddef.h>\n");
             source.append("#include <string.h>\n");
             source.append("#include <math.h>\n\n");
-            emitHelpers(source);
             source.append("void ")
                     .append(kernelName)
                     .append("(void **buffers, uint64_t *scalars, uint64_t scratch_ptr) {\n");
@@ -66,160 +64,6 @@ final class CKernelProgramGenerator {
             }
             source.append("}\n");
             return source.toString();
-        }
-
-        private void emitHelpers(StringBuilder source) {
-            source.append("#if defined(__FLT16_MANT_DIG__) || defined(__SIZEOF_FLOAT16__)\n");
-            source.append("#define JOTA_HAS_FP16 1\n");
-            source.append("typedef _Float16 jota_fp16;\n");
-            source.append("#else\n");
-            source.append("#define JOTA_HAS_FP16 0\n");
-            source.append("typedef uint16_t jota_fp16;\n");
-            source.append("#endif\n\n");
-
-            source.append("#if defined(__BF16_MANT_DIG__) || defined(__SIZEOF_BFLOAT16__)\n");
-            source.append("#define JOTA_HAS_BF16 1\n");
-            source.append("typedef __bf16 jota_bf16;\n");
-            source.append("#else\n");
-            source.append("#define JOTA_HAS_BF16 0\n");
-            source.append("typedef uint16_t jota_bf16;\n");
-            source.append("#endif\n\n");
-
-            source.append("static inline uint16_t jota_fp16_bits_from_float(float f) {\n");
-            source.append("  uint32_t x; memcpy(&x, &f, sizeof(x));\n");
-            source.append("  uint32_t sign = (x >> 16) & 0x8000u;\n");
-            source.append("  int32_t exp = ((x >> 23) & 0xFF) - 127 + 15;\n");
-            source.append("  uint32_t mant = x & 0x7FFFFFu;\n");
-            source.append("  if (exp <= 0) {\n");
-            source.append("    if (exp < -10) return (uint16_t)sign;\n");
-            source.append("    mant |= 0x800000u;\n");
-            source.append("    uint32_t shift = (uint32_t)(14 - exp);\n");
-            source.append("    uint32_t rounded = mant >> shift;\n");
-            source.append("    uint32_t rem = mant & ((1u << shift) - 1u);\n");
-            source.append(
-                    "    if (rem > (1u << (shift - 1)) || (rem == (1u << (shift - 1)) && (rounded & 1u))) rounded++;\n");
-            source.append("    return (uint16_t)(sign | rounded);\n");
-            source.append("  }\n");
-            source.append("  if (exp >= 31) {\n");
-            source.append("    return (uint16_t)(sign | 0x7C00u | (mant ? 1u : 0u));\n");
-            source.append("  }\n");
-            source.append("  uint32_t half = ((uint32_t)exp << 10) | (mant >> 13);\n");
-            source.append("  uint32_t rem = mant & 0x1FFFu;\n");
-            source.append("  if (rem > 0x1000u || (rem == 0x1000u && (half & 1u))) half++;\n");
-            source.append("  return (uint16_t)(sign | half);\n");
-            source.append("}\n\n");
-
-            source.append("static inline float jota_fp16_bits_to_float(uint16_t h) {\n");
-            source.append("  uint32_t sign = ((uint32_t)h & 0x8000u) << 16;\n");
-            source.append("  uint32_t exp = (h >> 10) & 0x1Fu;\n");
-            source.append("  uint32_t mant = h & 0x3FFu;\n");
-            source.append("  uint32_t out;\n");
-            source.append("  if (exp == 0) {\n");
-            source.append("    if (mant == 0) {\n");
-            source.append("      out = sign;\n");
-            source.append("    } else {\n");
-            source.append("      exp = 1;\n");
-            source.append("      while ((mant & 0x400u) == 0) { mant <<= 1; exp--; }\n");
-            source.append("      mant &= 0x3FFu;\n");
-            source.append("      out = sign | ((exp + 127 - 15) << 23) | (mant << 13);\n");
-            source.append("    }\n");
-            source.append("  } else if (exp == 31) {\n");
-            source.append("    out = sign | 0x7F800000u | (mant << 13);\n");
-            source.append("  } else {\n");
-            source.append("    out = sign | ((exp + 127 - 15) << 23) | (mant << 13);\n");
-            source.append("  }\n");
-            source.append("  float f; memcpy(&f, &out, sizeof(f)); return f;\n");
-            source.append("}\n\n");
-
-            source.append("static inline uint16_t jota_bf16_bits_from_float(float f) {\n");
-            source.append("  uint32_t x; memcpy(&x, &f, sizeof(x));\n");
-            source.append("  uint32_t lsb = (x >> 16) & 1u;\n");
-            source.append("  uint32_t rounded = x + 0x7FFFu + lsb;\n");
-            source.append("  return (uint16_t)(rounded >> 16);\n");
-            source.append("}\n\n");
-
-            source.append("static inline float jota_bf16_bits_to_float(uint16_t bits) {\n");
-            source.append("  uint32_t x = ((uint32_t)bits) << 16;\n");
-            source.append("  float f; memcpy(&f, &x, sizeof(f)); return f;\n");
-            source.append("}\n\n");
-
-            source.append("static inline jota_fp16 jota_fp16_from_bits(uint16_t bits) {\n");
-            source.append("#if JOTA_HAS_FP16\n");
-            source.append("  jota_fp16 v; memcpy(&v, &bits, sizeof(bits)); return v;\n");
-            source.append("#else\n");
-            source.append("  return bits;\n");
-            source.append("#endif\n");
-            source.append("}\n\n");
-
-            source.append("static inline uint16_t jota_fp16_to_bits(jota_fp16 v) {\n");
-            source.append("#if JOTA_HAS_FP16\n");
-            source.append("  uint16_t bits; memcpy(&bits, &v, sizeof(bits)); return bits;\n");
-            source.append("#else\n");
-            source.append("  return v;\n");
-            source.append("#endif\n");
-            source.append("}\n\n");
-
-            source.append("static inline float jota_fp16_to_float(jota_fp16 v) {\n");
-            source.append("#if JOTA_HAS_FP16\n");
-            source.append("  return (float)v;\n");
-            source.append("#else\n");
-            source.append("  return jota_fp16_bits_to_float(v);\n");
-            source.append("#endif\n");
-            source.append("}\n\n");
-
-            source.append("static inline jota_fp16 jota_fp16_from_float(float v) {\n");
-            source.append("#if JOTA_HAS_FP16\n");
-            source.append("  return (jota_fp16)v;\n");
-            source.append("#else\n");
-            source.append("  return jota_fp16_bits_from_float(v);\n");
-            source.append("#endif\n");
-            source.append("}\n\n");
-
-            source.append("static inline jota_bf16 jota_bf16_from_bits(uint16_t bits) {\n");
-            source.append("#if JOTA_HAS_BF16\n");
-            source.append("  jota_bf16 v; memcpy(&v, &bits, sizeof(bits)); return v;\n");
-            source.append("#else\n");
-            source.append("  return bits;\n");
-            source.append("#endif\n");
-            source.append("}\n\n");
-
-            source.append("static inline uint16_t jota_bf16_to_bits(jota_bf16 v) {\n");
-            source.append("#if JOTA_HAS_BF16\n");
-            source.append("  uint16_t bits; memcpy(&bits, &v, sizeof(bits)); return bits;\n");
-            source.append("#else\n");
-            source.append("  return v;\n");
-            source.append("#endif\n");
-            source.append("}\n\n");
-
-            source.append("static inline float jota_bf16_to_float(jota_bf16 v) {\n");
-            source.append("#if JOTA_HAS_BF16\n");
-            source.append("  return (float)v;\n");
-            source.append("#else\n");
-            source.append("  return jota_bf16_bits_to_float(v);\n");
-            source.append("#endif\n");
-            source.append("}\n\n");
-
-            source.append("static inline jota_bf16 jota_bf16_from_float(float v) {\n");
-            source.append("#if JOTA_HAS_BF16\n");
-            source.append("  return (jota_bf16)v;\n");
-            source.append("#else\n");
-            source.append("  return jota_bf16_bits_from_float(v);\n");
-            source.append("#endif\n");
-            source.append("}\n\n");
-
-            source.append("#if JOTA_HAS_FP16\n");
-            source.append("#define JOTA_FP16_BIN(op,a,b) ((jota_fp16)((a) op (b)))\n");
-            source.append("#else\n");
-            source.append(
-                    "#define JOTA_FP16_BIN(op,a,b) (jota_fp16_from_float(jota_fp16_to_float(a) op jota_fp16_to_float(b)))\n");
-            source.append("#endif\n");
-
-            source.append("#if JOTA_HAS_BF16\n");
-            source.append("#define JOTA_BF16_BIN(op,a,b) ((jota_bf16)((a) op (b)))\n");
-            source.append("#else\n");
-            source.append(
-                    "#define JOTA_BF16_BIN(op,a,b) (jota_bf16_from_float(jota_bf16_to_float(a) op jota_bf16_to_float(b)))\n");
-            source.append("#endif\n\n");
         }
 
         private void emitProlog() {
@@ -238,19 +82,25 @@ final class CKernelProgramGenerator {
                     scalarInputNames.put(scalar.id(), name);
                     String bitsExpr = "scalars[" + scalarIndex + "]";
                     if (scalar.dataType() == DataType.FP16) {
+                        addLine("uint16_t " + name + "_bits = (uint16_t)" + bitsExpr + ";");
                         addLine(
-                                "jota_fp16 "
+                                "_Float16 "
                                         + name
-                                        + " = jota_fp16_from_bits((uint16_t)"
-                                        + bitsExpr
-                                        + ");");
+                                        + "; memcpy(&"
+                                        + name
+                                        + ", &"
+                                        + name
+                                        + "_bits, sizeof(uint16_t));");
                     } else if (scalar.dataType() == DataType.BF16) {
+                        addLine("uint16_t " + name + "_bits = (uint16_t)" + bitsExpr + ";");
                         addLine(
-                                "jota_bf16 "
+                                "__bf16 "
                                         + name
-                                        + " = jota_bf16_from_bits((uint16_t)"
-                                        + bitsExpr
-                                        + ");");
+                                        + "; memcpy(&"
+                                        + name
+                                        + ", &"
+                                        + name
+                                        + "_bits, sizeof(uint16_t));");
                     } else if (scalar.dataType() == DataType.FP32) {
                         addLine("uint32_t " + name + "_bits = (uint32_t)" + bitsExpr + ";");
                         addLine(
@@ -679,32 +529,12 @@ final class CKernelProgramGenerator {
 
         private String readValue(BufferVar buffer, DataType type, String offset) {
             String ptr = "(" + buffer.name + " + " + offset + ")";
-            if (type == DataType.FP16) {
-                return "jota_fp16_from_bits(*(uint16_t*)" + ptr + ")";
-            }
-            if (type == DataType.BF16) {
-                return "jota_bf16_from_bits(*(uint16_t*)" + ptr + ")";
-            }
             return "*(" + typeName(type) + " *)" + ptr;
         }
 
         private String writeValue(
                 BufferVar buffer, DataType type, String offset, String value, DataType valueType) {
             String ptr = "(" + buffer.name + " + " + offset + ")";
-            if (type == DataType.FP16) {
-                return "*(uint16_t*)"
-                        + ptr
-                        + " = jota_fp16_to_bits("
-                        + castExpr(valueType, DataType.FP16, value)
-                        + ");";
-            }
-            if (type == DataType.BF16) {
-                return "*(uint16_t*)"
-                        + ptr
-                        + " = jota_bf16_to_bits("
-                        + castExpr(valueType, DataType.BF16, value)
-                        + ");";
-            }
             String castValue = castExpr(valueType, type, value);
             if (type == DataType.BOOL) {
                 if (valueType == DataType.BOOL) {
@@ -727,11 +557,12 @@ final class CKernelProgramGenerator {
             }
             if (type == DataType.FP16) {
                 float value = Float.float16ToFloat((short) bits);
-                return "jota_fp16_from_float(" + formatFloatLiteral(value) + ")";
+                return "((_Float16)" + formatFloatLiteral(value) + ")";
             }
             if (type == DataType.BF16) {
-                float value = BFloat16.toFloat((short) bits);
-                return "jota_bf16_from_float(" + formatFloatLiteral(value) + ")";
+                int bf16Bits = ((int) bits) & 0xFFFF;
+                float value = Float.intBitsToFloat(bf16Bits << 16);
+                return "((__bf16)" + formatFloatLiteral(value) + ")";
             }
             if (type == DataType.I8) {
                 return "(int8_t)" + bits + "LL";
@@ -793,10 +624,10 @@ final class CKernelProgramGenerator {
                 return "(" + expr + " != 0 ? 1 : 0)";
             }
             if (target == DataType.FP16) {
-                return "jota_fp16_from_float(" + toFloatExpr(source, expr) + ")";
+                return "((_Float16)(" + toFloatExpr(source, expr) + "))";
             }
             if (target == DataType.BF16) {
-                return "jota_bf16_from_float(" + toFloatExpr(source, expr) + ")";
+                return "((__bf16)(" + toFloatExpr(source, expr) + "))";
             }
             if (target == DataType.FP32) {
                 return toFloatExpr(source, expr);
@@ -812,10 +643,10 @@ final class CKernelProgramGenerator {
 
         private String toFloatExpr(DataType source, String expr) {
             if (source == DataType.FP16) {
-                return "jota_fp16_to_float(" + expr + ")";
+                return "(float)(" + expr + ")";
             }
             if (source == DataType.BF16) {
-                return "jota_bf16_to_float(" + expr + ")";
+                return "(float)(" + expr + ")";
             }
             if (source == DataType.FP32) {
                 return expr;
@@ -847,20 +678,20 @@ final class CKernelProgramGenerator {
 
         private String negateExpr(DataType type, String expr) {
             if (type == DataType.FP16) {
-                return "JOTA_FP16_BIN(-, 0, " + expr + ")";
+                return "((_Float16)(-(float)(" + expr + ")))";
             }
             if (type == DataType.BF16) {
-                return "JOTA_BF16_BIN(-, 0, " + expr + ")";
+                return "((__bf16)(-(float)(" + expr + ")))";
             }
             return "-" + expr;
         }
 
         private String absExpr(DataType type, String expr) {
             if (type == DataType.FP16) {
-                return "jota_fp16_from_float(fabsf(" + toFloatExpr(type, expr) + "))";
+                return "((_Float16)fabsf(" + toFloatExpr(type, expr) + "))";
             }
             if (type == DataType.BF16) {
-                return "jota_bf16_from_float(fabsf(" + toFloatExpr(type, expr) + "))";
+                return "((__bf16)fabsf(" + toFloatExpr(type, expr) + "))";
             }
             if (type == DataType.FP32) {
                 return "fabsf(" + expr + ")";
@@ -876,20 +707,20 @@ final class CKernelProgramGenerator {
 
         private String squareExpr(DataType type, String expr) {
             if (type == DataType.FP16) {
-                return "JOTA_FP16_BIN(*, " + expr + ", " + expr + ")";
+                return "((_Float16)((" + expr + ") * (" + expr + ")))";
             }
             if (type == DataType.BF16) {
-                return "JOTA_BF16_BIN(*, " + expr + ", " + expr + ")";
+                return "((__bf16)((" + expr + ") * (" + expr + ")))";
             }
             return "(" + expr + " * " + expr + ")";
         }
 
         private String reciprocalExpr(DataType type, String expr) {
             if (type == DataType.FP16) {
-                return "jota_fp16_from_float(1.0f / " + toFloatExpr(type, expr) + ")";
+                return "((_Float16)(1.0f / " + toFloatExpr(type, expr) + "))";
             }
             if (type == DataType.BF16) {
-                return "jota_bf16_from_float(1.0f / " + toFloatExpr(type, expr) + ")";
+                return "((__bf16)(1.0f / " + toFloatExpr(type, expr) + "))";
             }
             if (type == DataType.FP64) {
                 return "(1.0 / " + expr + ")";
@@ -899,10 +730,10 @@ final class CKernelProgramGenerator {
 
         private String floatUnaryExpr(DataType type, String fp64Fn, String fp32Fn, String expr) {
             if (type == DataType.FP16) {
-                return "jota_fp16_from_float(" + fp32Fn + "(" + toFloatExpr(type, expr) + "))";
+                return "((_Float16)" + fp32Fn + "(" + toFloatExpr(type, expr) + "))";
             }
             if (type == DataType.BF16) {
-                return "jota_bf16_from_float(" + fp32Fn + "(" + toFloatExpr(type, expr) + "))";
+                return "((__bf16)" + fp32Fn + "(" + toFloatExpr(type, expr) + "))";
             }
             if (type == DataType.FP64) {
                 return fp64Fn + "(" + expr + ")";
@@ -915,24 +746,24 @@ final class CKernelProgramGenerator {
 
         private String binaryArithmetic(DataType type, String op, String left, String right) {
             if (type == DataType.FP16) {
-                return "JOTA_FP16_BIN(" + op + ", " + left + ", " + right + ")";
+                return "((_Float16)((" + left + ") " + op + " (" + right + ")))";
             }
             if (type == DataType.BF16) {
-                return "JOTA_BF16_BIN(" + op + ", " + left + ", " + right + ")";
+                return "((__bf16)((" + left + ") " + op + " (" + right + ")))";
             }
             return "(" + left + " " + op + " " + right + ")";
         }
 
         private String minExpr(DataType type, String left, String right) {
             if (type == DataType.FP16) {
-                return "jota_fp16_from_float(fminf("
+                return "((_Float16)fminf("
                         + toFloatExpr(type, left)
                         + ", "
                         + toFloatExpr(type, right)
                         + "))";
             }
             if (type == DataType.BF16) {
-                return "jota_bf16_from_float(fminf("
+                return "((__bf16)fminf("
                         + toFloatExpr(type, left)
                         + ", "
                         + toFloatExpr(type, right)
@@ -949,14 +780,14 @@ final class CKernelProgramGenerator {
 
         private String maxExpr(DataType type, String left, String right) {
             if (type == DataType.FP16) {
-                return "jota_fp16_from_float(fmaxf("
+                return "((_Float16)fmaxf("
                         + toFloatExpr(type, left)
                         + ", "
                         + toFloatExpr(type, right)
                         + "))";
             }
             if (type == DataType.BF16) {
-                return "jota_bf16_from_float(fmaxf("
+                return "((__bf16)fmaxf("
                         + toFloatExpr(type, left)
                         + ", "
                         + toFloatExpr(type, right)
@@ -973,14 +804,14 @@ final class CKernelProgramGenerator {
 
         private String powExpr(DataType type, String left, String right) {
             if (type == DataType.FP16) {
-                return "jota_fp16_from_float(powf("
+                return "((_Float16)powf("
                         + toFloatExpr(type, left)
                         + ", "
                         + toFloatExpr(type, right)
                         + "))";
             }
             if (type == DataType.BF16) {
-                return "jota_bf16_from_float(powf("
+                return "((__bf16)powf("
                         + toFloatExpr(type, left)
                         + ", "
                         + toFloatExpr(type, right)
@@ -1012,10 +843,10 @@ final class CKernelProgramGenerator {
                 return "int64_t";
             }
             if (dataType == DataType.FP16) {
-                return "jota_fp16";
+                return "_Float16";
             }
             if (dataType == DataType.BF16) {
-                return "jota_bf16";
+                return "__bf16";
             }
             if (dataType == DataType.FP32) {
                 return "float";

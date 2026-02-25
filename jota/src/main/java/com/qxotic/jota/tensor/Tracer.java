@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * Orchestrates IR-T tracing and creates IRComputation. Similar to Tracer but uses IR-T instead of
@@ -18,7 +19,37 @@ import java.util.function.Function;
  */
 public final class Tracer {
 
+    private static final ScopedValue<TensorOps> IR_CONTEXT = ScopedValue.newInstance();
+
     private Tracer() {}
+
+    /** Returns true if we are currently inside a {@code Tracer.trace()} call. */
+    static boolean isTracing() {
+        return IR_CONTEXT.isBound();
+    }
+
+    /**
+     * Returns the current {@link IRTensorOps} if inside a trace, for use by view ops and other
+     * methods that need to call IRTensorOps directly inside a trace lambda.
+     */
+    static TensorOps requireIROps() {
+        if (IR_CONTEXT.isBound()) {
+            return IR_CONTEXT.get();
+        }
+        throw new IllegalStateException("Not inside a Tracer.trace() context");
+    }
+
+    /** Runs a supplier inside an IR context (package-private). */
+    static <T> T withIR(Supplier<T> supplier) {
+        Objects.requireNonNull(supplier, "supplier");
+        try {
+            return ScopedValue.where(IR_CONTEXT, new IRTensorOps()).call(supplier::get);
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalStateException("Scoped IR action failed", e);
+        }
+    }
 
     /** Traces a single-input function to IR-T. */
     public static Tensor trace(Tensor input, Function<Tensor, Tensor> fn) {
@@ -51,9 +82,7 @@ public final class Tracer {
     /** Traces a multi-input function to IR-T. */
     public static Tensor trace(List<Tensor> inputs, Function<List<Tensor>, Tensor> fn) {
         TraceInputs traceInputs = traceInputs(inputs);
-        Tensor output =
-                TensorOpsContext.with(
-                        new IRTensorOps(), () -> fn.apply(new ArrayList<>(traceInputs.tensors())));
+        Tensor output = withIR(() -> fn.apply(new ArrayList<>(traceInputs.tensors())));
         IRTensor irtOutput = (IRTensor) output;
         TIRGraph graph = new TIRGraph(traceInputs.nodes(), List.of(irtOutput.node()));
         return Tensor.lazy(

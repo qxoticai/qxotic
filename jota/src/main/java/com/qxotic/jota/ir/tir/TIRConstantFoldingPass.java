@@ -79,8 +79,8 @@ public final class TIRConstantFoldingPass implements TIRPass {
         @Override
         public TIRNode visitBinaryOp(BinaryOp node) {
             // First visit children
-            TIRNode newLeft = node.left().accept(this);
-            TIRNode newRight = node.right().accept(this);
+            TIRNode newLeft = rewriteChild(node.left());
+            TIRNode newRight = rewriteChild(node.right());
 
             // Try to fold if both are scalar constants (and neither is a graph input)
             if (newLeft instanceof ScalarConstant left
@@ -101,7 +101,7 @@ public final class TIRConstantFoldingPass implements TIRPass {
 
         @Override
         public TIRNode visitUnaryOp(UnaryOp node) {
-            TIRNode newInput = node.input().accept(this);
+            TIRNode newInput = rewriteChild(node.input());
 
             // Try to fold if input is scalar constant (and not a graph input)
             if (newInput instanceof ScalarConstant input && canFold(input)) {
@@ -119,7 +119,7 @@ public final class TIRConstantFoldingPass implements TIRPass {
 
         @Override
         public TIRNode visitReductionOp(ReductionOp node) {
-            TIRNode newInput = node.input().accept(this);
+            TIRNode newInput = rewriteChild(node.input());
 
             // Try to fold reduction on scalar constant (if not a graph input)
             if (newInput instanceof ScalarConstant scalar && canFold(scalar)) {

@@ -17,6 +17,8 @@ import java.util.List;
  */
 public class TIRRewriter implements TIRVisitor<TIRNode> {
 
+    private final java.util.Map<TIRNode, TIRNode> rewriteCache = new java.util.IdentityHashMap<>();
+
     /**
      * Rewrites a TIRGraph by transforming its outputs.
      *
@@ -43,36 +45,43 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
 
     /** Computes the list of input nodes that are actually referenced by the given outputs. */
     private List<TIRNode> computeInputsFromOutputs(List<TIRNode> outputs) {
-        java.util.Set<TIRNode> inputs = new java.util.HashSet<>();
+        java.util.Set<TIRNode> inputs =
+                java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        java.util.Set<TIRNode> visited =
+                java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         for (TIRNode output : outputs) {
-            collectInputs(output, inputs);
+            collectInputs(output, inputs, visited);
         }
         return new ArrayList<>(inputs);
     }
 
     /** Recursively collects all TensorInput nodes referenced by a node. */
-    private void collectInputs(TIRNode node, java.util.Set<TIRNode> inputs) {
+    private void collectInputs(
+            TIRNode node, java.util.Set<TIRNode> inputs, java.util.Set<TIRNode> visited) {
+        if (!visited.add(node)) {
+            return;
+        }
         switch (node) {
             case TensorInput ti -> inputs.add(ti);
             case ScalarInput si -> inputs.add(si);
-            case UnaryOp op -> collectInputs(op.input(), inputs);
+            case UnaryOp op -> collectInputs(op.input(), inputs, visited);
             case BinaryOp op -> {
-                collectInputs(op.left(), inputs);
-                collectInputs(op.right(), inputs);
+                collectInputs(op.left(), inputs, visited);
+                collectInputs(op.right(), inputs, visited);
             }
             case TernaryOp op -> {
-                collectInputs(op.cond(), inputs);
-                collectInputs(op.trueExpr(), inputs);
-                collectInputs(op.falseExpr(), inputs);
+                collectInputs(op.cond(), inputs, visited);
+                collectInputs(op.trueExpr(), inputs, visited);
+                collectInputs(op.falseExpr(), inputs, visited);
             }
-            case CastOp op -> collectInputs(op.input(), inputs);
-            case ReductionOp op -> collectInputs(op.input(), inputs);
+            case CastOp op -> collectInputs(op.input(), inputs, visited);
+            case ReductionOp op -> collectInputs(op.input(), inputs, visited);
             case GatherOp op -> {
-                collectInputs(op.input(), inputs);
-                collectInputs(op.indices(), inputs);
+                collectInputs(op.input(), inputs, visited);
+                collectInputs(op.indices(), inputs, visited);
             }
-            case ViewTransform vt -> collectInputs(vt.input(), inputs);
-            case Contiguous c -> collectInputs(c.input(), inputs);
+            case ViewTransform vt -> collectInputs(vt.input(), inputs, visited);
+            case Contiguous c -> collectInputs(c.input(), inputs, visited);
             case ScalarConstant sc -> {
                 // Leaf node - no inputs
             }
@@ -184,6 +193,12 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
     }
 
     protected TIRNode rewriteChild(TIRNode node) {
-        return node.accept(this);
+        TIRNode cached = rewriteCache.get(node);
+        if (cached != null) {
+            return cached;
+        }
+        TIRNode result = node.accept(this);
+        rewriteCache.put(node, result);
+        return result;
     }
 }

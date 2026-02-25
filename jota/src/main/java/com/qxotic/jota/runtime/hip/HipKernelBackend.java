@@ -12,14 +12,22 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 final class HipKernelBackend implements KernelBackend {
 
     private static final String ENV_HIPCC = "HIPCC";
     private static final Path KERNEL_ROOT = Path.of("__kernels").resolve(Device.HIP.leafName());
+    private static final boolean KERNEL_LOG = Boolean.getBoolean("jota.kernel.log");
+    private static final long COMPILE_TIMEOUT_SECONDS =
+            Long.getLong("com.qxotic.jota.hip.compile.timeout.seconds", 10L);
+    private static final String OPT_LEVEL =
+            System.getProperty("com.qxotic.jota.hip.compile.opt", "1").trim();
+    private static final String ARCH = resolveArch();
 
     private final KernelExecutableCache cache = new InMemoryKernelCache();
 
@@ -73,8 +81,10 @@ final class HipKernelBackend implements KernelBackend {
     public KernelExecutable getOrCompile(KernelProgram program, KernelCacheKey cacheKey) {
         KernelExecutable exec = cache.get(cacheKey);
         if (exec != null) {
+            log("HIP kernel cache hit key=" + cacheKey.value());
             return exec;
         }
+        log("HIP kernel cache miss key=" + cacheKey.value());
         KernelExecutable created =
                 program.kind() == KernelProgram.Kind.BINARY
                         ? load(program, cacheKey)
@@ -140,7 +150,10 @@ final class HipKernelBackend implements KernelBackend {
         String source = requireSource(program.payload());
         writeIfChanged(sourcePath, source);
         if (needsCompile(sourcePath, hsacoPath)) {
+            log("HIP kernel compile key=" + key.value() + " entry=" + kernelName);
             compileSource(sourcePath, hsacoPath);
+        } else {
+            log("HIP kernel reuse key=" + key.value() + " entry=" + kernelName);
         }
         return new HipKernelSpec(hsacoPath, kernelName);
     }
@@ -191,13 +204,27 @@ final class HipKernelBackend implements KernelBackend {
         if (hipcc == null || hipcc.isBlank()) {
             hipcc = "hipcc";
         }
-        ProcessBuilder builder =
-                new ProcessBuilder(
-                        hipcc, "--genco", "-O2", source.toString(), "-o", hsaco.toString());
+        List<String> command = new java.util.ArrayList<>();
+        command.add(hipcc);
+        command.add("--genco");
+        command.add("-O" + OPT_LEVEL);
+        if (ARCH != null && !ARCH.isBlank()) {
+            command.add("--offload-arch=" + ARCH);
+        }
+        command.add(source.toString());
+        command.add("-o");
+        command.add(hsaco.toString());
+        ProcessBuilder builder = new ProcessBuilder(command);
         builder.inheritIO();
         try {
             Process process = builder.start();
-            int code = process.waitFor();
+            if (!process.waitFor(COMPILE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                process.waitFor(1, TimeUnit.SECONDS);
+                throw new IllegalStateException(
+                        "HIP kernel compilation timed out after " + COMPILE_TIMEOUT_SECONDS + "s");
+            }
+            int code = process.exitValue();
             if (code != 0) {
                 throw new IllegalStateException(
                         "HIP kernel compilation failed (exit " + code + ")");
@@ -207,6 +234,24 @@ final class HipKernelBackend implements KernelBackend {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("HIP kernel compilation interrupted", e);
+        }
+    }
+
+    private static String resolveArch() {
+        String prop = System.getProperty("com.qxotic.jota.hip.arch");
+        if (prop != null && !prop.isBlank()) {
+            return prop.trim();
+        }
+        String env = System.getenv("JOTA_HIP_ARCH");
+        if (env != null && !env.isBlank()) {
+            return env.trim();
+        }
+        return null;
+    }
+
+    private static void log(String message) {
+        if (KERNEL_LOG) {
+            System.out.println("[jota-kernel] " + message);
         }
     }
 }
