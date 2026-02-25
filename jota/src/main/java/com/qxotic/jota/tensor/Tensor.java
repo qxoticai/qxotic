@@ -394,6 +394,39 @@ public interface Tensor {
         return view(Shape.resolveShape(total, dims));
     }
 
+    /**
+     * Inserts a size-1 axis at {@code axis_}.
+     *
+     * <p>{@code axis_} uses output-shape wrap-around semantics (post-op indexing): for rank {@code
+     * R}, valid values are in {@code [-(R+1), R]}.
+     */
+    default Tensor unsqueeze(int axis_) {
+        ViewTransforms.ViewTransformSpec spec = ViewTransforms.unsqueeze(layout(), axis_);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().viewTransform(this, spec);
+        }
+        return Tracer.trace(this, t -> Tracer.requireIROps().viewTransform(t, spec));
+    }
+
+    /**
+     * Removes a size-1 axis at {@code _axis}.
+     *
+     * <p>{@code _axis} uses input-shape wrap-around semantics. The selected axis/mode must have
+     * size {@code 1}.
+     */
+    default Tensor squeeze(int _axis) {
+        Shape currentShape = shape();
+        int rank = currentShape.rank();
+        if (rank == 0) {
+            throw new IllegalArgumentException("cannot squeeze scalar tensor");
+        }
+        if (currentShape.size(_axis) != 1) {
+            throw new IllegalArgumentException(
+                    "cannot squeeze axis " + _axis + " with size " + currentShape.size(_axis));
+        }
+        return view(currentShape.remove(_axis));
+    }
+
     default Tensor broadcast(Shape targetShape) {
         ViewTransforms.ViewTransformSpec spec = ViewTransforms.broadcast(layout(), targetShape);
         if (Tracer.isTracing()) {

@@ -69,6 +69,21 @@ public final class ViewTransforms {
         return ViewTransformSpec.lazy(kind, placeholderLayout, 0L);
     }
 
+    /**
+     * Inserts a singleton mode with zero stride.
+     *
+     * <p>This preserves data aliasing semantics (PyTorch-style unsqueeze): the inserted axis has
+     * shape=1 and stride=0.
+     */
+    public static ViewTransformSpec unsqueeze(Layout layout, int axis_) {
+        int axis = Util.wrapAround(axis_, layout.shape().rank() + 1);
+        Shape newShape = layout.shape().insert(axis, Shape.of(1));
+        Stride newStride = layout.stride().insert(axis, Stride.of(0));
+        Layout newLayout = Layout.of(newShape, newStride);
+        ViewKind kind = new ViewKind.Reshape(layout.shape(), newShape);
+        return ViewTransformSpec.simple(kind, newLayout, 0L);
+    }
+
     public static ViewTransformSpec expand(Layout layout, Shape newShape) {
         Shape currentShape = layout.shape();
 

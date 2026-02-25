@@ -149,8 +149,8 @@ final class StrideImpl extends NestedTupleImpl<Stride> implements Stride {
     }
 
     @Override
-    public Stride insert(int _modeIndex, Stride mode) {
-        int modeIndex = Util.wrapAround(_modeIndex, rank() + 1);
+    public Stride insert(int modeIndex_, Stride mode) {
+        int modeIndex = Util.wrapAround(modeIndex_, rank() + 1);
 
         if (isScalar()) {
             return mode;

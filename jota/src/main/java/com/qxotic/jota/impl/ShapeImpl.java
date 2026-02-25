@@ -196,8 +196,8 @@ final class ShapeImpl extends NestedTupleImpl<Shape> implements Shape {
     }
 
     @Override
-    public Shape insert(int _modeIndex, Shape mode) {
-        int modeIndex = Util.wrapAround(_modeIndex, rank() + 1); // Allow inserting at rank()
+    public Shape insert(int modeIndex_, Shape mode) {
+        int modeIndex = Util.wrapAround(modeIndex_, rank() + 1); // Allow inserting at rank()
 
         if (isScalar()) {
             return mode;

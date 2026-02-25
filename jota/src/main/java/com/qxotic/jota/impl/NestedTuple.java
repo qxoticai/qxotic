@@ -24,7 +24,7 @@ public interface NestedTuple<T extends NestedTuple<T>> {
 
     T replace(int _modeIndex, T newMode);
 
-    T insert(int _modeIndex, T mode);
+    T insert(int modeIndex_, T mode);
 
     T remove(int _modeIndex);
 
