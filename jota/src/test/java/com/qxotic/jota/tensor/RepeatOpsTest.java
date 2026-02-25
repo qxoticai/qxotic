@@ -217,10 +217,10 @@ class RepeatOpsTest {
     }
 
     @Test
-    void repeatRejectsScalarArguments() {
+    void repeatSupportsScalarIdentityAndRejectsExplicitFactors() {
         Tensor scalar = Tensor.scalar(3.0f);
 
-        assertThrows(IllegalArgumentException.class, () -> scalar.repeat());
+        assertSame(scalar, scalar.repeat());
         assertThrows(IllegalArgumentException.class, () -> scalar.repeat(1));
         assertThrows(IllegalArgumentException.class, () -> scalar.repeat(-1));
     }

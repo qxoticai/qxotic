@@ -307,16 +307,22 @@ public interface Tensor {
         if (dataType() != DataType.BOOL) {
             throw new IllegalArgumentException("expected BOOL");
         }
-        Tensor reduced = sum(DataType.I32).cast(DataType.I32);
-        return reduced.greaterThan(Tensor.scalar(0L, DataType.I32));
+        if (shape().rank() == 0) {
+            return this;
+        }
+        Tensor reduced = sum(DataType.I64);
+        return reduced.greaterThan(Tensor.scalar(0L, DataType.I64));
     }
 
     default Tensor all() {
         if (dataType() != DataType.BOOL) {
             throw new IllegalArgumentException("expected BOOL");
         }
-        Tensor reduced = sum(DataType.I32).cast(DataType.I32);
-        return reduced.equal(Tensor.scalar(shape().size(), DataType.I32));
+        if (shape().rank() == 0) {
+            return this;
+        }
+        Tensor reduced = sum(DataType.I64);
+        return reduced.equal(Tensor.scalar(shape().size(), DataType.I64));
     }
 
     default Tensor matmul(Tensor other) {
@@ -463,8 +469,8 @@ public interface Tensor {
         return Tracer.trace(this, t -> Tracer.requireIROps().viewTransform(t, spec));
     }
 
-    default Tensor transpose(int axis0, int axis1) {
-        ViewTransforms.ViewTransformSpec spec = ViewTransforms.transpose(layout(), axis0, axis1);
+    default Tensor transpose(int _axis0, int _axis1) {
+        ViewTransforms.ViewTransformSpec spec = ViewTransforms.transpose(layout(), _axis0, _axis1);
         if (Tracer.isTracing()) {
             return Tracer.requireIROps().viewTransform(this, spec);
         }
@@ -480,13 +486,13 @@ public interface Tensor {
         return Tracer.trace(this, t -> Tracer.requireIROps().viewTransform(t, spec));
     }
 
-    default Tensor slice(int axis, long start, long end) {
-        return slice(axis, start, end, 1);
+    default Tensor slice(int _axis, long start, long end) {
+        return slice(_axis, start, end, 1);
     }
 
-    default Tensor slice(int axis, long start, long end, long indexStride) {
+    default Tensor slice(int _axis, long start, long end, long indexStride) {
         ViewTransforms.ViewTransformSpec spec =
-                ViewTransforms.slice(layout(), dataType(), axis, start, end, indexStride);
+                ViewTransforms.slice(layout(), dataType(), _axis, start, end, indexStride);
         if (Tracer.isTracing()) {
             return Tracer.requireIROps().viewTransform(this, spec);
         }
@@ -497,16 +503,14 @@ public interface Tensor {
      * Repeats this tensor along each axis.
      *
      * <p>Strict semantics: {@code repeats.length} must equal tensor rank and each repeat factor
-     * must be {@code >= 1}. This method does not prepend dimensions or flatten implicitly.
+     * must be {@code >= 1}. This method does not prepend dimensions or flatten implicitly. For
+     * scalar tensors (rank 0), {@code repeat()} is the identity.
      */
     default Tensor repeat(long... repeats) {
         Objects.requireNonNull(repeats, "repeats");
         Shape currentShape = shape();
         Shape modeShape = currentShape.flattenModes();
         int rank = currentShape.rank();
-        if (repeats.length == 0) {
-            throw new IllegalArgumentException("repeat requires at least one repeat factor");
-        }
         if (repeats.length != rank) {
             throw new IllegalArgumentException(
                     "repeat expects "
@@ -921,6 +925,7 @@ public interface Tensor {
     }
 
     default Tensor logicalNot() {
+        TensorTypeSemantics.requireBool(dataType(), "logicalNot");
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.LOGICAL_NOT)
                 .orElseGet(
                         () -> {
@@ -1145,14 +1150,14 @@ public interface Tensor {
      * seqLen, hiddenSize] embeddings
      *
      * @param indices the indices tensor (must be integral type)
-     * @param axis the axis along which to gather
+     * @param _axis the axis along which to gather (wrap-around semantics)
      * @return the gathered tensor
      */
-    default Tensor gather(Tensor indices, int axis) {
+    default Tensor gather(Tensor indices, int _axis) {
         if (Tracer.isTracing()) {
-            return Tracer.requireIROps().gather(this, indices, axis);
+            return Tracer.requireIROps().gather(this, indices, _axis);
         }
-        return Tracer.trace(this, indices, (input, idx) -> input.gather(idx, axis));
+        return Tracer.trace(this, indices, (input, idx) -> input.gather(idx, _axis));
     }
 
     /**
@@ -1345,16 +1350,6 @@ public interface Tensor {
         }
         // For other scalars (e.g., IRTensor), use broadcast view transform
         return right.broadcast(left.shape());
-    }
-
-    /** Broadcasts the other operand if it is scalar and this is not. */
-    private Tensor broadcastIfScalar(Tensor other) {
-        return broadcastRightScalar(this, other);
-    }
-
-    /** Broadcasts this operand if it is scalar and other is not. */
-    private Tensor broadcastSelfIfScalar(Tensor other) {
-        return broadcastLeftScalar(this, other);
     }
 
     default Tensor reciprocal() {

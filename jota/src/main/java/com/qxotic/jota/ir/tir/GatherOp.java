@@ -54,13 +54,13 @@ public record GatherOp(TIRNode input, TIRNode indices, int axis, Shape shape) im
      *
      * @param inputShape shape of the input tensor
      * @param indicesShape shape of the indices tensor
-     * @param axis axis along which to gather
+     * @param _axis axis along which to gather (wrap-around semantics)
      * @return the output shape
      */
-    public static Shape computeOutputShape(Shape inputShape, Shape indicesShape, int axis) {
+    public static Shape computeOutputShape(Shape inputShape, Shape indicesShape, int _axis) {
         int inputRank = inputShape.rank();
         int indicesRank = indicesShape.rank();
-        int normalizedAxis = Util.wrapAround(axis, inputRank);
+        int normalizedAxis = Util.wrapAround(_axis, inputRank);
 
         // Output rank = inputRank - 1 (remove gathered axis) + indicesRank (add indices dimensions)
         int outputRank = inputRank - 1 + indicesRank;
