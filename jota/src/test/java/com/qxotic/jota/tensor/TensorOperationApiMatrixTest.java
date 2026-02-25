@@ -63,6 +63,20 @@ class TensorOperationApiMatrixTest {
     }
 
     @Test
+    void logicalNotRequiresBool() {
+        Tensor boolTensor = Tensor.scalar(1L, DataType.BOOL);
+        assertEquals(DataType.BOOL, boolTensor.logicalNot().materialize().dataType());
+
+        for (DataType type : PRIMITIVE_TYPES) {
+            if (type == DataType.BOOL) {
+                continue;
+            }
+            Tensor input = Tensor.scalar(1L, type);
+            assertThrows(IllegalArgumentException.class, input::logicalNot);
+        }
+    }
+
+    @Test
     void matmulValidatesRankShapeAndDtype() {
         Tensor left = Tensor.iota(6, DataType.FP32).view(Shape.of(2, 3));
         Tensor right = Tensor.iota(12, DataType.FP32).view(Shape.of(3, 4));

@@ -121,12 +121,6 @@ public interface TensorOps {
                 x, accumulatorType, false, axes[0], Arrays.copyOfRange(axes, 1, axes.length));
     }
 
-    Tensor mean(Tensor x, int _axis, boolean keepDims);
-
-    default Tensor mean(Tensor x, int _axis) {
-        return mean(x, _axis, false);
-    }
-
     Tensor max(Tensor x, boolean keepDims, int _axis, int... _axes);
 
     default Tensor max(Tensor x, int _axis, int... _axes) {
@@ -168,10 +162,10 @@ public interface TensorOps {
      *
      * @param input the source tensor to gather from
      * @param indices the indices tensor (must be integral type)
-     * @param axis the axis along which to gather
+     * @param _axis the axis along which to gather (wrap-around semantics)
      * @return the gathered tensor
      */
-    Tensor gather(Tensor input, Tensor indices, int axis);
+    Tensor gather(Tensor input, Tensor indices, int _axis);
 
     // === Linear Algebra ===
 
@@ -183,8 +177,9 @@ public interface TensorOps {
 
     Tensor viewTransform(Tensor x, ViewTransforms.ViewTransformSpec spec);
 
-    default Tensor transpose(Tensor x, int axis0, int axis1) {
-        ViewTransforms.ViewTransformSpec spec = ViewTransforms.transpose(x.layout(), axis0, axis1);
+    default Tensor transpose(Tensor x, int _axis0, int _axis1) {
+        ViewTransforms.ViewTransformSpec spec =
+                ViewTransforms.transpose(x.layout(), _axis0, _axis1);
         return viewTransform(x, spec);
     }
 
@@ -215,13 +210,13 @@ public interface TensorOps {
         return viewTransform(x, spec);
     }
 
-    default Tensor slice(Tensor x, int axis, long start, long end) {
-        return slice(x, axis, start, end, 1);
+    default Tensor slice(Tensor x, int _axis, long start, long end) {
+        return slice(x, _axis, start, end, 1);
     }
 
-    default Tensor slice(Tensor x, int axis, long start, long end, long indexStride) {
+    default Tensor slice(Tensor x, int _axis, long start, long end, long indexStride) {
         ViewTransforms.ViewTransformSpec spec =
-                ViewTransforms.slice(x.layout(), x.dataType(), axis, start, end, indexStride);
+                ViewTransforms.slice(x.layout(), x.dataType(), _axis, start, end, indexStride);
         return viewTransform(x, spec);
     }
 

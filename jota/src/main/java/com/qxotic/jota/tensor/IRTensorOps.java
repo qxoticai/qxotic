@@ -183,19 +183,6 @@ final class IRTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor mean(Tensor x, int _axis, boolean keepDims) {
-        IRTensor tensor = requireIRTensor(x);
-        DataType dtype = tensor.dataType();
-        TensorTypeSemantics.requireFloatingPoint(dtype, "mean");
-
-        int normalizedAxis = TensorSemantics.normalizeAxis(tensor.shape().rank(), _axis);
-        long count = tensor.shape().flatAt(normalizedAxis);
-
-        Tensor reduced = sum(tensor, dtype, keepDims, _axis);
-        return divide(reduced, Tensor.scalar((double) count, dtype));
-    }
-
-    @Override
     public Tensor max(Tensor x, boolean keepDims, int _axis, int... _axes) {
         return reduceAxes(x, ReductionOperator.MAX, _axis, _axes, keepDims, null);
     }
@@ -206,7 +193,7 @@ final class IRTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor gather(Tensor input, Tensor indices, int axis) {
+    public Tensor gather(Tensor input, Tensor indices, int _axis) {
         IRTensor inputTensor = requireIRTensor(input);
         IRTensor indicesTensor = requireIRTensor(indices);
 
@@ -219,10 +206,10 @@ final class IRTensorOps implements TensorOps {
 
         // Compute output shape
         Shape outputShape =
-                GatherOp.computeOutputShape(inputTensor.shape(), indicesTensor.shape(), axis);
+                GatherOp.computeOutputShape(inputTensor.shape(), indicesTensor.shape(), _axis);
 
         // Create GatherOp node
-        GatherOp node = new GatherOp(inputTensor.node(), indicesTensor.node(), axis, outputShape);
+        GatherOp node = new GatherOp(inputTensor.node(), indicesTensor.node(), _axis, outputShape);
 
         return new IRTensor(node, inputTensor.device());
     }
