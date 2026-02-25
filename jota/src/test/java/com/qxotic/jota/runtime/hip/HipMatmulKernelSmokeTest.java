@@ -276,8 +276,7 @@ class HipMatmulKernelSmokeTest {
 
     private static Environment hipEnvironment() {
         Environment current = Environment.current();
-        return new Environment(
-                Device.HIP, current.defaultFloat(), current.runtimes(), current.executionMode());
+        return new Environment(Device.HIP, current.defaultFloat(), current.runtimes());
     }
 
     private static float readFp32(MemoryView<?> view, long linearIndex) {

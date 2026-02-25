@@ -1,6 +1,7 @@
 package com.qxotic.jota.tensor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Indexing;
@@ -13,6 +14,18 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 class BooleanOpsTest extends AbstractMemoryTest {
+
+    private static final DataType[] NON_BOOL_TYPES =
+            new DataType[] {
+                DataType.I8,
+                DataType.I16,
+                DataType.I32,
+                DataType.I64,
+                DataType.FP16,
+                DataType.BF16,
+                DataType.FP32,
+                DataType.FP64
+            };
 
     private static MemoryDomain<MemorySegment> domain;
 
@@ -113,7 +126,7 @@ class BooleanOpsTest extends AbstractMemoryTest {
                         trueTensor,
                         falseTensor,
                         // Odd min function.
-                        (t, f) -> t.lessThan(f).select(t, f));
+                        (t, f) -> t.lessThan(f).where(t, f));
 
         MemoryView<?> output = min.materialize();
 
@@ -136,13 +149,61 @@ class BooleanOpsTest extends AbstractMemoryTest {
         Tensor trueTensor = Tensor.of(trueView);
         Tensor falseTensor = Tensor.of(falseView);
 
-        Tensor selected = Tracer.trace(condition, trueTensor, falseTensor, Tensor::select);
+        Tensor selected = Tracer.trace(condition, trueTensor, falseTensor, Tensor::where);
         MemoryView<?> output = selected.materialize();
 
         assertEquals(0, readInt(output, 0));
         assertEquals(-1, readInt(output, 1));
         assertEquals(2, readInt(output, 2));
         assertEquals(-1, readInt(output, 3));
+    }
+
+    @Test
+    void logicalXorRejectsNonBoolTypes() {
+        Shape shape = Shape.of(4);
+        for (DataType dataType : NON_BOOL_TYPES) {
+            MemoryView<MemorySegment> left = range(dataType, shape);
+            MemoryView<MemorySegment> right = range(dataType, shape);
+            Tensor a = Tensor.of(left);
+            Tensor b = Tensor.of(right);
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> Tracer.trace(a, b, Tensor::logicalXor),
+                    "Expected logicalXor to reject " + dataType);
+        }
+    }
+
+    @Test
+    void anyAndAllHandleBoolPatterns() {
+        Shape shape = Shape.of(4);
+        Tensor allFalse = Tensor.of(boolPattern(shape, new byte[] {0, 0, 0, 0}));
+        Tensor mixed = Tensor.of(boolPattern(shape, new byte[] {0, 1, 0, 0}));
+        Tensor allTrue = Tensor.of(boolPattern(shape, new byte[] {1, 1, 1, 1}));
+
+        assertEquals(0, readBool(allFalse.any().materialize(), 0));
+        assertEquals(0, readBool(allFalse.all().materialize(), 0));
+
+        assertEquals(1, readBool(mixed.any().materialize(), 0));
+        assertEquals(0, readBool(mixed.all().materialize(), 0));
+
+        assertEquals(1, readBool(allTrue.any().materialize(), 0));
+        assertEquals(1, readBool(allTrue.all().materialize(), 0));
+    }
+
+    @Test
+    void anyAndAllRejectNonBoolTypes() {
+        Shape shape = Shape.of(4);
+        for (DataType dataType : NON_BOOL_TYPES) {
+            Tensor input = Tensor.of(range(dataType, shape));
+            assertThrows(
+                    IllegalArgumentException.class,
+                    input::any,
+                    "Expected any() to reject " + dataType);
+            assertThrows(
+                    IllegalArgumentException.class,
+                    input::all,
+                    "Expected all() to reject " + dataType);
+        }
     }
 
     private MemoryView<MemorySegment> range(DataType dataType, Shape shape) {

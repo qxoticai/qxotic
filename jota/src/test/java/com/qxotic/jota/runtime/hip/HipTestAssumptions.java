@@ -3,6 +3,7 @@ package com.qxotic.jota.runtime.hip;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.runtime.RuntimeDiagnostic;
+import com.qxotic.jota.testutil.ExternalToolChecks;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Assumptions;
 
@@ -11,15 +12,20 @@ final class HipTestAssumptions {
     private HipTestAssumptions() {}
 
     static void assumeHipReady() {
-        String details = diagnosticsSummary();
+        boolean hipccAvailable = isHipccAvailable();
+        String details = diagnosticsSummary(hipccAvailable);
         Assumptions.assumeTrue(HipRuntime.isAvailable(), "HIP runtime not available\n" + details);
         Assumptions.assumeTrue(
                 Environment.current().runtimes().hasRuntime(Device.HIP),
                 "HIP runtime is not registered\n" + details);
-        Assumptions.assumeTrue(isHipccAvailable(), "hipcc not available\n" + details);
+        Assumptions.assumeTrue(hipccAvailable, "hipcc not available\n" + details);
     }
 
     static String diagnosticsSummary() {
+        return diagnosticsSummary(isHipccAvailable());
+    }
+
+    static String diagnosticsSummary(boolean hipccAvailable) {
         String hipDiagnostics =
                 Environment.current().runtimeDiagnostics().stream()
                         .filter(d -> d.device().equals(Device.HIP))
@@ -35,7 +41,7 @@ final class HipTestAssumptions {
                 + "\nHIP runtime registered="
                 + Environment.current().runtimes().hasRuntime(Device.HIP)
                 + "\nhipcc available="
-                + isHipccAvailable();
+                + hipccAvailable;
     }
 
     private static String formatDiagnostic(RuntimeDiagnostic d) {
@@ -58,12 +64,6 @@ final class HipTestAssumptions {
     }
 
     private static boolean isHipccAvailable() {
-        try {
-            Process process = new ProcessBuilder("hipcc", "--version").start();
-            int code = process.waitFor();
-            return code == 0;
-        } catch (Exception e) {
-            return false;
-        }
+        return ExternalToolChecks.hasVersionCommand("hipcc");
     }
 }

@@ -35,7 +35,7 @@ public final class TracingEagerKernels implements DeviceRuntime.EagerKernels {
 
     @Override
     public Tensor where(Tensor condition, Tensor trueValue, Tensor falseValue) {
-        return Tracer.trace(condition, trueValue, falseValue, Tensor::select);
+        return Tracer.trace(condition, trueValue, falseValue, Tensor::where);
     }
 
     @Override

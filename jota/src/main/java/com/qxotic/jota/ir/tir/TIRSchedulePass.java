@@ -16,6 +16,8 @@ import java.util.stream.Collectors;
  */
 public final class TIRSchedulePass {
 
+    private static final boolean SCHEDULE_LOG = Boolean.getBoolean("jota.schedule.log");
+
     private final LoweringSupportChecker loweringSupportChecker;
 
     public TIRSchedulePass() {
@@ -34,6 +36,19 @@ public final class TIRSchedulePass {
         }
 
         TIRNode output = graph.outputs().getFirst();
+        if (TIRNodeUtils.isComputeNode(output) && countReductions(output) <= 1) {
+            TIRStepGraphBuilder.Result fused =
+                    tryBuildSupportedStep(output, new IdentityHashMap<TIRNode, ValueId>());
+            if (fused != null) {
+                ValueId out = new ValueId(0);
+                log("fused schedule with 1 step for " + describe(output));
+                return new ScheduledProgram(
+                        List.of(new KernelStep(fused.graph(), fused.inputs(), out)),
+                        new ScheduledOutputRef.ValueOutput(out));
+            }
+        }
+
+        log("falling back to staged schedule for " + describe(output));
         List<TIRNode> topo = collectTopo(output);
         List<TIRNode> roots = stepRoots(output, topo);
         List<KernelStep> steps = new ArrayList<>(roots.size());
@@ -41,14 +56,13 @@ public final class TIRSchedulePass {
 
         int nextValueId = 0;
         for (TIRNode root : roots) {
-            TIRStepGraphBuilder.Result result = TIRStepGraphBuilder.build(root, producedValues);
-            if (countReductions(result.graph().outputs().getFirst()) > 1) {
+            TIRStepGraphBuilder.Result result = tryBuildSupportedStep(root, producedValues);
+            if (result == null) {
                 throw new UnsupportedOperationException(
-                        "Unsupported scheduled kernel for "
-                                + root.getClass().getSimpleName()
-                                + ": more than one reduction in kernel");
+                        "Unsupported scheduled kernel "
+                                + describe(root)
+                                + ": could not lower as isolated step");
             }
-            loweringSupportChecker.verifyOrThrow(result.graph(), describe(root));
 
             ValueId out = new ValueId(nextValueId++);
             steps.add(new KernelStep(result.graph(), result.inputs(), out));
@@ -56,7 +70,22 @@ public final class TIRSchedulePass {
         }
 
         ScheduledOutputRef scheduledOutput = resolveOutputRef(output, producedValues);
+        log("staged schedule produced " + steps.size() + " step(s)");
         return new ScheduledProgram(steps, scheduledOutput);
+    }
+
+    private TIRStepGraphBuilder.Result tryBuildSupportedStep(
+            TIRNode root, Map<TIRNode, ValueId> producedValues) {
+        TIRStepGraphBuilder.Result result = TIRStepGraphBuilder.build(root, producedValues);
+        if (countReductions(result.graph().outputs().getFirst()) > 1) {
+            return null;
+        }
+        try {
+            loweringSupportChecker.verifyOrThrow(result.graph(), describe(root));
+            return result;
+        } catch (UnsupportedOperationException e) {
+            return null;
+        }
     }
 
     private static List<TIRNode> collectTopo(TIRNode output) {
@@ -128,5 +157,11 @@ public final class TIRSchedulePass {
             count += countReductions(input, visited);
         }
         return count;
+    }
+
+    private static void log(String message) {
+        if (SCHEDULE_LOG) {
+            System.out.println("[jota-schedule] " + message);
+        }
     }
 }

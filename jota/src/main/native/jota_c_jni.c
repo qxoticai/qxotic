@@ -14,7 +14,7 @@ static void throw_runtime(JNIEnv *env, const char *message) {
     }
 }
 
-JNIEXPORT jlong JNICALL Java_ai_qxotic_jota_runtime_c_CNative_loadKernel(
+JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_c_CNative_loadKernel(
         JNIEnv *env, jclass cls, jstring soPath, jstring symbol) {
     (void)cls;
     const char *so = (*env)->GetStringUTFChars(env, soPath, NULL);
@@ -71,7 +71,7 @@ JNIEXPORT jlong JNICALL Java_ai_qxotic_jota_runtime_c_CNative_loadKernel(
     return (jlong)(uintptr_t)fn;
 }
 
-JNIEXPORT void JNICALL Java_ai_qxotic_jota_runtime_c_CNative_invokeKernel(
+JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_c_CNative_invokeKernel(
         JNIEnv *env, jclass cls, jlong functionPtr, jlongArray bufferPtrs, jlongArray scalarBits, jlong scratchPtr) {
     (void)cls;
     if (functionPtr == 0) {

@@ -3,9 +3,6 @@ package com.qxotic.jota.tensor;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Device;
-import com.qxotic.jota.Environment;
-import com.qxotic.jota.ExecutionMode;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
@@ -415,26 +412,14 @@ class CustomKernelLaunchTest {
                 "mul_tensors",
                 KernelProgram.source(KernelProgram.JAVA, source, "MulTensorsKernel"));
 
-        Environment eagerEnv =
-                new Environment(
-                        Device.PANAMA,
-                        Environment.current().defaultFloat(),
-                        Environment.current().runtimes(),
-                        ExecutionMode.EAGER);
-        Environment.with(
-                eagerEnv,
-                () -> {
-                    // Broadcast tensors must be made contiguous before passing to kernels
-                    // that index linearly — this is the caller's responsibility (like PyTorch)
-                    Tensor ones = Tensor.ones(DataType.FP32, Shape.flat(4)).contiguous();
-                    Tensor fives = Tensor.full(5.0f, Shape.flat(4)).contiguous();
-                    Tensor out = Tensor.of(new float[4]);
+        // Kernel tensors must be row-major contiguous — create them directly
+        Tensor ones = Tensor.of(new float[] {1f, 1f, 1f, 1f});
+        Tensor fives = Tensor.of(new float[] {5f, 5f, 5f, 5f});
+        Tensor out = Tensor.of(new float[4]);
 
-                    runtime.launchKernel("mul_tensors", ones, fives, out);
+        runtime.launchKernel("mul_tensors", ones, fives, out);
 
-                    assertFloats(out.materialize(), 5f, 5f, 5f, 5f);
-                    return null;
-                });
+        assertFloats(out.materialize(), 5f, 5f, 5f, 5f);
     }
 
     @Test

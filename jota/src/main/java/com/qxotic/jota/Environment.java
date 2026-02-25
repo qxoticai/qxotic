@@ -23,25 +23,16 @@ public final class Environment {
     private static final AtomicReference<Environment> GLOBAL = new AtomicReference<>();
     private static final Environment DEFAULT_GLOBAL =
             new Environment(
-                    Device.PANAMA,
-                    DataTypeImpl.defaultFloatValue(),
-                    buildDefaultRuntimes(),
-                    ExecutionMode.LAZY);
+                    Device.PANAMA, DataTypeImpl.defaultFloatValue(), buildDefaultRuntimes());
 
     private final Device defaultDevice;
     private final DataType defaultFloat;
     private final RuntimeRegistry runtimes;
-    private final ExecutionMode executionMode;
 
-    public Environment(
-            Device defaultDevice,
-            DataType defaultFloat,
-            RuntimeRegistry runtimes,
-            ExecutionMode executionMode) {
+    public Environment(Device defaultDevice, DataType defaultFloat, RuntimeRegistry runtimes) {
         this.defaultDevice = Objects.requireNonNull(defaultDevice, "defaultDevice");
         this.defaultFloat = Objects.requireNonNull(defaultFloat, "defaultFloat");
         this.runtimes = Objects.requireNonNull(runtimes, "runtimes");
-        this.executionMode = Objects.requireNonNull(executionMode, "executionMode");
     }
 
     public static Environment current() {
@@ -99,10 +90,6 @@ public final class Environment {
 
     public ComputeEngine computeEngineFor(Device device) {
         return runtimes.runtimeFor(device).computeEngine();
-    }
-
-    public ExecutionMode executionMode() {
-        return executionMode;
     }
 
     public List<RuntimeDiagnostic> runtimeDiagnostics() {

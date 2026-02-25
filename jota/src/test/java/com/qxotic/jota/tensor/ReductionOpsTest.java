@@ -101,6 +101,58 @@ class ReductionOpsTest extends AbstractMemoryTest {
         assertValueEquals(DataType.FP32, 6.0f, readValue(output, 1, DataType.FP32));
     }
 
+    @Test
+    void reducesFullShapeToScalarForMinAndMax() {
+        MemoryView<MemorySegment> view = range(DataType.FP32, Shape.of(2, 3));
+        Tensor input = Tensor.of(view);
+
+        Tensor minReduced = input.min();
+        Tensor maxReduced = input.max();
+
+        MemoryView<?> minOutput = minReduced.materialize();
+        MemoryView<?> maxOutput = maxReduced.materialize();
+
+        assertEquals(Shape.scalar(), minOutput.shape());
+        assertEquals(Shape.scalar(), maxOutput.shape());
+        assertValueEquals(DataType.FP32, 0.0f, readValue(minOutput, 0, DataType.FP32));
+        assertValueEquals(DataType.FP32, 5.0f, readValue(maxOutput, 0, DataType.FP32));
+    }
+
+    @Test
+    void wrapsNegativeAxisForMinAndMax() {
+        MemoryView<MemorySegment> view = range(DataType.FP32, Shape.of(2, 2, 2));
+        Tensor input = Tensor.of(view);
+
+        Tensor minReduced = input.min(-1);
+        Tensor maxReduced = input.max(-1);
+
+        MemoryView<?> minOutput = minReduced.materialize();
+        MemoryView<?> maxOutput = maxReduced.materialize();
+
+        assertEquals(Shape.of(2, 2), minOutput.shape());
+        assertEquals(Shape.of(2, 2), maxOutput.shape());
+        assertValueEquals(DataType.FP32, 0.0f, readValue(minOutput, 0, DataType.FP32));
+        assertValueEquals(DataType.FP32, 2.0f, readValue(minOutput, 1, DataType.FP32));
+        assertValueEquals(DataType.FP32, 4.0f, readValue(minOutput, 2, DataType.FP32));
+        assertValueEquals(DataType.FP32, 6.0f, readValue(minOutput, 3, DataType.FP32));
+        assertValueEquals(DataType.FP32, 1.0f, readValue(maxOutput, 0, DataType.FP32));
+        assertValueEquals(DataType.FP32, 3.0f, readValue(maxOutput, 1, DataType.FP32));
+        assertValueEquals(DataType.FP32, 5.0f, readValue(maxOutput, 2, DataType.FP32));
+        assertValueEquals(DataType.FP32, 7.0f, readValue(maxOutput, 3, DataType.FP32));
+    }
+
+    @Test
+    void normalizesDuplicateAxesForMax() {
+        MemoryView<MemorySegment> view = range(DataType.FP32, Shape.of(2, 3));
+        Tensor input = Tensor.of(view);
+        Tensor reduced = input.max(true, 1, -1);
+        MemoryView<?> output = reduced.materialize();
+
+        assertEquals(Shape.of(2, 1), output.shape());
+        assertValueEquals(DataType.FP32, 2.0f, readValue(output, 0, DataType.FP32));
+        assertValueEquals(DataType.FP32, 5.0f, readValue(output, 1, DataType.FP32));
+    }
+
     private MemoryView<MemorySegment> range(DataType dataType, Shape shape) {
         if (dataType == DataType.BOOL) {
             return MemoryHelpers.full(memoryDomain, dataType, shape.size(), 1).view(shape);

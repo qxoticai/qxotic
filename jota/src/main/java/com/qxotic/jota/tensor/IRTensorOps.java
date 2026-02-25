@@ -183,15 +183,15 @@ final class IRTensorOps implements TensorOps {
     }
 
     @Override
-    public Tensor mean(Tensor x, int axis, boolean keepDims) {
+    public Tensor mean(Tensor x, int _axis, boolean keepDims) {
         IRTensor tensor = requireIRTensor(x);
         DataType dtype = tensor.dataType();
         TensorTypeSemantics.requireFloatingPoint(dtype, "mean");
 
-        int normalizedAxis = TensorSemantics.normalizeAxis(tensor.shape().rank(), axis);
+        int normalizedAxis = TensorSemantics.normalizeAxis(tensor.shape().rank(), _axis);
         long count = tensor.shape().flatAt(normalizedAxis);
 
-        Tensor reduced = sum(tensor, dtype, keepDims, axis);
+        Tensor reduced = sum(tensor, dtype, keepDims, _axis);
         return divide(reduced, Tensor.scalar((double) count, dtype));
     }
 

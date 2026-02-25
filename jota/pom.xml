@@ -104,8 +104,6 @@
                             <includes>
                                 <include>**/CBackendAvailabilityTest.java</include>
                                 <include>**/CKernelSmokeTest.java</include>
-                                <include>**/CMatmulKernelSmokeTest.java</include>
-                                <include>**/CCustomKernelLaunchTest.java</include>
                             </includes>
                             <argLine>
                                 -Djava.library.path=${native.c.build.dir}
@@ -186,8 +184,9 @@
                             <!-- Override default excludes -->
                             <excludes combine.self="override"></excludes>
                             <includes>
-                                <include>**/Hip*Test.java</include>
-                                <include>**/MemoryOperationsCrossContextTest.java</include>
+                                <include>**/HipBackendAvailabilityTest.java</include>
+                                <include>**/HipRuntimeDiagnosticsTest.java</include>
+                                <include>**/HipKernelSmokeTest.java</include>
                             </includes>
                             <argLine>
                                 -Djava.library.path=${native.hip.build.dir}

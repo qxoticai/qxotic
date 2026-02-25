@@ -25,11 +25,7 @@ class EnvironmentTest {
     @Test
     void scopedEnvironmentOverridesDefaults() {
         Environment env =
-                new Environment(
-                        Device.PANAMA,
-                        DataType.FP64,
-                        Environment.global().runtimes(),
-                        ExecutionMode.LAZY);
+                new Environment(Device.PANAMA, DataType.FP64, Environment.global().runtimes());
 
         Environment.with(
                 env,

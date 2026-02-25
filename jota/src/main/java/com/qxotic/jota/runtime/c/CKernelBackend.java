@@ -11,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 final class CKernelBackend implements KernelBackend {
 
+    private static final boolean KERNEL_LOG = Boolean.getBoolean("jota.kernel.log");
     private final KernelExecutableCache cache = new InMemoryKernelCache();
     private final CKernelCompiler compiler = new CKernelCompiler();
 
@@ -31,8 +32,10 @@ final class CKernelBackend implements KernelBackend {
     public KernelExecutable getOrCompile(KernelProgram program, KernelCacheKey cacheKey) {
         KernelExecutable exec = cache.get(cacheKey);
         if (exec != null) {
+            log("C kernel cache hit key=" + cacheKey.value());
             return exec;
         }
+        log("C kernel cache miss key=" + cacheKey.value());
         KernelExecutable created = compile(program, cacheKey);
         cache.put(cacheKey, created);
         return created;
@@ -58,6 +61,12 @@ final class CKernelBackend implements KernelBackend {
         @Override
         public void put(KernelCacheKey key, KernelExecutable exec) {
             map.put(key, exec);
+        }
+    }
+
+    private static void log(String message) {
+        if (KERNEL_LOG) {
+            System.out.println("[jota-kernel] " + message);
         }
     }
 }

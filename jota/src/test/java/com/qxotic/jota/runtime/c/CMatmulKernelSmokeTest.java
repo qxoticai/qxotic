@@ -13,6 +13,7 @@ import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.Tracer;
+import com.qxotic.jota.testutil.ExternalToolChecks;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -299,8 +300,7 @@ class CMatmulKernelSmokeTest {
 
     private static Environment cEnvironment() {
         Environment current = Environment.current();
-        return new Environment(
-                Device.C, current.defaultFloat(), current.runtimes(), current.executionMode());
+        return new Environment(Device.C, current.defaultFloat(), current.runtimes());
     }
 
     @SuppressWarnings("unchecked")
@@ -320,12 +320,6 @@ class CMatmulKernelSmokeTest {
 
     private static void assumeCBackendAvailable() {
         Assumptions.assumeTrue(CNative.isAvailable(), "C JNI runtime not available");
-        try {
-            Process process = new ProcessBuilder("gcc", "--version").start();
-            int code = process.waitFor();
-            Assumptions.assumeTrue(code == 0, "gcc not available");
-        } catch (Exception e) {
-            Assumptions.assumeTrue(false, "gcc not available");
-        }
+        Assumptions.assumeTrue(ExternalToolChecks.hasVersionCommand("gcc"), "gcc not available");
     }
 }

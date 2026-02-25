@@ -8,10 +8,12 @@ import com.qxotic.jota.ir.TIRToLIRLowerer;
 import com.qxotic.jota.ir.lir.LIRGraph;
 import com.qxotic.jota.ir.lir.LIRInput;
 import com.qxotic.jota.ir.lir.LIRStandardPipeline;
+import com.qxotic.jota.ir.lir.LIRTextRenderer;
 import com.qxotic.jota.ir.lir.scratch.ScratchAnalysisPass;
 import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
 import com.qxotic.jota.ir.lir.scratch.ScratchVerificationPass;
 import com.qxotic.jota.ir.tir.TIRGraph;
+import com.qxotic.jota.ir.tir.TIRTextRenderer;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
@@ -27,12 +29,12 @@ public final class CComputeEngine implements ComputeEngine {
     private final CKernelBackend backend = new CKernelBackend();
     private final CKernelProgramGenerator generator = new CKernelProgramGenerator();
     private final LIRKernelArgsBuilder argsBuilder = new LIRKernelArgsBuilder();
-    private final TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
     private final LIRStandardPipeline pipeline = new LIRStandardPipeline();
     private final ScratchAnalysisPass scratchAnalysis = new ScratchAnalysisPass();
     private final ScratchVerificationPass scratchVerification = new ScratchVerificationPass();
     private final boolean verifyScratch =
             Boolean.parseBoolean(System.getProperty("jota.verifyScratch", "false"));
+    private final boolean logKernelIr = Boolean.getBoolean("jota.kernel.ir.log");
 
     public CComputeEngine(CMemoryDomain memoryDomain) {
         this.memoryDomain = memoryDomain;
@@ -46,6 +48,7 @@ public final class CComputeEngine implements ComputeEngine {
     @Override
     public MemoryView<?> execute(TIRGraph graph, List<Tensor> inputs) {
         CNative.requireAvailable();
+        TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
         LIRGraph lirGraph = pipeline.run(lowerer.lower(graph));
         ScratchLayout scratchLayout = scratchAnalysis.analyze(lirGraph);
         if (verifyScratch) {
@@ -62,6 +65,7 @@ public final class CComputeEngine implements ComputeEngine {
         }
 
         KernelCacheKey key = backend.cacheKey(lirGraph, scratchLayout);
+        logKernelIr(key, graph, lirGraph);
         KernelProgram program = generator.generate(lirGraph, scratchLayout, key);
 
         List<Tensor> resolvedInputs = resolveInputs(lirGraph, inputs);
@@ -76,6 +80,16 @@ public final class CComputeEngine implements ComputeEngine {
                 new ExecutionStream(Device.C, 0L, true));
 
         return outputViews.getFirst();
+    }
+
+    private void logKernelIr(KernelCacheKey key, TIRGraph tirGraph, LIRGraph lirGraph) {
+        if (!logKernelIr) {
+            return;
+        }
+        System.out.println("[jota-ir] BEGIN C kernel key=" + key.value());
+        System.out.println("[jota-ir] TIR:\n" + new TIRTextRenderer().render(tirGraph));
+        System.out.println("[jota-ir] LIR:\n" + new LIRTextRenderer().render(lirGraph));
+        System.out.println("[jota-ir] END C kernel key=" + key.value());
     }
 
     private List<Tensor> resolveInputs(LIRGraph graph, List<Tensor> inputs) {

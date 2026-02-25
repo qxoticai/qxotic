@@ -161,7 +161,7 @@ final class LIRKernelCompiler {
     private KernelCacheKey buildCacheKey(
             LIRGraph graph, ScratchLayout scratchLayout, boolean needsStridedKernel) {
         String hash = hashLirGraph(graph, scratchLayout, needsStridedKernel);
-        return KernelCacheKey.of(hash + "-lir-v7");
+        return KernelCacheKey.of(hash + "-lir-v10");
     }
 
     private String hashLirGraph(
@@ -1045,13 +1045,20 @@ final class LIRKernelCompiler {
                 }
                 case I_VAR -> ((IVar) resolved).name();
                 case I_BINARY -> {
+                    IBinary binary = (IBinary) resolved;
+                    if (binary.op() == IndexBinaryOp.MULTIPLY) {
+                        String specialized =
+                                tryEmitStrideMultiply(
+                                        binary.left(), binary.right(), strides, strideVars);
+                        if (specialized != null) {
+                            yield specialized;
+                        }
+                    }
                     String left =
-                            emitIndexWithStrideReplacementExpr(
-                                    ((IBinary) resolved).left(), strides, strideVars);
+                            emitIndexWithStrideReplacementExpr(binary.left(), strides, strideVars);
                     String right =
-                            emitIndexWithStrideReplacementExpr(
-                                    ((IBinary) resolved).right(), strides, strideVars);
-                    yield "(" + left + " " + indexOp(((IBinary) resolved).op()) + " " + right + ")";
+                            emitIndexWithStrideReplacementExpr(binary.right(), strides, strideVars);
+                    yield "(" + left + " " + indexOp(binary.op()) + " " + right + ")";
                 }
                 case I_FROM_SCALAR -> emitIndexFromScalarExpr((IFromScalar) resolved);
                 default ->
@@ -1070,6 +1077,45 @@ final class LIRKernelCompiler {
                 return scalarExpr;
             }
             return "(long) (" + scalarExpr + ")";
+        }
+
+        private String tryEmitStrideMultiply(
+                LIRExprNode left, LIRExprNode right, long[] strides, String[] strideVars) {
+            String fromLeft = tryEmitStrideMultiplySide(left, right, strides, strideVars);
+            if (fromLeft != null) {
+                return fromLeft;
+            }
+            return tryEmitStrideMultiplySide(right, left, strides, strideVars);
+        }
+
+        private String tryEmitStrideMultiplySide(
+                LIRExprNode varSide, LIRExprNode constSide, long[] strides, String[] strideVars) {
+            LIRExprNode varResolved = exprGraph.resolve(varSide);
+            LIRExprNode constResolved = exprGraph.resolve(constSide);
+            if (!(varResolved instanceof IVar var) || !(constResolved instanceof IConst constant)) {
+                return null;
+            }
+            String name = var.name();
+            if (name == null || name.length() < 2 || name.charAt(0) != 'i') {
+                return null;
+            }
+            int axis;
+            try {
+                axis = Integer.parseInt(name.substring(1));
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+            if (axis < 0 || strides == null || strideVars == null || axis >= strides.length) {
+                return null;
+            }
+            if (strides[axis] != constant.value()) {
+                return null;
+            }
+            String strideVar = strideVars[axis];
+            if (strideVar == null) {
+                return null;
+            }
+            return "(" + name + " * " + strideVar + ")";
         }
 
         private String compareExpr(

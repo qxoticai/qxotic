@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.runtime.RuntimeDiagnostic;
+import com.qxotic.jota.testutil.ExternalToolChecks;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
@@ -61,12 +62,6 @@ class CBackendAvailabilityTest {
     }
 
     private static boolean isGccAvailable() {
-        try {
-            Process process = new ProcessBuilder("gcc", "--version").start();
-            int code = process.waitFor();
-            return code == 0;
-        } catch (Exception e) {
-            return false;
-        }
+        return ExternalToolChecks.hasVersionCommand("gcc");
     }
 }

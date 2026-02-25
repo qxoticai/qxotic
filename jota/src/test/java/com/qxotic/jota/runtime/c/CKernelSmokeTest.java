@@ -14,6 +14,7 @@ import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.Tracer;
+import com.qxotic.jota.testutil.ExternalToolChecks;
 import com.qxotic.jota.testutil.TestKernels;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
@@ -23,21 +24,17 @@ import org.junit.jupiter.api.Test;
 
 class CKernelSmokeTest {
 
-    private static final int FRACTAL_WIDTH = 320;
-    private static final int FRACTAL_HEIGHT = 240;
-    private static final int FRACTAL_ITERATIONS = 32;
+    private static final int FRACTAL_WIDTH = 640;
+    private static final int FRACTAL_HEIGHT = 480;
+    private static final int FRACTAL_ITERATIONS = 100;
 
     @Test
     void runsTracedGeluKernel() {
+        assumeNotFractalOnlyRun();
         assumeCBackendAvailable();
 
         Environment current = Environment.current();
-        Environment cEnv =
-                new Environment(
-                        Device.C,
-                        current.defaultFloat(),
-                        current.runtimes(),
-                        current.executionMode());
+        Environment cEnv = new Environment(Device.C, current.defaultFloat(), current.runtimes());
 
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>)
@@ -74,12 +71,7 @@ class CKernelSmokeTest {
         int iterations = FRACTAL_ITERATIONS;
 
         Environment current = Environment.current();
-        Environment cEnv =
-                new Environment(
-                        Device.C,
-                        current.defaultFloat(),
-                        current.runtimes(),
-                        current.executionMode());
+        Environment cEnv = new Environment(Device.C, current.defaultFloat(), current.runtimes());
 
         MemoryView<?> output =
                 Environment.with(
@@ -126,15 +118,11 @@ class CKernelSmokeTest {
 
     @Test
     void runsTracedFp16Kernel() {
+        assumeNotFractalOnlyRun();
         assumeCBackendAvailable();
 
         Environment current = Environment.current();
-        Environment cEnv =
-                new Environment(
-                        Device.C,
-                        current.defaultFloat(),
-                        current.runtimes(),
-                        current.executionMode());
+        Environment cEnv = new Environment(Device.C, current.defaultFloat(), current.runtimes());
 
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>)
@@ -162,15 +150,11 @@ class CKernelSmokeTest {
 
     @Test
     void runsTracedBf16Kernel() {
+        assumeNotFractalOnlyRun();
         assumeCBackendAvailable();
 
         Environment current = Environment.current();
-        Environment cEnv =
-                new Environment(
-                        Device.C,
-                        current.defaultFloat(),
-                        current.runtimes(),
-                        current.executionMode());
+        Environment cEnv = new Environment(Device.C, current.defaultFloat(), current.runtimes());
 
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>)
@@ -245,19 +229,19 @@ class CKernelSmokeTest {
 
     private static void assumeCBackendAvailable() {
         Assumptions.assumeTrue(CNative.isAvailable(), "C JNI runtime not available");
-        try {
-            Process process = new ProcessBuilder("gcc", "--version").start();
-            int code = process.waitFor();
-            Assumptions.assumeTrue(code == 0, "gcc not available");
-        } catch (Exception e) {
-            Assumptions.assumeTrue(false, "gcc not available");
-        }
+        Assumptions.assumeTrue(ExternalToolChecks.hasVersionCommand("gcc"), "gcc not available");
     }
 
     private static void assumeFractalsEnabled() {
         Assumptions.assumeTrue(
                 Boolean.getBoolean("jota.test.c.fractals") && Boolean.getBoolean("jota.test.ppm"),
                 "C fractal smoke tests disabled; set -Djota.test.c.fractals=true and -Djota.test.ppm=true to enable");
+    }
+
+    private static void assumeNotFractalOnlyRun() {
+        Assumptions.assumeFalse(
+                Boolean.getBoolean("jota.test.c.fractals") && Boolean.getBoolean("jota.test.ppm"),
+                "Skipping non-fractal C smoke tests in fractal-only run");
     }
 
     private static float readValue(

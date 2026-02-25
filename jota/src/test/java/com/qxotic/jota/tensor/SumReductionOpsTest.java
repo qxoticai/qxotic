@@ -156,6 +156,29 @@ class SumReductionOpsTest extends AbstractMemoryTest {
         assertValueEquals(DataType.I64, 16L, readValue(output, 5, DataType.I64));
     }
 
+    @Test
+    void reducesFullShapeToScalar() {
+        MemoryView<MemorySegment> view = range(DataType.I32, Shape.of(2, 2));
+        Tensor input = Tensor.of(view);
+        Tensor reduced = input.sum(DataType.I64);
+        MemoryView<?> output = reduced.materialize();
+
+        assertEquals(Shape.scalar(), output.shape());
+        assertValueEquals(DataType.I64, 6L, readValue(output, 0, DataType.I64));
+    }
+
+    @Test
+    void usesZeroForEmptyReduction() {
+        MemoryView<MemorySegment> view = range(DataType.I32, Shape.of(2, 0));
+        Tensor input = Tensor.of(view);
+        Tensor reduced = input.sum(DataType.I64, 1);
+        MemoryView<?> output = reduced.materialize();
+
+        assertEquals(Shape.of(2), output.shape());
+        assertValueEquals(DataType.I64, 0L, readValue(output, 0, DataType.I64));
+        assertValueEquals(DataType.I64, 0L, readValue(output, 1, DataType.I64));
+    }
+
     private MemoryView<MemorySegment> range(DataType dataType, Shape shape) {
         if (dataType == DataType.BOOL) {
             return MemoryHelpers.full(memoryDomain, dataType, shape.size(), 1).view(shape);

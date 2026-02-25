@@ -596,16 +596,21 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
             return exprGraph.indexConst(0);
         }
 
+        int indexRank = indices.size();
+        int strideRank = strides.length;
+        int strideShift = indexRank - strideRank;
+
         LIRExprNode offset = null;
-        for (int i = 0; i < indices.size(); i++) {
-            if (strides[i] == 0) {
+        for (int i = 0; i < indexRank; i++) {
+            int strideIndex = i - strideShift;
+            long stride =
+                    (strideIndex < 0 || strideIndex >= strideRank) ? 0L : strides[strideIndex];
+            if (stride == 0) {
                 continue; // Broadcasting dimension - skip
             }
             LIRExprNode term =
                     exprGraph.indexBinary(
-                            IndexBinaryOp.MULTIPLY,
-                            indices.get(i),
-                            exprGraph.indexConst(strides[i]));
+                            IndexBinaryOp.MULTIPLY, indices.get(i), exprGraph.indexConst(stride));
             offset =
                     (offset == null)
                             ? term

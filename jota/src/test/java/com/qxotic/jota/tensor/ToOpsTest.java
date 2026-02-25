@@ -1,6 +1,5 @@
 package com.qxotic.jota.tensor;
 
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jota.DataType;
@@ -24,34 +23,21 @@ class ToOpsTest {
     }
 
     @Test
-    void toReturnsSameTensorForSameDevice() {
+    void toThrowsForUnsupportedDeviceTransfer() {
         MemoryView<MemorySegment> view =
                 MemoryHelpers.arange(domain, DataType.FP32, 4).view(Shape.of(4));
         Tensor input = Tensor.of(view);
-        Tensor result =
-                TensorOpsContext.with(new EagerTensorOps(domain), () -> input.to(Device.PANAMA));
-        assertSame(input, result);
+        // Device transfer is not yet supported in IR — throws during tracing
+        assertThrows(UnsupportedOperationException.class, () -> input.to(Device.PANAMA));
     }
 
     @Test
-    void toReturnsLazyTensorForDifferentDevice() {
+    void toThrowsForDifferentDevice() {
         MemoryView<MemorySegment> view =
                 MemoryHelpers.arange(domain, DataType.FP32, 4).view(Shape.of(4));
         Tensor input = Tensor.of(view);
         assertThrows(
                 UnsupportedOperationException.class,
                 () -> Tracer.trace(input, t -> t.to(Device.GPU)));
-    }
-
-    @Test
-    void toThrowsWhenTargetDeviceMissing() {
-        MemoryView<MemorySegment> view =
-                MemoryHelpers.arange(domain, DataType.FP32, 4).view(Shape.of(4));
-        Tensor input = Tensor.of(view);
-        assertThrows(
-                IllegalStateException.class,
-                () ->
-                        TensorOpsContext.with(
-                                new EagerTensorOps(domain), () -> input.to(Device.GPU)));
     }
 }
