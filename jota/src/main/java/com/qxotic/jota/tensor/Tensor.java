@@ -427,6 +427,26 @@ public interface Tensor {
         return view(currentShape.remove(_axis));
     }
 
+    /**
+     * Removes all size-1 modes from the current (possibly nested) shape.
+     *
+     * <p>This is a view-only transform and preserves remaining nested structure.
+     */
+    default Tensor squeezeAll() {
+        Shape currentShape = shape();
+        if (currentShape.rank() == 0) {
+            return this;
+        }
+
+        Shape squeezed = currentShape;
+        for (int i = squeezed.rank() - 1; i >= 0; i--) {
+            if (squeezed.size(i) == 1) {
+                squeezed = squeezed.remove(i);
+            }
+        }
+        return squeezed.equals(currentShape) ? this : view(squeezed);
+    }
+
     default Tensor broadcast(Shape targetShape) {
         ViewTransforms.ViewTransformSpec spec = ViewTransforms.broadcast(layout(), targetShape);
         if (Tracer.isTracing()) {
@@ -481,8 +501,9 @@ public interface Tensor {
      */
     default Tensor repeat(long... repeats) {
         Objects.requireNonNull(repeats, "repeats");
-        Shape modeShape = shape().flattenModes();
-        int rank = modeShape.rank();
+        Shape currentShape = shape();
+        Shape modeShape = currentShape.flattenModes();
+        int rank = currentShape.rank();
         if (repeats.length == 0) {
             throw new IllegalArgumentException("repeat requires at least one repeat factor");
         }
@@ -499,7 +520,10 @@ public interface Tensor {
                             + ")");
         }
 
-        long[] dims = modeShape.toArray();
+        long[] dims = new long[rank];
+        for (int i = 0; i < rank; i++) {
+            dims[i] = currentShape.size(i);
+        }
         boolean identity = true;
         int expandedRank = 0;
         for (int i = 0; i < rank; i++) {
@@ -541,9 +565,34 @@ public interface Tensor {
             j++;
         }
 
-        return base.view(Shape.flat(unsqueezed))
-                .broadcast(Shape.flat(expanded))
-                .view(Shape.flat(out));
+        Tensor repeatedFlat =
+                base.view(Shape.flat(unsqueezed))
+                        .broadcast(Shape.flat(expanded))
+                        .view(Shape.flat(out));
+        return repeatedFlat.view(resolveRepeatedShape(currentShape, repeats, out));
+    }
+
+    private static Shape resolveRepeatedShape(Shape shape, long[] repeats, long[] outModeSizes) {
+        if (shape.isFlat()) {
+            return Shape.flat(outModeSizes);
+        }
+        Object[] modes = new Object[shape.rank()];
+        for (int i = 0; i < modes.length; i++) {
+            modes[i] = scaleMode(shape.modeAt(i), repeats[i]);
+        }
+        return Shape.of(modes);
+    }
+
+    private static Shape scaleMode(Shape mode, long repeat) {
+        if (repeat == 1) {
+            return mode;
+        }
+        long[] flatDims = mode.toArray();
+        flatDims[0] = Math.multiplyExact(flatDims[0], repeat);
+        if (mode.isFlat()) {
+            return Shape.flat(flatDims);
+        }
+        return Shape.template(mode, flatDims);
     }
 
     /**
@@ -636,6 +685,48 @@ public interface Tensor {
         return acc;
     }
 
+    /**
+     * Splits a tensor into multiple views along one axis.
+     *
+     * <p>Strict semantics:
+     *
+     * <ul>
+     *   <li>Split axis must refer to a flat (non-nested) mode
+     *   <li>All explicit sizes must be {@code >= 1}
+     *   <li>At most one size may be {@code -1} and is inferred from remaining size
+     *   <li>Resolved sizes must sum exactly to axis size
+     * </ul>
+     */
+    static Tensor[] split(
+            int _axis, Tensor input, long firstSize, long secondSize, long... restSizes) {
+        Objects.requireNonNull(input, "input");
+        Objects.requireNonNull(restSizes, "restSizes");
+
+        Shape shape = input.shape();
+        int axis = TensorSemantics.normalizeAxis(shape.rank(), _axis);
+        if (shape.modeAt(axis).rank() != 1) {
+            throw new IllegalArgumentException(
+                    "split axis cannot be nested: axis=" + _axis + ", mode=" + shape.modeAt(axis));
+        }
+
+        long[] sizes = new long[2 + restSizes.length];
+        sizes[0] = firstSize;
+        sizes[1] = secondSize;
+        System.arraycopy(restSizes, 0, sizes, 2, restSizes.length);
+
+        long axisSize = shape.size(axis);
+        long[] resolved = resolveSplitSizes(axisSize, sizes);
+
+        Tensor[] out = new Tensor[resolved.length];
+        long start = 0;
+        for (int i = 0; i < resolved.length; i++) {
+            long size = resolved[i];
+            out[i] = input.slice(axis, start, start + size);
+            start += size;
+        }
+        return out;
+    }
+
     private static Tensor asModeTensor(Tensor tensor, Shape modeShape) {
         return tensor.shape().equals(modeShape) ? tensor : tensor.view(modeShape);
     }
@@ -651,6 +742,42 @@ public interface Tensor {
             }
         }
         return Shape.flat(out);
+    }
+
+    private static long[] resolveSplitSizes(long axisSize, long[] sizes) {
+        int inferIndex = -1;
+        long knownSum = 0;
+        for (int i = 0; i < sizes.length; i++) {
+            long s = sizes[i];
+            if (s == -1) {
+                if (inferIndex >= 0) {
+                    throw new IllegalArgumentException("split allows at most one -1 size");
+                }
+                inferIndex = i;
+                continue;
+            }
+            if (s < 1) {
+                throw new IllegalArgumentException("split sizes must be >= 1 (or -1), got " + s);
+            }
+            knownSum = Math.addExact(knownSum, s);
+        }
+
+        long[] resolved = sizes.clone();
+        if (inferIndex >= 0) {
+            long inferred = axisSize - knownSum;
+            if (inferred < 1) {
+                throw new IllegalArgumentException(
+                        "cannot infer split size: inferred size must be >= 1, got " + inferred);
+            }
+            resolved[inferIndex] = inferred;
+            return resolved;
+        }
+
+        if (knownSum != axisSize) {
+            throw new IllegalArgumentException(
+                    "split sizes must sum to axis size " + axisSize + ", got " + knownSum);
+        }
+        return resolved;
     }
 
     private static Tensor concatPair(int axis, Tensor left, Tensor right) {

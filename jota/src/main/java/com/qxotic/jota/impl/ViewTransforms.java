@@ -249,7 +249,7 @@ public final class ViewTransforms {
 
         ViewKind kind = new ViewKind.Slice(axis, fromInclusive, indexStride);
         Layout newLayout = Layout.of(newShape, newStride);
-        return ViewTransformSpec.simple(kind, newLayout, byteOffsetDelta);
+        return ViewTransformSpec.lazy(kind, newLayout, byteOffsetDelta);
     }
 
     /**
