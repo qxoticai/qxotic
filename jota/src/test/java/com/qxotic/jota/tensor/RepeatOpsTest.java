@@ -156,7 +156,7 @@ class RepeatOpsTest {
         Tensor repeated = input.repeat(2, 2);
         MemoryView<?> output = repeated.materialize();
 
-        assertEquals(Shape.of(4, 8), output.shape());
+        assertEquals(Shape.of(4, Shape.of(4, 2)), output.shape());
         float[] expected = {
             1f, 2f, 3f, 4f, 1f, 2f, 3f, 4f,
             5f, 6f, 7f, 8f, 5f, 6f, 7f, 8f,

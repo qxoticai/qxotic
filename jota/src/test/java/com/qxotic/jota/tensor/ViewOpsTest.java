@@ -188,6 +188,52 @@ class ViewOpsTest {
     }
 
     @Test
+    void squeezeAllRemovesAllSingletonModes() {
+        Tensor input = Tensor.iota(6, DataType.FP32).view(Shape.of(1, 2, 1, 3, 1));
+
+        Tensor result = input.squeezeAll();
+
+        assertEquals(Shape.of(2, 3), result.shape());
+    }
+
+    @Test
+    void squeezeAllPreservesNestedLayout() {
+        Tensor input = Tensor.iota(30, DataType.FP32).view(Shape.of(1, 2, Shape.of(3, 5), 1));
+
+        Tensor result = input.squeezeAll();
+
+        assertEquals(Shape.of(2, Shape.of(3, 5)), result.shape());
+    }
+
+    @Test
+    void squeezeAllOnScalarReturnsSameTensor() {
+        Tensor scalar = Tensor.scalar(1.0f);
+
+        Tensor result = scalar.squeezeAll();
+
+        assertSame(scalar, result);
+    }
+
+    @Test
+    void squeezeAllWhenNoSingletonModesReturnsSameTensor() {
+        Tensor input = Tensor.iota(6, DataType.FP32).view(Shape.of(2, 3));
+
+        Tensor result = input.squeezeAll();
+
+        assertSame(input, result);
+    }
+
+    @Test
+    void squeezeAllWorksThroughTracing() {
+        Tensor input = Tensor.iota(6, DataType.FP32).view(Shape.of(1, 2, 1, 3));
+
+        Tensor traced = Tracer.trace(input, Tensor::squeezeAll);
+
+        assertEquals(Shape.of(2, 3), traced.shape());
+        assertEquals(Shape.of(2, 3), traced.materialize().shape());
+    }
+
+    @Test
     void unsqueezeThenSqueezeRoundTripShape() {
         Tensor input = Tensor.iota(6, DataType.FP32).view(Shape.of(2, 3));
 
