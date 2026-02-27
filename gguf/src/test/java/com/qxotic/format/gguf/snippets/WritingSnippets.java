@@ -53,7 +53,7 @@ public class WritingSnippets {
 
             for (TensorEntry tensor : gguf.getTensors()) {
                 ByteBuffer data = ByteBuffer.allocate((int) tensor.byteSize());
-                channel.position(tensor.absoluteOffset(gguf));
+                channel.position(gguf.absoluteOffset(tensor));
                 channel.write(data);
             }
         }

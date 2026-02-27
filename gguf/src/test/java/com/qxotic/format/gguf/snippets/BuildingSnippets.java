@@ -62,7 +62,7 @@ public class BuildingSnippets {
     void checkAlignment() throws IOException {
         GGUF gguf = GGUF.read(Paths.get("model.gguf"));
         TensorEntry tensor = gguf.getTensor("weights");
-        long offset = tensor.absoluteOffset(gguf);
+        long offset = gguf.absoluteOffset(tensor);
         int alignment = gguf.getAlignment();
         boolean isAligned = (offset % alignment) == 0;
     }

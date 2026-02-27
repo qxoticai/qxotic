@@ -172,8 +172,8 @@ public final class TensorEntry {
     /**
      * Creates a copy of this tensor entry with a different offset.
      *
-     * <p>This is useful when rearranging tensors in a GGUF file. All other properties
-     * (name, shape, ggmlType) remain unchanged.
+     * <p>This is useful when rearranging tensors in a GGUF file. All other properties (name, shape,
+     * ggmlType) remain unchanged.
      *
      * <p>Example usage:
      *

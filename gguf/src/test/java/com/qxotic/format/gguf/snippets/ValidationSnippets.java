@@ -41,7 +41,7 @@ public class ValidationSnippets {
                 if (tensor.byteSize() <= 0) {
                     errors.add("Invalid size: " + tensor.name());
                 }
-                if (tensor.absoluteOffset(gguf) % gguf.getAlignment() != 0) {
+                if (gguf.absoluteOffset(tensor) % gguf.getAlignment() != 0) {
                     warnings.add("Unaligned: " + tensor.name());
                 }
             }

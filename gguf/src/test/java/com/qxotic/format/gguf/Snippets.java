@@ -165,7 +165,7 @@ class Snippets {
         // Compute absolute file position where tensor data begins
         long position = gguf.getTensorDataOffset() + tensor.offset();
         // Or using the convenience method:
-        long position2 = tensor.absoluteOffset(gguf);
+        long position2 = gguf.absoluteOffset(tensor);
         // --8<-- [end:tensor-offset]
     }
 
@@ -174,7 +174,7 @@ class Snippets {
         GGUF gguf = GGUF.read(modelPath);
         // --8<-- [start:read-tensor-mmap]
         TensorEntry tensor = gguf.getTensor("token_embd.weight");
-        long absoluteOffset = tensor.absoluteOffset(gguf);
+        long absoluteOffset = gguf.absoluteOffset(tensor);
         long byteSize = tensor.byteSize();
 
         try (var channel = FileChannel.open(modelPath, StandardOpenOption.READ)) {
@@ -191,7 +191,7 @@ class Snippets {
         GGUF gguf = GGUF.read(modelPath);
         // --8<-- [start:read-tensor-channel]
         TensorEntry tensor = gguf.getTensor("token_embd.weight");
-        long absoluteOffset = tensor.absoluteOffset(gguf);
+        long absoluteOffset = gguf.absoluteOffset(tensor);
         long byteSize = tensor.byteSize();
 
         ByteBuffer buffer =
@@ -211,7 +211,7 @@ class Snippets {
         GGUF gguf = GGUF.read(modelPath);
         // --8<-- [start:read-tensor-bytebuffer]
         TensorEntry tensor = gguf.getTensor("token_embd.weight");
-        long absoluteOffset = tensor.absoluteOffset(gguf);
+        long absoluteOffset = gguf.absoluteOffset(tensor);
         long byteSize = tensor.byteSize();
 
         // Allocate a direct ByteBuffer for better performance
@@ -237,7 +237,7 @@ class Snippets {
         GGUF gguf = GGUF.read(modelPath);
         TensorEntry tensor = gguf.getTensor("token_embd.weight");
         // --8<-- [start:read-tensor-mmap-buffer]
-        long absoluteOffset = tensor.absoluteOffset(gguf);
+        long absoluteOffset = gguf.absoluteOffset(tensor);
         long byteSize = tensor.byteSize();
 
         try (var channel = FileChannel.open(modelPath, StandardOpenOption.READ)) {
@@ -286,7 +286,7 @@ class Snippets {
             GGUF.write(gguf, channel);
 
             // Position to tensor offset and write data
-            channel.position(tensor.absoluteOffset(gguf));
+            channel.position(gguf.absoluteOffset(tensor));
             channel.write(tensorData);
         }
         // --8<-- [end:write-tensor-buffer]
