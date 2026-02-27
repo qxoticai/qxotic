@@ -187,7 +187,7 @@ class Snippets {
         Safetensors st = Safetensors.read(Path.of("model.safetensors"));
         TensorEntry tensor = st.getTensor("weight");
         // --8<-- [start:read-tensor-bytebuffer]
-        long absoluteOffset = tensor.absoluteOffset(st);
+        long absoluteOffset = st.absoluteOffset(tensor);
         long byteSize = tensor.byteSize();
 
         try (var channel =
@@ -205,7 +205,7 @@ class Snippets {
         Safetensors st = Safetensors.read(Path.of("model.safetensors"));
         TensorEntry tensor = st.getTensor("weight");
         // --8<-- [start:read-tensor-mmap-buffer]
-        long absoluteOffset = tensor.absoluteOffset(st);
+        long absoluteOffset = st.absoluteOffset(tensor);
         long byteSize = tensor.byteSize();
 
         try (var channel =
@@ -236,7 +236,7 @@ class Snippets {
                         StandardOpenOption.WRITE,
                         StandardOpenOption.TRUNCATE_EXISTING)) {
             Safetensors.write(st, channel);
-            channel.position(tensor.absoluteOffset(st));
+            channel.position(st.absoluteOffset(tensor));
             channel.write(tensorData);
         }
         // --8<-- [end:write-tensor-buffer]
