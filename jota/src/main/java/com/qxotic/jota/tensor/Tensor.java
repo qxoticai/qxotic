@@ -8,10 +8,12 @@ import com.qxotic.jota.memory.MemoryOperations;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.memory.impl.DomainFactory;
 import com.qxotic.jota.memory.impl.MemoryFactory;
+import com.qxotic.jota.random.RandomKey;
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.BiFunction;
 import java.util.stream.IntStream;
 
 /**
@@ -90,132 +92,107 @@ public interface Tensor {
     Optional<LazyComputation> computation();
 
     default Tensor add(Tensor other) {
-        return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.ADD)
-                .orElseGet(
-                        () -> {
-                            Tensor left = broadcastLeftScalar(this, other);
-                            Tensor right = broadcastRightScalar(this, other);
-                            if (Tracer.isTracing()) {
-                                return Tracer.requireIROps().add(left, right);
-                            }
-                            return Tracer.trace(left, right, (a, b) -> a.add(b));
-                        });
+        return dispatchFoldedBinaryOp(
+                other,
+                BinaryOp.ADD,
+                (left, right) -> Tracer.requireIROps().add(left, right),
+                Tensor::add);
     }
 
     default Tensor add(int scalar) {
-        return add(Tensor.broadcasted(scalar, shape()));
+        return dispatchScalarBinaryOp(scalar, Tensor::add);
     }
 
     default Tensor add(long scalar) {
-        return add(Tensor.broadcasted(scalar, shape()));
+        return dispatchScalarBinaryOp(scalar, Tensor::add);
     }
 
     default Tensor add(float scalar) {
-        return add(Tensor.broadcasted(scalar, shape()));
+        return dispatchScalarBinaryOp(scalar, Tensor::add);
     }
 
     default Tensor add(double scalar) {
-        return add(Tensor.broadcasted(scalar, shape()));
+        return dispatchScalarBinaryOp(scalar, Tensor::add);
     }
 
     default Tensor subtract(Tensor other) {
-        return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.SUBTRACT)
-                .orElseGet(
-                        () -> {
-                            Tensor left = broadcastLeftScalar(this, other);
-                            Tensor right = broadcastRightScalar(this, other);
-                            if (Tracer.isTracing()) {
-                                return Tracer.requireIROps().subtract(left, right);
-                            }
-                            return Tracer.trace(left, right, (a, b) -> a.subtract(b));
-                        });
+        return dispatchFoldedBinaryOp(
+                other,
+                BinaryOp.SUBTRACT,
+                (left, right) -> Tracer.requireIROps().subtract(left, right),
+                Tensor::subtract);
     }
 
     default Tensor subtract(int scalar) {
-        return subtract(Tensor.broadcasted(scalar, shape()));
+        return dispatchScalarBinaryOp(scalar, Tensor::subtract);
     }
 
     default Tensor subtract(long scalar) {
-        return subtract(Tensor.broadcasted(scalar, shape()));
+        return dispatchScalarBinaryOp(scalar, Tensor::subtract);
     }
 
     default Tensor subtract(float scalar) {
-        return subtract(Tensor.broadcasted(scalar, shape()));
+        return dispatchScalarBinaryOp(scalar, Tensor::subtract);
     }
 
     default Tensor subtract(double scalar) {
-        return subtract(Tensor.broadcasted(scalar, shape()));
+        return dispatchScalarBinaryOp(scalar, Tensor::subtract);
     }
 
     default Tensor multiply(Tensor other) {
-        return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.MULTIPLY)
-                .orElseGet(
-                        () -> {
-                            Tensor left = broadcastLeftScalar(this, other);
-                            Tensor right = broadcastRightScalar(this, other);
-                            if (Tracer.isTracing()) {
-                                return Tracer.requireIROps().multiply(left, right);
-                            }
-                            return Tracer.trace(left, right, (a, b) -> a.multiply(b));
-                        });
+        return dispatchFoldedBinaryOp(
+                other,
+                BinaryOp.MULTIPLY,
+                (left, right) -> Tracer.requireIROps().multiply(left, right),
+                Tensor::multiply);
     }
 
     default Tensor multiply(int scalar) {
-        return multiply(Tensor.broadcasted(scalar, shape()));
+        return dispatchScalarBinaryOp(scalar, Tensor::multiply);
     }
 
     default Tensor multiply(long scalar) {
-        return multiply(Tensor.broadcasted(scalar, shape()));
+        return dispatchScalarBinaryOp(scalar, Tensor::multiply);
     }
 
     default Tensor multiply(float scalar) {
-        return multiply(Tensor.broadcasted(scalar, shape()));
+        return dispatchScalarBinaryOp(scalar, Tensor::multiply);
     }
 
     default Tensor multiply(double scalar) {
-        return multiply(Tensor.broadcasted(scalar, shape()));
+        return dispatchScalarBinaryOp(scalar, Tensor::multiply);
     }
 
     default Tensor divide(Tensor other) {
-        return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.DIVIDE)
-                .orElseGet(
-                        () -> {
-                            Tensor left = broadcastLeftScalar(this, other);
-                            Tensor right = broadcastRightScalar(this, other);
-                            if (Tracer.isTracing()) {
-                                return Tracer.requireIROps().divide(left, right);
-                            }
-                            return Tracer.trace(left, right, (a, b) -> a.divide(b));
-                        });
+        return dispatchFoldedBinaryOp(
+                other,
+                BinaryOp.DIVIDE,
+                (left, right) -> Tracer.requireIROps().divide(left, right),
+                Tensor::divide);
     }
 
     default Tensor divide(int scalar) {
-        return divide(Tensor.broadcasted(scalar, shape()));
+        return dispatchScalarBinaryOp(scalar, Tensor::divide);
     }
 
     default Tensor divide(long scalar) {
-        return divide(Tensor.broadcasted(scalar, shape()));
+        return dispatchScalarBinaryOp(scalar, Tensor::divide);
     }
 
     default Tensor divide(float scalar) {
-        return divide(Tensor.broadcasted(scalar, shape()));
+        return dispatchScalarBinaryOp(scalar, Tensor::divide);
     }
 
     default Tensor divide(double scalar) {
-        return divide(Tensor.broadcasted(scalar, shape()));
+        return dispatchScalarBinaryOp(scalar, Tensor::divide);
     }
 
     default Tensor min(Tensor other) {
-        return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.MIN)
-                .orElseGet(
-                        () -> {
-                            Tensor left = broadcastLeftScalar(this, other);
-                            Tensor right = broadcastRightScalar(this, other);
-                            if (Tracer.isTracing()) {
-                                return Tracer.requireIROps().min(left, right);
-                            }
-                            return Tracer.trace(left, right, (a, b) -> a.min(b));
-                        });
+        return dispatchFoldedBinaryOp(
+                other,
+                BinaryOp.MIN,
+                (left, right) -> Tracer.requireIROps().min(left, right),
+                Tensor::min);
     }
 
     /**
@@ -255,16 +232,11 @@ public interface Tensor {
     }
 
     default Tensor max(Tensor other) {
-        return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.MAX)
-                .orElseGet(
-                        () -> {
-                            Tensor left = broadcastLeftScalar(this, other);
-                            Tensor right = broadcastRightScalar(this, other);
-                            if (Tracer.isTracing()) {
-                                return Tracer.requireIROps().max(left, right);
-                            }
-                            return Tracer.trace(left, right, (a, b) -> a.max(b));
-                        });
+        return dispatchFoldedBinaryOp(
+                other,
+                BinaryOp.MAX,
+                (left, right) -> Tracer.requireIROps().max(left, right),
+                Tensor::max);
     }
 
     /**
@@ -303,6 +275,66 @@ public interface Tensor {
         return Tracer.trace(this, t -> t.max(keepDims, _axis, _axes));
     }
 
+    /** Returns the global argmax index over the flattened tensor as scalar I64. */
+    default Tensor argmax() {
+        TensorTypeSemantics.requireNumericNonBool(dataType(), "argmax");
+        if (shape().rank() == 0) {
+            return Tensor.scalar(0L, DataType.I64);
+        }
+        Tensor flat = reshape(Shape.of(shape().size()));
+        return flat.argmax(0, false);
+    }
+
+    /** Returns argmax indices along one axis as I64. */
+    default Tensor argmax(int _axis) {
+        return argmax(_axis, false);
+    }
+
+    /** Returns argmax indices along one axis as I64. */
+    default Tensor argmax(int _axis, boolean keepDims) {
+        TensorTypeSemantics.requireNumericNonBool(dataType(), "argmax");
+        int axis = TensorSemantics.normalizeAxis(shape().rank(), _axis);
+        long axisSize = shape().flatAt(axis);
+
+        Tensor comparable = argReduceComparableView(this);
+        Tensor extrema = comparable.max(true, axis);
+        Tensor mask = comparable.equal(extrema.broadcast(shape()));
+        Tensor axisIndices = axisIndexGrid(shape(), axis);
+        Tensor sentinel = Tensor.full(axisSize, DataType.I64, shape());
+        Tensor selected = mask.where(axisIndices, sentinel);
+        return selected.min(keepDims, axis);
+    }
+
+    /** Returns the global argmin index over the flattened tensor as scalar I64. */
+    default Tensor argmin() {
+        TensorTypeSemantics.requireNumericNonBool(dataType(), "argmin");
+        if (shape().rank() == 0) {
+            return Tensor.scalar(0L, DataType.I64);
+        }
+        Tensor flat = reshape(Shape.of(shape().size()));
+        return flat.argmin(0, false);
+    }
+
+    /** Returns argmin indices along one axis as I64. */
+    default Tensor argmin(int _axis) {
+        return argmin(_axis, false);
+    }
+
+    /** Returns argmin indices along one axis as I64. */
+    default Tensor argmin(int _axis, boolean keepDims) {
+        TensorTypeSemantics.requireNumericNonBool(dataType(), "argmin");
+        int axis = TensorSemantics.normalizeAxis(shape().rank(), _axis);
+        long axisSize = shape().flatAt(axis);
+
+        Tensor comparable = argReduceComparableView(this);
+        Tensor extrema = comparable.min(true, axis);
+        Tensor mask = comparable.equal(extrema.broadcast(shape()));
+        Tensor axisIndices = axisIndexGrid(shape(), axis);
+        Tensor sentinel = Tensor.full(axisSize, DataType.I64, shape());
+        Tensor selected = mask.where(axisIndices, sentinel);
+        return selected.min(keepDims, axis);
+    }
+
     default Tensor any() {
         if (dataType() != DataType.BOOL) {
             throw new IllegalArgumentException("expected BOOL");
@@ -339,11 +371,94 @@ public interface Tensor {
         return Tracer.trace(this, other, (a, b) -> a.batchedMatmul(b));
     }
 
-    default Tensor to(Device device) {
-        if (Tracer.isTracing()) {
-            return Tracer.requireIROps().to(this, device);
+    /**
+     * Dot product of two vectors with explicit accumulator type.
+     *
+     * <p>Strict semantics:
+     *
+     * <ul>
+     *   <li>Both operands must be rank-1 (vectors)
+     *   <li>Both vectors must have the same length and dtype
+     *   <li>Input dtype must be numeric non-BOOL
+     *   <li>Vectors must be non-empty
+     * </ul>
+     *
+     * <p>Execution semantics: both inputs are cast to {@code accumulatorType}, multiplication is
+     * performed in {@code accumulatorType}, and accumulation is also performed in {@code
+     * accumulatorType}. The result is a scalar tensor of {@code accumulatorType}.
+     *
+     * <p>Example:
+     *
+     * <pre>{@code
+     * Tensor a = Tensor.of(new int[] {50_000, 50_000});
+     * Tensor b = Tensor.of(new int[] {50_000, 50_000});
+     * Tensor out = a.dot(b, DataType.I64); // scalar I64, value 5_000_000_000
+     * }</pre>
+     */
+    default Tensor dot(Tensor other, DataType accumulatorType) {
+        Objects.requireNonNull(other, "other");
+        Objects.requireNonNull(accumulatorType, "accumulatorType");
+
+        TensorTypeSemantics.requireNumericNonBool(dataType(), "dot");
+        TensorTypeSemantics.requireNumericNonBool(other.dataType(), "dot");
+        if (dataType() != other.dataType()) {
+            throw new IllegalArgumentException(
+                    "dot requires same input dtypes, got "
+                            + dataType()
+                            + " and "
+                            + other.dataType());
         }
-        return Tracer.trace(this, t -> t.to(device));
+        if (shape().rank() != 1 || other.shape().rank() != 1) {
+            throw new IllegalArgumentException(
+                    "dot requires rank-1 tensors, got " + shape() + " and " + other.shape());
+        }
+        long size = shape().flatAt(0);
+        if (size != other.shape().flatAt(0)) {
+            throw new IllegalArgumentException(
+                    "dot requires equal vector lengths, got "
+                            + size
+                            + " and "
+                            + other.shape().flatAt(0));
+        }
+        if (size == 0) {
+            throw new IllegalArgumentException("dot requires non-empty vectors");
+        }
+
+        DataType accType =
+                TensorTypeSemantics.resolveReductionAccumulator(dataType(), accumulatorType, "dot");
+        Tensor left = cast(accType);
+        Tensor right = other.cast(accType);
+        if (Tracer.isTracing()) {
+            return Tracer.requireIROps().dot(left, right, accType);
+        }
+        return Tracer.trace(left, right, (a, b) -> a.dot(b, accType));
+    }
+
+    /**
+     * Dot product of two vectors using the default accumulator policy.
+     *
+     * <p>Default overload is intentionally floating-point only. For integral inputs, use {@link
+     * #dot(Tensor, DataType)} to make the accumulator dtype explicit.
+     */
+    default Tensor dot(Tensor other) {
+        Objects.requireNonNull(other, "other");
+        if (!dataType().isFloatingPoint() || !other.dataType().isFloatingPoint()) {
+            throw new IllegalArgumentException(
+                    "dot(other) is floating-point only; use dot(other, accumulatorType) for integral inputs");
+        }
+        return dot(other, dataType());
+    }
+
+    default Tensor to(Device device) {
+        Objects.requireNonNull(device, "device");
+        if (Tracer.isTracing()) {
+            throw new UnsupportedOperationException(
+                    "Tensor.to(Device) is a runtime transfer boundary and is not allowed inside tracing");
+        }
+        if (device.equals(device())) {
+            return this;
+        }
+        return transferToDevice(this, device);
     }
 
     default Tensor contiguous() {
@@ -884,44 +999,124 @@ public interface Tensor {
 
     default Tensor bitwiseAnd(Tensor other) {
         TensorTypeSemantics.requireSameIntegralType(dataType(), other.dataType(), "bitwiseAnd");
-        return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.BITWISE_AND)
-                .orElseGet(
-                        () -> {
-                            Tensor left = broadcastLeftScalar(this, other);
-                            Tensor right = broadcastRightScalar(this, other);
-                            if (Tracer.isTracing()) {
-                                return Tracer.requireIROps().bitwiseAnd(left, right);
-                            }
-                            return Tracer.trace(left, right, (a, b) -> a.bitwiseAnd(b));
-                        });
+        return dispatchFoldedBinaryOp(
+                other,
+                BinaryOp.BITWISE_AND,
+                (left, right) -> Tracer.requireIROps().bitwiseAnd(left, right),
+                Tensor::bitwiseAnd);
     }
 
     default Tensor bitwiseOr(Tensor other) {
         TensorTypeSemantics.requireSameIntegralType(dataType(), other.dataType(), "bitwiseOr");
-        return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.BITWISE_OR)
-                .orElseGet(
-                        () -> {
-                            Tensor left = broadcastLeftScalar(this, other);
-                            Tensor right = broadcastRightScalar(this, other);
-                            if (Tracer.isTracing()) {
-                                return Tracer.requireIROps().bitwiseOr(left, right);
-                            }
-                            return Tracer.trace(left, right, (a, b) -> a.bitwiseOr(b));
-                        });
+        return dispatchFoldedBinaryOp(
+                other,
+                BinaryOp.BITWISE_OR,
+                (left, right) -> Tracer.requireIROps().bitwiseOr(left, right),
+                Tensor::bitwiseOr);
     }
 
     default Tensor bitwiseXor(Tensor other) {
         TensorTypeSemantics.requireSameIntegralType(dataType(), other.dataType(), "bitwiseXor");
-        return ConstantFolder.tryFoldBinaryOp(this, other, BinaryOp.BITWISE_XOR)
-                .orElseGet(
-                        () -> {
-                            Tensor left = broadcastLeftScalar(this, other);
-                            Tensor right = broadcastRightScalar(this, other);
-                            if (Tracer.isTracing()) {
-                                return Tracer.requireIROps().bitwiseXor(left, right);
-                            }
-                            return Tracer.trace(left, right, (a, b) -> a.bitwiseXor(b));
-                        });
+        return dispatchFoldedBinaryOp(
+                other,
+                BinaryOp.BITWISE_XOR,
+                (left, right) -> Tracer.requireIROps().bitwiseXor(left, right),
+                Tensor::bitwiseXor);
+    }
+
+    default Tensor leftShift(Tensor other) {
+        return dispatchShiftBinaryOp(
+                other,
+                "leftShift",
+                BinaryOp.LEFT_SHIFT,
+                (left, right) -> Tracer.requireIROps().leftShift(left, right),
+                Tensor::leftShift);
+    }
+
+    default Tensor rightShift(Tensor other) {
+        return dispatchShiftBinaryOp(
+                other,
+                "rightShift",
+                BinaryOp.RIGHT_SHIFT,
+                (left, right) -> Tracer.requireIROps().rightShift(left, right),
+                Tensor::rightShift);
+    }
+
+    default Tensor rightShiftUnsigned(Tensor other) {
+        return dispatchShiftBinaryOp(
+                other,
+                "rightShiftUnsigned",
+                BinaryOp.RIGHT_SHIFT_UNSIGNED,
+                (left, right) -> Tracer.requireIROps().rightShiftUnsigned(left, right),
+                Tensor::rightShiftUnsigned);
+    }
+
+    private Tensor normalizeShiftCountOperand(Tensor other, String opName) {
+        TensorTypeSemantics.requireShiftOperandTypes(dataType(), other.dataType(), opName);
+        if (other.dataType() != DataType.I32) {
+            return other.cast(DataType.I32);
+        }
+        return other;
+    }
+
+    private Tensor dispatchBinaryOp(
+            Tensor other,
+            BiFunction<Tensor, Tensor, Tensor> tracedOp,
+            BiFunction<Tensor, Tensor, Tensor> eagerOp) {
+        Tensor left = broadcastLeftScalar(this, other);
+        Tensor right = broadcastRightScalar(this, other);
+        if (Tracer.isTracing()) {
+            return tracedOp.apply(left, right);
+        }
+        return Tracer.trace(left, right, eagerOp);
+    }
+
+    private Tensor dispatchScalarBinaryOp(
+            Number scalar, BiFunction<Tensor, Tensor, Tensor> binaryOp) {
+        Tensor scalarTensor;
+        if (scalar instanceof Integer value) {
+            scalarTensor = Tensor.broadcasted(value, shape());
+        } else if (scalar instanceof Long value) {
+            scalarTensor = Tensor.broadcasted(value, shape());
+        } else if (scalar instanceof Float value) {
+            scalarTensor = Tensor.broadcasted(value, shape());
+        } else if (scalar instanceof Double value) {
+            scalarTensor = Tensor.broadcasted(value, shape());
+        } else {
+            throw new IllegalArgumentException("Unsupported scalar type: " + scalar.getClass());
+        }
+        return binaryOp.apply(this, scalarTensor);
+    }
+
+    private Tensor dispatchFoldedBinaryOp(
+            Tensor other,
+            BinaryOp foldOp,
+            BiFunction<Tensor, Tensor, Tensor> tracedOp,
+            BiFunction<Tensor, Tensor, Tensor> eagerOp) {
+        return ConstantFolder.tryFoldBinaryOp(this, other, foldOp)
+                .orElseGet(() -> dispatchBinaryOp(other, tracedOp, eagerOp));
+    }
+
+    private Tensor dispatchFoldedCompareOp(
+            Tensor other,
+            BinaryOp foldOp,
+            BiFunction<Tensor, Tensor, Tensor> tracedOp,
+            BiFunction<Tensor, Tensor, Tensor> eagerOp) {
+        return ConstantFolder.tryFoldCompareOp(this, other, foldOp)
+                .orElseGet(() -> dispatchBinaryOp(other, tracedOp, eagerOp));
+    }
+
+    private Tensor dispatchShiftBinaryOp(
+            Tensor other,
+            String opName,
+            BinaryOp foldOp,
+            BiFunction<Tensor, Tensor, Tensor> tracedOp,
+            BiFunction<Tensor, Tensor, Tensor> eagerOp) {
+        Tensor normalizedOther = normalizeShiftCountOperand(other, opName);
+        if (dataType() == normalizedOther.dataType()) {
+            return dispatchFoldedBinaryOp(normalizedOther, foldOp, tracedOp, eagerOp);
+        }
+        return dispatchBinaryOp(normalizedOther, tracedOp, eagerOp);
     }
 
     default Tensor logicalNot() {
@@ -937,56 +1132,43 @@ public interface Tensor {
     }
 
     default Tensor logicalAnd(Tensor other) {
-        Tensor left = broadcastLeftScalar(this, other);
-        Tensor right = broadcastRightScalar(this, other);
-        if (Tracer.isTracing()) {
-            return Tracer.requireIROps().logicalAnd(left, right);
-        }
-        return Tracer.trace(left, right, (a, b) -> a.logicalAnd(b));
+        TensorTypeSemantics.requireBooleanPair(dataType(), other.dataType(), "logicalAnd");
+        return dispatchBinaryOp(
+                other,
+                (left, right) -> Tracer.requireIROps().logicalAnd(left, right),
+                Tensor::logicalAnd);
     }
 
     default Tensor logicalOr(Tensor other) {
-        Tensor left = broadcastLeftScalar(this, other);
-        Tensor right = broadcastRightScalar(this, other);
-        if (Tracer.isTracing()) {
-            return Tracer.requireIROps().logicalOr(left, right);
-        }
-        return Tracer.trace(left, right, (a, b) -> a.logicalOr(b));
+        TensorTypeSemantics.requireBooleanPair(dataType(), other.dataType(), "logicalOr");
+        return dispatchBinaryOp(
+                other,
+                (left, right) -> Tracer.requireIROps().logicalOr(left, right),
+                Tensor::logicalOr);
     }
 
     default Tensor logicalXor(Tensor other) {
-        Tensor left = broadcastLeftScalar(this, other);
-        Tensor right = broadcastRightScalar(this, other);
-        if (Tracer.isTracing()) {
-            return Tracer.requireIROps().logicalXor(left, right);
-        }
-        return Tracer.trace(left, right, (a, b) -> a.logicalXor(b));
+        TensorTypeSemantics.requireBooleanPair(dataType(), other.dataType(), "logicalXor");
+        return dispatchBinaryOp(
+                other,
+                (left, right) -> Tracer.requireIROps().logicalXor(left, right),
+                Tensor::logicalXor);
     }
 
     default Tensor equal(Tensor other) {
-        return ConstantFolder.tryFoldCompareOp(this, other, BinaryOp.EQUAL)
-                .orElseGet(
-                        () -> {
-                            Tensor left = broadcastLeftScalar(this, other);
-                            Tensor right = broadcastRightScalar(this, other);
-                            if (Tracer.isTracing()) {
-                                return Tracer.requireIROps().equal(left, right);
-                            }
-                            return Tracer.trace(left, right, (a, b) -> a.equal(b));
-                        });
+        return dispatchFoldedCompareOp(
+                other,
+                BinaryOp.EQUAL,
+                (left, right) -> Tracer.requireIROps().equal(left, right),
+                Tensor::equal);
     }
 
     default Tensor lessThan(Tensor other) {
-        return ConstantFolder.tryFoldCompareOp(this, other, BinaryOp.LESS_THAN)
-                .orElseGet(
-                        () -> {
-                            Tensor left = broadcastLeftScalar(this, other);
-                            Tensor right = broadcastRightScalar(this, other);
-                            if (Tracer.isTracing()) {
-                                return Tracer.requireIROps().lessThan(left, right);
-                            }
-                            return Tracer.trace(left, right, (a, b) -> a.lessThan(b));
-                        });
+        return dispatchFoldedCompareOp(
+                other,
+                BinaryOp.LESS_THAN,
+                (left, right) -> Tracer.requireIROps().lessThan(left, right),
+                Tensor::lessThan);
     }
 
     default Tensor notEqual(Tensor other) {
@@ -1352,6 +1534,23 @@ public interface Tensor {
         return right.broadcast(left.shape());
     }
 
+    private static Tensor axisIndexGrid(Shape shape, int axis) {
+        long[] indexShapeDims = new long[shape.rank()];
+        Arrays.fill(indexShapeDims, 1L);
+        indexShapeDims[axis] = shape.flatAt(axis);
+        Tensor axisIndices =
+                Tensor.iota(shape.flatAt(axis), DataType.I64).view(Shape.flat(indexShapeDims));
+        return axisIndices.broadcast(shape);
+    }
+
+    private static Tensor argReduceComparableView(Tensor input) {
+        DataType dataType = input.dataType();
+        if (dataType == DataType.FP16 || dataType == DataType.BF16) {
+            return input.cast(DataType.FP32);
+        }
+        return input;
+    }
+
     default Tensor reciprocal() {
         TensorTypeSemantics.requireFloatingPoint(dataType(), "reciprocal");
         return ConstantFolder.tryFoldUnaryOp(this, UnaryOp.RECIPROCAL)
@@ -1463,6 +1662,254 @@ public interface Tensor {
                     Device.defaultDevice());
         }
         return iota(n).cast(dataType);
+    }
+
+    /**
+     * Sets the thread-local RNG seed used by random methods that do not take an explicit {@link
+     * RandomKey}.
+     */
+    static void manualSeed(long seed) {
+        TensorRandomState.manualSeed(seed);
+    }
+
+    /** Alias of {@link #uniform(long, double, double, DataType)} with [0, 1) bounds. */
+    static Tensor rand(long size, DataType dataType) {
+        return rand(size, dataType, TensorRandomState.nextKey());
+    }
+
+    /** Alias of {@link #uniform(long, double, double, DataType, RandomKey)} with [0, 1) bounds. */
+    static Tensor rand(long size, DataType dataType, RandomKey randomKey) {
+        return randomUnitInterval(size, dataType, randomKey, "rand");
+    }
+
+    /** Alias of {@link #uniform(Shape, double, double, DataType)} with [0, 1) bounds. */
+    static Tensor rand(Shape shape, DataType dataType) {
+        return uniform(shape, 0.0, 1.0, dataType);
+    }
+
+    /** Alias of {@link #uniform(Shape, double, double, DataType, RandomKey)} with [0, 1) bounds. */
+    static Tensor rand(Shape shape, DataType dataType, RandomKey randomKey) {
+        return uniform(shape, 0.0, 1.0, dataType, randomKey);
+    }
+
+    /** Alias of {@link #normal(long, double, double, DataType)} with mean=0 and std=1. */
+    static Tensor randn(long size, DataType dataType) {
+        return randn(size, dataType, TensorRandomState.nextKey());
+    }
+
+    /**
+     * Alias of {@link #normal(long, double, double, DataType, RandomKey)} with mean=0 and std=1.
+     */
+    static Tensor randn(long size, DataType dataType, RandomKey randomKey) {
+        return randomStandardNormal(size, dataType, randomKey, "randn");
+    }
+
+    /** Alias of {@link #normal(Shape, double, double, DataType)} with mean=0 and std=1. */
+    static Tensor randn(Shape shape, DataType dataType) {
+        return normal(shape, 0.0, 1.0, dataType);
+    }
+
+    /**
+     * Alias of {@link #normal(Shape, double, double, DataType, RandomKey)} with mean=0 and std=1.
+     */
+    static Tensor randn(Shape shape, DataType dataType, RandomKey randomKey) {
+        return normal(shape, 0.0, 1.0, dataType, randomKey);
+    }
+
+    /** Alias of {@link #uniformInt(long, long, long, DataType)}. */
+    static Tensor randInt(long startInclusive, long endExclusive, long size, DataType dataType) {
+        return uniformInt(startInclusive, endExclusive, size, dataType);
+    }
+
+    /** Alias of {@link #uniformInt(long, long, long, DataType, RandomKey)}. */
+    static Tensor randInt(
+            long startInclusive,
+            long endExclusive,
+            long size,
+            DataType dataType,
+            RandomKey randomKey) {
+        return uniformInt(startInclusive, endExclusive, size, dataType, randomKey);
+    }
+
+    /** Alias of {@link #uniformInt(long, long, Shape, DataType)}. */
+    static Tensor randInt(long startInclusive, long endExclusive, Shape shape, DataType dataType) {
+        return uniformInt(startInclusive, endExclusive, shape, dataType);
+    }
+
+    /** Alias of {@link #uniformInt(long, long, Shape, DataType, RandomKey)}. */
+    static Tensor randInt(
+            long startInclusive,
+            long endExclusive,
+            Shape shape,
+            DataType dataType,
+            RandomKey randomKey) {
+        return uniformInt(startInclusive, endExclusive, shape, dataType, randomKey);
+    }
+
+    /** Creates lazy floating-point uniform values in [startInclusive, endExclusive). */
+    static Tensor uniform(
+            long size, double startInclusive, double endExclusive, DataType dataType) {
+        return uniform(size, startInclusive, endExclusive, dataType, TensorRandomState.nextKey());
+    }
+
+    /** Creates lazy floating-point uniform values in [startInclusive, endExclusive). */
+    static Tensor uniform(
+            long size,
+            double startInclusive,
+            double endExclusive,
+            DataType dataType,
+            RandomKey randomKey) {
+        ensureValidRandomFloatRange(startInclusive, endExclusive, "uniform");
+        Tensor unit = rand(size, dataType, randomKey);
+        if (dataType == DataType.FP32) {
+            float span = (float) (endExclusive - startInclusive);
+            float start = (float) startInclusive;
+            return unit.multiply(span).add(start);
+        }
+        double span = endExclusive - startInclusive;
+        return unit.multiply(span).add(startInclusive);
+    }
+
+    /** Creates lazy floating-point uniform values in [startInclusive, endExclusive). */
+    static Tensor uniform(
+            Shape shape, double startInclusive, double endExclusive, DataType dataType) {
+        Objects.requireNonNull(shape, "shape");
+        return uniform(shape, startInclusive, endExclusive, dataType, TensorRandomState.nextKey());
+    }
+
+    /** Creates lazy floating-point uniform values in [startInclusive, endExclusive). */
+    static Tensor uniform(
+            Shape shape,
+            double startInclusive,
+            double endExclusive,
+            DataType dataType,
+            RandomKey randomKey) {
+        Objects.requireNonNull(shape, "shape");
+        return uniform(shape.size(), startInclusive, endExclusive, dataType, randomKey).view(shape);
+    }
+
+    /** Creates lazy standard normal values and applies mean/std affine transform. */
+    static Tensor normal(long size, double mean, double std, DataType dataType) {
+        return normal(size, mean, std, dataType, TensorRandomState.nextKey());
+    }
+
+    /** Creates lazy standard normal values and applies mean/std affine transform. */
+    static Tensor normal(
+            long size, double mean, double std, DataType dataType, RandomKey randomKey) {
+        ensureValidNormalParams(mean, std, "normal");
+        Tensor standard = randn(size, dataType, randomKey);
+        if (dataType == DataType.FP32) {
+            return standard.multiply((float) std).add((float) mean);
+        }
+        return standard.multiply(std).add(mean);
+    }
+
+    /** Creates lazy standard normal values and applies mean/std affine transform. */
+    static Tensor normal(Shape shape, double mean, double std, DataType dataType) {
+        Objects.requireNonNull(shape, "shape");
+        return normal(shape, mean, std, dataType, TensorRandomState.nextKey());
+    }
+
+    /** Creates lazy standard normal values and applies mean/std affine transform. */
+    static Tensor normal(
+            Shape shape, double mean, double std, DataType dataType, RandomKey randomKey) {
+        Objects.requireNonNull(shape, "shape");
+        return normal(shape.size(), mean, std, dataType, randomKey).view(shape);
+    }
+
+    /** Creates lazy integral uniform values in [startInclusive, endExclusive). */
+    static Tensor uniformInt(long startInclusive, long endExclusive, long size, DataType dataType) {
+        return uniformInt(
+                startInclusive, endExclusive, size, dataType, TensorRandomState.nextKey());
+    }
+
+    /** Creates lazy integral uniform values in [startInclusive, endExclusive). */
+    static Tensor uniformInt(
+            long startInclusive,
+            long endExclusive,
+            long size,
+            DataType dataType,
+            RandomKey randomKey) {
+        Objects.requireNonNull(dataType, "dataType");
+        Objects.requireNonNull(randomKey, "randomKey");
+        ensureSupportedRandomInt(dataType, "uniformInt");
+        ensureValidRandIntRange(startInclusive, endExclusive, dataType, "uniformInt");
+
+        long range;
+        try {
+            range = Math.subtractExact(endExclusive, startInclusive);
+        } catch (ArithmeticException ex) {
+            throw new IllegalArgumentException(
+                    "uniformInt range overflow: [" + startInclusive + ", " + endExclusive + ")",
+                    ex);
+        }
+
+        Tensor uniform = randomUnitInterval(size, DataType.FP64, randomKey, "uniformInt");
+        Tensor offset = uniform.multiply((double) range).cast(DataType.I64);
+        Tensor shifted = offset.add(startInclusive);
+        return dataType == DataType.I64 ? shifted : shifted.cast(dataType);
+    }
+
+    /** Creates lazy integral uniform values in [startInclusive, endExclusive). */
+    static Tensor uniformInt(
+            long startInclusive, long endExclusive, Shape shape, DataType dataType) {
+        Objects.requireNonNull(shape, "shape");
+        return uniformInt(
+                        startInclusive,
+                        endExclusive,
+                        shape.size(),
+                        dataType,
+                        TensorRandomState.nextKey())
+                .view(shape);
+    }
+
+    /** Creates lazy integral uniform values in [startInclusive, endExclusive). */
+    static Tensor uniformInt(
+            long startInclusive,
+            long endExclusive,
+            Shape shape,
+            DataType dataType,
+            RandomKey randomKey) {
+        Objects.requireNonNull(shape, "shape");
+        return uniformInt(startInclusive, endExclusive, shape.size(), dataType, randomKey)
+                .view(shape);
+    }
+
+    /** Creates integer-valued normal samples by rounding and clamping to target integer dtype. */
+    static Tensor normalInt(long size, double mean, double std, DataType dataType) {
+        return normalInt(size, mean, std, dataType, TensorRandomState.nextKey());
+    }
+
+    /** Creates integer-valued normal samples by rounding and clamping to target integer dtype. */
+    static Tensor normalInt(
+            long size, double mean, double std, DataType dataType, RandomKey randomKey) {
+        Objects.requireNonNull(dataType, "dataType");
+        Objects.requireNonNull(randomKey, "randomKey");
+        ensureSupportedRandomInt(dataType, "normalInt");
+        ensureValidNormalParams(mean, std, "normalInt");
+
+        Tensor fp = normal(size, mean, std, DataType.FP64, randomKey);
+        Tensor rounded =
+                fp.greaterThanOrEqual(Tensor.scalar(0.0, DataType.FP64))
+                        .where(fp.add(0.5), fp.subtract(0.5))
+                        .cast(DataType.I64);
+        Tensor clamped =
+                rounded.max(Tensor.scalar(randomIntMin(dataType), DataType.I64))
+                        .min(Tensor.scalar(randomIntMax(dataType), DataType.I64));
+        return dataType == DataType.I64 ? clamped : clamped.cast(dataType);
+    }
+
+    /** Creates integer-valued normal samples by rounding and clamping to target integer dtype. */
+    static Tensor normalInt(Shape shape, double mean, double std, DataType dataType) {
+        Objects.requireNonNull(shape, "shape");
+        return normalInt(shape, mean, std, dataType, TensorRandomState.nextKey());
+    }
+
+    /** Creates integer-valued normal samples by rounding and clamping to target integer dtype. */
+    static Tensor normalInt(
+            Shape shape, double mean, double std, DataType dataType, RandomKey randomKey) {
+        Objects.requireNonNull(shape, "shape");
+        return normalInt(shape.size(), mean, std, dataType, randomKey).view(shape);
     }
 
     /**
@@ -1602,6 +2049,163 @@ public interface Tensor {
 
         ConstantComputation computation = ConstantComputation.of(value, dataType, shape, device);
         return lazy(computation, dataType, layout, device);
+    }
+
+    private static void ensureSupportedRandomFloat(DataType dtype, String opName) {
+        if (dtype != DataType.FP32 && dtype != DataType.FP64) {
+            throw new IllegalArgumentException(opName + " supports FP32/FP64 only, got: " + dtype);
+        }
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static Tensor transferToDevice(Tensor source, Device targetDevice) {
+        MemoryView srcView = source.materialize();
+        Environment environment = Environment.current();
+        MemoryDomain srcDomain = environment.runtimeFor(source.device()).memoryDomain();
+        MemoryDomain dstDomain = environment.runtimeFor(targetDevice).memoryDomain();
+
+        MemoryView dstView =
+                MemoryView.of(
+                        dstDomain
+                                .memoryAllocator()
+                                .allocateMemory(source.dataType(), source.shape()),
+                        source.dataType(),
+                        Layout.rowMajor(source.shape()));
+
+        MemoryDomain.copy(srcDomain, srcView, dstDomain, dstView);
+        return Tensor.of(dstView);
+    }
+
+    private static Tensor randomUnitInterval(
+            long size, DataType dataType, RandomKey randomKey, String opName) {
+        Objects.requireNonNull(dataType, "dataType");
+        Objects.requireNonNull(randomKey, "randomKey");
+        ensureSupportedRandomFloat(dataType, opName);
+        Shape shape = shapeFromSize(size, opName);
+        Layout layout = Layout.rowMajor(shape);
+        RandomComputation computation =
+                new RandomComputation(shape, dataType, Device.defaultDevice(), randomKey);
+        return lazy(computation, dataType, layout, Device.defaultDevice());
+    }
+
+    private static Tensor randomStandardNormal(
+            long size, DataType dataType, RandomKey randomKey, String opName) {
+        Objects.requireNonNull(dataType, "dataType");
+        Objects.requireNonNull(randomKey, "randomKey");
+        ensureSupportedRandomFloat(dataType, opName);
+
+        RandomKey k0 = randomKey.split(0L);
+        RandomKey k1 = randomKey.split(1L);
+        Tensor u1 = randomUnitInterval(size, dataType, k0, opName);
+        Tensor u2 = randomUnitInterval(size, dataType, k1, opName);
+
+        if (dataType == DataType.FP64) {
+            Tensor r = u2.multiply(-1.0).add(1.0).log().multiply(-2.0).sqrt();
+            Tensor theta = u1.multiply(2.0 * Math.PI);
+            return theta.cos().multiply(r);
+        }
+
+        Tensor r = u2.multiply(-1.0f).add(1.0f).log().multiply(-2.0f).sqrt();
+        Tensor theta = u1.multiply((float) (2.0 * Math.PI));
+        return theta.cos().multiply(r);
+    }
+
+    private static void ensureSupportedRandomInt(DataType dtype, String opName) {
+        if (dtype == DataType.BOOL || !dtype.isIntegral()) {
+            throw new IllegalArgumentException(
+                    opName + " supports I8/I16/I32/I64 only, got: " + dtype);
+        }
+    }
+
+    private static void ensureValidRandomFloatRange(
+            double startInclusive, double endExclusive, String opName) {
+        if (!Double.isFinite(startInclusive) || !Double.isFinite(endExclusive)) {
+            throw new IllegalArgumentException(opName + " requires finite bounds");
+        }
+        if (!(endExclusive > startInclusive)) {
+            throw new IllegalArgumentException(
+                    opName
+                            + " requires endExclusive > startInclusive, got ["
+                            + startInclusive
+                            + ", "
+                            + endExclusive
+                            + ")");
+        }
+    }
+
+    private static void ensureValidNormalParams(double mean, double std, String opName) {
+        if (!Double.isFinite(mean) || !Double.isFinite(std)) {
+            throw new IllegalArgumentException(opName + " requires finite mean/std");
+        }
+        if (!(std > 0.0)) {
+            throw new IllegalArgumentException(opName + " requires std > 0, got: " + std);
+        }
+    }
+
+    private static void ensureValidRandIntRange(
+            long startInclusive, long endExclusive, DataType dataType, String opName) {
+        if (endExclusive <= startInclusive) {
+            throw new IllegalArgumentException(
+                    opName
+                            + " requires endExclusive > startInclusive, got ["
+                            + startInclusive
+                            + ", "
+                            + endExclusive
+                            + ")");
+        }
+        long min = randomIntMin(dataType);
+        long max = randomIntMax(dataType);
+        long upperInclusive = endExclusive - 1L;
+        if (startInclusive < min || upperInclusive > max) {
+            throw new IllegalArgumentException(
+                    opName
+                            + " range ["
+                            + startInclusive
+                            + ", "
+                            + endExclusive
+                            + ") does not fit dtype "
+                            + dataType);
+        }
+    }
+
+    private static Shape shapeFromSize(long size, String opName) {
+        if (size < 0) {
+            throw new IllegalArgumentException(
+                    opName + " requires non-negative size, got: " + size);
+        }
+        return Shape.flat(size);
+    }
+
+    private static long randomIntMin(DataType dataType) {
+        if (dataType == DataType.I8) {
+            return Byte.MIN_VALUE;
+        }
+        if (dataType == DataType.I16) {
+            return Short.MIN_VALUE;
+        }
+        if (dataType == DataType.I32) {
+            return Integer.MIN_VALUE;
+        }
+        if (dataType == DataType.I64) {
+            return Long.MIN_VALUE;
+        }
+        throw new IllegalArgumentException("Unsupported random integer dtype: " + dataType);
+    }
+
+    private static long randomIntMax(DataType dataType) {
+        if (dataType == DataType.I8) {
+            return Byte.MAX_VALUE;
+        }
+        if (dataType == DataType.I16) {
+            return Short.MAX_VALUE;
+        }
+        if (dataType == DataType.I32) {
+            return Integer.MAX_VALUE;
+        }
+        if (dataType == DataType.I64) {
+            return Long.MAX_VALUE;
+        }
+        throw new IllegalArgumentException("Unsupported random integer dtype: " + dataType);
     }
 
     private static Tensor createIRScalarConstant(
@@ -1858,7 +2462,7 @@ public interface Tensor {
         return MemoryView.of(dst, DataType.BOOL, Layout.rowMajor(shape));
     }
 
-    @Deprecated
+    @Deprecated(forRemoval = true, since = "0.1")
     default Tensor realize() {
         materialize();
         return this;

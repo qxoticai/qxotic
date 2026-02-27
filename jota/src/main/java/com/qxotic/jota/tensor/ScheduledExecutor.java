@@ -16,6 +16,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 final class ScheduledExecutor {
 
@@ -30,6 +34,8 @@ final class ScheduledExecutor {
                             + program.steps().size()
                             + " kernel steps");
         }
+
+        precompileStepsInParallelIfSupported(program, computeEngine);
 
         Map<ValueId, MemoryView<?>> produced = new HashMap<>();
         for (int i = 0; i < program.steps().size(); i++) {
@@ -50,6 +56,30 @@ final class ScheduledExecutor {
             case ScheduledOutputRef.ScalarInputOutput input ->
                     inputAt(graphInputs, input.inputId()).materialize();
         };
+    }
+
+    private static void precompileStepsInParallelIfSupported(
+            ScheduledProgram program, ComputeEngine computeEngine) {
+        if (computeEngine == null || !computeEngine.supportsParallelPrecompile()) {
+            return;
+        }
+        if (program.steps().size() < 2) {
+            return;
+        }
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            List<Future<?>> futures = new ArrayList<>(program.steps().size());
+            for (KernelStep step : program.steps()) {
+                futures.add(executor.submit(() -> computeEngine.precompile(step.graph())));
+            }
+            for (Future<?> future : futures) {
+                future.get();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while precompiling scheduled kernels", e);
+        } catch (ExecutionException e) {
+            throw new IllegalStateException("Failed to precompile scheduled kernels", e.getCause());
+        }
     }
 
     private static List<Tensor> resolveStepInputs(
@@ -99,11 +129,8 @@ final class ScheduledExecutor {
         }
 
         MemoryDomain<Object> srcDomain =
-                (MemoryDomain<Object>)
-                        Environment.current().runtimeFor(view.memory().device()).memoryDomain();
-        MemoryDomain<Object> dstDomain =
-                (MemoryDomain<Object>)
-                        Environment.current().runtimeFor(targetDevice).memoryDomain();
+                Environment.current().memoryDomainFor(view.memory().device());
+        MemoryDomain<Object> dstDomain = Environment.current().memoryDomainFor(targetDevice);
         MemoryView<Object> srcView = (MemoryView<Object>) view;
         Memory<Object> dstMemory =
                 dstDomain.memoryAllocator().allocateMemory(view.dataType(), view.shape());

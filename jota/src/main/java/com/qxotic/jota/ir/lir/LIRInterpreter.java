@@ -186,8 +186,10 @@ public final class LIRInterpreter {
                             case DIVIDE -> left / right;
                             case MODULO -> left % right;
                             case BITWISE_AND -> left & right;
+                            case BITWISE_XOR -> left ^ right;
                             case SHIFT_LEFT -> left << right;
                             case SHIFT_RIGHT -> left >> right;
+                            case UNSIGNED_SHIFT_RIGHT -> left >>> right;
                         };
                     }
                     case I_FROM_SCALAR -> {
@@ -294,9 +296,63 @@ public final class LIRInterpreter {
             case BITWISE_AND -> castFromLong(toLong(left) & toLong(right), type);
             case BITWISE_OR -> castFromLong(toLong(left) | toLong(right), type);
             case BITWISE_XOR -> castFromLong(toLong(left) ^ toLong(right), type);
+            case SHIFT_LEFT -> castFromLong(shiftLeft(type, toLong(left), toLong(right)), type);
+            case SHIFT_RIGHT -> castFromLong(shiftRight(type, toLong(left), toLong(right)), type);
+            case SHIFT_RIGHT_UNSIGNED ->
+                    castFromLong(shiftRightUnsigned(type, toLong(left), toLong(right)), type);
             case EQUAL -> castFromBool(compareEqual(left, right), type);
             case LESS_THAN -> castFromBool(compareLessThan(left, right), type);
         };
+    }
+
+    private long shiftLeft(DataType type, long left, long right) {
+        if (type == DataType.I8) {
+            return (byte) ((byte) left << (((int) right) & 7));
+        }
+        if (type == DataType.I16) {
+            return (short) ((short) left << (((int) right) & 15));
+        }
+        if (type == DataType.I32) {
+            return (int) left << (((int) right) & 31);
+        }
+        if (type == DataType.I64) {
+            return left << (((int) right) & 63);
+        }
+        throw new UnsupportedOperationException("SHIFT_LEFT not supported for " + type);
+    }
+
+    private long shiftRight(DataType type, long left, long right) {
+        if (type == DataType.I8) {
+            return (byte) ((byte) left >> (((int) right) & 7));
+        }
+        if (type == DataType.I16) {
+            return (short) ((short) left >> (((int) right) & 15));
+        }
+        if (type == DataType.I32) {
+            return (int) left >> (((int) right) & 31);
+        }
+        if (type == DataType.I64) {
+            return left >> (((int) right) & 63);
+        }
+        throw new UnsupportedOperationException("SHIFT_RIGHT not supported for " + type);
+    }
+
+    private long shiftRightUnsigned(DataType type, long left, long right) {
+        if (type == DataType.I8) {
+            int value = ((int) (byte) left) & 0xFF;
+            return (byte) (value >>> (((int) right) & 7));
+        }
+        if (type == DataType.I16) {
+            int value = ((int) (short) left) & 0xFFFF;
+            return (short) (value >>> (((int) right) & 15));
+        }
+        if (type == DataType.I32) {
+            return ((int) left) >>> (((int) right) & 31);
+        }
+        if (type == DataType.I64) {
+            return left >>> (((int) right) & 63);
+        }
+        throw new UnsupportedOperationException("SHIFT_RIGHT_UNSIGNED not supported for " + type);
     }
 
     private ScalarValue evalTernary(STernary ternary, Env env, Bindings bindings) {

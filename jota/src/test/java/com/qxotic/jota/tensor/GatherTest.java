@@ -3,12 +3,9 @@ package com.qxotic.jota.tensor;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Environment;
-import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
-import com.qxotic.jota.memory.MemoryDomain;
-import com.qxotic.jota.memory.MemoryView;
-import java.lang.foreign.MemorySegment;
+import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
+import com.qxotic.jota.testutil.TensorTestReads;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -24,17 +21,11 @@ import org.junit.jupiter.api.Test;
  *   <li>Gathering specific rows/columns from matrices
  * </ul>
  */
+@RunOnAllAvailableBackends
 class GatherTest {
 
-    @SuppressWarnings("unchecked")
-    private static final MemoryDomain<MemorySegment> CONTEXT =
-            (MemoryDomain<MemorySegment>) Environment.current().nativeRuntime().memoryDomain();
-
-    private static float readFloat(MemoryView<?> view, long linearIndex) {
-        @SuppressWarnings("unchecked")
-        MemoryView<MemorySegment> typedView = (MemoryView<MemorySegment>) view;
-        long offset = Indexing.linearToOffset(typedView, linearIndex);
-        return CONTEXT.directAccess().readFloat(typedView.memory(), offset);
+    private static float readFloat(Tensor tensor, long linearIndex) {
+        return TensorTestReads.readFloat(tensor, linearIndex);
     }
 
     // ==================== Basic Functionality Tests ====================
@@ -62,10 +53,9 @@ class GatherTest {
         assertEquals(DataType.FP32, result.dataType());
 
         // Materialize and check values
-        MemoryView<?> view = result.materialize();
         float[] expected = {6, 7, 8, 0, 1, 2, 9, 10, 11};
         for (int i = 0; i < expected.length; i++) {
-            assertEquals(expected[i], readFloat(view, i), 0.0001f);
+            assertEquals(expected[i], readFloat(result, i), 0.0001f);
         }
     }
 
@@ -91,16 +81,15 @@ class GatherTest {
         assertEquals(DataType.FP32, result.dataType());
 
         // Verify specific values
-        MemoryView<?> view = result.materialize();
         // tokenIds[0,0]=0 -> embeddings[0] = [0, 1, 2, 3]
-        assertEquals(0, readFloat(view, 0), 0.0001f);
-        assertEquals(1, readFloat(view, 1), 0.0001f);
-        assertEquals(2, readFloat(view, 2), 0.0001f);
-        assertEquals(3, readFloat(view, 3), 0.0001f);
+        assertEquals(0, readFloat(result, 0), 0.0001f);
+        assertEquals(1, readFloat(result, 1), 0.0001f);
+        assertEquals(2, readFloat(result, 2), 0.0001f);
+        assertEquals(3, readFloat(result, 3), 0.0001f);
 
         // tokenIds[0,1]=2 -> embeddings[2] = [8, 9, 10, 11]
-        assertEquals(8, readFloat(view, 4), 0.0001f);
-        assertEquals(9, readFloat(view, 5), 0.0001f);
+        assertEquals(8, readFloat(result, 4), 0.0001f);
+        assertEquals(9, readFloat(result, 5), 0.0001f);
     }
 
     @Test
@@ -122,12 +111,11 @@ class GatherTest {
         // Result: [2, 4]
         assertEquals(Shape.of(2, 4), result.shape());
 
-        MemoryView<?> view = result.materialize();
         // First row should be input[1] = [4, 5, 6, 7]
         // Second row should be input[3] = [12, 13, 14, 15]
         float[] expected = {4, 5, 6, 7, 12, 13, 14, 15};
         for (int i = 0; i < expected.length; i++) {
-            assertEquals(expected[i], readFloat(view, i), 0.0001f);
+            assertEquals(expected[i], readFloat(result, i), 0.0001f);
         }
     }
 
@@ -149,13 +137,12 @@ class GatherTest {
         // Result: [3, 2]
         assertEquals(Shape.of(3, 2), result.shape());
 
-        MemoryView<?> view = result.materialize();
         // Row 0: [0, 2]
         // Row 1: [4, 6]
         // Row 2: [8, 10]
         float[] expected = {0, 2, 4, 6, 8, 10};
         for (int i = 0; i < expected.length; i++) {
-            assertEquals(expected[i], readFloat(view, i), 0.0001f);
+            assertEquals(expected[i], readFloat(result, i), 0.0001f);
         }
     }
 
@@ -177,12 +164,11 @@ class GatherTest {
         // Result: [2, 3]
         assertEquals(Shape.of(2, 3), result.shape());
 
-        MemoryView<?> view = result.materialize();
         // Row 0: [4, 1, 3] (columns 4, 1, 3 from first row)
         // Row 1: [9, 6, 8] (columns 4, 1, 3 from second row)
         float[] expected = {4, 1, 3, 9, 6, 8};
         for (int i = 0; i < expected.length; i++) {
-            assertEquals(expected[i], readFloat(view, i), 0.0001f);
+            assertEquals(expected[i], readFloat(result, i), 0.0001f);
         }
     }
 
@@ -205,9 +191,8 @@ class GatherTest {
         // Result: [2, 2, 4]
         assertEquals(Shape.of(2, 2, 4), result.shape());
 
-        MemoryView<?> view = result.materialize();
         // Verify shape and some values
-        assertEquals(2 * 2 * 4, view.shape().size());
+        assertEquals(2 * 2 * 4, result.materialize().shape().size());
     }
 
     @Test
@@ -248,14 +233,13 @@ class GatherTest {
         // Result: [2, 2, 3]
         assertEquals(Shape.of(2, 2, 3), result.shape());
 
-        MemoryView<?> view = result.materialize();
         // indices[0,0]=0 -> input[0] = [0, 1, 2]
         // indices[0,1]=2 -> input[2] = [6, 7, 8]
         // indices[1,0]=1 -> input[1] = [3, 4, 5]
         // indices[1,1]=3 -> input[3] = [9, 10, 11]
         float[] expected = {0, 1, 2, 6, 7, 8, 3, 4, 5, 9, 10, 11};
         for (int i = 0; i < expected.length; i++) {
-            assertEquals(expected[i], readFloat(view, i), 0.0001f);
+            assertEquals(expected[i], readFloat(result, i), 0.0001f);
         }
     }
 
@@ -294,12 +278,11 @@ class GatherTest {
 
         assertEquals(Shape.of(2, 3), result.shape());
 
-        MemoryView<?> view = result.materialize();
         // indices[0]=1 -> embeddings[1] = [3, 4, 5]
         // indices[1]=3 -> embeddings[3] = [9, 10, 11]
         float[] expected = {3, 4, 5, 9, 10, 11};
         for (int i = 0; i < expected.length; i++) {
-            assertEquals(expected[i], readFloat(view, i), 0.0001f);
+            assertEquals(expected[i], readFloat(result, i), 0.0001f);
         }
     }
 
@@ -384,10 +367,9 @@ class GatherTest {
         // Result: scalar-ish -> [3]
         assertEquals(Shape.of(3), result.shape());
 
-        MemoryView<?> view = result.materialize();
         float[] expected = {3, 4, 5};
         for (int i = 0; i < expected.length; i++) {
-            assertEquals(expected[i], readFloat(view, i), 0.0001f);
+            assertEquals(expected[i], readFloat(result, i), 0.0001f);
         }
     }
 
@@ -406,10 +388,9 @@ class GatherTest {
         // Result: [3]
         assertEquals(Shape.of(3), result.shape());
 
-        MemoryView<?> view = result.materialize();
         float[] expected = {50, 10, 30};
         for (int i = 0; i < expected.length; i++) {
-            assertEquals(expected[i], readFloat(view, i), 0.0001f);
+            assertEquals(expected[i], readFloat(result, i), 0.0001f);
         }
     }
 
@@ -432,15 +413,14 @@ class GatherTest {
         // Result: [2, 1, 4]
         assertEquals(Shape.of(2, 1, 4), result.shape());
 
-        MemoryView<?> view = result.materialize();
         // For each batch (2), get slice 2 (index 2 in dim 1), all 4 elements
         // Batch 0, slice 2: values 8, 9, 10, 11
         // Batch 1, slice 2: values 20, 21, 22, 23
-        assertEquals(8, readFloat(view, 0), 0.0001f);
-        assertEquals(9, readFloat(view, 1), 0.0001f);
-        assertEquals(10, readFloat(view, 2), 0.0001f);
-        assertEquals(11, readFloat(view, 3), 0.0001f);
-        assertEquals(20, readFloat(view, 4), 0.0001f);
+        assertEquals(8, readFloat(result, 0), 0.0001f);
+        assertEquals(9, readFloat(result, 1), 0.0001f);
+        assertEquals(10, readFloat(result, 2), 0.0001f);
+        assertEquals(11, readFloat(result, 3), 0.0001f);
+        assertEquals(20, readFloat(result, 4), 0.0001f);
     }
 
     @Test
@@ -458,12 +438,11 @@ class GatherTest {
         // Result: [3, 3]
         assertEquals(Shape.of(3, 3), result.shape());
 
-        MemoryView<?> view = result.materialize();
         // All three rows should be [3, 4, 5]
         for (int row = 0; row < 3; row++) {
-            assertEquals(3, readFloat(view, row * 3 + 0), 0.0001f);
-            assertEquals(4, readFloat(view, row * 3 + 1), 0.0001f);
-            assertEquals(5, readFloat(view, row * 3 + 2), 0.0001f);
+            assertEquals(3, readFloat(result, row * 3), 0.0001f);
+            assertEquals(4, readFloat(result, row * 3 + 1), 0.0001f);
+            assertEquals(5, readFloat(result, row * 3 + 2), 0.0001f);
         }
     }
 
@@ -479,10 +458,9 @@ class GatherTest {
         Tensor result = embeddingTable.gather(indicesTensor, 0);
 
         // Verify the values are correct
-        MemoryView<?> view = result.materialize();
         float[] expected = {3, 4, 5, 0, 1, 2};
         for (int i = 0; i < expected.length; i++) {
-            assertEquals(expected[i], readFloat(view, i), 0.0001f);
+            assertEquals(expected[i], readFloat(result, i), 0.0001f);
         }
     }
 
@@ -515,10 +493,9 @@ class GatherTest {
         // Result should be [3] - row 1 of input
         assertEquals(Shape.of(3), result.shape());
 
-        MemoryView<?> view = result.materialize();
         float[] expected = {3, 4, 5};
         for (int i = 0; i < expected.length; i++) {
-            assertEquals(expected[i], readFloat(view, i), 0.0001f);
+            assertEquals(expected[i], readFloat(result, i), 0.0001f);
         }
     }
 
@@ -566,7 +543,6 @@ class GatherTest {
         assertEquals(Shape.of(seqLen, 1), result.shape());
 
         // Materialize
-        MemoryView<?> view = result.materialize();
-        assertNotNull(view);
+        assertNotNull(result.materialize());
     }
 }

@@ -4,13 +4,10 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.impl.ViewTransforms;
-import com.qxotic.jota.memory.MemoryDomain;
 import java.util.Arrays;
 import java.util.stream.IntStream;
 
 public interface TensorOps {
-
-    MemoryDomain<?> memoryDomain();
 
     // === Elementwise - Binary ===
 
@@ -55,6 +52,12 @@ public interface TensorOps {
     Tensor bitwiseOr(Tensor a, Tensor b); // a | b
 
     Tensor bitwiseXor(Tensor a, Tensor b); // a ^ b
+
+    Tensor leftShift(Tensor a, Tensor b); // a << b
+
+    Tensor rightShift(Tensor a, Tensor b); // a >> b
+
+    Tensor rightShiftUnsigned(Tensor a, Tensor b); // a >>> b
 
     // === Boolean Operations ===
 
@@ -168,6 +171,17 @@ public interface TensorOps {
     Tensor gather(Tensor input, Tensor indices, int _axis);
 
     // === Linear Algebra ===
+
+    Tensor dot(Tensor a, Tensor b, DataType accumulatorType);
+
+    default Tensor dot(Tensor a, Tensor b) {
+        DataType inputType = a.dataType();
+        if (!inputType.isFloatingPoint() || !b.dataType().isFloatingPoint()) {
+            throw new IllegalArgumentException(
+                    "dot(a, b) is floating-point only; use dot(a, b, accumulatorType) for integral inputs");
+        }
+        return dot(a, b, inputType);
+    }
 
     Tensor matmul(Tensor a, Tensor b);
 

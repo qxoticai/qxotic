@@ -7,6 +7,8 @@ public enum IndexBinaryOp {
     DIVIDE,
     MODULO,
     BITWISE_AND,
+    BITWISE_XOR,
     SHIFT_LEFT,
-    SHIFT_RIGHT
+    SHIFT_RIGHT,
+    UNSIGNED_SHIFT_RIGHT
 }

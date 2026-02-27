@@ -38,7 +38,10 @@ public interface Device {
 
     // CUDA.belongsTo(Device.GPU)
     default boolean belongsTo(Device other) {
-        return this.name().startsWith(other.name());
+        Objects.requireNonNull(other, "other");
+        String thisName = name();
+        String otherName = other.name();
+        return thisName.equals(otherName) || thisName.startsWith(otherName + ":");
     }
 }
 

@@ -531,6 +531,17 @@ final class HipKernelProgramGenerator {
             if (binary.op() == BinaryOperator.BITWISE_XOR) {
                 return castExpr(type, type, "(" + left + " ^ " + right + ")");
             }
+            if (binary.op() == BinaryOperator.SHIFT_LEFT) {
+                return castExpr(
+                        type, type, "(" + left + " << " + normalizedShift(type, right) + ")");
+            }
+            if (binary.op() == BinaryOperator.SHIFT_RIGHT) {
+                return castExpr(
+                        type, type, "(" + left + " >> " + normalizedShift(type, right) + ")");
+            }
+            if (binary.op() == BinaryOperator.SHIFT_RIGHT_UNSIGNED) {
+                return unsignedRightShiftExpr(type, left, right);
+            }
             if (binary.op() == BinaryOperator.EQUAL) {
                 return compareExpr("==", binary.left(), binary.right(), type);
             }
@@ -538,6 +549,34 @@ final class HipKernelProgramGenerator {
                 return compareExpr("<", binary.left(), binary.right(), type);
             }
             throw new UnsupportedOperationException("Unsupported binary operator: " + binary.op());
+        }
+
+        private String normalizedShift(DataType type, String right) {
+            int mask = 31;
+            if (type == DataType.I8) {
+                mask = 7;
+            } else if (type == DataType.I16) {
+                mask = 15;
+            } else if (type == DataType.I64) {
+                mask = 63;
+            }
+            return "((int)(" + right + ") & " + mask + ")";
+        }
+
+        private String unsignedRightShiftExpr(DataType type, String left, String right) {
+            String shift = normalizedShift(type, right);
+            String unsignedType =
+                    switch (typeName(type)) {
+                        case "int8_t" -> "uint8_t";
+                        case "int16_t" -> "uint16_t";
+                        case "int32_t" -> "uint32_t";
+                        case "int64_t" -> "uint64_t";
+                        default ->
+                                throw new UnsupportedOperationException(
+                                        "Unsupported shift type: " + type);
+                    };
+            String expr = "((" + unsignedType + ")(" + left + ") >> " + shift + ")";
+            return castExpr(type, type, expr);
         }
 
         private String maybeConvertForBinaryExpr(
@@ -576,6 +615,10 @@ final class HipKernelProgramGenerator {
                                 + " "
                                 + emitIndexExpr(((IBinary) resolved).right())
                                 + ")";
+                case I_FROM_SCALAR -> {
+                    String scalarExpr = emitScalarExpr(((IFromScalar) resolved).scalarExpr());
+                    yield "((long long)(" + scalarExpr + "))";
+                }
                 default ->
                         throw new IllegalStateException(
                                 "Expected index node, got " + resolved.kind());
@@ -628,8 +671,10 @@ final class HipKernelProgramGenerator {
                 case DIVIDE -> "/";
                 case MODULO -> "%";
                 case BITWISE_AND -> "&";
+                case BITWISE_XOR -> "^";
                 case SHIFT_LEFT -> "<<";
                 case SHIFT_RIGHT -> ">>";
+                case UNSIGNED_SHIFT_RIGHT -> ">>";
             };
         }
 

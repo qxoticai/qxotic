@@ -401,9 +401,48 @@ final class CKernelProgramGenerator {
                 case BITWISE_AND -> "(" + left + " & " + right + ")";
                 case BITWISE_OR -> "(" + left + " | " + right + ")";
                 case BITWISE_XOR -> "(" + left + " ^ " + right + ")";
+                case SHIFT_LEFT ->
+                        castExpr(
+                                type,
+                                type,
+                                "(" + left + " << " + normalizedShift(type, right) + ")");
+                case SHIFT_RIGHT ->
+                        castExpr(
+                                type,
+                                type,
+                                "(" + left + " >> " + normalizedShift(type, right) + ")");
+                case SHIFT_RIGHT_UNSIGNED -> unsignedRightShiftExpr(type, left, right);
                 case EQUAL -> compareExpr("==", binary.left(), binary.right(), type);
                 case LESS_THAN -> compareExpr("<", binary.left(), binary.right(), type);
             };
+        }
+
+        private String normalizedShift(DataType type, String right) {
+            int mask = 31;
+            if (type == DataType.I8) {
+                mask = 7;
+            } else if (type == DataType.I16) {
+                mask = 15;
+            } else if (type == DataType.I64) {
+                mask = 63;
+            }
+            return "((int)(" + right + ") & " + mask + ")";
+        }
+
+        private String unsignedRightShiftExpr(DataType type, String left, String right) {
+            String shift = normalizedShift(type, right);
+            String unsignedType =
+                    switch (typeName(type)) {
+                        case "int8_t" -> "uint8_t";
+                        case "int16_t" -> "uint16_t";
+                        case "int32_t" -> "uint32_t";
+                        case "int64_t" -> "uint64_t";
+                        default ->
+                                throw new UnsupportedOperationException(
+                                        "Unsupported shift type: " + type);
+                    };
+            String expr = "((" + unsignedType + ")(" + left + ") >> " + shift + ")";
+            return castExpr(type, type, expr);
         }
 
         private String logicalExpr(String op, SBinary binary, String left, String right) {
@@ -448,6 +487,10 @@ final class CKernelProgramGenerator {
                                 + " "
                                 + emitIndexExpr(((IBinary) resolved).right())
                                 + ")";
+                case I_FROM_SCALAR -> {
+                    String scalarExpr = emitScalarExpr(((IFromScalar) resolved).scalarExpr());
+                    yield "((long long)(" + scalarExpr + "))";
+                }
                 default ->
                         throw new IllegalStateException(
                                 "Expected index node, got " + resolved.kind());
@@ -498,8 +541,10 @@ final class CKernelProgramGenerator {
                 case DIVIDE -> "/";
                 case MODULO -> "%";
                 case BITWISE_AND -> "&";
+                case BITWISE_XOR -> "^";
                 case SHIFT_LEFT -> "<<";
                 case SHIFT_RIGHT -> ">>";
+                case UNSIGNED_SHIFT_RIGHT -> ">>";
             };
         }
 

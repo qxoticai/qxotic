@@ -26,4 +26,6 @@ public interface TIRVisitor<T> {
     T visitScalarConstant(ScalarConstant node);
 
     T visitIotaConstant(IotaConstant node);
+
+    T visitRandomUniformOp(RandomUniformOp node);
 }

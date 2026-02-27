@@ -21,20 +21,41 @@ public final class Environment {
 
     private static final ScopedValue<Environment> CURRENT = ScopedValue.newInstance();
     private static final AtomicReference<Environment> GLOBAL = new AtomicReference<>();
-    private static final Environment DEFAULT_GLOBAL =
-            new Environment(
-                    Device.PANAMA, DataTypeImpl.defaultFloatValue(), buildDefaultRuntimes());
 
     private final Device defaultDevice;
     private final DataType defaultFloat;
     private final RuntimeRegistry runtimes;
 
+    /**
+     * Creates an immutable runtime environment.
+     *
+     * <p>Invariants:
+     *
+     * <ul>
+     *   <li>{@code defaultFloat} must be floating-point
+     *   <li>{@code runtimes} must contain a runtime for {@code defaultDevice}
+     * </ul>
+     */
     public Environment(Device defaultDevice, DataType defaultFloat, RuntimeRegistry runtimes) {
         this.defaultDevice = Objects.requireNonNull(defaultDevice, "defaultDevice");
         this.defaultFloat = Objects.requireNonNull(defaultFloat, "defaultFloat");
         this.runtimes = Objects.requireNonNull(runtimes, "runtimes");
+        if (!defaultFloat.isFloatingPoint()) {
+            throw new IllegalArgumentException(
+                    "defaultFloat must be floating-point, got " + defaultFloat);
+        }
+        if (!runtimes.hasRuntime(defaultDevice)) {
+            throw new IllegalArgumentException(
+                    "No runtime registered for defaultDevice " + defaultDevice);
+        }
     }
 
+    /**
+     * Returns the currently active environment.
+     *
+     * <p>If a scoped environment is active via {@link #with(Environment, Supplier)}, that scoped
+     * environment is returned. Otherwise the globally configured environment is returned.
+     */
     public static Environment current() {
         return CURRENT.isBound() ? CURRENT.get() : global();
     }
@@ -44,11 +65,23 @@ public final class Environment {
         return (MemoryDomain<MemorySegment>) runtimes.nativeRuntime().memoryDomain();
     }
 
-    public static Environment global() {
-        Environment configured = GLOBAL.get();
-        return configured == null ? DEFAULT_GLOBAL : configured;
+    @SuppressWarnings("unchecked")
+    public <B> MemoryDomain<B> memoryDomainFor(Device device) {
+        Objects.requireNonNull(device, "device");
+        return (MemoryDomain<B>) runtimeFor(device).memoryDomain();
     }
 
+    /** Returns the globally configured environment, or the default built-in global environment. */
+    public static Environment global() {
+        Environment configured = GLOBAL.get();
+        return configured == null ? DefaultGlobalHolder.INSTANCE : configured;
+    }
+
+    /**
+     * Configures the process-wide global environment.
+     *
+     * <p>This method can only be called once. Subsequent calls fail.
+     */
     public static void configureGlobal(Environment environment) {
         Objects.requireNonNull(environment, "environment");
         if (!GLOBAL.compareAndSet(null, environment)) {
@@ -56,16 +89,15 @@ public final class Environment {
         }
     }
 
+    /**
+     * Executes {@code action} with {@code environment} bound as the current scoped environment.
+     *
+     * <p>The binding applies only within this call and does not mutate global configuration.
+     */
     public static <T> T with(Environment environment, Supplier<T> action) {
         Objects.requireNonNull(environment, "environment");
         Objects.requireNonNull(action, "action");
-        try {
-            return ScopedValue.where(CURRENT, environment).call(action::get);
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new IllegalStateException("Scoped Environment action failed", e);
-        }
+        return ScopedValue.where(CURRENT, environment).call(action::get);
     }
 
     public Device defaultDevice() {
@@ -140,5 +172,11 @@ public final class Environment {
                             provider.device(),
                             RuntimeProbe.error("Runtime provider failed to create runtime", t)));
         }
+    }
+
+    private static final class DefaultGlobalHolder {
+        private static final Environment INSTANCE =
+                new Environment(
+                        Device.PANAMA, DataTypeImpl.defaultFloatValue(), buildDefaultRuntimes());
     }
 }

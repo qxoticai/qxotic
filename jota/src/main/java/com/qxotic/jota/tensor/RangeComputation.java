@@ -32,7 +32,7 @@ record RangeComputation(long count, Device device) implements LazyComputation {
 
     @Override
     public MemoryView<?> execute() {
-        MemoryDomain<?> memoryDomain = Environment.current().runtimeFor(device).memoryDomain();
+        MemoryDomain<?> memoryDomain = Environment.current().memoryDomainFor(device);
         return MemoryHelpers.arange(memoryDomain, DataType.I64, count);
     }
 }

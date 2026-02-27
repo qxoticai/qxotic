@@ -106,5 +106,8 @@ class DeviceTest {
         Device cpuSibling = Device.CPU.child("sibling");
         assertFalse(cpuTest.belongsTo(cpuSibling));
         assertFalse(cpuSibling.belongsTo(cpuTest));
+
+        Device hipX = Device.GPU.child("hipx");
+        assertFalse(hipX.belongsTo(Device.HIP));
     }
 }

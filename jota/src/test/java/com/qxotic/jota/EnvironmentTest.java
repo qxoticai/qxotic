@@ -46,6 +46,23 @@ class EnvironmentTest {
     }
 
     @Test
+    void constructorRejectsNonFloatingDefaultFloat() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        new Environment(
+                                Device.PANAMA, DataType.I32, Environment.global().runtimes()));
+    }
+
+    @Test
+    void constructorRejectsMissingDefaultDeviceRuntime() {
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new Environment(Device.C, DataType.FP32, registry));
+    }
+
+    @Test
     void registryExposesRegisteredDevices() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.register(new StubDeviceRuntime(DomainFactory.ofBytes(), dummyRuntime()));

@@ -25,6 +25,7 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
     private final Map<TIRNode, com.qxotic.jota.ir.lir.ScalarInput> inputScalars =
             new IdentityHashMap<>();
     private final Map<TIRNode, BufferRef> outputBuffers = new IdentityHashMap<>();
+    private final Map<TensorInput, Layout> inputLayoutOverrides = new IdentityHashMap<>();
     private final List<LIRInput> allInputs = new ArrayList<>();
     private final List<BufferRef> allOutputs = new ArrayList<>();
     private final IdentityHashMap<TIRNode, LIRExprNode> scalarCache = new IdentityHashMap<>();
@@ -38,9 +39,17 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
 
     /** Lowers a TIRGraph to an LIRGraph. */
     public LIRGraph lower(TIRGraph tirGraph) {
+        return lower(tirGraph, null);
+    }
+
+    /**
+     * Lowers a TIRGraph to an LIRGraph using optional runtime layout overrides for tensor inputs.
+     */
+    public LIRGraph lower(TIRGraph tirGraph, List<Layout> inputLayouts) {
         inputBuffers.clear();
         inputScalars.clear();
         outputBuffers.clear();
+        inputLayoutOverrides.clear();
         allInputs.clear();
         allOutputs.clear();
         loopIndices.clear();
@@ -49,6 +58,25 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
         nextId = 0;
         nextScalarId = 0;
         LIRExprGraph exprGraph = new LIRExprGraph();
+
+        if (inputLayouts != null) {
+            if (inputLayouts.size() != tirGraph.inputs().size()) {
+                throw new IllegalArgumentException(
+                        "Expected "
+                                + tirGraph.inputs().size()
+                                + " input layouts but got "
+                                + inputLayouts.size());
+            }
+            for (int i = 0; i < tirGraph.inputs().size(); i++) {
+                TIRNode input = tirGraph.inputs().get(i);
+                if (input instanceof TensorInput tensorInput) {
+                    Layout override = inputLayouts.get(i);
+                    if (override != null) {
+                        inputLayoutOverrides.put(tensorInput, override);
+                    }
+                }
+            }
+        }
 
         // Create inputs for materialized inputs
         // - IotaConstant: always virtual (computed from loop index)
@@ -120,7 +148,7 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
      * always virtual since its values are determined purely by shape/index.
      */
     private boolean isVirtualInput(TIRNode node) {
-        return node instanceof IotaConstant;
+        return node instanceof IotaConstant || node instanceof RandomUniformOp;
     }
 
     /**
@@ -153,6 +181,10 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
 
     private Layout layoutForNode(TIRNode node) {
         if (node instanceof TensorInput input) {
+            Layout override = inputLayoutOverrides.get(input);
+            if (override != null) {
+                return override;
+            }
             return input.layout();
         }
         if (node instanceof ViewTransform view) {
@@ -429,6 +461,9 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
                 return exprGraph.scalarInput(scalar.id(), scalar.dataType());
             }
             case IotaConstant __ ->
+                    throw new UnsupportedOperationException(
+                            "Post-ops after reductions must be element-wise on the reduction result");
+            case RandomUniformOp __ ->
                     throw new UnsupportedOperationException(
                             "Post-ops after reductions must be element-wise on the reduction result");
         }
@@ -829,19 +864,9 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
             throw new IllegalStateException("Unknown TensorInput: " + tensorInput.id());
         }
 
-        // Check if any transform in the chain needs lazy indexing
-        boolean needsLazy = chain.stream().anyMatch(ViewTransform::needsLazyIndexing);
-
-        if (!needsLazy) {
-            // Simple case: use the final view's strides directly
-            Layout viewLayout = node.layout().flatten();
-            long[] viewByteStrides = toByteStrides(viewLayout, node.dataType());
-            LIRExprNode offset = computeOffset(loopIndices, viewByteStrides);
-            return exprGraph.scalarLoad(buf, offset, buf.dataType());
-        }
-
-        // Lazy indexing: compose index expressions by walking the chain in reverse
-        // Start with output loop indices and transform back to input coordinates
+        // Compose index expressions by walking the chain in reverse from output space back to
+        // input space. This is required for correctness even for view transforms that are not
+        // marked lazy (e.g. reshape introducing singleton dimensions).
         List<LIRExprNode> indices = new ArrayList<>(loopIndices);
 
         // Apply transforms in REVERSE order (from output to input)
@@ -1072,5 +1097,93 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
                     }
                     return exprGraph.scalarCast(indexValue, targetType);
                 });
+    }
+
+    @Override
+    public LIRExprNode visitRandomUniformOp(RandomUniformOp node) {
+        return cacheScalar(
+                node,
+                () -> {
+                    int rank = node.shape().flatRank();
+                    if (rank != loopIndices.size()) {
+                        throw new IllegalStateException(
+                                "RandomUniform rank/loop rank mismatch: "
+                                        + rank
+                                        + " vs "
+                                        + loopIndices.size());
+                    }
+
+                    LIRExprNode linear = exprGraph.indexConst(0);
+                    long stride = 1;
+                    for (int i = rank - 1; i >= 0; i--) {
+                        LIRExprNode term =
+                                exprGraph.indexBinary(
+                                        IndexBinaryOp.MULTIPLY,
+                                        loopIndices.get(i),
+                                        exprGraph.indexConst(stride));
+                        linear = exprGraph.indexBinary(IndexBinaryOp.ADD, linear, term);
+                        stride = Math.multiplyExact(stride, node.shape().flatAt(i));
+                    }
+
+                    long key0 = Math.floorMod((int) node.key0(), 1024);
+                    long key1 = Math.floorMod((int) node.key1(), 1024);
+                    LIRExprNode seed =
+                            exprGraph.indexBinary(
+                                    IndexBinaryOp.ADD,
+                                    linear,
+                                    exprGraph.indexBinary(
+                                            IndexBinaryOp.ADD,
+                                            exprGraph.indexBinary(
+                                                    IndexBinaryOp.MULTIPLY,
+                                                    exprGraph.indexConst(key0),
+                                                    exprGraph.indexConst(1009)),
+                                            exprGraph.indexBinary(
+                                                    IndexBinaryOp.MULTIPLY,
+                                                    exprGraph.indexConst(key1),
+                                                    exprGraph.indexConst(9176))));
+                    LIRExprNode state0 = nextState(seed);
+
+                    if (node.dataType() == DataType.FP32) {
+                        LIRExprNode u24 = modPositive(state0, 16777216L);
+                        LIRExprNode numerator = exprGraph.scalarFromIndex(u24, DataType.FP32);
+                        LIRExprNode denom =
+                                exprGraph.scalarConst(
+                                        Float.floatToRawIntBits(16777216.0f), DataType.FP32);
+                        return exprGraph.scalarBinary(BinaryOperator.DIVIDE, numerator, denom);
+                    }
+
+                    LIRExprNode state1 = nextState(state0);
+                    LIRExprNode hi26 = modPositive(state0, 67108864L);
+                    LIRExprNode lo27 = modPositive(state1, 134217728L);
+                    LIRExprNode bits53 =
+                            exprGraph.indexBinary(
+                                    IndexBinaryOp.ADD,
+                                    exprGraph.indexBinary(
+                                            IndexBinaryOp.MULTIPLY,
+                                            hi26,
+                                            exprGraph.indexConst(134217728)),
+                                    lo27);
+                    LIRExprNode numerator = exprGraph.scalarFromIndex(bits53, DataType.FP64);
+                    LIRExprNode denom =
+                            exprGraph.scalarConst(
+                                    Double.doubleToRawLongBits(9007199254740992.0), DataType.FP64);
+                    return exprGraph.scalarBinary(BinaryOperator.DIVIDE, numerator, denom);
+                });
+    }
+
+    private LIRExprNode nextState(LIRExprNode value) {
+        return exprGraph.indexBinary(
+                IndexBinaryOp.ADD,
+                exprGraph.indexBinary(IndexBinaryOp.MULTIPLY, value, exprGraph.indexConst(1664525)),
+                exprGraph.indexConst(1013904223));
+    }
+
+    private LIRExprNode modPositive(LIRExprNode value, long bound) {
+        LIRExprNode mod =
+                exprGraph.indexBinary(IndexBinaryOp.MODULO, value, exprGraph.indexConst(bound));
+        return exprGraph.indexBinary(
+                IndexBinaryOp.MODULO,
+                exprGraph.indexBinary(IndexBinaryOp.ADD, mod, exprGraph.indexConst(bound)),
+                exprGraph.indexConst(bound));
     }
 }

@@ -46,7 +46,8 @@ record ConstantComputation(long rawBits, DataType dataType, Shape shape, Device 
 
     @Override
     public MemoryView<?> execute() {
-        MemoryDomain<?> memoryDomain = Environment.current().runtimeFor(device).memoryDomain();
+        Environment environment = Environment.current();
+        MemoryDomain<?> memoryDomain = environment.memoryDomainFor(device);
         return allocateAndFill(memoryDomain);
     }
 
@@ -61,9 +62,7 @@ record ConstantComputation(long rawBits, DataType dataType, Shape shape, Device 
             writeValue(access, memory, 0, rawBits, dataType);
         } else {
             @SuppressWarnings("unchecked")
-            MemoryDomain<MemorySegment> hostDomain =
-                    (MemoryDomain<MemorySegment>)
-                            Environment.current().nativeRuntime().memoryDomain();
+            MemoryDomain<MemorySegment> hostDomain = Environment.current().nativeMemoryDomain();
             MemoryAccess<MemorySegment> hostAccess = hostDomain.directAccess();
             if (hostAccess == null) {
                 throw new UnsupportedOperationException(

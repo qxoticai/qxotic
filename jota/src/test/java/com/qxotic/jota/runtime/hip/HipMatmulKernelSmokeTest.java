@@ -9,7 +9,6 @@ import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryAccess;
-import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.memory.impl.DomainFactory;
 import com.qxotic.jota.tensor.Tensor;
@@ -280,36 +279,15 @@ class HipMatmulKernelSmokeTest {
     }
 
     private static float readFp32(MemoryView<?> view, long linearIndex) {
-        MemoryView<MemorySegment> hostView = toHost(DomainFactory.ofMemorySegment(), view);
+        MemoryView<MemorySegment> hostView = toHost(view);
         MemoryAccess<MemorySegment> access = DomainFactory.ofMemorySegment().directAccess();
         long offset = Indexing.linearToOffset(hostView, linearIndex);
         return access.readFloat(hostView.memory(), offset);
     }
 
-    private static MemoryView<MemorySegment> toHost(
-            MemoryDomain<MemorySegment> host, MemoryView<?> view) {
-        if (view.memory().base() instanceof MemorySegment) {
-            @SuppressWarnings("unchecked")
-            MemoryView<MemorySegment> hostView = (MemoryView<MemorySegment>) view;
-            return hostView;
-        }
-        @SuppressWarnings("unchecked")
-        MemoryView<HipDevicePtr> devView = (MemoryView<HipDevicePtr>) view;
-        MemoryView<MemorySegment> hostView =
-                MemoryView.of(
-                        host.memoryAllocator().allocateMemory(devView.dataType(), devView.shape()),
-                        devView.dataType(),
-                        devView.layout());
-        long byteSize = devView.dataType().byteSizeFor(devView.shape());
-        HipMemoryDomain.instance()
-                .memoryOperations()
-                .copyToNative(
-                        devView.memory(),
-                        devView.byteOffset(),
-                        hostView.memory(),
-                        hostView.byteOffset(),
-                        byteSize);
-        return hostView;
+    @SuppressWarnings("unchecked")
+    private static MemoryView<MemorySegment> toHost(MemoryView<?> view) {
+        return (MemoryView<MemorySegment>) Tensor.of(view).to(Device.PANAMA).materialize();
     }
 
     private static void assertClose(float actual, float expected) {

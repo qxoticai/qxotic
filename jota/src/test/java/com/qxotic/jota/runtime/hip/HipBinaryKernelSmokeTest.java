@@ -3,6 +3,7 @@ package com.qxotic.jota.runtime.hip;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.Device;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
@@ -28,7 +29,7 @@ class HipBinaryKernelSmokeTest {
         MemoryView<?> output = runBinary(hostA, hostB, (a, b) -> a.add(b));
 
         MemoryAccess<MemorySegment> access = hostAccess();
-        MemoryView<MemorySegment> hostOut = toHost(DomainFactory.ofMemorySegment(), output);
+        MemoryView<MemorySegment> hostOut = toHost(output);
         long lastOffset = Indexing.linearToOffset(hostOut, n - 1);
         assertEquals(
                 (float) (n - 1) + 2.0f, access.readFloat(hostOut.memory(), lastOffset), 0.0001f);
@@ -73,29 +74,10 @@ class HipBinaryKernelSmokeTest {
         return traced.materialize();
     }
 
-    private static MemoryView<MemorySegment> toHost(
-            MemoryDomain<MemorySegment> host, MemoryView<?> view) {
-        if (view.memory().base() instanceof MemorySegment) {
-            @SuppressWarnings("unchecked")
-            MemoryView<MemorySegment> hostView = (MemoryView<MemorySegment>) view;
-            return hostView;
-        }
+    private static MemoryView<MemorySegment> toHost(MemoryView<?> view) {
         @SuppressWarnings("unchecked")
-        MemoryView<HipDevicePtr> devView = (MemoryView<HipDevicePtr>) view;
         MemoryView<MemorySegment> hostView =
-                MemoryView.of(
-                        host.memoryAllocator().allocateMemory(devView.dataType(), devView.shape()),
-                        devView.dataType(),
-                        devView.layout());
-        long byteSize = devView.dataType().byteSizeFor(devView.shape());
-        HipMemoryDomain.instance()
-                .memoryOperations()
-                .copyToNative(
-                        devView.memory(),
-                        devView.byteOffset(),
-                        hostView.memory(),
-                        hostView.byteOffset(),
-                        byteSize);
+                (MemoryView<MemorySegment>) Tensor.of(view).to(Device.PANAMA).materialize();
         return hostView;
     }
 

@@ -10,4 +10,12 @@ public interface ComputeEngine {
     Device device();
 
     MemoryView<?> execute(TIRGraph graph, List<Tensor> inputs);
+
+    default boolean supportsParallelPrecompile() {
+        return false;
+    }
+
+    default void precompile(TIRGraph graph) {
+        // Default no-op.
+    }
 }

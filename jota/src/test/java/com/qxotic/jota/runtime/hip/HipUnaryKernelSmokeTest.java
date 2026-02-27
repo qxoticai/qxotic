@@ -3,6 +3,7 @@ package com.qxotic.jota.runtime.hip;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.Device;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
@@ -44,34 +45,16 @@ class HipUnaryKernelSmokeTest {
         Tensor traced = Tracer.trace(Tensor.of(dev), Tensor::sqrt);
         MemoryView<?> output = traced.materialize();
 
-        MemoryView<MemorySegment> hostOut = toHost(host, hipDomain, output);
+        MemoryView<MemorySegment> hostOut = toHost(output);
         long lastOffset = Indexing.linearToOffset(hostOut, n - 1);
         assertEquals(
                 (float) Math.sqrt(n - 1), access.readFloat(hostOut.memory(), lastOffset), 0.0001f);
     }
 
-    private static MemoryView<MemorySegment> toHost(
-            MemoryDomain<MemorySegment> host, HipMemoryDomain device, MemoryView<?> view) {
-        if (view.memory().base() instanceof MemorySegment) {
-            @SuppressWarnings("unchecked")
-            MemoryView<MemorySegment> hostView = (MemoryView<MemorySegment>) view;
-            return hostView;
-        }
+    private static MemoryView<MemorySegment> toHost(MemoryView<?> view) {
         @SuppressWarnings("unchecked")
-        MemoryView<HipDevicePtr> devView = (MemoryView<HipDevicePtr>) view;
         MemoryView<MemorySegment> hostView =
-                MemoryView.of(
-                        host.memoryAllocator().allocateMemory(devView.dataType(), devView.shape()),
-                        devView.dataType(),
-                        devView.layout());
-        long byteSize = devView.dataType().byteSizeFor(devView.shape());
-        device.memoryOperations()
-                .copyToNative(
-                        devView.memory(),
-                        devView.byteOffset(),
-                        hostView.memory(),
-                        hostView.byteOffset(),
-                        byteSize);
+                (MemoryView<MemorySegment>) Tensor.of(view).to(Device.PANAMA).materialize();
         return hostView;
     }
 

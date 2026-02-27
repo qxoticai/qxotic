@@ -28,11 +28,13 @@ final class HipKernelBackend implements KernelBackend {
     private static final String OPT_LEVEL =
             System.getProperty("com.qxotic.jota.hip.compile.opt", "1").trim();
     private static final String ARCH = resolveArch();
+    private static final boolean TIMING_LOG = Boolean.getBoolean("jota.hip.timing.log");
 
     private final KernelExecutableCache cache = new InMemoryKernelCache();
 
     @Override
     public KernelExecutable compile(KernelProgram program, KernelCacheKey cacheKey) {
+        long t0 = System.nanoTime();
         if (!KernelProgram.HIP.equals(program.language())) {
             throw new UnsupportedOperationException("HIP backend expects HIP programs");
         }
@@ -40,9 +42,14 @@ final class HipKernelBackend implements KernelBackend {
             throw new UnsupportedOperationException("HIP compile expects source program");
         }
         HipKernelSpec spec = compileSourceProgram(program, cacheKey);
+        long tCompiled = System.nanoTime();
         byte[] hsaco = HipKernelSourceLoader.load(spec.hsacoPath().toString());
+        long tLoadedBinary = System.nanoTime();
         HipModule module = HipModule.load(hsaco);
+        long tLoadModule = System.nanoTime();
         HipKernelExecutable exec = new HipKernelExecutable(module.function(spec.kernelName()));
+        long tResolveFunction = System.nanoTime();
+        logTiming("compile", cacheKey, t0, tCompiled, tLoadedBinary, tLoadModule, tResolveFunction);
         return new KernelExecutable() {
             @Override
             public void launch(LaunchConfig config, KernelArgs args, ExecutionStream stream) {
@@ -58,12 +65,18 @@ final class HipKernelBackend implements KernelBackend {
 
     @Override
     public KernelExecutable load(KernelProgram program, KernelCacheKey cacheKey) {
+        long t0 = System.nanoTime();
         if (program.kind() != KernelProgram.Kind.BINARY) {
             throw new UnsupportedOperationException("HIP load expects binary program");
         }
         byte[] hsaco = (byte[]) program.payload();
+        long tLoadedBinary = System.nanoTime();
         HipModule module = HipModule.load(hsaco);
+        long tLoadModule = System.nanoTime();
         HipKernelExecutable exec = new HipKernelExecutable(module.function(program.entryPoint()));
+        long tResolveFunction = System.nanoTime();
+        logTiming(
+                "load", cacheKey, t0, tLoadedBinary, tLoadedBinary, tLoadModule, tResolveFunction);
         return new KernelExecutable() {
             @Override
             public void launch(LaunchConfig config, KernelArgs args, ExecutionStream stream) {
@@ -148,14 +161,77 @@ final class HipKernelBackend implements KernelBackend {
         Path hsacoPath = kernelDir.resolve(kernelName + ".hsaco");
         ensureDirectory(kernelDir);
         String source = requireSource(program.payload());
+        long t0 = System.nanoTime();
         writeIfChanged(sourcePath, source);
+        long tWrite = System.nanoTime();
         if (needsCompile(sourcePath, hsacoPath)) {
             log("HIP kernel compile key=" + key.value() + " entry=" + kernelName);
             compileSource(sourcePath, hsacoPath);
+            long tCompile = System.nanoTime();
+            logCompileTiming(key, kernelName, true, t0, tWrite, tCompile);
         } else {
             log("HIP kernel reuse key=" + key.value() + " entry=" + kernelName);
+            long tReuse = System.nanoTime();
+            logCompileTiming(key, kernelName, false, t0, tWrite, tReuse);
         }
         return new HipKernelSpec(hsacoPath, kernelName);
+    }
+
+    private static void logCompileTiming(
+            KernelCacheKey key,
+            String kernelName,
+            boolean compiled,
+            long t0,
+            long tWrite,
+            long tEnd) {
+        if (!TIMING_LOG) {
+            return;
+        }
+        System.out.println(
+                "[jota-hip-timing] compileStage key="
+                        + key.value()
+                        + " entry="
+                        + kernelName
+                        + " compiled="
+                        + compiled
+                        + " writeSourceMs="
+                        + ms(tWrite - t0)
+                        + " compileOrReuseMs="
+                        + ms(tEnd - tWrite)
+                        + " totalMs="
+                        + ms(tEnd - t0));
+    }
+
+    private static void logTiming(
+            String phase,
+            KernelCacheKey key,
+            long t0,
+            long tCompiled,
+            long tLoadedBinary,
+            long tLoadModule,
+            long tResolveFunction) {
+        if (!TIMING_LOG) {
+            return;
+        }
+        System.out.println(
+                "[jota-hip-timing] backendPhase="
+                        + phase
+                        + " key="
+                        + key.value()
+                        + " compileOrPrepareMs="
+                        + ms(tCompiled - t0)
+                        + " loadBinaryMs="
+                        + ms(tLoadedBinary - tCompiled)
+                        + " loadModuleMs="
+                        + ms(tLoadModule - tLoadedBinary)
+                        + " resolveFunctionMs="
+                        + ms(tResolveFunction - tLoadModule)
+                        + " totalMs="
+                        + ms(tResolveFunction - t0));
+    }
+
+    private static String ms(long nanos) {
+        return String.format(Locale.ROOT, "%.3f", nanos / 1_000_000.0);
     }
 
     private static String requireSource(Object payload) {

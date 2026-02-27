@@ -235,6 +235,9 @@ public final class IRConstantFolder {
             case BITWISE_AND -> left & right;
             case BITWISE_OR -> left | right;
             case BITWISE_XOR -> left ^ right;
+            case SHIFT_LEFT -> left << (right & 31);
+            case SHIFT_RIGHT -> left >> (right & 31);
+            case SHIFT_RIGHT_UNSIGNED -> left >>> (right & 31);
             default -> null;
         };
     }
@@ -261,6 +264,9 @@ public final class IRConstantFolder {
             case BITWISE_AND -> left & right;
             case BITWISE_OR -> left | right;
             case BITWISE_XOR -> left ^ right;
+            case SHIFT_LEFT -> left << (right & 63);
+            case SHIFT_RIGHT -> left >> (right & 63);
+            case SHIFT_RIGHT_UNSIGNED -> left >>> (right & 63);
             default -> null;
         };
     }

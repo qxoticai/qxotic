@@ -237,6 +237,16 @@ public final class LIRExprGraph {
             case BITWISE_AND -> scalarConst(bitsForInt(l, type) & bitsForInt(r, type), type);
             case BITWISE_OR -> scalarConst(bitsForInt(l, type) | bitsForInt(r, type), type);
             case BITWISE_XOR -> scalarConst(bitsForInt(l, type) ^ bitsForInt(r, type), type);
+            case SHIFT_LEFT ->
+                    scalarConst(
+                            shiftLeftBits(bitsForInt(l, type), bitsForInt(r, type), type), type);
+            case SHIFT_RIGHT ->
+                    scalarConst(
+                            shiftRightBits(bitsForInt(l, type), bitsForInt(r, type), type), type);
+            case SHIFT_RIGHT_UNSIGNED ->
+                    scalarConst(
+                            shiftRightUnsignedBits(bitsForInt(l, type), bitsForInt(r, type), type),
+                            type);
             case EQUAL -> scalarConst(booleanBits(compare(l, r, type) == 0), DataType.BOOL);
             case LESS_THAN -> scalarConst(booleanBits(compare(l, r, type) < 0), DataType.BOOL);
             case MIN ->
@@ -281,9 +291,50 @@ public final class LIRExprGraph {
             case DIVIDE -> indexConst(l / r);
             case MODULO -> indexConst(l % r);
             case BITWISE_AND -> indexConst(l & r);
+            case BITWISE_XOR -> indexConst(l ^ r);
             case SHIFT_LEFT -> indexConst(l << r);
             case SHIFT_RIGHT -> indexConst(l >> r);
+            case UNSIGNED_SHIFT_RIGHT -> indexConst(l >>> r);
         };
+    }
+
+    private long shiftLeftBits(long left, long right, DataType type) {
+        if (type == DataType.I8) {
+            return (byte) ((byte) left << (((int) right) & 7));
+        }
+        if (type == DataType.I16) {
+            return (short) ((short) left << (((int) right) & 15));
+        }
+        if (type == DataType.I32) {
+            return (int) left << (((int) right) & 31);
+        }
+        return left << (((int) right) & 63);
+    }
+
+    private long shiftRightBits(long left, long right, DataType type) {
+        if (type == DataType.I8) {
+            return (byte) ((byte) left >> (((int) right) & 7));
+        }
+        if (type == DataType.I16) {
+            return (short) ((short) left >> (((int) right) & 15));
+        }
+        if (type == DataType.I32) {
+            return (int) left >> (((int) right) & 31);
+        }
+        return left >> (((int) right) & 63);
+    }
+
+    private long shiftRightUnsignedBits(long left, long right, DataType type) {
+        if (type == DataType.I8) {
+            return (byte) ((((int) (byte) left) & 0xFF) >>> (((int) right) & 7));
+        }
+        if (type == DataType.I16) {
+            return (short) ((((int) (short) left) & 0xFFFF) >>> (((int) right) & 15));
+        }
+        if (type == DataType.I32) {
+            return ((int) left) >>> (((int) right) & 31);
+        }
+        return left >>> (((int) right) & 63);
     }
 
     LIRExprNode simplifyIndexBinary(IndexBinaryOp op, LIRExprNode left, LIRExprNode right) {

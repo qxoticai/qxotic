@@ -8,9 +8,11 @@ import com.qxotic.jota.Shape;
 import com.qxotic.jota.tensor.LazyComputation;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.Tracer;
+import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
+@RunOnAllAvailableBackends
 class TIRTextRendererTest {
 
     @Test
