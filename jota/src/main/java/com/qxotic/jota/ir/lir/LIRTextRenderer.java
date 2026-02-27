@@ -346,8 +346,10 @@ public final class LIRTextRenderer {
             case DIVIDE -> "arith.divsi";
             case MODULO -> "arith.remsi";
             case BITWISE_AND -> "arith.andi";
+            case BITWISE_XOR -> "arith.xori";
             case SHIFT_LEFT -> "arith.shli";
             case SHIFT_RIGHT -> "arith.shrsi";
+            case UNSIGNED_SHIFT_RIGHT -> "arith.shrui";
         };
     }
 

@@ -97,13 +97,10 @@ public final class LIRKernelArgsBuilder {
             segment = memSegment;
         } else {
             @SuppressWarnings("unchecked")
-            MemoryDomain<MemorySegment> hostContext =
-                    (MemoryDomain<MemorySegment>)
-                            Environment.current().nativeRuntime().memoryDomain();
+            MemoryDomain<MemorySegment> hostContext = Environment.current().nativeMemoryDomain();
             @SuppressWarnings("unchecked")
             MemoryDomain<Object> srcContext =
-                    (MemoryDomain<Object>)
-                            Environment.current().runtimeFor(view.memory().device()).memoryDomain();
+                    Environment.current().memoryDomainFor(view.memory().device());
             @SuppressWarnings("unchecked")
             MemoryView<Object> srcView = (MemoryView<Object>) view;
             MemoryView<MemorySegment> hostView =

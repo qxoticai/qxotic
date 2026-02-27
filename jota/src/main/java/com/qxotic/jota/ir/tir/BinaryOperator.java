@@ -18,6 +18,9 @@ public enum BinaryOperator {
     BITWISE_AND,
     BITWISE_OR,
     BITWISE_XOR,
+    SHIFT_LEFT,
+    SHIFT_RIGHT,
+    SHIFT_RIGHT_UNSIGNED,
 
     EQUAL,
     LESS_THAN

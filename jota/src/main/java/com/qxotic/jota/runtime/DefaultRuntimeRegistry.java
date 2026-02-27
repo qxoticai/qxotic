@@ -24,13 +24,30 @@ public final class DefaultRuntimeRegistry implements RuntimeRegistry {
     @Override
     public void register(DeviceRuntime deviceRuntime) {
         Objects.requireNonNull(deviceRuntime, "deviceRuntime");
-        runtimes.put(deviceRuntime.device(), deviceRuntime);
+        Device device = deviceRuntime.device();
+        DeviceRuntime existing = runtimes.putIfAbsent(device, deviceRuntime);
+        if (existing != null) {
+            throw new IllegalStateException("Runtime already registered for device " + device);
+        }
         if (nativeDeviceRuntime == null && deviceRuntime.device().equals(Device.PANAMA)) {
             nativeDeviceRuntime = deviceRuntime;
         }
     }
 
     public void registerNative(DeviceRuntime deviceRuntime) {
+        Objects.requireNonNull(deviceRuntime, "deviceRuntime");
+        if (!deviceRuntime.device().equals(Device.PANAMA)) {
+            throw new IllegalArgumentException(
+                    "Native runtime must target "
+                            + Device.PANAMA
+                            + ", got "
+                            + deviceRuntime.device());
+        }
+        if (nativeDeviceRuntime != null
+                && !nativeDeviceRuntime.device().equals(deviceRuntime.device())) {
+            throw new IllegalStateException(
+                    "Native runtime already configured for " + nativeDeviceRuntime.device());
+        }
         register(deviceRuntime);
         nativeDeviceRuntime = deviceRuntime;
     }

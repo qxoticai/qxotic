@@ -4,19 +4,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Environment;
-import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
-import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
-import java.lang.foreign.MemorySegment;
+import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
+import com.qxotic.jota.testutil.TensorTestReads;
 import org.junit.jupiter.api.Test;
 
+@RunOnAllAvailableBackends
 class BooleanTensorTest {
-
-    @SuppressWarnings("unchecked")
-    private static final MemoryDomain<MemorySegment> CONTEXT =
-            (MemoryDomain<MemorySegment>) Environment.current().nativeRuntime().memoryDomain();
 
     @Test
     void createsBoolTensorFromArray() {
@@ -25,21 +20,14 @@ class BooleanTensorTest {
 
         assertEquals(DataType.BOOL, output.dataType());
         assertEquals(Shape.flat(3), output.shape());
-        assertEquals(1, readByte(output, 0));
-        assertEquals(0, readByte(output, 1));
-        assertEquals(1, readByte(output, 2));
+        assertEquals(1, TensorTestReads.readByte(tensor, 0));
+        assertEquals(0, TensorTestReads.readByte(tensor, 1));
+        assertEquals(1, TensorTestReads.readByte(tensor, 2));
     }
 
     @Test
     void rejectsShapeMismatch() {
         boolean[] data = new boolean[] {true, false};
         assertThrows(IllegalArgumentException.class, () -> Tensor.of(data, Shape.flat(3)));
-    }
-
-    private static byte readByte(MemoryView<?> view, long linearIndex) {
-        @SuppressWarnings("unchecked")
-        MemoryView<MemorySegment> typedView = (MemoryView<MemorySegment>) view;
-        long offset = Indexing.linearToOffset(typedView, linearIndex);
-        return CONTEXT.directAccess().readByte(typedView.memory(), offset);
     }
 }

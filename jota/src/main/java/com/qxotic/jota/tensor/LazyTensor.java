@@ -92,6 +92,8 @@ final class LazyTensor implements Tensor {
             builder.append(", constant=").append(constant.value());
         } else if (computation instanceof RangeComputation) {
             builder.append(", op=range");
+        } else if (computation instanceof RandomComputation) {
+            builder.append(", op=random");
         } else {
             builder.append(", op=ir-graph");
         }

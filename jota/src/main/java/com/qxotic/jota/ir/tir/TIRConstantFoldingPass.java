@@ -239,6 +239,9 @@ public final class TIRConstantFoldingPass implements TIRPass {
                             case BITWISE_AND -> a & b;
                             case BITWISE_OR -> a | b;
                             case BITWISE_XOR -> a ^ b;
+                            case SHIFT_LEFT -> a << (b & 31);
+                            case SHIFT_RIGHT -> a >> (b & 31);
+                            case SHIFT_RIGHT_UNSIGNED -> a >>> (b & 31);
                             default -> 0;
                         };
                 return result;
@@ -256,6 +259,9 @@ public final class TIRConstantFoldingPass implements TIRPass {
                             case BITWISE_AND -> a & b;
                             case BITWISE_OR -> a | b;
                             case BITWISE_XOR -> a ^ b;
+                            case SHIFT_LEFT -> a << (b & 63);
+                            case SHIFT_RIGHT -> a >> (b & 63);
+                            case SHIFT_RIGHT_UNSIGNED -> a >>> (b & 63);
                             default -> 0;
                         };
                 return result;

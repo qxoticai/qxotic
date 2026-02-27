@@ -79,6 +79,10 @@ public final class Tracer {
                 tensors -> fn.apply(tensors.get(0), tensors.get(1), tensors.get(2)));
     }
 
+    public static Tensor trace(Supplier<Tensor> fn) {
+        return trace(List.of(), unused -> fn.get());
+    }
+
     /** Traces a multi-input function to IR-T. */
     public static Tensor trace(List<Tensor> inputs, Function<List<Tensor>, Tensor> fn) {
         TraceInputs traceInputs = traceInputs(inputs);
@@ -114,6 +118,13 @@ public final class Tracer {
                     node =
                             new com.qxotic.jota.ir.tir.IotaConstant(
                                     range.count(), input.dataType(), Shape.flat(range.count()));
+                } else if (comp instanceof RandomComputation random) {
+                    node =
+                            new com.qxotic.jota.ir.tir.RandomUniformOp(
+                                    random.shape(),
+                                    random.dataType(),
+                                    random.key().k0(),
+                                    random.key().k1());
                 } else if (comp instanceof ConstantComputation constComp) {
                     // Constant value - inline as ScalarConstant
                     node =

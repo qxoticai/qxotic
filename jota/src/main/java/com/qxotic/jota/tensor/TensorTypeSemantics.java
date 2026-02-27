@@ -37,6 +37,15 @@ final class TensorTypeSemantics {
         requireIntegral(left, opName);
     }
 
+    static void requireShiftOperandTypes(DataType valueType, DataType shiftType, String opName) {
+        requireIntegral(valueType, opName);
+        if (shiftType.isIntegral() && shiftType != DataType.BOOL) {
+            return;
+        }
+        throw new IllegalArgumentException(
+                opName + " requires integral shift counts (non-BOOL), got " + shiftType);
+    }
+
     static void requireBooleanPair(DataType left, DataType right, String opName) {
         if (left != DataType.BOOL || right != DataType.BOOL) {
             throw new IllegalArgumentException(
@@ -55,6 +64,13 @@ final class TensorTypeSemantics {
         if (!dataType.isFloatingPoint()) {
             throw new IllegalArgumentException(
                     opName + " requires floating-point tensor, got " + dataType);
+        }
+    }
+
+    static void requireNumericNonBool(DataType dataType, String opName) {
+        if (dataType == DataType.BOOL || (!dataType.isIntegral() && !dataType.isFloatingPoint())) {
+            throw new IllegalArgumentException(
+                    opName + " requires numeric non-BOOL tensor, got " + dataType);
         }
     }
 

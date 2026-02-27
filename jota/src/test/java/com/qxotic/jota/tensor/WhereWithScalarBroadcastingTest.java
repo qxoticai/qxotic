@@ -3,13 +3,10 @@ package com.qxotic.jota.tensor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Environment;
-import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
-import com.qxotic.jota.memory.MemoryAccess;
-import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
-import java.lang.foreign.MemorySegment;
+import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
+import com.qxotic.jota.testutil.TensorTestReads;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -21,11 +18,8 @@ import org.junit.jupiter.api.Test;
  *
  * <p>Use Tensor.scalar(value) to create scalar values that will broadcast.
  */
+@RunOnAllAvailableBackends
 class WhereWithScalarBroadcastingTest {
-
-    @SuppressWarnings("unchecked")
-    private static final MemoryDomain<MemorySegment> CONTEXT =
-            (MemoryDomain<MemorySegment>) Environment.current().nativeRuntime().memoryDomain();
 
     @Test
     void whereWithScalarFalseValue() {
@@ -42,12 +36,12 @@ class WhereWithScalarBroadcastingTest {
         MemoryView<?> view = result.materialize();
 
         // Expected: [0,0,0,100,100,100]
-        assertEquals(0.0f, readFloat(view, 0), 0.001f);
-        assertEquals(0.0f, readFloat(view, 1), 0.001f);
-        assertEquals(0.0f, readFloat(view, 2), 0.001f);
-        assertEquals(100.0f, readFloat(view, 3), 0.001f);
-        assertEquals(100.0f, readFloat(view, 4), 0.001f);
-        assertEquals(100.0f, readFloat(view, 5), 0.001f);
+        assertEquals(0.0f, readFloat(result, 0), 0.001f);
+        assertEquals(0.0f, readFloat(result, 1), 0.001f);
+        assertEquals(0.0f, readFloat(result, 2), 0.001f);
+        assertEquals(100.0f, readFloat(result, 3), 0.001f);
+        assertEquals(100.0f, readFloat(result, 4), 0.001f);
+        assertEquals(100.0f, readFloat(result, 5), 0.001f);
     }
 
     @Test
@@ -65,12 +59,12 @@ class WhereWithScalarBroadcastingTest {
         MemoryView<?> view = result.materialize();
 
         // Expected: [-1,-1,-1,3,4,5]
-        assertEquals(-1.0f, readFloat(view, 0), 0.001f);
-        assertEquals(-1.0f, readFloat(view, 1), 0.001f);
-        assertEquals(-1.0f, readFloat(view, 2), 0.001f);
-        assertEquals(3.0f, readFloat(view, 3), 0.001f);
-        assertEquals(4.0f, readFloat(view, 4), 0.001f);
-        assertEquals(5.0f, readFloat(view, 5), 0.001f);
+        assertEquals(-1.0f, readFloat(result, 0), 0.001f);
+        assertEquals(-1.0f, readFloat(result, 1), 0.001f);
+        assertEquals(-1.0f, readFloat(result, 2), 0.001f);
+        assertEquals(3.0f, readFloat(result, 3), 0.001f);
+        assertEquals(4.0f, readFloat(result, 4), 0.001f);
+        assertEquals(5.0f, readFloat(result, 5), 0.001f);
     }
 
     @Test
@@ -88,12 +82,12 @@ class WhereWithScalarBroadcastingTest {
         MemoryView<?> view = result.materialize();
 
         // Expected: [0,0,0,1,1,1]
-        assertEquals(0.0f, readFloat(view, 0), 0.001f);
-        assertEquals(0.0f, readFloat(view, 1), 0.001f);
-        assertEquals(0.0f, readFloat(view, 2), 0.001f);
-        assertEquals(1.0f, readFloat(view, 3), 0.001f);
-        assertEquals(1.0f, readFloat(view, 4), 0.001f);
-        assertEquals(1.0f, readFloat(view, 5), 0.001f);
+        assertEquals(0.0f, readFloat(result, 0), 0.001f);
+        assertEquals(0.0f, readFloat(result, 1), 0.001f);
+        assertEquals(0.0f, readFloat(result, 2), 0.001f);
+        assertEquals(1.0f, readFloat(result, 3), 0.001f);
+        assertEquals(1.0f, readFloat(result, 4), 0.001f);
+        assertEquals(1.0f, readFloat(result, 5), 0.001f);
     }
 
     @Test
@@ -122,12 +116,12 @@ class WhereWithScalarBroadcastingTest {
 
         // Expected: [0,0,1,1,2,2] - each pair of elements gets the iteration number
         // when they "escaped"
-        assertEquals(0.0f, readFloat(view, 0), 0.001f);
-        assertEquals(0.0f, readFloat(view, 1), 0.001f);
-        assertEquals(1.0f, readFloat(view, 2), 0.001f);
-        assertEquals(1.0f, readFloat(view, 3), 0.001f);
-        assertEquals(2.0f, readFloat(view, 4), 0.001f);
-        assertEquals(2.0f, readFloat(view, 5), 0.001f);
+        assertEquals(0.0f, readFloat(iterations, 0), 0.001f);
+        assertEquals(0.0f, readFloat(iterations, 1), 0.001f);
+        assertEquals(1.0f, readFloat(iterations, 2), 0.001f);
+        assertEquals(1.0f, readFloat(iterations, 3), 0.001f);
+        assertEquals(2.0f, readFloat(iterations, 4), 0.001f);
+        assertEquals(2.0f, readFloat(iterations, 5), 0.001f);
     }
 
     @Test
@@ -161,19 +155,15 @@ class WhereWithScalarBroadcastingTest {
         }
 
         MemoryView<?> view = iterations.materialize();
-        assertEquals(0.0f, readFloat(view, 0), 0.001f); // escaped at i=0
-        assertEquals(2.0f, readFloat(view, 1), 0.001f); // escaped at i=2
-        assertEquals(3.0f, readFloat(view, 2), 0.001f); // escaped at i=3
-        assertEquals(4.0f, readFloat(view, 3), 0.001f); // escaped at i=4
-        assertEquals(4.0f, readFloat(view, 4), 0.001f); // escaped at i=4
-        assertEquals(4.0f, readFloat(view, 5), 0.001f); // escaped at i=4
+        assertEquals(0.0f, readFloat(iterations, 0), 0.001f); // escaped at i=0
+        assertEquals(2.0f, readFloat(iterations, 1), 0.001f); // escaped at i=2
+        assertEquals(3.0f, readFloat(iterations, 2), 0.001f); // escaped at i=3
+        assertEquals(4.0f, readFloat(iterations, 3), 0.001f); // escaped at i=4
+        assertEquals(4.0f, readFloat(iterations, 4), 0.001f); // escaped at i=4
+        assertEquals(4.0f, readFloat(iterations, 5), 0.001f); // escaped at i=4
     }
 
-    private static float readFloat(MemoryView<?> view, long linearIndex) {
-        @SuppressWarnings("unchecked")
-        MemoryView<MemorySegment> typedView = (MemoryView<MemorySegment>) view;
-        long offset = Indexing.linearToOffset(typedView, linearIndex);
-        MemoryAccess<MemorySegment> access = CONTEXT.directAccess();
-        return access.readFloat(typedView.memory(), offset);
+    private static float readFloat(Tensor tensor, long linearIndex) {
+        return TensorTestReads.readFloat(tensor, linearIndex);
     }
 }

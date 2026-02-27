@@ -565,6 +565,24 @@ public class TIRTextRenderer implements TIRVisitor<String> {
     }
 
     @Override
+    public String visitRandomUniformOp(RandomUniformOp node) {
+        String var = allocateVar(node);
+        String randomDef =
+                var
+                        + " = tensor.random_uniform key=("
+                        + Long.toUnsignedString(node.key0())
+                        + ","
+                        + Long.toUnsignedString(node.key1())
+                        + ") : tensor<"
+                        + node.shape()
+                        + "x"
+                        + TextRenderUtils.formatDataType(node.dataType())
+                        + ">";
+        appendLine(randomDef);
+        return var;
+    }
+
+    @Override
     public String visitUnaryOp(UnaryOp node) {
         String input = node.input().accept(this);
         String op = formatUnaryOp(node.op());

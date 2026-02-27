@@ -9,6 +9,7 @@ import com.qxotic.jota.ir.lir.LIRGraph;
 import com.qxotic.jota.ir.lir.LIRInput;
 import com.qxotic.jota.ir.lir.LIRStandardPipeline;
 import com.qxotic.jota.ir.lir.LIRTextRenderer;
+import com.qxotic.jota.ir.lir.ScalarInput;
 import com.qxotic.jota.ir.lir.scratch.ScratchAnalysisPass;
 import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
 import com.qxotic.jota.ir.lir.scratch.ScratchVerificationPass;
@@ -18,7 +19,13 @@ import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.runtime.panama.LIRKernelArgsBuilder;
-import com.qxotic.jota.tensor.*;
+import com.qxotic.jota.tensor.ComputeEngine;
+import com.qxotic.jota.tensor.ExecutionStream;
+import com.qxotic.jota.tensor.KernelArgs;
+import com.qxotic.jota.tensor.KernelCacheKey;
+import com.qxotic.jota.tensor.KernelProgram;
+import com.qxotic.jota.tensor.LaunchConfig;
+import com.qxotic.jota.tensor.Tensor;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.List;
@@ -48,8 +55,11 @@ public final class CComputeEngine implements ComputeEngine {
     @Override
     public MemoryView<?> execute(TIRGraph graph, List<Tensor> inputs) {
         CNative.requireAvailable();
+        List<MemoryView<?>> runtimeInputViews = materializeRuntimeInputViews(graph, inputs);
+        List<Layout> runtimeInputLayouts = runtimeInputLayouts(graph, runtimeInputViews);
+
         TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
-        LIRGraph lirGraph = pipeline.run(lowerer.lower(graph));
+        LIRGraph lirGraph = pipeline.run(lowerer.lower(graph, runtimeInputLayouts));
         ScratchLayout scratchLayout = scratchAnalysis.analyze(lirGraph);
         if (verifyScratch) {
             scratchVerification.verifyOrThrow(lirGraph, scratchLayout);
@@ -68,7 +78,7 @@ public final class CComputeEngine implements ComputeEngine {
         logKernelIr(key, graph, lirGraph);
         KernelProgram program = generator.generate(lirGraph, scratchLayout, key);
 
-        List<Tensor> resolvedInputs = resolveInputs(lirGraph, inputs);
+        List<Tensor> resolvedInputs = resolveInputs(lirGraph, inputs, runtimeInputViews);
         KernelArgs args = argsBuilder.build(lirGraph, resolvedInputs, outputViews);
         long scratchPtr = scratch == null ? 0L : scratch.base().address();
         args.addMetadata(scratchPtr);
@@ -92,7 +102,40 @@ public final class CComputeEngine implements ComputeEngine {
         System.out.println("[jota-ir] END C kernel key=" + key.value());
     }
 
-    private List<Tensor> resolveInputs(LIRGraph graph, List<Tensor> inputs) {
+    private static List<MemoryView<?>> materializeRuntimeInputViews(
+            TIRGraph graph, List<Tensor> inputs) {
+        if (graph.inputs().size() != inputs.size()) {
+            throw new IllegalArgumentException(
+                    "Expected " + graph.inputs().size() + " inputs but got " + inputs.size());
+        }
+        List<MemoryView<?>> materialized = new ArrayList<>(inputs.size());
+        for (int i = 0; i < graph.inputs().size(); i++) {
+            if (graph.inputs().get(i) instanceof com.qxotic.jota.ir.tir.ScalarInput) {
+                materialized.add(null);
+                continue;
+            }
+            Tensor tensor = inputs.get(i);
+            materialized.add(tensor.tryGetMaterialized().orElseGet(tensor::materialize));
+        }
+        return materialized;
+    }
+
+    private static List<Layout> runtimeInputLayouts(
+            TIRGraph graph, List<MemoryView<?>> runtimeViews) {
+        List<Layout> layouts = new ArrayList<>(graph.inputs().size());
+        for (int i = 0; i < graph.inputs().size(); i++) {
+            if (graph.inputs().get(i) instanceof com.qxotic.jota.ir.tir.ScalarInput) {
+                layouts.add(null);
+                continue;
+            }
+            MemoryView<?> view = runtimeViews.get(i);
+            layouts.add(view.layout());
+        }
+        return layouts;
+    }
+
+    private List<Tensor> resolveInputs(
+            LIRGraph graph, List<Tensor> inputs, List<MemoryView<?>> runtimeInputViews) {
         if (graph.inputs().size() != inputs.size()) {
             throw new IllegalArgumentException(
                     "Expected " + graph.inputs().size() + " inputs but got " + inputs.size());
@@ -101,22 +144,25 @@ public final class CComputeEngine implements ComputeEngine {
         for (int i = 0; i < graph.inputs().size(); i++) {
             LIRInput input = graph.inputs().get(i);
             Tensor tensor = inputs.get(i);
-            if (input instanceof com.qxotic.jota.ir.lir.ScalarInput) {
+            if (input instanceof ScalarInput) {
                 resolved.add(tensor);
                 continue;
             }
-            MemoryView<?> view = tensor.tryGetMaterialized().orElseGet(tensor::materialize);
+
+            MemoryView<?> view = runtimeInputViews.get(i);
             @SuppressWarnings("unchecked")
             MemoryDomain<Object> srcContext =
                     (MemoryDomain<Object>)
                             Environment.current().runtimeFor(view.memory().device()).memoryDomain();
             @SuppressWarnings("unchecked")
             MemoryView<Object> srcView = (MemoryView<Object>) view;
+
             if (view.memory().device().equals(Device.C)
                     && view.memory().base() instanceof MemorySegment) {
                 resolved.add(Tensor.of(view));
                 continue;
             }
+
             BufferSpec spec = computeBufferSpec(view.layout(), view.dataType());
             MemoryView<MemorySegment> copy =
                     MemoryView.of(

@@ -88,6 +88,9 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
             case IotaConstant ic -> {
                 // Leaf node - no inputs
             }
+            case RandomUniformOp ru -> {
+                // Leaf node - no inputs
+            }
         }
     }
 
@@ -107,6 +110,11 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
 
     @Override
     public TIRNode visitIotaConstant(IotaConstant node) {
+        return node;
+    }
+
+    @Override
+    public TIRNode visitRandomUniformOp(RandomUniformOp node) {
         return node;
     }
 

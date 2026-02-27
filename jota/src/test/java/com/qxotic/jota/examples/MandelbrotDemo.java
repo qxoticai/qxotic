@@ -281,23 +281,7 @@ public class MandelbrotDemo {
 
     @SuppressWarnings("unchecked")
     private static MemoryView<MemorySegment> toNativeHostView(MemoryView<?> view) {
-        if (view.memory().base() instanceof MemorySegment
-                && view.memory().device().belongsTo(Device.CPU)) {
-            return (MemoryView<MemorySegment>) view;
-        }
-        MemoryDomain<MemorySegment> hostDomain =
-                (MemoryDomain<MemorySegment>) Environment.current().nativeRuntime().memoryDomain();
-        MemoryView<MemorySegment> hostView =
-                MemoryView.of(
-                        hostDomain.memoryAllocator().allocateMemory(view.dataType(), view.shape()),
-                        view.dataType(),
-                        view.layout());
-        MemoryDomain<Object> srcDomain =
-                (MemoryDomain<Object>)
-                        Environment.current().runtimeFor(view.memory().device()).memoryDomain();
-        MemoryView<Object> srcView = (MemoryView<Object>) view;
-        MemoryDomain.copy(srcDomain, srcView, hostDomain, hostView);
-        return hostView;
+        return (MemoryView<MemorySegment>) Tensor.of(view).to(Device.PANAMA).materialize();
     }
 
     private static Device resolveBackend(String[] args) {

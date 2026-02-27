@@ -3,14 +3,8 @@ package com.qxotic.jota.tensor;
 import com.qxotic.jota.*;
 import com.qxotic.jota.impl.ViewTransforms;
 import com.qxotic.jota.ir.tir.*;
-import com.qxotic.jota.memory.MemoryDomain;
 
 final class IRTensorOps implements TensorOps {
-
-    @Override
-    public MemoryDomain<?> memoryDomain() {
-        throw new UnsupportedOperationException("IR-T ops do not expose a memory domain");
-    }
 
     @Override
     public Tensor add(Tensor a, Tensor b) {
@@ -118,6 +112,21 @@ final class IRTensorOps implements TensorOps {
     }
 
     @Override
+    public Tensor leftShift(Tensor a, Tensor b) {
+        return shiftBinaryOp(a, b, BinaryOperator.SHIFT_LEFT, "leftShift");
+    }
+
+    @Override
+    public Tensor rightShift(Tensor a, Tensor b) {
+        return shiftBinaryOp(a, b, BinaryOperator.SHIFT_RIGHT, "rightShift");
+    }
+
+    @Override
+    public Tensor rightShiftUnsigned(Tensor a, Tensor b) {
+        return shiftBinaryOp(a, b, BinaryOperator.SHIFT_RIGHT_UNSIGNED, "rightShiftUnsigned");
+    }
+
+    @Override
     public Tensor logicalNot(Tensor x) {
         return unaryOp(x, UnaryOperator.LOGICAL_NOT);
     }
@@ -212,6 +221,38 @@ final class IRTensorOps implements TensorOps {
         GatherOp node = new GatherOp(inputTensor.node(), indicesTensor.node(), _axis, outputShape);
 
         return new IRTensor(node, inputTensor.device());
+    }
+
+    @Override
+    public Tensor dot(Tensor a, Tensor b, DataType accumulatorType) {
+        IRTensor left = requireIRTensor(a);
+        IRTensor right = requireIRTensor(b);
+
+        TensorTypeSemantics.requireNumericNonBool(left.dataType(), "dot");
+        TensorTypeSemantics.requireNumericNonBool(right.dataType(), "dot");
+        requireSameType(left, right, "dot");
+
+        if (left.shape().rank() != 1 || right.shape().rank() != 1) {
+            throw new IllegalArgumentException(
+                    "dot requires rank-1 tensors, got " + left.shape() + " and " + right.shape());
+        }
+        long length = left.shape().flatAt(0);
+        long rightLength = right.shape().flatAt(0);
+        if (length != rightLength) {
+            throw new IllegalArgumentException(
+                    "dot requires equal vector lengths, got " + length + " and " + rightLength);
+        }
+        if (length == 0) {
+            throw new IllegalArgumentException("dot requires non-empty vectors");
+        }
+
+        DataType accType =
+                TensorTypeSemantics.resolveReductionAccumulator(
+                        left.dataType(), accumulatorType, "dot");
+        Tensor castLeft = cast(left, accType);
+        Tensor castRight = cast(right, accType);
+        Tensor product = multiply(castLeft, castRight);
+        return sum(product, accType);
     }
 
     @Override
@@ -466,6 +507,17 @@ final class IRTensorOps implements TensorOps {
         Shape outputShape = requireCompatibleShape(left, right);
         TIRNode leftNode = left.node();
         TIRNode rightNode = right.node();
+        TIRNode node = new com.qxotic.jota.ir.tir.BinaryOp(op, leftNode, rightNode, outputShape);
+        return new IRTensor(node, left.device());
+    }
+
+    private Tensor shiftBinaryOp(Tensor a, Tensor b, BinaryOperator op, String opName) {
+        IRTensor left = requireIRTensor(a);
+        IRTensor right = requireIRTensor(b);
+        TensorTypeSemantics.requireShiftOperandTypes(left.dataType(), right.dataType(), opName);
+        Shape outputShape = requireCompatibleShape(left, right);
+        TIRNode leftNode = left.node();
+        TIRNode rightNode = maybeCast(right.node(), DataType.I32);
         TIRNode node = new com.qxotic.jota.ir.tir.BinaryOp(op, leftNode, rightNode, outputShape);
         return new IRTensor(node, left.device());
     }

@@ -12,25 +12,20 @@ import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.random.RandomAlgorithms;
+import com.qxotic.jota.random.RandomKey;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.Tracer;
 import com.qxotic.jota.testutil.ExternalToolChecks;
 import com.qxotic.jota.testutil.TestKernels;
 import java.lang.foreign.MemorySegment;
-import java.nio.file.Path;
-import java.util.List;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 class CKernelSmokeTest {
 
-    private static final int FRACTAL_WIDTH = 640;
-    private static final int FRACTAL_HEIGHT = 480;
-    private static final int FRACTAL_ITERATIONS = 100;
-
     @Test
     void runsTracedGeluKernel() {
-        assumeNotFractalOnlyRun();
         assumeCBackendAvailable();
 
         Environment current = Environment.current();
@@ -62,63 +57,7 @@ class CKernelSmokeTest {
     }
 
     @Test
-    void runsTracedMandelbrotKernel() {
-        assumeCBackendAvailable();
-        assumeFractalsEnabled();
-
-        int width = FRACTAL_WIDTH;
-        int height = FRACTAL_HEIGHT;
-        int iterations = FRACTAL_ITERATIONS;
-
-        Environment current = Environment.current();
-        Environment cEnv = new Environment(Device.C, current.defaultFloat(), current.runtimes());
-
-        MemoryView<?> output =
-                Environment.with(
-                        cEnv,
-                        () -> {
-                            Tensor traced =
-                                    Tracer.trace(
-                                            List.of(),
-                                            inputs ->
-                                                    TestKernels.mandelbrotTensor(
-                                                            width, height, iterations));
-                            return traced.materialize();
-                        });
-
-        MemoryDomain<MemorySegment> domain =
-                (MemoryDomain<MemorySegment>)
-                        Environment.current().runtimeFor(Device.C).memoryDomain();
-        MemoryAccess<MemorySegment> access = domain.directAccess();
-        MemoryView<MemorySegment> typed = (MemoryView<MemorySegment>) output;
-
-        TestKernels.writeMandelbrotPpm(
-                domain,
-                typed,
-                Path.of("target", "mandelbrot-c-lir.ppm"),
-                width,
-                height,
-                iterations);
-
-        assertEquals(
-                TestKernels.mandelbrotIter(0, 0, width, height, iterations),
-                access.readFloat(typed.memory(), Indexing.linearToOffset(typed, 0)),
-                1e-3f);
-        long centerIdx = (long) (height / 2) * width + (width / 2);
-        assertEquals(
-                TestKernels.mandelbrotIter(height / 2, width / 2, width, height, iterations),
-                access.readFloat(typed.memory(), Indexing.linearToOffset(typed, centerIdx)),
-                1e-3f);
-        long lastIdx = (long) (height - 1) * width + (width - 1);
-        assertEquals(
-                TestKernels.mandelbrotIter(height - 1, width - 1, width, height, iterations),
-                access.readFloat(typed.memory(), Indexing.linearToOffset(typed, lastIdx)),
-                1e-3f);
-    }
-
-    @Test
     void runsTracedFp16Kernel() {
-        assumeNotFractalOnlyRun();
         assumeCBackendAvailable();
 
         Environment current = Environment.current();
@@ -150,7 +89,6 @@ class CKernelSmokeTest {
 
     @Test
     void runsTracedBf16Kernel() {
-        assumeNotFractalOnlyRun();
         assumeCBackendAvailable();
 
         Environment current = Environment.current();
@@ -177,6 +115,53 @@ class CKernelSmokeTest {
             float value = readValue(access, typed, offset);
             float expected = (i + 1.0f) * 2.0f;
             assertEquals(expected, value, 1e-2f);
+        }
+    }
+
+    @Test
+    void runsTracedRandomKernelWithGoldenParity() {
+        assumeCBackendAvailable();
+
+        Environment current = Environment.current();
+        Environment cEnv = new Environment(Device.C, current.defaultFloat(), current.runtimes());
+        RandomKey key = RandomKey.of(2026L);
+        int n = 64;
+
+        MemoryView<?> outFp32 =
+                Environment.with(
+                        cEnv,
+                        () ->
+                                Tracer.trace(Tensor.rand(Shape.of(n), DataType.FP32, key), x -> x)
+                                        .materialize());
+        MemoryView<?> outFp64 =
+                Environment.with(
+                        cEnv,
+                        () ->
+                                Tracer.trace(Tensor.rand(Shape.of(n), DataType.FP64, key), x -> x)
+                                        .materialize());
+
+        MemoryDomain<MemorySegment> domain =
+                (MemoryDomain<MemorySegment>)
+                        Environment.current().runtimeFor(Device.C).memoryDomain();
+        MemoryAccess<MemorySegment> access = domain.directAccess();
+
+        @SuppressWarnings("unchecked")
+        MemoryView<MemorySegment> fp32 = (MemoryView<MemorySegment>) outFp32;
+        @SuppressWarnings("unchecked")
+        MemoryView<MemorySegment> fp64 = (MemoryView<MemorySegment>) outFp64;
+
+        for (int i = 0; i < n; i++) {
+            long off32 = Indexing.linearToOffset(fp32, i);
+            int actual32 = Float.floatToRawIntBits(access.readFloat(fp32.memory(), off32));
+            int expected32 =
+                    Float.floatToRawIntBits(RandomAlgorithms.uniformFp32(i, key.k0(), key.k1()));
+            assertEquals(expected32, actual32);
+
+            long off64 = Indexing.linearToOffset(fp64, i);
+            long actual64 = Double.doubleToRawLongBits(access.readDouble(fp64.memory(), off64));
+            long expected64 =
+                    Double.doubleToRawLongBits(RandomAlgorithms.uniformFp64(i, key.k0(), key.k1()));
+            assertEquals(expected64, actual64);
         }
     }
 
@@ -230,18 +215,6 @@ class CKernelSmokeTest {
     private static void assumeCBackendAvailable() {
         Assumptions.assumeTrue(CNative.isAvailable(), "C JNI runtime not available");
         Assumptions.assumeTrue(ExternalToolChecks.hasVersionCommand("gcc"), "gcc not available");
-    }
-
-    private static void assumeFractalsEnabled() {
-        Assumptions.assumeTrue(
-                Boolean.getBoolean("jota.test.c.fractals") && Boolean.getBoolean("jota.test.ppm"),
-                "C fractal smoke tests disabled; set -Djota.test.c.fractals=true and -Djota.test.ppm=true to enable");
-    }
-
-    private static void assumeNotFractalOnlyRun() {
-        Assumptions.assumeFalse(
-                Boolean.getBoolean("jota.test.c.fractals") && Boolean.getBoolean("jota.test.ppm"),
-                "Skipping non-fractal C smoke tests in fractal-only run");
     }
 
     private static float readValue(

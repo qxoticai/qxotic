@@ -4,6 +4,7 @@ import com.qxotic.jota.*;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.random.RandomAlgorithms;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.List;
@@ -321,6 +322,24 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
         return output;
     }
 
+    private int readShiftCount(MemoryView<MemorySegment> right, long linearIndex) {
+        long offset = Indexing.linearToOffset(right, linearIndex);
+        if (right.dataType() == DataType.I32) {
+            return memAccess.readInt(right.memory(), offset);
+        }
+        if (right.dataType() == DataType.I8) {
+            return memAccess.readByte(right.memory(), offset);
+        }
+        if (right.dataType() == DataType.I16) {
+            return memAccess.readShort(right.memory(), offset);
+        }
+        if (right.dataType() == DataType.I64) {
+            return (int) memAccess.readLong(right.memory(), offset);
+        }
+        throw new UnsupportedOperationException(
+                "Shift count requires integral dtype, got " + right.dataType());
+    }
+
     private void executeBinaryFloat(
             BinaryOperator op,
             MemoryView<MemorySegment> left,
@@ -359,6 +378,15 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case BITWISE_XOR ->
                                 throw new UnsupportedOperationException(
                                         "BITWISE_XOR not supported for FP32");
+                        case SHIFT_LEFT ->
+                                throw new UnsupportedOperationException(
+                                        "SHIFT_LEFT not supported for FP32");
+                        case SHIFT_RIGHT ->
+                                throw new UnsupportedOperationException(
+                                        "SHIFT_RIGHT not supported for FP32");
+                        case SHIFT_RIGHT_UNSIGNED ->
+                                throw new UnsupportedOperationException(
+                                        "SHIFT_RIGHT_UNSIGNED not supported for FP32");
                         case EQUAL -> a == b ? 1.0f : 0.0f;
                         case LESS_THAN -> a < b ? 1.0f : 0.0f;
                     };
@@ -402,6 +430,15 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case BITWISE_XOR ->
                                 throw new UnsupportedOperationException(
                                         "BITWISE_XOR not supported for FP64");
+                        case SHIFT_LEFT ->
+                                throw new UnsupportedOperationException(
+                                        "SHIFT_LEFT not supported for FP64");
+                        case SHIFT_RIGHT ->
+                                throw new UnsupportedOperationException(
+                                        "SHIFT_RIGHT not supported for FP64");
+                        case SHIFT_RIGHT_UNSIGNED ->
+                                throw new UnsupportedOperationException(
+                                        "SHIFT_RIGHT_UNSIGNED not supported for FP64");
                         case EQUAL -> a == b ? 1.0 : 0.0;
                         case LESS_THAN -> a < b ? 1.0 : 0.0;
                     };
@@ -447,6 +484,15 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case BITWISE_XOR ->
                                 throw new UnsupportedOperationException(
                                         "BITWISE_XOR not supported for FP16");
+                        case SHIFT_LEFT ->
+                                throw new UnsupportedOperationException(
+                                        "SHIFT_LEFT not supported for FP16");
+                        case SHIFT_RIGHT ->
+                                throw new UnsupportedOperationException(
+                                        "SHIFT_RIGHT not supported for FP16");
+                        case SHIFT_RIGHT_UNSIGNED ->
+                                throw new UnsupportedOperationException(
+                                        "SHIFT_RIGHT_UNSIGNED not supported for FP16");
                         case EQUAL -> a == b ? 1.0f : 0.0f;
                         case LESS_THAN -> a < b ? 1.0f : 0.0f;
                     };
@@ -493,6 +539,15 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case BITWISE_XOR ->
                                 throw new UnsupportedOperationException(
                                         "BITWISE_XOR not supported for BF16");
+                        case SHIFT_LEFT ->
+                                throw new UnsupportedOperationException(
+                                        "SHIFT_LEFT not supported for BF16");
+                        case SHIFT_RIGHT ->
+                                throw new UnsupportedOperationException(
+                                        "SHIFT_RIGHT not supported for BF16");
+                        case SHIFT_RIGHT_UNSIGNED ->
+                                throw new UnsupportedOperationException(
+                                        "SHIFT_RIGHT_UNSIGNED not supported for BF16");
                         case EQUAL -> a == b ? 1.0f : 0.0f;
                         case LESS_THAN -> a < b ? 1.0f : 0.0f;
                     };
@@ -510,6 +565,7 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
         for (long i = 0; i < size; i++) {
             byte a = memAccess.readByte(left.memory(), Indexing.linearToOffset(left, i));
             byte b = memAccess.readByte(right.memory(), Indexing.linearToOffset(right, i));
+            int shiftCount = readShiftCount(right, i);
             byte result =
                     switch (op) {
                         case ADD -> (byte) (a + b);
@@ -521,6 +577,9 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case BITWISE_AND -> (byte) (a & b);
                         case BITWISE_OR -> (byte) (a | b);
                         case BITWISE_XOR -> (byte) (a ^ b);
+                        case SHIFT_LEFT -> (byte) (a << (shiftCount & 7));
+                        case SHIFT_RIGHT -> (byte) (a >> (shiftCount & 7));
+                        case SHIFT_RIGHT_UNSIGNED -> (byte) ((a & 0xFF) >>> (shiftCount & 7));
                         case LOGICAL_AND ->
                                 throw new UnsupportedOperationException(
                                         "LOGICAL_AND not supported for I8");
@@ -548,6 +607,7 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
         for (long i = 0; i < size; i++) {
             short a = memAccess.readShort(left.memory(), Indexing.linearToOffset(left, i));
             short b = memAccess.readShort(right.memory(), Indexing.linearToOffset(right, i));
+            int shiftCount = readShiftCount(right, i);
             short result =
                     switch (op) {
                         case ADD -> (short) (a + b);
@@ -559,6 +619,9 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case BITWISE_AND -> (short) (a & b);
                         case BITWISE_OR -> (short) (a | b);
                         case BITWISE_XOR -> (short) (a ^ b);
+                        case SHIFT_LEFT -> (short) (a << (shiftCount & 15));
+                        case SHIFT_RIGHT -> (short) (a >> (shiftCount & 15));
+                        case SHIFT_RIGHT_UNSIGNED -> (short) ((a & 0xFFFF) >>> (shiftCount & 15));
                         case LOGICAL_AND ->
                                 throw new UnsupportedOperationException(
                                         "LOGICAL_AND not supported for I16");
@@ -587,6 +650,7 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
         for (long i = 0; i < size; i++) {
             int a = memAccess.readInt(left.memory(), Indexing.linearToOffset(left, i));
             int b = memAccess.readInt(right.memory(), Indexing.linearToOffset(right, i));
+            int shiftCount = readShiftCount(right, i);
             int result =
                     switch (op) {
                         case ADD -> a + b;
@@ -598,6 +662,9 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case BITWISE_AND -> a & b;
                         case BITWISE_OR -> a | b;
                         case BITWISE_XOR -> a ^ b;
+                        case SHIFT_LEFT -> a << (shiftCount & 31);
+                        case SHIFT_RIGHT -> a >> (shiftCount & 31);
+                        case SHIFT_RIGHT_UNSIGNED -> a >>> (shiftCount & 31);
                         case LOGICAL_AND ->
                                 throw new UnsupportedOperationException(
                                         "LOGICAL_AND not supported for I32");
@@ -626,6 +693,7 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
         for (long i = 0; i < size; i++) {
             long a = memAccess.readLong(left.memory(), Indexing.linearToOffset(left, i));
             long b = memAccess.readLong(right.memory(), Indexing.linearToOffset(right, i));
+            int shiftCount = readShiftCount(right, i);
             long result =
                     switch (op) {
                         case ADD -> a + b;
@@ -637,6 +705,9 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case BITWISE_AND -> a & b;
                         case BITWISE_OR -> a | b;
                         case BITWISE_XOR -> a ^ b;
+                        case SHIFT_LEFT -> a << (shiftCount & 63);
+                        case SHIFT_RIGHT -> a >> (shiftCount & 63);
+                        case SHIFT_RIGHT_UNSIGNED -> a >>> (shiftCount & 63);
                         case LOGICAL_AND ->
                                 throw new UnsupportedOperationException(
                                         "LOGICAL_AND not supported for I64");
@@ -673,7 +744,12 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case ADD, SUBTRACT, MULTIPLY, DIVIDE, MIN, MAX, POW ->
                                 throw new UnsupportedOperationException(
                                         op + " not supported for BOOL");
-                        case BITWISE_AND, BITWISE_OR, BITWISE_XOR ->
+                        case BITWISE_AND,
+                                BITWISE_OR,
+                                BITWISE_XOR,
+                                SHIFT_LEFT,
+                                SHIFT_RIGHT,
+                                SHIFT_RIGHT_UNSIGNED ->
                                 throw new UnsupportedOperationException(
                                         op + " not supported for BOOL");
                         case EQUAL -> (byte) (((a != 0) == (b != 0)) ? 1 : 0);
@@ -1158,10 +1234,10 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                 byte value = memAccess.readByte(input.memory(), inOffset);
                 acc =
                         switch (op) {
-                            case SUM -> (byte) (((acc != 0) ? 1 : 0) + ((value != 0) ? 1 : 0));
-                            case PROD -> (byte) (((acc != 0) && (value != 0)) ? 1 : 0);
-                            case MIN -> (byte) (((acc != 0) && (value != 0)) ? 1 : 0);
-                            case MAX -> (byte) (((acc != 0) || (value != 0)) ? 1 : 0);
+                            case SUM -> (byte) (acc + value);
+                            case PROD -> (byte) (acc * value);
+                            case MIN -> (byte) Math.min(acc, value);
+                            case MAX -> (byte) Math.max(acc, value);
                         };
             }
 
@@ -1569,6 +1645,28 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
             }
         }
 
+        return output;
+    }
+
+    @Override
+    public MemoryView<MemorySegment> visitRandomUniformOp(RandomUniformOp node) {
+        Layout layout = Layout.rowMajor(node.shape());
+        DataType dtype = node.dataType();
+        MemoryView<MemorySegment> output = context.allocateTemporary(dtype, layout);
+        long count = node.shape().size();
+
+        for (long i = 0; i < count; i++) {
+            if (dtype == DataType.FP32) {
+                float value = RandomAlgorithms.uniformFp32(i, node.key0(), node.key1());
+                memAccess.writeFloat(output.memory(), Indexing.linearToOffset(output, i), value);
+            } else if (dtype == DataType.FP64) {
+                double value = RandomAlgorithms.uniformFp64(i, node.key0(), node.key1());
+                memAccess.writeDouble(output.memory(), Indexing.linearToOffset(output, i), value);
+            } else {
+                throw new UnsupportedOperationException(
+                        "RandomUniformOp supports FP32/FP64 only, got: " + dtype);
+            }
+        }
         return output;
     }
 

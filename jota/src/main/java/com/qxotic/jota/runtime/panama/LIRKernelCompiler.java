@@ -976,6 +976,15 @@ final class LIRKernelCompiler {
             if (binary.op() == BinaryOperator.BITWISE_XOR) {
                 return castFor(type, "(" + left + " ^ " + right + ")");
             }
+            if (binary.op() == BinaryOperator.SHIFT_LEFT) {
+                return castFor(type, "(" + left + " << " + normalizedShift(type, right) + ")");
+            }
+            if (binary.op() == BinaryOperator.SHIFT_RIGHT) {
+                return castFor(type, "(" + left + " >> " + normalizedShift(type, right) + ")");
+            }
+            if (binary.op() == BinaryOperator.SHIFT_RIGHT_UNSIGNED) {
+                return castFor(type, unsignedRightShiftExpr(type, left, right));
+            }
             if (binary.op() == BinaryOperator.EQUAL) {
                 return compareExpr("==", binary.left(), binary.right(), type);
             }
@@ -983,6 +992,29 @@ final class LIRKernelCompiler {
                 return compareExpr("<", binary.left(), binary.right(), type);
             }
             throw new UnsupportedOperationException("Unsupported binary operator: " + binary.op());
+        }
+
+        private String normalizedShift(DataType type, String right) {
+            int mask = 31;
+            if (type == DataType.I8) {
+                mask = 7;
+            } else if (type == DataType.I16) {
+                mask = 15;
+            } else if (type == DataType.I64) {
+                mask = 63;
+            }
+            return "((int) (" + right + ") & " + mask + ")";
+        }
+
+        private String unsignedRightShiftExpr(DataType type, String left, String right) {
+            String shift = normalizedShift(type, right);
+            if (type == DataType.I8) {
+                return "((((int) (" + left + ")) & 0xFF) >>> " + shift + ")";
+            }
+            if (type == DataType.I16) {
+                return "((((int) (" + left + ")) & 0xFFFF) >>> " + shift + ")";
+            }
+            return "(" + left + " >>> " + shift + ")";
         }
 
         private String maybeConvertForBinaryExpr(
@@ -1011,7 +1043,7 @@ final class LIRKernelCompiler {
         private String emitIndexExpr(LIRExprNode node) {
             LIRExprNode resolved = exprGraph.resolve(node);
             return switch (resolved.kind()) {
-                case I_CONST -> Long.toString(((IConst) resolved).value());
+                case I_CONST -> indexLiteral(((IConst) resolved).value());
                 case I_VAR -> ((IVar) resolved).name();
                 case I_BINARY ->
                         "("
@@ -1041,7 +1073,7 @@ final class LIRKernelCompiler {
                 case I_CONST -> {
                     long value = ((IConst) resolved).value();
                     String replacement = findStrideVariable(value, strides, strideVars);
-                    yield replacement != null ? replacement : Long.toString(value);
+                    yield replacement != null ? replacement : indexLiteral(value);
                 }
                 case I_VAR -> ((IVar) resolved).name();
                 case I_BINARY -> {
@@ -1155,9 +1187,15 @@ final class LIRKernelCompiler {
                 case DIVIDE -> "/";
                 case MODULO -> "%";
                 case BITWISE_AND -> "&";
+                case BITWISE_XOR -> "^";
                 case SHIFT_LEFT -> "<<";
                 case SHIFT_RIGHT -> ">>";
+                case UNSIGNED_SHIFT_RIGHT -> ">>>";
             };
+        }
+
+        private String indexLiteral(long value) {
+            return value + "L";
         }
 
         /**

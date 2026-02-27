@@ -29,6 +29,7 @@ final class TIRNodeUtils {
             case ReductionOp __ -> true;
             case GatherOp __ -> true;
             case Contiguous __ -> true;
+            case RandomUniformOp __ -> true;
             default -> false;
         };
     }

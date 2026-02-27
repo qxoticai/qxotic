@@ -21,7 +21,7 @@ public final class ExecutionContexts {
 
     public static ExecutionContext forDevice(Device device) {
         Objects.requireNonNull(device, "device");
-        MemoryDomain<?> memoryDomain = Environment.current().runtimeFor(device).memoryDomain();
+        MemoryDomain<?> memoryDomain = Environment.current().memoryDomainFor(device);
         return forContext(memoryDomain);
     }
 

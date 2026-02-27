@@ -19,7 +19,8 @@ public sealed interface TIRNode extends IRNode
                 GatherOp,
                 ViewTransform,
                 Contiguous,
-                IotaConstant {
+                IotaConstant,
+                RandomUniformOp {
 
     /** Returns the shape of this node. */
     Shape shape();
@@ -39,6 +40,7 @@ public sealed interface TIRNode extends IRNode
             case ViewTransform n -> visitor.visitViewTransform(n);
             case Contiguous n -> visitor.visitContiguous(n);
             case IotaConstant n -> visitor.visitIotaConstant(n);
+            case RandomUniformOp n -> visitor.visitRandomUniformOp(n);
         };
     }
 }

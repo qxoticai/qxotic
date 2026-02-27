@@ -17,8 +17,6 @@ import java.nio.file.Path;
 
 public final class TestKernels {
 
-    private static final String PPM_PROPERTY = "jota.test.ppm";
-
     private TestKernels() {}
 
     public static float gelu(float x) {
@@ -110,9 +108,6 @@ public final class TestKernels {
             int width,
             int height,
             int iterations) {
-        if (!Boolean.getBoolean(PPM_PROPERTY)) {
-            return;
-        }
         writePpm(domain, view, path, width, height, iterations);
     }
 
@@ -123,9 +118,6 @@ public final class TestKernels {
             int width,
             int height,
             int iterations) {
-        if (!Boolean.getBoolean(PPM_PROPERTY)) {
-            return;
-        }
         writePpm(domain, view, path, width, height, iterations);
     }
 

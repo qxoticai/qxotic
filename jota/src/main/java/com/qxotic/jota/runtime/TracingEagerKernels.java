@@ -107,6 +107,9 @@ public final class TracingEagerKernels implements DeviceRuntime.EagerKernels {
             case BITWISE_AND -> left.bitwiseAnd(right);
             case BITWISE_OR -> left.bitwiseOr(right);
             case BITWISE_XOR -> left.bitwiseXor(right);
+            case LEFT_SHIFT -> left.leftShift(right);
+            case RIGHT_SHIFT -> left.rightShift(right);
+            case RIGHT_SHIFT_UNSIGNED -> left.rightShiftUnsigned(right);
             case LOGICAL_AND, LOGICAL_OR, LOGICAL_XOR, EQUAL, LESS_THAN ->
                     throw new UnsupportedOperationException(
                             "Binary op not supported in this method: " + op);

@@ -48,6 +48,9 @@ final class ConstantFolder {
         if (op == BinaryOp.BITWISE_AND) return BinaryOperator.BITWISE_AND;
         if (op == BinaryOp.BITWISE_OR) return BinaryOperator.BITWISE_OR;
         if (op == BinaryOp.BITWISE_XOR) return BinaryOperator.BITWISE_XOR;
+        if (op == BinaryOp.LEFT_SHIFT) return BinaryOperator.SHIFT_LEFT;
+        if (op == BinaryOp.RIGHT_SHIFT) return BinaryOperator.SHIFT_RIGHT;
+        if (op == BinaryOp.RIGHT_SHIFT_UNSIGNED) return BinaryOperator.SHIFT_RIGHT_UNSIGNED;
         if (op == BinaryOp.EQUAL) return BinaryOperator.EQUAL;
         if (op == BinaryOp.LESS_THAN) return BinaryOperator.LESS_THAN;
         return null;
@@ -147,6 +150,10 @@ final class ConstantFolder {
         if (op == BinaryOp.BITWISE_AND) return (byte) (a & b);
         if (op == BinaryOp.BITWISE_OR) return (byte) (a | b);
         if (op == BinaryOp.BITWISE_XOR) return (byte) (a ^ b);
+        int s = b & 7;
+        if (op == BinaryOp.LEFT_SHIFT) return (byte) (a << s);
+        if (op == BinaryOp.RIGHT_SHIFT) return (byte) (a >> s);
+        if (op == BinaryOp.RIGHT_SHIFT_UNSIGNED) return (byte) ((a & 0xFF) >>> s);
         throw new UnsupportedOperationException("Cannot fold: " + op);
     }
 
@@ -160,6 +167,10 @@ final class ConstantFolder {
         if (op == BinaryOp.BITWISE_AND) return (short) (a & b);
         if (op == BinaryOp.BITWISE_OR) return (short) (a | b);
         if (op == BinaryOp.BITWISE_XOR) return (short) (a ^ b);
+        int s = b & 15;
+        if (op == BinaryOp.LEFT_SHIFT) return (short) (a << s);
+        if (op == BinaryOp.RIGHT_SHIFT) return (short) (a >> s);
+        if (op == BinaryOp.RIGHT_SHIFT_UNSIGNED) return (short) ((a & 0xFFFF) >>> s);
         throw new UnsupportedOperationException("Cannot fold: " + op);
     }
 
@@ -173,6 +184,10 @@ final class ConstantFolder {
         if (op == BinaryOp.BITWISE_AND) return a & b;
         if (op == BinaryOp.BITWISE_OR) return a | b;
         if (op == BinaryOp.BITWISE_XOR) return a ^ b;
+        int s = b & 31;
+        if (op == BinaryOp.LEFT_SHIFT) return a << s;
+        if (op == BinaryOp.RIGHT_SHIFT) return a >> s;
+        if (op == BinaryOp.RIGHT_SHIFT_UNSIGNED) return a >>> s;
         throw new UnsupportedOperationException("Cannot fold: " + op);
     }
 
@@ -186,6 +201,10 @@ final class ConstantFolder {
         if (op == BinaryOp.BITWISE_AND) return a & b;
         if (op == BinaryOp.BITWISE_OR) return a | b;
         if (op == BinaryOp.BITWISE_XOR) return a ^ b;
+        int s = (int) (b & 63);
+        if (op == BinaryOp.LEFT_SHIFT) return a << s;
+        if (op == BinaryOp.RIGHT_SHIFT) return a >> s;
+        if (op == BinaryOp.RIGHT_SHIFT_UNSIGNED) return a >>> s;
         throw new UnsupportedOperationException("Cannot fold: " + op);
     }
 

@@ -8,12 +8,14 @@ import com.qxotic.jota.tensor.KernelCacheKey;
 import com.qxotic.jota.tensor.KernelExecutable;
 import com.qxotic.jota.tensor.KernelProgram;
 import com.qxotic.jota.tensor.LaunchConfig;
+import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
+@RunOnAllAvailableBackends
 class KernelServiceTest {
 
     @Test

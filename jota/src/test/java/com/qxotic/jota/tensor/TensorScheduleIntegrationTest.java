@@ -18,9 +18,11 @@ import com.qxotic.jota.ir.tir.TIRSchedulePass;
 import com.qxotic.jota.ir.tir.TernaryOp;
 import com.qxotic.jota.ir.tir.UnaryOp;
 import com.qxotic.jota.ir.tir.ViewTransform;
+import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
+@RunOnAllAvailableBackends
 class TensorScheduleIntegrationTest {
 
     @Test
