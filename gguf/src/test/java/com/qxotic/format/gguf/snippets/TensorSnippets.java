@@ -37,7 +37,7 @@ public class TensorSnippets {
         GGUF gguf = GGUF.read(Paths.get("model.gguf"));
         TensorEntry tensor = gguf.getTensor("token_embd.weight");
 
-        long absoluteOffset = tensor.absoluteOffset(gguf);
+        long absoluteOffset = gguf.absoluteOffset(tensor);
         // Or manually: gguf.getTensorDataOffset() + tensor.offset()
     }
 

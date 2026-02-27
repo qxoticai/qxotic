@@ -23,7 +23,7 @@ public class TensorDataSnippets {
 
         try (FileChannel channel =
                 FileChannel.open(Paths.get("model.gguf"), StandardOpenOption.READ)) {
-            channel.position(tensor.absoluteOffset(gguf));
+            channel.position(gguf.absoluteOffset(tensor));
             channel.read(buffer);
             buffer.flip();
         }
@@ -41,7 +41,7 @@ public class TensorDataSnippets {
             MappedByteBuffer buffer =
                     channel.map(
                             FileChannel.MapMode.READ_ONLY,
-                            tensor.absoluteOffset(gguf),
+                            gguf.absoluteOffset(tensor),
                             tensor.byteSize());
         }
     }
@@ -56,7 +56,7 @@ public class TensorDataSnippets {
         try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
             for (TensorEntry tensor : gguf.getTensors()) {
                 ByteBuffer buffer = ByteBuffer.allocate((int) tensor.byteSize());
-                channel.position(tensor.absoluteOffset(gguf));
+                channel.position(gguf.absoluteOffset(tensor));
                 channel.read(buffer);
                 buffer.flip();
                 process(tensor.name(), buffer);
