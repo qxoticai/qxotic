@@ -8,6 +8,7 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.tensor.Tensor;
+import com.qxotic.jota.tensor.TensorTestInternals;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
 import com.qxotic.jota.testutil.TensorTestReads;
 import org.junit.jupiter.api.Test;
@@ -19,8 +20,8 @@ class TensorUsabilityExamplesTest {
     void elementwiseChainMaterializes() {
         Tensor y = Tensor.iota(6, DataType.FP32).view(Shape.of(2, 3)).add(1.0f).sqrt();
 
-        assertTrue(y.isLazy());
-        assertFalse(y.isMaterialized());
+        assertTrue(TensorTestInternals.isLazy(y));
+        assertFalse(TensorTestInternals.isMaterialized(y));
 
         MemoryView<?> output = y.materialize();
 

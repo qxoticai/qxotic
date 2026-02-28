@@ -26,7 +26,7 @@ class GatherTraceLazyTest {
         Tensor indices = Tensor.of(new int[] {2, 0}, Shape.of(2));
 
         Tensor traced = Tracer.trace(List.of(table, indices), ts -> ts.get(0).gather(ts.get(1), 0));
-        assertTrue(traced.isLazy());
+        assertTrue(TensorTestInternals.isLazy(traced));
 
         MemoryView<?> view = traced.materialize();
         assertEquals(DataType.FP32, view.dataType());

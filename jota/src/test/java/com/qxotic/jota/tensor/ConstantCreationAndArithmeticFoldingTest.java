@@ -43,9 +43,9 @@ class ConstantCreationAndArithmeticFoldingTest {
     void broadcastedFloatStaysLazy() {
         Tensor tensor = Tensor.broadcasted(3.5f, Shape.of(2, 3));
 
-        assertTrue(tensor.isLazy());
-        assertFalse(tensor.isMaterialized());
-        assertTrue(tensor.isScalarBroadcast());
+        assertTrue(TensorTestInternals.isLazy(tensor));
+        assertFalse(TensorTestInternals.isMaterialized(tensor));
+        assertTrue(TensorTestInternals.isScalarBroadcast(tensor));
         assertEquals(DataType.FP32, tensor.dataType());
     }
 
@@ -109,9 +109,9 @@ class ConstantCreationAndArithmeticFoldingTest {
     void scalarFloatStaysLazy() {
         Tensor tensor = Tensor.scalar(3.5f);
 
-        assertTrue(tensor.isLazy());
-        assertFalse(tensor.isMaterialized());
-        assertTrue(tensor.isScalarBroadcast());
+        assertTrue(TensorTestInternals.isLazy(tensor));
+        assertFalse(TensorTestInternals.isMaterialized(tensor));
+        assertTrue(TensorTestInternals.isScalarBroadcast(tensor));
         assertEquals(Shape.scalar(), tensor.shape());
         assertEquals(1L, tensor.size());
         assertEquals(0, tensor.stride().flatRank());
@@ -196,8 +196,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     void zerosUsesDefaultFloat() {
         Tensor tensor = Tensor.zeros(Shape.of(2, 3));
 
-        assertTrue(tensor.isLazy());
-        assertTrue(tensor.isScalarBroadcast());
+        assertTrue(TensorTestInternals.isLazy(tensor));
+        assertTrue(TensorTestInternals.isScalarBroadcast(tensor));
         assertEquals(DataType.defaultFloat(), tensor.dataType());
         assertEquals(Shape.of(2, 3), tensor.shape());
     }
@@ -206,8 +206,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     void zerosWithExplicitDtype() {
         Tensor tensor = Tensor.zeros(DataType.I32, Shape.of(4, 5));
 
-        assertTrue(tensor.isLazy());
-        assertTrue(tensor.isScalarBroadcast());
+        assertTrue(TensorTestInternals.isLazy(tensor));
+        assertTrue(TensorTestInternals.isScalarBroadcast(tensor));
         assertEquals(DataType.I32, tensor.dataType());
         assertEquals(Shape.of(4, 5), tensor.shape());
     }
@@ -243,8 +243,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     void onesUsesDefaultFloat() {
         Tensor tensor = Tensor.ones(Shape.of(3, 4));
 
-        assertTrue(tensor.isLazy());
-        assertTrue(tensor.isScalarBroadcast());
+        assertTrue(TensorTestInternals.isLazy(tensor));
+        assertTrue(TensorTestInternals.isScalarBroadcast(tensor));
         assertEquals(DataType.defaultFloat(), tensor.dataType());
         assertEquals(Shape.of(3, 4), tensor.shape());
     }
@@ -253,8 +253,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     void onesWithExplicitDtype() {
         Tensor tensor = Tensor.ones(DataType.I64, Shape.of(2, 2));
 
-        assertTrue(tensor.isLazy());
-        assertTrue(tensor.isScalarBroadcast());
+        assertTrue(TensorTestInternals.isLazy(tensor));
+        assertTrue(TensorTestInternals.isScalarBroadcast(tensor));
         assertEquals(DataType.I64, tensor.dataType());
         assertEquals(Shape.of(2, 2), tensor.shape());
     }
@@ -290,8 +290,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     void fullFloatInfersDtype() {
         Tensor tensor = Tensor.full(3.14f, Shape.of(2, 2));
 
-        assertTrue(tensor.isLazy());
-        assertTrue(tensor.isScalarBroadcast());
+        assertTrue(TensorTestInternals.isLazy(tensor));
+        assertTrue(TensorTestInternals.isScalarBroadcast(tensor));
         assertEquals(DataType.FP32, tensor.dataType());
     }
 
@@ -299,8 +299,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     void fullDoubleInfersDtype() {
         Tensor tensor = Tensor.full(2.718, Shape.of(3, 3));
 
-        assertTrue(tensor.isLazy());
-        assertTrue(tensor.isScalarBroadcast());
+        assertTrue(TensorTestInternals.isLazy(tensor));
+        assertTrue(TensorTestInternals.isScalarBroadcast(tensor));
         assertEquals(DataType.FP64, tensor.dataType());
     }
 
@@ -308,8 +308,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     void fullLongInfersDtype() {
         Tensor tensor = Tensor.full(42L, Shape.of(4, 4));
 
-        assertTrue(tensor.isLazy());
-        assertTrue(tensor.isScalarBroadcast());
+        assertTrue(TensorTestInternals.isLazy(tensor));
+        assertTrue(TensorTestInternals.isScalarBroadcast(tensor));
         assertEquals(DataType.I64, tensor.dataType());
     }
 
@@ -317,8 +317,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     void fullIntInfersDtype() {
         Tensor tensor = Tensor.full(7, Shape.of(5, 5));
 
-        assertTrue(tensor.isLazy());
-        assertTrue(tensor.isScalarBroadcast());
+        assertTrue(TensorTestInternals.isLazy(tensor));
+        assertTrue(TensorTestInternals.isScalarBroadcast(tensor));
         assertEquals(DataType.I32, tensor.dataType());
     }
 
@@ -326,8 +326,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     void fullWithExplicitDtype() {
         Tensor tensor = Tensor.full(Integer.valueOf(99), DataType.I16, Shape.of(2, 3));
 
-        assertTrue(tensor.isLazy());
-        assertTrue(tensor.isScalarBroadcast());
+        assertTrue(TensorTestInternals.isLazy(tensor));
+        assertTrue(TensorTestInternals.isScalarBroadcast(tensor));
         assertEquals(DataType.I16, tensor.dataType());
     }
 
@@ -373,7 +373,7 @@ class ConstantCreationAndArithmeticFoldingTest {
                     float[] data = {1.0f, 2.0f, 3.0f, 4.0f};
                     Tensor tensor = Tensor.of(data);
 
-                    assertTrue(tensor.isMaterialized());
+                    assertTrue(TensorTestInternals.isMaterialized(tensor));
                     assertEquals(DataType.FP32, tensor.dataType());
                     assertEquals(Shape.flat(4), tensor.shape());
 
@@ -404,7 +404,7 @@ class ConstantCreationAndArithmeticFoldingTest {
                     float[] data = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
                     Tensor tensor = Tensor.of(data, Shape.of(2, 3));
 
-                    assertTrue(tensor.isMaterialized());
+                    assertTrue(TensorTestInternals.isMaterialized(tensor));
                     assertEquals(Shape.of(2, 3), tensor.shape());
                     return null;
                 });
@@ -423,7 +423,7 @@ class ConstantCreationAndArithmeticFoldingTest {
                     double[] data = {1.0, 2.0, 3.0};
                     Tensor tensor = Tensor.of(data);
 
-                    assertTrue(tensor.isMaterialized());
+                    assertTrue(TensorTestInternals.isMaterialized(tensor));
                     assertEquals(DataType.FP64, tensor.dataType());
                     assertEquals(Shape.flat(3), tensor.shape());
 
@@ -454,7 +454,7 @@ class ConstantCreationAndArithmeticFoldingTest {
                     int[] data = {10, 20, 30, 40};
                     Tensor tensor = Tensor.of(data);
 
-                    assertTrue(tensor.isMaterialized());
+                    assertTrue(TensorTestInternals.isMaterialized(tensor));
                     assertEquals(DataType.I32, tensor.dataType());
                     assertEquals(Shape.flat(4), tensor.shape());
 
@@ -484,7 +484,7 @@ class ConstantCreationAndArithmeticFoldingTest {
                     long[] data = {100L, 200L, 300L};
                     Tensor tensor = Tensor.of(data);
 
-                    assertTrue(tensor.isMaterialized());
+                    assertTrue(TensorTestInternals.isMaterialized(tensor));
                     assertEquals(DataType.I64, tensor.dataType());
                     assertEquals(Shape.flat(3), tensor.shape());
 
@@ -523,8 +523,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     void scalarWithDoubleCarrierCreatesFP16() {
         Tensor tensor = Tensor.scalar(3.14, DataType.FP16);
 
-        assertTrue(tensor.isLazy());
-        assertTrue(tensor.isScalarBroadcast());
+        assertTrue(TensorTestInternals.isLazy(tensor));
+        assertTrue(TensorTestInternals.isScalarBroadcast(tensor));
         assertEquals(Shape.scalar(), tensor.shape());
         assertEquals(DataType.FP16, tensor.dataType());
     }
@@ -533,8 +533,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     void scalarWithDoubleCarrierCreatesBF16() {
         Tensor tensor = Tensor.scalar(2.718, DataType.BF16);
 
-        assertTrue(tensor.isLazy());
-        assertTrue(tensor.isScalarBroadcast());
+        assertTrue(TensorTestInternals.isLazy(tensor));
+        assertTrue(TensorTestInternals.isScalarBroadcast(tensor));
         assertEquals(Shape.scalar(), tensor.shape());
         assertEquals(DataType.BF16, tensor.dataType());
     }
@@ -543,8 +543,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     void scalarWithDoubleCarrierCreatesFP32() {
         Tensor tensor = Tensor.scalar(1.5, DataType.FP32);
 
-        assertTrue(tensor.isLazy());
-        assertTrue(tensor.isScalarBroadcast());
+        assertTrue(TensorTestInternals.isLazy(tensor));
+        assertTrue(TensorTestInternals.isScalarBroadcast(tensor));
         assertEquals(Shape.scalar(), tensor.shape());
         assertEquals(DataType.FP32, tensor.dataType());
     }
@@ -553,8 +553,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     void scalarWithDoubleCarrierCreatesFP64() {
         Tensor tensor = Tensor.scalar(1.5, DataType.FP64);
 
-        assertTrue(tensor.isLazy());
-        assertTrue(tensor.isScalarBroadcast());
+        assertTrue(TensorTestInternals.isLazy(tensor));
+        assertTrue(TensorTestInternals.isScalarBroadcast(tensor));
         assertEquals(Shape.scalar(), tensor.shape());
         assertEquals(DataType.FP64, tensor.dataType());
     }
@@ -563,8 +563,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     void scalarWithLongCarrierCreatesI8() {
         Tensor tensor = Tensor.scalar(42L, DataType.I8);
 
-        assertTrue(tensor.isLazy());
-        assertTrue(tensor.isScalarBroadcast());
+        assertTrue(TensorTestInternals.isLazy(tensor));
+        assertTrue(TensorTestInternals.isScalarBroadcast(tensor));
         assertEquals(Shape.scalar(), tensor.shape());
         assertEquals(DataType.I8, tensor.dataType());
     }
@@ -573,8 +573,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     void scalarWithLongCarrierCreatesI16() {
         Tensor tensor = Tensor.scalar(1000L, DataType.I16);
 
-        assertTrue(tensor.isLazy());
-        assertTrue(tensor.isScalarBroadcast());
+        assertTrue(TensorTestInternals.isLazy(tensor));
+        assertTrue(TensorTestInternals.isScalarBroadcast(tensor));
         assertEquals(Shape.scalar(), tensor.shape());
         assertEquals(DataType.I16, tensor.dataType());
     }
@@ -583,8 +583,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     void scalarWithLongCarrierCreatesI32() {
         Tensor tensor = Tensor.scalar(100000L, DataType.I32);
 
-        assertTrue(tensor.isLazy());
-        assertTrue(tensor.isScalarBroadcast());
+        assertTrue(TensorTestInternals.isLazy(tensor));
+        assertTrue(TensorTestInternals.isScalarBroadcast(tensor));
         assertEquals(Shape.scalar(), tensor.shape());
         assertEquals(DataType.I32, tensor.dataType());
     }
@@ -593,8 +593,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     void scalarWithLongCarrierCreatesI64() {
         Tensor tensor = Tensor.scalar(9999999999L, DataType.I64);
 
-        assertTrue(tensor.isLazy());
-        assertTrue(tensor.isScalarBroadcast());
+        assertTrue(TensorTestInternals.isLazy(tensor));
+        assertTrue(TensorTestInternals.isScalarBroadcast(tensor));
         assertEquals(Shape.scalar(), tensor.shape());
         assertEquals(DataType.I64, tensor.dataType());
     }
@@ -602,7 +602,7 @@ class ConstantCreationAndArithmeticFoldingTest {
     // ========== Constant folding tests (binary ops) ==========
 
     private static ConstantComputation getConstant(Tensor tensor) {
-        return tensor.computation()
+        return TensorTestInternals.computation(tensor)
                 .filter(ConstantComputation.class::isInstance)
                 .map(ConstantComputation.class::cast)
                 .orElseThrow(() -> new AssertionError("Expected ConstantComputation"));
@@ -642,8 +642,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     void foldsBinaryAdd() {
         Tensor result = Tensor.scalar(2.0f).add(3.0f);
 
-        assertTrue(result.isLazy());
-        assertTrue(result.isScalarBroadcast());
+        assertTrue(TensorTestInternals.isLazy(result));
+        assertTrue(TensorTestInternals.isScalarBroadcast(result));
         assertEquals(Shape.scalar(), result.shape());
         assertEquals(DataType.FP32, result.dataType());
 
@@ -655,7 +655,7 @@ class ConstantCreationAndArithmeticFoldingTest {
     void foldsBinarySubtract() {
         Tensor result = Tensor.scalar(10.0f).subtract(3.0f);
 
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         ConstantComputation constant = getConstant(result);
         assertEquals(7.0, constant.value().doubleValue(), 0.0001);
     }
@@ -664,7 +664,7 @@ class ConstantCreationAndArithmeticFoldingTest {
     void foldsBinaryMultiply() {
         Tensor result = Tensor.scalar(4.0f).multiply(5.0f);
 
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         ConstantComputation constant = getConstant(result);
         assertEquals(20.0, constant.value().doubleValue(), 0.0001);
     }
@@ -673,7 +673,7 @@ class ConstantCreationAndArithmeticFoldingTest {
     void foldsBinaryDivide() {
         Tensor result = Tensor.scalar(15.0f).divide(3.0f);
 
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         ConstantComputation constant = getConstant(result);
         assertEquals(5.0, constant.value().doubleValue(), 0.0001);
     }
@@ -682,7 +682,7 @@ class ConstantCreationAndArithmeticFoldingTest {
     void foldsBinaryWithTypePromotion() {
         Tensor result = Tensor.scalar(2.0f).add(Tensor.scalar(3.0)); // FP32 + FP64 -> FP64
 
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(DataType.FP64, result.dataType());
         ConstantComputation constant = getConstant(result);
         assertEquals(5.0, constant.value().doubleValue(), 0.0001);
@@ -693,7 +693,7 @@ class ConstantCreationAndArithmeticFoldingTest {
         // (2 + 3) * 4 = 20
         Tensor result = Tensor.scalar(2.0f).add(3.0f).multiply(4.0f);
 
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         ConstantComputation constant = getConstant(result);
         assertEquals(20.0, constant.value().doubleValue(), 0.0001);
     }
@@ -703,91 +703,91 @@ class ConstantCreationAndArithmeticFoldingTest {
     @Test
     void foldsUnaryNegate() {
         Tensor result = Tensor.scalar(5.0f).negate();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(-5.0, getConstant(result).value().doubleValue(), 0.0001);
     }
 
     @Test
     void foldsUnaryAbs() {
         Tensor result = Tensor.scalar(-7.0f).abs();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(7.0, getConstant(result).value().doubleValue(), 0.0001);
     }
 
     @Test
     void foldsUnaryExp() {
         Tensor result = Tensor.scalar(1.0f).exp();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(Math.E, getConstant(result).value().doubleValue(), 0.0001);
     }
 
     @Test
     void foldsUnaryLog() {
         Tensor result = Tensor.scalar((float) Math.E).log();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(1.0, getConstant(result).value().doubleValue(), 0.0001);
     }
 
     @Test
     void foldsUnarySqrt() {
         Tensor result = Tensor.scalar(16.0f).sqrt();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(4.0, getConstant(result).value().doubleValue(), 0.0001);
     }
 
     @Test
     void foldsUnarySin() {
         Tensor result = Tensor.scalar(0.0f).sin();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(0.0, getConstant(result).value().doubleValue(), 0.0001);
     }
 
     @Test
     void foldsUnaryCos() {
         Tensor result = Tensor.scalar(0.0f).cos();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(1.0, getConstant(result).value().doubleValue(), 0.0001);
     }
 
     @Test
     void foldsUnaryTanh() {
         Tensor result = Tensor.scalar(0.0f).tanh();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(0.0, getConstant(result).value().doubleValue(), 0.0001);
     }
 
     @Test
     void foldsUnaryReciprocal() {
         Tensor result = Tensor.scalar(4.0f).reciprocal();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(0.25, getConstant(result).value().doubleValue(), 0.0001);
     }
 
     @Test
     void foldsUnarySigmoid() {
         Tensor result = Tensor.scalar(0.0f).sigmoid();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(0.5, getConstant(result).value().doubleValue(), 0.0001);
     }
 
     @Test
     void foldsChainedUnaryOps() {
         Tensor result = Tensor.scalar(-5.0f).abs().negate();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(-5.0, getConstant(result).value().doubleValue(), 0.0001);
     }
 
     @Test
     void foldsUnaryPreservesDataType() {
         Tensor result = Tensor.scalar(4.0, DataType.FP32).negate();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(DataType.FP32, result.dataType());
     }
 
     @Test
     void foldsMixedUnaryAndBinaryOps() {
         Tensor result = Tensor.scalar(2.0f).negate().add(5.0f);
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(3.0, getConstant(result).value().doubleValue(), 0.0001);
     }
 
@@ -796,14 +796,14 @@ class ConstantCreationAndArithmeticFoldingTest {
     @Test
     void foldsBinaryMin() {
         Tensor result = Tensor.scalar(7.0f).min(Tensor.scalar(3.0f));
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(3.0, getConstant(result).value().doubleValue(), 0.0001);
     }
 
     @Test
     void foldsBinaryMax() {
         Tensor result = Tensor.scalar(7.0f).max(Tensor.scalar(3.0f));
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(7.0, getConstant(result).value().doubleValue(), 0.0001);
     }
 
@@ -812,35 +812,35 @@ class ConstantCreationAndArithmeticFoldingTest {
     @Test
     void foldsReluPositive() {
         Tensor result = Tensor.scalar(5.0f).relu();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(5.0, getConstant(result).value().doubleValue(), 0.0001);
     }
 
     @Test
     void foldsReluNegative() {
         Tensor result = Tensor.scalar(-3.0f).relu();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(0.0, getConstant(result).value().doubleValue(), 0.0001);
     }
 
     @Test
     void foldsReluZero() {
         Tensor result = Tensor.scalar(0.0f).relu();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(0.0, getConstant(result).value().doubleValue(), 0.0001);
     }
 
     @Test
     void foldsSilu() {
         Tensor result = Tensor.scalar(0.0f).silu();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(0.0, getConstant(result).value().doubleValue(), 0.0001);
     }
 
     @Test
     void foldsSiluPositive() {
         Tensor result = Tensor.scalar(1.0f).silu();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         double expected = 1.0 / (1.0 + Math.exp(-1.0));
         assertEquals(expected, getConstant(result).value().doubleValue(), 0.0001);
     }
@@ -848,14 +848,14 @@ class ConstantCreationAndArithmeticFoldingTest {
     @Test
     void foldsGelu() {
         Tensor result = Tensor.scalar(0.0f).gelu();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(0.0, getConstant(result).value().doubleValue(), 0.0001);
     }
 
     @Test
     void foldsGeluPositive() {
         Tensor result = Tensor.scalar(1.0f).gelu();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         double x = 1.0;
         double inner = Math.sqrt(2.0 / Math.PI) * (x + 0.044715 * x * x * x);
         double expected = 0.5 * x * (1 + Math.tanh(inner));
@@ -867,7 +867,7 @@ class ConstantCreationAndArithmeticFoldingTest {
     @Test
     void foldsIntegerAdd() {
         Tensor result = Tensor.scalar(100L).add(Tensor.scalar(200L));
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(DataType.I64, result.dataType());
         assertEquals(300L, getConstant(result).value().longValue());
     }
@@ -875,21 +875,21 @@ class ConstantCreationAndArithmeticFoldingTest {
     @Test
     void foldsIntegerMultiply() {
         Tensor result = Tensor.scalar(12L).multiply(Tensor.scalar(11L));
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(132L, getConstant(result).value().longValue());
     }
 
     @Test
     void foldsIntegerNegate() {
         Tensor result = Tensor.scalar(42L).negate();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(-42L, getConstant(result).value().longValue());
     }
 
     @Test
     void foldsIntegerAbs() {
         Tensor result = Tensor.scalar(-99L).abs();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(99L, getConstant(result).value().longValue());
     }
 
@@ -904,14 +904,14 @@ class ConstantCreationAndArithmeticFoldingTest {
     @Test
     void foldsIntegerDivision() {
         Tensor result = Tensor.scalar(17L).divide(Tensor.scalar(5L));
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(3L, getConstant(result).value().longValue());
     }
 
     @Test
     void preservesI32DataType() {
         Tensor result = Tensor.scalar(10L, DataType.I32).add(Tensor.scalar(5L, DataType.I32));
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(DataType.I32, result.dataType());
         assertEquals(15L, getConstant(result).value().longValue());
     }
@@ -921,28 +921,28 @@ class ConstantCreationAndArithmeticFoldingTest {
     @Test
     void sigmoidPreservesDataType() {
         Tensor result = Tensor.scalar(0.0, DataType.FP32).sigmoid();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(DataType.FP32, result.dataType());
     }
 
     @Test
     void reluPreservesDataType() {
         Tensor result = Tensor.scalar(1.0, DataType.FP32).relu();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(DataType.FP32, result.dataType());
     }
 
     @Test
     void siluPreservesDataType() {
         Tensor result = Tensor.scalar(1.0, DataType.FP32).silu();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(DataType.FP32, result.dataType());
     }
 
     @Test
     void geluPreservesDataType() {
         Tensor result = Tensor.scalar(1.0, DataType.FP32).gelu();
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(DataType.FP32, result.dataType());
     }
 
@@ -952,39 +952,39 @@ class ConstantCreationAndArithmeticFoldingTest {
     void foldsLargeIntegerValues() {
         long largeValue = Long.MAX_VALUE - 100;
         Tensor result = Tensor.scalar(largeValue).add(Tensor.scalar(50L));
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(largeValue + 50L, getConstant(result).value().longValue());
     }
 
     @Test
     void foldsNegativeValues() {
         Tensor result = Tensor.scalar(-100L).multiply(Tensor.scalar(-5L));
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(500L, getConstant(result).value().longValue());
     }
 
     @Test
     void foldsIntegerOverflow() {
         Tensor result = Tensor.scalar(Long.MAX_VALUE).add(Tensor.scalar(1L));
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(Long.MIN_VALUE, getConstant(result).value().longValue());
     }
 
     @Test
     void foldsFloatSpecialValues() {
         Tensor infResult = Tensor.scalar(1.0).divide(Tensor.scalar(0.0));
-        assertTrue(infResult.isLazy());
+        assertTrue(TensorTestInternals.isLazy(infResult));
         assertEquals(Double.POSITIVE_INFINITY, getConstant(infResult).value().doubleValue());
 
         Tensor negInfResult = Tensor.scalar(-1.0).divide(Tensor.scalar(0.0));
-        assertTrue(negInfResult.isLazy());
+        assertTrue(TensorTestInternals.isLazy(negInfResult));
         assertEquals(Double.NEGATIVE_INFINITY, getConstant(negInfResult).value().doubleValue());
     }
 
     @Test
     void foldsNaNPropagation() {
         Tensor nanResult = Tensor.scalar(0.0).divide(Tensor.scalar(0.0));
-        assertTrue(nanResult.isLazy());
+        assertTrue(TensorTestInternals.isLazy(nanResult));
         assertTrue(Double.isNaN(getConstant(nanResult).value().doubleValue()));
 
         Tensor nanAdd = nanResult.add(Tensor.scalar(5.0));
@@ -999,7 +999,7 @@ class ConstantCreationAndArithmeticFoldingTest {
                         .multiply(Tensor.scalar(4.0f))
                         .subtract(Tensor.scalar(10.0f))
                         .divide(Tensor.scalar(2.0f));
-        assertTrue(result.isLazy());
+        assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(5.0, getConstant(result).value().doubleValue(), 0.0001);
     }
 }

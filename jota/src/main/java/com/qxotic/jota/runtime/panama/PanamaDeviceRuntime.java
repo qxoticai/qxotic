@@ -10,6 +10,7 @@ import com.qxotic.jota.runtime.KernelService;
 import com.qxotic.jota.tensor.ComputeEngine;
 import com.qxotic.jota.tensor.DiskKernelCache;
 import com.qxotic.jota.tensor.KernelBackend;
+import com.qxotic.jota.tensor.KernelLaunchContext;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
 import java.util.Objects;
@@ -21,14 +22,26 @@ public final class PanamaDeviceRuntime implements DeviceRuntime {
     private final ComputeEngine computeEngine;
     private final KernelService kernelService;
     private final EagerKernels eagerKernels;
+    private final KernelLaunchContext launchContext;
 
     public PanamaDeviceRuntime() {
-        this(PanamaFactory.createDomain(), DiskKernelCache.defaultCache());
+        this(
+                PanamaFactory.createDomain(),
+                DiskKernelCache.defaultCache(),
+                KernelLaunchContext.disabled());
     }
 
     public PanamaDeviceRuntime(MemoryDomain<MemorySegment> memoryDomain, DiskKernelCache cache) {
+        this(memoryDomain, cache, KernelLaunchContext.disabled());
+    }
+
+    public PanamaDeviceRuntime(
+            MemoryDomain<MemorySegment> memoryDomain,
+            DiskKernelCache cache,
+            KernelLaunchContext launchContext) {
         this.memoryDomain = Objects.requireNonNull(memoryDomain, "memoryDomain");
-        this.computeEngine = new PanamaLirComputeEngine(memoryDomain, cache);
+        this.launchContext = Objects.requireNonNull(launchContext, "launchContext");
+        this.computeEngine = new PanamaLirComputeEngine(memoryDomain, cache, this.launchContext);
         KernelBackend backend = new JavaKernelBackend(memoryDomain, cache);
         Path programRoot =
                 Path.of("__kernels").resolve(Device.PANAMA.leafName()).resolve("programs");

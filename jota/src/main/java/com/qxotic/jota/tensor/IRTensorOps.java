@@ -58,28 +58,28 @@ final class IRTensorOps implements TensorOps {
 
     @Override
     public Tensor sqrt(Tensor x) {
-        IRTensor tensor = requireIRTensor(x);
+        IRTensorImpl tensor = requireIRTensor(x);
         TensorTypeSemantics.requireFloatingPoint(tensor.dataType(), "sqrt");
         return unaryOp(x, UnaryOperator.SQRT);
     }
 
     @Override
     public Tensor sin(Tensor x) {
-        IRTensor tensor = requireIRTensor(x);
+        IRTensorImpl tensor = requireIRTensor(x);
         TensorTypeSemantics.requireFloatingPoint(tensor.dataType(), "sin");
         return unaryOp(x, UnaryOperator.SIN);
     }
 
     @Override
     public Tensor cos(Tensor x) {
-        IRTensor tensor = requireIRTensor(x);
+        IRTensorImpl tensor = requireIRTensor(x);
         TensorTypeSemantics.requireFloatingPoint(tensor.dataType(), "cos");
         return unaryOp(x, UnaryOperator.COS);
     }
 
     @Override
     public Tensor tanh(Tensor x) {
-        IRTensor tensor = requireIRTensor(x);
+        IRTensorImpl tensor = requireIRTensor(x);
         TensorTypeSemantics.requireFloatingPoint(tensor.dataType(), "tanh");
         return unaryOp(x, UnaryOperator.TANH);
     }
@@ -91,7 +91,7 @@ final class IRTensorOps implements TensorOps {
 
     @Override
     public Tensor bitwiseNot(Tensor x) {
-        IRTensor tensor = requireIRTensor(x);
+        IRTensorImpl tensor = requireIRTensor(x);
         TensorTypeSemantics.requireIntegral(tensor.dataType(), "bitwiseNot");
         return unaryOp(x, UnaryOperator.BITWISE_NOT);
     }
@@ -158,9 +158,9 @@ final class IRTensorOps implements TensorOps {
 
     @Override
     public Tensor where(Tensor condition, Tensor trueValue, Tensor falseValue) {
-        IRTensor condTensor = requireIRTensor(condition);
-        IRTensor aTensor = requireIRTensor(trueValue);
-        IRTensor bTensor = requireIRTensor(falseValue);
+        IRTensorImpl condTensor = requireIRTensor(condition);
+        IRTensorImpl aTensor = requireIRTensor(trueValue);
+        IRTensorImpl bTensor = requireIRTensor(falseValue);
 
         // Validate condition is BOOL type
         TensorTypeSemantics.requireBool(condTensor.dataType(), "where condition");
@@ -168,7 +168,9 @@ final class IRTensorOps implements TensorOps {
         // Validate true and false values have same type
         requireSameType(aTensor, bTensor, "where");
 
-        Shape outputShape = resolveWhereShape(condTensor.shape(), aTensor.shape(), bTensor.shape());
+        Shape outputShape =
+                TensorSemantics.resolveWhereShape(
+                        condTensor.shape(), aTensor.shape(), bTensor.shape());
         TernaryOp node =
                 new TernaryOp(
                         TernaryOperator.WHERE,
@@ -176,7 +178,7 @@ final class IRTensorOps implements TensorOps {
                         aTensor.node(),
                         bTensor.node(),
                         outputShape);
-        return new IRTensor(node, aTensor.device());
+        return new IRTensorImpl(node, aTensor.device());
     }
 
     @Override
@@ -203,8 +205,8 @@ final class IRTensorOps implements TensorOps {
 
     @Override
     public Tensor gather(Tensor input, Tensor indices, int _axis) {
-        IRTensor inputTensor = requireIRTensor(input);
-        IRTensor indicesTensor = requireIRTensor(indices);
+        IRTensorImpl inputTensor = requireIRTensor(input);
+        IRTensorImpl indicesTensor = requireIRTensor(indices);
 
         // Validate indices is integral type
         DataType indicesType = indicesTensor.dataType();
@@ -220,13 +222,13 @@ final class IRTensorOps implements TensorOps {
         // Create GatherOp node
         GatherOp node = new GatherOp(inputTensor.node(), indicesTensor.node(), _axis, outputShape);
 
-        return new IRTensor(node, inputTensor.device());
+        return new IRTensorImpl(node, inputTensor.device());
     }
 
     @Override
     public Tensor dot(Tensor a, Tensor b, DataType accumulatorType) {
-        IRTensor left = requireIRTensor(a);
-        IRTensor right = requireIRTensor(b);
+        IRTensorImpl left = requireIRTensor(a);
+        IRTensorImpl right = requireIRTensor(b);
 
         TensorTypeSemantics.requireNumericNonBool(left.dataType(), "dot");
         TensorTypeSemantics.requireNumericNonBool(right.dataType(), "dot");
@@ -257,8 +259,8 @@ final class IRTensorOps implements TensorOps {
 
     @Override
     public Tensor matmul(Tensor a, Tensor b) {
-        IRTensor left = requireIRTensor(a);
-        IRTensor right = requireIRTensor(b);
+        IRTensorImpl left = requireIRTensor(a);
+        IRTensorImpl right = requireIRTensor(b);
         if (left.shape().rank() != 2 || right.shape().rank() != 2) {
             throw new IllegalArgumentException(
                     "matmul requires rank-2 tensors, got "
@@ -287,8 +289,8 @@ final class IRTensorOps implements TensorOps {
 
         Tensor leftPrepared = contiguous(left);
         Tensor rightPrepared = contiguous(right);
-        IRTensor leftTensor = requireIRTensor(leftPrepared);
-        IRTensor rightTensor = requireIRTensor(rightPrepared);
+        IRTensorImpl leftTensor = requireIRTensor(leftPrepared);
+        IRTensorImpl rightTensor = requireIRTensor(rightPrepared);
 
         Shape productShape = Shape.of(m, k, n);
         Tensor leftExpanded = view(leftTensor, Shape.of(m, k, 1));
@@ -301,8 +303,8 @@ final class IRTensorOps implements TensorOps {
 
     @Override
     public Tensor batchedMatmul(Tensor a, Tensor b) {
-        IRTensor left = requireIRTensor(a);
-        IRTensor right = requireIRTensor(b);
+        IRTensorImpl left = requireIRTensor(a);
+        IRTensorImpl right = requireIRTensor(b);
         if (left.shape().rank() != 3 || right.shape().rank() != 3) {
             throw new IllegalArgumentException(
                     "batchedMatmul requires rank-3 tensors, got "
@@ -340,8 +342,8 @@ final class IRTensorOps implements TensorOps {
 
         Tensor leftPrepared = contiguous(left);
         Tensor rightPrepared = contiguous(right);
-        IRTensor leftTensor = requireIRTensor(leftPrepared);
-        IRTensor rightTensor = requireIRTensor(rightPrepared);
+        IRTensorImpl leftTensor = requireIRTensor(leftPrepared);
+        IRTensorImpl rightTensor = requireIRTensor(rightPrepared);
 
         Shape productShape = Shape.of(batch, m, k, n);
         Tensor leftExpanded = view(leftTensor, Shape.of(batch, m, k, 1));
@@ -354,16 +356,16 @@ final class IRTensorOps implements TensorOps {
 
     @Override
     public Tensor viewTransform(Tensor input, ViewTransforms.ViewTransformSpec spec) {
-        IRTensor tensor = requireIRTensor(input);
+        IRTensorImpl tensor = requireIRTensor(input);
         TIRNode node =
                 new ViewTransform(
                         tensor.node(), spec.kind(), spec.layout(), spec.needsLazyIndexing());
-        return new IRTensor(node, tensor.device());
+        return new IRTensorImpl(node, tensor.device());
     }
 
     @Override
     public Tensor reshape(Tensor input, Shape newShape) {
-        IRTensor tensor = requireIRTensor(input);
+        IRTensorImpl tensor = requireIRTensor(input);
         Shape inputShape = tensor.shape();
         if (inputShape.size() != newShape.size()) {
             throw new IllegalArgumentException(
@@ -393,30 +395,30 @@ final class IRTensorOps implements TensorOps {
 
     @Override
     public Tensor contiguous(Tensor input) {
-        IRTensor tensor = requireIRTensor(input);
+        IRTensorImpl tensor = requireIRTensor(input);
         if (tensor.layout().isSuffixContiguous(0)) {
             return tensor;
         }
         TIRNode node = new Contiguous(tensor.node(), tensor.shape());
-        return new IRTensor(node, tensor.device());
+        return new IRTensorImpl(node, tensor.device());
     }
 
     @Override
     public Tensor cast(Tensor input, DataType targetType) {
-        IRTensor tensor = requireIRTensor(input);
+        IRTensorImpl tensor = requireIRTensor(input);
         TIRNode node = new CastOp(tensor.node(), targetType, tensor.shape());
-        return new IRTensor(node, tensor.device());
+        return new IRTensorImpl(node, tensor.device());
     }
 
     private Tensor unaryOp(Tensor x, UnaryOperator op) {
-        IRTensor tensor = requireIRTensor(x);
+        IRTensorImpl tensor = requireIRTensor(x);
         TIRNode node = new com.qxotic.jota.ir.tir.UnaryOp(op, tensor.node(), tensor.shape());
-        return new IRTensor(node, tensor.device());
+        return new IRTensorImpl(node, tensor.device());
     }
 
     private Tensor binaryOp(Tensor a, Tensor b, BinaryOperator op) {
-        IRTensor left = requireIRTensor(a);
-        IRTensor right = requireIRTensor(b);
+        IRTensorImpl left = requireIRTensor(a);
+        IRTensorImpl right = requireIRTensor(b);
         Shape outputShape = requireCompatibleShape(left, right);
         DataType targetType =
                 TensorTypeSemantics.promoteForArithmetic(
@@ -424,12 +426,12 @@ final class IRTensorOps implements TensorOps {
         TIRNode leftNode = maybeCast(left.node(), targetType);
         TIRNode rightNode = maybeCast(right.node(), targetType);
         TIRNode node = new com.qxotic.jota.ir.tir.BinaryOp(op, leftNode, rightNode, outputShape);
-        return new IRTensor(node, left.device());
+        return new IRTensorImpl(node, left.device());
     }
 
     private Tensor compareBinaryOp(Tensor a, Tensor b, BinaryOperator op) {
-        IRTensor left = requireIRTensor(a);
-        IRTensor right = requireIRTensor(b);
+        IRTensorImpl left = requireIRTensor(a);
+        IRTensorImpl right = requireIRTensor(b);
         Shape outputShape = requireCompatibleShape(left, right);
         DataType targetType =
                 TensorTypeSemantics.promoteForComparison(
@@ -437,18 +439,18 @@ final class IRTensorOps implements TensorOps {
         TIRNode leftNode = maybeCast(left.node(), targetType);
         TIRNode rightNode = maybeCast(right.node(), targetType);
         TIRNode node = new com.qxotic.jota.ir.tir.BinaryOp(op, leftNode, rightNode, outputShape);
-        return new IRTensor(node, left.device());
+        return new IRTensorImpl(node, left.device());
     }
 
     private Tensor booleanBinaryOp(Tensor a, Tensor b, BinaryOperator op, String opName) {
-        IRTensor left = requireIRTensor(a);
-        IRTensor right = requireIRTensor(b);
+        IRTensorImpl left = requireIRTensor(a);
+        IRTensorImpl right = requireIRTensor(b);
         TensorTypeSemantics.requireBooleanPair(left.dataType(), right.dataType(), opName);
         Shape outputShape = requireCompatibleShape(left, right);
         TIRNode leftNode = left.node();
         TIRNode rightNode = right.node();
         TIRNode node = new com.qxotic.jota.ir.tir.BinaryOp(op, leftNode, rightNode, outputShape);
-        return new IRTensor(node, left.device());
+        return new IRTensorImpl(node, left.device());
     }
 
     private Tensor reduceAxes(
@@ -458,7 +460,7 @@ final class IRTensorOps implements TensorOps {
             int[] otherAxes,
             boolean keepDims,
             DataType accumulatorType) {
-        IRTensor tensor = requireIRTensor(input);
+        IRTensorImpl tensor = requireIRTensor(input);
         int[] axes =
                 TensorSemantics.normalizeReductionAxes(tensor.shape().rank(), firstAxis, otherAxes);
         DataType accType =
@@ -468,7 +470,7 @@ final class IRTensorOps implements TensorOps {
         TIRNode node =
                 new com.qxotic.jota.ir.tir.ReductionOp(
                         op, tensor.node(), axes, keepDims, accType, outputShape);
-        return new IRTensor(node, tensor.device());
+        return new IRTensorImpl(node, tensor.device());
     }
 
     private TIRNode maybeCast(TIRNode node, DataType targetType) {
@@ -478,7 +480,7 @@ final class IRTensorOps implements TensorOps {
         return new CastOp(node, targetType, node.shape());
     }
 
-    private void requireSameType(IRTensor left, IRTensor right, String opName) {
+    private void requireSameType(IRTensorImpl left, IRTensorImpl right, String opName) {
         if (left.dataType() != right.dataType()) {
             throw new IllegalArgumentException(
                     opName
@@ -489,44 +491,36 @@ final class IRTensorOps implements TensorOps {
         }
     }
 
-    private Shape requireCompatibleShape(IRTensor left, IRTensor right) {
+    private Shape requireCompatibleShape(IRTensorImpl left, IRTensorImpl right) {
         return TensorSemantics.requireCompatibleShape(left.shape(), right.shape());
     }
 
-    private IRTensor requireIRTensor(Tensor tensor) {
-        if (tensor instanceof IRTensor irtensor) {
+    private IRTensorImpl requireIRTensor(Tensor tensor) {
+        if (tensor instanceof IRTensorImpl irtensor) {
             return irtensor;
         }
-        throw new IllegalArgumentException("Expected IRTensor, got: " + tensor.getClass());
+        throw new IllegalArgumentException("Expected IRTensorImpl, got: " + tensor.getClass());
     }
 
     private Tensor bitwiseBinaryOp(Tensor a, Tensor b, BinaryOperator op, String opName) {
-        IRTensor left = requireIRTensor(a);
-        IRTensor right = requireIRTensor(b);
+        IRTensorImpl left = requireIRTensor(a);
+        IRTensorImpl right = requireIRTensor(b);
         TensorTypeSemantics.requireSameIntegralType(left.dataType(), right.dataType(), opName);
         Shape outputShape = requireCompatibleShape(left, right);
         TIRNode leftNode = left.node();
         TIRNode rightNode = right.node();
         TIRNode node = new com.qxotic.jota.ir.tir.BinaryOp(op, leftNode, rightNode, outputShape);
-        return new IRTensor(node, left.device());
+        return new IRTensorImpl(node, left.device());
     }
 
     private Tensor shiftBinaryOp(Tensor a, Tensor b, BinaryOperator op, String opName) {
-        IRTensor left = requireIRTensor(a);
-        IRTensor right = requireIRTensor(b);
+        IRTensorImpl left = requireIRTensor(a);
+        IRTensorImpl right = requireIRTensor(b);
         TensorTypeSemantics.requireShiftOperandTypes(left.dataType(), right.dataType(), opName);
         Shape outputShape = requireCompatibleShape(left, right);
         TIRNode leftNode = left.node();
         TIRNode rightNode = maybeCast(right.node(), DataType.I32);
         TIRNode node = new com.qxotic.jota.ir.tir.BinaryOp(op, leftNode, rightNode, outputShape);
-        return new IRTensor(node, left.device());
-    }
-
-    private Shape resolveWhereShape(Shape condShape, Shape trueShape, Shape falseShape) {
-        return TensorSemantics.resolveWhereShape(condShape, trueShape, falseShape);
-    }
-
-    private Shape requireCompatibleShape(Shape left, Shape right) {
-        return TensorSemantics.requireCompatibleShape(left, right);
+        return new IRTensorImpl(node, left.device());
     }
 }

@@ -38,7 +38,8 @@ class LyapunovFractalTest {
     @Test
     void generatesLyapunovPpmOnCurrentBackend() {
         Device backend = Environment.current().defaultDevice();
-        MemoryView<?> output = lyapunovTensor(WIDTH, HEIGHT, WARMUP, SAMPLES, TRACE_CHUNK).materialize();
+        MemoryView<?> output =
+                lyapunovTensor(WIDTH, HEIGHT, WARMUP, SAMPLES, TRACE_CHUNK).materialize();
 
         MemoryDomain<MemorySegment> hostDomain = Environment.current().nativeMemoryDomain();
         MemoryView<MemorySegment> hostView = toHost(output);

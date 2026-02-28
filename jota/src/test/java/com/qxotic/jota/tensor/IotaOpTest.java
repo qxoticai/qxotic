@@ -29,8 +29,8 @@ class IotaOpTest {
         assumeArangeSupportedOnConfiguredDevice();
         Tensor range = Tensor.iota(6);
 
-        assertTrue(range.isLazy());
-        assertFalse(range.isMaterialized());
+        assertTrue(TensorTestInternals.isLazy(range));
+        assertFalse(TensorTestInternals.isMaterialized(range));
 
         MemoryView<?> output = range.materialize();
 

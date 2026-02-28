@@ -13,6 +13,7 @@ import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.tensor.DiskKernelCache;
 import com.qxotic.jota.tensor.JavaKernel;
 import com.qxotic.jota.tensor.KernelCacheKey;
+import com.qxotic.jota.tensor.KernelLaunchContext;
 import com.qxotic.jota.tensor.Tensor;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
@@ -56,8 +57,16 @@ public final class PanamaLIRKernelExecutor {
 
     public MemoryView<?> execute(
             TIRGraph graph, List<Tensor> lirInputs, MemoryDomain<MemorySegment> memoryDomain) {
+        return execute(graph, lirInputs, memoryDomain, KernelLaunchContext.disabled());
+    }
+
+    public MemoryView<?> execute(
+            TIRGraph graph,
+            List<Tensor> lirInputs,
+            MemoryDomain<MemorySegment> memoryDomain,
+            KernelLaunchContext launchContext) {
         LIRGraph lirGraph = pipeline.run(lowerer.lower(graph));
-        return execute(lirGraph, lirInputs, memoryDomain);
+        return execute(lirGraph, lirInputs, memoryDomain, launchContext);
     }
 
     public void execute(
@@ -66,9 +75,14 @@ public final class PanamaLIRKernelExecutor {
             List<Tensor> lirInputs,
             List<MemoryView<?>> outputs,
             MemoryDomain<MemorySegment> memoryDomain,
-            Memory<MemorySegment> scratch) {
+            Memory<MemorySegment> scratch,
+            KernelLaunchContext launchContext) {
         compiled.kernel()
-                .execute(memoryDomain, argsBuilder.build(graph, lirInputs, outputs), scratch);
+                .execute(
+                        memoryDomain,
+                        argsBuilder.build(graph, lirInputs, outputs),
+                        scratch,
+                        launchContext);
     }
 
     public void execute(
@@ -78,15 +92,34 @@ public final class PanamaLIRKernelExecutor {
             List<com.qxotic.jota.tensor.ScalarArg> scalars,
             List<MemoryView<?>> outputs,
             MemoryDomain<MemorySegment> memoryDomain,
-            Memory<MemorySegment> scratch) {
+            Memory<MemorySegment> scratch,
+            KernelLaunchContext launchContext) {
         compiled.kernel()
-                .execute(memoryDomain, argsBuilder.build(graph, inputs, scalars, outputs), scratch);
+                .execute(
+                        memoryDomain,
+                        argsBuilder.build(graph, inputs, scalars, outputs),
+                        scratch,
+                        launchContext);
     }
 
     public MemoryView<?> execute(
             LIRGraph graph, List<Tensor> lirInputs, MemoryDomain<MemorySegment> memoryDomain) {
+        return execute(graph, lirInputs, memoryDomain, KernelLaunchContext.disabled());
+    }
+
+    public MemoryView<?> execute(
+            LIRGraph graph,
+            List<Tensor> lirInputs,
+            MemoryDomain<MemorySegment> memoryDomain,
+            KernelLaunchContext launchContext) {
         CompiledKernel compiled = compile(graph);
-        return execute(graph, compiled.kernel(), compiled.scratchLayout(), lirInputs, memoryDomain);
+        return execute(
+                graph,
+                compiled.kernel(),
+                compiled.scratchLayout(),
+                lirInputs,
+                memoryDomain,
+                launchContext);
     }
 
     public MemoryView<?> execute(
@@ -96,7 +129,13 @@ public final class PanamaLIRKernelExecutor {
             MemoryDomain<MemorySegment> memoryDomain) {
         // For backwards compatibility - analyze scratch if not provided
         ScratchLayout scratchLayout = scratchAnalysis.analyze(graph);
-        return execute(graph, kernel, scratchLayout, lirInputs, memoryDomain);
+        return execute(
+                graph,
+                kernel,
+                scratchLayout,
+                lirInputs,
+                memoryDomain,
+                KernelLaunchContext.disabled());
     }
 
     public MemoryView<?> execute(
@@ -104,7 +143,8 @@ public final class PanamaLIRKernelExecutor {
             JavaKernel kernel,
             ScratchLayout scratchLayout,
             List<Tensor> lirInputs,
-            MemoryDomain<MemorySegment> memoryDomain) {
+            MemoryDomain<MemorySegment> memoryDomain,
+            KernelLaunchContext launchContext) {
         List<MemoryView<?>> outputs = allocateOutputs(graph, memoryDomain);
 
         // Allocate scratch if needed
@@ -114,7 +154,8 @@ public final class PanamaLIRKernelExecutor {
         }
 
         // Execute kernel with scratch
-        kernel.execute(memoryDomain, argsBuilder.build(graph, lirInputs, outputs), scratch);
+        kernel.execute(
+                memoryDomain, argsBuilder.build(graph, lirInputs, outputs), scratch, launchContext);
 
         return outputs.getFirst();
     }

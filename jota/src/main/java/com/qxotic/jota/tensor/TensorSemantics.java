@@ -119,17 +119,6 @@ final class TensorSemantics {
         if (conditionShape.isScalar()) {
             return valueShape;
         }
-        if (valueShape.isScalar()) {
-            return conditionShape;
-        }
-        if (!conditionShape.isCongruentWith(valueShape)) {
-            throw new IllegalArgumentException(
-                    "Incompatible shapes in where(): condition shape "
-                            + conditionShape
-                            + " is not compatible with value shapes "
-                            + valueShape
-                            + ". Only true scalar tensors can be broadcast.");
-        }
-        return valueShape;
+        return requireCompatibleShape(conditionShape, valueShape);
     }
 }

@@ -11,9 +11,9 @@ import java.util.Map;
 import java.util.Objects;
 
 /** Lazy range computation that materializes on demand. */
-record RangeComputation(long count, Device device) implements LazyComputation {
+public record RangeComputation(long count, Device device) implements LazyComputation {
 
-    RangeComputation {
+    public RangeComputation {
         if (count < 0) {
             throw new IllegalArgumentException("count must be non-negative, got: " + count);
         }

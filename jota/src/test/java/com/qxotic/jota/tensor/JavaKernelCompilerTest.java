@@ -147,7 +147,7 @@ class JavaKernelCompilerTest {
         MemoryView<?> first = traced.materialize();
         assertNotNull(first);
 
-        assertTrue(traced.computation().isPresent());
+        assertTrue(TensorTestInternals.computation(traced).isPresent());
 
         MemoryView<?> second = traced.materialize();
         assertNotNull(second);

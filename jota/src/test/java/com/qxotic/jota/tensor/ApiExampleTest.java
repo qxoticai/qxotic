@@ -24,8 +24,8 @@ class ApiExampleTest {
         Tensor x = Tensor.of(view);
         Tensor y = x.add(x).sqrt();
 
-        assertTrue(y.isLazy());
-        assertFalse(y.isMaterialized());
+        assertTrue(TensorTestInternals.isLazy(y));
+        assertFalse(TensorTestInternals.isMaterialized(y));
 
         MemoryView<?> output = y.materialize();
 

@@ -7,11 +7,11 @@ import com.qxotic.jota.memory.MemoryView;
 import java.util.Objects;
 import java.util.Optional;
 
-final class MaterializedTensor implements Tensor {
+final class MaterializedTensorImpl extends AbstractTensorImpl {
 
     private final MemoryView<?> view;
 
-    MaterializedTensor(MemoryView<?> view) {
+    MaterializedTensorImpl(MemoryView<?> view) {
         this.view = Objects.requireNonNull(view);
     }
 
@@ -30,13 +30,11 @@ final class MaterializedTensor implements Tensor {
         return view.memory().device();
     }
 
-    @Override
-    public boolean isMaterialized() {
+    boolean isMaterializedInternal() {
         return true;
     }
 
-    @Override
-    public boolean isLazy() {
+    boolean isLazyInternal() {
         return false;
     }
 
@@ -45,13 +43,11 @@ final class MaterializedTensor implements Tensor {
         return view;
     }
 
-    @Override
-    public Optional<MemoryView<?>> tryGetMaterialized() {
+    Optional<MemoryView<?>> tryGetMaterializedInternal() {
         return Optional.of(view);
     }
 
-    @Override
-    public Optional<LazyComputation> computation() {
+    Optional<LazyComputation> computationInternal() {
         return Optional.empty();
     }
 

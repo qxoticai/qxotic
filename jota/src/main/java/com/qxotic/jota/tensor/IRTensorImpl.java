@@ -12,12 +12,12 @@ import java.util.Optional;
  * Temporary wrapper for TIRNode during IR-T tracing. Similar to TraceTensor but uses IR-T instead
  * of ExprNode.
  */
-final class IRTensor implements Tensor {
+final class IRTensorImpl extends AbstractTensorImpl {
 
     private final TIRNode node;
     private final Device device;
 
-    IRTensor(TIRNode node, Device device) {
+    IRTensorImpl(TIRNode node, Device device) {
         this.node = Objects.requireNonNull(node);
         this.device = Objects.requireNonNull(device);
     }
@@ -43,18 +43,15 @@ final class IRTensor implements Tensor {
         return device;
     }
 
-    @Override
-    public boolean isMaterialized() {
+    boolean isMaterializedInternal() {
         return false;
     }
 
-    @Override
-    public boolean isLazy() {
+    boolean isLazyInternal() {
         return true;
     }
 
-    @Override
-    public Optional<MemoryView<?>> tryGetMaterialized() {
+    Optional<MemoryView<?>> tryGetMaterializedInternal() {
         return Optional.empty();
     }
 
@@ -65,8 +62,7 @@ final class IRTensor implements Tensor {
                         + "Use Tensor.lazy(IRComputation) or trace to IRGraph.");
     }
 
-    @Override
-    public Optional<LazyComputation> computation() {
+    Optional<LazyComputation> computationInternal() {
         return Optional.empty();
     }
 

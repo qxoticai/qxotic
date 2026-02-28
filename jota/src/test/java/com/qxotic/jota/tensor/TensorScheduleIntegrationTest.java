@@ -42,9 +42,10 @@ class TensorScheduleIntegrationTest {
                             return z.sum(DataType.FP32, 1).add(2f).square();
                         });
 
-        assertTrue(traced.isLazy());
+        assertTrue(TensorTestInternals.isLazy(traced));
         IRComputation computation =
-                assertInstanceOf(IRComputation.class, traced.computation().orElseThrow());
+                assertInstanceOf(
+                        IRComputation.class, TensorTestInternals.computation(traced).orElseThrow());
         TIRGraph optimized = computation.optimizeGraph(computation.graph());
 
         ScheduledProgram schedule = new TIRSchedulePass().run(optimized);

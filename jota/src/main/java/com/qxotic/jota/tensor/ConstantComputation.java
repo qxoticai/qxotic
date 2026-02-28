@@ -23,14 +23,15 @@ import java.util.Map;
  * <p>The constant value can be extracted without allocation, allowing the kernel compiler to emit
  * it as a literal in generated code.
  */
-record ConstantComputation(long rawBits, DataType dataType, Shape shape, Device device)
+public record ConstantComputation(long rawBits, DataType dataType, Shape shape, Device device)
         implements LazyComputation {
 
-    static ConstantComputation of(Number value, DataType dataType, Shape shape, Device device) {
+    public static ConstantComputation of(
+            Number value, DataType dataType, Shape shape, Device device) {
         return new ConstantComputation(toBits(value, dataType), dataType, shape, device);
     }
 
-    Number value() {
+    public Number value() {
         return fromBits(rawBits, dataType);
     }
 
