@@ -7,7 +7,7 @@ import com.qxotic.jota.memory.MemoryView;
 import java.util.Objects;
 import java.util.Optional;
 
-final class LazyTensor implements Tensor {
+final class LazyTensorImpl extends AbstractTensorImpl {
 
     private final LazyComputation computation;
     private final DataType dtype;
@@ -17,7 +17,7 @@ final class LazyTensor implements Tensor {
     private volatile MemoryView<?> cachedResult;
     private final Object materializeLock = new Object();
 
-    LazyTensor(LazyComputation computation, DataType dtype, Layout layout, Device device) {
+    LazyTensorImpl(LazyComputation computation, DataType dtype, Layout layout, Device device) {
         this.computation = Objects.requireNonNull(computation);
         this.dtype = Objects.requireNonNull(dtype);
         this.layout = Objects.requireNonNull(layout);
@@ -39,13 +39,11 @@ final class LazyTensor implements Tensor {
         return device;
     }
 
-    @Override
-    public boolean isMaterialized() {
+    boolean isMaterializedInternal() {
         return cachedResult != null;
     }
 
-    @Override
-    public boolean isLazy() {
+    boolean isLazyInternal() {
         return true;
     }
 
@@ -65,13 +63,11 @@ final class LazyTensor implements Tensor {
         }
     }
 
-    @Override
-    public Optional<MemoryView<?>> tryGetMaterialized() {
+    Optional<MemoryView<?>> tryGetMaterializedInternal() {
         return Optional.ofNullable(cachedResult);
     }
 
-    @Override
-    public Optional<LazyComputation> computation() {
+    Optional<LazyComputation> computationInternal() {
         return Optional.of(computation);
     }
 
@@ -79,7 +75,7 @@ final class LazyTensor implements Tensor {
     public String toString() {
         StringBuilder builder =
                 new StringBuilder("Tensor(materialized=")
-                        .append(isMaterialized())
+                        .append(isMaterializedInternal())
                         .append(", lazy=true, dtype=")
                         .append(dtype)
                         .append(", shape=")
@@ -88,11 +84,12 @@ final class LazyTensor implements Tensor {
                         .append(layout)
                         .append(", device=")
                         .append(device.name());
-        if (computation instanceof ConstantComputation constant) {
-            builder.append(", constant=").append(constant.value());
-        } else if (computation instanceof RangeComputation) {
+        String computationType = computation.getClass().getSimpleName();
+        if ("ConstantComputation".equals(computationType)) {
+            builder.append(", op=constant");
+        } else if ("RangeComputation".equals(computationType)) {
             builder.append(", op=range");
-        } else if (computation instanceof RandomComputation) {
+        } else if ("RandomComputation".equals(computationType)) {
             builder.append(", op=random");
         } else {
             builder.append(", op=ir-graph");

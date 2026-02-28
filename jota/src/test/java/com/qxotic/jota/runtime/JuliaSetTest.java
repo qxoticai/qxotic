@@ -37,7 +37,8 @@ class JuliaSetTest {
     @Test
     void generatesJuliaPpmOnCurrentBackend() {
         Device backend = Environment.current().defaultDevice();
-        MemoryView<?> output = juliaTensorChunked(WIDTH, HEIGHT, ITERATIONS, TRACE_CHUNK).materialize();
+        MemoryView<?> output =
+                juliaTensorChunked(WIDTH, HEIGHT, ITERATIONS, TRACE_CHUNK).materialize();
 
         MemoryDomain<MemorySegment> hostDomain = Environment.current().nativeMemoryDomain();
         MemoryView<MemorySegment> hostView = toHost(output);

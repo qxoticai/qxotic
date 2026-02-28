@@ -16,13 +16,13 @@ import java.lang.foreign.MemorySegment;
 import java.util.List;
 import java.util.Map;
 
-final class RandomComputation implements LazyComputation {
+public final class RandomComputation implements LazyComputation {
     private final Shape shape;
     private final DataType dtype;
     private final Device device;
     private final RandomKey key;
 
-    RandomComputation(Shape shape, DataType dtype, Device device, RandomKey key) {
+    public RandomComputation(Shape shape, DataType dtype, Device device, RandomKey key) {
         this.shape = shape;
         this.dtype = dtype;
         this.device = device;

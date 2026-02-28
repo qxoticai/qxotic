@@ -5,9 +5,7 @@ import com.qxotic.jota.Shape;
 import com.qxotic.jota.ir.tir.TIRGraph;
 import com.qxotic.jota.ir.tir.TIRNode;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -24,7 +22,7 @@ public final class Tracer {
     private Tracer() {}
 
     /** Returns true if we are currently inside a {@code Tracer.trace()} call. */
-    static boolean isTracing() {
+    public static boolean isTracing() {
         return IR_CONTEXT.isBound();
     }
 
@@ -37,6 +35,11 @@ public final class Tracer {
             return IR_CONTEXT.get();
         }
         throw new IllegalStateException("Not inside a Tracer.trace() context");
+    }
+
+    public static <T> T withRequiredIROps(Function<TensorOps, T> fn) {
+        Objects.requireNonNull(fn, "fn");
+        return fn.apply(requireIROps());
     }
 
     /** Runs a supplier inside an IR context (package-private). */
@@ -87,8 +90,8 @@ public final class Tracer {
     public static Tensor trace(List<Tensor> inputs, Function<List<Tensor>, Tensor> fn) {
         TraceInputs traceInputs = traceInputs(inputs);
         Tensor output = withIR(() -> fn.apply(new ArrayList<>(traceInputs.tensors())));
-        IRTensor irtOutput = (IRTensor) output;
-        TIRGraph graph = new TIRGraph(traceInputs.nodes(), List.of(irtOutput.node()));
+        TIRGraph graph =
+                new TIRGraph(traceInputs.nodes(), List.of(InternalTensorAccess.irNode(output)));
         return Tensor.lazy(
                 new IRComputation(graph, inputs),
                 output.dataType(),
@@ -99,7 +102,6 @@ public final class Tracer {
     private static TraceInputs traceInputs(List<Tensor> inputs) {
         List<TIRNode> nodes = new ArrayList<>();
         List<Tensor> tensors = new ArrayList<>();
-        Map<Integer, Tensor> tensorMap = new HashMap<>();
 
         for (int i = 0; i < inputs.size(); i++) {
             Tensor input = inputs.get(i);
@@ -108,11 +110,12 @@ public final class Tracer {
 
             if (scalarBroadcast && input.device().root() == Device.CPU) {
                 node = new com.qxotic.jota.ir.tir.ScalarInput(i, input.dataType(), input.shape());
-            } else if (input.isMaterialized() || input.computation().isEmpty()) {
+            } else if (InternalTensorAccess.isMaterialized(input)
+                    || InternalTensorAccess.computation(input).isEmpty()) {
                 // Materialized tensor - create a TensorInput
                 node = new com.qxotic.jota.ir.tir.TensorInput(i, input.dataType(), input.layout());
             } else {
-                LazyComputation comp = input.computation().orElseThrow();
+                LazyComputation comp = InternalTensorAccess.computation(input).orElseThrow();
                 if (comp instanceof RangeComputation range) {
                     // Iota constant - computed from loop index
                     node =
@@ -142,25 +145,19 @@ public final class Tracer {
             }
 
             nodes.add(node);
-            tensors.add(new IRTensor(node, input.device()));
-            tensorMap.put(i, input);
+            tensors.add(new IRTensorImpl(node, input.device()));
         }
 
-        return new TraceInputs(nodes, tensors, tensorMap);
+        return new TraceInputs(nodes, tensors);
     }
 
-    private record TraceInputs(
-            List<TIRNode> nodes, List<Tensor> tensors, Map<Integer, Tensor> tensorMap) {
+    private record TraceInputs(List<TIRNode> nodes, List<Tensor> tensors) {
         public List<TIRNode> nodes() {
             return nodes;
         }
 
         public List<Tensor> tensors() {
             return tensors;
-        }
-
-        public Map<Integer, Tensor> tensorMap() {
-            return tensorMap;
         }
     }
 }

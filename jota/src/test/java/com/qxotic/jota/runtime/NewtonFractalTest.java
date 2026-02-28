@@ -37,7 +37,8 @@ class NewtonFractalTest {
     @Test
     void generatesNewtonPpmOnCurrentBackend() {
         Device backend = Environment.current().defaultDevice();
-        MemoryView<?> output = Tracer.trace(() -> newtonTensor(WIDTH, HEIGHT, ITERATIONS)).materialize();
+        MemoryView<?> output =
+                Tracer.trace(() -> newtonTensor(WIDTH, HEIGHT, ITERATIONS)).materialize();
 
         MemoryDomain<MemorySegment> hostDomain = Environment.current().nativeMemoryDomain();
         MemoryView<MemorySegment> hostView = toHost(output);
@@ -93,7 +94,8 @@ class NewtonFractalTest {
             Tensor denom = fpReal.square().add(fpImag.square()).add(1e-12f);
 
             Tensor deltaReal = fReal.multiply(fpReal).add(fImag.multiply(fpImag)).divide(denom);
-            Tensor deltaImag = fImag.multiply(fpReal).subtract(fReal.multiply(fpImag)).divide(denom);
+            Tensor deltaImag =
+                    fImag.multiply(fpReal).subtract(fReal.multiply(fpImag)).divide(denom);
 
             Tensor nextReal = zReal.subtract(deltaReal);
             Tensor nextImag = zImag.subtract(deltaImag);
@@ -116,8 +118,7 @@ class NewtonFractalTest {
         Tensor root1 = d1.lessThan(d2);
         Tensor rootId =
                 root0.where(
-                        Tensor.scalar(0.0f),
-                        root1.where(Tensor.scalar(1.0f), Tensor.scalar(2.0f)));
+                        Tensor.scalar(0.0f), root1.where(Tensor.scalar(1.0f), Tensor.scalar(2.0f)));
         Tensor unresolved = solved.logicalNot();
         Tensor unresolvedCode = Tensor.full(2.95f, DataType.FP32, shape);
         return unresolved.where(unresolvedCode, rootId.add(iterFrac.multiply(0.95f)));

@@ -58,12 +58,12 @@ class ToOpTest {
     @Test
     void toOnSameDeviceDoesNotMaterializeLazyTensor() {
         Tensor lazy = Tensor.iota(128, DataType.FP32);
-        assertFalse(lazy.isMaterialized());
+        assertFalse(TensorTestInternals.isMaterialized(lazy));
 
         Tensor same = lazy.to(ConfiguredTestDevice.resolve());
 
         assertSame(lazy, same);
-        assertFalse(same.isMaterialized());
+        assertFalse(TensorTestInternals.isMaterialized(same));
     }
 
     @Test

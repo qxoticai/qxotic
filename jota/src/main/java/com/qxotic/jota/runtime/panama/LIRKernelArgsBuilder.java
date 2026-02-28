@@ -31,7 +31,7 @@ public final class LIRKernelArgsBuilder {
                 args.addScalarBits(rawBits, scalarInput.dataType());
                 continue;
             }
-            MemoryView<?> view = tensor.tryGetMaterialized().orElseGet(tensor::materialize);
+            MemoryView<?> view = tensor.materialize();
             args.addBuffer(view);
         }
         for (MemoryView<?> output : outputs) {
@@ -85,12 +85,7 @@ public final class LIRKernelArgsBuilder {
     }
 
     private long readScalarBits(Tensor tensor, DataType type) {
-        java.util.OptionalLong constantBits = tensor.scalarConstantBits();
-        if (constantBits.isPresent()) {
-            return constantBits.getAsLong();
-        }
-
-        MemoryView<?> view = tensor.tryGetMaterialized().orElseGet(tensor::materialize);
+        MemoryView<?> view = tensor.materialize();
         MemorySegment segment;
         long offset = view.byteOffset();
         if (view.memory().base() instanceof MemorySegment memSegment) {

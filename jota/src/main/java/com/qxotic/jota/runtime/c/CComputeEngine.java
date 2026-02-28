@@ -115,7 +115,7 @@ public final class CComputeEngine implements ComputeEngine {
                 continue;
             }
             Tensor tensor = inputs.get(i);
-            materialized.add(tensor.tryGetMaterialized().orElseGet(tensor::materialize));
+            materialized.add(tensor.materialize());
         }
         return materialized;
     }
