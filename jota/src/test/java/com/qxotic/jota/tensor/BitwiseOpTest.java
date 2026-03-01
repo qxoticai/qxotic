@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.Device;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
 import com.qxotic.jota.testutil.TensorTestReads;
@@ -136,11 +137,11 @@ class BitwiseOpTest {
             return TensorTestReads.readByte(tensor, index);
         }
         if (dataType == DataType.I16) {
-            Tensor materialized = tensor.to(com.qxotic.jota.Device.PANAMA);
+            Tensor materialized = tensor.to(Device.PANAMA);
             return (short) TensorTestReads.readLong(materialized.cast(DataType.I64), index);
         }
         if (dataType == DataType.I32) {
-            Tensor materialized = tensor.to(com.qxotic.jota.Device.PANAMA);
+            Tensor materialized = tensor.to(Device.PANAMA);
             return (int) TensorTestReads.readLong(materialized.cast(DataType.I64), index);
         }
         if (dataType == DataType.I64) {

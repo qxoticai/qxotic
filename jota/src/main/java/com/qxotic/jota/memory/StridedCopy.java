@@ -1,6 +1,7 @@
 package com.qxotic.jota.memory;
 
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.Device;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
@@ -42,7 +43,7 @@ final class StridedCopy {
             return;
         }
 
-        if (domain.device() == com.qxotic.jota.Device.PANAMA
+        if (domain.device() == Device.PANAMA
                 && src.memory().base() instanceof MemorySegment
                 && dst.memory().base() instanceof MemorySegment) {
             copyWithMemorySegment(

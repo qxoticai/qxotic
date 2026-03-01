@@ -13,6 +13,7 @@ import com.qxotic.jota.memory.impl.MemoryViewFactory;
 import com.qxotic.jota.testutil.TestKernels;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.Disabled;
@@ -160,10 +161,8 @@ class JavaKernelCompilerTest {
         MemoryView<MemorySegment> input2 = range(Shape.of(2, 2));
         Tensor traced =
                 Tracer.trace(
-                        Tensor.of(input0),
-                        Tensor.of(input1),
-                        Tensor.of(input2),
-                        (a, b, c) -> a.add(b).multiply(c));
+                        List.of(Tensor.of(input0), Tensor.of(input1), Tensor.of(input2)),
+                        tensors -> tensors.get(0).add(tensors.get(1)).multiply(tensors.get(2)));
 
         MemoryView<?> output = traced.materialize();
 
@@ -179,7 +178,7 @@ class JavaKernelCompilerTest {
             long offset = (long) i * DataType.FP32.byteSize();
             segment.set(ValueLayout.JAVA_FLOAT_UNALIGNED, offset, (float) i);
         }
-        return MemoryViewFactory.of(DataType.FP32, memory, com.qxotic.jota.Layout.rowMajor(shape));
+        return MemoryViewFactory.of(DataType.FP32, memory, Layout.rowMajor(shape));
     }
 
     private MemoryView<MemorySegment> rangeInt(Shape shape) {
@@ -190,7 +189,7 @@ class JavaKernelCompilerTest {
             long offset = (long) i * DataType.I32.byteSize();
             segment.set(ValueLayout.JAVA_INT_UNALIGNED, offset, i);
         }
-        return MemoryViewFactory.of(DataType.I32, memory, com.qxotic.jota.Layout.rowMajor(shape));
+        return MemoryViewFactory.of(DataType.I32, memory, Layout.rowMajor(shape));
     }
 
     private float[] readFloatValues(MemoryView<?> view, int count) {

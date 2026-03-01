@@ -12,12 +12,14 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -27,6 +29,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Pattern;
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
@@ -128,7 +131,7 @@ final class LIRKernelCompiler {
         if (classPath == null || classPath.isBlank()) {
             return;
         }
-        for (String part : classPath.split(java.util.regex.Pattern.quote(File.pathSeparator))) {
+        for (String part : classPath.split(Pattern.quote(File.pathSeparator))) {
             if (part != null && !part.isBlank()) {
                 entries.add(part);
             }
@@ -213,7 +216,7 @@ final class LIRKernelCompiler {
             updateLong(digest, scratchLayout.totalByteSize());
             List<Map.Entry<BufferRef, Long>> offsets =
                     new ArrayList<>(scratchLayout.offsets().entrySet());
-            offsets.sort(java.util.Comparator.comparingInt(e -> e.getKey().id()));
+            offsets.sort(Comparator.comparingInt(e -> e.getKey().id()));
             updateInt(digest, offsets.size());
             for (Map.Entry<BufferRef, Long> entry : offsets) {
                 updateBufferRef(digest, entry.getKey());
@@ -373,7 +376,7 @@ final class LIRKernelCompiler {
         }
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] bytes = text.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            byte[] bytes = text.toString().getBytes(StandardCharsets.UTF_8);
             byte[] hashed = digest.digest(bytes);
             StringBuilder builder = new StringBuilder(hashed.length * 2);
             for (byte value : hashed) {

@@ -902,10 +902,6 @@ public interface Tensor {
     // endregion Fill / Scalar Creation
     // region Lazy / Array-backed Creation
 
-    static Tensor lazy(LazyComputation computation, DataType dtype, Layout layout, Device device) {
-        return TensorFactory.lazy(computation, dtype, layout, device);
-    }
-
     /**
      * Creates a tensor from a float array.
      *

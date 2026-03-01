@@ -2,6 +2,7 @@ package com.qxotic.jota.ir.tir;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Map;
@@ -340,7 +341,7 @@ public final class TIRCSEPass implements TIRPass {
         @Override
         public int hashCode() {
             int result = op.hashCode();
-            result = 31 * result + java.util.Arrays.hashCode(axes);
+            result = 31 * result + Arrays.hashCode(axes);
             result = 31 * result + Boolean.hashCode(keepDims);
             result = 31 * result + accumulatorType.hashCode();
             return result;

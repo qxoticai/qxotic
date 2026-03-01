@@ -1,6 +1,7 @@
 package com.qxotic.jota.ir.tir;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -144,7 +145,7 @@ public final class TIRSchedulePass {
     }
 
     private static int countReductions(TIRNode root) {
-        Set<TIRNode> visited = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<TIRNode> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         return countReductions(root, visited);
     }
 

@@ -144,7 +144,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
                 var
                         + " = arith.constant "
                         + value
-                        + com.qxotic.jota.ir.TextRenderUtils.formatOpTypeSuffix(node.dataType());
+                        + TextRenderUtils.formatOpTypeSuffix(node.dataType());
         appendLine(scalarDef);
     }
 
@@ -175,7 +175,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
                         + op
                         + " "
                         + input
-                        + com.qxotic.jota.ir.TextRenderUtils.formatOpTypeSuffix(node.dataType());
+                        + TextRenderUtils.formatOpTypeSuffix(node.dataType());
         appendLine(unaryDef);
     }
 
@@ -198,7 +198,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
                         + left
                         + ", "
                         + right
-                        + com.qxotic.jota.ir.TextRenderUtils.formatOpTypeSuffix(node.dataType());
+                        + TextRenderUtils.formatOpTypeSuffix(node.dataType());
         appendLine(binaryDef);
     }
 
@@ -224,7 +224,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
                         + trueExpr
                         + ", "
                         + falseExpr
-                        + com.qxotic.jota.ir.TextRenderUtils.formatOpTypeSuffix(node.dataType());
+                        + TextRenderUtils.formatOpTypeSuffix(node.dataType());
         appendLine(ternaryDef);
     }
 
@@ -241,8 +241,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
                         + op
                         + " "
                         + input
-                        + com.qxotic.jota.ir.TextRenderUtils.formatOpTypeSuffix(
-                                node.targetDataType());
+                        + TextRenderUtils.formatOpTypeSuffix(node.targetDataType());
         appendLine(castDef);
     }
 
@@ -360,9 +359,8 @@ public class TIRTextRenderer implements TIRVisitor<String> {
         if (node instanceof TensorInput input) {
             long[] shape = input.layout().shape().toArray();
             long[] stride = input.layout().stride().toArray();
-            boolean contiguous = com.qxotic.jota.ir.TextRenderUtils.isContiguous(shape, stride);
-            return com.qxotic.jota.ir.TextRenderUtils.formatTensorType(
-                    input.dataType(), shape, stride, contiguous);
+            boolean contiguous = TextRenderUtils.isContiguous(shape, stride);
+            return TextRenderUtils.formatTensorType(input.dataType(), shape, stride, contiguous);
         }
         return formatNodeType(node);
     }
@@ -378,9 +376,8 @@ public class TIRTextRenderer implements TIRVisitor<String> {
     private String formatTensorType(Layout layout, DataType dataType) {
         long[] shape = layout.shape().toArray();
         long[] stride = layout.stride().toArray();
-        boolean contiguous = com.qxotic.jota.ir.TextRenderUtils.isContiguous(shape, stride);
-        return com.qxotic.jota.ir.TextRenderUtils.formatTensorType(
-                dataType, shape, stride, contiguous);
+        boolean contiguous = TextRenderUtils.isContiguous(shape, stride);
+        return TextRenderUtils.formatTensorType(dataType, shape, stride, contiguous);
     }
 
     private String formatTensorTypeForNode(TIRNode node) {
@@ -391,8 +388,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
             return formatTensorType(view.layout(), view.dataType());
         }
         long[] shape = node.shape().toArray();
-        return com.qxotic.jota.ir.TextRenderUtils.formatTensorType(
-                node.dataType(), shape, null, true);
+        return TextRenderUtils.formatTensorType(node.dataType(), shape, null, true);
     }
 
     private Layout layoutForNode(TIRNode node) {
@@ -470,7 +466,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
     }
 
     private String formatDataType(DataType dataType) {
-        return com.qxotic.jota.ir.TextRenderUtils.formatDataType(dataType);
+        return TextRenderUtils.formatDataType(dataType);
     }
 
     private void appendLine(String line) {
@@ -543,7 +539,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
                 var
                         + " = arith.constant "
                         + value
-                        + com.qxotic.jota.ir.TextRenderUtils.formatOpTypeSuffix(node.dataType());
+                        + TextRenderUtils.formatOpTypeSuffix(node.dataType());
         appendLine(scalarDef);
         return var;
     }
@@ -593,7 +589,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
                         + op
                         + " "
                         + input
-                        + com.qxotic.jota.ir.TextRenderUtils.formatOpTypeSuffix(node.dataType());
+                        + TextRenderUtils.formatOpTypeSuffix(node.dataType());
         appendLine(unaryDef);
         return var;
     }
@@ -612,7 +608,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
                         + left
                         + ", "
                         + right
-                        + com.qxotic.jota.ir.TextRenderUtils.formatOpTypeSuffix(node.dataType());
+                        + TextRenderUtils.formatOpTypeSuffix(node.dataType());
         appendLine(binaryDef);
         return var;
     }
@@ -631,7 +627,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
                         + trueExpr
                         + ", "
                         + falseExpr
-                        + com.qxotic.jota.ir.TextRenderUtils.formatOpTypeSuffix(node.dataType());
+                        + TextRenderUtils.formatOpTypeSuffix(node.dataType());
         appendLine(ternaryDef);
         return var;
     }
@@ -647,8 +643,7 @@ public class TIRTextRenderer implements TIRVisitor<String> {
                         + op
                         + " "
                         + input
-                        + com.qxotic.jota.ir.TextRenderUtils.formatOpTypeSuffix(
-                                node.targetDataType());
+                        + TextRenderUtils.formatOpTypeSuffix(node.targetDataType());
         appendLine(castDef);
         return var;
     }

@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -280,7 +281,7 @@ final class HipKernelBackend implements KernelBackend {
         if (hipcc == null || hipcc.isBlank()) {
             hipcc = "hipcc";
         }
-        List<String> command = new java.util.ArrayList<>();
+        List<String> command = new ArrayList<>();
         command.add(hipcc);
         command.add("--genco");
         command.add("-O" + OPT_LEVEL);

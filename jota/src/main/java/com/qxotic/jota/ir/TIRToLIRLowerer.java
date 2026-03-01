@@ -369,14 +369,12 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
 
     private ReductionOp findReductionRoot(TIRNode node) {
         ReductionOp[] found = new ReductionOp[1];
-        findReductionRootRec(node, found, new java.util.IdentityHashMap<>());
+        findReductionRootRec(node, found, new IdentityHashMap<>());
         return found[0];
     }
 
     private void findReductionRootRec(
-            TIRNode node,
-            ReductionOp[] found,
-            java.util.IdentityHashMap<TIRNode, Boolean> visited) {
+            TIRNode node, ReductionOp[] found, IdentityHashMap<TIRNode, Boolean> visited) {
         if (visited.put(node, Boolean.TRUE) != null) {
             return;
         }

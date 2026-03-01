@@ -86,14 +86,6 @@ final class TensorSupport {
         return input;
     }
 
-    static Optional<Tensor> tryFoldUnaryOp(Tensor input, UnaryOp op) {
-        return ConstantFolder.tryFoldUnaryOp(input, op);
-    }
-
-    static Optional<Tensor> tryFoldCast(Tensor input, DataType targetType) {
-        return ConstantFolder.tryFoldCast(input, targetType);
-    }
-
     static void requireSameIntegralType(DataType left, DataType right, String opName) {
         TensorTypeSemantics.requireSameIntegralType(left, right, opName);
     }
@@ -121,15 +113,6 @@ final class TensorSupport {
     static DataType resolveReductionAccumulator(
             DataType inputType, DataType accumulatorType, String opName) {
         return TensorTypeSemantics.resolveReductionAccumulator(inputType, accumulatorType, opName);
-    }
-
-    static Tensor normalizeShiftCountOperand(Tensor self, Tensor other, String opName) {
-        DataType shiftType = other.dataType();
-        TensorTypeSemantics.requireShiftOperandTypes(self.dataType(), shiftType, opName);
-        if (shiftType != DataType.I32) {
-            return other.cast(DataType.I32);
-        }
-        return other;
     }
 
     static Tensor dispatchBinaryOp(
@@ -222,7 +205,9 @@ final class TensorSupport {
             BinaryOp foldOp,
             BiFunction<Tensor, Tensor, Tensor> tracedOp,
             BiFunction<Tensor, Tensor, Tensor> eagerOp) {
-        Tensor normalizedOther = normalizeShiftCountOperand(self, other, opName);
+        DataType shiftType = other.dataType();
+        TensorTypeSemantics.requireShiftOperandTypes(self.dataType(), shiftType, opName);
+        Tensor normalizedOther = shiftType == DataType.I32 ? other : other.cast(DataType.I32);
         if (self.dataType() == normalizedOther.dataType()) {
             return dispatchFoldedBinaryOp(self, normalizedOther, foldOp, tracedOp, eagerOp);
         }

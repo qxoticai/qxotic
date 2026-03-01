@@ -25,6 +25,7 @@ import com.qxotic.jota.tensor.*;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public final class HipComputeEngine implements ComputeEngine {
 
@@ -212,7 +213,7 @@ public final class HipComputeEngine implements ComputeEngine {
     }
 
     private static String ms(long nanos) {
-        return String.format(java.util.Locale.ROOT, "%.3f", nanos / 1_000_000.0);
+        return String.format(Locale.ROOT, "%.3f", nanos / 1_000_000.0);
     }
 
     private static List<Layout> graphInputLayouts(TIRGraph graph) {

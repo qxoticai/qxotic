@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
-import com.qxotic.jota.tensor.LazyComputation;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.TensorTestInternals;
 import com.qxotic.jota.tensor.Tracer;
@@ -21,8 +20,7 @@ class TIRTextRendererTest {
         Tensor input = Tensor.of(new float[] {1.0f, 2.0f, 3.0f});
         Tensor result = Tracer.trace(input, Tensor::negate);
 
-        LazyComputation comp = TensorTestInternals.computation(result).orElseThrow();
-        Object graph = comp.attributes().get("graph");
+        Object graph = TensorTestInternals.computationAttributes(result).orElseThrow().get("graph");
         assertTrue(graph instanceof TIRGraph);
 
         TIRGraph tirGraph = (TIRGraph) graph;
@@ -42,8 +40,7 @@ class TIRTextRendererTest {
                 Tracer.trace(
                         List.of(input1, input2), tensors -> tensors.get(0).add(tensors.get(1)));
 
-        LazyComputation comp = TensorTestInternals.computation(result).orElseThrow();
-        Object graph = comp.attributes().get("graph");
+        Object graph = TensorTestInternals.computationAttributes(result).orElseThrow().get("graph");
         assertTrue(graph instanceof TIRGraph);
 
         TIRGraph tirGraph = (TIRGraph) graph;
@@ -59,8 +56,7 @@ class TIRTextRendererTest {
         Tensor input = Tensor.of(new float[] {1.0f, 2.0f, 3.0f});
         Tensor result = Tracer.trace(input, Tensor::negate);
 
-        LazyComputation comp = TensorTestInternals.computation(result).orElseThrow();
-        Object graph = comp.attributes().get("graph");
+        Object graph = TensorTestInternals.computationAttributes(result).orElseThrow().get("graph");
         assertTrue(graph instanceof TIRGraph);
 
         TIRGraph tirGraph = (TIRGraph) graph;
@@ -76,8 +72,7 @@ class TIRTextRendererTest {
         Tensor scalar = Tensor.full(10.0f, DataType.FP32, Shape.of(3));
         Tensor result = Tracer.trace(scalar, t -> t.add(5.0f));
 
-        LazyComputation comp = TensorTestInternals.computation(result).orElseThrow();
-        Object graph = comp.attributes().get("graph");
+        Object graph = TensorTestInternals.computationAttributes(result).orElseThrow().get("graph");
         assertTrue(graph instanceof TIRGraph);
 
         TIRGraph tirGraph = (TIRGraph) graph;

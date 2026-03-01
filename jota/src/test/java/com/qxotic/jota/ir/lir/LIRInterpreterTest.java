@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.ir.tir.BinaryOperator;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryHelpers;
@@ -37,8 +38,7 @@ class LIRInterpreterTest {
         LIRExprNode offset = graph.indexBinary(IndexBinaryOp.MULTIPLY, i, graph.indexConst(stride));
         LIRExprNode leftVal = graph.scalarLoad(leftBuf, offset, DataType.FP32);
         LIRExprNode rightVal = graph.scalarLoad(rightBuf, offset, DataType.FP32);
-        LIRExprNode sum =
-                graph.scalarBinary(com.qxotic.jota.ir.tir.BinaryOperator.ADD, leftVal, rightVal);
+        LIRExprNode sum = graph.scalarBinary(BinaryOperator.ADD, leftVal, rightVal);
         LIRExprNode store = graph.store(outBuf, offset, sum);
         Block body = graph.block(List.of(store, graph.yield(List.of())));
         LIRExprNode loop =
@@ -77,8 +77,7 @@ class LIRInterpreterTest {
         LIRExprNode value = graph.scalarLoad(inputBuf, offset, DataType.FP32);
 
         LIRExprNode accRef = graph.scalarRef("acc", DataType.FP32);
-        LIRExprNode sum =
-                graph.scalarBinary(com.qxotic.jota.ir.tir.BinaryOperator.ADD, accRef, value);
+        LIRExprNode sum = graph.scalarBinary(BinaryOperator.ADD, accRef, value);
         Block body = graph.block(List.of(graph.yield(List.of(sum))));
 
         LIRExprNode loop =
@@ -121,8 +120,7 @@ class LIRInterpreterTest {
         LIRExprNode offset = graph.indexBinary(IndexBinaryOp.MULTIPLY, i, graph.indexConst(stride));
         LIRExprNode value = graph.scalarLoad(inputBuf, offset, DataType.FP32);
         LIRExprNode scalarVal = graph.scalarInput(scalar.id(), scalar.dataType());
-        LIRExprNode sum =
-                graph.scalarBinary(com.qxotic.jota.ir.tir.BinaryOperator.ADD, value, scalarVal);
+        LIRExprNode sum = graph.scalarBinary(BinaryOperator.ADD, value, scalarVal);
         LIRExprNode store = graph.store(outBuf, offset, sum);
         Block body = graph.block(List.of(store, graph.yield(List.of())));
         LIRExprNode loop =

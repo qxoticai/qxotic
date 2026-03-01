@@ -7,6 +7,7 @@ import com.qxotic.jota.ir.tir.UnaryOperator;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -146,7 +147,7 @@ public final class LIRExprGraph {
         return (IFromScalar) addUnique(new IFromScalar(nextId++, scalarExpr));
     }
 
-    public Block block(java.util.List<LIRExprNode> statements) {
+    public Block block(List<LIRExprNode> statements) {
         return (Block) addNode(new Block(nextId++, statements));
     }
 
@@ -154,7 +155,7 @@ public final class LIRExprGraph {
         return (Store) addNode(new Store(nextId++, buffer, offset, value));
     }
 
-    public Yield yield(java.util.List<LIRExprNode> values) {
+    public Yield yield(List<LIRExprNode> values) {
         return (Yield) addNode(new Yield(nextId++, values));
     }
 
@@ -163,7 +164,7 @@ public final class LIRExprGraph {
             LIRExprNode lowerBound,
             LIRExprNode upperBound,
             LIRExprNode step,
-            java.util.List<LoopIterArg> iterArgs,
+            List<LoopIterArg> iterArgs,
             Block body) {
         return (StructuredFor)
                 addNode(

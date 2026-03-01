@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.Shape;
 import com.qxotic.jota.TypeRules;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.tensor.Tensor;
@@ -250,8 +251,8 @@ class TensorTypeContractMatrixTest {
     void dotRequiresSameNumericNonBoolInputTypes() {
         for (DataType leftType : PRIMITIVE_TYPES) {
             for (DataType rightType : PRIMITIVE_TYPES) {
-                Tensor left = scalar(leftType, 2).view(com.qxotic.jota.Shape.of(1));
-                Tensor right = scalar(rightType, 3).view(com.qxotic.jota.Shape.of(1));
+                Tensor left = scalar(leftType, 2).view(Shape.of(1));
+                Tensor right = scalar(rightType, 3).view(Shape.of(1));
                 boolean supported =
                         leftType == rightType
                                 && leftType != DataType.BOOL
@@ -272,8 +273,8 @@ class TensorTypeContractMatrixTest {
         for (DataType leftType : PRIMITIVE_TYPES) {
             for (DataType rightType : PRIMITIVE_TYPES) {
                 for (DataType accType : PRIMITIVE_TYPES) {
-                    Tensor left = scalar(leftType, 2).view(com.qxotic.jota.Shape.of(1));
-                    Tensor right = scalar(rightType, 3).view(com.qxotic.jota.Shape.of(1));
+                    Tensor left = scalar(leftType, 2).view(Shape.of(1));
+                    Tensor right = scalar(rightType, 3).view(Shape.of(1));
 
                     boolean inputSupported =
                             leftType == rightType

@@ -5,6 +5,7 @@ import com.qxotic.jota.tensor.BinaryOp;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.Tracer;
 import com.qxotic.jota.tensor.UnaryOp;
+import java.util.List;
 
 public final class TracingEagerKernels implements DeviceRuntime.EagerKernels {
 
@@ -35,7 +36,9 @@ public final class TracingEagerKernels implements DeviceRuntime.EagerKernels {
 
     @Override
     public Tensor where(Tensor condition, Tensor trueValue, Tensor falseValue) {
-        return Tracer.trace(condition, trueValue, falseValue, Tensor::where);
+        return Tracer.trace(
+                List.of(condition, trueValue, falseValue),
+                tensors -> tensors.get(0).where(tensors.get(1), tensors.get(2)));
     }
 
     @Override
@@ -48,14 +51,13 @@ public final class TracingEagerKernels implements DeviceRuntime.EagerKernels {
             int... axes) {
         return Tracer.trace(
                 x,
-                t -> {
-                    return switch (op) {
-                        case SUM -> t.sum(accumulatorType, keepDims, axis, axes);
-                        case PRODUCT -> t.product(accumulatorType, keepDims, axis, axes);
-                        case MIN -> t.min(keepDims, axis, axes);
-                        case MAX -> t.max(keepDims, axis, axes);
-                    };
-                });
+                t ->
+                        switch (op) {
+                            case SUM -> t.sum(accumulatorType, keepDims, axis, axes);
+                            case PRODUCT -> t.product(accumulatorType, keepDims, axis, axes);
+                            case MIN -> t.min(keepDims, axis, axes);
+                            case MAX -> t.max(keepDims, axis, axes);
+                        });
     }
 
     @Override

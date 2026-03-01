@@ -10,7 +10,6 @@ import com.qxotic.jota.ir.tir.TIRGraph;
 import com.qxotic.jota.memory.*;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.impl.DomainFactory;
-import com.qxotic.jota.tensor.LazyComputation;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.TensorTestInternals;
 import com.qxotic.jota.tensor.Tracer;
@@ -100,8 +99,7 @@ class LIRInterpreterTraceTest {
     }
 
     private TIRGraph extractGraph(Tensor traced) {
-        LazyComputation computation = TensorTestInternals.computation(traced).orElseThrow();
-        Object graph = computation.attributes().get("graph");
+        Object graph = TensorTestInternals.computationAttributes(traced).orElseThrow().get("graph");
         if (!(graph instanceof TIRGraph tirGraph)) {
             throw new IllegalStateException("Expected TIRGraph, got: " + graph);
         }

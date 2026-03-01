@@ -22,7 +22,7 @@ public record BinaryOp(BinaryOperator op, TIRNode left, TIRNode right, Shape sha
     @Override
     public DataType dataType() {
         return switch (op) {
-            case EQUAL, LESS_THAN -> com.qxotic.jota.DataType.BOOL;
+            case EQUAL, LESS_THAN -> DataType.BOOL;
             default -> left.dataType();
         };
     }

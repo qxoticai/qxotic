@@ -1,7 +1,11 @@
 package com.qxotic.jota.ir.tir;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Base visitor for rewriting TIR graphs. Recursively visits and rebuilds the tree, using structural
@@ -17,7 +21,7 @@ import java.util.List;
  */
 public class TIRRewriter implements TIRVisitor<TIRNode> {
 
-    private final java.util.Map<TIRNode, TIRNode> rewriteCache = new java.util.IdentityHashMap<>();
+    private final Map<TIRNode, TIRNode> rewriteCache = new IdentityHashMap<>();
 
     /**
      * Rewrites a TIRGraph by transforming its outputs.
@@ -45,10 +49,8 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
 
     /** Computes the list of input nodes that are actually referenced by the given outputs. */
     private List<TIRNode> computeInputsFromOutputs(List<TIRNode> outputs) {
-        java.util.Set<TIRNode> inputs =
-                java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-        java.util.Set<TIRNode> visited =
-                java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        Set<TIRNode> inputs = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<TIRNode> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         for (TIRNode output : outputs) {
             collectInputs(output, inputs, visited);
         }
@@ -56,8 +58,7 @@ public class TIRRewriter implements TIRVisitor<TIRNode> {
     }
 
     /** Recursively collects all TensorInput nodes referenced by a node. */
-    private void collectInputs(
-            TIRNode node, java.util.Set<TIRNode> inputs, java.util.Set<TIRNode> visited) {
+    private void collectInputs(TIRNode node, Set<TIRNode> inputs, Set<TIRNode> visited) {
         if (!visited.add(node)) {
             return;
         }

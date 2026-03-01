@@ -1,5 +1,7 @@
 package com.qxotic.jota.ir.tir;
 
+import java.util.Objects;
+
 /** Reference to a value consumed by a scheduled kernel step. */
 public sealed interface ScheduleInputRef
         permits ScheduleInputRef.TensorInputRef,
@@ -26,7 +28,7 @@ public sealed interface ScheduleInputRef
 
     record ProducedValueRef(ValueId valueId) implements ScheduleInputRef {
         public ProducedValueRef {
-            java.util.Objects.requireNonNull(valueId, "valueId");
+            Objects.requireNonNull(valueId, "valueId");
         }
     }
 }

@@ -1,6 +1,7 @@
 package com.qxotic.jota.ir.tir;
 
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAccess;
@@ -41,9 +42,8 @@ public final class TIRInterpreter {
                         MemoryView.of(persistentMemory, 0, dtype, layout);
 
                 for (long i = 0; i < size; i++) {
-                    long offset = com.qxotic.jota.Indexing.linearToOffset(arenaOutput, i);
-                    long persistentOffset =
-                            com.qxotic.jota.Indexing.linearToOffset(persistentOutput, i);
+                    long offset = Indexing.linearToOffset(arenaOutput, i);
+                    long persistentOffset = Indexing.linearToOffset(persistentOutput, i);
 
                     if (dtype == DataType.FP32) {
                         float value = memAccess.readFloat(arenaOutput.memory(), offset);

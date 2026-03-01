@@ -203,7 +203,7 @@ public final class ScratchVerificationPass {
 
     private void collectBuffersFromExpr(LIRExprNode expr, Set<BufferRef> buffers) {
         Deque<LIRExprNode> stack = new ArrayDeque<>();
-        Set<LIRExprNode> visited = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<LIRExprNode> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         stack.add(expr);
         while (!stack.isEmpty()) {
             LIRExprNode current = stack.removeLast();
@@ -240,7 +240,7 @@ public final class ScratchVerificationPass {
 
     private void collectAccessedFromExpr(LIRExprNode expr, Set<BufferRef> accessed) {
         Deque<LIRExprNode> stack = new ArrayDeque<>();
-        Set<LIRExprNode> visited = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<LIRExprNode> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         stack.add(expr);
         while (!stack.isEmpty()) {
             LIRExprNode current = stack.removeLast();
@@ -273,7 +273,7 @@ public final class ScratchVerificationPass {
 
     private void collectReadFromExpr(LIRExprNode expr, Set<BufferRef> read) {
         Deque<LIRExprNode> stack = new ArrayDeque<>();
-        Set<LIRExprNode> visited = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<LIRExprNode> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         stack.add(expr);
         while (!stack.isEmpty()) {
             LIRExprNode current = stack.removeLast();
@@ -403,7 +403,7 @@ public final class ScratchVerificationPass {
     private void recordUses(
             LIRExprNode expr, Set<BufferRef> targets, Map<BufferRef, Integer> lastUse, int idx) {
         Deque<LIRExprNode> stack = new ArrayDeque<>();
-        Set<LIRExprNode> visited = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<LIRExprNode> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         stack.add(expr);
         while (!stack.isEmpty()) {
             LIRExprNode current = stack.removeLast();

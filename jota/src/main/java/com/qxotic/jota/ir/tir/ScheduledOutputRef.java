@@ -1,5 +1,7 @@
 package com.qxotic.jota.ir.tir;
 
+import java.util.Objects;
+
 /** Reference to the final output produced by a scheduled program. */
 public sealed interface ScheduledOutputRef
         permits ScheduledOutputRef.ValueOutput,
@@ -8,7 +10,7 @@ public sealed interface ScheduledOutputRef
 
     record ValueOutput(ValueId valueId) implements ScheduledOutputRef {
         public ValueOutput {
-            java.util.Objects.requireNonNull(valueId, "valueId");
+            Objects.requireNonNull(valueId, "valueId");
         }
     }
 

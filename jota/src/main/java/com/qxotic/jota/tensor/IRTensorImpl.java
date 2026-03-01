@@ -4,6 +4,8 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.ir.tir.TIRNode;
+import com.qxotic.jota.ir.tir.TensorInput;
+import com.qxotic.jota.ir.tir.ViewTransform;
 import com.qxotic.jota.memory.MemoryView;
 import java.util.Objects;
 import java.util.Optional;
@@ -29,10 +31,10 @@ final class IRTensorImpl extends AbstractTensorImpl {
 
     @Override
     public Layout layout() {
-        if (node instanceof com.qxotic.jota.ir.tir.TensorInput input) {
+        if (node instanceof TensorInput input) {
             return input.layout();
         }
-        if (node instanceof com.qxotic.jota.ir.tir.ViewTransform view) {
+        if (node instanceof ViewTransform view) {
             return view.layout();
         }
         return Layout.rowMajor(node.shape());
@@ -59,7 +61,7 @@ final class IRTensorImpl extends AbstractTensorImpl {
     public MemoryView<?> materialize() {
         throw new UnsupportedOperationException(
                 "IRTensor cannot be materialized directly. "
-                        + "Use Tensor.lazy(IRComputation) or trace to IRGraph.");
+                        + "Use tracing to build a lazy tensor graph.");
     }
 
     Optional<LazyComputation> computationInternal() {
