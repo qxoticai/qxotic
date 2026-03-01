@@ -14,6 +14,7 @@ import com.qxotic.jota.tensor.DiskKernelCache;
 import com.qxotic.jota.tensor.JavaKernel;
 import com.qxotic.jota.tensor.KernelCacheKey;
 import com.qxotic.jota.tensor.KernelLaunchContext;
+import com.qxotic.jota.tensor.ScalarArg;
 import com.qxotic.jota.tensor.Tensor;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
@@ -89,7 +90,7 @@ public final class PanamaLIRKernelExecutor {
             LIRGraph graph,
             CompiledKernel compiled,
             List<MemoryView<?>> inputs,
-            List<com.qxotic.jota.tensor.ScalarArg> scalars,
+            List<ScalarArg> scalars,
             List<MemoryView<?>> outputs,
             MemoryDomain<MemorySegment> memoryDomain,
             Memory<MemorySegment> scratch,

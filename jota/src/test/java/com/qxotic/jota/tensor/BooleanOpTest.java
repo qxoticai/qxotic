@@ -7,6 +7,7 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
 import com.qxotic.jota.testutil.TensorTestReads;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 @RunOnAllAvailableBackends
@@ -135,7 +136,10 @@ class BooleanOpTest {
         Tensor trueTensor = Tensor.iota(shape.size(), DataType.I32).view(shape);
         Tensor falseTensor = Tensor.full(-1L, DataType.I32, shape);
 
-        Tensor selected = Tracer.trace(condition, trueTensor, falseTensor, Tensor::where);
+        Tensor selected =
+                Tracer.trace(
+                        List.of(condition, trueTensor, falseTensor),
+                        tensors -> tensors.get(0).where(tensors.get(1), tensors.get(2)));
         selected.materialize();
 
         assertEquals(0, readInt(selected, 0));

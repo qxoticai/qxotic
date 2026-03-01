@@ -2,8 +2,13 @@ package com.qxotic.jota.tensor;
 
 import com.qxotic.jota.Device;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.ir.tir.IotaConstant;
+import com.qxotic.jota.ir.tir.RandomUniformOp;
+import com.qxotic.jota.ir.tir.ScalarConstant;
+import com.qxotic.jota.ir.tir.ScalarInput;
 import com.qxotic.jota.ir.tir.TIRGraph;
 import com.qxotic.jota.ir.tir.TIRNode;
+import com.qxotic.jota.ir.tir.TensorInput;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -67,21 +72,6 @@ public final class Tracer {
         return trace(List.of(left, right), tensors -> fn.apply(tensors.get(0), tensors.get(1)));
     }
 
-    /** Traces a three-input function to IR-T. */
-    public static Tensor trace(
-            Tensor first,
-            Tensor second,
-            Tensor third,
-            TriFunction<Tensor, Tensor, Tensor, Tensor> fn) {
-        Objects.requireNonNull(first, "first");
-        Objects.requireNonNull(second, "second");
-        Objects.requireNonNull(third, "third");
-        Objects.requireNonNull(fn, "fn");
-        return trace(
-                List.of(first, second, third),
-                tensors -> fn.apply(tensors.get(0), tensors.get(1), tensors.get(2)));
-    }
-
     public static Tensor trace(Supplier<Tensor> fn) {
         return trace(List.of(), unused -> fn.get());
     }
@@ -92,7 +82,7 @@ public final class Tracer {
         Tensor output = withIR(() -> fn.apply(new ArrayList<>(traceInputs.tensors())));
         TIRGraph graph =
                 new TIRGraph(traceInputs.nodes(), List.of(InternalTensorAccess.irNode(output)));
-        return Tensor.lazy(
+        return TensorFactory.lazy(
                 new IRComputation(graph, inputs),
                 output.dataType(),
                 output.layout(),
@@ -109,21 +99,21 @@ public final class Tracer {
             boolean scalarBroadcast = input.layout().stride().isAllZeros();
 
             if (scalarBroadcast && input.device().root() == Device.CPU) {
-                node = new com.qxotic.jota.ir.tir.ScalarInput(i, input.dataType(), input.shape());
+                node = new ScalarInput(i, input.dataType(), input.shape());
             } else if (InternalTensorAccess.isMaterialized(input)
                     || InternalTensorAccess.computation(input).isEmpty()) {
                 // Materialized tensor - create a TensorInput
-                node = new com.qxotic.jota.ir.tir.TensorInput(i, input.dataType(), input.layout());
+                node = new TensorInput(i, input.dataType(), input.layout());
             } else {
                 LazyComputation comp = InternalTensorAccess.computation(input).orElseThrow();
                 if (comp instanceof RangeComputation range) {
                     // Iota constant - computed from loop index
                     node =
-                            new com.qxotic.jota.ir.tir.IotaConstant(
+                            new IotaConstant(
                                     range.count(), input.dataType(), Shape.flat(range.count()));
                 } else if (comp instanceof RandomComputation random) {
                     node =
-                            new com.qxotic.jota.ir.tir.RandomUniformOp(
+                            new RandomUniformOp(
                                     random.shape(),
                                     random.dataType(),
                                     random.key().k0(),
@@ -131,16 +121,14 @@ public final class Tracer {
                 } else if (comp instanceof ConstantComputation constComp) {
                     // Constant value - inline as ScalarConstant
                     node =
-                            com.qxotic.jota.ir.tir.ScalarConstant.broadcast(
+                            ScalarConstant.broadcast(
                                     constComp.rawBits(),
                                     constComp.dataType(),
                                     input.layout().shape());
                 } else {
                     // IRComputation or other - treat as buffer input
                     // The computation will be executed first, and its result used as input
-                    node =
-                            new com.qxotic.jota.ir.tir.TensorInput(
-                                    i, input.dataType(), input.layout());
+                    node = new TensorInput(i, input.dataType(), input.layout());
                 }
             }
 

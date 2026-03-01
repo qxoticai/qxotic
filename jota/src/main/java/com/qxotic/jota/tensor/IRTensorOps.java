@@ -467,9 +467,7 @@ final class IRTensorOps implements TensorOps {
                 TensorTypeSemantics.resolveReductionAccumulator(
                         tensor.dataType(), accumulatorType, op.name().toLowerCase());
         Shape outputShape = TensorSemantics.reduceShape(tensor.shape(), axes, keepDims);
-        TIRNode node =
-                new com.qxotic.jota.ir.tir.ReductionOp(
-                        op, tensor.node(), axes, keepDims, accType, outputShape);
+        TIRNode node = new ReductionOp(op, tensor.node(), axes, keepDims, accType, outputShape);
         return new IRTensorImpl(node, tensor.device());
     }
 

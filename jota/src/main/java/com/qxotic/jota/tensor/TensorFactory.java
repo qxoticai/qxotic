@@ -6,6 +6,8 @@ import com.qxotic.jota.Environment;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.Stride;
+import com.qxotic.jota.ir.tir.IotaConstant;
+import com.qxotic.jota.ir.tir.ScalarConstant;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryOperations;
@@ -44,8 +46,7 @@ final class TensorFactory {
         Shape shape = Shape.flat(n);
         if (Tracer.isTracing()) {
             return new IRTensorImpl(
-                    new com.qxotic.jota.ir.tir.IotaConstant(n, DataType.I64, shape),
-                    Device.defaultDevice());
+                    new IotaConstant(n, DataType.I64, shape), Device.defaultDevice());
         }
         Layout layout = Layout.rowMajor(shape);
         RangeComputation computation = new RangeComputation(n, Device.defaultDevice());
@@ -62,8 +63,7 @@ final class TensorFactory {
         }
         if (Tracer.isTracing()) {
             return new IRTensorImpl(
-                    new com.qxotic.jota.ir.tir.IotaConstant(n, dataType, Shape.flat(n)),
-                    Device.defaultDevice());
+                    new IotaConstant(n, dataType, Shape.flat(n)), Device.defaultDevice());
         }
         return iota(n).cast(dataType);
     }
@@ -618,7 +618,7 @@ final class TensorFactory {
 
     private static Tensor createIRScalarConstant(
             Number value, DataType dataType, Shape shape, Device device) {
-        com.qxotic.jota.ir.tir.ScalarConstant scalar;
+        ScalarConstant scalar;
         long rawBits;
         if (dataType == DataType.FP32) {
             rawBits = Float.floatToIntBits(value.floatValue());
@@ -631,7 +631,7 @@ final class TensorFactory {
         } else {
             throw new IllegalArgumentException("Unsupported data type: " + dataType);
         }
-        scalar = com.qxotic.jota.ir.tir.ScalarConstant.broadcast(rawBits, dataType, shape);
+        scalar = ScalarConstant.broadcast(rawBits, dataType, shape);
         return new IRTensorImpl(scalar, device);
     }
 

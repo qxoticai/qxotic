@@ -4,6 +4,7 @@ import com.qxotic.jota.*;
 import com.qxotic.jota.impl.ViewTransforms;
 import com.qxotic.jota.memory.MemoryView;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
@@ -743,7 +744,9 @@ abstract class AbstractTensorImpl implements Tensor {
         if (Tracer.isTracing()) {
             return TensorSupport.irOps().where(this, trueValue, falseValue);
         }
-        return Tracer.trace(this, trueValue, falseValue, (c, t, f) -> c.where(t, f));
+        return Tracer.trace(
+                List.of(this, trueValue, falseValue),
+                tensors -> tensors.get(0).where(tensors.get(1), tensors.get(2)));
     }
 
     public Tensor sum(DataType accumulatorType) {

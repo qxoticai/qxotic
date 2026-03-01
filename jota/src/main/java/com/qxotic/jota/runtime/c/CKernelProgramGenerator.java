@@ -6,6 +6,7 @@ import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
 import com.qxotic.jota.tensor.KernelCacheKey;
 import com.qxotic.jota.tensor.KernelProgram;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,7 +17,7 @@ final class CKernelProgramGenerator {
         String kernelName = "c_lir_" + key.value().substring(0, 12);
         String source = LirKernelSourceGenerator.generate(graph, scratchLayout, kernelName);
         return new KernelProgram(
-                KernelProgram.Kind.SOURCE, KernelProgram.C, source, kernelName, java.util.Map.of());
+                KernelProgram.Kind.SOURCE, KernelProgram.C, source, kernelName, Map.of());
     }
 
     private static final class LirKernelSourceGenerator {
@@ -25,7 +26,7 @@ final class CKernelProgramGenerator {
         private final String kernelName;
         private final LIRExprGraph exprGraph;
         private final Map<ScalarInput, String> scalarInputs = new IdentityHashMap<>();
-        private final Map<Integer, String> scalarInputNames = new java.util.HashMap<>();
+        private final Map<Integer, String> scalarInputNames = new HashMap<>();
         private final Map<LIRExprNode, String> tempNames = new IdentityHashMap<>();
         private final Map<BufferRef, BufferVar> buffers = new IdentityHashMap<>();
         private final Map<BufferRef, ScratchBufferVar> scratchBuffers = new IdentityHashMap<>();

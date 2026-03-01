@@ -3,6 +3,7 @@ package com.qxotic.jota.tensor;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
@@ -606,7 +607,7 @@ class CustomKernelLaunchTest {
 
     private MemoryView<?> allocate(DataType dtype, Shape shape) {
         var mem = domain().memoryAllocator().allocateMemory(dtype, shape.size());
-        return MemoryView.of(mem, dtype, com.qxotic.jota.Layout.rowMajor(shape));
+        return MemoryView.of(mem, dtype, Layout.rowMajor(shape));
     }
 
     @SuppressWarnings("unchecked")

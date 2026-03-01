@@ -3,6 +3,7 @@ package com.qxotic.jota.runtime;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.qxotic.jota.tensor.ExecutionStream;
+import com.qxotic.jota.tensor.KernelArgs;
 import com.qxotic.jota.tensor.KernelBackend;
 import com.qxotic.jota.tensor.KernelCacheKey;
 import com.qxotic.jota.tensor.KernelExecutable;
@@ -124,10 +125,7 @@ class KernelServiceTest {
 
     private static final class NoopKernelExecutable implements KernelExecutable {
         @Override
-        public void launch(
-                LaunchConfig config,
-                com.qxotic.jota.tensor.KernelArgs args,
-                ExecutionStream stream) {
+        public void launch(LaunchConfig config, KernelArgs args, ExecutionStream stream) {
             // no-op
         }
     }

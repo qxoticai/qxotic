@@ -3,6 +3,7 @@ package com.qxotic.jota.tensor;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.Environment;
+import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryDomain;
@@ -16,13 +17,13 @@ import java.lang.foreign.MemorySegment;
 import java.util.List;
 import java.util.Map;
 
-public final class RandomComputation implements LazyComputation {
+final class RandomComputation implements LazyComputation {
     private final Shape shape;
     private final DataType dtype;
     private final Device device;
     private final RandomKey key;
 
-    public RandomComputation(Shape shape, DataType dtype, Device device, RandomKey key) {
+    RandomComputation(Shape shape, DataType dtype, Device device, RandomKey key) {
         this.shape = shape;
         this.dtype = dtype;
         this.device = device;
@@ -85,7 +86,7 @@ public final class RandomComputation implements LazyComputation {
                 dst,
                 0,
                 (long) data.length * Float.BYTES);
-        return MemoryView.of(dst, DataType.FP32, com.qxotic.jota.Layout.rowMajor(shape));
+        return MemoryView.of(dst, DataType.FP32, Layout.rowMajor(shape));
     }
 
     private static <B> MemoryView<B> copyDoubleArray(
@@ -101,7 +102,7 @@ public final class RandomComputation implements LazyComputation {
                 dst,
                 0,
                 (long) data.length * Double.BYTES);
-        return MemoryView.of(dst, DataType.FP64, com.qxotic.jota.Layout.rowMajor(shape));
+        return MemoryView.of(dst, DataType.FP64, Layout.rowMajor(shape));
     }
 
     private void fillFp32(float[] out) {

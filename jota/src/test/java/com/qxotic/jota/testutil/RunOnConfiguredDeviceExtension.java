@@ -2,6 +2,7 @@ package com.qxotic.jota.testutil;
 
 import com.qxotic.jota.Device;
 import com.qxotic.jota.Environment;
+import java.lang.reflect.Method;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.InvocationInterceptor;
@@ -13,7 +14,7 @@ public final class RunOnConfiguredDeviceExtension implements InvocationIntercept
     @Override
     public void interceptTestMethod(
             Invocation<Void> invocation,
-            ReflectiveInvocationContext<java.lang.reflect.Method> invocationContext,
+            ReflectiveInvocationContext<Method> invocationContext,
             ExtensionContext extensionContext)
             throws Throwable {
         runInConfiguredDevice(invocation);
@@ -22,7 +23,7 @@ public final class RunOnConfiguredDeviceExtension implements InvocationIntercept
     @Override
     public void interceptTestTemplateMethod(
             Invocation<Void> invocation,
-            ReflectiveInvocationContext<java.lang.reflect.Method> invocationContext,
+            ReflectiveInvocationContext<Method> invocationContext,
             ExtensionContext extensionContext)
             throws Throwable {
         runInConfiguredDevice(invocation);

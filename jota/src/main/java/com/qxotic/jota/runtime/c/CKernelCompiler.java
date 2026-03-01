@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
@@ -75,7 +76,7 @@ final class CKernelCompiler {
 
     private static void compileSource(Path source, Path soPath) {
         String compiler = compilerCommand();
-        List<String> command = new java.util.ArrayList<>();
+        List<String> command = new ArrayList<>();
         command.add(compiler);
         command.addAll(sharedFlags());
         if (openMpEnabled()) {

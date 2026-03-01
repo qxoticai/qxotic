@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.lang.foreign.MemorySegment;
 import java.util.Locale;
+import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.swing.JFrame;
@@ -514,8 +515,7 @@ public class GameOfLife {
         switch (pattern) {
             case RANDOM:
                 // Random initial state (30% alive)
-                java.util.Random random =
-                        new java.util.Random(42); // Fixed seed for reproducibility
+                Random random = new Random(42); // Fixed seed for reproducibility
                 for (int i = 0; i < data.length; i++) {
                     data[i] = random.nextFloat() < 0.3f ? 1.0f : 0.0f;
                 }

@@ -2,7 +2,9 @@ package com.qxotic.jota.ir.tir;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Shape;
+import java.util.HashSet;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * TIR pass that folds constant expressions at compile time.
@@ -31,7 +33,7 @@ public final class TIRConstantFoldingPass implements TIRPass {
         // Collect the underlying ScalarConstants from graph inputs
         // Graph inputs may be wrapped in ViewTransforms, but the underlying
         // ScalarConstants represent runtime parameters and should NOT be folded
-        java.util.Set<ScalarConstant> inputScalars = new java.util.HashSet<>();
+        Set<ScalarConstant> inputScalars = new HashSet<>();
         for (TIRNode input : graph.inputs()) {
             extractUnderlyingScalars(input, inputScalars);
         }
@@ -42,7 +44,7 @@ public final class TIRConstantFoldingPass implements TIRPass {
      * Extracts underlying ScalarConstant nodes from a graph input. ViewTransforms are traversed to
      * find the base scalar.
      */
-    private void extractUnderlyingScalars(TIRNode node, java.util.Set<ScalarConstant> scalars) {
+    private void extractUnderlyingScalars(TIRNode node, Set<ScalarConstant> scalars) {
         if (node instanceof ScalarConstant sc) {
             scalars.add(sc);
         } else if (node instanceof ViewTransform vt) {
@@ -62,9 +64,9 @@ public final class TIRConstantFoldingPass implements TIRPass {
          * ScalarConstants that are graph inputs - represent runtime parameters and must not be
          * folded.
          */
-        private final java.util.Set<ScalarConstant> inputScalars;
+        private final Set<ScalarConstant> inputScalars;
 
-        ConstantFoldingRewriter(java.util.Set<ScalarConstant> inputScalars) {
+        ConstantFoldingRewriter(Set<ScalarConstant> inputScalars) {
             this.inputScalars = inputScalars;
         }
 

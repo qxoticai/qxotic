@@ -10,13 +10,17 @@ import com.qxotic.jota.Device;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.ir.tir.TIRGraph;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.memory.MemoryViewPrinter;
 import com.qxotic.jota.runtime.DefaultRuntimeRegistry;
 import com.qxotic.jota.runtime.DeviceRuntime;
+import com.qxotic.jota.runtime.KernelService;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
+import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -32,8 +36,7 @@ class ConstantCreationAndArithmeticFoldingTest {
             }
 
             @Override
-            public MemoryView<?> execute(
-                    com.qxotic.jota.ir.tir.TIRGraph graph, java.util.List<Tensor> inputs) {
+            public MemoryView<?> execute(TIRGraph graph, List<Tensor> inputs) {
                 throw new UnsupportedOperationException("No backend execution in this test");
             }
         };
@@ -633,8 +636,8 @@ class ConstantCreationAndArithmeticFoldingTest {
         }
 
         @Override
-        public java.util.Optional<com.qxotic.jota.runtime.KernelService> kernelService() {
-            return java.util.Optional.empty();
+        public Optional<KernelService> kernelService() {
+            return Optional.empty();
         }
     }
 

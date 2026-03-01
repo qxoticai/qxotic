@@ -4,7 +4,7 @@ import com.qxotic.jota.memory.MemoryView;
 import java.util.List;
 import java.util.Map;
 
-public sealed interface LazyComputation
+sealed interface LazyComputation
         permits ConstantComputation, RangeComputation, IRComputation, RandomComputation {
 
     List<Tensor> inputs();

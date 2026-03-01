@@ -1,9 +1,11 @@
 package com.qxotic.jota.runtime.c;
 
+import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.tensor.ExecutionStream;
 import com.qxotic.jota.tensor.KernelArgs;
 import com.qxotic.jota.tensor.KernelExecutable;
 import com.qxotic.jota.tensor.LaunchConfig;
+import java.lang.foreign.MemorySegment;
 import java.util.List;
 
 final class CKernelExecutable implements KernelExecutable {
@@ -56,11 +58,11 @@ final class CKernelExecutable implements KernelExecutable {
 
     private static long bufferPointer(KernelArgs.Entry entry) {
         Object value = entry.value();
-        if (!(value instanceof com.qxotic.jota.memory.MemoryView<?> view)) {
+        if (!(value instanceof MemoryView<?> view)) {
             throw new IllegalArgumentException("Expected MemoryView, got " + value);
         }
         Object base = view.memory().base();
-        if (!(base instanceof java.lang.foreign.MemorySegment segment)) {
+        if (!(base instanceof MemorySegment segment)) {
             throw new IllegalArgumentException("Expected MemorySegment base for C backend");
         }
         return segment.address() + view.byteOffset();

@@ -25,6 +25,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
@@ -174,7 +175,7 @@ public final class JavaKernelBackend implements KernelBackend {
         if (classPath == null || classPath.isBlank()) {
             return;
         }
-        for (String part : classPath.split(java.util.regex.Pattern.quote(File.pathSeparator))) {
+        for (String part : classPath.split(Pattern.quote(File.pathSeparator))) {
             if (part != null && !part.isBlank()) {
                 entries.add(part);
             }
