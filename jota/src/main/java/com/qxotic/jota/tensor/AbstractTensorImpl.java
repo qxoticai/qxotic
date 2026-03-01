@@ -3,6 +3,8 @@ package com.qxotic.jota.tensor;
 import com.qxotic.jota.*;
 import com.qxotic.jota.impl.ViewTransforms;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.runtime.BinaryOp;
+import com.qxotic.jota.runtime.UnaryOp;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;

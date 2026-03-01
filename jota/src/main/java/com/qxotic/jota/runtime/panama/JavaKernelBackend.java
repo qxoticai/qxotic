@@ -1,16 +1,16 @@
 package com.qxotic.jota.runtime.panama;
 
 import com.qxotic.jota.memory.MemoryDomain;
-import com.qxotic.jota.tensor.DiskKernelCache;
-import com.qxotic.jota.tensor.ExecutionStream;
-import com.qxotic.jota.tensor.JavaKernel;
-import com.qxotic.jota.tensor.KernelArgs;
-import com.qxotic.jota.tensor.KernelBackend;
-import com.qxotic.jota.tensor.KernelCacheEntry;
-import com.qxotic.jota.tensor.KernelCacheKey;
-import com.qxotic.jota.tensor.KernelExecutable;
-import com.qxotic.jota.tensor.KernelProgram;
-import com.qxotic.jota.tensor.LaunchConfig;
+import com.qxotic.jota.runtime.DiskKernelCache;
+import com.qxotic.jota.runtime.ExecutionStream;
+import com.qxotic.jota.runtime.JavaKernel;
+import com.qxotic.jota.runtime.KernelArgs;
+import com.qxotic.jota.runtime.KernelBackend;
+import com.qxotic.jota.runtime.KernelCacheEntry;
+import com.qxotic.jota.runtime.KernelCacheKey;
+import com.qxotic.jota.runtime.KernelExecutable;
+import com.qxotic.jota.runtime.KernelProgram;
+import com.qxotic.jota.runtime.LaunchConfig;
 import java.io.File;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;

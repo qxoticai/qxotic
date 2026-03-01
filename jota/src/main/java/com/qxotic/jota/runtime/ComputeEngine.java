@@ -1,8 +1,9 @@
-package com.qxotic.jota.tensor;
+package com.qxotic.jota.runtime;
 
 import com.qxotic.jota.Device;
 import com.qxotic.jota.ir.tir.TIRGraph;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.tensor.Tensor;
 import java.util.List;
 
 public interface ComputeEngine {

@@ -11,7 +11,7 @@ import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryHelpers;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.memory.impl.DomainFactory;
-import com.qxotic.jota.tensor.ScalarArg;
+import com.qxotic.jota.runtime.ScalarArg;
 import java.lang.foreign.MemorySegment;
 import java.util.List;
 import org.junit.jupiter.api.Test;

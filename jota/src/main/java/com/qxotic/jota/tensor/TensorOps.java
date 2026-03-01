@@ -7,7 +7,7 @@ import com.qxotic.jota.impl.ViewTransforms;
 import java.util.Arrays;
 import java.util.stream.IntStream;
 
-public interface TensorOps {
+interface TensorOps {
 
     // === Elementwise - Binary ===
 

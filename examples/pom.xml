@@ -30,7 +30,7 @@
         </dependency>
         <dependency>
             <groupId>com.qxotic</groupId>
-            <artifactId>tokenizers-api</artifactId>
+            <artifactId>tokenizers</artifactId>
         </dependency>
     </dependencies>
 

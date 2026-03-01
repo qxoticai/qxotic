@@ -1,9 +1,9 @@
 package com.qxotic.jota.runtime.hip;
 
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.tensor.ExecutionStream;
-import com.qxotic.jota.tensor.KernelArgs;
-import com.qxotic.jota.tensor.KernelArgs.Kind;
+import com.qxotic.jota.runtime.ExecutionStream;
+import com.qxotic.jota.runtime.KernelArgs;
+import com.qxotic.jota.runtime.KernelArgs.Kind;
 
 final class HipKernelParams {
 

@@ -1,7 +1,5 @@
 package com.qxotic.jota.runtime;
 
-import com.qxotic.jota.tensor.KernelCacheKey;
-import com.qxotic.jota.tensor.KernelProgram;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -9,10 +7,13 @@ import java.util.Map;
 
 public final class KernelProgramHasher {
 
+    private static final String HASH_SCHEMA_VERSION = "kernel-program-hash-v2";
+
     private KernelProgramHasher() {}
 
     public static KernelCacheKey keyFor(KernelProgram program) {
         MessageDigest digest = sha256();
+        update(digest, HASH_SCHEMA_VERSION);
         update(digest, program.kind().name());
         update(digest, program.language());
         update(digest, program.entryPoint());

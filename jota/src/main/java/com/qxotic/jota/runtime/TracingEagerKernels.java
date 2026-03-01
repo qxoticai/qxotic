@@ -1,10 +1,8 @@
 package com.qxotic.jota.runtime;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.tensor.BinaryOp;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.Tracer;
-import com.qxotic.jota.tensor.UnaryOp;
 import java.util.List;
 
 public final class TracingEagerKernels implements DeviceRuntime.EagerKernels {

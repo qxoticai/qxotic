@@ -8,6 +8,7 @@ import com.qxotic.jota.ir.tir.TIRConstantFoldingPass;
 import com.qxotic.jota.ir.tir.TIRGraph;
 import com.qxotic.jota.ir.tir.TIRSchedulePass;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.runtime.ComputeEngine;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;

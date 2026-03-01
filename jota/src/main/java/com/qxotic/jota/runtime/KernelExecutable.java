@@ -1,4 +1,4 @@
-package com.qxotic.jota.tensor;
+package com.qxotic.jota.runtime;
 
 public interface KernelExecutable extends AutoCloseable {
 

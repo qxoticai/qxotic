@@ -29,6 +29,34 @@ final class TensorFactory {
 
     private TensorFactory() {}
 
+    private static Device defaultDevice() {
+        return Device.defaultDevice();
+    }
+
+    private static MemoryDomain<?> defaultMemoryDomain() {
+        return Environment.current().runtimeFor(defaultDevice()).memoryDomain();
+    }
+
+    private static Tensor onDefaultDevice(Number value, DataType dataType, Shape shape) {
+        return broadcasted(value, dataType, shape, defaultDevice());
+    }
+
+    private static Tensor viewWithShape(Tensor tensor, Shape shape) {
+        Objects.requireNonNull(shape, "shape");
+        return tensor.view(shape);
+    }
+
+    @FunctionalInterface
+    private interface ArrayCopier {
+        MemoryView<?> copy(MemoryDomain<?> memoryDomain, Shape shape);
+    }
+
+    private static Tensor fromArray(int length, Shape shape, ArrayCopier copier) {
+        requireArraySize(length, shape);
+        MemoryView<?> view = copier.copy(defaultMemoryDomain(), shape);
+        return of(view);
+    }
+
     // region Tensor Creation
     // region Core Construction
     static Tensor of(MemoryView<?> view) {
@@ -44,13 +72,13 @@ final class TensorFactory {
             throw new IllegalArgumentException("n must be non-negative, got: " + n);
         }
         Shape shape = Shape.flat(n);
+        Device device = defaultDevice();
         if (Tracer.isTracing()) {
-            return new IRTensorImpl(
-                    new IotaConstant(n, DataType.I64, shape), Device.defaultDevice());
+            return new IRTensorImpl(new IotaConstant(n, DataType.I64, shape), device);
         }
         Layout layout = Layout.rowMajor(shape);
-        RangeComputation computation = new RangeComputation(n, Device.defaultDevice());
-        return lazy(computation, DataType.I64, layout, Device.defaultDevice());
+        RangeComputation computation = new RangeComputation(n, device);
+        return lazy(computation, DataType.I64, layout, device);
     }
 
     static Tensor iota(long n, DataType dataType) {
@@ -62,8 +90,7 @@ final class TensorFactory {
             throw new IllegalArgumentException("Unsupported data type for iota: " + dataType);
         }
         if (Tracer.isTracing()) {
-            return new IRTensorImpl(
-                    new IotaConstant(n, dataType, Shape.flat(n)), Device.defaultDevice());
+            return new IRTensorImpl(new IotaConstant(n, dataType, Shape.flat(n)), defaultDevice());
         }
         return iota(n).cast(dataType);
     }
@@ -76,7 +103,7 @@ final class TensorFactory {
     }
 
     static Tensor zeros(DataType dtype, Shape shape) {
-        return broadcasted(0, dtype, shape, Device.defaultDevice());
+        return onDefaultDevice(0, dtype, shape);
     }
 
     static Tensor ones(Shape shape) {
@@ -84,7 +111,7 @@ final class TensorFactory {
     }
 
     static Tensor ones(DataType dtype, Shape shape) {
-        return broadcasted(1, dtype, shape, Device.defaultDevice());
+        return onDefaultDevice(1, dtype, shape);
     }
 
     static void manualSeed(long seed) {
@@ -183,8 +210,8 @@ final class TensorFactory {
             double endExclusive,
             DataType dataType,
             RandomKey randomKey) {
-        Objects.requireNonNull(shape, "shape");
-        return uniform(shape.size(), startInclusive, endExclusive, dataType, randomKey).view(shape);
+        return viewWithShape(
+                uniform(shape.size(), startInclusive, endExclusive, dataType, randomKey), shape);
     }
 
     static Tensor normal(long size, double mean, double std, DataType dataType) {
@@ -208,8 +235,7 @@ final class TensorFactory {
 
     static Tensor normal(
             Shape shape, double mean, double std, DataType dataType, RandomKey randomKey) {
-        Objects.requireNonNull(shape, "shape");
-        return normal(shape.size(), mean, std, dataType, randomKey).view(shape);
+        return viewWithShape(normal(shape.size(), mean, std, dataType, randomKey), shape);
     }
 
     static Tensor uniformInt(long startInclusive, long endExclusive, long size, DataType dataType) {
@@ -244,9 +270,8 @@ final class TensorFactory {
 
     static Tensor uniformInt(
             long startInclusive, long endExclusive, Shape shape, DataType dataType) {
-        Objects.requireNonNull(shape, "shape");
-        return uniformInt(startInclusive, endExclusive, shape.size(), dataType, nextKey())
-                .view(shape);
+        return viewWithShape(
+                uniformInt(startInclusive, endExclusive, shape.size(), dataType, nextKey()), shape);
     }
 
     static Tensor uniformInt(
@@ -255,9 +280,8 @@ final class TensorFactory {
             Shape shape,
             DataType dataType,
             RandomKey randomKey) {
-        Objects.requireNonNull(shape, "shape");
-        return uniformInt(startInclusive, endExclusive, shape.size(), dataType, randomKey)
-                .view(shape);
+        return viewWithShape(
+                uniformInt(startInclusive, endExclusive, shape.size(), dataType, randomKey), shape);
     }
 
     static Tensor normalInt(long size, double mean, double std, DataType dataType) {
@@ -289,75 +313,70 @@ final class TensorFactory {
 
     static Tensor normalInt(
             Shape shape, double mean, double std, DataType dataType, RandomKey randomKey) {
-        Objects.requireNonNull(shape, "shape");
-        return normalInt(shape.size(), mean, std, dataType, randomKey).view(shape);
+        return viewWithShape(normalInt(shape.size(), mean, std, dataType, randomKey), shape);
     }
 
     // endregion Random Creation
     // region Constant / Fill Creation
 
     static Tensor full(float value, Shape shape) {
-        return broadcasted(Float.valueOf(value), DataType.FP32, shape, Device.defaultDevice());
+        return onDefaultDevice(value, DataType.FP32, shape);
     }
 
     static Tensor full(double value, Shape shape) {
-        return broadcasted(Double.valueOf(value), DataType.FP64, shape, Device.defaultDevice());
+        return onDefaultDevice(value, DataType.FP64, shape);
     }
 
     static Tensor full(long value, Shape shape) {
-        return broadcasted(Long.valueOf(value), DataType.I64, shape, Device.defaultDevice());
+        return onDefaultDevice(value, DataType.I64, shape);
     }
 
     static Tensor full(int value, Shape shape) {
-        return broadcasted(Integer.valueOf(value), DataType.I32, shape, Device.defaultDevice());
+        return onDefaultDevice(value, DataType.I32, shape);
     }
 
     static Tensor full(Number value, DataType dtype, Shape shape) {
-        return broadcasted(value, dtype, shape, Device.defaultDevice());
+        return onDefaultDevice(value, dtype, shape);
     }
 
     static Tensor broadcasted(int value, Shape shape) {
-        return broadcasted(Integer.valueOf(value), DataType.I32, shape, Device.defaultDevice());
+        return onDefaultDevice(value, DataType.I32, shape);
     }
 
     static Tensor broadcasted(long value, Shape shape) {
-        return broadcasted(Long.valueOf(value), DataType.I64, shape, Device.defaultDevice());
+        return onDefaultDevice(value, DataType.I64, shape);
     }
 
     static Tensor broadcasted(float value, Shape shape) {
-        return broadcasted(Float.valueOf(value), DataType.FP32, shape, Device.defaultDevice());
+        return onDefaultDevice(value, DataType.FP32, shape);
     }
 
     static Tensor broadcasted(double value, Shape shape) {
-        return broadcasted(Double.valueOf(value), DataType.FP64, shape, Device.defaultDevice());
+        return onDefaultDevice(value, DataType.FP64, shape);
     }
 
     static Tensor scalar(int value) {
-        return broadcasted(
-                Integer.valueOf(value), DataType.I32, Shape.scalar(), Device.defaultDevice());
+        return onDefaultDevice(value, DataType.I32, Shape.scalar());
     }
 
     static Tensor scalar(float value) {
-        return broadcasted(
-                Float.valueOf(value), DataType.FP32, Shape.scalar(), Device.defaultDevice());
+        return onDefaultDevice(value, DataType.FP32, Shape.scalar());
     }
 
     static Tensor scalar(double value) {
-        return broadcasted(
-                Double.valueOf(value), DataType.FP64, Shape.scalar(), Device.defaultDevice());
+        return onDefaultDevice(value, DataType.FP64, Shape.scalar());
     }
 
     static Tensor scalar(long value) {
-        return broadcasted(
-                Long.valueOf(value), DataType.I64, Shape.scalar(), Device.defaultDevice());
+        return onDefaultDevice(value, DataType.I64, Shape.scalar());
     }
 
     static Tensor scalar(double value, DataType dtype) {
-        return broadcasted(Double.valueOf(value), dtype, Shape.scalar(), Device.defaultDevice());
+        return onDefaultDevice(value, dtype, Shape.scalar());
     }
 
     static Tensor scalar(long value, DataType dtype) {
-        return broadcasted(Long.valueOf(value), dtype, Shape.scalar(), Device.defaultDevice());
+        return onDefaultDevice(value, dtype, Shape.scalar());
     }
 
     // endregion Constant / Fill Creation
@@ -384,11 +403,8 @@ final class TensorFactory {
     }
 
     static Tensor of(float[] data, Shape shape) {
-        requireArraySize(data.length, shape);
-        MemoryDomain<?> memoryDomain =
-                Environment.current().runtimeFor(Device.defaultDevice()).memoryDomain();
-        MemoryView<?> view = copyFloatArray(memoryDomain, data, shape);
-        return of(view);
+        return fromArray(
+                data.length, shape, (memoryDomain, s) -> copyFloatArray(memoryDomain, data, s));
     }
 
     static Tensor of(double[] data) {
@@ -396,11 +412,8 @@ final class TensorFactory {
     }
 
     static Tensor of(double[] data, Shape shape) {
-        requireArraySize(data.length, shape);
-        MemoryDomain<?> memoryDomain =
-                Environment.current().runtimeFor(Device.defaultDevice()).memoryDomain();
-        MemoryView<?> view = copyDoubleArray(memoryDomain, data, shape);
-        return of(view);
+        return fromArray(
+                data.length, shape, (memoryDomain, s) -> copyDoubleArray(memoryDomain, data, s));
     }
 
     static Tensor of(int[] data) {
@@ -408,11 +421,8 @@ final class TensorFactory {
     }
 
     static Tensor of(int[] data, Shape shape) {
-        requireArraySize(data.length, shape);
-        MemoryDomain<?> memoryDomain =
-                Environment.current().runtimeFor(Device.defaultDevice()).memoryDomain();
-        MemoryView<?> view = copyIntArray(memoryDomain, data, shape);
-        return of(view);
+        return fromArray(
+                data.length, shape, (memoryDomain, s) -> copyIntArray(memoryDomain, data, s));
     }
 
     static Tensor of(long[] data) {
@@ -420,11 +430,8 @@ final class TensorFactory {
     }
 
     static Tensor of(long[] data, Shape shape) {
-        requireArraySize(data.length, shape);
-        MemoryDomain<?> memoryDomain =
-                Environment.current().runtimeFor(Device.defaultDevice()).memoryDomain();
-        MemoryView<?> view = copyLongArray(memoryDomain, data, shape);
-        return of(view);
+        return fromArray(
+                data.length, shape, (memoryDomain, s) -> copyLongArray(memoryDomain, data, s));
     }
 
     static Tensor of(boolean[] data) {
@@ -432,11 +439,8 @@ final class TensorFactory {
     }
 
     static Tensor of(boolean[] data, Shape shape) {
-        requireArraySize(data.length, shape);
-        MemoryDomain<?> memoryDomain =
-                Environment.current().runtimeFor(Device.defaultDevice()).memoryDomain();
-        MemoryView<?> view = copyBooleanArray(memoryDomain, data, shape);
-        return of(view);
+        return fromArray(
+                data.length, shape, (memoryDomain, s) -> copyBooleanArray(memoryDomain, data, s));
     }
 
     // endregion Array-backed Creation
@@ -479,9 +483,9 @@ final class TensorFactory {
         ensureSupportedRandomFloat(dataType, opName);
         Shape shape = shapeFromSize(size, opName);
         Layout layout = Layout.rowMajor(shape);
-        RandomComputation computation =
-                new RandomComputation(shape, dataType, Device.defaultDevice(), randomKey);
-        return lazy(computation, dataType, layout, Device.defaultDevice());
+        Device device = defaultDevice();
+        RandomComputation computation = new RandomComputation(shape, dataType, device, randomKey);
+        return lazy(computation, dataType, layout, device);
     }
 
     private static Tensor randomStandardNormal(

@@ -10,7 +10,6 @@ import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.memory.impl.DomainFactory;
 import com.qxotic.jota.runtime.panama.PanamaDeviceRuntime;
-import com.qxotic.jota.tensor.ComputeEngine;
 import com.qxotic.jota.tensor.Tensor;
 import java.util.List;
 import java.util.Optional;
