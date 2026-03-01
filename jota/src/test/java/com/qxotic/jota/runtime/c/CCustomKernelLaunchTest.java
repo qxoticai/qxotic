@@ -8,7 +8,7 @@ import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.tensor.KernelProgram;
+import com.qxotic.jota.runtime.KernelProgram;
 import com.qxotic.jota.testutil.ExternalToolChecks;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Assumptions;

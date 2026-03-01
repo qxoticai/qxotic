@@ -1,6 +1,7 @@
 package com.qxotic.jota;
 
 import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.runtime.ComputeEngine;
 import com.qxotic.jota.runtime.DefaultRuntimeRegistry;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.RuntimeDiagnostic;
@@ -8,7 +9,6 @@ import com.qxotic.jota.runtime.RuntimeRegistry;
 import com.qxotic.jota.runtime.panama.PanamaDeviceRuntime;
 import com.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
 import com.qxotic.jota.runtime.spi.RuntimeProbe;
-import com.qxotic.jota.tensor.ComputeEngine;
 import java.lang.foreign.MemorySegment;
 import java.util.Comparator;
 import java.util.List;

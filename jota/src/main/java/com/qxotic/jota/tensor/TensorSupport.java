@@ -7,6 +7,8 @@ import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.runtime.BinaryOp;
+import com.qxotic.jota.runtime.UnaryOp;
 import java.util.Arrays;
 import java.util.Optional;
 import java.util.function.BiFunction;

@@ -1,7 +1,5 @@
 package com.qxotic.jota.runtime;
 
-import com.qxotic.jota.tensor.KernelCacheKey;
-import com.qxotic.jota.tensor.KernelProgram;
 import java.nio.file.Path;
 import java.util.Optional;
 

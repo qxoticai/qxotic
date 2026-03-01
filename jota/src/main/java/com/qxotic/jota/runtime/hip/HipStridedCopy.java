@@ -3,7 +3,7 @@ package com.qxotic.jota.runtime.hip;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.tensor.*;
+import com.qxotic.jota.runtime.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 

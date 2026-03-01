@@ -7,6 +7,8 @@ import com.qxotic.jota.ir.tir.BinaryOperator;
 import com.qxotic.jota.ir.tir.IRConstantFolder;
 import com.qxotic.jota.ir.tir.ScalarConstant;
 import com.qxotic.jota.ir.tir.UnaryOperator;
+import com.qxotic.jota.runtime.BinaryOp;
+import com.qxotic.jota.runtime.UnaryOp;
 import java.util.Optional;
 
 final class ConstantFolder {

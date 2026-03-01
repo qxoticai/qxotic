@@ -1,4 +1,4 @@
-package com.qxotic.jota.tensor;
+package com.qxotic.jota.runtime;
 
 import com.qxotic.jota.Device;
 import java.util.Objects;

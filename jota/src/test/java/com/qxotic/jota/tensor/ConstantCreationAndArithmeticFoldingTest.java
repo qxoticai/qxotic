@@ -15,6 +15,7 @@ import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.memory.MemoryViewPrinter;
+import com.qxotic.jota.runtime.ComputeEngine;
 import com.qxotic.jota.runtime.DefaultRuntimeRegistry;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.KernelService;

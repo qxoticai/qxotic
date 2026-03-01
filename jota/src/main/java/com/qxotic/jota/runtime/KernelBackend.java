@@ -1,4 +1,4 @@
-package com.qxotic.jota.tensor;
+package com.qxotic.jota.runtime;
 
 public interface KernelBackend {
     KernelExecutable compile(KernelProgram program, KernelCacheKey cacheKey);

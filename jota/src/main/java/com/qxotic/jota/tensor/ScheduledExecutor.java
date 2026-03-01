@@ -11,6 +11,7 @@ import com.qxotic.jota.ir.tir.ValueId;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.runtime.ComputeEngine;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;

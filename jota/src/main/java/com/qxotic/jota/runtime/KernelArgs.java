@@ -1,8 +1,9 @@
-package com.qxotic.jota.tensor;
+package com.qxotic.jota.runtime;
 
 import com.qxotic.jota.BFloat16;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.tensor.Tensor;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;

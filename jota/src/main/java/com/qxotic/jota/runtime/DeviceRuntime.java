@@ -3,16 +3,7 @@ package com.qxotic.jota.runtime;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.MemoryDomain;
-import com.qxotic.jota.tensor.BinaryOp;
-import com.qxotic.jota.tensor.ComputeEngine;
-import com.qxotic.jota.tensor.ExecutionStream;
-import com.qxotic.jota.tensor.KernelArgs;
-import com.qxotic.jota.tensor.KernelCacheKey;
-import com.qxotic.jota.tensor.KernelExecutable;
-import com.qxotic.jota.tensor.KernelProgram;
-import com.qxotic.jota.tensor.LaunchConfig;
 import com.qxotic.jota.tensor.Tensor;
-import com.qxotic.jota.tensor.UnaryOp;
 import java.util.Objects;
 import java.util.Optional;
 

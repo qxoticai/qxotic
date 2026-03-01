@@ -2,13 +2,13 @@ package com.qxotic.jota.runtime.hip;
 
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.runtime.ComputeEngine;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.EagerKernelFactory;
 import com.qxotic.jota.runtime.FileKernelProgramStore;
+import com.qxotic.jota.runtime.KernelBackend;
 import com.qxotic.jota.runtime.KernelProgramStore;
 import com.qxotic.jota.runtime.KernelService;
-import com.qxotic.jota.tensor.ComputeEngine;
-import com.qxotic.jota.tensor.KernelBackend;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Optional;

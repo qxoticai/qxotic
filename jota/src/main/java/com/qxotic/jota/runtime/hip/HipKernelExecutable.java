@@ -1,9 +1,9 @@
 package com.qxotic.jota.runtime.hip;
 
-import com.qxotic.jota.tensor.ExecutionStream;
-import com.qxotic.jota.tensor.KernelArgs;
-import com.qxotic.jota.tensor.KernelExecutable;
-import com.qxotic.jota.tensor.LaunchConfig;
+import com.qxotic.jota.runtime.ExecutionStream;
+import com.qxotic.jota.runtime.KernelArgs;
+import com.qxotic.jota.runtime.KernelExecutable;
+import com.qxotic.jota.runtime.LaunchConfig;
 import java.util.Objects;
 
 public final class HipKernelExecutable implements KernelExecutable {

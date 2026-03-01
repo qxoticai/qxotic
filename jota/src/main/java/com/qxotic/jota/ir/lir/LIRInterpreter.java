@@ -5,7 +5,7 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.tensor.ScalarArg;
+import com.qxotic.jota.runtime.ScalarArg;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;

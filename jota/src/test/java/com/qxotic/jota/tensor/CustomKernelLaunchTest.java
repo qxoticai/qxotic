@@ -8,6 +8,11 @@ import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.runtime.ExecutionStream;
+import com.qxotic.jota.runtime.KernelArgs;
+import com.qxotic.jota.runtime.KernelExecutable;
+import com.qxotic.jota.runtime.KernelProgram;
+import com.qxotic.jota.runtime.LaunchConfig;
 import com.qxotic.jota.runtime.panama.PanamaDeviceRuntime;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.BeforeAll;
@@ -32,13 +37,13 @@ class CustomKernelLaunchTest {
         // language=java
         String source =
                 """
-                package com.qxotic.jota.tensor.jit;
+                package com.qxotic.jota.runtime.jit;
 
                 import com.qxotic.jota.memory.MemoryAccess;
                 import com.qxotic.jota.memory.MemoryDomain;
                 import com.qxotic.jota.memory.MemoryView;
-                import com.qxotic.jota.tensor.JavaKernel;
-                import com.qxotic.jota.tensor.KernelArgs;
+                import com.qxotic.jota.runtime.JavaKernel;
+                import com.qxotic.jota.runtime.KernelArgs;
                 import java.lang.foreign.MemorySegment;
 
                 public final class ScaleKernel implements JavaKernel {
@@ -77,13 +82,13 @@ class CustomKernelLaunchTest {
         // language=java
         String source =
                 """
-                package com.qxotic.jota.tensor.jit;
+                package com.qxotic.jota.runtime.jit;
 
                 import com.qxotic.jota.memory.MemoryAccess;
                 import com.qxotic.jota.memory.MemoryDomain;
                 import com.qxotic.jota.memory.MemoryView;
-                import com.qxotic.jota.tensor.JavaKernel;
-                import com.qxotic.jota.tensor.KernelArgs;
+                import com.qxotic.jota.runtime.JavaKernel;
+                import com.qxotic.jota.runtime.KernelArgs;
                 import java.lang.foreign.MemorySegment;
 
                 public final class AddKernel implements JavaKernel {
@@ -126,13 +131,13 @@ class CustomKernelLaunchTest {
         // language=java
         String source =
                 """
-                package com.qxotic.jota.tensor.jit;
+                package com.qxotic.jota.runtime.jit;
 
                 import com.qxotic.jota.memory.MemoryAccess;
                 import com.qxotic.jota.memory.MemoryDomain;
                 import com.qxotic.jota.memory.MemoryView;
-                import com.qxotic.jota.tensor.JavaKernel;
-                import com.qxotic.jota.tensor.KernelArgs;
+                import com.qxotic.jota.runtime.JavaKernel;
+                import com.qxotic.jota.runtime.KernelArgs;
                 import java.lang.foreign.MemorySegment;
 
                 public final class NegateKernel implements JavaKernel {
@@ -170,13 +175,13 @@ class CustomKernelLaunchTest {
         // language=java
         String source =
                 """
-                package com.qxotic.jota.tensor.jit;
+                package com.qxotic.jota.runtime.jit;
 
                 import com.qxotic.jota.memory.MemoryAccess;
                 import com.qxotic.jota.memory.MemoryDomain;
                 import com.qxotic.jota.memory.MemoryView;
-                import com.qxotic.jota.tensor.JavaKernel;
-                import com.qxotic.jota.tensor.KernelArgs;
+                import com.qxotic.jota.runtime.JavaKernel;
+                import com.qxotic.jota.runtime.KernelArgs;
                 import java.lang.foreign.MemorySegment;
 
                 public final class FillKernel implements JavaKernel {
@@ -210,13 +215,13 @@ class CustomKernelLaunchTest {
         // language=java
         String source =
                 """
-                package com.qxotic.jota.tensor.jit;
+                package com.qxotic.jota.runtime.jit;
 
                 import com.qxotic.jota.memory.MemoryAccess;
                 import com.qxotic.jota.memory.MemoryDomain;
                 import com.qxotic.jota.memory.MemoryView;
-                import com.qxotic.jota.tensor.JavaKernel;
-                import com.qxotic.jota.tensor.KernelArgs;
+                import com.qxotic.jota.runtime.JavaKernel;
+                import com.qxotic.jota.runtime.KernelArgs;
                 import java.lang.foreign.MemorySegment;
 
                 public final class DoubleKernel implements JavaKernel {
@@ -262,13 +267,13 @@ class CustomKernelLaunchTest {
         // language=java
         String source =
                 """
-                package com.qxotic.jota.tensor.jit;
+                package com.qxotic.jota.runtime.jit;
 
                 import com.qxotic.jota.memory.MemoryAccess;
                 import com.qxotic.jota.memory.MemoryDomain;
                 import com.qxotic.jota.memory.MemoryView;
-                import com.qxotic.jota.tensor.JavaKernel;
-                import com.qxotic.jota.tensor.KernelArgs;
+                import com.qxotic.jota.runtime.JavaKernel;
+                import com.qxotic.jota.runtime.KernelArgs;
                 import java.lang.foreign.MemorySegment;
 
                 public final class GemvKernel implements JavaKernel {
@@ -333,13 +338,13 @@ class CustomKernelLaunchTest {
         // language=java
         String source =
                 """
-                package com.qxotic.jota.tensor.jit;
+                package com.qxotic.jota.runtime.jit;
 
                 import com.qxotic.jota.memory.MemoryAccess;
                 import com.qxotic.jota.memory.MemoryDomain;
                 import com.qxotic.jota.memory.MemoryView;
-                import com.qxotic.jota.tensor.JavaKernel;
-                import com.qxotic.jota.tensor.KernelArgs;
+                import com.qxotic.jota.runtime.JavaKernel;
+                import com.qxotic.jota.runtime.KernelArgs;
                 import java.lang.foreign.MemorySegment;
 
                 public final class AddTensorsKernel implements JavaKernel {
@@ -381,13 +386,13 @@ class CustomKernelLaunchTest {
         // language=java
         String source =
                 """
-                package com.qxotic.jota.tensor.jit;
+                package com.qxotic.jota.runtime.jit;
 
                 import com.qxotic.jota.memory.MemoryAccess;
                 import com.qxotic.jota.memory.MemoryDomain;
                 import com.qxotic.jota.memory.MemoryView;
-                import com.qxotic.jota.tensor.JavaKernel;
-                import com.qxotic.jota.tensor.KernelArgs;
+                import com.qxotic.jota.runtime.JavaKernel;
+                import com.qxotic.jota.runtime.KernelArgs;
                 import java.lang.foreign.MemorySegment;
 
                 public final class MulTensorsKernel implements JavaKernel {
@@ -454,13 +459,13 @@ class CustomKernelLaunchTest {
     // language=java
     private static final String GEMV_KERNEL_SOURCE =
             """
-            package com.qxotic.jota.tensor.jit;
+            package com.qxotic.jota.runtime.jit;
 
             import com.qxotic.jota.memory.MemoryAccess;
             import com.qxotic.jota.memory.MemoryDomain;
             import com.qxotic.jota.memory.MemoryView;
-            import com.qxotic.jota.tensor.JavaKernel;
-            import com.qxotic.jota.tensor.KernelArgs;
+            import com.qxotic.jota.runtime.JavaKernel;
+            import com.qxotic.jota.runtime.KernelArgs;
             import java.lang.foreign.MemorySegment;
 
             public final class GemvTensorKernel implements JavaKernel {
@@ -495,13 +500,13 @@ class CustomKernelLaunchTest {
         // language=java
         String source =
                 """
-                package com.qxotic.jota.tensor.jit;
+                package com.qxotic.jota.runtime.jit;
 
                 import com.qxotic.jota.memory.MemoryAccess;
                 import com.qxotic.jota.memory.MemoryDomain;
                 import com.qxotic.jota.memory.MemoryView;
-                import com.qxotic.jota.tensor.JavaKernel;
-                import com.qxotic.jota.tensor.KernelArgs;
+                import com.qxotic.jota.runtime.JavaKernel;
+                import com.qxotic.jota.runtime.KernelArgs;
                 import java.lang.foreign.MemorySegment;
 
                 public final class MismatchKernel implements JavaKernel {
@@ -537,11 +542,11 @@ class CustomKernelLaunchTest {
         // language=java
         String source =
                 """
-                package com.qxotic.jota.tensor.jit;
+                package com.qxotic.jota.runtime.jit;
 
                 import com.qxotic.jota.memory.MemoryDomain;
-                import com.qxotic.jota.tensor.JavaKernel;
-                import com.qxotic.jota.tensor.KernelArgs;
+                import com.qxotic.jota.runtime.JavaKernel;
+                import com.qxotic.jota.runtime.KernelArgs;
                 import java.lang.foreign.MemorySegment;
 
                 public final class BadScalarReadKernel implements JavaKernel {
@@ -566,12 +571,12 @@ class CustomKernelLaunchTest {
         // language=java
         String source =
                 """
-                package com.qxotic.jota.tensor.jit;
+                package com.qxotic.jota.runtime.jit;
 
                 import com.qxotic.jota.memory.MemoryDomain;
                 import com.qxotic.jota.memory.MemoryView;
-                import com.qxotic.jota.tensor.JavaKernel;
-                import com.qxotic.jota.tensor.KernelArgs;
+                import com.qxotic.jota.runtime.JavaKernel;
+                import com.qxotic.jota.runtime.KernelArgs;
                 import java.lang.foreign.MemorySegment;
 
                 public final class BadBufferReadKernel implements JavaKernel {

@@ -1,4 +1,4 @@
-package com.qxotic.jota.tensor;
+package com.qxotic.jota.runtime;
 
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryDomain;

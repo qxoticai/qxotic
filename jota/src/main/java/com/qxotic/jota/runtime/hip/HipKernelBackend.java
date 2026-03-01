@@ -4,7 +4,7 @@ import com.qxotic.jota.Device;
 import com.qxotic.jota.ir.lir.LIRGraph;
 import com.qxotic.jota.ir.lir.LIRTextRenderer;
 import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
-import com.qxotic.jota.tensor.*;
+import com.qxotic.jota.runtime.*;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;

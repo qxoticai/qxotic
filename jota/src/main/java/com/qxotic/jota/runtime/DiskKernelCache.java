@@ -1,11 +1,11 @@
-package com.qxotic.jota.tensor;
+package com.qxotic.jota.runtime;
 
 import com.qxotic.jota.Device;
 import java.nio.file.Path;
 
 public final class DiskKernelCache implements KernelCache {
 
-    private static final String DEFAULT_PACKAGE = "com.qxotic.jota.tensor.jit";
+    private static final String DEFAULT_PACKAGE = "com.qxotic.jota.runtime.jit";
     private static final Path DEFAULT_ROOT = Path.of("__kernels").resolve(Device.PANAMA.leafName());
 
     private final Path root;

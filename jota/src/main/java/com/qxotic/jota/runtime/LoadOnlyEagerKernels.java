@@ -6,13 +6,7 @@ import com.qxotic.jota.Shape;
 import com.qxotic.jota.Util;
 import com.qxotic.jota.ir.tir.GatherOp;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.tensor.BinaryOp;
-import com.qxotic.jota.tensor.ExecutionStream;
-import com.qxotic.jota.tensor.KernelArgs;
-import com.qxotic.jota.tensor.KernelExecutable;
-import com.qxotic.jota.tensor.LaunchConfig;
 import com.qxotic.jota.tensor.Tensor;
-import com.qxotic.jota.tensor.UnaryOp;
 
 final class LoadOnlyEagerKernels implements DeviceRuntime.EagerKernels {
 

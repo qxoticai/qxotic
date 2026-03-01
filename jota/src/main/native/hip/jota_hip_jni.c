@@ -443,12 +443,12 @@ JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_hip_HipKernelParams_packNat
     return 0;
   }
 
-  jclass entryClass = findClass(env, "com/qxotic/jota/tensor/KernelArgs$Entry");
+  jclass entryClass = findClass(env, "com/qxotic/jota/runtime/KernelArgs$Entry");
   if (entryClass == NULL) {
     freeArgsPack(pack);
     return 0;
   }
-  jmethodID kindMid = getMethod(env, entryClass, "kind", "()Lcom/qxotic/jota/tensor/KernelArgs$Kind;");
+  jmethodID kindMid = getMethod(env, entryClass, "kind", "()Lcom/qxotic/jota/runtime/KernelArgs$Kind;");
   if (kindMid == NULL) {
     freeArgsPack(pack);
     return 0;
@@ -464,7 +464,7 @@ JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_hip_HipKernelParams_packNat
     return 0;
   }
 
-  jclass kindClass = findClass(env, "com/qxotic/jota/tensor/KernelArgs$Kind");
+  jclass kindClass = findClass(env, "com/qxotic/jota/runtime/KernelArgs$Kind");
   if (kindClass == NULL) {
     freeArgsPack(pack);
     return 0;

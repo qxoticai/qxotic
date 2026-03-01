@@ -1,4 +1,4 @@
-package com.qxotic.jota.tensor;
+package com.qxotic.jota.runtime;
 
 import java.util.Objects;
 import java.util.concurrent.Executor;

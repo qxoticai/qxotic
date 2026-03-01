@@ -2,13 +2,6 @@ package com.qxotic.jota.runtime;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.qxotic.jota.tensor.ExecutionStream;
-import com.qxotic.jota.tensor.KernelArgs;
-import com.qxotic.jota.tensor.KernelBackend;
-import com.qxotic.jota.tensor.KernelCacheKey;
-import com.qxotic.jota.tensor.KernelExecutable;
-import com.qxotic.jota.tensor.KernelProgram;
-import com.qxotic.jota.tensor.LaunchConfig;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
 import java.nio.file.Path;
 import java.util.HashMap;

@@ -1,9 +1,5 @@
 package com.qxotic.jota.runtime;
 
-import com.qxotic.jota.tensor.KernelBackend;
-import com.qxotic.jota.tensor.KernelCacheKey;
-import com.qxotic.jota.tensor.KernelExecutable;
-import com.qxotic.jota.tensor.KernelProgram;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;

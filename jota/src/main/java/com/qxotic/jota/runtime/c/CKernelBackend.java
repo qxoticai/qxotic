@@ -2,10 +2,10 @@ package com.qxotic.jota.runtime.c;
 
 import com.qxotic.jota.ir.lir.LIRGraph;
 import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
-import com.qxotic.jota.tensor.KernelBackend;
-import com.qxotic.jota.tensor.KernelCacheKey;
-import com.qxotic.jota.tensor.KernelExecutable;
-import com.qxotic.jota.tensor.KernelProgram;
+import com.qxotic.jota.runtime.KernelBackend;
+import com.qxotic.jota.runtime.KernelCacheKey;
+import com.qxotic.jota.runtime.KernelExecutable;
+import com.qxotic.jota.runtime.KernelProgram;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 

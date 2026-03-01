@@ -4,10 +4,10 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.ir.lir.*;
 import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
 import com.qxotic.jota.ir.tir.BinaryOperator;
-import com.qxotic.jota.tensor.JavaKernel;
-import com.qxotic.jota.tensor.KernelCache;
-import com.qxotic.jota.tensor.KernelCacheEntry;
-import com.qxotic.jota.tensor.KernelCacheKey;
+import com.qxotic.jota.runtime.JavaKernel;
+import com.qxotic.jota.runtime.KernelCache;
+import com.qxotic.jota.runtime.KernelCacheEntry;
+import com.qxotic.jota.runtime.KernelCacheKey;
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
@@ -164,7 +164,7 @@ final class LIRKernelCompiler {
     private KernelCacheKey buildCacheKey(
             LIRGraph graph, ScratchLayout scratchLayout, boolean needsStridedKernel) {
         String hash = hashLirGraph(graph, scratchLayout, needsStridedKernel);
-        return KernelCacheKey.of(hash + "-lir-v10");
+        return KernelCacheKey.of(hash + "-lir-v11");
     }
 
     private String hashLirGraph(
@@ -456,9 +456,9 @@ final class LIRKernelCompiler {
             source.append("import com.qxotic.jota.memory.MemoryAccess;\n");
             source.append("import com.qxotic.jota.memory.MemoryDomain;\n");
             source.append("import com.qxotic.jota.memory.MemoryView;\n");
-            source.append("import com.qxotic.jota.tensor.KernelArgs;\n");
-            source.append("import com.qxotic.jota.tensor.KernelLaunchContext;\n");
-            source.append("import com.qxotic.jota.tensor.JavaKernel;\n");
+            source.append("import com.qxotic.jota.runtime.KernelArgs;\n");
+            source.append("import com.qxotic.jota.runtime.KernelLaunchContext;\n");
+            source.append("import com.qxotic.jota.runtime.JavaKernel;\n");
             source.append("import java.lang.foreign.MemorySegment;\n");
             source.append("import java.lang.foreign.ValueLayout;\n");
             source.append("\n");
