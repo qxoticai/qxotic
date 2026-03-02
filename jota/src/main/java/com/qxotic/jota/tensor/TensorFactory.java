@@ -15,17 +15,11 @@ import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.memory.impl.DomainFactory;
 import com.qxotic.jota.memory.impl.MemoryFactory;
 import com.qxotic.jota.random.RandomKey;
+import com.qxotic.jota.random.RandomKeys;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicLong;
 
 final class TensorFactory {
-
-    private static final long DEFAULT_SEED = 0x5eed5eedL;
-
-    private static final ThreadLocal<RandomState> RANDOM_STATE =
-            ThreadLocal.withInitial(
-                    () -> new RandomState(RandomKey.of(DEFAULT_SEED), new AtomicLong(0L)));
 
     private TensorFactory() {}
 
@@ -114,81 +108,52 @@ final class TensorFactory {
         return onDefaultDevice(1, dtype, shape);
     }
 
-    static void manualSeed(long seed) {
-        RANDOM_STATE.set(new RandomState(RandomKey.of(seed), new AtomicLong(0L)));
+    static RandomKey randomKey(long seed) {
+        return RandomKeys.key(seed);
     }
 
-    static Tensor rand(long size, DataType dataType) {
-        return rand(size, dataType, nextKey());
+    static Tensor rand(RandomKey randomKey, long size, DataType dataType) {
+        return randomUnitInterval(randomKey, size, dataType, "rand");
     }
 
-    static Tensor rand(long size, DataType dataType, RandomKey randomKey) {
-        return randomUnitInterval(size, dataType, randomKey, "rand");
+    static Tensor rand(RandomKey randomKey, Shape shape, DataType dataType) {
+        return uniform(randomKey, shape, 0.0, 1.0, dataType);
     }
 
-    static Tensor rand(Shape shape, DataType dataType) {
-        return uniform(shape, 0.0, 1.0, dataType);
+    static Tensor randn(RandomKey randomKey, long size, DataType dataType) {
+        return randomStandardNormal(randomKey, size, dataType, "randn");
     }
 
-    static Tensor rand(Shape shape, DataType dataType, RandomKey randomKey) {
-        return uniform(shape, 0.0, 1.0, dataType, randomKey);
-    }
-
-    static Tensor randn(long size, DataType dataType) {
-        return randn(size, dataType, nextKey());
-    }
-
-    static Tensor randn(long size, DataType dataType, RandomKey randomKey) {
-        return randomStandardNormal(size, dataType, randomKey, "randn");
-    }
-
-    static Tensor randn(Shape shape, DataType dataType) {
-        return normal(shape, 0.0, 1.0, dataType);
-    }
-
-    static Tensor randn(Shape shape, DataType dataType, RandomKey randomKey) {
-        return normal(shape, 0.0, 1.0, dataType, randomKey);
-    }
-
-    static Tensor randInt(long startInclusive, long endExclusive, long size, DataType dataType) {
-        return uniformInt(startInclusive, endExclusive, size, dataType);
+    static Tensor randn(RandomKey randomKey, Shape shape, DataType dataType) {
+        return normal(randomKey, shape, 0.0, 1.0, dataType);
     }
 
     static Tensor randInt(
+            RandomKey randomKey,
             long startInclusive,
             long endExclusive,
             long size,
-            DataType dataType,
-            RandomKey randomKey) {
-        return uniformInt(startInclusive, endExclusive, size, dataType, randomKey);
-    }
-
-    static Tensor randInt(long startInclusive, long endExclusive, Shape shape, DataType dataType) {
-        return uniformInt(startInclusive, endExclusive, shape, dataType);
+            DataType dataType) {
+        return uniformInt(randomKey, startInclusive, endExclusive, size, dataType);
     }
 
     static Tensor randInt(
+            RandomKey randomKey,
             long startInclusive,
             long endExclusive,
             Shape shape,
-            DataType dataType,
-            RandomKey randomKey) {
-        return uniformInt(startInclusive, endExclusive, shape, dataType, randomKey);
+            DataType dataType) {
+        return uniformInt(randomKey, startInclusive, endExclusive, shape, dataType);
     }
 
     static Tensor uniform(
-            long size, double startInclusive, double endExclusive, DataType dataType) {
-        return uniform(size, startInclusive, endExclusive, dataType, nextKey());
-    }
-
-    static Tensor uniform(
+            RandomKey randomKey,
             long size,
             double startInclusive,
             double endExclusive,
-            DataType dataType,
-            RandomKey randomKey) {
+            DataType dataType) {
         ensureValidRandomFloatRange(startInclusive, endExclusive, "uniform");
-        Tensor unit = rand(size, dataType, randomKey);
+        Tensor unit = rand(randomKey, size, dataType);
         if (dataType == DataType.FP32) {
             float span = (float) (endExclusive - startInclusive);
             float start = (float) startInclusive;
@@ -199,55 +164,36 @@ final class TensorFactory {
     }
 
     static Tensor uniform(
-            Shape shape, double startInclusive, double endExclusive, DataType dataType) {
-        Objects.requireNonNull(shape, "shape");
-        return uniform(shape, startInclusive, endExclusive, dataType, nextKey());
-    }
-
-    static Tensor uniform(
+            RandomKey randomKey,
             Shape shape,
             double startInclusive,
             double endExclusive,
-            DataType dataType,
-            RandomKey randomKey) {
+            DataType dataType) {
         return viewWithShape(
-                uniform(shape.size(), startInclusive, endExclusive, dataType, randomKey), shape);
-    }
-
-    static Tensor normal(long size, double mean, double std, DataType dataType) {
-        return normal(size, mean, std, dataType, nextKey());
+                uniform(randomKey, shape.size(), startInclusive, endExclusive, dataType), shape);
     }
 
     static Tensor normal(
-            long size, double mean, double std, DataType dataType, RandomKey randomKey) {
+            RandomKey randomKey, long size, double mean, double std, DataType dataType) {
         ensureValidNormalParams(mean, std, "normal");
-        Tensor standard = randn(size, dataType, randomKey);
+        Tensor standard = randn(randomKey, size, dataType);
         if (dataType == DataType.FP32) {
             return standard.multiply((float) std).add((float) mean);
         }
         return standard.multiply(std).add(mean);
     }
 
-    static Tensor normal(Shape shape, double mean, double std, DataType dataType) {
-        Objects.requireNonNull(shape, "shape");
-        return normal(shape, mean, std, dataType, nextKey());
-    }
-
     static Tensor normal(
-            Shape shape, double mean, double std, DataType dataType, RandomKey randomKey) {
-        return viewWithShape(normal(shape.size(), mean, std, dataType, randomKey), shape);
-    }
-
-    static Tensor uniformInt(long startInclusive, long endExclusive, long size, DataType dataType) {
-        return uniformInt(startInclusive, endExclusive, size, dataType, nextKey());
+            RandomKey randomKey, Shape shape, double mean, double std, DataType dataType) {
+        return viewWithShape(normal(randomKey, shape.size(), mean, std, dataType), shape);
     }
 
     static Tensor uniformInt(
+            RandomKey randomKey,
             long startInclusive,
             long endExclusive,
             long size,
-            DataType dataType,
-            RandomKey randomKey) {
+            DataType dataType) {
         Objects.requireNonNull(dataType, "dataType");
         Objects.requireNonNull(randomKey, "randomKey");
         ensureSupportedRandomInt(dataType, "uniformInt");
@@ -262,40 +208,30 @@ final class TensorFactory {
                     ex);
         }
 
-        Tensor uniform = randomUnitInterval(size, DataType.FP64, randomKey, "uniformInt");
+        Tensor uniform = randomUnitInterval(randomKey, size, DataType.FP64, "uniformInt");
         Tensor offset = uniform.multiply((double) range).cast(DataType.I64);
         Tensor shifted = offset.add(startInclusive);
         return dataType == DataType.I64 ? shifted : shifted.cast(dataType);
     }
 
     static Tensor uniformInt(
-            long startInclusive, long endExclusive, Shape shape, DataType dataType) {
-        return viewWithShape(
-                uniformInt(startInclusive, endExclusive, shape.size(), dataType, nextKey()), shape);
-    }
-
-    static Tensor uniformInt(
+            RandomKey randomKey,
             long startInclusive,
             long endExclusive,
             Shape shape,
-            DataType dataType,
-            RandomKey randomKey) {
+            DataType dataType) {
         return viewWithShape(
-                uniformInt(startInclusive, endExclusive, shape.size(), dataType, randomKey), shape);
-    }
-
-    static Tensor normalInt(long size, double mean, double std, DataType dataType) {
-        return normalInt(size, mean, std, dataType, nextKey());
+                uniformInt(randomKey, startInclusive, endExclusive, shape.size(), dataType), shape);
     }
 
     static Tensor normalInt(
-            long size, double mean, double std, DataType dataType, RandomKey randomKey) {
+            RandomKey randomKey, long size, double mean, double std, DataType dataType) {
         Objects.requireNonNull(dataType, "dataType");
         Objects.requireNonNull(randomKey, "randomKey");
         ensureSupportedRandomInt(dataType, "normalInt");
         ensureValidNormalParams(mean, std, "normalInt");
 
-        Tensor fp = normal(size, mean, std, DataType.FP64, randomKey);
+        Tensor fp = normal(randomKey, size, mean, std, DataType.FP64);
         Tensor rounded =
                 fp.greaterThanOrEqual(Tensor.scalar(0.0, DataType.FP64))
                         .where(fp.add(0.5), fp.subtract(0.5))
@@ -306,14 +242,9 @@ final class TensorFactory {
         return dataType == DataType.I64 ? clamped : clamped.cast(dataType);
     }
 
-    static Tensor normalInt(Shape shape, double mean, double std, DataType dataType) {
-        Objects.requireNonNull(shape, "shape");
-        return normalInt(shape, mean, std, dataType, nextKey());
-    }
-
     static Tensor normalInt(
-            Shape shape, double mean, double std, DataType dataType, RandomKey randomKey) {
-        return viewWithShape(normalInt(shape.size(), mean, std, dataType, randomKey), shape);
+            RandomKey randomKey, Shape shape, double mean, double std, DataType dataType) {
+        return viewWithShape(normalInt(randomKey, shape.size(), mean, std, dataType), shape);
     }
 
     // endregion Random Creation
@@ -477,7 +408,7 @@ final class TensorFactory {
     }
 
     private static Tensor randomUnitInterval(
-            long size, DataType dataType, RandomKey randomKey, String opName) {
+            RandomKey randomKey, long size, DataType dataType, String opName) {
         Objects.requireNonNull(dataType, "dataType");
         Objects.requireNonNull(randomKey, "randomKey");
         ensureSupportedRandomFloat(dataType, opName);
@@ -489,15 +420,15 @@ final class TensorFactory {
     }
 
     private static Tensor randomStandardNormal(
-            long size, DataType dataType, RandomKey randomKey, String opName) {
+            RandomKey randomKey, long size, DataType dataType, String opName) {
         Objects.requireNonNull(dataType, "dataType");
         Objects.requireNonNull(randomKey, "randomKey");
         ensureSupportedRandomFloat(dataType, opName);
 
         RandomKey k0 = randomKey.split(0L);
         RandomKey k1 = randomKey.split(1L);
-        Tensor u1 = randomUnitInterval(size, dataType, k0, opName);
-        Tensor u2 = randomUnitInterval(size, dataType, k1, opName);
+        Tensor u1 = randomUnitInterval(k0, size, dataType, opName);
+        Tensor u2 = randomUnitInterval(k1, size, dataType, opName);
 
         if (dataType == DataType.FP64) {
             Tensor r = u2.multiply(-1.0).add(1.0).log().multiply(-2.0).sqrt();
@@ -730,17 +661,5 @@ final class TensorFactory {
     }
 
     // endregion Array Copy Helpers
-
-    // region Random Key State
-
-    private static RandomKey nextKey() {
-        RandomState state = RANDOM_STATE.get();
-        long stream = state.counter().getAndIncrement();
-        return state.baseKey().split(stream);
-    }
-
-    private record RandomState(RandomKey baseKey, AtomicLong counter) {}
-
-    // endregion Random Key State
     // endregion Internal Private Helpers
 }

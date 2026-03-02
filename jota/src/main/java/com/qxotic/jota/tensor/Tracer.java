@@ -9,6 +9,7 @@ import com.qxotic.jota.ir.tir.ScalarInput;
 import com.qxotic.jota.ir.tir.TIRGraph;
 import com.qxotic.jota.ir.tir.TIRNode;
 import com.qxotic.jota.ir.tir.TensorInput;
+import com.qxotic.jota.random.RandomAlgorithms;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -116,8 +117,8 @@ public final class Tracer {
                             new RandomUniformOp(
                                     random.shape(),
                                     random.dataType(),
-                                    random.key().k0(),
-                                    random.key().k1());
+                                    RandomAlgorithms.key0(random.key()),
+                                    RandomAlgorithms.key1(random.key()));
                 } else if (comp instanceof ConstantComputation constComp) {
                     // Constant value - inline as ScalarConstant
                     node =

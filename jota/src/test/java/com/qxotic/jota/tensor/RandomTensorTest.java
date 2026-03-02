@@ -14,14 +14,14 @@ import org.junit.jupiter.api.Test;
 class RandomTensorTest {
 
     @Test
-    void manualSeedMakesRandDeterministic() {
-        Tensor.manualSeed(1234L);
-        Tensor first = Tensor.rand(Shape.of(16), DataType.FP32);
-        Tensor second = Tensor.rand(Shape.of(16), DataType.FP32);
+    void explicitKeyStreamsAreDeterministic() {
+        RandomKey key = Tensor.randomKey(1234L);
+        Tensor first = Tensor.rand(key.split(0L), Shape.of(16), DataType.FP32);
+        Tensor second = Tensor.rand(key.split(1L), Shape.of(16), DataType.FP32);
 
-        Tensor.manualSeed(1234L);
-        Tensor firstAgain = Tensor.rand(Shape.of(16), DataType.FP32);
-        Tensor secondAgain = Tensor.rand(Shape.of(16), DataType.FP32);
+        RandomKey keyAgain = Tensor.randomKey(1234L);
+        Tensor firstAgain = Tensor.rand(keyAgain.split(0L), Shape.of(16), DataType.FP32);
+        Tensor secondAgain = Tensor.rand(keyAgain.split(1L), Shape.of(16), DataType.FP32);
 
         assertArrayEquals(toFloatArray(first), toFloatArray(firstAgain));
         assertArrayEquals(toFloatArray(second), toFloatArray(secondAgain));
@@ -31,11 +31,11 @@ class RandomTensorTest {
     void explicitKeySplitIsDeterministic() {
         RandomKey key = RandomKey.of(9876L);
 
-        Tensor a = Tensor.rand(Shape.of(8), DataType.FP32, key.split(0L));
-        Tensor b = Tensor.rand(Shape.of(8), DataType.FP32, key.split(1L));
+        Tensor a = Tensor.rand(key.split(0L), Shape.of(8), DataType.FP32);
+        Tensor b = Tensor.rand(key.split(1L), Shape.of(8), DataType.FP32);
 
-        Tensor aAgain = Tensor.rand(Shape.of(8), DataType.FP32, key.split(0L));
-        Tensor bAgain = Tensor.rand(Shape.of(8), DataType.FP32, key.split(1L));
+        Tensor aAgain = Tensor.rand(key.split(0L), Shape.of(8), DataType.FP32);
+        Tensor bAgain = Tensor.rand(key.split(1L), Shape.of(8), DataType.FP32);
 
         assertArrayEquals(toFloatArray(a), toFloatArray(aAgain));
         assertArrayEquals(toFloatArray(b), toFloatArray(bAgain));
@@ -45,18 +45,16 @@ class RandomTensorTest {
     void randAndRandnRejectNonFloatingOutputTypes() {
         RandomKey key = RandomKey.of(1L);
         assertThrows(
-                IllegalArgumentException.class, () -> Tensor.rand(Shape.of(4), DataType.I32, key));
+                IllegalArgumentException.class, () -> Tensor.rand(key, Shape.of(4), DataType.I32));
         assertThrows(
-                IllegalArgumentException.class, () -> Tensor.randn(Shape.of(4), DataType.I64, key));
+                IllegalArgumentException.class, () -> Tensor.randn(key, Shape.of(4), DataType.I64));
     }
 
     @Test
     void tracedRandUsesDeterministicRandomNode() {
-        Tensor.manualSeed(999L);
-        Tensor a = Tracer.trace(Tensor.rand(Shape.of(8), DataType.FP32), t -> t.add(1.0f));
-
-        Tensor.manualSeed(999L);
-        Tensor b = Tracer.trace(Tensor.rand(Shape.of(8), DataType.FP32), t -> t.add(1.0f));
+        RandomKey key = Tensor.randomKey(999L);
+        Tensor a = Tracer.trace(Tensor.rand(key, Shape.of(8), DataType.FP32), t -> t.add(1.0f));
+        Tensor b = Tracer.trace(Tensor.rand(key, Shape.of(8), DataType.FP32), t -> t.add(1.0f));
 
         assertArrayEquals(toFloatArray(a), toFloatArray(b));
     }

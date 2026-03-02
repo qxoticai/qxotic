@@ -16,8 +16,10 @@ import com.qxotic.jota.testutil.TestKernels;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
 @RunOnAllAvailableBackends
+@EnabledIfSystemProperty(named = "jota.test.fractals", matches = "true")
 class JuliaSetTest {
 
     private static final boolean HIGH_QUALITY = Boolean.getBoolean("jota.fractal.highQuality");
