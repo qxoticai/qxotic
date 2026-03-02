@@ -125,11 +125,29 @@ public final class BackendClassMatrixExtension implements ClassTemplateInvocatio
                         } catch (TestAbortedException aborted) {
                             throw aborted;
                         } catch (Throwable throwable) {
+                            if (target.equals(Device.METAL)
+                                    && isUnsupportedMetalDouble(throwable)) {
+                                throw new TestAbortedException(
+                                        "Skipping on Metal: FP64 is not supported by this runtime",
+                                        throwable);
+                            }
                             throw new InvocationFailure(target, throwable);
                         } finally {
                             TestBackendContext.clear();
                         }
                     });
+        }
+
+        private static boolean isUnsupportedMetalDouble(Throwable throwable) {
+            Throwable cursor = throwable;
+            while (cursor != null) {
+                String message = cursor.getMessage();
+                if (message != null && message.contains("'double' is not supported in Metal")) {
+                    return true;
+                }
+                cursor = cursor.getCause();
+            }
+            return false;
         }
     }
 

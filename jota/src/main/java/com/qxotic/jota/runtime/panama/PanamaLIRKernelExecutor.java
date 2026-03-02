@@ -27,10 +27,6 @@ public final class PanamaLIRKernelExecutor {
 
     private final LIRKernelCompiler compiler;
     private final LIRKernelArgsBuilder argsBuilder = new LIRKernelArgsBuilder();
-    private final TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
-    private final LIRStandardPipeline pipeline = new LIRStandardPipeline();
-    private final ScratchAnalysisPass scratchAnalysis = new ScratchAnalysisPass();
-    private final ScratchVerificationPass scratchVerification = new ScratchVerificationPass();
     private final boolean verifyScratch =
             Boolean.parseBoolean(System.getProperty("jota.verifyScratch", "false"));
     private final ConcurrentMap<KernelCacheKey, CompiledKernel> compiledKernelCache =
@@ -43,8 +39,10 @@ public final class PanamaLIRKernelExecutor {
     public record CompiledKernel(JavaKernel kernel, ScratchLayout scratchLayout) {}
 
     public CompiledKernel compile(LIRGraph graph) {
+        ScratchAnalysisPass scratchAnalysis = new ScratchAnalysisPass();
         ScratchLayout scratchLayout = scratchAnalysis.analyze(graph);
         if (verifyScratch) {
+            ScratchVerificationPass scratchVerification = new ScratchVerificationPass();
             scratchVerification.verifyOrThrow(graph, scratchLayout);
         }
         KernelCacheKey key = compiler.cacheKeyFor(graph, scratchLayout);
@@ -66,6 +64,8 @@ public final class PanamaLIRKernelExecutor {
             List<Tensor> lirInputs,
             MemoryDomain<MemorySegment> memoryDomain,
             KernelLaunchContext launchContext) {
+        TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
+        LIRStandardPipeline pipeline = new LIRStandardPipeline();
         LIRGraph lirGraph = pipeline.run(lowerer.lower(graph));
         return execute(lirGraph, lirInputs, memoryDomain, launchContext);
     }
@@ -129,7 +129,7 @@ public final class PanamaLIRKernelExecutor {
             List<Tensor> lirInputs,
             MemoryDomain<MemorySegment> memoryDomain) {
         // For backwards compatibility - analyze scratch if not provided
-        ScratchLayout scratchLayout = scratchAnalysis.analyze(graph);
+        ScratchLayout scratchLayout = new ScratchAnalysisPass().analyze(graph);
         return execute(
                 graph,
                 kernel,

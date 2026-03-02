@@ -36,7 +36,7 @@ public final class AvailableBackends {
 
         Set<Device> targets = new LinkedHashSet<>();
         targets.add(Device.PANAMA);
-        for (Device device : List.of(Device.C, Device.HIP)) {
+        for (Device device : List.of(Device.C, Device.HIP, Device.METAL)) {
             if (isAvailable(current, device)) {
                 targets.add(device);
             }
@@ -48,6 +48,14 @@ public final class AvailableBackends {
     }
 
     private static boolean isAvailable(Environment environment, Device device) {
+        if (device.equals(Device.METAL)
+                && !(ExternalToolChecks.hasVersionCommand("xcrun")
+                        && ExternalToolChecks.hasCommand(
+                                "xcrun", "-sdk", "macosx", "-find", "metal")
+                        && ExternalToolChecks.hasCommand(
+                                "xcrun", "-sdk", "macosx", "-find", "metallib"))) {
+            return false;
+        }
         if (!environment.runtimes().hasRuntime(device)) {
             return false;
         }

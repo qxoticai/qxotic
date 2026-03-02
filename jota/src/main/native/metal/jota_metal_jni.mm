@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <atomic>
+#include <mutex>
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -39,6 +41,37 @@ static void throwRuntime(JNIEnv *env, const char *message) {
   }
 }
 
+static std::atomic<uint64_t> g_queueAttempts{0};
+static std::atomic<uint64_t> g_queueFailures{0};
+static std::atomic<uint64_t> g_queueCreates{0};
+static std::atomic<uint64_t> g_bufferAllocs{0};
+static std::atomic<uint64_t> g_bufferFrees{0};
+static std::atomic<uint64_t> g_libraryLoads{0};
+static std::atomic<uint64_t> g_libraryUnloads{0};
+static std::atomic<uint64_t> g_pipelineCreates{0};
+static std::atomic<uint64_t> g_pipelineReleases{0};
+static std::mutex g_queueMutex;
+static id<MTLCommandQueue> g_sharedQueue = nil;
+
+static NSString *runtimeStatsSummary() {
+  return [NSString
+      stringWithFormat:@"stats{queues=%llu queueCreates=%llu queueFailures=%llu buffers=%llu frees=%llu libs=%llu/%llu pipelines=%llu/%llu}",
+                       (unsigned long long)g_queueAttempts.load(),
+                       (unsigned long long)g_queueCreates.load(),
+                       (unsigned long long)g_queueFailures.load(),
+                       (unsigned long long)g_bufferAllocs.load(),
+                       (unsigned long long)g_bufferFrees.load(),
+                       (unsigned long long)g_libraryLoads.load(),
+                       (unsigned long long)g_libraryUnloads.load(),
+                       (unsigned long long)g_pipelineCreates.load(),
+                       (unsigned long long)g_pipelineReleases.load()];
+}
+
+static void throwRuntimeWithStats(JNIEnv *env, NSString *message) {
+  NSString *combined = [NSString stringWithFormat:@"%@ (%@)", message, runtimeStatsSummary()];
+  throwRuntime(env, [combined UTF8String]);
+}
+
 static void throwUnsupported(JNIEnv *env, const char *message) {
   jclass exClass = env->FindClass("java/lang/UnsupportedOperationException");
   if (exClass != nullptr) {
@@ -66,11 +99,57 @@ static void releaseHandle(jlong handle) {
 }
 
 static id<MTLCommandQueue> createQueueOrThrow(JNIEnv *env, id<MTLDevice> device) {
-  id<MTLCommandQueue> queue = [device newCommandQueue];
-  if (queue == nil) {
-    throwRuntime(env, "Failed to create Metal command queue");
+  g_queueAttempts.fetch_add(1);
+  {
+    std::lock_guard<std::mutex> lock(g_queueMutex);
+    if (g_sharedQueue != nil) {
+      return g_sharedQueue;
+    }
+
+    id<MTLCommandQueue> queue = [device newCommandQueue];
+    if (queue == nil) {
+      g_queueFailures.fetch_add(1);
+      NSString *deviceName = device == nil ? @"<nil>" : [device name];
+      throwRuntimeWithStats(
+          env,
+          [NSString stringWithFormat:@"Failed to create Metal command queue (device=%@)",
+                                     deviceName]);
+      return nil;
+    }
+    g_sharedQueue = queue;
+    g_queueCreates.fetch_add(1);
+    return g_sharedQueue;
   }
-  return queue;
+}
+
+static void invalidateSharedQueue() {
+  std::lock_guard<std::mutex> lock(g_queueMutex);
+  g_sharedQueue = nil;
+}
+
+static id<MTLCommandBuffer> createCommandBufferOrThrow(JNIEnv *env,
+                                                       id<MTLDevice> device,
+                                                       NSString *context) {
+  id<MTLCommandQueue> queue = createQueueOrThrow(env, device);
+  if (env->ExceptionCheck()) {
+    return nil;
+  }
+  id<MTLCommandBuffer> cmd = [queue commandBuffer];
+  if (cmd != nil) {
+    return cmd;
+  }
+
+  invalidateSharedQueue();
+  queue = createQueueOrThrow(env, device);
+  if (env->ExceptionCheck()) {
+    return nil;
+  }
+  cmd = [queue commandBuffer];
+  if (cmd == nil) {
+    throwRuntimeWithStats(env, context);
+    return nil;
+  }
+  return cmd;
 }
 
 static void freePackedArgs(PackedArgs *packed) {
@@ -151,12 +230,16 @@ static void copyHostToBuffer(JNIEnv *env,
     throwRuntime(env, "Failed to allocate Metal staging upload buffer");
     return;
   }
-  id<MTLCommandQueue> queue = createQueueOrThrow(env, device);
-  if (env->ExceptionCheck()) {
+  id<MTLCommandBuffer> cmd =
+      createCommandBufferOrThrow(env, device, @"Failed to create Metal command buffer for upload");
+  if (cmd == nil) {
     return;
   }
-  id<MTLCommandBuffer> cmd = [queue commandBuffer];
   id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
+  if (blit == nil) {
+    throwRuntimeWithStats(env, @"Failed to create Metal blit encoder for upload");
+    return;
+  }
   [blit copyFromBuffer:staging
           sourceOffset:0
               toBuffer:dst
@@ -187,12 +270,16 @@ static void copyBufferToHost(JNIEnv *env,
     throwRuntime(env, "Failed to allocate Metal staging download buffer");
     return;
   }
-  id<MTLCommandQueue> queue = createQueueOrThrow(env, device);
-  if (env->ExceptionCheck()) {
+  id<MTLCommandBuffer> cmd =
+      createCommandBufferOrThrow(env, device, @"Failed to create Metal command buffer for download");
+  if (cmd == nil) {
     return;
   }
-  id<MTLCommandBuffer> cmd = [queue commandBuffer];
   id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
+  if (blit == nil) {
+    throwRuntimeWithStats(env, @"Failed to create Metal blit encoder for download");
+    return;
+  }
   [blit copyFromBuffer:src
           sourceOffset:srcOffset
               toBuffer:staging
@@ -214,12 +301,16 @@ static void copyBufferToBuffer(JNIEnv *env,
   if (size == 0) {
     return;
   }
-  id<MTLCommandQueue> queue = createQueueOrThrow(env, device);
-  if (env->ExceptionCheck()) {
+  id<MTLCommandBuffer> cmd = createCommandBufferOrThrow(
+      env, device, @"Failed to create Metal command buffer for device copy");
+  if (cmd == nil) {
     return;
   }
-  id<MTLCommandBuffer> cmd = [queue commandBuffer];
   id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
+  if (blit == nil) {
+    throwRuntimeWithStats(env, @"Failed to create Metal blit encoder for device copy");
+    return;
+  }
   [blit copyFromBuffer:src
           sourceOffset:srcOffset
               toBuffer:dst
@@ -239,12 +330,16 @@ static void fillBufferByte(JNIEnv *env,
   if (size == 0) {
     return;
   }
-  id<MTLCommandQueue> queue = createQueueOrThrow(env, device);
-  if (env->ExceptionCheck()) {
+  id<MTLCommandBuffer> cmd =
+      createCommandBufferOrThrow(env, device, @"Failed to create Metal command buffer for fill");
+  if (cmd == nil) {
     return;
   }
-  id<MTLCommandBuffer> cmd = [queue commandBuffer];
   id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
+  if (blit == nil) {
+    throwRuntimeWithStats(env, @"Failed to create Metal blit encoder for fill");
+    return;
+  }
   [blit fillBuffer:dst range:NSMakeRange(dstOffset, size) value:value];
   [blit endEncoding];
   [cmd commit];
@@ -304,12 +399,16 @@ static void fillBufferPattern(JNIEnv *env,
     filled += chunk;
   }
 
-  id<MTLCommandQueue> queue = createQueueOrThrow(env, device);
-  if (env->ExceptionCheck()) {
+  id<MTLCommandBuffer> cmd = createCommandBufferOrThrow(
+      env, device, @"Failed to create Metal command buffer for patterned fill");
+  if (cmd == nil) {
     return;
   }
-  id<MTLCommandBuffer> cmd = [queue commandBuffer];
   id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
+  if (blit == nil) {
+    throwRuntimeWithStats(env, @"Failed to create Metal blit encoder for patterned fill");
+    return;
+  }
   NSUInteger copied = 0;
   while (copied < size) {
     NSUInteger chunk = stagingSize;
@@ -356,11 +455,17 @@ Java_com_qxotic_jota_runtime_metal_MetalRuntime_malloc(JNIEnv *env,
     } else {
       options |= MTLResourceStorageModePrivate;
     }
-    id<MTLBuffer> buffer = [device newBufferWithLength:(NSUInteger)byteSize options:options];
+    NSUInteger allocSize = (NSUInteger)(byteSize > 0 ? byteSize : 1);
+    id<MTLBuffer> buffer = [device newBufferWithLength:allocSize options:options];
     if (buffer == nil) {
-      throwRuntime(env, "Metal buffer allocation failed");
+      throwRuntimeWithStats(
+          env,
+          [NSString stringWithFormat:@"Metal buffer allocation failed (bytes=%lld mode=%d)",
+                                     (long long)byteSize,
+                                     (int)storageMode]);
       return 0;
     }
+    g_bufferAllocs.fetch_add(1);
     return retainObj(buffer);
   }
 }
@@ -370,6 +475,9 @@ Java_com_qxotic_jota_runtime_metal_MetalRuntime_free(JNIEnv *env, jclass cls, jl
   (void)env;
   (void)cls;
   @autoreleasepool {
+    if (handle != 0) {
+      g_bufferFrees.fetch_add(1);
+    }
     releaseHandle(handle);
   }
 }
@@ -601,21 +709,39 @@ Java_com_qxotic_jota_runtime_metal_MetalRuntime_loadLibrary(JNIEnv *env,
       return 0;
     }
     jsize len = env->GetArrayLength(bytes);
-    jbyte *elements = env->GetByteArrayElements(bytes, NULL);
-    if (elements == NULL) {
-      throwRuntime(env, "Failed to read metallib bytes");
+    if (len <= 0) {
+      throwRuntime(env, "Metallib bytes are empty");
       return 0;
     }
-    NSData *data = [NSData dataWithBytes:elements length:(NSUInteger)len];
-    env->ReleaseByteArrayElements(bytes, elements, JNI_ABORT);
+    size_t byteCount = (size_t)len;
+    void *copiedBytes = malloc(byteCount);
+    if (copiedBytes == NULL) {
+      throwRuntime(env, "Failed to allocate metallib byte buffer");
+      return 0;
+    }
+    env->GetByteArrayRegion(bytes, 0, len, (jbyte *)copiedBytes);
+    if (env->ExceptionCheck()) {
+      free(copiedBytes);
+      return 0;
+    }
+    dispatch_data_t data = dispatch_data_create(copiedBytes,
+                                                byteCount,
+                                                dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
+                                                DISPATCH_DATA_DESTRUCTOR_FREE);
+    if (data == NULL) {
+      free(copiedBytes);
+      throwRuntime(env, "Failed to create dispatch data for metallib bytes");
+      return 0;
+    }
 
     NSError *error = nil;
     id<MTLLibrary> lib = [device newLibraryWithData:data error:&error];
     if (lib == nil) {
       NSString *msg = error == nil ? @"Unknown Metal library load error" : [error description];
-      throwRuntime(env, [msg UTF8String]);
+      throwRuntimeWithStats(env, msg);
       return 0;
     }
+    g_libraryLoads.fetch_add(1);
     return retainObj(lib);
   }
 }
@@ -627,6 +753,9 @@ Java_com_qxotic_jota_runtime_metal_MetalRuntime_unloadLibrary(JNIEnv *env,
   (void)env;
   (void)cls;
   @autoreleasepool {
+    if (libraryHandle != 0) {
+      g_libraryUnloads.fetch_add(1);
+    }
     releaseHandle(libraryHandle);
   }
 }
@@ -671,9 +800,10 @@ Java_com_qxotic_jota_runtime_metal_MetalRuntime_createPipeline(JNIEnv *env,
         [device newComputePipelineStateWithFunction:function error:&error];
     if (pipeline == nil) {
       NSString *msg = error == nil ? @"Unknown Metal pipeline error" : [error description];
-      throwRuntime(env, [msg UTF8String]);
+      throwRuntimeWithStats(env, msg);
       return 0;
     }
+    g_pipelineCreates.fetch_add(1);
     return retainObj(pipeline);
   }
 }
@@ -685,6 +815,9 @@ Java_com_qxotic_jota_runtime_metal_MetalRuntime_releasePipeline(JNIEnv *env,
   (void)env;
   (void)cls;
   @autoreleasepool {
+    if (pipelineHandle != 0) {
+      g_pipelineReleases.fetch_add(1);
+    }
     releaseHandle(pipelineHandle);
   }
 }
@@ -719,12 +852,16 @@ Java_com_qxotic_jota_runtime_metal_MetalRuntime_launchKernel(JNIEnv *env,
       return;
     }
 
-    id<MTLCommandQueue> queue = createQueueOrThrow(env, device);
-    if (env->ExceptionCheck()) {
+    id<MTLCommandBuffer> cmd = createCommandBufferOrThrow(
+        env, device, @"Failed to create Metal command buffer for kernel launch");
+    if (cmd == nil) {
       return;
     }
-    id<MTLCommandBuffer> cmd = [queue commandBuffer];
     id<MTLComputeCommandEncoder> encoder = [cmd computeCommandEncoder];
+    if (encoder == nil) {
+      throwRuntimeWithStats(env, @"Failed to create Metal compute encoder for kernel launch");
+      return;
+    }
     [encoder setComputePipelineState:pipeline];
 
     for (int i = 0; i < packed->count; i++) {

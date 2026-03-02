@@ -306,11 +306,12 @@ public class MandelbrotDemo {
             case "java-aot" -> Device.JAVA_AOT;
             case "c" -> Device.C;
             case "hip" -> Device.HIP;
+            case "metal" -> Device.METAL;
             default ->
                     throw new IllegalArgumentException(
                             "Unknown backend '"
                                     + requested
-                                    + "'. Use one of: native, panama, java-aot, c, hip");
+                                    + "'. Use one of: native, panama, java-aot, c, hip, metal");
         };
     }
 
