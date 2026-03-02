@@ -386,6 +386,72 @@ JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_memcpyDtoD
 #endif
 }
 
+// Memory fill operations
+static void *devicePtr(jlong base, jlong offset) {
+  return (void *)((uintptr_t)base + (uintptr_t)offset);
+}
+
+JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_memsetD8
+  (JNIEnv *env, jclass cls, jlong dstPtr, jlong dstOffset, jlong byteSize, jbyte value) {
+  (void)cls;
+#if __has_include(<hip/hip_runtime_api.h>)
+  checkHip(env, hipMemset(devicePtr(dstPtr, dstOffset), value, (size_t)byteSize), "hipMemset");
+#else
+  throwUnsupported(env, "HIP not available");
+#endif
+}
+
+JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_memsetD16
+  (JNIEnv *env, jclass cls, jlong dstPtr, jlong dstOffset, jlong elementCount, jshort value) {
+  (void)cls;
+#if __has_include(<hip/hip_runtime_api.h>)
+  checkHip(env, hipMemsetD16(devicePtr(dstPtr, dstOffset), (unsigned short)value, (size_t)elementCount), "hipMemsetD16");
+#else
+  throwUnsupported(env, "HIP not available");
+#endif
+}
+
+JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_memsetD32
+  (JNIEnv *env, jclass cls, jlong dstPtr, jlong dstOffset, jlong elementCount, jint value) {
+  (void)cls;
+#if __has_include(<hip/hip_runtime_api.h>)
+  checkHip(env, hipMemsetD32(devicePtr(dstPtr, dstOffset), (unsigned int)value, (size_t)elementCount), "hipMemsetD32");
+#else
+  throwUnsupported(env, "HIP not available");
+#endif
+}
+
+JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_fillD64
+  (JNIEnv *env, jclass cls, jlong dstPtr, jlong dstOffset, jlong elementCount, jlong value) {
+  (void)cls;
+#if __has_include(<hip/hip_runtime_api.h>)
+  if (elementCount == 0) return;
+  size_t remaining = (size_t)elementCount;
+  uint64_t pattern = (uint64_t)value;
+  const size_t chunkElems = 4096;
+  size_t chunkBytes = chunkElems * sizeof(uint64_t);
+  uint64_t *host = (uint64_t *)malloc(chunkBytes);
+  if (host == NULL) {
+    throwRuntime(env, "fillD64: failed to allocate staging buffer");
+    return;
+  }
+  for (size_t i = 0; i < chunkElems; i++) {
+    host[i] = pattern;
+  }
+  uint8_t *dst = (uint8_t *)devicePtr(dstPtr, dstOffset);
+  while (remaining > 0) {
+    size_t n = remaining < chunkElems ? remaining : chunkElems;
+    size_t bytes = n * sizeof(uint64_t);
+    checkHip(env, hipMemcpy(dst, host, bytes, hipMemcpyHostToDevice), "fillD64");
+    dst += bytes;
+    remaining -= n;
+  }
+  free(host);
+#else
+  throwUnsupported(env, "HIP not available");
+#endif
+}
+
 JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_hip_HipKernelParams_packNative
   (JNIEnv *env, jclass cls, jobject args) {
   (void)cls;

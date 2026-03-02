@@ -1,2 +1,3 @@
 com.qxotic.jota.runtime.c.CRuntimeProvider
 com.qxotic.jota.runtime.hip.HipRuntimeProvider
+com.qxotic.jota.runtime.metal.MetalRuntimeProvider

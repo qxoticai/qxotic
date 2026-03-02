@@ -15,6 +15,7 @@ public record KernelProgram(
     public static final String C = "c";
     public static final String HIP = "hip";
     public static final String CUDA = "cuda";
+    public static final String METAL = "metal";
     public static final String OPENCL = "opencl";
 
     public KernelProgram {

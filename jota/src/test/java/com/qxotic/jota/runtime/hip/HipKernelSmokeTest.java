@@ -269,6 +269,75 @@ class HipKernelSmokeTest {
         }
     }
 
+    @Test
+    void fillByteSetsAllBytes() throws Exception {
+        HipTestAssumptions.assumeHipReady();
+
+        int n = 1024;
+        HipMemoryDomain device = HipMemoryDomain.instance();
+        MemoryView<HipDevicePtr> devBuf =
+                MemoryView.of(
+                        device.memoryAllocator().allocateMemory(DataType.I8, n),
+                        DataType.I8,
+                        Layout.rowMajor(Shape.flat(n)));
+
+        byte fillValue = (byte) 0xAB;
+        device.memoryOperations().fillByte(devBuf.memory(), 0, n, fillValue);
+
+        MemoryView<MemorySegment> hostBuf = toHost(devBuf);
+        MemoryAccess<MemorySegment> access = DomainFactory.ofMemorySegment().directAccess();
+        for (int i = 0; i < n; i++) {
+            long offset = Indexing.linearToOffset(hostBuf, i);
+            assertEquals(fillValue, access.readByte(hostBuf.memory(), offset));
+        }
+    }
+
+    @Test
+    void fillIntSetsAllInts() throws Exception {
+        HipTestAssumptions.assumeHipReady();
+
+        int n = 256;
+        HipMemoryDomain device = HipMemoryDomain.instance();
+        MemoryView<HipDevicePtr> devBuf =
+                MemoryView.of(
+                        device.memoryAllocator().allocateMemory(DataType.I32, n),
+                        DataType.I32,
+                        Layout.rowMajor(Shape.flat(n)));
+
+        int fillValue = 0xDEADBEEF;
+        device.memoryOperations().fillInt(devBuf.memory(), 0, (long) n * Integer.BYTES, fillValue);
+
+        MemoryView<MemorySegment> hostBuf = toHost(devBuf);
+        MemoryAccess<MemorySegment> access = DomainFactory.ofMemorySegment().directAccess();
+        for (int i = 0; i < n; i++) {
+            long offset = Indexing.linearToOffset(hostBuf, i);
+            assertEquals(fillValue, access.readInt(hostBuf.memory(), offset));
+        }
+    }
+
+    @Test
+    void fillLongSetsAllLongs() throws Exception {
+        HipTestAssumptions.assumeHipReady();
+
+        int n = 128;
+        HipMemoryDomain device = HipMemoryDomain.instance();
+        MemoryView<HipDevicePtr> devBuf =
+                MemoryView.of(
+                        device.memoryAllocator().allocateMemory(DataType.I64, n),
+                        DataType.I64,
+                        Layout.rowMajor(Shape.flat(n)));
+
+        long fillValue = 0xDEADBEEFCAFEBABEL;
+        device.memoryOperations().fillLong(devBuf.memory(), 0, (long) n * Long.BYTES, fillValue);
+
+        MemoryView<MemorySegment> hostBuf = toHost(devBuf);
+        MemoryAccess<MemorySegment> access = DomainFactory.ofMemorySegment().directAccess();
+        for (int i = 0; i < n; i++) {
+            long offset = Indexing.linearToOffset(hostBuf, i);
+            assertEquals(fillValue, access.readLong(hostBuf.memory(), offset));
+        }
+    }
+
     private static MemoryView<MemorySegment> toHost(MemoryView<?> view) {
         @SuppressWarnings("unchecked")
         MemoryView<MemorySegment> hostView =
