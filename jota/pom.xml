@@ -322,11 +322,6 @@
         <!-- Build both C and HIP: mvn compile -Pnative -->
         <profile>
             <id>metal</id>
-            <activation>
-                <os>
-                    <family>mac</family>
-                </os>
-            </activation>
             <build>
                 <plugins>
                     <plugin>
@@ -374,9 +369,64 @@
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-surefire-plugin</artifactId>
                         <configuration>
+                            <!-- Override default excludes -->
                             <excludes combine.self="override"></excludes>
                             <includes>
-                                <include>**/runtime/metal/*Test.java</include>
+                                <include>**/MetalBackendAvailabilityTest.java</include>
+                                <include>**/MetalRuntimeDiagnosticsTest.java</include>
+                                <include>**/MetalKernelSmokeTest.java</include>
+                                <include>**/MandelbrotTest.java</include>
+                                <include>**/TensorApiContractMatrixTest.java</include>
+                                <include>**/TensorTypeContractMatrixTest.java</include>
+                                <include>**/TensorScheduleIntegrationTest.java</include>
+                                <include>**/KernelServiceTest.java</include>
+                                <include>**/TIRTextRendererTest.java</include>
+                                <include>**/ToOpTest.java</include>
+                                <include>**/ConstantCreationAndArithmeticFoldingTest.java</include>
+                                <include>**/ConstantFoldingCastTest.java</include>
+                                <include>**/ConstantFoldingComparisonTest.java</include>
+                                <include>**/ConstantFoldingBitwiseTest.java</include>
+                                <include>**/AddTest.java</include>
+                                <include>**/IotaOpTest.java</include>
+                                <include>**/ApiExampleTest.java</include>
+                                <include>**/BooleanTensorTest.java</include>
+                                <include>**/RandomTensorTest.java</include>
+                                <include>**/RandomTensorComprehensiveTest.java</include>
+                                <include>**/RandomDistributionsTest.java</include>
+                                <include>**/RandomGoldenVectorTest.java</include>
+                                <include>**/GatherTraceLazyTest.java</include>
+                                <include>**/WhereSemanticsContractTest.java</include>
+                                <include>**/ReductionSemanticsContractTest.java</include>
+                                <include>**/TypeRuleSemanticsContractTest.java</include>
+                                <include>**/MaterializationSemanticsContractTest.java</include>
+                                <include>**/SpiralGalaxyDemoTest.java</include>
+                                <include>**/NBodySnapshotTest.java</include>
+                                <include>**/TensorUsabilityExamplesTest.java</include>
+                                <include>**/ComparisonOpTest.java</include>
+                                <include>**/BitwiseOpTest.java</include>
+                                <include>**/MaxReductionOpTest.java</include>
+                                <include>**/MinReductionOpTest.java</include>
+                                <include>**/ProductReductionOpTest.java</include>
+                                <include>**/CastOpTest.java</include>
+                                <include>**/ConcatOpTest.java</include>
+                                <include>**/ContiguousOpTest.java</include>
+                                <include>**/ReciprocalOpTest.java</include>
+                                <include>**/GatherTest.java</include>
+                                <include>**/ViewOpTest.java</include>
+                                <include>**/ReshapeOpTest.java</include>
+                                <include>**/SqueezeUnsqueezeOpTest.java</include>
+                                <include>**/SumReductionOpTest.java</include>
+                                <include>**/DotOpTest.java</include>
+                                <include>**/ArgmaxOpTest.java</include>
+                                <include>**/ArgminOpTest.java</include>
+                                <include>**/StackOpTest.java</include>
+                                <include>**/SplitOpTest.java</include>
+                                <include>**/RepeatOpTest.java</include>
+                                <include>**/RepeatInterleaveOpTest.java</include>
+                                <include>**/WhereWithScalarBroadcastingTest.java</include>
+                                <include>**/ShiftOpTest.java</include>
+                                <include>**/MatmulOpTest.java</include>
+                                <include>**/BooleanOpTest.java</include>
                             </includes>
                             <systemPropertyVariables>
                                 <jota.test.device>metal</jota.test.device>

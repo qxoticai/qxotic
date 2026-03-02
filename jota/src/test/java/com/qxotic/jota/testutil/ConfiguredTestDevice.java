@@ -19,13 +19,14 @@ public final class ConfiguredTestDevice {
             case "panama" -> Device.PANAMA;
             case "c" -> Device.C;
             case "hip" -> Device.HIP;
+            case "metal" -> Device.METAL;
             default ->
                     throw new IllegalArgumentException(
                             "Unsupported "
                                     + TEST_DEVICE_PROPERTY
                                     + "='"
                                     + raw
-                                    + "'. Supported values: panama, c, hip");
+                                    + "'. Supported values: panama, c, hip, metal");
         };
     }
 }

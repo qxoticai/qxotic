@@ -13,7 +13,10 @@ final class MetalTestAssumptions {
 
     static void assumeMetalReady() {
         boolean xcrunAvailable = isXcrunAvailable();
-        String details = diagnosticsSummary(xcrunAvailable);
+        boolean metalCompilerAvailable = isMetalCompilerAvailable();
+        boolean metallibToolAvailable = isMetallibToolAvailable();
+        String details =
+                diagnosticsSummary(xcrunAvailable, metalCompilerAvailable, metallibToolAvailable);
         Assumptions.assumeTrue(
                 MetalRuntime.isAvailable(), "Metal runtime not available\n" + details);
         Assumptions.assumeTrue(
@@ -21,14 +24,25 @@ final class MetalTestAssumptions {
                 "Metal runtime is not registered\n" + details);
         Assumptions.assumeTrue(xcrunAvailable, "xcrun not available\n" + details);
         Assumptions.assumeTrue(
+                metalCompilerAvailable, "xcrun metal tool not available\n" + details);
+        Assumptions.assumeTrue(
+                metallibToolAvailable, "xcrun metallib tool not available\n" + details);
+        Assumptions.assumeTrue(
                 MetalRuntime.deviceCount() > 0, "No Metal device visible\n" + details);
     }
 
     static String diagnosticsSummary() {
-        return diagnosticsSummary(isXcrunAvailable());
+        return diagnosticsSummary(
+                isXcrunAvailable(), isMetalCompilerAvailable(), isMetallibToolAvailable());
     }
 
     static String diagnosticsSummary(boolean xcrunAvailable) {
+        return diagnosticsSummary(
+                xcrunAvailable, isMetalCompilerAvailable(), isMetallibToolAvailable());
+    }
+
+    static String diagnosticsSummary(
+            boolean xcrunAvailable, boolean metalCompilerAvailable, boolean metallibToolAvailable) {
         String diagnostics =
                 Environment.current().runtimeDiagnostics().stream()
                         .filter(d -> d.device().equals(Device.METAL))
@@ -44,7 +58,11 @@ final class MetalTestAssumptions {
                 + "\nMetal runtime registered="
                 + Environment.current().runtimes().hasRuntime(Device.METAL)
                 + "\nxcrun available="
-                + xcrunAvailable;
+                + xcrunAvailable
+                + "\nmetal tool available="
+                + metalCompilerAvailable
+                + "\nmetallib tool available="
+                + metallibToolAvailable;
     }
 
     private static String formatDiagnostic(RuntimeDiagnostic d) {
@@ -68,5 +86,13 @@ final class MetalTestAssumptions {
 
     private static boolean isXcrunAvailable() {
         return ExternalToolChecks.hasVersionCommand("xcrun");
+    }
+
+    private static boolean isMetalCompilerAvailable() {
+        return ExternalToolChecks.hasCommand("xcrun", "-sdk", "macosx", "-find", "metal");
+    }
+
+    private static boolean isMetallibToolAvailable() {
+        return ExternalToolChecks.hasCommand("xcrun", "-sdk", "macosx", "-find", "metallib");
     }
 }

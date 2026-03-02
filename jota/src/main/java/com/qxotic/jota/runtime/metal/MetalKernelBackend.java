@@ -11,7 +11,9 @@ import com.qxotic.jota.runtime.KernelCacheKey;
 import com.qxotic.jota.runtime.KernelExecutable;
 import com.qxotic.jota.runtime.KernelProgram;
 import com.qxotic.jota.runtime.LaunchConfig;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -169,6 +171,7 @@ final class MetalKernelBackend implements KernelBackend {
         metalCompile.add("macosx");
         metalCompile.add("metal");
         metalCompile.add("-O" + OPT_LEVEL);
+        metalCompile.add("-c");
         metalCompile.add(source.toString());
         metalCompile.add("-o");
         metalCompile.add(air.toString());
@@ -187,24 +190,95 @@ final class MetalKernelBackend implements KernelBackend {
 
     private static void runCommand(List<String> command, String errorPrefix) {
         ProcessBuilder builder = new ProcessBuilder(command);
-        builder.inheritIO();
         try {
             Process process = builder.start();
+            StreamCapture stdout = StreamCapture.start(process.getInputStream());
+            StreamCapture stderr = StreamCapture.start(process.getErrorStream());
             if (!process.waitFor(COMPILE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
                 process.waitFor(1, TimeUnit.SECONDS);
+                String out = stdout.await();
+                String err = stderr.await();
                 throw new IllegalStateException(
-                        errorPrefix + ": timed out after " + COMPILE_TIMEOUT_SECONDS + "s");
+                        errorPrefix
+                                + ": timed out after "
+                                + COMPILE_TIMEOUT_SECONDS
+                                + "s\n"
+                                + formatCommandFailure(command, -1, out, err));
             }
             int code = process.exitValue();
+            String out = stdout.await();
+            String err = stderr.await();
             if (code != 0) {
-                throw new IllegalStateException(errorPrefix + " (exit " + code + ")");
+                throw new IllegalStateException(
+                        errorPrefix + "\n" + formatCommandFailure(command, code, out, err));
             }
         } catch (IOException e) {
             throw new IllegalStateException(errorPrefix, e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(errorPrefix + " (interrupted)", e);
+        }
+    }
+
+    private static String formatCommandFailure(
+            List<String> command, int exitCode, String stdout, String stderr) {
+        StringBuilder details = new StringBuilder();
+        details.append("command: ").append(joinCommand(command)).append('\n');
+        if (exitCode >= 0) {
+            details.append("exit: ").append(exitCode).append('\n');
+        }
+        if (!stdout.isBlank()) {
+            details.append("stdout:\n").append(limitOutput(stdout)).append('\n');
+        }
+        if (!stderr.isBlank()) {
+            details.append("stderr:\n").append(limitOutput(stderr)).append('\n');
+        }
+        return details.toString().trim();
+    }
+
+    private static String joinCommand(List<String> command) {
+        return String.join(" ", command);
+    }
+
+    private static String limitOutput(String text) {
+        int max = 4000;
+        if (text.length() <= max) {
+            return text;
+        }
+        return text.substring(0, max) + "\n... [truncated " + (text.length() - max) + " chars]";
+    }
+
+    private static final class StreamCapture {
+        private Thread thread;
+        private final ByteArrayOutputStream output = new ByteArrayOutputStream();
+        private volatile IOException error;
+
+        private StreamCapture() {}
+
+        static StreamCapture start(InputStream input) {
+            StreamCapture capture = new StreamCapture();
+            capture.thread =
+                    new Thread(
+                            () -> {
+                                try (input) {
+                                    input.transferTo(capture.output);
+                                } catch (IOException e) {
+                                    capture.error = e;
+                                }
+                            },
+                            "jota-metal-cmd-capture");
+            capture.thread.setDaemon(true);
+            capture.thread.start();
+            return capture;
+        }
+
+        String await() throws InterruptedException, IOException {
+            thread.join();
+            if (error != null) {
+                throw error;
+            }
+            return output.toString(StandardCharsets.UTF_8);
         }
     }
 
