@@ -1,6 +1,7 @@
 package com.qxotic.jota.runtime.hip;
 
 import com.qxotic.jota.memory.Memory;
+import com.qxotic.jota.memory.MemoryAccessChecks;
 import com.qxotic.jota.memory.MemoryOperations;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -80,25 +81,44 @@ final class HipMemoryOperations implements MemoryOperations<HipDevicePtr> {
     }
 
     @Override
-    public void fillByte(
-            Memory<HipDevicePtr> memory, long byteOffset, long byteSize, byte byteValue) {
-        throw new UnsupportedOperationException("HIP memory fillByte not implemented");
+    public void fillByte(Memory<HipDevicePtr> m, long offset, long size, byte value) {
+        validateFill(m, offset, size);
+        HipRuntime.memsetD8(m.base().address(), offset, size, value);
     }
 
     @Override
-    public void fillShort(
-            Memory<HipDevicePtr> memory, long byteOffset, long byteSize, short shortValue) {
-        throw new UnsupportedOperationException("HIP memory fillShort not implemented");
+    public void fillShort(Memory<HipDevicePtr> m, long offset, long size, short value) {
+        validateFill(m, offset, size, Short.BYTES);
+        HipRuntime.memsetD16(m.base().address(), offset, size / Short.BYTES, value);
     }
 
     @Override
-    public void fillInt(Memory<HipDevicePtr> memory, long byteOffset, long byteSize, int intValue) {
-        throw new UnsupportedOperationException("HIP memory fillInt not implemented");
+    public void fillInt(Memory<HipDevicePtr> m, long offset, long size, int value) {
+        validateFill(m, offset, size, Integer.BYTES);
+        HipRuntime.memsetD32(m.base().address(), offset, size / Integer.BYTES, value);
     }
 
     @Override
-    public void fillLong(
-            Memory<HipDevicePtr> memory, long byteOffset, long byteSize, long longValue) {
-        throw new UnsupportedOperationException("HIP memory fillLong not implemented");
+    public void fillLong(Memory<HipDevicePtr> m, long offset, long size, long value) {
+        validateFill(m, offset, size, Long.BYTES);
+        HipRuntime.fillD64(m.base().address(), offset, size / Long.BYTES, value);
+    }
+
+    private static void validateFill(
+            Memory<HipDevicePtr> m, long offset, long size, int alignment) {
+        MemoryAccessChecks.checkBounds(m, offset, size);
+        MemoryAccessChecks.checkWriteable(m);
+        if (size == 0) return;
+        if (size % alignment != 0) {
+            throw new IllegalArgumentException(
+                    "Size must be multiple of " + alignment + ": " + size);
+        }
+        HipRuntime.requireAvailable();
+    }
+
+    private static void validateFill(Memory<HipDevicePtr> m, long offset, long size) {
+        MemoryAccessChecks.checkBounds(m, offset, size);
+        MemoryAccessChecks.checkWriteable(m);
+        HipRuntime.requireAvailable();
     }
 }

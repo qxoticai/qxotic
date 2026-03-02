@@ -68,4 +68,13 @@ public final class HipRuntime {
 
     static native void memcpyDtoD(
             long dstPtr, long dstOffset, long srcPtr, long srcOffset, long byteSize);
+
+    // Memory fill operations
+    static native void memsetD8(long dstPtr, long dstOffset, long byteSize, byte value);
+
+    static native void memsetD16(long dstPtr, long dstOffset, long elementCount, short value);
+
+    static native void memsetD32(long dstPtr, long dstOffset, long elementCount, int value);
+
+    static native void fillD64(long dstPtr, long dstOffset, long elementCount, long value);
 }

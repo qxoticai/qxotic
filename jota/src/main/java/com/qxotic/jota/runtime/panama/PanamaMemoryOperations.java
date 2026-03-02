@@ -69,6 +69,10 @@ public final class PanamaMemoryOperations implements MemoryOperations<MemorySegm
         if (byteSize == 0) {
             return;
         }
+        if (byteSize % Short.BYTES != 0) {
+            throw new IllegalArgumentException(
+                    "byteSize must be multiple of 2 for fillShort: " + byteSize);
+        }
         long end = byteOffset + byteSize;
         for (long offset = byteOffset; offset < end; offset += Short.BYTES) {
             memory.base().set(ValueLayout.JAVA_SHORT_UNALIGNED, offset, shortValue);
@@ -83,6 +87,10 @@ public final class PanamaMemoryOperations implements MemoryOperations<MemorySegm
         if (byteSize == 0) {
             return;
         }
+        if (byteSize % Integer.BYTES != 0) {
+            throw new IllegalArgumentException(
+                    "byteSize must be multiple of 4 for fillInt: " + byteSize);
+        }
         long end = byteOffset + byteSize;
         for (long offset = byteOffset; offset < end; offset += Integer.BYTES) {
             memory.base().set(ValueLayout.JAVA_INT_UNALIGNED, offset, intValue);
@@ -96,6 +104,10 @@ public final class PanamaMemoryOperations implements MemoryOperations<MemorySegm
         MemoryAccessChecks.checkWriteable(memory);
         if (byteSize == 0) {
             return;
+        }
+        if (byteSize % Long.BYTES != 0) {
+            throw new IllegalArgumentException(
+                    "byteSize must be multiple of 8 for fillLong: " + byteSize);
         }
         long end = byteOffset + byteSize;
         for (long offset = byteOffset; offset < end; offset += Long.BYTES) {
