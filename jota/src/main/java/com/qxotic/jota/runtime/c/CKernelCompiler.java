@@ -80,7 +80,7 @@ final class CKernelCompiler {
         command.add(compiler);
         command.addAll(sharedFlags());
         if (openMpEnabled()) {
-            command.add("-fopenmp");
+            command.addAll(openMpCompileFlags());
         }
         command.add("-O" + OPT_LEVEL);
         command.add("-std=gnu17");
@@ -90,14 +90,16 @@ final class CKernelCompiler {
         if (!isWindows()) {
             command.add("-lm");
         }
+        if (openMpEnabled()) {
+            command.addAll(openMpLinkFlags());
+        }
         if (!isMac() && !isWindows()) {
             command.add("-ldl");
         }
 
         ProcessBuilder builder =
                 new ProcessBuilder(command)
-                        .redirectErrorStream(true)
-                        .redirectOutput(ProcessBuilder.Redirect.DISCARD);
+                        .redirectErrorStream(true);
         try {
             Process process = builder.start();
             if (!process.waitFor(COMPILE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
@@ -108,7 +110,13 @@ final class CKernelCompiler {
             }
             int code = process.exitValue();
             if (code != 0) {
-                throw new IllegalStateException("C kernel compilation failed (exit " + code + ")");
+                String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                throw new IllegalStateException(
+                        "C kernel compilation failed (exit "
+                                + code
+                                + ")\ncommand: "
+                                + String.join(" ", command)
+                                + (output.isBlank() ? "" : "\ncompiler output:\n" + output));
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -157,7 +165,73 @@ final class CKernelCompiler {
         if (override != null) {
             return Boolean.parseBoolean(override);
         }
-        return !isMac() && !isWindows();
+        if (isWindows()) {
+            return false;
+        }
+        if (!isMac()) {
+            return true;
+        }
+        return detectBrewLibOmpPrefix() != null;
+    }
+
+    private static List<String> openMpCompileFlags() {
+        String override = System.getProperty("com.qxotic.jota.c.openmp.compileFlags");
+        if (override != null && !override.isBlank()) {
+            return splitFlags(override);
+        }
+        if (isMac()) {
+            Path prefix = detectBrewLibOmpPrefix();
+            if (prefix == null) {
+                return List.of("-Xpreprocessor", "-fopenmp");
+            }
+            return List.of(
+                    "-Xpreprocessor",
+                    "-fopenmp",
+                    "-I" + prefix.resolve("include").toAbsolutePath());
+        }
+        return List.of("-fopenmp");
+    }
+
+    private static List<String> openMpLinkFlags() {
+        String override = System.getProperty("com.qxotic.jota.c.openmp.linkFlags");
+        if (override != null && !override.isBlank()) {
+            return splitFlags(override);
+        }
+        if (isMac()) {
+            Path prefix = detectBrewLibOmpPrefix();
+            if (prefix == null) {
+                return List.of("-lomp");
+            }
+            Path libDir = prefix.resolve("lib").toAbsolutePath();
+            return List.of(
+                    "-L" + libDir,
+                    "-lomp",
+                    "-Wl,-rpath," + libDir);
+        }
+        return List.of();
+    }
+
+    private static Path detectBrewLibOmpPrefix() {
+        Path homebrew = Path.of("/opt/homebrew/opt/libomp");
+        if (Files.isDirectory(homebrew)) {
+            return homebrew;
+        }
+        Path intel = Path.of("/usr/local/opt/libomp");
+        if (Files.isDirectory(intel)) {
+            return intel;
+        }
+        return null;
+    }
+
+    private static List<String> splitFlags(String flags) {
+        String[] parts = flags.trim().split("\\s+");
+        List<String> result = new ArrayList<>(parts.length);
+        for (String part : parts) {
+            if (!part.isBlank()) {
+                result.add(part);
+            }
+        }
+        return List.copyOf(result);
     }
 
     private static String hashLirGraph(LIRGraph graph, ScratchLayout scratchLayout) {
@@ -173,6 +247,11 @@ final class CKernelCompiler {
                                             .append(buf.id())
                                             .append(": offset=")
                                             .append(offset));
+        }
+        text.append("\n// openmp: ").append(openMpEnabled());
+        if (openMpEnabled()) {
+            text.append("\n// openmp-compile-flags: ").append(String.join(" ", openMpCompileFlags()));
+            text.append("\n// openmp-link-flags: ").append(String.join(" ", openMpLinkFlags()));
         }
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
