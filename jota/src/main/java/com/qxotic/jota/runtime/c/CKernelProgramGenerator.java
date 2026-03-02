@@ -5,13 +5,18 @@ import com.qxotic.jota.ir.lir.*;
 import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
 import com.qxotic.jota.runtime.KernelCacheKey;
 import com.qxotic.jota.runtime.KernelProgram;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 final class CKernelProgramGenerator {
+
+    private static final boolean OPENMP_ENABLED = openMpEnabled();
 
     KernelProgram generate(LIRGraph graph, ScratchLayout scratchLayout, KernelCacheKey key) {
         String kernelName = "c_lir_" + key.value().substring(0, 12);
@@ -54,6 +59,7 @@ final class CKernelProgramGenerator {
             source.append("#include <stddef.h>\n");
             source.append("#include <string.h>\n");
             source.append("#include <math.h>\n\n");
+            source.append("// openmp: ").append(OPENMP_ENABLED).append("\n");
             source.append("void ")
                     .append(kernelName)
                     .append("(void **buffers, uint64_t *scalars, uint64_t scratch_ptr) {\n");
@@ -184,6 +190,9 @@ final class CKernelProgramGenerator {
                 for (LoopIterArg arg : loop.iterArgs()) {
                     String initExpr = emitScalarExpr(arg.init());
                     addLine(typeName(arg.dataType()) + " " + arg.name() + " = " + initExpr + ";");
+                }
+                if (canParallelizeWithOpenMp(loop)) {
+                    addLine("#pragma omp parallel for");
                 }
                 addLine(
                         "for (long long "
@@ -932,5 +941,43 @@ final class CKernelProgramGenerator {
                 this.offset = offset;
             }
         }
+
+        private static boolean canParallelizeWithOpenMp(StructuredFor loop) {
+            return OPENMP_ENABLED && loop.iterArgs().isEmpty();
+        }
+    }
+
+    private static boolean openMpEnabled() {
+        String override = System.getProperty("com.qxotic.jota.c.openmp");
+        if (override != null) {
+            return Boolean.parseBoolean(override);
+        }
+        if (isWindows()) {
+            return false;
+        }
+        if (!isMac()) {
+            return true;
+        }
+        return detectBrewLibOmpPrefix() != null;
+    }
+
+    private static boolean isMac() {
+        return System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("mac");
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
+    }
+
+    private static Path detectBrewLibOmpPrefix() {
+        Path homebrew = Path.of("/opt/homebrew/opt/libomp");
+        if (Files.isDirectory(homebrew)) {
+            return homebrew;
+        }
+        Path intel = Path.of("/usr/local/opt/libomp");
+        if (Files.isDirectory(intel)) {
+            return intel;
+        }
+        return null;
     }
 }
