@@ -71,7 +71,7 @@ class RandomGoldenVectorTest {
     void randFp32MatchesPythonGoldenBits() {
         Tensor t =
                 Tensor.rand(
-                        Shape.of(EXPECTED_FP32_BITS.length), DataType.FP32, RandomKey.of(1234L));
+                        RandomKey.of(1234L), Shape.of(EXPECTED_FP32_BITS.length), DataType.FP32);
         assertArrayEquals(EXPECTED_FP32_BITS, toFp32Bits(t));
     }
 
@@ -79,7 +79,7 @@ class RandomGoldenVectorTest {
     void randFp64MatchesPythonGoldenBits() {
         Tensor t =
                 Tensor.rand(
-                        Shape.of(EXPECTED_FP64_BITS.length), DataType.FP64, RandomKey.of(1234L));
+                        RandomKey.of(1234L), Shape.of(EXPECTED_FP64_BITS.length), DataType.FP64);
         assertArrayEquals(EXPECTED_FP64_BITS, toFp64Bits(t));
     }
 
@@ -88,9 +88,9 @@ class RandomGoldenVectorTest {
         Tensor t =
                 Tracer.trace(
                         Tensor.rand(
+                                RandomKey.of(1234L),
                                 Shape.of(EXPECTED_FP32_BITS.length),
-                                DataType.FP32,
-                                RandomKey.of(1234L)),
+                                DataType.FP32),
                         x -> x);
         assertArrayEquals(EXPECTED_FP32_BITS, toFp32Bits(t));
     }
@@ -100,9 +100,9 @@ class RandomGoldenVectorTest {
         Tensor t =
                 Tracer.trace(
                         Tensor.rand(
+                                RandomKey.of(1234L),
                                 Shape.of(EXPECTED_FP64_BITS.length),
-                                DataType.FP64,
-                                RandomKey.of(1234L)),
+                                DataType.FP64),
                         x -> x);
         assertArrayEquals(EXPECTED_FP64_BITS, toFp64Bits(t));
     }
@@ -111,14 +111,14 @@ class RandomGoldenVectorTest {
     void randForSecondSeedMatchesPythonGoldenBits() {
         Tensor t32 =
                 Tensor.rand(
+                        RandomKey.of(2026L),
                         Shape.of(EXPECTED_FP32_BITS_SEED_2026.length),
-                        DataType.FP32,
-                        RandomKey.of(2026L));
+                        DataType.FP32);
         Tensor t64 =
                 Tensor.rand(
+                        RandomKey.of(2026L),
                         Shape.of(EXPECTED_FP64_BITS_SEED_2026.length),
-                        DataType.FP64,
-                        RandomKey.of(2026L));
+                        DataType.FP64);
         assertArrayEquals(EXPECTED_FP32_BITS_SEED_2026, toFp32Bits(t32));
         assertArrayEquals(EXPECTED_FP64_BITS_SEED_2026, toFp64Bits(t64));
     }
@@ -128,16 +128,16 @@ class RandomGoldenVectorTest {
         Tensor t32 =
                 Tracer.trace(
                         Tensor.rand(
+                                RandomKey.of(2026L),
                                 Shape.of(EXPECTED_FP32_BITS_SEED_2026.length),
-                                DataType.FP32,
-                                RandomKey.of(2026L)),
+                                DataType.FP32),
                         x -> x);
         Tensor t64 =
                 Tracer.trace(
                         Tensor.rand(
+                                RandomKey.of(2026L),
                                 Shape.of(EXPECTED_FP64_BITS_SEED_2026.length),
-                                DataType.FP64,
-                                RandomKey.of(2026L)),
+                                DataType.FP64),
                         x -> x);
         assertArrayEquals(EXPECTED_FP32_BITS_SEED_2026, toFp32Bits(t32));
         assertArrayEquals(EXPECTED_FP64_BITS_SEED_2026, toFp64Bits(t64));

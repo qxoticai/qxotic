@@ -318,14 +318,14 @@ abstract class AbstractTensorImpl implements Tensor {
         if (Tracer.isTracing()) {
             return TensorSupport.irOps().matmul(this, other);
         }
-        return Tracer.trace(this, other, (a, b) -> a.matmul(b));
+        return Tracer.trace(this, other, Tensor::matmul);
     }
 
     public Tensor batchedMatmul(Tensor other) {
         if (Tracer.isTracing()) {
             return TensorSupport.irOps().batchedMatmul(this, other);
         }
-        return Tracer.trace(this, other, (a, b) -> a.batchedMatmul(b));
+        return Tracer.trace(this, other, Tensor::batchedMatmul);
     }
 
     public Tensor dot(Tensor other, DataType accumulatorType) {
@@ -825,10 +825,6 @@ abstract class AbstractTensorImpl implements Tensor {
         return Tracer.trace(this, indices, (input, idx) -> input.gather(idx, _axis));
     }
 
-    public Tensor embeddingLookup(Tensor indices) {
-        return gather(indices, 0);
-    }
-
     // endregion Selection / Reduction Ops
     // region Unary Ops
 
@@ -884,36 +880,6 @@ abstract class AbstractTensorImpl implements Tensor {
                 this, UnaryOp.TANH, t -> TensorSupport.irOps().tanh(t), Tensor::tanh);
     }
 
-    public Tensor relu() {
-        TensorSupport.requireFloatingPoint(dataType(), "relu");
-        return max(Tensor.full(0f, dataType(), shape()));
-    }
-
-    public Tensor sigmoid() {
-        TensorSupport.requireFloatingPoint(dataType(), "sigmoid");
-        return negate().exp().add(Tensor.scalar(1, dataType())).reciprocal();
-    }
-
-    public Tensor silu() {
-        TensorSupport.requireFloatingPoint(dataType(), "silu");
-        return multiply(sigmoid()); // x * sigmoid(x)
-    }
-
-    public Tensor gelu() {
-        TensorSupport.requireFloatingPoint(dataType(), "gelu");
-        // GELU(x) ≈ 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
-        DataType dt = dataType();
-        Tensor cubic = multiply(this).multiply(this);
-        Tensor inner =
-                cubic.multiply(Tensor.scalar(0.044715, dt))
-                        .add(this)
-                        .multiply(Tensor.scalar(0.7978845608, dt));
-        return inner.tanh()
-                .add(Tensor.scalar(1, dt))
-                .multiply(this)
-                .multiply(Tensor.scalar(0.5, dt));
-    }
-
     public Tensor reciprocal() {
         TensorSupport.requireFloatingPoint(dataType(), "reciprocal");
         return TensorSupport.dispatchFoldedUnaryOp(
@@ -921,14 +887,6 @@ abstract class AbstractTensorImpl implements Tensor {
                 UnaryOp.RECIPROCAL,
                 t -> TensorSupport.irOps().reciprocal(t),
                 Tensor::reciprocal);
-    }
-
-    public Tensor reciprocal(DataType dataType) {
-        if (!dataType.isFloatingPoint()) {
-            throw new IllegalArgumentException(
-                    "reciprocal target type must be floating-point, got " + dataType);
-        }
-        return this.cast(dataType).reciprocal();
     }
 
     // endregion Unary Ops

@@ -107,13 +107,13 @@ final class RandomComputation implements LazyComputation {
 
     private void fillFp32(float[] out) {
         for (int i = 0; i < out.length; i++) {
-            out[i] = RandomAlgorithms.uniformFp32(i, key.k0(), key.k1());
+            out[i] = RandomAlgorithms.uniformFp32(i, key);
         }
     }
 
     private void fillFp64(double[] out) {
         for (int i = 0; i < out.length; i++) {
-            out[i] = RandomAlgorithms.uniformFp64(i, key.k0(), key.k1());
+            out[i] = RandomAlgorithms.uniformFp64(i, key);
         }
     }
 }

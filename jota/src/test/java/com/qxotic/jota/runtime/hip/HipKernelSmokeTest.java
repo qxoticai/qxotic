@@ -188,13 +188,13 @@ class HipKernelSmokeTest {
                 Environment.with(
                         hipEnv,
                         () ->
-                                Tracer.trace(Tensor.rand(Shape.of(n), DataType.FP32, key), x -> x)
+                                Tracer.trace(Tensor.rand(key, Shape.of(n), DataType.FP32), x -> x)
                                         .materialize());
         MemoryView<?> outFp64 =
                 Environment.with(
                         hipEnv,
                         () ->
-                                Tracer.trace(Tensor.rand(Shape.of(n), DataType.FP64, key), x -> x)
+                                Tracer.trace(Tensor.rand(key, Shape.of(n), DataType.FP64), x -> x)
                                         .materialize());
 
         MemoryDomain<MemorySegment> host = DomainFactory.ofMemorySegment();
@@ -206,14 +206,12 @@ class HipKernelSmokeTest {
         for (int i = 0; i < n; i++) {
             long off32 = Indexing.linearToOffset(fp32, i);
             int actual32 = Float.floatToRawIntBits(access.readFloat(fp32.memory(), off32));
-            int expected32 =
-                    Float.floatToRawIntBits(RandomAlgorithms.uniformFp32(i, key.k0(), key.k1()));
+            int expected32 = Float.floatToRawIntBits(RandomAlgorithms.uniformFp32(i, key));
             assertEquals(expected32, actual32);
 
             long off64 = Indexing.linearToOffset(fp64, i);
             long actual64 = Double.doubleToRawLongBits(access.readDouble(fp64.memory(), off64));
-            long expected64 =
-                    Double.doubleToRawLongBits(RandomAlgorithms.uniformFp64(i, key.k0(), key.k1()));
+            long expected64 = Double.doubleToRawLongBits(RandomAlgorithms.uniformFp64(i, key));
             assertEquals(expected64, actual64);
         }
     }

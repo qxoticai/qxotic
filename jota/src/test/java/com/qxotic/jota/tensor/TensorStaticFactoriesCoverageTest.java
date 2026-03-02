@@ -28,86 +28,58 @@ class TensorStaticFactoriesCoverageTest {
         MemoryView<?> view = a.materialize();
         assertTensor(Tensor.of(view), DataType.FP32, Shape.of(2, 2));
 
-        // Zero/one/iota/manualSeed.
+        // Zero/one/iota.
         assertTensor(Tensor.zeros(Shape.of(2, 3)), DataType.defaultFloat(), Shape.of(2, 3));
         assertTensor(Tensor.zeros(DataType.I32, Shape.of(2, 3)), DataType.I32, Shape.of(2, 3));
         assertTensor(Tensor.ones(Shape.of(2, 3)), DataType.defaultFloat(), Shape.of(2, 3));
         assertTensor(Tensor.ones(DataType.I64, Shape.of(2, 3)), DataType.I64, Shape.of(2, 3));
         assertTensor(Tensor.iota(5), DataType.I64, Shape.of(5));
         assertTensor(Tensor.iota(5, DataType.FP32), DataType.FP32, Shape.of(5));
-        Tensor.manualSeed(1234L);
 
         RandomKey key = RandomKey.of(99L);
 
         // rand overloads.
-        assertTensor(Tensor.rand(4, DataType.FP32), DataType.FP32, Shape.of(4));
-        assertTensor(Tensor.rand(4, DataType.FP64, key), DataType.FP64, Shape.of(4));
-        assertTensor(Tensor.rand(Shape.of(2, 2), DataType.FP32), DataType.FP32, Shape.of(2, 2));
+        assertTensor(Tensor.rand(key, 4, DataType.FP64), DataType.FP64, Shape.of(4));
         assertTensor(
-                Tensor.rand(Shape.of(2, 2), DataType.FP64, key), DataType.FP64, Shape.of(2, 2));
+                Tensor.rand(key, Shape.of(2, 2), DataType.FP64), DataType.FP64, Shape.of(2, 2));
 
         // randn overloads.
-        assertTensor(Tensor.randn(4, DataType.FP32), DataType.FP32, Shape.of(4));
-        assertTensor(Tensor.randn(4, DataType.FP64, key), DataType.FP64, Shape.of(4));
-        assertTensor(Tensor.randn(Shape.of(2, 2), DataType.FP32), DataType.FP32, Shape.of(2, 2));
+        assertTensor(Tensor.randn(key, 4, DataType.FP64), DataType.FP64, Shape.of(4));
         assertTensor(
-                Tensor.randn(Shape.of(2, 2), DataType.FP64, key), DataType.FP64, Shape.of(2, 2));
+                Tensor.randn(key, Shape.of(2, 2), DataType.FP64), DataType.FP64, Shape.of(2, 2));
 
         // randInt overloads.
-        assertTensor(Tensor.randInt(0, 10, 4, DataType.I32), DataType.I32, Shape.of(4));
-        assertTensor(Tensor.randInt(0, 10, 4, DataType.I64, key), DataType.I64, Shape.of(4));
+        assertTensor(Tensor.randInt(key, 0, 10, 4, DataType.I64), DataType.I64, Shape.of(4));
         assertTensor(
-                Tensor.randInt(0, 10, Shape.of(2, 2), DataType.I32), DataType.I32, Shape.of(2, 2));
-        assertTensor(
-                Tensor.randInt(0, 10, Shape.of(2, 2), DataType.I64, key),
+                Tensor.randInt(key, 0, 10, Shape.of(2, 2), DataType.I64),
                 DataType.I64,
                 Shape.of(2, 2));
 
         // uniform overloads.
-        assertTensor(Tensor.uniform(4, -1.0, 1.0, DataType.FP32), DataType.FP32, Shape.of(4));
-        assertTensor(Tensor.uniform(4, -1.0, 1.0, DataType.FP64, key), DataType.FP64, Shape.of(4));
+        assertTensor(Tensor.uniform(key, 4, -1.0, 1.0, DataType.FP64), DataType.FP64, Shape.of(4));
         assertTensor(
-                Tensor.uniform(Shape.of(2, 2), -1.0, 1.0, DataType.FP32),
-                DataType.FP32,
-                Shape.of(2, 2));
-        assertTensor(
-                Tensor.uniform(Shape.of(2, 2), -1.0, 1.0, DataType.FP64, key),
+                Tensor.uniform(key, Shape.of(2, 2), -1.0, 1.0, DataType.FP64),
                 DataType.FP64,
                 Shape.of(2, 2));
 
         // normal overloads.
-        assertTensor(Tensor.normal(4, 0.0, 1.0, DataType.FP32), DataType.FP32, Shape.of(4));
-        assertTensor(Tensor.normal(4, 0.0, 1.0, DataType.FP64, key), DataType.FP64, Shape.of(4));
+        assertTensor(Tensor.normal(key, 4, 0.0, 1.0, DataType.FP64), DataType.FP64, Shape.of(4));
         assertTensor(
-                Tensor.normal(Shape.of(2, 2), 0.0, 1.0, DataType.FP32),
-                DataType.FP32,
-                Shape.of(2, 2));
-        assertTensor(
-                Tensor.normal(Shape.of(2, 2), 0.0, 1.0, DataType.FP64, key),
+                Tensor.normal(key, Shape.of(2, 2), 0.0, 1.0, DataType.FP64),
                 DataType.FP64,
                 Shape.of(2, 2));
 
         // uniformInt overloads.
-        assertTensor(Tensor.uniformInt(0, 10, 4, DataType.I32), DataType.I32, Shape.of(4));
-        assertTensor(Tensor.uniformInt(0, 10, 4, DataType.I64, key), DataType.I64, Shape.of(4));
+        assertTensor(Tensor.uniformInt(key, 0, 10, 4, DataType.I64), DataType.I64, Shape.of(4));
         assertTensor(
-                Tensor.uniformInt(0, 10, Shape.of(2, 2), DataType.I32),
-                DataType.I32,
-                Shape.of(2, 2));
-        assertTensor(
-                Tensor.uniformInt(0, 10, Shape.of(2, 2), DataType.I64, key),
+                Tensor.uniformInt(key, 0, 10, Shape.of(2, 2), DataType.I64),
                 DataType.I64,
                 Shape.of(2, 2));
 
         // normalInt overloads.
-        assertTensor(Tensor.normalInt(4, 0.0, 1.0, DataType.I32), DataType.I32, Shape.of(4));
-        assertTensor(Tensor.normalInt(4, 0.0, 1.0, DataType.I64, key), DataType.I64, Shape.of(4));
+        assertTensor(Tensor.normalInt(key, 4, 0.0, 1.0, DataType.I64), DataType.I64, Shape.of(4));
         assertTensor(
-                Tensor.normalInt(Shape.of(2, 2), 0.0, 1.0, DataType.I32),
-                DataType.I32,
-                Shape.of(2, 2));
-        assertTensor(
-                Tensor.normalInt(Shape.of(2, 2), 0.0, 1.0, DataType.I64, key),
+                Tensor.normalInt(key, Shape.of(2, 2), 0.0, 1.0, DataType.I64),
                 DataType.I64,
                 Shape.of(2, 2));
 

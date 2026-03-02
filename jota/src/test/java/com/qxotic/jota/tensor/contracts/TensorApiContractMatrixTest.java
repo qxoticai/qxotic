@@ -47,12 +47,14 @@ class TensorApiContractMatrixTest {
             boolean floating = type.isFloatingPoint();
             if (floating) {
                 assertEquals(type, input.sqrt().materialize().dataType());
+                assertEquals(type, input.rsqrt().materialize().dataType());
                 assertEquals(type, input.sin().materialize().dataType());
                 assertEquals(type, input.cos().materialize().dataType());
                 assertEquals(type, input.tanh().materialize().dataType());
                 assertEquals(type, input.reciprocal().materialize().dataType());
             } else {
                 assertThrows(IllegalArgumentException.class, input::sqrt);
+                assertThrows(IllegalArgumentException.class, input::rsqrt);
                 assertThrows(IllegalArgumentException.class, input::sin);
                 assertThrows(IllegalArgumentException.class, input::cos);
                 assertThrows(IllegalArgumentException.class, input::tanh);

@@ -740,6 +740,13 @@ class ConstantCreationAndArithmeticFoldingTest {
     }
 
     @Test
+    void foldsUnaryRsqrt() {
+        Tensor result = Tensor.scalar(16.0f).rsqrt();
+        assertTrue(TensorTestInternals.isLazy(result));
+        assertEquals(0.25, getConstant(result).value().doubleValue(), 0.0001);
+    }
+
+    @Test
     void foldsUnarySin() {
         Tensor result = Tensor.scalar(0.0f).sin();
         assertTrue(TensorTestInternals.isLazy(result));
@@ -765,6 +772,22 @@ class ConstantCreationAndArithmeticFoldingTest {
         Tensor result = Tensor.scalar(4.0f).reciprocal();
         assertTrue(TensorTestInternals.isLazy(result));
         assertEquals(0.25, getConstant(result).value().doubleValue(), 0.0001);
+    }
+
+    @Test
+    void foldsClamp() {
+        // Test clip with scalar bounds
+        Tensor result = Tensor.scalar(10.0f).clip(0.0, 5.0);
+        assertTrue(TensorTestInternals.isLazy(result));
+        assertEquals(5.0, getConstant(result).value().doubleValue(), 0.0001);
+
+        // Test value below min
+        result = Tensor.scalar(-3.0f).clip(0.0, 5.0);
+        assertEquals(0.0, getConstant(result).value().doubleValue(), 0.0001);
+
+        // Test value within range
+        result = Tensor.scalar(3.0f).clip(0.0, 5.0);
+        assertEquals(3.0, getConstant(result).value().doubleValue(), 0.0001);
     }
 
     @Test

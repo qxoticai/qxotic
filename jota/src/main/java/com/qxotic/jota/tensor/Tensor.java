@@ -468,10 +468,14 @@ public interface Tensor {
     /**
      * Convenience method for embedding lookup (gather along axis 0).
      *
+     * <p>This is equivalent to {@code gather(indices, 0)}.
+     *
      * @param indices the indices tensor
      * @return the gathered embeddings
      */
-    Tensor embeddingLookup(Tensor indices);
+    default Tensor embeddingLookup(Tensor indices) {
+        return gather(indices, 0);
+    }
 
     // endregion Selection / Reduction Operations
     // region Elementwise Unary Operations
@@ -488,6 +492,18 @@ public interface Tensor {
 
     Tensor sqrt();
 
+    /**
+     * Computes the reciprocal of the square root (1 / sqrt(x)).
+     *
+     * <p>This is a convenience method equivalent to {@code sqrt().reciprocal()}.
+     *
+     * @return a tensor with rsqrt values
+     * @throws IllegalArgumentException if the data type is not floating-point
+     */
+    default Tensor rsqrt() {
+        return sqrt().reciprocal();
+    }
+
     default Tensor square() {
         return multiply(this);
     }
@@ -498,17 +514,122 @@ public interface Tensor {
 
     Tensor tanh();
 
-    Tensor relu();
+    /**
+     * Applies the Rectified Linear Unit (ReLU) activation function.
+     *
+     * <p>Returns max(0, x) elementwise.
+     *
+     * @return a tensor with ReLU values
+     */
+    default Tensor relu() {
+        return max(Tensor.full(0f, dataType(), shape()));
+    }
 
-    Tensor sigmoid();
+    /**
+     * Computes the sigmoid function: 1 / (1 + exp(-x)).
+     *
+     * <p>This is equivalent to {@code negate().exp().add(1).reciprocal()}.
+     *
+     * @return a tensor with sigmoid values
+     */
+    default Tensor sigmoid() {
+        return negate().exp().add(Tensor.scalar(1, dataType())).reciprocal();
+    }
 
-    Tensor silu();
+    /**
+     * Computes the SiLU (Swish) activation: x * sigmoid(x).
+     *
+     * <p>This is equivalent to {@code multiply(sigmoid())}.
+     *
+     * @return a tensor with SiLU values
+     */
+    default Tensor silu() {
+        return multiply(sigmoid());
+    }
 
-    Tensor gelu();
+    /**
+     * Computes the GELU (Gaussian Error Linear Unit) activation using the tanh approximation.
+     *
+     * <p>Formula: 0.5 * x * (1 + tanh(√(2/π) * (x + 0.044715 * x³)))
+     *
+     * <p>This is the approximation from the original GELU paper (Hendrycks &amp; Gimpel 2016).
+     *
+     * @return a tensor with GELU values
+     */
+    default Tensor gelu() {
+        DataType dt = dataType();
+        return square().multiply(this)
+                .multiply(Tensor.scalar(0.044715, dt))
+                .add(this)
+                .multiply(Tensor.scalar(0.7978845608, dt))
+                .tanh()
+                .add(Tensor.scalar(1, dt))
+                .multiply(this)
+                .multiply(Tensor.scalar(0.5, dt));
+    }
 
     Tensor reciprocal();
 
-    Tensor reciprocal(DataType dataType);
+    /**
+     * Computes the reciprocal (1/x) with explicit target data type.
+     *
+     * <p>This is equivalent to {@code cast(dataType).reciprocal()}.
+     *
+     * @param dataType the target data type (must be floating-point)
+     * @return a tensor with reciprocal values in the specified data type
+     * @throws IllegalArgumentException if dataType is not floating-point
+     */
+    default Tensor reciprocal(DataType dataType) {
+        if (!dataType.isFloatingPoint()) {
+            throw new IllegalArgumentException(
+                    "reciprocal target type must be floating-point, got " + dataType);
+        }
+        return cast(dataType).reciprocal();
+    }
+
+    /**
+     * Clips (clamps) all elements to be within [min, max].
+     *
+     * <p>Returns min where input < min, max where input > max, and input otherwise.
+     *
+     * <p>Bounds are cast to the input tensor's data type (JAX/NumPy semantics). For example, {@code
+     * intTensor.clip(0.5, 2.5)} will truncate bounds to 0 and 2.
+     *
+     * @param min the lower bound (inclusive)
+     * @param max the upper bound (inclusive)
+     * @return a tensor with clipped values
+     */
+    default Tensor clip(Tensor min, Tensor max) {
+        return this.max(min).min(max);
+    }
+
+    /**
+     * Clips (clamps) all elements to be within [min, max].
+     *
+     * <p>Bounds are cast to the input tensor's data type (JAX/NumPy semantics). For example, {@code
+     * intTensor.clip(0.5, 2.5)} will truncate bounds to 0 and 2.
+     *
+     * @param min the lower bound scalar value (cast to input dtype)
+     * @param max the upper bound scalar value (cast to input dtype)
+     * @return a tensor with clipped values, same dtype as input
+     */
+    default Tensor clip(double min, double max) {
+        return clip(Tensor.scalar(min, dataType()), Tensor.scalar(max, dataType()));
+    }
+
+    /**
+     * Clips (clamps) all elements to be within [min, max].
+     *
+     * <p>Bounds are cast to the input tensor's data type. For integer tensors, this provides exact
+     * clipping without precision loss.
+     *
+     * @param min the lower bound scalar value (cast to input dtype)
+     * @param max the upper bound scalar value (cast to input dtype)
+     * @return a tensor with clipped values, same dtype as input
+     */
+    default Tensor clip(long min, long max) {
+        return clip(Tensor.scalar(min, dataType()), Tensor.scalar(max, dataType()));
+    }
 
     // endregion Elementwise Unary Operations
     // endregion Instance Operations
@@ -594,192 +715,326 @@ public interface Tensor {
     // region Random Creation
 
     /**
-     * Sets the thread-local RNG seed used by random methods that do not take an explicit {@link
-     * RandomKey}.
+     * Creates an opaque random key from a seed.
+     *
+     * <p>Recommended usage:
+     *
+     * <pre>{@code
+     * RandomKey key = Tensor.randomKey(1234L);
+     * Tensor x = Tensor.rand(key, Shape.of(2, 3), DataType.FP32);
+     * Tensor y = Tensor.randn(key.split(1L), Shape.of(2, 3), DataType.FP32);
+     * }</pre>
      */
-    static void manualSeed(long seed) {
-        TensorFactory.manualSeed(seed);
-    }
-
-    /** Alias of {@link #uniform(long, double, double, DataType)} with [0, 1) bounds. */
-    static Tensor rand(long size, DataType dataType) {
-        return TensorFactory.rand(size, dataType);
-    }
-
-    /** Alias of {@link #uniform(long, double, double, DataType, RandomKey)} with [0, 1) bounds. */
-    static Tensor rand(long size, DataType dataType, RandomKey randomKey) {
-        return TensorFactory.rand(size, dataType, randomKey);
-    }
-
-    /** Alias of {@link #uniform(Shape, double, double, DataType)} with [0, 1) bounds. */
-    static Tensor rand(Shape shape, DataType dataType) {
-        return TensorFactory.rand(shape, dataType);
-    }
-
-    /** Alias of {@link #uniform(Shape, double, double, DataType, RandomKey)} with [0, 1) bounds. */
-    static Tensor rand(Shape shape, DataType dataType, RandomKey randomKey) {
-        return TensorFactory.rand(shape, dataType, randomKey);
-    }
-
-    /** Alias of {@link #normal(long, double, double, DataType)} with mean=0 and std=1. */
-    static Tensor randn(long size, DataType dataType) {
-        return TensorFactory.randn(size, dataType);
+    static RandomKey randomKey(long seed) {
+        return TensorFactory.randomKey(seed);
     }
 
     /**
-     * Alias of {@link #normal(long, double, double, DataType, RandomKey)} with mean=0 and std=1.
+     * Creates a lazy tensor with uniform random values in [0, 1).
+     *
+     * <p>Deterministic output given the same key, counter, and length.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param size number of elements
+     * @param dataType must be FP32 or FP64
+     * @return a lazy tensor with random values in [0, 1)
+     * @throws NullPointerException if randomKey or dataType is null
+     * @throws IllegalArgumentException if dataType is not FP32 or FP64
      */
-    static Tensor randn(long size, DataType dataType, RandomKey randomKey) {
-        return TensorFactory.randn(size, dataType, randomKey);
-    }
-
-    /** Alias of {@link #normal(Shape, double, double, DataType)} with mean=0 and std=1. */
-    static Tensor randn(Shape shape, DataType dataType) {
-        return TensorFactory.randn(shape, dataType);
+    static Tensor rand(RandomKey randomKey, long size, DataType dataType) {
+        return TensorFactory.rand(randomKey, size, dataType);
     }
 
     /**
-     * Alias of {@link #normal(Shape, double, double, DataType, RandomKey)} with mean=0 and std=1.
+     * Creates a lazy tensor with uniform random values in [0, 1).
+     *
+     * <p>Deterministic output given the same key, counter, and shape.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param shape the tensor shape
+     * @param dataType must be FP32 or FP64
+     * @return a lazy tensor with random values in [0, 1)
+     * @throws NullPointerException if randomKey, shape, or dataType is null
+     * @throws IllegalArgumentException if dataType is not FP32 or FP64
      */
-    static Tensor randn(Shape shape, DataType dataType, RandomKey randomKey) {
-        return TensorFactory.randn(shape, dataType, randomKey);
+    static Tensor rand(RandomKey randomKey, Shape shape, DataType dataType) {
+        return TensorFactory.rand(randomKey, shape, dataType);
     }
 
-    /** Alias of {@link #uniformInt(long, long, long, DataType)}. */
-    static Tensor randInt(long startInclusive, long endExclusive, long size, DataType dataType) {
-        return TensorFactory.randInt(startInclusive, endExclusive, size, dataType);
+    /**
+     * Creates a lazy tensor with standard normal (N(0, 1)) random values.
+     *
+     * <p>Deterministic output given the same key, counter, and length.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param size number of elements
+     * @param dataType must be FP32 or FP64
+     * @return a lazy tensor with normal random values
+     * @throws NullPointerException if randomKey or dataType is null
+     * @throws IllegalArgumentException if dataType is not FP32 or FP64
+     */
+    static Tensor randn(RandomKey randomKey, long size, DataType dataType) {
+        return TensorFactory.randn(randomKey, size, dataType);
     }
 
-    /** Alias of {@link #uniformInt(long, long, long, DataType, RandomKey)}. */
+    /**
+     * Creates a lazy tensor with standard normal (N(0, 1)) random values.
+     *
+     * <p>Deterministic output given the same key, counter, and shape.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param shape the tensor shape
+     * @param dataType must be FP32 or FP64
+     * @return a lazy tensor with normal random values
+     * @throws NullPointerException if randomKey, shape, or dataType is null
+     * @throws IllegalArgumentException if dataType is not FP32 or FP64
+     */
+    static Tensor randn(RandomKey randomKey, Shape shape, DataType dataType) {
+        return TensorFactory.randn(randomKey, shape, dataType);
+    }
+
+    /**
+     * Creates a lazy tensor with uniform random integers in [startInclusive, endExclusive).
+     *
+     * <p>Deterministic output given the same key, counter, and length.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param startInclusive the lower bound (inclusive)
+     * @param endExclusive the upper bound (exclusive)
+     * @param size number of elements
+     * @param dataType must be I8, I16, I32, or I64
+     * @return a lazy tensor with random integers
+     * @throws NullPointerException if randomKey or dataType is null
+     * @throws IllegalArgumentException if dataType is not an integer type, or if endExclusive <=
+     *     startInclusive, or if range doesn't fit in the target dtype
+     */
     static Tensor randInt(
+            RandomKey randomKey,
             long startInclusive,
             long endExclusive,
             long size,
-            DataType dataType,
-            RandomKey randomKey) {
-        return TensorFactory.randInt(startInclusive, endExclusive, size, dataType, randomKey);
+            DataType dataType) {
+        return TensorFactory.randInt(randomKey, startInclusive, endExclusive, size, dataType);
     }
 
-    /** Alias of {@link #uniformInt(long, long, Shape, DataType)}. */
-    static Tensor randInt(long startInclusive, long endExclusive, Shape shape, DataType dataType) {
-        return TensorFactory.randInt(startInclusive, endExclusive, shape, dataType);
-    }
-
-    /** Alias of {@link #uniformInt(long, long, Shape, DataType, RandomKey)}. */
+    /**
+     * Creates a lazy tensor with uniform random integers in [startInclusive, endExclusive).
+     *
+     * <p>Deterministic output given the same key, counter, and shape.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param startInclusive the lower bound (inclusive)
+     * @param endExclusive the upper bound (exclusive)
+     * @param shape the tensor shape
+     * @param dataType must be I8, I16, I32, or I64
+     * @return a lazy tensor with random integers
+     * @throws NullPointerException if randomKey, shape, or dataType is null
+     * @throws IllegalArgumentException if dataType is not an integer type, or if endExclusive <=
+     *     startInclusive, or if range doesn't fit in the target dtype
+     */
     static Tensor randInt(
+            RandomKey randomKey,
             long startInclusive,
             long endExclusive,
             Shape shape,
-            DataType dataType,
-            RandomKey randomKey) {
-        return TensorFactory.randInt(startInclusive, endExclusive, shape, dataType, randomKey);
+            DataType dataType) {
+        return TensorFactory.randInt(randomKey, startInclusive, endExclusive, shape, dataType);
     }
 
-    /** Creates lazy floating-point uniform values in [startInclusive, endExclusive). */
+    /**
+     * Creates a lazy tensor with uniform random values in [startInclusive, endExclusive).
+     *
+     * <p>Deterministic output given the same key, counter, and length.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param size number of elements
+     * @param startInclusive the lower bound (inclusive)
+     * @param endExclusive the upper bound (exclusive); must be > startInclusive
+     * @param dataType must be FP32 or FP64
+     * @return a lazy tensor with random values
+     * @throws NullPointerException if randomKey or dataType is null
+     * @throws IllegalArgumentException if dataType is not FP32 or FP64, or if endExclusive <=
+     *     startInclusive, or if range is NaN or infinite
+     */
     static Tensor uniform(
-            long size, double startInclusive, double endExclusive, DataType dataType) {
-        return TensorFactory.uniform(size, startInclusive, endExclusive, dataType);
-    }
-
-    /** Creates lazy floating-point uniform values in [startInclusive, endExclusive). */
-    static Tensor uniform(
+            RandomKey randomKey,
             long size,
             double startInclusive,
             double endExclusive,
-            DataType dataType,
-            RandomKey randomKey) {
-        return TensorFactory.uniform(size, startInclusive, endExclusive, dataType, randomKey);
+            DataType dataType) {
+        return TensorFactory.uniform(randomKey, size, startInclusive, endExclusive, dataType);
     }
 
-    /** Creates lazy floating-point uniform values in [startInclusive, endExclusive). */
+    /**
+     * Creates a lazy tensor with uniform random values in [startInclusive, endExclusive).
+     *
+     * <p>Deterministic output given the same key, counter, and shape.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param shape the tensor shape
+     * @param startInclusive the lower bound (inclusive)
+     * @param endExclusive the upper bound (exclusive); must be > startInclusive
+     * @param dataType must be FP32 or FP64
+     * @return a lazy tensor with random values
+     * @throws NullPointerException if randomKey, shape, or dataType is null
+     * @throws IllegalArgumentException if dataType is not FP32 or FP64, or if endExclusive <=
+     *     startInclusive, or if range is NaN or infinite
+     */
     static Tensor uniform(
-            Shape shape, double startInclusive, double endExclusive, DataType dataType) {
-        return TensorFactory.uniform(shape, startInclusive, endExclusive, dataType);
-    }
-
-    /** Creates lazy floating-point uniform values in [startInclusive, endExclusive). */
-    static Tensor uniform(
+            RandomKey randomKey,
             Shape shape,
             double startInclusive,
             double endExclusive,
-            DataType dataType,
-            RandomKey randomKey) {
-        return TensorFactory.uniform(shape, startInclusive, endExclusive, dataType, randomKey);
+            DataType dataType) {
+        return TensorFactory.uniform(randomKey, shape, startInclusive, endExclusive, dataType);
     }
 
-    /** Creates lazy standard normal values and applies mean/std affine transform. */
-    static Tensor normal(long size, double mean, double std, DataType dataType) {
-        return TensorFactory.normal(size, mean, std, dataType);
-    }
-
-    /** Creates lazy standard normal values and applies mean/std affine transform. */
+    /**
+     * Creates a lazy tensor with normal (Gaussian) random values N(mean, std).
+     *
+     * <p>Deterministic output given the same key, counter, and length.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param size number of elements
+     * @param mean the mean of the distribution
+     * @param std the standard deviation; must be > 0
+     * @param dataType must be FP32 or FP64
+     * @return a lazy tensor with normal random values
+     * @throws NullPointerException if randomKey or dataType is null
+     * @throws IllegalArgumentException if dataType is not FP32 or FP64, or if std <= 0, or if
+     *     parameters are NaN or infinite
+     */
     static Tensor normal(
-            long size, double mean, double std, DataType dataType, RandomKey randomKey) {
-        return TensorFactory.normal(size, mean, std, dataType, randomKey);
+            RandomKey randomKey, long size, double mean, double std, DataType dataType) {
+        return TensorFactory.normal(randomKey, size, mean, std, dataType);
     }
 
-    /** Creates lazy standard normal values and applies mean/std affine transform. */
-    static Tensor normal(Shape shape, double mean, double std, DataType dataType) {
-        return TensorFactory.normal(shape, mean, std, dataType);
-    }
-
-    /** Creates lazy standard normal values and applies mean/std affine transform. */
+    /**
+     * Creates a lazy tensor with normal (Gaussian) random values N(mean, std).
+     *
+     * <p>Deterministic output given the same key, counter, and shape.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param shape the tensor shape
+     * @param mean the mean of the distribution
+     * @param std the standard deviation; must be > 0
+     * @param dataType must be FP32 or FP64
+     * @return a lazy tensor with normal random values
+     * @throws NullPointerException if randomKey, shape, or dataType is null
+     * @throws IllegalArgumentException if dataType is not FP32 or FP64, or if std <= 0, or if
+     *     parameters are NaN or infinite
+     */
     static Tensor normal(
-            Shape shape, double mean, double std, DataType dataType, RandomKey randomKey) {
-        return TensorFactory.normal(shape, mean, std, dataType, randomKey);
+            RandomKey randomKey, Shape shape, double mean, double std, DataType dataType) {
+        return TensorFactory.normal(randomKey, shape, mean, std, dataType);
     }
 
-    /** Creates lazy integral uniform values in [startInclusive, endExclusive). */
-    static Tensor uniformInt(long startInclusive, long endExclusive, long size, DataType dataType) {
-        return TensorFactory.uniformInt(startInclusive, endExclusive, size, dataType);
-    }
-
-    /** Creates lazy integral uniform values in [startInclusive, endExclusive). */
+    /**
+     * Creates a lazy tensor with uniform random integers in [startInclusive, endExclusive).
+     *
+     * <p>Deterministic output given the same key, counter, and length.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param startInclusive the lower bound (inclusive)
+     * @param endExclusive the upper bound (exclusive)
+     * @param size number of elements
+     * @param dataType must be I8, I16, I32, or I64
+     * @return a lazy tensor with random integers
+     * @throws NullPointerException if randomKey or dataType is null
+     * @throws IllegalArgumentException if dataType is not an integer type, or if endExclusive <=
+     *     startInclusive, or if range doesn't fit in the target dtype, or if range overflows
+     */
     static Tensor uniformInt(
+            RandomKey randomKey,
             long startInclusive,
             long endExclusive,
             long size,
-            DataType dataType,
-            RandomKey randomKey) {
-        return TensorFactory.uniformInt(startInclusive, endExclusive, size, dataType, randomKey);
+            DataType dataType) {
+        return TensorFactory.uniformInt(randomKey, startInclusive, endExclusive, size, dataType);
     }
 
-    /** Creates lazy integral uniform values in [startInclusive, endExclusive). */
+    /**
+     * Creates a lazy tensor with uniform random integers in [startInclusive, endExclusive).
+     *
+     * <p>Deterministic output given the same key, counter, and shape.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param startInclusive the lower bound (inclusive)
+     * @param endExclusive the upper bound (exclusive)
+     * @param shape the tensor shape
+     * @param dataType must be I8, I16, I32, or I64
+     * @return a lazy tensor with random integers
+     * @throws NullPointerException if randomKey, shape, or dataType is null
+     * @throws IllegalArgumentException if dataType is not an integer type, or if endExclusive <=
+     *     startInclusive, or if range doesn't fit in the target dtype, or if range overflows
+     */
     static Tensor uniformInt(
-            long startInclusive, long endExclusive, Shape shape, DataType dataType) {
-        return TensorFactory.uniformInt(startInclusive, endExclusive, shape, dataType);
-    }
-
-    /** Creates lazy integral uniform values in [startInclusive, endExclusive). */
-    static Tensor uniformInt(
+            RandomKey randomKey,
             long startInclusive,
             long endExclusive,
             Shape shape,
-            DataType dataType,
-            RandomKey randomKey) {
-        return TensorFactory.uniformInt(startInclusive, endExclusive, shape, dataType, randomKey);
+            DataType dataType) {
+        return TensorFactory.uniformInt(randomKey, startInclusive, endExclusive, shape, dataType);
     }
 
-    /** Creates integer-valued normal samples by rounding and clamping to target integer dtype. */
-    static Tensor normalInt(long size, double mean, double std, DataType dataType) {
-        return TensorFactory.normalInt(size, mean, std, dataType);
-    }
-
-    /** Creates integer-valued normal samples by rounding and clamping to target integer dtype. */
+    /**
+     * Creates a lazy tensor with normal random values N(mean, std), rounded to integers.
+     *
+     * <p>Values are rounded to nearest integer (ties away from zero) and clamped to the dtype
+     * range.
+     *
+     * <p>Deterministic output given the same key, counter, and length.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param size number of elements
+     * @param mean the mean of the distribution
+     * @param std the standard deviation; must be > 0 and finite
+     * @param dataType must be I8, I16, I32, or I64
+     * @return a lazy tensor with random integers
+     * @throws NullPointerException if randomKey or dataType is null
+     * @throws IllegalArgumentException if dataType is not an integer type, or if std <= 0 or std is
+     *     infinite
+     */
     static Tensor normalInt(
-            long size, double mean, double std, DataType dataType, RandomKey randomKey) {
-        return TensorFactory.normalInt(size, mean, std, dataType, randomKey);
+            RandomKey randomKey, long size, double mean, double std, DataType dataType) {
+        return TensorFactory.normalInt(randomKey, size, mean, std, dataType);
     }
 
-    /** Creates integer-valued normal samples by rounding and clamping to target integer dtype. */
-    static Tensor normalInt(Shape shape, double mean, double std, DataType dataType) {
-        return TensorFactory.normalInt(shape, mean, std, dataType);
-    }
-
-    /** Creates integer-valued normal samples by rounding and clamping to target integer dtype. */
+    /**
+     * Creates a lazy tensor with normal random values N(mean, std), rounded to integers.
+     *
+     * <p>Values are rounded to nearest integer (ties away from zero) and clamped to the dtype
+     * range.
+     *
+     * <p>Deterministic output given the same key, counter, and shape.
+     *
+     * @param randomKey the random key; determines the random stream (use {@code
+     *     Tensor.randomKey(seed)} or key split/fold)
+     * @param shape the tensor shape
+     * @param mean the mean of the distribution
+     * @param std the standard deviation; must be > 0 and finite
+     * @param dataType must be I8, I16, I32, or I64
+     * @return a lazy tensor with random integers
+     * @throws NullPointerException if randomKey, shape, or dataType is null
+     * @throws IllegalArgumentException if dataType is not an integer type, or if std <= 0 or std is
+     *     infinite
+     */
     static Tensor normalInt(
-            Shape shape, double mean, double std, DataType dataType, RandomKey randomKey) {
-        return TensorFactory.normalInt(shape, mean, std, dataType, randomKey);
+            RandomKey randomKey, Shape shape, double mean, double std, DataType dataType) {
+        return TensorFactory.normalInt(randomKey, shape, mean, std, dataType);
     }
 
     // endregion Random Creation

@@ -2,7 +2,6 @@ package com.qxotic.jota.tensor;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -11,10 +10,6 @@ import com.qxotic.jota.Shape;
 import com.qxotic.jota.random.RandomKey;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
 import com.qxotic.jota.testutil.TensorTestReads;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import org.junit.jupiter.api.Test;
 
 @RunOnAllAvailableBackends
@@ -23,14 +18,14 @@ class RandomTensorComprehensiveTest {
     @Test
     void sizeAndShapeRandomApisMatch() {
         RandomKey key = RandomKey.of(7L);
-        Tensor fromSize = Tensor.rand(6, DataType.FP32, key);
-        Tensor fromShape = Tensor.rand(Shape.of(2, 3), DataType.FP32, key);
+        Tensor fromSize = Tensor.rand(key, 6, DataType.FP32);
+        Tensor fromShape = Tensor.rand(key, Shape.of(2, 3), DataType.FP32);
         assertArrayEquals(toFloatArray(fromSize), toFloatArray(fromShape));
     }
 
     @Test
     void randFp32ValuesStayWithinUnitInterval() {
-        Tensor t = Tensor.rand(Shape.of(2048), DataType.FP32, RandomKey.of(10L));
+        Tensor t = Tensor.rand(RandomKey.of(10L), Shape.of(2048), DataType.FP32);
         float[] values = toFloatArray(t);
 
         for (float v : values) {
@@ -42,7 +37,7 @@ class RandomTensorComprehensiveTest {
 
     @Test
     void randFp64ValuesStayWithinUnitInterval() {
-        Tensor t = Tensor.rand(Shape.of(2048), DataType.FP64, RandomKey.of(11L));
+        Tensor t = Tensor.rand(RandomKey.of(11L), Shape.of(2048), DataType.FP64);
         double[] values = toDoubleArray(t);
 
         for (double v : values) {
@@ -53,12 +48,10 @@ class RandomTensorComprehensiveTest {
     }
 
     @Test
-    void randnWithManualSeedIsDeterministic() {
-        Tensor.manualSeed(444L);
-        Tensor first = Tensor.randn(Shape.of(64), DataType.FP32);
-
-        Tensor.manualSeed(444L);
-        Tensor second = Tensor.randn(Shape.of(64), DataType.FP32);
+    void randnWithKeyFromSeedIsDeterministic() {
+        RandomKey key = Tensor.randomKey(444L);
+        Tensor first = Tensor.randn(key, Shape.of(64), DataType.FP32);
+        Tensor second = Tensor.randn(key, Shape.of(64), DataType.FP32);
 
         assertArrayEquals(toFloatArray(first), toFloatArray(second));
     }
@@ -66,15 +59,15 @@ class RandomTensorComprehensiveTest {
     @Test
     void randnWithExplicitKeyIsDeterministicForFp64() {
         RandomKey key = RandomKey.of(123L);
-        Tensor first = Tensor.randn(Shape.of(64), DataType.FP64, key);
-        Tensor second = Tensor.randn(Shape.of(64), DataType.FP64, key);
+        Tensor first = Tensor.randn(key, Shape.of(64), DataType.FP64);
+        Tensor second = Tensor.randn(key, Shape.of(64), DataType.FP64);
 
         assertArrayEquals(toDoubleArray(first), toDoubleArray(second));
     }
 
     @Test
     void randnProducesFiniteValuesWithBothSigns() {
-        Tensor t = Tensor.randn(Shape.of(8192), DataType.FP64, RandomKey.of(555L));
+        Tensor t = Tensor.randn(RandomKey.of(555L), Shape.of(8192), DataType.FP64);
         double[] values = toDoubleArray(t);
 
         boolean hasPositive = false;
@@ -99,27 +92,31 @@ class RandomTensorComprehensiveTest {
     void randomApisRejectNullArguments() {
         RandomKey key = RandomKey.of(1L);
 
-        assertThrows(NullPointerException.class, () -> Tensor.rand(null, DataType.FP32, key));
-        assertThrows(NullPointerException.class, () -> Tensor.rand(Shape.of(1), null, key));
         assertThrows(
-                NullPointerException.class, () -> Tensor.rand(Shape.of(1), DataType.FP32, null));
-
-        assertThrows(NullPointerException.class, () -> Tensor.randn(null, DataType.FP32, key));
-        assertThrows(NullPointerException.class, () -> Tensor.randn(Shape.of(1), null, key));
-        assertThrows(
-                NullPointerException.class, () -> Tensor.randn(Shape.of(1), DataType.FP32, null));
-
-        assertThrows(
-                NullPointerException.class, () -> Tensor.randInt(0, 10, Shape.of(1), null, key));
+                NullPointerException.class, () -> Tensor.rand(key, (Shape) null, DataType.FP32));
+        assertThrows(NullPointerException.class, () -> Tensor.rand(key, Shape.of(1), null));
         assertThrows(
                 NullPointerException.class,
-                () -> Tensor.randInt(0, 10, Shape.of(1), DataType.I32, null));
+                () -> Tensor.rand((RandomKey) null, Shape.of(1), DataType.FP32));
+
+        assertThrows(
+                NullPointerException.class, () -> Tensor.randn(key, (Shape) null, DataType.FP32));
+        assertThrows(NullPointerException.class, () -> Tensor.randn(key, Shape.of(1), null));
+        assertThrows(
+                NullPointerException.class,
+                () -> Tensor.randn((RandomKey) null, Shape.of(1), DataType.FP32));
+
+        assertThrows(
+                NullPointerException.class, () -> Tensor.randInt(key, 0, 10, Shape.of(1), null));
+        assertThrows(
+                NullPointerException.class,
+                () -> Tensor.randInt((RandomKey) null, 0, 10, Shape.of(1), DataType.I32));
     }
 
     @Test
     void randomSupportsZeroSizedShapes() {
-        Tensor u = Tensor.rand(Shape.of(0, 3), DataType.FP32, RandomKey.of(9L));
-        Tensor n = Tensor.randn(Shape.of(0, 3), DataType.FP64, RandomKey.of(9L));
+        Tensor u = Tensor.rand(RandomKey.of(9L), Shape.of(0, 3), DataType.FP32);
+        Tensor n = Tensor.randn(RandomKey.of(9L), Shape.of(0, 3), DataType.FP64);
 
         assertEquals(0L, u.shape().size());
         assertEquals(0L, n.shape().size());
@@ -128,19 +125,19 @@ class RandomTensorComprehensiveTest {
     }
 
     @Test
-    void tracedRandnIsDeterministicWithManualSeed() {
-        Tensor.manualSeed(808L);
-        Tensor first = Tracer.trace(Tensor.randn(Shape.of(32), DataType.FP32), t -> t.add(0.5f));
-
-        Tensor.manualSeed(808L);
-        Tensor second = Tracer.trace(Tensor.randn(Shape.of(32), DataType.FP32), t -> t.add(0.5f));
+    void tracedRandnIsDeterministicWithExplicitKey() {
+        RandomKey key = Tensor.randomKey(808L);
+        Tensor first =
+                Tracer.trace(Tensor.randn(key, Shape.of(32), DataType.FP32), t -> t.add(0.5f));
+        Tensor second =
+                Tracer.trace(Tensor.randn(key, Shape.of(32), DataType.FP32), t -> t.add(0.5f));
 
         assertArrayEquals(toFloatArray(first), toFloatArray(second));
     }
 
     @Test
     void randIntProducesValuesWithinBounds() {
-        Tensor ints = Tensor.randInt(-5, 13, Shape.of(4096), DataType.I32, RandomKey.of(41L));
+        Tensor ints = Tensor.randInt(RandomKey.of(41L), -5, 13, Shape.of(4096), DataType.I32);
         float[] values = toFloatArray(ints.cast(DataType.FP32));
         for (float v : values) {
             assertTrue(v >= -5.0f);
@@ -151,8 +148,8 @@ class RandomTensorComprehensiveTest {
     @Test
     void randIntIsDeterministicForSameKey() {
         RandomKey key = RandomKey.of(123L);
-        Tensor a = Tensor.randInt(10, 20, 256, DataType.I64, key);
-        Tensor b = Tensor.randInt(10, 20, 256, DataType.I64, key);
+        Tensor a = Tensor.randInt(key, 10, 20, 256, DataType.I64);
+        Tensor b = Tensor.randInt(key, 10, 20, 256, DataType.I64);
         assertArrayEquals(
                 toDoubleArray(a.cast(DataType.FP64)), toDoubleArray(b.cast(DataType.FP64)));
     }
@@ -161,21 +158,21 @@ class RandomTensorComprehensiveTest {
     void randIntValidatesDtypeAndBounds() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> Tensor.randInt(0, 10, 4, DataType.FP32, RandomKey.of(1L)));
+                () -> Tensor.randInt(RandomKey.of(1L), 0, 10, 4, DataType.FP32));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> Tensor.randInt(0, 10, 4, DataType.BOOL, RandomKey.of(1L)));
+                () -> Tensor.randInt(RandomKey.of(1L), 0, 10, 4, DataType.BOOL));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> Tensor.randInt(5, 5, 4, DataType.I32, RandomKey.of(1L)));
+                () -> Tensor.randInt(RandomKey.of(1L), 5, 5, 4, DataType.I32));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> Tensor.randInt(0, 1000, 4, DataType.I8, RandomKey.of(1L)));
+                () -> Tensor.randInt(RandomKey.of(1L), 0, 1000, 4, DataType.I8));
     }
 
     @Test
     void uniformSupportsCustomFloatRange() {
-        Tensor t = Tensor.uniform(2048, -3.5, 2.25, DataType.FP64, RandomKey.of(8L));
+        Tensor t = Tensor.uniform(RandomKey.of(8L), 2048, -3.5, 2.25, DataType.FP64);
         double[] values = toDoubleArray(t);
         for (double v : values) {
             assertTrue(v >= -3.5);
@@ -186,8 +183,8 @@ class RandomTensorComprehensiveTest {
     @Test
     void normalIntIsDeterministicAndIntegralTyped() {
         RandomKey key = RandomKey.of(77L);
-        Tensor a = Tensor.normalInt(512, 5.0, 2.0, DataType.I16, key);
-        Tensor b = Tensor.normalInt(512, 5.0, 2.0, DataType.I16, key);
+        Tensor a = Tensor.normalInt(key, 512, 5.0, 2.0, DataType.I16);
+        Tensor b = Tensor.normalInt(key, 512, 5.0, 2.0, DataType.I16);
         assertEquals(DataType.I16, a.dataType());
         assertArrayEquals(toFloatArray(a.cast(DataType.FP32)), toFloatArray(b.cast(DataType.FP32)));
     }
@@ -196,55 +193,13 @@ class RandomTensorComprehensiveTest {
     void normalAndUniformRejectInvalidParameters() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> Tensor.uniform(4, 1.0, 1.0, DataType.FP32, RandomKey.of(1L)));
+                () -> Tensor.uniform(RandomKey.of(1L), 4, 1.0, 1.0, DataType.FP32));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> Tensor.normal(4, 0.0, 0.0, DataType.FP32, RandomKey.of(1L)));
+                () -> Tensor.normal(RandomKey.of(1L), 4, 0.0, 0.0, DataType.FP32));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> Tensor.normalInt(4, 0.0, -1.0, DataType.I32, RandomKey.of(1L)));
-    }
-
-    @Test
-    void manualSeedIsThreadLocal() throws ExecutionException, InterruptedException {
-        Tensor.manualSeed(123L);
-        float[] mainFirst = toFloatArray(Tensor.rand(Shape.of(16), DataType.FP32));
-
-        ExecutorService executor = Executors.newSingleThreadExecutor();
-        try {
-            Future<float[]> workerFuture =
-                    executor.submit(
-                            () -> {
-                                Tensor.manualSeed(999L);
-                                return toFloatArray(Tensor.rand(Shape.of(16), DataType.FP32));
-                            });
-
-            float[] workerValues = workerFuture.get();
-
-            float[] mainSecond = toFloatArray(Tensor.rand(Shape.of(16), DataType.FP32));
-
-            Tensor.manualSeed(123L);
-            float[] expectedMainFirst = toFloatArray(Tensor.rand(Shape.of(16), DataType.FP32));
-            float[] expectedMainSecond = toFloatArray(Tensor.rand(Shape.of(16), DataType.FP32));
-
-            assertArrayEquals(expectedMainFirst, mainFirst);
-            assertArrayEquals(expectedMainSecond, mainSecond);
-            assertFalse(arraysEqual(workerValues, mainFirst));
-        } finally {
-            executor.shutdownNow();
-        }
-    }
-
-    private static boolean arraysEqual(float[] a, float[] b) {
-        if (a.length != b.length) {
-            return false;
-        }
-        for (int i = 0; i < a.length; i++) {
-            if (Float.floatToIntBits(a[i]) != Float.floatToIntBits(b[i])) {
-                return false;
-            }
-        }
-        return true;
+                () -> Tensor.normalInt(RandomKey.of(1L), 4, 0.0, -1.0, DataType.I32));
     }
 
     private static float[] toFloatArray(Tensor tensor) {
