@@ -1,0 +1,2 @@
+# Core intentionally ships no optional DeviceRuntimeProvider implementations.
+# Optional backends provide their own ServiceLoader entries in backend modules.

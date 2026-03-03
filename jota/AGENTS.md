@@ -9,15 +9,39 @@ Jota (JVM Open Tensor Algebra) is a tensor algebra library with lazy evaluation,
 ## Build Commands
 
 ```bash
-# Always use mvnd (instead of mvn) that keeps a warmed-up daemon to speedup the compile/test/run loop
-# From jota directory
-mvnd clean compile        # Build
-mvnd test                 # Run all tests
-mvnd test -Dtest=TestClass           # Run specific test class
-mvnd test -Dtest=TestClass#testMethod  # Run specific test method
-mvnd spotless:check       # Check formatting
-mvnd spotless:apply       # Apply formatting (Google Java Format, AOSP style)
+# Always use mvnd (never mvn) to keep a warmed daemon and faster edit/build/test loops.
+# From jota/ directory
+
+# Build
+mvnd clean compile
+
+# Test suites
+mvnd test                 # Core suite (Panama/default runtime)
+mvnd -Pc test             # C backend suite (runs regular tests against C runtime + C-specific tests)
+mvnd -Phip test           # HIP backend suite (runs HIP backend tests)
+mvnd -Pmetal test         # Metal backend profile (runs Metal tests on macOS; non-mac skips native/test steps)
+
+# Targeted tests
+mvnd test -Dtest=TestClass
+mvnd test -Dtest=TestClass#testMethod
+
+# Formatting (always run before finishing changes)
+mvnd spotless:check
+mvnd spotless:apply
 ```
+
+## Development Workflow (Quick Reference)
+
+- Work from `jota/` root and always use `mvnd`.
+- Fast compile loop: `mvnd clean compile` (first run) then `mvnd compile`.
+- Run core tests during normal iteration: `mvnd test`.
+- Validate C backend behavior with full C profile: `mvnd -Pc test`.
+- Validate HIP backend behavior: `mvnd -Phip test`.
+- Validate Metal backend behavior: `mvnd -Pmetal test` (native/tests execute on macOS; non-mac skips).
+- Run a focused test while iterating: `mvnd test -Dtest=ClassName` or `mvnd test -Dtest=ClassName#methodName`.
+- Before finishing any change, run formatting: `mvnd spotless:apply` (then optionally `mvnd spotless:check`).
+- If touching backend-specific code, run both core (`mvnd test`) and the corresponding backend profile suite.
+- Keep Panama as the default/core runtime path; treat C/HIP/Metal as profile-scoped validation paths.
 
 **Java Version:** 25 (source/target)
 
