@@ -15,11 +15,10 @@
     <name>Jota Backend HIP</name>
 
     <properties>
-        <maven.compiler.source>25</maven.compiler.source>
-        <maven.compiler.target>25</maven.compiler.target>
         <native.hip.dir>${project.basedir}/src/main/native</native.hip.dir>
         <native.hip.build.dir>${native.hip.dir}/build</native.hip.build.dir>
         <rocm.path>${env.ROCM_PATH}</rocm.path>
+        <maven.test.skip>${backend.hip.tests.skip}</maven.test.skip>
     </properties>
 
     <dependencies>
@@ -48,7 +47,14 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <skipTests>true</skipTests>
+                    <skipTests>${backend.hip.tests.skip}</skipTests>
+                    <dependenciesToScan>
+                        <dependency>com.qxotic:jota:test-jar:tests:${project.version}</dependency>
+                    </dependenciesToScan>
+                    <argLine>-Djava.library.path=${native.hip.build.dir}</argLine>
+                    <environmentVariables>
+                        <LD_LIBRARY_PATH>${native.hip.build.dir}:${env.LD_LIBRARY_PATH}</LD_LIBRARY_PATH>
+                    </environmentVariables>
                 </configuration>
             </plugin>
         </plugins>
@@ -62,7 +68,6 @@
                     <plugin>
                         <groupId>org.codehaus.mojo</groupId>
                         <artifactId>exec-maven-plugin</artifactId>
-                        <version>3.4.1</version>
                         <executions>
                             <execution>
                                 <id>check-hipcc</id>
@@ -71,6 +76,7 @@
                                     <goal>exec</goal>
                                 </goals>
                                 <configuration>
+                                    <skip>${backend.hip.native.skip}</skip>
                                     <executable>hipcc</executable>
                                     <arguments>
                                         <argument>--version</argument>
@@ -84,6 +90,7 @@
                                     <goal>exec</goal>
                                 </goals>
                                 <configuration>
+                                    <skip>${backend.hip.native.skip}</skip>
                                     <executable>cmake</executable>
                                     <arguments>
                                         <argument>-S</argument>
@@ -101,6 +108,7 @@
                                     <goal>exec</goal>
                                 </goals>
                                 <configuration>
+                                    <skip>${backend.hip.native.skip}</skip>
                                     <executable>cmake</executable>
                                     <arguments>
                                         <argument>--build</argument>
@@ -113,21 +121,6 @@
                                 </configuration>
                             </execution>
                         </executions>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-surefire-plugin</artifactId>
-                        <configuration>
-                            <skipTests>false</skipTests>
-                            <systemPropertyVariables>
-                                <jota.test.device>${jota.test.device}</jota.test.device>
-                                <jota.test.backends>${jota.test.backends}</jota.test.backends>
-                            </systemPropertyVariables>
-                            <argLine>-Djava.library.path=${native.hip.build.dir}</argLine>
-                            <environmentVariables>
-                                <LD_LIBRARY_PATH>${native.hip.build.dir}:${env.LD_LIBRARY_PATH}</LD_LIBRARY_PATH>
-                            </environmentVariables>
-                        </configuration>
                     </plugin>
                 </plugins>
             </build>

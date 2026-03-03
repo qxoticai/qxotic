@@ -15,12 +15,9 @@
     <name>Jota Backend Metal</name>
 
     <properties>
-        <maven.compiler.source>25</maven.compiler.source>
-        <maven.compiler.target>25</maven.compiler.target>
         <native.metal.dir>${project.basedir}/src/main/native</native.metal.dir>
         <native.metal.build.dir>${native.metal.dir}/build</native.metal.build.dir>
-        <metal.native.skip>true</metal.native.skip>
-        <metal.tests.skip>true</metal.tests.skip>
+        <maven.test.skip>${backend.metal.tests.skip}</maven.test.skip>
     </properties>
 
     <dependencies>
@@ -49,7 +46,11 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <skipTests>true</skipTests>
+                    <skipTests>${backend.metal.tests.skip}</skipTests>
+                    <dependenciesToScan>
+                        <dependency>com.qxotic:jota:test-jar:tests:${project.version}</dependency>
+                    </dependenciesToScan>
+                    <argLine>-Djava.library.path=${native.metal.build.dir}</argLine>
                 </configuration>
             </plugin>
         </plugins>
@@ -63,7 +64,6 @@
                     <plugin>
                         <groupId>org.codehaus.mojo</groupId>
                         <artifactId>exec-maven-plugin</artifactId>
-                        <version>3.4.1</version>
                         <executions>
                             <execution>
                                 <id>configure-native-metal</id>
@@ -72,7 +72,7 @@
                                     <goal>exec</goal>
                                 </goals>
                                 <configuration>
-                                    <skip>${metal.native.skip}</skip>
+                                    <skip>${backend.metal.native.skip}</skip>
                                     <executable>cmake</executable>
                                     <arguments>
                                         <argument>-S</argument>
@@ -89,7 +89,7 @@
                                     <goal>exec</goal>
                                 </goals>
                                 <configuration>
-                                    <skip>${metal.native.skip}</skip>
+                                    <skip>${backend.metal.native.skip}</skip>
                                     <executable>cmake</executable>
                                     <arguments>
                                         <argument>--build</argument>
@@ -103,18 +103,6 @@
                             </execution>
                         </executions>
                     </plugin>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-surefire-plugin</artifactId>
-                        <configuration>
-                            <skipTests>${metal.tests.skip}</skipTests>
-                            <systemPropertyVariables>
-                                <jota.test.device>${jota.test.device}</jota.test.device>
-                                <jota.test.backends>${jota.test.backends}</jota.test.backends>
-                            </systemPropertyVariables>
-                            <argLine>-Djava.library.path=${native.metal.build.dir}</argLine>
-                        </configuration>
-                    </plugin>
                 </plugins>
             </build>
         </profile>
@@ -126,8 +114,8 @@
                 </os>
             </activation>
             <properties>
-                <metal.native.skip>false</metal.native.skip>
-                <metal.tests.skip>false</metal.tests.skip>
+                <backend.metal.native.skip>false</backend.metal.native.skip>
+                <backend.metal.tests.skip>false</backend.metal.tests.skip>
             </properties>
         </profile>
     </profiles>

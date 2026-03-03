@@ -10,8 +10,7 @@ class CLikeScalarSupportTest {
     @Test
     void emitsTypedTernaryCondition() {
         assertEquals(
-                "(cond ? t : f)",
-                CLikeScalarSupport.ternaryExpr("cond", DataType.BOOL, "t", "f"));
+                "(cond ? t : f)", CLikeScalarSupport.ternaryExpr("cond", DataType.BOOL, "t", "f"));
         assertEquals(
                 "(cond != 0 ? t : f)",
                 CLikeScalarSupport.ternaryExpr("cond", DataType.I32, "t", "f"));
@@ -49,7 +48,8 @@ class CLikeScalarSupportTest {
                         "right",
                         DataType.FP64,
                         DataType.BOOL,
-                        (source, target, value) -> "cast(" + source + "->" + target + "," + value + ")",
+                        (source, target, value) ->
+                                "cast(" + source + "->" + target + "," + value + ")",
                         (source, value) -> "toFloat(" + source + "," + value + ")");
 
         assertEquals("(cast(bool->fp64,left) < right)", expr);
