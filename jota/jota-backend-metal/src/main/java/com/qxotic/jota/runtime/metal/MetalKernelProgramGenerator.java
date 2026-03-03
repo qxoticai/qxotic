@@ -504,8 +504,7 @@ final class MetalKernelProgramGenerator {
             String cond = emitScalarExpr(ternary.condition());
             String tVal = emitScalarExpr(ternary.trueValue());
             String fVal = emitScalarExpr(ternary.falseValue());
-            return CLikeScalarSupport.ternaryExpr(
-                    cond, ternary.condition().dataType(), tVal, fVal);
+            return CLikeScalarSupport.ternaryExpr(cond, ternary.condition().dataType(), tVal, fVal);
         }
 
         private String emitCastExpr(SCast cast) {

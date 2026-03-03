@@ -332,8 +332,7 @@ final class HipKernelProgramGenerator {
         private String emitScalarExprInline(LIRExprNode resolved) {
             return switch (resolved.kind()) {
                 case S_CONST -> scalarLiteral(((SConst) resolved).rawBits(), resolved.dataType());
-                case S_INPUT ->
-                        requireScalarInputById(((SInput) resolved).inputId());
+                case S_INPUT -> requireScalarInputById(((SInput) resolved).inputId());
                 case S_REF -> ((SRef) resolved).name();
                 case S_FROM_INDEX -> {
                     String indexExpr = emitIndexExpr(((SFromIndex) resolved).indexExpr());
@@ -492,8 +491,7 @@ final class HipKernelProgramGenerator {
             String cond = emitScalarExpr(ternary.condition());
             String tVal = emitScalarExpr(ternary.trueValue());
             String fVal = emitScalarExpr(ternary.falseValue());
-            return CLikeScalarSupport.ternaryExpr(
-                    cond, ternary.condition().dataType(), tVal, fVal);
+            return CLikeScalarSupport.ternaryExpr(cond, ternary.condition().dataType(), tVal, fVal);
         }
 
         private String emitCastExpr(SCast cast) {

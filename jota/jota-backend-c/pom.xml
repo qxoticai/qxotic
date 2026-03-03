@@ -15,10 +15,9 @@
     <name>Jota Backend C</name>
 
     <properties>
-        <maven.compiler.source>25</maven.compiler.source>
-        <maven.compiler.target>25</maven.compiler.target>
         <native.c.dir>${project.basedir}/src/main/native</native.c.dir>
         <native.c.build.dir>${native.c.dir}/build</native.c.build.dir>
+        <maven.test.skip>${backend.c.tests.skip}</maven.test.skip>
     </properties>
 
     <dependencies>
@@ -47,7 +46,14 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <skipTests>true</skipTests>
+                    <skipTests>${backend.c.tests.skip}</skipTests>
+                    <dependenciesToScan>
+                        <dependency>com.qxotic:jota:test-jar:tests:${project.version}</dependency>
+                    </dependenciesToScan>
+                    <argLine>-Djava.library.path=${native.c.build.dir}</argLine>
+                    <environmentVariables>
+                        <LD_LIBRARY_PATH>${native.c.build.dir}:${env.LD_LIBRARY_PATH}</LD_LIBRARY_PATH>
+                    </environmentVariables>
                 </configuration>
             </plugin>
         </plugins>
@@ -61,7 +67,6 @@
                     <plugin>
                         <groupId>org.codehaus.mojo</groupId>
                         <artifactId>exec-maven-plugin</artifactId>
-                        <version>3.4.1</version>
                         <executions>
                             <execution>
                                 <id>configure-native-c</id>
@@ -70,6 +75,7 @@
                                     <goal>exec</goal>
                                 </goals>
                                 <configuration>
+                                    <skip>${backend.c.native.skip}</skip>
                                     <executable>cmake</executable>
                                     <arguments>
                                         <argument>-S</argument>
@@ -86,6 +92,7 @@
                                     <goal>exec</goal>
                                 </goals>
                                 <configuration>
+                                    <skip>${backend.c.native.skip}</skip>
                                     <executable>cmake</executable>
                                     <arguments>
                                         <argument>--build</argument>
@@ -98,24 +105,6 @@
                                 </configuration>
                             </execution>
                         </executions>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-surefire-plugin</artifactId>
-                        <configuration>
-                            <skipTests>false</skipTests>
-                            <dependenciesToScan>
-                                <dependency>com.qxotic:jota:test-jar:tests:${project.version}</dependency>
-                            </dependenciesToScan>
-                            <systemPropertyVariables>
-                                <jota.test.device>${jota.test.device}</jota.test.device>
-                                <jota.test.backends>${jota.test.backends}</jota.test.backends>
-                            </systemPropertyVariables>
-                            <argLine>-Djava.library.path=${native.c.build.dir}</argLine>
-                            <environmentVariables>
-                                <LD_LIBRARY_PATH>${native.c.build.dir}:${env.LD_LIBRARY_PATH}</LD_LIBRARY_PATH>
-                            </environmentVariables>
-                        </configuration>
                     </plugin>
                 </plugins>
             </build>

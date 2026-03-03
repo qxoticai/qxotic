@@ -18,9 +18,21 @@
     <properties>
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
+        <maven.compiler.release>25</maven.compiler.release>
+        <maven.compiler.plugin.version>3.14.0</maven.compiler.plugin.version>
+        <maven.resources.plugin.version>3.3.1</maven.resources.plugin.version>
+        <maven.jar.plugin.version>3.4.2</maven.jar.plugin.version>
+        <maven.surefire.plugin.version>3.5.3</maven.surefire.plugin.version>
+        <exec.maven.plugin.version>3.4.1</exec.maven.plugin.version>
         <jota.test.device>panama</jota.test.device>
         <jota.test.backends>single</jota.test.backends>
         <core.tests.skip>false</core.tests.skip>
+        <backend.c.tests.skip>true</backend.c.tests.skip>
+        <backend.c.native.skip>true</backend.c.native.skip>
+        <backend.hip.tests.skip>true</backend.hip.tests.skip>
+        <backend.hip.native.skip>true</backend.hip.native.skip>
+        <backend.metal.tests.skip>true</backend.metal.tests.skip>
+        <backend.metal.native.skip>true</backend.metal.native.skip>
     </properties>
 
     <modules>
@@ -37,21 +49,74 @@
                 <jota.test.device>c</jota.test.device>
                 <jota.test.backends>single</jota.test.backends>
                 <core.tests.skip>true</core.tests.skip>
+                <backend.c.tests.skip>false</backend.c.tests.skip>
+                <backend.c.native.skip>false</backend.c.native.skip>
             </properties>
         </profile>
         <profile>
             <id>hip</id>
             <properties>
                 <jota.test.device>hip</jota.test.device>
-                <jota.test.backends>available</jota.test.backends>
+                <jota.test.backends>single</jota.test.backends>
+                <core.tests.skip>true</core.tests.skip>
+                <backend.hip.tests.skip>false</backend.hip.tests.skip>
+                <backend.hip.native.skip>false</backend.hip.native.skip>
             </properties>
         </profile>
         <profile>
             <id>metal</id>
             <properties>
                 <jota.test.device>metal</jota.test.device>
+                <jota.test.backends>single</jota.test.backends>
+                <core.tests.skip>true</core.tests.skip>
+            </properties>
+        </profile>
+        <profile>
+            <id>backend-matrix</id>
+            <properties>
                 <jota.test.backends>available</jota.test.backends>
             </properties>
         </profile>
     </profiles>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${maven.compiler.plugin.version}</version>
+                    <configuration>
+                        <release>${maven.compiler.release}</release>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-resources-plugin</artifactId>
+                    <version>${maven.resources.plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <version>${maven.jar.plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven.surefire.plugin.version}</version>
+                    <configuration>
+                        <systemPropertyVariables>
+                            <jota.test.device>${jota.test.device}</jota.test.device>
+                            <jota.test.backends>${jota.test.backends}</jota.test.backends>
+                        </systemPropertyVariables>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>exec-maven-plugin</artifactId>
+                    <version>${exec.maven.plugin.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
 </project>

@@ -14,11 +14,6 @@
     <artifactId>jota</artifactId>
     <name>Java Open Tensor Algebra (Core)</name>
 
-    <properties>
-        <maven.compiler.source>25</maven.compiler.source>
-        <maven.compiler.target>25</maven.compiler.target>
-    </properties>
-
     <dependencies>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -52,10 +47,6 @@
                         <exclude>**/runtime/hip/*Test.java</exclude>
                         <exclude>**/runtime/metal/*Test.java</exclude>
                     </excludes>
-                    <systemPropertyVariables>
-                        <jota.test.device>${jota.test.device}</jota.test.device>
-                        <jota.test.backends>${jota.test.backends}</jota.test.backends>
-                    </systemPropertyVariables>
                 </configuration>
             </plugin>
         </plugins>

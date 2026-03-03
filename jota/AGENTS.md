@@ -18,8 +18,9 @@ mvnd clean compile
 # Test suites
 mvnd test                 # Core suite (Panama/default runtime)
 mvnd -Pc test             # C backend suite (runs regular tests against C runtime + C-specific tests)
-mvnd -Phip test           # HIP backend suite (runs HIP backend tests)
-mvnd -Pmetal test         # Metal backend profile (runs Metal tests on macOS; non-mac skips native/test steps)
+mvnd -Phip test           # HIP backend suite (requires HIP/ROCm toolchain/runtime)
+mvnd -Pmetal test         # Metal backend suite (runs on macOS; non-mac skips native/test steps)
+mvnd -Phip,backend-matrix test   # Optional backend matrix mode for HIP profile
 
 # Targeted tests
 mvnd test -Dtest=TestClass
@@ -36,8 +37,9 @@ mvnd spotless:apply
 - Fast compile loop: `mvnd clean compile` (first run) then `mvnd compile`.
 - Run core tests during normal iteration: `mvnd test`.
 - Validate C backend behavior with full C profile: `mvnd -Pc test`.
-- Validate HIP backend behavior: `mvnd -Phip test`.
+- Validate HIP backend behavior: `mvnd -Phip test` (with HIP toolchain/runtime available).
 - Validate Metal backend behavior: `mvnd -Pmetal test` (native/tests execute on macOS; non-mac skips).
+- Use `backend-matrix` only when explicitly needed; default profiles run deterministic single-backend tests.
 - Run a focused test while iterating: `mvnd test -Dtest=ClassName` or `mvnd test -Dtest=ClassName#methodName`.
 - Before finishing any change, run formatting: `mvnd spotless:apply` (then optionally `mvnd spotless:check`).
 - If touching backend-specific code, run both core (`mvnd test`) and the corresponding backend profile suite.
