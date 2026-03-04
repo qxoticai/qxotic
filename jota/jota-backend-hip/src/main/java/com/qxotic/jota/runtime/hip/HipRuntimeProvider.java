@@ -4,8 +4,14 @@ import com.qxotic.jota.Device;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
 import com.qxotic.jota.runtime.spi.RuntimeProbe;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 public final class HipRuntimeProvider implements DeviceRuntimeProvider {
+
+    private static final String ENV_HIPCC = "HIPCC";
 
     @Override
     public String id() {
@@ -23,6 +29,14 @@ public final class HipRuntimeProvider implements DeviceRuntimeProvider {
             return RuntimeProbe.missingSoftware(
                     "HIP JNI runtime library is not available",
                     "Ensure libjota_hip and ROCm runtime libraries are installed and discoverable");
+        }
+        if (!isHipccAvailable()) {
+            String hipcc = hipccExecutable();
+            return RuntimeProbe.missingSoftware(
+                    "HIP toolchain executable is not available: " + hipcc,
+                    "Install ROCm hipcc and ensure it is on PATH, or set "
+                            + ENV_HIPCC
+                            + " to a valid hipcc binary");
         }
         try {
             int count = HipRuntime.deviceCount();
@@ -48,5 +62,39 @@ public final class HipRuntimeProvider implements DeviceRuntimeProvider {
     @Override
     public DeviceRuntime create() {
         return new HipDeviceRuntime();
+    }
+
+    private static String hipccExecutable() {
+        String fromEnv = System.getenv(ENV_HIPCC);
+        if (fromEnv != null && !fromEnv.isBlank()) {
+            return fromEnv.trim();
+        }
+        return "hipcc";
+    }
+
+    private static boolean isHipccAvailable() {
+        String hipcc = hipccExecutable();
+        Process process = null;
+        try {
+            List<String> command = new ArrayList<>();
+            command.add(hipcc);
+            command.add("--version");
+            process = new ProcessBuilder(command).start();
+            if (!process.waitFor(3, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                process.waitFor(1, TimeUnit.SECONDS);
+                return false;
+            }
+            return process.exitValue() == 0;
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return false;
+        } finally {
+            if (process != null) {
+                process.destroy();
+            }
+        }
     }
 }

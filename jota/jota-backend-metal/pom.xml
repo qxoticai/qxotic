@@ -59,6 +59,9 @@
     <profiles>
         <profile>
             <id>metal</id>
+            <properties>
+                <backend.metal.tests.skip>false</backend.metal.tests.skip>
+            </properties>
             <build>
                 <plugins>
                     <plugin>

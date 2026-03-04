@@ -15,12 +15,32 @@ class CBackendAvailabilityTest {
     @Test
     void cBackendMustBeAvailableInCProfile() {
         String details = diagnosticsSummary();
-        assertTrue(CNative.isAvailable(), "C JNI runtime not available\n" + details);
+        assertTrue(
+                CNative.isAvailable(),
+                canaryFailureMessage(
+                        "[MISSING_SOFTWARE] C JNI runtime not available",
+                        "mvnd -Pc test",
+                        details));
         assertTrue(
                 Environment.current().runtimes().hasRuntime(Device.C),
-                "C runtime is not registered\n" + details);
-        assertTrue(isGccAvailable(), "gcc not available\n" + details);
+                canaryFailureMessage(
+                        "[MISSING_SOFTWARE] C runtime is not registered",
+                        "mvnd -Pc test",
+                        details));
+        assertTrue(
+                isGccAvailable(),
+                canaryFailureMessage(
+                        "[MISSING_SOFTWARE] gcc not available", "mvnd -Pc test", details));
         assertEquals(Device.C, Environment.current().runtimeFor(Device.C).device());
+    }
+
+    private static String canaryFailureMessage(String reason, String command, String details) {
+        return "[BACKEND CANARY] "
+                + reason
+                + "\nRequested profile command: "
+                + command
+                + "\nInstall/enable the C toolchain and JNI runtime, or run without -Pc.\n\n"
+                + details;
     }
 
     private static String diagnosticsSummary() {

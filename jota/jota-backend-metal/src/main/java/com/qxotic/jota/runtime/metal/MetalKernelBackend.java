@@ -35,7 +35,7 @@ final class MetalKernelBackend implements KernelBackend {
     private static final long COMPILE_TIMEOUT_SECONDS =
             Long.getLong("com.qxotic.jota.metal.compile.timeout.seconds", 15L);
     private static final String OPT_LEVEL =
-            System.getProperty("com.qxotic.jota.metal.compile.opt", "1").trim();
+            System.getProperty("com.qxotic.jota.metal.compile.opt", "2").trim();
     private static final boolean KERNEL_LOG = Boolean.getBoolean("jota.kernel.log");
 
     private final KernelExecutableCache cache = new InMemoryKernelCache();

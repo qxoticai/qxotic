@@ -4,7 +4,6 @@ import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.runtime.ComputeEngine;
 import com.qxotic.jota.runtime.DeviceRuntime;
-import com.qxotic.jota.runtime.EagerKernelFactory;
 import com.qxotic.jota.runtime.FileKernelProgramStore;
 import com.qxotic.jota.runtime.KernelBackend;
 import com.qxotic.jota.runtime.KernelProgramStore;
@@ -19,7 +18,6 @@ public final class CDeviceRuntime implements DeviceRuntime {
     private final CMemoryDomain memoryDomain;
     private final ComputeEngine computeEngine;
     private final KernelService kernelService;
-    private final EagerKernels eagerKernels;
 
     public CDeviceRuntime() {
         this(new CMemoryDomain());
@@ -33,7 +31,6 @@ public final class CDeviceRuntime implements DeviceRuntime {
         KernelProgramStore sourceStore = new FileKernelProgramStore(programRoot.resolve("source"));
         KernelProgramStore binaryStore = new FileKernelProgramStore(programRoot.resolve("binary"));
         this.kernelService = new KernelService(backend, sourceStore, binaryStore);
-        this.eagerKernels = EagerKernelFactory.create(this);
     }
 
     @Override
@@ -54,10 +51,5 @@ public final class CDeviceRuntime implements DeviceRuntime {
     @Override
     public Optional<KernelService> kernelService() {
         return Optional.of(kernelService);
-    }
-
-    @Override
-    public Optional<EagerKernels> eagerKernels() {
-        return Optional.of(eagerKernels);
     }
 }

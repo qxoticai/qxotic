@@ -1,9 +1,7 @@
 package com.qxotic.jota.runtime;
 
-import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.MemoryDomain;
-import com.qxotic.jota.tensor.Tensor;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -15,10 +13,6 @@ public interface DeviceRuntime {
     ComputeEngine computeEngine();
 
     Optional<KernelService> kernelService();
-
-    default Optional<EagerKernels> eagerKernels() {
-        return Optional.empty();
-    }
 
     default boolean supportsKernels() {
         return kernelService().isPresent();
@@ -110,41 +104,5 @@ public interface DeviceRuntime {
                     "Runtime does not support kernels: " + device());
         }
         return service.get();
-    }
-
-    enum ReductionOp {
-        SUM,
-        PRODUCT,
-        MIN,
-        MAX
-    }
-
-    interface EagerKernels {
-
-        Tensor unary(UnaryOp op, Tensor x);
-
-        Tensor binary(BinaryOp op, Tensor a, Tensor b);
-
-        Tensor compare(BinaryOp op, Tensor a, Tensor b);
-
-        Tensor logical(BinaryOp op, Tensor a, Tensor b);
-
-        Tensor cast(Tensor x, DataType targetType);
-
-        Tensor where(Tensor condition, Tensor trueValue, Tensor falseValue);
-
-        Tensor reduce(
-                ReductionOp op,
-                Tensor x,
-                DataType accumulatorType,
-                boolean keepDims,
-                int axis,
-                int... axes);
-
-        Tensor matmul(Tensor a, Tensor b);
-
-        Tensor batchedMatmul(Tensor a, Tensor b);
-
-        Tensor gather(Tensor input, Tensor indices, int axis);
     }
 }

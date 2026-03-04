@@ -421,7 +421,7 @@ JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_memsetD32
 #endif
 }
 
-JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_fillD64
+JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_memsetD64
   (JNIEnv *env, jclass cls, jlong dstPtr, jlong dstOffset, jlong elementCount, jlong value) {
   (void)cls;
 #if __has_include(<hip/hip_runtime_api.h>)
@@ -432,7 +432,7 @@ JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_fillD64
   size_t chunkBytes = chunkElems * sizeof(uint64_t);
   uint64_t *host = (uint64_t *)malloc(chunkBytes);
   if (host == NULL) {
-    throwRuntime(env, "fillD64: failed to allocate staging buffer");
+    throwRuntime(env, "memsetD64: failed to allocate staging buffer");
     return;
   }
   for (size_t i = 0; i < chunkElems; i++) {
@@ -442,7 +442,7 @@ JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_fillD64
   while (remaining > 0) {
     size_t n = remaining < chunkElems ? remaining : chunkElems;
     size_t bytes = n * sizeof(uint64_t);
-    checkHip(env, hipMemcpy(dst, host, bytes, hipMemcpyHostToDevice), "fillD64");
+    checkHip(env, hipMemcpy(dst, host, bytes, hipMemcpyHostToDevice), "memsetD64");
     dst += bytes;
     remaining -= n;
   }

@@ -22,7 +22,7 @@ final class CKernelCompiler {
     private static final long COMPILE_TIMEOUT_SECONDS =
             Long.getLong("com.qxotic.jota.c.compile.timeout.seconds", 10L);
     private static final String OPT_LEVEL =
-            System.getProperty("com.qxotic.jota.c.compile.opt", "1").trim();
+            System.getProperty("com.qxotic.jota.c.compile.opt", "2").trim();
 
     KernelCacheKey cacheKey(LIRGraph graph, ScratchLayout scratchLayout) {
         String hash = hashLirGraph(graph, scratchLayout);
@@ -87,13 +87,13 @@ final class CKernelCompiler {
         command.add(source.toAbsolutePath().toString());
         command.add("-o");
         command.add(soPath.toAbsolutePath().toString());
-        if (!isWindows()) {
+        if (!COpenMpConfig.isWindows()) {
             command.add("-lm");
         }
         if (openMpEnabled()) {
             command.addAll(openMpLinkFlags());
         }
-        if (!isMac() && !isWindows()) {
+        if (!COpenMpConfig.isMac() && !COpenMpConfig.isWindows()) {
             command.add("-ldl");
         }
 
@@ -138,10 +138,10 @@ final class CKernelCompiler {
     }
 
     private static List<String> sharedFlags() {
-        if (isMac()) {
+        if (COpenMpConfig.isMac()) {
             return List.of("-dynamiclib", "-fPIC");
         }
-        if (isWindows()) {
+        if (COpenMpConfig.isWindows()) {
             return List.of("-shared");
         }
         return List.of("-shared", "-fPIC");
@@ -151,26 +151,8 @@ final class CKernelCompiler {
         return System.mapLibraryName(base);
     }
 
-    private static boolean isMac() {
-        return System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("mac");
-    }
-
-    private static boolean isWindows() {
-        return System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
-    }
-
     private static boolean openMpEnabled() {
-        String override = System.getProperty("com.qxotic.jota.c.openmp");
-        if (override != null) {
-            return Boolean.parseBoolean(override);
-        }
-        if (isWindows()) {
-            return false;
-        }
-        if (!isMac()) {
-            return true;
-        }
-        return detectBrewLibOmpPrefix() != null;
+        return COpenMpConfig.enabled();
     }
 
     private static List<String> openMpCompileFlags() {
@@ -178,8 +160,8 @@ final class CKernelCompiler {
         if (override != null && !override.isBlank()) {
             return splitFlags(override);
         }
-        if (isMac()) {
-            Path prefix = detectBrewLibOmpPrefix();
+        if (COpenMpConfig.isMac()) {
+            Path prefix = COpenMpConfig.detectBrewLibOmpPrefix();
             if (prefix == null) {
                 return List.of("-Xpreprocessor", "-fopenmp");
             }
@@ -196,8 +178,8 @@ final class CKernelCompiler {
         if (override != null && !override.isBlank()) {
             return splitFlags(override);
         }
-        if (isMac()) {
-            Path prefix = detectBrewLibOmpPrefix();
+        if (COpenMpConfig.isMac()) {
+            Path prefix = COpenMpConfig.detectBrewLibOmpPrefix();
             if (prefix == null) {
                 return List.of("-lomp");
             }
@@ -205,18 +187,6 @@ final class CKernelCompiler {
             return List.of("-L" + libDir, "-lomp", "-Wl,-rpath," + libDir);
         }
         return List.of();
-    }
-
-    private static Path detectBrewLibOmpPrefix() {
-        Path homebrew = Path.of("/opt/homebrew/opt/libomp");
-        if (Files.isDirectory(homebrew)) {
-            return homebrew;
-        }
-        Path intel = Path.of("/usr/local/opt/libomp");
-        if (Files.isDirectory(intel)) {
-            return intel;
-        }
-        return null;
     }
 
     private static List<String> splitFlags(String flags) {
