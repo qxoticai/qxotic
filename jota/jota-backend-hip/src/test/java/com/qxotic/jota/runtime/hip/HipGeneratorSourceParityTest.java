@@ -13,8 +13,8 @@ class HipGeneratorSourceParityTest {
         String source =
                 CLikeParityTestSupport.renderBinaryScalarSource(
                         (graph, kernelName) ->
-                                HipKernelProgramGenerator.SourceGenerator.generate(
-                                        graph, ScratchLayout.EMPTY, kernelName),
+                                new HipDialect()
+                                        .renderSource(graph, ScratchLayout.EMPTY, kernelName),
                         "parity_kernel_hip",
                         BinaryOperator.LESS_THAN,
                         DataType.BOOL,

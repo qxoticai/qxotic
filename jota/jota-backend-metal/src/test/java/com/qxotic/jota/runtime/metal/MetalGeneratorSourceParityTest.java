@@ -13,8 +13,8 @@ class MetalGeneratorSourceParityTest {
         String source =
                 CLikeParityTestSupport.renderBinaryScalarSource(
                         (graph, kernelName) ->
-                                MetalKernelProgramGenerator.SourceGenerator.generate(
-                                        graph, ScratchLayout.EMPTY, kernelName),
+                                new MetalDialect()
+                                        .renderSource(graph, ScratchLayout.EMPTY, kernelName),
                         "parity_kernel_metal",
                         BinaryOperator.LESS_THAN,
                         DataType.BOOL,

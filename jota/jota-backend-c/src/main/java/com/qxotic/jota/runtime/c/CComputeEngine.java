@@ -24,6 +24,7 @@ import com.qxotic.jota.runtime.KernelArgs;
 import com.qxotic.jota.runtime.KernelCacheKey;
 import com.qxotic.jota.runtime.KernelProgram;
 import com.qxotic.jota.runtime.LaunchConfig;
+import com.qxotic.jota.runtime.clike.CLikeKernelGenerator;
 import com.qxotic.jota.runtime.panama.LIRKernelArgsBuilder;
 import com.qxotic.jota.tensor.Tensor;
 import java.lang.foreign.MemorySegment;
@@ -34,7 +35,7 @@ public final class CComputeEngine implements ComputeEngine {
 
     private final CMemoryDomain memoryDomain;
     private final CKernelBackend backend = new CKernelBackend();
-    private final CKernelProgramGenerator generator = new CKernelProgramGenerator();
+    private final CLikeKernelGenerator generator = new CLikeKernelGenerator(new CDialect());
     private final LIRKernelArgsBuilder argsBuilder = new LIRKernelArgsBuilder();
     private final LIRStandardPipeline pipeline = new LIRStandardPipeline();
     private final ScratchAnalysisPass scratchAnalysis = new ScratchAnalysisPass();

@@ -5,7 +5,6 @@ import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.runtime.ComputeEngine;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.DiskKernelCache;
-import com.qxotic.jota.runtime.EagerKernelFactory;
 import com.qxotic.jota.runtime.FileKernelProgramStore;
 import com.qxotic.jota.runtime.KernelBackend;
 import com.qxotic.jota.runtime.KernelLaunchContext;
@@ -21,7 +20,6 @@ public final class PanamaDeviceRuntime implements DeviceRuntime {
     private final MemoryDomain<MemorySegment> memoryDomain;
     private final ComputeEngine computeEngine;
     private final KernelService kernelService;
-    private final EagerKernels eagerKernels;
     private final KernelLaunchContext launchContext;
 
     public PanamaDeviceRuntime() {
@@ -48,7 +46,6 @@ public final class PanamaDeviceRuntime implements DeviceRuntime {
         KernelProgramStore sourceStore = new FileKernelProgramStore(programRoot.resolve("source"));
         KernelProgramStore binaryStore = new FileKernelProgramStore(programRoot.resolve("binary"));
         this.kernelService = new KernelService(backend, sourceStore, binaryStore);
-        this.eagerKernels = EagerKernelFactory.create(this);
     }
 
     @Override
@@ -69,10 +66,5 @@ public final class PanamaDeviceRuntime implements DeviceRuntime {
     @Override
     public Optional<KernelService> kernelService() {
         return Optional.of(kernelService);
-    }
-
-    @Override
-    public Optional<EagerKernels> eagerKernels() {
-        return Optional.of(eagerKernels);
     }
 }

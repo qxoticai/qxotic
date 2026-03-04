@@ -16,15 +16,40 @@ class HipBackendAvailabilityTest {
     void hipBackendMustBeAvailableInHipProfile() {
         boolean hipccAvailable = isHipccAvailable();
         String details = diagnosticsSummary(hipccAvailable);
-        assertTrue(HipRuntime.isAvailable(), "HIP JNI runtime not available\n" + details);
+        assertTrue(
+                HipRuntime.isAvailable(),
+                canaryFailureMessage(
+                        "[MISSING_SOFTWARE] HIP JNI runtime not available",
+                        "mvnd -Phip test",
+                        details));
         assertTrue(
                 Environment.current().runtimes().hasRuntime(Device.HIP),
-                "HIP runtime is not registered\n" + details);
-        assertTrue(hipccAvailable, "hipcc not available\n" + details);
+                canaryFailureMessage(
+                        "[MISSING_SOFTWARE] HIP runtime is not registered",
+                        "mvnd -Phip test",
+                        details));
+        assertTrue(
+                hipccAvailable,
+                canaryFailureMessage(
+                        "[MISSING_SOFTWARE] hipcc not available", "mvnd -Phip test", details));
 
         int deviceCount = HipRuntime.deviceCount();
-        assertTrue(deviceCount > 0, "HIP reported no visible device\n" + details);
+        assertTrue(
+                deviceCount > 0,
+                canaryFailureMessage(
+                        "[UNSUPPORTED_HARDWARE] HIP reported no visible device",
+                        "mvnd -Phip test",
+                        details));
         assertEquals(Device.HIP, Environment.current().runtimeFor(Device.HIP).device());
+    }
+
+    private static String canaryFailureMessage(String reason, String command, String details) {
+        return "[BACKEND CANARY] "
+                + reason
+                + "\nRequested profile command: "
+                + command
+                + "\nInstall/enable the HIP runtime toolchain for this machine, or run without -Phip.\n\n"
+                + details;
     }
 
     private static String diagnosticsSummary() {

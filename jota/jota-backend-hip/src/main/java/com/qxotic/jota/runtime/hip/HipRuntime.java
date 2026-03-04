@@ -76,5 +76,5 @@ public final class HipRuntime {
 
     static native void memsetD32(long dstPtr, long dstOffset, long elementCount, int value);
 
-    static native void fillD64(long dstPtr, long dstOffset, long elementCount, long value);
+    static native void memsetD64(long dstPtr, long dstOffset, long elementCount, long value);
 }

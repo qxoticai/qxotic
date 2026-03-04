@@ -21,6 +21,8 @@ public final class Environment {
 
     private static final ScopedValue<Environment> CURRENT = ScopedValue.newInstance();
     private static final AtomicReference<Environment> GLOBAL = new AtomicReference<>();
+    private static final boolean LOG_RUNTIME_WARNINGS =
+            Boolean.parseBoolean(System.getProperty("jota.runtime.probe.log", "true"));
 
     private final Device defaultDevice;
     private final DataType defaultFloat;
@@ -150,6 +152,7 @@ public final class Environment {
         }
         registry.addDiagnostic(new RuntimeDiagnostic(provider.id(), provider.device(), probe));
         if (!probe.isAvailable()) {
+            logUnavailableRuntime(provider, probe);
             return;
         }
         if (provider.device().equals(Device.PANAMA)) {
@@ -161,17 +164,46 @@ public final class Environment {
                                     "Optional provider targets reserved native device",
                                     "Do not register external providers for Device.PANAMA",
                                     null)));
+            logUnavailableRuntime(
+                    provider,
+                    RuntimeProbe.misconfigured(
+                            "Optional provider targets reserved native device",
+                            "Do not register external providers for Device.PANAMA",
+                            null));
             return;
         }
         try {
             registry.register(provider.create());
         } catch (Throwable t) {
+            RuntimeProbe failure =
+                    RuntimeProbe.error("Runtime provider failed to create runtime", t);
             registry.addDiagnostic(
-                    new RuntimeDiagnostic(
-                            provider.id(),
-                            provider.device(),
-                            RuntimeProbe.error("Runtime provider failed to create runtime", t)));
+                    new RuntimeDiagnostic(provider.id(), provider.device(), failure));
+            logUnavailableRuntime(provider, failure);
         }
+    }
+
+    private static void logUnavailableRuntime(DeviceRuntimeProvider provider, RuntimeProbe probe) {
+        if (!LOG_RUNTIME_WARNINGS) {
+            return;
+        }
+        StringBuilder warning = new StringBuilder();
+        warning.append("[jota-runtime] WARNING: backend '")
+                .append(provider.id())
+                .append("' on device ")
+                .append(provider.device().leafName())
+                .append(" is unavailable: ")
+                .append(probe.message());
+        if (probe.hint() != null) {
+            warning.append(" | hint: ").append(probe.hint());
+        }
+        if (probe.cause() != null) {
+            warning.append(" | cause: ")
+                    .append(probe.cause().getClass().getSimpleName())
+                    .append(": ")
+                    .append(probe.cause().getMessage());
+        }
+        System.err.println(warning);
     }
 
     private static final class DefaultGlobalHolder {

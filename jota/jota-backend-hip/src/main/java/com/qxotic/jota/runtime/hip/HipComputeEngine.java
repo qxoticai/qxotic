@@ -21,6 +21,7 @@ import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.runtime.*;
+import com.qxotic.jota.runtime.clike.CLikeKernelGenerator;
 import com.qxotic.jota.runtime.panama.LIRKernelArgsBuilder;
 import com.qxotic.jota.tensor.Tensor;
 import java.lang.foreign.MemorySegment;
@@ -31,7 +32,7 @@ import java.util.Locale;
 public final class HipComputeEngine implements ComputeEngine {
 
     private final Device device;
-    private final HipKernelProgramGenerator generator = new HipKernelProgramGenerator();
+    private final CLikeKernelGenerator generator = new CLikeKernelGenerator(new HipDialect());
     private final HipKernelBackend backend = new HipKernelBackend();
     private final LIRKernelArgsBuilder lirArgsBuilder = new LIRKernelArgsBuilder();
     private final LIRStandardPipeline pipeline = new LIRStandardPipeline();

@@ -24,6 +24,7 @@ import com.qxotic.jota.runtime.KernelCacheKey;
 import com.qxotic.jota.runtime.KernelExecutable;
 import com.qxotic.jota.runtime.KernelProgram;
 import com.qxotic.jota.runtime.LaunchConfig;
+import com.qxotic.jota.runtime.clike.CLikeKernelGenerator;
 import com.qxotic.jota.runtime.panama.LIRKernelArgsBuilder;
 import com.qxotic.jota.tensor.Tensor;
 import java.lang.foreign.MemorySegment;
@@ -33,7 +34,7 @@ import java.util.List;
 public final class MetalComputeEngine implements ComputeEngine {
 
     private final Device device;
-    private final MetalKernelProgramGenerator generator = new MetalKernelProgramGenerator();
+    private final CLikeKernelGenerator generator = new CLikeKernelGenerator(new MetalDialect());
     private final MetalKernelBackend backend = new MetalKernelBackend();
     private final LIRKernelArgsBuilder argsBuilder = new LIRKernelArgsBuilder();
     private final LIRStandardPipeline pipeline = new LIRStandardPipeline();

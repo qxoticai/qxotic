@@ -101,7 +101,7 @@ final class HipMemoryOperations implements MemoryOperations<HipDevicePtr> {
     @Override
     public void fillLong(Memory<HipDevicePtr> m, long offset, long size, long value) {
         validateFill(m, offset, size, Long.BYTES);
-        HipRuntime.fillD64(m.base().address(), offset, size / Long.BYTES, value);
+        HipRuntime.memsetD64(m.base().address(), offset, size / Long.BYTES, value);
     }
 
     private static void validateFill(
