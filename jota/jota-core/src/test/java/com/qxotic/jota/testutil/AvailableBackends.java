@@ -36,7 +36,7 @@ public final class AvailableBackends {
 
         Set<Device> targets = new LinkedHashSet<>();
         targets.add(Device.PANAMA);
-        for (Device device : List.of(Device.C, Device.HIP, Device.METAL)) {
+        for (Device device : List.of(Device.C, Device.HIP, Device.OPENCL, Device.METAL)) {
             if (isAvailable(current, device)) {
                 targets.add(device);
             }
