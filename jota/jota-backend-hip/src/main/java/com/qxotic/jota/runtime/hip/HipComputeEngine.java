@@ -92,10 +92,11 @@ public final class HipComputeEngine implements ComputeEngine {
         List<Tensor> resolvedInputs =
                 resolveInputs(lirGraph, inputs, runtimeInputViews, hipContext);
         long tResolveInputs = System.nanoTime();
-        KernelArgs args = lirArgsBuilder.build(lirGraph, resolvedInputs, outputs);
-        long tBuildArgs = System.nanoTime();
         long scratchPtr = scratch == null ? 0L : scratch.base().address();
-        args.addScalarBits(scratchPtr, DataType.I64);
+        KernelArgs args =
+                lirArgsBuilder.buildGroupedWithWorkspaceScalar(
+                        lirGraph, resolvedInputs, outputs, scratchPtr, DataType.I64);
+        long tBuildArgs = System.nanoTime();
         LaunchConfig config = chooseLirLaunchConfig(lirGraph);
         ExecutionStream stream = new ExecutionStream(Device.HIP, 0L, true);
         KernelExecutable exec = backend.getOrCompile(program, key);

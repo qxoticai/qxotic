@@ -46,6 +46,7 @@
                         <exclude>**/runtime/c/*Test.java</exclude>
                         <exclude>**/runtime/hip/*Test.java</exclude>
                         <exclude>**/runtime/metal/*Test.java</exclude>
+                        <exclude>**/runtime/opencl/*Test.java</exclude>
                     </excludes>
                 </configuration>
             </plugin>

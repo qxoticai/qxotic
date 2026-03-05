@@ -18,8 +18,8 @@ final class CKernelBackend implements KernelBackend {
     @Override
     public KernelExecutable compile(KernelProgram program, KernelCacheKey cacheKey) {
         CNative.requireAvailable();
-        CKernelSpec spec = compiler.compile(program, cacheKey);
-        long fnPtr = CNative.loadKernel(spec.soPath().toString(), spec.kernelName());
+        String kernelName = program.entryPoint();
+        long fnPtr = CNative.loadKernel(compiler.compile(program, cacheKey).toString(), kernelName);
         return new CKernelExecutable(fnPtr);
     }
 

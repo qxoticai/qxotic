@@ -40,6 +40,71 @@ public final class LIRKernelArgsBuilder {
         return args;
     }
 
+    public KernelArgs buildGrouped(
+            LIRGraph graph,
+            List<Tensor> inputs,
+            List<MemoryView<?>> outputs,
+            MemoryView<?> workspaceBuffer) {
+        if (graph.inputs().size() != inputs.size()) {
+            throw new IllegalArgumentException(
+                    "Expected " + graph.inputs().size() + " inputs but got " + inputs.size());
+        }
+        KernelArgs args = new KernelArgs();
+        for (int i = 0; i < graph.inputs().size(); i++) {
+            if (graph.inputs().get(i) instanceof ScalarInput) {
+                continue;
+            }
+            args.addBuffer(inputs.get(i).materialize());
+        }
+        for (MemoryView<?> output : outputs) {
+            args.addBuffer(output);
+        }
+        if (workspaceBuffer != null) {
+            args.addBuffer(workspaceBuffer);
+        }
+        for (int i = 0; i < graph.inputs().size(); i++) {
+            LIRInput input = graph.inputs().get(i);
+            if (!(input instanceof ScalarInput scalarInput)) {
+                continue;
+            }
+            long rawBits = readScalarBits(inputs.get(i), scalarInput.dataType());
+            args.addScalarBits(rawBits, scalarInput.dataType());
+        }
+        return args;
+    }
+
+    public KernelArgs buildGroupedWithWorkspaceScalar(
+            LIRGraph graph,
+            List<Tensor> inputs,
+            List<MemoryView<?>> outputs,
+            long workspaceRawBits,
+            DataType workspaceType) {
+        if (graph.inputs().size() != inputs.size()) {
+            throw new IllegalArgumentException(
+                    "Expected " + graph.inputs().size() + " inputs but got " + inputs.size());
+        }
+        KernelArgs args = new KernelArgs();
+        for (int i = 0; i < graph.inputs().size(); i++) {
+            if (graph.inputs().get(i) instanceof ScalarInput) {
+                continue;
+            }
+            args.addBuffer(inputs.get(i).materialize());
+        }
+        for (MemoryView<?> output : outputs) {
+            args.addBuffer(output);
+        }
+        args.addScalarBits(workspaceRawBits, workspaceType);
+        for (int i = 0; i < graph.inputs().size(); i++) {
+            LIRInput input = graph.inputs().get(i);
+            if (!(input instanceof ScalarInput scalarInput)) {
+                continue;
+            }
+            long rawBits = readScalarBits(inputs.get(i), scalarInput.dataType());
+            args.addScalarBits(rawBits, scalarInput.dataType());
+        }
+        return args;
+    }
+
     public KernelArgs build(
             LIRGraph graph,
             List<MemoryView<?>> buffers,
@@ -80,6 +145,58 @@ public final class LIRKernelArgsBuilder {
         }
         for (MemoryView<?> output : outputs) {
             args.addBuffer(output);
+        }
+        return args;
+    }
+
+    public KernelArgs buildGrouped(
+            LIRGraph graph,
+            List<MemoryView<?>> buffers,
+            List<ScalarArg> scalars,
+            List<MemoryView<?>> outputs,
+            MemoryView<?> workspaceBuffer) {
+        KernelArgs args = new KernelArgs();
+        int bufferIndex = 0;
+        int scalarIndex = 0;
+        for (LIRInput input : graph.inputs()) {
+            if (input instanceof ScalarInput) {
+                continue;
+            }
+            if (bufferIndex >= buffers.size()) {
+                throw new IllegalArgumentException("Missing buffer input at index " + bufferIndex);
+            }
+            args.addBuffer(buffers.get(bufferIndex++));
+        }
+        if (bufferIndex != buffers.size()) {
+            throw new IllegalArgumentException(
+                    "Expected " + bufferIndex + " buffer inputs but got " + buffers.size());
+        }
+        for (MemoryView<?> output : outputs) {
+            args.addBuffer(output);
+        }
+        if (workspaceBuffer != null) {
+            args.addBuffer(workspaceBuffer);
+        }
+        for (LIRInput input : graph.inputs()) {
+            if (!(input instanceof ScalarInput scalarInput)) {
+                continue;
+            }
+            if (scalarIndex >= scalars.size()) {
+                throw new IllegalArgumentException("Missing scalar input at index " + scalarIndex);
+            }
+            ScalarArg scalar = scalars.get(scalarIndex++);
+            if (scalar.dataType() != scalarInput.dataType()) {
+                throw new IllegalArgumentException(
+                        "Scalar input type mismatch: expected "
+                                + scalarInput.dataType()
+                                + " but got "
+                                + scalar.dataType());
+            }
+            args.addScalarBits(scalar.rawBits(), scalar.dataType());
+        }
+        if (scalarIndex != scalars.size()) {
+            throw new IllegalArgumentException(
+                    "Expected " + scalarIndex + " scalar inputs but got " + scalars.size());
         }
         return args;
     }

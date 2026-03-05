@@ -202,11 +202,11 @@ final class OpenClDialect implements CLikeDialect {
         }
 
         private String renderKernelSignature() {
-            return CLikeKernelSignatureSupport.renderKernelArgumentList(
+            return CLikeKernelSignatureSupport.renderKernelArgumentListGrouped(
                     graph(),
                     this::renderKernelInputArgument,
                     this::renderKernelOutputArgument,
-                    "__global uchar *scratch");
+                    new String[] {"__global uchar *scratch"});
         }
 
         private String renderKernelInputArgument(LIRInput input, int argIndex) {

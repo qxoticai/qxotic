@@ -42,13 +42,14 @@ final class HipKernelBackend implements KernelBackend {
         if (program.kind() != KernelProgram.Kind.SOURCE) {
             throw new UnsupportedOperationException("HIP compile expects source program");
         }
-        HipKernelSpec spec = compileSourceProgram(program, cacheKey);
+        String kernelName = program.entryPoint();
+        Path hsacoPath = compileSourceProgram(program, cacheKey);
         long tCompiled = System.nanoTime();
-        byte[] hsaco = HipKernelSourceLoader.load(spec.hsacoPath().toString());
+        byte[] hsaco = loadHsaco(hsacoPath);
         long tLoadedBinary = System.nanoTime();
         HipModule module = HipModule.load(hsaco);
         long tLoadModule = System.nanoTime();
-        HipKernelExecutable exec = new HipKernelExecutable(module.function(spec.kernelName()));
+        HipKernelExecutable exec = new HipKernelExecutable(module.function(kernelName));
         long tResolveFunction = System.nanoTime();
         logTiming("compile", cacheKey, t0, tCompiled, tLoadedBinary, tLoadModule, tResolveFunction);
         return new KernelExecutable() {
@@ -155,7 +156,7 @@ final class HipKernelBackend implements KernelBackend {
         }
     }
 
-    private HipKernelSpec compileSourceProgram(KernelProgram program, KernelCacheKey key) {
+    private Path compileSourceProgram(KernelProgram program, KernelCacheKey key) {
         String kernelName = program.entryPoint();
         Path kernelDir = KERNEL_ROOT.resolve(key.value());
         Path sourcePath = kernelDir.resolve(kernelName + ".hip");
@@ -175,7 +176,15 @@ final class HipKernelBackend implements KernelBackend {
             long tReuse = System.nanoTime();
             logCompileTiming(key, kernelName, false, t0, tWrite, tReuse);
         }
-        return new HipKernelSpec(hsacoPath, kernelName);
+        return hsacoPath;
+    }
+
+    private static byte[] loadHsaco(Path hsacoPath) {
+        try {
+            return Files.readAllBytes(hsacoPath);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to read HSACO: " + hsacoPath, e);
+        }
     }
 
     private static void logCompileTiming(

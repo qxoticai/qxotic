@@ -29,7 +29,7 @@ final class CKernelCompiler {
         return KernelCacheKey.of(hash + "-c-lir-v1");
     }
 
-    CKernelSpec compile(KernelProgram program, KernelCacheKey key) {
+    Path compile(KernelProgram program, KernelCacheKey key) {
         if (program.kind() != KernelProgram.Kind.SOURCE) {
             throw new IllegalArgumentException("C compiler expects source program");
         }
@@ -49,7 +49,7 @@ final class CKernelCompiler {
         } else {
             log("C kernel reuse key=" + key.value() + " entry=" + kernelName);
         }
-        return new CKernelSpec(soPath, kernelName);
+        return soPath;
     }
 
     private static boolean needsCompile(Path source, Path soPath) {
