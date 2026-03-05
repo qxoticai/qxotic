@@ -1139,7 +1139,11 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
                                                     IndexBinaryOp.MULTIPLY,
                                                     exprGraph.indexConst(key1),
                                                     exprGraph.indexConst(9176))));
-                    LIRExprNode state0 = nextState(seed);
+                    // Keep LCG state bounded to prevent overflow in nextState multiplication.
+                    // Use 2^48 as the modulus which is large enough to maintain good randomness
+                    // but small enough to prevent 64-bit overflow (max intermediate: 2^48 * 1664525
+                    // < 2^63). Use bitwise AND with (2^48 - 1) for efficient power-of-2 modulus.
+                    LIRExprNode state0 = modPowerOfTwo(nextState(seed), 281474976710655L);
 
                     if (node.dataType() == DataType.FP32) {
                         LIRExprNode u24 = modPositive(state0, 16777216L);
@@ -1150,7 +1154,7 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
                         return exprGraph.scalarBinary(BinaryOperator.DIVIDE, numerator, denom);
                     }
 
-                    LIRExprNode state1 = nextState(state0);
+                    LIRExprNode state1 = modPowerOfTwo(nextState(state0), 281474976710655L);
                     LIRExprNode hi26 = modPositive(state0, 67108864L);
                     LIRExprNode lo27 = modPositive(state1, 134217728L);
                     LIRExprNode bits53 =
@@ -1183,5 +1187,13 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
                 IndexBinaryOp.MODULO,
                 exprGraph.indexBinary(IndexBinaryOp.ADD, mod, exprGraph.indexConst(bound)),
                 exprGraph.indexConst(bound));
+    }
+
+    /**
+     * Computes value mod 2^n using bitwise AND with (2^n - 1). This is much faster than regular
+     * modulo on GPUs. The mask parameter should be (2^n - 1), e.g., for 2^48, use 281474976710655L.
+     */
+    private LIRExprNode modPowerOfTwo(LIRExprNode value, long mask) {
+        return exprGraph.indexBinary(IndexBinaryOp.BITWISE_AND, value, exprGraph.indexConst(mask));
     }
 }

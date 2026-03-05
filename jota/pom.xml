@@ -40,6 +40,7 @@
         <module>jota-backend-c</module>
         <module>jota-backend-hip</module>
         <module>jota-backend-metal</module>
+        <module>jota-backend-opencl</module>
     </modules>
 
     <profiles>
@@ -69,6 +70,16 @@
                 <jota.test.device>metal</jota.test.device>
                 <jota.test.backends>single</jota.test.backends>
                 <core.tests.skip>true</core.tests.skip>
+            </properties>
+        </profile>
+        <profile>
+            <id>opencl</id>
+            <properties>
+                <jota.test.device>opencl</jota.test.device>
+                <jota.test.backends>single</jota.test.backends>
+                <core.tests.skip>true</core.tests.skip>
+                <backend.opencl.tests.skip>false</backend.opencl.tests.skip>
+                <backend.opencl.native.skip>false</backend.opencl.native.skip>
             </properties>
         </profile>
         <profile>
