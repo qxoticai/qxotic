@@ -205,24 +205,26 @@ final class MetalDialect implements CLikeDialect {
         }
 
         private String renderKernelSignature() {
-            int scratchSlot = graph().inputs().size() + graph().outputs().size();
+            int scratchSlot =
+                    CLikeKernelSignatureSupport.inputBufferCount(graph())
+                            + graph().outputs().size();
             String scratchArg = "device uchar *scratch [[buffer(" + scratchSlot + ")]]";
-            return CLikeKernelSignatureSupport.renderKernelArgumentList(
+            return CLikeKernelSignatureSupport.renderKernelArgumentListGrouped(
                     graph(),
                     this::renderKernelInputArgument,
                     this::renderKernelOutputArgument,
-                    scratchArg,
+                    new String[] {scratchArg},
                     "uint3 gid [[thread_position_in_grid]]");
         }
 
-        private String renderKernelInputArgument(LIRInput input, int argIndex) {
+        private String renderKernelInputArgument(LIRInput input, int argIndex, int argumentSlot) {
             if (input instanceof BufferRef buffer) {
                 return "const device "
                         + renderDataTypeToken(buffer.dataType())
                         + " *input"
                         + argIndex
                         + " [[buffer("
-                        + argIndex
+                        + argumentSlot
                         + ")]]";
             }
             ScalarInput scalar = requireScalarInput(input);
@@ -231,7 +233,7 @@ final class MetalDialect implements CLikeDialect {
                     + " *scalarPtr"
                     + argIndex
                     + " [[buffer("
-                    + argIndex
+                    + argumentSlot
                     + ")]]";
         }
 

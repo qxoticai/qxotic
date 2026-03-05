@@ -83,8 +83,8 @@ public final class OpenClComputeEngine implements ComputeEngine {
         KernelProgram program = generator.generate(lirGraph, scratchLayout, key);
         List<Tensor> resolvedInputs =
                 resolveInputs(lirGraph, inputs, runtimeInputViews, openclDomain);
-        KernelArgs args = argsBuilder.build(lirGraph, resolvedInputs, outputs);
-        args.addBuffer(allocateScratchBuffer(openclDomain, scratchLayout));
+        MemoryView<OpenClDevicePtr> scratch = allocateScratchBuffer(openclDomain, scratchLayout);
+        KernelArgs args = argsBuilder.buildGrouped(lirGraph, resolvedInputs, outputs, scratch);
         LaunchConfig config = chooseLirLaunchConfig(lirGraph);
         ExecutionStream stream = new ExecutionStream(Device.OPENCL, 0L, true);
         KernelExecutable exec = backend.getOrCompile(program, key);

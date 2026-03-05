@@ -83,8 +83,8 @@ public final class MetalComputeEngine implements ComputeEngine {
         KernelProgram program = generator.generate(lirGraph, scratchLayout, key);
         List<Tensor> resolvedInputs =
                 resolveInputs(lirGraph, inputs, runtimeInputViews, metalDomain);
-        KernelArgs args = argsBuilder.build(lirGraph, resolvedInputs, outputs);
-        args.addBuffer(allocateScratchBuffer(metalDomain, scratchLayout));
+        MemoryView<MetalDevicePtr> scratch = allocateScratchBuffer(metalDomain, scratchLayout);
+        KernelArgs args = argsBuilder.buildGrouped(lirGraph, resolvedInputs, outputs, scratch);
         LaunchConfig config = chooseLirLaunchConfig(lirGraph);
         ExecutionStream stream = new ExecutionStream(Device.METAL, 0L, true);
         KernelExecutable exec = backend.getOrCompile(program, key);

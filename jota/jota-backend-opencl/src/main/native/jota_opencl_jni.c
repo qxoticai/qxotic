@@ -49,6 +49,16 @@ static void releaseSubBuffers(cl_mem *subBuffers, int subCount) {
   }
 }
 
+static void freeSelectionProps(char *typeProp,
+                               char *platformIndexProp,
+                               char *deviceIndexProp,
+                               char *nameContainsProp) {
+  free(typeProp);
+  free(platformIndexProp);
+  free(deviceIndexProp);
+  free(nameContainsProp);
+}
+
 static void throwRuntime(JNIEnv *env, const char *message) {
   jclass exClass = (*env)->FindClass(env, "java/lang/RuntimeException");
   if (exClass != NULL) {
@@ -387,35 +397,23 @@ static int ensureRuntime(JNIEnv *env) {
 
   if (!typeOk) {
     setInitError("Invalid jota.opencl.device.type (expected gpu|cpu|any)");
-    free(typeProp);
-    free(platformIndexProp);
-    free(deviceIndexProp);
-    free(nameContainsProp);
+    freeSelectionProps(typeProp, platformIndexProp, deviceIndexProp, nameContainsProp);
     return 0;
   }
   if (!platformOk) {
     setInitError("Invalid jota.opencl.platform.index (expected non-negative integer)");
-    free(typeProp);
-    free(platformIndexProp);
-    free(deviceIndexProp);
-    free(nameContainsProp);
+    freeSelectionProps(typeProp, platformIndexProp, deviceIndexProp, nameContainsProp);
     return 0;
   }
   if (!deviceOk) {
     setInitError("Invalid jota.opencl.device.index (expected non-negative integer)");
-    free(typeProp);
-    free(platformIndexProp);
-    free(deviceIndexProp);
-    free(nameContainsProp);
+    freeSelectionProps(typeProp, platformIndexProp, deviceIndexProp, nameContainsProp);
     return 0;
   }
   if ((platformIndex >= 0 && deviceIndex < 0) || (platformIndex < 0 && deviceIndex >= 0)) {
     setInitError(
         "Both jota.opencl.platform.index and jota.opencl.device.index must be set together");
-    free(typeProp);
-    free(platformIndexProp);
-    free(deviceIndexProp);
-    free(nameContainsProp);
+    freeSelectionProps(typeProp, platformIndexProp, deviceIndexProp, nameContainsProp);
     return 0;
   }
 
@@ -423,30 +421,21 @@ static int ensureRuntime(JNIEnv *env) {
   cl_int err = clGetPlatformIDs(0, NULL, &platformCount);
   if (err != CL_SUCCESS || platformCount == 0) {
     setInitError("No OpenCL platform found");
-    free(typeProp);
-    free(platformIndexProp);
-    free(deviceIndexProp);
-    free(nameContainsProp);
+    freeSelectionProps(typeProp, platformIndexProp, deviceIndexProp, nameContainsProp);
     return 0;
   }
   cl_platform_id *platforms =
       (cl_platform_id *)calloc((size_t)platformCount, sizeof(cl_platform_id));
   if (platforms == NULL) {
     setInitError("Failed to allocate OpenCL platform list");
-    free(typeProp);
-    free(platformIndexProp);
-    free(deviceIndexProp);
-    free(nameContainsProp);
+    freeSelectionProps(typeProp, platformIndexProp, deviceIndexProp, nameContainsProp);
     return 0;
   }
   err = clGetPlatformIDs(platformCount, platforms, NULL);
   if (err != CL_SUCCESS) {
     setInitError("Failed to query OpenCL platforms");
     free(platforms);
-    free(typeProp);
-    free(platformIndexProp);
-    free(deviceIndexProp);
-    free(nameContainsProp);
+    freeSelectionProps(typeProp, platformIndexProp, deviceIndexProp, nameContainsProp);
     return 0;
   }
 
@@ -461,10 +450,7 @@ static int ensureRuntime(JNIEnv *env) {
                platformIndex,
                (unsigned)(platformCount == 0 ? 0 : platformCount - 1));
       free(platforms);
-      free(typeProp);
-      free(platformIndexProp);
-      free(deviceIndexProp);
-      free(nameContainsProp);
+      freeSelectionProps(typeProp, platformIndexProp, deviceIndexProp, nameContainsProp);
       return 0;
     }
     cl_device_id tmp[256];
@@ -478,10 +464,7 @@ static int ensureRuntime(JNIEnv *env) {
                (unsigned)(count == 0 ? 0 : count - 1),
                platformIndex);
       free(platforms);
-      free(typeProp);
-      free(platformIndexProp);
-      free(deviceIndexProp);
-      free(nameContainsProp);
+      freeSelectionProps(typeProp, platformIndexProp, deviceIndexProp, nameContainsProp);
       return 0;
     }
     selected = tmp[deviceIndex];
@@ -509,10 +492,7 @@ static int ensureRuntime(JNIEnv *env) {
                "No OpenCL device matched jota.opencl.device.name.contains='%s'",
                nameContainsProp);
       free(platforms);
-      free(typeProp);
-      free(platformIndexProp);
-      free(deviceIndexProp);
-      free(nameContainsProp);
+      freeSelectionProps(typeProp, platformIndexProp, deviceIndexProp, nameContainsProp);
       return 0;
     }
   } else {
@@ -529,10 +509,7 @@ static int ensureRuntime(JNIEnv *env) {
     }
   }
 
-  free(typeProp);
-  free(platformIndexProp);
-  free(deviceIndexProp);
-  free(nameContainsProp);
+  freeSelectionProps(typeProp, platformIndexProp, deviceIndexProp, nameContainsProp);
   free(platforms);
   if (selected == NULL || selectedPlatform == NULL) {
     if (g_init_error[0] == '\0') {

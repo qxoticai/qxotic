@@ -180,11 +180,11 @@ final class HipDialect implements CLikeDialect {
         }
 
         private String renderKernelSignature() {
-            return CLikeKernelSignatureSupport.renderKernelArgumentList(
+            return CLikeKernelSignatureSupport.renderKernelArgumentListGrouped(
                     graph(),
                     this::renderKernelInputArgument,
                     this::renderKernelOutputArgument,
-                    "uint64_t scratch_ptr");
+                    new String[] {"uint64_t scratch_ptr"});
         }
 
         private String renderKernelInputArgument(LIRInput input, int argIndex) {

@@ -37,11 +37,11 @@ final class OpenClKernelBackend implements KernelBackend {
         if (program.kind() != KernelProgram.Kind.SOURCE) {
             throw new UnsupportedOperationException("OpenCL compile expects source program");
         }
-        OpenClKernelSpec spec = persistSourceProgram(program, cacheKey);
-        byte[] sourceBytes = OpenClKernelSourceLoader.load(spec.sourcePath().toString());
-        OpenClModule module = OpenClModule.load(sourceBytes);
-        return wrapExecutable(
-                module, new OpenClKernelExecutable(module.function(spec.kernelName())));
+        String source = requireSource(program.payload());
+        String kernelName = program.entryPoint();
+        persistSourceProgram(source, kernelName, cacheKey);
+        OpenClModule module = OpenClModule.load(source.getBytes(StandardCharsets.UTF_8));
+        return wrapExecutable(module, new OpenClKernelExecutable(module.function(kernelName)));
     }
 
     @Override
@@ -127,14 +127,11 @@ final class OpenClKernelBackend implements KernelBackend {
         return cache;
     }
 
-    private OpenClKernelSpec persistSourceProgram(KernelProgram program, KernelCacheKey key) {
-        String kernelName = program.entryPoint();
+    private void persistSourceProgram(String source, String kernelName, KernelCacheKey key) {
         Path kernelDir = KERNEL_ROOT.resolve(key.value());
         Path sourcePath = kernelDir.resolve(kernelName + ".cl");
         ensureDirectory(kernelDir);
-        String source = requireSource(program.payload());
         writeIfChanged(sourcePath, source);
-        return new OpenClKernelSpec(sourcePath, kernelName);
     }
 
     private static String requireSource(Object payload) {

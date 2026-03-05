@@ -33,6 +33,8 @@
         <backend.hip.native.skip>true</backend.hip.native.skip>
         <backend.metal.tests.skip>true</backend.metal.tests.skip>
         <backend.metal.native.skip>true</backend.metal.native.skip>
+        <backend.opencl.tests.skip>true</backend.opencl.tests.skip>
+        <backend.opencl.native.skip>true</backend.opencl.native.skip>
     </properties>
 
     <modules>
