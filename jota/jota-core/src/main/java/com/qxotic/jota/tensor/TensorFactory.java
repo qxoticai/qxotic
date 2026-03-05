@@ -431,12 +431,14 @@ final class TensorFactory {
         Tensor u2 = randomUnitInterval(k1, size, dataType, opName);
 
         if (dataType == DataType.FP64) {
-            Tensor r = u2.multiply(-1.0).add(1.0).log().multiply(-2.0).sqrt();
+            Tensor safeU2 = u2.clip(1.0e-15, 1.0 - 1.0e-15);
+            Tensor r = safeU2.multiply(-1.0).add(1.0).log().multiply(-2.0).sqrt();
             Tensor theta = u1.multiply(2.0 * Math.PI);
             return theta.cos().multiply(r);
         }
 
-        Tensor r = u2.multiply(-1.0f).add(1.0f).log().multiply(-2.0f).sqrt();
+        Tensor safeU2 = u2.clip(1.0e-7, 1.0 - 1.0e-7);
+        Tensor r = safeU2.multiply(-1.0f).add(1.0f).log().multiply(-2.0f).sqrt();
         Tensor theta = u1.multiply((float) (2.0 * Math.PI));
         return theta.cos().multiply(r);
     }

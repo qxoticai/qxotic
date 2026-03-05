@@ -30,6 +30,7 @@ public interface Device {
 
     Device CUDA = GPU.child("cuda");
     Device HIP = GPU.child("hip");
+    Device OPENCL = GPU.child("opencl");
     Device METAL = GPU.child("metal");
     Device WEBGPU = GPU.child("webgpu");
 

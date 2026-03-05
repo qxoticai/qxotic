@@ -49,6 +49,10 @@ class DeviceTest {
         assertEquals("gpu:cuda", Device.CUDA.name());
         assertSame(Device.GPU, Device.CUDA.parent());
         assertSame(Device.GPU, Device.CUDA.root());
+
+        assertEquals("gpu:opencl", Device.OPENCL.name());
+        assertSame(Device.GPU, Device.OPENCL.parent());
+        assertSame(Device.GPU, Device.OPENCL.root());
     }
 
     @Test
