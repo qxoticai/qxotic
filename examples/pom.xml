@@ -17,6 +17,8 @@
     <properties>
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
+        <maven.compiler.release>25</maven.compiler.release>
+        <maven.deploy.skip>true</maven.deploy.skip>
     </properties>
 
     <dependencies>
