@@ -12,6 +12,7 @@ import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.memory.impl.DomainFactory;
+import com.qxotic.jota.memory.impl.MemoryFactory;
 import com.qxotic.jota.random.RandomAlgorithms;
 import com.qxotic.jota.random.RandomKey;
 import com.qxotic.jota.tensor.Tensor;
@@ -335,6 +336,26 @@ class HipKernelSmokeTest {
         for (int i = 0; i < n; i++) {
             long offset = Indexing.linearToOffset(hostBuf, i);
             assertEquals(fillValue, access.readLong(hostBuf.memory(), offset));
+        }
+    }
+
+    @Test
+    void copiesHeapBackedFloatMemorySegmentToDeviceAndBack() {
+        HipTestAssumptions.assumeHipReady();
+
+        float[] values = {1.5f, -2.25f, 0.0f, 9.75f, -6.5f};
+        MemoryView<MemorySegment> hostView =
+                MemoryView.of(
+                        MemoryFactory.ofMemorySegment(MemorySegment.ofArray(values)),
+                        DataType.FP32,
+                        Layout.rowMajor(Shape.flat(values.length)));
+
+        Tensor onHip = Tensor.of(hostView).to(Device.HIP);
+        MemoryView<MemorySegment> roundTrip = toHost(onHip.materialize());
+        MemoryAccess<MemorySegment> access = DomainFactory.ofMemorySegment().directAccess();
+        for (int i = 0; i < values.length; i++) {
+            long offset = Indexing.linearToOffset(roundTrip, i);
+            assertEquals(values[i], access.readFloat(roundTrip.memory(), offset), 1e-6f);
         }
     }
 

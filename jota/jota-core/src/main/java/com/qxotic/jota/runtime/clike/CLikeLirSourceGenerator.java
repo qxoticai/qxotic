@@ -38,6 +38,7 @@ public abstract class CLikeLirSourceGenerator {
     private final List<String> lines = new ArrayList<>();
     private int tempId;
     private int indentLevel;
+    private int structuredLoopDepth;
 
     protected CLikeLirSourceGenerator(
             LIRGraph graph, ScratchLayout scratchLayout, String kernelName) {
@@ -68,6 +69,7 @@ public abstract class CLikeLirSourceGenerator {
         buffers.clear();
         tempId = 0;
         indentLevel = 1;
+        structuredLoopDepth = 0;
         lines.clear();
         emitProlog();
         if (!emitTopLevel()) {
@@ -127,6 +129,10 @@ public abstract class CLikeLirSourceGenerator {
     }
 
     protected void maybeEmitSimpleLoopPragma(StructuredFor loop) {}
+
+    protected final boolean isInsideStructuredLoop() {
+        return structuredLoopDepth > 0;
+    }
 
     protected final void registerScalarInputName(int id, String name) {
         scalarInputNames.put(id, name);
@@ -289,8 +295,13 @@ public abstract class CLikeLirSourceGenerator {
                             + idx
                             + "++) {");
             indent();
-            emitStructuredBody(loop);
-            outdent();
+            structuredLoopDepth++;
+            try {
+                emitStructuredBody(loop);
+            } finally {
+                structuredLoopDepth--;
+                outdent();
+            }
             addLine("}");
             return;
         }
@@ -335,8 +346,13 @@ public abstract class CLikeLirSourceGenerator {
                         + stepVar
                         + ") {");
         indent();
-        emitStructuredBody(loop);
-        outdent();
+        structuredLoopDepth++;
+        try {
+            emitStructuredBody(loop);
+        } finally {
+            structuredLoopDepth--;
+            outdent();
+        }
         addLine("}");
     }
 
