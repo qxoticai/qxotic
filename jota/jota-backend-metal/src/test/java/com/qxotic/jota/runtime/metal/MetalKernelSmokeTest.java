@@ -5,9 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.Indexing;
+import com.qxotic.jota.Layout;
+import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.memory.impl.DomainFactory;
+import com.qxotic.jota.memory.impl.MemoryFactory;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.Tracer;
 import java.lang.foreign.MemorySegment;
@@ -46,6 +50,26 @@ class MetalKernelSmokeTest {
         for (int i = 0; i < n; i++) {
             long offset = Indexing.linearToOffset(host, i);
             assertEquals(i, access.readInt(host.memory(), offset));
+        }
+    }
+
+    @Test
+    void copiesHeapBackedFloatMemorySegmentToDeviceAndBack() {
+        MetalTestAssumptions.assumeMetalReady();
+
+        float[] values = {1.5f, -2.25f, 0.0f, 9.75f, -6.5f};
+        Memory<MemorySegment> hostMemory =
+                MemoryFactory.ofMemorySegment(MemorySegment.ofArray(values));
+        MemoryView<MemorySegment> hostView =
+                MemoryView.of(
+                        hostMemory, DataType.FP32, Layout.rowMajor(Shape.flat(values.length)));
+
+        Tensor onMetal = Tensor.of(hostView).to(Device.METAL);
+        MemoryView<MemorySegment> roundTrip = toHost(onMetal.materialize());
+        MemoryAccess<MemorySegment> access = DomainFactory.ofMemorySegment().directAccess();
+        for (int i = 0; i < values.length; i++) {
+            long offset = Indexing.linearToOffset(roundTrip, i);
+            assertEquals(values[i], access.readFloat(roundTrip.memory(), offset), 1e-6f);
         }
     }
 

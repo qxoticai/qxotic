@@ -20,17 +20,18 @@ class EnvironmentTest {
     @Test
     void currentDefaultsToGlobal() {
         assertSame(Environment.global(), Environment.current());
+        assertEquals(Device.NATIVE, Environment.global().defaultDevice());
     }
 
     @Test
     void scopedEnvironmentOverridesDefaults() {
         Environment env =
-                new Environment(Device.PANAMA, DataType.FP64, Environment.global().runtimes());
+                new Environment(Device.NATIVE, DataType.FP64, Environment.global().runtimes());
 
         Environment.with(
                 env,
                 () -> {
-                    assertEquals(Device.PANAMA, Device.defaultDevice());
+                    assertEquals(Device.NATIVE, Device.defaultDevice());
                     assertEquals(DataType.FP64, DataType.defaultFloat());
                     return null;
                 });
@@ -51,7 +52,7 @@ class EnvironmentTest {
                 IllegalArgumentException.class,
                 () ->
                         new Environment(
-                                Device.PANAMA, DataType.I32, Environment.global().runtimes()));
+                                Device.NATIVE, DataType.I32, Environment.global().runtimes()));
     }
 
     @Test
@@ -69,6 +70,7 @@ class EnvironmentTest {
         registry.register(new StubDeviceRuntime(DomainFactory.ofMemorySegment(), dummyRuntime()));
 
         assertTrue(registry.devices().contains(Device.PANAMA));
+        assertTrue(registry.devices().contains(Device.NATIVE));
     }
 
     private ComputeEngine dummyRuntime() {

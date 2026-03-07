@@ -457,7 +457,6 @@ final class LIRKernelCompiler {
             source.append("import com.qxotic.jota.memory.MemoryDomain;\n");
             source.append("import com.qxotic.jota.memory.MemoryView;\n");
             source.append("import com.qxotic.jota.runtime.KernelArgs;\n");
-            source.append("import com.qxotic.jota.runtime.KernelLaunchContext;\n");
             source.append("import com.qxotic.jota.runtime.JavaKernel;\n");
             source.append("import java.lang.foreign.MemorySegment;\n");
             source.append("import java.lang.foreign.ValueLayout;\n");
@@ -485,17 +484,7 @@ final class LIRKernelCompiler {
             source.append("  @Override\n");
             source.append(
                     "  public void execute(MemoryDomain<MemorySegment> memoryDomain, KernelArgs args) {\n");
-            source.append(
-                    "    execute(memoryDomain, args, null, KernelLaunchContext.disabled());\n");
-            source.append("  }\n");
-
-            source.append("  @Override\n");
-            source.append("  public void execute(\n");
-            source.append("          MemoryDomain<MemorySegment> memoryDomain,\n");
-            source.append("          KernelArgs args,\n");
-            source.append("          Memory<MemorySegment> scratch) {\n");
-            source.append(
-                    "    execute(memoryDomain, args, scratch, KernelLaunchContext.disabled());\n");
+            source.append("    execute(memoryDomain, args, null);\n");
             source.append("  }\n");
 
             source.append("  @Override\n");
@@ -503,8 +492,7 @@ final class LIRKernelCompiler {
             source.append("  public void execute(\n");
             source.append("          MemoryDomain<MemorySegment> memoryDomain,\n");
             source.append("          KernelArgs args,\n");
-            source.append("          Memory<MemorySegment> scratch,\n");
-            source.append("          KernelLaunchContext launchContext) {\n");
+            source.append("          Memory<MemorySegment> scratch) {\n");
             source.append(
                     "    MemoryAccess<MemorySegment> access = (MemoryAccess<MemorySegment>) memoryDomain.directAccess();\n");
             emitInputs(source);
@@ -520,21 +508,11 @@ final class LIRKernelCompiler {
 
         private void emitExecuteWithScratch(StringBuilder source) {
             source.append("  @Override\n");
-            source.append("  public void execute(\n");
-            source.append("          MemoryDomain<MemorySegment> memoryDomain,\n");
-            source.append("          KernelArgs args,\n");
-            source.append("          Memory<MemorySegment> scratch) {\n");
-            source.append(
-                    "    execute(memoryDomain, args, scratch, KernelLaunchContext.disabled());\n");
-            source.append("  }\n");
-
-            source.append("  @Override\n");
             source.append("  @SuppressWarnings(\"unchecked\")\n");
             source.append("  public void execute(\n");
             source.append("          MemoryDomain<MemorySegment> memoryDomain,\n");
             source.append("          KernelArgs args,\n");
-            source.append("          Memory<MemorySegment> scratch,\n");
-            source.append("          KernelLaunchContext launchContext) {\n");
+            source.append("          Memory<MemorySegment> scratch) {\n");
             source.append(
                     "    MemoryAccess<MemorySegment> access = (MemoryAccess<MemorySegment>) memoryDomain.directAccess();\n");
             source.append("    MemorySegment scratchBase = scratch.base();\n");
@@ -733,257 +711,75 @@ final class LIRKernelCompiler {
             String ub = emitIndexExpr(loop.upperBound());
             String step = emitIndexExpr(loop.step());
 
-            // Check if this is a simple forward loop with step = 1
-            boolean isSimpleForwardLoop =
-                    step.equals("1") || (loop.step() instanceof IConst ic && ic.value() == 1);
-
-            if (canParallelizeTopLoop(loop, isSimpleForwardLoop)) {
-                emitParallelStructuredFor(loop, idx, lb, ub);
-                return;
-            }
+            boolean isSimpleForwardLoop = isSimpleForwardLoop(loop, step);
 
             if (isSimpleForwardLoop) {
-                // Simplified loop without extra variables
-                for (LoopIterArg arg : loop.iterArgs()) {
-                    String initExpr = emitScalarExpr(arg.init());
-                    addLine(javaType(arg.dataType()) + " " + arg.name() + " = " + initExpr + ";");
-                }
-
-                addLine(
-                        "for (long "
-                                + idx
-                                + " = "
-                                + lb
-                                + "; "
-                                + idx
-                                + " < "
-                                + ub
-                                + "; "
-                                + idx
-                                + "++) {");
-                indentLevel++;
-                emitStructuredBody(loop);
-                indentLevel--;
-                addLine("}");
+                emitLoopIterArgInitializers(loop);
+                emitSimpleForwardLoop(loop, idx, lb, ub);
             } else {
-                // Full loop with step variable for non-trivial cases
-                String lbVar = idx + "_lb";
-                String ubVar = idx + "_ub";
-                String stepVar = idx + "_step";
-                addLine("long " + lbVar + " = " + lb + ";");
-                addLine("long " + ubVar + " = " + ub + ";");
-                addLine("long " + stepVar + " = " + step + ";");
-
-                for (LoopIterArg arg : loop.iterArgs()) {
-                    String initExpr = emitScalarExpr(arg.init());
-                    addLine(javaType(arg.dataType()) + " " + arg.name() + " = " + initExpr + ";");
-                }
-
-                addLine(
-                        "for (long "
-                                + idx
-                                + " = "
-                                + lbVar
-                                + "; "
-                                + stepVar
-                                + " > 0 ? "
-                                + idx
-                                + " < "
-                                + ubVar
-                                + " : "
-                                + idx
-                                + " > "
-                                + ubVar
-                                + "; "
-                                + idx
-                                + " += "
-                                + stepVar
-                                + ") {");
-                indentLevel++;
-                emitStructuredBody(loop);
-                indentLevel--;
-                addLine("}");
+                emitSteppedLoop(loop, idx, lb, ub, step);
             }
         }
 
-        private boolean canParallelizeTopLoop(StructuredFor loop, boolean isSimpleForwardLoop) {
-            if (!isSimpleForwardLoop) {
-                return false;
-            }
-            if (indentLevel != 0) {
-                return false;
-            }
-            if (!loop.iterArgs().isEmpty()) {
-                return false;
-            }
-            return !scratchLayout.requiresScratch();
+        private boolean isSimpleForwardLoop(StructuredFor loop, String stepExpr) {
+            return stepExpr.equals("1") || (loop.step() instanceof IConst ic && ic.value() == 1);
         }
 
-        private void emitParallelStructuredFor(
-                StructuredFor loop, String idx, String lb, String ub) {
-            int id = tempId++;
-            String lbVar = idx + "_lb" + id;
-            String ubVar = idx + "_ub" + id;
-            String tripVar = idx + "_trip" + id;
-            String tasksVar = "taskCount" + id;
-            String chunkVar = "chunkSize" + id;
-            String taskVar = "task" + id;
-            String startVar = "start" + id;
-            String endVar = "end" + id;
-            String futuresVar = "futures" + id;
-            String failureVar = "firstFailure" + id;
-            String futureVar = "future" + id;
-            String exVar = "ex" + id;
+        private void emitLoopIterArgInitializers(StructuredFor loop) {
+            for (LoopIterArg arg : loop.iterArgs()) {
+                String initExpr = emitScalarExpr(arg.init());
+                addLine(javaType(arg.dataType()) + " " + arg.name() + " = " + initExpr + ";");
+            }
+        }
 
-            addLine("long " + lbVar + " = " + lb + ";");
-            addLine("long " + ubVar + " = " + ub + ";");
-            addLine("long " + tripVar + " = " + ubVar + " - " + lbVar + ";");
-            addLine(
-                    "if (launchContext != null && launchContext.parallelEnabled() && launchContext.executor() != null && "
-                            + tripVar
-                            + " >= launchContext.minTripCount()) {");
-            indentLevel++;
-            addLine(
-                    "int "
-                            + tasksVar
-                            + " = (int) Math.min((long) launchContext.targetTasks(), "
-                            + tripVar
-                            + ");");
-            addLine(
-                    "long "
-                            + chunkVar
-                            + " = ("
-                            + tripVar
-                            + " + "
-                            + tasksVar
-                            + " - 1L) / "
-                            + tasksVar
-                            + ";");
-            addLine(
-                    "java.util.List<java.util.concurrent.CompletableFuture<Void>> "
-                            + futuresVar
-                            + " = new java.util.ArrayList<>("
-                            + tasksVar
-                            + ");");
-            addLine(
-                    "for (int "
-                            + taskVar
-                            + " = 0; "
-                            + taskVar
-                            + " < "
-                            + tasksVar
-                            + "; "
-                            + taskVar
-                            + "++) {");
-            indentLevel++;
-            addLine(
-                    "long "
-                            + startVar
-                            + " = "
-                            + lbVar
-                            + " + (long) "
-                            + taskVar
-                            + " * "
-                            + chunkVar
-                            + ";");
-            addLine("if (" + startVar + " >= " + ubVar + ") {");
-            indentLevel++;
-            addLine("break;");
-            indentLevel--;
-            addLine("}");
-            addLine(
-                    "long "
-                            + endVar
-                            + " = Math.min("
-                            + ubVar
-                            + ", "
-                            + startVar
-                            + " + "
-                            + chunkVar
-                            + ");");
-            addLine(futuresVar + ".add(java.util.concurrent.CompletableFuture.runAsync(() -> {");
-            indentLevel++;
+        private void emitSimpleForwardLoop(
+                StructuredFor loop, String idx, String startInclusive, String endExclusive) {
             addLine(
                     "for (long "
                             + idx
                             + " = "
-                            + startVar
+                            + startInclusive
                             + "; "
                             + idx
                             + " < "
-                            + endVar
+                            + endExclusive
                             + "; "
                             + idx
                             + "++) {");
-            indentLevel++;
-            tempNames.clear();
-            emitStructuredBody(loop);
-            indentLevel--;
+            withIndent(() -> emitStructuredBody(loop));
             addLine("}");
-            indentLevel--;
-            addLine("}, launchContext.executor()));");
-            indentLevel--;
-            addLine("}");
-            addLine("Throwable " + failureVar + " = null;");
+        }
+
+        private void emitSteppedLoop(
+                StructuredFor loop, String idx, String lowerBound, String upperBound, String stepExpr) {
+            String lbVar = idx + "_lb";
+            String ubVar = idx + "_ub";
+            String stepVar = idx + "_step";
+            addLine("long " + lbVar + " = " + lowerBound + ";");
+            addLine("long " + ubVar + " = " + upperBound + ";");
+            addLine("long " + stepVar + " = " + stepExpr + ";");
+            emitLoopIterArgInitializers(loop);
             addLine(
-                    "for (java.util.concurrent.CompletableFuture<Void> "
-                            + futureVar
+                    "for (long "
+                            + idx
+                            + " = "
+                            + lbVar
+                            + "; "
+                            + stepVar
+                            + " > 0 ? "
+                            + idx
+                            + " < "
+                            + ubVar
                             + " : "
-                            + futuresVar
-                            + ") {");
-            indentLevel++;
-            addLine("try {");
-            indentLevel++;
-            addLine(futureVar + ".join();");
-            indentLevel--;
-            addLine("} catch (java.util.concurrent.CompletionException " + exVar + ") {");
-            indentLevel++;
-            addLine("if (" + failureVar + " == null) {");
-            indentLevel++;
-            addLine(
-                    failureVar
-                            + " = "
-                            + exVar
-                            + ".getCause() != null ? "
-                            + exVar
-                            + ".getCause() : "
-                            + exVar
-                            + ";");
-            indentLevel--;
-            addLine("}");
-            indentLevel--;
-            addLine("}");
-            indentLevel--;
-            addLine("}");
-            addLine("if (" + failureVar + " != null) {");
-            indentLevel++;
-            addLine(
-                    "throw new IllegalStateException(\"Parallel kernel execution failed\", "
-                            + failureVar
-                            + ");");
-            indentLevel--;
-            addLine("}");
-            indentLevel--;
-            addLine("} else {");
-            indentLevel++;
-            addLine(
-                    "for (long "
                             + idx
-                            + " = "
-                            + lbVar
-                            + "; "
-                            + idx
-                            + " < "
+                            + " > "
                             + ubVar
                             + "; "
                             + idx
-                            + "++) {");
-            indentLevel++;
-            tempNames.clear();
-            emitStructuredBody(loop);
-            indentLevel--;
-            addLine("}");
-            indentLevel--;
+                            + " += "
+                            + stepVar
+                            + ") {");
+            withIndent(() -> emitStructuredBody(loop));
             addLine("}");
         }
 
@@ -1995,6 +1791,15 @@ final class LIRKernelCompiler {
             }
             builder.append(line);
             lines.add(builder.toString());
+        }
+
+        private void withIndent(Runnable body) {
+            indentLevel++;
+            try {
+                body.run();
+            } finally {
+                indentLevel--;
+            }
         }
 
         /** Base interface for buffer variable references in generated code. */

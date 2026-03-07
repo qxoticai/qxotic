@@ -104,7 +104,7 @@ final class CDialect implements CLikeDialect {
 
         @Override
         protected void maybeEmitSimpleLoopPragma(StructuredFor loop) {
-            if (COpenMpConfig.enabled() && loop.iterArgs().isEmpty()) {
+            if (COpenMpConfig.enabled() && loop.iterArgs().isEmpty() && !isInsideStructuredLoop()) {
                 addLine("#pragma omp parallel for");
             }
         }

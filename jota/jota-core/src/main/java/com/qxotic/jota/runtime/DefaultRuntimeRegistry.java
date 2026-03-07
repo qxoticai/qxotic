@@ -1,6 +1,7 @@
 package com.qxotic.jota.runtime;
 
 import com.qxotic.jota.Device;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -25,6 +26,9 @@ public final class DefaultRuntimeRegistry implements RuntimeRegistry {
     public void register(DeviceRuntime deviceRuntime) {
         Objects.requireNonNull(deviceRuntime, "deviceRuntime");
         Device device = deviceRuntime.device();
+        if (device.equals(Device.NATIVE)) {
+            throw new IllegalArgumentException("Device.NATIVE is a runtime alias and cannot be registered");
+        }
         DeviceRuntime existing = runtimes.putIfAbsent(device, deviceRuntime);
         if (existing != null) {
             throw new IllegalStateException("Runtime already registered for device " + device);
@@ -36,24 +40,28 @@ public final class DefaultRuntimeRegistry implements RuntimeRegistry {
 
     public void registerNative(DeviceRuntime deviceRuntime) {
         Objects.requireNonNull(deviceRuntime, "deviceRuntime");
-        if (!deviceRuntime.device().equals(Device.PANAMA)) {
+        Device device = deviceRuntime.device();
+        if (!device.equals(Device.PANAMA) && !device.equals(Device.C)) {
             throw new IllegalArgumentException(
                     "Native runtime must target "
                             + Device.PANAMA
+                            + " or "
+                            + Device.C
                             + ", got "
-                            + deviceRuntime.device());
+                            + device);
         }
-        if (nativeDeviceRuntime != null
-                && !nativeDeviceRuntime.device().equals(deviceRuntime.device())) {
-            throw new IllegalStateException(
-                    "Native runtime already configured for " + nativeDeviceRuntime.device());
+        DeviceRuntime existing = runtimes.putIfAbsent(device, deviceRuntime);
+        if (existing != null && existing != deviceRuntime) {
+            deviceRuntime = existing;
         }
-        register(deviceRuntime);
         nativeDeviceRuntime = deviceRuntime;
     }
 
     @Override
     public DeviceRuntime runtimeFor(Device device) {
+        if (device.equals(Device.NATIVE)) {
+            return nativeRuntime();
+        }
         DeviceRuntime deviceRuntime = runtimes.get(device);
         if (deviceRuntime == null) {
             throw new IllegalStateException("No runtime registered for " + device);
@@ -63,6 +71,9 @@ public final class DefaultRuntimeRegistry implements RuntimeRegistry {
 
     @Override
     public boolean hasRuntime(Device device) {
+        if (device.equals(Device.NATIVE)) {
+            return nativeDeviceRuntime != null;
+        }
         return runtimes.containsKey(device);
     }
 
@@ -77,7 +88,11 @@ public final class DefaultRuntimeRegistry implements RuntimeRegistry {
 
     @Override
     public Set<Device> devices() {
-        return Set.copyOf(runtimes.keySet());
+        Set<Device> devices = new HashSet<>(runtimes.keySet());
+        if (nativeDeviceRuntime != null) {
+            devices.add(Device.NATIVE);
+        }
+        return Set.copyOf(devices);
     }
 
     @Override

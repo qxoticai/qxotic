@@ -16,6 +16,7 @@ public final class ConfiguredTestDevice {
         String raw = System.getProperty(TEST_DEVICE_PROPERTY, "panama");
         String normalized = raw == null ? "panama" : raw.trim().toLowerCase();
         return switch (normalized) {
+            case "native" -> Device.NATIVE;
             case "panama" -> Device.PANAMA;
             case "c" -> Device.C;
             case "hip" -> Device.HIP;
@@ -27,7 +28,7 @@ public final class ConfiguredTestDevice {
                                     + TEST_DEVICE_PROPERTY
                                     + "='"
                                     + raw
-                                    + "'. Supported values: panama, c, hip, opencl, metal");
+                                    + "'. Supported values: native, panama, c, hip, opencl, metal");
         };
     }
 }

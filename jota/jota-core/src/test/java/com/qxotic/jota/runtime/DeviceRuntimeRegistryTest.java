@@ -2,6 +2,7 @@ package com.qxotic.jota.runtime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jota.Device;
@@ -24,6 +25,7 @@ class DeviceRuntimeRegistryTest {
         assertNotNull(registry.nativeRuntime());
         assertEquals(Device.PANAMA, registry.nativeRuntime().device());
         assertNotNull(registry.runtimeFor(Device.PANAMA));
+        assertSame(registry.nativeRuntime(), registry.runtimeFor(Device.NATIVE));
     }
 
     @Test
@@ -35,12 +37,27 @@ class DeviceRuntimeRegistryTest {
     }
 
     @Test
-    void registerNativeRejectsNonPanamaDevice() {
+    void registerNativeRejectsNonNativeDevice() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         DeviceRuntime nonNative =
                 new StubDeviceRuntime(
-                        Device.C, DomainFactory.ofMemorySegment(), new NoopEngine(Device.C));
+                        Device.HIP, DomainFactory.ofMemorySegment(), new NoopEngine(Device.HIP));
         assertThrows(IllegalArgumentException.class, () -> registry.registerNative(nonNative));
+    }
+
+    @Test
+    void registerNativeCanSwitchToCBackend() {
+        DefaultRuntimeRegistry registry =
+                DefaultRuntimeRegistry.withNative(new PanamaDeviceRuntime());
+        DeviceRuntime cRuntime =
+                new StubDeviceRuntime(Device.C, DomainFactory.ofMemorySegment(), new NoopEngine(Device.C));
+        registry.register(cRuntime);
+
+        registry.registerNative(cRuntime);
+
+        assertSame(cRuntime, registry.nativeRuntime());
+        assertSame(cRuntime, registry.runtimeFor(Device.NATIVE));
+        assertEquals(Device.C, registry.runtimeFor(Device.NATIVE).device());
     }
 
     private record NoopEngine(Device device) implements ComputeEngine {

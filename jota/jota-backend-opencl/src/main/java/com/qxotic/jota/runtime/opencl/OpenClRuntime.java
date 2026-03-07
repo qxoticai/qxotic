@@ -1,7 +1,11 @@
 package com.qxotic.jota.runtime.opencl;
 
+import com.qxotic.jota.NativeLibraryLoader;
 import java.util.concurrent.atomic.AtomicReference;
 
+/**
+ * JNI bindings for the OpenCL backend native runtime.
+ */
 public final class OpenClRuntime {
 
     static final int STORAGE_MODE_SHARED = 0;
@@ -17,8 +21,13 @@ public final class OpenClRuntime {
     private static final AtomicReference<String> LOAD_FAILURE = new AtomicReference<>();
     private static final Object LOAD_LOCK = new Object();
 
-    private OpenClRuntime() {}
+    private OpenClRuntime() {
+        // Utility class
+    }
 
+    /**
+     * Returns true if the OpenCL backend native library is available.
+     */
     public static boolean isAvailable() {
         Boolean available = AVAILABLE.get();
         if (available != null) {
@@ -30,7 +39,7 @@ public final class OpenClRuntime {
                 return available;
             }
             try {
-                System.loadLibrary(LIB_NAME);
+                NativeLibraryLoader.load(LIB_NAME);
                 LOAD_FAILURE.set(null);
                 AVAILABLE.set(true);
             } catch (UnsatisfiedLinkError e) {
@@ -41,10 +50,17 @@ public final class OpenClRuntime {
         return AVAILABLE.get();
     }
 
+    /**
+     * Requires that the OpenCL backend is available, throwing otherwise.
+     *
+     * @throws IllegalStateException if the OpenCL backend is not available
+     */
     public static void requireAvailable() {
         if (!isAvailable()) {
             throw new IllegalStateException(
-                    "OpenCL runtime not available (" + LIB_NAME + "). " + availabilityDetails());
+                "OpenCL backend not available (" + LIB_NAME + "). " +
+                availabilityDetails()
+            );
         }
     }
 
@@ -53,13 +69,19 @@ public final class OpenClRuntime {
         if (failure == null || failure.isBlank()) {
             return "Ensure lib"
                     + LIB_NAME
-                    + " and OpenCL ICD/runtime libraries are installed and on java.library.path/LD_LIBRARY_PATH.";
+                    + " is on java.library.path or the backend JAR includes natives for your platform ("
+                    + NativeLibraryLoader.currentPlatform()
+                    + "). Supported platforms: Linux x86_64/aarch64, Windows x86_64, macOS aarch64. "
+                    + "Also ensure OpenCL ICD/runtime libraries are installed.";
         }
         return "Library load error: "
                 + failure
                 + ". Ensure lib"
                 + LIB_NAME
-                + " and OpenCL ICD/runtime libraries are installed and on java.library.path/LD_LIBRARY_PATH.";
+                + " is on java.library.path or the backend JAR includes natives for your platform ("
+                + NativeLibraryLoader.currentPlatform()
+                    + "). Supported platforms: Linux x86_64/aarch64, Windows x86_64, macOS aarch64. "
+                + "Also ensure OpenCL ICD/runtime libraries are installed.";
     }
 
     public static int deviceCount() {

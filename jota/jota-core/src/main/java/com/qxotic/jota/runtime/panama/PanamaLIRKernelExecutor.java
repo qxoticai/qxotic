@@ -13,8 +13,6 @@ import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.runtime.DiskKernelCache;
 import com.qxotic.jota.runtime.JavaKernel;
 import com.qxotic.jota.runtime.KernelCacheKey;
-import com.qxotic.jota.runtime.KernelLaunchContext;
-import com.qxotic.jota.runtime.ScalarArg;
 import com.qxotic.jota.tensor.Tensor;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
@@ -36,9 +34,9 @@ public final class PanamaLIRKernelExecutor {
         this.compiler = new LIRKernelCompiler(Objects.requireNonNull(cache, "cache"));
     }
 
-    public record CompiledKernel(JavaKernel kernel, ScratchLayout scratchLayout) {}
+    private record CompiledKernel(JavaKernel kernel, ScratchLayout scratchLayout) {}
 
-    public CompiledKernel compile(LIRGraph graph) {
+    private CompiledKernel compile(LIRGraph graph) {
         ScratchAnalysisPass scratchAnalysis = new ScratchAnalysisPass();
         ScratchLayout scratchLayout = scratchAnalysis.analyze(graph);
         if (verifyScratch) {
@@ -56,107 +54,23 @@ public final class PanamaLIRKernelExecutor {
 
     public MemoryView<?> execute(
             TIRGraph graph, List<Tensor> lirInputs, MemoryDomain<MemorySegment> memoryDomain) {
-        return execute(graph, lirInputs, memoryDomain, KernelLaunchContext.disabled());
-    }
-
-    public MemoryView<?> execute(
-            TIRGraph graph,
-            List<Tensor> lirInputs,
-            MemoryDomain<MemorySegment> memoryDomain,
-            KernelLaunchContext launchContext) {
         TIRToLIRLowerer lowerer = new TIRToLIRLowerer();
         LIRStandardPipeline pipeline = new LIRStandardPipeline();
         LIRGraph lirGraph = pipeline.run(lowerer.lower(graph));
-        return execute(lirGraph, lirInputs, memoryDomain, launchContext);
-    }
-
-    public void execute(
-            LIRGraph graph,
-            CompiledKernel compiled,
-            List<Tensor> lirInputs,
-            List<MemoryView<?>> outputs,
-            MemoryDomain<MemorySegment> memoryDomain,
-            Memory<MemorySegment> scratch,
-            KernelLaunchContext launchContext) {
-        compiled.kernel()
-                .execute(
-                        memoryDomain,
-                        argsBuilder.build(graph, lirInputs, outputs),
-                        scratch,
-                        launchContext);
-    }
-
-    public void execute(
-            LIRGraph graph,
-            CompiledKernel compiled,
-            List<MemoryView<?>> inputs,
-            List<ScalarArg> scalars,
-            List<MemoryView<?>> outputs,
-            MemoryDomain<MemorySegment> memoryDomain,
-            Memory<MemorySegment> scratch,
-            KernelLaunchContext launchContext) {
-        compiled.kernel()
-                .execute(
-                        memoryDomain,
-                        argsBuilder.build(graph, inputs, scalars, outputs),
-                        scratch,
-                        launchContext);
+        return execute(lirGraph, lirInputs, memoryDomain);
     }
 
     public MemoryView<?> execute(
             LIRGraph graph, List<Tensor> lirInputs, MemoryDomain<MemorySegment> memoryDomain) {
-        return execute(graph, lirInputs, memoryDomain, KernelLaunchContext.disabled());
-    }
-
-    public MemoryView<?> execute(
-            LIRGraph graph,
-            List<Tensor> lirInputs,
-            MemoryDomain<MemorySegment> memoryDomain,
-            KernelLaunchContext launchContext) {
         CompiledKernel compiled = compile(graph);
-        return execute(
-                graph,
-                compiled.kernel(),
-                compiled.scratchLayout(),
-                lirInputs,
-                memoryDomain,
-                launchContext);
-    }
-
-    public MemoryView<?> execute(
-            LIRGraph graph,
-            JavaKernel kernel,
-            List<Tensor> lirInputs,
-            MemoryDomain<MemorySegment> memoryDomain) {
-        // For backwards compatibility - analyze scratch if not provided
-        ScratchLayout scratchLayout = new ScratchAnalysisPass().analyze(graph);
-        return execute(
-                graph,
-                kernel,
-                scratchLayout,
-                lirInputs,
-                memoryDomain,
-                KernelLaunchContext.disabled());
-    }
-
-    public MemoryView<?> execute(
-            LIRGraph graph,
-            JavaKernel kernel,
-            ScratchLayout scratchLayout,
-            List<Tensor> lirInputs,
-            MemoryDomain<MemorySegment> memoryDomain,
-            KernelLaunchContext launchContext) {
         List<MemoryView<?>> outputs = allocateOutputs(graph, memoryDomain);
 
-        // Allocate scratch if needed
         Memory<MemorySegment> scratch = null;
-        if (scratchLayout.requiresScratch()) {
-            scratch = allocateScratch(memoryDomain, scratchLayout.alignedTotalByteSize());
+        if (compiled.scratchLayout().requiresScratch()) {
+            scratch = allocateScratch(memoryDomain, compiled.scratchLayout().alignedTotalByteSize());
         }
 
-        // Execute kernel with scratch
-        kernel.execute(
-                memoryDomain, argsBuilder.build(graph, lirInputs, outputs), scratch, launchContext);
+        compiled.kernel().execute(memoryDomain, argsBuilder.build(graph, lirInputs, outputs), scratch);
 
         return outputs.getFirst();
     }

@@ -64,7 +64,7 @@ public final class Environment {
 
     @SuppressWarnings("unchecked")
     public MemoryDomain<MemorySegment> nativeMemoryDomain() {
-        return (MemoryDomain<MemorySegment>) runtimes.nativeRuntime().memoryDomain();
+        return (MemoryDomain<MemorySegment>) runtimeFor(Device.NATIVE).memoryDomain();
     }
 
     @SuppressWarnings("unchecked")
@@ -131,15 +131,58 @@ public final class Environment {
     }
 
     private static RuntimeRegistry buildDefaultRuntimes() {
-        DefaultRuntimeRegistry registry =
-                DefaultRuntimeRegistry.withNative(new PanamaDeviceRuntime());
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
+        DeviceRuntime panamaRuntime = new PanamaDeviceRuntime();
+        registry.register(panamaRuntime);
+        registry.registerNative(panamaRuntime);
         ServiceLoader<DeviceRuntimeProvider> providers =
                 ServiceLoader.load(DeviceRuntimeProvider.class);
         providers.stream()
                 .map(ServiceLoader.Provider::get)
                 .sorted(Comparator.comparingInt(DeviceRuntimeProvider::priority).reversed())
                 .forEach(provider -> registerProvider(registry, provider));
+        registry.registerNative(registry.runtimeFor(selectNativeBackend(registry)));
         return registry;
+    }
+
+    private static Device selectNativeBackend(RuntimeRegistry registry) {
+        Device override = parseNativeBackendOverride(System.getProperty("jota.native.backend"));
+        if (override != null) {
+            if (!registry.hasRuntime(override)) {
+                throw new IllegalStateException(
+                        "Configured jota.native.backend selects unavailable backend: "
+                                + override
+                                + ". Available devices: "
+                                + registry.devices());
+            }
+            return override;
+        }
+        if (isNativeImageRuntime() && registry.hasRuntime(Device.C)) {
+            return Device.C;
+        }
+        return Device.PANAMA;
+    }
+
+    private static Device parseNativeBackendOverride(String rawValue) {
+        if (rawValue == null || rawValue.isBlank()) {
+            return null;
+        }
+        String value = rawValue.trim().toLowerCase();
+        return switch (value) {
+            case "auto", "native" -> null;
+            case "panama", "java", "jvm", "ffm" -> Device.PANAMA;
+            case "c" -> Device.C;
+            default ->
+                    throw new IllegalArgumentException(
+                            "Unsupported jota.native.backend='"
+                                    + rawValue
+                                    + "'. Supported values: auto, native, panama, java, c");
+        };
+    }
+
+    private static boolean isNativeImageRuntime() {
+        String imageCode = System.getProperty("org.graalvm.nativeimage.imagecode");
+        return imageCode != null && !imageCode.isBlank();
     }
 
     private static void registerProvider(
@@ -155,20 +198,20 @@ public final class Environment {
             logUnavailableRuntime(provider, probe);
             return;
         }
-        if (provider.device().equals(Device.PANAMA)) {
+        if (provider.device().equals(Device.PANAMA) || provider.device().equals(Device.NATIVE)) {
             registry.addDiagnostic(
                     new RuntimeDiagnostic(
                             provider.id(),
                             provider.device(),
                             RuntimeProbe.misconfigured(
                                     "Optional provider targets reserved native device",
-                                    "Do not register external providers for Device.PANAMA",
+                                    "Do not register external providers for Device.PANAMA/Device.NATIVE",
                                     null)));
             logUnavailableRuntime(
                     provider,
                     RuntimeProbe.misconfigured(
                             "Optional provider targets reserved native device",
-                            "Do not register external providers for Device.PANAMA",
+                            "Do not register external providers for Device.PANAMA/Device.NATIVE",
                             null));
             return;
         }
@@ -209,6 +252,6 @@ public final class Environment {
     private static final class DefaultGlobalHolder {
         private static final Environment INSTANCE =
                 new Environment(
-                        Device.PANAMA, DataTypeImpl.defaultFloatValue(), buildDefaultRuntimes());
+                        Device.NATIVE, DataTypeImpl.defaultFloatValue(), buildDefaultRuntimes());
     }
 }

@@ -41,14 +41,6 @@ public interface JavaKernel {
         execute(memoryDomain, args);
     }
 
-    default void execute(
-            MemoryDomain<MemorySegment> memoryDomain,
-            KernelArgs args,
-            Memory<MemorySegment> scratch,
-            KernelLaunchContext launchContext) {
-        execute(memoryDomain, args, scratch);
-    }
-
     /**
      * Returns the scratch buffer size required by this kernel.
      *

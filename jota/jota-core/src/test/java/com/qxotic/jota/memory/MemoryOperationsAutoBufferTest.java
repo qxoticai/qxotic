@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jota.memory.impl.DomainFactory;
 import com.qxotic.jota.memory.impl.MemoryAllocatorFactory;
+import com.qxotic.jota.memory.impl.MemoryFactory;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.util.stream.Stream;
@@ -106,6 +107,31 @@ class MemoryOperationsAutoBufferTest {
                 Float.BYTES);
 
         assertEquals(3.14159f, nativeDomain.directAccess().readFloat(dst, 0), 0.00001f);
+    }
+
+    @Test
+    void copyFromHeapBackedFloatMemorySegment() {
+        float[] source = {1.25f, -2.5f, 3.75f, 0.5f};
+        Memory<MemorySegment> src = MemoryFactory.ofMemorySegment(MemorySegment.ofArray(source));
+        Memory<float[]> dst =
+                floatDomain.memoryAllocator().allocateMemory((long) source.length * Float.BYTES);
+
+        MemoryOperations.copy(
+                nativeDomain.memoryOperations(),
+                src,
+                0,
+                floatDomain.memoryOperations(),
+                dst,
+                0,
+                (long) source.length * Float.BYTES);
+
+        for (int i = 0; i < source.length; i++) {
+            assertEquals(
+                    source[i],
+                    floatDomain.directAccess().readFloat(dst, (long) i * Float.BYTES),
+                    0.00001f,
+                    "Mismatch at float index " + i);
+        }
     }
 
     // ========== Copies smaller than minimum buffer (4K) ==========
