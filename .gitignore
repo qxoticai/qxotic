@@ -28,6 +28,7 @@ replay_pid*
 # === Maven ===
 target/
 !**/src/**/target/
+**/.flattened-pom.xml
 
 # === Mill Build System ===
 .bsp/

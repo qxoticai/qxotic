@@ -7,17 +7,12 @@
     <parent>
         <groupId>com.qxotic</groupId>
         <artifactId>qxotic-parent</artifactId>
-        <version>0.1-SNAPSHOT</version>
+        <version>0.1.0</version>
     </parent>
 
     <artifactId>gguf</artifactId>
     <name>Quixotic GGUF</name>
-
-    <properties>
-        <maven.compiler.source>11</maven.compiler.source>
-        <maven.compiler.target>11</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    </properties>
+    <description>GGUF (GGML Universal Format) library for reading/writing llama.cpp .gguf files</description>
 
     <dependencies>
         <dependency>
@@ -26,5 +21,4 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-
 </project>
