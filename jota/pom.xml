@@ -7,34 +7,39 @@
     <parent>
         <groupId>com.qxotic</groupId>
         <artifactId>qxotic-parent</artifactId>
-        <version>0.1-SNAPSHOT</version>
+        <version>0.1.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
     <artifactId>jota-aggregator</artifactId>
     <packaging>pom</packaging>
     <name>Jota Aggregator</name>
+    <description>JVM Open Tensor Algebra - Multi-backend tensor computation library</description>
 
     <properties>
+        <!-- Java 25 required for Jota (FFM API, Vector API) -->
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
         <maven.compiler.release>25</maven.compiler.release>
-        <maven.compiler.plugin.version>3.14.0</maven.compiler.plugin.version>
-        <maven.resources.plugin.version>3.3.1</maven.resources.plugin.version>
-        <maven.jar.plugin.version>3.4.2</maven.jar.plugin.version>
-        <maven.surefire.plugin.version>3.5.3</maven.surefire.plugin.version>
-        <exec.maven.plugin.version>3.4.1</exec.maven.plugin.version>
+
+        <!-- Test configuration -->
         <jota.test.device>panama</jota.test.device>
         <jota.test.backends>single</jota.test.backends>
-        <core.tests.skip>false</core.tests.skip>
-        <backend.c.tests.skip>true</backend.c.tests.skip>
-        <backend.c.native.skip>true</backend.c.native.skip>
-        <backend.hip.tests.skip>true</backend.hip.tests.skip>
-        <backend.hip.native.skip>true</backend.hip.native.skip>
-        <backend.metal.tests.skip>true</backend.metal.tests.skip>
-        <backend.metal.native.skip>true</backend.metal.native.skip>
-        <backend.opencl.tests.skip>true</backend.opencl.tests.skip>
-        <backend.opencl.native.skip>true</backend.opencl.native.skip>
+
+        <!-- Backend test skipping (all disabled by default) -->
+        <skipTests.backend.c>true</skipTests.backend.c>
+        <skipTests.backend.hip>true</skipTests.backend.hip>
+        <skipTests.backend.metal>true</skipTests.backend.metal>
+        <skipTests.backend.opencl>true</skipTests.backend.opencl>
+
+        <!-- Native build skipping (all disabled by default) -->
+        <skipNative.backend.c>true</skipNative.backend.c>
+        <skipNative.backend.hip>true</skipNative.backend.hip>
+        <skipNative.backend.metal>true</skipNative.backend.metal>
+        <skipNative.backend.opencl>true</skipNative.backend.opencl>
+
+        <!-- Core tests run by default -->
+        <skipTests.backend.core>false</skipTests.backend.core>
     </properties>
 
     <modules>
@@ -46,48 +51,230 @@
     </modules>
 
     <profiles>
+        <!-- C Backend Profile -->
         <profile>
             <id>c</id>
             <properties>
                 <jota.test.device>c</jota.test.device>
                 <jota.test.backends>single</jota.test.backends>
-                <core.tests.skip>true</core.tests.skip>
-                <backend.c.tests.skip>false</backend.c.tests.skip>
-                <backend.c.native.skip>false</backend.c.native.skip>
+                <skipTests.backend.core>true</skipTests.backend.core>
+                <skipTests.backend.c>false</skipTests.backend.c>
+                <skipNative.backend.c>false</skipNative.backend.c>
             </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>check-toolchain-c</id>
+                                <phase>validate</phase>
+                                <goals><goal>exec</goal></goals>
+                                <configuration>
+                                    <skip>${skipNative.backend.c}</skip>
+                                    <executable>/bin/sh</executable>
+                                    <arguments>
+                                        <argument>-c</argument>
+                                        <argument>
+                                            command -v gcc &amp;&amp; exit 0 ||
+                                            command -v clang &amp;&amp; exit 0 ||
+                                            (echo "[ERROR] C compiler (gcc or clang) not found in PATH" &amp;&amp;
+echo "[ERROR] Required for -Pc profile (C backend)" &amp;&amp;
+echo "[ERROR] Install build tools:" &amp;&amp;
+echo "[ERROR]   Ubuntu/Debian: sudo apt install build-essential" &amp;&amp;
+echo "[ERROR]   RHEL/CentOS: sudo dnf install gcc gcc-c++ make" &amp;&amp;
+echo "[ERROR]   macOS: xcode-select --install" &amp;&amp;
+echo "[ERROR]   Arch: sudo pacman -S base-devel" &amp;&amp;
+exit 1)
+                                        </argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>check-toolchain-cmake</id>
+                                <phase>validate</phase>
+                                <goals><goal>exec</goal></goals>
+                                <configuration>
+                                    <skip>${skipNative.backend.c}</skip>
+                                    <executable>/bin/sh</executable>
+                                    <arguments>
+                                        <argument>-c</argument>
+                                        <argument>
+                                            command -v cmake &amp;&amp; exit 0 ||
+                                            (echo "[ERROR] CMake not found in PATH" &amp;&amp;
+echo "[ERROR] Required for -Pc profile (C backend native builds)" &amp;&amp;
+echo "[ERROR] Install CMake:" &amp;&amp;
+echo "[ERROR]   Ubuntu/Debian: sudo apt install cmake" &amp;&amp;
+echo "[ERROR]   RHEL/CentOS: sudo dnf install cmake" &amp;&amp;
+echo "[ERROR]   macOS: brew install cmake" &amp;&amp;
+echo "[ERROR]   See: https://cmake.org/download/" &amp;&amp;
+exit 1)
+                                        </argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
+
+        <!-- HIP Backend Profile -->
         <profile>
             <id>hip</id>
             <properties>
                 <jota.test.device>hip</jota.test.device>
                 <jota.test.backends>single</jota.test.backends>
-                <core.tests.skip>true</core.tests.skip>
-                <backend.hip.tests.skip>false</backend.hip.tests.skip>
-                <backend.hip.native.skip>false</backend.hip.native.skip>
+                <skipTests.backend.core>true</skipTests.backend.core>
+                <skipTests.backend.hip>false</skipTests.backend.hip>
+                <skipNative.backend.hip>false</skipNative.backend.hip>
             </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>check-toolchain-hip</id>
+                                <phase>validate</phase>
+                                <goals><goal>exec</goal></goals>
+                                <configuration>
+                                    <skip>${skipNative.backend.hip}</skip>
+                                    <executable>/bin/sh</executable>
+                                    <arguments>
+                                        <argument>-c</argument>
+                                        <argument>
+                                            command -v hipcc &amp;&amp; exit 0 ||
+                                            (echo "[ERROR] HIP compiler (hipcc) not found in PATH" &amp;&amp;
+echo "[ERROR] Required for -Phip profile (AMD GPU backend)" &amp;&amp;
+echo "[ERROR] Install ROCm:" &amp;&amp;
+echo "[ERROR]   Ubuntu 22.04: https://rocm.docs.amd.com/projects/install-on-linux/en/latest/tutorial/quick-start.html#ubuntu" &amp;&amp;
+echo "[ERROR]   RHEL/Rocky: https://rocm.docs.amd.com/projects/install-on-linux/en/latest/tutorial/quick-start.html#rhel" &amp;&amp;
+echo "[ERROR]   Ensure ROCM_PATH is set (e.g., /opt/rocm)" &amp;&amp;
+echo "[ERROR]   Add to PATH: export PATH=\$ROCM_PATH/bin:\$PATH" &amp;&amp;
+exit 1)
+                                        </argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
+
+        <!-- Metal Backend Profile -->
         <profile>
             <id>metal</id>
             <properties>
                 <jota.test.device>metal</jota.test.device>
                 <jota.test.backends>single</jota.test.backends>
-                <core.tests.skip>true</core.tests.skip>
+                <skipTests.backend.core>true</skipTests.backend.core>
+                <skipTests.backend.metal>false</skipTests.backend.metal>
+                <skipNative.backend.metal>false</skipNative.backend.metal>
             </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>check-toolchain-metal</id>
+                                <phase>validate</phase>
+                                <goals><goal>exec</goal></goals>
+                                <configuration>
+                                    <skip>${skipNative.backend.metal}</skip>
+                                    <executable>/bin/sh</executable>
+                                    <arguments>
+                                        <argument>-c</argument>
+                                        <argument>
+                                            if [ "$(uname)" != "Darwin" ]; then
+                                                echo "[ERROR] Metal backend is only supported on macOS"
+                                                echo "[ERROR] Current OS: $(uname)"
+                                                exit 1
+                                            fi
+                                            command -v xcrun &amp;&amp; exit 0 ||
+                                            (echo "[ERROR] Xcode command line tools (xcrun) not found" &amp;&amp;
+echo "[ERROR] Required for -Pmetal profile (Apple Metal backend)" &amp;&amp;
+echo "[ERROR] Install: xcode-select --install" &amp;&amp;
+exit 1)
+                                        </argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
+
+        <!-- OpenCL Backend Profile -->
         <profile>
             <id>opencl</id>
             <properties>
                 <jota.test.device>opencl</jota.test.device>
                 <jota.test.backends>single</jota.test.backends>
-                <core.tests.skip>true</core.tests.skip>
-                <backend.opencl.tests.skip>false</backend.opencl.tests.skip>
-                <backend.opencl.native.skip>false</backend.opencl.native.skip>
+                <skipTests.backend.core>true</skipTests.backend.core>
+                <skipTests.backend.opencl>false</skipTests.backend.opencl>
+                <skipNative.backend.opencl>false</skipNative.backend.opencl>
             </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>check-toolchain-opencl</id>
+                                <phase>validate</phase>
+                                <goals><goal>exec</goal></goals>
+                                <configuration>
+                                    <skip>${skipNative.backend.opencl}</skip>
+                                    <executable>/bin/sh</executable>
+                                    <arguments>
+                                        <argument>-c</argument>
+                                        <argument>
+                                            command -v cmake &amp;&amp; exit 0 ||
+                                            (echo "[ERROR] CMake not found in PATH" &amp;&amp;
+echo "[ERROR] Required for -Popencl profile (OpenCL backend native builds)" &amp;&amp;
+echo "[ERROR] Install CMake:" &amp;&amp;
+echo "[ERROR]   Ubuntu/Debian: sudo apt install cmake" &amp;&amp;
+echo "[ERROR]   RHEL/CentOS: sudo dnf install cmake" &amp;&amp;
+echo "[ERROR]   macOS: brew install cmake" &amp;&amp;
+echo "[ERROR]   Also install OpenCL headers and runtime for your platform" &amp;&amp;
+exit 1)
+                                        </argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
+
+        <!-- Backend Matrix Profile: test all available backends -->
         <profile>
             <id>backend-matrix</id>
             <properties>
                 <jota.test.backends>available</jota.test.backends>
+            </properties>
+        </profile>
+
+        <!-- Auto-activation: Metal on macOS -->
+        <profile>
+            <id>metal-macos</id>
+            <activation>
+                <os>
+                    <family>mac</family>
+                </os>
+            </activation>
+            <properties>
+                <skipNative.backend.metal>false</skipNative.backend.metal>
+                <skipTests.backend.metal>false</skipTests.backend.metal>
             </properties>
         </profile>
     </profiles>
@@ -98,36 +285,19 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
-                    <version>${maven.compiler.plugin.version}</version>
                     <configuration>
                         <release>${maven.compiler.release}</release>
                     </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-resources-plugin</artifactId>
-                    <version>${maven.resources.plugin.version}</version>
-                </plugin>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-jar-plugin</artifactId>
-                    <version>${maven.jar.plugin.version}</version>
-                </plugin>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
-                    <version>${maven.surefire.plugin.version}</version>
                     <configuration>
                         <systemPropertyVariables>
                             <jota.test.device>${jota.test.device}</jota.test.device>
                             <jota.test.backends>${jota.test.backends}</jota.test.backends>
                         </systemPropertyVariables>
                     </configuration>
-                </plugin>
-                <plugin>
-                    <groupId>org.codehaus.mojo</groupId>
-                    <artifactId>exec-maven-plugin</artifactId>
-                    <version>${exec.maven.plugin.version}</version>
                 </plugin>
             </plugins>
         </pluginManagement>

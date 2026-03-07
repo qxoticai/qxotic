@@ -7,11 +7,18 @@
     <parent>
         <groupId>com.qxotic</groupId>
         <artifactId>qxotic-parent</artifactId>
-        <version>0.1-SNAPSHOT</version>
+        <version>0.1.0</version>
     </parent>
 
     <artifactId>span</artifactId>
-    <name>llm4j Deprecated SPAN</name>
+    <name>Quixotic SPAN (Deprecated)</name>
+    <description>DEPRECATED: Old tensor implementation - to be ported to Jota architecture</description>
+
+    <properties>
+        <maven.compiler.source>24</maven.compiler.source>
+        <maven.compiler.target>24</maven.compiler.target>
+        <maven.compiler.release>24</maven.compiler.release>
+    </properties>
 
     <dependencies>
         <dependency>
@@ -19,13 +26,5 @@
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
-
     </dependencies>
-
-    <properties>
-        <maven.compiler.source>24</maven.compiler.source>
-        <maven.compiler.target>24</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    </properties>
-
 </project>

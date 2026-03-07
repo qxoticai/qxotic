@@ -7,14 +7,15 @@
     <parent>
         <groupId>com.qxotic</groupId>
         <artifactId>qxotic-parent</artifactId>
-        <version>0.1-SNAPSHOT</version>
-<!--        <version>${qxotic.version}</version>-->
+        <version>0.1.0</version>
     </parent>
 
     <artifactId>examples</artifactId>
-    <name>Jota Examples</name>
+    <name>Quixotic Examples</name>
+    <description>Example applications demonstrating Quixotic AI usage</description>
 
     <properties>
+        <!-- Examples require Java 25 for Jota integration -->
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
         <maven.compiler.release>25</maven.compiler.release>
@@ -42,6 +43,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
+                    <release>25</release>
                     <compilerArgs>
                         <arg>--add-modules</arg>
                         <arg>jdk.incubator.vector</arg>
@@ -49,6 +51,7 @@
                 </configuration>
             </plugin>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-assembly-plugin</artifactId>
                 <configuration>
                     <descriptorRefs>
