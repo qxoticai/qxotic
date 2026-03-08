@@ -287,7 +287,7 @@ class HipMatmulKernelSmokeTest {
 
     @SuppressWarnings("unchecked")
     private static MemoryView<MemorySegment> toHost(MemoryView<?> view) {
-        return (MemoryView<MemorySegment>) Tensor.of(view).to(Device.PANAMA).materialize();
+        return (MemoryView<MemorySegment>) Tensor.of(view).to(Device.NATIVE).materialize();
     }
 
     private static void assertClose(float actual, float expected) {

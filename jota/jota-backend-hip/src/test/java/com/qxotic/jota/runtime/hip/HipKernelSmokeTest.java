@@ -233,7 +233,7 @@ class HipKernelSmokeTest {
         HipMemoryDomain device = HipMemoryDomain.instance();
         MemoryView<MemorySegment> hostDst = toHost(dst.materialize());
         MemoryView<MemorySegment> hostSrc =
-                (MemoryView<MemorySegment>) src.to(Device.PANAMA).materialize();
+                (MemoryView<MemorySegment>) src.to(Device.NATIVE).materialize();
         MemoryAccess<MemorySegment> access = host.directAccess();
 
         long n = src.shape().size();
@@ -362,7 +362,7 @@ class HipKernelSmokeTest {
     private static MemoryView<MemorySegment> toHost(MemoryView<?> view) {
         @SuppressWarnings("unchecked")
         MemoryView<MemorySegment> hostView =
-                (MemoryView<MemorySegment>) Tensor.of(view).to(Device.PANAMA).materialize();
+                (MemoryView<MemorySegment>) Tensor.of(view).to(Device.NATIVE).materialize();
         return hostView;
     }
 

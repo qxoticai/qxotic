@@ -33,6 +33,7 @@
     <!-- Test configuration -->
     <jota.test.device>panama</jota.test.device>
     <jota.test.backends>single</jota.test.backends>
+    <jota.native.backend>native</jota.native.backend>
 
     <!-- Backend test skipping (all disabled by default) -->
     <skipTests.backend.c>true</skipTests.backend.c>
@@ -85,6 +86,7 @@
             <systemPropertyVariables>
               <jota.test.device>${jota.test.device}</jota.test.device>
               <jota.test.backends>${jota.test.backends}</jota.test.backends>
+              <jota.native.backend>${jota.native.backend}</jota.native.backend>
             </systemPropertyVariables>
           </configuration>
         </plugin>
@@ -156,6 +158,7 @@
       <properties>
         <jota.test.device>panama</jota.test.device>
         <jota.test.backends>single</jota.test.backends>
+        <jota.native.backend>panama</jota.native.backend>
         <skipTests.backend.core>true</skipTests.backend.core>
         <skipTests.backend.panama>false</skipTests.backend.panama>
       </properties>
@@ -167,6 +170,7 @@
       <properties>
         <jota.test.device>c</jota.test.device>
         <jota.test.backends>single</jota.test.backends>
+        <jota.native.backend>c</jota.native.backend>
         <skipTests.backend.core>true</skipTests.backend.core>
         <skipTests.backend.c>false</skipTests.backend.c>
         <skipNative.backend.c>false</skipNative.backend.c>
@@ -212,6 +216,7 @@ exit 1)</argument>
       <properties>
         <jota.test.device>hip</jota.test.device>
         <jota.test.backends>single</jota.test.backends>
+        <jota.native.backend>panama</jota.native.backend>
         <skipTests.backend.core>true</skipTests.backend.core>
         <skipTests.backend.hip>false</skipTests.backend.hip>
         <skipNative.backend.hip>false</skipNative.backend.hip>
@@ -257,6 +262,7 @@ exit 1)</argument>
       <properties>
         <jota.test.device>metal</jota.test.device>
         <jota.test.backends>single</jota.test.backends>
+        <jota.native.backend>panama</jota.native.backend>
         <skipTests.backend.core>true</skipTests.backend.core>
         <skipTests.backend.metal>false</skipTests.backend.metal>
         <skipNative.backend.metal>false</skipNative.backend.metal>
@@ -303,6 +309,7 @@ exit 1)</argument>
       <properties>
         <jota.test.device>opencl</jota.test.device>
         <jota.test.backends>single</jota.test.backends>
+        <jota.native.backend>panama</jota.native.backend>
         <skipTests.backend.core>true</skipTests.backend.core>
         <skipTests.backend.opencl>false</skipTests.backend.opencl>
         <skipNative.backend.opencl>false</skipNative.backend.opencl>

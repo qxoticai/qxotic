@@ -109,7 +109,7 @@ class EnvironmentTest {
         assertTrue(message.contains("com.qxotic:jota-backend-panama"));
         assertTrue(message.contains("com.qxotic:jota-backend-c"));
         assertTrue(message.contains("com.qxotic:jota-graal"));
-        assertTrue(message.contains("-Djota.native.backend=panama or c"));
+        assertTrue(message.contains("-Djota.native.backend=<backend-id>"));
     }
 
     @Test
