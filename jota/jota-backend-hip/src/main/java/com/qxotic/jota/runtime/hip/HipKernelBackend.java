@@ -28,8 +28,7 @@ final class HipKernelBackend implements KernelBackend {
     private static final boolean KERNEL_LOG = Boolean.getBoolean("jota.kernel.log");
     private static final long COMPILE_TIMEOUT_SECONDS =
             Long.getLong("jota.hip.compile.timeout.seconds", 10L);
-    private static final String OPT_LEVEL =
-            System.getProperty("jota.hip.compile.opt", "2").trim();
+    private static final String OPT_LEVEL = System.getProperty("jota.hip.compile.opt", "2").trim();
     private static final String ARCH = resolveArch();
     private static final boolean TIMING_LOG = Boolean.getBoolean("jota.hip.timing.log");
 

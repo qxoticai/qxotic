@@ -601,16 +601,11 @@ class JSONQueryTest {
     @DisplayName("query: complex nested structure")
     void testComplexStructure() {
         String json =
-                "{"
-                        + "\"company\": {"
-                        + "    \"name\": \"Acme Corp\","
-                        + "    \"employees\": ["
-                        + "        {\"id\": 1, \"name\": \"Alice\", \"active\": true, \"salary\": 50000.50},"
-                        + "        {\"id\": 2, \"name\": \"Bob\", \"active\": false, \"salary\": 60000.00}"
-                        + "    ],"
-                        + "    \"metadata\": null,"
-                        + "    \"settings\": {\"debug\": true, \"version\": 1.5}"
-                        + "}}";
+                "{\"company\": {    \"name\": \"Acme Corp\",    \"employees\": [        {\"id\": 1,"
+                    + " \"name\": \"Alice\", \"active\": true, \"salary\": 50000.50},       "
+                    + " {\"id\": 2, \"name\": \"Bob\", \"active\": false, \"salary\": 60000.00}   "
+                    + " ],    \"metadata\": null,    \"settings\": {\"debug\": true, \"version\":"
+                    + " 1.5}}}";
 
         Map<String, Object> data = JSON.parseMap(json);
 
@@ -689,7 +684,8 @@ class JSONQueryTest {
     void testTypeChecksWithParsedData() {
         Map<String, Object> data =
                 JSON.parseMap(
-                        "{\"str\": \"text\", \"num\": 42, \"bool\": true, \"obj\": {}, \"arr\": []}");
+                        "{\"str\": \"text\", \"num\": 42, \"bool\": true, \"obj\": {}, \"arr\":"
+                                + " []}");
 
         assertTrue(JSON.isString(data.get("str")));
         assertTrue(JSON.isNumber(data.get("num")));

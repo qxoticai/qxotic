@@ -205,7 +205,8 @@ public final class Environment {
                             provider.device(),
                             RuntimeProbe.misconfigured(
                                     "Optional provider targets reserved native device",
-                                    "Do not register external providers for Device.PANAMA/Device.NATIVE",
+                                    "Do not register external providers for"
+                                            + " Device.PANAMA/Device.NATIVE",
                                     null)));
             logUnavailableRuntime(
                     provider,

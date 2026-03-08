@@ -23,9 +23,21 @@ import java.util.regex.Pattern;
 public final class ModelSplitters {
 
     private static final String LLAMA3_PATTERN =
-            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
+            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r"
+                    + "\\n"
+                    + "\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r"
+                    + "\\n"
+                    + "]*|\\s*[\\r"
+                    + "\\n"
+                    + "]+|\\s+(?!\\S)|\\s+";
     private static final String QWEN2_PATTERN =
-            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
+            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r"
+                    + "\\n"
+                    + "\\p{L}\\p{N}]?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\\r"
+                    + "\\n"
+                    + "]*|\\s*[\\r"
+                    + "\\n"
+                    + "]+|\\s+(?!\\S)|\\s+";
     private static final String[] SMOLLM2_PATTERNS = {
         "\\p{N}", "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)"
     };
@@ -33,7 +45,16 @@ public final class ModelSplitters {
         "\\p{N}", "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)"
     };
     private static final String[] TEKKEN_PATTERNS = {
-        "[^\\r\\n\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]*[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]+|[^\\r\\n\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]+[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]*|\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n/]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+"
+        "[^\\r"
+            + "\\n"
+            + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]*[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]+|[^\\r"
+            + "\\n"
+            + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]+[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]*|\\p{N}|"
+            + " ?[^\\s\\p{L}\\p{N}]+[\\r"
+            + "\\n"
+            + "/]*|\\s*[\\r"
+            + "\\n"
+            + "]+|\\s+(?!\\S)|\\s+"
     };
     private static final String[] DEFAULT_BPE_SPLITS = {
         "[\\p{P}\\$\\+<=>\\^~\\|]+",

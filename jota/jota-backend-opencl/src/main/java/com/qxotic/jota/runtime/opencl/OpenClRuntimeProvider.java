@@ -29,7 +29,8 @@ public final class OpenClRuntimeProvider implements DeviceRuntimeProvider {
             if (count <= 0) {
                 return RuntimeProbe.unsupportedHardware(
                         "OpenCL runtime is present but no compatible CPU/GPU device was detected",
-                        "Install/enable an OpenCL ICD and verify at least one OpenCL CPU/GPU device is visible");
+                        "Install/enable an OpenCL ICD and verify at least one OpenCL CPU/GPU device"
+                                + " is visible");
             }
             return RuntimeProbe.available(
                     "OpenCL runtime available with "

@@ -52,7 +52,8 @@ class JSONTestSuiteCorpusTest {
             System.err.println();
             System.err.println("  mkdir -p ~/.cache/qxotic/json");
             System.err.println(
-                    "  git clone https://github.com/nst/JSONTestSuite.git ~/.cache/qxotic/json/JSONTestSuite");
+                    "  git clone https://github.com/nst/JSONTestSuite.git"
+                            + " ~/.cache/qxotic/json/JSONTestSuite");
             System.err.println();
             System.err.println("Or set a custom path using:");
             System.err.println("  - System property: -Djson.testsuite.path=/path/to/JSONTestSuite");
@@ -146,7 +147,8 @@ class JSONTestSuiteCorpusTest {
         System.out.println(
                 String.format(
                         Locale.ROOT,
-                        "JSONTestSuite summary: y pass=%d fail=%d | n pass=%d fail=%d | i accept=%d reject=%d undecodable=%d",
+                        "JSONTestSuite summary: y pass=%d fail=%d | n pass=%d fail=%d | i accept=%d"
+                                + " reject=%d undecodable=%d",
                         yPassed,
                         yFailed,
                         nPassed,

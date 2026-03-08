@@ -178,7 +178,8 @@ interface TensorOps {
         DataType inputType = a.dataType();
         if (!inputType.isFloatingPoint() || !b.dataType().isFloatingPoint()) {
             throw new IllegalArgumentException(
-                    "dot(a, b) is floating-point only; use dot(a, b, accumulatorType) for integral inputs");
+                    "dot(a, b) is floating-point only; use dot(a, b, accumulatorType) for integral"
+                            + " inputs");
         }
         return dot(a, b, inputType);
     }

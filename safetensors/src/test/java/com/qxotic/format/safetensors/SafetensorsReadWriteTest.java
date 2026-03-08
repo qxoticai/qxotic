@@ -58,7 +58,6 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
         assertThrows(NullPointerException.class, () -> TensorEntry.create("t", DType.F32, null, 0));
         assertThrows(NullPointerException.class, () -> st.absoluteOffset(null));
 
-
         // sanity check: non-null writable channel still works
         Safetensors.write(st, Channels.newChannel(new ByteArrayOutputStream()));
     }

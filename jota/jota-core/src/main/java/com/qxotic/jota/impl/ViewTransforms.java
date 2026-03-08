@@ -213,7 +213,8 @@ public final class ViewTransforms {
             if (fromInclusive < 0 || toExclusive > dimSize || fromInclusive > toExclusive) {
                 throw new IllegalArgumentException(
                         String.format(
-                                "Invalid slice range [%d, %d) with step %d for dimension %d of size %d",
+                                "Invalid slice range [%d, %d) with step %d for dimension %d of size"
+                                        + " %d",
                                 fromInclusive, toExclusive, indexStride, axis, dimSize));
             }
         } else {
@@ -224,7 +225,8 @@ public final class ViewTransforms {
                     || fromInclusive < toExclusive) {
                 throw new IllegalArgumentException(
                         String.format(
-                                "Invalid slice range [%d, %d) with step %d for dimension %d of size %d",
+                                "Invalid slice range [%d, %d) with step %d for dimension %d of size"
+                                        + " %d",
                                 fromInclusive, toExclusive, indexStride, axis, dimSize));
             }
         }

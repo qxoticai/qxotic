@@ -312,7 +312,8 @@ public class MandelbrotDemo {
                     throw new IllegalArgumentException(
                             "Unknown backend '"
                                     + requested
-                                    + "'. Use one of: native, panama, java-aot, c, hip, opencl, metal");
+                                    + "'. Use one of: native, panama, java-aot, c, hip, opencl,"
+                                    + " metal");
         };
     }
 

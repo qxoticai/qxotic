@@ -2,7 +2,6 @@ package com.qxotic.format.safetensors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 
 public class TensorEntryTest {
@@ -100,7 +99,8 @@ public class TensorEntryTest {
         long[] originalShape = new long[] {5, 10, 15};
         long originalOffset = 1024;
 
-        TensorEntry original = TensorEntry.create(originalName, originalDtype, originalShape, originalOffset);
+        TensorEntry original =
+                TensorEntry.create(originalName, originalDtype, originalShape, originalOffset);
         TensorEntry modified = original.withOffset(2048);
 
         // Verify original is unchanged

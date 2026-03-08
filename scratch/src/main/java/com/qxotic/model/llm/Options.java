@@ -22,7 +22,8 @@ public record Options(
         require(modelPath != null, "Missing argument: --model <path> is required");
         require(
                 interactive || prompt != null,
-                "Missing argument: --prompt is required in --instruct mode e.g. --prompt \"Why is the sky blue?\"");
+                "Missing argument: --prompt is required in --instruct mode e.g. --prompt \"Why is"
+                        + " the sky blue?\"");
         require(0 <= temperature, "Invalid argument: --temperature must be non-negative");
         require(0 <= topp && topp <= 1, "Invalid argument: --top-p must be within [0, 1]");
     }
@@ -47,22 +48,27 @@ public record Options(
         out.println("  --system-prompt, -sp <string> (optional) system prompt");
         out.println("  --temperature, -temp <float>  temperature in [0,inf], default 0.1");
         out.println(
-                "  --top-p <float>               p value in top-p (nucleus) sampling in [0,1] default 0.95");
+                "  --top-p <float>               p value in top-p (nucleus) sampling in [0,1]"
+                        + " default 0.95");
         out.println("  --seed <long>                 random seed, default System.nanoTime()");
         out.println(
-                "  --max-tokens, -n <int>        number of steps to run for < 0 = limited by context length, default "
+                "  --max-tokens, -n <int>        number of steps to run for < 0 = limited by"
+                        + " context length, default "
                         + DEFAULT_MAX_TOKENS);
         out.println(
-                "  --stream <boolean>            print tokens during generation; may cause encoding artifacts for non ASCII text, default true");
+                "  --stream <boolean>            print tokens during generation; may cause encoding"
+                        + " artifacts for non ASCII text, default true");
         out.println(
-                "  --echo <boolean>              print ALL tokens to stderr, if true, recommended to set --stream=false, default false");
+                "  --echo <boolean>              print ALL tokens to stderr, if true, recommended"
+                        + " to set --stream=false, default false");
         out.println();
         out.println("Examples:");
         out.println(
                 "  jbang Llama4j.java --model qwen2.5-3b-q4_0.gguf --prompt \"Tell me a joke\"");
         out.println("  jbang Llama4j.java --model qwen2.5-3b-q4_0.gguf --chat");
         out.println(
-                "  jbang Llama4j.java --model qwen2.5-3b-q4_0.gguf --prompt \"Print 5 emojis\" --stream=false");
+                "  jbang Llama4j.java --model qwen2.5-3b-q4_0.gguf --prompt \"Print 5 emojis\""
+                        + " --stream=false");
     }
 
     public static Options parseOptions(String[] args) {

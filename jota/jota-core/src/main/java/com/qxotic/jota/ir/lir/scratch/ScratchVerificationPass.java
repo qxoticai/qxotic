@@ -329,7 +329,8 @@ public final class ScratchVerificationPass {
                             && live1.overlaps(live2)
                             && !buf1.equals(buf2)) {
                         errors.add(
-                                "Overlapping scratch allocations for buffers with overlapping lifetimes: "
+                                "Overlapping scratch allocations for buffers with overlapping"
+                                        + " lifetimes: "
                                         + bufferDescription(buf1)
                                         + " ["
                                         + live1.firstUse()

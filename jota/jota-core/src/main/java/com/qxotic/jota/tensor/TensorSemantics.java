@@ -108,8 +108,9 @@ final class TensorSemantics {
                             + left
                             + " vs "
                             + right
-                            + ". Note: Only true scalar tensors (shape.isScalar() == true) can be broadcast, "
-                            + "not broadcasted tensors. Use Tensor.scalar(value) to create scalar values.");
+                            + ". Note: Only true scalar tensors (shape.isScalar() == true) can be"
+                            + " broadcast, not broadcasted tensors. Use Tensor.scalar(value) to"
+                            + " create scalar values.");
         }
         return left;
     }

@@ -4,8 +4,8 @@ import com.qxotic.jota.Device;
 import com.qxotic.jota.ir.lir.LIRGraph;
 import com.qxotic.jota.ir.lir.LIRTextRenderer;
 import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
-import com.qxotic.jota.runtime.KernelCachePaths;
 import com.qxotic.jota.runtime.KernelCacheKey;
+import com.qxotic.jota.runtime.KernelCachePaths;
 import com.qxotic.jota.runtime.KernelProgram;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -23,11 +23,9 @@ final class CKernelCompiler {
     private static final boolean KERNEL_LOG = Boolean.getBoolean("jota.kernel.log");
     private static final long COMPILE_TIMEOUT_SECONDS =
             Long.getLong("jota.c.compile.timeout.seconds", 10L);
-    private static final String OPT_LEVEL =
-            System.getProperty("jota.c.compile.opt", "2").trim();
+    private static final String OPT_LEVEL = System.getProperty("jota.c.compile.opt", "2").trim();
     private static final String COMPILER_PROPERTY = "jota.c.compiler";
-    private static final String EXTRA_COMPILE_FLAGS_PROPERTY =
-            "jota.c.compile.extraFlags";
+    private static final String EXTRA_COMPILE_FLAGS_PROPERTY = "jota.c.compile.extraFlags";
     private static final String EXTRA_LINK_FLAGS_PROPERTY = "jota.c.link.extraFlags";
 
     KernelCacheKey cacheKey(LIRGraph graph, ScratchLayout scratchLayout) {

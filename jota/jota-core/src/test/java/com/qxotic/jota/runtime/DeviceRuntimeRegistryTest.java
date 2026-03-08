@@ -50,7 +50,8 @@ class DeviceRuntimeRegistryTest {
         DefaultRuntimeRegistry registry =
                 DefaultRuntimeRegistry.withNative(new PanamaDeviceRuntime());
         DeviceRuntime cRuntime =
-                new StubDeviceRuntime(Device.C, DomainFactory.ofMemorySegment(), new NoopEngine(Device.C));
+                new StubDeviceRuntime(
+                        Device.C, DomainFactory.ofMemorySegment(), new NoopEngine(Device.C));
         registry.register(cRuntime);
 
         registry.registerNative(cRuntime);

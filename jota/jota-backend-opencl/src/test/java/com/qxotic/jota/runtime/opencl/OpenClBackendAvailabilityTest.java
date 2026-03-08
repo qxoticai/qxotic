@@ -54,7 +54,9 @@ class OpenClBackendAvailabilityTest {
                 + reason
                 + "\nRequested profile command: "
                 + command
-                + "\nInstall/enable OpenCL runtime support on this machine, or run without -Popencl.\n\n"
+                + "\n"
+                + "Install/enable OpenCL runtime support on this machine, or run without"
+                + " -Popencl.\n\n"
                 + details;
     }
 }

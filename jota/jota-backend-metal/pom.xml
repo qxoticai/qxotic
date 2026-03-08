@@ -1,74 +1,72 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
 
-    <parent>
-        <groupId>com.qxotic</groupId>
-        <artifactId>jota-aggregator</artifactId>
-        <version>0.1.0</version>
-        <relativePath>../pom.xml</relativePath>
-    </parent>
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jota-aggregator</artifactId>
+    <version>0.1.0</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
 
-    <artifactId>jota-backend-metal</artifactId>
-    <name>Jota Backend Metal</name>
-    <description>Apple Metal GPU backend for Jota tensor operations (macOS only)</description>
+  <artifactId>jota-backend-metal</artifactId>
+  <name>Jota Backend Metal</name>
+  <description>Apple Metal GPU backend for Jota tensor operations (macOS only)</description>
 
-    <properties>
-        <metal.configure.extraArgs></metal.configure.extraArgs>
-        <metal.build.extraArgs></metal.build.extraArgs>
-        <native.dir>${project.basedir}/src/main/native</native.dir>
-        <native.build.dir>${native.dir}/build</native.build.dir>
-        <native.library.basename>jota_metal</native.library.basename>
-        <native.configure.extraArgs>${metal.configure.extraArgs}</native.configure.extraArgs>
-        <native.build.extraArgs>${metal.build.extraArgs}</native.build.extraArgs>
-        <native.copy.skip>false</native.copy.skip>
-        <native.skip.tests>${skipTests.backend.metal}</native.skip.tests>
-        <native.skip.build>${skipNative.backend.metal}</native.skip.build>
-    </properties>
+  <properties>
+    <metal.configure.extraArgs />
+    <metal.build.extraArgs />
+    <native.dir>${project.basedir}/src/main/native</native.dir>
+    <native.build.dir>${native.dir}/build</native.build.dir>
+    <native.library.basename>jota_metal</native.library.basename>
+    <native.configure.extraArgs>${metal.configure.extraArgs}</native.configure.extraArgs>
+    <native.build.extraArgs>${metal.build.extraArgs}</native.build.extraArgs>
+    <native.copy.skip>false</native.copy.skip>
+    <native.skip.tests>${skipTests.backend.metal}</native.skip.tests>
+    <native.skip.build>${skipNative.backend.metal}</native.skip.build>
+  </properties>
 
-    <dependencies>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>jota</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>jota</artifactId>
-            <version>${project.version}</version>
-            <type>test-jar</type>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
+  <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota</artifactId>
+      <version>${project.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
 
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-resources-plugin</artifactId>
-            </plugin>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+      </plugin>
 
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <configuration>
-                    <skipTests>${native.skip.tests}</skipTests>
-                    <dependenciesToScan>
-                        <dependency>com.qxotic:jota:test-jar:tests:${project.version}</dependency>
-                    </dependenciesToScan>
-                </configuration>
-            </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <skipTests>${native.skip.tests}</skipTests>
+          <dependenciesToScan>
+            <dependency>com.qxotic:jota:test-jar:tests:${project.version}</dependency>
+          </dependenciesToScan>
+        </configuration>
+      </plugin>
 
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>exec-maven-plugin</artifactId>
-            </plugin>
-        </plugins>
-    </build>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
 </project>

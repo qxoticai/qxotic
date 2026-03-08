@@ -58,7 +58,9 @@ class MetalBackendAvailabilityTest {
                 + reason
                 + "\nRequested profile command: "
                 + command
-                + "\nInstall/enable Metal runtime support on this machine, or run without -Pmetal.\n\n"
+                + "\n"
+                + "Install/enable Metal runtime support on this machine, or run without"
+                + " -Pmetal.\n\n"
                 + details;
     }
 }

@@ -3,9 +3,7 @@ package com.qxotic.jota.runtime.metal;
 import com.qxotic.jota.NativeLibraryLoader;
 import java.util.concurrent.atomic.AtomicReference;
 
-/**
- * JNI bindings for the Metal backend native runtime.
- */
+/** JNI bindings for the Metal backend native runtime. */
 public final class MetalRuntime {
 
     static final int STORAGE_MODE_SHARED = 0;
@@ -18,9 +16,7 @@ public final class MetalRuntime {
         // Utility class
     }
 
-    /**
-     * Returns true if the Metal backend native library is available.
-     */
+    /** Returns true if the Metal backend native library is available. */
     public static boolean isAvailable() {
         Boolean available = AVAILABLE.get();
         if (available != null) {
@@ -43,12 +39,16 @@ public final class MetalRuntime {
     public static void requireAvailable() {
         if (!isAvailable()) {
             throw new IllegalStateException(
-                "Metal backend not available (" + LIB_NAME + "). " +
-                "Metal is only supported on macOS aarch64 (Apple Silicon). " +
-                "Ensure lib" + LIB_NAME + " is on java.library.path " +
-                "or the backend JAR includes natives for your platform (" + 
-                NativeLibraryLoader.currentPlatform() + ")."
-            );
+                    "Metal backend not available ("
+                            + LIB_NAME
+                            + "). "
+                            + "Metal is only supported on macOS aarch64 (Apple Silicon). "
+                            + "Ensure lib"
+                            + LIB_NAME
+                            + " is on java.library.path "
+                            + "or the backend JAR includes natives for your platform ("
+                            + NativeLibraryLoader.currentPlatform()
+                            + ").");
         }
     }
 

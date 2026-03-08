@@ -137,10 +137,14 @@ public class GPT4TokenizerTest {
             String.join(
                     "|",
                     // Words starting with lowercase or modifier after optional non-alphanumeric
-                    "[^\\r\\n\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]*[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?",
+                    "[^\\r"
+                        + "\\n"
+                        + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]*[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?",
 
                     // Words starting with uppercase or title case after optional non-alphanumeric
-                    "[^\\r\\n\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]+[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?",
+                    "[^\\r"
+                        + "\\n"
+                        + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]+[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?",
 
                     // Numbers 1-3 digits
                     "\\p{N}{1,3}",
@@ -255,10 +259,12 @@ public class GPT4TokenizerTest {
     void testGPT4o(Tokenizer tokenizer) {
         String text =
                 "Many words map to one token, but some don't: indivisible.\n"
-                        + "\n"
-                        + "Unicode characters like emojis may be split into many tokens containing the underlying bytes: \uD83E\uDD1A\uD83C\uDFFE\n"
-                        + "\n"
-                        + "Sequences of characters commonly found next to each other may be grouped together: 1234567890";
+                    + "\n"
+                    + "Unicode characters like emojis may be split into many tokens containing the"
+                    + " underlying bytes: \uD83E\uDD1A\uD83C\uDFFE\n"
+                    + "\n"
+                    + "Sequences of characters commonly found next to each other may be grouped"
+                    + " together: 1234567890";
         IntSequence expected =
                 IntSequence.of(
                         12488, 6391, 4014, 316, 1001, 6602, 11, 889, 1236, 4128, 25, 3862, 181386,
