@@ -40,6 +40,23 @@
 
         <!-- Core tests run by default -->
         <skipTests.backend.core>false</skipTests.backend.core>
+
+        <!-- Shared native backend build properties (overridden per backend module) -->
+        <native.dir>${project.basedir}/src/main/native</native.dir>
+        <native.build.dir>${native.dir}/build</native.build.dir>
+        <native.resource.dir>${project.build.outputDirectory}/META-INF/native/${os.name}/${os.arch}</native.resource.dir>
+        <os.name>linux</os.name>
+        <os.arch>x86_64</os.arch>
+        <native.cmake.executable>cmake</native.cmake.executable>
+        <native.build.type>Release</native.build.type>
+        <native.configure.extraArgs></native.configure.extraArgs>
+        <native.build.extraArgs></native.build.extraArgs>
+        <native.configure.commandline>-S ${native.dir} -B ${native.build.dir} ${native.configure.extraArgs}</native.configure.commandline>
+        <native.build.commandline>--build ${native.build.dir} --config ${native.build.type} --target ${native.library.basename} ${native.build.extraArgs}</native.build.commandline>
+        <native.library.basename>unset</native.library.basename>
+        <native.copy.skip>true</native.copy.skip>
+        <native.skip.tests>true</native.skip.tests>
+        <native.skip.build>true</native.skip.build>
     </properties>
 
     <modules>
@@ -68,30 +85,6 @@
                         <artifactId>exec-maven-plugin</artifactId>
                         <executions>
                             <execution>
-                                <id>check-toolchain-c</id>
-                                <phase>validate</phase>
-                                <goals><goal>exec</goal></goals>
-                                <configuration>
-                                    <skip>${skipNative.backend.c}</skip>
-                                    <executable>/bin/sh</executable>
-                                    <arguments>
-                                        <argument>-c</argument>
-                                        <argument>
-                                            command -v gcc &amp;&amp; exit 0 ||
-                                            command -v clang &amp;&amp; exit 0 ||
-                                            (echo "[ERROR] C compiler (gcc or clang) not found in PATH" &amp;&amp;
-echo "[ERROR] Required for -Pc profile (C backend)" &amp;&amp;
-echo "[ERROR] Install build tools:" &amp;&amp;
-echo "[ERROR]   Ubuntu/Debian: sudo apt install build-essential" &amp;&amp;
-echo "[ERROR]   RHEL/CentOS: sudo dnf install gcc gcc-c++ make" &amp;&amp;
-echo "[ERROR]   macOS: xcode-select --install" &amp;&amp;
-echo "[ERROR]   Arch: sudo pacman -S base-devel" &amp;&amp;
-exit 1)
-                                        </argument>
-                                    </arguments>
-                                </configuration>
-                            </execution>
-                            <execution>
                                 <id>check-toolchain-cmake</id>
                                 <phase>validate</phase>
                                 <goals><goal>exec</goal></goals>
@@ -101,8 +94,8 @@ exit 1)
                                     <arguments>
                                         <argument>-c</argument>
                                         <argument>
-                                            command -v cmake &amp;&amp; exit 0 ||
-                                            (echo "[ERROR] CMake not found in PATH" &amp;&amp;
+                                            command -v "${native.cmake.executable}" &gt;/dev/null 2&gt;&amp;1 || [ -x "${native.cmake.executable}" ] ||
+                                            (echo "[ERROR] CMake executable not found: ${native.cmake.executable}" &amp;&amp;
 echo "[ERROR] Required for -Pc profile (C backend native builds)" &amp;&amp;
 echo "[ERROR] Install CMake:" &amp;&amp;
 echo "[ERROR]   Ubuntu/Debian: sudo apt install cmake" &amp;&amp;
@@ -237,8 +230,8 @@ exit 1)
                                     <arguments>
                                         <argument>-c</argument>
                                         <argument>
-                                            command -v cmake &amp;&amp; exit 0 ||
-                                            (echo "[ERROR] CMake not found in PATH" &amp;&amp;
+                                            command -v "${native.cmake.executable}" &gt;/dev/null 2&gt;&amp;1 || [ -x "${native.cmake.executable}" ] ||
+                                            (echo "[ERROR] CMake executable not found: ${native.cmake.executable}" &amp;&amp;
 echo "[ERROR] Required for -Popencl profile (OpenCL backend native builds)" &amp;&amp;
 echo "[ERROR] Install CMake:" &amp;&amp;
 echo "[ERROR]   Ubuntu/Debian: sudo apt install cmake" &amp;&amp;
@@ -261,6 +254,101 @@ exit 1)
             <id>backend-matrix</id>
             <properties>
                 <jota.test.backends>available</jota.test.backends>
+            </properties>
+        </profile>
+
+        <!-- Shared platform detection for backend native packaging -->
+        <profile>
+            <id>native-windows</id>
+            <activation>
+                <os>
+                    <family>windows</family>
+                </os>
+            </activation>
+            <properties>
+                <os.name>windows</os.name>
+                <os.arch>x86_64</os.arch>
+            </properties>
+        </profile>
+        <profile>
+            <id>native-linux-x64</id>
+            <activation>
+                <os>
+                    <name>Linux</name>
+                    <arch>amd64</arch>
+                </os>
+            </activation>
+            <properties>
+                <os.name>linux</os.name>
+                <os.arch>x86_64</os.arch>
+            </properties>
+        </profile>
+        <profile>
+            <id>native-linux-arm64</id>
+            <activation>
+                <os>
+                    <name>Linux</name>
+                    <arch>aarch64</arch>
+                </os>
+            </activation>
+            <properties>
+                <os.name>linux</os.name>
+                <os.arch>aarch64</os.arch>
+            </properties>
+        </profile>
+        <profile>
+            <id>native-macos-x64</id>
+            <activation>
+                <os>
+                    <name>Mac OS X</name>
+                    <arch>x86_64</arch>
+                </os>
+            </activation>
+            <properties>
+                <os.name>macos</os.name>
+                <os.arch>x86_64</os.arch>
+            </properties>
+        </profile>
+        <profile>
+            <id>native-macos-arm64</id>
+            <activation>
+                <os>
+                    <name>Mac OS X</name>
+                    <arch>aarch64</arch>
+                </os>
+            </activation>
+            <properties>
+                <os.name>macos</os.name>
+                <os.arch>aarch64</os.arch>
+            </properties>
+        </profile>
+
+        <!-- CI profile: native builds expected from matrix artifacts -->
+        <profile>
+            <id>ci-natives</id>
+            <activation>
+                <property>
+                    <name>env.CI</name>
+                </property>
+            </activation>
+            <properties>
+                <skipNative.backend.c>true</skipNative.backend.c>
+                <skipNative.backend.hip>true</skipNative.backend.hip>
+                <skipNative.backend.metal>true</skipNative.backend.metal>
+                <skipNative.backend.opencl>true</skipNative.backend.opencl>
+            </properties>
+        </profile>
+
+        <!-- HIP is unsupported on macOS -->
+        <profile>
+            <id>hip-macos-skip</id>
+            <activation>
+                <os>
+                    <family>mac</family>
+                </os>
+            </activation>
+            <properties>
+                <skipNative.backend.hip>true</skipNative.backend.hip>
             </properties>
         </profile>
 
@@ -298,6 +386,63 @@ exit 1)
                             <jota.test.backends>${jota.test.backends}</jota.test.backends>
                         </systemPropertyVariables>
                     </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-resources-plugin</artifactId>
+                    <executions>
+                        <execution>
+                            <id>copy-native-backend</id>
+                            <phase>process-resources</phase>
+                            <goals>
+                                <goal>copy-resources</goal>
+                            </goals>
+                            <configuration>
+                                <skip>${native.copy.skip}</skip>
+                                <outputDirectory>${native.resource.dir}</outputDirectory>
+                                <resources>
+                                    <resource>
+                                        <directory>${native.build.dir}</directory>
+                                        <includes>
+                                            <include>lib${native.library.basename}.so</include>
+                                            <include>lib${native.library.basename}.dylib</include>
+                                            <include>${native.library.basename}.dll</include>
+                                        </includes>
+                                    </resource>
+                                </resources>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>exec-maven-plugin</artifactId>
+                    <executions>
+                        <execution>
+                            <id>configure-native</id>
+                            <phase>generate-sources</phase>
+                            <goals>
+                                <goal>exec</goal>
+                            </goals>
+                            <configuration>
+                                <skip>${native.skip.build}</skip>
+                                <executable>${native.cmake.executable}</executable>
+                                <commandlineArgs>${native.configure.commandline}</commandlineArgs>
+                            </configuration>
+                        </execution>
+                        <execution>
+                            <id>build-native</id>
+                            <phase>compile</phase>
+                            <goals>
+                                <goal>exec</goal>
+                            </goals>
+                            <configuration>
+                                <skip>${native.skip.build}</skip>
+                                <executable>${native.cmake.executable}</executable>
+                                <commandlineArgs>${native.build.commandline}</commandlineArgs>
+                            </configuration>
+                        </execution>
+                    </executions>
                 </plugin>
             </plugins>
         </pluginManagement>

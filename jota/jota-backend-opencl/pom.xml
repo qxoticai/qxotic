@@ -16,12 +16,16 @@
     <description>OpenCL backend for Jota tensor operations (cross-platform GPU/CPU)</description>
 
     <properties>
-        <native.opencl.dir>${project.basedir}/src/main/native</native.opencl.dir>
-        <native.opencl.build.dir>${native.opencl.dir}/build</native.opencl.build.dir>
-        <native.resource.dir>${project.build.outputDirectory}/META-INF/native/${os.name}/${os.arch}</native.resource.dir>
-        <!-- Platform detection for local builds -->
-        <os.name>linux</os.name>
-        <os.arch>x86_64</os.arch>
+        <opencl.configure.extraArgs></opencl.configure.extraArgs>
+        <opencl.build.extraArgs></opencl.build.extraArgs>
+        <native.dir>${project.basedir}/src/main/native</native.dir>
+        <native.build.dir>${native.dir}/build</native.build.dir>
+        <native.library.basename>jota_opencl</native.library.basename>
+        <native.configure.extraArgs>${opencl.configure.extraArgs}</native.configure.extraArgs>
+        <native.build.extraArgs>${opencl.build.extraArgs}</native.build.extraArgs>
+        <native.copy.skip>false</native.copy.skip>
+        <native.skip.tests>${skipTests.backend.opencl}</native.skip.tests>
+        <native.skip.build>${skipNative.backend.opencl}</native.skip.build>
     </properties>
 
     <dependencies>
@@ -45,161 +49,30 @@
 
     <build>
         <plugins>
-            <!-- Copy native library into JAR resources -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-resources-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>copy-native-opencl</id>
-                        <phase>process-resources</phase>
-                        <goals><goal>copy-resources</goal></goals>
-                        <configuration>
-                            <outputDirectory>${native.resource.dir}</outputDirectory>
-                            <resources>
-                                <resource>
-                                    <directory>${native.opencl.build.dir}</directory>
-                                    <includes>
-                                        <include>libjota_opencl.so</include>
-                                        <include>libjota_opencl.dylib</include>
-                                        <include>jota_opencl.dll</include>
-                                    </includes>
-                                </resource>
-                            </resources>
-                        </configuration>
-                    </execution>
-                </executions>
             </plugin>
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <skipTests>${skipTests.backend.opencl}</skipTests>
+                    <skipTests>${native.skip.tests}</skipTests>
                     <dependenciesToScan>
                         <dependency>com.qxotic:jota:test-jar:tests:${project.version}</dependency>
                     </dependenciesToScan>
-                    <!-- java.library.path no longer needed - NativeLibraryLoader extracts from JAR -->
                 </configuration>
             </plugin>
 
-            <!-- Build native library for local platform during development -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>configure-native-opencl</id>
-                        <phase>generate-sources</phase>
-                        <goals><goal>exec</goal></goals>
-                        <configuration>
-                            <skip>${skipNative.backend.opencl}</skip>
-                            <executable>cmake</executable>
-                            <arguments>
-                                <argument>-S</argument>
-                                <argument>${native.opencl.dir}</argument>
-                                <argument>-B</argument>
-                                <argument>${native.opencl.build.dir}</argument>
-                            </arguments>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>build-native-opencl</id>
-                        <phase>compile</phase>
-                        <goals><goal>exec</goal></goals>
-                        <configuration>
-                            <skip>${skipNative.backend.opencl}</skip>
-                            <executable>cmake</executable>
-                            <arguments>
-                                <argument>--build</argument>
-                                <argument>${native.opencl.build.dir}</argument>
-                                <argument>--config</argument>
-                                <argument>Release</argument>
-                                <argument>--target</argument>
-                                <argument>jota_opencl</argument>
-                            </arguments>
-                        </configuration>
-                    </execution>
-                </executions>
             </plugin>
         </plugins>
     </build>
 
     <profiles>
-        <!-- Platform detection: Windows -->
-        <profile>
-            <id>native-windows</id>
-            <activation>
-                <os>
-                    <family>windows</family>
-                </os>
-            </activation>
-            <properties>
-                <os.name>windows</os.name>
-                <os.arch>x86_64</os.arch>
-            </properties>
-        </profile>
-
-        <!-- Platform detection: Linux x86_64 -->
-        <profile>
-            <id>native-linux-x64</id>
-            <activation>
-                <os>
-                    <name>Linux</name>
-                    <arch>amd64</arch>
-                </os>
-            </activation>
-            <properties>
-                <os.name>linux</os.name>
-                <os.arch>x86_64</os.arch>
-            </properties>
-        </profile>
-
-        <!-- Platform detection: Linux aarch64 -->
-        <profile>
-            <id>native-linux-arm64</id>
-            <activation>
-                <os>
-                    <name>Linux</name>
-                    <arch>aarch64</arch>
-                </os>
-            </activation>
-            <properties>
-                <os.name>linux</os.name>
-                <os.arch>aarch64</os.arch>
-            </properties>
-        </profile>
-
-        <!-- Platform detection: macOS x86_64 (Intel) -->
-        <profile>
-            <id>native-macos-x64</id>
-            <activation>
-                <os>
-                    <name>Mac OS X</name>
-                    <arch>x86_64</arch>
-                </os>
-            </activation>
-            <properties>
-                <os.name>macos</os.name>
-                <os.arch>x86_64</os.arch>
-            </properties>
-        </profile>
-
-        <!-- Platform detection: macOS aarch64 (Apple Silicon) -->
-        <profile>
-            <id>native-macos-arm64</id>
-            <activation>
-                <os>
-                    <name>Mac OS X</name>
-                    <arch>aarch64</arch>
-                </os>
-            </activation>
-            <properties>
-                <os.name>macos</os.name>
-                <os.arch>aarch64</os.arch>
-            </properties>
-        </profile>
-
         <!-- Explicit test selection enables tests -->
         <profile>
             <id>opencl-explicit-test-selection</id>
@@ -210,20 +83,6 @@
             </activation>
             <properties>
                 <skipTests.backend.opencl>false</skipTests.backend.opencl>
-            </properties>
-        </profile>
-
-        <!-- CI profile: multi-platform native build -->
-        <profile>
-            <id>ci-natives</id>
-            <activation>
-                <property>
-                    <name>env.CI</name>
-                </property>
-            </activation>
-            <properties>
-                <!-- In CI, expect pre-built natives from matrix build -->
-                <skipNative.backend.opencl>true</skipNative.backend.opencl>
             </properties>
         </profile>
     </profiles>

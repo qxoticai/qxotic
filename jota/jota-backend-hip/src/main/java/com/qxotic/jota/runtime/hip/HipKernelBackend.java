@@ -22,12 +22,14 @@ import java.util.concurrent.TimeUnit;
 final class HipKernelBackend implements KernelBackend {
 
     private static final String ENV_HIPCC = "HIPCC";
+    private static final String COMPILER_PROPERTY = "jota.hip.compiler";
+    private static final String EXTRA_FLAGS_PROPERTY = "jota.hip.compile.flags";
     private static final Path KERNEL_ROOT = Path.of("__kernels").resolve(Device.HIP.leafName());
     private static final boolean KERNEL_LOG = Boolean.getBoolean("jota.kernel.log");
     private static final long COMPILE_TIMEOUT_SECONDS =
-            Long.getLong("com.qxotic.jota.hip.compile.timeout.seconds", 10L);
+            Long.getLong("jota.hip.compile.timeout.seconds", 10L);
     private static final String OPT_LEVEL =
-            System.getProperty("com.qxotic.jota.hip.compile.opt", "2").trim();
+            System.getProperty("jota.hip.compile.opt", "2").trim();
     private static final String ARCH = resolveArch();
     private static final boolean TIMING_LOG = Boolean.getBoolean("jota.hip.timing.log");
 
@@ -125,6 +127,16 @@ final class HipKernelBackend implements KernelBackend {
                                         Long.toString(entry.getValue())
                                                 .getBytes(StandardCharsets.UTF_8));
                             });
+            String hipcc = System.getenv(ENV_HIPCC);
+            if (hipcc == null || hipcc.isBlank()) {
+                hipcc = "hipcc";
+            }
+            digest.update(resolveHipcc(hipcc).getBytes(StandardCharsets.UTF_8));
+            digest.update(OPT_LEVEL.getBytes(StandardCharsets.UTF_8));
+            digest.update(String.join(" ", extraCompileFlags()).getBytes(StandardCharsets.UTF_8));
+            if (ARCH != null) {
+                digest.update(ARCH.getBytes(StandardCharsets.UTF_8));
+            }
             byte[] hashed = digest.digest();
             StringBuilder builder = new StringBuilder(hashed.length * 2 + 11);
             for (byte value : hashed) {
@@ -291,12 +303,13 @@ final class HipKernelBackend implements KernelBackend {
             hipcc = "hipcc";
         }
         List<String> command = new ArrayList<>();
-        command.add(hipcc);
+        command.add(resolveHipcc(hipcc));
         command.add("--genco");
         command.add("-O" + OPT_LEVEL);
         if (ARCH != null && !ARCH.isBlank()) {
             command.add("--offload-arch=" + ARCH);
         }
+        command.addAll(extraCompileFlags());
         command.add(source.toString());
         command.add("-o");
         command.add(hsaco.toString());
@@ -324,7 +337,7 @@ final class HipKernelBackend implements KernelBackend {
     }
 
     private static String resolveArch() {
-        String prop = System.getProperty("com.qxotic.jota.hip.arch");
+        String prop = System.getProperty("jota.hip.arch");
         if (prop != null && !prop.isBlank()) {
             return prop.trim();
         }
@@ -333,6 +346,29 @@ final class HipKernelBackend implements KernelBackend {
             return env.trim();
         }
         return null;
+    }
+
+    private static String resolveHipcc(String fallbackFromEnv) {
+        String prop = System.getProperty(COMPILER_PROPERTY);
+        if (prop != null && !prop.isBlank()) {
+            return prop.trim();
+        }
+        return fallbackFromEnv;
+    }
+
+    private static List<String> extraCompileFlags() {
+        String flags = System.getProperty(EXTRA_FLAGS_PROPERTY);
+        if (flags == null || flags.isBlank()) {
+            return List.of();
+        }
+        String[] parts = flags.trim().split("\\s+");
+        List<String> result = new ArrayList<>(parts.length);
+        for (String part : parts) {
+            if (!part.isBlank()) {
+                result.add(part);
+            }
+        }
+        return List.copyOf(result);
     }
 
     private static void log(String message) {

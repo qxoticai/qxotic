@@ -16,12 +16,16 @@
     <description>Apple Metal GPU backend for Jota tensor operations (macOS only)</description>
 
     <properties>
-        <native.metal.dir>${project.basedir}/src/main/native</native.metal.dir>
-        <native.metal.build.dir>${native.metal.dir}/build</native.metal.build.dir>
-        <native.resource.dir>${project.build.outputDirectory}/META-INF/native/${os.name}/${os.arch}</native.resource.dir>
-        <!-- Platform detection for local builds -->
-        <os.name>macos</os.name>
-        <os.arch>aarch64</os.arch>
+        <metal.configure.extraArgs></metal.configure.extraArgs>
+        <metal.build.extraArgs></metal.build.extraArgs>
+        <native.dir>${project.basedir}/src/main/native</native.dir>
+        <native.build.dir>${native.dir}/build</native.build.dir>
+        <native.library.basename>jota_metal</native.library.basename>
+        <native.configure.extraArgs>${metal.configure.extraArgs}</native.configure.extraArgs>
+        <native.build.extraArgs>${metal.build.extraArgs}</native.build.extraArgs>
+        <native.copy.skip>false</native.copy.skip>
+        <native.skip.tests>${skipTests.backend.metal}</native.skip.tests>
+        <native.skip.build>${skipNative.backend.metal}</native.skip.build>
     </properties>
 
     <dependencies>
@@ -45,129 +49,26 @@
 
     <build>
         <plugins>
-            <!-- Copy native library into JAR resources -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-resources-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>copy-native-metal</id>
-                        <phase>process-resources</phase>
-                        <goals><goal>copy-resources</goal></goals>
-                        <configuration>
-                            <outputDirectory>${native.resource.dir}</outputDirectory>
-                            <resources>
-                                <resource>
-                                    <directory>${native.metal.build.dir}</directory>
-                                    <includes>
-                                        <include>libjota_metal.so</include>
-                                        <include>libjota_metal.dylib</include>
-                                        <include>jota_metal.dll</include>
-                                    </includes>
-                                </resource>
-                            </resources>
-                        </configuration>
-                    </execution>
-                </executions>
             </plugin>
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <skipTests>${skipTests.backend.metal}</skipTests>
+                    <skipTests>${native.skip.tests}</skipTests>
                     <dependenciesToScan>
                         <dependency>com.qxotic:jota:test-jar:tests:${project.version}</dependency>
                     </dependenciesToScan>
-                    <!-- java.library.path no longer needed - NativeLibraryLoader extracts from JAR -->
                 </configuration>
             </plugin>
 
-            <!-- Build native library for local platform during development -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>configure-native-metal</id>
-                        <phase>generate-sources</phase>
-                        <goals><goal>exec</goal></goals>
-                        <configuration>
-                            <skip>${skipNative.backend.metal}</skip>
-                            <executable>cmake</executable>
-                            <arguments>
-                                <argument>-S</argument>
-                                <argument>${native.metal.dir}</argument>
-                                <argument>-B</argument>
-                                <argument>${native.metal.build.dir}</argument>
-                            </arguments>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>build-native-metal</id>
-                        <phase>compile</phase>
-                        <goals><goal>exec</goal></goals>
-                        <configuration>
-                            <skip>${skipNative.backend.metal}</skip>
-                            <executable>cmake</executable>
-                            <arguments>
-                                <argument>--build</argument>
-                                <argument>${native.metal.build.dir}</argument>
-                                <argument>--config</argument>
-                                <argument>Release</argument>
-                                <argument>--target</argument>
-                                <argument>jota_metal</argument>
-                            </arguments>
-                        </configuration>
-                    </execution>
-                </executions>
             </plugin>
         </plugins>
     </build>
-
-    <profiles>
-        <!-- Platform detection: macOS x86_64 (Intel) -->
-        <profile>
-            <id>native-macos-x64</id>
-            <activation>
-                <os>
-                    <name>Mac OS X</name>
-                    <arch>x86_64</arch>
-                </os>
-            </activation>
-            <properties>
-                <os.name>macos</os.name>
-                <os.arch>x86_64</os.arch>
-            </properties>
-        </profile>
-
-        <!-- Platform detection: macOS aarch64 (Apple Silicon) -->
-        <profile>
-            <id>native-macos-arm64</id>
-            <activation>
-                <os>
-                    <name>Mac OS X</name>
-                    <arch>aarch64</arch>
-                </os>
-            </activation>
-            <properties>
-                <os.name>macos</os.name>
-                <os.arch>aarch64</os.arch>
-            </properties>
-        </profile>
-
-        <!-- CI profile: multi-platform native build -->
-        <profile>
-            <id>ci-natives</id>
-            <activation>
-                <property>
-                    <name>env.CI</name>
-                </property>
-            </activation>
-            <properties>
-                <!-- In CI, expect pre-built natives from matrix build -->
-                <skipNative.backend.metal>true</skipNative.backend.metal>
-            </properties>
-        </profile>
-    </profiles>
 </project>

@@ -20,9 +20,13 @@ final class CKernelCompiler {
 
     private static final boolean KERNEL_LOG = Boolean.getBoolean("jota.kernel.log");
     private static final long COMPILE_TIMEOUT_SECONDS =
-            Long.getLong("com.qxotic.jota.c.compile.timeout.seconds", 10L);
+            Long.getLong("jota.c.compile.timeout.seconds", 10L);
     private static final String OPT_LEVEL =
-            System.getProperty("com.qxotic.jota.c.compile.opt", "2").trim();
+            System.getProperty("jota.c.compile.opt", "2").trim();
+    private static final String COMPILER_PROPERTY = "jota.c.compiler";
+    private static final String EXTRA_COMPILE_FLAGS_PROPERTY =
+            "jota.c.compile.extraFlags";
+    private static final String EXTRA_LINK_FLAGS_PROPERTY = "jota.c.link.extraFlags";
 
     KernelCacheKey cacheKey(LIRGraph graph, ScratchLayout scratchLayout) {
         String hash = hashLirGraph(graph, scratchLayout);
@@ -82,6 +86,7 @@ final class CKernelCompiler {
         if (openMpEnabled()) {
             command.addAll(openMpCompileFlags());
         }
+        command.addAll(extraCompileFlags());
         command.add("-O" + OPT_LEVEL);
         command.add("-std=gnu17");
         command.add(source.toAbsolutePath().toString());
@@ -93,6 +98,7 @@ final class CKernelCompiler {
         if (openMpEnabled()) {
             command.addAll(openMpLinkFlags());
         }
+        command.addAll(extraLinkFlags());
         if (!COpenMpConfig.isMac() && !COpenMpConfig.isWindows()) {
             command.add("-ldl");
         }
@@ -126,6 +132,10 @@ final class CKernelCompiler {
     }
 
     private static String compilerCommand() {
+        String property = System.getProperty(COMPILER_PROPERTY);
+        if (property != null && !property.isBlank()) {
+            return property.trim();
+        }
         String override = System.getenv("JOTA_C_CC");
         if (override != null && !override.isBlank()) {
             return override;
@@ -156,7 +166,7 @@ final class CKernelCompiler {
     }
 
     private static List<String> openMpCompileFlags() {
-        String override = System.getProperty("com.qxotic.jota.c.openmp.compileFlags");
+        String override = System.getProperty("jota.c.openmp.compileFlags");
         if (override != null && !override.isBlank()) {
             return splitFlags(override);
         }
@@ -174,7 +184,7 @@ final class CKernelCompiler {
     }
 
     private static List<String> openMpLinkFlags() {
-        String override = System.getProperty("com.qxotic.jota.c.openmp.linkFlags");
+        String override = System.getProperty("jota.c.openmp.linkFlags");
         if (override != null && !override.isBlank()) {
             return splitFlags(override);
         }
@@ -200,6 +210,22 @@ final class CKernelCompiler {
         return List.copyOf(result);
     }
 
+    private static List<String> extraCompileFlags() {
+        String flags = System.getProperty(EXTRA_COMPILE_FLAGS_PROPERTY);
+        if (flags == null || flags.isBlank()) {
+            return List.of();
+        }
+        return splitFlags(flags);
+    }
+
+    private static List<String> extraLinkFlags() {
+        String flags = System.getProperty(EXTRA_LINK_FLAGS_PROPERTY);
+        if (flags == null || flags.isBlank()) {
+            return List.of();
+        }
+        return splitFlags(flags);
+    }
+
     private static String hashLirGraph(LIRGraph graph, ScratchLayout scratchLayout) {
         LIRTextRenderer renderer = new LIRTextRenderer();
         StringBuilder text = new StringBuilder(renderer.render(graph));
@@ -215,6 +241,10 @@ final class CKernelCompiler {
                                             .append(offset));
         }
         text.append("\n// openmp: ").append(openMpEnabled());
+        text.append("\n// compiler: ").append(compilerCommand());
+        text.append("\n// opt-level: ").append(OPT_LEVEL);
+        text.append("\n// extra-compile-flags: ").append(String.join(" ", extraCompileFlags()));
+        text.append("\n// extra-link-flags: ").append(String.join(" ", extraLinkFlags()));
         if (openMpEnabled()) {
             text.append("\n// openmp-compile-flags: ")
                     .append(String.join(" ", openMpCompileFlags()));

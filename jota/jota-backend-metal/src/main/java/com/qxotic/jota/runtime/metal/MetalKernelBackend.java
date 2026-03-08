@@ -31,11 +31,15 @@ final class MetalKernelBackend implements KernelBackend {
 
     private static final Path KERNEL_ROOT = Path.of("__kernels").resolve(Device.METAL.leafName());
     private static final String METAL_COMPILER =
-            System.getProperty("com.qxotic.jota.metal.compiler", "xcrun").trim();
+            System.getProperty("jota.metal.compiler", "xcrun").trim();
+    private static final String METAL_COMPILE_FLAGS_PROPERTY =
+            "jota.metal.compile.flags";
+    private static final String METALLIB_FLAGS_PROPERTY =
+            "jota.metal.metallib.flags";
     private static final long COMPILE_TIMEOUT_SECONDS =
-            Long.getLong("com.qxotic.jota.metal.compile.timeout.seconds", 15L);
+            Long.getLong("jota.metal.compile.timeout.seconds", 15L);
     private static final String OPT_LEVEL =
-            System.getProperty("com.qxotic.jota.metal.compile.opt", "2").trim();
+            System.getProperty("jota.metal.compile.opt", "2").trim();
     private static final boolean KERNEL_LOG = Boolean.getBoolean("jota.kernel.log");
 
     private final KernelExecutableCache cache = new InMemoryKernelCache();
@@ -122,6 +126,14 @@ final class MetalKernelBackend implements KernelBackend {
                                         Long.toString(entry.getValue())
                                                 .getBytes(StandardCharsets.UTF_8));
                             });
+            digest.update(METAL_COMPILER.getBytes(StandardCharsets.UTF_8));
+            digest.update(OPT_LEVEL.getBytes(StandardCharsets.UTF_8));
+            digest.update(
+                    String.join(" ", extraFlags(METAL_COMPILE_FLAGS_PROPERTY))
+                            .getBytes(StandardCharsets.UTF_8));
+            digest.update(
+                    String.join(" ", extraFlags(METALLIB_FLAGS_PROPERTY))
+                            .getBytes(StandardCharsets.UTF_8));
             byte[] hashed = digest.digest();
             StringBuilder builder = new StringBuilder(hashed.length * 2 + 13);
             for (byte value : hashed) {
@@ -171,6 +183,7 @@ final class MetalKernelBackend implements KernelBackend {
         metalCompile.add("macosx");
         metalCompile.add("metal");
         metalCompile.add("-O" + OPT_LEVEL);
+        metalCompile.addAll(extraFlags(METAL_COMPILE_FLAGS_PROPERTY));
         metalCompile.add("-c");
         metalCompile.add(source.toString());
         metalCompile.add("-o");
@@ -182,6 +195,7 @@ final class MetalKernelBackend implements KernelBackend {
         libCompile.add("-sdk");
         libCompile.add("macosx");
         libCompile.add("metallib");
+        libCompile.addAll(extraFlags(METALLIB_FLAGS_PROPERTY));
         libCompile.add(air.toString());
         libCompile.add("-o");
         libCompile.add(metallib.toString());
@@ -247,6 +261,21 @@ final class MetalKernelBackend implements KernelBackend {
             return text;
         }
         return text.substring(0, max) + "\n... [truncated " + (text.length() - max) + " chars]";
+    }
+
+    private static List<String> extraFlags(String propertyName) {
+        String value = System.getProperty(propertyName);
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        String[] parts = value.trim().split("\\s+");
+        List<String> result = new ArrayList<>(parts.length);
+        for (String part : parts) {
+            if (!part.isBlank()) {
+                result.add(part);
+            }
+        }
+        return List.copyOf(result);
     }
 
     private static final class StreamCapture {

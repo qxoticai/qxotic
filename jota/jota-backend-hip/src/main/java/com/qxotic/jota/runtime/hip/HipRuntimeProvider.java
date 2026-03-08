@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit;
 public final class HipRuntimeProvider implements DeviceRuntimeProvider {
 
     private static final String ENV_HIPCC = "HIPCC";
+    private static final String HIPCC_PROPERTY = "jota.hip.compiler";
 
     @Override
     public String id() {
@@ -35,6 +36,8 @@ public final class HipRuntimeProvider implements DeviceRuntimeProvider {
             return RuntimeProbe.missingSoftware(
                     "HIP toolchain executable is not available: " + hipcc,
                     "Install ROCm hipcc and ensure it is on PATH, or set "
+                            + HIPCC_PROPERTY
+                            + " / "
                             + ENV_HIPCC
                             + " to a valid hipcc binary");
         }
@@ -65,6 +68,10 @@ public final class HipRuntimeProvider implements DeviceRuntimeProvider {
     }
 
     private static String hipccExecutable() {
+        String fromProperty = System.getProperty(HIPCC_PROPERTY);
+        if (fromProperty != null && !fromProperty.isBlank()) {
+            return fromProperty.trim();
+        }
         String fromEnv = System.getenv(ENV_HIPCC);
         if (fromEnv != null && !fromEnv.isBlank()) {
             return fromEnv.trim();
