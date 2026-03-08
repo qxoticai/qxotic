@@ -3,12 +3,12 @@ package com.qxotic.jota.tensor;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.impl.DomainFactory;
 import com.qxotic.jota.memory.impl.MemoryViewFactory;
 import com.qxotic.jota.testutil.TestKernels;
 import java.lang.foreign.MemorySegment;
@@ -21,7 +21,8 @@ import org.junit.jupiter.api.Test;
 
 class JavaKernelCompilerTest {
 
-    @AutoClose private final MemoryDomain<MemorySegment> domain = DomainFactory.ofMemorySegment();
+    @AutoClose
+    private final MemoryDomain<MemorySegment> domain = Environment.current().nativeMemoryDomain();
 
     private static Tensor tensorGelu(Tensor value) {
         Tensor cubic = value.multiply(value).multiply(value);

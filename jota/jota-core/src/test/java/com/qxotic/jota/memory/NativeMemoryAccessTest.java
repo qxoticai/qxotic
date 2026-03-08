@@ -10,7 +10,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;
 
-class PanamaMemoryAccessTest {
+class NativeMemoryAccessTest {
 
     private final MemoryAccess<MemorySegment> memoryAccess = MemoryAccessFactory.ofMemorySegment();
 

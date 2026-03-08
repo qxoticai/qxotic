@@ -5,10 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.Environment;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryHelpers;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.impl.DomainFactory;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
 import com.qxotic.jota.testutil.TensorTestReads;
 import org.junit.jupiter.api.Test;
@@ -19,7 +19,7 @@ class ApiExampleTest {
     @Test
     void basicFunctionRunsAndMaterializes() {
         MemoryView<?> view =
-                MemoryHelpers.arange(DomainFactory.ofMemorySegment(), DataType.FP32, 6)
+                MemoryHelpers.arange(Environment.current().nativeMemoryDomain(), DataType.FP32, 6)
                         .view(Shape.of(2, 3));
         Tensor x = Tensor.of(view);
         Tensor y = x.add(x).sqrt();

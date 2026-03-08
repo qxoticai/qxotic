@@ -17,7 +17,7 @@ final class BooleansMemoryAllocator implements MemoryAllocator<boolean[]> {
 
     @Override
     public Device device() {
-        return Device.PANAMA;
+        return Device.JAVA;
     }
 
     @Override

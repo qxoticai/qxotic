@@ -1,0 +1,11 @@
+[
+  {
+    "name": "com.qxotic.jota.runtime.hip.HipDevicePtr",
+    "methods": [
+      {
+        "name": "address",
+        "parameterTypes": []
+      }
+    ]
+  }
+]

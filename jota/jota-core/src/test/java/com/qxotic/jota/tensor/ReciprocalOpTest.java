@@ -3,11 +3,11 @@ package com.qxotic.jota.tensor;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.Environment;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.AbstractMemoryTest;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.impl.DomainFactory;
 import com.qxotic.jota.memory.impl.MemoryFactory;
 import com.qxotic.jota.memory.impl.MemoryViewFactory;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
@@ -24,7 +24,7 @@ class ReciprocalOpTest extends AbstractMemoryTest {
 
     @BeforeAll
     static void setUpDomain() {
-        domain = DomainFactory.ofMemorySegment();
+        domain = Environment.current().nativeMemoryDomain();
     }
 
     @Test

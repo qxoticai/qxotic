@@ -281,7 +281,7 @@ public class MandelbrotDemo {
 
     @SuppressWarnings("unchecked")
     private static MemoryView<MemorySegment> toNativeHostView(MemoryView<?> view) {
-        return (MemoryView<MemorySegment>) Tensor.of(view).to(Device.PANAMA).materialize();
+        return (MemoryView<MemorySegment>) Tensor.of(view).to(Device.NATIVE).materialize();
     }
 
     private static Device resolveBackend(String[] args) {

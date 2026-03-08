@@ -1,0 +1,22 @@
+[
+  {
+    "name": "java.lang.System",
+    "methods": [
+      {
+        "name": "getProperty",
+        "parameterTypes": [
+          "java.lang.String"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "com.qxotic.jota.runtime.opencl.OpenClDevicePtr",
+    "methods": [
+      {
+        "name": "handle",
+        "parameterTypes": []
+      }
+    ]
+  }
+]

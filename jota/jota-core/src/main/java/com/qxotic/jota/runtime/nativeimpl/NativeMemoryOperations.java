@@ -1,4 +1,4 @@
-package com.qxotic.jota.runtime.panama;
+package com.qxotic.jota.runtime.nativeimpl;
 
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAccessChecks;
@@ -6,15 +6,15 @@ import com.qxotic.jota.memory.MemoryOperations;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
-public final class PanamaMemoryOperations implements MemoryOperations<MemorySegment> {
+public final class NativeMemoryOperations implements MemoryOperations<MemorySegment> {
 
-    private static final PanamaMemoryOperations INSTANCE = new PanamaMemoryOperations();
+    private static final NativeMemoryOperations INSTANCE = new NativeMemoryOperations();
 
     public static MemoryOperations<MemorySegment> instance() {
         return INSTANCE;
     }
 
-    private PanamaMemoryOperations() {}
+    private NativeMemoryOperations() {}
 
     @Override
     public void copy(

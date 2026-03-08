@@ -1,18 +1,18 @@
-package com.qxotic.jota.runtime.panama;
+package com.qxotic.jota.runtime.nativeimpl;
 
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.Memory;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
 
-record PanamaMemory(MemorySegment memorySegment) implements Memory<MemorySegment> {
+record NativeMemorySegmentMemory(MemorySegment memorySegment) implements Memory<MemorySegment> {
 
-    PanamaMemory(MemorySegment memorySegment) {
+    NativeMemorySegmentMemory(MemorySegment memorySegment) {
         this.memorySegment = Objects.requireNonNull(memorySegment);
     }
 
-    static PanamaMemory of(MemorySegment memorySegment) {
-        return new PanamaMemory(memorySegment);
+    static NativeMemorySegmentMemory of(MemorySegment memorySegment) {
+        return new NativeMemorySegmentMemory(memorySegment);
     }
 
     @Override
@@ -40,11 +40,11 @@ record PanamaMemory(MemorySegment memorySegment) implements Memory<MemorySegment
         return Byte.BYTES;
     }
 
-    public PanamaMemory asReadOnly() {
+    public NativeMemorySegmentMemory asReadOnly() {
         if (isReadOnly()) {
             return this;
         } else {
-            return new PanamaMemory(this.memorySegment.asReadOnly());
+            return new NativeMemorySegmentMemory(this.memorySegment.asReadOnly());
         }
     }
 

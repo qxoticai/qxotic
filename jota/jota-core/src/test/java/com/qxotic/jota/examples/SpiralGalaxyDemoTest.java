@@ -83,7 +83,7 @@ class SpiralGalaxyDemoTest {
     }
 
     private static void writePPM(MemoryView<?> view, String filename) throws IOException {
-        MemoryView<?> hostView = Tensor.of(view).to(Device.PANAMA).materialize();
+        MemoryView<?> hostView = Tensor.of(view).to(Device.NATIVE).materialize();
         MemorySegment segment = (MemorySegment) hostView.memory().base();
         try (PrintStream out =
                 new PrintStream(new BufferedOutputStream(new FileOutputStream(filename)))) {

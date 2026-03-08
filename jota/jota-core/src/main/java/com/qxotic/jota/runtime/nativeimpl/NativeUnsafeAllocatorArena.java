@@ -1,4 +1,4 @@
-package com.qxotic.jota.runtime.panama;
+package com.qxotic.jota.runtime.nativeimpl;
 
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.ScopedMemory;
@@ -8,15 +8,15 @@ import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-class UnsafeAllocatorArena implements ScopedMemoryAllocatorArena<MemorySegment> {
+class NativeUnsafeAllocatorArena implements ScopedMemoryAllocatorArena<MemorySegment> {
 
     private final Set<ScopedMemory<MemorySegment>> allocations =
             Collections.newSetFromMap(new ConcurrentHashMap<>());
 
-    private UnsafeAllocatorArena() {}
+    private NativeUnsafeAllocatorArena() {}
 
     static ScopedMemoryAllocatorArena<MemorySegment> create() {
-        return new UnsafeAllocatorArena();
+        return new NativeUnsafeAllocatorArena();
     }
 
     @Override
@@ -32,7 +32,7 @@ class UnsafeAllocatorArena implements ScopedMemoryAllocatorArena<MemorySegment> 
     @Override
     public ScopedMemory<MemorySegment> allocateMemory(long byteSize, long byteAlignment) {
         ScopedMemory<MemorySegment> scopedMemory =
-                UnsafeAllocator.instance().allocateMemory(byteSize, byteAlignment);
+                NativeUnsafeAllocator.instance().allocateMemory(byteSize, byteAlignment);
         allocations.add(scopedMemory);
         // TODO(peterssen): Avoid extra indirection, copy UnsafeAllocator and include memory
         // tracking.

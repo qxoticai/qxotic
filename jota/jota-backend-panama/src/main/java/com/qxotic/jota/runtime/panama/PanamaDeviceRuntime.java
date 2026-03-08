@@ -10,6 +10,7 @@ import com.qxotic.jota.runtime.KernelBackend;
 import com.qxotic.jota.runtime.KernelCachePaths;
 import com.qxotic.jota.runtime.KernelProgramStore;
 import com.qxotic.jota.runtime.KernelService;
+import com.qxotic.jota.runtime.nativeimpl.NativeMemoryFactory;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
 import java.util.Objects;
@@ -22,7 +23,7 @@ public final class PanamaDeviceRuntime implements DeviceRuntime {
     private final KernelService kernelService;
 
     public PanamaDeviceRuntime() {
-        this(PanamaFactory.createDomain(), DiskKernelCache.defaultCache());
+        this(NativeMemoryFactory.createDomain(), DiskKernelCache.defaultCache(Device.PANAMA));
     }
 
     public PanamaDeviceRuntime(MemoryDomain<MemorySegment> memoryDomain, DiskKernelCache cache) {

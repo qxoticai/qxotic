@@ -16,7 +16,7 @@ final class IntsMemoryAllocator implements MemoryAllocator<int[]> {
 
     @Override
     public Device device() {
-        return Device.PANAMA;
+        return Device.JAVA;
     }
 
     @Override

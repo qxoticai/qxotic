@@ -4,12 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.Stride;
 import com.qxotic.jota.memory.*;
-import com.qxotic.jota.memory.impl.DomainFactory;
 import com.qxotic.jota.memory.impl.MemoryViewFactory;
 import java.lang.foreign.MemorySegment;
 import java.util.List;
@@ -23,7 +23,7 @@ class TIRInterpreterTest {
 
     @BeforeAll
     static void setUp() {
-        memoryDomain = DomainFactory.ofMemorySegment();
+        memoryDomain = Environment.current().nativeMemoryDomain();
         memoryAccess = memoryDomain.directAccess();
     }
 

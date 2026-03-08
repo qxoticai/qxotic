@@ -8,7 +8,6 @@ import com.qxotic.jota.memory.MemoryOperations;
 
 class LongsDomain implements MemoryDomain<long[]> {
 
-    private static final Device LONGS = Device.CPU.child("longs");
     private static final LongsDomain INSTANCE = new LongsDomain();
 
     static MemoryDomain<long[]> instance() {
@@ -19,7 +18,7 @@ class LongsDomain implements MemoryDomain<long[]> {
 
     @Override
     public Device device() {
-        return LONGS;
+        return Device.JAVA;
     }
 
     @Override

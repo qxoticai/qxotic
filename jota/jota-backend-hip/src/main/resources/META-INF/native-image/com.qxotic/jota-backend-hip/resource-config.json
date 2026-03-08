@@ -1,0 +1,12 @@
+{
+  "resources": {
+    "includes": [
+      {
+        "pattern": "META-INF/native/.*"
+      },
+      {
+        "pattern": "META-INF/services/com\\.qxotic\\.jota\\.runtime\\.spi\\.DeviceRuntimeProvider"
+      }
+    ]
+  }
+}

@@ -8,7 +8,6 @@ import com.qxotic.jota.memory.MemoryOperations;
 
 class BooleansDomain implements MemoryDomain<boolean[]> {
 
-    private static final Device BOOLEANS = Device.CPU.child("booleans");
     private static final BooleansDomain INSTANCE = new BooleansDomain();
 
     static MemoryDomain<boolean[]> instance() {
@@ -19,7 +18,7 @@ class BooleansDomain implements MemoryDomain<boolean[]> {
 
     @Override
     public Device device() {
-        return BOOLEANS;
+        return Device.JAVA;
     }
 
     @Override

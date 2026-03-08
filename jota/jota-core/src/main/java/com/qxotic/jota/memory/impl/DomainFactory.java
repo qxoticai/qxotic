@@ -2,7 +2,7 @@ package com.qxotic.jota.memory.impl;
 
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryDomain;
-import com.qxotic.jota.runtime.panama.PanamaFactory;
+import com.qxotic.jota.runtime.nativeimpl.NativeMemoryFactory;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 
@@ -42,11 +42,11 @@ public class DomainFactory {
 
     public static MemoryDomain<MemorySegment> ofMemorySegment(
             MemoryAllocator<MemorySegment> memoryAllocator) {
-        return PanamaFactory.createDomain(memoryAllocator);
+        return NativeMemoryFactory.createDomain(memoryAllocator);
     }
 
     public static MemoryDomain<MemorySegment> ofMemorySegment() {
-        return PanamaFactory.createDomain();
+        return NativeMemoryFactory.createDomain();
     }
 
     public static MemoryDomain<ByteBuffer> ofByteBuffer(

@@ -16,7 +16,7 @@ final class DoublesMemoryAllocator implements MemoryAllocator<double[]> {
 
     @Override
     public Device device() {
-        return Device.PANAMA;
+        return Device.JAVA;
     }
 
     @Override

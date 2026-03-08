@@ -16,7 +16,7 @@ final class LongsMemoryAllocator implements MemoryAllocator<long[]> {
 
     @Override
     public Device device() {
-        return Device.PANAMA;
+        return Device.JAVA;
     }
 
     @Override

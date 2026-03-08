@@ -11,7 +11,11 @@ import com.qxotic.jota.ir.tir.ValueId;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.memory.impl.DomainFactory;
+import com.qxotic.jota.memory.impl.MemoryAllocatorFactory;
 import com.qxotic.jota.runtime.ComputeEngine;
+import java.lang.foreign.MemorySegment;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -129,8 +133,7 @@ final class ScheduledExecutor {
             return view;
         }
 
-        MemoryDomain<Object> srcDomain =
-                Environment.current().memoryDomainFor(view.memory().device());
+        MemoryDomain<Object> srcDomain = sourceDomainFor((Memory<Object>) view.memory());
         MemoryDomain<Object> dstDomain = Environment.current().memoryDomainFor(targetDevice);
         MemoryView<Object> srcView = (MemoryView<Object>) view;
         Memory<Object> dstMemory =
@@ -140,5 +143,41 @@ final class ScheduledExecutor {
                         MemoryView.of(dstMemory, view.dataType(), Layout.rowMajor(view.shape()));
         MemoryDomain.copy(srcDomain, srcView, dstDomain, dstView);
         return dstView;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <B> MemoryDomain<B> sourceDomainFor(Memory<B> memory) {
+        Object base = memory.base();
+        if (base instanceof boolean[]) {
+            return (MemoryDomain<B>) DomainFactory.ofBooleans();
+        }
+        if (base instanceof byte[]) {
+            return (MemoryDomain<B>) DomainFactory.ofBytes();
+        }
+        if (base instanceof short[]) {
+            return (MemoryDomain<B>) DomainFactory.ofShorts();
+        }
+        if (base instanceof int[]) {
+            return (MemoryDomain<B>) DomainFactory.ofInts();
+        }
+        if (base instanceof long[]) {
+            return (MemoryDomain<B>) DomainFactory.ofLongs();
+        }
+        if (base instanceof float[]) {
+            return (MemoryDomain<B>) DomainFactory.ofFloats();
+        }
+        if (base instanceof double[]) {
+            return (MemoryDomain<B>) DomainFactory.ofDoubles();
+        }
+        if (base instanceof ByteBuffer byteBuffer) {
+            return (MemoryDomain<B>)
+                    DomainFactory.ofByteBuffer(
+                            MemoryAllocatorFactory.ofByteBuffer(byteBuffer.isDirect()));
+        }
+        if (base instanceof MemorySegment) {
+            return (MemoryDomain<B>) Environment.current().nativeMemoryDomain();
+        }
+        throw new IllegalArgumentException(
+                "Unsupported memory backing type: " + base.getClass().getName());
     }
 }

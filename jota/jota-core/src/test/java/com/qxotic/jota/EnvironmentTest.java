@@ -11,12 +11,14 @@ import com.qxotic.jota.runtime.DefaultRuntimeRegistry;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.KernelService;
 import com.qxotic.jota.runtime.RuntimeDiagnostic;
+import com.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
 import com.qxotic.jota.runtime.spi.RuntimeProbe;
 import com.qxotic.jota.tensor.Tensor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class EnvironmentTest {
@@ -86,7 +88,7 @@ class EnvironmentTest {
                         Device.PANAMA,
                         RuntimeProbe.missingSoftware(
                                 "Panama runtime unavailable",
-                                "Include com.qxotic:jota or com.qxotic:jota-backend-panama")));
+                                "Include com.qxotic:jota-backend-panama")));
         registry.addDiagnostic(
                 new RuntimeDiagnostic(
                         "c-runtime",
@@ -133,6 +135,90 @@ class EnvironmentTest {
         }
     }
 
+    @Test
+    void missingNativeRuntimeMessageIncludesBackendExcludeProperty() throws Exception {
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
+        String previousInclude = System.getProperty("jota.backends.include");
+        String previous = System.getProperty("jota.backends.exclude");
+        System.setProperty("jota.backends.include", "c,panama");
+        System.setProperty("jota.backends.exclude", "panama,opencl");
+        try {
+            IllegalStateException error =
+                    invokeMissingNativeRuntimeException(
+                            registry, "No compatible runtime available");
+            String message = error.getMessage();
+            assertNotNull(message);
+            assertTrue(message.contains("jota.backends.include: c,panama"));
+            assertTrue(message.contains("jota.backends.exclude: panama,opencl"));
+            assertTrue(message.contains("include/exclude filters"));
+        } finally {
+            if (previousInclude == null) {
+                System.clearProperty("jota.backends.include");
+            } else {
+                System.setProperty("jota.backends.include", previousInclude);
+            }
+            if (previous == null) {
+                System.clearProperty("jota.backends.exclude");
+            } else {
+                System.setProperty("jota.backends.exclude", previous);
+            }
+        }
+    }
+
+    @Test
+    void excludedBackendIsNotRegisteredEvenWhenProviderIsAvailable() throws Exception {
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
+        DeviceRuntimeProvider provider = new AlwaysAvailableProvider("opencl", Device.OPENCL);
+
+        Method method =
+                Environment.class.getDeclaredMethod(
+                        "registerProvider",
+                        DefaultRuntimeRegistry.class,
+                        DeviceRuntimeProvider.class,
+                        Set.class,
+                        Set.class);
+        method.setAccessible(true);
+        method.invoke(null, registry, provider, Set.of(), Set.of("opencl"));
+
+        assertFalse(registry.hasRuntime(Device.OPENCL));
+        assertTrue(
+                registry.diagnostics().stream()
+                        .anyMatch(
+                                diagnostic ->
+                                        diagnostic.providerId().equals("opencl")
+                                                && diagnostic
+                                                        .probe()
+                                                        .message()
+                                                        .contains("excluded by configuration")));
+    }
+
+    @Test
+    void excludeListTakesPriorityOverIncludeList() throws Exception {
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
+        DeviceRuntimeProvider provider = new AlwaysAvailableProvider("opencl", Device.OPENCL);
+
+        Method method =
+                Environment.class.getDeclaredMethod(
+                        "registerProvider",
+                        DefaultRuntimeRegistry.class,
+                        DeviceRuntimeProvider.class,
+                        Set.class,
+                        Set.class);
+        method.setAccessible(true);
+        method.invoke(null, registry, provider, Set.of("opencl"), Set.of("opencl"));
+
+        assertFalse(registry.hasRuntime(Device.OPENCL));
+        assertTrue(
+                registry.diagnostics().stream()
+                        .anyMatch(
+                                diagnostic ->
+                                        diagnostic.providerId().equals("opencl")
+                                                && diagnostic
+                                                        .probe()
+                                                        .hint()
+                                                        .contains("exclude wins over include")));
+    }
+
     private static IllegalStateException invokeMissingNativeRuntimeException(
             DefaultRuntimeRegistry registry, String reason) throws Exception {
         Method method =
@@ -160,7 +246,7 @@ class EnvironmentTest {
         }
     }
 
-    private ComputeEngine dummyRuntime() {
+    private static ComputeEngine dummyRuntime() {
         return new ComputeEngine() {
             @Override
             public Device device() {
@@ -207,6 +293,36 @@ class EnvironmentTest {
         @Override
         public Optional<KernelService> kernelService() {
             return Optional.empty();
+        }
+    }
+
+    private static final class AlwaysAvailableProvider implements DeviceRuntimeProvider {
+        private final String id;
+        private final Device device;
+
+        private AlwaysAvailableProvider(String id, Device device) {
+            this.id = id;
+            this.device = device;
+        }
+
+        @Override
+        public String id() {
+            return id;
+        }
+
+        @Override
+        public Device device() {
+            return device;
+        }
+
+        @Override
+        public RuntimeProbe probe() {
+            return RuntimeProbe.available("available");
+        }
+
+        @Override
+        public DeviceRuntime create() {
+            return new StubDeviceRuntime(DomainFactory.ofMemorySegment(), dummyRuntime());
         }
     }
 }

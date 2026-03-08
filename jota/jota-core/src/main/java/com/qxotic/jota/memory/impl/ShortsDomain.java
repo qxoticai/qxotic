@@ -8,7 +8,6 @@ import com.qxotic.jota.memory.MemoryOperations;
 
 class ShortsDomain implements MemoryDomain<short[]> {
 
-    private static final Device SHORTS = Device.CPU.child("shorts");
     private static final ShortsDomain INSTANCE = new ShortsDomain();
 
     static MemoryDomain<short[]> instance() {
@@ -19,7 +18,7 @@ class ShortsDomain implements MemoryDomain<short[]> {
 
     @Override
     public Device device() {
-        return SHORTS;
+        return Device.JAVA;
     }
 
     @Override

@@ -4,12 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.Environment;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryHelpers;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.impl.DomainFactory;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
 import com.qxotic.jota.testutil.TensorTestReads;
 import java.lang.foreign.MemorySegment;
@@ -36,7 +36,7 @@ class ContiguousOpTest {
 
     @BeforeAll
     static void setUpDomain() {
-        domain = DomainFactory.ofMemorySegment();
+        domain = Environment.current().nativeMemoryDomain();
     }
 
     @Test

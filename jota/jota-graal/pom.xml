@@ -11,7 +11,7 @@
 
   <artifactId>jota-graal</artifactId>
   <name>Jota Graal Support</name>
-  <description>Convenience dependency for GraalVM Native Image support with Jota C backend</description>
+  <description>Convenience dependency for GraalVM Native Image support across non-Panama Jota backends</description>
 
   <dependencies>
     <dependency>
@@ -22,6 +22,21 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jota-backend-c</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-backend-hip</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-backend-metal</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-backend-opencl</artifactId>
       <version>${project.version}</version>
     </dependency>
   </dependencies>

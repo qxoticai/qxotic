@@ -159,6 +159,6 @@ class LyapunovFractalTest {
 
     @SuppressWarnings("unchecked")
     private static MemoryView<MemorySegment> toHost(MemoryView<?> view) {
-        return (MemoryView<MemorySegment>) Tensor.of(view).to(Device.PANAMA).materialize();
+        return (MemoryView<MemorySegment>) Tensor.of(view).to(Device.NATIVE).materialize();
     }
 }

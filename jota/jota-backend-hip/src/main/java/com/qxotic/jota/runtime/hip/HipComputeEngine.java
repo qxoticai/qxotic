@@ -22,7 +22,7 @@ import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.runtime.*;
 import com.qxotic.jota.runtime.clike.CLikeKernelGenerator;
-import com.qxotic.jota.runtime.panama.LIRKernelArgsBuilder;
+import com.qxotic.jota.runtime.clike.LIRKernelArgsBuilder;
 import com.qxotic.jota.tensor.Tensor;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;

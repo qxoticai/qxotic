@@ -8,7 +8,6 @@ import com.qxotic.jota.memory.MemoryOperations;
 
 class DoublesDomain implements MemoryDomain<double[]> {
 
-    private static final Device DOUBLES = Device.CPU.child("doubles");
     private static final DoublesDomain INSTANCE = new DoublesDomain();
 
     static MemoryDomain<double[]> instance() {
@@ -19,7 +18,7 @@ class DoublesDomain implements MemoryDomain<double[]> {
 
     @Override
     public Device device() {
-        return DOUBLES;
+        return Device.JAVA;
     }
 
     @Override
