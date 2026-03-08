@@ -6,7 +6,6 @@ import com.qxotic.format.gguf.TensorEntry;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.Environment;
-import com.qxotic.jota.ExecutionMode;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.Memory;
@@ -44,7 +43,13 @@ import jdk.incubator.vector.VectorSpecies;
 public final class VanillaLlama {
 
     private static final String LLAMA3_PATTERN =
-            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
+            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r"
+                    + "\\n"
+                    + "\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r"
+                    + "\\n"
+                    + "]*|\\s*[\\r"
+                    + "\\n"
+                    + "]+|\\s+(?!\\S)|\\s+";
     private static final String GENERAL_ARCHITECTURE = "general.architecture";
     private static final String LLAMA_ARCH = "llama";
     private static final String TOKEN_EMBD_WEIGHT = "token_embd.weight";
@@ -72,11 +77,7 @@ public final class VanillaLlama {
     public static void main(String[] args) throws Exception {
         Options options = Options.parse(args);
         Environment env =
-                new Environment(
-                        Device.PANAMA,
-                        DataType.FP32,
-                        Environment.current().runtimes(),
-                        ExecutionMode.EAGER);
+                new Environment(Device.PANAMA, DataType.FP32, Environment.current().runtimes());
         Environment.with(
                 env,
                 () -> {
@@ -242,7 +243,8 @@ public final class VanillaLlama {
         double msPerToken = tokens > 0 ? totalMs / tokens : 0.0;
         return String.format(
                 Locale.ROOT,
-                "timings[%s]: gemv=%.2fms norm=%.2fms rope=%.2fms attn=%.2fms ffn=%.2fms total=%.2fms (%.2fms/tok)",
+                "timings[%s]: gemv=%.2fms norm=%.2fms rope=%.2fms attn=%.2fms ffn=%.2fms"
+                        + " total=%.2fms (%.2fms/tok)",
                 label,
                 gemvMs,
                 normMs,

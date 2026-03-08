@@ -14,6 +14,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.ServiceLoader;
+import java.util.StringJoiner;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
@@ -132,16 +133,38 @@ public final class Environment {
 
     private static RuntimeRegistry buildDefaultRuntimes() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        DeviceRuntime panamaRuntime = new PanamaDeviceRuntime();
-        registry.register(panamaRuntime);
-        registry.registerNative(panamaRuntime);
+        if (!isNativeImageRuntime()) {
+            try {
+                DeviceRuntime panamaRuntime = new PanamaDeviceRuntime();
+                registry.register(panamaRuntime);
+                registry.registerNative(panamaRuntime);
+            } catch (Throwable t) {
+                RuntimeProbe probe =
+                        RuntimeProbe.error("Built-in Panama runtime failed to initialize", t);
+                registry.addDiagnostic(new RuntimeDiagnostic("panama-core", Device.PANAMA, probe));
+                logUnavailableRuntime("panama-core", Device.PANAMA, probe);
+            }
+        }
         ServiceLoader<DeviceRuntimeProvider> providers =
                 ServiceLoader.load(DeviceRuntimeProvider.class);
         providers.stream()
                 .map(ServiceLoader.Provider::get)
                 .sorted(Comparator.comparingInt(DeviceRuntimeProvider::priority).reversed())
                 .forEach(provider -> registerProvider(registry, provider));
-        registry.registerNative(registry.runtimeFor(selectNativeBackend(registry)));
+        Device nativeBackend = selectNativeBackend(registry);
+        if (!registry.hasRuntime(nativeBackend)) {
+            throw missingNativeRuntimeException(
+                    registry, "Selected native backend " + nativeBackend + " is unavailable");
+        }
+        DeviceRuntime selectedRuntime = registry.runtimeFor(nativeBackend);
+        if (!selectedRuntime.supportsNativeRuntimeAlias()) {
+            throw missingNativeRuntimeException(
+                    registry,
+                    "Selected native backend "
+                            + nativeBackend
+                            + " does not support Device.NATIVE alias");
+        }
+        registry.registerNative(selectedRuntime);
         return registry;
     }
 
@@ -149,18 +172,36 @@ public final class Environment {
         Device override = parseNativeBackendOverride(System.getProperty("jota.native.backend"));
         if (override != null) {
             if (!registry.hasRuntime(override)) {
-                throw new IllegalStateException(
-                        "Configured jota.native.backend selects unavailable backend: "
-                                + override
-                                + ". Available devices: "
-                                + registry.devices());
+                throw missingNativeRuntimeException(
+                        registry,
+                        "Configured jota.native.backend selects unavailable backend: " + override);
+            }
+            DeviceRuntime overrideRuntime = registry.runtimeFor(override);
+            if (!overrideRuntime.supportsNativeRuntimeAlias()) {
+                throw missingNativeRuntimeException(
+                        registry,
+                        "Configured jota.native.backend selects backend that does not support"
+                                + " Device.NATIVE alias: "
+                                + override);
             }
             return override;
         }
         if (isNativeImageRuntime() && registry.hasRuntime(Device.C)) {
             return Device.C;
         }
-        return Device.PANAMA;
+        if (!isNativeImageRuntime() && registry.hasRuntime(Device.PANAMA)) {
+            return Device.PANAMA;
+        }
+        Device compatibleFallback = findCompatibleNativeBackend(registry);
+        if (compatibleFallback != null) {
+            return compatibleFallback;
+        }
+        throw missingNativeRuntimeException(
+                registry,
+                "No compatible runtime available for Device.NATIVE"
+                        + (isNativeImageRuntime()
+                                ? " in GraalVM Native Image"
+                                : " in JVM runtime"));
     }
 
     private static Device parseNativeBackendOverride(String rawValue) {
@@ -183,6 +224,107 @@ public final class Environment {
     private static boolean isNativeImageRuntime() {
         String imageCode = System.getProperty("org.graalvm.nativeimage.imagecode");
         return imageCode != null && !imageCode.isBlank();
+    }
+
+    private static Device findCompatibleNativeBackend(RuntimeRegistry registry) {
+        for (Device device : registry.devices()) {
+            if (device.equals(Device.NATIVE)) {
+                continue;
+            }
+            if (registry.runtimeFor(device).supportsNativeRuntimeAlias()) {
+                return device;
+            }
+        }
+        return null;
+    }
+
+    private static IllegalStateException missingNativeRuntimeException(
+            RuntimeRegistry registry, String reason) {
+        StringBuilder message = new StringBuilder();
+        message.append("Unable to configure Device.NATIVE runtime. ").append(reason).append('.');
+        message.append('\n')
+                .append("Runtime mode: ")
+                .append(isNativeImageRuntime() ? "graal-native-image" : "jvm");
+
+        String backendOverride = System.getProperty("jota.native.backend");
+        message.append('\n')
+                .append("jota.native.backend: ")
+                .append(
+                        (backendOverride == null || backendOverride.isBlank())
+                                ? "<auto>"
+                                : backendOverride);
+
+        message.append('\n')
+                .append("Registered runtimes: ")
+                .append(formatDevices(registry.devices()));
+        message.append('\n')
+                .append("Native-compatible runtimes: ")
+                .append(formatCompatibleNativeDevices(registry));
+
+        List<RuntimeDiagnostic> diagnostics = registry.diagnostics();
+        if (!diagnostics.isEmpty()) {
+            message.append('\n').append("Runtime probe diagnostics:");
+            for (RuntimeDiagnostic diagnostic : diagnostics) {
+                RuntimeProbe probe = diagnostic.probe();
+                message.append('\n')
+                        .append("- ")
+                        .append(diagnostic.providerId())
+                        .append(" [")
+                        .append(diagnostic.device().leafName())
+                        .append("] ")
+                        .append(probe.status().name().toLowerCase())
+                        .append(": ")
+                        .append(probe.message());
+                if (probe.hint() != null) {
+                    message.append(" | hint: ").append(probe.hint());
+                }
+                if (probe.cause() != null) {
+                    message.append(" | cause: ")
+                            .append(probe.cause().getClass().getSimpleName())
+                            .append(": ")
+                            .append(probe.cause().getMessage());
+                }
+            }
+        }
+
+        message.append('\n').append("Required: at least one runtime supporting Device.NATIVE");
+        message.append(" (Panama, C, or another runtime with supportsNativeRuntimeAlias=true).");
+        message.append('\n').append("Suggested fixes:");
+        message.append('\n')
+                .append(
+                        "- Include a Panama backend: com.qxotic:jota"
+                                + " (current default bundle) or com.qxotic:jota-backend-panama"
+                                + " (if using split backend modules)");
+        message.append('\n').append("- Include C backend: com.qxotic:jota-backend-c");
+        message.append('\n').append("- Graal Native Image: add dependency com.qxotic:jota-graal");
+        message.append('\n')
+                .append("- Explicit backend override: -Djota.native.backend=panama or c");
+        message.append('\n')
+                .append("- Run with -Djota.runtime.probe.log=true for backend warnings");
+        return new IllegalStateException(message.toString());
+    }
+
+    private static String formatDevices(Iterable<Device> devices) {
+        StringJoiner joiner = new StringJoiner(", ");
+        for (Device device : devices) {
+            joiner.add(device.leafName());
+        }
+        String value = joiner.toString();
+        return value.isEmpty() ? "<none>" : value;
+    }
+
+    private static String formatCompatibleNativeDevices(RuntimeRegistry registry) {
+        StringJoiner joiner = new StringJoiner(", ");
+        for (Device device : registry.devices()) {
+            if (device.equals(Device.NATIVE)) {
+                continue;
+            }
+            if (registry.runtimeFor(device).supportsNativeRuntimeAlias()) {
+                joiner.add(device.leafName());
+            }
+        }
+        String value = joiner.toString();
+        return value.isEmpty() ? "<none>" : value;
     }
 
     private static void registerProvider(
@@ -228,14 +370,18 @@ public final class Environment {
     }
 
     private static void logUnavailableRuntime(DeviceRuntimeProvider provider, RuntimeProbe probe) {
+        logUnavailableRuntime(provider.id(), provider.device(), probe);
+    }
+
+    private static void logUnavailableRuntime(String id, Device device, RuntimeProbe probe) {
         if (!LOG_RUNTIME_WARNINGS) {
             return;
         }
         StringBuilder warning = new StringBuilder();
         warning.append("[jota-runtime] WARNING: backend '")
-                .append(provider.id())
+                .append(id)
                 .append("' on device ")
-                .append(provider.device().leafName())
+                .append(device.leafName())
                 .append(" is unavailable: ")
                 .append(probe.message());
         if (probe.hint() != null) {

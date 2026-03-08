@@ -10,11 +10,11 @@ import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.memory.impl.MemoryFactory;
 import com.qxotic.jota.runtime.DeviceRuntime;
-import com.qxotic.jota.tensor.ExecutionStream;
-import com.qxotic.jota.tensor.KernelArgs;
-import com.qxotic.jota.tensor.KernelExecutable;
-import com.qxotic.jota.tensor.KernelProgram;
-import com.qxotic.jota.tensor.LaunchConfig;
+import com.qxotic.jota.runtime.ExecutionStream;
+import com.qxotic.jota.runtime.KernelArgs;
+import com.qxotic.jota.runtime.KernelExecutable;
+import com.qxotic.jota.runtime.KernelProgram;
+import com.qxotic.jota.runtime.LaunchConfig;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.tokenizers.IntSequence;
 import com.qxotic.tokenizers.Tokenizer;
@@ -50,7 +50,13 @@ public final class SimpleLlama {
     private static volatile float touchSink;
 
     private static final String LLAMA3_PATTERN =
-            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
+            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r"
+                    + "\\n"
+                    + "\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r"
+                    + "\\n"
+                    + "]*|\\s*[\\r"
+                    + "\\n"
+                    + "]+|\\s+(?!\\S)|\\s+";
 
     private static final class TimingProfiler {
         private final boolean enabled;
@@ -223,11 +229,7 @@ public final class SimpleLlama {
     public static void main(String[] args) throws Exception {
         Options options = Options.parse(args);
         Environment env =
-                new Environment(
-                        Device.PANAMA,
-                        DataType.FP32,
-                        Environment.current().runtimes(),
-                        ExecutionMode.EAGER);
+                new Environment(Device.PANAMA, DataType.FP32, Environment.current().runtimes());
         Environment.with(
                 env,
                 () -> {
@@ -269,7 +271,8 @@ public final class SimpleLlama {
                         Runtime.getRuntime().availableProcessors());
 
         System.out.printf(
-                "llama-bench style benchmark: model=%s bytes=%.2f GiB backend=CPU threads=%d runs=%d warmup=%d pp=%d tg=%d%n",
+                "llama-bench style benchmark: model=%s bytes=%.2f GiB backend=CPU threads=%d"
+                        + " runs=%d warmup=%d pp=%d tg=%d%n",
                 options.modelPath.getFileName(),
                 modelBytes / (1024.0 * 1024.0 * 1024.0),
                 threadCount,

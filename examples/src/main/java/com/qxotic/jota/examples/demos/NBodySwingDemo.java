@@ -3,7 +3,6 @@ package com.qxotic.jota.examples.demos;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.Environment;
-import com.qxotic.jota.ExecutionMode;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryDomain;
@@ -56,11 +55,8 @@ public final class NBodySwingDemo {
         if (!global.runtimes().hasRuntime(device)) {
             throw new IllegalStateException(unavailableDeviceMessage(global, device));
         }
-        ExecutionMode executionMode =
-                device.equals(Device.HIP) ? ExecutionMode.LAZY : ExecutionMode.EAGER;
         try {
-            Environment.configureGlobal(
-                    new Environment(device, DataType.FP32, global.runtimes(), executionMode));
+            Environment.configureGlobal(new Environment(device, DataType.FP32, global.runtimes()));
         } catch (IllegalStateException ignored) {
         }
 
@@ -360,7 +356,7 @@ public final class NBodySwingDemo {
 
             this.vecShape = Shape.of(count, 1);
             this.pairShape = Shape.of(count, count);
-            this.stabilizeLazyState = Environment.current().executionMode() == ExecutionMode.LAZY;
+            this.stabilizeLazyState = Device.HIP.equals(Environment.current().defaultDevice());
 
             float[] xArr = new float[count];
             float[] yArr = new float[count];

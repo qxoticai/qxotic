@@ -72,6 +72,11 @@ class DeviceRuntimeRegistryTest {
             Device device, MemoryDomain<?> memoryDomain, ComputeEngine computeEngine)
             implements DeviceRuntime {
         @Override
+        public boolean supportsNativeRuntimeAlias() {
+            return device.equals(Device.PANAMA) || device.equals(Device.C);
+        }
+
+        @Override
         public Optional<KernelService> kernelService() {
             return Optional.empty();
         }

@@ -6,7 +6,6 @@ import com.qxotic.format.gguf.TensorEntry;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.Environment;
-import com.qxotic.jota.ExecutionMode;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
@@ -41,16 +40,18 @@ import java.util.Scanner;
 public final class Qwen3Cli {
 
     private static final String QWEN2_PATTERN =
-            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
+            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r"
+                    + "\\n"
+                    + "\\p{L}\\p{N}]?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\\r"
+                    + "\\n"
+                    + "]*|\\s*[\\r"
+                    + "\\n"
+                    + "]+|\\s+(?!\\S)|\\s+";
 
     public static void main(String[] args) throws Exception {
         Options options = Options.parse(args);
         Environment env =
-                new Environment(
-                        Device.PANAMA,
-                        DataType.FP32,
-                        Environment.current().runtimes(),
-                        ExecutionMode.EAGER);
+                new Environment(Device.PANAMA, DataType.FP32, Environment.current().runtimes());
         Environment.with(
                 env,
                 () -> {

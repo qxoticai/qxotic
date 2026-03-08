@@ -17,6 +17,7 @@
   <modules>
     <module>jota-core</module>
     <module>jota-backend-c</module>
+    <module>jota-graal</module>
     <module>jota-backend-hip</module>
     <module>jota-backend-metal</module>
     <module>jota-backend-opencl</module>

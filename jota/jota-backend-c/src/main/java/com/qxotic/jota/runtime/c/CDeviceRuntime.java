@@ -53,4 +53,9 @@ public final class CDeviceRuntime implements DeviceRuntime {
     public Optional<KernelService> kernelService() {
         return Optional.of(kernelService);
     }
+
+    @Override
+    public boolean supportsNativeRuntimeAlias() {
+        return true;
+    }
 }
