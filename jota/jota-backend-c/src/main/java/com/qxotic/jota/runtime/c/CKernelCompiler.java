@@ -5,20 +5,24 @@ import com.qxotic.jota.ir.lir.LIRGraph;
 import com.qxotic.jota.ir.lir.LIRTextRenderer;
 import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
 import com.qxotic.jota.runtime.KernelCacheKey;
-import com.qxotic.jota.runtime.KernelCachePaths;
 import com.qxotic.jota.runtime.KernelProgram;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 final class CKernelCompiler {
+
+    private static final ConcurrentHashMap<Path, Object> COMPILE_LOCKS = new ConcurrentHashMap<>();
 
     private static final boolean KERNEL_LOG = Boolean.getBoolean("jota.kernel.log");
     private static final long COMPILE_TIMEOUT_SECONDS =
@@ -38,7 +42,7 @@ final class CKernelCompiler {
             throw new IllegalArgumentException("C compiler expects source program");
         }
         String kernelName = program.entryPoint();
-        Path baseDir = KernelCachePaths.deviceRoot(Device.C).resolve(key.value());
+        Path baseDir = deviceRoot().resolve(key.value());
         Path sourcePath = baseDir.resolve(kernelName + ".c");
         Path soPath = baseDir.resolve(sharedLibraryName(kernelName));
         log("C kernel compile key=" + key.value() + " entry=" + kernelName);
@@ -49,11 +53,22 @@ final class CKernelCompiler {
             throw new IllegalStateException("Failed to write C kernel source", e);
         }
         if (needsCompile(sourcePath, soPath)) {
-            compileSource(sourcePath, soPath);
+            compileWithLock(sourcePath, soPath);
         } else {
             log("C kernel reuse key=" + key.value() + " entry=" + kernelName);
         }
         return soPath;
+    }
+
+    private static void compileWithLock(Path sourcePath, Path soPath) {
+        Object lock = COMPILE_LOCKS.computeIfAbsent(soPath, ignored -> new Object());
+        synchronized (lock) {
+            if (needsCompile(sourcePath, soPath)) {
+                compileSource(sourcePath, soPath);
+            } else {
+                log("C kernel reuse entry=" + soPath.getFileName());
+            }
+        }
     }
 
     private static boolean needsCompile(Path source, Path soPath) {
@@ -80,6 +95,7 @@ final class CKernelCompiler {
 
     private static void compileSource(Path source, Path soPath) {
         String compiler = compilerCommand();
+        Path tmpSoPath = soPath.resolveSibling(soPath.getFileName() + ".tmp");
         List<String> command = new ArrayList<>();
         command.add(compiler);
         command.addAll(sharedFlags());
@@ -91,7 +107,7 @@ final class CKernelCompiler {
         command.add("-std=gnu17");
         command.add(source.toAbsolutePath().toString());
         command.add("-o");
-        command.add(soPath.toAbsolutePath().toString());
+        command.add(tmpSoPath.toAbsolutePath().toString());
         if (!COpenMpConfig.isWindows()) {
             command.add("-lm");
         }
@@ -123,11 +139,30 @@ final class CKernelCompiler {
                                 + String.join(" ", command)
                                 + (output.isBlank() ? "" : "\ncompiler output:\n" + output));
             }
+            moveAtomically(tmpSoPath, soPath);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("C kernel compilation failed", e);
         } catch (IOException e) {
             throw new IllegalStateException("C kernel compilation failed", e);
+        } finally {
+            try {
+                Files.deleteIfExists(tmpSoPath);
+            } catch (IOException ignored) {
+                // best effort cleanup
+            }
+        }
+    }
+
+    private static void moveAtomically(Path source, Path target) throws IOException {
+        try {
+            Files.move(
+                    source,
+                    target,
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 
@@ -268,5 +303,34 @@ final class CKernelCompiler {
         if (KERNEL_LOG) {
             System.out.println("[jota-kernel] " + message);
         }
+    }
+
+    private static Path deviceRoot() {
+        return cacheRoot().resolve(cacheVersion()).resolve(Device.C.leafName());
+    }
+
+    private static Path cacheRoot() {
+        String configured = System.getProperty("jota.cache.root");
+        if (configured != null && !configured.isBlank()) {
+            return Path.of(configured.trim());
+        }
+        return Path.of(System.getProperty("java.io.tmpdir", ".")).resolve("jota-cache");
+    }
+
+    private static String cacheVersion() {
+        String configured = System.getProperty("jota.version");
+        if (configured != null && !configured.isBlank()) {
+            return sanitizeSegment(configured.trim());
+        }
+        Package pkg = Device.class.getPackage();
+        String implementationVersion = pkg == null ? null : pkg.getImplementationVersion();
+        if (implementationVersion != null && !implementationVersion.isBlank()) {
+            return sanitizeSegment(implementationVersion.trim());
+        }
+        return "dev";
+    }
+
+    private static String sanitizeSegment(String value) {
+        return value.replaceAll("[^A-Za-z0-9._-]", "_");
     }
 }

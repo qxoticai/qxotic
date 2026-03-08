@@ -1,8 +1,9 @@
-package com.qxotic.jota.tensor;
+package com.qxotic.jota.runtime.panama;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.Device;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryAccess;
@@ -13,8 +14,10 @@ import com.qxotic.jota.runtime.KernelArgs;
 import com.qxotic.jota.runtime.KernelExecutable;
 import com.qxotic.jota.runtime.KernelProgram;
 import com.qxotic.jota.runtime.LaunchConfig;
-import com.qxotic.jota.runtime.panama.PanamaDeviceRuntime;
+import com.qxotic.jota.tensor.Tensor;
+import com.qxotic.jota.testutil.ConfiguredTestDevice;
 import java.lang.foreign.MemorySegment;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -22,13 +25,16 @@ class CustomKernelLaunchTest {
 
     static PanamaDeviceRuntime runtime;
 
-    @SuppressWarnings("unchecked")
     static MemoryDomain<MemorySegment> domain() {
         return runtime.memoryDomain();
     }
 
     @BeforeAll
     static void setUp() {
+        Device configured = ConfiguredTestDevice.resolve();
+        Assumptions.assumeTrue(
+                configured == Device.PANAMA || configured == Device.C,
+                "CustomKernelLaunchTest requires either the Panama or C runtime");
         runtime = new PanamaDeviceRuntime();
     }
 

@@ -22,11 +22,15 @@ final class COpenMpConfig {
     }
 
     static boolean isMac() {
-        return System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("mac");
+        return osName().contains("mac");
     }
 
     static boolean isWindows() {
-        return System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
+        return osName().contains("win");
+    }
+
+    private static String osName() {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
     }
 
     static Path detectBrewLibOmpPrefix() {

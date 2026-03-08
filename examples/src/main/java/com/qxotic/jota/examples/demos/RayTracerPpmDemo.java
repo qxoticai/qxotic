@@ -3,7 +3,6 @@ package com.qxotic.jota.examples.demos;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.Environment;
-import com.qxotic.jota.ExecutionMode;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryDomain;
@@ -44,11 +43,8 @@ public final class RayTracerPpmDemo {
             throw new IllegalStateException(unavailableDeviceMessage(global, device));
         }
 
-        ExecutionMode executionMode =
-                device.equals(Device.HIP) ? ExecutionMode.LAZY : ExecutionMode.EAGER;
         try {
-            Environment.configureGlobal(
-                    new Environment(device, DataType.FP32, global.runtimes(), executionMode));
+            Environment.configureGlobal(new Environment(device, DataType.FP32, global.runtimes()));
         } catch (IllegalStateException ignored) {
         }
 

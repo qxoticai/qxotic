@@ -18,6 +18,17 @@ public interface DeviceRuntime {
         return kernelService().isPresent();
     }
 
+    /**
+     * Indicates whether this runtime can safely back the {@link Device#NATIVE} alias.
+     *
+     * <p>By default runtimes are not eligible. CPU runtimes that operate on {@link
+     * java.lang.foreign.MemorySegment} and are intended as process-default runtimes should override
+     * this to {@code true}.
+     */
+    default boolean supportsNativeRuntimeAlias() {
+        return false;
+    }
+
     default KernelCacheKey keyFor(KernelProgram program) {
         return KernelProgramHasher.keyFor(program);
     }

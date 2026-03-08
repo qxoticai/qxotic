@@ -60,6 +60,9 @@
           <dependenciesToScan>
             <dependency>com.qxotic:jota:test-jar:tests:${project.version}</dependency>
           </dependenciesToScan>
+          <excludes>
+            <exclude>**/runtime/panama/CustomKernelLaunchTest.class</exclude>
+          </excludes>
         </configuration>
       </plugin>
 

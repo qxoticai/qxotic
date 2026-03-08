@@ -10,11 +10,11 @@ import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.memory.impl.MemoryFactory;
 import com.qxotic.jota.runtime.DeviceRuntime;
-import com.qxotic.jota.tensor.ExecutionStream;
-import com.qxotic.jota.tensor.KernelArgs;
-import com.qxotic.jota.tensor.KernelExecutable;
-import com.qxotic.jota.tensor.KernelProgram;
-import com.qxotic.jota.tensor.LaunchConfig;
+import com.qxotic.jota.runtime.ExecutionStream;
+import com.qxotic.jota.runtime.KernelArgs;
+import com.qxotic.jota.runtime.KernelExecutable;
+import com.qxotic.jota.runtime.KernelProgram;
+import com.qxotic.jota.runtime.LaunchConfig;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.tokenizers.IntSequence;
 import com.qxotic.tokenizers.Tokenizer;
@@ -42,16 +42,18 @@ public final class Llama32Cli {
     private static volatile float touchSink;
 
     private static final String LLAMA3_PATTERN =
-            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
+            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r"
+                    + "\\n"
+                    + "\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r"
+                    + "\\n"
+                    + "]*|\\s*[\\r"
+                    + "\\n"
+                    + "]+|\\s+(?!\\S)|\\s+";
 
     public static void main(String[] args) throws Exception {
         Options options = Options.parse(args);
         Environment env =
-                new Environment(
-                        Device.PANAMA,
-                        DataType.FP32,
-                        Environment.current().runtimes(),
-                        ExecutionMode.EAGER);
+                new Environment(Device.PANAMA, DataType.FP32, Environment.current().runtimes());
         Environment.with(
                 env,
                 () -> {
@@ -587,8 +589,8 @@ public final class Llama32Cli {
                 import com.qxotic.jota.memory.MemoryAccess;
                 import com.qxotic.jota.memory.MemoryDomain;
                 import com.qxotic.jota.memory.MemoryView;
-                import com.qxotic.jota.tensor.JavaKernel;
-                import com.qxotic.jota.tensor.KernelArgs;
+                import com.qxotic.jota.runtime.JavaKernel;
+                import com.qxotic.jota.runtime.KernelArgs;
                 import java.lang.foreign.MemorySegment;
                 import java.nio.ByteOrder;
                 import jdk.incubator.vector.FloatVector;
@@ -742,8 +744,8 @@ public final class Llama32Cli {
                 import com.qxotic.jota.memory.MemoryAccess;
                 import com.qxotic.jota.memory.MemoryDomain;
                 import com.qxotic.jota.memory.MemoryView;
-                import com.qxotic.jota.tensor.JavaKernel;
-                import com.qxotic.jota.tensor.KernelArgs;
+                import com.qxotic.jota.runtime.JavaKernel;
+                import com.qxotic.jota.runtime.KernelArgs;
                 import java.lang.foreign.MemorySegment;
                 import java.nio.ByteOrder;
                 import jdk.incubator.vector.FloatVector;
@@ -929,8 +931,8 @@ public final class Llama32Cli {
                 import com.qxotic.jota.memory.MemoryAccess;
                 import com.qxotic.jota.memory.MemoryDomain;
                 import com.qxotic.jota.memory.MemoryView;
-                import com.qxotic.jota.tensor.JavaKernel;
-                import com.qxotic.jota.tensor.KernelArgs;
+                import com.qxotic.jota.runtime.JavaKernel;
+                import com.qxotic.jota.runtime.KernelArgs;
                 import java.lang.foreign.MemorySegment;
                 import java.nio.ByteOrder;
                 import jdk.incubator.vector.FloatVector;
@@ -1134,8 +1136,8 @@ public final class Llama32Cli {
                 import com.qxotic.jota.memory.MemoryAccess;
                 import com.qxotic.jota.memory.MemoryDomain;
                 import com.qxotic.jota.memory.MemoryView;
-                import com.qxotic.jota.tensor.JavaKernel;
-                import com.qxotic.jota.tensor.KernelArgs;
+                import com.qxotic.jota.runtime.JavaKernel;
+                import com.qxotic.jota.runtime.KernelArgs;
                 import java.lang.foreign.MemorySegment;
                 import java.nio.ByteOrder;
                 import jdk.incubator.vector.FloatVector;
@@ -1271,8 +1273,8 @@ public final class Llama32Cli {
                 import com.qxotic.jota.memory.MemoryAccess;
                 import com.qxotic.jota.memory.MemoryDomain;
                 import com.qxotic.jota.memory.MemoryView;
-                import com.qxotic.jota.tensor.JavaKernel;
-                import com.qxotic.jota.tensor.KernelArgs;
+                import com.qxotic.jota.runtime.JavaKernel;
+                import com.qxotic.jota.runtime.KernelArgs;
                 import java.lang.foreign.MemorySegment;
                 import java.nio.ByteOrder;
                 import jdk.incubator.vector.FloatVector;
@@ -2171,7 +2173,9 @@ public final class Llama32Cli {
             double gemvPctOfWall = wallNs > 0 ? (100.0 * gemvTimeNs) / (double) wallNs : 0.0;
             double avgGemvUs = gemvCalls > 0 ? (gemvTimeNs / 1_000.0) / (double) gemvCalls : 0.0;
             System.out.printf(
-                    "timing[%s]: wall=%.3fms forward=%.3fms gemv=%.3fms (%.2f%%) attention=%.3fms ffn=%.3fms logits=%.3fms calls=%d avgGemv=%.3fus gemv/wall=%.2f%% forwardCalls=%d%n",
+                    "timing[%s]: wall=%.3fms forward=%.3fms gemv=%.3fms (%.2f%%) attention=%.3fms"
+                            + " ffn=%.3fms logits=%.3fms calls=%d avgGemv=%.3fus gemv/wall=%.2f%%"
+                            + " forwardCalls=%d%n",
                     mode,
                     wallMs,
                     forwardMs,
@@ -2185,7 +2189,11 @@ public final class Llama32Cli {
                     gemvPctOfWall,
                     forwardCalls);
             System.out.printf(
-                    "timing_detail[%s]: gemvPrep=%.3fms gemvLaunch=%.3fms attnNorm=%.3fms qkvProj=%.3fms rope=%.3fms kvCopy=%.3fms qk=%.3fms softmax=%.3fms pv=%.3fms attnScatter=%.3fms attnProj=%.3fms ffnNorm=%.3fms ffnPairProj=%.3fms ffnSwiglu=%.3fms ffnGate=%.3fms ffnUp=%.3fms ffnAct=%.3fms ffnMul=%.3fms ffnDown=%.3fms ffnDownSpecial=%.3fms%n",
+                    "timing_detail[%s]: gemvPrep=%.3fms gemvLaunch=%.3fms attnNorm=%.3fms"
+                            + " qkvProj=%.3fms rope=%.3fms kvCopy=%.3fms qk=%.3fms softmax=%.3fms"
+                            + " pv=%.3fms attnScatter=%.3fms attnProj=%.3fms ffnNorm=%.3fms"
+                            + " ffnPairProj=%.3fms ffnSwiglu=%.3fms ffnGate=%.3fms ffnUp=%.3fms"
+                            + " ffnAct=%.3fms ffnMul=%.3fms ffnDown=%.3fms ffnDownSpecial=%.3fms%n",
                     mode,
                     gemvPrepNs / 1_000_000.0,
                     gemvLaunchNs / 1_000_000.0,
@@ -2208,7 +2216,8 @@ public final class Llama32Cli {
                     ffnDownProjNs / 1_000_000.0,
                     ffnDownSpecialNs / 1_000_000.0);
             System.out.printf(
-                    "gemv_miss[%s]: fallback=%d dtype=%d xShape=%d wShape=%d shapeMismatch=%d device=%d contiguous=%d kernelUnavailable=%d%n",
+                    "gemv_miss[%s]: fallback=%d dtype=%d xShape=%d wShape=%d shapeMismatch=%d"
+                            + " device=%d contiguous=%d kernelUnavailable=%d%n",
                     mode,
                     gemvFallbackCalls,
                     gemvMissDtype,
@@ -2235,7 +2244,8 @@ public final class Llama32Cli {
             float s0 = data.length > 0 ? data[0] : 0f;
             float s1 = data.length > 1 ? data[1] : 0f;
             System.out.printf(
-                    "TRACE tensor vec stage=%s layer=%d pos=%d n=%d sum=%.6e l2=%.6e max=%.6e s0=%.6e s1=%.6e%n",
+                    "TRACE tensor vec stage=%s layer=%d pos=%d n=%d sum=%.6e l2=%.6e max=%.6e"
+                            + " s0=%.6e s1=%.6e%n",
                     stage, layer, position, data.length, sum, Math.sqrt(sq), maxAbs, s0, s1);
         }
 
@@ -2740,8 +2750,8 @@ public final class Llama32Cli {
                                                         "LlamaGemvKernel")));
             } catch (RuntimeException ex) {
                 System.err.println(
-                        "WARN: disabling fast llama.gemv.fp32 kernel; "
-                                + "run JVM with --add-modules jdk.incubator.vector to enable Vector API. Cause: "
+                        "WARN: disabling fast llama.gemv.fp32 kernel; run JVM with --add-modules"
+                                + " jdk.incubator.vector to enable Vector API. Cause: "
                                 + ex.getMessage());
                 return null;
             }

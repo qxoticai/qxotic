@@ -54,4 +54,9 @@ public final class PanamaDeviceRuntime implements DeviceRuntime {
     public Optional<KernelService> kernelService() {
         return Optional.of(kernelService);
     }
+
+    @Override
+    public boolean supportsNativeRuntimeAlias() {
+        return true;
+    }
 }

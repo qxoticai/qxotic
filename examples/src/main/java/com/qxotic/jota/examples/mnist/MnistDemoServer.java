@@ -2,12 +2,6 @@ package com.qxotic.jota.examples.mnist;
 
 import com.qxotic.jota.Device;
 import com.qxotic.jota.Environment;
-import com.qxotic.jota.ExecutionMode;
-import com.qxotic.jota.runtime.DefaultRuntimeRegistry;
-import com.qxotic.jota.runtime.c.CRuntimeProvider;
-import com.qxotic.jota.runtime.hip.HipRuntimeProvider;
-import com.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
-import com.qxotic.jota.runtime.spi.RuntimeProbe;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -55,9 +49,6 @@ public final class MnistDemoServer {
                                             "Unknown backend: " + backend);
                         };
         if (!current.runtimes().hasRuntime(device)) {
-            tryRegisterFallbackProvider(current, device);
-        }
-        if (!current.runtimes().hasRuntime(device)) {
             System.err.println(
                     "Requested backend "
                             + device
@@ -70,45 +61,9 @@ public final class MnistDemoServer {
             }
             throw new IllegalStateException("Backend not available: " + device);
         }
-        ExecutionMode mode = resolveExecutionMode(device, current.executionMode());
         Environment.configureGlobal(
-                new Environment(device, current.defaultFloat(), current.runtimes(), mode));
+                new Environment(device, current.defaultFloat(), current.runtimes()));
         return device;
-    }
-
-    private static ExecutionMode resolveExecutionMode(Device device, ExecutionMode fallback) {
-        String configured = System.getProperty("jota.executionMode");
-        if (configured != null && !configured.isBlank()) {
-            return switch (configured.toLowerCase(java.util.Locale.ROOT)) {
-                case "lazy" -> ExecutionMode.LAZY;
-                case "eager" -> ExecutionMode.EAGER;
-                default ->
-                        throw new IllegalArgumentException("Unknown execution mode: " + configured);
-            };
-        }
-        return Device.PANAMA.equals(device) ? ExecutionMode.EAGER : fallback;
-    }
-
-    private static void tryRegisterFallbackProvider(Environment current, Device device) {
-        if (!(current.runtimes() instanceof DefaultRuntimeRegistry registry)) {
-            return;
-        }
-        DeviceRuntimeProvider provider;
-        if (Device.HIP.equals(device)) {
-            provider = new HipRuntimeProvider();
-        } else if (Device.C.equals(device)) {
-            provider = new CRuntimeProvider();
-        } else {
-            provider = null;
-        }
-        if (provider == null) {
-            return;
-        }
-        RuntimeProbe probe = provider.probe();
-        if (!probe.isAvailable()) {
-            return;
-        }
-        registry.register(provider.create());
     }
 
     private void start() throws IOException {
@@ -300,10 +255,7 @@ public final class MnistDemoServer {
                 device,
                 d ->
                         new Environment(
-                                d,
-                                baseEnvironment.defaultFloat(),
-                                baseEnvironment.runtimes(),
-                                resolveExecutionMode(d, baseEnvironment.executionMode())));
+                                d, baseEnvironment.defaultFloat(), baseEnvironment.runtimes()));
     }
 
     private Device backendForRequest(HttpExchange exchange) {

@@ -34,23 +34,22 @@ public final class DefaultRuntimeRegistry implements RuntimeRegistry {
         if (existing != null) {
             throw new IllegalStateException("Runtime already registered for device " + device);
         }
-        if (nativeDeviceRuntime == null && deviceRuntime.device().equals(Device.PANAMA)) {
+        if (nativeDeviceRuntime == null && deviceRuntime.supportsNativeRuntimeAlias()) {
             nativeDeviceRuntime = deviceRuntime;
         }
     }
 
     public void registerNative(DeviceRuntime deviceRuntime) {
         Objects.requireNonNull(deviceRuntime, "deviceRuntime");
-        Device device = deviceRuntime.device();
-        if (!device.equals(Device.PANAMA) && !device.equals(Device.C)) {
+        if (!deviceRuntime.supportsNativeRuntimeAlias()) {
             throw new IllegalArgumentException(
-                    "Native runtime must target "
-                            + Device.PANAMA
-                            + " or "
-                            + Device.C
-                            + ", got "
-                            + device);
+                    "Runtime does not support Device.NATIVE alias: "
+                            + deviceRuntime.getClass().getName()
+                            + " (device="
+                            + deviceRuntime.device()
+                            + ")");
         }
+        Device device = deviceRuntime.device();
         DeviceRuntime existing = runtimes.putIfAbsent(device, deviceRuntime);
         if (existing != null && existing != deviceRuntime) {
             deviceRuntime = existing;
@@ -82,7 +81,8 @@ public final class DefaultRuntimeRegistry implements RuntimeRegistry {
     public DeviceRuntime nativeRuntime() {
         DeviceRuntime deviceRuntime = nativeDeviceRuntime;
         if (deviceRuntime == null) {
-            throw new IllegalStateException("No native runtime registered");
+            throw new IllegalStateException(
+                    "No native runtime registered. Available runtimes: " + runtimes.keySet());
         }
         return deviceRuntime;
     }
