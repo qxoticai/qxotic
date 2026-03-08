@@ -7,6 +7,7 @@ import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
 import com.qxotic.jota.runtime.ExecutionStream;
 import com.qxotic.jota.runtime.KernelArgs;
 import com.qxotic.jota.runtime.KernelBackend;
+import com.qxotic.jota.runtime.KernelCachePaths;
 import com.qxotic.jota.runtime.KernelCacheKey;
 import com.qxotic.jota.runtime.KernelExecutable;
 import com.qxotic.jota.runtime.KernelProgram;
@@ -24,7 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 final class OpenClKernelBackend implements KernelBackend {
 
-    private static final Path KERNEL_ROOT = Path.of("__kernels").resolve(Device.OPENCL.leafName());
+    private static final Path KERNEL_ROOT = KernelCachePaths.deviceRoot(Device.OPENCL);
     private static final boolean KERNEL_LOG = Boolean.getBoolean("jota.kernel.log");
 
     private final KernelExecutableCache cache = new InMemoryKernelCache();

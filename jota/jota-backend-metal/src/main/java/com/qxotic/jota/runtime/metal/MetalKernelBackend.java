@@ -7,6 +7,7 @@ import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
 import com.qxotic.jota.runtime.ExecutionStream;
 import com.qxotic.jota.runtime.KernelArgs;
 import com.qxotic.jota.runtime.KernelBackend;
+import com.qxotic.jota.runtime.KernelCachePaths;
 import com.qxotic.jota.runtime.KernelCacheKey;
 import com.qxotic.jota.runtime.KernelExecutable;
 import com.qxotic.jota.runtime.KernelProgram;
@@ -29,7 +30,7 @@ import java.util.concurrent.TimeUnit;
 
 final class MetalKernelBackend implements KernelBackend {
 
-    private static final Path KERNEL_ROOT = Path.of("__kernels").resolve(Device.METAL.leafName());
+    private static final Path KERNEL_ROOT = KernelCachePaths.deviceRoot(Device.METAL);
     private static final String METAL_COMPILER =
             System.getProperty("jota.metal.compiler", "xcrun").trim();
     private static final String METAL_COMPILE_FLAGS_PROPERTY =

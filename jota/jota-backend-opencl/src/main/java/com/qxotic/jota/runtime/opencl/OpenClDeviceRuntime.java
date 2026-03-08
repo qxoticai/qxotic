@@ -6,6 +6,7 @@ import com.qxotic.jota.runtime.ComputeEngine;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.FileKernelProgramStore;
 import com.qxotic.jota.runtime.KernelBackend;
+import com.qxotic.jota.runtime.KernelCachePaths;
 import com.qxotic.jota.runtime.KernelProgramStore;
 import com.qxotic.jota.runtime.KernelService;
 import java.nio.file.Path;
@@ -36,8 +37,7 @@ public final class OpenClDeviceRuntime implements DeviceRuntime {
         this.memoryDomain = Objects.requireNonNull(memoryDomain, "memoryDomain");
         this.computeEngine = new OpenClComputeEngine(memoryDomain.device());
         KernelBackend backend = new OpenClKernelBackend();
-        Path programRoot =
-                Path.of("__kernels").resolve(Device.OPENCL.leafName()).resolve("programs");
+        Path programRoot = KernelCachePaths.programRoot(Device.OPENCL);
         KernelProgramStore sourceStore = new FileKernelProgramStore(programRoot.resolve("source"));
         KernelProgramStore binaryStore = new FileKernelProgramStore(programRoot.resolve("binary"));
         this.kernelService = new KernelService(backend, sourceStore, binaryStore);

@@ -1,8 +1,10 @@
 package com.qxotic.jota.runtime.c;
 
+import com.qxotic.jota.Device;
 import com.qxotic.jota.ir.lir.LIRGraph;
 import com.qxotic.jota.ir.lir.LIRTextRenderer;
 import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
+import com.qxotic.jota.runtime.KernelCachePaths;
 import com.qxotic.jota.runtime.KernelCacheKey;
 import com.qxotic.jota.runtime.KernelProgram;
 import java.io.IOException;
@@ -38,7 +40,7 @@ final class CKernelCompiler {
             throw new IllegalArgumentException("C compiler expects source program");
         }
         String kernelName = program.entryPoint();
-        Path baseDir = Path.of("__kernels", "c", key.value());
+        Path baseDir = KernelCachePaths.deviceRoot(Device.C).resolve(key.value());
         Path sourcePath = baseDir.resolve(kernelName + ".c");
         Path soPath = baseDir.resolve(sharedLibraryName(kernelName));
         log("C kernel compile key=" + key.value() + " entry=" + kernelName);
