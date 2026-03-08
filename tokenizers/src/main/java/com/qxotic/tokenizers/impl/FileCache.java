@@ -46,7 +46,8 @@ public class FileCache {
         if (expectedHash != null && !checkHash(contents, expectedHash)) {
             throw new IOException(
                     String.format(
-                            "Hash mismatch for data from %s (expected %s). This may indicate corruption.",
+                            "Hash mismatch for data from %s (expected %s). This may indicate"
+                                    + " corruption.",
                             blobPath, expectedHash));
         }
 

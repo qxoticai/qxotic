@@ -106,8 +106,8 @@ final class MemoryViewImpl<T> implements MemoryView<T> {
                         Layout.rowMajor(newShape), dataType, byteOffset, memory);
             }
             throw new IllegalArgumentException(
-                    "Cannot reshape non-span-contiguous view without copying. "
-                            + "Use Tensor.view() to preserve linear order, or make a contiguous copy first.");
+                    "Cannot reshape non-span-contiguous view without copying. Use Tensor.view() to"
+                            + " preserve linear order, or make a contiguous copy first.");
         }
         return MemoryViewImpl.create(
                 spec.layout(), dataType, byteOffset + spec.byteOffsetDelta(), memory);

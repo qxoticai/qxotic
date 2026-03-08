@@ -483,7 +483,8 @@ final class LIRKernelCompiler {
         private void emitExecuteWithoutScratch(StringBuilder source) {
             source.append("  @Override\n");
             source.append(
-                    "  public void execute(MemoryDomain<MemorySegment> memoryDomain, KernelArgs args) {\n");
+                    "  public void execute(MemoryDomain<MemorySegment> memoryDomain, KernelArgs"
+                            + " args) {\n");
             source.append("    execute(memoryDomain, args, null);\n");
             source.append("  }\n");
 
@@ -494,7 +495,8 @@ final class LIRKernelCompiler {
             source.append("          KernelArgs args,\n");
             source.append("          Memory<MemorySegment> scratch) {\n");
             source.append(
-                    "    MemoryAccess<MemorySegment> access = (MemoryAccess<MemorySegment>) memoryDomain.directAccess();\n");
+                    "    MemoryAccess<MemorySegment> access = (MemoryAccess<MemorySegment>)"
+                            + " memoryDomain.directAccess();\n");
             emitInputs(source);
             emitOutputs(source);
 
@@ -514,7 +516,8 @@ final class LIRKernelCompiler {
             source.append("          KernelArgs args,\n");
             source.append("          Memory<MemorySegment> scratch) {\n");
             source.append(
-                    "    MemoryAccess<MemorySegment> access = (MemoryAccess<MemorySegment>) memoryDomain.directAccess();\n");
+                    "    MemoryAccess<MemorySegment> access = (MemoryAccess<MemorySegment>)"
+                            + " memoryDomain.directAccess();\n");
             source.append("    MemorySegment scratchBase = scratch.base();\n");
             emitInputs(source);
             emitOutputs(source);
@@ -531,9 +534,11 @@ final class LIRKernelCompiler {
         private void emitExecuteWithoutScratchStub(StringBuilder source) {
             source.append("  @Override\n");
             source.append(
-                    "  public void execute(MemoryDomain<MemorySegment> memoryDomain, KernelArgs args) {\n");
+                    "  public void execute(MemoryDomain<MemorySegment> memoryDomain, KernelArgs"
+                            + " args) {\n");
             source.append(
-                    "    throw new UnsupportedOperationException(\"This kernel requires scratch memory\");\n");
+                    "    throw new UnsupportedOperationException(\"This kernel requires scratch"
+                            + " memory\");\n");
             source.append("  }\n");
         }
 
@@ -751,7 +756,11 @@ final class LIRKernelCompiler {
         }
 
         private void emitSteppedLoop(
-                StructuredFor loop, String idx, String lowerBound, String upperBound, String stepExpr) {
+                StructuredFor loop,
+                String idx,
+                String lowerBound,
+                String upperBound,
+                String stepExpr) {
             String lbVar = idx + "_lb";
             String ubVar = idx + "_ub";
             String stepVar = idx + "_step";

@@ -48,7 +48,9 @@ class HipBackendAvailabilityTest {
                 + reason
                 + "\nRequested profile command: "
                 + command
-                + "\nInstall/enable the HIP runtime toolchain for this machine, or run without -Phip.\n\n"
+                + "\n"
+                + "Install/enable the HIP runtime toolchain for this machine, or run without"
+                + " -Phip.\n\n"
                 + details;
     }
 

@@ -103,7 +103,8 @@
     <maven-javadoc-plugin.version>3.10.1</maven-javadoc-plugin.version>
     <nexus-staging-maven-plugin.version>1.7.0</nexus-staging-maven-plugin.version>
     <flatten-maven-plugin.version>1.6.0</flatten-maven-plugin.version>
-    <spotless-maven-plugin.version>2.43.0</spotless-maven-plugin.version>
+    <spotless-maven-plugin.version>2.46.1</spotless-maven-plugin.version>
+    <google-java-format.version>1.27.0</google-java-format.version>
     <jacoco-maven-plugin.version>0.8.12</jacoco-maven-plugin.version>
     <exec-maven-plugin.version>3.4.1</exec-maven-plugin.version>
   </properties>
@@ -228,6 +229,7 @@
           <configuration>
             <java>
               <googleJavaFormat>
+                <version>${google-java-format.version}</version>
                 <style>AOSP</style>
                 <reflowLongStrings>true</reflowLongStrings>
               </googleJavaFormat>
@@ -405,17 +407,17 @@
             <executions>
               <execution>
                 <id>flatten-release</id>
-                <phase>process-resources</phase>
                 <goals>
                   <goal>flatten</goal>
                 </goals>
+                <phase>process-resources</phase>
               </execution>
               <execution>
                 <id>flatten-clean-release</id>
-                <phase>clean</phase>
                 <goals>
                   <goal>clean</goal>
                 </goals>
+                <phase>clean</phase>
               </execution>
             </executions>
           </plugin>

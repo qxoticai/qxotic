@@ -450,7 +450,8 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
                             "Gather operations are not supported in post-ops after reductions");
             case TensorInput __ ->
                     throw new UnsupportedOperationException(
-                            "Post-ops after reductions must be element-wise on the reduction result");
+                            "Post-ops after reductions must be element-wise on the reduction"
+                                    + " result");
             case com.qxotic.jota.ir.tir.ScalarInput si -> {
                 com.qxotic.jota.ir.lir.ScalarInput scalar = inputScalars.get(si);
                 if (scalar == null) {
@@ -460,10 +461,12 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
             }
             case IotaConstant __ ->
                     throw new UnsupportedOperationException(
-                            "Post-ops after reductions must be element-wise on the reduction result");
+                            "Post-ops after reductions must be element-wise on the reduction"
+                                    + " result");
             case RandomUniformOp __ ->
                     throw new UnsupportedOperationException(
-                            "Post-ops after reductions must be element-wise on the reduction result");
+                            "Post-ops after reductions must be element-wise on the reduction"
+                                    + " result");
         }
     }
 
@@ -738,8 +741,8 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
         // This can happen if a reduction is used in a context that requires scalar evaluation
         // In such cases, we need to handle it - for now, throw a more helpful error
         throw new UnsupportedOperationException(
-                "ReductionOp lowering not yet implemented - requires separate handling. "
-                        + "Reductions with post-operations (e.g., .add(), .cast()) are not yet supported.");
+                "ReductionOp lowering not yet implemented - requires separate handling. Reductions"
+                        + " with post-operations (e.g., .add(), .cast()) are not yet supported.");
     }
 
     @Override

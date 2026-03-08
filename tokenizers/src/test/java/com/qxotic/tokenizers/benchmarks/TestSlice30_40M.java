@@ -18,7 +18,8 @@ public class TestSlice30_40M {
             "306cd27f03c1a714eca7108e03d66b7dc042abe8c258b44c199a7ed9838dd930";
 
     private static final String R50K_PATTERN =
-            "'(?:[sdmt]|ll|ve|re)| ?\\p{L}++| ?\\p{N}++| ?[^\\s\\p{L}\\p{N}]++|\\s++$|\\s+(?!\\S)|\\s";
+            "'(?:[sdmt]|ll|ve|re)| ?\\p{L}++| ?\\p{N}++|"
+                    + " ?[^\\s\\p{L}\\p{N}]++|\\s++$|\\s+(?!\\S)|\\s";
 
     private static final String FILE_PATH = "/home/mukel/Desktop/playground/enwik9";
     private static final String OUTPUT_PATH =

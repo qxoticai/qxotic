@@ -27,7 +27,8 @@ public final class DefaultRuntimeRegistry implements RuntimeRegistry {
         Objects.requireNonNull(deviceRuntime, "deviceRuntime");
         Device device = deviceRuntime.device();
         if (device.equals(Device.NATIVE)) {
-            throw new IllegalArgumentException("Device.NATIVE is a runtime alias and cannot be registered");
+            throw new IllegalArgumentException(
+                    "Device.NATIVE is a runtime alias and cannot be registered");
         }
         DeviceRuntime existing = runtimes.putIfAbsent(device, deviceRuntime);
         if (existing != null) {

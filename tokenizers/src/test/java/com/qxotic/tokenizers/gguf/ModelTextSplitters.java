@@ -34,14 +34,26 @@ public final class ModelTextSplitters {
      * </ul>
      */
     public static final String LLAMA3_PATTERN =
-            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
+            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r"
+                    + "\\n"
+                    + "\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r"
+                    + "\\n"
+                    + "]*|\\s*[\\r"
+                    + "\\n"
+                    + "]+|\\s+(?!\\S)|\\s+";
 
     /**
      * Qwen2 pattern - used by Qwen2 and Qwen3 models. Similar to Llama3 but handles single digits
      * differently.
      */
     public static final String QWEN2_PATTERN =
-            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+";
+            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r"
+                    + "\\n"
+                    + "\\p{L}\\p{N}]?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\\r"
+                    + "\\n"
+                    + "]*|\\s*[\\r"
+                    + "\\n"
+                    + "]+|\\s+(?!\\S)|\\s+";
 
     /** SmolLM2 patterns - used by SmolLM models. Uses multiple patterns applied sequentially. */
     public static final String[] SMOLLM2_PATTERNS = {

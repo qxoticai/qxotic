@@ -71,8 +71,8 @@ public final class TensorEntry {
     /**
      * Returns the total number of elements in this tensor.
      *
-     * <p>Computes the product of all dimensions in the shape. An empty shape (scalar)
-     * returns 1. Throws {@link ArithmeticException} on overflow.
+     * <p>Computes the product of all dimensions in the shape. An empty shape (scalar) returns 1.
+     * Throws {@link ArithmeticException} on overflow.
      *
      * @return total number of elements
      */
@@ -122,8 +122,8 @@ public final class TensorEntry {
     /**
      * Creates a copy of this tensor entry with a different byte offset.
      *
-     * <p>This is useful when rearranging tensors in a safetensors file. All other properties
-     * (name, dtype, shape) remain unchanged.
+     * <p>This is useful when rearranging tensors in a safetensors file. All other properties (name,
+     * dtype, shape) remain unchanged.
      *
      * <p>Example usage:
      *

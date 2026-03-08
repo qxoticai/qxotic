@@ -10,7 +10,10 @@ import com.qxotic.tokenizers.impl.RegexSplitter;
 @AutoService(TextSplitterFactory.class)
 public class Qwen2TextSplitterFactory implements GGUFTextSplitterFactory {
     public static final String QWEN2_PATTERN =
-            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\r\n]*|\\s*[\r\n]+|\\s+(?!\\S)|\\s+";
+            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n"
+                    + "\\p{L}\\p{N}]?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\r\n"
+                    + "]*|\\s*[\r\n"
+                    + "]+|\\s+(?!\\S)|\\s+";
 
     @Override
     public String getTextSplitterName() {

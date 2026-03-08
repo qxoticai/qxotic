@@ -67,10 +67,12 @@ public final class PanamaLIRKernelExecutor {
 
         Memory<MemorySegment> scratch = null;
         if (compiled.scratchLayout().requiresScratch()) {
-            scratch = allocateScratch(memoryDomain, compiled.scratchLayout().alignedTotalByteSize());
+            scratch =
+                    allocateScratch(memoryDomain, compiled.scratchLayout().alignedTotalByteSize());
         }
 
-        compiled.kernel().execute(memoryDomain, argsBuilder.build(graph, lirInputs, outputs), scratch);
+        compiled.kernel()
+                .execute(memoryDomain, argsBuilder.build(graph, lirInputs, outputs), scratch);
 
         return outputs.getFirst();
     }

@@ -46,7 +46,8 @@ public final class HipRuntimeProvider implements DeviceRuntimeProvider {
             if (count <= 0) {
                 return RuntimeProbe.unsupportedHardware(
                         "HIP runtime is present but no compatible GPU was detected",
-                        "Install supported AMD GPU drivers/ROCm and verify hip runtime can see a device");
+                        "Install supported AMD GPU drivers/ROCm and verify hip runtime can see a"
+                                + " device");
             }
             return RuntimeProbe.available("HIP runtime available with " + count + " device(s)");
         } catch (UnsupportedOperationException e) {

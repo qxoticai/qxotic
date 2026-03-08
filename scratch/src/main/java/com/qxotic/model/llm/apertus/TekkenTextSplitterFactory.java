@@ -12,7 +12,16 @@ import java.util.Arrays;
 @AutoService(TextSplitterFactory.class)
 public class TekkenTextSplitterFactory implements GGUFTextSplitterFactory {
     public static final String[] TEKKEN_PATTERN = {
-        "[^\\r\\n\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]*[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]+|[^\\r\\n\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]+[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]*|\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n/]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+"
+        "[^\\r"
+            + "\\n"
+            + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]*[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]+|[^\\r"
+            + "\\n"
+            + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]+[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]*|\\p{N}|"
+            + " ?[^\\s\\p{L}\\p{N}]+[\\r"
+            + "\\n"
+            + "/]*|\\s*[\\r"
+            + "\\n"
+            + "]+|\\s+(?!\\S)|\\s+"
     };
 
     @Override

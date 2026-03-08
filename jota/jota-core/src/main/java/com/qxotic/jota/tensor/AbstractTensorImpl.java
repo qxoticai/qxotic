@@ -371,7 +371,8 @@ abstract class AbstractTensorImpl implements Tensor {
         Objects.requireNonNull(other, "other");
         if (!dataType().isFloatingPoint() || !other.dataType().isFloatingPoint()) {
             throw new IllegalArgumentException(
-                    "dot(other) is floating-point only; use dot(other, accumulatorType) for integral inputs");
+                    "dot(other) is floating-point only; use dot(other, accumulatorType) for"
+                            + " integral inputs");
         }
         return dot(other, dataType());
     }
@@ -380,7 +381,8 @@ abstract class AbstractTensorImpl implements Tensor {
         Objects.requireNonNull(device, "device");
         if (Tracer.isTracing()) {
             throw new UnsupportedOperationException(
-                    "Tensor.to(Device) is a runtime transfer boundary and is not allowed inside tracing");
+                    "Tensor.to(Device) is a runtime transfer boundary and is not allowed inside"
+                            + " tracing");
         }
         if (device.equals(device())) {
             return this;

@@ -40,7 +40,8 @@ public final class TraceDebug {
         float sample0 = tmp.length > 0 ? tmp[0] : 0f;
         float sample1 = tmp.length > 1 ? tmp[1] : 0f;
         System.err.printf(
-                "TRACE scratch vec stage=%s layer=%d pos=%d n=%d sum=%.6e l2=%.6e max=%.6e s0=%.6e s1=%.6e%n",
+                "TRACE scratch vec stage=%s layer=%d pos=%d n=%d sum=%.6e l2=%.6e max=%.6e s0=%.6e"
+                        + " s1=%.6e%n",
                 stage, layer, position, tmp.length, sum, Math.sqrt(sq), maxAbs, sample0, sample1);
     }
 }

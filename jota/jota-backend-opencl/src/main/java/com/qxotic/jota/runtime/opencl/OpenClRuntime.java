@@ -3,9 +3,7 @@ package com.qxotic.jota.runtime.opencl;
 import com.qxotic.jota.NativeLibraryLoader;
 import java.util.concurrent.atomic.AtomicReference;
 
-/**
- * JNI bindings for the OpenCL backend native runtime.
- */
+/** JNI bindings for the OpenCL backend native runtime. */
 public final class OpenClRuntime {
 
     static final int STORAGE_MODE_SHARED = 0;
@@ -25,9 +23,7 @@ public final class OpenClRuntime {
         // Utility class
     }
 
-    /**
-     * Returns true if the OpenCL backend native library is available.
-     */
+    /** Returns true if the OpenCL backend native library is available. */
     public static boolean isAvailable() {
         Boolean available = AVAILABLE.get();
         if (available != null) {
@@ -58,9 +54,7 @@ public final class OpenClRuntime {
     public static void requireAvailable() {
         if (!isAvailable()) {
             throw new IllegalStateException(
-                "OpenCL backend not available (" + LIB_NAME + "). " +
-                availabilityDetails()
-            );
+                    "OpenCL backend not available (" + LIB_NAME + "). " + availabilityDetails());
         }
     }
 
@@ -69,10 +63,11 @@ public final class OpenClRuntime {
         if (failure == null || failure.isBlank()) {
             return "Ensure lib"
                     + LIB_NAME
-                    + " is on java.library.path or the backend JAR includes natives for your platform ("
+                    + " is on java.library.path or the backend JAR includes natives for your"
+                    + " platform ("
                     + NativeLibraryLoader.currentPlatform()
-                    + "). Supported platforms: Linux x86_64/aarch64, Windows x86_64, macOS aarch64. "
-                    + "Also ensure OpenCL ICD/runtime libraries are installed.";
+                    + "). Supported platforms: Linux x86_64/aarch64, Windows x86_64, macOS aarch64."
+                    + " Also ensure OpenCL ICD/runtime libraries are installed.";
         }
         return "Library load error: "
                 + failure
@@ -80,7 +75,7 @@ public final class OpenClRuntime {
                 + LIB_NAME
                 + " is on java.library.path or the backend JAR includes natives for your platform ("
                 + NativeLibraryLoader.currentPlatform()
-                    + "). Supported platforms: Linux x86_64/aarch64, Windows x86_64, macOS aarch64. "
+                + "). Supported platforms: Linux x86_64/aarch64, Windows x86_64, macOS aarch64. "
                 + "Also ensure OpenCL ICD/runtime libraries are installed.";
     }
 

@@ -3,9 +3,7 @@ package com.qxotic.jota.runtime.hip;
 import com.qxotic.jota.NativeLibraryLoader;
 import java.util.concurrent.atomic.AtomicReference;
 
-/**
- * JNI bindings for the HIP backend native runtime.
- */
+/** JNI bindings for the HIP backend native runtime. */
 public final class HipRuntime {
 
     private static final String LIB_NAME = "jota_hip";
@@ -15,9 +13,7 @@ public final class HipRuntime {
         // Utility class
     }
 
-    /**
-     * Returns true if the HIP backend native library is available.
-     */
+    /** Returns true if the HIP backend native library is available. */
     public static boolean isAvailable() {
         Boolean available = AVAILABLE.get();
         if (available != null) {
@@ -40,13 +36,17 @@ public final class HipRuntime {
     public static void requireAvailable() {
         if (!isAvailable()) {
             throw new IllegalStateException(
-                "HIP backend not available (" + LIB_NAME + "). " +
-                "Ensure lib" + LIB_NAME + " is on java.library.path " +
-                "or the backend JAR includes natives for your platform (" + 
-                NativeLibraryLoader.currentPlatform() + "). " +
-                "Supported platforms: Linux x86_64/aarch64, Windows x86_64. " +
-                "Note: HIP requires AMD ROCm to be installed."
-            );
+                    "HIP backend not available ("
+                            + LIB_NAME
+                            + "). "
+                            + "Ensure lib"
+                            + LIB_NAME
+                            + " is on java.library.path "
+                            + "or the backend JAR includes natives for your platform ("
+                            + NativeLibraryLoader.currentPlatform()
+                            + "). "
+                            + "Supported platforms: Linux x86_64/aarch64, Windows x86_64. "
+                            + "Note: HIP requires AMD ROCm to be installed.");
         }
     }
 

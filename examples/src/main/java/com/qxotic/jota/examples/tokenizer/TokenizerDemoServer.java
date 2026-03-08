@@ -46,7 +46,8 @@ public final class TokenizerDemoServer {
                             loadTiktokenTokenizer(
                                     "gpt2",
                                     "tiktoken/r50k_base.tiktoken",
-                                    "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+",
+                                    "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+|"
+                                            + " ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+",
                                     Map.of("<|endoftext|>", 50256))));
 
             // CL100k (GPT-4, GPT-3.5)
@@ -58,7 +59,14 @@ public final class TokenizerDemoServer {
                             loadTiktokenTokenizer(
                                     "cl100k_base",
                                     "tiktoken/cl100k_base.tiktoken",
-                                    "'(?i:[sdmt]|ll|ve|re)|[^\\r\\n\\p{L}\\p{N}]?+\\p{L}++|\\p{N}{1,3}+| ?[^\\s\\p{L}\\p{N}]++[\\r\\n]*+|\\s++$|\\s*[\\r\\n]|\\s+(?!\\S)|\\s",
+                                    "'(?i:[sdmt]|ll|ve|re)|[^\\r"
+                                            + "\\n"
+                                            + "\\p{L}\\p{N}]?+\\p{L}++|\\p{N}{1,3}+|"
+                                            + " ?[^\\s\\p{L}\\p{N}]++[\\r"
+                                            + "\\n"
+                                            + "]*+|\\s++$|\\s*[\\r"
+                                            + "\\n"
+                                            + "]|\\s+(?!\\S)|\\s",
                                     Map.of(
                                             "<|endoftext|>", 100257,
                                             "<|fim_prefix|>", 100258,
@@ -75,7 +83,14 @@ public final class TokenizerDemoServer {
                             loadTiktokenTokenizer(
                                     "o200k_base",
                                     "tiktoken/o200k_base.tiktoken",
-                                    "'(?i:[sdmt]|ll|ve|re)|[^\\r\\n\\p{L}\\p{N}]?+\\p{L}++|\\p{N}{1,3}+| ?[^\\s\\p{L}\\p{N}]++[\\r\\n]*+|\\s++$|\\s*[\\r\\n]|\\s+(?!\\S)|\\s",
+                                    "'(?i:[sdmt]|ll|ve|re)|[^\\r"
+                                            + "\\n"
+                                            + "\\p{L}\\p{N}]?+\\p{L}++|\\p{N}{1,3}+|"
+                                            + " ?[^\\s\\p{L}\\p{N}]++[\\r"
+                                            + "\\n"
+                                            + "]*+|\\s++$|\\s*[\\r"
+                                            + "\\n"
+                                            + "]|\\s+(?!\\S)|\\s",
                                     Map.of(
                                             "<|endoftext|>", 199999,
                                             "<|endofprompt|>", 200018))));
@@ -89,7 +104,8 @@ public final class TokenizerDemoServer {
                             loadTiktokenTokenizer(
                                     "p50k_base",
                                     "tiktoken/p50k_base.tiktoken",
-                                    "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+",
+                                    "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+|"
+                                            + " ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+",
                                     Map.of("<|endoftext|>", 50256))));
 
         } catch (Exception e) {

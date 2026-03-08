@@ -2,8 +2,8 @@ package com.qxotic.jota.runtime;
 
 import com.qxotic.jota.Device;
 import java.nio.file.Path;
-import java.util.Set;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 

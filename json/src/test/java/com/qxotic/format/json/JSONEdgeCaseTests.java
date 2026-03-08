@@ -206,7 +206,8 @@ class JSONEdgeCaseTests {
 
         Object parsed =
                 JSON.parse(
-                        "{\"key-with-dash\": \"value\", \"key.with.dot\": \"value\", \"key:with:colon\": \"value\"}");
+                        "{\"key-with-dash\": \"value\", \"key.with.dot\": \"value\","
+                                + " \"key:with:colon\": \"value\"}");
         assertEquals(expected, parsed);
     }
 
