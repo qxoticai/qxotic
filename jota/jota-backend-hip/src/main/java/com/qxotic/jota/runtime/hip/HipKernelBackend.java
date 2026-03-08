@@ -24,7 +24,7 @@ final class HipKernelBackend implements KernelBackend {
     private static final String ENV_HIPCC = "HIPCC";
     private static final String COMPILER_PROPERTY = "jota.hip.compiler";
     private static final String EXTRA_FLAGS_PROPERTY = "jota.hip.compile.flags";
-    private static final Path KERNEL_ROOT = Path.of("__kernels").resolve(Device.HIP.leafName());
+    private static final Path KERNEL_ROOT = KernelCachePaths.deviceRoot(Device.HIP);
     private static final boolean KERNEL_LOG = Boolean.getBoolean("jota.kernel.log");
     private static final long COMPILE_TIMEOUT_SECONDS =
             Long.getLong("jota.hip.compile.timeout.seconds", 10L);

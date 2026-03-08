@@ -6,6 +6,7 @@ import com.qxotic.jota.runtime.ComputeEngine;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.FileKernelProgramStore;
 import com.qxotic.jota.runtime.KernelBackend;
+import com.qxotic.jota.runtime.KernelCachePaths;
 import com.qxotic.jota.runtime.KernelProgramStore;
 import com.qxotic.jota.runtime.KernelService;
 import java.lang.foreign.MemorySegment;
@@ -27,7 +28,7 @@ public final class CDeviceRuntime implements DeviceRuntime {
         this.memoryDomain = Objects.requireNonNull(memoryDomain, "memoryDomain");
         this.computeEngine = new CComputeEngine(memoryDomain);
         KernelBackend backend = new CKernelBackend();
-        Path programRoot = Path.of("__kernels").resolve(Device.C.leafName()).resolve("programs");
+        Path programRoot = KernelCachePaths.programRoot(Device.C);
         KernelProgramStore sourceStore = new FileKernelProgramStore(programRoot.resolve("source"));
         KernelProgramStore binaryStore = new FileKernelProgramStore(programRoot.resolve("binary"));
         this.kernelService = new KernelService(backend, sourceStore, binaryStore);

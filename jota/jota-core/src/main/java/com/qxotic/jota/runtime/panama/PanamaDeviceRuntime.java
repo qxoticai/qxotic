@@ -7,6 +7,7 @@ import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.DiskKernelCache;
 import com.qxotic.jota.runtime.FileKernelProgramStore;
 import com.qxotic.jota.runtime.KernelBackend;
+import com.qxotic.jota.runtime.KernelCachePaths;
 import com.qxotic.jota.runtime.KernelProgramStore;
 import com.qxotic.jota.runtime.KernelService;
 import java.lang.foreign.MemorySegment;
@@ -28,8 +29,7 @@ public final class PanamaDeviceRuntime implements DeviceRuntime {
         this.memoryDomain = Objects.requireNonNull(memoryDomain, "memoryDomain");
         this.computeEngine = new PanamaLirComputeEngine(memoryDomain, cache);
         KernelBackend backend = new JavaKernelBackend(memoryDomain, cache);
-        Path programRoot =
-                Path.of("__kernels").resolve(Device.PANAMA.leafName()).resolve("programs");
+        Path programRoot = KernelCachePaths.programRoot(Device.PANAMA);
         KernelProgramStore sourceStore = new FileKernelProgramStore(programRoot.resolve("source"));
         KernelProgramStore binaryStore = new FileKernelProgramStore(programRoot.resolve("binary"));
         this.kernelService = new KernelService(backend, sourceStore, binaryStore);

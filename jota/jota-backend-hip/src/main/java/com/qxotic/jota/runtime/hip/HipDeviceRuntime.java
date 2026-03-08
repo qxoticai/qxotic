@@ -6,6 +6,7 @@ import com.qxotic.jota.runtime.ComputeEngine;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.FileKernelProgramStore;
 import com.qxotic.jota.runtime.KernelBackend;
+import com.qxotic.jota.runtime.KernelCachePaths;
 import com.qxotic.jota.runtime.KernelProgramStore;
 import com.qxotic.jota.runtime.KernelService;
 import java.nio.file.Path;
@@ -31,7 +32,7 @@ public final class HipDeviceRuntime implements DeviceRuntime {
         this.memoryDomain = Objects.requireNonNull(memoryDomain, "memoryDomain");
         this.computeEngine = new HipComputeEngine(memoryDomain.device());
         KernelBackend backend = new HipKernelBackend();
-        Path programRoot = Path.of("__kernels").resolve(Device.HIP.leafName()).resolve("programs");
+        Path programRoot = KernelCachePaths.programRoot(Device.HIP);
         KernelProgramStore sourceStore = new FileKernelProgramStore(programRoot.resolve("source"));
         KernelProgramStore binaryStore = new FileKernelProgramStore(programRoot.resolve("binary"));
         this.kernelService = new KernelService(backend, sourceStore, binaryStore);
