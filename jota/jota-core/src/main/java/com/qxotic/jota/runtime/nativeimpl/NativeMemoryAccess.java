@@ -1,4 +1,4 @@
-package com.qxotic.jota.runtime.panama;
+package com.qxotic.jota.runtime.nativeimpl;
 
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAccess;
@@ -6,15 +6,15 @@ import com.qxotic.jota.memory.MemoryAccessChecks;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
-public final class PanamaMemoryAccess implements MemoryAccess<MemorySegment> {
+public final class NativeMemoryAccess implements MemoryAccess<MemorySegment> {
 
-    private static final PanamaMemoryAccess INSTANCE = new PanamaMemoryAccess();
+    private static final NativeMemoryAccess INSTANCE = new NativeMemoryAccess();
 
     public static MemoryAccess<MemorySegment> instance() {
         return INSTANCE;
     }
 
-    private PanamaMemoryAccess() {}
+    private NativeMemoryAccess() {}
 
     @Override
     public byte readByte(Memory<MemorySegment> memory, long byteOffset) {

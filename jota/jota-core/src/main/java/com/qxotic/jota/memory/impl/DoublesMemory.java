@@ -28,7 +28,7 @@ final class DoublesMemory implements Memory<double[]> {
 
     @Override
     public Device device() {
-        return Device.PANAMA;
+        return Device.JAVA;
     }
 
     @Override

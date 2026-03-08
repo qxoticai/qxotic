@@ -6,14 +6,16 @@ import com.qxotic.jota.runtime.DefaultRuntimeRegistry;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.RuntimeDiagnostic;
 import com.qxotic.jota.runtime.RuntimeRegistry;
-import com.qxotic.jota.runtime.panama.PanamaDeviceRuntime;
 import com.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
 import com.qxotic.jota.runtime.spi.RuntimeProbe;
 import java.lang.foreign.MemorySegment;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.ServiceLoader;
+import java.util.Set;
 import java.util.StringJoiner;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
@@ -133,24 +135,19 @@ public final class Environment {
 
     private static RuntimeRegistry buildDefaultRuntimes() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        if (!isNativeImageRuntime()) {
-            try {
-                DeviceRuntime panamaRuntime = new PanamaDeviceRuntime();
-                registry.register(panamaRuntime);
-                registry.registerNative(panamaRuntime);
-            } catch (Throwable t) {
-                RuntimeProbe probe =
-                        RuntimeProbe.error("Built-in Panama runtime failed to initialize", t);
-                registry.addDiagnostic(new RuntimeDiagnostic("panama-core", Device.PANAMA, probe));
-                logUnavailableRuntime("panama-core", Device.PANAMA, probe);
-            }
-        }
+        Set<String> includedBackends =
+                parseBackendList(System.getProperty("jota.backends.include"));
+        Set<String> excludedBackends =
+                parseBackendList(System.getProperty("jota.backends.exclude"));
         ServiceLoader<DeviceRuntimeProvider> providers =
                 ServiceLoader.load(DeviceRuntimeProvider.class);
         providers.stream()
                 .map(ServiceLoader.Provider::get)
                 .sorted(Comparator.comparingInt(DeviceRuntimeProvider::priority).reversed())
-                .forEach(provider -> registerProvider(registry, provider));
+                .forEach(
+                        provider ->
+                                registerProvider(
+                                        registry, provider, includedBackends, excludedBackends));
         Device nativeBackend = selectNativeBackend(registry);
         if (!registry.hasRuntime(nativeBackend)) {
             throw missingNativeRuntimeException(
@@ -211,14 +208,58 @@ public final class Environment {
         String value = rawValue.trim().toLowerCase();
         return switch (value) {
             case "auto", "native" -> null;
-            case "panama", "java", "jvm", "ffm" -> Device.PANAMA;
+            case "panama", "jvm", "ffm" -> Device.PANAMA;
             case "c" -> Device.C;
             default ->
                     throw new IllegalArgumentException(
                             "Unsupported jota.native.backend='"
                                     + rawValue
-                                    + "'. Supported values: auto, native, panama, java, c");
+                                    + "'. Supported values: auto, native, panama, c");
         };
+    }
+
+    private static Set<String> parseBackendList(String rawValue) {
+        if (rawValue == null || rawValue.isBlank()) {
+            return Set.of();
+        }
+        Set<String> values = new LinkedHashSet<>();
+        for (String token : rawValue.split("[,\\s]+")) {
+            if (!token.isBlank()) {
+                values.add(token.trim().toLowerCase(Locale.ROOT));
+            }
+        }
+        return values;
+    }
+
+    private static boolean matchesBackendSelector(
+            DeviceRuntimeProvider provider, Set<String> selectors) {
+        String id = provider.id().toLowerCase(Locale.ROOT);
+        String leaf = provider.device().leafName().toLowerCase(Locale.ROOT);
+        String full = provider.device().name().toLowerCase(Locale.ROOT);
+        return selectors.contains(id) || selectors.contains(leaf) || selectors.contains(full);
+    }
+
+    private static RuntimeProbe backendFilterProbe(
+            DeviceRuntimeProvider provider,
+            Set<String> includedBackends,
+            Set<String> excludedBackends) {
+        boolean included =
+                includedBackends.isEmpty() || matchesBackendSelector(provider, includedBackends);
+        boolean excluded =
+                !excludedBackends.isEmpty() && matchesBackendSelector(provider, excludedBackends);
+        if (!included) {
+            return RuntimeProbe.misconfigured(
+                    "Runtime provider filtered out by include list",
+                    "Add backend to -Djota.backends.include or clear include filter",
+                    null);
+        }
+        if (excluded) {
+            return RuntimeProbe.misconfigured(
+                    "Runtime provider excluded by configuration",
+                    "Remove it from -Djota.backends.exclude to enable (exclude wins over include)",
+                    null);
+        }
+        return null;
     }
 
     private static boolean isNativeImageRuntime() {
@@ -253,6 +294,22 @@ public final class Environment {
                         (backendOverride == null || backendOverride.isBlank())
                                 ? "<auto>"
                                 : backendOverride);
+
+        String includedBackends = System.getProperty("jota.backends.include");
+        message.append('\n')
+                .append("jota.backends.include: ")
+                .append(
+                        (includedBackends == null || includedBackends.isBlank())
+                                ? "<all>"
+                                : includedBackends);
+
+        String excludedBackends = System.getProperty("jota.backends.exclude");
+        message.append('\n')
+                .append("jota.backends.exclude: ")
+                .append(
+                        (excludedBackends == null || excludedBackends.isBlank())
+                                ? "<none>"
+                                : excludedBackends);
 
         message.append('\n')
                 .append("Registered runtimes: ")
@@ -290,15 +347,13 @@ public final class Environment {
         message.append('\n').append("Required: at least one runtime supporting Device.NATIVE");
         message.append(" (Panama, C, or another runtime with supportsNativeRuntimeAlias=true).");
         message.append('\n').append("Suggested fixes:");
-        message.append('\n')
-                .append(
-                        "- Include a Panama backend: com.qxotic:jota"
-                                + " (current default bundle) or com.qxotic:jota-backend-panama"
-                                + " (if using split backend modules)");
+        message.append('\n').append("- Include a Panama backend: com.qxotic:jota-backend-panama");
         message.append('\n').append("- Include C backend: com.qxotic:jota-backend-c");
         message.append('\n').append("- Graal Native Image: add dependency com.qxotic:jota-graal");
         message.append('\n')
                 .append("- Explicit backend override: -Djota.native.backend=panama or c");
+        message.append('\n')
+                .append("- Ensure required backends are allowed by include/exclude filters");
         message.append('\n')
                 .append("- Run with -Djota.runtime.probe.log=true for backend warnings");
         return new IllegalStateException(message.toString());
@@ -328,7 +383,16 @@ public final class Environment {
     }
 
     private static void registerProvider(
-            DefaultRuntimeRegistry registry, DeviceRuntimeProvider provider) {
+            DefaultRuntimeRegistry registry,
+            DeviceRuntimeProvider provider,
+            Set<String> includedBackends,
+            Set<String> excludedBackends) {
+        RuntimeProbe filterProbe = backendFilterProbe(provider, includedBackends, excludedBackends);
+        if (filterProbe != null) {
+            registry.addDiagnostic(
+                    new RuntimeDiagnostic(provider.id(), provider.device(), filterProbe));
+            return;
+        }
         RuntimeProbe probe;
         try {
             probe = provider.probe();
@@ -340,22 +404,24 @@ public final class Environment {
             logUnavailableRuntime(provider, probe);
             return;
         }
-        if (provider.device().equals(Device.PANAMA) || provider.device().equals(Device.NATIVE)) {
+        if (provider.device().equals(Device.NATIVE)) {
             registry.addDiagnostic(
                     new RuntimeDiagnostic(
                             provider.id(),
                             provider.device(),
                             RuntimeProbe.misconfigured(
                                     "Optional provider targets reserved native device",
-                                    "Do not register external providers for"
-                                            + " Device.PANAMA/Device.NATIVE",
+                                    "Do not register external providers for Device.NATIVE",
                                     null)));
             logUnavailableRuntime(
                     provider,
                     RuntimeProbe.misconfigured(
                             "Optional provider targets reserved native device",
-                            "Do not register external providers for Device.PANAMA/Device.NATIVE",
+                            "Do not register external providers for Device.NATIVE",
                             null));
+            return;
+        }
+        if (provider.device().equals(Device.PANAMA) && registry.hasRuntime(Device.PANAMA)) {
             return;
         }
         try {

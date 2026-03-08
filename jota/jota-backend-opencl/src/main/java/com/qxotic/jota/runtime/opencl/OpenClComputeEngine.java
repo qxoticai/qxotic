@@ -25,7 +25,7 @@ import com.qxotic.jota.runtime.KernelExecutable;
 import com.qxotic.jota.runtime.KernelProgram;
 import com.qxotic.jota.runtime.LaunchConfig;
 import com.qxotic.jota.runtime.clike.CLikeKernelGenerator;
-import com.qxotic.jota.runtime.panama.LIRKernelArgsBuilder;
+import com.qxotic.jota.runtime.clike.LIRKernelArgsBuilder;
 import com.qxotic.jota.tensor.Tensor;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;

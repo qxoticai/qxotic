@@ -1,0 +1,92 @@
+[
+  {
+    "name": "com.qxotic.jota.runtime.KernelArgs",
+    "methods": [
+      {
+        "name": "size",
+        "parameterTypes": []
+      },
+      {
+        "name": "entry",
+        "parameterTypes": [
+          "int"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "com.qxotic.jota.runtime.KernelArgs$Entry",
+    "methods": [
+      {
+        "name": "kind",
+        "parameterTypes": []
+      },
+      {
+        "name": "value",
+        "parameterTypes": []
+      },
+      {
+        "name": "dataType",
+        "parameterTypes": []
+      }
+    ]
+  },
+  {
+    "name": "com.qxotic.jota.runtime.KernelArgs$Kind",
+    "methods": [
+      {
+        "name": "ordinal",
+        "parameterTypes": []
+      }
+    ]
+  },
+  {
+    "name": "java.lang.Enum",
+    "methods": [
+      {
+        "name": "ordinal",
+        "parameterTypes": []
+      }
+    ]
+  },
+  {
+    "name": "java.lang.Number",
+    "methods": [
+      {
+        "name": "longValue",
+        "parameterTypes": []
+      }
+    ]
+  },
+  {
+    "name": "com.qxotic.jota.DataType",
+    "methods": [
+      {
+        "name": "name",
+        "parameterTypes": []
+      }
+    ]
+  },
+  {
+    "name": "com.qxotic.jota.memory.MemoryView",
+    "methods": [
+      {
+        "name": "memory",
+        "parameterTypes": []
+      },
+      {
+        "name": "byteOffset",
+        "parameterTypes": []
+      }
+    ]
+  },
+  {
+    "name": "com.qxotic.jota.memory.Memory",
+    "methods": [
+      {
+        "name": "base",
+        "parameterTypes": []
+      }
+    ]
+  }
+]

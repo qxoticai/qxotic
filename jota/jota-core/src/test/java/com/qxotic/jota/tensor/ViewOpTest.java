@@ -3,6 +3,7 @@ package com.qxotic.jota.tensor;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.Environment;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.Stride;
@@ -10,7 +11,6 @@ import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryHelpers;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.impl.DomainFactory;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.BeforeAll;
@@ -23,7 +23,7 @@ class ViewOpTest {
 
     @BeforeAll
     static void setUpDomain() {
-        domain = DomainFactory.ofMemorySegment();
+        domain = Environment.current().nativeMemoryDomain();
     }
 
     @Test

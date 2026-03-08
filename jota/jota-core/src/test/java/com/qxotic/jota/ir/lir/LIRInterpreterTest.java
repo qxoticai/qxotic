@@ -3,6 +3,7 @@ package com.qxotic.jota.ir.lir;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.ir.tir.BinaryOperator;
@@ -10,7 +11,6 @@ import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryHelpers;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.memory.impl.DomainFactory;
 import com.qxotic.jota.runtime.ScalarArg;
 import java.lang.foreign.MemorySegment;
 import java.util.List;
@@ -20,7 +20,7 @@ class LIRInterpreterTest {
 
     @Test
     void executesElementwiseAdd() {
-        MemoryDomain<MemorySegment> domain = DomainFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> domain = Environment.current().nativeMemoryDomain();
         MemoryView<MemorySegment> left =
                 MemoryHelpers.arange(domain, DataType.FP32, 4).view(Shape.flat(4));
         MemoryView<MemorySegment> right =
@@ -61,7 +61,7 @@ class LIRInterpreterTest {
 
     @Test
     void executesReductionWithIterArgs() {
-        MemoryDomain<MemorySegment> domain = DomainFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> domain = Environment.current().nativeMemoryDomain();
         MemoryView<MemorySegment> input =
                 MemoryHelpers.arange(domain, DataType.FP32, 4).view(Shape.flat(4));
         MemoryView<MemorySegment> out = MemoryHelpers.zeros(domain, DataType.FP32, Shape.flat(1));
@@ -104,7 +104,7 @@ class LIRInterpreterTest {
 
     @Test
     void supportsScalarInputs() {
-        MemoryDomain<MemorySegment> domain = DomainFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> domain = Environment.current().nativeMemoryDomain();
         MemoryView<MemorySegment> input =
                 MemoryHelpers.arange(domain, DataType.FP32, 3).view(Shape.flat(3));
         MemoryView<MemorySegment> out = MemoryHelpers.zeros(domain, DataType.FP32, Shape.flat(3));

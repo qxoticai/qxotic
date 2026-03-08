@@ -8,7 +8,6 @@ import com.qxotic.jota.memory.MemoryOperations;
 
 class IntsDomain implements MemoryDomain<int[]> {
 
-    private static final Device INTS = Device.CPU.child("ints");
     private static final IntsDomain INSTANCE = new IntsDomain();
 
     static MemoryDomain<int[]> instance() {
@@ -19,7 +18,7 @@ class IntsDomain implements MemoryDomain<int[]> {
 
     @Override
     public Device device() {
-        return INTS;
+        return Device.JAVA;
     }
 
     @Override

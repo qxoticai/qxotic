@@ -3,6 +3,7 @@ package com.qxotic.jota.memory;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.Device;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.impl.MemoryAllocatorFactory;
 import java.nio.ByteOrder;
@@ -25,6 +26,23 @@ public class MemoryAllocatorTest {
                 MemoryAllocatorFactory::newPanamaAuto,
                 () -> MemoryAllocatorFactory.ofByteBuffer(true, ByteOrder.nativeOrder()),
                 () -> MemoryAllocatorFactory.ofByteBuffer(false, ByteOrder.nativeOrder()));
+    }
+
+    static Stream<Supplier<MemoryAllocator<?>>> javaArrayAllocatorProvider() {
+        return Stream.of(
+                MemoryAllocatorFactory::ofBooleans,
+                MemoryAllocatorFactory::ofBytes,
+                MemoryAllocatorFactory::ofShorts,
+                MemoryAllocatorFactory::ofInts,
+                MemoryAllocatorFactory::ofFloats,
+                MemoryAllocatorFactory::ofDoubles,
+                MemoryAllocatorFactory::ofLongs);
+    }
+
+    static Stream<Supplier<MemoryAllocator<?>>> byteBufferAllocatorProvider() {
+        return Stream.of(
+                () -> MemoryAllocatorFactory.ofByteBuffer(false, ByteOrder.nativeOrder()),
+                () -> MemoryAllocatorFactory.ofByteBuffer(true, ByteOrder.nativeOrder()));
     }
 
     static Stream<Supplier<ScopedMemoryAllocator<?>>> scopedAllocatorProvider() {
@@ -57,5 +75,19 @@ public class MemoryAllocatorTest {
                 assertEquals(dataType.byteSize(), memory.byteSize());
             }
         }
+    }
+
+    @ParameterizedTest
+    @MethodSource("javaArrayAllocatorProvider")
+    <B> void testJavaArrayAllocatorsUseJavaDevice(
+            Supplier<MemoryAllocator<B>> memoryAllocatorSupplier) {
+        assertEquals(Device.JAVA, memoryAllocatorSupplier.get().device());
+    }
+
+    @ParameterizedTest
+    @MethodSource("byteBufferAllocatorProvider")
+    <B> void testByteBufferAllocatorsUseJavaDevice(
+            Supplier<MemoryAllocator<B>> memoryAllocatorSupplier) {
+        assertEquals(Device.JAVA, memoryAllocatorSupplier.get().device());
     }
 }

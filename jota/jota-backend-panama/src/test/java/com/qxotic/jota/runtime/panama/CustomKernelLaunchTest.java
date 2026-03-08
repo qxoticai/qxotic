@@ -33,8 +33,7 @@ class CustomKernelLaunchTest {
     static void setUp() {
         Device configured = ConfiguredTestDevice.resolve();
         Assumptions.assumeTrue(
-                configured == Device.PANAMA || configured == Device.C,
-                "CustomKernelLaunchTest requires either the Panama or C runtime");
+                configured == Device.PANAMA, "CustomKernelLaunchTest requires the Panama runtime");
         runtime = new PanamaDeviceRuntime();
     }
 

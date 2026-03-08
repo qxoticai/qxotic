@@ -16,7 +16,7 @@ final class ShortsMemoryAllocator implements MemoryAllocator<short[]> {
 
     @Override
     public Device device() {
-        return Device.PANAMA;
+        return Device.JAVA;
     }
 
     @Override

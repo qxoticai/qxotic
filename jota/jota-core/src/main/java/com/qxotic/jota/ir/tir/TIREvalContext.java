@@ -4,7 +4,7 @@ import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.memory.*;
 import com.qxotic.jota.memory.MemoryDomain;
-import com.qxotic.jota.runtime.panama.PanamaFactory;
+import com.qxotic.jota.runtime.nativeimpl.NativeMemoryFactory;
 import java.lang.foreign.MemorySegment;
 import java.util.HashMap;
 import java.util.List;
@@ -37,7 +37,7 @@ public final class TIREvalContext implements AutoCloseable {
 
         MemoryAccess<MemorySegment> memAccess =
                 (MemoryAccess<MemorySegment>) memoryDomain.directAccess();
-        ScopedMemoryAllocatorArena<MemorySegment> arena = PanamaFactory.createArena();
+        ScopedMemoryAllocatorArena<MemorySegment> arena = NativeMemoryFactory.createArena();
 
         return new TIREvalContext(arena, inputMap, new HashMap<>(), memAccess);
     }

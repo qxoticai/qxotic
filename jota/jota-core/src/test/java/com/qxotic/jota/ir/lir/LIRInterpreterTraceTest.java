@@ -3,13 +3,13 @@ package com.qxotic.jota.ir.lir;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.ir.TIRToLIRLowerer;
 import com.qxotic.jota.ir.tir.TIRGraph;
 import com.qxotic.jota.memory.*;
 import com.qxotic.jota.memory.MemoryDomain;
-import com.qxotic.jota.memory.impl.DomainFactory;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.TensorTestInternals;
 import com.qxotic.jota.tensor.Tracer;
@@ -27,7 +27,7 @@ class LIRInterpreterTraceTest {
 
     @Test
     void interpretsTracedGelu() {
-        MemoryDomain<MemorySegment> domain = DomainFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> domain = Environment.current().nativeMemoryDomain();
         MemoryView<MemorySegment> input =
                 MemoryHelpers.arange(domain, DataType.FP32, 4).view(Shape.flat(4));
         Tensor inputTensor = Tensor.of(input);
@@ -48,7 +48,7 @@ class LIRInterpreterTraceTest {
 
     @Test
     void interpretsTracedMandelbrot() {
-        MemoryDomain<MemorySegment> domain = DomainFactory.ofMemorySegment();
+        MemoryDomain<MemorySegment> domain = Environment.current().nativeMemoryDomain();
         Tensor traced =
                 Tracer.trace(
                         List.of(),

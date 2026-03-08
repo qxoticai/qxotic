@@ -1,4 +1,4 @@
-package com.qxotic.jota.runtime.panama;
+package com.qxotic.jota.runtime.clike;
 
 import com.qxotic.jota.BFloat16;
 import com.qxotic.jota.DataType;
@@ -6,13 +6,17 @@ import com.qxotic.jota.Environment;
 import com.qxotic.jota.ir.lir.LIRGraph;
 import com.qxotic.jota.ir.lir.LIRInput;
 import com.qxotic.jota.ir.lir.ScalarInput;
+import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.memory.impl.DomainFactory;
+import com.qxotic.jota.memory.impl.MemoryAllocatorFactory;
 import com.qxotic.jota.runtime.KernelArgs;
 import com.qxotic.jota.runtime.ScalarArg;
 import com.qxotic.jota.tensor.Tensor;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.nio.ByteBuffer;
 import java.util.List;
 
 public final class LIRKernelArgsBuilder {
@@ -211,8 +215,7 @@ public final class LIRKernelArgsBuilder {
             @SuppressWarnings("unchecked")
             MemoryDomain<MemorySegment> hostContext = Environment.current().nativeMemoryDomain();
             @SuppressWarnings("unchecked")
-            MemoryDomain<Object> srcContext =
-                    Environment.current().memoryDomainFor(view.memory().device());
+            MemoryDomain<Object> srcContext = sourceDomainFor((Memory<Object>) view.memory());
             @SuppressWarnings("unchecked")
             MemoryView<Object> srcView = (MemoryView<Object>) view;
             MemoryView<MemorySegment> hostView =
@@ -254,5 +257,41 @@ public final class LIRKernelArgsBuilder {
             return segment.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
         }
         throw new UnsupportedOperationException("Unsupported scalar dtype: " + type);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <B> MemoryDomain<B> sourceDomainFor(Memory<B> memory) {
+        Object base = memory.base();
+        if (base instanceof boolean[]) {
+            return (MemoryDomain<B>) DomainFactory.ofBooleans();
+        }
+        if (base instanceof byte[]) {
+            return (MemoryDomain<B>) DomainFactory.ofBytes();
+        }
+        if (base instanceof short[]) {
+            return (MemoryDomain<B>) DomainFactory.ofShorts();
+        }
+        if (base instanceof int[]) {
+            return (MemoryDomain<B>) DomainFactory.ofInts();
+        }
+        if (base instanceof long[]) {
+            return (MemoryDomain<B>) DomainFactory.ofLongs();
+        }
+        if (base instanceof float[]) {
+            return (MemoryDomain<B>) DomainFactory.ofFloats();
+        }
+        if (base instanceof double[]) {
+            return (MemoryDomain<B>) DomainFactory.ofDoubles();
+        }
+        if (base instanceof ByteBuffer byteBuffer) {
+            return (MemoryDomain<B>)
+                    DomainFactory.ofByteBuffer(
+                            MemoryAllocatorFactory.ofByteBuffer(byteBuffer.isDirect()));
+        }
+        if (base instanceof MemorySegment) {
+            return (MemoryDomain<B>) Environment.current().nativeMemoryDomain();
+        }
+        throw new IllegalArgumentException(
+                "Unsupported memory backing type: " + base.getClass().getName());
     }
 }

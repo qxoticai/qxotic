@@ -16,11 +16,9 @@ class BytesDomain implements MemoryDomain<byte[]> {
 
     private BytesDomain() {}
 
-    private static final Device BYTES = Device.CPU.child("bytes");
-
     @Override
     public Device device() {
-        return BYTES;
+        return Device.JAVA;
     }
 
     @Override

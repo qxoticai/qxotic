@@ -5,8 +5,8 @@ import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryOperations;
-import com.qxotic.jota.runtime.panama.PanamaMemoryAccess;
-import com.qxotic.jota.runtime.panama.PanamaMemoryOperations;
+import com.qxotic.jota.runtime.nativeimpl.NativeMemoryAccess;
+import com.qxotic.jota.runtime.nativeimpl.NativeMemoryOperations;
 import java.lang.foreign.MemorySegment;
 
 final class CMemoryDomain implements MemoryDomain<MemorySegment> {
@@ -25,12 +25,12 @@ final class CMemoryDomain implements MemoryDomain<MemorySegment> {
 
     @Override
     public MemoryAccess<MemorySegment> directAccess() {
-        return PanamaMemoryAccess.instance();
+        return NativeMemoryAccess.instance();
     }
 
     @Override
     public MemoryOperations<MemorySegment> memoryOperations() {
-        return PanamaMemoryOperations.instance();
+        return NativeMemoryOperations.instance();
     }
 
     @Override

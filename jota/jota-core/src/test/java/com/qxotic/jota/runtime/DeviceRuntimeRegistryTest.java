@@ -10,7 +10,6 @@ import com.qxotic.jota.ir.tir.TIRGraph;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.memory.impl.DomainFactory;
-import com.qxotic.jota.runtime.panama.PanamaDeviceRuntime;
 import com.qxotic.jota.tensor.Tensor;
 import java.util.List;
 import java.util.Optional;
@@ -20,8 +19,7 @@ class DeviceRuntimeRegistryTest {
 
     @Test
     void registersNativeRuntimeFor() {
-        DefaultRuntimeRegistry registry =
-                DefaultRuntimeRegistry.withNative(new PanamaDeviceRuntime());
+        DefaultRuntimeRegistry registry = DefaultRuntimeRegistry.withNative(panamaRuntime());
         assertNotNull(registry.nativeRuntime());
         assertEquals(Device.PANAMA, registry.nativeRuntime().device());
         assertNotNull(registry.runtimeFor(Device.PANAMA));
@@ -30,10 +28,8 @@ class DeviceRuntimeRegistryTest {
 
     @Test
     void registerRejectsDuplicateDeviceRuntime() {
-        DefaultRuntimeRegistry registry =
-                DefaultRuntimeRegistry.withNative(new PanamaDeviceRuntime());
-        assertThrows(
-                IllegalStateException.class, () -> registry.register(new PanamaDeviceRuntime()));
+        DefaultRuntimeRegistry registry = DefaultRuntimeRegistry.withNative(panamaRuntime());
+        assertThrows(IllegalStateException.class, () -> registry.register(panamaRuntime()));
     }
 
     @Test
@@ -47,8 +43,7 @@ class DeviceRuntimeRegistryTest {
 
     @Test
     void registerNativeCanSwitchToCBackend() {
-        DefaultRuntimeRegistry registry =
-                DefaultRuntimeRegistry.withNative(new PanamaDeviceRuntime());
+        DefaultRuntimeRegistry registry = DefaultRuntimeRegistry.withNative(panamaRuntime());
         DeviceRuntime cRuntime =
                 new StubDeviceRuntime(
                         Device.C, DomainFactory.ofMemorySegment(), new NoopEngine(Device.C));
@@ -59,6 +54,11 @@ class DeviceRuntimeRegistryTest {
         assertSame(cRuntime, registry.nativeRuntime());
         assertSame(cRuntime, registry.runtimeFor(Device.NATIVE));
         assertEquals(Device.C, registry.runtimeFor(Device.NATIVE).device());
+    }
+
+    private static DeviceRuntime panamaRuntime() {
+        return new StubDeviceRuntime(
+                Device.PANAMA, DomainFactory.ofMemorySegment(), new NoopEngine(Device.PANAMA));
     }
 
     private record NoopEngine(Device device) implements ComputeEngine {

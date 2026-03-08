@@ -1,4 +1,4 @@
-package com.qxotic.jota.runtime.panama;
+package com.qxotic.jota.runtime.nativeimpl;
 
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.Memory;
@@ -8,7 +8,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.concurrent.atomic.AtomicReference;
 
-final class PanamaAutoAllocator
+final class NativeAutoAllocator
         implements MemoryAllocator<MemorySegment>, MemoryArena<MemorySegment> {
 
     private final AtomicReference<Arena> arenaRef = new AtomicReference<>(Arena.ofAuto());
@@ -26,7 +26,7 @@ final class PanamaAutoAllocator
     @Override
     public Memory<MemorySegment> allocateMemory(long byteSize, long byteAlignment) {
         Arena arena = getArena();
-        return PanamaMemory.of(arena.allocate(byteSize, byteAlignment));
+        return NativeMemorySegmentMemory.of(arena.allocate(byteSize, byteAlignment));
     }
 
     private Arena getArena() {

@@ -16,7 +16,7 @@ final class FloatsMemoryAllocator implements MemoryAllocator<float[]> {
 
     @Override
     public Device device() {
-        return Device.PANAMA;
+        return Device.JAVA;
     }
 
     @Override

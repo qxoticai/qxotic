@@ -1,4 +1,4 @@
-package com.qxotic.jota.runtime.panama;
+package com.qxotic.jota.runtime.nativeimpl;
 
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.ScopedMemory;
@@ -8,16 +8,16 @@ import java.lang.reflect.Field;
 import java.util.concurrent.atomic.AtomicBoolean;
 import sun.misc.Unsafe;
 
-class UnsafeAllocator implements ScopedMemoryAllocator<MemorySegment> {
+class NativeUnsafeAllocator implements ScopedMemoryAllocator<MemorySegment> {
 
     private static final Unsafe UNSAFE = initializeUnsafe();
-    private static final UnsafeAllocator INSTANCE = new UnsafeAllocator();
+    private static final NativeUnsafeAllocator INSTANCE = new NativeUnsafeAllocator();
 
     public static ScopedMemoryAllocator<MemorySegment> instance() {
         return INSTANCE;
     }
 
-    private UnsafeAllocator() {}
+    private NativeUnsafeAllocator() {}
 
     @Override
     public Device device() {

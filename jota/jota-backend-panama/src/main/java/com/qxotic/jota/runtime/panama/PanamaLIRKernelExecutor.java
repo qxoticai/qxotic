@@ -13,6 +13,7 @@ import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.runtime.DiskKernelCache;
 import com.qxotic.jota.runtime.JavaKernel;
 import com.qxotic.jota.runtime.KernelCacheKey;
+import com.qxotic.jota.runtime.clike.LIRKernelArgsBuilder;
 import com.qxotic.jota.tensor.Tensor;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;

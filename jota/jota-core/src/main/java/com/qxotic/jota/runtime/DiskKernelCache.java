@@ -6,13 +6,12 @@ import java.nio.file.Path;
 public final class DiskKernelCache implements KernelCache {
 
     private static final String DEFAULT_PACKAGE = "com.qxotic.jota.runtime.jit";
-    private static final Path DEFAULT_ROOT = KernelCachePaths.deviceRoot(Device.PANAMA);
 
     private final Path root;
     private final String packageName;
 
-    public static DiskKernelCache defaultCache() {
-        return new DiskKernelCache(DEFAULT_ROOT, DEFAULT_PACKAGE);
+    public static DiskKernelCache defaultCache(Device device) {
+        return new DiskKernelCache(KernelCachePaths.deviceRoot(device), DEFAULT_PACKAGE);
     }
 
     public DiskKernelCache(Path root) {

@@ -8,7 +8,6 @@ import com.qxotic.jota.memory.MemoryOperations;
 
 class FloatsDomain implements MemoryDomain<float[]> {
 
-    private static final Device FLOATS = Device.CPU.child("floats");
     private static final FloatsDomain INSTANCE = new FloatsDomain();
 
     static MemoryDomain<float[]> instance() {
@@ -19,7 +18,7 @@ class FloatsDomain implements MemoryDomain<float[]> {
 
     @Override
     public Device device() {
-        return FLOATS;
+        return Device.JAVA;
     }
 
     @Override

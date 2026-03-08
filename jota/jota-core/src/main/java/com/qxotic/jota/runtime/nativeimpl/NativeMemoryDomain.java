@@ -1,15 +1,15 @@
-package com.qxotic.jota.runtime.panama;
+package com.qxotic.jota.runtime.nativeimpl;
 
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.*;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
 
-final class PanamaDomain implements MemoryDomain<MemorySegment> {
+final class NativeMemoryDomain implements MemoryDomain<MemorySegment> {
 
     private final MemoryAllocator<MemorySegment> memoryAllocator;
 
-    PanamaDomain(MemoryAllocator<MemorySegment> memoryAllocator) {
+    NativeMemoryDomain(MemoryAllocator<MemorySegment> memoryAllocator) {
         assert memoryAllocator.device().belongsTo(Device.PANAMA);
         this.memoryAllocator = Objects.requireNonNull(memoryAllocator);
     }
@@ -26,12 +26,12 @@ final class PanamaDomain implements MemoryDomain<MemorySegment> {
 
     @Override
     public MemoryAccess<MemorySegment> directAccess() {
-        return PanamaMemoryAccess.instance();
+        return NativeMemoryAccess.instance();
     }
 
     @Override
     public MemoryOperations<MemorySegment> memoryOperations() {
-        return PanamaMemoryOperations.instance();
+        return NativeMemoryOperations.instance();
     }
 
     @Override

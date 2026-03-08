@@ -46,6 +46,10 @@ class DeviceTest {
         assertSame(Device.CPU, Device.PANAMA.parent());
         assertSame(Device.CPU, Device.PANAMA.root());
 
+        assertEquals("cpu:java", Device.JAVA.name());
+        assertSame(Device.CPU, Device.JAVA.parent());
+        assertSame(Device.CPU, Device.JAVA.root());
+
         assertEquals("cpu:native", Device.NATIVE.name());
         assertSame(Device.CPU, Device.NATIVE.parent());
         assertSame(Device.CPU, Device.NATIVE.root());
@@ -90,6 +94,7 @@ class DeviceTest {
     @Test
     void testBelongsTo() {
         assertTrue(Device.PANAMA.belongsTo(Device.CPU));
+        assertTrue(Device.JAVA.belongsTo(Device.CPU));
         assertTrue(Device.NATIVE.belongsTo(Device.CPU));
         assertTrue(Device.CUDA.belongsTo(Device.GPU));
         assertFalse(Device.CPU.belongsTo(Device.PANAMA));
@@ -99,6 +104,7 @@ class DeviceTest {
         assertTrue(Device.CPU.belongsTo(Device.CPU));
         assertTrue(Device.GPU.belongsTo(Device.GPU));
         assertTrue(Device.PANAMA.belongsTo(Device.PANAMA));
+        assertTrue(Device.JAVA.belongsTo(Device.JAVA));
 
         Device cudaDevice0 = Device.GPU.child("cuda").child("0");
         assertTrue(cudaDevice0.belongsTo(Device.GPU));

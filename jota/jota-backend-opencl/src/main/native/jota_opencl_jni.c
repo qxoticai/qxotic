@@ -1238,20 +1238,15 @@ Java_com_qxotic_jota_runtime_opencl_OpenClKernelParams_packNative(JNIEnv *env,
   }
 
   jclass kernelArgsClass = (*env)->GetObjectClass(env, argsObj);
-  jmethodID entriesMid =
-      (*env)->GetMethodID(env, kernelArgsClass, "entries", "()Ljava/util/List;");
-  jobject entries = (*env)->CallObjectMethod(env, argsObj, entriesMid);
-  if (entries == NULL) {
-    throwRuntime(env, "KernelArgs.entries returned null");
-    return 0;
-  }
-
-  jclass listClass = (*env)->FindClass(env, "java/util/List");
-  jmethodID sizeMid = (*env)->GetMethodID(env, listClass, "size", "()I");
-  jmethodID getMid = (*env)->GetMethodID(env, listClass, "get", "(I)Ljava/lang/Object;");
-  jint size = (*env)->CallIntMethod(env, entries, sizeMid);
+  jmethodID sizeMid = (*env)->GetMethodID(env, kernelArgsClass, "size", "()I");
+  jmethodID entryMid =
+      (*env)->GetMethodID(env,
+                         kernelArgsClass,
+                         "entry",
+                         "(I)Lcom/qxotic/jota/runtime/KernelArgs$Entry;");
+  jint size = (*env)->CallIntMethod(env, argsObj, sizeMid);
   if (size < 0) {
-    throwRuntime(env, "KernelArgs.entries size invalid");
+    throwRuntime(env, "KernelArgs.size invalid");
     return 0;
   }
 
@@ -1299,7 +1294,7 @@ Java_com_qxotic_jota_runtime_opencl_OpenClKernelParams_packNative(JNIEnv *env,
   jmethodID handleMid = (*env)->GetMethodID(env, ptrClass, "handle", "()J");
 
   for (jint i = 0; i < size; i++) {
-    jobject entry = (*env)->CallObjectMethod(env, entries, getMid, i);
+    jobject entry = (*env)->CallObjectMethod(env, argsObj, entryMid, i);
     jobject kindObj = (*env)->CallObjectMethod(env, entry, kindMid);
     jint kindOrdinal = (*env)->CallIntMethod(env, kindObj, ordinalMid);
     jobject valueObj = (*env)->CallObjectMethod(env, entry, valueMid);

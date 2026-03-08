@@ -1,4 +1,4 @@
-package com.qxotic.jota.runtime.panama;
+package com.qxotic.jota.runtime.nativeimpl;
 
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.Memory;
@@ -6,10 +6,10 @@ import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryArena;
 import java.lang.foreign.MemorySegment;
 
-final class PanamaBytesAllocator
+final class NativeBytesAllocator
         implements MemoryAllocator<MemorySegment>, MemoryArena<MemorySegment> {
 
-    private static final MemoryAllocator<MemorySegment> INSTANCE = new PanamaBytesAllocator();
+    private static final MemoryAllocator<MemorySegment> INSTANCE = new NativeBytesAllocator();
 
     public static MemoryAllocator<MemorySegment> instance() {
         return INSTANCE;
@@ -32,7 +32,7 @@ final class PanamaBytesAllocator
             throw new IllegalArgumentException("unsupported byteAlignment");
         }
         int byteSizeInt = Math.toIntExact(byteSize);
-        return PanamaMemory.of(MemorySegment.ofArray(new byte[byteSizeInt]));
+        return NativeMemorySegmentMemory.of(MemorySegment.ofArray(new byte[byteSizeInt]));
     }
 
     @Override

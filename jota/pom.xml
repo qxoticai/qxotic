@@ -16,6 +16,7 @@
 
   <modules>
     <module>jota-core</module>
+    <module>jota-backend-panama</module>
     <module>jota-backend-c</module>
     <module>jota-graal</module>
     <module>jota-backend-hip</module>
@@ -35,6 +36,7 @@
 
     <!-- Backend test skipping (all disabled by default) -->
     <skipTests.backend.c>true</skipTests.backend.c>
+    <skipTests.backend.panama>true</skipTests.backend.panama>
     <skipTests.backend.hip>true</skipTests.backend.hip>
     <skipTests.backend.metal>true</skipTests.backend.metal>
     <skipTests.backend.opencl>true</skipTests.backend.opencl>
@@ -148,6 +150,17 @@
   </build>
 
   <profiles>
+    <!-- Panama Backend Profile -->
+    <profile>
+      <id>panama</id>
+      <properties>
+        <jota.test.device>panama</jota.test.device>
+        <jota.test.backends>single</jota.test.backends>
+        <skipTests.backend.core>true</skipTests.backend.core>
+        <skipTests.backend.panama>false</skipTests.backend.panama>
+      </properties>
+    </profile>
+
     <!-- C Backend Profile -->
     <profile>
       <id>c</id>

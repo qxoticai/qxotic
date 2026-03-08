@@ -7,7 +7,7 @@ import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
-import com.qxotic.jota.runtime.panama.PanamaFactory;
+import com.qxotic.jota.runtime.nativeimpl.NativeMemoryFactory;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.List;
@@ -37,7 +37,7 @@ public final class TIRInterpreter {
                 long size = layout.shape().size();
 
                 Memory<MemorySegment> persistentMemory =
-                        PanamaFactory.onHeapAllocator().allocateMemory(dtype, size);
+                        NativeMemoryFactory.onHeapAllocator().allocateMemory(dtype, size);
                 MemoryView<MemorySegment> persistentOutput =
                         MemoryView.of(persistentMemory, 0, dtype, layout);
 

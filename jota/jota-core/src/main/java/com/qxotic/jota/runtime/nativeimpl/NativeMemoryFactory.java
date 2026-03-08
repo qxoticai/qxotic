@@ -1,12 +1,17 @@
-package com.qxotic.jota.runtime.panama;
+package com.qxotic.jota.runtime.nativeimpl;
 
-import com.qxotic.jota.memory.*;
+import com.qxotic.jota.memory.Memory;
+import com.qxotic.jota.memory.MemoryAccess;
+import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.memory.MemoryOperations;
+import com.qxotic.jota.memory.ScopedMemoryAllocator;
+import com.qxotic.jota.memory.ScopedMemoryAllocatorArena;
 import java.lang.foreign.MemorySegment;
 
-public final class PanamaFactory {
+public final class NativeMemoryFactory {
 
-    private PanamaFactory() {}
+    private NativeMemoryFactory() {}
 
     public static MemoryDomain<MemorySegment> createDomain() {
         return createDomain(createArena());
@@ -14,34 +19,34 @@ public final class PanamaFactory {
 
     public static MemoryDomain<MemorySegment> createDomain(
             MemoryAllocator<MemorySegment> allocator) {
-        return new PanamaDomain(allocator);
+        return new NativeMemoryDomain(allocator);
     }
 
     public static ScopedMemoryAllocator<MemorySegment> scopedAllocator() {
-        return UnsafeAllocator.instance();
+        return NativeUnsafeAllocator.instance();
     }
 
     public static ScopedMemoryAllocatorArena<MemorySegment> createArena() {
-        return UnsafeAllocatorArena.create();
+        return NativeUnsafeAllocatorArena.create();
     }
 
     public static MemoryAllocator<MemorySegment> createManagedArena() {
-        return new PanamaAutoAllocator();
+        return new NativeAutoAllocator();
     }
 
     public static MemoryAllocator<MemorySegment> onHeapAllocator() {
-        return PanamaBytesAllocator.instance();
+        return NativeBytesAllocator.instance();
     }
 
     public static MemoryAccess<MemorySegment> memoryAccess() {
-        return PanamaMemoryAccess.instance();
+        return NativeMemoryAccess.instance();
     }
 
     public static MemoryOperations<MemorySegment> memoryOperations() {
-        return PanamaMemoryOperations.instance();
+        return NativeMemoryOperations.instance();
     }
 
     public static Memory<MemorySegment> memory(MemorySegment segment) {
-        return PanamaMemory.of(segment);
+        return NativeMemorySegmentMemory.of(segment);
     }
 }

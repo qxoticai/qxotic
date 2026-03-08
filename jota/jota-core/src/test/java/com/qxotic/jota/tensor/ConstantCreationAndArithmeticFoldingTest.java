@@ -517,7 +517,7 @@ class ConstantCreationAndArithmeticFoldingTest {
         Tensor scalar = Tensor.scalar(3.14f);
         Tensor reciprocal = scalar.reciprocal();
         MemoryAccess access = Environment.current().nativeMemoryDomain().directAccess();
-        MemoryView<?> printable = reciprocal.to(Device.PANAMA).materialize();
+        MemoryView<?> printable = reciprocal.to(Device.NATIVE).materialize();
         System.out.println(MemoryViewPrinter.toString(printable, access));
     }
 

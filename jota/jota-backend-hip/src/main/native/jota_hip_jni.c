@@ -465,31 +465,20 @@ JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_hip_HipKernelParams_packNat
     throwRuntime(env, "Failed to resolve KernelArgs class");
     return 0;
   }
-  jmethodID entriesMid = getMethod(env, kernelArgsClass, "entries", "()Ljava/util/List;");
-  if (entriesMid == NULL) {
-    return 0;
-  }
-  jobject entries = (*env)->CallObjectMethod(env, args, entriesMid);
-  if (entries == NULL) {
-    throwRuntime(env, "KernelArgs.entries returned null");
-    return 0;
-  }
-
-  jclass listClass = findClass(env, "java/util/List");
-  if (listClass == NULL) {
-    return 0;
-  }
-  jmethodID sizeMid = getMethod(env, listClass, "size", "()I");
+  jmethodID sizeMid = getMethod(env, kernelArgsClass, "size", "()I");
   if (sizeMid == NULL) {
     return 0;
   }
-  jmethodID getMid = getMethod(env, listClass, "get", "(I)Ljava/lang/Object;");
-  if (getMid == NULL) {
+
+  jmethodID entryMid =
+      getMethod(env, kernelArgsClass, "entry", "(I)Lcom/qxotic/jota/runtime/KernelArgs$Entry;");
+  if (entryMid == NULL) {
     return 0;
   }
-  jint size = (*env)->CallIntMethod(env, entries, sizeMid);
+
+  jint size = (*env)->CallIntMethod(env, args, sizeMid);
   if (size < 0) {
-    throwRuntime(env, "KernelArgs.entries size invalid");
+    throwRuntime(env, "KernelArgs.size invalid");
     return 0;
   }
 
@@ -595,7 +584,7 @@ JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_hip_HipKernelParams_packNat
   }
 
   for (jint i = 0; i < size; i++) {
-    jobject entry = (*env)->CallObjectMethod(env, entries, getMid, i);
+    jobject entry = (*env)->CallObjectMethod(env, args, entryMid, i);
     if (entry == NULL) {
       freeArgsPack(pack);
       throwRuntime(env, "KernelArgs entry is null");

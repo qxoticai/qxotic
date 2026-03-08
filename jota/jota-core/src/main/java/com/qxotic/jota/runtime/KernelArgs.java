@@ -54,6 +54,10 @@ public final class KernelArgs {
         return entries.get(index);
     }
 
+    public int size() {
+        return entries.size();
+    }
+
     public MemoryView<?> getBuffer(int index) {
         Entry entry = entry(index);
         if (entry.kind() != Kind.BUFFER) {
