@@ -8,7 +8,7 @@ final class COpenMpConfig {
     private COpenMpConfig() {}
 
     static boolean enabled() {
-        String override = System.getProperty("com.qxotic.jota.c.openmp");
+        String override = System.getProperty("jota.c.openmp");
         if (override != null) {
             return Boolean.parseBoolean(override);
         }
