@@ -148,6 +148,8 @@ public final class Environment {
                         provider ->
                                 registerProvider(
                                         registry, provider, includedBackends, excludedBackends));
+        Device configuredOverride =
+                parseNativeBackendOverride(System.getProperty("jota.native.backend"));
         Device nativeBackend = selectNativeBackend(registry);
         if (!registry.hasRuntime(nativeBackend)) {
             throw missingNativeRuntimeException(
@@ -172,14 +174,6 @@ public final class Environment {
                 throw missingNativeRuntimeException(
                         registry,
                         "Configured jota.native.backend selects unavailable backend: " + override);
-            }
-            DeviceRuntime overrideRuntime = registry.runtimeFor(override);
-            if (!overrideRuntime.supportsNativeRuntimeAlias()) {
-                throw missingNativeRuntimeException(
-                        registry,
-                        "Configured jota.native.backend selects backend that does not support"
-                                + " Device.NATIVE alias: "
-                                + override);
             }
             return override;
         }
@@ -210,11 +204,15 @@ public final class Environment {
             case "auto", "native" -> null;
             case "panama", "jvm", "ffm" -> Device.PANAMA;
             case "c" -> Device.C;
+            case "hip" -> Device.HIP;
+            case "opencl" -> Device.OPENCL;
+            case "metal" -> Device.METAL;
             default ->
                     throw new IllegalArgumentException(
                             "Unsupported jota.native.backend='"
                                     + rawValue
-                                    + "'. Supported values: auto, native, panama, c");
+                                    + "'. Supported values: auto, native, panama, c, hip, opencl,"
+                                    + " metal");
         };
     }
 
@@ -351,7 +349,9 @@ public final class Environment {
         message.append('\n').append("- Include C backend: com.qxotic:jota-backend-c");
         message.append('\n').append("- Graal Native Image: add dependency com.qxotic:jota-graal");
         message.append('\n')
-                .append("- Explicit backend override: -Djota.native.backend=panama or c");
+                .append(
+                        "- Explicit backend override: -Djota.native.backend=<backend-id>"
+                                + " (e.g. panama, c, hip, opencl, metal)");
         message.append('\n')
                 .append("- Ensure required backends are allowed by include/exclude filters");
         message.append('\n')
