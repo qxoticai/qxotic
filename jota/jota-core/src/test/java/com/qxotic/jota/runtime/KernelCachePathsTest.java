@@ -12,13 +12,13 @@ class KernelCachePathsTest {
 
     private static final String CACHE_ROOT_PROPERTY = KernelCachePaths.CACHE_ROOT_PROPERTY;
     private static final String VERSION_PROPERTY = KernelCachePaths.VERSION_PROPERTY;
+    private static final String ORIGINAL_CACHE_ROOT = System.getProperty(CACHE_ROOT_PROPERTY);
+    private static final String ORIGINAL_VERSION = System.getProperty(VERSION_PROPERTY);
 
     @AfterEach
     void restoreProperties() {
-        clear(CACHE_ROOT_PROPERTY);
-        clear(VERSION_PROPERTY);
-        clear("os.name");
-        clear("user.home");
+        restore(CACHE_ROOT_PROPERTY, ORIGINAL_CACHE_ROOT);
+        restore(VERSION_PROPERTY, ORIGINAL_VERSION);
     }
 
     @Test
@@ -45,33 +45,26 @@ class KernelCachePathsTest {
 
     @Test
     void resolvesLinuxDefaultCacheRoot() {
-        System.setProperty("os.name", "Linux");
-        System.setProperty("user.home", "/home/tester");
-
         String xdgCacheHome = System.getenv("XDG_CACHE_HOME");
         Path expected =
                 (xdgCacheHome != null && !xdgCacheHome.isBlank())
                         ? Path.of(xdgCacheHome).resolve("jota")
                         : Path.of("/home/tester").resolve(".cache").resolve("jota");
 
-        assertEquals(expected, KernelCachePaths.cacheRoot());
+        assertEquals(
+                expected,
+                KernelCachePaths.defaultCacheRootFor("Linux", "/home/tester", xdgCacheHome, null));
     }
 
     @Test
     void resolvesMacDefaultCacheRoot() {
-        System.setProperty("os.name", "Mac OS X");
-        System.setProperty("user.home", "/Users/tester");
-
         assertEquals(
                 Path.of("/Users/tester", "Library", "Caches", "jota"),
-                KernelCachePaths.cacheRoot());
+                KernelCachePaths.defaultCacheRootFor("Mac OS X", "/Users/tester", null, null));
     }
 
     @Test
     void resolvesWindowsDefaultCacheRoot() {
-        System.setProperty("os.name", "Windows 11");
-        System.setProperty("user.home", "C:\\Users\\tester");
-
         String localAppData = System.getenv("LOCALAPPDATA");
         Path expected =
                 (localAppData != null && !localAppData.isBlank())
@@ -82,7 +75,10 @@ class KernelCachePathsTest {
                                 .resolve("jota")
                                 .resolve("cache");
 
-        assertEquals(expected, KernelCachePaths.cacheRoot());
+        assertEquals(
+                expected,
+                KernelCachePaths.defaultCacheRootFor(
+                        "Windows 11", "C:\\Users\\tester", null, localAppData));
     }
 
     @Test
@@ -95,7 +91,11 @@ class KernelCachePathsTest {
         assertEquals(version, version.replaceAll("[^A-Za-z0-9._-]", "_"));
     }
 
-    private static void clear(String key) {
-        System.clearProperty(key);
+    private static void restore(String key, String value) {
+        if (value == null) {
+            System.clearProperty(key);
+            return;
+        }
+        System.setProperty(key, value);
     }
 }

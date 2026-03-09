@@ -42,6 +42,7 @@ typedef struct JNINativeInterface_ {
   void (*ReleaseIntArrayElements)(JNIEnv *, jintArray, jint *, jint);
   const char *(*GetStringUTFChars)(JNIEnv *, jstring, jboolean *);
   void (*ReleaseStringUTFChars)(JNIEnv *, jstring, const char *);
+  jstring (*NewStringUTF)(JNIEnv *, const char *);
 } JNINativeInterface_;
 #define JNIEXPORT
 #define JNICALL
@@ -184,6 +185,46 @@ JNIEXPORT jint JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_nativeDeviceC
 #else
   throwUnsupported(env, "HIP headers not available");
   return -1;
+#endif
+}
+
+JNIEXPORT jint JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_nativeCurrentDevice
+  (JNIEnv *env, jclass cls) {
+  (void)cls;
+#if __has_include(<hip/hip_runtime_api.h>)
+  int device = -1;
+  hipError_t status = hipGetDevice(&device);
+  if (status != hipSuccess) {
+    checkHip(env, status, "hipGetDevice failed");
+    return -1;
+  }
+  return (jint)device;
+#else
+  throwUnsupported(env, "HIP headers not available");
+  return -1;
+#endif
+}
+
+JNIEXPORT jstring JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_nativeDeviceArchName
+  (JNIEnv *env, jclass cls, jint deviceIndex) {
+  (void)cls;
+#if __has_include(<hip/hip_runtime_api.h>)
+  hipDeviceProp_t props;
+  memset(&props, 0, sizeof(props));
+  hipError_t status = hipGetDeviceProperties(&props, (int)deviceIndex);
+  if (status != hipSuccess) {
+    checkHip(env, status, "hipGetDeviceProperties failed");
+    return NULL;
+  }
+  if (props.gcnArchName[0] == '\0') {
+    throwRuntime(env, "hipGetDeviceProperties returned empty gcnArchName");
+    return NULL;
+  }
+  return (*env)->NewStringUTF(env, props.gcnArchName);
+#else
+  (void)deviceIndex;
+  throwUnsupported(env, "HIP headers not available");
+  return NULL;
 #endif
 }
 
