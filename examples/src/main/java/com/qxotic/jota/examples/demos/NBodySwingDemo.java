@@ -144,12 +144,13 @@ public final class NBodySwingDemo {
     private static Device parseDevice(String value) {
         String normalized = value == null ? "panama" : value.trim().toLowerCase();
         return switch (normalized) {
-            case "panama", "cpu", "native" -> Device.PANAMA;
+            case "panama" -> Device.PANAMA;
             case "c" -> Device.C;
             case "hip" -> Device.HIP;
+            case "opencl" -> Device.OPENCL;
             default ->
                     throw new IllegalArgumentException(
-                            "Unsupported --device value: " + value + " (use panama|c|hip)");
+                            "Unsupported --device value: " + value + " (use panama|c|hip|opencl)");
         };
     }
 
@@ -333,6 +334,10 @@ public final class NBodySwingDemo {
         private float[] yHost;
         private final float[] massHost;
 
+        // Pre-allocated arrays for mouse interaction (avoids reallocation)
+        private final float[] mouseXArr;
+        private final float[] mouseYArr;
+
         private NBodySimulation(
                 int count,
                 float dt,
@@ -401,9 +406,14 @@ public final class NBodySwingDemo {
             this.xHost = toHostVector(this.x);
             this.yHost = toHostVector(this.y);
             this.massHost = toHostVector(this.mass);
+
+            // Pre-allocate arrays for mouse interaction
+            this.mouseXArr = new float[count];
+            this.mouseYArr = new float[count];
         }
 
         private void step(float mouseX, float mouseY, boolean mouseActive) {
+            // Compute gravitational accelerations (n-body)
             Tensor xT = x.transpose(0, 1).contiguous();
             Tensor yT = y.transpose(0, 1).contiguous();
             Tensor mT = mass.transpose(0, 1).contiguous();
@@ -426,35 +436,52 @@ public final class NBodySwingDemo {
             Tensor ax = dx.multiply(accelScale).matmul(onesCol);
             Tensor ay = dy.multiply(accelScale).matmul(onesCol);
 
+            // Materialize accelerations before applying mouse forces
+            // This prevents the mouse position from being embedded as constants
+            float[] axHost = toHostVector(ax);
+            float[] ayHost = toHostVector(ay);
+            
+            // Get current positions and velocities
+            float[] xArr = toHostVector(x);
+            float[] yArr = toHostVector(y);
+            float[] vxArr = toHostVector(vx);
+            float[] vyArr = toHostVector(vy);
+
             if (mouseActive) {
-                Tensor mouseXT = Tensor.broadcasted(mouseX, vecShape);
-                Tensor mouseYT = Tensor.broadcasted(mouseY, vecShape);
-                Tensor mdx = mouseXT.subtract(x);
-                Tensor mdy = mouseYT.subtract(y);
-                Tensor md2 = mdx.square().add(mdy.square()).add(softening * 420.0f);
-                Tensor mInv = md2.sqrt().reciprocal();
-                Tensor mouseScale = mInv.multiply(mouseG);
-                ax = ax.add(mdx.multiply(mouseScale)).add(mdx.multiply(mouseSpring));
-                ay = ay.add(mdy.multiply(mouseScale)).add(mdy.multiply(mouseSpring));
+                // Apply mouse forces on the host side to avoid kernel recompilation
+                for (int i = 0; i < count; i++) {
+                    float mdx = mouseX - xArr[i];
+                    float mdy = mouseY - yArr[i];
+                    float md2 = mdx * mdx + mdy * mdy + softening * 420.0f;
+                    float mInv = 1.0f / (float) Math.sqrt(md2);
+                    float mouseScale = mInv * mouseG;
 
-                Tensor targetVx = mdx.multiply(mouseSteer);
-                Tensor targetVy = mdy.multiply(mouseSteer);
-                vx = vx.add(targetVx.subtract(vx).multiply(dt * 1.8f));
-                vy = vy.add(targetVy.subtract(vy).multiply(dt * 1.8f));
+                    // Add mouse gravity and spring forces to acceleration
+                    axHost[i] += mdx * mouseScale + mdx * mouseSpring;
+                    ayHost[i] += mdy * mouseScale + mdy * mouseSpring;
+
+                    // Apply steering forces directly to velocity
+                    float targetVx = mdx * mouseSteer;
+                    float targetVy = mdy * mouseSteer;
+                    vxArr[i] += (targetVx - vxArr[i]) * dt * 1.8f;
+                    vyArr[i] += (targetVy - vyArr[i]) * dt * 1.8f;
+                }
+            }
+            
+            // Update velocities and positions
+            for (int i = 0; i < count; i++) {
+                vxArr[i] += axHost[i] * dt;
+                vyArr[i] += ayHost[i] * dt;
+                vxArr[i] *= damping;
+                vyArr[i] *= damping;
+                xArr[i] += vxArr[i] * dt;
+                yArr[i] += vyArr[i] * dt;
             }
 
-            vx = vx.add(ax.multiply(dt)).multiply(damping);
-            vy = vy.add(ay.multiply(dt)).multiply(damping);
-
-            x = x.add(vx.multiply(dt));
-            y = y.add(vy.multiply(dt));
-
-            if (stabilizeLazyState) {
-                x = Tensor.of(x.materialize());
-                y = Tensor.of(y.materialize());
-                vx = Tensor.of(vx.materialize());
-                vy = Tensor.of(vy.materialize());
-            }
+            vx = Tensor.of(vxArr, vecShape);
+            vy = Tensor.of(vyArr, vecShape);
+            x = Tensor.of(xArr, vecShape);
+            y = Tensor.of(yArr, vecShape);
 
             keepInBounds();
             xHost = toHostVector(x);
