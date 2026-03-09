@@ -86,14 +86,14 @@
 
     <!-- Dependency versions -->
     <junit.version>6.0.3</junit.version>
-    <slf4j.version>2.0.16</slf4j.version>
+    <slf4j.version>2.0.17</slf4j.version>
     <jtokkit.version>1.1.0</jtokkit.version>
     <jmh.version>1.37</jmh.version>
 
     <!-- Plugin versions -->
-    <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
-    <maven-surefire-plugin.version>3.5.3</maven-surefire-plugin.version>
-    <maven-failsafe-plugin.version>3.5.3</maven-failsafe-plugin.version>
+    <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
+    <maven-surefire-plugin.version>3.5.5</maven-surefire-plugin.version>
+    <maven-failsafe-plugin.version>3.5.5</maven-failsafe-plugin.version>
     <maven-assembly-plugin.version>3.7.1</maven-assembly-plugin.version>
     <maven-jar-plugin.version>3.4.2</maven-jar-plugin.version>
     <maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
@@ -104,7 +104,7 @@
     <maven-javadoc-plugin.version>3.10.1</maven-javadoc-plugin.version>
     <nexus-staging-maven-plugin.version>1.7.0</nexus-staging-maven-plugin.version>
     <flatten-maven-plugin.version>1.6.0</flatten-maven-plugin.version>
-    <spotless-maven-plugin.version>2.46.1</spotless-maven-plugin.version>
+    <spotless-maven-plugin.version>3.3.0</spotless-maven-plugin.version>
     <google-java-format.version>1.27.0</google-java-format.version>
     <jacoco-maven-plugin.version>0.8.14</jacoco-maven-plugin.version>
     <exec-maven-plugin.version>3.4.1</exec-maven-plugin.version>
