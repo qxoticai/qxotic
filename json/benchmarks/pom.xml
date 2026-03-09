@@ -4,16 +4,19 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.qxotic</groupId>
+    <parent>
+        <groupId>com.qxotic</groupId>
+        <artifactId>qxotic-parent</artifactId>
+        <version>0.1.0</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
     <artifactId>json-benchmarks</artifactId>
-    <version>0.1-SNAPSHOT</version>
-    <packaging>jar</packaging>
+    <name>JSON Benchmarks</name>
+    <description>JMH benchmarks for JSON library</description>
 
     <properties>
-        <maven.compiler.source>11</maven.compiler.source>
-        <maven.compiler.target>11</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <jmh.version>1.37</jmh.version>
+        <maven.deploy.skip>true</maven.deploy.skip>
     </properties>
 
     <dependencies>
@@ -21,7 +24,6 @@
         <dependency>
             <groupId>com.qxotic</groupId>
             <artifactId>json</artifactId>
-            <version>0.1-SNAPSHOT</version>
         </dependency>
 
         <!-- Comparison: Jackson (industry standard) -->
@@ -31,43 +33,25 @@
             <version>2.16.1</version>
         </dependency>
 
-        <!-- JMH Benchmark Framework -->
+        <!-- JMH for benchmarks -->
         <dependency>
             <groupId>org.openjdk.jmh</groupId>
             <artifactId>jmh-core</artifactId>
-            <version>${jmh.version}</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.openjdk.jmh</groupId>
             <artifactId>jmh-generator-annprocess</artifactId>
-            <version>${jmh.version}</version>
-            <scope>provided</scope>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 
     <build>
         <plugins>
-            <!-- Compiler plugin with annotation processor -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
-                <configuration>
-                    <annotationProcessorPaths>
-                        <path>
-                            <groupId>org.openjdk.jmh</groupId>
-                            <artifactId>jmh-generator-annprocess</artifactId>
-                            <version>${jmh.version}</version>
-                        </path>
-                    </annotationProcessorPaths>
-                </configuration>
-            </plugin>
-            
             <!-- JMH Plugin to run benchmarks -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-                <version>3.1.1</version>
                 <configuration>
                     <mainClass>org.openjdk.jmh.Main</mainClass>
                 </configuration>

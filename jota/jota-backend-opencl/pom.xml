@@ -46,7 +46,6 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jota-backend-panama</artifactId>
-      <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
   </dependencies>
