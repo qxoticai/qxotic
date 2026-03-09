@@ -6,13 +6,13 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
-class JSONOddCasesTest {
+class JsonOddCasesTest {
 
     @Test
     void testRejectIncompleteLiterals() {
-        JSON.ParseException e1 = assertThrows(JSON.ParseException.class, () -> JSON.parse("tru"));
-        JSON.ParseException e2 = assertThrows(JSON.ParseException.class, () -> JSON.parse("fals"));
-        JSON.ParseException e3 = assertThrows(JSON.ParseException.class, () -> JSON.parse("nul"));
+        Json.ParseException e1 = assertThrows(Json.ParseException.class, () -> Json.parse("tru"));
+        Json.ParseException e2 = assertThrows(Json.ParseException.class, () -> Json.parse("fals"));
+        Json.ParseException e3 = assertThrows(Json.ParseException.class, () -> Json.parse("nul"));
 
         assertTrue(e1.getMessage().contains("Expected"));
         assertTrue(e2.getMessage().contains("Expected"));
@@ -21,54 +21,54 @@ class JSONOddCasesTest {
 
     @Test
     void testRejectLiteralWithSuffix() {
-        JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parse("truefalse"));
+        Json.ParseException e =
+                assertThrows(Json.ParseException.class, () -> Json.parse("truefalse"));
         assertTrue(e.getMessage().contains("end of input"));
     }
 
     @Test
     void testRejectArrayWithOnlyComma() {
-        JSON.ParseException e = assertThrows(JSON.ParseException.class, () -> JSON.parse("[, ]"));
+        Json.ParseException e = assertThrows(Json.ParseException.class, () -> Json.parse("[, ]"));
         assertTrue(e.getMessage().contains("Expected") || e.getMessage().contains("Unexpected"));
     }
 
     @Test
     void testRejectObjectWithOnlyComma() {
-        JSON.ParseException e = assertThrows(JSON.ParseException.class, () -> JSON.parse("{,}"));
+        Json.ParseException e = assertThrows(Json.ParseException.class, () -> Json.parse("{,}"));
         assertTrue(e.getMessage().contains("Expected") || e.getMessage().contains("Unexpected"));
     }
 
     @Test
     void testRejectLeadingCommaInArray() {
-        JSON.ParseException e = assertThrows(JSON.ParseException.class, () -> JSON.parse("[,1]"));
+        Json.ParseException e = assertThrows(Json.ParseException.class, () -> Json.parse("[,1]"));
         assertTrue(e.getMessage().contains("Expected") || e.getMessage().contains("Unexpected"));
     }
 
     @Test
     void testRejectLeadingCommaInObject() {
-        JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parse("{,\"a\":1}"));
+        Json.ParseException e =
+                assertThrows(Json.ParseException.class, () -> Json.parse("{,\"a\":1}"));
         assertTrue(e.getMessage().contains("Expected") || e.getMessage().contains("Unexpected"));
     }
 
     @Test
     void testRejectMissingValueAfterComma() {
-        JSON.ParseException e = assertThrows(JSON.ParseException.class, () -> JSON.parse("[1,2,"));
+        Json.ParseException e = assertThrows(Json.ParseException.class, () -> Json.parse("[1,2,"));
         assertTrue(e.getMessage().contains("Expected") || e.getMessage().contains("Unexpected"));
     }
 
     @Test
     void testRejectMissingMemberAfterComma() {
-        JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parse("{\"a\":1,"));
+        Json.ParseException e =
+                assertThrows(Json.ParseException.class, () -> Json.parse("{\"a\":1,"));
         assertTrue(e.getMessage().contains("Expected") || e.getMessage().contains("Unexpected"));
     }
 
     @Test
     void testRejectExponentWithoutDigits() {
-        JSON.ParseException e1 = assertThrows(JSON.ParseException.class, () -> JSON.parse("1e"));
-        JSON.ParseException e2 = assertThrows(JSON.ParseException.class, () -> JSON.parse("1e+"));
-        JSON.ParseException e3 = assertThrows(JSON.ParseException.class, () -> JSON.parse("1e-"));
+        Json.ParseException e1 = assertThrows(Json.ParseException.class, () -> Json.parse("1e"));
+        Json.ParseException e2 = assertThrows(Json.ParseException.class, () -> Json.parse("1e+"));
+        Json.ParseException e3 = assertThrows(Json.ParseException.class, () -> Json.parse("1e-"));
 
         assertTrue(e1.getMessage().toLowerCase().contains("exponent"));
         assertTrue(e2.getMessage().toLowerCase().contains("exponent"));
@@ -77,10 +77,10 @@ class JSONOddCasesTest {
 
     @Test
     void testRejectPlusSignAndBareNumberTokens() {
-        JSON.ParseException plus = assertThrows(JSON.ParseException.class, () -> JSON.parse("+1"));
-        JSON.ParseException minus = assertThrows(JSON.ParseException.class, () -> JSON.parse("-"));
-        JSON.ParseException bareDot =
-                assertThrows(JSON.ParseException.class, () -> JSON.parse(".5"));
+        Json.ParseException plus = assertThrows(Json.ParseException.class, () -> Json.parse("+1"));
+        Json.ParseException minus = assertThrows(Json.ParseException.class, () -> Json.parse("-"));
+        Json.ParseException bareDot =
+                assertThrows(Json.ParseException.class, () -> Json.parse(".5"));
 
         assertTrue(
                 plus.getMessage().contains("Unexpected") || plus.getMessage().contains("Expected"));
@@ -92,9 +92,9 @@ class JSONOddCasesTest {
 
     @Test
     void testRejectUpperCaseLiterals() {
-        JSON.ParseException e1 = assertThrows(JSON.ParseException.class, () -> JSON.parse("TRUE"));
-        JSON.ParseException e2 = assertThrows(JSON.ParseException.class, () -> JSON.parse("FALSE"));
-        JSON.ParseException e3 = assertThrows(JSON.ParseException.class, () -> JSON.parse("NULL"));
+        Json.ParseException e1 = assertThrows(Json.ParseException.class, () -> Json.parse("TRUE"));
+        Json.ParseException e2 = assertThrows(Json.ParseException.class, () -> Json.parse("FALSE"));
+        Json.ParseException e3 = assertThrows(Json.ParseException.class, () -> Json.parse("NULL"));
 
         assertTrue(e1.getMessage().contains("Unexpected"));
         assertTrue(e2.getMessage().contains("Unexpected"));
@@ -103,15 +103,15 @@ class JSONOddCasesTest {
 
     @Test
     void testRejectTrailingGarbageAfterValidJson() {
-        JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parse("{\"a\":1}\n  x"));
+        Json.ParseException e =
+                assertThrows(Json.ParseException.class, () -> Json.parse("{\"a\":1}\n  x"));
         assertTrue(e.getMessage().contains("end of input"));
     }
 
     @Test
     void testRejectUnterminatedEscapeAtEndOfString() {
-        JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parse("\"abc\\\""));
+        Json.ParseException e =
+                assertThrows(Json.ParseException.class, () -> Json.parse("\"abc\\\""));
         assertTrue(e.getMessage().contains("Unexpected end of input"));
     }
 
@@ -121,7 +121,7 @@ class JSONOddCasesTest {
         map.put(1, "one");
 
         IllegalArgumentException e =
-                assertThrows(IllegalArgumentException.class, () -> JSON.stringify(map, false));
+                assertThrows(IllegalArgumentException.class, () -> Json.stringify(map, false));
         assertTrue(e.getMessage().contains("keys must be strings"));
     }
 
@@ -131,7 +131,7 @@ class JSONOddCasesTest {
         map.put(null, "value");
 
         IllegalArgumentException e =
-                assertThrows(IllegalArgumentException.class, () -> JSON.stringify(map, false));
+                assertThrows(IllegalArgumentException.class, () -> Json.stringify(map, false));
         assertTrue(e.getMessage().contains("keys must be strings"));
     }
 }

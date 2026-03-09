@@ -7,19 +7,19 @@ import java.math.BigInteger;
 import java.util.*;
 import org.junit.jupiter.api.Test;
 
-class JSON2EdgeCasesTest {
+class Json2EdgeCasesTest {
 
     @Test
     void testLargeNumbers() {
         BigInteger bigInt = new BigInteger("9999999999999999999999999999999999999999");
-        Object parsed = JSON.parse("9999999999999999999999999999999999999999");
+        Object parsed = Json.parse("9999999999999999999999999999999999999999");
         assertEquals(bigInt, parsed);
-        assertEquals("9999999999999999999999999999999999999999", JSON.stringify(parsed));
+        assertEquals("9999999999999999999999999999999999999999", Json.stringify(parsed));
 
         // Test large decimal with BigDecimal mode
         String largeDec = "12345678901234567890.12345678901234567890";
         Object bdParsed =
-                JSON.parse(largeDec, JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
+                Json.parse(largeDec, Json.ParseOptions.defaults().decimalsAsBigDecimal(true));
         assertInstanceOf(BigDecimal.class, bdParsed);
         assertEquals(new BigDecimal(largeDec), bdParsed);
     }
@@ -27,23 +27,23 @@ class JSON2EdgeCasesTest {
     @Test
     void testUnicode() {
         String emoji = "\"\\uD83D\\uDE00\""; // 😀
-        Object parsed = JSON.parse(emoji);
+        Object parsed = Json.parse(emoji);
         assertEquals("\uD83D\uDE00", parsed);
-        String stringified = JSON.stringify(parsed);
+        String stringified = Json.stringify(parsed);
         // JSON spec allows direct Unicode output
         assertEquals("\"😀\"", stringified);
 
         String chinese = "\"\\u4E2D\\u6587\""; // 中文
-        parsed = JSON.parse(chinese);
+        parsed = Json.parse(chinese);
         assertEquals("\u4e2d\u6587", parsed);
         // JSON spec allows direct Unicode output
-        assertEquals("\"中文\"", JSON.stringify(parsed));
+        assertEquals("\"中文\"", Json.stringify(parsed));
 
         String mixed = "\"Hello \\u4E16\\u754C!\""; // Hello 世界!
-        parsed = JSON.parse(mixed);
+        parsed = Json.parse(mixed);
         assertEquals("Hello \u4e16\u754c!", parsed);
         // JSON spec allows direct Unicode output
-        assertEquals("\"Hello 世界!\"", JSON.stringify(parsed));
+        assertEquals("\"Hello 世界!\"", Json.stringify(parsed));
     }
 
     @Test
@@ -53,10 +53,10 @@ class JSON2EdgeCasesTest {
         obj.put("age", 30);
         obj.put("active", true);
 
-        String compact = JSON.stringify(obj, false);
+        String compact = Json.stringify(obj, false);
         assertEquals("{\"name\":\"John\",\"age\":30,\"active\":true}", compact);
 
-        String pretty = JSON.stringify(obj, true);
+        String pretty = Json.stringify(obj, true);
         assertEquals(
                 "{\n"
                         + "  \"name\" : \"John\",\n"
@@ -70,47 +70,47 @@ class JSON2EdgeCasesTest {
         arr.add(2);
         arr.add(3);
 
-        String compactArr = JSON.stringify(arr, false);
+        String compactArr = Json.stringify(arr, false);
         assertEquals("[1,2,3]", compactArr);
 
-        String prettyArr = JSON.stringify(arr, true);
+        String prettyArr = Json.stringify(arr, true);
         assertEquals("[\n" + "  1,\n" + "  2,\n" + "  3\n" + "]", prettyArr);
     }
 
     @Test
     void testNullHandling() {
-        assertSame(JSON.NULL, JSON.parse("null"));
-        assertEquals("null", JSON.stringify(JSON.NULL));
+        assertSame(Json.NULL, Json.parse("null"));
+        assertEquals("null", Json.stringify(Json.NULL));
 
         Map<String, Object> obj = new LinkedHashMap<>();
-        obj.put("key1", JSON.NULL);
+        obj.put("key1", Json.NULL);
         obj.put("key2", "value");
-        String json = JSON.stringify(obj);
+        String json = Json.stringify(obj);
         assertEquals("{\"key1\":null,\"key2\":\"value\"}", json);
 
-        Object parsed = JSON.parse(json);
+        Object parsed = Json.parse(json);
         assertEquals(obj, parsed);
     }
 
     @Test
     void testWhitespace() {
         String json = "  {  \"key\"  :  \n  \"value\"  \t  }  ";
-        Object parsed = JSON.parse(json);
+        Object parsed = Json.parse(json);
         assertEquals(Map.of("key", "value"), parsed);
 
         json = "  [  1  ,  2  ,  3  ]  ";
-        parsed = JSON.parse(json);
+        parsed = Json.parse(json);
         assertEquals(List.of(1L, 2L, 3L), parsed);
 
         json = "  \"  hello  world  \"  ";
-        parsed = JSON.parse(json);
+        parsed = Json.parse(json);
         assertEquals("  hello  world  ", parsed);
     }
 
     @Test
     void testDuplicateKeys() {
         String json = "{\"key\":\"value1\",\"key\":\"value2\"}";
-        Map<String, Object> obj = (Map<String, Object>) JSON.parse(json);
+        Map<String, Object> obj = (Map<String, Object>) Json.parse(json);
         assertEquals(1, obj.size());
         assertEquals("value2", obj.get("key"));
     }
@@ -118,15 +118,15 @@ class JSON2EdgeCasesTest {
     @Test
     void testNegativeZero() {
         // Test with BigDecimal mode
-        Object parsed = JSON.parse("-0", JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
+        Object parsed = Json.parse("-0", Json.ParseOptions.defaults().decimalsAsBigDecimal(true));
         assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, ((BigDecimal) parsed).compareTo(BigDecimal.ZERO));
-        String stringified = JSON.stringify(parsed);
+        String stringified = Json.stringify(parsed);
         assertEquals("0", stringified);
 
-        parsed = JSON.parse("-0.0", JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
+        parsed = Json.parse("-0.0", Json.ParseOptions.defaults().decimalsAsBigDecimal(true));
         assertInstanceOf(BigDecimal.class, parsed);
-        stringified = JSON.stringify(parsed);
+        stringified = Json.stringify(parsed);
         // stripTrailingZeros() removes .0
         assertEquals("0", stringified);
     }

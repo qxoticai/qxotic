@@ -5,11 +5,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
-class JSONApiSimplificationTest {
+class JsonApiSimplificationTest {
 
     @Test
     void testOptionsShortcutMatchesDefaults() {
-        JSON.ParseOptions options = JSON.ParseOptions.defaults();
+        Json.ParseOptions options = Json.ParseOptions.defaults();
         assertTrue(options.decimalsAsBigDecimal());
         assertEquals(1000, options.maxDepth());
         assertFalse(options.failOnDuplicateKeys());
@@ -17,8 +17,8 @@ class JSONApiSimplificationTest {
 
     @Test
     void testOptionsPresets() {
-        JSON.ParseOptions strict = JSON.ParseOptions.defaults().failOnDuplicateKeys(true);
-        JSON.ParseOptions fast = JSON.ParseOptions.defaults().decimalsAsBigDecimal(false);
+        Json.ParseOptions strict = Json.ParseOptions.defaults().failOnDuplicateKeys(true);
+        Json.ParseOptions fast = Json.ParseOptions.defaults().decimalsAsBigDecimal(false);
 
         assertTrue(strict.failOnDuplicateKeys());
         assertTrue(strict.decimalsAsBigDecimal());
@@ -27,36 +27,36 @@ class JSONApiSimplificationTest {
 
     @Test
     void testParseBooleanRoot() {
-        assertTrue(JSON.parseBoolean("true"));
-        assertFalse(JSON.parseBoolean("false"));
+        assertTrue(Json.parseBoolean("true"));
+        assertFalse(Json.parseBoolean("false"));
     }
 
     @Test
     void testParseBooleanRejectsOtherRoots() {
-        JSON.ParseException e =
-                assertThrows(JSON.ParseException.class, () -> JSON.parseBoolean("1"));
+        Json.ParseException e =
+                assertThrows(Json.ParseException.class, () -> Json.parseBoolean("1"));
         assertTrue(e.getMessage().contains("Expected JSON boolean at root"));
     }
 
     @Test
     void testTypedParseForMaps() {
-        Map<?, ?> map = JSON.parseMap("{\"a\":1}");
+        Map<?, ?> map = Json.parseMap("{\"a\":1}");
         assertEquals(1L, map.get("a"));
     }
 
     @Test
     void testTypedParseRespectsOptions() {
         boolean valid =
-                JSON.isValid(
+                Json.isValid(
                         "{\"a\":1,\"a\":2}",
-                        JSON.ParseOptions.defaults().failOnDuplicateKeys(true));
+                        Json.ParseOptions.defaults().failOnDuplicateKeys(true));
         assertFalse(valid);
     }
 
     @Test
     void testJsonNullHelper() {
-        Object parsed = JSON.parse("null");
-        assertSame(JSON.NULL, parsed);
-        assertNotNull(JSON.NULL);
+        Object parsed = Json.parse("null");
+        assertSame(Json.NULL, parsed);
+        assertNotNull(Json.NULL);
     }
 }

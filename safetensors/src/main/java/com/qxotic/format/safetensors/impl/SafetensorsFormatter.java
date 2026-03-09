@@ -1,6 +1,6 @@
 package com.qxotic.format.safetensors.impl;
 
-import com.qxotic.format.json.JSON;
+import com.qxotic.format.json.Json;
 import com.qxotic.format.safetensors.Safetensors;
 import com.qxotic.format.safetensors.TensorEntry;
 import java.util.Map;
@@ -50,9 +50,9 @@ class SafetensorsFormatter {
             String key = entry.getKey();
             String value = entry.getValue();
             sb.append("    ")
-                    .append(JSON.stringify(key, false))
+                    .append(Json.stringify(key, false))
                     .append(" : ")
-                    .append(JSON.stringify(value, false));
+                    .append(Json.stringify(value, false));
             sb.append('\n');
         }
 

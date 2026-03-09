@@ -1,6 +1,6 @@
 package com.qxotic.format.safetensors.impl;
 
-import com.qxotic.format.json.JSON;
+import com.qxotic.format.json.Json;
 import com.qxotic.format.safetensors.Safetensors;
 import com.qxotic.format.safetensors.SafetensorsFormatException;
 import com.qxotic.format.safetensors.SafetensorsIndex;
@@ -81,9 +81,9 @@ public final class SafetensorsIndexImpl implements SafetensorsIndex {
         Map<String, String> weightMap;
         try {
             Map<?, ?> index =
-                    requireObject(JSON.parseMap(Files.readString(indexPath)), INDEX_ROOT_ERROR);
+                    requireObject(Json.parseMap(Files.readString(indexPath)), INDEX_ROOT_ERROR);
             weightMap = parseWeightMap(index.get(WEIGHT_MAP));
-        } catch (JSON.ParseException | SafetensorsFormatException e) {
+        } catch (Json.ParseException | SafetensorsFormatException e) {
             throw new SafetensorsFormatException(
                     "Invalid JSON in " + SAFETENSORS_INDEX + ": " + e.getMessage(), e);
         }

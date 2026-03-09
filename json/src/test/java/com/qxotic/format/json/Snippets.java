@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Documentation snippets for JSON module.
+ * Documentation snippets for Json module.
  *
  * <p>All code in docs/ must reference snippets from this file. Never write code directly in
  * Markdown.
@@ -20,13 +20,13 @@ class Snippets {
     void quickStart() {
         // --8<-- [start:quick-start]
         // Parse JSON string
-        Map<String, Object> config = JSON.parseMap("{\"host\":\"localhost\",\"port\":8080}");
+        Map<String, Object> config = Json.parseMap("{\"host\":\"localhost\",\"port\":8080}");
 
         String host = (String) config.get("host");
         Long port = (Long) config.get("port");
 
         // Serialize back to JSON
-        String json = JSON.stringify(config);
+        String json = Json.stringify(config);
         // --8<-- [end:quick-start]
     }
 
@@ -34,7 +34,7 @@ class Snippets {
 
     void parseGeneric() {
         // --8<-- [start:parse-generic]
-        Object value = JSON.parse("{\"name\":\"alice\",\"age\":30}");
+        Object value = Json.parse("{\"name\":\"alice\",\"age\":30}");
 
         if (value instanceof Map) {
             @SuppressWarnings("unchecked")
@@ -47,14 +47,14 @@ class Snippets {
     void parseTypedRoot() {
         // --8<-- [start:parse-typed-root]
         // Require specific root type - throws if mismatch
-        Map<String, Object> obj = JSON.parseMap("{\"x\":1,\"y\":2}");
-        List<Object> arr = JSON.parseList("[1, 2, 3]");
-        String str = JSON.parseString("\"hello world\"");
-        Number num = JSON.parseNumber("3.14159");
-        boolean bool = JSON.parseBoolean("true");
+        Map<String, Object> obj = Json.parseMap("{\"x\":1,\"y\":2}");
+        List<Object> arr = Json.parseList("[1, 2, 3]");
+        String str = Json.parseString("\"hello world\"");
+        Number num = Json.parseNumber("3.14159");
+        boolean bool = Json.parseBoolean("true");
 
         // Generic typed parse
-        Map<?, ?> alsoObj = JSON.parseMap("{\"status\":\"ok\"}");
+        Map<?, ?> alsoObj = Json.parseMap("{\"status\":\"ok\"}");
         // --8<-- [end:parse-typed-root]
     }
 
@@ -67,7 +67,7 @@ class Snippets {
                         + "\"vocab\": [32000, 32001, 32002]"
                         + "}";
 
-        Map<String, Object> root = JSON.parseMap(json);
+        Map<String, Object> root = Json.parseMap(json);
 
         String model = (String) root.get("model");
 
@@ -83,13 +83,13 @@ class Snippets {
     void parseValidation() {
         // --8<-- [start:parse-validation]
         // Check validity without throwing
-        boolean valid = JSON.isValid("{\"x\":1}"); // true
-        boolean invalid = JSON.isValid("{\"x\":}"); // false
+        boolean valid = Json.isValid("{\"x\":1}"); // true
+        boolean invalid = Json.isValid("{\"x\":}"); // false
 
         // Use in guards
         String userInput = getUserInput();
-        if (JSON.isValid(userInput)) {
-            Map<String, Object> data = JSON.parseMap(userInput);
+        if (Json.isValid(userInput)) {
+            Map<String, Object> data = Json.parseMap(userInput);
             process(data);
         }
         // --8<-- [end:parse-validation]
@@ -106,28 +106,28 @@ class Snippets {
     void parseOptionsBasic() {
         // --8<-- [start:parse-options-basic]
         // Default options: BigDecimal for decimals, max depth 1000
-        JSON.ParseOptions defaults = JSON.ParseOptions.defaults();
+        Json.ParseOptions defaults = Json.ParseOptions.defaults();
 
         // Customize options
-        JSON.ParseOptions options =
-                JSON.ParseOptions.defaults()
+        Json.ParseOptions options =
+                Json.ParseOptions.defaults()
                         .decimalsAsBigDecimal(false) // Use Double instead
                         .maxDepth(100) // Limit nesting
                         .failOnDuplicateKeys(true); // Reject duplicate keys
 
-        Object value = JSON.parse("[1, 2, 3]", options);
+        Object value = Json.parse("[1, 2, 3]", options);
         // --8<-- [end:parse-options-basic]
     }
 
     void parseOptionsDecimals() {
         // --8<-- [start:parse-options-decimals]
         // Default: precise decimal handling
-        Number precise = JSON.parseNumber("0.1");
+        Number precise = Json.parseNumber("0.1");
         // precise is BigDecimal
 
         // Alternative: use Double (faster, potential precision loss)
-        JSON.ParseOptions doubleMode = JSON.ParseOptions.defaults().decimalsAsBigDecimal(false);
-        Number approx = JSON.parseNumber("0.1", doubleMode);
+        Json.ParseOptions doubleMode = Json.ParseOptions.defaults().decimalsAsBigDecimal(false);
+        Number approx = Json.parseNumber("0.1", doubleMode);
         // approx is Double
         // --8<-- [end:parse-options-decimals]
     }
@@ -138,11 +138,11 @@ class Snippets {
         String nested = "[[[[[[[[[[1]]]]]]]]]]";
 
         // Limit depth to prevent stack overflow on malicious input
-        JSON.ParseOptions shallow = JSON.ParseOptions.defaults().maxDepth(10);
+        Json.ParseOptions shallow = Json.ParseOptions.defaults().maxDepth(10);
 
         try {
-            JSON.parse(nested, shallow);
-        } catch (JSON.ParseException e) {
+            Json.parse(nested, shallow);
+        } catch (Json.ParseException e) {
             // "Maximum parsing depth exceeded"
         }
         // --8<-- [end:parse-options-depth]
@@ -153,14 +153,14 @@ class Snippets {
         String json = "{\"a\":1,\"a\":2}";
 
         // Default: last key wins
-        Map<String, Object> defaultBehavior = JSON.parseMap(json);
+        Map<String, Object> defaultBehavior = Json.parseMap(json);
         // defaultBehavior.get("a") == 2
 
         // Strict mode: reject duplicates
-        JSON.ParseOptions strict = JSON.ParseOptions.defaults().failOnDuplicateKeys(true);
+        Json.ParseOptions strict = Json.ParseOptions.defaults().failOnDuplicateKeys(true);
         try {
-            JSON.parse(json, strict);
-        } catch (JSON.ParseException e) {
+            Json.parse(json, strict);
+        } catch (Json.ParseException e) {
             // "Duplicate key: 'a'"
         }
         // --8<-- [end:parse-options-duplicate]
@@ -170,7 +170,7 @@ class Snippets {
 
     void dataModel() {
         // --8<-- [start:data-model]
-        Map<String, Object> obj = JSON.parseMap("{\"int\":42,\"decimal\":3.14,\"big\":9999999999}");
+        Map<String, Object> obj = Json.parseMap("{\"int\":42,\"decimal\":3.14,\"big\":9999999999}");
 
         // Integer fits in long
         Long intVal = (Long) obj.get("int");
@@ -183,19 +183,19 @@ class Snippets {
 
         // Null handling
         String jsonWithNull = "{\"value\":null}";
-        Map<String, Object> withNull = JSON.parseMap(jsonWithNull);
+        Map<String, Object> withNull = Json.parseMap(jsonWithNull);
         Object n = withNull.get("value");
-        // n == JSON.NULL (not Java null!)
+        // n == Json.NULL (not Java null!)
         // --8<-- [end:data-model]
     }
 
     void nullHandling() {
         // --8<-- [start:null-handling]
-        Map<String, Object> obj = JSON.parseMap("{\"present\":null}");
+        Map<String, Object> obj = Json.parseMap("{\"present\":null}");
         obj.put("absent", null); // Simulating missing key
 
         Object present = obj.get("present");
-        if (JSON.isNull(present)) {
+        if (Json.isNull(present)) {
             // JSON null value (key exists, value is null)
         }
 
@@ -204,8 +204,8 @@ class Snippets {
             // Key doesn't exist or was set to Java null
         }
 
-        // Serialize JSON.NULL back to "null"
-        String back = JSON.stringify(Map.of("value", JSON.NULL));
+        // Serialize Json.NULL back to "null"
+        String back = Json.stringify(Map.of("value", Json.NULL));
         // back == "{\"value\":null}"
         // --8<-- [end:null-handling]
     }
@@ -221,11 +221,11 @@ class Snippets {
         data.put("tags", List.of("a", "b", "c"));
 
         // Compact output
-        String compact = JSON.stringify(data);
+        String compact = Json.stringify(data);
         // {"name":"alice","active":true,"count":42,"tags":["a","b","c"]}
 
         // Pretty-printed
-        String pretty = JSON.stringify(data, true);
+        String pretty = Json.stringify(data, true);
         // --8<-- [end:stringify-basic]
     }
 
@@ -236,7 +236,7 @@ class Snippets {
                         "model", Map.of("name", "llama", "size", 7),
                         "training", Map.of("epochs", 100, "lr", 0.001));
 
-        String pretty = JSON.stringify(config, true);
+        String pretty = Json.stringify(config, true);
         // {
         //   "model" : {
         //     "name" : "llama",
@@ -253,16 +253,16 @@ class Snippets {
     void roundTrip() {
         // --8<-- [start:round-trip]
         // Parse
-        Map<String, Object> original = JSON.parseMap("{\"x\":1,\"y\":2}");
+        Map<String, Object> original = Json.parseMap("{\"x\":1,\"y\":2}");
 
         // Modify
         original.put("z", 3);
 
         // Serialize
-        String json = JSON.stringify(original);
+        String json = Json.stringify(original);
 
         // Parse again
-        Map<String, Object> parsed = JSON.parseMap(json);
+        Map<String, Object> parsed = Json.parseMap(json);
         // --8<-- [end:round-trip]
     }
 
@@ -271,8 +271,8 @@ class Snippets {
     void errorHandling() {
         // --8<-- [start:error-handling]
         try {
-            JSON.parse("{\"broken\":,}");
-        } catch (JSON.ParseException e) {
+            Json.parse("{\"broken\":,}");
+        } catch (Json.ParseException e) {
             // Error message with location
             String message = e.getMessage();
             // "Line 1, Column 10: Expected value"
@@ -290,14 +290,14 @@ class Snippets {
     void errorTypes() {
         // --8<-- [start:error-types]
         // Syntax errors
-        assertThrows(() -> JSON.parse("{")); // Unexpected end of input
-        assertThrows(() -> JSON.parse("[1,]")); // Expected value
-        assertThrows(() -> JSON.parse("[1 2]")); // Expected ',' or ']'
-        assertThrows(() -> JSON.parse("{\"a\"}")); // Expected ':'
+        assertThrows(() -> Json.parse("{")); // Unexpected end of input
+        assertThrows(() -> Json.parse("[1,]")); // Expected value
+        assertThrows(() -> Json.parse("[1 2]")); // Expected ',' or ']'
+        assertThrows(() -> Json.parse("{\"a\"}")); // Expected ':'
 
         // Type mismatches
-        assertThrows(() -> JSON.parseMap("[]")); // Expected JSON object at root
-        assertThrows(() -> JSON.parseList("{}")); // Expected JSON array at root
+        assertThrows(() -> Json.parseMap("[]")); // Expected JSON object at root
+        assertThrows(() -> Json.parseList("{}")); // Expected JSON array at root
         // --8<-- [end:error-types]
     }
 
@@ -318,14 +318,14 @@ class Snippets {
         cycle.put("self", cycle);
 
         try {
-            JSON.stringify(cycle);
+            Json.stringify(cycle);
         } catch (IllegalArgumentException e) {
             // "Cannot serialize cyclic structure"
         }
 
         // NaN and Infinity are rejected
         try {
-            JSON.stringify(Map.of("value", Double.NaN));
+            Json.stringify(Map.of("value", Double.NaN));
         } catch (IllegalArgumentException e) {
             // "Cannot serialize NaN/Infinity"
         }
@@ -345,7 +345,7 @@ class Snippets {
                         + "\"llama.embedding_length\": 4096"
                         + "}";
 
-        Map<String, Object> meta = JSON.parseMap(metadataJson);
+        Map<String, Object> meta = Json.parseMap(metadataJson);
 
         String name = (String) meta.get("general.name");
         Long contextLength = (Long) meta.get("llama.context_length");
@@ -358,14 +358,14 @@ class Snippets {
         // --8<-- [start:unicode]
         // Unicode in strings
         Map<String, Object> obj =
-                JSON.parseMap("{\"emoji\":\"" + "\uD83C\uDF0D" + "\",\"jp\":\"こんにちは\"}");
+                Json.parseMap("{\"emoji\":\"" + "\uD83C\uDF0D" + "\",\"jp\":\"こんにちは\"}");
 
         // Round-trips correctly
-        String encoded = JSON.stringify(obj);
-        Map<String, Object> decoded = JSON.parseMap(encoded);
+        String encoded = Json.stringify(obj);
+        Map<String, Object> decoded = Json.parseMap(encoded);
 
         // Escape sequences
-        String withEscape = JSON.parseString("\"Hello\\nWorld\""); // "Hello\nWorld"
+        String withEscape = Json.parseString("\"Hello\\nWorld\""); // "Hello\nWorld"
         // --8<-- [end:unicode]
     }
 }

@@ -11,31 +11,31 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.*;
 
-class JSONPrinterTest {
+class JsonPrinterTest {
 
     @Test
     void testCompactOutput() {
-        assertEquals("{\"key\":\"value\"}", JSON.stringify(map("key", "value"), false));
-        assertEquals("[1,2,3]", JSON.stringify(list(1, 2, 3), false));
+        assertEquals("{\"key\":\"value\"}", Json.stringify(map("key", "value"), false));
+        assertEquals("[1,2,3]", Json.stringify(list(1, 2, 3), false));
     }
 
     @Test
     void testPrettyOutput() {
-        String json = JSON.stringify(map("name", "John", "age", 30), true);
+        String json = Json.stringify(map("name", "John", "age", 30), true);
         assertTrue(json.contains("\"name\" : \"John\""));
         assertTrue(json.contains("\n"));
     }
 
     @Test
     void testNegativeZero() {
-        assertEquals("0", JSON.stringify(new BigDecimal("-0"), false));
-        assertEquals("{\"zero\":0}", JSON.stringify(map("zero", new BigDecimal("-0")), false));
+        assertEquals("0", Json.stringify(new BigDecimal("-0"), false));
+        assertEquals("{\"zero\":0}", Json.stringify(map("zero", new BigDecimal("-0")), false));
     }
 
     @ParameterizedTest
     @MethodSource("numberPrintCases")
     void testNumberPrinting(Number input, String expected) {
-        assertEquals(expected, JSON.stringify(input, false));
+        assertEquals(expected, Json.stringify(input, false));
     }
 
     static Stream<Arguments> numberPrintCases() {
@@ -59,33 +59,33 @@ class JSONPrinterTest {
 
     @Test
     void testLiteralPrinting() {
-        assertEquals("true", JSON.stringify(true, false));
-        assertEquals("false", JSON.stringify(false, false));
-        assertEquals("null", JSON.stringify(JSON.NULL, false));
+        assertEquals("true", Json.stringify(true, false));
+        assertEquals("false", Json.stringify(false, false));
+        assertEquals("null", Json.stringify(Json.NULL, false));
     }
 
     @Test
     void testStringEscapes() {
-        assertEquals("\"hello\"", JSON.stringify("hello", false));
-        assertEquals("\"\\\"test\\\"\"", JSON.stringify("\"test\"", false));
-        assertEquals("\"\\\\test\"", JSON.stringify("\\test", false));
-        assertEquals("\"line1\\nline2\"", JSON.stringify("line1\nline2", false));
-        assertEquals("\"a\\tb\"", JSON.stringify("a\tb", false));
-        assertEquals("\"中文\"", JSON.stringify("中文", false));
-        assertEquals("\"\uD83D\uDE00\"", JSON.stringify("\uD83D\uDE00", false));
+        assertEquals("\"hello\"", Json.stringify("hello", false));
+        assertEquals("\"\\\"test\\\"\"", Json.stringify("\"test\"", false));
+        assertEquals("\"\\\\test\"", Json.stringify("\\test", false));
+        assertEquals("\"line1\\nline2\"", Json.stringify("line1\nline2", false));
+        assertEquals("\"a\\tb\"", Json.stringify("a\tb", false));
+        assertEquals("\"中文\"", Json.stringify("中文", false));
+        assertEquals("\"\uD83D\uDE00\"", Json.stringify("\uD83D\uDE00", false));
     }
 
     @Test
     void testEmptyStructures() {
-        assertEquals("[]", JSON.stringify(list(), false));
-        assertEquals("{}", JSON.stringify(map(), false));
-        assertEquals("\"\"", JSON.stringify("", false));
+        assertEquals("[]", Json.stringify(list(), false));
+        assertEquals("{}", Json.stringify(map(), false));
+        assertEquals("\"\"", Json.stringify("", false));
     }
 
     @Test
     void testComplexStructure() {
         Map<String, Object> obj = map("array", list(1, 2, 3), "nested", map("a", 1));
-        String json = JSON.stringify(obj, false);
+        String json = Json.stringify(obj, false);
         assertTrue(json.contains("\"array\":[1,2,3]"));
         assertTrue(json.contains("\"nested\":{\"a\":1}"));
     }
@@ -93,7 +93,7 @@ class JSONPrinterTest {
     @ParameterizedTest
     @ValueSource(doubles = {Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY})
     void testInvalidNumbersThrow(double value) {
-        assertThrows(IllegalArgumentException.class, () -> JSON.stringify(value, false));
+        assertThrows(IllegalArgumentException.class, () -> Json.stringify(value, false));
     }
 
     @Test
@@ -101,11 +101,11 @@ class JSONPrinterTest {
         List<Object> cyclicList = new ArrayList<>();
         cyclicList.add("x");
         cyclicList.add(cyclicList);
-        assertThrows(IllegalArgumentException.class, () -> JSON.stringify(cyclicList, false));
+        assertThrows(IllegalArgumentException.class, () -> Json.stringify(cyclicList, false));
 
         Map<String, Object> cyclicMap = new LinkedHashMap<>();
         cyclicMap.put("self", cyclicMap);
-        assertThrows(IllegalArgumentException.class, () -> JSON.stringify(cyclicMap, false));
+        assertThrows(IllegalArgumentException.class, () -> Json.stringify(cyclicMap, false));
     }
 
     @Test
@@ -115,6 +115,6 @@ class JSONPrinterTest {
         List<Object> root = new ArrayList<>();
         root.add(child);
         root.add(child);
-        assertEquals("[[1],[1]]", JSON.stringify(root, false));
+        assertEquals("[[1],[1]]", Json.stringify(root, false));
     }
 }

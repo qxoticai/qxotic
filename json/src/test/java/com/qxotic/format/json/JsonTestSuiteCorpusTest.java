@@ -29,7 +29,7 @@ import org.junit.jupiter.api.Test;
  *   <li>Default: {@code /tmp/JSONTestSuite}
  * </ol>
  */
-class JSONTestSuiteCorpusTest {
+class JsonTestSuiteCorpusTest {
 
     private static final String PROP_PATH = "json.testsuite.path";
     private static final String ENV_PATH = "JSON_TEST_SUITE_PATH";
@@ -115,7 +115,7 @@ class JSONTestSuiteCorpusTest {
 
             boolean parsed;
             try {
-                JSON.parse(input);
+                Json.parse(input);
                 parsed = true;
             } catch (RuntimeException ex) {
                 parsed = false;

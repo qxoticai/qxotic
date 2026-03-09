@@ -1,6 +1,6 @@
 package com.qxotic.format.safetensors.impl;
 
-import com.qxotic.format.json.JSON;
+import com.qxotic.format.json.Json;
 import com.qxotic.format.safetensors.Safetensors;
 import com.qxotic.format.safetensors.TensorEntry;
 import java.io.IOException;
@@ -65,7 +65,7 @@ final class WriterImpl {
                             "shape", toList(entry.shape()),
                             "data_offsets", List.of(start, end)));
         }
-        String header = JSON.stringify(json, false);
+        String header = Json.stringify(json, false);
         byte[] headerBytes = header.getBytes(StandardCharsets.UTF_8);
         return headerBytes;
     }

@@ -7,7 +7,7 @@ import java.math.BigInteger;
 import java.util.*;
 import org.junit.jupiter.api.Test;
 
-class JSON2ComparisonTest {
+class Json2ComparisonTest {
 
     @Test
     void testJSON2RejectsInvalidNumbers() {
@@ -17,8 +17,8 @@ class JSON2ComparisonTest {
 
         for (String num : invalidNumbers) {
             assertThrows(
-                    JSON.ParseException.class,
-                    () -> JSON.parse(num),
+                    Json.ParseException.class,
+                    () -> Json.parse(num),
                     "JSON2 should reject: " + num);
         }
     }
@@ -32,8 +32,8 @@ class JSON2ComparisonTest {
 
         for (String str : invalidStrings) {
             assertThrows(
-                    JSON.ParseException.class,
-                    () -> JSON.parse(str),
+                    Json.ParseException.class,
+                    () -> Json.parse(str),
                     "JSON2 should reject: " + str);
         }
     }
@@ -45,7 +45,7 @@ class JSON2ComparisonTest {
         };
 
         for (String str : validSurrogates) {
-            Object result = JSON.parse(str);
+            Object result = Json.parse(str);
             assertNotNull(result);
         }
 
@@ -53,37 +53,37 @@ class JSON2ComparisonTest {
 
         for (String str : invalidSurrogates) {
             assertThrows(
-                    JSON.ParseException.class,
-                    () -> JSON.parse(str),
+                    Json.ParseException.class,
+                    () -> Json.parse(str),
                     "JSON2 should reject: " + str);
         }
     }
 
     @Test
     void testJSON2BetterErrorMessages() {
-        JSON.ParseException e;
+        Json.ParseException e;
 
-        e = assertThrows(JSON.ParseException.class, () -> JSON.parse("{\n  \"key\":,\n}"));
+        e = assertThrows(Json.ParseException.class, () -> Json.parse("{\n  \"key\":,\n}"));
         assertEquals(2, e.getLine());
         assertTrue(e.getMessage().contains("Line"));
         assertTrue(e.getMessage().contains("Column"));
 
-        e = assertThrows(JSON.ParseException.class, () -> JSON.parse("01"));
+        e = assertThrows(Json.ParseException.class, () -> Json.parse("01"));
         assertTrue(e.getMessage().contains("Leading zeros"));
 
-        e = assertThrows(JSON.ParseException.class, () -> JSON.parse("\"\\uD800\""));
+        e = assertThrows(Json.ParseException.class, () -> Json.parse("\"\\uD800\""));
         assertTrue(e.getMessage().contains("surrogate"));
     }
 
     @Test
     void testJSON2PreservesNegativeZero() {
-        Object parsed = JSON.parse("-0");
+        Object parsed = Json.parse("-0");
         assertInstanceOf(Number.class, parsed);
 
-        String stringified = JSON.stringify(parsed);
+        String stringified = Json.stringify(parsed);
         assertEquals("0", stringified);
 
-        Object roundTrip = JSON.parse(stringified);
+        Object roundTrip = Json.parse(stringified);
         assertEquals(0, ((Number) roundTrip).doubleValue(), 0.0001);
     }
 
@@ -101,8 +101,8 @@ class JSON2ComparisonTest {
         };
 
         for (String json : validJson) {
-            Object json1 = JSON.parse(json);
-            Object json2 = JSON.parse(json);
+            Object json1 = Json.parse(json);
+            Object json2 = Json.parse(json);
 
             assertTrue(objectsEqual(json1, json2), "Both should parse " + json + " same way");
         }
@@ -112,8 +112,8 @@ class JSON2ComparisonTest {
         if (o1 == o2) return true;
         if (o1 == null || o2 == null) return false;
 
-        if (o1 == JSON.NULL && o2 == JSON.NULL) return true;
-        if (o1 == JSON.NULL && o2 == JSON.NULL) return true;
+        if (o1 == Json.NULL && o2 == Json.NULL) return true;
+        if (o1 == Json.NULL && o2 == Json.NULL) return true;
 
         if (o1 instanceof Number && o2 instanceof Number) {
             Number n1 = (Number) o1;

@@ -3,7 +3,7 @@ package com.qxotic.tokenizers;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.format.json.JSON;
+import com.qxotic.format.json.Json;
 import com.qxotic.tokenizers.testkit.TiktokenFixtures;
 import java.io.IOException;
 import java.io.InputStream;
@@ -169,7 +169,7 @@ class TokenizerGoldenTest {
                 throw new IllegalStateException("Missing ground_truth_tokens.json");
             }
             String json = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-            return (Map<String, Object>) JSON.parse(json);
+            return (Map<String, Object>) Json.parse(json);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to load golden fixture", e);
         }
