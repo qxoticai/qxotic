@@ -1,5 +1,6 @@
 package com.qxotic.jota.examples.llama;
 
+import com.qxotic.jota.Device;
 import java.nio.file.Path;
 
 final class Options {
@@ -15,6 +16,7 @@ final class Options {
     final long benchmarkPauseMs;
     final boolean stream;
     final boolean trace;
+    final Device device;
 
     private Options(
             Path modelPath,
@@ -28,7 +30,8 @@ final class Options {
             int benchmarkRuns,
             long benchmarkPauseMs,
             boolean stream,
-            boolean trace) {
+            boolean trace,
+            Device device) {
         this.modelPath = modelPath;
         this.prompt = prompt;
         this.systemPrompt = systemPrompt;
@@ -41,6 +44,7 @@ final class Options {
         this.benchmarkPauseMs = benchmarkPauseMs;
         this.stream = stream;
         this.trace = trace;
+        this.device = device;
     }
 
     static Options parse(String[] args) {
@@ -56,6 +60,7 @@ final class Options {
         long benchmarkPauseMs = 0L;
         boolean stream = true;
         boolean trace = Boolean.getBoolean("com.qxotic.trace");
+        Device device = Device.PANAMA;
 
         for (int i = 0; i < args.length; i++) {
             String arg = args[i];
@@ -135,6 +140,12 @@ final class Options {
                     }
                     trace = Boolean.parseBoolean(value);
                 }
+                case "--device", "-d" -> {
+                    if (!arg.contains("=")) {
+                        i++;
+                    }
+                    device = parseDevice(value);
+                }
                 case "--help", "-h" -> {
                     printUsage();
                     System.exit(0);
@@ -161,7 +172,20 @@ final class Options {
                 benchmarkRuns,
                 benchmarkPauseMs,
                 stream,
-                trace);
+                trace,
+                device);
+    }
+
+    private static Device parseDevice(String value) {
+        String normalized = value == null ? "panama" : value.trim().toLowerCase();
+        return switch (normalized) {
+            case "panama", "cpu", "native" -> Device.PANAMA;
+            case "c" -> Device.C;
+            case "hip" -> Device.HIP;
+            case "opencl", "ocl" -> Device.OPENCL;
+            default -> throw new IllegalArgumentException(
+                    "Unsupported --device value: " + value + " (use panama|c|hip|opencl)");
+        };
     }
 
     private static void printUsage() {

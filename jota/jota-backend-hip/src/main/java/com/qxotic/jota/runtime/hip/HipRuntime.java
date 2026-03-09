@@ -55,7 +55,24 @@ public final class HipRuntime {
         return nativeDeviceCount();
     }
 
+    public static int currentDevice() {
+        requireAvailable();
+        return nativeCurrentDevice();
+    }
+
+    public static String deviceArchName(int deviceIndex) {
+        requireAvailable();
+        if (deviceIndex < 0) {
+            throw new IllegalArgumentException("deviceIndex must be >= 0");
+        }
+        return nativeDeviceArchName(deviceIndex);
+    }
+
     private static native int nativeDeviceCount();
+
+    private static native int nativeCurrentDevice();
+
+    private static native String nativeDeviceArchName(int deviceIndex);
 
     static native long createStream();
 

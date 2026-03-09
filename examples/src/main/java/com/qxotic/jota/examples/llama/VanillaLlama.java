@@ -77,7 +77,7 @@ public final class VanillaLlama {
     public static void main(String[] args) throws Exception {
         Options options = Options.parse(args);
         Environment env =
-                new Environment(Device.PANAMA, DataType.FP32, Environment.current().runtimes());
+                new Environment(options.device, DataType.FP32, Environment.current().runtimes());
         Environment.with(
                 env,
                 () -> {

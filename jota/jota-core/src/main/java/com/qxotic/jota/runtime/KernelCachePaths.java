@@ -57,11 +57,18 @@ public final class KernelCachePaths {
     }
 
     private static Path defaultCacheRoot() {
-        String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        String userHome = System.getProperty("user.home");
+        return defaultCacheRootFor(
+                System.getProperty("os.name", ""),
+                System.getProperty("user.home"),
+                System.getenv("XDG_CACHE_HOME"),
+                System.getenv("LOCALAPPDATA"));
+    }
+
+    static Path defaultCacheRootFor(
+            String osNameRaw, String userHome, String xdgCacheHome, String localAppData) {
+        String osName = osNameRaw == null ? "" : osNameRaw.toLowerCase(Locale.ROOT);
 
         if (osName.contains("win")) {
-            String localAppData = System.getenv("LOCALAPPDATA");
             if (localAppData != null && !localAppData.isBlank()) {
                 return Path.of(localAppData).resolve("jota").resolve("cache");
             }
@@ -80,7 +87,6 @@ public final class KernelCachePaths {
             }
         }
 
-        String xdgCacheHome = System.getenv("XDG_CACHE_HOME");
         if (xdgCacheHome != null && !xdgCacheHome.isBlank()) {
             return Path.of(xdgCacheHome).resolve("jota");
         }
