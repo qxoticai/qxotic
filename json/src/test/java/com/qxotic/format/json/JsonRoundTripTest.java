@@ -7,13 +7,13 @@ import java.math.BigInteger;
 import java.util.*;
 import org.junit.jupiter.api.Test;
 
-class JSONRoundTripTest {
+class JsonRoundTripTest {
 
     private boolean deepEquals(Object o1, Object o2) {
         if (o1 == o2) return true;
         if (o1 == null || o2 == null) return false;
 
-        if (o1 == JSON.NULL && o2 == JSON.NULL) return true;
+        if (o1 == Json.NULL && o2 == Json.NULL) return true;
 
         if (o1 instanceof Number && o2 instanceof Number) {
             Number n1 = (Number) o1;
@@ -58,8 +58,8 @@ class JSONRoundTripTest {
         original.put("age", 30);
         original.put("active", true);
 
-        String json = JSON.stringify(original, false);
-        Object parsed = JSON.parse(json);
+        String json = Json.stringify(original, false);
+        Object parsed = Json.parse(json);
         assertTrue(deepEquals(original, parsed));
     }
 
@@ -71,9 +71,9 @@ class JSONRoundTripTest {
         special.add(new BigDecimal("-0"));
         special.add(new BigInteger("123456789"));
 
-        String json = JSON.stringify(special, false);
+        String json = Json.stringify(special, false);
         List<?> parsed =
-                (List<?>) JSON.parse(json, JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
+                (List<?>) Json.parse(json, Json.ParseOptions.defaults().decimalsAsBigDecimal(true));
         assertTrue(deepEquals(special, parsed));
     }
 
@@ -84,15 +84,15 @@ class JSONRoundTripTest {
         Map<String, Object> outer = new LinkedHashMap<>();
         outer.put("inner", inner);
 
-        String json = JSON.stringify(outer, false);
-        Object parsed = JSON.parse(json);
+        String json = Json.stringify(outer, false);
+        Object parsed = Json.parse(json);
         assertTrue(deepEquals(outer, parsed));
     }
 
     @Test
     void testNegativeZeroRoundTrip() {
-        String json = JSON.stringify(new BigDecimal("-0"), false);
-        Object parsed = JSON.parse(json, JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
+        String json = Json.stringify(new BigDecimal("-0"), false);
+        Object parsed = Json.parse(json, Json.ParseOptions.defaults().decimalsAsBigDecimal(true));
         // BigDecimal("-0") prints as "0", which parses as Long(0) in default mode
         // Even with decimalsAsBigDecimal(), integers return Long
         assertEquals(0L, parsed);
@@ -103,24 +103,24 @@ class JSONRoundTripTest {
         Map<String, Object> original = new LinkedHashMap<>();
         original.put("zero", new BigDecimal("-0"));
 
-        String json = JSON.stringify(original, false);
-        Object parsed = JSON.parse(json, JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
+        String json = Json.stringify(original, false);
+        Object parsed = Json.parse(json, Json.ParseOptions.defaults().decimalsAsBigDecimal(true));
         assertTrue(deepEquals(original, parsed));
     }
 
     @Test
     void testLargeNumberRoundTrip() {
         BigInteger large = new BigInteger("9999999999999999999999999999999999999999");
-        String json = JSON.stringify(large, false);
-        Object parsed = JSON.parse(json);
+        String json = Json.stringify(large, false);
+        Object parsed = Json.parse(json);
         assertEquals(large, parsed);
     }
 
     @Test
     void testDecimalRoundTrip() {
         BigDecimal bd = new BigDecimal("123.456789");
-        String json = JSON.stringify(bd, false);
-        Object parsed = JSON.parse(json, JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
+        String json = Json.stringify(bd, false);
+        Object parsed = Json.parse(json, Json.ParseOptions.defaults().decimalsAsBigDecimal(true));
         assertEquals(bd, parsed);
     }
 
@@ -130,8 +130,8 @@ class JSONRoundTripTest {
         original.put("chinese", "中文");
         original.put("emoji", "\uD83D\uDE00");
 
-        String json = JSON.stringify(original, false);
-        Object parsed = JSON.parse(json);
+        String json = Json.stringify(original, false);
+        Object parsed = Json.parse(json);
         assertTrue(deepEquals(original, parsed));
     }
 
@@ -142,19 +142,19 @@ class JSONRoundTripTest {
         original.put("backslash", "\\");
         original.put("newline", "\n");
 
-        String json = JSON.stringify(original, false);
-        Object parsed = JSON.parse(json);
+        String json = Json.stringify(original, false);
+        Object parsed = Json.parse(json);
         assertTrue(deepEquals(original, parsed));
     }
 
     @Test
     void testNullValueRoundTrip() {
         Map<String, Object> original = new LinkedHashMap<>();
-        original.put("null", JSON.NULL);
+        original.put("null", Json.NULL);
         original.put("string", "value");
 
-        String json = JSON.stringify(original, false);
-        Object parsed = JSON.parse(json);
+        String json = Json.stringify(original, false);
+        Object parsed = Json.parse(json);
         assertTrue(deepEquals(original, parsed));
     }
 
@@ -164,8 +164,8 @@ class JSONRoundTripTest {
         obj.put("array", new ArrayList<>(Arrays.asList(1, 2, 3)));
         obj.put("nested", new LinkedHashMap<>(Map.of("a", 1, "b", 2)));
 
-        String json = JSON.stringify(obj, false);
-        Object parsed = JSON.parse(json);
+        String json = Json.stringify(obj, false);
+        Object parsed = Json.parse(json);
         assertTrue(deepEquals(obj, parsed));
     }
 
@@ -174,16 +174,16 @@ class JSONRoundTripTest {
         Map<String, Object> original = new LinkedHashMap<>();
         original.put("key", "value");
 
-        String json = JSON.stringify(original, true);
-        Object parsed = JSON.parse(json);
+        String json = Json.stringify(original, true);
+        Object parsed = Json.parse(json);
         assertTrue(deepEquals(original, parsed));
     }
 
     @Test
     void testPrettyPrintListRoundTrip() {
         List<Object> original = Arrays.asList(1, 2, 3);
-        String json = JSON.stringify(original, true);
-        Object parsed = JSON.parse(json);
+        String json = Json.stringify(original, true);
+        Object parsed = Json.parse(json);
         assertTrue(deepEquals(original, parsed));
     }
 
@@ -193,8 +193,8 @@ class JSONRoundTripTest {
         original.put("array", new ArrayList<>());
         original.put("object", new LinkedHashMap<>());
 
-        String json = JSON.stringify(original, false);
-        Object parsed = JSON.parse(json);
+        String json = Json.stringify(original, false);
+        Object parsed = Json.parse(json);
         assertTrue(deepEquals(original, parsed));
     }
 
@@ -208,8 +208,8 @@ class JSONRoundTripTest {
             current = next;
         }
 
-        String json = JSON.stringify(current, false);
-        Object parsed = JSON.parse(json);
+        String json = Json.stringify(current, false);
+        Object parsed = Json.parse(json);
         assertTrue(deepEquals(current, parsed));
     }
 
@@ -224,8 +224,8 @@ class JSONRoundTripTest {
         special.add(new BigDecimal("-0"));
         special.add(new BigInteger("123456789"));
 
-        String json = JSON.stringify(special, false);
-        Object parsed = JSON.parse(json);
+        String json = Json.stringify(special, false);
+        Object parsed = Json.parse(json);
         assertTrue(deepEquals(special, parsed));
     }
 
@@ -235,10 +235,10 @@ class JSONRoundTripTest {
         original.put("string", "hello");
         original.put("number", 42);
         original.put("decimal", new BigDecimal("3.14"));
-        String json = JSON.stringify(original, false);
+        String json = Json.stringify(original, false);
         Map<?, ?> parsed =
                 (Map<?, ?>)
-                        JSON.parse(json, JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
+                        Json.parse(json, Json.ParseOptions.defaults().decimalsAsBigDecimal(true));
         assertTrue(deepEquals(original, parsed));
     }
 
@@ -250,8 +250,8 @@ class JSONRoundTripTest {
         outer.put("inner", inner);
         outer.put("array", new ArrayList<>(Arrays.asList(1, 2, 3)));
 
-        String json = JSON.stringify(outer, true);
-        Object parsed = JSON.parse(json);
+        String json = Json.stringify(outer, true);
+        Object parsed = Json.parse(json);
         assertTrue(deepEquals(outer, parsed));
     }
 
@@ -261,8 +261,8 @@ class JSONRoundTripTest {
         Map<String, Object> obj = new LinkedHashMap<>();
         obj.put("text", chinese);
 
-        String json = JSON.stringify(obj, false);
-        Object parsed = JSON.parse(json);
+        String json = Json.stringify(obj, false);
+        Object parsed = Json.parse(json);
         assertTrue(deepEquals(obj, parsed));
     }
 }

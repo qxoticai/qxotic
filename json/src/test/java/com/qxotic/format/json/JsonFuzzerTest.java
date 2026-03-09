@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
 
-class JSONFuzzerTest {
+class JsonFuzzerTest {
 
     private static final long SEED = 0xC0FFEE1234ABL;
 
@@ -25,14 +25,14 @@ class JSONFuzzerTest {
                     for (int i = 0; i < 100_000; i++) {
                         Object value = randomValue(rnd, 0, 4);
 
-                        String json = JSON.stringify(value, rnd.nextBoolean());
-                        assertTrue(JSON.isValid(json), "Generated JSON should be valid");
+                        String json = Json.stringify(value, rnd.nextBoolean());
+                        assertTrue(Json.isValid(json), "Generated JSON should be valid");
 
-                        Object parsed = JSON.parse(json);
-                        String canonical = JSON.stringify(parsed, false);
+                        Object parsed = Json.parse(json);
+                        String canonical = Json.stringify(parsed, false);
 
-                        Object parsedAgain = JSON.parse(canonical);
-                        String canonicalAgain = JSON.stringify(parsedAgain, false);
+                        Object parsedAgain = Json.parse(canonical);
+                        String canonicalAgain = Json.stringify(parsedAgain, false);
 
                         assertEquals(canonical, canonicalAgain, "Canonical output must be stable");
                     }
@@ -46,13 +46,13 @@ class JSONFuzzerTest {
                 () -> {
                     Random rnd = new Random(SEED ^ 0x5EEDBEEFL);
                     for (int i = 0; i < 200_000; i++) {
-                        String base = JSON.stringify(randomValue(rnd, 0, 3), false);
+                        String base = Json.stringify(randomValue(rnd, 0, 3), false);
                         String mutated = mutate(base, rnd);
 
                         try {
-                            JSON.parse(mutated);
+                            Json.parse(mutated);
                         } catch (RuntimeException e) {
-                            if (!(e instanceof JSON.ParseException)) {
+                            if (!(e instanceof Json.ParseException)) {
                                 fail("Unexpected exception type: " + e.getClass().getName());
                             }
                         }
@@ -89,7 +89,7 @@ class JSONFuzzerTest {
     private static Object randomScalar(Random rnd) {
         switch (rnd.nextInt(10)) {
             case 0:
-                return rnd.nextBoolean() ? null : JSON.NULL;
+                return rnd.nextBoolean() ? null : Json.NULL;
             case 1:
                 return rnd.nextBoolean();
             case 2:

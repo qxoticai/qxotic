@@ -5,9 +5,9 @@ import java.math.BigInteger;
 import java.util.*;
 
 /** Beautiful, minimal JSON parser and printer. RFC 8259 compliant, elegant, and fast. */
-public final class JSON {
+public final class Json {
 
-    private JSON() {}
+    private Json() {}
 
     /** JSON null distinct from Java null. */
     public static final Null NULL = Null.INSTANCE;
@@ -899,7 +899,7 @@ public final class JSON {
     // === Query Methods - Navigate through Map keys with varargs ===
 
     /**
-     * Query any value by navigating through object keys. Returns Optional.of(JSON.NULL) for
+     * Query any value by navigating through object keys. Returns Optional.of(Json.NULL) for
      * explicit null values. Returns empty if path doesn't exist.
      */
     public static Optional<Object> query(Object root, String... keys) {
@@ -936,7 +936,7 @@ public final class JSON {
 
     /**
      * Navigate through nested Maps using the provided keys. Returns null if navigation fails
-     * (missing key, wrong type, etc.) Returns JSON.NULL for explicit null values. With 0 keys,
+     * (missing key, wrong type, etc.) Returns Json.NULL for explicit null values. With 0 keys,
      * returns root directly (acts as cast).
      */
     private static Object navigate(Object root, String... keys) {

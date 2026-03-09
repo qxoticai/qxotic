@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
  * Performance and security tests for JSON parser. Tests memory usage, recursion depth, and
  * malicious input handling.
  */
-class JSONPerformanceSecurityTest {
+class JsonPerformanceSecurityTest {
 
     @Test
     void testLargeInputMemorySafety() {
@@ -25,7 +25,7 @@ class JSONPerformanceSecurityTest {
         sb.append("x".repeat(100000));
         sb.append("\"");
 
-        Object parsed = JSON.parse(sb.toString());
+        Object parsed = Json.parse(sb.toString());
         assertInstanceOf(String.class, parsed);
         String result = (String) parsed;
         assertEquals(100000, result.length());
@@ -39,7 +39,7 @@ class JSONPerformanceSecurityTest {
         }
         sb.append("]");
 
-        parsed = JSON.parse(sb.toString());
+        parsed = Json.parse(sb.toString());
         assertInstanceOf(List.class, parsed);
         List<?> list = (List<?>) parsed;
         assertEquals(10000, list.size());
@@ -52,19 +52,19 @@ class JSONPerformanceSecurityTest {
         int depth = 200;
         String sb = "[".repeat(depth) + "null" + "]".repeat(depth);
         // Should parse successfully at default max depth (1000)
-        Object result = JSON.parse(sb);
+        Object result = Json.parse(sb);
         assertNotNull(result);
 
         // Should fail if we exceed max depth
         // Use 1200 to exceed default 1000 but not cause Java stack overflow
         int exceededDepth = 1200;
         String sb2 = "[".repeat(exceededDepth) + "null" + "]".repeat(exceededDepth);
-        JSON.ParseException e = assertThrows(JSON.ParseException.class, () -> JSON.parse(sb2));
+        Json.ParseException e = assertThrows(Json.ParseException.class, () -> Json.parse(sb2));
         assertNotNull(e.getMessage());
 
         // Should work with increased max depth
-        JSON.ParseOptions options = JSON.ParseOptions.defaults().maxDepth(2000);
-        result = JSON.parse(sb2, options);
+        Json.ParseOptions options = Json.ParseOptions.defaults().maxDepth(2000);
+        result = Json.parse(sb2, options);
         assertNotNull(result);
     }
 
@@ -73,27 +73,27 @@ class JSONPerformanceSecurityTest {
         // Deep nested objects
         int depth = 500;
         String sb = "{\"a\":".repeat(depth) + "null" + "}".repeat(depth);
-        Object result = JSON.parse(sb);
+        Object result = Json.parse(sb);
         assertNotNull(result);
     }
 
     @Test
     void testMaliciousLargeExponent() {
         // Very large exponents should be handled safely
-        Object parsed = JSON.parse("1e999999");
+        Object parsed = Json.parse("1e999999");
         assertInstanceOf(BigDecimal.class, parsed);
 
-        parsed = JSON.parse("1e-999999");
+        parsed = Json.parse("1e-999999");
         assertInstanceOf(BigDecimal.class, parsed);
 
         // Test overflow behavior
         try {
             parsed =
-                    JSON.parse(
+                    Json.parse(
                             "999999999999999999999999999999999999999999999999999999999999999999999999999999999999");
             // Should be BigInteger
             assertInstanceOf(BigInteger.class, parsed);
-        } catch (JSON.ParseException e) {
+        } catch (Json.ParseException e) {
             // Also acceptable to reject
             assertNotNull(e.getMessage());
         }
@@ -108,7 +108,7 @@ class JSONPerformanceSecurityTest {
         String sb = "\"" + "\\u".repeat(10000) + "\"";
 
         // Should throw ParseException quickly, not hang
-        JSON.ParseException e = assertThrows(JSON.ParseException.class, () -> JSON.parse(sb));
+        Json.ParseException e = assertThrows(Json.ParseException.class, () -> Json.parse(sb));
         assertNotNull(e.getMessage());
     }
 
@@ -126,7 +126,7 @@ class JSONPerformanceSecurityTest {
             }
             sb.append("]");
 
-            Object parsed = JSON.parse(sb.toString());
+            Object parsed = Json.parse(sb.toString());
             assertInstanceOf(List.class, parsed);
             List<?> list = (List<?>) parsed;
             assertEquals(1000, list.size());
@@ -139,15 +139,15 @@ class JSONPerformanceSecurityTest {
         String beyondRange = "\"\u00110000\"";
         // This should either parse (if implementation accepts) or throw
         try {
-            Object parsed = JSON.parse(beyondRange);
+            Object parsed = Json.parse(beyondRange);
             assertInstanceOf(String.class, parsed);
-        } catch (JSON.ParseException e) {
+        } catch (Json.ParseException e) {
             assertNotNull(e.getMessage());
         }
 
         // Test very high Unicode (beyond BMP)
         String highUnicode = "\"\uD800\uDC00\""; // Valid surrogate pair for U+10000
-        Object parsed = JSON.parse(highUnicode);
+        Object parsed = Json.parse(highUnicode);
         assertEquals("\uD800\uDC00", parsed);
     }
 
@@ -169,12 +169,12 @@ class JSONPerformanceSecurityTest {
         largeMap.put("count", 1000L);
         largeMap.put("timestamp", new BigDecimal("1234567890.123456"));
 
-        String json = JSON.stringify(largeMap);
+        String json = Json.stringify(largeMap);
         assertNotNull(json);
         assertTrue(json.length() > 1000);
 
         // Round-trip should work
-        Object parsed = JSON.parse(json);
+        Object parsed = Json.parse(json);
         assertInstanceOf(Map.class, parsed);
     }
 
@@ -197,7 +197,7 @@ class JSONPerformanceSecurityTest {
                             () -> {
                                 for (int i = 0; i < iterations; i++) {
                                     try {
-                                        Object parsed = JSON.parse(testJson);
+                                        Object parsed = Json.parse(testJson);
                                         assertNotNull(parsed);
                                         successCount.incrementAndGet();
                                     } catch (Exception e) {
@@ -231,10 +231,10 @@ class JSONPerformanceSecurityTest {
 
         for (String number : problematicNumbers) {
             try {
-                Object parsed = JSON.parse(number);
+                Object parsed = Json.parse(number);
                 // Should parse as BigDecimal or BigInteger
                 assertTrue(parsed instanceof BigDecimal || parsed instanceof BigInteger);
-            } catch (JSON.ParseException e) {
+            } catch (Json.ParseException e) {
                 // Also acceptable - implementation may reject extreme values
                 assertNotNull(e.getMessage());
             }
@@ -244,22 +244,22 @@ class JSONPerformanceSecurityTest {
     @Test
     void testEmptyAndWhitespaceOnlyInput() {
         // Empty input should throw
-        JSON.ParseException e = assertThrows(JSON.ParseException.class, () -> JSON.parse(""));
+        Json.ParseException e = assertThrows(Json.ParseException.class, () -> Json.parse(""));
         assertNotNull(e.getMessage());
 
         // Whitespace-only input should throw
-        e = assertThrows(JSON.ParseException.class, () -> JSON.parse("   "));
+        e = assertThrows(Json.ParseException.class, () -> Json.parse("   "));
         assertNotNull(e.getMessage());
 
-        e = assertThrows(JSON.ParseException.class, () -> JSON.parse("\n\t\r "));
+        e = assertThrows(Json.ParseException.class, () -> Json.parse("\n\t\r "));
         assertNotNull(e.getMessage());
     }
 
     @Test
     void testParseOptionsMemorySafety() {
         // Test that ParseOptions doesn't cause memory issues
-        JSON.ParseOptions options =
-                JSON.ParseOptions.defaults().decimalsAsBigDecimal(true).maxDepth(5000);
+        Json.ParseOptions options =
+                Json.ParseOptions.defaults().decimalsAsBigDecimal(true).maxDepth(5000);
 
         // Large structure with increased depth
         StringBuilder sb = new StringBuilder();
@@ -275,7 +275,7 @@ class JSONPerformanceSecurityTest {
         }
         sb.append("]");
 
-        Object parsed = JSON.parse(sb.toString(), options);
+        Object parsed = Json.parse(sb.toString(), options);
         assertNotNull(parsed);
     }
 }

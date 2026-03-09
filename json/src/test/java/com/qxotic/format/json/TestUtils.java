@@ -34,8 +34,8 @@ public final class TestUtils {
 
     /** Asserts that value round-trips correctly, optionally pretty-printed. */
     public static void assertRoundTrip(Object value, boolean pretty) {
-        String json = JSON.stringify(value, pretty);
-        Object parsed = JSON.parse(json);
+        String json = Json.stringify(value, pretty);
+        Object parsed = Json.parse(json);
         assertTrue(
                 deepEquals(value, parsed),
                 "Round-trip failed for: " + value + " -> " + json + " -> " + parsed);
@@ -43,7 +43,7 @@ public final class TestUtils {
 
     /** Asserts that parsing throws with expected message substring. */
     public static void assertParseThrows(String json, String expectedMessage) {
-        JSON.ParseException e = assertThrows(JSON.ParseException.class, () -> JSON.parse(json));
+        Json.ParseException e = assertThrows(Json.ParseException.class, () -> Json.parse(json));
         assertTrue(
                 e.getMessage().contains(expectedMessage),
                 "Expected message containing '" + expectedMessage + "' but got: " + e.getMessage());

@@ -1,6 +1,6 @@
 package com.qxotic.format.safetensors.impl;
 
-import com.qxotic.format.json.JSON;
+import com.qxotic.format.json.Json;
 import com.qxotic.format.safetensors.DType;
 import com.qxotic.format.safetensors.Safetensors;
 import com.qxotic.format.safetensors.SafetensorsFormatException;
@@ -72,8 +72,8 @@ class ReaderImpl {
         String headerJson = StandardCharsets.UTF_8.decode(headerBuffer).toString();
         Map<String, ?> header;
         try {
-            header = JSON.parseMap(headerJson);
-        } catch (JSON.ParseException e) {
+            header = Json.parseMap(headerJson);
+        } catch (Json.ParseException e) {
             throw new SafetensorsFormatException("Invalid JSON in header: " + e.getMessage(), e);
         }
 

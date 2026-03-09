@@ -11,33 +11,33 @@ import org.junit.jupiter.api.Test;
  * Comprehensive edge case tests for JSON parsing and stringify. Tests corner cases not covered in
  * other test files.
  */
-class JSONEdgeCaseTests {
+class JsonEdgeCaseTests {
 
     // ===== Number Edge Cases =====
 
     @Test
     void testNumberMaxLong() {
-        assertEquals(Long.MAX_VALUE, JSON.parse(String.valueOf(Long.MAX_VALUE)));
-        assertEquals(String.valueOf(Long.MAX_VALUE), JSON.stringify(Long.MAX_VALUE));
+        assertEquals(Long.MAX_VALUE, Json.parse(String.valueOf(Long.MAX_VALUE)));
+        assertEquals(String.valueOf(Long.MAX_VALUE), Json.stringify(Long.MAX_VALUE));
     }
 
     @Test
     void testNumberMinLong() {
-        assertEquals(Long.MIN_VALUE, JSON.parse(String.valueOf(Long.MIN_VALUE)));
-        assertEquals(String.valueOf(Long.MIN_VALUE), JSON.stringify(Long.MIN_VALUE));
+        assertEquals(Long.MIN_VALUE, Json.parse(String.valueOf(Long.MIN_VALUE)));
+        assertEquals(String.valueOf(Long.MIN_VALUE), Json.stringify(Long.MIN_VALUE));
     }
 
     @Test
     void testNumberAtLongBoundary() {
         // Just above Long.MAX_VALUE should be BigInteger
         String aboveMax = "9223372036854775808"; // Long.MAX_VALUE + 1
-        Object parsed = JSON.parse(aboveMax);
+        Object parsed = Json.parse(aboveMax);
         assertInstanceOf(BigInteger.class, parsed);
         assertEquals(new BigInteger(aboveMax), parsed);
 
         // Just below Long.MIN_VALUE should be BigInteger
         String belowMin = "-9223372036854775809"; // Long.MIN_VALUE - 1
-        parsed = JSON.parse(belowMin);
+        parsed = Json.parse(belowMin);
         assertInstanceOf(BigInteger.class, parsed);
         assertEquals(new BigInteger(belowMin), parsed);
     }
@@ -45,37 +45,37 @@ class JSONEdgeCaseTests {
     @Test
     void testNumberScientificNotationBounds() {
         // Very large exponent
-        assertEquals(new BigDecimal("1E+308"), JSON.parse("1e308"));
-        assertEquals(new BigDecimal("1E-307"), JSON.parse("1e-307"));
+        assertEquals(new BigDecimal("1E+308"), Json.parse("1e308"));
+        assertEquals(new BigDecimal("1E-307"), Json.parse("1e-307"));
 
         // Test with BigDecimal mode
         Object parsed =
-                JSON.parse("1e308", JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
+                Json.parse("1e308", Json.ParseOptions.defaults().decimalsAsBigDecimal(true));
         assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(0, new BigDecimal("1E+308").compareTo((BigDecimal) parsed));
     }
 
     @Test
     void testNumberExponentWithPlusSign() {
-        assertEquals(new BigDecimal("1.5E+10"), JSON.parse("1.5e+10"));
-        assertEquals(new BigDecimal("1.5E-10"), JSON.parse("1.5e-10"));
+        assertEquals(new BigDecimal("1.5E+10"), Json.parse("1.5e+10"));
+        assertEquals(new BigDecimal("1.5E-10"), Json.parse("1.5e-10"));
     }
 
     @Test
     void testNumberExponentUpperCase() {
-        assertEquals(new BigDecimal("1.5E+10"), JSON.parse("1.5E+10"));
-        assertEquals(new BigDecimal("1.5E-10"), JSON.parse("1.5E-10"));
+        assertEquals(new BigDecimal("1.5E+10"), Json.parse("1.5E+10"));
+        assertEquals(new BigDecimal("1.5E-10"), Json.parse("1.5E-10"));
     }
 
     @Test
     void testNumberTrailingDecimalZerosPreservedInBigDecimalMode() {
         // In BigDecimal mode, trailing zeros should be preserved except for zero values
         Object parsed =
-                JSON.parse("1.500", JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
+                Json.parse("1.500", Json.ParseOptions.defaults().decimalsAsBigDecimal(true));
         assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(new BigDecimal("1.500"), parsed);
 
-        parsed = JSON.parse("1.500e2", JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
+        parsed = Json.parse("1.500e2", Json.ParseOptions.defaults().decimalsAsBigDecimal(true));
         assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(new BigDecimal("150.0"), parsed);
     }
@@ -84,7 +84,7 @@ class JSONEdgeCaseTests {
     void testNumberVeryPreciseDecimal() {
         String precise = "0.1234567890123456789012345678901234567890";
         Object parsed =
-                JSON.parse(precise, JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
+                Json.parse(precise, Json.ParseOptions.defaults().decimalsAsBigDecimal(true));
         assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(new BigDecimal(precise), parsed);
     }
@@ -97,40 +97,40 @@ class JSONEdgeCaseTests {
         for (int i = 0; i <= 0x1F; i++) {
             char c = (char) i;
             String input = "\"" + c + "\"";
-            JSON.ParseException e =
-                    assertThrows(JSON.ParseException.class, () -> JSON.parse(input));
+            Json.ParseException e =
+                    assertThrows(Json.ParseException.class, () -> Json.parse(input));
             assertTrue(e.getMessage().contains("Control") || e.getMessage().contains("control"));
         }
     }
 
     @Test
     void testStringWithValidEscapes() {
-        assertEquals("\"", JSON.parse("\"\\\"\""));
-        assertEquals("\\", JSON.parse("\"\\\\\""));
-        assertEquals("/", JSON.parse("\"\\/\""));
-        assertEquals("\b", JSON.parse("\"\\b\""));
-        assertEquals("\f", JSON.parse("\"\\f\""));
-        assertEquals("\n", JSON.parse("\"\\n\""));
-        assertEquals("\r", JSON.parse("\"\\r\""));
-        assertEquals("\t", JSON.parse("\"\\t\""));
+        assertEquals("\"", Json.parse("\"\\\"\""));
+        assertEquals("\\", Json.parse("\"\\\\\""));
+        assertEquals("/", Json.parse("\"\\/\""));
+        assertEquals("\b", Json.parse("\"\\b\""));
+        assertEquals("\f", Json.parse("\"\\f\""));
+        assertEquals("\n", Json.parse("\"\\n\""));
+        assertEquals("\r", Json.parse("\"\\r\""));
+        assertEquals("\t", Json.parse("\"\\t\""));
     }
 
     @Test
     void testStringUnicodeSupplementaryPlanes() {
         // Test characters from supplementary planes
         String supplementary = "\uD83D\uDE00\uD83C\uDF89\uD83C\uDDFA\uD83C\uDDF8";
-        String json = JSON.stringify(supplementary, false);
+        String json = Json.stringify(supplementary, false);
         assertEquals("\"" + supplementary + "\"", json);
 
         // Round trip
-        Object parsed = JSON.parse(json);
+        Object parsed = Json.parse(json);
         assertEquals(supplementary, parsed);
     }
 
     @Test
     void testStringMixedEscapedAndUnescapedUnicode() {
         String input = "A\u0042C\u0044E"; // A B C D E
-        String json = JSON.stringify(input, false);
+        String json = Json.stringify(input, false);
         // Should output direct Unicode, not escaped
         assertEquals("\"ABCDE\"", json);
     }
@@ -139,23 +139,23 @@ class JSONEdgeCaseTests {
 
     @Test
     void testEmptyArray() {
-        assertEquals(Collections.emptyList(), JSON.parse("[]"));
-        assertEquals("[]", JSON.stringify(Collections.emptyList(), false));
+        assertEquals(Collections.emptyList(), Json.parse("[]"));
+        assertEquals("[]", Json.stringify(Collections.emptyList(), false));
     }
 
     @Test
     void testSingleElementArray() {
-        assertEquals(List.of(1L), JSON.parse("[1]"));
-        assertEquals(List.of("test"), JSON.parse("[\"test\"]"));
-        assertEquals(List.of(true), JSON.parse("[true]"));
-        assertEquals(List.of(JSON.NULL), JSON.parse("[null]"));
+        assertEquals(List.of(1L), Json.parse("[1]"));
+        assertEquals(List.of("test"), Json.parse("[\"test\"]"));
+        assertEquals(List.of(true), Json.parse("[true]"));
+        assertEquals(List.of(Json.NULL), Json.parse("[null]"));
     }
 
     @Test
     void testArrayWithMixedTypes() {
         // Default mode uses BigDecimal for floating-point numbers
-        List<Object> expected = Arrays.asList(1L, "two", true, JSON.NULL, new BigDecimal("3.14"));
-        Object parsed = JSON.parse("[1, \"two\", true, null, 3.14]");
+        List<Object> expected = Arrays.asList(1L, "two", true, Json.NULL, new BigDecimal("3.14"));
+        Object parsed = Json.parse("[1, \"two\", true, null, 3.14]");
         // Compare content, not exact List implementation
         assertInstanceOf(List.class, parsed);
         List<?> parsedList = (List<?>) parsed;
@@ -174,16 +174,16 @@ class JSONEdgeCaseTests {
 
     @Test
     void testArrayNestedEmpty() {
-        assertEquals(List.of(Collections.emptyList()), JSON.parse("[[]]"));
-        assertEquals(List.of(Collections.emptyMap()), JSON.parse("[{}]"));
+        assertEquals(List.of(Collections.emptyList()), Json.parse("[[]]"));
+        assertEquals(List.of(Collections.emptyMap()), Json.parse("[{}]"));
     }
 
     // ===== Object Edge Cases =====
 
     @Test
     void testEmptyObject() {
-        assertEquals(Collections.emptyMap(), JSON.parse("{}"));
-        assertEquals("{}", JSON.stringify(Collections.emptyMap(), false));
+        assertEquals(Collections.emptyMap(), Json.parse("{}"));
+        assertEquals("{}", Json.stringify(Collections.emptyMap(), false));
     }
 
     @Test
@@ -193,7 +193,7 @@ class JSONEdgeCaseTests {
         expected.put("123", "value");
         expected.put("456", "another");
 
-        Object parsed = JSON.parse("{\"123\": \"value\", \"456\": \"another\"}");
+        Object parsed = Json.parse("{\"123\": \"value\", \"456\": \"another\"}");
         assertEquals(expected, parsed);
     }
 
@@ -205,7 +205,7 @@ class JSONEdgeCaseTests {
         expected.put("key:with:colon", "value");
 
         Object parsed =
-                JSON.parse(
+                Json.parse(
                         "{\"key-with-dash\": \"value\", \"key.with.dot\": \"value\","
                                 + " \"key:with:colon\": \"value\"}");
         assertEquals(expected, parsed);
@@ -215,7 +215,7 @@ class JSONEdgeCaseTests {
     void testObjectDuplicateKeysLastWins() {
         // RFC 8259 says duplicate names are allowed, last value wins
         Map<String, Object> parsed =
-                (Map<String, Object>) JSON.parse("{\"key\": \"first\", \"key\": \"last\"}");
+                (Map<String, Object>) Json.parse("{\"key\": \"first\", \"key\": \"last\"}");
         assertEquals(1, parsed.size());
         assertEquals("last", parsed.get("key"));
     }
@@ -235,16 +235,16 @@ class JSONEdgeCaseTests {
         sb.append("null");
         sb.append("]".repeat(depth));
 
-        Object result = JSON.parse(sb.toString());
+        Object result = Json.parse(sb.toString());
         assertNotNull(result);
 
         // Should fail with custom max depth of 100 (depth 200 > 100)
-        JSON.ParseException e =
+        Json.ParseException e =
                 assertThrows(
-                        JSON.ParseException.class,
+                        Json.ParseException.class,
                         () ->
-                                JSON.parse(
-                                        sb.toString(), JSON.ParseOptions.defaults().maxDepth(100)));
+                                Json.parse(
+                                        sb.toString(), Json.ParseOptions.defaults().maxDepth(100)));
         assertNotNull(e.getMessage());
     }
 
@@ -254,7 +254,7 @@ class JSONEdgeCaseTests {
         IllegalArgumentException e =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> JSON.ParseOptions.defaults().maxDepth(0));
+                        () -> Json.ParseOptions.defaults().maxDepth(0));
         assertTrue(e.getMessage().contains("Maximum parsing depth must be positive"));
     }
 
@@ -264,7 +264,7 @@ class JSONEdgeCaseTests {
         IllegalArgumentException e =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> JSON.ParseOptions.defaults().maxDepth(-1));
+                        () -> Json.ParseOptions.defaults().maxDepth(-1));
         assertTrue(e.getMessage().contains("Maximum parsing depth must be positive"));
     }
 
@@ -280,7 +280,7 @@ class JSONEdgeCaseTests {
                         "  \"key3\": \"value3\"\n"
                         + "}";
 
-        JSON.ParseException e = assertThrows(JSON.ParseException.class, () -> JSON.parse(json));
+        Json.ParseException e = assertThrows(Json.ParseException.class, () -> Json.parse(json));
         assertEquals(3, e.getLine()); // Error on line 3
         assertTrue(e.getColumn() > 0);
     }
@@ -288,7 +288,7 @@ class JSONEdgeCaseTests {
     @Test
     void testErrorLineColumnWithTabs() {
         String json = "{\t\"key\":\t}"; // Error: missing value after colon
-        JSON.ParseException e = assertThrows(JSON.ParseException.class, () -> JSON.parse(json));
+        Json.ParseException e = assertThrows(Json.ParseException.class, () -> Json.parse(json));
         assertEquals(1, e.getLine());
         // Column should account for tab as 1 character (not expanded)
         assertTrue(e.getColumn() > 0);
@@ -297,7 +297,7 @@ class JSONEdgeCaseTests {
     @Test
     void testErrorLineColumnInArray() {
         String json = "[1, 2, , 4]"; // Error: extra comma
-        JSON.ParseException e = assertThrows(JSON.ParseException.class, () -> JSON.parse(json));
+        Json.ParseException e = assertThrows(Json.ParseException.class, () -> Json.parse(json));
         assertEquals(1, e.getLine());
         // Column of extra comma (after "[1, 2, ")
         assertTrue(e.getColumn() >= 7);
@@ -307,30 +307,30 @@ class JSONEdgeCaseTests {
 
     @Test
     void testStringifyNull() {
-        assertEquals("null", JSON.stringify(null, false));
-        assertEquals("null", JSON.stringify(JSON.NULL, false));
+        assertEquals("null", Json.stringify(null, false));
+        assertEquals("null", Json.stringify(Json.NULL, false));
     }
 
     @Test
     void testStringifyBoolean() {
-        assertEquals("true", JSON.stringify(true, false));
-        assertEquals("false", JSON.stringify(false, false));
+        assertEquals("true", Json.stringify(true, false));
+        assertEquals("false", Json.stringify(false, false));
     }
 
     @Test
     void testStringifyBigInteger() {
         BigInteger big = new BigInteger("123456789012345678901234567890");
-        assertEquals("123456789012345678901234567890", JSON.stringify(big, false));
+        assertEquals("123456789012345678901234567890", Json.stringify(big, false));
     }
 
     @Test
     void testStringifyBigDecimalScientificNotation() {
         // BigDecimal with scientific notation should use toPlainString()
         BigDecimal bd = new BigDecimal("1.23E+10");
-        assertEquals("12300000000", JSON.stringify(bd, false));
+        assertEquals("12300000000", Json.stringify(bd, false));
 
         bd = new BigDecimal("1.23E-10");
-        assertEquals("0.000000000123", JSON.stringify(bd, false));
+        assertEquals("0.000000000123", Json.stringify(bd, false));
     }
 
     @Test
@@ -340,11 +340,11 @@ class JSONEdgeCaseTests {
         obj.put("nested", Map.of("key", "value"));
         obj.put("number", 42L); // Use Long
 
-        String pretty = JSON.stringify(obj, true);
+        String pretty = Json.stringify(obj, true);
         assertTrue(pretty.contains("\n"));
         assertTrue(pretty.contains("  ")); // Indentation
         // Should be valid JSON
-        Object parsed = JSON.parse(pretty);
+        Object parsed = Json.parse(pretty);
         // Compare content
         assertInstanceOf(Map.class, parsed);
         Map<?, ?> parsedMap = (Map<?, ?>) parsed;
@@ -368,13 +368,13 @@ class JSONEdgeCaseTests {
 
     @Test
     void testParseOptionsChaining() {
-        JSON.ParseOptions options =
-                JSON.ParseOptions.defaults()
+        Json.ParseOptions options =
+                Json.ParseOptions.defaults()
                         .decimalsAsBigDecimal(true)
                         .maxDepth(500)
                         .decimalsAsBigDecimal(false); // Should override BigDecimal
 
-        Object parsed = JSON.parse("3.14", options);
+        Object parsed = Json.parse("3.14", options);
         assertInstanceOf(Double.class, parsed);
         assertEquals(3.14, (Double) parsed, 0.001);
     }
@@ -382,7 +382,7 @@ class JSONEdgeCaseTests {
     @Test
     void testParseOptionsDefaultIsBigDecimal() {
         // Default should be BigDecimal for floats
-        Object parsed = JSON.parse("3.14");
+        Object parsed = Json.parse("3.14");
         assertInstanceOf(BigDecimal.class, parsed);
         assertEquals(new BigDecimal("3.14"), parsed);
     }
@@ -392,7 +392,7 @@ class JSONEdgeCaseTests {
     @Test
     void testRoundTripAllTypes() {
         Map<String, Object> original = new LinkedHashMap<>();
-        original.put("null", JSON.NULL);
+        original.put("null", Json.NULL);
         original.put("boolean", true);
         original.put("number", 42L);
         original.put("float", new BigDecimal("3.14"));
@@ -402,8 +402,8 @@ class JSONEdgeCaseTests {
         original.put("emptyArray", Collections.emptyList());
         original.put("emptyObject", Collections.emptyMap());
 
-        String json = JSON.stringify(original, false);
-        Object parsed = JSON.parse(json);
+        String json = Json.stringify(original, false);
+        Object parsed = Json.parse(json);
         // Compare content
         assertInstanceOf(Map.class, parsed);
         Map<?, ?> parsedMap = (Map<?, ?>) parsed;
@@ -441,8 +441,8 @@ class JSONEdgeCaseTests {
         original.put("emoji", "😀");
         original.put("mixed", "Hello 世界 😀");
 
-        String json = JSON.stringify(original, false);
-        Object parsed = JSON.parse(json);
+        String json = Json.stringify(original, false);
+        Object parsed = Json.parse(json);
         assertEquals(original, parsed);
     }
 
@@ -453,8 +453,8 @@ class JSONEdgeCaseTests {
         original.put("bigint", new BigInteger("123456789012345678901234567890"));
         original.put("bigdecimal", new BigDecimal("1234567890.12345678901234567890"));
 
-        String json = JSON.stringify(original, false);
-        Object parsed = JSON.parse(json, JSON.ParseOptions.defaults().decimalsAsBigDecimal(true));
+        String json = Json.stringify(original, false);
+        Object parsed = Json.parse(json, Json.ParseOptions.defaults().decimalsAsBigDecimal(true));
 
         // Compare values
         Map<?, ?> parsedMap = (Map<?, ?>) parsed;
