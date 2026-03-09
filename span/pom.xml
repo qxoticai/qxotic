@@ -13,9 +13,9 @@
   <description>DEPRECATED: Old tensor implementation - to be ported to Jota architecture</description>
 
   <properties>
-    <maven.compiler.source>24</maven.compiler.source>
-    <maven.compiler.target>24</maven.compiler.target>
-    <maven.compiler.release>24</maven.compiler.release>
+    <maven.compiler.source>25</maven.compiler.source>
+    <maven.compiler.target>25</maven.compiler.target>
+    <maven.compiler.release>25</maven.compiler.release>
   </properties>
 
   <dependencies>

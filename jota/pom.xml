@@ -72,13 +72,7 @@
   <build>
     <pluginManagement>
       <plugins>
-        <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-compiler-plugin</artifactId>
-          <configuration>
-            <release>${maven.compiler.release}</release>
-          </configuration>
-        </plugin>
+
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-surefire-plugin</artifactId>
@@ -349,11 +343,16 @@ exit 1)</argument>
       </build>
     </profile>
 
-    <!-- Backend Matrix Profile: test all available backends -->
+    <!-- All Backends Profile: test all available backends -->
     <profile>
-      <id>backend-matrix</id>
+      <id>all</id>
       <properties>
         <jota.test.backends>available</jota.test.backends>
+        <!-- Enable all backends for testing -->
+        <skipTests.backend.panama>false</skipTests.backend.panama>
+        <skipTests.backend.c>false</skipTests.backend.c>
+        <skipTests.backend.opencl>false</skipTests.backend.opencl>
+        <!-- HIP and Metal are platform-specific, handled by other profiles -->
       </properties>
     </profile>
 
@@ -371,55 +370,25 @@ exit 1)</argument>
       </properties>
     </profile>
     <profile>
-      <id>native-linux-x64</id>
+      <id>native-linux</id>
       <activation>
         <os>
           <name>Linux</name>
-          <arch>amd64</arch>
         </os>
       </activation>
       <properties>
         <os.name>linux</os.name>
-        <os.arch>x86_64</os.arch>
       </properties>
     </profile>
     <profile>
-      <id>native-linux-arm64</id>
+      <id>native-macos</id>
       <activation>
         <os>
-          <name>Linux</name>
-          <arch>aarch64</arch>
-        </os>
-      </activation>
-      <properties>
-        <os.name>linux</os.name>
-        <os.arch>aarch64</os.arch>
-      </properties>
-    </profile>
-    <profile>
-      <id>native-macos-x64</id>
-      <activation>
-        <os>
-          <name>Mac OS X</name>
-          <arch>x86_64</arch>
+          <family>mac</family>
         </os>
       </activation>
       <properties>
         <os.name>macos</os.name>
-        <os.arch>x86_64</os.arch>
-      </properties>
-    </profile>
-    <profile>
-      <id>native-macos-arm64</id>
-      <activation>
-        <os>
-          <name>Mac OS X</name>
-          <arch>aarch64</arch>
-        </os>
-      </activation>
-      <properties>
-        <os.name>macos</os.name>
-        <os.arch>aarch64</os.arch>
       </properties>
     </profile>
 

@@ -34,16 +34,17 @@
   </developers>
 
   <modules>
+    <!-- Core modules (order by dependency) -->
     <module>gguf</module>
-    <module>jota</module>
-    <module>tokenizers</module>
-    <module>safetensors</module>
     <module>json</module>
+    <module>safetensors</module>
+    <module>tokenizers</module>
+    <module>jota</module>
     <module>examples</module>
 
-    <!-- deprecated -->
-    <module>scratch</module>
+    <!-- Deprecated modules -->
     <module>span</module>
+    <module>scratch</module>
   </modules>
 
   <scm>
@@ -105,7 +106,7 @@
     <flatten-maven-plugin.version>1.6.0</flatten-maven-plugin.version>
     <spotless-maven-plugin.version>2.46.1</spotless-maven-plugin.version>
     <google-java-format.version>1.27.0</google-java-format.version>
-    <jacoco-maven-plugin.version>0.8.12</jacoco-maven-plugin.version>
+    <jacoco-maven-plugin.version>0.8.14</jacoco-maven-plugin.version>
     <exec-maven-plugin.version>3.4.1</exec-maven-plugin.version>
   </properties>
 
@@ -166,6 +167,31 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>jota</artifactId>
+        <version>${qxotic.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jota-backend-panama</artifactId>
+        <version>${qxotic.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jota-backend-c</artifactId>
+        <version>${qxotic.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jota-backend-hip</artifactId>
+        <version>${qxotic.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jota-backend-metal</artifactId>
+        <version>${qxotic.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jota-backend-opencl</artifactId>
         <version>${qxotic.version}</version>
       </dependency>
       <dependency>
