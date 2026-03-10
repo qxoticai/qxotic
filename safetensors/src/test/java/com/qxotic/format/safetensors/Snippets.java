@@ -52,8 +52,7 @@ class Snippets {
             throws IOException {
         URL url =
                 new URL(
-                        "https://huggingface.co/%s/%s/resolve/main/%s"
-                                .formatted(user, repo, filename));
+                        String.format("https://huggingface.co/%s/%s/resolve/main/%s", user, repo, filename));
         try (var channel = Channels.newChannel(new BufferedInputStream(url.openStream()))) {
             return Safetensors.read(channel);
         }
