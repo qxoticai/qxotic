@@ -5,13 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.tensor.Tensor;
+import com.qxotic.jota.testutil.PpmWriter;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
 import com.qxotic.jota.testutil.TensorTestReads;
-import java.io.BufferedOutputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.PrintStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
@@ -183,12 +180,7 @@ class NBodySnapshotTest {
 
     private static void writeSnapshotPpm(NBodyState state, float[] mass, Path path)
             throws IOException {
-        Path parent = path.getParent();
-        if (parent != null) {
-            Files.createDirectories(parent);
-        }
-
-        int[] rgb = new int[IMAGE_W * IMAGE_H * 3];
+        byte[] rgb = new byte[IMAGE_W * IMAGE_H * 3];
 
         for (int i = 0; i < state.x.length; i++) {
             int px = worldToPixelX(state.x[i]);
@@ -197,29 +189,10 @@ class NBodySnapshotTest {
             int red = clamp255(180 + Math.round(60.0f * mass[i]));
             int green = clamp255(160 + Math.round(45.0f * (1.5f - mass[i])));
             int blue = 245;
-            drawDisc(rgb, px, py, radius, red, green, blue);
+            drawDisc(rgb, px, py, radius, (byte) red, (byte) green, (byte) blue);
         }
 
-        try (PrintStream out =
-                new PrintStream(new BufferedOutputStream(new FileOutputStream(path.toFile())))) {
-            out.println("P3");
-            out.println(IMAGE_W + " " + IMAGE_H);
-            out.println("255");
-            for (int y = 0; y < IMAGE_H; y++) {
-                for (int x = 0; x < IMAGE_W; x++) {
-                    int idx = (y * IMAGE_W + x) * 3;
-                    out.print(rgb[idx]);
-                    out.print(' ');
-                    out.print(rgb[idx + 1]);
-                    out.print(' ');
-                    out.print(rgb[idx + 2]);
-                    if (x < IMAGE_W - 1) {
-                        out.print(' ');
-                    }
-                }
-                out.println();
-            }
-        }
+        PpmWriter.write(path, IMAGE_W, IMAGE_H, rgb);
     }
 
     private static int worldToPixelX(float x) {
@@ -232,7 +205,7 @@ class NBodySnapshotTest {
         return clampCoord(Math.round(normalized * (IMAGE_H - 1)), IMAGE_H);
     }
 
-    private static void drawDisc(int[] rgb, int cx, int cy, int radius, int r, int g, int b) {
+    private static void drawDisc(byte[] rgb, int cx, int cy, int radius, byte r, byte g, byte b) {
         int r2 = radius * radius;
         for (int dy = -radius; dy <= radius; dy++) {
             for (int dx = -radius; dx <= radius; dx++) {

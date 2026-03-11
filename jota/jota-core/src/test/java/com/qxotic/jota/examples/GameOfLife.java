@@ -8,6 +8,7 @@ import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.tensor.Tensor;
+import com.qxotic.jota.testutil.PpmWriter;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics;
@@ -16,12 +17,8 @@ import java.awt.RenderingHints;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
-import java.io.BufferedOutputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.PrintStream;
 import java.lang.foreign.MemorySegment;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Random;
@@ -642,32 +639,17 @@ public class GameOfLife {
     }
 
     private static void saveFrame(float[] gridData, String filename) throws IOException {
-        Path outputPath = Path.of(filename);
-        Path parent = outputPath.getParent();
-        if (parent != null) {
-            Files.createDirectories(parent);
-        }
-        try (PrintStream out =
-                new PrintStream(new BufferedOutputStream(new FileOutputStream(filename)))) {
-            out.println("P3");
-            out.println(WIDTH + " " + HEIGHT);
-            out.println("255");
-
-            for (int y = 0; y < HEIGHT; y++) {
-                for (int x = 0; x < WIDTH; x++) {
-                    int idx = y * WIDTH + x;
-                    float value = gridData[idx];
-
-                    // Alive = white, Dead = black
-                    int shade = value > 0.5f ? 255 : 0;
-
-                    out.print(shade + " " + shade + " " + shade);
-                    if (x < WIDTH - 1) {
-                        out.print(" ");
-                    }
-                }
-                out.println();
+        byte[] rgb = new byte[WIDTH * HEIGHT * 3];
+        for (int y = 0; y < HEIGHT; y++) {
+            for (int x = 0; x < WIDTH; x++) {
+                int idx = y * WIDTH + x;
+                float value = gridData[idx];
+                byte shade = value > 0.5f ? (byte) 255 : 0;
+                rgb[idx * 3] = shade;
+                rgb[idx * 3 + 1] = shade;
+                rgb[idx * 3 + 2] = shade;
             }
         }
+        PpmWriter.write(Path.of(filename), WIDTH, HEIGHT, rgb);
     }
 }

@@ -11,9 +11,8 @@ import com.qxotic.jota.memory.impl.DomainFactory;
 import com.qxotic.jota.memory.impl.MemoryFactory;
 import com.qxotic.jota.runtime.RuntimeDiagnostic;
 import com.qxotic.jota.tensor.Tensor;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 
 public final class RayTracerFusedDemo {
     private static final String OUTPUT = "render.ppm";
@@ -42,7 +41,8 @@ public final class RayTracerFusedDemo {
                     () -> {
                         try {
                             RenderResult result = render(WIDTH, HEIGHT, 3);
-                            writePpm(OUTPUT, WIDTH, HEIGHT, result);
+                            PpmWriter.write(
+                                    Path.of(OUTPUT), WIDTH, HEIGHT, result.r, result.g, result.b);
                         } catch (IOException e) {
                             throw new RuntimeException(e);
                         }
@@ -217,23 +217,6 @@ public final class RayTracerFusedDemo {
             brefl = broadcast(s.refl, shape).multiply(better).add(brefl.multiply(worse));
         }
         return new Hit(bestT.lessThan(hugeHalf), bx, by, bz, bnx, bny, bnz, bar, bag, bab, brefl);
-    }
-
-    private static void writePpm(String file, int w, int h, RenderResult r) throws IOException {
-        byte[] rgb = new byte[w * h * 3];
-        for (int i = 0; i < w * h; i++) {
-            rgb[i * 3] = toByte(r.r[i]);
-            rgb[i * 3 + 1] = toByte(r.g[i]);
-            rgb[i * 3 + 2] = toByte(r.b[i]);
-        }
-        try (FileOutputStream out = new FileOutputStream(file)) {
-            out.write(("P6\n" + w + " " + h + "\n255\n").getBytes(StandardCharsets.US_ASCII));
-            out.write(rgb);
-        }
-    }
-
-    private static byte toByte(float v) {
-        return (byte) Math.round(Math.max(0, Math.min(1, v)) * 255);
     }
 
     private static float[] toArray(Tensor t) {

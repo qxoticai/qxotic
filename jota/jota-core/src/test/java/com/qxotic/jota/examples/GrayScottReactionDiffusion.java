@@ -8,6 +8,7 @@ import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.tensor.Tensor;
+import com.qxotic.jota.testutil.PpmWriter;
 import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
@@ -15,12 +16,8 @@ import java.awt.RenderingHints;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
-import java.io.BufferedOutputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.PrintStream;
 import java.lang.foreign.MemorySegment;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
@@ -585,41 +582,19 @@ public class GrayScottReactionDiffusion {
     }
 
     private static void saveVisualization(float[] v, String filename) throws IOException {
-        Path outputPath = Path.of(filename);
-        Path parent = outputPath.getParent();
-        if (parent != null) {
-            Files.createDirectories(parent);
-        }
-        try (PrintStream out =
-                new PrintStream(new BufferedOutputStream(new FileOutputStream(filename)))) {
-            out.println("P3");
-            out.println(WIDTH + " " + HEIGHT);
-            out.println("255");
+        byte[] rgb = new byte[WIDTH * HEIGHT * 3];
+        for (int y = 0; y < HEIGHT; y++) {
+            for (int x = 0; x < WIDTH; x++) {
+                int idx = y * WIDTH + x;
+                float value = v[idx];
 
-            for (int y = 0; y < HEIGHT; y++) {
-                for (int x = 0; x < WIDTH; x++) {
-                    int idx = y * WIDTH + x;
-                    float value = v[idx];
-
-                    // Color mapping: V concentration (0 = dark blue, 1 = yellow/orange)
-                    // Using nonlinear mapping for better contrast
-                    double t = value;
-                    int r = (int) (Math.pow(t, 0.5) * 255);
-                    int g = (int) (t * 200);
-                    int b = (int) (Math.pow(1 - t, 2) * 255);
-
-                    r = clamp(r, 0, 255);
-                    g = clamp(g, 0, 255);
-                    b = clamp(b, 0, 255);
-
-                    out.print(r + " " + g + " " + b);
-                    if (x < WIDTH - 1) {
-                        out.print(" ");
-                    }
-                }
-                out.println();
+                double t = value;
+                rgb[idx * 3] = (byte) clamp((int) (Math.pow(t, 0.5) * 255), 0, 255);
+                rgb[idx * 3 + 1] = (byte) clamp((int) (t * 200), 0, 255);
+                rgb[idx * 3 + 2] = (byte) clamp((int) (Math.pow(1 - t, 2) * 255), 0, 255);
             }
         }
+        PpmWriter.write(Path.of(filename), WIDTH, HEIGHT, rgb);
     }
 
     private static int clamp(int value, int min, int max) {

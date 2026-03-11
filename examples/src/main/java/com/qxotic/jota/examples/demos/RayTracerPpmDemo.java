@@ -11,9 +11,8 @@ import com.qxotic.jota.memory.impl.DomainFactory;
 import com.qxotic.jota.memory.impl.MemoryFactory;
 import com.qxotic.jota.runtime.RuntimeDiagnostic;
 import com.qxotic.jota.tensor.Tensor;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 
 public final class RayTracerPpmDemo {
 
@@ -50,7 +49,7 @@ public final class RayTracerPpmDemo {
 
         long start = System.nanoTime();
         RenderResult render = render(width, height, bounces);
-        writePpm(output, width, height, render.r, render.g, render.b);
+        PpmWriter.write(Path.of(output), width, height, render.r, render.g, render.b);
         long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
 
         System.out.println(
@@ -444,29 +443,6 @@ public final class RayTracerPpmDemo {
                 bestCheckerR,
                 bestCheckerG,
                 bestCheckerB);
-    }
-
-    private static void writePpm(
-            String output, int width, int height, float[] r, float[] g, float[] b)
-            throws IOException {
-        byte[] rgb = new byte[width * height * 3];
-        for (int i = 0; i < width * height; i++) {
-            rgb[i * 3] = (byte) toByte(r[i]);
-            rgb[i * 3 + 1] = (byte) toByte(g[i]);
-            rgb[i * 3 + 2] = (byte) toByte(b[i]);
-        }
-
-        try (FileOutputStream out = new FileOutputStream(output)) {
-            out.write(
-                    ("P6\n" + width + " " + height + "\n255\n")
-                            .getBytes(StandardCharsets.US_ASCII));
-            out.write(rgb);
-        }
-    }
-
-    private static int toByte(float v) {
-        float clamped = Math.max(0.0f, Math.min(1.0f, v));
-        return Math.round(clamped * 255.0f);
     }
 
     private static float[] toHostVector(Tensor tensor) {

@@ -7,12 +7,8 @@ import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.tensor.Tensor;
-import java.io.BufferedOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.lang.foreign.MemorySegment;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 public final class TestKernels {
@@ -128,26 +124,22 @@ public final class TestKernels {
             int width,
             int height,
             int iterations) {
-        try {
-            Files.createDirectories(path.getParent());
-            try (OutputStream stream = new BufferedOutputStream(Files.newOutputStream(path))) {
-                writeAscii(stream, "P6\n");
-                writeAscii(stream, width + " " + height + "\n");
-                writeAscii(stream, "255\n");
-
-                MemoryAccess<MemorySegment> access = domain.directAccess();
-                for (int h = 0; h < height; h++) {
-                    for (int w = 0; w < width; w++) {
-                        long idx = (long) h * width + w;
-                        long offset = Indexing.linearToOffset(view, idx);
-                        float iter = access.readFloat(view.memory(), offset);
-                        int[] rgb = mandelbrotColor(iter, iterations);
-                        stream.write(rgb[0]);
-                        stream.write(rgb[1]);
-                        stream.write(rgb[2]);
-                    }
-                }
+        byte[] rgb = new byte[width * height * 3];
+        MemoryAccess<MemorySegment> access = domain.directAccess();
+        for (int h = 0; h < height; h++) {
+            for (int w = 0; w < width; w++) {
+                long idx = (long) h * width + w;
+                long offset = Indexing.linearToOffset(view, idx);
+                float iter = access.readFloat(view.memory(), offset);
+                int[] color = mandelbrotColor(iter, iterations);
+                int i = (int) idx * 3;
+                rgb[i] = (byte) color[0];
+                rgb[i + 1] = (byte) color[1];
+                rgb[i + 2] = (byte) color[2];
             }
+        }
+        try {
+            PpmWriter.write(path, width, height, rgb);
         } catch (IOException e) {
             throw new RuntimeException("Failed to write PPM to " + path, e);
         }
@@ -162,9 +154,5 @@ public final class TestKernels {
         int g = (int) (15 * (1 - t) * (1 - t) * t * t * 255);
         int b = (int) (8.5 * (1 - t) * (1 - t) * (1 - t) * t * 255);
         return new int[] {r, g, b};
-    }
-
-    private static void writeAscii(OutputStream stream, String value) throws IOException {
-        stream.write(value.getBytes(StandardCharsets.US_ASCII));
     }
 }
