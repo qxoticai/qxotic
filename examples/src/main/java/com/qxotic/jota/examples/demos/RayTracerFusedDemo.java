@@ -293,9 +293,12 @@ public final class RayTracerFusedDemo {
             case "c" -> Device.C;
             case "hip" -> Device.HIP;
             case "opencl", "cl" -> Device.OPENCL;
+            case "mojo" -> Device.MOJO;
             default ->
                     throw new IllegalArgumentException(
-                            "Unsupported --device: " + value + " (use native|panama|c|hip|opencl)");
+                            "Unsupported --device: "
+                                    + value
+                                    + " (use native|panama|c|hip|opencl|mojo)");
         };
     }
 
