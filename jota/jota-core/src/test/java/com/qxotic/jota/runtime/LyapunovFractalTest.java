@@ -11,13 +11,10 @@ import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.tensor.Tensor;
+import com.qxotic.jota.testutil.PpmWriter;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
-import java.io.BufferedOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.lang.foreign.MemorySegment;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -118,20 +115,16 @@ class LyapunovFractalTest {
             maxAbs = Math.max(maxAbs, Math.abs(value));
         }
 
+        byte[] rgb = new byte[width * height * 3];
+        for (int i = 0; i < width * height; i++) {
+            float value = access.readFloat(view.memory(), Indexing.linearToOffset(view, i));
+            int[] color = lyapunovColor(value, maxAbs);
+            rgb[i * 3] = (byte) color[0];
+            rgb[i * 3 + 1] = (byte) color[1];
+            rgb[i * 3 + 2] = (byte) color[2];
+        }
         try {
-            Files.createDirectories(path.getParent());
-            try (OutputStream stream = new BufferedOutputStream(Files.newOutputStream(path))) {
-                writeAscii(stream, "P6\n");
-                writeAscii(stream, width + " " + height + "\n");
-                writeAscii(stream, "255\n");
-                for (int i = 0; i < width * height; i++) {
-                    float value = access.readFloat(view.memory(), Indexing.linearToOffset(view, i));
-                    int[] rgb = lyapunovColor(value, maxAbs);
-                    stream.write(rgb[0]);
-                    stream.write(rgb[1]);
-                    stream.write(rgb[2]);
-                }
-            }
+            PpmWriter.writeP6(path, width, height, rgb);
         } catch (IOException e) {
             throw new RuntimeException("Failed to write Lyapunov PPM to " + path, e);
         }
@@ -151,10 +144,6 @@ class LyapunovFractalTest {
         int g = (int) Math.round(35 + 85 * t);
         int b = (int) Math.round(18 + 45 * t);
         return new int[] {r, g, b};
-    }
-
-    private static void writeAscii(OutputStream stream, String value) throws IOException {
-        stream.write(value.getBytes(StandardCharsets.US_ASCII));
     }
 
     @SuppressWarnings("unchecked")

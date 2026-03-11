@@ -6,11 +6,10 @@ import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.Tracer;
-import java.io.BufferedOutputStream;
-import java.io.FileOutputStream;
+import com.qxotic.jota.testutil.PpmWriter;
 import java.io.IOException;
-import java.io.PrintStream;
 import java.lang.foreign.MemorySegment;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import org.junit.jupiter.api.Test;
@@ -47,7 +46,7 @@ public class MandelbrotDemo {
                 new Environment(backend, current.defaultFloat(), current.runtimes());
 
         long start = System.currentTimeMillis();
-        int[][] rgb =
+        byte[] rgb =
                 Environment.with(
                         backendEnv,
                         () -> {
@@ -73,7 +72,7 @@ public class MandelbrotDemo {
                         + ")");
 
         String filename = "mandelbrot-" + backend.leafName() + ".ppm";
-        writePPM(filename, rgb, WIDTH, HEIGHT);
+        PpmWriter.write(Path.of(filename), WIDTH, HEIGHT, rgb);
     }
 
     @Test
@@ -233,26 +232,16 @@ public class MandelbrotDemo {
      * Converts iteration counts to RGB colors.
      *
      * @param iterations tensor of iteration counts
-     * @return 2D array [HEIGHT*WIDTH][3] of RGB values (0-255)
+     * @return byte array of RGB values (0-255) in binary format
      */
     @SuppressWarnings("unchecked")
-    private static int[][] toRGB(Tensor iterations) {
+    private static byte[] toRGB(Tensor iterations) {
         MemoryView<MemorySegment> typedView = toNativeHostView(iterations.materialize());
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>) Environment.current().nativeRuntime().memoryDomain();
         MemoryAccess<MemorySegment> access = domain.directAccess();
 
-        // Check iteration value range
-        float minIter = Float.MAX_VALUE;
-        float maxIter = Float.MIN_VALUE;
-        for (int i = 0; i < HEIGHT * WIDTH; i++) {
-            long off = Indexing.linearToOffset(typedView, i);
-            float val = access.readFloat(typedView.memory(), off);
-            minIter = Math.min(minIter, val);
-            maxIter = Math.max(maxIter, val);
-        }
-
-        int[][] rgb = new int[HEIGHT * WIDTH][3];
+        byte[] rgb = new byte[HEIGHT * WIDTH * 3];
 
         for (int h = 0; h < HEIGHT; h++) {
             for (int w = 0; w < WIDTH; w++) {
@@ -261,16 +250,14 @@ public class MandelbrotDemo {
                 float iter = access.readFloat(typedView.memory(), offset);
 
                 if (iter >= MAX_ITER - 1) {
-                    // Point is in the Mandelbrot set - color it black
-                    rgb[idx][0] = 0;
-                    rgb[idx][1] = 0;
-                    rgb[idx][2] = 0;
+                    rgb[idx * 3] = 0;
+                    rgb[idx * 3 + 1] = 0;
+                    rgb[idx * 3 + 2] = 0;
                 } else {
-                    // Color based on iteration count (smooth coloring)
                     double t = iter / MAX_ITER;
-                    rgb[idx][0] = (int) (9 * (1 - t) * t * t * t * 255);
-                    rgb[idx][1] = (int) (15 * (1 - t) * (1 - t) * t * t * 255);
-                    rgb[idx][2] = (int) (8.5 * (1 - t) * (1 - t) * (1 - t) * t * 255);
+                    rgb[idx * 3] = (byte) (9 * (1 - t) * t * t * t * 255);
+                    rgb[idx * 3 + 1] = (byte) (15 * (1 - t) * (1 - t) * t * t * 255);
+                    rgb[idx * 3 + 2] = (byte) (8.5 * (1 - t) * (1 - t) * (1 - t) * t * 255);
                 }
             }
         }
@@ -314,68 +301,5 @@ public class MandelbrotDemo {
                                     + "'. Use one of: native, panama, java-aot, c, hip, opencl,"
                                     + " metal, mojo");
         };
-    }
-
-    private static int[][] toRGB(float[] iterations) {
-        int[][] rgb = new int[HEIGHT * WIDTH][3];
-
-        float minIter = Float.MAX_VALUE;
-        float maxIter = Float.MIN_VALUE;
-        for (float iter : iterations) {
-            minIter = Math.min(minIter, iter);
-            maxIter = Math.max(maxIter, iter);
-        }
-        System.out.println("Java iteration range: " + minIter + " to " + maxIter);
-
-        for (int h = 0; h < HEIGHT; h++) {
-            for (int w = 0; w < WIDTH; w++) {
-                int idx = h * WIDTH + w;
-                float iter = iterations[idx];
-
-                if (iter >= MAX_ITER - 1) {
-                    rgb[idx][0] = 0;
-                    rgb[idx][1] = 0;
-                    rgb[idx][2] = 0;
-                } else {
-                    double t = iter / MAX_ITER;
-                    rgb[idx][0] = (int) (9 * (1 - t) * t * t * t * 255);
-                    rgb[idx][1] = (int) (15 * (1 - t) * (1 - t) * t * t * 255);
-                    rgb[idx][2] = (int) (8.5 * (1 - t) * (1 - t) * (1 - t) * t * 255);
-                }
-            }
-        }
-
-        return rgb;
-    }
-
-    /**
-     * Writes an image in PPM (Portable Pixmap) format.
-     *
-     * @param filename output filename
-     * @param rgb pixel colors as [index][r,g,b]
-     * @param width image width
-     * @param height image height
-     */
-    private static void writePPM(String filename, int[][] rgb, int width, int height)
-            throws IOException {
-        try (PrintStream out =
-                new PrintStream(new BufferedOutputStream(new FileOutputStream(filename)))) {
-            // PPM header
-            out.println("P3");
-            out.println(width + " " + height);
-            out.println("255");
-
-            // Pixel data
-            for (int h = 0; h < height; h++) {
-                for (int w = 0; w < width; w++) {
-                    int idx = h * width + w;
-                    out.print(rgb[idx][0] + " " + rgb[idx][1] + " " + rgb[idx][2]);
-                    if (w < width - 1) {
-                        out.print(" ");
-                    }
-                }
-                out.println();
-            }
-        }
     }
 }

@@ -19,7 +19,9 @@ public class UtilitySnippets {
             throws IOException {
         URL url =
                 new URL(
-                        String.format("https://huggingface.co/%s/%s/resolve/main/%s", user, repo, filename));
+                        String.format(
+                                "https://huggingface.co/%s/%s/resolve/main/%s",
+                                user, repo, filename));
         try (ReadableByteChannel channel =
                 Channels.newChannel(new BufferedInputStream(url.openStream()))) {
             return GGUF.read(channel);
