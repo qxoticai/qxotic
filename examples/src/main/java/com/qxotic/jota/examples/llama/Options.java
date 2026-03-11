@@ -183,8 +183,9 @@ final class Options {
             case "c" -> Device.C;
             case "hip" -> Device.HIP;
             case "opencl", "ocl" -> Device.OPENCL;
-            default -> throw new IllegalArgumentException(
-                    "Unsupported --device value: " + value + " (use panama|c|hip|opencl)");
+            default ->
+                    throw new IllegalArgumentException(
+                            "Unsupported --device value: " + value + " (use panama|c|hip|opencl)");
         };
     }
 

@@ -251,7 +251,6 @@ public class MandelbrotDemo {
             minIter = Math.min(minIter, val);
             maxIter = Math.max(maxIter, val);
         }
-        System.out.println("Iteration range: " + minIter + " to " + maxIter);
 
         int[][] rgb = new int[HEIGHT * WIDTH][3];
 
@@ -303,7 +302,6 @@ public class MandelbrotDemo {
         String normalized = requested.trim().toLowerCase(Locale.ROOT);
         return switch (normalized) {
             case "panama", "native-panama" -> Device.PANAMA;
-            case "java-aot" -> Device.JAVA_AOT;
             case "c" -> Device.C;
             case "hip" -> Device.HIP;
             case "opencl" -> Device.OPENCL;

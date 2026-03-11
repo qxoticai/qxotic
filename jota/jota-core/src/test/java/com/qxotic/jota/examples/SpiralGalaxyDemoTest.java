@@ -17,6 +17,8 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
 @RunOnAllAvailableBackends
@@ -85,6 +87,11 @@ class SpiralGalaxyDemoTest {
     private static void writePPM(MemoryView<?> view, String filename) throws IOException {
         MemoryView<?> hostView = Tensor.of(view).to(Device.NATIVE).materialize();
         MemorySegment segment = (MemorySegment) hostView.memory().base();
+        Path outputPath = Path.of(filename);
+        Path parent = outputPath.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
         try (PrintStream out =
                 new PrintStream(new BufferedOutputStream(new FileOutputStream(filename)))) {
             out.println("P3");

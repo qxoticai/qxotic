@@ -21,6 +21,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.lang.foreign.MemorySegment;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
@@ -65,6 +67,8 @@ public class GameOfLife {
     // Simulation parameters
     private static final int MAX_ITER = 20000;
     private static final int SAVE_EVERY = 20;
+    private static final boolean SAVE_INTERMEDIATE_FRAMES =
+            Boolean.getBoolean("jota.examples.saveIntermediateFrames");
     private static final int CONSOLE_EVERY = 1;
     private static final int CONSOLE_DELAY_MS = 35;
 
@@ -151,22 +155,27 @@ public class GameOfLife {
     @Test
     void testGameOfLifeRandom() throws IOException {
         System.out.println("\n=== Testing Game of Life - Random ===");
-        runSimulation(Pattern.RANDOM, RenderMode.PPM);
+        runSimulation(Pattern.RANDOM, RenderMode.PPM, 200);
     }
 
     @Test
     void testGameOfLifeGlider() throws IOException {
         System.out.println("\n=== Testing Game of Life - Glider ===");
-        runSimulation(Pattern.GLIDER, RenderMode.PPM);
+        runSimulation(Pattern.GLIDER, RenderMode.PPM, 200);
     }
 
     @Test
     void testGameOfLifeGliderGun() throws IOException {
         System.out.println("\n=== Testing Game of Life - Glider Gun ===");
-        runSimulation(Pattern.GLIDER_GUN, RenderMode.PPM);
+        runSimulation(Pattern.GLIDER_GUN, RenderMode.PPM, 200);
     }
 
     private static void runSimulation(Pattern pattern, RenderMode renderMode) throws IOException {
+        runSimulation(pattern, renderMode, MAX_ITER);
+    }
+
+    private static void runSimulation(Pattern pattern, RenderMode renderMode, int iterations)
+            throws IOException {
         Shape shape = Shape.of(HEIGHT, WIDTH);
 
         // Initialize grid based on pattern
@@ -182,7 +191,7 @@ public class GameOfLife {
             swingRenderer = new SwingRenderer(WIDTH, HEIGHT, "Game of Life");
         }
 
-        for (int iter = 0; iter < MAX_ITER; iter++) {
+        for (int iter = 0; iter < iterations; iter++) {
             // Create tensor from current grid
             Tensor grid = Tensor.of(gridData.clone(), shape);
 
@@ -217,6 +226,7 @@ public class GameOfLife {
 
             // Save intermediate frames
             if ((renderMode == RenderMode.PPM || renderMode == RenderMode.BOTH)
+                    && SAVE_INTERMEDIATE_FRAMES
                     && iter % SAVE_EVERY == 0) {
                 String filename =
                         String.format("target/gameoflife-%s-%04d.ppm", pattern.name, iter);
@@ -234,7 +244,7 @@ public class GameOfLife {
         }
 
         if (renderMode == RenderMode.CONSOLE || renderMode == RenderMode.BOTH) {
-            renderConsole(gridData, MAX_ITER, pattern);
+            renderConsole(gridData, iterations, pattern);
             System.out.print("\033[?25h");
         }
 
@@ -244,7 +254,7 @@ public class GameOfLife {
             System.out.println("Saved: " + finalFilename);
         }
         if (renderMode == RenderMode.SWING) {
-            swingRenderer.renderColored(gridData, ageData, MAX_ITER, pattern.name);
+            swingRenderer.renderColored(gridData, ageData, iterations, pattern.name);
             swingRenderer.waitUntilClosed();
         }
     }
@@ -632,6 +642,11 @@ public class GameOfLife {
     }
 
     private static void saveFrame(float[] gridData, String filename) throws IOException {
+        Path outputPath = Path.of(filename);
+        Path parent = outputPath.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
         try (PrintStream out =
                 new PrintStream(new BufferedOutputStream(new FileOutputStream(filename)))) {
             out.println("P3");
