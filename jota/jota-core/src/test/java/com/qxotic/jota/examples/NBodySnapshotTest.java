@@ -11,6 +11,7 @@ import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
@@ -182,6 +183,11 @@ class NBodySnapshotTest {
 
     private static void writeSnapshotPpm(NBodyState state, float[] mass, Path path)
             throws IOException {
+        Path parent = path.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+
         int[] rgb = new int[IMAGE_W * IMAGE_H * 3];
 
         for (int i = 0; i < state.x.length; i++) {

@@ -20,6 +20,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.lang.foreign.MemorySegment;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -60,6 +62,8 @@ public class GrayScottReactionDiffusion {
     // Simulation parameters
     private static final int MAX_ITER = 500000;
     private static final int SAVE_EVERY = 1000;
+    private static final boolean SAVE_INTERMEDIATE_FRAMES =
+            Boolean.getBoolean("jota.examples.saveIntermediateFrames");
     private static final int CONSOLE_EVERY = 20;
     private static final int CONSOLE_DELAY_MS = 20;
 
@@ -154,22 +158,27 @@ public class GrayScottReactionDiffusion {
     @Test
     void testGrayScottCoral() throws IOException {
         System.out.println("\n=== Testing Gray-Scott Coral Pattern ===");
-        runSimulation(Pattern.CORAL, RenderMode.PPM);
+        runSimulation(Pattern.CORAL, RenderMode.PPM, 500);
     }
 
     @Test
     void testGrayScottFingerprint() throws IOException {
         System.out.println("\n=== Testing Gray-Scott Fingerprint Pattern ===");
-        runSimulation(Pattern.FINGERPRINT, RenderMode.PPM);
+        runSimulation(Pattern.FINGERPRINT, RenderMode.PPM, 500);
     }
 
     @Test
     void testGrayScottSpots() throws IOException {
         System.out.println("\n=== Testing Gray-Scott Spots Pattern ===");
-        runSimulation(Pattern.SPOTS, RenderMode.PPM);
+        runSimulation(Pattern.SPOTS, RenderMode.PPM, 500);
     }
 
     private static void runSimulation(Pattern pattern, RenderMode renderMode) throws IOException {
+        runSimulation(pattern, renderMode, MAX_ITER);
+    }
+
+    private static void runSimulation(Pattern pattern, RenderMode renderMode, int iterations)
+            throws IOException {
         Shape shape = Shape.of(HEIGHT, WIDTH);
 
         // Initialize U and V with seed in center
@@ -215,7 +224,7 @@ public class GrayScottReactionDiffusion {
         }
 
         // Run simulation
-        for (int iter = 0; iter < MAX_ITER; iter++) {
+        for (int iter = 0; iter < iterations; iter++) {
             // Compute laplacians using Java (simpler and faster for 5-point stencil)
             float[] lapU = computeLaplacianJava(u);
             float[] lapV = computeLaplacianJava(v);
@@ -252,6 +261,7 @@ public class GrayScottReactionDiffusion {
 
             // Save intermediate frames
             if ((renderMode == RenderMode.PPM || renderMode == RenderMode.BOTH)
+                    && SAVE_INTERMEDIATE_FRAMES
                     && iter > 0
                     && iter % SAVE_EVERY == 0) {
                 String filename = String.format("target/grayscott-%s-%05d.ppm", pattern.name, iter);
@@ -270,7 +280,7 @@ public class GrayScottReactionDiffusion {
         }
 
         if (renderMode == RenderMode.CONSOLE || renderMode == RenderMode.BOTH) {
-            renderConsole(v, MAX_ITER, pattern);
+            renderConsole(v, iterations, pattern);
             System.out.print("\033[?25h");
         }
 
@@ -281,7 +291,7 @@ public class GrayScottReactionDiffusion {
         }
         if (renderMode == RenderMode.SWING) {
             swingRenderer.renderField(
-                    v, MAX_ITER, pattern.name, pattern.feedRate, pattern.killRate);
+                    v, iterations, pattern.name, pattern.feedRate, pattern.killRate);
             swingRenderer.waitUntilClosed();
         }
     }
@@ -575,6 +585,11 @@ public class GrayScottReactionDiffusion {
     }
 
     private static void saveVisualization(float[] v, String filename) throws IOException {
+        Path outputPath = Path.of(filename);
+        Path parent = outputPath.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
         try (PrintStream out =
                 new PrintStream(new BufferedOutputStream(new FileOutputStream(filename)))) {
             out.println("P3");

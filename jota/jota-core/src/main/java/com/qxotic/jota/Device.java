@@ -27,7 +27,6 @@ public interface Device {
     Device NATIVE = CPU.child("native"); // Alias resolved to PANAMA or C at runtime
     Device JAVA = CPU.child("java"); // Java array-backed memory
     Device PANAMA = CPU.child("panama"); // MemorySegment-backed memory
-    Device JAVA_AOT = CPU.child("java-aot");
     Device C = CPU.child("c");
 
     Device CUDA = GPU.child("cuda");
