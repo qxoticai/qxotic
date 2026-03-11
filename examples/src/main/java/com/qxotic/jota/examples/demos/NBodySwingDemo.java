@@ -440,7 +440,7 @@ public final class NBodySwingDemo {
             // This prevents the mouse position from being embedded as constants
             float[] axHost = toHostVector(ax);
             float[] ayHost = toHostVector(ay);
-            
+
             // Get current positions and velocities
             float[] xArr = toHostVector(x);
             float[] yArr = toHostVector(y);
@@ -467,7 +467,7 @@ public final class NBodySwingDemo {
                     vyArr[i] += (targetVy - vyArr[i]) * dt * 1.8f;
                 }
             }
-            
+
             // Update velocities and positions
             for (int i = 0; i < count; i++) {
                 vxArr[i] += axHost[i] * dt;

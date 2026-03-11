@@ -20,6 +20,7 @@ public final class ConfiguredTestDevice {
             case "panama" -> Device.PANAMA;
             case "c" -> Device.C;
             case "hip" -> Device.HIP;
+            case "mojo" -> Device.MOJO;
             case "opencl" -> Device.OPENCL;
             case "metal" -> Device.METAL;
             default ->
@@ -28,7 +29,8 @@ public final class ConfiguredTestDevice {
                                     + TEST_DEVICE_PROPERTY
                                     + "='"
                                     + raw
-                                    + "'. Supported values: native, panama, c, hip, opencl, metal");
+                                    + "'. Supported values: native, panama, c, hip, mojo, opencl,"
+                                    + " metal");
         };
     }
 }

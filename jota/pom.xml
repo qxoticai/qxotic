@@ -20,6 +20,7 @@
     <module>jota-backend-c</module>
     <module>jota-graal</module>
     <module>jota-backend-hip</module>
+    <module>jota-backend-mojo</module>
     <module>jota-backend-metal</module>
     <module>jota-backend-opencl</module>
   </modules>
@@ -39,12 +40,14 @@
     <skipTests.backend.c>true</skipTests.backend.c>
     <skipTests.backend.panama>true</skipTests.backend.panama>
     <skipTests.backend.hip>true</skipTests.backend.hip>
+    <skipTests.backend.mojo>true</skipTests.backend.mojo>
     <skipTests.backend.metal>true</skipTests.backend.metal>
     <skipTests.backend.opencl>true</skipTests.backend.opencl>
 
     <!-- Native build skipping (all disabled by default) -->
     <skipNative.backend.c>true</skipNative.backend.c>
     <skipNative.backend.hip>true</skipNative.backend.hip>
+    <skipNative.backend.mojo>true</skipNative.backend.mojo>
     <skipNative.backend.metal>true</skipNative.backend.metal>
     <skipNative.backend.opencl>true</skipNative.backend.opencl>
 
@@ -240,6 +243,49 @@ echo "[ERROR]   Ubuntu 22.04: https://rocm.docs.amd.com/projects/install-on-linu
 echo "[ERROR]   RHEL/Rocky: https://rocm.docs.amd.com/projects/install-on-linux/en/latest/tutorial/quick-start.html#rhel" &amp;&amp;
 echo "[ERROR]   Ensure ROCM_PATH is set (e.g., /opt/rocm)" &amp;&amp;
 echo "[ERROR]   Add to PATH: export PATH=\$ROCM_PATH/bin:\$PATH" &amp;&amp;
+exit 1)</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <!-- Mojo Backend Profile -->
+    <profile>
+      <id>mojo</id>
+      <properties>
+        <jota.test.device>mojo</jota.test.device>
+        <jota.test.backends>single</jota.test.backends>
+        <jota.native.backend>panama</jota.native.backend>
+        <skipTests.backend.core>true</skipTests.backend.core>
+        <skipTests.backend.mojo>false</skipTests.backend.mojo>
+        <skipNative.backend.mojo>false</skipNative.backend.mojo>
+        <skipNative.backend.hip>false</skipNative.backend.hip>
+      </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>check-toolchain-mojo</id>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <phase>validate</phase>
+                <configuration>
+                  <skip>${skipNative.backend.mojo}</skip>
+                  <executable>/bin/sh</executable>
+                  <arguments>
+                    <argument>-c</argument>
+                    <argument>command -v hipcc &amp;&amp; command -v mojo &amp;&amp; exit 0 ||
+                                            (echo "[ERROR] mojo profile requires both hipcc and mojo in PATH" &amp;&amp;
+echo "[ERROR] activate your virtualenv and ROCm toolchain first" &amp;&amp;
+echo "[ERROR] example: source .venv/bin/activate" &amp;&amp;
 exit 1)</argument>
                   </arguments>
                 </configuration>
