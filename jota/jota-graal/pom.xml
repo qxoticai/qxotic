@@ -39,5 +39,10 @@
       <artifactId>jota-backend-opencl</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-backend-mojo</artifactId>
+      <version>${project.version}</version>
+    </dependency>
   </dependencies>
 </project>

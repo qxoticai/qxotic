@@ -397,7 +397,12 @@ exit 1)</argument>
         <!-- Enable all backends for testing -->
         <skipTests.backend.panama>false</skipTests.backend.panama>
         <skipTests.backend.c>false</skipTests.backend.c>
+        <skipTests.backend.mojo>false</skipTests.backend.mojo>
         <skipTests.backend.opencl>false</skipTests.backend.opencl>
+        <skipNative.backend.c>false</skipNative.backend.c>
+        <skipNative.backend.opencl>false</skipNative.backend.opencl>
+        <skipNative.backend.mojo>false</skipNative.backend.mojo>
+        <skipNative.backend.hip>false</skipNative.backend.hip>
         <!-- HIP and Metal are platform-specific, handled by other profiles -->
       </properties>
     </profile>
