@@ -308,12 +308,13 @@ public class MandelbrotDemo {
             case "hip" -> Device.HIP;
             case "opencl" -> Device.OPENCL;
             case "metal" -> Device.METAL;
+            case "mojo" -> Device.MOJO;
             default ->
                     throw new IllegalArgumentException(
                             "Unknown backend '"
                                     + requested
                                     + "'. Use one of: native, panama, java-aot, c, hip, opencl,"
-                                    + " metal");
+                                    + " metal, mojo");
         };
     }
 

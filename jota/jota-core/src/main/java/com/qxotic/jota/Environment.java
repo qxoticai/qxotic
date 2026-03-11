@@ -205,14 +205,15 @@ public final class Environment {
             case "panama", "jvm", "ffm" -> Device.PANAMA;
             case "c" -> Device.C;
             case "hip" -> Device.HIP;
+            case "mojo" -> Device.MOJO;
             case "opencl" -> Device.OPENCL;
             case "metal" -> Device.METAL;
             default ->
                     throw new IllegalArgumentException(
                             "Unsupported jota.native.backend='"
                                     + rawValue
-                                    + "'. Supported values: auto, native, panama, c, hip, opencl,"
-                                    + " metal");
+                                    + "'. Supported values: auto, native, panama, c, hip, mojo,"
+                                    + " opencl, metal");
         };
     }
 
@@ -351,7 +352,7 @@ public final class Environment {
         message.append('\n')
                 .append(
                         "- Explicit backend override: -Djota.native.backend=<backend-id>"
-                                + " (e.g. panama, c, hip, opencl, metal)");
+                                + " (e.g. panama, c, hip, mojo, opencl, metal)");
         message.append('\n')
                 .append("- Ensure required backends are allowed by include/exclude filters");
         message.append('\n')
