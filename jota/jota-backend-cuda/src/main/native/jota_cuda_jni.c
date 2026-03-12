@@ -154,7 +154,20 @@ static cudaError_t cudaMemsetD16Compat(void *dst, unsigned short value, size_t e
 }
 
 static cudaError_t cudaMemsetD32Compat(void *dst, unsigned int value, size_t elementCount) {
-  return cudaMemsetD32(dst, (unsigned int)value, elementCount);
+  if (elementCount == 0) {
+    return cudaSuccess;
+  }
+  size_t bytes = elementCount * sizeof(unsigned int);
+  unsigned int *host = (unsigned int *)malloc(bytes);
+  if (host == NULL) {
+    return cudaErrorMemoryAllocation;
+  }
+  for (size_t i = 0; i < elementCount; i++) {
+    host[i] = value;
+  }
+  cudaError_t st = cudaMemcpy(dst, host, bytes, cudaMemcpyHostToDevice);
+  free(host);
+  return st;
 }
 #endif
 
@@ -300,7 +313,7 @@ JNIEXPORT jstring JNICALL Java_com_qxotic_jota_runtime_cuda_CudaRuntime_nativeDe
   (JNIEnv *env, jclass cls, jint deviceIndex) {
   (void)cls;
 #if __has_include(<cuda_runtime_api.h>) && __has_include(<cuda.h>)
-  cudaDeviceProp props;
+  struct cudaDeviceProp props;
   memset(&props, 0, sizeof(props));
   cudaError_t status = cudaGetDeviceProperties(&props, (int)deviceIndex);
   if (status != cudaSuccess) {
