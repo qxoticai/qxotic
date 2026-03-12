@@ -61,8 +61,9 @@ typedef struct JNINativeInterface_ {
 #else
 typedef int cudaError_t;
 typedef void *cudaStream_t;
-typedef void *cudaModule_t;
-typedef void *cudaFunction_t;
+typedef void *CUmodule;
+typedef void *CUfunction;
+typedef void *CUstream;
 #define cudaSuccess 0
 #define cudaMemcpyHostToDevice 0
 #define cudaMemcpyDeviceToHost 1
@@ -83,31 +84,29 @@ static int ensureCudaDriverInit(void) {
   return 1;
 }
 
-static cudaError_t cudaModuleLoadData(cudaModule_t *module, void *image) {
+static cudaError_t jotaCudaModuleLoad(CUmodule *module, const void *image) {
   if (!ensureCudaDriverInit()) {
     return cudaErrorUnknown;
   }
-  return cuModuleLoadData((CUmodule *)module, image) == CUDA_SUCCESS ? cudaSuccess : cudaErrorUnknown;
+  return cuModuleLoadData(module, image) == CUDA_SUCCESS ? cudaSuccess : cudaErrorUnknown;
 }
 
-static cudaError_t cudaModuleUnload(cudaModule_t module) {
+static cudaError_t jotaCudaModuleUnload(CUmodule module) {
   if (!ensureCudaDriverInit()) {
     return cudaErrorUnknown;
   }
-  return cuModuleUnload((CUmodule)module) == CUDA_SUCCESS ? cudaSuccess : cudaErrorUnknown;
+  return cuModuleUnload(module) == CUDA_SUCCESS ? cudaSuccess : cudaErrorUnknown;
 }
 
-static cudaError_t cudaModuleGetFunction(cudaFunction_t *function, cudaModule_t module, const char *name) {
+static cudaError_t jotaCudaModuleGetFunction(CUfunction *function, CUmodule module, const char *name) {
   if (!ensureCudaDriverInit()) {
     return cudaErrorUnknown;
   }
-  return cuModuleGetFunction((CUfunction *)function, (CUmodule)module, name) == CUDA_SUCCESS
-             ? cudaSuccess
-             : cudaErrorUnknown;
+  return cuModuleGetFunction(function, module, name) == CUDA_SUCCESS ? cudaSuccess : cudaErrorUnknown;
 }
 
-static cudaError_t cudaModuleLaunchKernel(
-    cudaFunction_t function,
+static cudaError_t jotaCudaModuleLaunchKernel(
+    CUfunction function,
     unsigned int gridDimX,
     unsigned int gridDimY,
     unsigned int gridDimZ,
@@ -121,7 +120,7 @@ static cudaError_t cudaModuleLaunchKernel(
   if (!ensureCudaDriverInit()) {
     return cudaErrorUnknown;
   }
-  return cuLaunchKernel((CUfunction)function,
+  return cuLaunchKernel(function,
                         gridDimX,
                         gridDimY,
                         gridDimZ,
@@ -344,8 +343,8 @@ JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_cuda_CudaRuntime_loadModule
     throwRuntime(env, "Failed to read PTX bytes");
     return 0;
   }
-  cudaModule_t module;
-  cudaError_t status = cudaModuleLoadData(&module, (void *)bytes);
+  CUmodule module;
+  cudaError_t status = jotaCudaModuleLoad(&module, (const void *)bytes);
   (*env)->ReleaseByteArrayElements(env, ptx, bytes, JNI_ABORT);
   checkCuda(env, status, "cudaModuleLoadData failed");
   return (jlong)(uintptr_t)module;
@@ -360,8 +359,8 @@ JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_cuda_CudaRuntime_unloadModul
   (JNIEnv *env, jclass cls, jlong moduleHandle) {
   (void)cls;
 #if __has_include(<cuda_runtime_api.h>) && __has_include(<cuda.h>)
-  cudaModule_t module = (cudaModule_t)(uintptr_t)moduleHandle;
-  cudaError_t status = cudaModuleUnload(module);
+  CUmodule module = (CUmodule)(uintptr_t)moduleHandle;
+  cudaError_t status = jotaCudaModuleUnload(module);
   checkCuda(env, status, "cudaModuleUnload failed");
 #else
   (void)env;
@@ -382,9 +381,9 @@ JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_cuda_CudaRuntime_getFunctio
     throwRuntime(env, "Failed to read kernel name");
     return 0;
   }
-  cudaFunction_t function;
-  cudaModule_t module = (cudaModule_t)(uintptr_t)moduleHandle;
-  cudaError_t status = cudaModuleGetFunction(&function, module, nameChars);
+  CUfunction function;
+  CUmodule module = (CUmodule)(uintptr_t)moduleHandle;
+  cudaError_t status = jotaCudaModuleGetFunction(&function, module, nameChars);
   (*env)->ReleaseStringUTFChars(env, name, nameChars);
   checkCuda(env, status, "cudaModuleGetFunction failed");
   return (jlong)(uintptr_t)function;
@@ -401,11 +400,11 @@ JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_cuda_CudaRuntime_launchKerne
    jint blockDimX, jint blockDimY, jint blockDimZ, jint sharedMemBytes, jlong streamHandle,
    jlong argsHandle) {
 #if __has_include(<cuda_runtime_api.h>) && __has_include(<cuda.h>)
-  cudaFunction_t function = (cudaFunction_t)(uintptr_t)functionHandle;
+  CUfunction function = (CUfunction)(uintptr_t)functionHandle;
   cudaStream_t stream = (cudaStream_t)(uintptr_t)streamHandle;
   ArgsPack *pack = (ArgsPack *)(uintptr_t)argsHandle;
   void **args = pack != NULL ? pack->params : NULL;
-  cudaError_t status = cudaModuleLaunchKernel(
+  cudaError_t status = jotaCudaModuleLaunchKernel(
       function,
       gridDimX,
       gridDimY,
