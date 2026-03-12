@@ -42,8 +42,7 @@ public final class Mandelbrot {
                         backendEnv,
                         () -> {
                             Tensor iterations =
-                                    Tracer.trace(
-                                            List.of(), inputs -> computeMandelbrotPureTensor());
+                                    Tracer.trace(List.of(), inputs -> computeMandelbrot());
                             return toRGB(iterations);
                         });
         long elapsed = System.currentTimeMillis() - start;
@@ -69,7 +68,7 @@ public final class Mandelbrot {
         return Tensor.iota(count, DataType.FP32).multiply(step).add(start);
     }
 
-    private static Tensor computeMandelbrotPureTensor() {
+    private static Tensor computeMandelbrot() {
         Shape image = Shape.of(HEIGHT, WIDTH);
         Tensor cReal = linspace(X_MIN, X_MAX, WIDTH).view(Shape.of(1, WIDTH)).broadcast(image);
         Tensor cImag = linspace(Y_MIN, Y_MAX, HEIGHT).view(Shape.of(HEIGHT, 1)).broadcast(image);
@@ -81,18 +80,17 @@ public final class Mandelbrot {
 
         for (int i = 0; i < MAX_ITER; i++) {
             Tensor zRealNext = zReal.square().subtract(zImag.square()).add(cReal);
-            Tensor zImagNext = zReal.multiply(zImag).multiply(2.0f).add(cImag);
+            Tensor zImagNext = zReal.multiply(zImag).multiply(2f).add(cImag);
             Tensor escapedNow =
-                    zRealNext.square().add(zImagNext.square()).greaterThan(Tensor.scalar(4.0f));
+                    zRealNext.square().add(zImagNext.square()).greaterThan(Tensor.scalar(4f));
             Tensor justEscaped = escapedNow.logicalAnd(escaped.logicalNot());
-            iterations =
-                    justEscaped.where(Tensor.full((float) i, DataType.FP32, image), iterations);
+            iterations = justEscaped.where(Tensor.full(i, DataType.FP32, image), iterations);
             escaped = escaped.logicalOr(escapedNow);
             zReal = zRealNext;
             zImag = zImagNext;
         }
 
-        return escaped.where(iterations, Tensor.full((float) (MAX_ITER - 1), DataType.FP32, image));
+        return escaped.where(iterations, Tensor.full(MAX_ITER - 1, DataType.FP32, image));
     }
 
     @SuppressWarnings("unchecked")
