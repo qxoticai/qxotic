@@ -5,6 +5,7 @@ import com.qxotic.jota.ir.lir.LIRGraph;
 import com.qxotic.jota.ir.lir.LIRTextRenderer;
 import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
 import com.qxotic.jota.runtime.KernelCacheKey;
+import com.qxotic.jota.runtime.KernelCachePaths;
 import com.qxotic.jota.runtime.KernelProgram;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -306,31 +307,6 @@ final class CKernelCompiler {
     }
 
     private static Path deviceRoot() {
-        return cacheRoot().resolve(cacheVersion()).resolve(Device.C.leafName());
-    }
-
-    private static Path cacheRoot() {
-        String configured = System.getProperty("jota.cache.root");
-        if (configured != null && !configured.isBlank()) {
-            return Path.of(configured.trim());
-        }
-        return Path.of(System.getProperty("java.io.tmpdir", ".")).resolve("jota-cache");
-    }
-
-    private static String cacheVersion() {
-        String configured = System.getProperty("jota.version");
-        if (configured != null && !configured.isBlank()) {
-            return sanitizeSegment(configured.trim());
-        }
-        Package pkg = Device.class.getPackage();
-        String implementationVersion = pkg == null ? null : pkg.getImplementationVersion();
-        if (implementationVersion != null && !implementationVersion.isBlank()) {
-            return sanitizeSegment(implementationVersion.trim());
-        }
-        return "dev";
-    }
-
-    private static String sanitizeSegment(String value) {
-        return value.replaceAll("[^A-Za-z0-9._-]", "_");
+        return KernelCachePaths.deviceRoot(Device.C);
     }
 }
