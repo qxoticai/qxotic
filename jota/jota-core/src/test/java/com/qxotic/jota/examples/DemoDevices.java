@@ -11,7 +11,14 @@ import java.util.Set;
 final class DemoDevices {
 
     private static final List<Device> SUPPORTED_BACKENDS =
-            List.of(Device.PANAMA, Device.C, Device.HIP, Device.OPENCL, Device.METAL, Device.MOJO);
+            List.of(
+                    Device.PANAMA,
+                    Device.C,
+                    Device.HIP,
+                    Device.CUDA,
+                    Device.OPENCL,
+                    Device.METAL,
+                    Device.MOJO);
 
     private DemoDevices() {}
 
@@ -35,6 +42,7 @@ final class DemoDevices {
                     case "panama", "ffm", "jvm" -> Device.PANAMA;
                     case "c" -> Device.C;
                     case "hip" -> Device.HIP;
+                    case "cuda" -> Device.CUDA;
                     case "opencl", "cl" -> Device.OPENCL;
                     case "metal" -> Device.METAL;
                     case "mojo" -> Device.MOJO;
@@ -42,7 +50,7 @@ final class DemoDevices {
                             throw new IllegalArgumentException(
                                     "Unknown backend/device '"
                                             + requested
-                                            + "'. Use one of: native, panama, c, hip, opencl,"
+                                            + "'. Use one of: native, panama, c, hip, cuda, opencl,"
                                             + " metal, mojo");
                 };
         if (parsed.equals(Device.NATIVE)) {

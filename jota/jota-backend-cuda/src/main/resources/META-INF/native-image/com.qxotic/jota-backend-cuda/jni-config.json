@@ -1,0 +1,11 @@
+[
+  {
+    "name": "com.qxotic.jota.runtime.cuda.CudaDevicePtr",
+    "methods": [
+      {
+        "name": "address",
+        "parameterTypes": []
+      }
+    ]
+  }
+]
