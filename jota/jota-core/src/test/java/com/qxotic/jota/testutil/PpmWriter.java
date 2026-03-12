@@ -24,6 +24,10 @@ public final class PpmWriter {
         }
     }
 
+    public static void writeP6(Path path, int width, int height, byte[] rgb) throws IOException {
+        write(path, width, height, rgb);
+    }
+
     public static void write(Path path, int width, int height, float[] r, float[] g, float[] b)
             throws IOException {
         byte[] rgb = new byte[width * height * 3];

@@ -45,7 +45,7 @@ final class MetalKernelBackend implements KernelBackend {
 
     @Override
     public KernelExecutable compile(KernelProgram program, KernelCacheKey cacheKey) {
-        if (!KernelProgram.METAL.equals(program.language())) {
+        if (!"metal".equals(program.language())) {
             throw new UnsupportedOperationException("Metal backend expects Metal programs");
         }
         if (program.kind() != KernelProgram.Kind.SOURCE) {
@@ -60,7 +60,7 @@ final class MetalKernelBackend implements KernelBackend {
 
     @Override
     public KernelExecutable load(KernelProgram program, KernelCacheKey cacheKey) {
-        if (!KernelProgram.METAL.equals(program.language())) {
+        if (!"metal".equals(program.language())) {
             throw new UnsupportedOperationException("Metal backend expects Metal programs");
         }
         if (program.kind() != KernelProgram.Kind.BINARY) {

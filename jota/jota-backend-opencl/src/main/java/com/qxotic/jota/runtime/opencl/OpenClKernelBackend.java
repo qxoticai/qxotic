@@ -32,7 +32,7 @@ final class OpenClKernelBackend implements KernelBackend {
 
     @Override
     public KernelExecutable compile(KernelProgram program, KernelCacheKey cacheKey) {
-        if (!KernelProgram.OPENCL.equals(program.language())) {
+        if (!"opencl".equals(program.language())) {
             throw new UnsupportedOperationException("OpenCL backend expects OpenCL programs");
         }
         if (program.kind() != KernelProgram.Kind.SOURCE) {
@@ -47,7 +47,7 @@ final class OpenClKernelBackend implements KernelBackend {
 
     @Override
     public KernelExecutable load(KernelProgram program, KernelCacheKey cacheKey) {
-        if (!KernelProgram.OPENCL.equals(program.language())) {
+        if (!"opencl".equals(program.language())) {
             throw new UnsupportedOperationException("OpenCL backend expects OpenCL programs");
         }
         if (program.kind() != KernelProgram.Kind.BINARY) {

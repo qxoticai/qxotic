@@ -173,7 +173,7 @@ final class MojoKernelBackend implements KernelBackend {
         COMPILE_NANOS_MAX.accumulateAndGet(elapsed, Math::max);
         NATIVE_COMPILES.incrementAndGet();
 
-        return KernelProgram.binary(KernelProgram.HIP, elf, entry, program.options());
+        return KernelProgram.binary("hip", elf, entry, program.options());
     }
 
     private static KernelProgram loadCachedBinaryProgram(
@@ -189,7 +189,7 @@ final class MojoKernelBackend implements KernelBackend {
             if (elf.length == 0 || entry.isEmpty()) {
                 return null;
             }
-            return KernelProgram.binary(KernelProgram.HIP, elf, entry, source.options());
+            return KernelProgram.binary("hip", elf, entry, source.options());
         } catch (IOException e) {
             return null;
         }

@@ -55,7 +55,7 @@ class CCustomKernelLaunchTest {
                 }
                 """;
 
-        runtime.registerKernel("gemv", KernelProgram.source(KernelProgram.C, source, "gemv"));
+        runtime.registerKernel("gemv", KernelProgram.source("c", source, "gemv"));
 
         int M = 3, N = 4;
         MemoryDomain<MemorySegment> domain = runtime.memoryDomain();

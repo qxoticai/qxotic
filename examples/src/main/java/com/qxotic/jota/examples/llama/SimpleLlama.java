@@ -1934,7 +1934,7 @@ public final class SimpleLlama {
                                         runtime.registerKernel(
                                                 C_BATCH_GEMM_KERNEL_NAME,
                                                 KernelProgram.source(
-                                                        KernelProgram.C,
+                                                        "c",
                                                         C_BATCH_GEMM_KERNEL_SOURCE,
                                                         C_BATCH_GEMM_KERNEL_NAME)));
             } catch (RuntimeException ex) {
@@ -1964,7 +1964,7 @@ public final class SimpleLlama {
                                         runtime.registerKernel(
                                                 C_GEMV_KERNEL_NAME,
                                                 KernelProgram.source(
-                                                        KernelProgram.C,
+                                                        "c",
                                                         C_GEMV_KERNEL_SOURCE,
                                                         C_GEMV_KERNEL_NAME)));
             } catch (RuntimeException ex) {

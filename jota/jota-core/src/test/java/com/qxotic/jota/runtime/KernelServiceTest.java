@@ -21,11 +21,7 @@ class KernelServiceTest {
 
         KernelProgram program =
                 new KernelProgram(
-                        KernelProgram.Kind.SOURCE,
-                        KernelProgram.C,
-                        "void custom() {}",
-                        "custom",
-                        Map.of());
+                        KernelProgram.Kind.SOURCE, "c", "void custom() {}", "custom", Map.of());
         KernelCacheKey key = KernelCacheKey.of("custom-kernel");
 
         KernelExecutable executable = service.register("custom.gelu", program, key);
@@ -45,11 +41,7 @@ class KernelServiceTest {
 
         KernelProgram program =
                 new KernelProgram(
-                        KernelProgram.Kind.SOURCE,
-                        KernelProgram.C,
-                        "void custom() {}",
-                        "custom",
-                        Map.of());
+                        KernelProgram.Kind.SOURCE, "c", "void custom() {}", "custom", Map.of());
         KernelCacheKey key = KernelCacheKey.of("custom-kernel");
 
         service.register("custom.attention", program, key);

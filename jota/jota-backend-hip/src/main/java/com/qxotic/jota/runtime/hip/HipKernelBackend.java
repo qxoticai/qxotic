@@ -55,7 +55,7 @@ final class HipKernelBackend implements KernelBackend {
     @Override
     public KernelExecutable compile(KernelProgram program, KernelCacheKey cacheKey) {
         long t0 = System.nanoTime();
-        if (!KernelProgram.HIP.equals(program.language())) {
+        if (!"hip".equals(program.language())) {
             throw new UnsupportedOperationException("HIP backend expects HIP programs");
         }
         if (program.kind() != KernelProgram.Kind.SOURCE) {
