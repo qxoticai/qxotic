@@ -16,6 +16,7 @@ The Jota IRs are intentionally simple, MLIR-like, with no data-dependent control
 - [C](https://github.com/qxoticai/qxotic/tree/main/jota/jota-backend-c) (default on Native Image)
 - [OpenCL](https://github.com/qxoticai/qxotic/tree/main/jota/jota-backend-opencl)
 - [HIP](https://github.com/qxoticai/qxotic/tree/main/jota/jota-backend-hip) (AMD only)
+- [CUDA](https://github.com/qxoticai/qxotic/tree/main/jota/jota-backend-cuda) (NVIDIA, Linux/Windows)
 - [Metal](https://github.com/qxoticai/qxotic/tree/main/jota/jota-backend-metal) (Apple)
 - [Mojo](https://github.com/qxoticai/qxotic/tree/main/jota/jota-backend-mojo) (**experimental**)
 
@@ -89,6 +90,13 @@ Just include the backend `.jar` in the classpath and it will be automatically av
     <version>0.1.0</version>
 </dependency>
 
+<!-- NVIDIA GPU (Linux/Windows) -->
+<dependency>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jota-backend-cuda</artifactId>
+    <version>0.1.0</version>
+</dependency>
+
 <!-- Apple GPU (macOS) -->
 <dependency>
     <groupId>com.qxotic</groupId>
@@ -106,7 +114,7 @@ Just include the backend `.jar` in the classpath and it will be automatically av
 
 ## GraalVM Native Image
 
-Use `jota-graal` for out-of-the-box Native Image support across C/HIP/Metal/OpenCL/Mojo backends. Panama is intentionally excluded from Native Image support because it relies on runtime class loading/JIT behavior.
+Use `jota-graal` for out-of-the-box Native Image support across C/HIP/CUDA/Metal/OpenCL/Mojo backends. Panama is intentionally excluded from Native Image support because it relies on runtime class loading/JIT behavior.
 
 In Native Image runtime, `Device.NATIVE` resolves to an available backend that supports `MemorySegment` (typically `Device.C`).
 
@@ -117,7 +125,7 @@ You can control backend registration even when backend jars are present on class
 -Djota.backends.exclude=hip,opencl
 ```
 
-Accepted tokens are provider id (`hip`, `opencl`, `c`, `metal`, `panama`, `mojo`).
+Accepted tokens are provider id (`hip`, `cuda`, `opencl`, `c`, `metal`, `panama`, `mojo`).
 If both include and exclude mention the same backend, exclude takes priority.
 
 Requirements:
@@ -139,6 +147,7 @@ mvnd test
 # Backends
 mvnd -Pc test        # C
 mvnd -Phip test      # HIP (AMD only)
+mvnd -Pcuda test     # CUDA (NVIDIA, Linux/Windows; ignored on unsupported platforms)
 mvnd -Pmojo test     # Mojo (AMD only)
 mvnd -Popencl test   # Cross-platform
 mvnd -Pmetal test    # Apple (macOS only)

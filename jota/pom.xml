@@ -20,6 +20,7 @@
     <module>jota-backend-c</module>
     <module>jota-graal</module>
     <module>jota-backend-hip</module>
+    <module>jota-backend-cuda</module>
     <module>jota-backend-mojo</module>
     <module>jota-backend-metal</module>
     <module>jota-backend-opencl</module>
@@ -35,11 +36,13 @@
     <jota.test.device>panama</jota.test.device>
     <jota.test.backends>single</jota.test.backends>
     <jota.native.backend>native</jota.native.backend>
+    <jota.cuda.requested>false</jota.cuda.requested>
 
     <!-- Backend test skipping (all disabled by default) -->
     <skipTests.backend.c>true</skipTests.backend.c>
     <skipTests.backend.panama>true</skipTests.backend.panama>
     <skipTests.backend.hip>true</skipTests.backend.hip>
+    <skipTests.backend.cuda>true</skipTests.backend.cuda>
     <skipTests.backend.mojo>true</skipTests.backend.mojo>
     <skipTests.backend.metal>true</skipTests.backend.metal>
     <skipTests.backend.opencl>true</skipTests.backend.opencl>
@@ -47,6 +50,7 @@
     <!-- Native build skipping (all disabled by default) -->
     <skipNative.backend.c>true</skipNative.backend.c>
     <skipNative.backend.hip>true</skipNative.backend.hip>
+    <skipNative.backend.cuda>true</skipNative.backend.cuda>
     <skipNative.backend.mojo>true</skipNative.backend.mojo>
     <skipNative.backend.metal>true</skipNative.backend.metal>
     <skipNative.backend.opencl>true</skipNative.backend.opencl>
@@ -253,6 +257,76 @@ exit 1)</argument>
       </build>
     </profile>
 
+    <!-- CUDA Backend Profile -->
+    <profile>
+      <id>cuda</id>
+      <properties>
+        <jota.cuda.requested>true</jota.cuda.requested>
+      </properties>
+    </profile>
+
+    <!-- CUDA enabled on Linux -->
+    <profile>
+      <id>cuda-linux</id>
+      <activation>
+        <os>
+          <name>Linux</name>
+        </os>
+        <property>
+          <name>jota.cuda.requested</name>
+          <value>true</value>
+        </property>
+      </activation>
+      <properties>
+        <jota.test.device>cuda</jota.test.device>
+        <jota.test.backends>single</jota.test.backends>
+        <jota.native.backend>panama</jota.native.backend>
+        <skipTests.backend.core>true</skipTests.backend.core>
+        <skipTests.backend.cuda>false</skipTests.backend.cuda>
+        <skipNative.backend.cuda>false</skipNative.backend.cuda>
+      </properties>
+    </profile>
+
+    <!-- CUDA enabled on Windows -->
+    <profile>
+      <id>cuda-windows</id>
+      <activation>
+        <os>
+          <family>windows</family>
+        </os>
+        <property>
+          <name>jota.cuda.requested</name>
+          <value>true</value>
+        </property>
+      </activation>
+      <properties>
+        <jota.test.device>cuda</jota.test.device>
+        <jota.test.backends>single</jota.test.backends>
+        <jota.native.backend>panama</jota.native.backend>
+        <skipTests.backend.core>true</skipTests.backend.core>
+        <skipTests.backend.cuda>false</skipTests.backend.cuda>
+        <skipNative.backend.cuda>false</skipNative.backend.cuda>
+      </properties>
+    </profile>
+
+    <!-- CUDA unsupported on macOS: keep profile as no-op -->
+    <profile>
+      <id>cuda-macos-skip</id>
+      <activation>
+        <os>
+          <family>mac</family>
+        </os>
+        <property>
+          <name>jota.cuda.requested</name>
+          <value>true</value>
+        </property>
+      </activation>
+      <properties>
+        <skipTests.backend.cuda>true</skipTests.backend.cuda>
+        <skipNative.backend.cuda>true</skipNative.backend.cuda>
+      </properties>
+    </profile>
+
     <!-- Mojo Backend Profile -->
     <profile>
       <id>mojo</id>
@@ -454,6 +528,7 @@ exit 1)</argument>
       <properties>
         <skipNative.backend.c>true</skipNative.backend.c>
         <skipNative.backend.hip>true</skipNative.backend.hip>
+        <skipNative.backend.cuda>true</skipNative.backend.cuda>
         <skipNative.backend.metal>true</skipNative.backend.metal>
         <skipNative.backend.opencl>true</skipNative.backend.opencl>
       </properties>

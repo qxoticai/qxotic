@@ -1,0 +1,116 @@
+package com.qxotic.jota.runtime.cuda;
+
+import com.qxotic.jota.Device;
+import com.qxotic.jota.runtime.DeviceRuntime;
+import com.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
+import com.qxotic.jota.runtime.spi.RuntimeProbe;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.TimeUnit;
+
+public final class CudaRuntimeProvider implements DeviceRuntimeProvider {
+
+    private static final String ENV_NVCC = "NVCC";
+    private static final String NVCC_PROPERTY = "jota.cuda.compiler";
+
+    @Override
+    public String id() {
+        return "cuda";
+    }
+
+    @Override
+    public Device device() {
+        return Device.CUDA;
+    }
+
+    @Override
+    public RuntimeProbe probe() {
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        if (os.contains("mac") || os.contains("darwin")) {
+            return RuntimeProbe.unsupportedHardware(
+                    "CUDA backend is unsupported on macOS",
+                    "Use panama, opencl, metal, or c backend on this platform");
+        }
+        if (!CudaRuntime.isAvailable()) {
+            return RuntimeProbe.missingSoftware(
+                    "CUDA JNI runtime library is not available",
+                    "Ensure libjota_cuda and CUDA runtime libraries are installed and"
+                            + " discoverable");
+        }
+        if (!isNvccAvailable()) {
+            String nvcc = nvccExecutable();
+            return RuntimeProbe.missingSoftware(
+                    "CUDA toolchain executable is not available: " + nvcc,
+                    "Install NVIDIA CUDA nvcc and ensure it is on PATH, or set "
+                            + NVCC_PROPERTY
+                            + " / "
+                            + ENV_NVCC
+                            + " to a valid nvcc binary");
+        }
+        try {
+            int count = CudaRuntime.deviceCount();
+            if (count <= 0) {
+                return RuntimeProbe.unsupportedHardware(
+                        "CUDA runtime is present but no compatible GPU was detected",
+                        "Install supported NVIDIA GPU drivers/CUDA and verify CUDA runtime can see"
+                                + " a device");
+            }
+            return RuntimeProbe.available("CUDA runtime available with " + count + " device(s)");
+        } catch (UnsupportedOperationException e) {
+            return RuntimeProbe.misconfigured(
+                    "CUDA runtime is loaded but device probing is not supported",
+                    "Rebuild native CUDA JNI with full CUDA runtime support",
+                    e);
+        } catch (RuntimeException e) {
+            return RuntimeProbe.misconfigured(
+                    "CUDA runtime is loaded but device probing failed",
+                    "Check CUDA installation, permissions, and runtime environment variables",
+                    e);
+        }
+    }
+
+    @Override
+    public DeviceRuntime create() {
+        return new CudaDeviceRuntime();
+    }
+
+    private static String nvccExecutable() {
+        String fromProperty = System.getProperty(NVCC_PROPERTY);
+        if (fromProperty != null && !fromProperty.isBlank()) {
+            return fromProperty.trim();
+        }
+        String fromEnv = System.getenv(ENV_NVCC);
+        if (fromEnv != null && !fromEnv.isBlank()) {
+            return fromEnv.trim();
+        }
+        return "nvcc";
+    }
+
+    private static boolean isNvccAvailable() {
+        String nvcc = nvccExecutable();
+        Process process = null;
+        try {
+            List<String> command = new ArrayList<>();
+            command.add(nvcc);
+            command.add("--version");
+            process = new ProcessBuilder(command).start();
+            if (!process.waitFor(3, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                process.waitFor(1, TimeUnit.SECONDS);
+                return false;
+            }
+            return process.exitValue() == 0;
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return false;
+        } finally {
+            if (process != null) {
+                process.destroy();
+            }
+        }
+    }
+}

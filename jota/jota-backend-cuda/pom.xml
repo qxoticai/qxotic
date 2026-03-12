@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jota-aggregator</artifactId>
+    <version>0.1.0</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>jota-backend-cuda</artifactId>
+  <name>Jota Backend CUDA</name>
+  <description>NVIDIA CUDA GPU backend for Jota tensor operations</description>
+
+  <properties>
+    <cuda.configure.extraArgs />
+    <cuda.build.extraArgs />
+    <native.dir>${project.basedir}/src/main/native</native.dir>
+    <native.build.dir>${native.dir}/build</native.build.dir>
+    <native.library.basename>jota_cuda</native.library.basename>
+    <native.copy.skip>false</native.copy.skip>
+    <native.skip.tests>${skipTests.backend.cuda}</native.skip.tests>
+    <native.skip.build>${skipNative.backend.cuda}</native.skip.build>
+    <native.configure.extraArgs>${cuda.configure.extraArgs}</native.configure.extraArgs>
+    <native.build.extraArgs>${cuda.build.extraArgs}</native.build.extraArgs>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota</artifactId>
+      <version>${project.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-backend-panama</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <skipTests>${native.skip.tests}</skipTests>
+          <dependenciesToScan>
+            <dependency>com.qxotic:jota:test-jar:tests:${project.version}</dependency>
+          </dependenciesToScan>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <!-- Explicit test selection enables tests -->
+    <profile>
+      <id>cuda-explicit-test-selection</id>
+      <activation>
+        <property>
+          <name>test</name>
+        </property>
+      </activation>
+      <properties>
+        <skipTests.backend.cuda>false</skipTests.backend.cuda>
+      </properties>
+    </profile>
+  </profiles>
+</project>
