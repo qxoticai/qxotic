@@ -28,18 +28,18 @@ JSON (JavaScript Object Notation) is a lightweight data interchange format. This
 ## Quick Start
 
 ```java
-import com.qxotic.format.json.JSON;
+import com.qxotic.format.json.Json;
+
 import java.util.Map;
-import java.util.List;
 
 // Parse JSON string
-Map<String, Object> config = JSON.parseMap("{"host":"localhost","port":8080}");
+Map<String, Object> config = Json.parseMap("{\"host\":\"localhost\",\"port\":8080}");
 
 String host = (String) config.get("host");
 Long port = (Long) config.get("port");
 
 // Serialize back to JSON
-String json = JSON.stringify(config);
+String json = Json.stringify(config);
 ```
 
 ## Java Type Mappings
@@ -52,7 +52,7 @@ JSON objects become `Map<String, Object>`:
 
 ```java
 // {"name": "alice", "age": 30}
-Map<String, Object> person = JSON.parseMap(json);
+Map<String, Object> person = Json.parseMap(json);
 String name = (String) person.get("name");
 Long age = (Long) person.get("age");
 ```
@@ -65,7 +65,7 @@ JSON arrays become `List<Object>`:
 
 ```java
 // [1, 2, 3]
-List<Object> numbers = JSON.parseList(json);
+List<Object> numbers = Json.parseList(json);
 Long first = (Long) numbers.get(0);
 ```
 
@@ -75,7 +75,7 @@ JSON strings become `String`:
 
 ```java
 // "hello world"
-String text = JSON.parseString(json);
+String text = Json.parseString(json);
 ```
 
 ### Numbers
@@ -91,20 +91,20 @@ JSON numbers become different Java types based on value:
 
 ```java
 // Integer - fits in long
-Number small = JSON.parseNumber("42");
+Number small = Json.parseNumber("42");
 // small instanceof Long
 
 // Integer - exceeds long range
-Number big = JSON.parseNumber("99999999999999999999");
+Number big = Json.parseNumber("99999999999999999999");
 // big instanceof BigInteger
 
 // Decimal - precise (default)
-Number precise = JSON.parseNumber("0.1");
+Number precise = Json.parseNumber("0.1");
 // precise instanceof BigDecimal
 
 // Decimal - fast approximation
-JSON.ParseOptions fast = JSON.options().decimalsAsBigDecimal(false);
-Number approx = JSON.parseNumber("0.1", fast);
+Json.ParseOptions fast = Json.options().decimalsAsBigDecimal(false);
+Number approx = Json.parseNumber("0.1", fast);
 // approx instanceof Double
 ```
 
@@ -117,19 +117,19 @@ JSON booleans become `Boolean`:
 
 ```java
 // true or false
-Boolean active = JSON.parseBoolean("true");
+Boolean active = Json.parseBoolean("true");
 ```
 
 ### Null
 
-JSON `null` becomes a special sentinel value `JSON.NULL` (not Java `null`):
+JSON `null` becomes a special sentinel value `Json.NULL` (not Java `null`):
 
 ```java
-Map<String, Object> obj = JSON.parseMap("{"value":null}");
+Map<String, Object> obj = Json.parseMap("{\"value\":null}");
 Object value = obj.get("value");
 
 // Check for JSON null
-if (JSON.isNull(value)) {
+if (Json.isNull(value)) {
     // Key exists, value is JSON null
 }
 
@@ -150,7 +150,7 @@ if (missing == null) {
 | `number` (integer) | `Long` or `BigInteger` | Auto-promotes if too large |
 | `number` (decimal) | `BigDecimal` | Precise; use options for `Double` |
 | `boolean` | `Boolean` | `true` or `false` |
-| `null` | `JSON.NULL` | Sentinel value, not Java `null` |
+| `null` | `Json.NULL` | Sentinel value, not Java `null` |
 
 ## Installation
 
@@ -307,12 +307,13 @@ Navigate nested structures safely with type-safe query methods:
 ## Thread Safety
 
 !!! info "Concurrency"
-    - `JSON` class methods are **thread-safe** and can be called concurrently
+    - `Json` class methods are **thread-safe** and can be called concurrently
     - `ParseOptions` instances are **immutable** and reusable across threads
     - Parsed objects (Map, List) are standard Java collections - not thread-safe for concurrent modification
 
 ## Next Steps
 
-- [Parsing Guide](guides/parsing.md) - Parse options, typed roots, validation
+- [Parsing Guide](guides/parsing.md) - Parse options, typed roots, validation, query methods
 - [Serialization Guide](guides/serialization.md) - Compact vs pretty, round-trips
 - [Error Handling](guides/error-handling.md) - Exception details, common errors
+- [Migration Guide](guides/migration.md) - Moving from Jackson, Gson, or org.json
