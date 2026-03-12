@@ -186,6 +186,11 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
+        <artifactId>jota-backend-cuda</artifactId>
+        <version>${qxotic.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
         <artifactId>jota-backend-mojo</artifactId>
         <version>${qxotic.version}</version>
       </dependency>
