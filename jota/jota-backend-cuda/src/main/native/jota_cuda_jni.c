@@ -71,7 +71,7 @@ typedef void *CUstream;
 #endif
 
 #if __has_include(<cuda_runtime_api.h>) && __has_include(<cuda.h>)
-static char g_lastCudaDriverError[512] = "";
+static char g_lastCudaDriverError[2048] = "";
 
 static void setLastCudaDriverError(CUresult res, const char *context) {
   const char *name = NULL;
@@ -113,9 +113,31 @@ static cudaError_t jotaCudaModuleLoad(CUmodule *module, const void *image) {
   if (!ensureCudaDriverInit()) {
     return cudaErrorUnknown;
   }
-  CUresult res = cuModuleLoadData(module, image);
+  char infoLog[1024];
+  char errorLog[1024];
+  infoLog[0] = '\0';
+  errorLog[0] = '\0';
+  CUjit_option options[4] = {
+      CU_JIT_INFO_LOG_BUFFER,
+      CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES,
+      CU_JIT_ERROR_LOG_BUFFER,
+      CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES};
+  void *values[4] = {
+      (void *)infoLog,
+      (void *)(uintptr_t)sizeof(infoLog),
+      (void *)errorLog,
+      (void *)(uintptr_t)sizeof(errorLog)};
+  CUresult res = cuModuleLoadDataEx(module, image, 4, options, values);
   if (res != CUDA_SUCCESS) {
     setLastCudaDriverError(res, "cuModuleLoadData failed");
+    if (errorLog[0] != '\0' || infoLog[0] != '\0') {
+      size_t used = strlen(g_lastCudaDriverError);
+      snprintf(g_lastCudaDriverError + used,
+               sizeof(g_lastCudaDriverError) - used,
+               " [jit-error='%s' jit-info='%s']",
+               errorLog,
+               infoLog);
+    }
     return cudaErrorUnknown;
   }
   g_lastCudaDriverError[0] = '\0';
@@ -401,14 +423,24 @@ JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_cuda_CudaRuntime_loadModule
     throwRuntime(env, "PTX buffer is null");
     return 0;
   }
+  jsize len = (*env)->GetArrayLength(env, ptx);
   jbyte *bytes = (*env)->GetByteArrayElements(env, ptx, NULL);
   if (bytes == NULL) {
     throwRuntime(env, "Failed to read PTX bytes");
     return 0;
   }
+  char *nullTerminatedPtx = (char *)malloc((size_t)len + 1U);
+  if (nullTerminatedPtx == NULL) {
+    (*env)->ReleaseByteArrayElements(env, ptx, bytes, JNI_ABORT);
+    throwRuntime(env, "Failed to allocate PTX staging buffer");
+    return 0;
+  }
+  memcpy(nullTerminatedPtx, bytes, (size_t)len);
+  nullTerminatedPtx[len] = '\0';
   CUmodule module;
-  cudaError_t status = jotaCudaModuleLoad(&module, (const void *)bytes);
+  cudaError_t status = jotaCudaModuleLoad(&module, (const void *)nullTerminatedPtx);
   (*env)->ReleaseByteArrayElements(env, ptx, bytes, JNI_ABORT);
+  free(nullTerminatedPtx);
   checkCuda(env, status, "cudaModuleLoadData failed");
   return (jlong)(uintptr_t)module;
 #else
