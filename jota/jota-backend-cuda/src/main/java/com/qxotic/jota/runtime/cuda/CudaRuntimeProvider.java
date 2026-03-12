@@ -34,8 +34,13 @@ public final class CudaRuntimeProvider implements DeviceRuntimeProvider {
                     "Use panama, opencl, metal, or c backend on this platform");
         }
         if (!CudaRuntime.isAvailable()) {
+            String loadError = CudaRuntime.loadError();
+            String message = "CUDA JNI runtime library is not available";
+            if (loadError != null && !loadError.isBlank()) {
+                message = message + ": " + loadError;
+            }
             return RuntimeProbe.missingSoftware(
-                    "CUDA JNI runtime library is not available",
+                    message,
                     "Ensure libjota_cuda and CUDA runtime libraries are installed and"
                             + " discoverable");
         }

@@ -8,6 +8,7 @@ public final class CudaRuntime {
 
     private static final String LIB_NAME = "jota_cuda";
     private static final AtomicReference<Boolean> AVAILABLE = new AtomicReference<>();
+    private static final AtomicReference<String> LOAD_ERROR = new AtomicReference<>();
 
     private CudaRuntime() {
         // Utility class
@@ -22,10 +23,16 @@ public final class CudaRuntime {
         try {
             NativeLibraryLoader.load(LIB_NAME);
             AVAILABLE.set(true);
+            LOAD_ERROR.set(null);
         } catch (UnsatisfiedLinkError e) {
             AVAILABLE.set(false);
+            LOAD_ERROR.set(e.getMessage());
         }
         return AVAILABLE.get();
+    }
+
+    static String loadError() {
+        return LOAD_ERROR.get();
     }
 
     /**
