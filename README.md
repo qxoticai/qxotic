@@ -1,20 +1,19 @@
-# Quixotic AI (qxotic.ai)
+# [Quixotic AI](https://qxotic.ai)
 
 Umbrella project for end-to-end LLM inference implementation for the JVM.
 The goal is high performance, matching native C/C++/CUDA/Metal/HIP where it matters.
 
 ## Components
 
-- [GGUF](https://github.com/qxoticai/qxotic/tree/main/gguf)
-- [Safetensors](https://github.com/qxoticai/qxotic/tree/main/safetensors)
-- [Tokenizers](https://github.com/qxoticai/qxotic/tree/main/tokenizers)
-- [Jota](https://github.com/qxoticai/qxotic/tree/main/jota)
+- [Jota](https://github.com/qxoticai/qxotic/tree/main/jota) Tensor engine
+- [GGUF](https://github.com/qxoticai/qxotic/tree/main/gguf) llama.cpp's model format
+- [Safetensors](https://github.com/qxoticai/qxotic/tree/main/safetensors) HuggingFace's model format
+- [Tokenizers](https://github.com/qxoticai/qxotic/tree/main/tokenizers) supports TikToken and common tokenizers
 
-Include all the core components needed for inference as standalone libraries:
-- Model formats: **GGUF** and **Safetensors** (read + write)
-- Tokenization: **TikToken** and common tokenizers, with high performance
-- Tensor engine: **Tensor** API that runs on different devices
-- 
+All components needed for inference as standalone libraries:
+- Model formats: **GGUF** and **Safetensors** both reading + writing
+- Tokenization: **TikToken**, BPE and common tokenizers
+- Tensor operations: Pristine [Tensor API](https://github.com/qxoticai/qxotic/blob/main/jota/jota-core/src/main/java/com/qxotic/jota/tensor/Tensor.java) with support for multiple-backends
 
 ## Java for AI?
 
@@ -23,8 +22,8 @@ Today "Java for AI" means:
 - HTTP calls to external inference services
 - JNI wrappers around native libraries
 
-Many use cases that can be satisfied locally, there's no reason for these relegated to Python, the JVM provides superior performance and can also
-run on other devices.
+Many use cases can be satisfied locally, embeddings, small models... there's no reason for these to use Python or native code, the JVM provides superior performance and can offload work to
+accelerators if needed.
 
 ## Status
 
