@@ -7,7 +7,6 @@ import com.qxotic.jota.ir.lir.LIRGraph;
 import com.qxotic.jota.ir.lir.LIRInput;
 import com.qxotic.jota.ir.lir.ScalarInput;
 import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
-import com.qxotic.jota.runtime.KernelProgram;
 import com.qxotic.jota.runtime.clike.CLikeDataTypeModel;
 import com.qxotic.jota.runtime.clike.CLikeDialect;
 import com.qxotic.jota.runtime.clike.CLikeKernelSignatureSupport;
@@ -37,7 +36,7 @@ final class OpenClDialect implements CLikeDialect {
 
     @Override
     public String language() {
-        return KernelProgram.OPENCL;
+        return "opencl";
     }
 
     @Override

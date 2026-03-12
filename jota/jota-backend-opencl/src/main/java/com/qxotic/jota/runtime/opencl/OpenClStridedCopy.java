@@ -34,8 +34,7 @@ final class OpenClStridedCopy {
                         id -> {
                             String source = generateKernel(rank, elemBytes);
                             KernelProgram program =
-                                    KernelProgram.source(
-                                            KernelProgram.OPENCL, source, "strided_copy");
+                                    KernelProgram.source("opencl", source, "strided_copy");
                             return BACKEND.compile(program, KernelCacheKey.of(id));
                         });
 

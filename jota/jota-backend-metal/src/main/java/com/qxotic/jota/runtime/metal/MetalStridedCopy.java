@@ -35,7 +35,7 @@ final class MetalStridedCopy {
                             String source = generateKernel(rank, elemBytes);
                             KernelProgram program =
                                     KernelProgram.source(
-                                            KernelProgram.METAL, source, "strided_copy");
+                                            "metal", source, "strided_copy");
                             return BACKEND.compile(program, KernelCacheKey.of(id));
                         });
 

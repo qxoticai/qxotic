@@ -10,14 +10,6 @@ public record KernelProgram(
         String entryPoint,
         Map<String, String> options) {
 
-    // Language constants
-    public static final String JAVA = "java";
-    public static final String C = "c";
-    public static final String HIP = "hip";
-    public static final String CUDA = "cuda";
-    public static final String METAL = "metal";
-    public static final String OPENCL = "opencl";
-
     public KernelProgram {
         Objects.requireNonNull(kind, "kind");
         Objects.requireNonNull(language, "language");

@@ -70,8 +70,7 @@ class CustomKernelLaunchTest {
                 }
                 """;
 
-        runtime.registerKernel(
-                "scale", KernelProgram.source(KernelProgram.JAVA, source, "ScaleKernel"));
+        runtime.registerKernel("scale", KernelProgram.source("java", source, "ScaleKernel"));
 
         MemoryView<?> in = allocate(DataType.FP32, Shape.flat(4));
         MemoryView<?> out = allocate(DataType.FP32, Shape.flat(4));
@@ -117,8 +116,7 @@ class CustomKernelLaunchTest {
                 }
                 """;
 
-        runtime.registerKernel(
-                "add", KernelProgram.source(KernelProgram.JAVA, source, "AddKernel"));
+        runtime.registerKernel("add", KernelProgram.source("java", source, "AddKernel"));
 
         MemoryView<?> a = allocate(DataType.FP32, Shape.flat(4));
         MemoryView<?> b = allocate(DataType.FP32, Shape.flat(4));
@@ -163,8 +161,7 @@ class CustomKernelLaunchTest {
                 }
                 """;
 
-        runtime.registerKernel(
-                "negate", KernelProgram.source(KernelProgram.JAVA, source, "NegateKernel"));
+        runtime.registerKernel("negate", KernelProgram.source("java", source, "NegateKernel"));
 
         Tensor input = Tensor.of(new float[] {1f, -2f, 3f, -4f});
         MemoryView<?> out = allocate(DataType.FP32, Shape.flat(4));
@@ -204,8 +201,7 @@ class CustomKernelLaunchTest {
                 }
                 """;
 
-        runtime.registerKernel(
-                "fill", KernelProgram.source(KernelProgram.JAVA, source, "FillKernel"));
+        runtime.registerKernel("fill", KernelProgram.source("java", source, "FillKernel"));
 
         MemoryView<?> out = allocate(DataType.FP32, Shape.flat(4));
 
@@ -250,8 +246,7 @@ class CustomKernelLaunchTest {
         // Use the handle returned by registerKernel directly
         KernelExecutable doubleKernel =
                 runtime.registerKernel(
-                        "double_it",
-                        KernelProgram.source(KernelProgram.JAVA, source, "DoubleKernel"));
+                        "double_it", KernelProgram.source("java", source, "DoubleKernel"));
 
         MemoryView<?> in = allocate(DataType.FP32, Shape.flat(3));
         MemoryView<?> out = allocate(DataType.FP32, Shape.flat(3));
@@ -313,8 +308,7 @@ class CustomKernelLaunchTest {
                 }
                 """;
 
-        runtime.registerKernel(
-                "gemv", KernelProgram.source(KernelProgram.JAVA, source, "GemvKernel"));
+        runtime.registerKernel("gemv", KernelProgram.source("java", source, "GemvKernel"));
 
         int M = 3, N = 4;
 
@@ -372,8 +366,7 @@ class CustomKernelLaunchTest {
                 """;
 
         runtime.registerKernel(
-                "add_tensors",
-                KernelProgram.source(KernelProgram.JAVA, source, "AddTensorsKernel"));
+                "add_tensors", KernelProgram.source("java", source, "AddTensorsKernel"));
 
         Tensor a = Tensor.of(new float[] {1f, 2f, 3f});
         Tensor b = Tensor.of(new float[] {10f, 20f, 30f});
@@ -420,8 +413,7 @@ class CustomKernelLaunchTest {
                 """;
 
         runtime.registerKernel(
-                "mul_tensors",
-                KernelProgram.source(KernelProgram.JAVA, source, "MulTensorsKernel"));
+                "mul_tensors", KernelProgram.source("java", source, "MulTensorsKernel"));
 
         // Kernel tensors must be row-major contiguous — create them directly
         Tensor ones = Tensor.of(new float[] {1f, 1f, 1f, 1f});
@@ -446,8 +438,7 @@ class CustomKernelLaunchTest {
     void launchGemvWithTensorInputs() {
         // GEMV using Tensor inputs and MemoryView output
         runtime.registerKernel(
-                "gemv_t",
-                KernelProgram.source(KernelProgram.JAVA, GEMV_KERNEL_SOURCE, "GemvTensorKernel"));
+                "gemv_t", KernelProgram.source("java", GEMV_KERNEL_SOURCE, "GemvTensorKernel"));
 
         int M = 2, N = 3;
         Tensor A = Tensor.of(new float[] {1, 2, 3, 4, 5, 6}, Shape.of(M, N));
@@ -525,8 +516,7 @@ class CustomKernelLaunchTest {
                 }
                 """;
 
-        runtime.registerKernel(
-                "mismatch", KernelProgram.source(KernelProgram.JAVA, source, "MismatchKernel"));
+        runtime.registerKernel("mismatch", KernelProgram.source("java", source, "MismatchKernel"));
 
         MemoryView<?> buf = allocate(DataType.FP32, Shape.flat(4));
 
@@ -564,8 +554,7 @@ class CustomKernelLaunchTest {
                 """;
 
         runtime.registerKernel(
-                "bad_scalar_read",
-                KernelProgram.source(KernelProgram.JAVA, source, "BadScalarReadKernel"));
+                "bad_scalar_read", KernelProgram.source("java", source, "BadScalarReadKernel"));
 
         MemoryView<?> buf = allocate(DataType.FP32, Shape.flat(4));
         assertThrows(Exception.class, () -> runtime.launchKernel("bad_scalar_read", buf));
@@ -596,8 +585,7 @@ class CustomKernelLaunchTest {
                 """;
 
         runtime.registerKernel(
-                "bad_buffer_read",
-                KernelProgram.source(KernelProgram.JAVA, source, "BadBufferReadKernel"));
+                "bad_buffer_read", KernelProgram.source("java", source, "BadBufferReadKernel"));
 
         assertThrows(Exception.class, () -> runtime.launchKernel("bad_buffer_read", 42));
     }
