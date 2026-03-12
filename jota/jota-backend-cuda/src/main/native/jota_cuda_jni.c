@@ -61,8 +61,9 @@ typedef struct JNINativeInterface_ {
 #else
 typedef int cudaError_t;
 typedef void *cudaStream_t;
-typedef void *cudaModule_t;
-typedef void *cudaFunction_t;
+typedef void *CUmodule;
+typedef void *CUfunction;
+typedef void *CUstream;
 #define cudaSuccess 0
 #define cudaMemcpyHostToDevice 0
 #define cudaMemcpyDeviceToHost 1
@@ -70,44 +71,109 @@ typedef void *cudaFunction_t;
 #endif
 
 #if __has_include(<cuda_runtime_api.h>) && __has_include(<cuda.h>)
-static int ensureCudaDriverInit(void) {
+static char g_lastCudaDriverError[2048] = "";
+
+static void setLastCudaDriverError(CUresult res, const char *context) {
+  const char *name = NULL;
+  const char *desc = NULL;
+  (void)cuGetErrorName(res, &name);
+  (void)cuGetErrorString(res, &desc);
+  snprintf(g_lastCudaDriverError,
+           sizeof(g_lastCudaDriverError),
+           "%s: %s (%s)",
+           context,
+           desc != NULL ? desc : "driver error",
+           name != NULL ? name : "CUDA_ERROR_UNKNOWN");
+}
+
+static int ensureCudaDriverContext(void) {
   static int initialized = 0;
-  if (initialized) {
-    return 1;
+  if (!initialized) {
+    CUresult res = cuInit(0);
+    if (res != CUDA_SUCCESS) {
+      setLastCudaDriverError(res, "cuInit failed");
+      return 0;
+    }
+    initialized = 1;
   }
-  CUresult res = cuInit(0);
-  if (res != CUDA_SUCCESS) {
+
+  // Ensure a CUDA runtime primary context is current for the calling thread
+  // before issuing driver API module operations.
+  cudaError_t rt = cudaFree(0);
+  if (rt != cudaSuccess) {
+    snprintf(g_lastCudaDriverError,
+             sizeof(g_lastCudaDriverError),
+             "cudaFree(0) failed while initializing primary context: %s",
+             cudaGetErrorString(rt));
     return 0;
   }
-  initialized = 1;
+  g_lastCudaDriverError[0] = '\0';
   return 1;
 }
 
-static cudaError_t cudaModuleLoadData(cudaModule_t *module, void *image) {
-  if (!ensureCudaDriverInit()) {
+static cudaError_t jotaCudaModuleLoad(CUmodule *module, const void *image) {
+  if (!ensureCudaDriverContext()) {
     return cudaErrorUnknown;
   }
-  return cuModuleLoadData((CUmodule *)module, image) == CUDA_SUCCESS ? cudaSuccess : cudaErrorUnknown;
-}
-
-static cudaError_t cudaModuleUnload(cudaModule_t module) {
-  if (!ensureCudaDriverInit()) {
+  char infoLog[1024];
+  char errorLog[1024];
+  infoLog[0] = '\0';
+  errorLog[0] = '\0';
+  CUjit_option options[4] = {
+      CU_JIT_INFO_LOG_BUFFER,
+      CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES,
+      CU_JIT_ERROR_LOG_BUFFER,
+      CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES};
+  void *values[4] = {
+      (void *)infoLog,
+      (void *)(uintptr_t)sizeof(infoLog),
+      (void *)errorLog,
+      (void *)(uintptr_t)sizeof(errorLog)};
+  CUresult res = cuModuleLoadDataEx(module, image, 4, options, values);
+  if (res != CUDA_SUCCESS) {
+    setLastCudaDriverError(res, "cuModuleLoadData failed");
+    if (errorLog[0] != '\0' || infoLog[0] != '\0') {
+      size_t used = strlen(g_lastCudaDriverError);
+      snprintf(g_lastCudaDriverError + used,
+               sizeof(g_lastCudaDriverError) - used,
+               " [jit-error='%s' jit-info='%s']",
+               errorLog,
+               infoLog);
+    }
     return cudaErrorUnknown;
   }
-  return cuModuleUnload((CUmodule)module) == CUDA_SUCCESS ? cudaSuccess : cudaErrorUnknown;
+  g_lastCudaDriverError[0] = '\0';
+  return cudaSuccess;
 }
 
-static cudaError_t cudaModuleGetFunction(cudaFunction_t *function, cudaModule_t module, const char *name) {
-  if (!ensureCudaDriverInit()) {
+static cudaError_t jotaCudaModuleUnload(CUmodule module) {
+  if (!ensureCudaDriverContext()) {
     return cudaErrorUnknown;
   }
-  return cuModuleGetFunction((CUfunction *)function, (CUmodule)module, name) == CUDA_SUCCESS
-             ? cudaSuccess
-             : cudaErrorUnknown;
+  CUresult res = cuModuleUnload(module);
+  if (res != CUDA_SUCCESS) {
+    setLastCudaDriverError(res, "cuModuleUnload failed");
+    return cudaErrorUnknown;
+  }
+  g_lastCudaDriverError[0] = '\0';
+  return cudaSuccess;
 }
 
-static cudaError_t cudaModuleLaunchKernel(
-    cudaFunction_t function,
+static cudaError_t jotaCudaModuleGetFunction(CUfunction *function, CUmodule module, const char *name) {
+  if (!ensureCudaDriverContext()) {
+    return cudaErrorUnknown;
+  }
+  CUresult res = cuModuleGetFunction(function, module, name);
+  if (res != CUDA_SUCCESS) {
+    setLastCudaDriverError(res, "cuModuleGetFunction failed");
+    return cudaErrorUnknown;
+  }
+  g_lastCudaDriverError[0] = '\0';
+  return cudaSuccess;
+}
+
+static cudaError_t jotaCudaModuleLaunchKernel(
+    CUfunction function,
     unsigned int gridDimX,
     unsigned int gridDimY,
     unsigned int gridDimZ,
@@ -118,23 +184,27 @@ static cudaError_t cudaModuleLaunchKernel(
     cudaStream_t stream,
     void **kernelParams,
     void **extra) {
-  if (!ensureCudaDriverInit()) {
+  if (!ensureCudaDriverContext()) {
     return cudaErrorUnknown;
   }
-  return cuLaunchKernel((CUfunction)function,
-                        gridDimX,
-                        gridDimY,
-                        gridDimZ,
-                        blockDimX,
-                        blockDimY,
-                        blockDimZ,
-                        sharedMemBytes,
-                        (CUstream)stream,
-                        kernelParams,
-                        extra)
-                 == CUDA_SUCCESS
-             ? cudaSuccess
-             : cudaErrorUnknown;
+  CUresult res =
+      cuLaunchKernel(function,
+                     gridDimX,
+                     gridDimY,
+                     gridDimZ,
+                     blockDimX,
+                     blockDimY,
+                     blockDimZ,
+                     sharedMemBytes,
+                     (CUstream)stream,
+                     kernelParams,
+                     extra);
+  if (res != CUDA_SUCCESS) {
+    setLastCudaDriverError(res, "cuLaunchKernel failed");
+    return cudaErrorUnknown;
+  }
+  g_lastCudaDriverError[0] = '\0';
+  return cudaSuccess;
 }
 
 static cudaError_t cudaMemsetD16Compat(void *dst, unsigned short value, size_t elementCount) {
@@ -155,7 +225,20 @@ static cudaError_t cudaMemsetD16Compat(void *dst, unsigned short value, size_t e
 }
 
 static cudaError_t cudaMemsetD32Compat(void *dst, unsigned int value, size_t elementCount) {
-  return cudaMemsetD32(dst, (unsigned int)value, elementCount);
+  if (elementCount == 0) {
+    return cudaSuccess;
+  }
+  size_t bytes = elementCount * sizeof(unsigned int);
+  unsigned int *host = (unsigned int *)malloc(bytes);
+  if (host == NULL) {
+    return cudaErrorMemoryAllocation;
+  }
+  for (size_t i = 0; i < elementCount; i++) {
+    host[i] = value;
+  }
+  cudaError_t st = cudaMemcpy(dst, host, bytes, cudaMemcpyHostToDevice);
+  free(host);
+  return st;
 }
 #endif
 
@@ -170,6 +253,9 @@ static void throwRuntime(JNIEnv *env, const char *message) {
 static void checkCuda(JNIEnv *env, cudaError_t status, const char *context) {
   if (status != cudaSuccess) {
     const char *err = cudaGetErrorString(status);
+    if (status == cudaErrorUnknown && g_lastCudaDriverError[0] != '\0') {
+      err = g_lastCudaDriverError;
+    }
     char buffer[512];
     snprintf(buffer, sizeof(buffer), "%s: %s", context, err);
     throwRuntime(env, buffer);
@@ -301,7 +387,7 @@ JNIEXPORT jstring JNICALL Java_com_qxotic_jota_runtime_cuda_CudaRuntime_nativeDe
   (JNIEnv *env, jclass cls, jint deviceIndex) {
   (void)cls;
 #if __has_include(<cuda_runtime_api.h>) && __has_include(<cuda.h>)
-  cudaDeviceProp props;
+  struct cudaDeviceProp props;
   memset(&props, 0, sizeof(props));
   cudaError_t status = cudaGetDeviceProperties(&props, (int)deviceIndex);
   if (status != cudaSuccess) {
@@ -339,14 +425,24 @@ JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_cuda_CudaRuntime_loadModule
     throwRuntime(env, "PTX buffer is null");
     return 0;
   }
+  jsize len = (*env)->GetArrayLength(env, ptx);
   jbyte *bytes = (*env)->GetByteArrayElements(env, ptx, NULL);
   if (bytes == NULL) {
     throwRuntime(env, "Failed to read PTX bytes");
     return 0;
   }
-  cudaModule_t module;
-  cudaError_t status = cudaModuleLoadData(&module, (void *)bytes);
+  char *nullTerminatedPtx = (char *)malloc((size_t)len + 1U);
+  if (nullTerminatedPtx == NULL) {
+    (*env)->ReleaseByteArrayElements(env, ptx, bytes, JNI_ABORT);
+    throwRuntime(env, "Failed to allocate PTX staging buffer");
+    return 0;
+  }
+  memcpy(nullTerminatedPtx, bytes, (size_t)len);
+  nullTerminatedPtx[len] = '\0';
+  CUmodule module;
+  cudaError_t status = jotaCudaModuleLoad(&module, (const void *)nullTerminatedPtx);
   (*env)->ReleaseByteArrayElements(env, ptx, bytes, JNI_ABORT);
+  free(nullTerminatedPtx);
   checkCuda(env, status, "cudaModuleLoadData failed");
   return (jlong)(uintptr_t)module;
 #else
@@ -360,8 +456,8 @@ JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_cuda_CudaRuntime_unloadModul
   (JNIEnv *env, jclass cls, jlong moduleHandle) {
   (void)cls;
 #if __has_include(<cuda_runtime_api.h>) && __has_include(<cuda.h>)
-  cudaModule_t module = (cudaModule_t)(uintptr_t)moduleHandle;
-  cudaError_t status = cudaModuleUnload(module);
+  CUmodule module = (CUmodule)(uintptr_t)moduleHandle;
+  cudaError_t status = jotaCudaModuleUnload(module);
   checkCuda(env, status, "cudaModuleUnload failed");
 #else
   (void)env;
@@ -382,9 +478,9 @@ JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_cuda_CudaRuntime_getFunctio
     throwRuntime(env, "Failed to read kernel name");
     return 0;
   }
-  cudaFunction_t function;
-  cudaModule_t module = (cudaModule_t)(uintptr_t)moduleHandle;
-  cudaError_t status = cudaModuleGetFunction(&function, module, nameChars);
+  CUfunction function;
+  CUmodule module = (CUmodule)(uintptr_t)moduleHandle;
+  cudaError_t status = jotaCudaModuleGetFunction(&function, module, nameChars);
   (*env)->ReleaseStringUTFChars(env, name, nameChars);
   checkCuda(env, status, "cudaModuleGetFunction failed");
   return (jlong)(uintptr_t)function;
@@ -401,11 +497,11 @@ JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_cuda_CudaRuntime_launchKerne
    jint blockDimX, jint blockDimY, jint blockDimZ, jint sharedMemBytes, jlong streamHandle,
    jlong argsHandle) {
 #if __has_include(<cuda_runtime_api.h>) && __has_include(<cuda.h>)
-  cudaFunction_t function = (cudaFunction_t)(uintptr_t)functionHandle;
+  CUfunction function = (CUfunction)(uintptr_t)functionHandle;
   cudaStream_t stream = (cudaStream_t)(uintptr_t)streamHandle;
   ArgsPack *pack = (ArgsPack *)(uintptr_t)argsHandle;
   void **args = pack != NULL ? pack->params : NULL;
-  cudaError_t status = cudaModuleLaunchKernel(
+  cudaError_t status = jotaCudaModuleLaunchKernel(
       function,
       gridDimX,
       gridDimY,

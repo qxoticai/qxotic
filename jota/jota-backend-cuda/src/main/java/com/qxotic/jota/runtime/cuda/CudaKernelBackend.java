@@ -44,6 +44,7 @@ final class CudaKernelBackend implements KernelBackend {
                     + "#include <cuda_bf16.h>\n"
                     + "#include <stdint.h>\n"
                     + "#include <math.h>\n";
+    private static final String UNUSED_SCRATCH_WARNING_SUPPRESSION = "-diag-suppress=177";
     private static final Pattern QUOTED_TOKEN = Pattern.compile("\\\"([^\\\"]*)\\\"");
     private static final List<String> EXTRA_FLAGS = parseExtraCompileFlags();
     private static final Map<String, String> NVCC_ID_CACHE = new ConcurrentHashMap<>();
@@ -591,12 +592,13 @@ final class CudaKernelBackend implements KernelBackend {
     }
 
     private static List<String> parseExtraCompileFlags() {
+        List<String> result = new ArrayList<>();
+        result.add(UNUSED_SCRATCH_WARNING_SUPPRESSION);
         String flags = System.getProperty(EXTRA_FLAGS_PROPERTY);
         if (flags == null || flags.isBlank()) {
-            return List.of();
+            return List.copyOf(result);
         }
         String[] parts = flags.trim().split("\\s+");
-        List<String> result = new ArrayList<>(parts.length);
         for (String part : parts) {
             if (!part.isBlank()) {
                 result.add(part);
