@@ -9,28 +9,22 @@ import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.memory.impl.DomainFactory;
 import com.qxotic.jota.memory.impl.MemoryFactory;
-import com.qxotic.jota.runtime.RuntimeDiagnostic;
 import com.qxotic.jota.tensor.Tensor;
 import java.io.IOException;
 import java.nio.file.Path;
 
-public final class RayTracerFusedDemo {
+public final class RayTracer {
     private static final String OUTPUT = "render.ppm";
     private static final int WIDTH = 960, HEIGHT = 540;
     private static final float EPS = 0.001f, HUGE = 1e20f;
 
     public static void main(String[] args) throws IOException {
-        Device device = parseDevice(stringArg(args, "--device", "native"));
-        boolean listDevices = boolFlag(args, "--list-devices");
-
         Environment global = Environment.global();
-        if (listDevices) {
-            printRuntimeDiagnostics(global);
+        if (DemoDevices.hasListDevicesFlag(args)) {
+            System.out.println(DemoDevices.listDevices(global));
             return;
         }
-        if (!global.runtimes().hasRuntime(device)) {
-            throw new IllegalStateException(unavailableDeviceMessage(global, device));
-        }
+        Device device = DemoDevices.resolveDevice(global, stringArg(args, "--device", null));
 
         // Use scoped environment to properly select backend
         Environment env = new Environment(device, DataType.FP32, global.runtimes());
@@ -261,58 +255,5 @@ public final class RayTracerFusedDemo {
             if (args[i].startsWith(key + "=")) return args[i].substring(key.length() + 1);
         }
         return fallback;
-    }
-
-    private static boolean boolFlag(String[] args, String key) {
-        for (String arg : args) if (key.equals(arg)) return true;
-        return false;
-    }
-
-    private static Device parseDevice(String value) {
-        String n = value == null ? "native" : value.trim().toLowerCase();
-        return switch (n) {
-            case "native" -> Device.NATIVE;
-            case "panama", "cpu" -> Device.PANAMA;
-            case "c" -> Device.C;
-            case "hip" -> Device.HIP;
-            case "opencl", "cl" -> Device.OPENCL;
-            case "mojo" -> Device.MOJO;
-            default ->
-                    throw new IllegalArgumentException(
-                            "Unsupported --device: "
-                                    + value
-                                    + " (use native|panama|c|hip|opencl|mojo)");
-        };
-    }
-
-    private static void printRuntimeDiagnostics(Environment env) {
-        System.out.println("Runtime availability:");
-        for (RuntimeDiagnostic d : env.runtimeDiagnostics()) {
-            System.out.println(
-                    "- "
-                            + d.device().leafName()
-                            + " ["
-                            + d.probe().status().name().toLowerCase()
-                            + "] "
-                            + d.probe().message());
-            if (d.probe().hint() != null) System.out.println("  hint: " + d.probe().hint());
-        }
-    }
-
-    private static String unavailableDeviceMessage(Environment env, Device device) {
-        StringBuilder sb =
-                new StringBuilder(
-                        "Requested device runtime is not available: " + device.name() + "\n");
-        for (RuntimeDiagnostic d : env.runtimes().diagnosticsFor(device)) {
-            sb.append("- ")
-                    .append(d.probe().status().name().toLowerCase())
-                    .append(": ")
-                    .append(d.probe().message())
-                    .append("\n");
-            if (d.probe().hint() != null)
-                sb.append("  hint: ").append(d.probe().hint()).append("\n");
-        }
-        sb.append("Try: --device native or run with --list-devices for diagnostics.");
-        return sb.toString();
     }
 }

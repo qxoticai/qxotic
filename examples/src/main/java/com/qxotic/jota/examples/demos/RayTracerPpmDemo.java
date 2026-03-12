@@ -9,7 +9,6 @@ import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.memory.impl.DomainFactory;
 import com.qxotic.jota.memory.impl.MemoryFactory;
-import com.qxotic.jota.runtime.RuntimeDiagnostic;
 import com.qxotic.jota.tensor.Tensor;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -30,17 +29,13 @@ public final class RayTracerPpmDemo {
         int height = intArg(args, "--height", DEFAULT_HEIGHT);
         int bounces = intArg(args, "--bounces", 3);
         String output = stringArg(args, "--output", DEFAULT_OUTPUT);
-        Device device = parseDevice(stringArg(args, "--device", "panama"));
-        boolean listDevices = boolFlag(args, "--list-devices");
 
         Environment global = Environment.global();
-        if (listDevices) {
-            printRuntimeDiagnostics(global);
+        if (DemoDevices.hasListDevicesFlag(args)) {
+            System.out.println(DemoDevices.listDevices(global));
             return;
         }
-        if (!global.runtimes().hasRuntime(device)) {
-            throw new IllegalStateException(unavailableDeviceMessage(global, device));
-        }
+        Device device = DemoDevices.resolveDevice(global, stringArg(args, "--device", null));
 
         try {
             Environment.configureGlobal(new Environment(device, DataType.FP32, global.runtimes()));
@@ -488,63 +483,6 @@ public final class RayTracerPpmDemo {
             }
         }
         return fallback;
-    }
-
-    private static boolean boolFlag(String[] args, String key) {
-        for (String arg : args) {
-            if (key.equals(arg)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static Device parseDevice(String value) {
-        String normalized = value == null ? "panama" : value.trim().toLowerCase();
-        return switch (normalized) {
-            case "panama", "cpu", "native" -> Device.PANAMA;
-            case "c" -> Device.C;
-            case "hip" -> Device.HIP;
-            default ->
-                    throw new IllegalArgumentException(
-                            "Unsupported --device value: " + value + " (use panama|c|hip)");
-        };
-    }
-
-    private static void printRuntimeDiagnostics(Environment environment) {
-        System.out.println("Runtime availability:");
-        for (RuntimeDiagnostic diagnostic : environment.runtimeDiagnostics()) {
-            String status = diagnostic.probe().status().name().toLowerCase();
-            String line =
-                    "- "
-                            + diagnostic.device().leafName()
-                            + " ["
-                            + status
-                            + "] "
-                            + diagnostic.probe().message();
-            System.out.println(line);
-            if (diagnostic.probe().hint() != null) {
-                System.out.println("  hint: " + diagnostic.probe().hint());
-            }
-        }
-    }
-
-    private static String unavailableDeviceMessage(Environment environment, Device device) {
-        StringBuilder message =
-                new StringBuilder(
-                        "Requested device runtime is not available: " + device.name() + "\n");
-        for (RuntimeDiagnostic diagnostic : environment.runtimes().diagnosticsFor(device)) {
-            message.append("- ")
-                    .append(diagnostic.probe().status().name().toLowerCase())
-                    .append(": ")
-                    .append(diagnostic.probe().message())
-                    .append("\n");
-            if (diagnostic.probe().hint() != null) {
-                message.append("  hint: ").append(diagnostic.probe().hint()).append("\n");
-            }
-        }
-        message.append("Try: --device panama or run with --list-devices for diagnostics.");
-        return message.toString();
     }
 
     private record Sphere(
