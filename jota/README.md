@@ -56,7 +56,7 @@ Jota supports custom kernels for these cases and provides decent performance for
 
 ### Backend Dependencies
 
-Just include the backend `.jar` in the classpath, and is will be automatically available on platforms that support it.
+Just include the backend `.jar` in the classpath and it will be automatically available on platforms that support it.  
 **No `-Djava.library.path` required.** Native libraries are bundled in the JAR and auto-extracted at runtime. Use `-Djava.library.path` only for custom native library overrides.
 
 
