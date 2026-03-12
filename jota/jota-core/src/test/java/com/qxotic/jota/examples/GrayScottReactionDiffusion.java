@@ -1,6 +1,7 @@
 package com.qxotic.jota.examples;
 
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.Device;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
@@ -94,10 +95,20 @@ public class GrayScottReactionDiffusion {
     private static final float DV = 0.08f; // Diffusion rate for V
 
     public static void main(String[] args) throws IOException {
+        Environment current = Environment.current();
+        if (DemoDevices.hasListDevicesFlag(args)) {
+            System.out.println(DemoDevices.listDevices(current));
+            return;
+        }
+        Device backend = DemoDevices.resolveDevice(current, backendOption(args));
+
         Pattern pattern = Pattern.CORAL;
         RenderMode renderMode = RenderMode.CONSOLE;
         for (String arg : args) {
             if (arg == null || arg.isBlank()) {
+                continue;
+            }
+            if ("--list-devices".equalsIgnoreCase(arg) || arg.startsWith("--backend=")) {
                 continue;
             }
             if (arg.startsWith("--render=")) {
@@ -144,12 +155,39 @@ public class GrayScottReactionDiffusion {
         System.out.println("Grid: " + WIDTH + "x" + HEIGHT);
         System.out.println("Iterations: " + MAX_ITER);
 
+        Pattern finalPattern = pattern;
+        RenderMode finalRenderMode = renderMode;
         long start = System.currentTimeMillis();
-
-        runSimulation(pattern, renderMode);
+        Environment scoped = new Environment(backend, current.defaultFloat(), current.runtimes());
+        try {
+            Environment.with(
+                    scoped,
+                    () -> {
+                        try {
+                            runSimulation(finalPattern, finalRenderMode);
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                        return null;
+                    });
+        } catch (RuntimeException e) {
+            if (e.getCause() instanceof IOException ioException) {
+                throw ioException;
+            }
+            throw e;
+        }
 
         long elapsed = System.currentTimeMillis() - start;
         System.out.println("\nCompleted in " + elapsed + "ms");
+    }
+
+    private static String backendOption(String[] args) {
+        for (String arg : args) {
+            if (arg != null && arg.startsWith("--backend=")) {
+                return arg.substring("--backend=".length());
+            }
+        }
+        return null;
     }
 
     @Test
