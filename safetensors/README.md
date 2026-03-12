@@ -3,9 +3,9 @@
 [![Java](https://img.shields.io/badge/Java-11+-blue)](https://openjdk.org/projects/jdk/11/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
-A small Java library for reading and writing [Safetensors](https://github.com/huggingface/safetensors) headers.
+A pure Java library for reading and writing HuggingFace's [Safetensors](https://github.com/huggingface/safetensors) format.
 
-**Header-focused · Java 11+**
+**Zero dependencies · Java 11+ · GraalVM Native Image ready**
 
 ---
 
@@ -33,7 +33,7 @@ This keeps the API small and predictable.
 <dependency>
     <groupId>com.qxotic</groupId>
     <artifactId>safetensors</artifactId>
-    <version>0.1-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 ```
 
@@ -80,9 +80,9 @@ The index loader handles both:
 
 ---
 
-## CLI Script (JBang)
+## JBang CLI Script 
 
-Inspect headers directly from local files, URLs, Hugging Face repos, or ModelScope repos:
+Inspect headers directly from local files, URLs, HuggingFace or ModelScope:
 
 ```bash
 jbang scripts/safetensors.java hf HuggingFaceTB/SmolLM2-135M --no-tensors
@@ -95,4 +95,4 @@ Output is pure JSON on stdout.
 
 ## Documentation
 
-Full docs with snippet-backed examples are in `docs/index.md`.
+Full docs and examples are in `docs/index.md`.
