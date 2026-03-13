@@ -18,7 +18,159 @@ public interface Layout {
         return of(shape().flatten(), stride().flatten());
     }
 
+    /**
+     * Returns a simplified flat layout by coalescing adjacent compatible modes.
+     *
+     * <p>Coalescing preserves the layout mapping over its domain while reducing mode count when
+     * possible. This method flattens nested structure and applies local merge rules on adjacent
+     * flat modes.
+     */
+    Layout coalesce();
+
+    /**
+     * Returns whether mode {@code modeIndex} can be coalesced with its next top-level mode.
+     *
+     * <p>This predicate mirrors {@link #coalesce(int)}: it returns true only when the selected pair
+     * is mergeable under the current coalescing rules.
+     */
+    boolean canCoalesce(int _modeIndex);
+
+    /**
+     * Returns a layout with mode {@code modeIndex} coalesced with its next top-level mode when
+     * possible.
+     *
+     * <p>If the selected pair is not mergeable (or no next mode exists), this method returns this
+     * layout unchanged.
+     */
+    Layout coalesce(int _modeIndex);
+
     boolean isCongruentWith(Layout other);
+
+    /**
+     * Returns whether this layout is injective on its logical domain.
+     *
+     * <p>Injective means no two distinct coordinates map to the same offset:
+     *
+     * <pre>c1 != c2 => L(c1) != L(c2)</pre>
+     *
+     * <p>This is equivalent to a non-overlapping layout (no broadcast aliasing).
+     */
+    default boolean isInjective() {
+        return isNonOverlapping();
+    }
+
+    /**
+     * Returns whether this layout is bijective onto its image span.
+     *
+     * <p>Codomain span is the closed interval [{@code minOffset}, {@code maxOffset}] induced by all
+     * mapped offsets. Bijective here means:
+     *
+     * <ul>
+     *   <li>injective (no overlap), and
+     *   <li>surjective over that span (no gaps).
+     * </ul>
+     *
+     * <p>Equivalent predicate in this model: {@code isInjective() && isSpanContiguous()}.
+     */
+    default boolean isBijective() {
+        return isInjective() && isSpanContiguous();
+    }
+
+    /**
+     * Returns the size of the codomain span covered by this layout.
+     *
+     * <p>For a non-empty layout this is {@code maxOffset - minOffset + 1}, where min/max are taken
+     * over all mapped offsets. This is a span-size metric (CuTe-style {@code cosize}), not the
+     * number of unique touched offsets.
+     *
+     * <p>Examples:
+     *
+     * <ul>
+     *   <li>Holey layout may have {@code cosize() > size()}
+     *   <li>Broadcast/overlapping layout may have {@code cosize() < size()}
+     * </ul>
+     *
+     * <p>Empty layouts ({@code size() == 0}) return {@code 0}.
+     *
+     * @throws ArithmeticException on intermediate overflow
+     */
+    default long cosize() {
+        if (shape().hasZeroElements()) {
+            return 0;
+        }
+
+        long minOffset = 0;
+        long maxOffset = 0;
+        long[] dims = shape().toArray();
+        long[] strides = stride().toArray();
+        for (int i = 0; i < dims.length; i++) {
+            long dim = dims[i];
+            if (dim <= 1) {
+                continue;
+            }
+            long span = Math.multiplyExact(dim - 1, strides[i]);
+            if (span >= 0) {
+                maxOffset = Math.addExact(maxOffset, span);
+            } else {
+                minOffset = Math.addExact(minOffset, span);
+            }
+        }
+        return Math.addExact(Math.subtractExact(maxOffset, minOffset), 1);
+    }
+
+    /**
+     * Returns layout composition {@code this ∘ inner}.
+     *
+     * <p>For any coordinate {@code c} in {@code inner.shape()}, the composed mapping is:
+     *
+     * <pre>(this.compose(inner))(c) = this(inner(c))</pre>
+     *
+     * <p>The resulting domain is {@code inner.shape()}. In this API, composition is accepted only
+     * when the resulting map is representable as plain {@code Layout(shape, stride)} (pure affine
+     * strided map with zero origin in coordinate space).
+     *
+     * <p>Throws {@link IllegalArgumentException} when:
+     *
+     * <ul>
+     *   <li>{@code inner} maps outside {@code this} domain, or
+     *   <li>the semantic composition is not representable in this model.
+     * </ul>
+     */
+    Layout compose(Layout inner);
+
+    /**
+     * Returns the inverse layout {@code L^-1} when representable.
+     *
+     * <p>Inverse exists only for bijective layouts. In this API it additionally requires a
+     * zero-based dense codomain ({@code [0, size-1]}), and the inverse map must itself be
+     * representable as plain {@code Layout(shape, stride)}.
+     *
+     * <p>Round-trip law when this method succeeds:
+     *
+     * <pre>L.inverse().compose(L) = I and L.compose(L.inverse()) = I</pre>
+     *
+     * where {@code I} is {@code Layout.rowMajor(L.shape())}.
+     *
+     * <p>Throws {@link IllegalArgumentException} when any precondition or representability check
+     * fails.
+     */
+    Layout inverse();
+
+    /**
+     * Returns the ordered complement layout up to {@code cotarget} codomain coverage.
+     *
+     * <p>The complement captures the "rest/repetition" structure relative to this layout and is
+     * intended for CuTe-style layout algebra (for example, logical divide/product constructions).
+     *
+     * <p>This API currently supports injective, non-negative-stride layouts under the affine
+     * strided model.
+     *
+     * @param cotarget target codomain coverage bound (must be {@code > 0})
+     * @return complement layout in canonical coalesced form
+     * @throws IllegalArgumentException when preconditions are not satisfied
+     * @throws ArithmeticException on overflow in exact arithmetic
+     */
+    Layout complement(long cotarget);
 
     /**
      * Returns true if the given mode (wrap-around index) is contiguous within its own mode range.
