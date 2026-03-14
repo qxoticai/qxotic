@@ -199,14 +199,7 @@ final class TensorFactory {
         ensureSupportedRandomInt(dataType, "uniformInt");
         ensureValidRandIntRange(startInclusive, endExclusive, dataType, "uniformInt");
 
-        long range;
-        try {
-            range = Math.subtractExact(endExclusive, startInclusive);
-        } catch (ArithmeticException ex) {
-            throw new IllegalArgumentException(
-                    "uniformInt range overflow: [" + startInclusive + ", " + endExclusive + ")",
-                    ex);
-        }
+        long range = Math.subtractExact(endExclusive, startInclusive);
 
         Tensor uniform = randomUnitInterval(randomKey, size, DataType.FP64, "uniformInt");
         Tensor offset = uniform.multiply((double) range).cast(DataType.I64);
