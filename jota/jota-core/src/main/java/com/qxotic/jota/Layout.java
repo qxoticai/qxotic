@@ -157,7 +157,7 @@ public interface Layout {
     Layout inverse();
 
     /**
-     * Returns the ordered complement layout up to {@code cotarget} codomain coverage.
+     * Returns the ordered complement layout up to {@code codomainSpanTarget} codomain coverage.
      *
      * <p>The complement captures the "rest/repetition" structure relative to this layout and is
      * intended for CuTe-style layout algebra (for example, logical divide/product constructions).
@@ -165,12 +165,22 @@ public interface Layout {
      * <p>This API currently supports injective, non-negative-stride layouts under the affine
      * strided model.
      *
-     * @param cotarget target codomain coverage bound (must be {@code > 0})
+     * @param codomainSpanTarget target codomain span coverage bound (must be {@code > 0})
      * @return complement layout in canonical coalesced form
      * @throws IllegalArgumentException when preconditions are not satisfied
      * @throws ArithmeticException on overflow in exact arithmetic
      */
-    Layout complement(long cotarget);
+    Layout complement(long codomainSpanTarget);
+
+    /**
+     * Returns the logical divide {@code this ⊘ tiler}.
+     */
+    Layout logicalDivide(Layout tiler);
+
+    /**
+     * Returns the logical product {@code this ⊗ other}.
+     */
+    Layout logicalProduct(Layout other);
 
     /**
      * Returns true if the given mode (wrap-around index) is contiguous within its own mode range.

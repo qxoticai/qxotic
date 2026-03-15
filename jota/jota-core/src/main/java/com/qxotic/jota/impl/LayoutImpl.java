@@ -245,12 +245,12 @@ final class LayoutImpl implements Layout {
     }
 
     @Override
-    public Layout complement(long cotarget) {
-        if (cotarget <= 0) {
-            throw new IllegalArgumentException("cotarget must be > 0");
+    public Layout complement(long codomainSpanTarget) {
+        if (codomainSpanTarget <= 0) {
+            throw new IllegalArgumentException("codomainSpanTarget must be > 0");
         }
         if (shape.hasZeroElements()) {
-            return Layout.rowMajor(cotarget);
+            return Layout.rowMajor(codomainSpanTarget);
         }
 
         Layout normalized = coalesce();
@@ -260,7 +260,7 @@ final class LayoutImpl implements Layout {
 
         List<Mode> modes = normalizedModes(normalized);
         if (modes.isEmpty()) {
-            return Layout.rowMajor(cotarget);
+            return Layout.rowMajor(codomainSpanTarget);
         }
 
         for (Mode mode : modes) {
@@ -292,7 +292,7 @@ final class LayoutImpl implements Layout {
             running = Math.multiplyExact(running, mode.dim);
         }
 
-        long tail = ceilDiv(cotarget, running);
+        long tail = ceilDiv(codomainSpanTarget, running);
         if (tail > 1) {
             complementDims.add(tail);
             complementStrides.add(running);
@@ -305,6 +305,21 @@ final class LayoutImpl implements Layout {
         long[] dims = toArray(complementDims);
         long[] strides = toArray(complementStrides);
         return Layout.of(Shape.flat(dims), Stride.flat(strides)).coalesce();
+    }
+
+    @Override
+    public Layout logicalDivide(Layout tiler) {
+        Objects.requireNonNull(tiler);
+        Layout rest = tiler.complement(shape.size());
+        return compose(makeLayout(tiler, rest));
+    }
+
+    @Override
+    public Layout logicalProduct(Layout other) {
+        Objects.requireNonNull(other);
+        long codomainSpanTarget = Math.multiplyExact(shape.size(), other.cosize());
+        Layout repetitions = complement(codomainSpanTarget).compose(other);
+        return makeLayout(this, repetitions);
     }
 
     private long composeOffset(Layout inner, long[] coord) {
@@ -520,6 +535,11 @@ final class LayoutImpl implements Layout {
             result[i] = values.get(i);
         }
         return result;
+    }
+
+    private static Layout makeLayout(Layout left, Layout right) {
+        return Layout.of(
+                Shape.of(left.shape(), right.shape()), Stride.of(left.stride(), right.stride()));
     }
 
     private record ModePair(long leftDim, long leftStride, long rightDim, long rightStride) {}
