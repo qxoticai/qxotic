@@ -317,7 +317,7 @@ final class MojoComputeEngine<T> implements ComputeEngine {
             for (byte value : hashed) {
                 builder.append(String.format(Locale.ROOT, "%02x", value));
             }
-            builder.append("-mojo-lir-v1");
+            builder.append("-mojo-lir-v13");
             return KernelCacheKey.of(builder.toString());
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is not available", e);
