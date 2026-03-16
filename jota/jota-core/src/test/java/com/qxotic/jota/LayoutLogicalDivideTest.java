@@ -13,8 +13,7 @@ class LayoutLogicalDivideTest {
         Layout base = Layout.rowMajor(24);
         Layout tiler = Layout.rowMajor(4);
 
-        Layout expected =
-                base.compose(makeLayout(tiler, tiler.complement(base.shape().size())));
+        Layout expected = base.compose(makeLayout(tiler, tiler.complement(base.shape().size())));
 
         Layout actual = base.logicalDivide(tiler);
 
@@ -26,8 +25,7 @@ class LayoutLogicalDivideTest {
         Layout base = Layout.rowMajor(Shape.of(2, Shape.of(3, 4)));
         Layout tiler = Layout.rowMajor(Shape.of(2, 2));
 
-        Layout expected =
-                base.compose(makeLayout(tiler, tiler.complement(base.shape().size())));
+        Layout expected = base.compose(makeLayout(tiler, tiler.complement(base.shape().size())));
 
         Layout actual = base.logicalDivide(tiler);
 
@@ -39,8 +37,7 @@ class LayoutLogicalDivideTest {
         Layout base = Layout.of(Shape.flat(2, 2, 2), Stride.flat(8, 2, 1));
         Layout tiler = Layout.rowMajor(4);
 
-        Layout expected =
-                base.compose(makeLayout(tiler, tiler.complement(base.shape().size())));
+        Layout expected = base.compose(makeLayout(tiler, tiler.complement(base.shape().size())));
 
         Layout actual = base.logicalDivide(tiler);
 
@@ -52,8 +49,7 @@ class LayoutLogicalDivideTest {
         Layout base = Layout.rowMajor(24);
         Layout tiler = Layout.of(Shape.flat(1, 4, 1), Stride.flat(0, 1, 0));
 
-        Layout expected =
-                base.compose(makeLayout(tiler, tiler.complement(base.shape().size())));
+        Layout expected = base.compose(makeLayout(tiler, tiler.complement(base.shape().size())));
 
         Layout actual = base.logicalDivide(tiler);
 
@@ -65,8 +61,7 @@ class LayoutLogicalDivideTest {
         Layout base = Layout.rowMajor(8);
         Layout tiler = Layout.scalar();
 
-        Layout expected =
-                base.compose(makeLayout(tiler, tiler.complement(base.shape().size())));
+        Layout expected = base.compose(makeLayout(tiler, tiler.complement(base.shape().size())));
 
         Layout actual = base.logicalDivide(tiler);
 
@@ -143,8 +138,7 @@ class LayoutLogicalDivideTest {
         Layout base = Layout.rowMajor(24);
         Layout tiler = Layout.rowMajor(4);
 
-        Layout expected =
-                base.compose(makeLayout(tiler, tiler.complement(base.shape().size())));
+        Layout expected = base.compose(makeLayout(tiler, tiler.complement(base.shape().size())));
         Layout actual = base.logicalDivide(tiler);
 
         assertEquals(expected.shape(), actual.shape());

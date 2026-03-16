@@ -12,9 +12,11 @@ class LayoutLogicalProductTest {
         Layout base = Layout.rowMajor(4);
         Layout other = Layout.rowMajor(6);
 
-        Layout expected = makeLayout(
-                base,
-                base.complement(Math.multiplyExact(base.shape().size(), other.cosize())).compose(other));
+        Layout expected =
+                makeLayout(
+                        base,
+                        base.complement(Math.multiplyExact(base.shape().size(), other.cosize()))
+                                .compose(other));
 
         Layout actual = base.logicalProduct(other);
 
@@ -26,9 +28,11 @@ class LayoutLogicalProductTest {
         Layout base = Layout.rowMajor(Shape.of(2, Shape.of(2, 2)));
         Layout other = Layout.rowMajor(3);
 
-        Layout expected = makeLayout(
-                base,
-                base.complement(Math.multiplyExact(base.shape().size(), other.cosize())).compose(other));
+        Layout expected =
+                makeLayout(
+                        base,
+                        base.complement(Math.multiplyExact(base.shape().size(), other.cosize()))
+                                .compose(other));
 
         Layout actual = base.logicalProduct(other);
 
@@ -40,9 +44,11 @@ class LayoutLogicalProductTest {
         Layout base = Layout.rowMajor(8);
         Layout other = Layout.scalar();
 
-        Layout expected = makeLayout(
-                base,
-                base.complement(Math.multiplyExact(base.shape().size(), other.cosize())).compose(other));
+        Layout expected =
+                makeLayout(
+                        base,
+                        base.complement(Math.multiplyExact(base.shape().size(), other.cosize()))
+                                .compose(other));
 
         Layout actual = base.logicalProduct(other);
 
@@ -65,9 +71,11 @@ class LayoutLogicalProductTest {
         Layout base = Layout.rowMajor(6);
         Layout other = Layout.rowMajor(4);
 
-        Layout formula = makeLayout(
-                base,
-                base.complement(Math.multiplyExact(base.shape().size(), other.cosize())).compose(other));
+        Layout formula =
+                makeLayout(
+                        base,
+                        base.complement(Math.multiplyExact(base.shape().size(), other.cosize()))
+                                .compose(other));
 
         assertEquals(formula, base.logicalProduct(other));
     }

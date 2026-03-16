@@ -172,9 +172,7 @@ public interface Layout {
      */
     Layout complement(long codomainSpanTarget);
 
-    /**
-     * Returns the logical divide {@code this ⊘ tiler}.
-     */
+    /** Returns the logical divide {@code this ⊘ tiler}. */
     Layout logicalDivide(Layout tiler);
 
     /**
@@ -194,9 +192,7 @@ public interface Layout {
         return logicalDivide(Layout.rowMajor(tileSize));
     }
 
-    /**
-     * Returns the logical product {@code this ⊗ other}.
-     */
+    /** Returns the logical product {@code this ⊗ other}. */
     Layout logicalProduct(Layout other);
 
     /**
