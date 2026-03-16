@@ -2788,9 +2788,7 @@ public final class Llama32Cli {
                                         runtime.registerKernel(
                                                 kernelName,
                                                 KernelProgram.source(
-                                                        "c",
-                                                        kernelSource,
-                                                        entryPoint)));
+                                                        "c", kernelSource, entryPoint)));
             } catch (RuntimeException ex) {
                 return null;
             }

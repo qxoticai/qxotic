@@ -43,8 +43,8 @@
     <module>examples</module>
 
     <!-- Deprecated modules -->
-    <module>span</module>
-    <module>scratch</module>
+    <module>deprecated/span</module>
+    <module>deprecated/scratch</module>
   </modules>
 
   <scm>
