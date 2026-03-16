@@ -239,6 +239,98 @@ class MojoLirKernelGeneratorTest {
         assertTrue(source.contains(" != "));
     }
 
+    @Test
+    void emitsTypedIntegerAccumulatorForReduction() {
+        useTempCache();
+
+        LIRGraph.Builder builder = LIRGraph.builder();
+        BufferRef inputBuf = builder.addContiguousInput(DataType.I32, 6);
+        BufferRef outBuf = builder.addContiguousOutput(DataType.I32, 2);
+
+        LIRExprGraph graph = builder.exprGraph();
+        LIRExprNode i0 = graph.indexVar("i0");
+        LIRExprNode i1 = graph.indexVar("i1");
+        LIRExprNode rowBase = graph.indexBinary(IndexBinaryOp.MULTIPLY, i0, graph.indexConst(12));
+        LIRExprNode colOff = graph.indexBinary(IndexBinaryOp.MULTIPLY, i1, graph.indexConst(4));
+        LIRExprNode offset = graph.indexBinary(IndexBinaryOp.ADD, rowBase, colOff);
+        LIRExprNode x = graph.scalarLoad(inputBuf, offset, DataType.I32);
+        LIRExprNode accRef = graph.scalarRef("acc0", DataType.I32);
+        LIRExprNode max = graph.scalarBinary(BinaryOperator.MAX, accRef, x);
+
+        Block innerBody = graph.block(List.of(graph.yield(List.of(max))));
+        LIRExprNode innerLoop =
+                graph.structuredFor(
+                        "i1",
+                        graph.indexConst(0),
+                        graph.indexConst(3),
+                        graph.indexConst(1),
+                        List.of(
+                                new LoopIterArg(
+                                        "acc0",
+                                        DataType.I32,
+                                        graph.scalarConst(Integer.MIN_VALUE, DataType.I32))),
+                        innerBody);
+
+        LIRExprNode outOffset = graph.indexBinary(IndexBinaryOp.MULTIPLY, i0, graph.indexConst(4));
+        LIRExprNode store = graph.store(outBuf, outOffset, accRef);
+        Block outerBody = graph.block(List.of(innerLoop, store, graph.yield(List.of())));
+        LIRExprNode outerLoop =
+                graph.structuredFor(
+                        "i0",
+                        graph.indexConst(0),
+                        graph.indexConst(2),
+                        graph.indexConst(1),
+                        List.of(),
+                        outerBody);
+
+        KernelProgram program =
+                new MojoLirKernelGenerator()
+                        .generate(
+                                builder.build(outerLoop),
+                                ScratchLayout.EMPTY,
+                                KernelCacheKey.of("lir_to_mojo_i32_reduction_typed_acc"));
+
+        String source = (String) program.payload();
+        assertTrue(source.contains("acc0 = Int32("));
+        assertTrue(source.contains("acc0_next"));
+        assertTrue(source.contains("acc0 = acc0_next"));
+    }
+
+    @Test
+    void emitsFp64TrigViaFp32Workaround() {
+        useTempCache();
+
+        LIRGraph.Builder builder = LIRGraph.builder();
+        BufferRef inputBuf = builder.addContiguousInput(DataType.FP64, 2);
+        BufferRef outBuf = builder.addContiguousOutput(DataType.FP64, 2);
+
+        LIRExprGraph graph = builder.exprGraph();
+        LIRExprNode i = graph.indexVar("i");
+        LIRExprNode offset = graph.indexBinary(IndexBinaryOp.MULTIPLY, i, graph.indexConst(8));
+        LIRExprNode x = graph.scalarLoad(inputBuf, offset, DataType.FP64);
+        LIRExprNode c = graph.scalarUnary(UnaryOperator.COS, x);
+        LIRExprNode store = graph.store(outBuf, offset, c);
+        Block body = graph.block(List.of(store, graph.yield(List.of())));
+        LIRExprNode loop =
+                graph.structuredFor(
+                        "i",
+                        graph.indexConst(0),
+                        graph.indexConst(2),
+                        graph.indexConst(1),
+                        List.of(),
+                        body);
+
+        KernelProgram program =
+                new MojoLirKernelGenerator()
+                        .generate(
+                                builder.build(loop),
+                                ScratchLayout.EMPTY,
+                                KernelCacheKey.of("lir_to_mojo_fp64_trig_workaround"));
+
+        String source = (String) program.payload();
+        assertTrue(source.contains("Float64(cos(Float32("));
+    }
+
     private void useTempCache() {
         System.setProperty(KernelCachePaths.CACHE_ROOT_PROPERTY, tempDir.toString());
         System.setProperty(KernelCachePaths.VERSION_PROPERTY, "test");

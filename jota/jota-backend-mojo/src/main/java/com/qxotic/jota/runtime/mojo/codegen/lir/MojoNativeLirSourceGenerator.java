@@ -1,5 +1,6 @@
 package com.qxotic.jota.runtime.mojo.codegen.lir;
 
+import com.qxotic.jota.BFloat16;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.ir.lir.Block;
 import com.qxotic.jota.ir.lir.BufferRef;
@@ -66,7 +67,7 @@ final class MojoNativeLirSourceGenerator {
         cachedScalars.clear();
 
         line("from std.gpu import block_idx, block_dim, thread_idx");
-        line("from math import sqrt");
+        line("from math import cos, log2, sin, sqrt, tan, tanh");
         line("");
         emitHeader();
         indent++;
@@ -265,7 +266,7 @@ final class MojoNativeLirSourceGenerator {
 
     private void emitStructuredFor(StructuredFor loop) {
         for (LoopIterArg arg : loop.iterArgs()) {
-            line(arg.name() + " = " + emitScalarExpr(arg.init()));
+            line(arg.name() + " = " + forceCastExpr(arg.dataType(), emitScalarExpr(arg.init())));
         }
         String idx = loop.indexName();
         String lb = emitIndexExpr(loop.lowerBound());
@@ -281,7 +282,10 @@ final class MojoNativeLirSourceGenerator {
         for (int i = 0; i < loop.iterArgs().size(); i++) {
             LoopIterArg arg = loop.iterArgs().get(i);
             String tmp = arg.name() + "_next" + (tempId++);
-            line(tmp + " = " + emitScalarExpr(yield.values().get(i)));
+            line(
+                    tmp
+                            + " = "
+                            + forceCastExpr(arg.dataType(), emitScalarExpr(yield.values().get(i))));
             line(arg.name() + " = " + tmp);
         }
         indent--;
@@ -291,6 +295,9 @@ final class MojoNativeLirSourceGenerator {
         String bufferName = requireBuffer(store.buffer());
         String idx = byteOffsetToElementIndex(store.buffer(), emitIndexExpr(store.offset()));
         String value = emitScalarExpr(store.value());
+        if (store.value().dataType() != store.buffer().dataType()) {
+            value = castExpr(store.value().dataType(), store.buffer().dataType(), value);
+        }
         line(bufferName + "[" + idx + "] = " + value);
     }
 
@@ -335,7 +342,7 @@ final class MojoNativeLirSourceGenerator {
             case S_FROM_INDEX -> {
                 SFromIndex fromIndex = (SFromIndex) node;
                 String indexExpr = emitIndexExpr(fromIndex.indexExpr());
-                yield castExpr(DataType.I64, fromIndex.dataType(), indexExpr);
+                yield forceCastExpr(fromIndex.dataType(), indexExpr);
             }
             case S_UNARY -> emitUnary((SUnary) node);
             case S_BINARY -> emitBinary((SBinary) node);
@@ -354,10 +361,10 @@ final class MojoNativeLirSourceGenerator {
             case LOG -> "(log2(" + in + ") * 0.6931471805599453)"; // Approximate ln(x)
             case SQRT -> "sqrt(" + in + ")";
             case SQUARE -> "(" + in + " * " + in + ")";
-            case SIN -> "sin(" + in + ")";
-            case COS -> "cos(" + in + ")";
-            case TAN -> "tan(" + in + ")";
-            case TANH -> "tanh(" + in + ")";
+            case SIN -> emitTrig("sin", in, unary.input().dataType());
+            case COS -> emitTrig("cos", in, unary.input().dataType());
+            case TAN -> emitTrig("tan", in, unary.input().dataType());
+            case TANH -> emitTrig("tanh", in, unary.input().dataType());
             case RECIPROCAL -> {
                 String one = unary.input().dataType() == DataType.FP32 ? "Float32(1.0)" : "1.0";
                 yield "(" + one + " / " + in + ")";
@@ -365,6 +372,13 @@ final class MojoNativeLirSourceGenerator {
             case LOGICAL_NOT -> "(not (" + truthy(in, unary.input().dataType()) + "))";
             case BITWISE_NOT -> "~(" + in + ")";
         };
+    }
+
+    private String emitTrig(String fn, String in, DataType type) {
+        if (type == DataType.FP64) {
+            return "Float64(" + fn + "(Float32(" + in + ")))";
+        }
+        return fn + "(" + in + ")";
     }
 
     private String emitBinary(SBinary binary) {
@@ -400,10 +414,17 @@ final class MojoNativeLirSourceGenerator {
             case BITWISE_AND -> "(" + l + " & " + r + ")";
             case BITWISE_OR -> "(" + l + " | " + r + ")";
             case BITWISE_XOR -> "(" + l + " ^ " + r + ")";
-            case SHIFT_LEFT -> "(" + l + " << " + normalizedShift(binary.dataType(), r) + ")";
-            case SHIFT_RIGHT -> "(" + l + " >> " + normalizedShift(binary.dataType(), r) + ")";
+            case SHIFT_LEFT ->
+                    forceCastExpr(
+                            binary.dataType(),
+                            "(" + l + " << " + normalizedShift(binary.dataType(), r) + ")");
+            case SHIFT_RIGHT ->
+                    forceCastExpr(
+                            binary.dataType(),
+                            "(" + l + " >> " + normalizedShift(binary.dataType(), r) + ")");
             case SHIFT_RIGHT_UNSIGNED ->
-                    "(UInt64(" + l + ") >> " + normalizedShift(binary.dataType(), r) + ")";
+                    emitUnsignedRightShift(
+                            binary.dataType(), l, normalizedShift(binary.dataType(), r));
             case EQUAL -> "(" + l + " == " + r + ")";
             case LESS_THAN -> "(" + l + " < " + r + ")";
         };
@@ -447,7 +468,7 @@ final class MojoNativeLirSourceGenerator {
             case ADD -> "+";
             case SUBTRACT -> "-";
             case MULTIPLY -> "*";
-            case DIVIDE -> "/";
+            case DIVIDE -> "//";
             case MODULO -> "%";
             case BITWISE_AND -> "&";
             case BITWISE_XOR -> "^";
@@ -478,9 +499,7 @@ final class MojoNativeLirSourceGenerator {
         if (byteSize == 1) {
             return "Int(" + offsetExpr + ")";
         }
-        // Use regular division and let Int() truncate, or use // for floor division
-        // Both should work for positive offsets
-        return "Int((" + offsetExpr + ") / " + byteSize + ")";
+        return "Int((" + offsetExpr + ") // " + byteSize + ")";
     }
 
     private String scalarLiteral(SConst c) {
@@ -489,18 +508,71 @@ final class MojoNativeLirSourceGenerator {
         if (t == DataType.BOOL) {
             return bits == 0 ? "False" : "True";
         }
-        if (t == DataType.I8 || t == DataType.I16 || t == DataType.I32 || t == DataType.I64) {
-            return Long.toString(bits);
+        if (t == DataType.I8) {
+            return "Int8(" + Byte.toString((byte) bits) + ")";
+        }
+        if (t == DataType.I16) {
+            return "Int16(" + Short.toString((short) bits) + ")";
+        }
+        if (t == DataType.I32) {
+            return "Int32(" + Integer.toString((int) bits) + ")";
+        }
+        if (t == DataType.I64) {
+            return "Int64(" + Long.toString(bits) + ")";
         }
         if (t == DataType.FP32) {
-            String literal = CLikeExprSupport.formatFloatLiteral(Float.intBitsToFloat((int) bits));
+            float value = Float.intBitsToFloat((int) bits);
+            if (Float.isNaN(value)) {
+                return "Float32(0.0)";
+            }
+            if (Float.isInfinite(value)) {
+                return value < 0.0f ? "Float32(-3.4028235e38)" : "Float32(3.4028235e38)";
+            }
+            String literal = CLikeExprSupport.formatFloatLiteral(value);
             if (literal.endsWith("f")) {
                 literal = literal.substring(0, literal.length() - 1);
             }
             return "Float32(" + literal + ")";
         }
         if (t == DataType.FP64) {
-            return CLikeExprSupport.formatDoubleLiteral(Double.longBitsToDouble(bits));
+            double value = Double.longBitsToDouble(bits);
+            if (Double.isNaN(value)) {
+                return "Float64(0.0)";
+            }
+            if (Double.isInfinite(value)) {
+                return value < 0.0
+                        ? "Float64(-1.7976931348623157e308)"
+                        : "Float64(1.7976931348623157e308)";
+            }
+            return "Float64(" + CLikeExprSupport.formatDoubleLiteral(value) + ")";
+        }
+        if (t == DataType.FP16) {
+            float value = Float.float16ToFloat((short) bits);
+            if (Float.isNaN(value)) {
+                return "Float16(0.0)";
+            }
+            if (Float.isInfinite(value)) {
+                return value < 0.0f ? "Float16(-65504.0)" : "Float16(65504.0)";
+            }
+            String literal = CLikeExprSupport.formatFloatLiteral(value);
+            if (literal.endsWith("f")) {
+                literal = literal.substring(0, literal.length() - 1);
+            }
+            return "Float16(" + literal + ")";
+        }
+        if (t == DataType.BF16) {
+            float value = BFloat16.toFloat((short) bits);
+            if (Float.isNaN(value)) {
+                return "BFloat16(0.0)";
+            }
+            if (Float.isInfinite(value)) {
+                return value < 0.0f ? "BFloat16(-3.3895314e38)" : "BFloat16(3.3895314e38)";
+            }
+            String literal = CLikeExprSupport.formatFloatLiteral(value);
+            if (literal.endsWith("f")) {
+                literal = literal.substring(0, literal.length() - 1);
+            }
+            return "BFloat16(" + literal + ")";
         }
         return "0";
     }
@@ -528,7 +600,44 @@ final class MojoNativeLirSourceGenerator {
             return "Float64(" + expr + ")";
         }
         if (target == DataType.I64) {
-            return "Int(" + expr + ")";
+            return "Int64(" + expr + ")";
+        }
+        if (target == DataType.FP16) {
+            return "Float16(" + expr + ")";
+        }
+        if (target == DataType.BF16) {
+            return "BFloat16(" + expr + ")";
+        }
+        return expr;
+    }
+
+    private String forceCastExpr(DataType target, String expr) {
+        if (target == DataType.BOOL) {
+            return "Bool(" + expr + ")";
+        }
+        if (target == DataType.I8) {
+            return "Int8(" + expr + ")";
+        }
+        if (target == DataType.I16) {
+            return "Int16(" + expr + ")";
+        }
+        if (target == DataType.I32) {
+            return "Int32(" + expr + ")";
+        }
+        if (target == DataType.I64) {
+            return "Int64(" + expr + ")";
+        }
+        if (target == DataType.FP32) {
+            return "Float32(" + expr + ")";
+        }
+        if (target == DataType.FP64) {
+            return "Float64(" + expr + ")";
+        }
+        if (target == DataType.FP16) {
+            return "Float16(" + expr + ")";
+        }
+        if (target == DataType.BF16) {
+            return "BFloat16(" + expr + ")";
         }
         return expr;
     }
@@ -541,7 +650,33 @@ final class MojoNativeLirSourceGenerator {
     }
 
     private String normalizedShift(DataType type, String right) {
-        return CLikeExprSupport.normalizedShift(type, right);
+        int mask = 31;
+        if (type == DataType.I8) {
+            mask = 7;
+        } else if (type == DataType.I16) {
+            mask = 15;
+        } else if (type == DataType.I32) {
+            mask = 31;
+        } else if (type == DataType.I64) {
+            mask = 63;
+        }
+        return "(Int(" + right + ") & " + mask + ")";
+    }
+
+    private String emitUnsignedRightShift(DataType type, String left, String shiftExpr) {
+        if (type == DataType.I8) {
+            return "Int8((UInt32(Int32(" + left + ") & 255) >> " + shiftExpr + "))";
+        }
+        if (type == DataType.I16) {
+            return "Int16((UInt32(Int32(" + left + ") & 65535) >> " + shiftExpr + "))";
+        }
+        if (type == DataType.I32) {
+            return "Int32((UInt32(" + left + ") >> " + shiftExpr + "))";
+        }
+        if (type == DataType.I64) {
+            return "Int64((UInt64(" + left + ") >> " + shiftExpr + "))";
+        }
+        return forceCastExpr(type, "(UInt64(" + left + ") >> " + shiftExpr + ")");
     }
 
     private String mojoType(DataType type) {
@@ -558,7 +693,7 @@ final class MojoNativeLirSourceGenerator {
             return "Int32";
         }
         if (type == DataType.I64) {
-            return "Int";
+            return "Int64";
         }
         if (type == DataType.FP32) {
             return "Float32";

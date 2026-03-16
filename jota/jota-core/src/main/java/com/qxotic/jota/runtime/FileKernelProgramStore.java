@@ -73,19 +73,39 @@ public final class FileKernelProgramStore implements KernelProgramStore {
         } catch (IOException e) {
             throw new IllegalStateException("Failed to read kernel program metadata " + key, e);
         }
-        KernelProgram.Kind kind = KernelProgram.Kind.valueOf(props.getProperty("kind"));
+        String kindName = props.getProperty("kind");
+        if (kindName == null || kindName.isBlank()) {
+            return Optional.empty();
+        }
+        KernelProgram.Kind kind;
+        try {
+            kind = KernelProgram.Kind.valueOf(kindName);
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
+        }
         String language = props.getProperty("language");
         String entryPoint = props.getProperty("entryPoint");
+        if (language == null || language.isBlank() || entryPoint == null || entryPoint.isBlank()) {
+            return Optional.empty();
+        }
         Map<String, String> options = readOptions(props);
         Object payload;
         try {
             if (kind == KernelProgram.Kind.SOURCE) {
-                payload = Files.readString(dir.resolve(SOURCE_FILE), StandardCharsets.UTF_8);
+                Path sourcePath = dir.resolve(SOURCE_FILE);
+                if (!Files.exists(sourcePath)) {
+                    return Optional.empty();
+                }
+                payload = Files.readString(sourcePath, StandardCharsets.UTF_8);
             } else {
-                payload = Files.readAllBytes(dir.resolve(BINARY_FILE));
+                Path binaryPath = dir.resolve(BINARY_FILE);
+                if (!Files.exists(binaryPath)) {
+                    return Optional.empty();
+                }
+                payload = Files.readAllBytes(binaryPath);
             }
         } catch (IOException e) {
-            throw new IllegalStateException("Failed to read kernel program payload " + key, e);
+            return Optional.empty();
         }
         return Optional.of(new KernelProgram(kind, language, payload, entryPoint, options));
     }
