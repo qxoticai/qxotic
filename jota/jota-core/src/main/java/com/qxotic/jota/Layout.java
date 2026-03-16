@@ -178,6 +178,23 @@ public interface Layout {
     Layout logicalDivide(Layout tiler);
 
     /**
+     * Convenience tiling helper equivalent to dividing by a 1D row-major tiler.
+     *
+     * <p>Definition: {@code this.tile(tileSize) == this.logicalDivide(Layout.rowMajor(tileSize))}.
+     *
+     * @param tileSize tile length (must be {@code > 0})
+     * @throws IllegalArgumentException if {@code tileSize <= 0} or if the underlying logical divide
+     *     preconditions fail
+     * @throws ArithmeticException on overflow in exact arithmetic
+     */
+    default Layout tile(long tileSize) {
+        if (tileSize <= 0) {
+            throw new IllegalArgumentException("tileSize must be > 0");
+        }
+        return logicalDivide(Layout.rowMajor(tileSize));
+    }
+
+    /**
      * Returns the logical product {@code this ⊗ other}.
      */
     Layout logicalProduct(Layout other);
