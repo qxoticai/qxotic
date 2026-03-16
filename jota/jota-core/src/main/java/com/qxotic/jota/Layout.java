@@ -91,8 +91,6 @@ public interface Layout {
      * </ul>
      *
      * <p>Empty layouts ({@code size() == 0}) return {@code 0}.
-     *
-     * @throws ArithmeticException on intermediate overflow
      */
     default long cosize() {
         if (shape().hasZeroElements()) {
@@ -168,7 +166,6 @@ public interface Layout {
      * @param codomainSpanTarget target codomain span coverage bound (must be {@code > 0})
      * @return complement layout in canonical coalesced form
      * @throws IllegalArgumentException when preconditions are not satisfied
-     * @throws ArithmeticException on overflow in exact arithmetic
      */
     Layout complement(long codomainSpanTarget);
 
@@ -183,7 +180,6 @@ public interface Layout {
      * @param tileSize tile length (must be {@code > 0})
      * @throws IllegalArgumentException if {@code tileSize <= 0} or if the underlying logical divide
      *     preconditions fail
-     * @throws ArithmeticException on overflow in exact arithmetic
      */
     default Layout tile(long tileSize) {
         if (tileSize <= 0) {
