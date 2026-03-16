@@ -70,18 +70,4 @@
     </plugins>
   </build>
 
-  <profiles>
-    <!-- Explicit test selection enables tests -->
-    <profile>
-      <id>c-explicit-test-selection</id>
-      <activation>
-        <property>
-          <name>test</name>
-        </property>
-      </activation>
-      <properties>
-        <skipTests.backend.c>false</skipTests.backend.c>
-      </properties>
-    </profile>
-  </profiles>
 </project>
