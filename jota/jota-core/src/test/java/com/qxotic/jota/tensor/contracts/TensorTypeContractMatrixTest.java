@@ -46,8 +46,8 @@ class TensorTypeContractMatrixTest {
         for (BinaryTensorOp op : ops) {
             for (DataType leftType : PRIMITIVE_TYPES) {
                 for (DataType rightType : PRIMITIVE_TYPES) {
-                    Tensor left = scalar(leftType, 3);
-                    Tensor right = scalar(rightType, 2);
+                    Tensor left = Tensor.scalar(3, leftType);
+                    Tensor right = Tensor.scalar(2, rightType);
                     DataType expected;
                     try {
                         expected = TypeRules.promote(leftType, rightType);
@@ -79,8 +79,8 @@ class TensorTypeContractMatrixTest {
         for (BinaryTensorOp op : ops) {
             for (DataType leftType : PRIMITIVE_TYPES) {
                 for (DataType rightType : PRIMITIVE_TYPES) {
-                    Tensor left = scalar(leftType, 3);
-                    Tensor right = scalar(rightType, 2);
+                    Tensor left = Tensor.scalar(3, leftType);
+                    Tensor right = Tensor.scalar(2, rightType);
                     try {
                         TypeRules.promoteForComparison(leftType, rightType);
                     } catch (IllegalArgumentException e) {
@@ -104,8 +104,8 @@ class TensorTypeContractMatrixTest {
         for (BinaryTensorOp op : ops) {
             for (DataType leftType : PRIMITIVE_TYPES) {
                 for (DataType rightType : PRIMITIVE_TYPES) {
-                    Tensor left = scalar(leftType, 1);
-                    Tensor right = scalar(rightType, 0);
+                    Tensor left = Tensor.scalar(1, leftType);
+                    Tensor right = Tensor.scalar(0, rightType);
                     if (leftType == DataType.BOOL && rightType == DataType.BOOL) {
                         MemoryView<?> out = op.apply(left, right).materialize();
                         assertEquals(DataType.BOOL, out.dataType());
@@ -131,8 +131,8 @@ class TensorTypeContractMatrixTest {
         for (BinaryTensorOp op : ops) {
             for (DataType leftType : PRIMITIVE_TYPES) {
                 for (DataType rightType : PRIMITIVE_TYPES) {
-                    Tensor left = scalar(leftType, 1);
-                    Tensor right = scalar(rightType, 3);
+                    Tensor left = Tensor.scalar(1, leftType);
+                    Tensor right = Tensor.scalar(3, rightType);
                     boolean supported =
                             leftType == rightType
                                     && leftType.isIntegral()
@@ -162,8 +162,8 @@ class TensorTypeContractMatrixTest {
         for (BinaryTensorOp op : ops) {
             for (DataType leftType : PRIMITIVE_TYPES) {
                 for (DataType rightType : PRIMITIVE_TYPES) {
-                    Tensor left = scalar(leftType, 1);
-                    Tensor right = scalar(rightType, 3);
+                    Tensor left = Tensor.scalar(1, leftType);
+                    Tensor right = Tensor.scalar(3, rightType);
                     boolean supported =
                             leftType.isIntegral()
                                     && leftType != DataType.BOOL
@@ -190,7 +190,7 @@ class TensorTypeContractMatrixTest {
     @Test
     void bitwiseNotRequiresIntegralNonBoolType() {
         for (DataType type : PRIMITIVE_TYPES) {
-            Tensor input = scalar(type, 1);
+            Tensor input = Tensor.scalar(1, type);
             if (type.isIntegral() && type != DataType.BOOL) {
                 MemoryView<?> out = input.bitwiseNot().materialize();
                 assertEquals(type, out.dataType());
@@ -203,26 +203,30 @@ class TensorTypeContractMatrixTest {
 
     @Test
     void whereTypeRulesAreEnforced() {
-        Tensor condition = scalar(DataType.BOOL, 1);
+        Tensor condition = Tensor.scalar(1, DataType.BOOL);
         for (DataType type : PRIMITIVE_TYPES) {
-            Tensor value = scalar(type, 7);
+            Tensor value = Tensor.scalar(7, type);
             MemoryView<?> out = condition.where(value, value).materialize();
             assertEquals(type, out.dataType());
         }
 
-        Tensor nonBoolCondition = scalar(DataType.I32, 1);
+        Tensor nonBoolCondition = Tensor.scalar(1, DataType.I32);
         assertThrows(
                 IllegalArgumentException.class,
-                () -> nonBoolCondition.where(scalar(DataType.I32, 1), scalar(DataType.I32, 2)));
+                () ->
+                        nonBoolCondition.where(
+                                Tensor.scalar(1, DataType.I32), Tensor.scalar(2, DataType.I32)));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> condition.where(scalar(DataType.I32, 1), scalar(DataType.FP32, 2)));
+                () ->
+                        condition.where(
+                                Tensor.scalar(1, DataType.I32), Tensor.scalar(2, DataType.FP32)));
     }
 
     @Test
     void anyAllRequireBoolInputs() {
         for (DataType type : PRIMITIVE_TYPES) {
-            Tensor input = scalar(type, 1);
+            Tensor input = Tensor.scalar(1, type);
             if (type == DataType.BOOL) {
                 assertEquals(DataType.BOOL, input.any().materialize().dataType());
                 assertEquals(DataType.BOOL, input.all().materialize().dataType());
@@ -236,7 +240,7 @@ class TensorTypeContractMatrixTest {
     @Test
     void argReduceRejectsBoolAndReturnsI64ForNumericTypes() {
         for (DataType type : PRIMITIVE_TYPES) {
-            Tensor input = scalar(type, 1);
+            Tensor input = Tensor.scalar(1, type);
             if (type == DataType.BOOL) {
                 assertThrows(IllegalArgumentException.class, input::argmax);
                 assertThrows(IllegalArgumentException.class, input::argmin);
@@ -251,8 +255,8 @@ class TensorTypeContractMatrixTest {
     void dotRequiresSameNumericNonBoolInputTypes() {
         for (DataType leftType : PRIMITIVE_TYPES) {
             for (DataType rightType : PRIMITIVE_TYPES) {
-                Tensor left = scalar(leftType, 2).view(Shape.of(1));
-                Tensor right = scalar(rightType, 3).view(Shape.of(1));
+                Tensor left = Tensor.scalar(2, leftType).view(Shape.of(1));
+                Tensor right = Tensor.scalar(3, rightType).view(Shape.of(1));
                 boolean supported =
                         leftType == rightType
                                 && leftType != DataType.BOOL
@@ -273,8 +277,8 @@ class TensorTypeContractMatrixTest {
         for (DataType leftType : PRIMITIVE_TYPES) {
             for (DataType rightType : PRIMITIVE_TYPES) {
                 for (DataType accType : PRIMITIVE_TYPES) {
-                    Tensor left = scalar(leftType, 2).view(Shape.of(1));
-                    Tensor right = scalar(rightType, 3).view(Shape.of(1));
+                    Tensor left = Tensor.scalar(2, leftType).view(Shape.of(1));
+                    Tensor right = Tensor.scalar(3, rightType).view(Shape.of(1));
 
                     boolean inputSupported =
                             leftType == rightType
@@ -306,9 +310,5 @@ class TensorTypeContractMatrixTest {
                 }
             }
         }
-    }
-
-    private static Tensor scalar(DataType type, long value) {
-        return Tensor.scalar(value, type);
     }
 }
