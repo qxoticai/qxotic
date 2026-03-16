@@ -47,17 +47,4 @@
     </plugins>
   </build>
 
-  <profiles>
-    <profile>
-      <id>panama-explicit-test-selection</id>
-      <activation>
-        <property>
-          <name>test</name>
-        </property>
-      </activation>
-      <properties>
-        <skipTests.backend.panama>false</skipTests.backend.panama>
-      </properties>
-    </profile>
-  </profiles>
 </project>

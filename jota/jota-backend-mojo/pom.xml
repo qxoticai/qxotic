@@ -213,16 +213,5 @@
         </plugins>
       </build>
     </profile>
-    <profile>
-      <id>hip-explicit-test-selection</id>
-      <activation>
-        <property>
-          <name>test</name>
-        </property>
-      </activation>
-      <properties>
-        <skipTests.backend.mojo>false</skipTests.backend.mojo>
-      </properties>
-    </profile>
   </profiles>
 </project>

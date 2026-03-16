@@ -70,18 +70,4 @@
     </plugins>
   </build>
 
-  <profiles>
-    <!-- Explicit test selection enables tests -->
-    <profile>
-      <id>cuda-explicit-test-selection</id>
-      <activation>
-        <property>
-          <name>test</name>
-        </property>
-      </activation>
-      <properties>
-        <skipTests.backend.cuda>false</skipTests.backend.cuda>
-      </properties>
-    </profile>
-  </profiles>
 </project>
