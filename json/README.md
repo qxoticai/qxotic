@@ -24,7 +24,7 @@ Strict JSON parser/printer for Java. Zero dependencies, RFC 8259 compliant.
 <dependency>    
     <groupId>com.qxotic</groupId>
     <artifactId>json</artifactId>
-    <version>0.1-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 ```
 

@@ -67,20 +67,20 @@ java GGUFInspector.java https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0
     <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>gguf</artifactId>
-        <version>0.1-SNAPSHOT</version>
+        <version>0.1.0</version>
     </dependency>
     ```
 
 === "Gradle"
 
     ```groovy
-    implementation 'com.qxotic:gguf:0.1-SNAPSHOT'
+    implementation 'com.qxotic:gguf:0.1.0'
     ```
 
 === "Mill"
 
     ```scala
-    ivy"com.qxotic::gguf:0.1-SNAPSHOT"
+    ivy"com.qxotic::gguf:0.1.0"
     ```
 
 ## Reading GGUF Files
