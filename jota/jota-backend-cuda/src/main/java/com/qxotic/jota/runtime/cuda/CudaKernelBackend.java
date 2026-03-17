@@ -24,8 +24,8 @@ import java.util.regex.Pattern;
 
 final class CudaKernelBackend implements KernelBackend {
 
-    private static final String ENV_NVCC = "NVCC";
-    private static final String COMPILER_PROPERTY = "jota.cuda.compiler";
+    static final String NVCC_ENV = "NVCC";
+    static final String NVCC_PROPERTY = "jota.cuda.compiler";
     private static final String EXTRA_FLAGS_PROPERTY = "jota.cuda.compile.flags";
     private static final String PCH_ENABLED_PROPERTY = "jota.cuda.pch.enabled";
     private static final String PCH_LOG_PROPERTY = "jota.cuda.pch.log";
@@ -145,11 +145,7 @@ final class CudaKernelBackend implements KernelBackend {
                                         Long.toString(entry.getValue())
                                                 .getBytes(StandardCharsets.UTF_8));
                             });
-            String nvcc = System.getenv(ENV_NVCC);
-            if (nvcc == null || nvcc.isBlank()) {
-                nvcc = "nvcc";
-            }
-            digest.update(resolveNvcc(nvcc).getBytes(StandardCharsets.UTF_8));
+            digest.update(resolveNvccExecutable().getBytes(StandardCharsets.UTF_8));
             digest.update(OPT_LEVEL.getBytes(StandardCharsets.UTF_8));
             digest.update(String.join(" ", EXTRA_FLAGS).getBytes(StandardCharsets.UTF_8));
             String arch = resolveArch();
@@ -321,11 +317,7 @@ final class CudaKernelBackend implements KernelBackend {
     }
 
     private void compileSource(Path source, Path ptx, KernelCacheKey key, String arch) {
-        String nvcc = System.getenv(ENV_NVCC);
-        if (nvcc == null || nvcc.isBlank()) {
-            nvcc = "nvcc";
-        }
-        String compiler = resolveNvcc(nvcc);
+        String compiler = resolveNvccExecutable();
         List<String> command = buildCompileCommand(compiler, source, ptx, null, arch);
         String archSegment = cacheArchSegment(arch);
         Path pchPath = maybeResolvePch(compiler, source, ptx, arch);
@@ -583,14 +575,6 @@ final class CudaKernelBackend implements KernelBackend {
         return null;
     }
 
-    private static String resolveNvcc(String fallbackFromEnv) {
-        String prop = System.getProperty(COMPILER_PROPERTY);
-        if (prop != null && !prop.isBlank()) {
-            return prop.trim();
-        }
-        return fallbackFromEnv;
-    }
-
     private static List<String> parseExtraCompileFlags() {
         List<String> result = new ArrayList<>();
         result.add(UNUSED_SCRATCH_WARNING_SUPPRESSION);
@@ -611,5 +595,17 @@ final class CudaKernelBackend implements KernelBackend {
         if (KERNEL_LOG) {
             System.out.println("[jota-kernel] " + message);
         }
+    }
+
+    static String resolveNvccExecutable() {
+        String fromProperty = System.getProperty(NVCC_PROPERTY);
+        if (fromProperty != null && !fromProperty.isBlank()) {
+            return fromProperty.trim();
+        }
+        String fromEnv = System.getenv(NVCC_ENV);
+        if (fromEnv != null && !fromEnv.isBlank()) {
+            return fromEnv.trim();
+        }
+        return "nvcc";
     }
 }

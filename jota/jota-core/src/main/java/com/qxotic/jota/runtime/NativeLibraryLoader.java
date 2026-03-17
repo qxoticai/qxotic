@@ -1,4 +1,4 @@
-package com.qxotic.jota;
+package com.qxotic.jota.runtime;
 
 import java.io.IOException;
 import java.io.InputStream;

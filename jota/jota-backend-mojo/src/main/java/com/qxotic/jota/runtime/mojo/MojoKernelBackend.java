@@ -19,6 +19,8 @@ import java.util.concurrent.atomic.AtomicLong;
 final class MojoKernelBackend implements KernelBackend {
 
     private static final String TARGET_PROPERTY = "jota.mojo.target";
+    static final String COMPILER_PROPERTY = "jota.mojo.compiler";
+    static final String COMPILER_ENV = "JOTA_MOJO_COMPILER";
     private static final String HIP_ARCH_PROPERTY = "jota.hip.arch";
     private static final String COMPILE_OPTIONS_PROPERTY = "jota.mojo.compile.options";
     private static final String SUMMARY_PROPERTY = "jota.mojo.kernel.summary";
@@ -153,7 +155,7 @@ final class MojoKernelBackend implements KernelBackend {
         List<String> command =
                 new ArrayList<>(
                         List.of(
-                                "mojo",
+                                resolveCompilerExecutable(),
                                 "build",
                                 wrapperPath.toString(),
                                 "--emit",
@@ -250,6 +252,18 @@ final class MojoKernelBackend implements KernelBackend {
             return t.trim();
         }
         return DEFAULT_TARGET;
+    }
+
+    static String resolveCompilerExecutable() {
+        String fromProperty = System.getProperty(COMPILER_PROPERTY);
+        if (fromProperty != null && !fromProperty.isBlank()) {
+            return fromProperty.trim();
+        }
+        String fromEnv = System.getenv(COMPILER_ENV);
+        if (fromEnv != null && !fromEnv.isBlank()) {
+            return fromEnv.trim();
+        }
+        return "mojo";
     }
 
     private static List<String> tokenizeCompileOptions(String options) {

@@ -27,10 +27,11 @@ public final class CRuntimeProvider implements DeviceRuntimeProvider {
                     "C JNI runtime library is not available",
                     "Ensure libjota_c is on java.library.path / LD_LIBRARY_PATH");
         }
-        if (!isCommandAvailable(List.of("gcc", "--version"))) {
+        String compiler = CKernelCompiler.resolveCompilerExecutable();
+        if (!isCommandAvailable(List.of(compiler, "--version"))) {
             return RuntimeProbe.missingSoftware(
-                    "C toolchain executable is not available: gcc",
-                    "Install gcc and ensure it is on PATH");
+                    "C toolchain executable is not available: " + compiler,
+                    "Install a C compiler and ensure it is on PATH, or set jota.c.compiler / CC");
         }
         return RuntimeProbe.available("C runtime available");
     }

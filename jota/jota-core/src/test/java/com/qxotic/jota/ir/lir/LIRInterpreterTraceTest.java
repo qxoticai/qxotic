@@ -11,7 +11,7 @@ import com.qxotic.jota.ir.tir.TIRGraph;
 import com.qxotic.jota.memory.*;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.tensor.Tensor;
-import com.qxotic.jota.tensor.TensorTestInternals;
+import com.qxotic.jota.tensor.TensorTracing;
 import com.qxotic.jota.tensor.Tracer;
 import com.qxotic.jota.testutil.TestKernels;
 import java.lang.foreign.MemorySegment;
@@ -99,11 +99,8 @@ class LIRInterpreterTraceTest {
     }
 
     private TIRGraph extractGraph(Tensor traced) {
-        Object graph = TensorTestInternals.computationAttributes(traced).orElseThrow().get("graph");
-        if (!(graph instanceof TIRGraph tirGraph)) {
-            throw new IllegalStateException("Expected TIRGraph, got: " + graph);
-        }
-        return tirGraph;
+        return TensorTracing.tracedGraph(traced)
+                .orElseThrow(() -> new IllegalStateException("Expected traced IR graph"));
     }
 
     private MemoryView<MemorySegment> allocateOutput(

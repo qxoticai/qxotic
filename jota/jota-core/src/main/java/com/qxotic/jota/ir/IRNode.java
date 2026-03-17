@@ -1,4 +1,4 @@
-package com.qxotic.jota.ir.base;
+package com.qxotic.jota.ir;
 
 import com.qxotic.jota.DataType;
 

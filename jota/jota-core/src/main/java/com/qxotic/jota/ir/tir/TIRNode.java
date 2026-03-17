@@ -1,7 +1,7 @@
 package com.qxotic.jota.ir.tir;
 
 import com.qxotic.jota.Shape;
-import com.qxotic.jota.ir.base.IRNode;
+import com.qxotic.jota.ir.IRNode;
 
 /**
  * Base interface for all IR-T (Tensor IR) nodes. IR-T represents tensor operations with explicit

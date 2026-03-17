@@ -1,6 +1,6 @@
 package com.qxotic.jota.runtime.metal;
 
-import com.qxotic.jota.NativeLibraryLoader;
+import com.qxotic.jota.runtime.NativeLibraryLoader;
 import java.util.concurrent.atomic.AtomicReference;
 
 /** JNI bindings for the Metal backend native runtime. */
