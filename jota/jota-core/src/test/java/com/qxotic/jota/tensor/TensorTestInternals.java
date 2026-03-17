@@ -3,6 +3,7 @@ package com.qxotic.jota.tensor;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.Layout;
+import com.qxotic.jota.ir.tir.TIRGraph;
 import com.qxotic.jota.ir.tir.TIRNode;
 import com.qxotic.jota.memory.MemoryView;
 import java.util.Map;
@@ -31,6 +32,13 @@ public final class TensorTestInternals {
 
     public static Optional<Map<String, Object>> computationAttributes(Tensor tensor) {
         return InternalTensorAccess.computation(tensor).map(LazyComputation::attributes);
+    }
+
+    public static Optional<TIRGraph> tracedGraph(Tensor tensor) {
+        return InternalTensorAccess.computation(tensor)
+                .filter(IRComputation.class::isInstance)
+                .map(IRComputation.class::cast)
+                .map(IRComputation::graph);
     }
 
     public static boolean isScalarBroadcast(Tensor tensor) {

@@ -1,6 +1,6 @@
 package com.qxotic.jota.runtime.mojo.bridge;
 
-import com.qxotic.jota.NativeLibraryLoader;
+import com.qxotic.jota.runtime.NativeLibraryLoader;
 import java.util.concurrent.atomic.AtomicReference;
 
 /** JNI bindings for the libjota_mojo.so runtime bridge. */

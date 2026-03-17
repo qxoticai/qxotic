@@ -12,9 +12,6 @@ import java.util.concurrent.TimeUnit;
 
 public final class CudaRuntimeProvider implements DeviceRuntimeProvider {
 
-    private static final String ENV_NVCC = "NVCC";
-    private static final String NVCC_PROPERTY = "jota.cuda.compiler";
-
     @Override
     public String id() {
         return "cuda";
@@ -49,9 +46,9 @@ public final class CudaRuntimeProvider implements DeviceRuntimeProvider {
             return RuntimeProbe.missingSoftware(
                     "CUDA toolchain executable is not available: " + nvcc,
                     "Install NVIDIA CUDA nvcc and ensure it is on PATH, or set "
-                            + NVCC_PROPERTY
+                            + CudaKernelBackend.NVCC_PROPERTY
                             + " / "
-                            + ENV_NVCC
+                            + CudaKernelBackend.NVCC_ENV
                             + " to a valid nvcc binary");
         }
         try {
@@ -82,15 +79,7 @@ public final class CudaRuntimeProvider implements DeviceRuntimeProvider {
     }
 
     private static String nvccExecutable() {
-        String fromProperty = System.getProperty(NVCC_PROPERTY);
-        if (fromProperty != null && !fromProperty.isBlank()) {
-            return fromProperty.trim();
-        }
-        String fromEnv = System.getenv(ENV_NVCC);
-        if (fromEnv != null && !fromEnv.isBlank()) {
-            return fromEnv.trim();
-        }
-        return "nvcc";
+        return CudaKernelBackend.resolveNvccExecutable();
     }
 
     private static boolean isNvccAvailable() {

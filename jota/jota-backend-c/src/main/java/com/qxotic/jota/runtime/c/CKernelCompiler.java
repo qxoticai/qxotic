@@ -95,7 +95,7 @@ final class CKernelCompiler {
     }
 
     private static void compileSource(Path source, Path soPath) {
-        String compiler = compilerCommand();
+        String compiler = resolveCompilerExecutable();
         Path tmpSoPath = soPath.resolveSibling(soPath.getFileName() + ".tmp");
         List<String> command = new ArrayList<>();
         command.add(compiler);
@@ -167,14 +167,10 @@ final class CKernelCompiler {
         }
     }
 
-    private static String compilerCommand() {
+    static String resolveCompilerExecutable() {
         String property = System.getProperty(COMPILER_PROPERTY);
         if (property != null && !property.isBlank()) {
             return property.trim();
-        }
-        String override = System.getenv("JOTA_C_CC");
-        if (override != null && !override.isBlank()) {
-            return override;
         }
         String cc = System.getenv("CC");
         if (cc != null && !cc.isBlank()) {
@@ -277,7 +273,7 @@ final class CKernelCompiler {
                                             .append(offset));
         }
         text.append("\n// openmp: ").append(openMpEnabled());
-        text.append("\n// compiler: ").append(compilerCommand());
+        text.append("\n// compiler: ").append(resolveCompilerExecutable());
         text.append("\n// opt-level: ").append(OPT_LEVEL);
         text.append("\n// extra-compile-flags: ").append(String.join(" ", extraCompileFlags()));
         text.append("\n// extra-link-flags: ").append(String.join(" ", extraLinkFlags()));
