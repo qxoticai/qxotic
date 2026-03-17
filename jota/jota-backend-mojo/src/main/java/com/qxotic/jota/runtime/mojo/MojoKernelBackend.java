@@ -19,12 +19,11 @@ import java.util.concurrent.atomic.AtomicLong;
 final class MojoKernelBackend implements KernelBackend {
 
     private static final String TARGET_PROPERTY = "jota.mojo.target";
+    private static final String TARGET_ENV = "JOTA_MOJO_TARGET";
     static final String COMPILER_PROPERTY = "jota.mojo.compiler";
     static final String COMPILER_ENV = "JOTA_MOJO_COMPILER";
-    private static final String HIP_ARCH_PROPERTY = "jota.hip.arch";
     private static final String COMPILE_FLAGS_PROPERTY = "jota.mojo.compile.flags";
     private static final String SUMMARY_PROPERTY = "jota.mojo.kernel.summary";
-    private static final String DEFAULT_TARGET = "gfx1103";
     private static final long COMPILE_TIMEOUT_SECONDS =
             Long.getLong("jota.mojo.compile.timeout.seconds", 30L);
     private static final AtomicLong CACHE_HITS = new AtomicLong();
@@ -247,11 +246,21 @@ final class MojoKernelBackend implements KernelBackend {
         if (t != null && !t.isBlank()) {
             return t.trim();
         }
-        t = System.getProperty(HIP_ARCH_PROPERTY);
+        t = System.getenv(TARGET_ENV);
         if (t != null && !t.isBlank()) {
             return t.trim();
         }
-        return DEFAULT_TARGET;
+        // Compute default from current HIP device
+        try {
+            int deviceIndex = com.qxotic.jota.runtime.hip.HipRuntime.currentDevice();
+            String deviceArch = com.qxotic.jota.runtime.hip.HipRuntime.deviceArchName(deviceIndex);
+            if (deviceArch != null && !deviceArch.isBlank()) {
+                return deviceArch.trim();
+            }
+        } catch (RuntimeException | UnsatisfiedLinkError ignored) {
+            // Fall back to default if HIP runtime not available
+        }
+        return "gfx1103";
     }
 
     static String resolveCompilerExecutable() {
