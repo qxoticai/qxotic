@@ -66,20 +66,20 @@ java PeekSafetensors.java https://huggingface.co/HuggingFaceTB/SmolLM2-135M/reso
     <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>safetensors</artifactId>
-        <version>0.1-SNAPSHOT</version>
+        <version>0.1.0</version>
     </dependency>
     ```
 
 === "Gradle"
 
     ```groovy
-    implementation 'com.qxotic:safetensors:0.1-SNAPSHOT'
+    implementation 'com.qxotic:safetensors:0.1.0'
     ```
 
 === "Mill"
 
     ```scala
-    ivy"com.qxotic::safetensors:0.1-SNAPSHOT"
+    ivy"com.qxotic::safetensors:0.1.0"
     ```
 
 ## Reading Safetensors Files

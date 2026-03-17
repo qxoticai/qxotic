@@ -160,20 +160,20 @@ if (missing == null) {
     <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>json</artifactId>
-        <version>0.1-SNAPSHOT</version>
+        <version>0.1.0</version>
     </dependency>
     ```
 
 === "Gradle"
 
     ```groovy
-    implementation 'com.qxotic:json:0.1-SNAPSHOT'
+    implementation 'com.qxotic:json:0.1.0'
     ```
 
 === "Mill"
 
     ```scala
-    ivy"com.qxotic::json:0.1-SNAPSHOT"
+    ivy"com.qxotic::json:0.1.0"
     ```
 
 ## Parsing JSON
