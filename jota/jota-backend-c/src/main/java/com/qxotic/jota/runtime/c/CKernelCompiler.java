@@ -198,7 +198,7 @@ final class CKernelCompiler {
     }
 
     private static List<String> openMpCompileFlags() {
-        String override = System.getProperty("jota.c.openmp.compileFlags");
+        String override = System.getProperty("jota.c.openmp.compile.flags");
         if (override != null && !override.isBlank()) {
             return splitFlags(override);
         }
@@ -216,7 +216,7 @@ final class CKernelCompiler {
     }
 
     private static List<String> openMpLinkFlags() {
-        String override = System.getProperty("jota.c.openmp.linkFlags");
+        String override = System.getProperty("jota.c.openmp.link.flags");
         if (override != null && !override.isBlank()) {
             return splitFlags(override);
         }

@@ -31,8 +31,9 @@ import java.util.concurrent.TimeUnit;
 final class MetalKernelBackend implements KernelBackend {
 
     private static final Path KERNEL_ROOT = KernelCachePaths.deviceRoot(Device.METAL);
-    private static final String METAL_COMPILER =
-            System.getProperty("jota.metal.compiler", "xcrun").trim();
+    private static final String COMPILER_PROPERTY = "jota.metal.compiler";
+    private static final String COMPILER_ENV = "JOTA_METAL_COMPILER";
+    private static final String METAL_COMPILER = resolveCompilerExecutable();
     private static final String METAL_COMPILE_FLAGS_PROPERTY = "jota.metal.compile.flags";
     private static final String LINK_FLAGS_PROPERTY = "jota.metal.link.flags";
     private static final long COMPILE_TIMEOUT_SECONDS =
@@ -275,6 +276,18 @@ final class MetalKernelBackend implements KernelBackend {
             }
         }
         return List.copyOf(result);
+    }
+
+    private static String resolveCompilerExecutable() {
+        String fromProperty = System.getProperty(COMPILER_PROPERTY);
+        if (fromProperty != null && !fromProperty.isBlank()) {
+            return fromProperty.trim();
+        }
+        String fromEnv = System.getenv(COMPILER_ENV);
+        if (fromEnv != null && !fromEnv.isBlank()) {
+            return fromEnv.trim();
+        }
+        return "xcrun";
     }
 
     private static final class StreamCapture {
