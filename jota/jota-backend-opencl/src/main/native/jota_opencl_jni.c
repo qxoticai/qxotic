@@ -975,7 +975,8 @@ Java_com_qxotic_jota_runtime_opencl_OpenClRuntime_fillLong(JNIEnv *env,
 JNIEXPORT jlong JNICALL
 Java_com_qxotic_jota_runtime_opencl_OpenClRuntime_loadLibrary(JNIEnv *env,
                                                                jclass cls,
-                                                               jbyteArray sourceBytes) {
+                                                               jbyteArray sourceBytes,
+                                                               jstring compileFlags) {
   (void)cls;
   if (!ensureRuntime(env)) {
     throwInitFailure(env);
@@ -1011,7 +1012,14 @@ Java_com_qxotic_jota_runtime_opencl_OpenClRuntime_loadLibrary(JNIEnv *env,
     return 0;
   }
 
-  err = clBuildProgram(program, 1, &g_device, NULL, NULL, NULL);
+  const char *flags = NULL;
+  if (compileFlags != NULL) {
+    flags = (*env)->GetStringUTFChars(env, compileFlags, NULL);
+  }
+  err = clBuildProgram(program, 1, &g_device, flags, NULL, NULL);
+  if (flags != NULL) {
+    (*env)->ReleaseStringUTFChars(env, compileFlags, flags);
+  }
   if (err != CL_SUCCESS) {
     size_t logSize = 0;
     clGetProgramBuildInfo(program,

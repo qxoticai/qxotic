@@ -30,8 +30,8 @@ final class CKernelCompiler {
             Long.getLong("jota.c.compile.timeout.seconds", 10L);
     private static final String OPT_LEVEL = System.getProperty("jota.c.compile.opt", "2").trim();
     private static final String COMPILER_PROPERTY = "jota.c.compiler";
-    private static final String EXTRA_COMPILE_FLAGS_PROPERTY = "jota.c.compile.extraFlags";
-    private static final String EXTRA_LINK_FLAGS_PROPERTY = "jota.c.link.extraFlags";
+    private static final String COMPILE_FLAGS_PROPERTY = "jota.c.compile.flags";
+    private static final String LINK_FLAGS_PROPERTY = "jota.c.link.flags";
 
     KernelCacheKey cacheKey(LIRGraph graph, ScratchLayout scratchLayout) {
         String hash = hashLirGraph(graph, scratchLayout);
@@ -103,8 +103,8 @@ final class CKernelCompiler {
         if (openMpEnabled()) {
             command.addAll(openMpCompileFlags());
         }
-        command.addAll(extraCompileFlags());
         command.add("-O" + OPT_LEVEL);
+        command.addAll(compileFlags());
         command.add("-std=gnu17");
         command.add(source.toAbsolutePath().toString());
         command.add("-o");
@@ -115,7 +115,7 @@ final class CKernelCompiler {
         if (openMpEnabled()) {
             command.addAll(openMpLinkFlags());
         }
-        command.addAll(extraLinkFlags());
+        command.addAll(linkFlags());
         if (!COpenMpConfig.isMac() && !COpenMpConfig.isWindows()) {
             command.add("-ldl");
         }
@@ -242,16 +242,16 @@ final class CKernelCompiler {
         return List.copyOf(result);
     }
 
-    private static List<String> extraCompileFlags() {
-        String flags = System.getProperty(EXTRA_COMPILE_FLAGS_PROPERTY);
+    private static List<String> compileFlags() {
+        String flags = System.getProperty(COMPILE_FLAGS_PROPERTY);
         if (flags == null || flags.isBlank()) {
             return List.of();
         }
         return splitFlags(flags);
     }
 
-    private static List<String> extraLinkFlags() {
-        String flags = System.getProperty(EXTRA_LINK_FLAGS_PROPERTY);
+    private static List<String> linkFlags() {
+        String flags = System.getProperty(LINK_FLAGS_PROPERTY);
         if (flags == null || flags.isBlank()) {
             return List.of();
         }
@@ -275,8 +275,8 @@ final class CKernelCompiler {
         text.append("\n// openmp: ").append(openMpEnabled());
         text.append("\n// compiler: ").append(resolveCompilerExecutable());
         text.append("\n// opt-level: ").append(OPT_LEVEL);
-        text.append("\n// extra-compile-flags: ").append(String.join(" ", extraCompileFlags()));
-        text.append("\n// extra-link-flags: ").append(String.join(" ", extraLinkFlags()));
+        text.append("\n// compile-flags: ").append(String.join(" ", compileFlags()));
+        text.append("\n// link-flags: ").append(String.join(" ", linkFlags()));
         if (openMpEnabled()) {
             text.append("\n// openmp-compile-flags: ")
                     .append(String.join(" ", openMpCompileFlags()));

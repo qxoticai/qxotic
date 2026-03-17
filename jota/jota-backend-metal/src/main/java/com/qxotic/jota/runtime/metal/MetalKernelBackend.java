@@ -34,7 +34,7 @@ final class MetalKernelBackend implements KernelBackend {
     private static final String METAL_COMPILER =
             System.getProperty("jota.metal.compiler", "xcrun").trim();
     private static final String METAL_COMPILE_FLAGS_PROPERTY = "jota.metal.compile.flags";
-    private static final String METALLIB_FLAGS_PROPERTY = "jota.metal.metallib.flags";
+    private static final String LINK_FLAGS_PROPERTY = "jota.metal.link.flags";
     private static final long COMPILE_TIMEOUT_SECONDS =
             Long.getLong("jota.metal.compile.timeout.seconds", 15L);
     private static final String OPT_LEVEL =
@@ -131,7 +131,7 @@ final class MetalKernelBackend implements KernelBackend {
                     String.join(" ", extraFlags(METAL_COMPILE_FLAGS_PROPERTY))
                             .getBytes(StandardCharsets.UTF_8));
             digest.update(
-                    String.join(" ", extraFlags(METALLIB_FLAGS_PROPERTY))
+                    String.join(" ", extraFlags(LINK_FLAGS_PROPERTY))
                             .getBytes(StandardCharsets.UTF_8));
             byte[] hashed = digest.digest();
             StringBuilder builder = new StringBuilder(hashed.length * 2 + 13);
@@ -194,7 +194,7 @@ final class MetalKernelBackend implements KernelBackend {
         libCompile.add("-sdk");
         libCompile.add("macosx");
         libCompile.add("metallib");
-        libCompile.addAll(extraFlags(METALLIB_FLAGS_PROPERTY));
+        libCompile.addAll(extraFlags(LINK_FLAGS_PROPERTY));
         libCompile.add(air.toString());
         libCompile.add("-o");
         libCompile.add(metallib.toString());

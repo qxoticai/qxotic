@@ -14,7 +14,8 @@ final class OpenClModule implements AutoCloseable {
     static OpenClModule load(byte[] source) {
         Objects.requireNonNull(source, "source");
         OpenClRuntime.requireAvailable();
-        long handle = OpenClRuntime.loadLibrary(source);
+        String flags = System.getProperty(OpenClRuntime.COMPILE_FLAGS_PROPERTY, "");
+        long handle = OpenClRuntime.loadLibrary(source, flags);
         if (handle == 0L) {
             throw new IllegalStateException("OpenCL module load returned null handle");
         }
