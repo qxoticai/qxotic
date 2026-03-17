@@ -13,6 +13,7 @@ public final class OpenClRuntime {
     public static final String PLATFORM_INDEX_PROPERTY = "jota.opencl.platform.index";
     public static final String DEVICE_INDEX_PROPERTY = "jota.opencl.device.index";
     public static final String DEVICE_NAME_CONTAINS_PROPERTY = "jota.opencl.device.name.contains";
+    public static final String COMPILE_FLAGS_PROPERTY = "jota.opencl.compile.flags";
 
     private static final String LIB_NAME = "jota_opencl";
     private static final AtomicReference<Boolean> AVAILABLE = new AtomicReference<>();
@@ -160,7 +161,7 @@ public final class OpenClRuntime {
 
     static native void fillLong(long dstHandle, long dstOffset, long byteSize, long value);
 
-    static native long loadLibrary(byte[] source);
+    static native long loadLibrary(byte[] source, String compileFlags);
 
     static native void unloadLibrary(long libraryHandle);
 

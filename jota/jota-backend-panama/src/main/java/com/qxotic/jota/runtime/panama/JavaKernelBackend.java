@@ -35,6 +35,8 @@ import javax.tools.ToolProvider;
 
 public final class JavaKernelBackend implements KernelBackend {
 
+    private static final String COMPILE_FLAGS_PROPERTY = "jota.panama.compile.flags";
+
     private final MemoryDomain<MemorySegment> memoryDomain;
     private final DiskKernelCache cache;
     private final KernelExecutableCache executableCache = new InMemoryKernelCache();
@@ -148,6 +150,14 @@ public final class JavaKernelBackend implements KernelBackend {
             if (ModuleLayer.boot().findModule("jdk.incubator.vector").isPresent()) {
                 options.add("--add-modules");
                 options.add("jdk.incubator.vector");
+            }
+            String extraFlags = System.getProperty(COMPILE_FLAGS_PROPERTY, "");
+            if (!extraFlags.isBlank()) {
+                for (String flag : extraFlags.trim().split("\\s+")) {
+                    if (!flag.isBlank()) {
+                        options.add(flag);
+                    }
+                }
             }
             JavaCompiler.CompilationTask task =
                     compiler.getTask(null, fileManager, diagnostics, options, null, units);

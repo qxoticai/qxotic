@@ -22,11 +22,11 @@ final class MojoKernelBackend implements KernelBackend {
     static final String COMPILER_PROPERTY = "jota.mojo.compiler";
     static final String COMPILER_ENV = "JOTA_MOJO_COMPILER";
     private static final String HIP_ARCH_PROPERTY = "jota.hip.arch";
-    private static final String COMPILE_OPTIONS_PROPERTY = "jota.mojo.compile.options";
+    private static final String COMPILE_FLAGS_PROPERTY = "jota.mojo.compile.flags";
     private static final String SUMMARY_PROPERTY = "jota.mojo.kernel.summary";
     private static final String DEFAULT_TARGET = "gfx1103";
     private static final long COMPILE_TIMEOUT_SECONDS =
-            Long.getLong("jota.mojo.native.compile.timeout.seconds", 30L);
+            Long.getLong("jota.mojo.compile.timeout.seconds", 30L);
     private static final AtomicLong CACHE_HITS = new AtomicLong();
     private static final AtomicLong CACHE_MISSES = new AtomicLong();
     private static final AtomicLong NATIVE_COMPILES = new AtomicLong();
@@ -164,7 +164,7 @@ final class MojoKernelBackend implements KernelBackend {
                                 target,
                                 "-o",
                                 asmPath.toString()));
-        command.addAll(tokenizeCompileOptions(System.getProperty(COMPILE_OPTIONS_PROPERTY, "")));
+        command.addAll(tokenizeCompileFlags(System.getProperty(COMPILE_FLAGS_PROPERTY, "")));
         exec(command, COMPILE_TIMEOUT_SECONDS);
 
         byte[] elf = extractElfFromAsm(asmPath);
@@ -266,7 +266,7 @@ final class MojoKernelBackend implements KernelBackend {
         return "mojo";
     }
 
-    private static List<String> tokenizeCompileOptions(String options) {
+    private static List<String> tokenizeCompileFlags(String options) {
         String trimmed = options == null ? "" : options.trim();
         if (trimmed.isEmpty()) {
             return List.of();
