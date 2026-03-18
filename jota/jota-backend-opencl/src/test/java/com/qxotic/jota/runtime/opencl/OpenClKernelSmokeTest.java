@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
@@ -24,7 +25,7 @@ class OpenClKernelSmokeTest {
         OpenClTestAssumptions.assumeOpenClReady();
 
         int n = 64;
-        Tensor input = Tensor.iota(n, DataType.FP32).to(Device.OPENCL);
+        Tensor input = Tensor.iota(n, DataType.FP32).to(new Device(DeviceType.OPENCL, 0));
         Tensor traced = Tracer.trace(input, t -> t.multiply(2.0f).add(1.0f));
         MemoryView<?> output = traced.materialize();
 
@@ -43,7 +44,7 @@ class OpenClKernelSmokeTest {
 
         int n = 128;
         Tensor src = Tensor.iota(n, DataType.I32);
-        Tensor onOpenCl = src.to(Device.OPENCL);
+        Tensor onOpenCl = src.to(new Device(DeviceType.OPENCL, 0));
         MemoryView<MemorySegment> host = toHost(onOpenCl.materialize());
 
         MemoryAccess<MemorySegment> access = DomainFactory.ofMemorySegment().directAccess();
@@ -64,7 +65,7 @@ class OpenClKernelSmokeTest {
                 MemoryView.of(
                         hostMemory, DataType.FP32, Layout.rowMajor(Shape.flat(values.length)));
 
-        Tensor onOpenCl = Tensor.of(hostView).to(Device.OPENCL);
+        Tensor onOpenCl = Tensor.of(hostView).to(new Device(DeviceType.OPENCL, 0));
         MemoryView<MemorySegment> roundTrip = toHost(onOpenCl.materialize());
         MemoryAccess<MemorySegment> access = DomainFactory.ofMemorySegment().directAccess();
         for (int i = 0; i < values.length; i++) {
@@ -76,7 +77,8 @@ class OpenClKernelSmokeTest {
     private static MemoryView<MemorySegment> toHost(MemoryView<?> view) {
         @SuppressWarnings("unchecked")
         MemoryView<MemorySegment> hostView =
-                (MemoryView<MemorySegment>) Tensor.of(view).to(Device.NATIVE).materialize();
+                (MemoryView<MemorySegment>)
+                        Tensor.of(view).to(new Device(DeviceType.PANAMA, 0)).materialize();
         return hostView;
     }
 }

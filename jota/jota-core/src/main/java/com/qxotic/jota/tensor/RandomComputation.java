@@ -53,7 +53,7 @@ final class RandomComputation implements LazyComputation {
 
     @Override
     public Map<String, Object> attributes() {
-        return Map.of("shape", shape, "dtype", dtype, "device", device.name(), "key", key);
+        return Map.of("shape", shape, "dtype", dtype, "device", device.toString(), "key", key);
     }
 
     @Override

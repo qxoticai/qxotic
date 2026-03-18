@@ -1,6 +1,7 @@
 package com.qxotic.jota.runtime.opencl;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryDomain;
@@ -19,7 +20,7 @@ public final class OpenClMemoryDomain implements MemoryDomain<OpenClDevicePtr> {
 
     @Override
     public Device device() {
-        return Device.OPENCL;
+        return new Device(DeviceType.OPENCL, 0);
     }
 
     @Override

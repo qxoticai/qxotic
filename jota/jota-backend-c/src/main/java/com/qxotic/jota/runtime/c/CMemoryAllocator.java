@@ -1,6 +1,7 @@
 package com.qxotic.jota.runtime.c;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryArena;
@@ -19,7 +20,7 @@ final class CMemoryAllocator implements MemoryAllocator<MemorySegment>, MemoryAr
 
     @Override
     public Device device() {
-        return Device.C;
+        return new Device(DeviceType.C, 0);
     }
 
     @Override

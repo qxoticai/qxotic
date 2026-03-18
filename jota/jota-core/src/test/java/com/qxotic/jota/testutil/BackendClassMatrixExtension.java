@@ -1,6 +1,7 @@
 package com.qxotic.jota.testutil;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
@@ -37,7 +38,7 @@ public final class BackendClassMatrixExtension implements ClassTemplateInvocatio
 
         @Override
         public String getDisplayName(int invocationIndex) {
-            return "backend=" + device.name();
+            return "backend=" + device;
         }
 
         @Override
@@ -112,7 +113,7 @@ public final class BackendClassMatrixExtension implements ClassTemplateInvocatio
             current.nativeRuntime();
             Assumptions.assumeTrue(
                     current.runtimes().hasRuntime(target),
-                    "Backend runtime unavailable for " + target.name());
+                    "Backend runtime unavailable for " + target);
 
             Environment configured =
                     new Environment(target, current.defaultFloat(), current.runtimes());
@@ -125,7 +126,7 @@ public final class BackendClassMatrixExtension implements ClassTemplateInvocatio
                         } catch (TestAbortedException aborted) {
                             throw aborted;
                         } catch (Throwable throwable) {
-                            if (target.equals(Device.METAL)
+                            if (target.belongsTo(DeviceType.METAL)
                                     && isUnsupportedMetalDouble(throwable)) {
                                 throw new TestAbortedException(
                                         "Skipping on Metal: FP64 is not supported by this runtime",

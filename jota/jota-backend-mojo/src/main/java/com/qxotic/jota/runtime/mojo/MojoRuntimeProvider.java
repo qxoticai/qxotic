@@ -1,6 +1,6 @@
 package com.qxotic.jota.runtime.mojo;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.hip.HipRuntimeProvider;
 import com.qxotic.jota.runtime.mojo.bridge.MojoRuntime;
@@ -14,13 +14,8 @@ import java.util.concurrent.TimeUnit;
 public final class MojoRuntimeProvider implements DeviceRuntimeProvider {
 
     @Override
-    public String id() {
-        return "mojo";
-    }
-
-    @Override
-    public Device device() {
-        return Device.MOJO;
+    public DeviceType deviceType() {
+        return DeviceType.MOJO;
     }
 
     @Override
@@ -55,7 +50,7 @@ public final class MojoRuntimeProvider implements DeviceRuntimeProvider {
     }
 
     @Override
-    public DeviceRuntime create() {
+    public DeviceRuntime create(int deviceIndex) {
         return new MojoDeviceRuntime();
     }
 

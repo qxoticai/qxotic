@@ -1,8 +1,11 @@
 package com.qxotic.jota.runtime.panama;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.runtime.ComputeEngine;
+import com.qxotic.jota.runtime.DeviceCapabilities;
+import com.qxotic.jota.runtime.DeviceProperties;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.DiskKernelCache;
 import com.qxotic.jota.runtime.FileKernelProgramStore;
@@ -13,6 +16,8 @@ import com.qxotic.jota.runtime.KernelService;
 import com.qxotic.jota.runtime.nativeimpl.NativeMemoryFactory;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -23,14 +28,14 @@ public final class PanamaDeviceRuntime implements DeviceRuntime {
     private final KernelService kernelService;
 
     public PanamaDeviceRuntime() {
-        this(NativeMemoryFactory.createDomain(), DiskKernelCache.defaultCache(Device.PANAMA));
+        this(NativeMemoryFactory.createDomain(), DiskKernelCache.defaultCache(DeviceType.PANAMA));
     }
 
     public PanamaDeviceRuntime(MemoryDomain<MemorySegment> memoryDomain, DiskKernelCache cache) {
         this.memoryDomain = Objects.requireNonNull(memoryDomain, "memoryDomain");
         this.computeEngine = new PanamaLirComputeEngine(memoryDomain, cache);
         KernelBackend backend = new JavaKernelBackend(memoryDomain, cache);
-        Path programRoot = KernelCachePaths.programRoot(Device.PANAMA);
+        Path programRoot = KernelCachePaths.programRoot(DeviceType.PANAMA);
         KernelProgramStore sourceStore = new FileKernelProgramStore(programRoot.resolve("source"));
         KernelProgramStore binaryStore = new FileKernelProgramStore(programRoot.resolve("binary"));
         this.kernelService = new KernelService(backend, sourceStore, binaryStore);
@@ -59,5 +64,29 @@ public final class PanamaDeviceRuntime implements DeviceRuntime {
     @Override
     public boolean supportsNativeRuntimeAlias() {
         return true;
+    }
+
+    @Override
+    public DeviceProperties properties() {
+        var props = new LinkedHashMap<String, Object>();
+        Runtime rt = Runtime.getRuntime();
+        props.put(DeviceProperties.DEVICE_NAME, "JVM (" + System.getProperty("java.vm.name") + ")");
+        props.put(DeviceProperties.VENDOR, System.getProperty("java.vm.vendor"));
+        props.put(DeviceProperties.ARCHITECTURE, System.getProperty("os.arch"));
+        props.put(DeviceProperties.DRIVER_VERSION, System.getProperty("java.runtime.version"));
+        props.put(DeviceProperties.GLOBAL_MEMORY_BYTES, rt.maxMemory());
+        props.put(DeviceProperties.COMPUTE_UNITS, (long) rt.availableProcessors());
+        return new DeviceProperties(props);
+    }
+
+    @Override
+    public DeviceCapabilities capabilities() {
+        var caps = new LinkedHashSet<String>();
+        caps.add(DeviceCapabilities.FP32);
+        caps.add(DeviceCapabilities.FP64);
+        caps.add(DeviceCapabilities.KERNEL_COMPILATION);
+        caps.add(DeviceCapabilities.NATIVE_RUNTIME);
+        caps.add(DeviceCapabilities.UNIFIED_MEMORY);
+        return new DeviceCapabilities(caps);
     }
 }

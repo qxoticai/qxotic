@@ -1,9 +1,8 @@
 package com.qxotic.jota.runtime.hip;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.runtime.RuntimeDiagnostic;
 import com.qxotic.jota.testutil.ExternalToolChecks;
@@ -23,7 +22,7 @@ class HipBackendAvailabilityTest {
                         "mvnd -Phip test",
                         details));
         assertTrue(
-                Environment.current().runtimes().hasRuntime(Device.HIP),
+                Environment.current().runtimes().hasRuntime("hip"),
                 canaryFailureMessage(
                         "[MISSING_SOFTWARE] HIP runtime is not registered",
                         "mvnd -Phip test",
@@ -40,7 +39,7 @@ class HipBackendAvailabilityTest {
                         "[UNSUPPORTED_HARDWARE] HIP reported no visible device",
                         "mvnd -Phip test",
                         details));
-        assertEquals(Device.HIP, Environment.current().runtimeFor(Device.HIP).device());
+        assertTrue(Environment.current().runtimeFor("hip").device().belongsTo(DeviceType.HIP));
     }
 
     private static String canaryFailureMessage(String reason, String command, String details) {
@@ -61,7 +60,7 @@ class HipBackendAvailabilityTest {
     private static String diagnosticsSummary(boolean hipccAvailable) {
         String hipDiagnostics =
                 Environment.current().runtimeDiagnostics().stream()
-                        .filter(d -> d.device().equals(Device.HIP))
+                        .filter(d -> d.deviceType().equals(DeviceType.HIP))
                         .map(HipBackendAvailabilityTest::formatDiagnostic)
                         .collect(Collectors.joining("\n"));
         if (hipDiagnostics.isBlank()) {
@@ -72,7 +71,7 @@ class HipBackendAvailabilityTest {
                 + "\nHipRuntime.isAvailable="
                 + HipRuntime.isAvailable()
                 + "\nHIP runtime registered="
-                + Environment.current().runtimes().hasRuntime(Device.HIP)
+                + Environment.current().runtimes().hasRuntime("hip")
                 + "\nhipcc available="
                 + hipccAvailable;
     }

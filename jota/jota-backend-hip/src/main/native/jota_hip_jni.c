@@ -43,6 +43,8 @@ typedef struct JNINativeInterface_ {
   const char *(*GetStringUTFChars)(JNIEnv *, jstring, jboolean *);
   void (*ReleaseStringUTFChars)(JNIEnv *, jstring, const char *);
   jstring (*NewStringUTF)(JNIEnv *, const char *);
+  jintArray (*NewIntArray)(JNIEnv *, jsize);
+  void (*SetIntArrayRegion)(JNIEnv *, jintArray, jsize, jsize, const jint *);
 } JNINativeInterface_;
 #define JNIEXPORT
 #define JNICALL
@@ -225,6 +227,235 @@ JNIEXPORT jstring JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_nativeDevi
   (void)deviceIndex;
   throwUnsupported(env, "HIP headers not available");
   return NULL;
+#endif
+}
+
+// Helper: fill hipDeviceProp_t for given device index, returns 0 on success.
+#if __has_include(<hip/hip_runtime_api.h>)
+static int getHipDeviceProps(JNIEnv *env, jint deviceIndex, hipDeviceProp_t *props) {
+  memset(props, 0, sizeof(*props));
+  hipError_t status = hipGetDeviceProperties(props, (int)deviceIndex);
+  if (status != hipSuccess) {
+    checkHip(env, status, "hipGetDeviceProperties failed");
+    return -1;
+  }
+  return 0;
+}
+#endif
+
+JNIEXPORT jstring JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_nativeDeviceName
+  (JNIEnv *env, jclass cls, jint deviceIndex) {
+  (void)cls;
+#if __has_include(<hip/hip_runtime_api.h>)
+  hipDeviceProp_t props;
+  if (getHipDeviceProps(env, deviceIndex, &props) != 0) return NULL;
+  return (*env)->NewStringUTF(env, props.name);
+#else
+  (void)deviceIndex;
+  throwUnsupported(env, "HIP headers not available");
+  return NULL;
+#endif
+}
+
+JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_nativeDeviceTotalMem
+  (JNIEnv *env, jclass cls, jint deviceIndex) {
+  (void)cls;
+#if __has_include(<hip/hip_runtime_api.h>)
+  hipDeviceProp_t props;
+  if (getHipDeviceProps(env, deviceIndex, &props) != 0) return 0;
+  return (jlong)props.totalGlobalMem;
+#else
+  (void)deviceIndex;
+  throwUnsupported(env, "HIP headers not available");
+  return 0;
+#endif
+}
+
+JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_nativeDeviceSharedMemPerBlock
+  (JNIEnv *env, jclass cls, jint deviceIndex) {
+  (void)cls;
+#if __has_include(<hip/hip_runtime_api.h>)
+  hipDeviceProp_t props;
+  if (getHipDeviceProps(env, deviceIndex, &props) != 0) return 0;
+  return (jlong)props.sharedMemPerBlock;
+#else
+  (void)deviceIndex;
+  throwUnsupported(env, "HIP headers not available");
+  return 0;
+#endif
+}
+
+JNIEXPORT jint JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_nativeDeviceMultiProcessorCount
+  (JNIEnv *env, jclass cls, jint deviceIndex) {
+  (void)cls;
+#if __has_include(<hip/hip_runtime_api.h>)
+  hipDeviceProp_t props;
+  if (getHipDeviceProps(env, deviceIndex, &props) != 0) return 0;
+  return (jint)props.multiProcessorCount;
+#else
+  (void)deviceIndex;
+  throwUnsupported(env, "HIP headers not available");
+  return 0;
+#endif
+}
+
+JNIEXPORT jint JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_nativeDeviceClockRateKHz
+  (JNIEnv *env, jclass cls, jint deviceIndex) {
+  (void)cls;
+#if __has_include(<hip/hip_runtime_api.h>)
+  hipDeviceProp_t props;
+  if (getHipDeviceProps(env, deviceIndex, &props) != 0) return 0;
+  return (jint)props.clockRate;
+#else
+  (void)deviceIndex;
+  throwUnsupported(env, "HIP headers not available");
+  return 0;
+#endif
+}
+
+JNIEXPORT jint JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_nativeDeviceWarpSize
+  (JNIEnv *env, jclass cls, jint deviceIndex) {
+  (void)cls;
+#if __has_include(<hip/hip_runtime_api.h>)
+  hipDeviceProp_t props;
+  if (getHipDeviceProps(env, deviceIndex, &props) != 0) return 0;
+  return (jint)props.warpSize;
+#else
+  (void)deviceIndex;
+  throwUnsupported(env, "HIP headers not available");
+  return 0;
+#endif
+}
+
+JNIEXPORT jint JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_nativeDeviceMaxThreadsPerBlock
+  (JNIEnv *env, jclass cls, jint deviceIndex) {
+  (void)cls;
+#if __has_include(<hip/hip_runtime_api.h>)
+  hipDeviceProp_t props;
+  if (getHipDeviceProps(env, deviceIndex, &props) != 0) return 0;
+  return (jint)props.maxThreadsPerBlock;
+#else
+  (void)deviceIndex;
+  throwUnsupported(env, "HIP headers not available");
+  return 0;
+#endif
+}
+
+JNIEXPORT jintArray JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_nativeDeviceMaxBlockDim
+  (JNIEnv *env, jclass cls, jint deviceIndex) {
+  (void)cls;
+#if __has_include(<hip/hip_runtime_api.h>)
+  hipDeviceProp_t props;
+  if (getHipDeviceProps(env, deviceIndex, &props) != 0) return NULL;
+  jintArray arr = (*env)->NewIntArray(env, 3);
+  jint dims[3] = { props.maxThreadsDim[0], props.maxThreadsDim[1], props.maxThreadsDim[2] };
+  (*env)->SetIntArrayRegion(env, arr, 0, 3, dims);
+  return arr;
+#else
+  (void)deviceIndex;
+  throwUnsupported(env, "HIP headers not available");
+  return NULL;
+#endif
+}
+
+JNIEXPORT jintArray JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_nativeDeviceMaxGridDim
+  (JNIEnv *env, jclass cls, jint deviceIndex) {
+  (void)cls;
+#if __has_include(<hip/hip_runtime_api.h>)
+  hipDeviceProp_t props;
+  if (getHipDeviceProps(env, deviceIndex, &props) != 0) return NULL;
+  jintArray arr = (*env)->NewIntArray(env, 3);
+  jint dims[3] = { props.maxGridSize[0], props.maxGridSize[1], props.maxGridSize[2] };
+  (*env)->SetIntArrayRegion(env, arr, 0, 3, dims);
+  return arr;
+#else
+  (void)deviceIndex;
+  throwUnsupported(env, "HIP headers not available");
+  return NULL;
+#endif
+}
+
+JNIEXPORT jboolean JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_nativeDeviceConcurrentKernels
+  (JNIEnv *env, jclass cls, jint deviceIndex) {
+  (void)cls;
+#if __has_include(<hip/hip_runtime_api.h>)
+  hipDeviceProp_t props;
+  if (getHipDeviceProps(env, deviceIndex, &props) != 0) return 0;
+  return (jboolean)(props.concurrentKernels != 0);
+#else
+  (void)deviceIndex;
+  throwUnsupported(env, "HIP headers not available");
+  return 0;
+#endif
+}
+
+JNIEXPORT jboolean JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_nativeDeviceEccEnabled
+  (JNIEnv *env, jclass cls, jint deviceIndex) {
+  (void)cls;
+#if __has_include(<hip/hip_runtime_api.h>)
+  hipDeviceProp_t props;
+  if (getHipDeviceProps(env, deviceIndex, &props) != 0) return 0;
+  return (jboolean)(props.ECCEnabled != 0);
+#else
+  (void)deviceIndex;
+  throwUnsupported(env, "HIP headers not available");
+  return 0;
+#endif
+}
+
+JNIEXPORT jint JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_nativeDeviceL2CacheSize
+  (JNIEnv *env, jclass cls, jint deviceIndex) {
+  (void)cls;
+#if __has_include(<hip/hip_runtime_api.h>)
+  hipDeviceProp_t props;
+  if (getHipDeviceProps(env, deviceIndex, &props) != 0) return 0;
+  return (jint)props.l2CacheSize;
+#else
+  (void)deviceIndex;
+  throwUnsupported(env, "HIP headers not available");
+  return 0;
+#endif
+}
+
+JNIEXPORT jint JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_nativeDeviceMemoryBusWidthBits
+  (JNIEnv *env, jclass cls, jint deviceIndex) {
+  (void)cls;
+#if __has_include(<hip/hip_runtime_api.h>)
+  hipDeviceProp_t props;
+  if (getHipDeviceProps(env, deviceIndex, &props) != 0) return 0;
+  return (jint)props.memoryBusWidth;
+#else
+  (void)deviceIndex;
+  throwUnsupported(env, "HIP headers not available");
+  return 0;
+#endif
+}
+
+JNIEXPORT jint JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_nativeDeviceMemoryClockRateKHz
+  (JNIEnv *env, jclass cls, jint deviceIndex) {
+  (void)cls;
+#if __has_include(<hip/hip_runtime_api.h>)
+  hipDeviceProp_t props;
+  if (getHipDeviceProps(env, deviceIndex, &props) != 0) return 0;
+  return (jint)props.memoryClockRate;
+#else
+  (void)deviceIndex;
+  throwUnsupported(env, "HIP headers not available");
+  return 0;
+#endif
+}
+
+JNIEXPORT jint JNICALL Java_com_qxotic_jota_runtime_hip_HipRuntime_nativeDeviceRegsPerBlock
+  (JNIEnv *env, jclass cls, jint deviceIndex) {
+  (void)cls;
+#if __has_include(<hip/hip_runtime_api.h>)
+  hipDeviceProp_t props;
+  if (getHipDeviceProps(env, deviceIndex, &props) != 0) return 0;
+  return (jint)props.regsPerBlock;
+#else
+  (void)deviceIndex;
+  throwUnsupported(env, "HIP headers not available");
+  return 0;
 #endif
 }
 

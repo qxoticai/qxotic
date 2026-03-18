@@ -1,6 +1,6 @@
 package com.qxotic.jota.tensor;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.Environment;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.ir.tir.IotaConstant;
 import com.qxotic.jota.ir.tir.RandomUniformOp;
@@ -99,7 +99,10 @@ public final class Tracer {
             TIRNode node;
             boolean scalarBroadcast = input.layout().stride().isAllZeros();
 
-            if (scalarBroadcast && input.device().root() == Device.CPU) {
+            if (scalarBroadcast
+                    && Environment.current()
+                            .runtimeFor(input.device())
+                            .supportsNativeRuntimeAlias()) {
                 node = new ScalarInput(i, input.dataType(), input.shape());
             } else if (InternalTensorAccess.isMaterialized(input)
                     || InternalTensorAccess.computation(input).isEmpty()) {

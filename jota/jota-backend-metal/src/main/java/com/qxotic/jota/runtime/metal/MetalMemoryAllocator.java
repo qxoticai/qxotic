@@ -1,6 +1,7 @@
 package com.qxotic.jota.runtime.metal;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAllocator;
 
@@ -16,7 +17,7 @@ final class MetalMemoryAllocator implements MemoryAllocator<MetalDevicePtr> {
 
     @Override
     public Device device() {
-        return Device.METAL;
+        return new Device(DeviceType.METAL, 0);
     }
 
     @Override

@@ -49,7 +49,7 @@ class JuliaSetTest {
         TestKernels.writePhoenixPpm(
                 hostDomain,
                 hostView,
-                Path.of("target", "julia-" + backend.leafName() + "-lir.ppm"),
+                Path.of("target", "julia-" + backend.runtimeId() + "-lir.ppm"),
                 WIDTH,
                 HEIGHT,
                 ITERATIONS);

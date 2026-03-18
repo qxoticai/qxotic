@@ -19,7 +19,7 @@ public final class OpenClDeviceListCli {
             System.out.println(OpenClRuntime.listDevices());
             System.out.println("Selected platform: " + OpenClRuntime.selectedPlatformName());
             System.out.println("Selected device type: " + OpenClRuntime.selectedDeviceType());
-            System.out.println("Selected device name: " + OpenClRuntime.selectedDeviceName());
+            System.out.println("Selected device name: " + OpenClRuntime.deviceName());
         } catch (RuntimeException e) {
             System.err.println("Failed to query OpenCL devices: " + e.getMessage());
             System.err.println("Init failure reason: " + OpenClRuntime.initFailureReason());

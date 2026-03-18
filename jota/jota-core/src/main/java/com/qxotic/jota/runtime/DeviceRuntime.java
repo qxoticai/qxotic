@@ -18,6 +18,14 @@ public interface DeviceRuntime {
         return kernelService().isPresent();
     }
 
+    default DeviceProperties properties() {
+        return DeviceProperties.EMPTY;
+    }
+
+    default DeviceCapabilities capabilities() {
+        return DeviceCapabilities.EMPTY;
+    }
+
     /**
      * Indicates whether this runtime can safely back the {@link Device#NATIVE} alias.
      *

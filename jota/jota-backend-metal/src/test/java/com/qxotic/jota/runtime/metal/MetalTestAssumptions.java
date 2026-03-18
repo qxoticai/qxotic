@@ -1,6 +1,6 @@
 package com.qxotic.jota.runtime.metal;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.runtime.RuntimeDiagnostic;
 import com.qxotic.jota.testutil.ExternalToolChecks;
@@ -20,7 +20,7 @@ final class MetalTestAssumptions {
         Assumptions.assumeTrue(
                 MetalRuntime.isAvailable(), "Metal runtime not available\n" + details);
         Assumptions.assumeTrue(
-                Environment.current().runtimes().hasRuntime(Device.METAL),
+                Environment.current().runtimes().hasRuntime("metal"),
                 "Metal runtime is not registered\n" + details);
         Assumptions.assumeTrue(xcrunAvailable, "xcrun not available\n" + details);
         Assumptions.assumeTrue(
@@ -45,7 +45,7 @@ final class MetalTestAssumptions {
             boolean xcrunAvailable, boolean metalCompilerAvailable, boolean metallibToolAvailable) {
         String diagnostics =
                 Environment.current().runtimeDiagnostics().stream()
-                        .filter(d -> d.device().equals(Device.METAL))
+                        .filter(d -> d.deviceType().equals(DeviceType.METAL))
                         .map(MetalTestAssumptions::formatDiagnostic)
                         .collect(Collectors.joining("\n"));
         if (diagnostics.isBlank()) {
@@ -56,7 +56,7 @@ final class MetalTestAssumptions {
                 + "\nMetalRuntime.isAvailable="
                 + MetalRuntime.isAvailable()
                 + "\nMetal runtime registered="
-                + Environment.current().runtimes().hasRuntime(Device.METAL)
+                + Environment.current().runtimes().hasRuntime("metal")
                 + "\nxcrun available="
                 + xcrunAvailable
                 + "\nmetal tool available="

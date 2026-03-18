@@ -43,7 +43,7 @@ class NewtonFractalTest {
         MemoryView<MemorySegment> hostView = toHost(output);
         MemoryAccess<MemorySegment> access = hostDomain.directAccess();
 
-        Path path = Path.of("target", "newton-" + backend.leafName() + "-lir.ppm");
+        Path path = Path.of("target", "newton-" + backend.runtimeId() + "-lir.ppm");
         writeNewtonPpm(access, hostView, path, WIDTH, HEIGHT);
 
         float min = Float.MAX_VALUE;

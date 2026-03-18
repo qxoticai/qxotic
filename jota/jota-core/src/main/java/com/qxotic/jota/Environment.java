@@ -67,7 +67,7 @@ public final class Environment {
 
     @SuppressWarnings("unchecked")
     public MemoryDomain<MemorySegment> nativeMemoryDomain() {
-        return (MemoryDomain<MemorySegment>) runtimeFor(Device.NATIVE).memoryDomain();
+        return (MemoryDomain<MemorySegment>) runtimeFor("native").memoryDomain();
     }
 
     @SuppressWarnings("unchecked")
@@ -121,8 +121,12 @@ public final class Environment {
         return runtimes.runtimeFor(device);
     }
 
+    public DeviceRuntime runtimeFor(String nameOrAlias) {
+        return runtimes.runtimeFor(nameOrAlias);
+    }
+
     public DeviceRuntime nativeRuntime() {
-        return runtimes.nativeRuntime();
+        return runtimeFor("native");
     }
 
     public ComputeEngine computeEngineFor(Device device) {
@@ -148,26 +152,17 @@ public final class Environment {
                         provider ->
                                 registerProvider(
                                         registry, provider, includedBackends, excludedBackends));
-        Device configuredOverride =
-                parseNativeBackendOverride(System.getProperty("jota.native.backend"));
+
+        // Wire native alias
         Device nativeBackend = selectNativeBackend(registry);
-        if (!registry.hasRuntime(nativeBackend)) {
-            throw missingNativeRuntimeException(
-                    registry, "Selected native backend " + nativeBackend + " is unavailable");
-        }
-        DeviceRuntime selectedRuntime = registry.runtimeFor(nativeBackend);
-        if (!selectedRuntime.supportsNativeRuntimeAlias()) {
-            throw missingNativeRuntimeException(
-                    registry,
-                    "Selected native backend "
-                            + nativeBackend
-                            + " does not support Device.NATIVE alias");
-        }
-        registry.registerNative(selectedRuntime);
+        registry.registerAlias("native", nativeBackend);
+        // Wire default alias
+        registry.registerAlias("default", nativeBackend);
+
         return registry;
     }
 
-    private static Device selectNativeBackend(RuntimeRegistry registry) {
+    private static Device selectNativeBackend(DefaultRuntimeRegistry registry) {
         Device override = parseNativeBackendOverride(System.getProperty("jota.native.backend"));
         if (override != null) {
             if (!registry.hasRuntime(override)) {
@@ -175,13 +170,23 @@ public final class Environment {
                         registry,
                         "Configured jota.native.backend selects unavailable backend: " + override);
             }
+            DeviceRuntime runtime = registry.runtimeFor(override);
+            if (!runtime.supportsNativeRuntimeAlias()) {
+                throw missingNativeRuntimeException(
+                        registry,
+                        "Selected native backend "
+                                + override
+                                + " does not support native runtime alias");
+            }
             return override;
         }
-        if (isNativeImageRuntime() && registry.hasRuntime(Device.C)) {
-            return Device.C;
+        Device panama0 = new Device(DeviceType.PANAMA, 0);
+        Device c0 = new Device(DeviceType.C, 0);
+        if (!isNativeImageRuntime() && registry.hasRuntime(panama0)) {
+            return panama0;
         }
-        if (!isNativeImageRuntime() && registry.hasRuntime(Device.PANAMA)) {
-            return Device.PANAMA;
+        if (isNativeImageRuntime() && registry.hasRuntime(c0)) {
+            return c0;
         }
         Device compatibleFallback = findCompatibleNativeBackend(registry);
         if (compatibleFallback != null) {
@@ -189,7 +194,7 @@ public final class Environment {
         }
         throw missingNativeRuntimeException(
                 registry,
-                "No compatible runtime available for Device.NATIVE"
+                "No compatible runtime available for native runtime"
                         + (isNativeImageRuntime()
                                 ? " in GraalVM Native Image"
                                 : " in JVM runtime"));
@@ -202,13 +207,13 @@ public final class Environment {
         String value = rawValue.trim().toLowerCase();
         return switch (value) {
             case "auto", "native" -> null;
-            case "panama", "jvm", "ffm" -> Device.PANAMA;
-            case "c" -> Device.C;
-            case "hip" -> Device.HIP;
-            case "cuda" -> Device.CUDA;
-            case "mojo" -> Device.MOJO;
-            case "opencl" -> Device.OPENCL;
-            case "metal" -> Device.METAL;
+            case "panama", "jvm", "ffm" -> new Device(DeviceType.PANAMA, 0);
+            case "c" -> new Device(DeviceType.C, 0);
+            case "hip" -> new Device(DeviceType.HIP, 0);
+            case "cuda" -> new Device(DeviceType.CUDA, 0);
+            case "mojo" -> new Device(DeviceType.MOJO, 0);
+            case "opencl" -> new Device(DeviceType.OPENCL, 0);
+            case "metal" -> new Device(DeviceType.METAL, 0);
             default ->
                     throw new IllegalArgumentException(
                             "Unsupported jota.native.backend='"
@@ -233,10 +238,8 @@ public final class Environment {
 
     private static boolean matchesBackendSelector(
             DeviceRuntimeProvider provider, Set<String> selectors) {
-        String id = provider.id().toLowerCase(Locale.ROOT);
-        String leaf = provider.device().leafName().toLowerCase(Locale.ROOT);
-        String full = provider.device().name().toLowerCase(Locale.ROOT);
-        return selectors.contains(id) || selectors.contains(leaf) || selectors.contains(full);
+        String runtimeId = provider.deviceType().id();
+        return selectors.contains(runtimeId);
     }
 
     private static RuntimeProbe backendFilterProbe(
@@ -267,12 +270,10 @@ public final class Environment {
         return imageCode != null && !imageCode.isBlank();
     }
 
-    private static Device findCompatibleNativeBackend(RuntimeRegistry registry) {
+    private static Device findCompatibleNativeBackend(DefaultRuntimeRegistry registry) {
         for (Device device : registry.devices()) {
-            if (device.equals(Device.NATIVE)) {
-                continue;
-            }
-            if (registry.runtimeFor(device).supportsNativeRuntimeAlias()) {
+            DeviceRuntime runtime = registry.runtimeFor(device);
+            if (runtime.supportsNativeRuntimeAlias()) {
                 return device;
             }
         }
@@ -282,7 +283,7 @@ public final class Environment {
     private static IllegalStateException missingNativeRuntimeException(
             RuntimeRegistry registry, String reason) {
         StringBuilder message = new StringBuilder();
-        message.append("Unable to configure Device.NATIVE runtime. ").append(reason).append('.');
+        message.append("Unable to configure native runtime. ").append(reason).append('.');
         message.append('\n')
                 .append("Runtime mode: ")
                 .append(isNativeImageRuntime() ? "graal-native-image" : "jvm");
@@ -314,9 +315,6 @@ public final class Environment {
         message.append('\n')
                 .append("Registered runtimes: ")
                 .append(formatDevices(registry.devices()));
-        message.append('\n')
-                .append("Native-compatible runtimes: ")
-                .append(formatCompatibleNativeDevices(registry));
 
         List<RuntimeDiagnostic> diagnostics = registry.diagnostics();
         if (!diagnostics.isEmpty()) {
@@ -327,7 +325,7 @@ public final class Environment {
                         .append("- ")
                         .append(diagnostic.providerId())
                         .append(" [")
-                        .append(diagnostic.device().leafName())
+                        .append(diagnostic.deviceType().id())
                         .append("] ")
                         .append(probe.status().name().toLowerCase())
                         .append(": ")
@@ -344,7 +342,7 @@ public final class Environment {
             }
         }
 
-        message.append('\n').append("Required: at least one runtime supporting Device.NATIVE");
+        message.append('\n').append("Required: at least one runtime supporting native alias");
         message.append(" (Panama, C, or another runtime with supportsNativeRuntimeAlias=true).");
         message.append('\n').append("Suggested fixes:");
         message.append('\n').append("- Include a Panama backend: com.qxotic:jota-backend-panama");
@@ -364,21 +362,7 @@ public final class Environment {
     private static String formatDevices(Iterable<Device> devices) {
         StringJoiner joiner = new StringJoiner(", ");
         for (Device device : devices) {
-            joiner.add(device.leafName());
-        }
-        String value = joiner.toString();
-        return value.isEmpty() ? "<none>" : value;
-    }
-
-    private static String formatCompatibleNativeDevices(RuntimeRegistry registry) {
-        StringJoiner joiner = new StringJoiner(", ");
-        for (Device device : registry.devices()) {
-            if (device.equals(Device.NATIVE)) {
-                continue;
-            }
-            if (registry.runtimeFor(device).supportsNativeRuntimeAlias()) {
-                joiner.add(device.leafName());
-            }
+            joiner.add(device.runtimeId());
         }
         String value = joiner.toString();
         return value.isEmpty() ? "<none>" : value;
@@ -389,10 +373,11 @@ public final class Environment {
             DeviceRuntimeProvider provider,
             Set<String> includedBackends,
             Set<String> excludedBackends) {
+        DeviceType deviceType = provider.deviceType();
+        String providerId = deviceType.id();
         RuntimeProbe filterProbe = backendFilterProbe(provider, includedBackends, excludedBackends);
         if (filterProbe != null) {
-            registry.addDiagnostic(
-                    new RuntimeDiagnostic(provider.id(), provider.device(), filterProbe));
+            registry.addDiagnostic(new RuntimeDiagnostic(providerId, deviceType, filterProbe));
             return;
         }
         RuntimeProbe probe;
@@ -401,47 +386,28 @@ public final class Environment {
         } catch (Throwable t) {
             probe = RuntimeProbe.error("Runtime probe threw unexpectedly", t);
         }
-        registry.addDiagnostic(new RuntimeDiagnostic(provider.id(), provider.device(), probe));
+        registry.addDiagnostic(new RuntimeDiagnostic(providerId, deviceType, probe));
         if (!probe.isAvailable()) {
-            logUnavailableRuntime(provider, probe);
-            return;
-        }
-        if (provider.device().equals(Device.NATIVE)) {
-            registry.addDiagnostic(
-                    new RuntimeDiagnostic(
-                            provider.id(),
-                            provider.device(),
-                            RuntimeProbe.misconfigured(
-                                    "Optional provider targets reserved native device",
-                                    "Do not register external providers for Device.NATIVE",
-                                    null)));
-            logUnavailableRuntime(
-                    provider,
-                    RuntimeProbe.misconfigured(
-                            "Optional provider targets reserved native device",
-                            "Do not register external providers for Device.NATIVE",
-                            null));
-            return;
-        }
-        if (provider.device().equals(Device.PANAMA) && registry.hasRuntime(Device.PANAMA)) {
+            logUnavailableRuntime(providerId, deviceType, probe);
             return;
         }
         try {
-            registry.register(provider.create());
+            int deviceCount = provider.deviceCount();
+            for (int i = 0; i < deviceCount; i++) {
+                Device logical = new Device(deviceType, i);
+                final int deviceIndex = i;
+                registry.registerFactory(logical, () -> provider.create(deviceIndex));
+            }
         } catch (Throwable t) {
             RuntimeProbe failure =
-                    RuntimeProbe.error("Runtime provider failed to create runtime", t);
-            registry.addDiagnostic(
-                    new RuntimeDiagnostic(provider.id(), provider.device(), failure));
-            logUnavailableRuntime(provider, failure);
+                    RuntimeProbe.error("Runtime provider failed to register factories", t);
+            registry.addDiagnostic(new RuntimeDiagnostic(providerId, deviceType, failure));
+            logUnavailableRuntime(providerId, deviceType, failure);
         }
     }
 
-    private static void logUnavailableRuntime(DeviceRuntimeProvider provider, RuntimeProbe probe) {
-        logUnavailableRuntime(provider.id(), provider.device(), probe);
-    }
-
-    private static void logUnavailableRuntime(String id, Device device, RuntimeProbe probe) {
+    private static void logUnavailableRuntime(
+            String id, DeviceType deviceType, RuntimeProbe probe) {
         if (!LOG_RUNTIME_WARNINGS) {
             return;
         }
@@ -449,7 +415,7 @@ public final class Environment {
         warning.append("[jota-runtime] WARNING: backend '")
                 .append(id)
                 .append("' on device ")
-                .append(device.leafName())
+                .append(deviceType.id())
                 .append(" is unavailable: ")
                 .append(probe.message());
         if (probe.hint() != null) {
@@ -465,8 +431,12 @@ public final class Environment {
     }
 
     private static final class DefaultGlobalHolder {
-        private static final Environment INSTANCE =
-                new Environment(
-                        Device.NATIVE, DataTypeImpl.defaultFloatValue(), buildDefaultRuntimes());
+        private static final Environment INSTANCE;
+
+        static {
+            RuntimeRegistry runtimes = buildDefaultRuntimes();
+            Device nativeDevice = runtimes.resolve("native");
+            INSTANCE = new Environment(nativeDevice, DataTypeImpl.defaultFloatValue(), runtimes);
+        }
     }
 }

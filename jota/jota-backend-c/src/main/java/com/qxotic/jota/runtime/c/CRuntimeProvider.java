@@ -1,6 +1,6 @@
 package com.qxotic.jota.runtime.c;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
 import com.qxotic.jota.runtime.spi.RuntimeProbe;
@@ -11,13 +11,8 @@ import java.util.concurrent.TimeUnit;
 public final class CRuntimeProvider implements DeviceRuntimeProvider {
 
     @Override
-    public String id() {
-        return "c";
-    }
-
-    @Override
-    public Device device() {
-        return Device.C;
+    public DeviceType deviceType() {
+        return DeviceType.C;
     }
 
     @Override
@@ -37,7 +32,7 @@ public final class CRuntimeProvider implements DeviceRuntimeProvider {
     }
 
     @Override
-    public DeviceRuntime create() {
+    public DeviceRuntime create(int deviceIndex) {
         return new CDeviceRuntime();
     }
 

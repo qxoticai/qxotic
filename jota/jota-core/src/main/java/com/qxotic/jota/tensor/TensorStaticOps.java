@@ -152,7 +152,7 @@ final class TensorStaticOps {
                             + " and "
                             + right.dataType());
         }
-        if (left.device() != right.device()) {
+        if (!left.device().equals(right.device())) {
             throw new IllegalArgumentException(
                     "concat requires matching devices, got "
                             + left.device()

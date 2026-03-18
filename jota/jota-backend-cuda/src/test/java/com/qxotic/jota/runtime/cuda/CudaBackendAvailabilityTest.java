@@ -1,9 +1,8 @@
 package com.qxotic.jota.runtime.cuda;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.runtime.RuntimeDiagnostic;
 import com.qxotic.jota.testutil.ExternalToolChecks;
@@ -23,7 +22,7 @@ class CudaBackendAvailabilityTest {
                         "mvnd -Pcuda test",
                         details));
         assertTrue(
-                Environment.current().runtimes().hasRuntime(Device.CUDA),
+                Environment.current().runtimes().hasRuntime("cuda"),
                 canaryFailureMessage(
                         "[MISSING_SOFTWARE] CUDA runtime is not registered",
                         "mvnd -Pcuda test",
@@ -40,7 +39,7 @@ class CudaBackendAvailabilityTest {
                         "[UNSUPPORTED_HARDWARE] CUDA reported no visible device",
                         "mvnd -Pcuda test",
                         details));
-        assertEquals(Device.CUDA, Environment.current().runtimeFor(Device.CUDA).device());
+        assertTrue(Environment.current().runtimeFor("cuda").device().belongsTo(DeviceType.CUDA));
     }
 
     private static String canaryFailureMessage(String reason, String command, String details) {
@@ -61,7 +60,7 @@ class CudaBackendAvailabilityTest {
     private static String diagnosticsSummary(boolean nvccAvailable) {
         String diagnostics =
                 Environment.current().runtimeDiagnostics().stream()
-                        .filter(d -> d.device().equals(Device.CUDA))
+                        .filter(d -> d.deviceType().equals(DeviceType.CUDA))
                         .map(CudaBackendAvailabilityTest::formatDiagnostic)
                         .collect(Collectors.joining("\n"));
         if (diagnostics.isBlank()) {
@@ -72,7 +71,7 @@ class CudaBackendAvailabilityTest {
                 + "\nCudaRuntime.isAvailable="
                 + CudaRuntime.isAvailable()
                 + "\nCUDA runtime registered="
-                + Environment.current().runtimes().hasRuntime(Device.CUDA)
+                + Environment.current().runtimes().hasRuntime("cuda")
                 + "\nnvcc available="
                 + nvccAvailable;
     }

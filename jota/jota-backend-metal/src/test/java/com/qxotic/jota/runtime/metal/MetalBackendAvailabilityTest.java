@@ -1,9 +1,8 @@
 package com.qxotic.jota.runtime.metal;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.testutil.ExternalToolChecks;
 import org.junit.jupiter.api.Test;
@@ -25,7 +24,7 @@ class MetalBackendAvailabilityTest {
                 canaryFailureMessage(
                         "Metal JNI runtime not available", "mvnd -Pmetal test", details));
         assertTrue(
-                Environment.current().runtimes().hasRuntime(Device.METAL),
+                Environment.current().runtimes().hasRuntime("metal"),
                 canaryFailureMessage(
                         "Metal runtime is not registered", "mvnd -Pmetal test", details));
         assertTrue(
@@ -50,7 +49,7 @@ class MetalBackendAvailabilityTest {
                         "[UNSUPPORTED_HARDWARE] no Metal device visible",
                         "mvnd -Pmetal test",
                         details));
-        assertEquals(Device.METAL, Environment.current().runtimeFor(Device.METAL).device());
+        assertTrue(Environment.current().runtimeFor("metal").device().belongsTo(DeviceType.METAL));
     }
 
     private static String canaryFailureMessage(String reason, String command, String details) {

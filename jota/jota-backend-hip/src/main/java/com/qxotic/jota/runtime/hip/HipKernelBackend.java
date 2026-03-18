@@ -1,6 +1,6 @@
 package com.qxotic.jota.runtime.hip;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.ir.lir.LIRGraph;
 import com.qxotic.jota.ir.lir.LIRTextRenderer;
 import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
@@ -29,7 +29,7 @@ final class HipKernelBackend implements KernelBackend {
     private static final String EXTRA_FLAGS_PROPERTY = "jota.hip.compile.flags";
     private static final String PCH_ENABLED_PROPERTY = "jota.hip.pch.enabled";
     private static final String PCH_LOG_PROPERTY = "jota.hip.pch.log";
-    private static final Path KERNEL_ROOT = KernelCachePaths.deviceRoot(Device.HIP);
+    private static final Path KERNEL_ROOT = KernelCachePaths.deviceRoot(DeviceType.HIP);
     private static final boolean KERNEL_LOG = Boolean.getBoolean("jota.kernel.log");
     private static final long COMPILE_TIMEOUT_SECONDS =
             Long.getLong("jota.hip.compile.timeout.seconds", 10L);

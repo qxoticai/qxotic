@@ -1,6 +1,6 @@
 package com.qxotic.jota.runtime.opencl;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.runtime.RuntimeDiagnostic;
 import java.util.stream.Collectors;
@@ -15,7 +15,7 @@ final class OpenClTestAssumptions {
         Assumptions.assumeTrue(
                 OpenClRuntime.isAvailable(), "OpenCL runtime not available\n" + details);
         Assumptions.assumeTrue(
-                Environment.current().runtimes().hasRuntime(Device.OPENCL),
+                Environment.current().runtimes().hasRuntime("opencl"),
                 "OpenCL runtime is not registered\n" + details);
         Assumptions.assumeTrue(
                 OpenClRuntime.deviceCount() > 0, "No OpenCL CPU/GPU device visible\n" + details);
@@ -24,7 +24,7 @@ final class OpenClTestAssumptions {
     static String diagnosticsSummary() {
         String diagnostics =
                 Environment.current().runtimeDiagnostics().stream()
-                        .filter(d -> d.device().equals(Device.OPENCL))
+                        .filter(d -> d.deviceType().equals(DeviceType.OPENCL))
                         .map(OpenClTestAssumptions::formatDiagnostic)
                         .collect(Collectors.joining("\n"));
         if (diagnostics.isBlank()) {
@@ -35,7 +35,7 @@ final class OpenClTestAssumptions {
                 + "\nOpenCLRuntime.isAvailable="
                 + OpenClRuntime.isAvailable()
                 + "\nOpenCL runtime registered="
-                + Environment.current().runtimes().hasRuntime(Device.OPENCL)
+                + Environment.current().runtimes().hasRuntime("opencl")
                 + "\nOpenCL device count="
                 + (OpenClRuntime.isAvailable() ? OpenClRuntime.deviceCount() : 0)
                 + "\nOpenCL selected device type="
@@ -47,9 +47,7 @@ final class OpenClTestAssumptions {
                         ? OpenClRuntime.selectedPlatformName()
                         : "<unavailable>")
                 + "\nOpenCL selected device name="
-                + (OpenClRuntime.isAvailable()
-                        ? OpenClRuntime.selectedDeviceName()
-                        : "<unavailable>")
+                + (OpenClRuntime.isAvailable() ? OpenClRuntime.deviceName() : "<unavailable>")
                 + "\nOpenCL selection properties="
                 + OpenClRuntime.selectionPropertiesSummary()
                 + "\nOpenCL device list=\n"

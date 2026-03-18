@@ -1,10 +1,9 @@
 package com.qxotic.jota.runtime.opencl;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import org.junit.jupiter.api.Test;
 
@@ -18,7 +17,7 @@ class OpenClBackendAvailabilityTest {
                 canaryFailureMessage(
                         "OpenCL JNI runtime not available", "mvnd -Popencl test", details));
         assertTrue(
-                Environment.current().runtimes().hasRuntime(Device.OPENCL),
+                Environment.current().runtimes().hasRuntime("opencl"),
                 canaryFailureMessage(
                         "OpenCL runtime is not registered", "mvnd -Popencl test", details));
         assertTrue(
@@ -35,7 +34,7 @@ class OpenClBackendAvailabilityTest {
                         "mvnd -Popencl test",
                         details));
         assertFalse(
-                OpenClRuntime.selectedDeviceName().isBlank(),
+                OpenClRuntime.deviceName().isBlank(),
                 canaryFailureMessage(
                         "Selected OpenCL device name is blank", "mvnd -Popencl test", details));
         assertFalse(
@@ -46,7 +45,8 @@ class OpenClBackendAvailabilityTest {
                 OpenClRuntime.listDevices().contains("platform["),
                 canaryFailureMessage(
                         "OpenCL device listing is empty", "mvnd -Popencl test", details));
-        assertEquals(Device.OPENCL, Environment.current().runtimeFor(Device.OPENCL).device());
+        assertTrue(
+                Environment.current().runtimeFor("opencl").device().belongsTo(DeviceType.OPENCL));
     }
 
     private static String canaryFailureMessage(String reason, String command, String details) {

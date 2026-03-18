@@ -1,6 +1,7 @@
 package com.qxotic.jota.runtime.cuda;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import java.lang.ref.Cleaner;
 
@@ -30,7 +31,7 @@ final class CudaMemory implements Memory<CudaDevicePtr> {
 
     @Override
     public Device device() {
-        return Device.CUDA;
+        return new Device(DeviceType.CUDA, 0);
     }
 
     @Override

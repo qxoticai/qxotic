@@ -2,6 +2,7 @@ package com.qxotic.jota.runtime.metal;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.ir.TIRToLIRLowerer;
@@ -86,7 +87,7 @@ public final class MetalComputeEngine implements ComputeEngine {
         MemoryView<MetalDevicePtr> scratch = allocateScratchBuffer(metalDomain, scratchLayout);
         KernelArgs args = argsBuilder.buildGrouped(lirGraph, resolvedInputs, outputs, scratch);
         LaunchConfig config = chooseLirLaunchConfig(lirGraph);
-        ExecutionStream stream = new ExecutionStream(Device.METAL, 0L, true);
+        ExecutionStream stream = new ExecutionStream(device, null, true);
         KernelExecutable exec = backend.getOrCompile(program, key);
         exec.launch(config, args, stream);
 
@@ -209,7 +210,7 @@ public final class MetalComputeEngine implements ComputeEngine {
 
     private static MemoryView<MetalDevicePtr> toDevice(
             MetalMemoryDomain metalDomain, MemoryView<?> view) {
-        if (view.memory().device().equals(Device.METAL)) {
+        if (view.memory().device().belongsTo(DeviceType.METAL)) {
             @SuppressWarnings("unchecked")
             MemoryView<MetalDevicePtr> metalView = (MemoryView<MetalDevicePtr>) view;
             return metalView;
@@ -276,7 +277,9 @@ public final class MetalComputeEngine implements ComputeEngine {
     }
 
     private static boolean shouldReturnHostOutput() {
-        return Environment.current().defaultDevice().belongsTo(Device.CPU);
+        return Environment.current()
+                .runtimeFor(Environment.current().defaultDevice())
+                .supportsNativeRuntimeAlias();
     }
 
     private static List<MemoryView<?>> allocateOutputs(

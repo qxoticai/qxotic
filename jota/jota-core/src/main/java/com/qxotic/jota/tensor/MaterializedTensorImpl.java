@@ -60,7 +60,7 @@ final class MaterializedTensorImpl extends AbstractTensorImpl {
                 + ", layout="
                 + layout()
                 + ", device="
-                + device().name()
+                + device()
                 + ")";
     }
 }

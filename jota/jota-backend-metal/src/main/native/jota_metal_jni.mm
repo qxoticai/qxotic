@@ -437,6 +437,51 @@ Java_com_qxotic_jota_runtime_metal_MetalRuntime_nativeDeviceCount(JNIEnv *env, j
   }
 }
 
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_qxotic_jota_runtime_metal_MetalRuntime_nativeDeviceName(JNIEnv *env, jclass cls) {
+  (void)cls;
+  @autoreleasepool {
+    id<MTLDevice> device = defaultDevice();
+    if (device == nil) {
+      throwRuntime(env, "Metal device not available");
+      return NULL;
+    }
+    NSString *name = [device name];
+    return (*env)->NewStringUTF(env, [name UTF8String]);
+  }
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_qxotic_jota_runtime_metal_MetalRuntime_nativeDeviceRecommendedMaxWorkingSetSize(JNIEnv *env, jclass cls) {
+  (void)cls;
+  @autoreleasepool {
+    id<MTLDevice> device = defaultDevice();
+    if (device == nil) return 0;
+    return (jlong)[device recommendedMaxWorkingSetSize];
+  }
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_qxotic_jota_runtime_metal_MetalRuntime_nativeDeviceMaxThreadgroupMemoryLength(JNIEnv *env, jclass cls) {
+  (void)cls;
+  @autoreleasepool {
+    id<MTLDevice> device = defaultDevice();
+    if (device == nil) return 0;
+    return (jlong)[device maxThreadgroupMemoryLength];
+  }
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_qxotic_jota_runtime_metal_MetalRuntime_nativeDeviceMaxThreadsPerThreadgroup(JNIEnv *env, jclass cls) {
+  (void)cls;
+  @autoreleasepool {
+    id<MTLDevice> device = defaultDevice();
+    if (device == nil) return 0;
+    MTLSize size = [device maxThreadsPerThreadgroup];
+    return (jlong)(size.width * size.height * size.depth);
+  }
+}
+
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_qxotic_jota_runtime_metal_MetalRuntime_malloc(JNIEnv *env,
                                                        jclass cls,

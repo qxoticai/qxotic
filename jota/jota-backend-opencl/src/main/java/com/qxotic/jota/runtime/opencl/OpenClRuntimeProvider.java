@@ -1,6 +1,6 @@
 package com.qxotic.jota.runtime.opencl;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
 import com.qxotic.jota.runtime.spi.RuntimeProbe;
@@ -8,13 +8,8 @@ import com.qxotic.jota.runtime.spi.RuntimeProbe;
 public final class OpenClRuntimeProvider implements DeviceRuntimeProvider {
 
     @Override
-    public String id() {
-        return "opencl";
-    }
-
-    @Override
-    public Device device() {
-        return Device.OPENCL;
+    public DeviceType deviceType() {
+        return DeviceType.OPENCL;
     }
 
     @Override
@@ -41,7 +36,7 @@ public final class OpenClRuntimeProvider implements DeviceRuntimeProvider {
                             + OpenClRuntime.selectedPlatformName()
                             + "'"
                             + " device '"
-                            + OpenClRuntime.selectedDeviceName()
+                            + OpenClRuntime.deviceName()
                             + "' ("
                             + OpenClRuntime.selectionPropertiesSummary()
                             + ")");
@@ -57,7 +52,7 @@ public final class OpenClRuntimeProvider implements DeviceRuntimeProvider {
     }
 
     @Override
-    public DeviceRuntime create() {
+    public DeviceRuntime create(int deviceIndex) {
         return new OpenClDeviceRuntime();
     }
 }

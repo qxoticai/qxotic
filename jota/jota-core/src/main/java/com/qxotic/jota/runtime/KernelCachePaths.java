@@ -1,6 +1,7 @@
 package com.qxotic.jota.runtime;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Set;
@@ -13,7 +14,7 @@ public final class KernelCachePaths {
     public static final String VERSION_PROPERTY = "jota.version";
     private static final boolean KERNEL_LOG = Boolean.getBoolean("jota.kernel.log");
     private static final AtomicBoolean CONFIG_LOGGED = new AtomicBoolean(false);
-    private static final Set<Device> DEVICE_ROOT_LOGGED = ConcurrentHashMap.newKeySet();
+    private static final Set<DeviceType> DEVICE_ROOT_LOGGED = ConcurrentHashMap.newKeySet();
 
     private KernelCachePaths() {}
 
@@ -47,13 +48,21 @@ public final class KernelCachePaths {
     }
 
     public static Path deviceRoot(Device device) {
-        Path root = versionRoot().resolve(device.leafName());
-        logDeviceRootOnce(device, root);
+        return deviceRoot(device.type());
+    }
+
+    public static Path deviceRoot(DeviceType deviceType) {
+        Path root = versionRoot().resolve(deviceType.id());
+        logDeviceRootOnce(deviceType, root);
         return root;
     }
 
     public static Path programRoot(Device device) {
-        return deviceRoot(device).resolve("programs");
+        return programRoot(device.type());
+    }
+
+    public static Path programRoot(DeviceType deviceType) {
+        return deviceRoot(deviceType).resolve("programs");
     }
 
     private static Path defaultCacheRoot() {
@@ -108,11 +117,11 @@ public final class KernelCachePaths {
         }
     }
 
-    private static void logDeviceRootOnce(Device device, Path root) {
-        if (KERNEL_LOG && DEVICE_ROOT_LOGGED.add(device)) {
+    private static void logDeviceRootOnce(DeviceType deviceType, Path root) {
+        if (KERNEL_LOG && DEVICE_ROOT_LOGGED.add(deviceType)) {
             System.out.println(
                     "[jota-kernel] device="
-                            + device.leafName()
+                            + deviceType.id()
                             + " deviceRoot="
                             + root.toAbsolutePath());
         }

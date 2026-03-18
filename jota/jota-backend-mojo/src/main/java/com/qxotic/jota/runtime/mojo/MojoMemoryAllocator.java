@@ -1,6 +1,7 @@
 package com.qxotic.jota.runtime.mojo;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAllocator;
 
@@ -19,7 +20,7 @@ final class MojoMemoryAllocator<T> implements MemoryAllocator<T> {
 
     @Override
     public Device device() {
-        return Device.MOJO;
+        return new Device(DeviceType.MOJO, 0);
     }
 
     @Override

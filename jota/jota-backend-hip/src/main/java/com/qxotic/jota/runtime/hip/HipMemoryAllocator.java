@@ -1,6 +1,7 @@
 package com.qxotic.jota.runtime.hip;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAllocator;
 
@@ -16,7 +17,7 @@ final class HipMemoryAllocator implements MemoryAllocator<HipDevicePtr> {
 
     @Override
     public Device device() {
-        return Device.HIP;
+        return new Device(DeviceType.HIP, 0);
     }
 
     @Override

@@ -26,18 +26,21 @@ class EnvironmentTest {
     @Test
     void currentDefaultsToGlobal() {
         assertSame(Environment.global(), Environment.current());
-        assertEquals(Device.NATIVE, Environment.global().defaultDevice());
+        assertTrue(
+                Environment.global().defaultDevice().belongsTo(DeviceType.PANAMA)
+                        || Environment.global().defaultDevice().belongsTo(DeviceType.C));
     }
 
     @Test
     void scopedEnvironmentOverridesDefaults() {
+        Device nativeDevice = Environment.global().runtimes().resolve("native");
         Environment env =
-                new Environment(Device.NATIVE, DataType.FP64, Environment.global().runtimes());
+                new Environment(nativeDevice, DataType.FP64, Environment.global().runtimes());
 
         Environment.with(
                 env,
                 () -> {
-                    assertEquals(Device.NATIVE, Device.defaultDevice());
+                    assertEquals(nativeDevice, Device.defaultDevice());
                     assertEquals(DataType.FP64, DataType.defaultFloat());
                     return null;
                 });
@@ -54,11 +57,10 @@ class EnvironmentTest {
 
     @Test
     void constructorRejectsNonFloatingDefaultFloat() {
+        Device nativeDevice = Environment.global().runtimes().resolve("native");
         assertThrows(
                 IllegalArgumentException.class,
-                () ->
-                        new Environment(
-                                Device.NATIVE, DataType.I32, Environment.global().runtimes()));
+                () -> new Environment(nativeDevice, DataType.I32, Environment.global().runtimes()));
     }
 
     @Test
@@ -66,17 +68,22 @@ class EnvironmentTest {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new Environment(Device.C, DataType.FP32, registry));
+                () -> new Environment(new Device(DeviceType.C, 0), DataType.FP32, registry));
     }
 
     @Test
     void registryExposesRegisteredDevices() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        registry.register(new StubDeviceRuntime(DomainFactory.ofBytes(), dummyRuntime()));
-        registry.register(new StubDeviceRuntime(DomainFactory.ofMemorySegment(), dummyRuntime()));
+        Device javaLogical = new Device(DeviceType.JAVA, 0);
+        Device panamaLogical = new Device(DeviceType.PANAMA, 0);
+        registry.registerFactory(
+                javaLogical, () -> new StubDeviceRuntime(DomainFactory.ofBytes(), dummyRuntime()));
+        registry.registerFactory(
+                panamaLogical,
+                () -> new StubDeviceRuntime(DomainFactory.ofMemorySegment(), dummyRuntime()));
 
-        assertTrue(registry.devices().contains(Device.PANAMA));
-        assertTrue(registry.devices().contains(Device.NATIVE));
+        assertTrue(registry.devices().contains(javaLogical));
+        assertTrue(registry.devices().contains(panamaLogical));
     }
 
     @Test
@@ -85,14 +92,14 @@ class EnvironmentTest {
         registry.addDiagnostic(
                 new RuntimeDiagnostic(
                         "panama-core",
-                        Device.PANAMA,
+                        DeviceType.PANAMA,
                         RuntimeProbe.missingSoftware(
                                 "Panama runtime unavailable",
                                 "Include com.qxotic:jota-backend-panama")));
         registry.addDiagnostic(
                 new RuntimeDiagnostic(
                         "c-runtime",
-                        Device.C,
+                        DeviceType.C,
                         RuntimeProbe.missingSoftware(
                                 "C backend unavailable",
                                 "Include com.qxotic:jota-backend-c and make gcc available")));
@@ -102,7 +109,7 @@ class EnvironmentTest {
 
         String message = error.getMessage();
         assertNotNull(message);
-        assertTrue(message.contains("Unable to configure Device.NATIVE runtime"));
+        assertTrue(message.contains("Unable to configure native runtime"));
         assertTrue(message.contains("Runtime probe diagnostics:"));
         assertTrue(message.contains("panama-core"));
         assertTrue(message.contains("c-runtime"));
@@ -168,7 +175,7 @@ class EnvironmentTest {
     @Test
     void excludedBackendIsNotRegisteredEvenWhenProviderIsAvailable() throws Exception {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        DeviceRuntimeProvider provider = new AlwaysAvailableProvider("opencl", Device.OPENCL);
+        DeviceRuntimeProvider provider = new AlwaysAvailableProvider("opencl", DeviceType.OPENCL);
 
         Method method =
                 Environment.class.getDeclaredMethod(
@@ -180,7 +187,7 @@ class EnvironmentTest {
         method.setAccessible(true);
         method.invoke(null, registry, provider, Set.of(), Set.of("opencl"));
 
-        assertFalse(registry.hasRuntime(Device.OPENCL));
+        assertFalse(registry.hasRuntime("opencl"));
         assertTrue(
                 registry.diagnostics().stream()
                         .anyMatch(
@@ -195,7 +202,7 @@ class EnvironmentTest {
     @Test
     void excludeListTakesPriorityOverIncludeList() throws Exception {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        DeviceRuntimeProvider provider = new AlwaysAvailableProvider("opencl", Device.OPENCL);
+        DeviceRuntimeProvider provider = new AlwaysAvailableProvider("opencl", DeviceType.OPENCL);
 
         Method method =
                 Environment.class.getDeclaredMethod(
@@ -207,7 +214,7 @@ class EnvironmentTest {
         method.setAccessible(true);
         method.invoke(null, registry, provider, Set.of("opencl"), Set.of("opencl"));
 
-        assertFalse(registry.hasRuntime(Device.OPENCL));
+        assertFalse(registry.hasRuntime("opencl"));
         assertTrue(
                 registry.diagnostics().stream()
                         .anyMatch(
@@ -234,7 +241,7 @@ class EnvironmentTest {
             DefaultRuntimeRegistry registry) throws Exception {
         Method method =
                 Environment.class.getDeclaredMethod(
-                        "selectNativeBackend", com.qxotic.jota.runtime.RuntimeRegistry.class);
+                        "selectNativeBackend", DefaultRuntimeRegistry.class);
         method.setAccessible(true);
         try {
             method.invoke(null, registry);
@@ -250,7 +257,7 @@ class EnvironmentTest {
         return new ComputeEngine() {
             @Override
             public Device device() {
-                return Device.PANAMA;
+                return new Device(DeviceType.PANAMA, 0);
             }
 
             @Override
@@ -287,7 +294,7 @@ class EnvironmentTest {
         @Override
         public boolean supportsNativeRuntimeAlias() {
             Device device = device();
-            return device.equals(Device.PANAMA) || device.equals(Device.C);
+            return device.belongsTo(DeviceType.PANAMA) || device.belongsTo(DeviceType.C);
         }
 
         @Override
@@ -297,22 +304,15 @@ class EnvironmentTest {
     }
 
     private static final class AlwaysAvailableProvider implements DeviceRuntimeProvider {
-        private final String id;
-        private final Device device;
+        private final DeviceType deviceType;
 
-        private AlwaysAvailableProvider(String id, Device device) {
-            this.id = id;
-            this.device = device;
+        private AlwaysAvailableProvider(String id, DeviceType deviceType) {
+            this.deviceType = deviceType;
         }
 
         @Override
-        public String id() {
-            return id;
-        }
-
-        @Override
-        public Device device() {
-            return device;
+        public DeviceType deviceType() {
+            return deviceType;
         }
 
         @Override
@@ -321,7 +321,7 @@ class EnvironmentTest {
         }
 
         @Override
-        public DeviceRuntime create() {
+        public DeviceRuntime create(int deviceIndex) {
             return new StubDeviceRuntime(DomainFactory.ofMemorySegment(), dummyRuntime());
         }
     }

@@ -1,6 +1,7 @@
 package com.qxotic.jota.testutil;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.runtime.RuntimeDiagnostic;
 import java.util.ArrayList;
@@ -35,15 +36,15 @@ public final class AvailableBackends {
         }
 
         Set<Device> targets = new LinkedHashSet<>();
-        targets.add(Device.PANAMA);
+        targets.add(new Device(DeviceType.PANAMA, 0));
         for (Device device :
                 List.of(
-                        Device.C,
-                        Device.HIP,
-                        Device.CUDA,
-                        Device.MOJO,
-                        Device.OPENCL,
-                        Device.METAL)) {
+                        new Device(DeviceType.C, 0),
+                        new Device(DeviceType.HIP, 0),
+                        new Device(DeviceType.CUDA, 0),
+                        new Device(DeviceType.MOJO, 0),
+                        new Device(DeviceType.OPENCL, 0),
+                        new Device(DeviceType.METAL, 0))) {
             if (isAvailable(current, device)) {
                 targets.add(device);
             }
@@ -55,7 +56,7 @@ public final class AvailableBackends {
     }
 
     private static boolean isAvailable(Environment environment, Device device) {
-        if (device.equals(Device.METAL)
+        if (device.belongsTo(DeviceType.METAL)
                 && !(ExternalToolChecks.hasVersionCommand("xcrun")
                         && ExternalToolChecks.hasCommand(
                                 "xcrun", "-sdk", "macosx", "-find", "metal")
@@ -66,7 +67,10 @@ public final class AvailableBackends {
         if (!environment.runtimes().hasRuntime(device)) {
             return false;
         }
-        List<RuntimeDiagnostic> diagnostics = environment.runtimes().diagnosticsFor(device);
+        List<RuntimeDiagnostic> diagnostics =
+                environment.runtimes().diagnostics().stream()
+                        .filter(d -> d.deviceType().equals(device.type()))
+                        .toList();
         if (diagnostics.isEmpty()) {
             return true;
         }
