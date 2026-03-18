@@ -1,6 +1,7 @@
 package com.qxotic.jota.runtime.c;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
@@ -27,7 +28,7 @@ final class CMemory implements Memory<MemorySegment> {
 
     @Override
     public Device device() {
-        return Device.C;
+        return new Device(DeviceType.C, 0);
     }
 
     @Override

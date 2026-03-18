@@ -1,6 +1,6 @@
 package com.qxotic.jota.runtime.cuda;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.runtime.RuntimeDiagnostic;
 import com.qxotic.jota.testutil.ExternalToolChecks;
@@ -16,7 +16,7 @@ final class CudaTestAssumptions {
         String details = diagnosticsSummary(nvccAvailable);
         Assumptions.assumeTrue(CudaRuntime.isAvailable(), "CUDA runtime not available\n" + details);
         Assumptions.assumeTrue(
-                Environment.current().runtimes().hasRuntime(Device.CUDA),
+                Environment.current().runtimes().hasRuntime("cuda"),
                 "CUDA runtime is not registered\n" + details);
         Assumptions.assumeTrue(nvccAvailable, "nvcc not available\n" + details);
     }
@@ -28,7 +28,7 @@ final class CudaTestAssumptions {
     static String diagnosticsSummary(boolean nvccAvailable) {
         String diagnostics =
                 Environment.current().runtimeDiagnostics().stream()
-                        .filter(d -> d.device().equals(Device.CUDA))
+                        .filter(d -> d.deviceType().equals(DeviceType.CUDA))
                         .map(CudaTestAssumptions::formatDiagnostic)
                         .collect(Collectors.joining("\n"));
         if (diagnostics.isBlank()) {
@@ -39,7 +39,7 @@ final class CudaTestAssumptions {
                 + "\nCudaRuntime.isAvailable="
                 + CudaRuntime.isAvailable()
                 + "\nCUDA runtime registered="
-                + Environment.current().runtimes().hasRuntime(Device.CUDA)
+                + Environment.current().runtimes().hasRuntime("cuda")
                 + "\nnvcc available="
                 + nvccAvailable;
     }

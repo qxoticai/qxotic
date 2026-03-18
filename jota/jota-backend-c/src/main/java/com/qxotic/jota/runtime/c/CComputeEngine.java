@@ -2,6 +2,7 @@ package com.qxotic.jota.runtime.c;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.ir.TIRToLIRLowerer;
@@ -43,14 +44,16 @@ public final class CComputeEngine implements ComputeEngine {
     private final boolean verifyScratch =
             Boolean.parseBoolean(System.getProperty("jota.verifyScratch", "false"));
     private final boolean logKernelIr = Boolean.getBoolean("jota.kernel.ir.log");
+    private final Device device;
 
     public CComputeEngine(CMemoryDomain memoryDomain) {
         this.memoryDomain = memoryDomain;
+        this.device = new Device(DeviceType.C, 0);
     }
 
     @Override
     public Device device() {
-        return Device.C;
+        return device;
     }
 
     @Override
@@ -88,7 +91,7 @@ public final class CComputeEngine implements ComputeEngine {
         exec.launch(
                 new LaunchConfig(1, 1, 1, 1, 1, 1, 0, false),
                 args,
-                new ExecutionStream(Device.C, 0L, true));
+                new ExecutionStream(device, null, true));
 
         return outputViews.getFirst();
     }
@@ -158,7 +161,7 @@ public final class CComputeEngine implements ComputeEngine {
             @SuppressWarnings("unchecked")
             MemoryView<Object> srcView = (MemoryView<Object>) view;
 
-            if (view.memory().device().equals(Device.C)
+            if (view.memory().device().belongsTo(DeviceType.C)
                     && view.memory().base() instanceof MemorySegment) {
                 resolved.add(Tensor.of(view));
                 continue;

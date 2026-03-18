@@ -1,6 +1,6 @@
 package com.qxotic.jota.runtime.hip;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.runtime.RuntimeDiagnostic;
 import com.qxotic.jota.testutil.ExternalToolChecks;
@@ -16,7 +16,7 @@ final class HipTestAssumptions {
         String details = diagnosticsSummary(hipccAvailable);
         Assumptions.assumeTrue(HipRuntime.isAvailable(), "HIP runtime not available\n" + details);
         Assumptions.assumeTrue(
-                Environment.current().runtimes().hasRuntime(Device.HIP),
+                Environment.current().runtimes().hasRuntime("hip"),
                 "HIP runtime is not registered\n" + details);
         Assumptions.assumeTrue(hipccAvailable, "hipcc not available\n" + details);
     }
@@ -28,7 +28,7 @@ final class HipTestAssumptions {
     static String diagnosticsSummary(boolean hipccAvailable) {
         String hipDiagnostics =
                 Environment.current().runtimeDiagnostics().stream()
-                        .filter(d -> d.device().equals(Device.HIP))
+                        .filter(d -> d.deviceType().equals(DeviceType.HIP))
                         .map(HipTestAssumptions::formatDiagnostic)
                         .collect(Collectors.joining("\n"));
         if (hipDiagnostics.isBlank()) {
@@ -39,7 +39,7 @@ final class HipTestAssumptions {
                 + "\nHipRuntime.isAvailable="
                 + HipRuntime.isAvailable()
                 + "\nHIP runtime registered="
-                + Environment.current().runtimes().hasRuntime(Device.HIP)
+                + Environment.current().runtimes().hasRuntime("hip")
                 + "\nhipcc available="
                 + hipccAvailable;
     }

@@ -1,9 +1,10 @@
 package com.qxotic.jota.runtime.mojo;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 
-/** Minimal wrapper to preserve Device.MOJO identity over HIP-backed memory. */
+/** Minimal wrapper to preserve Mojo device identity over HIP-backed memory. */
 final class MojoMemory<T> implements Memory<T> {
 
     private final Memory<T> delegate;
@@ -31,7 +32,7 @@ final class MojoMemory<T> implements Memory<T> {
 
     @Override
     public Device device() {
-        return Device.MOJO;
+        return new Device(DeviceType.MOJO, 0);
     }
 
     @Override

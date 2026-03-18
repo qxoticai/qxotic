@@ -45,7 +45,7 @@ class NBodySnapshotTest {
                 Path.of(
                         "target",
                         "nbody-snapshot-"
-                                + Environment.current().defaultDevice().leafName()
+                                + Environment.current().defaultDevice().runtimeId()
                                 + ".ppm"));
     }
 

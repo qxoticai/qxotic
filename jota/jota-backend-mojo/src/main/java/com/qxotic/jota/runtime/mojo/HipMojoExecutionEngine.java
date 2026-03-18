@@ -1,6 +1,6 @@
 package com.qxotic.jota.runtime.mojo;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.runtime.FileKernelProgramStore;
 import com.qxotic.jota.runtime.KernelBackend;
@@ -34,7 +34,7 @@ final class HipMojoExecutionEngine implements MojoExecutionEngine<HipDevicePtr> 
                                                 new IllegalStateException(
                                                         "HIP kernel service unavailable"))
                                 .backend());
-        Path programRoot = KernelCachePaths.programRoot(Device.MOJO);
+        Path programRoot = KernelCachePaths.programRoot(DeviceType.MOJO);
         KernelProgramStore sourceStore = new FileKernelProgramStore(programRoot.resolve("source"));
         KernelProgramStore binaryStore = new FileKernelProgramStore(programRoot.resolve("binary"));
         this.kernelService = new KernelService(backend, sourceStore, binaryStore);

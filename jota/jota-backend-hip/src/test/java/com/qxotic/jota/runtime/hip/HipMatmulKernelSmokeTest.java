@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
@@ -275,7 +276,8 @@ class HipMatmulKernelSmokeTest {
 
     private static Environment hipEnvironment() {
         Environment current = Environment.current();
-        return new Environment(Device.HIP, current.defaultFloat(), current.runtimes());
+        return new Environment(
+                new Device(DeviceType.HIP, 0), current.defaultFloat(), current.runtimes());
     }
 
     private static float readFp32(MemoryView<?> view, long linearIndex) {
@@ -287,7 +289,8 @@ class HipMatmulKernelSmokeTest {
 
     @SuppressWarnings("unchecked")
     private static MemoryView<MemorySegment> toHost(MemoryView<?> view) {
-        return (MemoryView<MemorySegment>) Tensor.of(view).to(Device.NATIVE).materialize();
+        return (MemoryView<MemorySegment>)
+                Tensor.of(view).to(new Device(DeviceType.PANAMA, 0)).materialize();
     }
 
     private static void assertClose(float actual, float expected) {

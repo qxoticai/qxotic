@@ -1,6 +1,7 @@
 package com.qxotic.jota.runtime.nativeimpl;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
@@ -27,7 +28,7 @@ record NativeMemorySegmentMemory(MemorySegment memorySegment) implements Memory<
 
     @Override
     public Device device() {
-        return Device.PANAMA;
+        return new Device(DeviceType.PANAMA, 0);
     }
 
     @Override

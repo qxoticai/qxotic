@@ -1,6 +1,6 @@
 package com.qxotic.jota.runtime.panama;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.nativeimpl.NativeMemoryFactory;
 import com.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
@@ -9,13 +9,8 @@ import com.qxotic.jota.runtime.spi.RuntimeProbe;
 public final class PanamaRuntimeProvider implements DeviceRuntimeProvider {
 
     @Override
-    public String id() {
-        return "panama";
-    }
-
-    @Override
-    public Device device() {
-        return Device.PANAMA;
+    public DeviceType deviceType() {
+        return DeviceType.PANAMA;
     }
 
     @Override
@@ -34,7 +29,16 @@ public final class PanamaRuntimeProvider implements DeviceRuntimeProvider {
     }
 
     @Override
-    public DeviceRuntime create() {
+    public DeviceRuntime create(int deviceIndex) {
         return new PanamaDeviceRuntime();
+    }
+
+    @Override
+    public String toString() {
+        return "PanamaRuntimeProvider[deviceType="
+                + deviceType()
+                + ", priority="
+                + priority()
+                + "]";
     }
 }

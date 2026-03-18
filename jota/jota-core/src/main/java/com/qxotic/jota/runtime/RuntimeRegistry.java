@@ -5,17 +5,17 @@ import java.util.List;
 import java.util.Set;
 
 public interface RuntimeRegistry {
-    void register(DeviceRuntime deviceRuntime);
-
     DeviceRuntime runtimeFor(Device device);
+
+    DeviceRuntime runtimeFor(String nameOrAlias);
 
     boolean hasRuntime(Device device);
 
-    DeviceRuntime nativeRuntime();
+    boolean hasRuntime(String nameOrAlias);
+
+    Device resolve(String nameOrAlias);
 
     Set<Device> devices();
 
     List<RuntimeDiagnostic> diagnostics();
-
-    List<RuntimeDiagnostic> diagnosticsFor(Device device);
 }

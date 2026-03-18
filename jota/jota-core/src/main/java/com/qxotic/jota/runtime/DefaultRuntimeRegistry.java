@@ -1,110 +1,110 @@
 package com.qxotic.jota.runtime;
 
 import com.qxotic.jota.Device;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Supplier;
 
 public final class DefaultRuntimeRegistry implements RuntimeRegistry {
 
+    /** name/alias → resolved concrete Device (e.g., "native" → Device(PANAMA, 0)) */
+    private final Map<String, Device> aliases = new ConcurrentHashMap<>();
+
+    /** concrete device → lazy factory */
+    private final Map<Device, Supplier<DeviceRuntime>> factories = new ConcurrentHashMap<>();
+
+    /** cache of created runtimes (populated lazily) */
     private final Map<Device, DeviceRuntime> runtimes = new ConcurrentHashMap<>();
+
     private final CopyOnWriteArrayList<RuntimeDiagnostic> diagnostics =
             new CopyOnWriteArrayList<>();
-    private volatile DeviceRuntime nativeDeviceRuntime;
 
-    public static DefaultRuntimeRegistry withNative(DeviceRuntime deviceRuntime) {
-        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        registry.registerNative(deviceRuntime);
-        return registry;
+    /**
+     * Registers a lazy factory for a concrete device.
+     *
+     * @param device the concrete (indexed) device
+     * @param factory supplier that creates the runtime on first access
+     */
+    public void registerFactory(Device device, Supplier<DeviceRuntime> factory) {
+        Objects.requireNonNull(device, "device");
+        Objects.requireNonNull(factory, "factory");
+        Supplier<DeviceRuntime> existing = factories.putIfAbsent(device, factory);
+        if (existing != null) {
+            throw new IllegalStateException("Factory already registered for device " + device);
+        }
+        // Auto-register the runtimeId as an alias → this concrete device (first one wins)
+        aliases.putIfAbsent(device.runtimeId(), device);
+    }
+
+    /**
+     * Registers an alias mapping.
+     *
+     * @param aliasId the alias name (e.g., "native", "default")
+     * @param target the concrete device to resolve to
+     */
+    public void registerAlias(String aliasId, Device target) {
+        Objects.requireNonNull(aliasId, "aliasId");
+        Objects.requireNonNull(target, "target");
+        aliases.put(aliasId.strip().toLowerCase(), target);
     }
 
     @Override
-    public void register(DeviceRuntime deviceRuntime) {
-        Objects.requireNonNull(deviceRuntime, "deviceRuntime");
-        Device device = deviceRuntime.device();
-        if (device.equals(Device.NATIVE)) {
-            throw new IllegalArgumentException(
-                    "Device.NATIVE is a runtime alias and cannot be registered");
+    public Device resolve(String nameOrAlias) {
+        Objects.requireNonNull(nameOrAlias, "nameOrAlias");
+        String key = nameOrAlias.strip().toLowerCase();
+        Device resolved = aliases.get(key);
+        if (resolved == null) {
+            throw new IllegalStateException("No device registered for alias '" + nameOrAlias + "'");
         }
-        DeviceRuntime existing = runtimes.putIfAbsent(device, deviceRuntime);
-        if (existing != null) {
-            throw new IllegalStateException("Runtime already registered for device " + device);
-        }
-        if (nativeDeviceRuntime == null && deviceRuntime.supportsNativeRuntimeAlias()) {
-            nativeDeviceRuntime = deviceRuntime;
-        }
-    }
-
-    public void registerNative(DeviceRuntime deviceRuntime) {
-        Objects.requireNonNull(deviceRuntime, "deviceRuntime");
-        if (!deviceRuntime.supportsNativeRuntimeAlias()) {
-            throw new IllegalArgumentException(
-                    "Runtime does not support Device.NATIVE alias: "
-                            + deviceRuntime.getClass().getName()
-                            + " (device="
-                            + deviceRuntime.device()
-                            + ")");
-        }
-        Device device = deviceRuntime.device();
-        DeviceRuntime existing = runtimes.putIfAbsent(device, deviceRuntime);
-        if (existing != null && existing != deviceRuntime) {
-            deviceRuntime = existing;
-        }
-        nativeDeviceRuntime = deviceRuntime;
+        return resolved;
     }
 
     @Override
     public DeviceRuntime runtimeFor(Device device) {
-        if (device.equals(Device.NATIVE)) {
-            return nativeRuntime();
-        }
-        DeviceRuntime deviceRuntime = runtimes.get(device);
-        if (deviceRuntime == null) {
-            throw new IllegalStateException("No runtime registered for " + device);
-        }
-        return deviceRuntime;
+        Objects.requireNonNull(device, "device");
+        return runtimes.computeIfAbsent(
+                device,
+                d -> {
+                    Supplier<DeviceRuntime> factory = factories.get(d);
+                    if (factory == null) {
+                        throw new IllegalStateException("No runtime registered for " + d);
+                    }
+                    return factory.get();
+                });
+    }
+
+    @Override
+    public DeviceRuntime runtimeFor(String nameOrAlias) {
+        return runtimeFor(resolve(nameOrAlias));
     }
 
     @Override
     public boolean hasRuntime(Device device) {
-        if (device.equals(Device.NATIVE)) {
-            return nativeDeviceRuntime != null;
-        }
-        return runtimes.containsKey(device);
+        return factories.containsKey(device);
     }
 
     @Override
-    public DeviceRuntime nativeRuntime() {
-        DeviceRuntime deviceRuntime = nativeDeviceRuntime;
-        if (deviceRuntime == null) {
-            throw new IllegalStateException(
-                    "No native runtime registered. Available runtimes: " + runtimes.keySet());
+    public boolean hasRuntime(String nameOrAlias) {
+        try {
+            Device concrete = resolve(nameOrAlias);
+            return factories.containsKey(concrete);
+        } catch (IllegalStateException e) {
+            return false;
         }
-        return deviceRuntime;
     }
 
     @Override
     public Set<Device> devices() {
-        Set<Device> devices = new HashSet<>(runtimes.keySet());
-        if (nativeDeviceRuntime != null) {
-            devices.add(Device.NATIVE);
-        }
-        return Set.copyOf(devices);
+        return Set.copyOf(factories.keySet());
     }
 
     @Override
     public List<RuntimeDiagnostic> diagnostics() {
         return List.copyOf(diagnostics);
-    }
-
-    @Override
-    public List<RuntimeDiagnostic> diagnosticsFor(Device device) {
-        Objects.requireNonNull(device, "device");
-        return diagnostics.stream().filter(it -> it.device().equals(device)).toList();
     }
 
     public void addDiagnostic(RuntimeDiagnostic diagnostic) {

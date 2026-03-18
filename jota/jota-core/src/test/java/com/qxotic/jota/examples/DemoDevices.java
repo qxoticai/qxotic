@@ -1,6 +1,7 @@
 package com.qxotic.jota.examples;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.runtime.RuntimeDiagnostic;
 import java.util.LinkedHashSet;
@@ -10,15 +11,15 @@ import java.util.Set;
 
 final class DemoDevices {
 
-    private static final List<Device> SUPPORTED_BACKENDS =
+    private static final List<DeviceType> SUPPORTED_BACKENDS =
             List.of(
-                    Device.PANAMA,
-                    Device.C,
-                    Device.HIP,
-                    Device.CUDA,
-                    Device.OPENCL,
-                    Device.METAL,
-                    Device.MOJO);
+                    DeviceType.PANAMA,
+                    DeviceType.C,
+                    DeviceType.HIP,
+                    DeviceType.CUDA,
+                    DeviceType.OPENCL,
+                    DeviceType.METAL,
+                    DeviceType.MOJO);
 
     private DemoDevices() {}
 
@@ -38,14 +39,14 @@ final class DemoDevices {
         String normalized = requested.trim().toLowerCase(Locale.ROOT);
         Device parsed =
                 switch (normalized) {
-                    case "native", "default", "auto" -> Device.NATIVE;
-                    case "panama", "ffm", "jvm" -> Device.PANAMA;
-                    case "c" -> Device.C;
-                    case "hip" -> Device.HIP;
-                    case "cuda" -> Device.CUDA;
-                    case "opencl", "cl" -> Device.OPENCL;
-                    case "metal" -> Device.METAL;
-                    case "mojo" -> Device.MOJO;
+                    case "native", "default", "auto" -> null;
+                    case "panama", "ffm", "jvm" -> new Device(DeviceType.PANAMA, 0);
+                    case "c" -> new Device(DeviceType.C, 0);
+                    case "hip" -> new Device(DeviceType.HIP, 0);
+                    case "cuda" -> new Device(DeviceType.CUDA, 0);
+                    case "opencl", "cl" -> new Device(DeviceType.OPENCL, 0);
+                    case "metal" -> new Device(DeviceType.METAL, 0);
+                    case "mojo" -> new Device(DeviceType.MOJO, 0);
                     default ->
                             throw new IllegalArgumentException(
                                     "Unknown backend/device '"
@@ -53,7 +54,7 @@ final class DemoDevices {
                                             + "'. Use one of: native, panama, c, hip, cuda, opencl,"
                                             + " metal, mojo");
                 };
-        if (parsed.equals(Device.NATIVE)) {
+        if (parsed == null) {
             return environment.nativeRuntime().device();
         }
         if (!environment.runtimes().hasRuntime(parsed)) {
@@ -68,34 +69,34 @@ final class DemoDevices {
         output.append("Available and usable devices:");
         output.append('\n')
                 .append("  - native -> ")
-                .append(environment.nativeRuntime().device().leafName());
+                .append(environment.nativeRuntime().device().runtimeId());
 
-        for (Device backend : SUPPORTED_BACKENDS) {
-            if (available.contains(backend)) {
-                output.append('\n').append("  - ").append(backend.leafName());
+        for (DeviceType backend : SUPPORTED_BACKENDS) {
+            if (environment.runtimes().hasRuntime(backend.id())) {
+                output.append('\n').append("  - ").append(backend.id());
             }
         }
 
-        Set<Device> unavailable = new LinkedHashSet<>();
+        Set<DeviceType> unavailable = new LinkedHashSet<>();
         List<RuntimeDiagnostic> diagnostics = environment.runtimeDiagnostics();
         for (RuntimeDiagnostic diagnostic : diagnostics) {
             if (!diagnostic.probe().isAvailable()
-                    && SUPPORTED_BACKENDS.contains(diagnostic.device())) {
-                unavailable.add(diagnostic.device());
+                    && SUPPORTED_BACKENDS.contains(diagnostic.deviceType())) {
+                unavailable.add(diagnostic.deviceType());
             }
         }
 
         if (!unavailable.isEmpty()) {
             output.append('\n').append('\n').append("Unavailable devices:");
-            for (Device device : unavailable) {
-                RuntimeDiagnostic diagnostic = latestDiagnosticFor(diagnostics, device);
+            for (DeviceType deviceType : unavailable) {
+                RuntimeDiagnostic diagnostic = latestDiagnosticFor(diagnostics, deviceType);
                 if (diagnostic == null) {
-                    output.append('\n').append("  - ").append(device.leafName());
+                    output.append('\n').append("  - ").append(deviceType.id());
                     continue;
                 }
                 output.append('\n')
                         .append("  - ")
-                        .append(device.leafName())
+                        .append(deviceType.id())
                         .append(": ")
                         .append(diagnostic.probe().message());
                 String hint = diagnostic.probe().hint();
@@ -110,9 +111,11 @@ final class DemoDevices {
 
     private static String unavailableDeviceMessage(Environment environment, Device device) {
         StringBuilder message =
-                new StringBuilder("Requested device runtime is unavailable: ")
-                        .append(device.name());
-        List<RuntimeDiagnostic> diagnostics = environment.runtimes().diagnosticsFor(device);
+                new StringBuilder("Requested device runtime is unavailable: ").append(device);
+        List<RuntimeDiagnostic> diagnostics =
+                environment.runtimes().diagnostics().stream()
+                        .filter(d -> d.deviceType().equals(device.type()))
+                        .toList();
         if (!diagnostics.isEmpty()) {
             message.append('\n').append("Diagnostics:");
             for (RuntimeDiagnostic diagnostic : diagnostics) {
@@ -132,10 +135,10 @@ final class DemoDevices {
     }
 
     private static RuntimeDiagnostic latestDiagnosticFor(
-            List<RuntimeDiagnostic> diagnostics, Device device) {
+            List<RuntimeDiagnostic> diagnostics, DeviceType deviceType) {
         for (int i = diagnostics.size() - 1; i >= 0; i--) {
             RuntimeDiagnostic diagnostic = diagnostics.get(i);
-            if (diagnostic.device().equals(device)) {
+            if (diagnostic.deviceType().equals(deviceType)) {
                 return diagnostic;
             }
         }

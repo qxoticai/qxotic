@@ -3,7 +3,7 @@ package com.qxotic.jota.runtime;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import java.nio.file.Path;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -29,11 +29,11 @@ class KernelCachePathsTest {
         assertEquals(Path.of("/tmp/jota-test-cache"), KernelCachePaths.cacheRoot());
         assertEquals("v1.2.3", KernelCachePaths.version());
         assertEquals(
-                Path.of("/tmp/jota-test-cache", "v1.2.3", Device.PANAMA.leafName()),
-                KernelCachePaths.deviceRoot(Device.PANAMA));
+                Path.of("/tmp/jota-test-cache", "v1.2.3", DeviceType.PANAMA.id()),
+                KernelCachePaths.deviceRoot(DeviceType.PANAMA));
         assertEquals(
-                Path.of("/tmp/jota-test-cache", "v1.2.3", Device.HIP.leafName(), "programs"),
-                KernelCachePaths.programRoot(Device.HIP));
+                Path.of("/tmp/jota-test-cache", "v1.2.3", DeviceType.HIP.id(), "programs"),
+                KernelCachePaths.programRoot(DeviceType.HIP));
     }
 
     @Test

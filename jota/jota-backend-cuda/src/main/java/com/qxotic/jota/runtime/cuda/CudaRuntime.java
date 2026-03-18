@@ -75,11 +75,123 @@ public final class CudaRuntime {
         return nativeDeviceArchName(deviceIndex);
     }
 
+    public static String deviceName(int deviceIndex) {
+        requireAvailable();
+        return nativeDeviceName(deviceIndex);
+    }
+
+    public static long deviceTotalMem(int deviceIndex) {
+        requireAvailable();
+        return nativeDeviceTotalMem(deviceIndex);
+    }
+
+    public static long deviceSharedMemPerBlock(int deviceIndex) {
+        requireAvailable();
+        return nativeDeviceSharedMemPerBlock(deviceIndex);
+    }
+
+    public static int deviceComputeUnits(int deviceIndex) {
+        requireAvailable();
+        return nativeDeviceMultiProcessorCount(deviceIndex);
+    }
+
+    public static int deviceClockRateKHz(int deviceIndex) {
+        requireAvailable();
+        return nativeDeviceClockRateKHz(deviceIndex);
+    }
+
+    public static int deviceWarpSize(int deviceIndex) {
+        requireAvailable();
+        return nativeDeviceWarpSize(deviceIndex);
+    }
+
+    public static int deviceMaxThreadsPerBlock(int deviceIndex) {
+        requireAvailable();
+        return nativeDeviceMaxThreadsPerBlock(deviceIndex);
+    }
+
+    public static int[] deviceMaxBlockDim(int deviceIndex) {
+        requireAvailable();
+        return nativeDeviceMaxBlockDim(deviceIndex);
+    }
+
+    public static int[] deviceMaxGridDim(int deviceIndex) {
+        requireAvailable();
+        return nativeDeviceMaxGridDim(deviceIndex);
+    }
+
+    public static boolean deviceConcurrentKernels(int deviceIndex) {
+        requireAvailable();
+        return nativeDeviceConcurrentKernels(deviceIndex);
+    }
+
+    public static boolean deviceEccEnabled(int deviceIndex) {
+        requireAvailable();
+        return nativeDeviceEccEnabled(deviceIndex);
+    }
+
+    public static boolean deviceUnifiedAddressing(int deviceIndex) {
+        requireAvailable();
+        return nativeDeviceUnifiedAddressing(deviceIndex);
+    }
+
+    public static int deviceL2CacheSize(int deviceIndex) {
+        requireAvailable();
+        return nativeDeviceL2CacheSize(deviceIndex);
+    }
+
+    public static int deviceMemoryBusWidthBits(int deviceIndex) {
+        requireAvailable();
+        return nativeDeviceMemoryBusWidthBits(deviceIndex);
+    }
+
+    public static int deviceMemoryClockRateKHz(int deviceIndex) {
+        requireAvailable();
+        return nativeDeviceMemoryClockRateKHz(deviceIndex);
+    }
+
+    public static int deviceRegsPerBlock(int deviceIndex) {
+        requireAvailable();
+        return nativeDeviceRegsPerBlock(deviceIndex);
+    }
+
     private static native int nativeDeviceCount();
 
     private static native int nativeCurrentDevice();
 
     private static native String nativeDeviceArchName(int deviceIndex);
+
+    private static native String nativeDeviceName(int deviceIndex);
+
+    private static native long nativeDeviceTotalMem(int deviceIndex);
+
+    private static native long nativeDeviceSharedMemPerBlock(int deviceIndex);
+
+    private static native int nativeDeviceMultiProcessorCount(int deviceIndex);
+
+    private static native int nativeDeviceClockRateKHz(int deviceIndex);
+
+    private static native int nativeDeviceWarpSize(int deviceIndex);
+
+    private static native int nativeDeviceMaxThreadsPerBlock(int deviceIndex);
+
+    private static native int[] nativeDeviceMaxBlockDim(int deviceIndex);
+
+    private static native int[] nativeDeviceMaxGridDim(int deviceIndex);
+
+    private static native boolean nativeDeviceConcurrentKernels(int deviceIndex);
+
+    private static native boolean nativeDeviceEccEnabled(int deviceIndex);
+
+    private static native boolean nativeDeviceUnifiedAddressing(int deviceIndex);
+
+    private static native int nativeDeviceL2CacheSize(int deviceIndex);
+
+    private static native int nativeDeviceMemoryBusWidthBits(int deviceIndex);
+
+    private static native int nativeDeviceMemoryClockRateKHz(int deviceIndex);
+
+    private static native int nativeDeviceRegsPerBlock(int deviceIndex);
 
     static native long createStream();
 

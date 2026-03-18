@@ -90,9 +90,17 @@ public final class OpenClRuntime {
         return nativeSelectedDeviceType();
     }
 
-    public static String selectedDeviceName() {
+    public static String deviceName() {
         requireAvailable();
         return nativeSelectedDeviceName();
+    }
+
+    /**
+     * @deprecated Use {@link #deviceName()} instead.
+     */
+    @Deprecated(forRemoval = true)
+    public static String selectedDeviceName() {
+        return deviceName();
     }
 
     public static String selectedPlatformName() {
@@ -130,6 +138,41 @@ public final class OpenClRuntime {
         return nativeInitFailureReason();
     }
 
+    public static String deviceVendor() {
+        requireAvailable();
+        return nativeDeviceVendor();
+    }
+
+    public static long deviceTotalMem() {
+        requireAvailable();
+        return nativeDeviceGlobalMemSize();
+    }
+
+    public static long deviceSharedMemPerBlock() {
+        requireAvailable();
+        return nativeDeviceLocalMemSize();
+    }
+
+    public static int deviceComputeUnits() {
+        requireAvailable();
+        return nativeDeviceMaxComputeUnits();
+    }
+
+    public static int deviceClockRateMHz() {
+        requireAvailable();
+        return nativeDeviceMaxClockFrequencyMHz();
+    }
+
+    public static long deviceMaxThreadsPerBlock() {
+        requireAvailable();
+        return nativeDeviceMaxWorkGroupSize();
+    }
+
+    public static long deviceMaxMemAllocSize() {
+        requireAvailable();
+        return nativeDeviceMaxMemAllocSize();
+    }
+
     private static native int nativeDeviceCount();
 
     private static native String nativeSelectedDeviceType();
@@ -141,6 +184,20 @@ public final class OpenClRuntime {
     private static native String nativeListDevices();
 
     private static native String nativeInitFailureReason();
+
+    private static native String nativeDeviceVendor();
+
+    private static native long nativeDeviceGlobalMemSize();
+
+    private static native long nativeDeviceLocalMemSize();
+
+    private static native int nativeDeviceMaxComputeUnits();
+
+    private static native int nativeDeviceMaxClockFrequencyMHz();
+
+    private static native long nativeDeviceMaxWorkGroupSize();
+
+    private static native long nativeDeviceMaxMemAllocSize();
 
     static native long malloc(long byteSize, int storageMode);
 

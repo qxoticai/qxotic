@@ -1,6 +1,7 @@
 package com.qxotic.jota.runtime;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import java.nio.file.Path;
 
 public final class DiskKernelCache implements KernelCache {
@@ -12,6 +13,10 @@ public final class DiskKernelCache implements KernelCache {
 
     public static DiskKernelCache defaultCache(Device device) {
         return new DiskKernelCache(KernelCachePaths.deviceRoot(device), DEFAULT_PACKAGE);
+    }
+
+    public static DiskKernelCache defaultCache(DeviceType deviceType) {
+        return new DiskKernelCache(KernelCachePaths.deviceRoot(deviceType), DEFAULT_PACKAGE);
     }
 
     public DiskKernelCache(Path root) {

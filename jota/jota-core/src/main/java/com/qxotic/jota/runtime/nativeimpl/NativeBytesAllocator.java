@@ -1,6 +1,7 @@
 package com.qxotic.jota.runtime.nativeimpl;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryArena;
@@ -17,7 +18,7 @@ final class NativeBytesAllocator
 
     @Override
     public Device device() {
-        return Device.PANAMA;
+        return new Device(DeviceType.PANAMA, 0);
     } // JAVA?
 
     @Override

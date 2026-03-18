@@ -83,7 +83,7 @@ final class LazyTensorImpl extends AbstractTensorImpl {
                         .append(", layout=")
                         .append(layout)
                         .append(", device=")
-                        .append(device.name());
+                        .append(device);
         String computationType = computation.getClass().getSimpleName();
         if ("ConstantComputation".equals(computationType)) {
             builder.append(", op=constant");

@@ -1,6 +1,7 @@
 package com.qxotic.jota.memory.impl;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryDomain;
@@ -18,7 +19,7 @@ class IntsDomain implements MemoryDomain<int[]> {
 
     @Override
     public Device device() {
-        return Device.JAVA;
+        return new Device(DeviceType.JAVA, 0);
     }
 
     @Override

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
@@ -77,7 +78,8 @@ class HipBinaryKernelSmokeTest {
     private static MemoryView<MemorySegment> toHost(MemoryView<?> view) {
         @SuppressWarnings("unchecked")
         MemoryView<MemorySegment> hostView =
-                (MemoryView<MemorySegment>) Tensor.of(view).to(Device.PANAMA).materialize();
+                (MemoryView<MemorySegment>)
+                        Tensor.of(view).to(new Device(DeviceType.PANAMA, 0)).materialize();
         return hostView;
     }
 

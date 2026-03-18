@@ -1,6 +1,7 @@
 package com.qxotic.jota.memory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
@@ -81,13 +82,13 @@ public class MemoryAllocatorTest {
     @MethodSource("javaArrayAllocatorProvider")
     <B> void testJavaArrayAllocatorsUseJavaDevice(
             Supplier<MemoryAllocator<B>> memoryAllocatorSupplier) {
-        assertEquals(Device.JAVA, memoryAllocatorSupplier.get().device());
+        assertTrue(memoryAllocatorSupplier.get().device().belongsTo(Device.JAVA));
     }
 
     @ParameterizedTest
     @MethodSource("byteBufferAllocatorProvider")
     <B> void testByteBufferAllocatorsUseJavaDevice(
             Supplier<MemoryAllocator<B>> memoryAllocatorSupplier) {
-        assertEquals(Device.JAVA, memoryAllocatorSupplier.get().device());
+        assertTrue(memoryAllocatorSupplier.get().device().belongsTo(Device.JAVA));
     }
 }

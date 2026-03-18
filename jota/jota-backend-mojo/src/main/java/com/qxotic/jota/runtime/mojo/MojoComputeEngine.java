@@ -2,6 +2,7 @@ package com.qxotic.jota.runtime.mojo;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.ir.TIRToLIRLowerer;
@@ -52,16 +53,18 @@ final class MojoComputeEngine<T> implements ComputeEngine {
     private final LIRKernelArgsBuilder argsBuilder = new LIRKernelArgsBuilder();
     private final boolean verifyScratch =
             Boolean.parseBoolean(System.getProperty("jota.verifyScratch", "false"));
+    private final Device device;
 
     MojoComputeEngine(MojoExecutionEngine<T> executionEngine) {
         this.executionEngine = executionEngine;
         this.memoryDomain = executionEngine.memoryDomain();
         this.kernelService = executionEngine.kernelService();
+        this.device = new Device(DeviceType.MOJO, 0);
     }
 
     @Override
     public Device device() {
-        return Device.MOJO;
+        return device;
     }
 
     @Override
@@ -95,7 +98,7 @@ final class MojoComputeEngine<T> implements ComputeEngine {
                 kernelService
                         .loadRegisteredExecutable(key.value())
                         .orElseGet(() -> executionEngine.getOrCompile(mojoProgram, key));
-        executable.launch(config, args, new ExecutionStream(Device.MOJO, 0L, true));
+        executable.launch(config, args, new ExecutionStream(device, null, true));
 
         if (shouldReturnHostOutput()) {
             return toHost(memoryDomain, castDevice(outputs.getFirst()));
@@ -198,7 +201,7 @@ final class MojoComputeEngine<T> implements ComputeEngine {
 
     private static <T> MemoryView<T> toDevice(
             MojoMemoryDomain<T> memoryDomain, MemoryView<?> view) {
-        if (view.memory().device().equals(Device.MOJO)) {
+        if (view.memory().device().belongsTo(DeviceType.MOJO)) {
             @SuppressWarnings("unchecked")
             MemoryView<T> mojoView = (MemoryView<T>) view;
             return mojoView;
@@ -241,7 +244,9 @@ final class MojoComputeEngine<T> implements ComputeEngine {
     }
 
     private static boolean shouldReturnHostOutput() {
-        return Environment.current().defaultDevice().belongsTo(Device.CPU);
+        return Environment.current()
+                .runtimeFor(Environment.current().defaultDevice())
+                .supportsNativeRuntimeAlias();
     }
 
     private static <T> List<MemoryView<?>> allocateOutputs(

@@ -57,7 +57,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     @MethodSource("com.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF32")
     <B> void materializesBroadcastedFloat(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
+        registry.registerFactory(
+                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -85,7 +86,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     @MethodSource("com.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingI64")
     <B> void materializesBroadcastedLong(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
+        registry.registerFactory(
+                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -126,7 +128,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     @MethodSource("com.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF64")
     <B> void materializesScalarDouble(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
+        registry.registerFactory(
+                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -154,7 +157,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     @MethodSource("com.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingI64")
     <B> void materializesScalarLong(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
+        registry.registerFactory(
+                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -182,7 +186,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     @MethodSource("com.qxotic.jota.memory.AbstractMemoryTest#allDomains")
     <B> void scalarUsesEnvironmentDefaultDevice(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
+        registry.registerFactory(
+                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -220,7 +225,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     @MethodSource("com.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF32")
     <B> void materializesZeros(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
+        registry.registerFactory(
+                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -267,7 +273,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     @MethodSource("com.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF32")
     <B> void materializesOnes(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
+        registry.registerFactory(
+                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -339,7 +346,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     @MethodSource("com.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF32")
     <B> void materializesFull(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
+        registry.registerFactory(
+                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -368,7 +376,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     @MethodSource("com.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF32")
     <B> void ofFloatArray(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
+        registry.registerFactory(
+                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -399,7 +408,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     @MethodSource("com.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF32")
     <B> void ofFloatArrayWithShape(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
+        registry.registerFactory(
+                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -418,7 +428,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     @MethodSource("com.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingF64")
     <B> void ofDoubleArray(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
+        registry.registerFactory(
+                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -449,7 +460,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     @MethodSource("com.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingI32")
     <B> void ofIntArray(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
+        registry.registerFactory(
+                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -479,7 +491,8 @@ class ConstantCreationAndArithmeticFoldingTest {
     @MethodSource("com.qxotic.jota.memory.AbstractMemoryTest#domainsSupportingI64")
     <B> void ofLongArray(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        registry.register(new StubDeviceRuntime<>(domain, dummyBackend()));
+        registry.registerFactory(
+                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(

@@ -45,8 +45,7 @@ final class IRComputation implements LazyComputation {
 
         if (!schedule.steps().isEmpty() && computeEngine == null) {
             throw new IllegalStateException(
-                    "No compute engine available for scheduled lazy execution on device "
-                            + device.name());
+                    "No compute engine available for scheduled lazy execution on device " + device);
         }
 
         return new ScheduledExecutor().execute(schedule, computeEngine, inputTensors);

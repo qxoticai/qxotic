@@ -1,6 +1,7 @@
 package com.qxotic.jota.runtime.opencl;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAllocator;
 
@@ -16,7 +17,7 @@ final class OpenClMemoryAllocator implements MemoryAllocator<OpenClDevicePtr> {
 
     @Override
     public Device device() {
-        return Device.OPENCL;
+        return new Device(DeviceType.OPENCL, 0);
     }
 
     @Override

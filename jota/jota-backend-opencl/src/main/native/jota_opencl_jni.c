@@ -744,6 +744,98 @@ Java_com_qxotic_jota_runtime_opencl_OpenClRuntime_nativeInitFailureReason(JNIEnv
   return (*env)->NewStringUTF(env, g_init_error);
 }
 
+JNIEXPORT jstring JNICALL
+Java_com_qxotic_jota_runtime_opencl_OpenClRuntime_nativeDeviceVendor(JNIEnv *env, jclass cls) {
+  (void)cls;
+  if (!ensureRuntime(env) || g_device == NULL) {
+    throwInitFailure(env);
+    return (*env)->NewStringUTF(env, "");
+  }
+  size_t size = 0;
+  cl_int err = clGetDeviceInfo(g_device, CL_DEVICE_VENDOR, 0, NULL, &size);
+  if (err != CL_SUCCESS || size == 0) {
+    return (*env)->NewStringUTF(env, "");
+  }
+  char *buf = (char *)calloc(size + 1u, 1u);
+  if (buf == NULL) return (*env)->NewStringUTF(env, "");
+  clGetDeviceInfo(g_device, CL_DEVICE_VENDOR, size, buf, NULL);
+  jstring result = (*env)->NewStringUTF(env, buf);
+  free(buf);
+  return result;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_qxotic_jota_runtime_opencl_OpenClRuntime_nativeDeviceGlobalMemSize(JNIEnv *env, jclass cls) {
+  (void)cls;
+  if (!ensureRuntime(env) || g_device == NULL) {
+    throwInitFailure(env);
+    return 0;
+  }
+  cl_ulong val = 0;
+  clGetDeviceInfo(g_device, CL_DEVICE_GLOBAL_MEM_SIZE, sizeof(val), &val, NULL);
+  return (jlong)val;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_qxotic_jota_runtime_opencl_OpenClRuntime_nativeDeviceLocalMemSize(JNIEnv *env, jclass cls) {
+  (void)cls;
+  if (!ensureRuntime(env) || g_device == NULL) {
+    throwInitFailure(env);
+    return 0;
+  }
+  cl_ulong val = 0;
+  clGetDeviceInfo(g_device, CL_DEVICE_LOCAL_MEM_SIZE, sizeof(val), &val, NULL);
+  return (jlong)val;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_qxotic_jota_runtime_opencl_OpenClRuntime_nativeDeviceMaxComputeUnits(JNIEnv *env, jclass cls) {
+  (void)cls;
+  if (!ensureRuntime(env) || g_device == NULL) {
+    throwInitFailure(env);
+    return 0;
+  }
+  cl_uint val = 0;
+  clGetDeviceInfo(g_device, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(val), &val, NULL);
+  return (jint)val;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_qxotic_jota_runtime_opencl_OpenClRuntime_nativeDeviceMaxClockFrequencyMHz(JNIEnv *env, jclass cls) {
+  (void)cls;
+  if (!ensureRuntime(env) || g_device == NULL) {
+    throwInitFailure(env);
+    return 0;
+  }
+  cl_uint val = 0;
+  clGetDeviceInfo(g_device, CL_DEVICE_MAX_CLOCK_FREQUENCY, sizeof(val), &val, NULL);
+  return (jint)val;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_qxotic_jota_runtime_opencl_OpenClRuntime_nativeDeviceMaxWorkGroupSize(JNIEnv *env, jclass cls) {
+  (void)cls;
+  if (!ensureRuntime(env) || g_device == NULL) {
+    throwInitFailure(env);
+    return 0;
+  }
+  size_t val = 0;
+  clGetDeviceInfo(g_device, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(val), &val, NULL);
+  return (jlong)val;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_qxotic_jota_runtime_opencl_OpenClRuntime_nativeDeviceMaxMemAllocSize(JNIEnv *env, jclass cls) {
+  (void)cls;
+  if (!ensureRuntime(env) || g_device == NULL) {
+    throwInitFailure(env);
+    return 0;
+  }
+  cl_ulong val = 0;
+  clGetDeviceInfo(g_device, CL_DEVICE_MAX_MEM_ALLOC_SIZE, sizeof(val), &val, NULL);
+  return (jlong)val;
+}
+
 JNIEXPORT jlong JNICALL
 Java_com_qxotic_jota_runtime_opencl_OpenClRuntime_malloc(JNIEnv *env,
                                                          jclass cls,

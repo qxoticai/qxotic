@@ -19,7 +19,7 @@ class PanamaMemoryTest {
             assertSame(segment, memory.base());
             assertEquals(100, memory.byteSize());
             assertFalse(memory.isReadOnly());
-            assertEquals(Device.PANAMA, memory.device());
+            assertTrue(memory.device().belongsTo(Device.PANAMA));
         }
     }
 
@@ -56,7 +56,7 @@ class PanamaMemoryTest {
             String str = memory.toString();
             assertTrue(str.contains("byteSize=40"));
             assertFalse(str.contains("readOnly=true")); // rw
-            assertTrue(str.contains("device=cpu:panama"));
+            assertTrue(str.contains("device=panama:0"));
         }
     }
 }

@@ -44,7 +44,7 @@ class LyapunovFractalTest {
         MemoryView<MemorySegment> hostView = toHost(output);
         MemoryAccess<MemorySegment> access = hostDomain.directAccess();
 
-        Path path = Path.of("target", "lyapunov-" + backend.leafName() + "-lir.ppm");
+        Path path = Path.of("target", "lyapunov-" + backend.runtimeId() + "-lir.ppm");
         writeLyapunovPpm(access, hostView, path, WIDTH, HEIGHT);
 
         float min = Float.MAX_VALUE;

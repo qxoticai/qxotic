@@ -57,7 +57,35 @@ public final class MetalRuntime {
         return nativeDeviceCount();
     }
 
+    public static String deviceName() {
+        requireAvailable();
+        return nativeDeviceName();
+    }
+
+    public static long deviceTotalMem() {
+        requireAvailable();
+        return nativeDeviceRecommendedMaxWorkingSetSize();
+    }
+
+    public static long deviceSharedMemPerBlock() {
+        requireAvailable();
+        return nativeDeviceMaxThreadgroupMemoryLength();
+    }
+
+    public static long deviceMaxThreadsPerBlock() {
+        requireAvailable();
+        return nativeDeviceMaxThreadsPerThreadgroup();
+    }
+
     private static native int nativeDeviceCount();
+
+    private static native String nativeDeviceName();
+
+    private static native long nativeDeviceRecommendedMaxWorkingSetSize();
+
+    private static native long nativeDeviceMaxThreadgroupMemoryLength();
+
+    private static native long nativeDeviceMaxThreadsPerThreadgroup();
 
     static native long malloc(long byteSize, int storageMode);
 

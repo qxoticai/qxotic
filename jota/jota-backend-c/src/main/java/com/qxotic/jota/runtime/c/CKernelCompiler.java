@@ -1,6 +1,6 @@
 package com.qxotic.jota.runtime.c;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.ir.lir.LIRGraph;
 import com.qxotic.jota.ir.lir.LIRTextRenderer;
 import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
@@ -303,6 +303,6 @@ final class CKernelCompiler {
     }
 
     private static Path deviceRoot() {
-        return KernelCachePaths.deviceRoot(Device.C);
+        return KernelCachePaths.deviceRoot(DeviceType.C);
     }
 }

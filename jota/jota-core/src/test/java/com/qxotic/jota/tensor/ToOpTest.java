@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryDomain;
@@ -51,7 +52,7 @@ class ToOpTest {
         Tensor input = Tensor.of(view);
         assertThrows(
                 UnsupportedOperationException.class,
-                () -> Tracer.trace(input, t -> t.to(Device.GPU)));
+                () -> Tracer.trace(input, t -> t.to(new Device(DeviceType.CUDA, 0))));
     }
 
     @Test
@@ -76,7 +77,7 @@ class ToOpTest {
         assertEquals(src.shape(), dst.shape());
         assertEquals(src.dataType(), dst.dataType());
         assertEquals(src.layout(), dst.layout());
-        assertTensorEqualsExact(src, dst.to(Device.NATIVE));
+        assertTensorEqualsExact(src, dst.to(Environment.current().nativeRuntime().device()));
     }
 
     @Test
@@ -90,7 +91,7 @@ class ToOpTest {
         assertEquals(src.shape(), dst.shape());
         assertEquals(src.dataType(), dst.dataType());
         assertEquals(src.layout(), dst.layout());
-        assertTensorEqualsExact(src, dst.to(Device.NATIVE));
+        assertTensorEqualsExact(src, dst.to(Environment.current().nativeRuntime().device()));
     }
 
     @Test
@@ -104,7 +105,7 @@ class ToOpTest {
         assertEquals(src.shape(), dst.shape());
         assertEquals(src.dataType(), dst.dataType());
         assertEquals(src.layout(), dst.layout());
-        assertTensorEqualsExact(src, dst.to(Device.NATIVE));
+        assertTensorEqualsExact(src, dst.to(Environment.current().nativeRuntime().device()));
     }
 
     @Test
@@ -119,7 +120,7 @@ class ToOpTest {
         assertEquals(src.shape(), dst.shape());
         assertEquals(src.dataType(), dst.dataType());
         assertEquals(src.layout(), dst.layout());
-        assertTensorEqualsExact(src, dst.to(Device.NATIVE));
+        assertTensorEqualsExact(src, dst.to(Environment.current().nativeRuntime().device()));
     }
 
     @Test
@@ -133,7 +134,7 @@ class ToOpTest {
         assertEquals(src.shape(), dst.shape());
         assertEquals(src.dataType(), dst.dataType());
         assertEquals(src.layout(), dst.layout());
-        assertTensorEqualsExact(src, dst.to(Device.NATIVE));
+        assertTensorEqualsExact(src, dst.to(Environment.current().nativeRuntime().device()));
     }
 
     @Test
@@ -148,7 +149,7 @@ class ToOpTest {
         assertEquals(src.dataType(), dst.dataType());
         assertEquals(src.layout(), dst.layout());
         assertEquals(0L, dst.shape().size());
-        assertTensorEqualsExact(src, dst.to(Device.NATIVE));
+        assertTensorEqualsExact(src, dst.to(Environment.current().nativeRuntime().device()));
     }
 
     @Test
@@ -161,7 +162,7 @@ class ToOpTest {
         for (DataType dtype : dtypes) {
             Tensor src =
                     Tensor.iota(18, DataType.I64).cast(dtype).view(Shape.of(3, 6)).transpose(0, 1);
-            Tensor roundTrip = src.to(target).to(Device.NATIVE);
+            Tensor roundTrip = src.to(target).to(Environment.current().nativeRuntime().device());
             assertTensorEqualsExact(src, roundTrip);
         }
     }

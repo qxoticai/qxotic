@@ -1,6 +1,7 @@
 package com.qxotic.jota.memory.impl;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import java.util.Objects;
 
@@ -28,7 +29,7 @@ final class DoublesMemory implements Memory<double[]> {
 
     @Override
     public Device device() {
-        return Device.JAVA;
+        return new Device(DeviceType.JAVA, 0);
     }
 
     @Override

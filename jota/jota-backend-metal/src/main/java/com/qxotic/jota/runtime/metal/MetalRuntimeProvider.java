@@ -1,6 +1,6 @@
 package com.qxotic.jota.runtime.metal;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
 import com.qxotic.jota.runtime.spi.RuntimeProbe;
@@ -12,13 +12,8 @@ import java.util.concurrent.TimeUnit;
 public final class MetalRuntimeProvider implements DeviceRuntimeProvider {
 
     @Override
-    public String id() {
-        return "metal";
-    }
-
-    @Override
-    public Device device() {
-        return Device.METAL;
+    public DeviceType deviceType() {
+        return DeviceType.METAL;
     }
 
     @Override
@@ -65,7 +60,7 @@ public final class MetalRuntimeProvider implements DeviceRuntimeProvider {
     }
 
     @Override
-    public DeviceRuntime create() {
+    public DeviceRuntime create(int deviceIndex) {
         return new MetalDeviceRuntime();
     }
 

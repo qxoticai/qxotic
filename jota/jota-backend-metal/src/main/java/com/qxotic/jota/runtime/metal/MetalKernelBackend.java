@@ -1,6 +1,6 @@
 package com.qxotic.jota.runtime.metal;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.ir.lir.LIRGraph;
 import com.qxotic.jota.ir.lir.LIRTextRenderer;
 import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
@@ -30,7 +30,7 @@ import java.util.concurrent.TimeUnit;
 
 final class MetalKernelBackend implements KernelBackend {
 
-    private static final Path KERNEL_ROOT = KernelCachePaths.deviceRoot(Device.METAL);
+    private static final Path KERNEL_ROOT = KernelCachePaths.deviceRoot(DeviceType.METAL);
     private static final String COMPILER_PROPERTY = "jota.metal.compiler";
     private static final String COMPILER_ENV = "JOTA_METAL_COMPILER";
     private static final String METAL_COMPILER = resolveCompilerExecutable();

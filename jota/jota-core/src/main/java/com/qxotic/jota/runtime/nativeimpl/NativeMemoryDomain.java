@@ -1,6 +1,7 @@
 package com.qxotic.jota.runtime.nativeimpl;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.*;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
@@ -10,7 +11,8 @@ final class NativeMemoryDomain implements MemoryDomain<MemorySegment> {
     private final MemoryAllocator<MemorySegment> memoryAllocator;
 
     NativeMemoryDomain(MemoryAllocator<MemorySegment> memoryAllocator) {
-        assert memoryAllocator.device().belongsTo(Device.PANAMA);
+        assert memoryAllocator.device().belongsTo(DeviceType.PANAMA)
+                : "Expected panama device, got " + memoryAllocator.device();
         this.memoryAllocator = Objects.requireNonNull(memoryAllocator);
     }
 

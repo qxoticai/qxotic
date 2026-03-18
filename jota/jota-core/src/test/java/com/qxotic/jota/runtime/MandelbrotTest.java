@@ -37,7 +37,7 @@ class MandelbrotTest {
         TestKernels.writeMandelbrotPpm(
                 hostDomain,
                 hostView,
-                Path.of("target", "mandelbrot-" + backend.leafName() + "-lir.ppm"),
+                Path.of("target", "mandelbrot-" + backend.runtimeId() + "-lir.ppm"),
                 WIDTH,
                 HEIGHT,
                 ITERATIONS);

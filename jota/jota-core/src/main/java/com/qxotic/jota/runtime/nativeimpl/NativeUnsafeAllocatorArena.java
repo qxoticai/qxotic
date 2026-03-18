@@ -1,6 +1,7 @@
 package com.qxotic.jota.runtime.nativeimpl;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.ScopedMemory;
 import com.qxotic.jota.memory.ScopedMemoryAllocatorArena;
 import java.lang.foreign.MemorySegment;
@@ -21,7 +22,7 @@ class NativeUnsafeAllocatorArena implements ScopedMemoryAllocatorArena<MemorySeg
 
     @Override
     public Device device() {
-        return Device.PANAMA;
+        return new Device(DeviceType.PANAMA, 0);
     }
 
     @Override

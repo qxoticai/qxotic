@@ -1,6 +1,7 @@
 package com.qxotic.jota.runtime.hip;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import java.lang.ref.Cleaner;
 
@@ -30,7 +31,7 @@ final class HipMemory implements Memory<HipDevicePtr> {
 
     @Override
     public Device device() {
-        return Device.HIP;
+        return new Device(DeviceType.HIP, 0);
     }
 
     @Override

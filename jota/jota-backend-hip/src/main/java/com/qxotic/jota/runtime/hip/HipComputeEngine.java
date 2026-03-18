@@ -2,6 +2,7 @@ package com.qxotic.jota.runtime.hip;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.ir.TIRToLIRLowerer;
@@ -98,7 +99,7 @@ public final class HipComputeEngine implements ComputeEngine {
                         lirGraph, resolvedInputs, outputs, scratchPtr, DataType.I64);
         long tBuildArgs = System.nanoTime();
         LaunchConfig config = chooseLirLaunchConfig(lirGraph);
-        ExecutionStream stream = new ExecutionStream(Device.HIP, 0L, true);
+        ExecutionStream stream = new ExecutionStream(device, null, true);
         KernelExecutable exec = backend.getOrCompile(program, key);
         long tGetOrCompile = System.nanoTime();
         exec.launch(config, args, stream);
@@ -299,7 +300,7 @@ public final class HipComputeEngine implements ComputeEngine {
 
     private static MemoryView<HipDevicePtr> toDevice(
             HipMemoryDomain hipContext, MemoryView<?> view) {
-        if (view.memory().device().equals(Device.HIP)) {
+        if (view.memory().device().belongsTo(DeviceType.HIP)) {
             @SuppressWarnings("unchecked")
             MemoryView<HipDevicePtr> hipView = (MemoryView<HipDevicePtr>) view;
             return hipView;
@@ -329,7 +330,9 @@ public final class HipComputeEngine implements ComputeEngine {
     private static MemoryView<MemorySegment> toHost(
             MemoryDomain<MemorySegment> hostContext, MemoryView<?> view) {
         if (view.memory().base() instanceof MemorySegment
-                && view.memory().device().belongsTo(Device.CPU)) {
+                && Environment.current()
+                        .runtimeFor(view.memory().device())
+                        .supportsNativeRuntimeAlias()) {
             @SuppressWarnings("unchecked")
             MemoryView<MemorySegment> hostView = (MemoryView<MemorySegment>) view;
             return hostView;
@@ -350,7 +353,7 @@ public final class HipComputeEngine implements ComputeEngine {
 
     private static boolean shouldReturnHostOutput() {
         Device defaultDevice = Environment.current().defaultDevice();
-        return defaultDevice.belongsTo(Device.CPU);
+        return Environment.current().runtimeFor(defaultDevice).supportsNativeRuntimeAlias();
     }
 
     private static MemoryView<?> toHost(HipMemoryDomain hipContext, MemoryView<HipDevicePtr> view) {

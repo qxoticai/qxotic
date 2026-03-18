@@ -1,6 +1,7 @@
 package com.qxotic.jota.memory.impl;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAllocator;
 
@@ -16,7 +17,7 @@ final class IntsMemoryAllocator implements MemoryAllocator<int[]> {
 
     @Override
     public Device device() {
-        return Device.JAVA;
+        return new Device(DeviceType.JAVA, 0);
     }
 
     @Override
