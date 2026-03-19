@@ -18,7 +18,7 @@ class JsonNumberTest {
     @Test
     void testNegativeZero() {
         Object parsed = Json.parse("-0");
-        assertInstanceOf(BigDecimal.class, parsed);
+        assertEquals(0L, parsed);
     }
 
     @Test
@@ -107,7 +107,7 @@ class JsonNumberTest {
     @Test
     void testExponentMissingDigitsRejected() {
         Json.ParseException e = assertThrows(Json.ParseException.class, () -> Json.parse("1e"));
-        assertTrue(e.getMessage().contains("exponent missing digits"));
+        assertTrue(e.getMessage().contains("Exponent missing digits"));
     }
 
     @Test
@@ -166,7 +166,7 @@ class JsonNumberTest {
     void testZeroWithExponent() {
         Object parsed = Json.parse("0e10");
         assertInstanceOf(BigDecimal.class, parsed);
-        assertEquals(new BigDecimal("0"), parsed);
+        assertEquals(new BigDecimal("0e10"), parsed);
     }
 
     @Test
@@ -398,27 +398,22 @@ class JsonNumberTest {
 
     @Test
     void testNegativeZeroEdgeCases() {
-        // Negative zero variations
+        // Negative zero as integer parses to 0L (no negative zero for integers)
         Object parsed = Json.parse("-0");
-        assertInstanceOf(BigDecimal.class, parsed);
-        BigDecimal negZero = (BigDecimal) parsed;
-        // Note: BigDecimal("-0").equals(BigDecimal("0")) is true
-        assertEquals(0, negZero.compareTo(BigDecimal.ZERO));
+        assertEquals(0L, parsed);
 
+        // Decimal forms still parse as BigDecimal
         parsed = Json.parse("-0.0");
         assertInstanceOf(BigDecimal.class, parsed);
-        negZero = (BigDecimal) parsed;
-        assertEquals(0, negZero.compareTo(BigDecimal.ZERO));
+        assertEquals(0, ((BigDecimal) parsed).compareTo(BigDecimal.ZERO));
 
         parsed = Json.parse("-0e0");
         assertInstanceOf(BigDecimal.class, parsed);
-        negZero = (BigDecimal) parsed;
-        assertEquals(0, negZero.compareTo(BigDecimal.ZERO));
+        assertEquals(0, ((BigDecimal) parsed).compareTo(BigDecimal.ZERO));
 
         parsed = Json.parse("-0e10");
         assertInstanceOf(BigDecimal.class, parsed);
-        negZero = (BigDecimal) parsed;
-        assertEquals(0, negZero.compareTo(BigDecimal.ZERO));
+        assertEquals(0, ((BigDecimal) parsed).compareTo(BigDecimal.ZERO));
     }
 
     @Test

@@ -418,93 +418,6 @@ class JsonQueryTest {
         assertTrue(result.isEmpty());
     }
 
-    // ============== Type Check Method Tests ==============
-
-    @Test
-    @DisplayName("isMap: returns true for Map")
-    void testIsMapTrue() {
-        assertInstanceOf(Map.class, Map.of());
-    }
-
-    @Test
-    @DisplayName("isMap: returns false for non-Map")
-    void testIsMapFalse() {
-        assertFalse(Json.isMap("string"));
-        assertFalse(Json.isMap(42));
-        assertFalse(Json.isMap(List.of()));
-        assertFalse(Json.isMap(true));
-        assertFalse(Json.isMap(null));
-    }
-
-    @Test
-    @DisplayName("isList: returns true for List")
-    void testIsListTrue() {
-        assertTrue(Json.isList(List.of()));
-        assertTrue(Json.isList(new ArrayList<>()));
-    }
-
-    @Test
-    @DisplayName("isList: returns false for non-List")
-    void testIsListFalse() {
-        assertFalse(Json.isList("string"));
-        assertFalse(Json.isList(42));
-        assertFalse(Json.isList(Map.of()));
-        assertFalse(Json.isList(true));
-        assertFalse(Json.isList(null));
-    }
-
-    @Test
-    @DisplayName("isString: returns true for String")
-    void testIsStringTrue() {
-        assertTrue(Json.isString("hello"));
-        assertTrue(Json.isString(""));
-    }
-
-    @Test
-    @DisplayName("isString: returns false for non-String")
-    void testIsStringFalse() {
-        assertFalse(Json.isString(42));
-        assertFalse(Json.isString(Map.of()));
-        assertFalse(Json.isString(List.of()));
-        assertFalse(Json.isString(true));
-        assertFalse(Json.isString(null));
-    }
-
-    @Test
-    @DisplayName("isNumber: returns true for Number")
-    void testIsNumberTrue() {
-        assertTrue(Json.isNumber(42));
-        assertTrue(Json.isNumber(3.14));
-        assertTrue(Json.isNumber(0L));
-    }
-
-    @Test
-    @DisplayName("isNumber: returns false for non-Number")
-    void testIsNumberFalse() {
-        assertFalse(Json.isNumber("string"));
-        assertFalse(Json.isNumber(Map.of()));
-        assertFalse(Json.isNumber(List.of()));
-        assertFalse(Json.isNumber(true));
-        assertFalse(Json.isNumber(null));
-    }
-
-    @Test
-    @DisplayName("isBoolean: returns true for Boolean")
-    void testIsBooleanTrue() {
-        assertTrue(Json.isBoolean(true));
-        assertTrue(Json.isBoolean(false));
-    }
-
-    @Test
-    @DisplayName("isBoolean: returns false for non-Boolean")
-    void testIsBooleanFalse() {
-        assertFalse(Json.isBoolean("true"));
-        assertFalse(Json.isBoolean(1));
-        assertFalse(Json.isBoolean(Map.of()));
-        assertFalse(Json.isBoolean(List.of()));
-        assertFalse(Json.isBoolean(null));
-    }
-
     // ============== Renamed Parsing Method Tests ==============
 
     @Test
@@ -677,21 +590,6 @@ class JsonQueryTest {
         List<Object> data = Json.parseList("[{\"name\": \"Alice\"}]");
         assertEquals(1, data.size());
         assertInstanceOf(Map.class, data.get(0));
-    }
-
-    @Test
-    @DisplayName("type checks work with parsed data")
-    void testTypeChecksWithParsedData() {
-        Map<String, Object> data =
-                Json.parseMap(
-                        "{\"str\": \"text\", \"num\": 42, \"bool\": true, \"obj\": {}, \"arr\":"
-                                + " []}");
-
-        assertTrue(Json.isString(data.get("str")));
-        assertTrue(Json.isNumber(data.get("num")));
-        assertTrue(Json.isBoolean(data.get("bool")));
-        assertTrue(Json.isMap(data.get("obj")));
-        assertTrue(Json.isList(data.get("arr")));
     }
 
     // ============== Edge Case Tests ==============

@@ -22,7 +22,7 @@ class JsonPrinterTest {
     @Test
     void testPrettyOutput() {
         String json = Json.stringify(map("name", "John", "age", 30), true);
-        assertTrue(json.contains("\"name\" : \"John\""));
+        assertTrue(json.contains("\"name\": \"John\""));
         assertTrue(json.contains("\n"));
     }
 

@@ -95,10 +95,9 @@ class JsonSpecComplianceTest {
         e = assertThrows(Json.ParseException.class, () -> Json.parse("00123"));
         assertTrue(e.getMessage().contains("Leading zeros"));
 
-        // Negative zero is allowed (parses as BigDecimal)
+        // Negative zero is allowed (parses as 0L — no negative zero for integers)
         Object parsed = Json.parse("-0");
-        assertInstanceOf(BigDecimal.class, parsed);
-        assertEquals(0, ((BigDecimal) parsed).compareTo(BigDecimal.ZERO));
+        assertEquals(0L, parsed);
     }
 
     @Test
@@ -131,8 +130,8 @@ class JsonSpecComplianceTest {
         assertTrue(e.getMessage().contains("digit") || e.getMessage().contains("Unexpected"));
 
         // But .0 after zero is covered by "0.5" case
-        // Note: We strip trailing zeros for zero values
-        assertEquals(new BigDecimal("0"), Json.parse("0.0"));
+        // Parser preserves original precision (no stripTrailingZeros)
+        assertEquals(new BigDecimal("0.0"), Json.parse("0.0"));
     }
 
     @Test

@@ -1,122 +1,120 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
 
-    <parent>
-        <groupId>com.qxotic</groupId>
-        <artifactId>qxotic-parent</artifactId>
-        <version>0.1.0</version>
-        <relativePath>../../pom.xml</relativePath>
-    </parent>
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>qxotic-parent</artifactId>
+    <version>0.1.0</version>
+    <relativePath>../../pom.xml</relativePath>
+  </parent>
 
-    <artifactId>json-benchmarks</artifactId>
-    <name>JSON Benchmarks</name>
-    <description>JMH benchmarks for JSON library</description>
+  <artifactId>json-benchmarks</artifactId>
+  <name>JSON Benchmarks</name>
+  <description>JMH benchmarks for JSON library</description>
 
-    <properties>
-        <maven.deploy.skip>true</maven.deploy.skip>
-    </properties>
+  <properties>
+    <maven.deploy.skip>true</maven.deploy.skip>
+  </properties>
 
-    <dependencies>
-        <!-- The JSON library being benchmarked -->
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>json</artifactId>
-        </dependency>
+  <dependencies>
+    <!-- The JSON library being benchmarked -->
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>json</artifactId>
+    </dependency>
 
-        <!-- Comparison: Jackson (industry standard) -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
-            <version>2.18.6</version>
-        </dependency>
+    <!-- Comparison: Jackson (industry standard) -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>2.18.6</version>
+    </dependency>
 
-        <!-- JMH for benchmarks -->
-        <dependency>
-            <groupId>org.openjdk.jmh</groupId>
-            <artifactId>jmh-core</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.openjdk.jmh</groupId>
-            <artifactId>jmh-generator-annprocess</artifactId>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
+    <!-- JMH for benchmarks -->
+    <dependency>
+      <groupId>org.openjdk.jmh</groupId>
+      <artifactId>jmh-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.openjdk.jmh</groupId>
+      <artifactId>jmh-generator-annprocess</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
 
-    <build>
-        <plugins>
-            <!-- Generate JSON test data before tests -->
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>exec-maven-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>generate-test-data</id>
-                        <phase>test-compile</phase>
-                        <goals>
-                            <goal>java</goal>
-                        </goals>
-                        <configuration>
-                            <mainClass>com.qxotic.json.benchmark.JsonDataGenerator</mainClass>
-                            <classpathScope>test</classpathScope>
-                            <arguments>
-                                <argument>${project.build.testOutputDirectory}</argument>
-                            </arguments>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
+  <build>
+    <plugins>
+      <!-- Generate JSON test data before tests -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>generate-test-data</id>
+            <goals>
+              <goal>java</goal>
+            </goals>
+            <phase>test-compile</phase>
+            <configuration>
+              <mainClass>com.qxotic.json.benchmark.JsonDataGenerator</mainClass>
+              <classpathScope>test</classpathScope>
+              <arguments>
+                <argument>${project.build.testOutputDirectory}</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
 
-            <!-- JMH Plugin to run benchmarks -->
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>exec-maven-plugin</artifactId>
-                <configuration>
-                    <mainClass>org.openjdk.jmh.Main</mainClass>
-                </configuration>
-            </plugin>
-            
-            <!-- Compiler plugin with JMH annotation processor -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <annotationProcessorPaths>
-                        <path>
-                            <groupId>org.openjdk.jmh</groupId>
-                            <artifactId>jmh-generator-annprocess</artifactId>
-                            <version>${jmh.version}</version>
-                        </path>
-                    </annotationProcessorPaths>
-                </configuration>
-            </plugin>
+      <!-- JMH Plugin to run benchmarks -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <configuration>
+          <mainClass>org.openjdk.jmh.Main</mainClass>
+        </configuration>
+      </plugin>
 
-            <!-- Shade plugin to create uber-jar with all dependencies -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>3.6.2</version>
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>shade</goal>
-                        </goals>
-                        <configuration>
-                            <finalName>json-benchmarks</finalName>
-                            <transformers>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>org.openjdk.jmh.Main</mainClass>
-                                </transformer>
-                            </transformers>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
-    </build>
+      <!-- Compiler plugin with JMH annotation processor -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>org.openjdk.jmh</groupId>
+              <artifactId>jmh-generator-annprocess</artifactId>
+              <version>${jmh.version}</version>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+      </plugin>
+
+      <!-- Shade plugin to create uber-jar with all dependencies -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.6.2</version>
+        <executions>
+          <execution>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <phase>package</phase>
+            <configuration>
+              <finalName>json-benchmarks</finalName>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>org.openjdk.jmh.Main</mainClass>
+                </transformer>
+              </transformers>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 
 </project>

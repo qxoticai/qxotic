@@ -69,7 +69,7 @@ class JsonEdgeCaseTests {
 
     @Test
     void testNumberTrailingDecimalZerosPreservedInBigDecimalMode() {
-        // In BigDecimal mode, trailing zeros should be preserved except for zero values
+        // parseBigDecimal() returns the BigDecimal as-is, preserving original precision
         Object parsed =
                 Json.parse("1.500", Json.ParseOptions.defaults().decimalsAsBigDecimal(true));
         assertInstanceOf(BigDecimal.class, parsed);
@@ -77,7 +77,7 @@ class JsonEdgeCaseTests {
 
         parsed = Json.parse("1.500e2", Json.ParseOptions.defaults().decimalsAsBigDecimal(true));
         assertInstanceOf(BigDecimal.class, parsed);
-        assertEquals(new BigDecimal("150.0"), parsed);
+        assertEquals(new BigDecimal("1.500e2"), parsed);
     }
 
     @Test
@@ -307,7 +307,8 @@ class JsonEdgeCaseTests {
 
     @Test
     void testStringifyNull() {
-        assertEquals("null", Json.stringify(null, false));
+        // stringify(null) now throws IllegalArgumentException; use Json.NULL for JSON null
+        assertThrows(IllegalArgumentException.class, () -> Json.stringify(null, false));
         assertEquals("null", Json.stringify(Json.NULL, false));
     }
 

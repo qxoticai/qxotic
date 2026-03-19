@@ -46,7 +46,7 @@ Optional<String> city = Json.queryString(person, "address", "city");
 
 // Serialize back
 String compact = Json.stringify(person);
-String pretty = Json.stringifyPretty(person);
+String pretty = Json.stringify(person, true);
 ```
 
 ## Features at a Glance
@@ -61,10 +61,10 @@ String pretty = Json.stringifyPretty(person);
 
 **Serialization:**
 - `Json.stringify()` - Compact JSON output
-- `Json.stringifyPretty()` - Human-readable with indentation
+- `Json.stringify(value, true)` - Human-readable with indentation
 
 **Configuration:**
-- `Json.options()` - Custom parse options
+- `Json.ParseOptions.defaults()` - Custom parse options
 - `maxDepth()` - Limit nesting depth (security)
 - `failOnDuplicateKeys()` - Strict duplicate key handling
 - `decimalsAsBigDecimal()` - Precision vs performance trade-off
