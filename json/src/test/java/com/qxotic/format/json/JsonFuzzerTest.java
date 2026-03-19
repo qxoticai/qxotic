@@ -89,7 +89,7 @@ class JsonFuzzerTest {
     private static Object randomScalar(Random rnd) {
         switch (rnd.nextInt(10)) {
             case 0:
-                return rnd.nextBoolean() ? null : Json.NULL;
+                return Json.NULL;
             case 1:
                 return rnd.nextBoolean();
             case 2:

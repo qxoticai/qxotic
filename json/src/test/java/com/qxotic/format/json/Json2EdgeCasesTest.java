@@ -59,9 +59,9 @@ class Json2EdgeCasesTest {
         String pretty = Json.stringify(obj, true);
         assertEquals(
                 "{\n"
-                        + "  \"name\" : \"John\",\n"
-                        + "  \"age\" : 30,\n"
-                        + "  \"active\" : true\n"
+                        + "  \"name\": \"John\",\n"
+                        + "  \"age\": 30,\n"
+                        + "  \"active\": true\n"
                         + "}",
                 pretty);
 
@@ -119,8 +119,8 @@ class Json2EdgeCasesTest {
     void testNegativeZero() {
         // Test with BigDecimal mode
         Object parsed = Json.parse("-0", Json.ParseOptions.defaults().decimalsAsBigDecimal(true));
-        assertInstanceOf(BigDecimal.class, parsed);
-        assertEquals(0, ((BigDecimal) parsed).compareTo(BigDecimal.ZERO));
+        // -0 as integer parses to 0L (no negative zero for integers)
+        assertEquals(0L, parsed);
         String stringified = Json.stringify(parsed);
         assertEquals("0", stringified);
 

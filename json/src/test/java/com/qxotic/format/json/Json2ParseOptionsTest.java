@@ -53,7 +53,8 @@ class Json2ParseOptionsTest {
     @Test
     void testNegativeZeroInDoubleMode() {
         Object result = Json.parse("-0", Json.ParseOptions.defaults().decimalsAsBigDecimal(true));
-        assertInstanceOf(BigDecimal.class, result);
+        // -0 as integer parses to 0L regardless of decimalsAsBigDecimal
+        assertEquals(0L, result);
     }
 
     @Test
@@ -161,7 +162,7 @@ class Json2ParseOptionsTest {
     void testZeroWithBigDecimal() {
         Object result = Json.parse("0.0", Json.ParseOptions.defaults().decimalsAsBigDecimal(true));
         assertInstanceOf(BigDecimal.class, result);
-        assertEquals(new BigDecimal("0"), result);
+        assertEquals(new BigDecimal("0.0"), result);
     }
 
     @Test

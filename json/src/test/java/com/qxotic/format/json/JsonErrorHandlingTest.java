@@ -248,7 +248,7 @@ class JsonErrorHandlingTest {
         assertErrorMessageContains("+1", "Unexpected character");
         assertErrorMessageContains(".5", "Unexpected character");
         assertErrorMessageContains("1.", "digit after decimal point");
-        assertErrorMessageContains("1e", "exponent missing");
+        assertErrorMessageContains("1e", "Exponent missing");
         assertErrorMessageContains("\"\\uD800\"", "Lone surrogate");
         assertErrorMessageContains("\"\\uDC00\"", "Lone surrogate");
         assertErrorMessageContains("{key:}", "Expected '\"'");

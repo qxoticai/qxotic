@@ -46,11 +46,11 @@ class JsonApiSimplificationTest {
 
     @Test
     void testTypedParseRespectsOptions() {
-        boolean valid =
+        // isValid() with failOnDuplicateKeys should reject duplicate keys
+        assertFalse(
                 Json.isValid(
                         "{\"a\":1,\"a\":2}",
-                        Json.ParseOptions.defaults().failOnDuplicateKeys(true));
-        assertFalse(valid);
+                        Json.ParseOptions.defaults().failOnDuplicateKeys(true)));
     }
 
     @Test

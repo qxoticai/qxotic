@@ -195,7 +195,7 @@ class Snippets {
         obj.put("absent", null); // Simulating missing key
 
         Object present = obj.get("present");
-        if (Json.isNull(present)) {
+        if (present instanceof Json.Null) {
             // JSON null value (key exists, value is null)
         }
 
