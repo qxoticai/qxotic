@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Device;
+import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryView;
@@ -82,7 +82,8 @@ class SpiralGalaxyDemoTest {
     }
 
     private static void writePPM(MemoryView<?> view, String filename) throws IOException {
-        MemoryView<?> hostView = Tensor.of(view).to(Device.NATIVE).materialize();
+        MemoryView<?> hostView =
+                Tensor.of(view).to(Environment.current().nativeRuntime().device()).materialize();
         MemorySegment segment = (MemorySegment) hostView.memory().base();
         byte[] rgb = new byte[WIDTH * HEIGHT * 3];
         for (int h = 0; h < HEIGHT; h++) {

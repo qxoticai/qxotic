@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
@@ -33,7 +34,7 @@ class ConstantCreationAndArithmeticFoldingTest {
         return new ComputeEngine() {
             @Override
             public Device device() {
-                return Device.PANAMA;
+                return DeviceType.PANAMA.deviceIndex(0);
             }
 
             @Override
@@ -530,7 +531,8 @@ class ConstantCreationAndArithmeticFoldingTest {
         Tensor scalar = Tensor.scalar(3.14f);
         Tensor reciprocal = scalar.reciprocal();
         MemoryAccess access = Environment.current().nativeMemoryDomain().directAccess();
-        MemoryView<?> printable = reciprocal.to(Device.NATIVE).materialize();
+        MemoryView<?> printable =
+                reciprocal.to(Environment.current().nativeRuntime().device()).materialize();
         System.out.println(MemoryViewPrinter.toString(printable, access));
     }
 

@@ -9,23 +9,26 @@ import com.qxotic.jota.memory.MemoryOperations;
 import com.qxotic.jota.memory.MemoryView;
 
 public final class MetalMemoryDomain implements MemoryDomain<MetalDevicePtr> {
-
-    private static final MetalMemoryDomain INSTANCE = new MetalMemoryDomain();
-
     public static MetalMemoryDomain instance() {
-        return INSTANCE;
+        return new MetalMemoryDomain(DeviceType.METAL.deviceIndex(0));
     }
 
-    private MetalMemoryDomain() {}
+    private final Device device;
+    private final MemoryAllocator<MetalDevicePtr> allocator;
+
+    public MetalMemoryDomain(Device device) {
+        this.device = device;
+        this.allocator = new MetalMemoryAllocator(device);
+    }
 
     @Override
     public Device device() {
-        return new Device(DeviceType.METAL, 0);
+        return device;
     }
 
     @Override
     public MemoryAllocator<MetalDevicePtr> memoryAllocator() {
-        return MetalMemoryAllocator.instance();
+        return allocator;
     }
 
     @Override

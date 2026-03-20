@@ -26,7 +26,11 @@ public final class CDeviceRuntime implements DeviceRuntime {
     private final KernelService kernelService;
 
     public CDeviceRuntime() {
-        this(new CMemoryDomain());
+        this(DeviceType.C.deviceIndex(0));
+    }
+
+    public CDeviceRuntime(Device device) {
+        this(new CMemoryDomain(device));
     }
 
     public CDeviceRuntime(CMemoryDomain memoryDomain) {

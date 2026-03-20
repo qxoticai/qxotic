@@ -1,7 +1,6 @@
 package com.qxotic.jota.runtime.metal;
 
 import com.qxotic.jota.Device;
-import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import java.lang.ref.Cleaner;
 
@@ -10,10 +9,12 @@ final class MetalMemory implements Memory<MetalDevicePtr> {
     private static final Cleaner CLEANER = Cleaner.create();
 
     private final MetalDevicePtr base;
+    private final Device device;
     private final long byteSize;
     private final Cleaner.Cleanable cleanable;
 
-    MetalMemory(MetalDevicePtr base, long byteSize) {
+    MetalMemory(Device device, MetalDevicePtr base, long byteSize) {
+        this.device = device;
         this.base = base;
         this.byteSize = byteSize;
         this.cleanable = CLEANER.register(this, new Releaser(base.handle()));
@@ -31,7 +32,7 @@ final class MetalMemory implements Memory<MetalDevicePtr> {
 
     @Override
     public Device device() {
-        return new Device(DeviceType.METAL, 0);
+        return device;
     }
 
     @Override

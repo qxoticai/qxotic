@@ -68,14 +68,14 @@ class EnvironmentTest {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new Environment(new Device(DeviceType.C, 0), DataType.FP32, registry));
+                () -> new Environment(DeviceType.C.deviceIndex(0), DataType.FP32, registry));
     }
 
     @Test
     void registryExposesRegisteredDevices() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        Device javaLogical = new Device(DeviceType.JAVA, 0);
-        Device panamaLogical = new Device(DeviceType.PANAMA, 0);
+        Device javaLogical = DeviceType.JAVA.deviceIndex(0);
+        Device panamaLogical = DeviceType.PANAMA.deviceIndex(0);
         registry.registerFactory(
                 javaLogical, () -> new StubDeviceRuntime(DomainFactory.ofBytes(), dummyRuntime()));
         registry.registerFactory(
@@ -226,6 +226,15 @@ class EnvironmentTest {
                                                         .contains("exclude wins over include")));
     }
 
+    @Test
+    void parseNativeBackendOverrideRejectsUnsupportedBackends() {
+        IllegalArgumentException error =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> invokeParseNativeBackendOverride("hip"));
+        assertTrue(error.getMessage().contains("Supported values: auto, native, panama, c"));
+    }
+
     private static IllegalStateException invokeMissingNativeRuntimeException(
             DefaultRuntimeRegistry registry, String reason) throws Exception {
         Method method =
@@ -253,11 +262,27 @@ class EnvironmentTest {
         }
     }
 
+    private static Device invokeParseNativeBackendOverride(String rawValue) {
+        try {
+            Method method =
+                    Environment.class.getDeclaredMethod("parseNativeBackendOverride", String.class);
+            method.setAccessible(true);
+            return (Device) method.invoke(null, rawValue);
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+        } catch (InvocationTargetException e) {
+            if (e.getCause() instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new RuntimeException(e.getCause());
+        }
+    }
+
     private static ComputeEngine dummyRuntime() {
         return new ComputeEngine() {
             @Override
             public Device device() {
-                return new Device(DeviceType.PANAMA, 0);
+                return DeviceType.PANAMA.deviceIndex(0);
             }
 
             @Override
@@ -303,7 +328,7 @@ class EnvironmentTest {
         }
     }
 
-    private static final class AlwaysAvailableProvider implements DeviceRuntimeProvider {
+    private static final class AlwaysAvailableProvider extends DeviceRuntimeProvider {
         private final DeviceType deviceType;
 
         private AlwaysAvailableProvider(String id, DeviceType deviceType) {

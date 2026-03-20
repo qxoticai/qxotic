@@ -1,23 +1,19 @@
 package com.qxotic.jota.runtime.cuda;
 
 import com.qxotic.jota.Device;
-import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAllocator;
 
 final class CudaMemoryAllocator implements MemoryAllocator<CudaDevicePtr> {
+    private final Device device;
 
-    private static final CudaMemoryAllocator INSTANCE = new CudaMemoryAllocator();
-
-    static CudaMemoryAllocator instance() {
-        return INSTANCE;
+    CudaMemoryAllocator(Device device) {
+        this.device = device;
     }
-
-    private CudaMemoryAllocator() {}
 
     @Override
     public Device device() {
-        return new Device(DeviceType.CUDA, 0);
+        return device;
     }
 
     @Override
@@ -27,7 +23,7 @@ final class CudaMemoryAllocator implements MemoryAllocator<CudaDevicePtr> {
         }
         CudaRuntime.requireAvailable();
         long ptr = CudaRuntime.malloc(byteSize);
-        return new CudaMemory(new CudaDevicePtr(ptr), byteSize);
+        return new CudaMemory(device, new CudaDevicePtr(ptr), byteSize);
     }
 
     @Override

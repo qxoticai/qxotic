@@ -160,6 +160,7 @@ class NewtonFractalTest {
 
     @SuppressWarnings("unchecked")
     private static MemoryView<MemorySegment> toHost(MemoryView<?> view) {
-        return (MemoryView<MemorySegment>) Tensor.of(view).to(Device.NATIVE).materialize();
+        return (MemoryView<MemorySegment>)
+                Tensor.of(view).to(Environment.current().nativeRuntime().device()).materialize();
     }
 }

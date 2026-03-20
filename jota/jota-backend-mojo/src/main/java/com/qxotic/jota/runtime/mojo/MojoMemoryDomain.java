@@ -1,7 +1,6 @@
 package com.qxotic.jota.runtime.mojo;
 
 import com.qxotic.jota.Device;
-import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryDomain;
@@ -10,21 +9,23 @@ import com.qxotic.jota.memory.MemoryView;
 
 final class MojoMemoryDomain<T> implements MemoryDomain<T> {
 
+    private final Device device;
     private final MemoryDomain<T> delegate;
     private final MojoMemoryAllocator<T> allocator;
 
-    MojoMemoryDomain(MemoryDomain<T> delegate) {
+    MojoMemoryDomain(Device device, MemoryDomain<T> delegate) {
         if (delegate instanceof MojoMemoryDomain) {
             throw new IllegalArgumentException(
                     "MojoMemoryDomain delegate must be a non-Mojo domain");
         }
+        this.device = device;
         this.delegate = delegate;
-        this.allocator = new MojoMemoryAllocator<>(delegate.memoryAllocator());
+        this.allocator = new MojoMemoryAllocator<>(device, delegate.memoryAllocator());
     }
 
     @Override
     public Device device() {
-        return new Device(DeviceType.MOJO, 0);
+        return device;
     }
 
     @Override

@@ -3,9 +3,10 @@ package com.qxotic.jota.runtime.c;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.runtime.RuntimeDiagnostic;
+import com.qxotic.jota.testutil.ConfiguredTestDevice;
 import com.qxotic.jota.testutil.ExternalToolChecks;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
@@ -22,7 +23,7 @@ class CBackendAvailabilityTest {
                         "mvnd -Pc test",
                         details));
         assertTrue(
-                Environment.current().runtimes().hasRuntime(Device.C),
+                ConfiguredTestDevice.hasRuntime(DeviceType.C),
                 canaryFailureMessage(
                         "[MISSING_SOFTWARE] C runtime is not registered",
                         "mvnd -Pc test",
@@ -31,7 +32,11 @@ class CBackendAvailabilityTest {
                 isGccAvailable(),
                 canaryFailureMessage(
                         "[MISSING_SOFTWARE] gcc not available", "mvnd -Pc test", details));
-        assertEquals(Device.C, Environment.current().runtimeFor(Device.C).device());
+        assertEquals(
+                DeviceType.C.deviceIndex(0),
+                Environment.current()
+                        .runtimeFor(ConfiguredTestDevice.resolve(DeviceType.C))
+                        .device());
     }
 
     private static String canaryFailureMessage(String reason, String command, String details) {
@@ -46,7 +51,7 @@ class CBackendAvailabilityTest {
     private static String diagnosticsSummary() {
         String cDiagnostics =
                 Environment.current().runtimeDiagnostics().stream()
-                        .filter(d -> d.device().equals(Device.C))
+                        .filter(d -> d.deviceType().equals(DeviceType.C))
                         .map(CBackendAvailabilityTest::formatDiagnostic)
                         .collect(Collectors.joining("\n"));
         if (cDiagnostics.isBlank()) {
@@ -57,7 +62,7 @@ class CBackendAvailabilityTest {
                 + "\nCNative.isAvailable="
                 + CNative.isAvailable()
                 + "\nC runtime registered="
-                + Environment.current().runtimes().hasRuntime(Device.C)
+                + ConfiguredTestDevice.hasRuntime(DeviceType.C)
                 + "\ngcc available="
                 + isGccAvailable();
     }

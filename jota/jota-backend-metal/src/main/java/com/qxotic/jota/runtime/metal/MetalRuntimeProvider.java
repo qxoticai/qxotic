@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
-public final class MetalRuntimeProvider implements DeviceRuntimeProvider {
+public final class MetalRuntimeProvider extends DeviceRuntimeProvider {
 
     @Override
     public DeviceType deviceType() {
@@ -61,7 +61,7 @@ public final class MetalRuntimeProvider implements DeviceRuntimeProvider {
 
     @Override
     public DeviceRuntime create(int deviceIndex) {
-        return new MetalDeviceRuntime();
+        return new MetalDeviceRuntime(deviceType().deviceIndex(deviceIndex));
     }
 
     private static boolean isMacOs() {

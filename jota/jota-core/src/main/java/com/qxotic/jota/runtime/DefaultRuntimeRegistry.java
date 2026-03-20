@@ -73,7 +73,20 @@ public final class DefaultRuntimeRegistry implements RuntimeRegistry {
                     if (factory == null) {
                         throw new IllegalStateException("No runtime registered for " + d);
                     }
-                    return factory.get();
+                    DeviceRuntime runtime = factory.get();
+                    if (runtime == null) {
+                        throw new IllegalStateException(
+                                "Runtime factory returned null for device " + d);
+                    }
+                    Device runtimeDevice = runtime.device();
+                    if (!d.equals(runtimeDevice)) {
+                        throw new IllegalStateException(
+                                "Runtime factory for device "
+                                        + d
+                                        + " returned runtime bound to "
+                                        + runtimeDevice);
+                    }
+                    return runtime;
                 });
     }
 

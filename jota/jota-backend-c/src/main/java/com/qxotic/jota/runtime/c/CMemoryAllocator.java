@@ -1,7 +1,6 @@
 package com.qxotic.jota.runtime.c;
 
 import com.qxotic.jota.Device;
-import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryArena;
@@ -16,11 +15,16 @@ final class CMemoryAllocator implements MemoryAllocator<MemorySegment>, MemoryAr
 
     private static final Unsafe UNSAFE = initializeUnsafe();
 
+    private final Device device;
     private final Set<CMemory> allocations = Collections.newSetFromMap(new ConcurrentHashMap<>());
+
+    CMemoryAllocator(Device device) {
+        this.device = device;
+    }
 
     @Override
     public Device device() {
-        return new Device(DeviceType.C, 0);
+        return device;
     }
 
     @Override
@@ -39,7 +43,7 @@ final class CMemoryAllocator implements MemoryAllocator<MemorySegment>, MemoryAr
             alignedAddress += byteAlignment - (alignedAddress % byteAlignment);
         }
         MemorySegment segment = MemorySegment.ofAddress(alignedAddress).reinterpret(byteSize);
-        CMemory memory = new CMemory(segment, mallocAddress);
+        CMemory memory = new CMemory(device, segment, mallocAddress);
         allocations.add(memory);
         return memory;
     }

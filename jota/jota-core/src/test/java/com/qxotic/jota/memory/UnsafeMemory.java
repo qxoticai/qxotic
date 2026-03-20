@@ -2,6 +2,7 @@ package com.qxotic.jota.memory;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 
 public final class UnsafeMemory implements Memory<Void> {
 
@@ -25,7 +26,7 @@ public final class UnsafeMemory implements Memory<Void> {
 
     @Override
     public Device device() {
-        return Device.PANAMA;
+        return DeviceType.PANAMA.deviceIndex(0);
     }
 
     @Override

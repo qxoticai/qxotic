@@ -9,23 +9,33 @@ import com.qxotic.jota.memory.MemoryOperations;
 import com.qxotic.jota.memory.MemoryView;
 
 public final class OpenClMemoryDomain implements MemoryDomain<OpenClDevicePtr> {
-
-    private static final OpenClMemoryDomain INSTANCE = new OpenClMemoryDomain();
-
     public static OpenClMemoryDomain instance() {
-        return INSTANCE;
+        String token = System.getProperty(OpenClRuntime.DEVICE_INDEX_PROPERTY, "0");
+        int index;
+        try {
+            index = Integer.parseInt(token.trim());
+        } catch (NumberFormatException ignored) {
+            index = 0;
+        }
+        return new OpenClMemoryDomain(DeviceType.OPENCL.deviceIndex(Math.max(index, 0)));
     }
 
-    private OpenClMemoryDomain() {}
+    private final Device device;
+    private final MemoryAllocator<OpenClDevicePtr> allocator;
+
+    public OpenClMemoryDomain(Device device) {
+        this.device = device;
+        this.allocator = new OpenClMemoryAllocator(device);
+    }
 
     @Override
     public Device device() {
-        return new Device(DeviceType.OPENCL, 0);
+        return device;
     }
 
     @Override
     public MemoryAllocator<OpenClDevicePtr> memoryAllocator() {
-        return OpenClMemoryAllocator.instance();
+        return allocator;
     }
 
     @Override

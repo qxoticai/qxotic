@@ -52,7 +52,7 @@ class ToOpTest {
         Tensor input = Tensor.of(view);
         assertThrows(
                 UnsupportedOperationException.class,
-                () -> Tracer.trace(input, t -> t.to(new Device(DeviceType.CUDA, 0))));
+                () -> Tracer.trace(input, t -> t.to(DeviceType.CUDA.deviceIndex(0))));
     }
 
     @Test
@@ -169,7 +169,9 @@ class ToOpTest {
 
     private static Device assumeTransferTarget() {
         Device target = ConfiguredTestDevice.resolve();
-        assumeTrue(target != Device.PANAMA, "transfer tests require non-PANAMA configured target");
+        assumeTrue(
+                !target.belongsTo(DeviceType.PANAMA),
+                "transfer tests require non-PANAMA configured target");
         assumeTrue(
                 Environment.current().runtimes().hasRuntime(target),
                 target + " runtime not registered in current environment");

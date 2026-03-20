@@ -9,23 +9,26 @@ import com.qxotic.jota.memory.MemoryOperations;
 import com.qxotic.jota.memory.MemoryView;
 
 public final class HipMemoryDomain implements MemoryDomain<HipDevicePtr> {
-
-    private static final HipMemoryDomain INSTANCE = new HipMemoryDomain();
-
     public static HipMemoryDomain instance() {
-        return INSTANCE;
+        return new HipMemoryDomain(DeviceType.HIP.deviceIndex(HipRuntime.currentDevice()));
     }
 
-    private HipMemoryDomain() {}
+    private final Device device;
+    private final MemoryAllocator<HipDevicePtr> allocator;
+
+    public HipMemoryDomain(Device device) {
+        this.device = device;
+        this.allocator = new HipMemoryAllocator(device);
+    }
 
     @Override
     public Device device() {
-        return new Device(DeviceType.HIP, 0);
+        return device;
     }
 
     @Override
     public MemoryAllocator<HipDevicePtr> memoryAllocator() {
-        return HipMemoryAllocator.instance();
+        return allocator;
     }
 
     @Override

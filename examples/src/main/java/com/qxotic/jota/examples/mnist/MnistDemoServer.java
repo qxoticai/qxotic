@@ -1,6 +1,7 @@
 package com.qxotic.jota.examples.mnist;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
@@ -41,9 +42,9 @@ public final class MnistDemoServer {
                 backend == null || backend.isBlank()
                         ? current.defaultDevice()
                         : switch (backend.toLowerCase(java.util.Locale.ROOT)) {
-                            case "hip" -> Device.HIP;
-                            case "c" -> Device.C;
-                            case "panama", "cpu" -> Device.PANAMA;
+                            case "hip" -> DeviceType.HIP.deviceIndex(0);
+                            case "c" -> DeviceType.C.deviceIndex(0);
+                            case "panama", "cpu" -> DeviceType.PANAMA.deviceIndex(0);
                             default ->
                                     throw new IllegalArgumentException(
                                             "Unknown backend: " + backend);
@@ -54,7 +55,7 @@ public final class MnistDemoServer {
                             + device
                             + " is not available. Available backends: "
                             + current.runtimes().devices());
-            if (device == Device.HIP) {
+            if (device.belongsTo(DeviceType.HIP)) {
                 System.err.println(
                         "HIP backend requires the HIP JNI library to be built and on"
                                 + " java.library.path/LD_LIBRARY_PATH.");
@@ -150,21 +151,21 @@ public final class MnistDemoServer {
         }
         StringBuilder builder = new StringBuilder(256);
         builder.append('{');
-        builder.append("\"defaultBackend\":\"").append(defaultDevice.leafName()).append("\",");
+        builder.append("\"defaultBackend\":\"").append(defaultDevice.runtimeId()).append("\",");
         builder.append("\"availableBackends\":[");
         boolean first = true;
         for (Device device : baseEnvironment.runtimes().devices()) {
-            if (Device.PANAMA.equals(device)) {
+            if (device.belongsTo(DeviceType.PANAMA)) {
                 if (!first) {
                     builder.append(',');
                 }
                 builder.append("\"panama\"");
                 first = false;
-            } else if (Device.C.equals(device) || Device.HIP.equals(device)) {
+            } else if (device.belongsTo(DeviceType.C) || device.belongsTo(DeviceType.HIP)) {
                 if (!first) {
                     builder.append(',');
                 }
-                builder.append('"').append(device.leafName()).append('"');
+                builder.append('"').append(device.runtimeId()).append('"');
                 first = false;
             }
         }
@@ -265,9 +266,9 @@ public final class MnistDemoServer {
         }
         Device device =
                 switch (selected.toLowerCase(java.util.Locale.ROOT)) {
-                    case "hip" -> Device.HIP;
-                    case "c" -> Device.C;
-                    case "panama", "cpu" -> Device.PANAMA;
+                    case "hip" -> DeviceType.HIP.deviceIndex(0);
+                    case "c" -> DeviceType.C.deviceIndex(0);
+                    case "panama", "cpu" -> DeviceType.PANAMA.deviceIndex(0);
                     default -> throw new IllegalArgumentException("Unknown backend: " + selected);
                 };
         if (!baseEnvironment.runtimes().hasRuntime(device)) {

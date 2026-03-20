@@ -1,6 +1,7 @@
 package com.qxotic.jota.examples.demos;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.runtime.RuntimeDiagnostic;
 import java.util.LinkedHashSet;
@@ -10,8 +11,14 @@ import java.util.Set;
 
 public final class DemoDevices {
 
-    private static final List<Device> SUPPORTED_BACKENDS =
-            List.of(Device.PANAMA, Device.C, Device.HIP, Device.OPENCL, Device.METAL, Device.MOJO);
+    private static final List<DeviceType> SUPPORTED_BACKENDS =
+            List.of(
+                    DeviceType.PANAMA,
+                    DeviceType.C,
+                    DeviceType.HIP,
+                    DeviceType.OPENCL,
+                    DeviceType.METAL,
+                    DeviceType.MOJO);
 
     private DemoDevices() {}
 
@@ -25,33 +32,40 @@ public final class DemoDevices {
     }
 
     public static Device defaultDevice(Environment environment) {
-        return environment.nativeRuntime().device();
+        return environment.defaultDevice();
     }
 
     public static Device resolveDevice(Environment environment, String requested) {
         if (requested == null || requested.isBlank()) {
             return defaultDevice(environment);
         }
-        Device parsed = parseDeviceToken(requested);
-        if (parsed.equals(Device.NATIVE)) {
+        String normalized = requested.trim().toLowerCase(Locale.ROOT);
+        if ("native".equals(normalized)
+                || "default".equals(normalized)
+                || "auto".equals(normalized)) {
             return defaultDevice(environment);
         }
+        DeviceType type = parseDeviceToken(normalized);
+        if (!environment.runtimes().hasRuntime(type.id())) {
+            throw new IllegalStateException(
+                    unavailableDeviceMessage(environment, type.deviceIndex(0)));
+        }
+        Device parsed = environment.resolveRuntime(type);
         if (!environment.runtimes().hasRuntime(parsed)) {
             throw new IllegalStateException(unavailableDeviceMessage(environment, parsed));
         }
         return parsed;
     }
 
-    public static Device parseDeviceToken(String value) {
-        String normalized = value == null ? "native" : value.trim().toLowerCase(Locale.ROOT);
+    public static DeviceType parseDeviceToken(String value) {
+        String normalized = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
         return switch (normalized) {
-            case "native", "default", "auto" -> Device.NATIVE;
-            case "panama", "ffm", "jvm" -> Device.PANAMA;
-            case "c" -> Device.C;
-            case "hip" -> Device.HIP;
-            case "opencl", "cl" -> Device.OPENCL;
-            case "metal" -> Device.METAL;
-            case "mojo" -> Device.MOJO;
+            case "panama", "ffm", "jvm" -> DeviceType.PANAMA;
+            case "c" -> DeviceType.C;
+            case "hip" -> DeviceType.HIP;
+            case "opencl", "cl" -> DeviceType.OPENCL;
+            case "metal" -> DeviceType.METAL;
+            case "mojo" -> DeviceType.MOJO;
             default ->
                     throw new IllegalArgumentException(
                             "Unknown backend/device '"
@@ -61,42 +75,35 @@ public final class DemoDevices {
     }
 
     public static String listDevices(Environment environment) {
-        Set<Device> available = new LinkedHashSet<>(environment.runtimes().devices());
         StringBuilder output = new StringBuilder();
         output.append("Available and usable devices:");
-        output.append('\n').append("  - native -> ").append(defaultDevice(environment).leafName());
+        output.append('\n').append("  - native -> ").append(defaultDevice(environment).runtimeId());
 
-        for (Device backend : SUPPORTED_BACKENDS) {
-            if (available.contains(backend)) {
-                output.append('\n').append("  - ").append(backend.leafName());
+        for (DeviceType backend : SUPPORTED_BACKENDS) {
+            if (environment.runtimes().hasRuntime(backend.id())) {
+                output.append('\n').append("  - ").append(backend.id());
             }
         }
 
-        Set<Device> unavailable = new LinkedHashSet<>();
+        Set<DeviceType> unavailable = new LinkedHashSet<>();
         List<RuntimeDiagnostic> diagnostics = environment.runtimeDiagnostics();
         for (RuntimeDiagnostic diagnostic : diagnostics) {
-            if (!diagnostic.probe().isAvailable()
-                    && SUPPORTED_BACKENDS.contains(diagnostic.device())) {
-                unavailable.add(diagnostic.device());
+            if (!diagnostic.probe().isAvailable()) {
+                unavailable.add(diagnostic.deviceType());
             }
         }
 
         if (!unavailable.isEmpty()) {
             output.append('\n').append('\n').append("Unavailable devices:");
-            for (Device device : unavailable) {
-                RuntimeDiagnostic diagnostic = latestDiagnosticFor(diagnostics, device);
-                if (diagnostic == null) {
-                    output.append('\n').append("  - ").append(device.leafName());
-                    continue;
-                }
-                output.append('\n')
-                        .append("  - ")
-                        .append(device.leafName())
-                        .append(": ")
-                        .append(diagnostic.probe().message());
-                String hint = diagnostic.probe().hint();
-                if (hint != null && !hint.isBlank()) {
-                    output.append(" (").append(hint).append(')');
+            for (DeviceType deviceType : unavailable) {
+                RuntimeDiagnostic diagnostic = latestDiagnosticFor(diagnostics, deviceType);
+                output.append('\n').append("  - ").append(deviceType.id());
+                if (diagnostic != null) {
+                    output.append(": ").append(diagnostic.probe().message());
+                    String hint = diagnostic.probe().hint();
+                    if (hint != null && !hint.isBlank()) {
+                        output.append(" (").append(hint).append(')');
+                    }
                 }
             }
         }
@@ -106,9 +113,8 @@ public final class DemoDevices {
 
     public static String unavailableDeviceMessage(Environment environment, Device device) {
         StringBuilder message =
-                new StringBuilder("Requested device runtime is unavailable: ")
-                        .append(device.name());
-        List<RuntimeDiagnostic> diagnostics = environment.runtimes().diagnosticsFor(device);
+                new StringBuilder("Requested device runtime is unavailable: ").append(device);
+        List<RuntimeDiagnostic> diagnostics = diagnosticsFor(environment, device);
         if (!diagnostics.isEmpty()) {
             message.append('\n').append("Diagnostics:");
             for (RuntimeDiagnostic diagnostic : diagnostics) {
@@ -127,11 +133,17 @@ public final class DemoDevices {
         return message.toString();
     }
 
+    private static List<RuntimeDiagnostic> diagnosticsFor(Environment environment, Device device) {
+        return environment.runtimeDiagnostics().stream()
+                .filter(diagnostic -> diagnostic.deviceType().equals(device.type()))
+                .toList();
+    }
+
     private static RuntimeDiagnostic latestDiagnosticFor(
-            List<RuntimeDiagnostic> diagnostics, Device device) {
+            List<RuntimeDiagnostic> diagnostics, DeviceType deviceType) {
         for (int i = diagnostics.size() - 1; i >= 0; i--) {
             RuntimeDiagnostic diagnostic = diagnostics.get(i);
-            if (diagnostic.device().equals(device)) {
+            if (diagnostic.deviceType().equals(deviceType)) {
                 return diagnostic;
             }
         }

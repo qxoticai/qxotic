@@ -3,13 +3,14 @@ package com.qxotic.jota.runtime.mojo;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.KernelCacheKey;
 import com.qxotic.jota.runtime.KernelService;
 import com.qxotic.jota.runtime.mojo.bridge.MojoRuntime;
 import com.qxotic.jota.tensor.Tensor;
+import com.qxotic.jota.testutil.ConfiguredTestDevice;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,8 +29,7 @@ class MojoNativeCompileModeTest {
     static void setUp() {
         Assumptions.assumeTrue(MojoRuntime.isAvailable(), "libjota_mojo.so is not available");
         Assumptions.assumeTrue(
-                Environment.current().runtimes().hasRuntime(Device.HIP),
-                "HIP runtime is unavailable");
+                ConfiguredTestDevice.hasRuntime(DeviceType.HIP), "HIP runtime is unavailable");
         Assumptions.assumeTrue(isCommandAvailable("mojo", "--version"), "mojo is unavailable");
     }
 
@@ -47,11 +47,14 @@ class MojoNativeCompileModeTest {
         previousMode = System.getProperty("jota.mojo.native.compile.mode");
         System.setProperty("jota.mojo.native.compile.mode", "native");
 
-        DeviceRuntime runtime = Environment.current().runtimeFor(Device.MOJO);
+        DeviceRuntime runtime =
+                Environment.current().runtimeFor(ConfiguredTestDevice.resolve(DeviceType.MOJO));
         KernelService kernelService = runtime.kernelService().orElseThrow();
 
-        Tensor left = Tensor.iota(513, DataType.FP32).to(Device.MOJO);
-        Tensor right = Tensor.iota(513, DataType.FP32).to(Device.MOJO);
+        Tensor left =
+                Tensor.iota(513, DataType.FP32).to(ConfiguredTestDevice.resolve(DeviceType.MOJO));
+        Tensor right =
+                Tensor.iota(513, DataType.FP32).to(ConfiguredTestDevice.resolve(DeviceType.MOJO));
         left.add(right).materialize();
 
         assertTrue(!kernelService.namedKernelKeys().isEmpty(), "Expected a registered Mojo kernel");

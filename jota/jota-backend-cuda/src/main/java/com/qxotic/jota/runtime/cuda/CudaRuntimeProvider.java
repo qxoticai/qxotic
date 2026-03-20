@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
-public final class CudaRuntimeProvider implements DeviceRuntimeProvider {
+public final class CudaRuntimeProvider extends DeviceRuntimeProvider {
 
     @Override
     public DeviceType deviceType() {
@@ -70,7 +70,7 @@ public final class CudaRuntimeProvider implements DeviceRuntimeProvider {
 
     @Override
     public DeviceRuntime create(int deviceIndex) {
-        return new CudaDeviceRuntime();
+        return new CudaDeviceRuntime(deviceType().deviceIndex(deviceIndex));
     }
 
     private static String nvccExecutable() {

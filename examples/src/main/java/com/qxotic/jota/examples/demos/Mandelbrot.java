@@ -48,7 +48,7 @@ public final class Mandelbrot {
         long elapsed = System.currentTimeMillis() - start;
         System.out.println(
                 "Backend="
-                        + backend.name()
+                        + backend.runtimeId()
                         + ", runtime="
                         + elapsed
                         + "ms"
@@ -59,7 +59,7 @@ public final class Mandelbrot {
                         + ", MAX_ITER="
                         + MAX_ITER
                         + ")");
-        String filename = "mandelbrot-" + backend.leafName() + ".ppm";
+        String filename = "mandelbrot-" + backend.runtimeId() + ".ppm";
         PpmWriter.write(Path.of(filename), WIDTH, HEIGHT, rgb);
     }
 
@@ -126,7 +126,8 @@ public final class Mandelbrot {
 
     @SuppressWarnings("unchecked")
     private static MemoryView<MemorySegment> toNativeHostView(MemoryView<?> view) {
-        return (MemoryView<MemorySegment>) Tensor.of(view).to(Device.NATIVE).materialize();
+        return (MemoryView<MemorySegment>)
+                Tensor.of(view).to(Environment.current().nativeRuntime().device()).materialize();
     }
 
     private static String requestedBackend(String[] args) {

@@ -3,22 +3,26 @@ package com.qxotic.jota.runtime.spi;
 import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.runtime.DeviceRuntime;
 
-public interface DeviceRuntimeProvider {
+public abstract class DeviceRuntimeProvider {
+
+    protected static DeviceType deviceType(String id) {
+        return DeviceType.fromId(id);
+    }
 
     /** The device type this provider serves (e.g., DeviceType.CUDA). */
-    DeviceType deviceType();
+    public abstract DeviceType deviceType();
 
-    default int priority() {
+    public int priority() {
         return 0;
     }
 
-    RuntimeProbe probe();
+    public abstract RuntimeProbe probe();
 
     /** Number of available device indices for this runtime. */
-    default int deviceCount() {
+    public int deviceCount() {
         return 1;
     }
 
     /** Create a runtime for the given device index. */
-    DeviceRuntime create(int deviceIndex);
+    public abstract DeviceRuntime create(int deviceIndex);
 }

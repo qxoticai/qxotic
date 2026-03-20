@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-public final class HipRuntimeProvider implements DeviceRuntimeProvider {
+public final class HipRuntimeProvider extends DeviceRuntimeProvider {
 
     private static final String ENV_HIPCC = "HIPCC";
     private static final String HIPCC_PROPERTY = "jota.hip.compiler";
@@ -60,7 +60,7 @@ public final class HipRuntimeProvider implements DeviceRuntimeProvider {
 
     @Override
     public DeviceRuntime create(int deviceIndex) {
-        return new HipDeviceRuntime();
+        return new HipDeviceRuntime(deviceType().deviceIndex(deviceIndex));
     }
 
     private static String hipccExecutable() {

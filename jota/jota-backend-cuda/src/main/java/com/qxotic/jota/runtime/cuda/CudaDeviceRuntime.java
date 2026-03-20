@@ -25,7 +25,11 @@ public final class CudaDeviceRuntime implements DeviceRuntime {
     private final KernelService kernelService;
 
     public CudaDeviceRuntime() {
-        this(CudaMemoryDomain.instance());
+        this(DeviceType.CUDA.deviceIndex(CudaRuntime.currentDevice()));
+    }
+
+    public CudaDeviceRuntime(Device device) {
+        this(new CudaMemoryDomain(device));
     }
 
     public CudaDeviceRuntime(CudaMemoryDomain memoryDomain) {
@@ -65,7 +69,7 @@ public final class CudaDeviceRuntime implements DeviceRuntime {
 
     @Override
     public DeviceProperties properties() {
-        int idx = device().index();
+        int idx = Math.toIntExact(device().index());
         var props = new LinkedHashMap<String, Object>();
         props.put(DeviceProperties.DEVICE_NAME, CudaRuntime.deviceName(idx));
         props.put(DeviceProperties.VENDOR, "NVIDIA");
@@ -101,7 +105,7 @@ public final class CudaDeviceRuntime implements DeviceRuntime {
 
     @Override
     public DeviceCapabilities capabilities() {
-        int idx = device().index();
+        int idx = Math.toIntExact(device().index());
         var caps = new LinkedHashSet<String>();
         caps.add(DeviceCapabilities.FP32);
         String arch = CudaRuntime.deviceArchName(idx);

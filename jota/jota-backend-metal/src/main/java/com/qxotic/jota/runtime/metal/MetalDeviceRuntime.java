@@ -25,7 +25,11 @@ public final class MetalDeviceRuntime implements DeviceRuntime {
     private final KernelService kernelService;
 
     public MetalDeviceRuntime() {
-        this(MetalMemoryDomain.instance());
+        this(DeviceType.METAL.deviceIndex(0));
+    }
+
+    public MetalDeviceRuntime(Device device) {
+        this(new MetalMemoryDomain(device));
     }
 
     public MetalDeviceRuntime(MetalMemoryDomain memoryDomain) {

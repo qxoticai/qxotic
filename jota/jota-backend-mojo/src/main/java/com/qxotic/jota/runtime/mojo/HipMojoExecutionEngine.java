@@ -23,8 +23,11 @@ final class HipMojoExecutionEngine implements MojoExecutionEngine<HipDevicePtr> 
     @SuppressWarnings("unchecked")
     HipMojoExecutionEngine() {
         HipDeviceRuntime hipRuntime = new HipDeviceRuntime();
+        int index = Math.toIntExact(hipRuntime.device().index());
         this.memoryDomain =
-                new MojoMemoryDomain((MemoryDomain<HipDevicePtr>) hipRuntime.memoryDomain());
+                new MojoMemoryDomain(
+                        DeviceType.MOJO.deviceIndex(index),
+                        (MemoryDomain<HipDevicePtr>) hipRuntime.memoryDomain());
         KernelBackend backend =
                 new MojoKernelBackend(
                         hipRuntime

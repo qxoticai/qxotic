@@ -5,6 +5,7 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.TensorEntry;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
@@ -38,7 +39,9 @@ final class MnistMlp {
         Weights hostWeights = Weights.load();
         Device targetDevice = Device.defaultDevice();
         this.weights =
-                Device.PANAMA.equals(targetDevice) ? hostWeights : hostWeights.copyTo(targetDevice);
+                targetDevice.belongsTo(DeviceType.PANAMA)
+                        ? hostWeights
+                        : hostWeights.copyTo(targetDevice);
     }
 
     InferenceResult infer(float[] batch, int batchSize) {

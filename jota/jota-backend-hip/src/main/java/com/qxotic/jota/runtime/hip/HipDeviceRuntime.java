@@ -25,7 +25,11 @@ public final class HipDeviceRuntime implements DeviceRuntime {
     private final KernelService kernelService;
 
     public HipDeviceRuntime() {
-        this(HipMemoryDomain.instance());
+        this(DeviceType.HIP.deviceIndex(HipRuntime.currentDevice()));
+    }
+
+    public HipDeviceRuntime(Device device) {
+        this(new HipMemoryDomain(device));
     }
 
     public HipDeviceRuntime(HipMemoryDomain memoryDomain) {
@@ -65,7 +69,7 @@ public final class HipDeviceRuntime implements DeviceRuntime {
 
     @Override
     public DeviceProperties properties() {
-        int idx = device().index();
+        int idx = Math.toIntExact(device().index());
         var props = new LinkedHashMap<String, Object>();
         props.put(DeviceProperties.DEVICE_NAME, HipRuntime.deviceName(idx));
         props.put(DeviceProperties.VENDOR, "AMD");
@@ -101,7 +105,7 @@ public final class HipDeviceRuntime implements DeviceRuntime {
 
     @Override
     public DeviceCapabilities capabilities() {
-        int idx = device().index();
+        int idx = Math.toIntExact(device().index());
         var caps = new LinkedHashSet<String>();
         caps.add(DeviceCapabilities.FP16);
         caps.add(DeviceCapabilities.FP32);

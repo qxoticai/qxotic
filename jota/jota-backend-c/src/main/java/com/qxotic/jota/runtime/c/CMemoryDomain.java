@@ -1,7 +1,6 @@
 package com.qxotic.jota.runtime.c;
 
 import com.qxotic.jota.Device;
-import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryDomain;
@@ -11,12 +10,17 @@ import com.qxotic.jota.runtime.nativeimpl.NativeMemoryOperations;
 import java.lang.foreign.MemorySegment;
 
 final class CMemoryDomain implements MemoryDomain<MemorySegment> {
+    private final Device device;
+    private final MemoryAllocator<MemorySegment> allocator;
 
-    private final MemoryAllocator<MemorySegment> allocator = new CMemoryAllocator();
+    CMemoryDomain(Device device) {
+        this.device = device;
+        this.allocator = new CMemoryAllocator(device);
+    }
 
     @Override
     public Device device() {
-        return new Device(DeviceType.C, 0);
+        return device;
     }
 
     @Override

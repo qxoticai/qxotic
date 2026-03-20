@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.impl.MemoryAllocatorFactory;
 import java.nio.ByteOrder;
@@ -82,13 +82,13 @@ public class MemoryAllocatorTest {
     @MethodSource("javaArrayAllocatorProvider")
     <B> void testJavaArrayAllocatorsUseJavaDevice(
             Supplier<MemoryAllocator<B>> memoryAllocatorSupplier) {
-        assertTrue(memoryAllocatorSupplier.get().device().belongsTo(Device.JAVA));
+        assertTrue(memoryAllocatorSupplier.get().device().belongsTo(DeviceType.JAVA));
     }
 
     @ParameterizedTest
     @MethodSource("byteBufferAllocatorProvider")
     <B> void testByteBufferAllocatorsUseJavaDevice(
             Supplier<MemoryAllocator<B>> memoryAllocatorSupplier) {
-        assertTrue(memoryAllocatorSupplier.get().device().belongsTo(Device.JAVA));
+        assertTrue(memoryAllocatorSupplier.get().device().belongsTo(DeviceType.JAVA));
     }
 }

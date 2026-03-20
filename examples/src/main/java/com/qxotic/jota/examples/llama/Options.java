@@ -1,6 +1,8 @@
 package com.qxotic.jota.examples.llama;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
+import com.qxotic.jota.Environment;
 import java.nio.file.Path;
 
 final class Options {
@@ -60,7 +62,7 @@ final class Options {
         long benchmarkPauseMs = 0L;
         boolean stream = true;
         boolean trace = Boolean.getBoolean("com.qxotic.trace");
-        Device device = Device.PANAMA;
+        Device device = Environment.current().runtimeFor("native").device();
 
         for (int i = 0; i < args.length; i++) {
             String arg = args[i];
@@ -177,12 +179,13 @@ final class Options {
     }
 
     private static Device parseDevice(String value) {
-        String normalized = value == null ? "panama" : value.trim().toLowerCase();
+        String normalized = value == null ? "native" : value.trim().toLowerCase();
         return switch (normalized) {
-            case "panama", "cpu", "native" -> Device.PANAMA;
-            case "c" -> Device.C;
-            case "hip" -> Device.HIP;
-            case "opencl", "ocl" -> Device.OPENCL;
+            case "native", "default", "auto" -> Environment.current().runtimeFor("native").device();
+            case "panama", "cpu" -> DeviceType.PANAMA.deviceIndex(0);
+            case "c" -> DeviceType.C.deviceIndex(0);
+            case "hip" -> DeviceType.HIP.deviceIndex(0);
+            case "opencl", "ocl" -> DeviceType.OPENCL.deviceIndex(0);
             default ->
                     throw new IllegalArgumentException(
                             "Unsupported --device value: " + value + " (use panama|c|hip|opencl)");

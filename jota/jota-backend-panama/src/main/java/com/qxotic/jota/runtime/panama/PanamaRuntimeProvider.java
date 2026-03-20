@@ -6,7 +6,7 @@ import com.qxotic.jota.runtime.nativeimpl.NativeMemoryFactory;
 import com.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
 import com.qxotic.jota.runtime.spi.RuntimeProbe;
 
-public final class PanamaRuntimeProvider implements DeviceRuntimeProvider {
+public final class PanamaRuntimeProvider extends DeviceRuntimeProvider {
 
     @Override
     public DeviceType deviceType() {
@@ -35,10 +35,6 @@ public final class PanamaRuntimeProvider implements DeviceRuntimeProvider {
 
     @Override
     public String toString() {
-        return "PanamaRuntimeProvider[deviceType="
-                + deviceType()
-                + ", priority="
-                + priority()
-                + "]";
+        return "PanamaRuntimeProvider[deviceType=panama, priority=" + priority() + "]";
     }
 }

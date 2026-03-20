@@ -1,8 +1,6 @@
 package com.qxotic.jota.runtime.opencl;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Device;
-import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.runtime.ExecutionStream;
 import com.qxotic.jota.runtime.KernelArgs;
@@ -62,7 +60,7 @@ final class OpenClStridedCopy {
         int threads = 256;
         int blocks = (int) ((totalElements + threads - 1) / threads);
         LaunchConfig config = LaunchConfig.grid(blocks).block(threads);
-        ExecutionStream stream = new ExecutionStream(new Device(DeviceType.OPENCL, 0), null, true);
+        ExecutionStream stream = new ExecutionStream(src.memory().device(), null, true);
         exec.launch(config, args, stream);
     }
 

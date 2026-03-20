@@ -1,23 +1,19 @@
 package com.qxotic.jota.runtime.metal;
 
 import com.qxotic.jota.Device;
-import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAllocator;
 
 final class MetalMemoryAllocator implements MemoryAllocator<MetalDevicePtr> {
+    private final Device device;
 
-    private static final MetalMemoryAllocator INSTANCE = new MetalMemoryAllocator();
-
-    static MetalMemoryAllocator instance() {
-        return INSTANCE;
+    MetalMemoryAllocator(Device device) {
+        this.device = device;
     }
-
-    private MetalMemoryAllocator() {}
 
     @Override
     public Device device() {
-        return new Device(DeviceType.METAL, 0);
+        return device;
     }
 
     @Override
@@ -28,7 +24,7 @@ final class MetalMemoryAllocator implements MemoryAllocator<MetalDevicePtr> {
         MetalRuntime.requireAvailable();
         int storageMode = MetalMemoryPolicy.current().storageMode();
         long handle = MetalRuntime.malloc(byteSize, storageMode);
-        return new MetalMemory(new MetalDevicePtr(handle), byteSize);
+        return new MetalMemory(device, new MetalDevicePtr(handle), byteSize);
     }
 
     @Override
