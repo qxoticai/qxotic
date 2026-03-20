@@ -6,8 +6,11 @@ import com.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
 import com.qxotic.jota.runtime.spi.RuntimeProbe;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 public final class CudaRuntimeProvider extends DeviceRuntimeProvider {
@@ -69,8 +72,30 @@ public final class CudaRuntimeProvider extends DeviceRuntimeProvider {
     }
 
     @Override
-    public DeviceRuntime create(int deviceIndex) {
+    public DeviceRuntime create(long deviceIndex) {
         return new CudaDeviceRuntime(deviceType().deviceIndex(deviceIndex));
+    }
+
+    @Override
+    public Map<String, String> properties(int deviceIndex) {
+        if (!CudaRuntime.isAvailable()) {
+            return Map.of();
+        }
+        var props = new LinkedHashMap<String, String>();
+        props.put("device.name", CudaRuntime.deviceName(deviceIndex));
+        props.put("device.vendor", "NVIDIA");
+        props.put("device.architecture", CudaRuntime.deviceArchName(deviceIndex));
+        props.put("device.kind", "gpu");
+        return Map.copyOf(props);
+    }
+
+    @Override
+    public Set<String> capabilities(int deviceIndex) {
+        if (!CudaRuntime.isAvailable()) {
+            return Set.of();
+        }
+        return Set.of(
+                "gpu", "fp32", "fp64", "int8", "kernel.compilation", "atomic.32", "atomic.64");
     }
 
     private static String nvccExecutable() {

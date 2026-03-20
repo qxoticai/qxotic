@@ -1,5 +1,4 @@
 #include <stdint.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -273,6 +272,8 @@ typedef struct ArgsPack {
   int deviceAllocCount;
 } ArgsPack;
 
+static void throwUnsupported(JNIEnv *env, const char *message);
+
 static void freeArgsPack(ArgsPack *pack) {
   if (pack == NULL) {
     return;
@@ -308,6 +309,32 @@ static void *allocArg(ArgsPack *pack, size_t size) {
   }
   pack->allocs[pack->allocCount++] = ptr;
   return ptr;
+}
+
+static int addMetadataDeviceCopy(
+    JNIEnv *env, ArgsPack *pack, int paramIndex, const void *src, size_t bytes) {
+#if __has_include(<cuda_runtime_api.h>) && __has_include(<cuda.h>)
+  void *devicePtr = NULL;
+  cudaError_t status = cudaMalloc(&devicePtr, bytes);
+  checkCuda(env, status, "cudaMalloc metadata failed");
+  status = cudaMemcpy(devicePtr, src, bytes, cudaMemcpyHostToDevice);
+  checkCuda(env, status, "cudaMemcpy metadata failed");
+  void *storage = allocArg(pack, sizeof(void *));
+  if (storage == NULL) {
+    cudaFree(devicePtr);
+    throwRuntime(env, "Failed to allocate metadata pointer storage");
+    return 0;
+  }
+  *(void **)storage = devicePtr;
+  pack->params[paramIndex] = storage;
+  pack->deviceAllocs[pack->deviceAllocCount++] = devicePtr;
+  return 1;
+#else
+  (void)src;
+  (void)bytes;
+  throwUnsupported(env, "CUDA headers not available");
+  return 0;
+#endif
 }
 
 static jclass findClass(JNIEnv *env, const char *name) {
@@ -475,20 +502,6 @@ JNIEXPORT jint JNICALL Java_com_qxotic_jota_runtime_cuda_CudaRuntime_nativeDevic
 #endif
 }
 
-JNIEXPORT jint JNICALL Java_com_qxotic_jota_runtime_cuda_CudaRuntime_nativeDeviceClockRateKHz
-  (JNIEnv *env, jclass cls, jint deviceIndex) {
-  (void)cls;
-#if __has_include(<cuda_runtime_api.h>) && __has_include(<cuda.h>)
-  struct cudaDeviceProp props;
-  if (getCudaDeviceProps(env, deviceIndex, &props) != 0) return 0;
-  return (jint)props.clockRate;
-#else
-  (void)deviceIndex;
-  throwUnsupported(env, "CUDA headers not available");
-  return 0;
-#endif
-}
-
 JNIEXPORT jint JNICALL Java_com_qxotic_jota_runtime_cuda_CudaRuntime_nativeDeviceWarpSize
   (JNIEnv *env, jclass cls, jint deviceIndex) {
   (void)cls;
@@ -614,20 +627,6 @@ JNIEXPORT jint JNICALL Java_com_qxotic_jota_runtime_cuda_CudaRuntime_nativeDevic
   struct cudaDeviceProp props;
   if (getCudaDeviceProps(env, deviceIndex, &props) != 0) return 0;
   return (jint)props.memoryBusWidth;
-#else
-  (void)deviceIndex;
-  throwUnsupported(env, "CUDA headers not available");
-  return 0;
-#endif
-}
-
-JNIEXPORT jint JNICALL Java_com_qxotic_jota_runtime_cuda_CudaRuntime_nativeDeviceMemoryClockRateKHz
-  (JNIEnv *env, jclass cls, jint deviceIndex) {
-  (void)cls;
-#if __has_include(<cuda_runtime_api.h>) && __has_include(<cuda.h>)
-  struct cudaDeviceProp props;
-  if (getCudaDeviceProps(env, deviceIndex, &props) != 0) return 0;
-  return (jint)props.memoryClockRate;
 #else
   (void)deviceIndex;
   throwUnsupported(env, "CUDA headers not available");
@@ -812,7 +811,7 @@ JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_cuda_CudaRuntime_memcpyHtoD
   void *dst = (void *)((uintptr_t)dstPtr + (uintptr_t)dstOffset);
   void *src = (void *)(uintptr_t)srcAddress;
   cudaError_t status = cudaMemcpy(dst, src, (size_t)byteSize, cudaMemcpyHostToDevice);
-  checkCuda(env, status, "hipMemcpy HtoD failed");
+  checkCuda(env, status, "cudaMemcpy HtoD failed");
 #else
   (void)dstPtr;
   (void)dstOffset;
@@ -829,7 +828,7 @@ JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_cuda_CudaRuntime_memcpyDtoH
   void *dst = (void *)(uintptr_t)dstAddress;
   void *src = (void *)((uintptr_t)srcPtr + (uintptr_t)srcOffset);
   cudaError_t status = cudaMemcpy(dst, src, (size_t)byteSize, cudaMemcpyDeviceToHost);
-  checkCuda(env, status, "hipMemcpy DtoH failed");
+  checkCuda(env, status, "cudaMemcpy DtoH failed");
 #else
   (void)dstAddress;
   (void)srcPtr;
@@ -846,7 +845,7 @@ JNIEXPORT void JNICALL Java_com_qxotic_jota_runtime_cuda_CudaRuntime_memcpyDtoD
   void *dst = (void *)((uintptr_t)dstPtr + (uintptr_t)dstOffset);
   void *src = (void *)((uintptr_t)srcPtr + (uintptr_t)srcOffset);
   cudaError_t status = cudaMemcpy(dst, src, (size_t)byteSize, cudaMemcpyDeviceToDevice);
-  checkCuda(env, status, "hipMemcpy DtoD failed");
+  checkCuda(env, status, "cudaMemcpy DtoD failed");
 #else
   (void)dstPtr;
   (void)dstOffset;
@@ -1006,13 +1005,13 @@ JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_cuda_CudaKernelParams_packN
     freeArgsPack(pack);
     return 0;
   }
-  jclass hipDevicePtrClass = findClass(env, "com/qxotic/jota/runtime/cuda/CudaDevicePtr");
-  if (hipDevicePtrClass == NULL) {
+  jclass devicePtrClass = findClass(env, "com/qxotic/jota/runtime/cuda/CudaDevicePtr");
+  if (devicePtrClass == NULL) {
     freeArgsPack(pack);
     return 0;
   }
-  jmethodID hipAddressMid = getMethod(env, hipDevicePtrClass, "address", "()J");
-  if (hipAddressMid == NULL) {
+  jmethodID addressMid = getMethod(env, devicePtrClass, "address", "()J");
+  if (addressMid == NULL) {
     freeArgsPack(pack);
     return 0;
   }
@@ -1089,8 +1088,8 @@ JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_cuda_CudaKernelParams_packN
         return 0;
       }
       jlong ptrValue = 0;
-      if ((*env)->IsInstanceOf(env, baseObj, hipDevicePtrClass)) {
-        ptrValue = (*env)->CallLongMethod(env, baseObj, hipAddressMid);
+      if ((*env)->IsInstanceOf(env, baseObj, devicePtrClass)) {
+        ptrValue = (*env)->CallLongMethod(env, baseObj, addressMid);
       } else if ((*env)->IsInstanceOf(env, baseObj, numberClass)) {
         ptrValue = (*env)->CallLongMethod(env, baseObj, longValueMid);
       } else {
@@ -1258,30 +1257,13 @@ JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_cuda_CudaKernelParams_packN
           throwRuntime(env, "Failed to read metadata long[]");
           return 0;
         }
-#if __has_include(<cuda_runtime_api.h>)
-        void *devicePtr = NULL;
-        cudaError_t status = cudaMalloc(&devicePtr, (size_t)len * sizeof(jlong));
-        checkCuda(env, status, "cudaMalloc metadata failed");
-        status = cudaMemcpy(devicePtr, elements, (size_t)len * sizeof(jlong), cudaMemcpyHostToDevice);
-        checkCuda(env, status, "hipMemcpy metadata failed");
-        (*env)->ReleaseLongArrayElements(env, array, elements, JNI_ABORT);
-        void *storage = allocArg(pack, sizeof(void *));
-        if (storage == NULL) {
-          cudaFree(devicePtr);
+        if (!addMetadataDeviceCopy(env, pack, i, elements, (size_t)len * sizeof(jlong))) {
+          (*env)->ReleaseLongArrayElements(env, array, elements, JNI_ABORT);
           freeArgsPack(pack);
-          throwRuntime(env, "Failed to allocate metadata pointer storage");
           return 0;
         }
-        *(void **)storage = devicePtr;
-        pack->params[i] = storage;
-        pack->deviceAllocs[pack->deviceAllocCount++] = devicePtr;
-        continue;
-#else
         (*env)->ReleaseLongArrayElements(env, array, elements, JNI_ABORT);
-        freeArgsPack(pack);
-        throwUnsupported(env, "CUDA headers not available");
-        return 0;
-#endif
+        continue;
       }
 
       if ((*env)->IsInstanceOf(env, valueObj, intArrayClass)) {
@@ -1293,30 +1275,13 @@ JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_cuda_CudaKernelParams_packN
           throwRuntime(env, "Failed to read metadata int[]");
           return 0;
         }
-#if __has_include(<cuda_runtime_api.h>)
-        void *devicePtr = NULL;
-        cudaError_t status = cudaMalloc(&devicePtr, (size_t)len * sizeof(jint));
-        checkCuda(env, status, "cudaMalloc metadata failed");
-        status = cudaMemcpy(devicePtr, elements, (size_t)len * sizeof(jint), cudaMemcpyHostToDevice);
-        checkCuda(env, status, "hipMemcpy metadata failed");
-        (*env)->ReleaseIntArrayElements(env, array, elements, JNI_ABORT);
-        void *storage = allocArg(pack, sizeof(void *));
-        if (storage == NULL) {
-          cudaFree(devicePtr);
+        if (!addMetadataDeviceCopy(env, pack, i, elements, (size_t)len * sizeof(jint))) {
+          (*env)->ReleaseIntArrayElements(env, array, elements, JNI_ABORT);
           freeArgsPack(pack);
-          throwRuntime(env, "Failed to allocate metadata pointer storage");
           return 0;
         }
-        *(void **)storage = devicePtr;
-        pack->params[i] = storage;
-        pack->deviceAllocs[pack->deviceAllocCount++] = devicePtr;
-        continue;
-#else
         (*env)->ReleaseIntArrayElements(env, array, elements, JNI_ABORT);
-        freeArgsPack(pack);
-        throwUnsupported(env, "CUDA headers not available");
-        return 0;
-#endif
+        continue;
       }
 
       freeArgsPack(pack);

@@ -5,6 +5,9 @@ import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.nativeimpl.NativeMemoryFactory;
 import com.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
 import com.qxotic.jota.runtime.spi.RuntimeProbe;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
 
 public final class PanamaRuntimeProvider extends DeviceRuntimeProvider {
 
@@ -29,12 +32,27 @@ public final class PanamaRuntimeProvider extends DeviceRuntimeProvider {
     }
 
     @Override
-    public DeviceRuntime create(int deviceIndex) {
+    public DeviceRuntime create(long deviceIndex) {
         return new PanamaDeviceRuntime();
     }
 
     @Override
-    public String toString() {
-        return "PanamaRuntimeProvider[deviceType=panama, priority=" + priority() + "]";
+    public Map<String, String> properties(int deviceIndex) {
+        Runtime rt = Runtime.getRuntime();
+        var props = new LinkedHashMap<String, String>();
+        props.put("device.name", "JVM (" + System.getProperty("java.vm.name") + ")");
+        props.put("device.vendor", System.getProperty("java.vm.vendor"));
+        props.put("device.architecture", System.getProperty("os.arch"));
+        props.put("device.driver.version", System.getProperty("java.runtime.version"));
+        props.put("memory.global.bytes", Long.toString(rt.maxMemory()));
+        props.put("compute.units", Integer.toString(rt.availableProcessors()));
+        props.put("device.kind", "cpu");
+        return Map.copyOf(props);
+    }
+
+    @Override
+    public Set<String> capabilities(int deviceIndex) {
+        return Set.of(
+                "fp32", "fp64", "kernel.compilation", "native.runtime", "unified.memory", "cpu");
     }
 }

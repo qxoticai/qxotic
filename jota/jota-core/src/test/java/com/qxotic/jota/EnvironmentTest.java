@@ -77,10 +77,10 @@ class EnvironmentTest {
         Device javaLogical = DeviceType.JAVA.deviceIndex(0);
         Device panamaLogical = DeviceType.PANAMA.deviceIndex(0);
         registry.registerFactory(
-                javaLogical, () -> new StubDeviceRuntime(DomainFactory.ofBytes(), dummyRuntime()));
+                javaLogical, d -> new StubDeviceRuntime(DomainFactory.ofBytes(), dummyRuntime()));
         registry.registerFactory(
                 panamaLogical,
-                () -> new StubDeviceRuntime(DomainFactory.ofMemorySegment(), dummyRuntime()));
+                d -> new StubDeviceRuntime(DomainFactory.ofMemorySegment(), dummyRuntime()));
 
         assertTrue(registry.devices().contains(javaLogical));
         assertTrue(registry.devices().contains(panamaLogical));
@@ -346,7 +346,7 @@ class EnvironmentTest {
         }
 
         @Override
-        public DeviceRuntime create(int deviceIndex) {
+        public DeviceRuntime create(long deviceIndex) {
             return new StubDeviceRuntime(DomainFactory.ofMemorySegment(), dummyRuntime());
         }
     }

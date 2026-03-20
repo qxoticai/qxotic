@@ -1,5 +1,4 @@
 #include <stdint.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -130,6 +129,32 @@ static void *allocArg(ArgsPack *pack, size_t size) {
   }
   pack->allocs[pack->allocCount++] = ptr;
   return ptr;
+}
+
+static int addMetadataDeviceCopy(
+    JNIEnv *env, ArgsPack *pack, int paramIndex, const void *src, size_t bytes) {
+#if __has_include(<hip/hip_runtime_api.h>)
+  void *devicePtr = NULL;
+  hipError_t status = hipMalloc(&devicePtr, bytes);
+  checkHip(env, status, "hipMalloc metadata failed");
+  status = hipMemcpy(devicePtr, src, bytes, hipMemcpyHostToDevice);
+  checkHip(env, status, "hipMemcpy metadata failed");
+  void *storage = allocArg(pack, sizeof(void *));
+  if (storage == NULL) {
+    hipFree(devicePtr);
+    throwRuntime(env, "Failed to allocate metadata pointer storage");
+    return 0;
+  }
+  *(void **)storage = devicePtr;
+  pack->params[paramIndex] = storage;
+  pack->deviceAllocs[pack->deviceAllocCount++] = devicePtr;
+  return 1;
+#else
+  (void)src;
+  (void)bytes;
+  throwUnsupported(env, "HIP headers not available");
+  return 0;
+#endif
 }
 
 static jclass findClass(JNIEnv *env, const char *name) {
@@ -807,13 +832,13 @@ JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_hip_HipKernelParams_packNat
     freeArgsPack(pack);
     return 0;
   }
-  jclass hipDevicePtrClass = findClass(env, "com/qxotic/jota/runtime/hip/HipDevicePtr");
-  if (hipDevicePtrClass == NULL) {
+  jclass devicePtrClass = findClass(env, "com/qxotic/jota/runtime/hip/HipDevicePtr");
+  if (devicePtrClass == NULL) {
     freeArgsPack(pack);
     return 0;
   }
-  jmethodID hipAddressMid = getMethod(env, hipDevicePtrClass, "address", "()J");
-  if (hipAddressMid == NULL) {
+  jmethodID addressMid = getMethod(env, devicePtrClass, "address", "()J");
+  if (addressMid == NULL) {
     freeArgsPack(pack);
     return 0;
   }
@@ -890,8 +915,8 @@ JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_hip_HipKernelParams_packNat
         return 0;
       }
       jlong ptrValue = 0;
-      if ((*env)->IsInstanceOf(env, baseObj, hipDevicePtrClass)) {
-        ptrValue = (*env)->CallLongMethod(env, baseObj, hipAddressMid);
+      if ((*env)->IsInstanceOf(env, baseObj, devicePtrClass)) {
+        ptrValue = (*env)->CallLongMethod(env, baseObj, addressMid);
       } else if ((*env)->IsInstanceOf(env, baseObj, numberClass)) {
         ptrValue = (*env)->CallLongMethod(env, baseObj, longValueMid);
       } else {
@@ -1059,30 +1084,13 @@ JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_hip_HipKernelParams_packNat
           throwRuntime(env, "Failed to read metadata long[]");
           return 0;
         }
-#if __has_include(<hip/hip_runtime_api.h>)
-        void *devicePtr = NULL;
-        hipError_t status = hipMalloc(&devicePtr, (size_t)len * sizeof(jlong));
-        checkHip(env, status, "hipMalloc metadata failed");
-        status = hipMemcpy(devicePtr, elements, (size_t)len * sizeof(jlong), hipMemcpyHostToDevice);
-        checkHip(env, status, "hipMemcpy metadata failed");
-        (*env)->ReleaseLongArrayElements(env, array, elements, JNI_ABORT);
-        void *storage = allocArg(pack, sizeof(void *));
-        if (storage == NULL) {
-          hipFree(devicePtr);
+        if (!addMetadataDeviceCopy(env, pack, i, elements, (size_t)len * sizeof(jlong))) {
+          (*env)->ReleaseLongArrayElements(env, array, elements, JNI_ABORT);
           freeArgsPack(pack);
-          throwRuntime(env, "Failed to allocate metadata pointer storage");
           return 0;
         }
-        *(void **)storage = devicePtr;
-        pack->params[i] = storage;
-        pack->deviceAllocs[pack->deviceAllocCount++] = devicePtr;
-        continue;
-#else
         (*env)->ReleaseLongArrayElements(env, array, elements, JNI_ABORT);
-        freeArgsPack(pack);
-        throwUnsupported(env, "HIP headers not available");
-        return 0;
-#endif
+        continue;
       }
 
       if ((*env)->IsInstanceOf(env, valueObj, intArrayClass)) {
@@ -1094,30 +1102,13 @@ JNIEXPORT jlong JNICALL Java_com_qxotic_jota_runtime_hip_HipKernelParams_packNat
           throwRuntime(env, "Failed to read metadata int[]");
           return 0;
         }
-#if __has_include(<hip/hip_runtime_api.h>)
-        void *devicePtr = NULL;
-        hipError_t status = hipMalloc(&devicePtr, (size_t)len * sizeof(jint));
-        checkHip(env, status, "hipMalloc metadata failed");
-        status = hipMemcpy(devicePtr, elements, (size_t)len * sizeof(jint), hipMemcpyHostToDevice);
-        checkHip(env, status, "hipMemcpy metadata failed");
-        (*env)->ReleaseIntArrayElements(env, array, elements, JNI_ABORT);
-        void *storage = allocArg(pack, sizeof(void *));
-        if (storage == NULL) {
-          hipFree(devicePtr);
+        if (!addMetadataDeviceCopy(env, pack, i, elements, (size_t)len * sizeof(jint))) {
+          (*env)->ReleaseIntArrayElements(env, array, elements, JNI_ABORT);
           freeArgsPack(pack);
-          throwRuntime(env, "Failed to allocate metadata pointer storage");
           return 0;
         }
-        *(void **)storage = devicePtr;
-        pack->params[i] = storage;
-        pack->deviceAllocs[pack->deviceAllocCount++] = devicePtr;
-        continue;
-#else
         (*env)->ReleaseIntArrayElements(env, array, elements, JNI_ABORT);
-        freeArgsPack(pack);
-        throwUnsupported(env, "HIP headers not available");
-        return 0;
-#endif
+        continue;
       }
 
       freeArgsPack(pack);

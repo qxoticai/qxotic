@@ -4,6 +4,9 @@ import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
 import com.qxotic.jota.runtime.spi.RuntimeProbe;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
 
 public final class OpenClRuntimeProvider extends DeviceRuntimeProvider {
 
@@ -52,7 +55,29 @@ public final class OpenClRuntimeProvider extends DeviceRuntimeProvider {
     }
 
     @Override
-    public DeviceRuntime create(int deviceIndex) {
+    public DeviceRuntime create(long deviceIndex) {
         return new OpenClDeviceRuntime(deviceType().deviceIndex(deviceIndex));
+    }
+
+    @Override
+    public Map<String, String> properties(int deviceIndex) {
+        if (!OpenClRuntime.isAvailable()) {
+            return Map.of();
+        }
+        var props = new LinkedHashMap<String, String>();
+        props.put("device.name", OpenClRuntime.deviceName());
+        props.put("device.vendor", OpenClRuntime.deviceVendor());
+        props.put("device.kind", OpenClRuntime.selectedDeviceType().toLowerCase());
+        props.put("opencl.platform", OpenClRuntime.selectedPlatformName());
+        return Map.copyOf(props);
+    }
+
+    @Override
+    public Set<String> capabilities(int deviceIndex) {
+        if (!OpenClRuntime.isAvailable()) {
+            return Set.of();
+        }
+        String kind = OpenClRuntime.selectedDeviceType().toLowerCase();
+        return Set.of(kind, "fp32", "kernel.compilation");
     }
 }

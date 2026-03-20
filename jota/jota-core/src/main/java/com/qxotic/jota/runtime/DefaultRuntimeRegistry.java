@@ -7,15 +7,16 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.function.Supplier;
+import java.util.function.Function;
 
 public final class DefaultRuntimeRegistry implements RuntimeRegistry {
 
     /** name/alias → resolved concrete Device (e.g., "native" → Device(PANAMA, 0)) */
     private final Map<String, Device> aliases = new ConcurrentHashMap<>();
 
-    /** concrete device → lazy factory */
-    private final Map<Device, Supplier<DeviceRuntime>> factories = new ConcurrentHashMap<>();
+    /** concrete device -> lazy factory */
+    private final Map<Device, Function<Device, DeviceRuntime>> factories =
+            new ConcurrentHashMap<>();
 
     /** cache of created runtimes (populated lazily) */
     private final Map<Device, DeviceRuntime> runtimes = new ConcurrentHashMap<>();
@@ -27,12 +28,12 @@ public final class DefaultRuntimeRegistry implements RuntimeRegistry {
      * Registers a lazy factory for a concrete device.
      *
      * @param device the concrete (indexed) device
-     * @param factory supplier that creates the runtime on first access
+     * @param factory function that creates the runtime for the requested device on first access
      */
-    public void registerFactory(Device device, Supplier<DeviceRuntime> factory) {
+    public void registerFactory(Device device, Function<Device, DeviceRuntime> factory) {
         Objects.requireNonNull(device, "device");
         Objects.requireNonNull(factory, "factory");
-        Supplier<DeviceRuntime> existing = factories.putIfAbsent(device, factory);
+        Function<Device, DeviceRuntime> existing = factories.putIfAbsent(device, factory);
         if (existing != null) {
             throw new IllegalStateException("Factory already registered for device " + device);
         }
@@ -69,11 +70,11 @@ public final class DefaultRuntimeRegistry implements RuntimeRegistry {
         return runtimes.computeIfAbsent(
                 device,
                 d -> {
-                    Supplier<DeviceRuntime> factory = factories.get(d);
+                    Function<Device, DeviceRuntime> factory = factories.get(d);
                     if (factory == null) {
                         throw new IllegalStateException("No runtime registered for " + d);
                     }
-                    DeviceRuntime runtime = factory.get();
+                    DeviceRuntime runtime = factory.apply(d);
                     if (runtime == null) {
                         throw new IllegalStateException(
                                 "Runtime factory returned null for device " + d);

@@ -2,24 +2,13 @@ package com.qxotic.jota;
 
 import java.util.Objects;
 
-public final class Device {
-    private final DeviceType type;
-    private final long index;
-
-    Device(DeviceType type, long index) {
+public record Device(DeviceType type, long index) {
+    public Device(DeviceType type, long index) {
         this.type = Objects.requireNonNull(type, "type");
         if (index < 0) {
             throw new IllegalArgumentException("index must be >= 0");
         }
         this.index = index;
-    }
-
-    public DeviceType type() {
-        return type;
-    }
-
-    public long index() {
-        return index;
     }
 
     public boolean belongsTo(DeviceType type) {
@@ -43,11 +32,6 @@ public final class Device {
             return false;
         }
         return index == device.index && type.equals(device.type);
-    }
-
-    @Override
-    public int hashCode() {
-        return 31 * type.hashCode() + (int) index;
     }
 
     @Override

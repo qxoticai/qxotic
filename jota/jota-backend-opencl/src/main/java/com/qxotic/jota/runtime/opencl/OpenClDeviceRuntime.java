@@ -4,8 +4,6 @@ import com.qxotic.jota.Device;
 import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.runtime.ComputeEngine;
-import com.qxotic.jota.runtime.DeviceCapabilities;
-import com.qxotic.jota.runtime.DeviceProperties;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.FileKernelProgramStore;
 import com.qxotic.jota.runtime.KernelBackend;
@@ -13,10 +11,10 @@ import com.qxotic.jota.runtime.KernelCachePaths;
 import com.qxotic.jota.runtime.KernelProgramStore;
 import com.qxotic.jota.runtime.KernelService;
 import java.nio.file.Path;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 public final class OpenClDeviceRuntime implements DeviceRuntime {
 
@@ -73,25 +71,27 @@ public final class OpenClDeviceRuntime implements DeviceRuntime {
     }
 
     @Override
-    public DeviceProperties properties() {
-        var props = new LinkedHashMap<String, Object>();
-        props.put(DeviceProperties.DEVICE_NAME, OpenClRuntime.deviceName());
-        props.put(DeviceProperties.VENDOR, OpenClRuntime.deviceVendor());
-        props.put(DeviceProperties.GLOBAL_MEMORY_BYTES, OpenClRuntime.deviceTotalMem());
-        props.put(DeviceProperties.SHARED_MEMORY_BYTES, OpenClRuntime.deviceSharedMemPerBlock());
-        props.put(DeviceProperties.MAX_ALLOCATION_BYTES, OpenClRuntime.deviceMaxMemAllocSize());
-        props.put(DeviceProperties.COMPUTE_UNITS, (long) OpenClRuntime.deviceComputeUnits());
-        props.put(DeviceProperties.CLOCK_MHZ, (long) OpenClRuntime.deviceClockRateMHz());
-        props.put(DeviceProperties.MAX_THREADS_PER_BLOCK, OpenClRuntime.deviceMaxThreadsPerBlock());
-        return new DeviceProperties(props);
+    public Map<String, String> properties() {
+        return Map.of(
+                "device.name",
+                OpenClRuntime.deviceName(),
+                "device.vendor",
+                OpenClRuntime.deviceVendor(),
+                "device.kind",
+                OpenClRuntime.selectedDeviceType().toLowerCase(),
+                "opencl.platform",
+                OpenClRuntime.selectedPlatformName());
     }
 
     @Override
-    public DeviceCapabilities capabilities() {
-        var caps = new LinkedHashSet<String>();
-        caps.add(DeviceCapabilities.FP32);
-        caps.add(DeviceCapabilities.KERNEL_COMPILATION);
-        return new DeviceCapabilities(caps);
+    public Set<String> capabilities() {
+        return Set.of(
+                OpenClRuntime.selectedDeviceType().toLowerCase(), "fp32", "kernel.compilation");
+    }
+
+    @Override
+    public String toString() {
+        return "DeviceRuntime{device=" + device() + "}";
     }
 
     private static int selectedDeviceIndex() {

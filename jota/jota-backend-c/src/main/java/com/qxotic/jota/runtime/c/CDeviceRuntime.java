@@ -4,8 +4,6 @@ import com.qxotic.jota.Device;
 import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.runtime.ComputeEngine;
-import com.qxotic.jota.runtime.DeviceCapabilities;
-import com.qxotic.jota.runtime.DeviceProperties;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.FileKernelProgramStore;
 import com.qxotic.jota.runtime.KernelBackend;
@@ -14,10 +12,10 @@ import com.qxotic.jota.runtime.KernelProgramStore;
 import com.qxotic.jota.runtime.KernelService;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 public final class CDeviceRuntime implements DeviceRuntime {
 
@@ -69,25 +67,31 @@ public final class CDeviceRuntime implements DeviceRuntime {
     }
 
     @Override
-    public DeviceProperties properties() {
-        var props = new LinkedHashMap<String, Object>();
+    public Map<String, String> properties() {
         Runtime rt = Runtime.getRuntime();
-        props.put(DeviceProperties.DEVICE_NAME, "C Host");
-        props.put(DeviceProperties.VENDOR, System.getProperty("os.name"));
-        props.put(DeviceProperties.ARCHITECTURE, System.getProperty("os.arch"));
-        props.put(DeviceProperties.GLOBAL_MEMORY_BYTES, rt.maxMemory());
-        props.put(DeviceProperties.COMPUTE_UNITS, (long) rt.availableProcessors());
-        return new DeviceProperties(props);
+        return Map.of(
+                "device.name",
+                "C Host",
+                "device.vendor",
+                System.getProperty("os.name"),
+                "device.architecture",
+                System.getProperty("os.arch"),
+                "memory.global.bytes",
+                Long.toString(rt.maxMemory()),
+                "compute.units",
+                Integer.toString(rt.availableProcessors()),
+                "device.kind",
+                "cpu");
     }
 
     @Override
-    public DeviceCapabilities capabilities() {
-        var caps = new LinkedHashSet<String>();
-        caps.add(DeviceCapabilities.FP32);
-        caps.add(DeviceCapabilities.FP64);
-        caps.add(DeviceCapabilities.KERNEL_COMPILATION);
-        caps.add(DeviceCapabilities.NATIVE_RUNTIME);
-        caps.add(DeviceCapabilities.UNIFIED_MEMORY);
-        return new DeviceCapabilities(caps);
+    public Set<String> capabilities() {
+        return Set.of(
+                "cpu", "fp32", "fp64", "kernel.compilation", "native.runtime", "unified.memory");
+    }
+
+    @Override
+    public String toString() {
+        return "DeviceRuntime{device=" + device() + "}";
     }
 }

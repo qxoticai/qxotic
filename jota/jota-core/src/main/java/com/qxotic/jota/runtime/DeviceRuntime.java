@@ -2,8 +2,11 @@ package com.qxotic.jota.runtime;
 
 import com.qxotic.jota.Device;
 import com.qxotic.jota.memory.MemoryDomain;
+import java.lang.foreign.MemorySegment;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 public interface DeviceRuntime {
     Device device();
@@ -18,20 +21,19 @@ public interface DeviceRuntime {
         return kernelService().isPresent();
     }
 
-    default DeviceProperties properties() {
-        return DeviceProperties.EMPTY;
+    default Map<String, String> properties() {
+        return Map.of();
     }
 
-    default DeviceCapabilities capabilities() {
-        return DeviceCapabilities.EMPTY;
+    default Set<String> capabilities() {
+        return Set.of();
     }
 
     /**
-     * Indicates whether this runtime can safely back the {@link Device#NATIVE} alias.
+     * Indicates whether this runtime can safely back the "native" device.
      *
-     * <p>By default runtimes are not eligible. CPU runtimes that operate on {@link
-     * java.lang.foreign.MemorySegment} and are intended as process-default runtimes should override
-     * this to {@code true}.
+     * <p>By default, runtimes are not eligible. CPU runtimes that operate on {@link MemorySegment}
+     * and are intended as process-default runtimes should override this to {@code true}.
      */
     default boolean supportsNativeRuntimeAlias() {
         return false;

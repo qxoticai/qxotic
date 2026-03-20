@@ -4,8 +4,6 @@ import com.qxotic.jota.Device;
 import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.runtime.ComputeEngine;
-import com.qxotic.jota.runtime.DeviceCapabilities;
-import com.qxotic.jota.runtime.DeviceProperties;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.FileKernelProgramStore;
 import com.qxotic.jota.runtime.KernelBackend;
@@ -13,10 +11,10 @@ import com.qxotic.jota.runtime.KernelCachePaths;
 import com.qxotic.jota.runtime.KernelProgramStore;
 import com.qxotic.jota.runtime.KernelService;
 import java.nio.file.Path;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 public final class MetalDeviceRuntime implements DeviceRuntime {
 
@@ -63,25 +61,31 @@ public final class MetalDeviceRuntime implements DeviceRuntime {
     }
 
     @Override
-    public DeviceProperties properties() {
-        var props = new LinkedHashMap<String, Object>();
-        props.put(DeviceProperties.DEVICE_NAME, MetalRuntime.deviceName());
-        props.put(DeviceProperties.VENDOR, "Apple");
-        props.put(DeviceProperties.ARCHITECTURE, System.getProperty("os.arch"));
-        props.put(DeviceProperties.GLOBAL_MEMORY_BYTES, MetalRuntime.deviceTotalMem());
-        props.put(DeviceProperties.SHARED_MEMORY_BYTES, MetalRuntime.deviceSharedMemPerBlock());
-        props.put(DeviceProperties.MAX_THREADS_PER_BLOCK, MetalRuntime.deviceMaxThreadsPerBlock());
-        return new DeviceProperties(props);
+    public Map<String, String> properties() {
+        return Map.of(
+                "device.name",
+                MetalRuntime.deviceName(),
+                "device.vendor",
+                "Apple",
+                "device.architecture",
+                System.getProperty("os.arch"),
+                "device.kind",
+                "gpu");
     }
 
     @Override
-    public DeviceCapabilities capabilities() {
-        var caps = new LinkedHashSet<String>();
-        caps.add(DeviceCapabilities.FP16);
-        caps.add(DeviceCapabilities.FP32);
-        caps.add(DeviceCapabilities.KERNEL_COMPILATION);
-        caps.add(DeviceCapabilities.UNIFIED_MEMORY);
-        caps.add(DeviceCapabilities.CONCURRENT_KERNELS);
-        return new DeviceCapabilities(caps);
+    public Set<String> capabilities() {
+        return Set.of(
+                "gpu",
+                "fp16",
+                "fp32",
+                "kernel.compilation",
+                "unified.memory",
+                "concurrent.kernels");
+    }
+
+    @Override
+    public String toString() {
+        return "DeviceRuntime{device=" + device() + "}";
     }
 }
