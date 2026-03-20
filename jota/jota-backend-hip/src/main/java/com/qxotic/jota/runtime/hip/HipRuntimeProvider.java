@@ -7,6 +7,8 @@ import com.qxotic.jota.runtime.spi.RuntimeProbe;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 public final class HipRuntimeProvider extends DeviceRuntimeProvider {
@@ -59,8 +61,40 @@ public final class HipRuntimeProvider extends DeviceRuntimeProvider {
     }
 
     @Override
-    public DeviceRuntime create(int deviceIndex) {
+    public DeviceRuntime create(long deviceIndex) {
         return new HipDeviceRuntime(deviceType().deviceIndex(deviceIndex));
+    }
+
+    @Override
+    public Map<String, String> properties(int deviceIndex) {
+        if (!HipRuntime.isAvailable()) {
+            return Map.of();
+        }
+        return Map.of(
+                "device.name",
+                HipRuntime.deviceName(deviceIndex),
+                "device.vendor",
+                "AMD",
+                "device.architecture",
+                HipRuntime.deviceArchName(deviceIndex),
+                "device.kind",
+                "gpu");
+    }
+
+    @Override
+    public Set<String> capabilities(int deviceIndex) {
+        if (!HipRuntime.isAvailable()) {
+            return Set.of();
+        }
+        return Set.of(
+                "gpu",
+                "fp16",
+                "fp32",
+                "fp64",
+                "int8",
+                "kernel.compilation",
+                "atomic.32",
+                "atomic.64");
     }
 
     private static String hipccExecutable() {

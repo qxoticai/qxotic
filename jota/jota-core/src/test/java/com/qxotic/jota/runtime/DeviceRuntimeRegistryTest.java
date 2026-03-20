@@ -25,7 +25,7 @@ class DeviceRuntimeRegistryTest {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         Device logical = DeviceType.PANAMA.deviceIndex(0);
         DeviceRuntime runtime = panamaRuntime(logical);
-        registry.registerFactory(logical, () -> runtime);
+        registry.registerFactory(logical, d -> runtime);
 
         assertSame(runtime, registry.runtimeFor(logical));
         assertTrue(registry.hasRuntime(logical));
@@ -36,7 +36,7 @@ class DeviceRuntimeRegistryTest {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         Device logical = DeviceType.PANAMA.deviceIndex(0);
         DeviceRuntime runtime = panamaRuntime(logical);
-        registry.registerFactory(logical, () -> runtime);
+        registry.registerFactory(logical, d -> runtime);
 
         // Auto-alias: "panama" → Device("panama", 0)
         assertSame(runtime, registry.runtimeFor("panama"));
@@ -48,7 +48,7 @@ class DeviceRuntimeRegistryTest {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         Device logical = DeviceType.PANAMA.deviceIndex(0);
         DeviceRuntime runtime = panamaRuntime(logical);
-        registry.registerFactory(logical, () -> runtime);
+        registry.registerFactory(logical, d -> runtime);
 
         // native → panama → panama:0
         registry.registerAlias("native", logical);
@@ -64,7 +64,7 @@ class DeviceRuntimeRegistryTest {
         AtomicInteger createCount = new AtomicInteger(0);
         registry.registerFactory(
                 logical,
-                () -> {
+                d -> {
                     createCount.incrementAndGet();
                     return panamaRuntime(logical);
                 });
@@ -80,10 +80,10 @@ class DeviceRuntimeRegistryTest {
     void registerFactoryRejectsDuplicates() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         Device logical = DeviceType.PANAMA.deviceIndex(0);
-        registry.registerFactory(logical, () -> panamaRuntime(logical));
+        registry.registerFactory(logical, d -> panamaRuntime(logical));
         assertThrows(
                 IllegalStateException.class,
-                () -> registry.registerFactory(logical, () -> panamaRuntime(logical)));
+                () -> registry.registerFactory(logical, d -> panamaRuntime(logical)));
     }
 
     @Test
@@ -99,8 +99,8 @@ class DeviceRuntimeRegistryTest {
         Device cLogical = DeviceType.C.deviceIndex(0);
         DeviceRuntime panamaRt = panamaRuntime(panamaLogical);
         DeviceRuntime cRt = cRuntime(cLogical);
-        registry.registerFactory(panamaLogical, () -> panamaRt);
-        registry.registerFactory(cLogical, () -> cRt);
+        registry.registerFactory(panamaLogical, d -> panamaRt);
+        registry.registerFactory(cLogical, d -> cRt);
 
         registry.registerAlias("native", panamaLogical);
         assertSame(panamaRt, registry.runtimeFor("native"));
@@ -113,7 +113,7 @@ class DeviceRuntimeRegistryTest {
     void devicesReturnsOnlyConcreteDevices() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         Device panamaLogical = DeviceType.PANAMA.deviceIndex(0);
-        registry.registerFactory(panamaLogical, () -> panamaRuntime(panamaLogical));
+        registry.registerFactory(panamaLogical, d -> panamaRuntime(panamaLogical));
         registry.registerAlias("native", panamaLogical);
 
         assertTrue(registry.devices().contains(panamaLogical));
@@ -125,7 +125,7 @@ class DeviceRuntimeRegistryTest {
         Device requested = DeviceType.CUDA.deviceIndex(1);
         Device wrong = DeviceType.CUDA.deviceIndex(0);
         registry.registerFactory(
-                requested, () -> new StubDeviceRuntime(wrong, null, new NoopEngine(wrong)));
+                requested, d -> new StubDeviceRuntime(wrong, null, new NoopEngine(wrong)));
 
         IllegalStateException error =
                 assertThrows(IllegalStateException.class, () -> registry.runtimeFor(requested));
@@ -136,7 +136,7 @@ class DeviceRuntimeRegistryTest {
     void runtimeFactoryMustNotReturnNullRuntime() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         Device requested = DeviceType.CUDA.deviceIndex(0);
-        registry.registerFactory(requested, () -> null);
+        registry.registerFactory(requested, d -> null);
 
         IllegalStateException error =
                 assertThrows(IllegalStateException.class, () -> registry.runtimeFor(requested));

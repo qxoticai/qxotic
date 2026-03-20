@@ -7,7 +7,10 @@ import com.qxotic.jota.runtime.mojo.bridge.MojoRuntime;
 import com.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
 import com.qxotic.jota.runtime.spi.RuntimeProbe;
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /** Registers Mojo as an explicit backend while reusing HIP device execution in v1. */
@@ -50,8 +53,23 @@ public final class MojoRuntimeProvider extends DeviceRuntimeProvider {
     }
 
     @Override
-    public DeviceRuntime create(int deviceIndex) {
+    public DeviceRuntime create(long deviceIndex) {
         return new MojoDeviceRuntime();
+    }
+
+    @Override
+    public Map<String, String> properties(int deviceIndex) {
+        var props = new LinkedHashMap<String, String>();
+        props.put("device.name", "Mojo (via HIP)");
+        props.put("device.vendor", "Modular");
+        props.put("device.kind", "gpu");
+        props.put("mojo.execution.backend", "hip");
+        return Map.copyOf(props);
+    }
+
+    @Override
+    public Set<String> capabilities(int deviceIndex) {
+        return Set.of("gpu", "fp32", "kernel.compilation");
     }
 
     private static boolean isCommandAvailable(List<String> command) {

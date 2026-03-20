@@ -354,7 +354,7 @@ public final class Environment {
         message.append('\n')
                 .append(
                         "- Explicit backend override: -Djota.native.backend=<backend-id>"
-                                + " (e.g. panama, c, hip, cuda, mojo, opencl, metal)");
+                                + " (supported: auto, native, panama, c)");
         message.append('\n')
                 .append("- Ensure required backends are allowed by include/exclude filters");
         message.append('\n')
@@ -398,8 +398,7 @@ public final class Environment {
             int deviceCount = provider.deviceCount();
             for (int i = 0; i < deviceCount; i++) {
                 Device logical = deviceType.deviceIndex(i);
-                final int deviceIndex = i;
-                registry.registerFactory(logical, () -> provider.create(deviceIndex));
+                registry.registerFactory(logical, provider::create);
             }
         } catch (Throwable t) {
             RuntimeProbe failure =

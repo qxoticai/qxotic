@@ -59,7 +59,7 @@ class ConstantCreationAndArithmeticFoldingTest {
     <B> void materializesBroadcastedFloat(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.registerFactory(
-                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
+                domain.device(), d -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -88,7 +88,7 @@ class ConstantCreationAndArithmeticFoldingTest {
     <B> void materializesBroadcastedLong(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.registerFactory(
-                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
+                domain.device(), d -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -130,7 +130,7 @@ class ConstantCreationAndArithmeticFoldingTest {
     <B> void materializesScalarDouble(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.registerFactory(
-                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
+                domain.device(), d -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -159,7 +159,7 @@ class ConstantCreationAndArithmeticFoldingTest {
     <B> void materializesScalarLong(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.registerFactory(
-                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
+                domain.device(), d -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -188,7 +188,7 @@ class ConstantCreationAndArithmeticFoldingTest {
     <B> void scalarUsesEnvironmentDefaultDevice(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.registerFactory(
-                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
+                domain.device(), d -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -227,7 +227,7 @@ class ConstantCreationAndArithmeticFoldingTest {
     <B> void materializesZeros(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.registerFactory(
-                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
+                domain.device(), d -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -275,7 +275,7 @@ class ConstantCreationAndArithmeticFoldingTest {
     <B> void materializesOnes(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.registerFactory(
-                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
+                domain.device(), d -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -348,7 +348,7 @@ class ConstantCreationAndArithmeticFoldingTest {
     <B> void materializesFull(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.registerFactory(
-                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
+                domain.device(), d -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -378,7 +378,7 @@ class ConstantCreationAndArithmeticFoldingTest {
     <B> void ofFloatArray(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.registerFactory(
-                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
+                domain.device(), d -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -410,7 +410,7 @@ class ConstantCreationAndArithmeticFoldingTest {
     <B> void ofFloatArrayWithShape(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.registerFactory(
-                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
+                domain.device(), d -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -430,7 +430,7 @@ class ConstantCreationAndArithmeticFoldingTest {
     <B> void ofDoubleArray(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.registerFactory(
-                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
+                domain.device(), d -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -462,7 +462,7 @@ class ConstantCreationAndArithmeticFoldingTest {
     <B> void ofIntArray(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.registerFactory(
-                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
+                domain.device(), d -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(
@@ -493,7 +493,7 @@ class ConstantCreationAndArithmeticFoldingTest {
     <B> void ofLongArray(MemoryDomain<B> domain) {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.registerFactory(
-                domain.device(), () -> new StubDeviceRuntime<>(domain, dummyBackend()));
+                domain.device(), d -> new StubDeviceRuntime<>(domain, dummyBackend()));
         Environment environment = new Environment(domain.device(), DataType.FP32, registry);
 
         Environment.with(

@@ -37,4 +37,9 @@ public final class MojoDeviceRuntime implements DeviceRuntime {
     public Optional<KernelService> kernelService() {
         return Optional.of(executionEngine.kernelService());
     }
+
+    @Override
+    public String toString() {
+        return "DeviceRuntime{device=" + device() + "}";
+    }
 }

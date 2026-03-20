@@ -5,8 +5,11 @@ import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
 import com.qxotic.jota.runtime.spi.RuntimeProbe;
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 public final class MetalRuntimeProvider extends DeviceRuntimeProvider {
@@ -60,8 +63,34 @@ public final class MetalRuntimeProvider extends DeviceRuntimeProvider {
     }
 
     @Override
-    public DeviceRuntime create(int deviceIndex) {
+    public DeviceRuntime create(long deviceIndex) {
         return new MetalDeviceRuntime(deviceType().deviceIndex(deviceIndex));
+    }
+
+    @Override
+    public Map<String, String> properties(int deviceIndex) {
+        if (!MetalRuntime.isAvailable()) {
+            return Map.of();
+        }
+        var props = new LinkedHashMap<String, String>();
+        props.put("device.name", MetalRuntime.deviceName());
+        props.put("device.vendor", "Apple");
+        props.put("device.kind", "gpu");
+        return Map.copyOf(props);
+    }
+
+    @Override
+    public Set<String> capabilities(int deviceIndex) {
+        if (!MetalRuntime.isAvailable()) {
+            return Set.of();
+        }
+        return Set.of(
+                "gpu",
+                "fp16",
+                "fp32",
+                "kernel.compilation",
+                "unified.memory",
+                "concurrent.kernels");
     }
 
     private static boolean isMacOs() {

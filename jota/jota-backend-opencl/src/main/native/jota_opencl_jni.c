@@ -4,7 +4,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_WIN32)
+#define JOTA_STRCASECMP _stricmp
+#else
 #include <strings.h>
+#define JOTA_STRCASECMP strcasecmp
+#endif
 
 enum ScalarType {
   SC_BOOL = 0,
@@ -194,13 +199,13 @@ static DeviceTypePref parseDeviceType(const char *value, int *ok) {
   if (value == NULL || value[0] == '\0') {
     return PREF_AUTO;
   }
-  if (strcasecmp(value, "gpu") == 0) {
+  if (JOTA_STRCASECMP(value, "gpu") == 0) {
     return PREF_GPU;
   }
-  if (strcasecmp(value, "cpu") == 0) {
+  if (JOTA_STRCASECMP(value, "cpu") == 0) {
     return PREF_CPU;
   }
-  if (strcasecmp(value, "any") == 0) {
+  if (JOTA_STRCASECMP(value, "any") == 0) {
     return PREF_ANY;
   }
   if (ok != NULL) {

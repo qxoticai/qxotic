@@ -95,11 +95,6 @@ public final class CudaRuntime {
         return nativeDeviceMultiProcessorCount(deviceIndex);
     }
 
-    public static int deviceClockRateKHz(int deviceIndex) {
-        requireAvailable();
-        return nativeDeviceClockRateKHz(deviceIndex);
-    }
-
     public static int deviceWarpSize(int deviceIndex) {
         requireAvailable();
         return nativeDeviceWarpSize(deviceIndex);
@@ -145,11 +140,6 @@ public final class CudaRuntime {
         return nativeDeviceMemoryBusWidthBits(deviceIndex);
     }
 
-    public static int deviceMemoryClockRateKHz(int deviceIndex) {
-        requireAvailable();
-        return nativeDeviceMemoryClockRateKHz(deviceIndex);
-    }
-
     public static int deviceRegsPerBlock(int deviceIndex) {
         requireAvailable();
         return nativeDeviceRegsPerBlock(deviceIndex);
@@ -169,8 +159,6 @@ public final class CudaRuntime {
 
     private static native int nativeDeviceMultiProcessorCount(int deviceIndex);
 
-    private static native int nativeDeviceClockRateKHz(int deviceIndex);
-
     private static native int nativeDeviceWarpSize(int deviceIndex);
 
     private static native int nativeDeviceMaxThreadsPerBlock(int deviceIndex);
@@ -188,8 +176,6 @@ public final class CudaRuntime {
     private static native int nativeDeviceL2CacheSize(int deviceIndex);
 
     private static native int nativeDeviceMemoryBusWidthBits(int deviceIndex);
-
-    private static native int nativeDeviceMemoryClockRateKHz(int deviceIndex);
 
     private static native int nativeDeviceRegsPerBlock(int deviceIndex);
 
