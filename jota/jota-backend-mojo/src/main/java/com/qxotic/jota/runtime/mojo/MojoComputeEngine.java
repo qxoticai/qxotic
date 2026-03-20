@@ -59,7 +59,7 @@ final class MojoComputeEngine<T> implements ComputeEngine {
         this.executionEngine = executionEngine;
         this.memoryDomain = executionEngine.memoryDomain();
         this.kernelService = executionEngine.kernelService();
-        this.device = new Device(DeviceType.MOJO, 0);
+        this.device = memoryDomain.device();
     }
 
     @Override

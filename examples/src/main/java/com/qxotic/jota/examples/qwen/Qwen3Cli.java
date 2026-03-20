@@ -51,7 +51,10 @@ public final class Qwen3Cli {
     public static void main(String[] args) throws Exception {
         Options options = Options.parse(args);
         Environment env =
-                new Environment(Device.PANAMA, DataType.FP32, Environment.current().runtimes());
+                new Environment(
+                        Environment.current().runtimeFor("native").device(),
+                        DataType.FP32,
+                        Environment.current().runtimes());
         Environment.with(
                 env,
                 () -> {

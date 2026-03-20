@@ -16,7 +16,7 @@ final class NativeAutoAllocator
 
     @Override
     public Device device() {
-        return new Device(DeviceType.PANAMA, 0);
+        return DeviceType.PANAMA.deviceIndex(0);
     }
 
     @Override

@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Device;
 import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
@@ -19,6 +18,7 @@ import com.qxotic.jota.random.RandomAlgorithms;
 import com.qxotic.jota.random.RandomKey;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.Tracer;
+import com.qxotic.jota.testutil.ConfiguredTestDevice;
 import com.qxotic.jota.testutil.TestKernels;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;
@@ -184,7 +184,7 @@ class HipKernelSmokeTest {
         Environment current = Environment.current();
         Environment hipEnv =
                 new Environment(
-                        new Device(DeviceType.HIP, 0), current.defaultFloat(), current.runtimes());
+                        DeviceType.HIP.deviceIndex(0), current.defaultFloat(), current.runtimes());
         RandomKey key = RandomKey.of(2026L);
         int n = 64;
 
@@ -225,7 +225,7 @@ class HipKernelSmokeTest {
         HipTestAssumptions.assumeHipReady();
 
         Tensor src = Tensor.iota(12, DataType.FP32).view(Shape.of(3, 4)).transpose(0, 1);
-        Tensor dst = src.to(new Device(DeviceType.HIP, 0));
+        Tensor dst = src.to(ConfiguredTestDevice.resolve(DeviceType.HIP));
 
         assertTrue(dst.device().belongsTo(DeviceType.HIP));
         assertEquals(src.shape(), dst.shape());
@@ -236,7 +236,8 @@ class HipKernelSmokeTest {
         HipMemoryDomain device = HipMemoryDomain.instance();
         MemoryView<MemorySegment> hostDst = toHost(dst.materialize());
         MemoryView<MemorySegment> hostSrc =
-                (MemoryView<MemorySegment>) src.to(new Device(DeviceType.PANAMA, 0)).materialize();
+                (MemoryView<MemorySegment>)
+                        src.to(ConfiguredTestDevice.resolve(DeviceType.PANAMA)).materialize();
         MemoryAccess<MemorySegment> access = host.directAccess();
 
         long n = src.shape().size();
@@ -254,7 +255,7 @@ class HipKernelSmokeTest {
         HipTestAssumptions.assumeHipReady();
 
         Tensor src = Tensor.full(42L, Shape.of(1, 1)).broadcast(Shape.of(5, 7));
-        Tensor dst = src.to(new Device(DeviceType.HIP, 0));
+        Tensor dst = src.to(ConfiguredTestDevice.resolve(DeviceType.HIP));
 
         assertTrue(dst.device().belongsTo(DeviceType.HIP));
         assertEquals(src.shape(), dst.shape());
@@ -353,7 +354,7 @@ class HipKernelSmokeTest {
                         DataType.FP32,
                         Layout.rowMajor(Shape.flat(values.length)));
 
-        Tensor onHip = Tensor.of(hostView).to(new Device(DeviceType.HIP, 0));
+        Tensor onHip = Tensor.of(hostView).to(ConfiguredTestDevice.resolve(DeviceType.HIP));
         MemoryView<MemorySegment> roundTrip = toHost(onHip.materialize());
         MemoryAccess<MemorySegment> access = DomainFactory.ofMemorySegment().directAccess();
         for (int i = 0; i < values.length; i++) {
@@ -366,7 +367,9 @@ class HipKernelSmokeTest {
         @SuppressWarnings("unchecked")
         MemoryView<MemorySegment> hostView =
                 (MemoryView<MemorySegment>)
-                        Tensor.of(view).to(new Device(DeviceType.PANAMA, 0)).materialize();
+                        Tensor.of(view)
+                                .to(ConfiguredTestDevice.resolve(DeviceType.PANAMA))
+                                .materialize();
         return hostView;
     }
 

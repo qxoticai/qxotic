@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.testutil.ConfiguredTestDevice;
@@ -129,7 +129,7 @@ class ShiftOpTest {
     @Test
     void shiftWorksForNonContiguousInputs() {
         Assumptions.assumeTrue(
-                ConfiguredTestDevice.resolve() == Device.PANAMA,
+                ConfiguredTestDevice.resolve().belongsTo(DeviceType.PANAMA),
                 "Non-contiguous shift currently panama-only in runtime-agnostic lane");
 
         Tensor base = Tensor.iota(12, DataType.I32).view(Shape.of(3, 4));

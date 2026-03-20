@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryAccess;
@@ -33,7 +34,8 @@ class CustomKernelLaunchTest {
     static void setUp() {
         Device configured = ConfiguredTestDevice.resolve();
         Assumptions.assumeTrue(
-                configured == Device.PANAMA, "CustomKernelLaunchTest requires the Panama runtime");
+                configured.equals(ConfiguredTestDevice.resolve(DeviceType.PANAMA)),
+                "CustomKernelLaunchTest requires the Panama runtime");
         runtime = new PanamaDeviceRuntime();
     }
 

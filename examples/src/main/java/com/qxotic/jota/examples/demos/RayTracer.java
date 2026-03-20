@@ -51,7 +51,7 @@ public final class RayTracer {
         long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
         System.out.printf(
                 "Wrote %s [%dx%d] on %s in %d ms%n",
-                OUTPUT, WIDTH, HEIGHT, device.name(), elapsedMs);
+                OUTPUT, WIDTH, HEIGHT, device.runtimeId(), elapsedMs);
     }
 
     private static RenderResult render(int w, int h, int bounces) {

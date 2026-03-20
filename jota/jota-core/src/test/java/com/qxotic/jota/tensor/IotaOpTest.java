@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.testutil.ConfiguredTestDevice;
@@ -20,7 +20,7 @@ class IotaOpTest {
 
     private static void assumeArangeSupportedOnConfiguredDevice() {
         Assumptions.assumeTrue(
-                ConfiguredTestDevice.resolve() == Device.PANAMA,
+                ConfiguredTestDevice.resolve().belongsTo(DeviceType.PANAMA),
                 "Tensor.iota currently panama-only in runtime-agnostic lane");
     }
 

@@ -68,7 +68,7 @@ public final class Llama32CliQ8_0 {
     public static void main(String[] args) throws Exception {
         Options options = Options.parse(args);
         Environment env =
-                new Environment(Device.PANAMA, DataType.FP32, Environment.current().runtimes());
+                new Environment(options.device, DataType.FP32, Environment.current().runtimes());
         Environment.with(
                 env,
                 () -> {
@@ -2202,7 +2202,7 @@ public final class Llama32CliQ8_0 {
             this.runtime = Environment.current().runtimeFor(Device.defaultDevice());
             DeviceRuntime cRt;
             try {
-                cRt = Environment.current().runtimeFor(Device.C);
+                cRt = Environment.current().runtimeFor(DeviceType.C.deviceIndex(0));
             } catch (RuntimeException ex) {
                 cRt = null;
             }

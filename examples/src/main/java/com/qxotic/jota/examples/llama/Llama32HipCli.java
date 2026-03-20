@@ -52,13 +52,16 @@ public final class Llama32HipCli {
 
     public static void main(String[] args) throws Exception {
         Options options = Options.parse(args);
-        if (!Environment.current().runtimes().hasRuntime(Device.HIP)) {
+        if (!Environment.current().runtimes().hasRuntime(DeviceType.HIP.deviceIndex(0))) {
             throw new IllegalStateException(
                     "HIP runtime is not available. Build/load jota-runtime-hip and ROCm/HIP runtime"
                             + " first.");
         }
         Environment env =
-                new Environment(Device.HIP, DataType.FP32, Environment.current().runtimes());
+                new Environment(
+                        DeviceType.HIP.deviceIndex(0),
+                        DataType.FP32,
+                        Environment.current().runtimes());
         Environment.with(
                 env,
                 () -> {
@@ -545,7 +548,7 @@ public final class Llama32HipCli {
         MemoryView<?> view = tensor.materialize();
         MemoryDomain<MemorySegment> nativeDomain = Environment.current().nativeMemoryDomain();
         // If the tensor is on a device (e.g. HIP GPU), copy it to host memory first.
-        if (view.memory().device() != Device.PANAMA) {
+        if (!view.memory().device().belongsTo(DeviceType.PANAMA)) {
             MemoryView<MemorySegment> hostView =
                     MemoryView.of(
                             nativeDomain
@@ -1785,7 +1788,7 @@ public final class Llama32HipCli {
             this.runtime = Environment.current().runtimeFor(Device.defaultDevice());
             DeviceRuntime cRt;
             try {
-                cRt = Environment.current().runtimeFor(Device.C);
+                cRt = Environment.current().runtimeFor(DeviceType.C.deviceIndex(0));
             } catch (RuntimeException ex) {
                 cRt = null;
             }

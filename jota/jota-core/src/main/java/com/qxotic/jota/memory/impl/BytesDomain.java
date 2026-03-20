@@ -19,7 +19,7 @@ class BytesDomain implements MemoryDomain<byte[]> {
 
     @Override
     public Device device() {
-        return new Device(DeviceType.JAVA, 0);
+        return DeviceType.JAVA.deviceIndex(0);
     }
 
     @Override

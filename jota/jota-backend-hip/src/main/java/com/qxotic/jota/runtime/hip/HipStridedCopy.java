@@ -1,8 +1,6 @@
 package com.qxotic.jota.runtime.hip;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Device;
-import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.runtime.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -57,7 +55,7 @@ final class HipStridedCopy {
         int threads = 256;
         int blocks = (int) ((totalElements + threads - 1) / threads);
         LaunchConfig config = LaunchConfig.grid(blocks).block(threads);
-        ExecutionStream stream = new ExecutionStream(new Device(DeviceType.HIP, 0), null, true);
+        ExecutionStream stream = new ExecutionStream(src.memory().device(), null, true);
         exec.launch(config, args, stream);
     }
 

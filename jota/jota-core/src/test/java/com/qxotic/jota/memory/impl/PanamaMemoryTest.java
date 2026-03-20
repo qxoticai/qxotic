@@ -2,7 +2,7 @@ package com.qxotic.jota.memory.impl;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -19,7 +19,7 @@ class PanamaMemoryTest {
             assertSame(segment, memory.base());
             assertEquals(100, memory.byteSize());
             assertFalse(memory.isReadOnly());
-            assertTrue(memory.device().belongsTo(Device.PANAMA));
+            assertTrue(memory.device().belongsTo(DeviceType.PANAMA));
         }
     }
 

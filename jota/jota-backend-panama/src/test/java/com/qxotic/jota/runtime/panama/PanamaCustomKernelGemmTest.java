@@ -1,6 +1,6 @@
 package com.qxotic.jota.runtime.panama;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.KernelProgram;
 import com.qxotic.jota.testutil.AbstractCustomKernelGemmTest;
@@ -12,7 +12,8 @@ class PanamaCustomKernelGemmTest extends AbstractCustomKernelGemmTest {
     @Override
     protected void assumeRuntimeReady() {
         Assumptions.assumeTrue(
-                ConfiguredTestDevice.resolve() == Device.PANAMA,
+                ConfiguredTestDevice.resolve()
+                        .equals(ConfiguredTestDevice.resolve(DeviceType.PANAMA)),
                 "PanamaCustomKernelGemmTest requires the Panama runtime");
     }
 

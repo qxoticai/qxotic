@@ -1,7 +1,6 @@
 package com.qxotic.jota.runtime.opencl;
 
 import com.qxotic.jota.Device;
-import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import java.lang.ref.Cleaner;
 
@@ -10,10 +9,12 @@ final class OpenClMemory implements Memory<OpenClDevicePtr> {
     private static final Cleaner CLEANER = Cleaner.create();
 
     private final OpenClDevicePtr base;
+    private final Device device;
     private final long byteSize;
     private final Cleaner.Cleanable cleanable;
 
-    OpenClMemory(OpenClDevicePtr base, long byteSize) {
+    OpenClMemory(Device device, OpenClDevicePtr base, long byteSize) {
+        this.device = device;
         this.base = base;
         this.byteSize = byteSize;
         this.cleanable = CLEANER.register(this, new Releaser(base.handle()));
@@ -31,7 +32,7 @@ final class OpenClMemory implements Memory<OpenClDevicePtr> {
 
     @Override
     public Device device() {
-        return new Device(DeviceType.OPENCL, 0);
+        return device;
     }
 
     @Override

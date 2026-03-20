@@ -1,23 +1,19 @@
 package com.qxotic.jota.runtime.opencl;
 
 import com.qxotic.jota.Device;
-import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAllocator;
 
 final class OpenClMemoryAllocator implements MemoryAllocator<OpenClDevicePtr> {
+    private final Device device;
 
-    private static final OpenClMemoryAllocator INSTANCE = new OpenClMemoryAllocator();
-
-    static OpenClMemoryAllocator instance() {
-        return INSTANCE;
+    OpenClMemoryAllocator(Device device) {
+        this.device = device;
     }
-
-    private OpenClMemoryAllocator() {}
 
     @Override
     public Device device() {
-        return new Device(DeviceType.OPENCL, 0);
+        return device;
     }
 
     @Override
@@ -31,7 +27,7 @@ final class OpenClMemoryAllocator implements MemoryAllocator<OpenClDevicePtr> {
         if (handle == 0L) {
             throw new IllegalStateException("OpenCL allocation returned null handle");
         }
-        return new OpenClMemory(new OpenClDevicePtr(handle), byteSize);
+        return new OpenClMemory(device, new OpenClDevicePtr(handle), byteSize);
     }
 
     @Override

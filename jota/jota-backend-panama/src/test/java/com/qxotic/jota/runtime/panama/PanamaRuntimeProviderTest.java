@@ -9,7 +9,7 @@ class PanamaRuntimeProviderTest {
     @Test
     void providerToStringIsCompactAndDescriptive() {
         String text = new PanamaRuntimeProvider().toString();
-        assertTrue(text.contains("device=panama"));
+        assertTrue(text.contains("deviceType=panama"));
         assertTrue(text.contains("priority="));
     }
 }

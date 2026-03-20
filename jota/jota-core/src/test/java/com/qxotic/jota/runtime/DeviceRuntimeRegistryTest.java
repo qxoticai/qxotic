@@ -23,7 +23,7 @@ class DeviceRuntimeRegistryTest {
     @Test
     void registersFactoryAndResolvesRuntime() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        Device logical = new Device(DeviceType.PANAMA, 0);
+        Device logical = DeviceType.PANAMA.deviceIndex(0);
         DeviceRuntime runtime = panamaRuntime(logical);
         registry.registerFactory(logical, () -> runtime);
 
@@ -34,7 +34,7 @@ class DeviceRuntimeRegistryTest {
     @Test
     void resolvesAliasToConcreteDevice() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        Device logical = new Device(DeviceType.PANAMA, 0);
+        Device logical = DeviceType.PANAMA.deviceIndex(0);
         DeviceRuntime runtime = panamaRuntime(logical);
         registry.registerFactory(logical, () -> runtime);
 
@@ -46,7 +46,7 @@ class DeviceRuntimeRegistryTest {
     @Test
     void aliasResolutionIsTransitive() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        Device logical = new Device(DeviceType.PANAMA, 0);
+        Device logical = DeviceType.PANAMA.deviceIndex(0);
         DeviceRuntime runtime = panamaRuntime(logical);
         registry.registerFactory(logical, () -> runtime);
 
@@ -60,7 +60,7 @@ class DeviceRuntimeRegistryTest {
     @Test
     void factoryIsLazy() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        Device logical = new Device(DeviceType.PANAMA, 0);
+        Device logical = DeviceType.PANAMA.deviceIndex(0);
         AtomicInteger createCount = new AtomicInteger(0);
         registry.registerFactory(
                 logical,
@@ -79,7 +79,7 @@ class DeviceRuntimeRegistryTest {
     @Test
     void registerFactoryRejectsDuplicates() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        Device logical = new Device(DeviceType.PANAMA, 0);
+        Device logical = DeviceType.PANAMA.deviceIndex(0);
         registry.registerFactory(logical, () -> panamaRuntime(logical));
         assertThrows(
                 IllegalStateException.class,
@@ -95,8 +95,8 @@ class DeviceRuntimeRegistryTest {
     @Test
     void registerAliasCanSwitchTarget() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        Device panamaLogical = new Device(DeviceType.PANAMA, 0);
-        Device cLogical = new Device(DeviceType.C, 0);
+        Device panamaLogical = DeviceType.PANAMA.deviceIndex(0);
+        Device cLogical = DeviceType.C.deviceIndex(0);
         DeviceRuntime panamaRt = panamaRuntime(panamaLogical);
         DeviceRuntime cRt = cRuntime(cLogical);
         registry.registerFactory(panamaLogical, () -> panamaRt);
@@ -112,11 +112,35 @@ class DeviceRuntimeRegistryTest {
     @Test
     void devicesReturnsOnlyConcreteDevices() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        Device panamaLogical = new Device(DeviceType.PANAMA, 0);
+        Device panamaLogical = DeviceType.PANAMA.deviceIndex(0);
         registry.registerFactory(panamaLogical, () -> panamaRuntime(panamaLogical));
         registry.registerAlias("native", panamaLogical);
 
         assertTrue(registry.devices().contains(panamaLogical));
+    }
+
+    @Test
+    void runtimeFactoryMustReturnRuntimeBoundToRequestedDevice() {
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
+        Device requested = DeviceType.CUDA.deviceIndex(1);
+        Device wrong = DeviceType.CUDA.deviceIndex(0);
+        registry.registerFactory(
+                requested, () -> new StubDeviceRuntime(wrong, null, new NoopEngine(wrong)));
+
+        IllegalStateException error =
+                assertThrows(IllegalStateException.class, () -> registry.runtimeFor(requested));
+        assertTrue(error.getMessage().contains("returned runtime bound to"));
+    }
+
+    @Test
+    void runtimeFactoryMustNotReturnNullRuntime() {
+        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
+        Device requested = DeviceType.CUDA.deviceIndex(0);
+        registry.registerFactory(requested, () -> null);
+
+        IllegalStateException error =
+                assertThrows(IllegalStateException.class, () -> registry.runtimeFor(requested));
+        assertTrue(error.getMessage().contains("returned null"));
     }
 
     private static DeviceRuntime panamaRuntime(Device device) {

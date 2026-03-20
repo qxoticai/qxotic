@@ -48,7 +48,7 @@ public final class CComputeEngine implements ComputeEngine {
 
     public CComputeEngine(CMemoryDomain memoryDomain) {
         this.memoryDomain = memoryDomain;
-        this.device = new Device(DeviceType.C, 0);
+        this.device = memoryDomain.device();
     }
 
     @Override

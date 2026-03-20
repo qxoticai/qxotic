@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /** Registers Mojo as an explicit backend while reusing HIP device execution in v1. */
-public final class MojoRuntimeProvider implements DeviceRuntimeProvider {
+public final class MojoRuntimeProvider extends DeviceRuntimeProvider {
 
     @Override
     public DeviceType deviceType() {

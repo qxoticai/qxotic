@@ -30,7 +30,7 @@ final class ByteBufferMemory implements Memory<ByteBuffer> {
 
     @Override
     public Device device() {
-        return new Device(DeviceType.JAVA, 0);
+        return DeviceType.JAVA.deviceIndex(0);
     }
 
     @Override

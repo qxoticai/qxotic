@@ -1,12 +1,12 @@
 package com.qxotic.jota.runtime.mojo;
 
-import com.qxotic.jota.Device;
-import com.qxotic.jota.Environment;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.KernelProgram;
 import com.qxotic.jota.runtime.LaunchConfig;
 import com.qxotic.jota.runtime.mojo.bridge.MojoRuntime;
 import com.qxotic.jota.testutil.AbstractCustomKernelSoftmaxTest;
+import com.qxotic.jota.testutil.ConfiguredTestDevice;
 import org.junit.jupiter.api.Assumptions;
 
 class MojoCustomKernelSoftmaxTest extends AbstractCustomKernelSoftmaxTest {
@@ -15,8 +15,7 @@ class MojoCustomKernelSoftmaxTest extends AbstractCustomKernelSoftmaxTest {
     protected void assumeRuntimeReady() {
         Assumptions.assumeTrue(MojoRuntime.isAvailable(), "libjota_mojo.so is not available");
         Assumptions.assumeTrue(
-                Environment.current().runtimes().hasRuntime(Device.HIP),
-                "HIP runtime is unavailable");
+                ConfiguredTestDevice.hasRuntime(DeviceType.HIP), "HIP runtime is unavailable");
     }
 
     @Override

@@ -5,7 +5,7 @@ import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
 import com.qxotic.jota.runtime.spi.RuntimeProbe;
 
-public final class OpenClRuntimeProvider implements DeviceRuntimeProvider {
+public final class OpenClRuntimeProvider extends DeviceRuntimeProvider {
 
     @Override
     public DeviceType deviceType() {
@@ -53,6 +53,6 @@ public final class OpenClRuntimeProvider implements DeviceRuntimeProvider {
 
     @Override
     public DeviceRuntime create(int deviceIndex) {
-        return new OpenClDeviceRuntime();
+        return new OpenClDeviceRuntime(deviceType().deviceIndex(deviceIndex));
     }
 }

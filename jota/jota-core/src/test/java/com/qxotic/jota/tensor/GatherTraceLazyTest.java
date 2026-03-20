@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.testutil.ConfiguredTestDevice;
@@ -20,7 +20,7 @@ class GatherTraceLazyTest {
     @Test
     void tracedGatherMaterializesThroughLowering() {
         Assumptions.assumeTrue(
-                ConfiguredTestDevice.resolve() == Device.PANAMA,
+                ConfiguredTestDevice.resolve().belongsTo(DeviceType.PANAMA),
                 "Gather traced lowering currently panama-only in runtime-agnostic lane");
         Tensor table = Tensor.of(new float[] {0f, 1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f}, Shape.of(3, 3));
         Tensor indices = Tensor.of(new int[] {2, 0}, Shape.of(2));

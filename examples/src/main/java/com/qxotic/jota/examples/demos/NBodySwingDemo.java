@@ -2,6 +2,7 @@ package com.qxotic.jota.examples.demos;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
@@ -78,7 +79,7 @@ public final class NBodySwingDemo {
                         seed);
 
         NBodyPanel panel = new NBodyPanel(simulation, width, height);
-        JFrame frame = new JFrame("Jota Tensor N-Body Demo [" + device.leafName() + "]");
+        JFrame frame = new JFrame("Jota Tensor N-Body Demo [" + device.runtimeId() + "]");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setContentPane(panel);
         frame.pack();
@@ -144,10 +145,10 @@ public final class NBodySwingDemo {
     private static Device parseDevice(String value) {
         String normalized = value == null ? "panama" : value.trim().toLowerCase();
         return switch (normalized) {
-            case "panama" -> Device.PANAMA;
-            case "c" -> Device.C;
-            case "hip" -> Device.HIP;
-            case "opencl" -> Device.OPENCL;
+            case "panama" -> DeviceType.PANAMA.deviceIndex(0);
+            case "c" -> DeviceType.C.deviceIndex(0);
+            case "hip" -> DeviceType.HIP.deviceIndex(0);
+            case "opencl" -> DeviceType.OPENCL.deviceIndex(0);
             default ->
                     throw new IllegalArgumentException(
                             "Unsupported --device value: " + value + " (use panama|c|hip|opencl)");
@@ -160,7 +161,7 @@ public final class NBodySwingDemo {
             String status = diagnostic.probe().status().name().toLowerCase();
             String line =
                     "- "
-                            + diagnostic.device().leafName()
+                            + diagnostic.deviceType().id()
                             + " ["
                             + status
                             + "] "
@@ -174,9 +175,11 @@ public final class NBodySwingDemo {
 
     private static String unavailableDeviceMessage(Environment environment, Device device) {
         StringBuilder message =
-                new StringBuilder(
-                        "Requested device runtime is not available: " + device.name() + "\n");
-        for (RuntimeDiagnostic diagnostic : environment.runtimes().diagnosticsFor(device)) {
+                new StringBuilder("Requested device runtime is not available: " + device + "\n");
+        for (RuntimeDiagnostic diagnostic : environment.runtimeDiagnostics()) {
+            if (!diagnostic.deviceType().equals(device.type())) {
+                continue;
+            }
             message.append("- ")
                     .append(diagnostic.probe().status().name().toLowerCase())
                     .append(": ")
@@ -361,7 +364,8 @@ public final class NBodySwingDemo {
 
             this.vecShape = Shape.of(count, 1);
             this.pairShape = Shape.of(count, count);
-            this.stabilizeLazyState = Device.HIP.equals(Environment.current().defaultDevice());
+            this.stabilizeLazyState =
+                    Environment.current().defaultDevice().belongsTo(DeviceType.HIP);
 
             float[] xArr = new float[count];
             float[] yArr = new float[count];

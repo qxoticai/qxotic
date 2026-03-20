@@ -36,15 +36,20 @@ public final class AvailableBackends {
         }
 
         Set<Device> targets = new LinkedHashSet<>();
-        targets.add(new Device(DeviceType.PANAMA, 0));
-        for (Device device :
+        targets.add(current.resolveRuntime("native"));
+        for (DeviceType type :
                 List.of(
-                        new Device(DeviceType.C, 0),
-                        new Device(DeviceType.HIP, 0),
-                        new Device(DeviceType.CUDA, 0),
-                        new Device(DeviceType.MOJO, 0),
-                        new Device(DeviceType.OPENCL, 0),
-                        new Device(DeviceType.METAL, 0))) {
+                        DeviceType.PANAMA,
+                        DeviceType.C,
+                        DeviceType.HIP,
+                        DeviceType.CUDA,
+                        DeviceType.MOJO,
+                        DeviceType.OPENCL,
+                        DeviceType.METAL)) {
+            if (!current.runtimes().hasRuntime(type.id())) {
+                continue;
+            }
+            Device device = current.resolveRuntime(type);
             if (isAvailable(current, device)) {
                 targets.add(device);
             }

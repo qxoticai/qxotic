@@ -25,7 +25,11 @@ public final class OpenClDeviceRuntime implements DeviceRuntime {
     private final KernelService kernelService;
 
     public OpenClDeviceRuntime() {
-        this(OpenClMemoryDomain.instance());
+        this(DeviceType.OPENCL.deviceIndex(selectedDeviceIndex()));
+    }
+
+    public OpenClDeviceRuntime(Device device) {
+        this(new OpenClMemoryDomain(device));
     }
 
     public OpenClDeviceRuntime(OpenClMemoryDomain memoryDomain) {
@@ -88,5 +92,15 @@ public final class OpenClDeviceRuntime implements DeviceRuntime {
         caps.add(DeviceCapabilities.FP32);
         caps.add(DeviceCapabilities.KERNEL_COMPILATION);
         return new DeviceCapabilities(caps);
+    }
+
+    private static int selectedDeviceIndex() {
+        String token = System.getProperty(OpenClRuntime.DEVICE_INDEX_PROPERTY, "0");
+        try {
+            int index = Integer.parseInt(token.trim());
+            return Math.max(index, 0);
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
     }
 }

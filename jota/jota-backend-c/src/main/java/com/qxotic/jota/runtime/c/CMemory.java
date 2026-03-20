@@ -1,7 +1,6 @@
 package com.qxotic.jota.runtime.c;
 
 import com.qxotic.jota.Device;
-import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
@@ -9,9 +8,11 @@ import java.util.Objects;
 final class CMemory implements Memory<MemorySegment> {
 
     private final MemorySegment segment;
+    private final Device device;
     private final long mallocAddress;
 
-    CMemory(MemorySegment segment, long mallocAddress) {
+    CMemory(Device device, MemorySegment segment, long mallocAddress) {
+        this.device = Objects.requireNonNull(device, "device");
         this.segment = Objects.requireNonNull(segment, "segment");
         this.mallocAddress = mallocAddress;
     }
@@ -28,7 +29,7 @@ final class CMemory implements Memory<MemorySegment> {
 
     @Override
     public Device device() {
-        return new Device(DeviceType.C, 0);
+        return device;
     }
 
     @Override

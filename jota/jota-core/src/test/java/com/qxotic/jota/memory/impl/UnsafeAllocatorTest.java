@@ -2,7 +2,7 @@ package com.qxotic.jota.memory.impl;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.ScopedMemory;
 import com.qxotic.jota.memory.ScopedMemoryAllocator;
 import java.lang.foreign.MemorySegment;
@@ -19,7 +19,7 @@ class UnsafeAllocatorTest {
             assertNotNull(memory);
             assertEquals(100, memory.byteSize());
             assertFalse(memory.isReadOnly());
-            assertTrue(memory.device().belongsTo(Device.PANAMA));
+            assertTrue(memory.device().belongsTo(DeviceType.PANAMA));
             assertNotNull(memory.base());
         }
     }
@@ -35,7 +35,7 @@ class UnsafeAllocatorTest {
 
     @Test
     void testDevice() {
-        assertTrue(unsafeAllocator.device().belongsTo(Device.PANAMA));
+        assertTrue(unsafeAllocator.device().belongsTo(DeviceType.PANAMA));
     }
 
     @Test

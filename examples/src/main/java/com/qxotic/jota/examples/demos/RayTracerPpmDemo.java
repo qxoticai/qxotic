@@ -48,7 +48,7 @@ public final class RayTracerPpmDemo {
         long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
 
         System.out.println(
-                "Wrote " + output + " [" + width + "x" + height + "] on " + device.name());
+                "Wrote " + output + " [" + width + "x" + height + "] on " + device.runtimeId());
         System.out.println("Render time: " + elapsedMs + " ms");
     }
 

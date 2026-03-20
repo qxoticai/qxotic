@@ -8,7 +8,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-public final class CRuntimeProvider implements DeviceRuntimeProvider {
+public final class CRuntimeProvider extends DeviceRuntimeProvider {
 
     @Override
     public DeviceType deviceType() {
@@ -33,7 +33,7 @@ public final class CRuntimeProvider implements DeviceRuntimeProvider {
 
     @Override
     public DeviceRuntime create(int deviceIndex) {
-        return new CDeviceRuntime();
+        return new CDeviceRuntime(deviceType().deviceIndex(deviceIndex));
     }
 
     private static boolean isCommandAvailable(List<String> command) {

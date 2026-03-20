@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.jota.BFloat16;
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
@@ -29,11 +29,15 @@ class CKernelSmokeTest {
         assumeCBackendAvailable();
 
         Environment current = Environment.current();
-        Environment cEnv = new Environment(Device.C, current.defaultFloat(), current.runtimes());
+        Environment cEnv =
+                new Environment(
+                        DeviceType.C.deviceIndex(0), current.defaultFloat(), current.runtimes());
 
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>)
-                        Environment.current().runtimeFor(Device.C).memoryDomain();
+                        Environment.current()
+                                .runtimeFor(DeviceType.C.deviceIndex(0))
+                                .memoryDomain();
         MemoryView<MemorySegment> inputView =
                 createFp32Input(domain, new float[] {-4f, -3f, -2f, -1f, 0f, 1f, 2f, 3f});
         Tensor input = Tensor.of(inputView);
@@ -61,11 +65,15 @@ class CKernelSmokeTest {
         assumeCBackendAvailable();
 
         Environment current = Environment.current();
-        Environment cEnv = new Environment(Device.C, current.defaultFloat(), current.runtimes());
+        Environment cEnv =
+                new Environment(
+                        DeviceType.C.deviceIndex(0), current.defaultFloat(), current.runtimes());
 
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>)
-                        Environment.current().runtimeFor(Device.C).memoryDomain();
+                        Environment.current()
+                                .runtimeFor(DeviceType.C.deviceIndex(0))
+                                .memoryDomain();
         MemoryView<MemorySegment> inputView = createFp16Input(domain, new float[] {1f, 2f, 3f, 4f});
         Tensor input = Tensor.of(inputView);
 
@@ -92,11 +100,15 @@ class CKernelSmokeTest {
         assumeCBackendAvailable();
 
         Environment current = Environment.current();
-        Environment cEnv = new Environment(Device.C, current.defaultFloat(), current.runtimes());
+        Environment cEnv =
+                new Environment(
+                        DeviceType.C.deviceIndex(0), current.defaultFloat(), current.runtimes());
 
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>)
-                        Environment.current().runtimeFor(Device.C).memoryDomain();
+                        Environment.current()
+                                .runtimeFor(DeviceType.C.deviceIndex(0))
+                                .memoryDomain();
         MemoryView<MemorySegment> inputView = createBf16Input(domain, new float[] {1f, 2f, 3f, 4f});
         Tensor input = Tensor.of(inputView);
 
@@ -123,7 +135,9 @@ class CKernelSmokeTest {
         assumeCBackendAvailable();
 
         Environment current = Environment.current();
-        Environment cEnv = new Environment(Device.C, current.defaultFloat(), current.runtimes());
+        Environment cEnv =
+                new Environment(
+                        DeviceType.C.deviceIndex(0), current.defaultFloat(), current.runtimes());
         RandomKey key = RandomKey.of(2026L);
         int n = 64;
 
@@ -142,7 +156,9 @@ class CKernelSmokeTest {
 
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>)
-                        Environment.current().runtimeFor(Device.C).memoryDomain();
+                        Environment.current()
+                                .runtimeFor(DeviceType.C.deviceIndex(0))
+                                .memoryDomain();
         MemoryAccess<MemorySegment> access = domain.directAccess();
 
         @SuppressWarnings("unchecked")

@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.testutil.ConfiguredTestDevice;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
@@ -42,7 +42,7 @@ class MatmulOpTest {
     @Test
     void matmulHandlesNonContiguousInput() {
         Assumptions.assumeTrue(
-                ConfiguredTestDevice.resolve() == Device.PANAMA,
+                ConfiguredTestDevice.resolve().belongsTo(DeviceType.PANAMA),
                 "Non-contiguous matmul currently panama-only in runtime-agnostic lane");
 
         Tensor output = runMatmulNonContiguousLeft();
@@ -56,7 +56,7 @@ class MatmulOpTest {
     @Test
     void tracedMatmulHandlesNonContiguousInput() {
         Assumptions.assumeTrue(
-                ConfiguredTestDevice.resolve() == Device.PANAMA,
+                ConfiguredTestDevice.resolve().belongsTo(DeviceType.PANAMA),
                 "Non-contiguous matmul currently panama-only in runtime-agnostic lane");
 
         Tensor output = runTracedMatmulNonContiguousLeft();

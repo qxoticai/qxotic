@@ -229,7 +229,10 @@ public final class SimpleLlama {
     public static void main(String[] args) throws Exception {
         Options options = Options.parse(args);
         Environment env =
-                new Environment(Device.PANAMA, DataType.FP32, Environment.current().runtimes());
+                new Environment(
+                        DeviceType.PANAMA.deviceIndex(0),
+                        DataType.FP32,
+                        Environment.current().runtimes());
         Environment.with(
                 env,
                 () -> {
@@ -1496,14 +1499,15 @@ public final class SimpleLlama {
             DeviceRuntime cRt;
             RuntimeException cRuntimeError = null;
             try {
-                cRt = Environment.current().runtimeFor(Device.C);
+                cRt = Environment.current().runtimeFor(DeviceType.C.deviceIndex(0));
             } catch (RuntimeException ex) {
                 cRt = null;
                 cRuntimeError = ex;
             }
             if (C_BATCH_GEMM_BLAS_REQUIRED && cRt == null) {
                 throw new IllegalStateException(
-                        "BLAS-required mode enabled but Device.C runtime is unavailable",
+                        "BLAS-required mode enabled but DeviceType.C.deviceIndex(0) runtime is"
+                                + " unavailable",
                         cRuntimeError);
             }
             this.cRuntime = cRt;

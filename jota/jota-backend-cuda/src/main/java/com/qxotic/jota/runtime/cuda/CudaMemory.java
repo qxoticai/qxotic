@@ -1,7 +1,6 @@
 package com.qxotic.jota.runtime.cuda;
 
 import com.qxotic.jota.Device;
-import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import java.lang.ref.Cleaner;
 
@@ -10,10 +9,12 @@ final class CudaMemory implements Memory<CudaDevicePtr> {
     private static final Cleaner CLEANER = Cleaner.create();
 
     private final CudaDevicePtr handle;
+    private final Device device;
     private final long byteSize;
     private final Cleaner.Cleanable cleanable;
 
-    CudaMemory(CudaDevicePtr handle, long byteSize) {
+    CudaMemory(Device device, CudaDevicePtr handle, long byteSize) {
+        this.device = device;
         this.handle = handle;
         this.byteSize = byteSize;
         this.cleanable = CLEANER.register(this, new Releaser(handle.address()));
@@ -31,7 +32,7 @@ final class CudaMemory implements Memory<CudaDevicePtr> {
 
     @Override
     public Device device() {
-        return new Device(DeviceType.CUDA, 0);
+        return device;
     }
 
     @Override

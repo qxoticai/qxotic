@@ -37,16 +37,16 @@ final class DemoDevices {
             return environment.nativeRuntime().device();
         }
         String normalized = requested.trim().toLowerCase(Locale.ROOT);
-        Device parsed =
+        DeviceType type =
                 switch (normalized) {
                     case "native", "default", "auto" -> null;
-                    case "panama", "ffm", "jvm" -> new Device(DeviceType.PANAMA, 0);
-                    case "c" -> new Device(DeviceType.C, 0);
-                    case "hip" -> new Device(DeviceType.HIP, 0);
-                    case "cuda" -> new Device(DeviceType.CUDA, 0);
-                    case "opencl", "cl" -> new Device(DeviceType.OPENCL, 0);
-                    case "metal" -> new Device(DeviceType.METAL, 0);
-                    case "mojo" -> new Device(DeviceType.MOJO, 0);
+                    case "panama", "ffm", "jvm" -> DeviceType.PANAMA;
+                    case "c" -> DeviceType.C;
+                    case "hip" -> DeviceType.HIP;
+                    case "cuda" -> DeviceType.CUDA;
+                    case "opencl", "cl" -> DeviceType.OPENCL;
+                    case "metal" -> DeviceType.METAL;
+                    case "mojo" -> DeviceType.MOJO;
                     default ->
                             throw new IllegalArgumentException(
                                     "Unknown backend/device '"
@@ -54,9 +54,14 @@ final class DemoDevices {
                                             + "'. Use one of: native, panama, c, hip, cuda, opencl,"
                                             + " metal, mojo");
                 };
-        if (parsed == null) {
+        if (type == null) {
             return environment.nativeRuntime().device();
         }
+        if (!environment.runtimes().hasRuntime(type.id())) {
+            throw new IllegalStateException(
+                    unavailableDeviceMessage(environment, type.deviceIndex(0)));
+        }
+        Device parsed = environment.resolveRuntime(type);
         if (!environment.runtimes().hasRuntime(parsed)) {
             throw new IllegalStateException(unavailableDeviceMessage(environment, parsed));
         }

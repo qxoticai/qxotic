@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
@@ -300,7 +300,8 @@ class CMatmulKernelSmokeTest {
 
     private static Environment cEnvironment() {
         Environment current = Environment.current();
-        return new Environment(Device.C, current.defaultFloat(), current.runtimes());
+        return new Environment(
+                DeviceType.C.deviceIndex(0), current.defaultFloat(), current.runtimes());
     }
 
     @SuppressWarnings("unchecked")
@@ -308,7 +309,9 @@ class CMatmulKernelSmokeTest {
         MemoryView<MemorySegment> typed = (MemoryView<MemorySegment>) view;
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>)
-                        Environment.current().runtimeFor(Device.C).memoryDomain();
+                        Environment.current()
+                                .runtimeFor(DeviceType.C.deviceIndex(0))
+                                .memoryDomain();
         MemoryAccess<MemorySegment> access = domain.directAccess();
         long offset = Indexing.linearToOffset(typed, linearIndex);
         return access.readFloat(typed.memory(), offset);

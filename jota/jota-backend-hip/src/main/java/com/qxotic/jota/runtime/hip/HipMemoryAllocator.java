@@ -1,23 +1,19 @@
 package com.qxotic.jota.runtime.hip;
 
 import com.qxotic.jota.Device;
-import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAllocator;
 
 final class HipMemoryAllocator implements MemoryAllocator<HipDevicePtr> {
+    private final Device device;
 
-    private static final HipMemoryAllocator INSTANCE = new HipMemoryAllocator();
-
-    static HipMemoryAllocator instance() {
-        return INSTANCE;
+    HipMemoryAllocator(Device device) {
+        this.device = device;
     }
-
-    private HipMemoryAllocator() {}
 
     @Override
     public Device device() {
-        return new Device(DeviceType.HIP, 0);
+        return device;
     }
 
     @Override
@@ -27,7 +23,7 @@ final class HipMemoryAllocator implements MemoryAllocator<HipDevicePtr> {
         }
         HipRuntime.requireAvailable();
         long ptr = HipRuntime.malloc(byteSize);
-        return new HipMemory(new HipDevicePtr(ptr), byteSize);
+        return new HipMemory(device, new HipDevicePtr(ptr), byteSize);
     }
 
     @Override

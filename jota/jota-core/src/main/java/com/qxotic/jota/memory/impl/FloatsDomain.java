@@ -19,7 +19,7 @@ class FloatsDomain implements MemoryDomain<float[]> {
 
     @Override
     public Device device() {
-        return new Device(DeviceType.JAVA, 0);
+        return DeviceType.JAVA.deviceIndex(0);
     }
 
     @Override

@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.tensor.Tensor;
@@ -141,7 +141,7 @@ class TensorApiContractMatrixTest {
     @Test
     void gatherValidatesIndexTypeAndAxis() {
         Assumptions.assumeTrue(
-                ConfiguredTestDevice.resolve() == Device.PANAMA,
+                ConfiguredTestDevice.resolve().belongsTo(DeviceType.PANAMA),
                 "Gather API matrix currently panama-only in runtime-agnostic lane");
         Tensor table = Tensor.iota(15, DataType.FP32).view(Shape.of(5, 3));
         Tensor indices = Tensor.iota(4, DataType.I32).view(Shape.of(2, 2));

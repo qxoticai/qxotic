@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Device;
 import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
@@ -14,6 +13,7 @@ import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.memory.impl.DomainFactory;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.Tracer;
+import com.qxotic.jota.testutil.ConfiguredTestDevice;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;
 
@@ -277,7 +277,7 @@ class HipMatmulKernelSmokeTest {
     private static Environment hipEnvironment() {
         Environment current = Environment.current();
         return new Environment(
-                new Device(DeviceType.HIP, 0), current.defaultFloat(), current.runtimes());
+                DeviceType.HIP.deviceIndex(0), current.defaultFloat(), current.runtimes());
     }
 
     private static float readFp32(MemoryView<?> view, long linearIndex) {
@@ -290,7 +290,7 @@ class HipMatmulKernelSmokeTest {
     @SuppressWarnings("unchecked")
     private static MemoryView<MemorySegment> toHost(MemoryView<?> view) {
         return (MemoryView<MemorySegment>)
-                Tensor.of(view).to(new Device(DeviceType.PANAMA, 0)).materialize();
+                Tensor.of(view).to(ConfiguredTestDevice.resolve(DeviceType.PANAMA)).materialize();
     }
 
     private static void assertClose(float actual, float expected) {

@@ -117,6 +117,15 @@ public final class Environment {
         return runtimes;
     }
 
+    public Device resolveRuntime(String nameOrAlias) {
+        return runtimes.resolve(nameOrAlias);
+    }
+
+    public Device resolveRuntime(DeviceType type) {
+        Objects.requireNonNull(type, "type");
+        return resolveRuntime(type.id());
+    }
+
     public DeviceRuntime runtimeFor(Device device) {
         return runtimes.runtimeFor(device);
     }
@@ -180,8 +189,8 @@ public final class Environment {
             }
             return override;
         }
-        Device panama0 = new Device(DeviceType.PANAMA, 0);
-        Device c0 = new Device(DeviceType.C, 0);
+        Device panama0 = DeviceType.PANAMA.deviceIndex(0);
+        Device c0 = DeviceType.C.deviceIndex(0);
         if (!isNativeImageRuntime() && registry.hasRuntime(panama0)) {
             return panama0;
         }
@@ -207,19 +216,13 @@ public final class Environment {
         String value = rawValue.trim().toLowerCase();
         return switch (value) {
             case "auto", "native" -> null;
-            case "panama", "jvm", "ffm" -> new Device(DeviceType.PANAMA, 0);
-            case "c" -> new Device(DeviceType.C, 0);
-            case "hip" -> new Device(DeviceType.HIP, 0);
-            case "cuda" -> new Device(DeviceType.CUDA, 0);
-            case "mojo" -> new Device(DeviceType.MOJO, 0);
-            case "opencl" -> new Device(DeviceType.OPENCL, 0);
-            case "metal" -> new Device(DeviceType.METAL, 0);
+            case "panama", "jvm", "ffm" -> DeviceType.PANAMA.deviceIndex(0);
+            case "c" -> DeviceType.C.deviceIndex(0);
             default ->
                     throw new IllegalArgumentException(
                             "Unsupported jota.native.backend='"
                                     + rawValue
-                                    + "'. Supported values: auto, native, panama, c, hip, cuda,"
-                                    + " mojo, opencl, metal");
+                                    + "'. Supported values: auto, native, panama, c");
         };
     }
 
@@ -394,7 +397,7 @@ public final class Environment {
         try {
             int deviceCount = provider.deviceCount();
             for (int i = 0; i < deviceCount; i++) {
-                Device logical = new Device(deviceType, i);
+                Device logical = deviceType.deviceIndex(i);
                 final int deviceIndex = i;
                 registry.registerFactory(logical, () -> provider.create(deviceIndex));
             }

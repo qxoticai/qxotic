@@ -3,7 +3,7 @@ package com.qxotic.jota.runtime.metal;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
@@ -14,6 +14,7 @@ import com.qxotic.jota.memory.impl.DomainFactory;
 import com.qxotic.jota.memory.impl.MemoryFactory;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.Tracer;
+import com.qxotic.jota.testutil.ConfiguredTestDevice;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;
 
@@ -24,7 +25,8 @@ class MetalKernelSmokeTest {
         MetalTestAssumptions.assumeMetalReady();
 
         int n = 64;
-        Tensor input = Tensor.iota(n, DataType.FP32).to(Device.METAL);
+        Tensor input =
+                Tensor.iota(n, DataType.FP32).to(ConfiguredTestDevice.resolve(DeviceType.METAL));
         Tensor traced = Tracer.trace(input, t -> t.multiply(2.0f).add(1.0f));
         MemoryView<?> output = traced.materialize();
 
@@ -43,7 +45,7 @@ class MetalKernelSmokeTest {
 
         int n = 128;
         Tensor src = Tensor.iota(n, DataType.I32);
-        Tensor onMetal = src.to(Device.METAL);
+        Tensor onMetal = src.to(ConfiguredTestDevice.resolve(DeviceType.METAL));
         MemoryView<MemorySegment> host = toHost(onMetal.materialize());
 
         MemoryAccess<MemorySegment> access = DomainFactory.ofMemorySegment().directAccess();
@@ -64,7 +66,7 @@ class MetalKernelSmokeTest {
                 MemoryView.of(
                         hostMemory, DataType.FP32, Layout.rowMajor(Shape.flat(values.length)));
 
-        Tensor onMetal = Tensor.of(hostView).to(Device.METAL);
+        Tensor onMetal = Tensor.of(hostView).to(ConfiguredTestDevice.resolve(DeviceType.METAL));
         MemoryView<MemorySegment> roundTrip = toHost(onMetal.materialize());
         MemoryAccess<MemorySegment> access = DomainFactory.ofMemorySegment().directAccess();
         for (int i = 0; i < values.length; i++) {
@@ -76,7 +78,10 @@ class MetalKernelSmokeTest {
     private static MemoryView<MemorySegment> toHost(MemoryView<?> view) {
         @SuppressWarnings("unchecked")
         MemoryView<MemorySegment> hostView =
-                (MemoryView<MemorySegment>) Tensor.of(view).to(Device.PANAMA).materialize();
+                (MemoryView<MemorySegment>)
+                        Tensor.of(view)
+                                .to(ConfiguredTestDevice.resolve(DeviceType.PANAMA))
+                                .materialize();
         return hostView;
     }
 }

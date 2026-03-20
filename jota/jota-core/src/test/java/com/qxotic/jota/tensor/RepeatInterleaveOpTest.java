@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.testutil.ConfiguredTestDevice;
@@ -21,7 +21,7 @@ class RepeatInterleaveOpTest {
     @BeforeEach
     void assumeRepeatSupportedOnConfiguredDevice() {
         Assumptions.assumeTrue(
-                ConfiguredTestDevice.resolve() == Device.PANAMA,
+                ConfiguredTestDevice.resolve().belongsTo(DeviceType.PANAMA),
                 "Repeat currently panama-only in runtime-agnostic lane");
     }
 

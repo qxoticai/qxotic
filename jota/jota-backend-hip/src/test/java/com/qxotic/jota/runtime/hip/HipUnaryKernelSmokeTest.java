@@ -3,7 +3,6 @@ package com.qxotic.jota.runtime.hip;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Device;
 import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
@@ -14,6 +13,7 @@ import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.memory.impl.DomainFactory;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.Tracer;
+import com.qxotic.jota.testutil.ConfiguredTestDevice;
 import java.lang.foreign.MemorySegment;
 import org.junit.jupiter.api.Test;
 
@@ -56,7 +56,9 @@ class HipUnaryKernelSmokeTest {
         @SuppressWarnings("unchecked")
         MemoryView<MemorySegment> hostView =
                 (MemoryView<MemorySegment>)
-                        Tensor.of(view).to(new Device(DeviceType.PANAMA, 0)).materialize();
+                        Tensor.of(view)
+                                .to(ConfiguredTestDevice.resolve(DeviceType.PANAMA))
+                                .materialize();
         return hostView;
     }
 

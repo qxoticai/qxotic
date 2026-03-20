@@ -9,23 +9,26 @@ import com.qxotic.jota.memory.MemoryOperations;
 import com.qxotic.jota.memory.MemoryView;
 
 public final class CudaMemoryDomain implements MemoryDomain<CudaDevicePtr> {
-
-    private static final CudaMemoryDomain INSTANCE = new CudaMemoryDomain();
-
     public static CudaMemoryDomain instance() {
-        return INSTANCE;
+        return new CudaMemoryDomain(DeviceType.CUDA.deviceIndex(CudaRuntime.currentDevice()));
     }
 
-    private CudaMemoryDomain() {}
+    private final Device device;
+    private final MemoryAllocator<CudaDevicePtr> allocator;
+
+    public CudaMemoryDomain(Device device) {
+        this.device = device;
+        this.allocator = new CudaMemoryAllocator(device);
+    }
 
     @Override
     public Device device() {
-        return new Device(DeviceType.CUDA, 0);
+        return device;
     }
 
     @Override
     public MemoryAllocator<CudaDevicePtr> memoryAllocator() {
-        return CudaMemoryAllocator.instance();
+        return allocator;
     }
 
     @Override
