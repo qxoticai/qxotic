@@ -2,6 +2,7 @@ package com.qxotic.jota.tensor;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
+import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
@@ -10,7 +11,7 @@ import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
-import java.lang.foreign.MemorySegment;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -63,16 +64,16 @@ record ConstantComputation(long rawBits, DataType dataType, Shape shape, Device 
             writeValue(access, memory, 0, rawBits, dataType);
         } else {
             @SuppressWarnings("unchecked")
-            MemoryDomain<MemorySegment> hostDomain = Environment.current().nativeMemoryDomain();
-            MemoryAccess<MemorySegment> hostAccess = hostDomain.directAccess();
+            MemoryDomain<Object> hostDomain =
+                    (MemoryDomain<Object>) resolveHostDomainWithDirectAccess(Environment.current());
+            MemoryAccess<Object> hostAccess = hostDomain.directAccess();
             if (hostAccess == null) {
                 throw new UnsupportedOperationException(
                         "Cannot materialize constant: no direct host MemoryAccess available");
             }
-            Memory<MemorySegment> hostMemory =
-                    hostDomain.memoryAllocator().allocateMemory(dataType, 1);
+            Memory<Object> hostMemory = hostDomain.memoryAllocator().allocateMemory(dataType, 1);
             writeValue(hostAccess, hostMemory, 0, rawBits, dataType);
-            MemoryView<MemorySegment> hostScalar =
+            MemoryView<Object> hostScalar =
                     MemoryView.of(hostMemory, dataType, Layout.rowMajor(Shape.scalar()));
             MemoryView<B> deviceScalar =
                     MemoryView.of(memory, dataType, Layout.rowMajor(Shape.scalar()));
@@ -167,5 +168,27 @@ record ConstantComputation(long rawBits, DataType dataType, Shape shape, Device 
         } else {
             throw new IllegalArgumentException("Unsupported data type for constant: " + dataType);
         }
+    }
+
+    private static MemoryDomain<?> resolveHostDomainWithDirectAccess(Environment environment) {
+        LinkedHashSet<Device> candidates = new LinkedHashSet<>();
+        candidates.add(environment.nativeDevice());
+        candidates.add(environment.defaultDevice());
+        candidates.add(DeviceType.PANAMA.deviceIndex(0));
+        candidates.add(DeviceType.C.deviceIndex(0));
+        candidates.add(DeviceType.JAVA.deviceIndex(0));
+        candidates.addAll(environment.runtimes().devices());
+
+        for (Device candidate : candidates) {
+            if (!environment.runtimes().hasRuntimeFor(candidate)) {
+                continue;
+            }
+            MemoryDomain<?> domain = environment.runtimeFor(candidate).memoryDomain();
+            if (domain.directAccess() != null) {
+                return domain;
+            }
+        }
+        throw new UnsupportedOperationException(
+                "Cannot materialize constant: no direct host MemoryAccess available");
     }
 }

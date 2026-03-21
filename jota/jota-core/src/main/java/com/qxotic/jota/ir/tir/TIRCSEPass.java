@@ -44,15 +44,22 @@ public final class TIRCSEPass implements TIRPass {
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
-            if (!(o instanceof ExprKey other)) return false;
-            if (nodeClass != other.nodeClass) return false;
-            if (!Objects.equals(op, other.op)) return false;
-            if (dataType != other.dataType) return false;
-            if (!shape.equals(other.shape)) return false;
-            if (inputs.length != other.inputs.length) return false;
+            if (!(o
+                    instanceof
+                    ExprKey(
+                            Class<? extends TIRNode> aClass,
+                            Object op1,
+                            DataType type,
+                            Shape shape1,
+                            TIRNode[] inputs1))) return false;
+            if (nodeClass != aClass) return false;
+            if (!Objects.equals(op, op1)) return false;
+            if (dataType != type) return false;
+            if (!shape.equals(shape1)) return false;
+            if (inputs.length != inputs1.length) return false;
             // Use identity equality for inputs - they must be the same node instance
             for (int i = 0; i < inputs.length; i++) {
-                if (inputs[i] != other.inputs[i]) {
+                if (inputs[i] != inputs1[i]) {
                     return false;
                 }
             }
@@ -325,13 +332,16 @@ public final class TIRCSEPass implements TIRPass {
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
-            if (!(o instanceof ReductionKey other)) return false;
-            if (op != other.op) return false;
-            if (keepDims != other.keepDims) return false;
-            if (accumulatorType != other.accumulatorType) return false;
-            if (axes.length != other.axes.length) return false;
+            if (!(o
+                    instanceof
+                    ReductionKey(ReductionOperator op1, int[] axes1, boolean dims, DataType type)))
+                return false;
+            if (op != op1) return false;
+            if (keepDims != dims) return false;
+            if (accumulatorType != type) return false;
+            if (axes.length != axes1.length) return false;
             for (int i = 0; i < axes.length; i++) {
-                if (axes[i] != other.axes[i]) {
+                if (axes[i] != axes1[i]) {
                     return false;
                 }
             }

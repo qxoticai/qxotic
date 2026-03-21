@@ -44,11 +44,6 @@ final class FloatsMemory implements Memory<float[]> {
 
     @Override
     public String toString() {
-        return new StringBuilder("Memory{float[], byteSize=")
-                .append(byteSize())
-                .append(", device=")
-                .append(device())
-                .append('}')
-                .toString();
+        return "Memory{float[], byteSize=" + byteSize() + ", device=" + device() + '}';
     }
 }

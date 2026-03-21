@@ -30,7 +30,7 @@ class CKernelSmokeTest {
 
         Environment current = Environment.current();
         Environment cEnv =
-                new Environment(
+                Environment.of(
                         DeviceType.C.deviceIndex(0), current.defaultFloat(), current.runtimes());
 
         MemoryDomain<MemorySegment> domain =
@@ -66,7 +66,7 @@ class CKernelSmokeTest {
 
         Environment current = Environment.current();
         Environment cEnv =
-                new Environment(
+                Environment.of(
                         DeviceType.C.deviceIndex(0), current.defaultFloat(), current.runtimes());
 
         MemoryDomain<MemorySegment> domain =
@@ -101,7 +101,7 @@ class CKernelSmokeTest {
 
         Environment current = Environment.current();
         Environment cEnv =
-                new Environment(
+                Environment.of(
                         DeviceType.C.deviceIndex(0), current.defaultFloat(), current.runtimes());
 
         MemoryDomain<MemorySegment> domain =
@@ -136,7 +136,7 @@ class CKernelSmokeTest {
 
         Environment current = Environment.current();
         Environment cEnv =
-                new Environment(
+                Environment.of(
                         DeviceType.C.deviceIndex(0), current.defaultFloat(), current.runtimes());
         RandomKey key = RandomKey.of(2026L);
         int n = 64;
@@ -228,7 +228,10 @@ class CKernelSmokeTest {
 
     private static void assumeCBackendAvailable() {
         Assumptions.assumeTrue(CNative.isAvailable(), "C JNI runtime not available");
-        Assumptions.assumeTrue(ExternalToolChecks.hasVersionCommand("gcc"), "gcc not available");
+        String compiler = CKernelCompiler.resolveCompilerExecutable();
+        Assumptions.assumeTrue(
+                ExternalToolChecks.hasVersionCommand(compiler),
+                "C compiler not available: " + compiler);
     }
 
     private static float readValue(

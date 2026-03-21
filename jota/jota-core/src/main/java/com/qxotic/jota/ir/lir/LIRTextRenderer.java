@@ -43,16 +43,12 @@ public final class LIRTextRenderer {
         for (int i = 0; i < graph.inputs().size(); i++) {
             LIRInput input = graph.inputs().get(i);
             String var = allocateVar();
-            if (input instanceof BufferRef buf) {
-                bufferIdToVar.put(buf.id(), var);
-                params.append(var)
-                        .append(": ")
-                        .append(formatMemRefType(buf.dataType(), buf.layout()));
-            } else if (input instanceof ScalarInput scalar) {
-                scalarIdToVar.put(scalar.id(), var);
-                params.append(var)
-                        .append(": ")
-                        .append(TextRenderUtils.formatDataType(scalar.dataType()));
+            if (input instanceof BufferRef(int id1, DataType type, Layout layout)) {
+                bufferIdToVar.put(id1, var);
+                params.append(var).append(": ").append(formatMemRefType(type, layout));
+            } else if (input instanceof ScalarInput(int id, DataType dataType)) {
+                scalarIdToVar.put(id, var);
+                params.append(var).append(": ").append(TextRenderUtils.formatDataType(dataType));
             }
             if (i < graph.inputs().size() - 1 || !graph.outputs().isEmpty()) {
                 params.append(", ");
@@ -391,7 +387,7 @@ public final class LIRTextRenderer {
     }
 
     private String formatMemRefType(DataType dataType, Layout layout) {
-        int rank = (int) layout.shape().flatRank();
+        int rank = layout.shape().flatRank();
         long[] shape = new long[rank];
         long[] strides = new long[rank];
         long byteSize = dataType.byteSize();

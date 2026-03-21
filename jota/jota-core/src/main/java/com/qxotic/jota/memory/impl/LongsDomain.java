@@ -44,11 +44,10 @@ class LongsDomain implements MemoryDomain<long[]> {
 
     @Override
     public String toString() {
-        return new StringBuilder("Context{long[], device=")
-                .append(device())
-                .append(", directAccess=")
-                .append(directAccess() != null)
-                .append('}')
-                .toString();
+        return "Context{long[], device="
+                + device()
+                + ", directAccess="
+                + (directAccess() != null)
+                + '}';
     }
 }

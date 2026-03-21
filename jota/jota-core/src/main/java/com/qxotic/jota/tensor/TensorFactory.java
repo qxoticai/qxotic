@@ -263,22 +263,6 @@ final class TensorFactory {
         return onDefaultDevice(value, dtype, shape);
     }
 
-    static Tensor broadcasted(int value, Shape shape) {
-        return onDefaultDevice(value, DataType.I32, shape);
-    }
-
-    static Tensor broadcasted(long value, Shape shape) {
-        return onDefaultDevice(value, DataType.I64, shape);
-    }
-
-    static Tensor broadcasted(float value, Shape shape) {
-        return onDefaultDevice(value, DataType.FP32, shape);
-    }
-
-    static Tensor broadcasted(double value, Shape shape) {
-        return onDefaultDevice(value, DataType.FP64, shape);
-    }
-
     static Tensor scalar(int value) {
         return onDefaultDevice(value, DataType.I32, Shape.scalar());
     }
@@ -557,7 +541,7 @@ final class TensorFactory {
         } else if (dataType == DataType.BOOL || dataType.isIntegral()) {
             rawBits = value.longValue();
         } else if (dataType == DataType.FP16 || dataType == DataType.BF16) {
-            rawBits = (long) Float.floatToIntBits(value.floatValue());
+            rawBits = Float.floatToIntBits(value.floatValue());
         } else {
             throw new IllegalArgumentException("Unsupported data type: " + dataType);
         }

@@ -32,7 +32,7 @@ public final class PanamaRuntimeProvider extends DeviceRuntimeProvider {
     }
 
     @Override
-    public DeviceRuntime create(long deviceIndex) {
+    protected DeviceRuntime createForDevice(com.qxotic.jota.Device device) {
         return new PanamaDeviceRuntime();
     }
 

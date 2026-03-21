@@ -63,7 +63,6 @@ class LIRInterpreterTraceTest {
         new LIRInterpreter().execute(lirGraph, List.of(), List.of(), List.of(output), domain);
 
         TestKernels.writeMandelbrotPpm(
-                domain,
                 output,
                 Path.of("target", "mandelbrot-lir.ppm"),
                 MANDEL_WIDTH,

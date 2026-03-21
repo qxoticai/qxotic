@@ -183,7 +183,7 @@ class HipKernelSmokeTest {
 
         Environment current = Environment.current();
         Environment hipEnv =
-                new Environment(
+                Environment.of(
                         DeviceType.HIP.deviceIndex(0), current.defaultFloat(), current.runtimes());
         RandomKey key = RandomKey.of(2026L);
         int n = 64;

@@ -61,8 +61,8 @@ public final class HipRuntimeProvider extends DeviceRuntimeProvider {
     }
 
     @Override
-    public DeviceRuntime create(long deviceIndex) {
-        return new HipDeviceRuntime(deviceType().deviceIndex(deviceIndex));
+    protected DeviceRuntime createForDevice(com.qxotic.jota.Device device) {
+        return new HipDeviceRuntime(device);
     }
 
     @Override

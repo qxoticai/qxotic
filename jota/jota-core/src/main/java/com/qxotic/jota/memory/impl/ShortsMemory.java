@@ -44,11 +44,6 @@ final class ShortsMemory implements Memory<short[]> {
 
     @Override
     public String toString() {
-        return new StringBuilder("Memory{short[], byteSize=")
-                .append(byteSize())
-                .append(", device=")
-                .append(device())
-                .append('}')
-                .toString();
+        return "Memory{short[], byteSize=" + byteSize() + ", device=" + device() + '}';
     }
 }

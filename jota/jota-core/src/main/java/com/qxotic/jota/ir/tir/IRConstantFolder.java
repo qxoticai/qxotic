@@ -158,7 +158,6 @@ public final class IRConstantFolder {
             case EXP -> (float) Math.exp(value);
             case LOG -> (float) Math.log(value);
             case SQRT -> (float) Math.sqrt(value);
-            case SQUARE -> value * value;
             case SIN -> (float) Math.sin(value);
             case COS -> (float) Math.cos(value);
             case TAN -> (float) Math.tan(value);
@@ -190,7 +189,6 @@ public final class IRConstantFolder {
             case EXP -> Math.exp(value);
             case LOG -> Math.log(value);
             case SQRT -> Math.sqrt(value);
-            case SQUARE -> value * value;
             case SIN -> Math.sin(value);
             case COS -> Math.cos(value);
             case TAN -> Math.tan(value);

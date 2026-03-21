@@ -139,8 +139,7 @@ final class ScheduledExecutor {
         Memory<Object> dstMemory =
                 dstDomain.memoryAllocator().allocateMemory(view.dataType(), view.shape());
         MemoryView<Object> dstView =
-                (MemoryView<Object>)
-                        MemoryView.of(dstMemory, view.dataType(), Layout.rowMajor(view.shape()));
+                MemoryView.of(dstMemory, view.dataType(), Layout.rowMajor(view.shape()));
         MemoryDomain.copy(srcDomain, srcView, dstDomain, dstView);
         return dstView;
     }

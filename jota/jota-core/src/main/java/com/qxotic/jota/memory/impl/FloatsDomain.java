@@ -44,11 +44,10 @@ class FloatsDomain implements MemoryDomain<float[]> {
 
     @Override
     public String toString() {
-        return new StringBuilder("Context{float[], device=")
-                .append(device())
-                .append(", directAccess=")
-                .append(directAccess() != null)
-                .append('}')
-                .toString();
+        return "Context{float[], device="
+                + device()
+                + ", directAccess="
+                + (directAccess() != null)
+                + '}';
     }
 }

@@ -44,11 +44,6 @@ final class BytesMemory implements Memory<byte[]> {
 
     @Override
     public String toString() {
-        return new StringBuilder("Memory{byte[], byteSize=")
-                .append(byteSize())
-                .append(", device=")
-                .append(device())
-                .append('}')
-                .toString();
+        return "Memory{byte[], byteSize=" + byteSize() + ", device=" + device() + '}';
     }
 }

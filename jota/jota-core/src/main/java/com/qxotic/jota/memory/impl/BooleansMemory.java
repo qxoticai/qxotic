@@ -50,11 +50,6 @@ final class BooleansMemory implements Memory<boolean[]> {
 
     @Override
     public String toString() {
-        return new StringBuilder("Memory{boolean[], byteSize=")
-                .append(byteSize())
-                .append(", device=")
-                .append(device())
-                .append('}')
-                .toString();
+        return "Memory{boolean[], byteSize=" + byteSize() + ", device=" + device() + '}';
     }
 }

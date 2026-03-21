@@ -67,11 +67,8 @@ public abstract class DeviceRuntimeProvider {
         return List.copyOf(devices);
     }
 
-    /**
-     * Create a runtime for a concrete device. Default implementation validates runtime id matches
-     * this provider and delegates to {@link #create(long)}.
-     */
-    public DeviceRuntime create(Device device) {
+    /** Create a runtime for a concrete device. */
+    public final DeviceRuntime create(Device device) {
         Objects.requireNonNull(device, "device");
         DeviceType type = deviceType();
         if (!device.belongsTo(type)) {
@@ -82,7 +79,7 @@ public abstract class DeviceRuntimeProvider {
                             + device
                             + "'");
         }
-        DeviceRuntime runtime = create(device.index());
+        DeviceRuntime runtime = createForDevice(device);
         if (runtime == null) {
             throw new IllegalStateException("Provider '" + type.id() + "' returned null runtime");
         }
@@ -99,8 +96,7 @@ public abstract class DeviceRuntimeProvider {
         return runtime;
     }
 
-    /** Create a runtime for the given device index. */
-    public abstract DeviceRuntime create(long deviceIndex);
+    protected abstract DeviceRuntime createForDevice(Device device);
 
     @Override
     public String toString() {

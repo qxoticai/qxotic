@@ -44,11 +44,10 @@ class ShortsDomain implements MemoryDomain<short[]> {
 
     @Override
     public String toString() {
-        return new StringBuilder("Context{short[], device=")
-                .append(device())
-                .append(", directAccess=")
-                .append(directAccess() != null)
-                .append('}')
-                .toString();
+        return "Context{short[], device="
+                + device()
+                + ", directAccess="
+                + (directAccess() != null)
+                + '}';
     }
 }

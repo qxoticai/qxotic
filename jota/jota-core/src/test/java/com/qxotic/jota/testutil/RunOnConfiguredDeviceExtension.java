@@ -34,7 +34,7 @@ public final class RunOnConfiguredDeviceExtension implements InvocationIntercept
         Environment current = Environment.current();
         current.nativeRuntime();
         Assumptions.assumeTrue(
-                current.runtimes().hasRuntime(targetDevice),
+                current.runtimes().hasRuntimeFor(targetDevice),
                 "Configured test device '"
                         + targetDevice
                         + "' has no registered runtime. Set -D"
@@ -42,7 +42,7 @@ public final class RunOnConfiguredDeviceExtension implements InvocationIntercept
                         + "=panama|c|hip or enable corresponding Maven profile.");
 
         Environment configured =
-                new Environment(targetDevice, current.defaultFloat(), current.runtimes());
+                Environment.of(targetDevice, current.defaultFloat(), current.runtimes());
 
         try {
             Environment.with(

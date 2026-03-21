@@ -5,9 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Environment;
 import com.qxotic.jota.Shape;
-import com.qxotic.jota.memory.MemoryHelpers;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
 import com.qxotic.jota.testutil.TensorTestReads;
@@ -18,10 +16,7 @@ class ApiExampleTest {
 
     @Test
     void basicFunctionRunsAndMaterializes() {
-        MemoryView<?> view =
-                MemoryHelpers.arange(Environment.current().nativeMemoryDomain(), DataType.FP32, 6)
-                        .view(Shape.of(2, 3));
-        Tensor x = Tensor.of(view);
+        Tensor x = Tensor.iota(6, DataType.FP32).view(Shape.of(2, 3));
         Tensor y = x.add(x).sqrt();
 
         assertTrue(TensorTestInternals.isLazy(y));

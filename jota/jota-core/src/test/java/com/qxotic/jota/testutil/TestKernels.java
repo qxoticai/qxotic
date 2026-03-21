@@ -3,12 +3,11 @@ package com.qxotic.jota.testutil;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAccess;
-import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.tensor.Tensor;
 import java.io.IOException;
-import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
 
 public final class TestKernels {
@@ -98,39 +97,27 @@ public final class TestKernels {
     }
 
     public static void writeMandelbrotPpm(
-            MemoryDomain<MemorySegment> domain,
-            MemoryView<MemorySegment> view,
-            Path path,
-            int width,
-            int height,
-            int iterations) {
-        writePpm(domain, view, path, width, height, iterations);
+            MemoryView<?> view, Path path, int width, int height, int iterations) {
+        writePpm(view, path, width, height, iterations);
     }
 
     public static void writePhoenixPpm(
-            MemoryDomain<MemorySegment> domain,
-            MemoryView<MemorySegment> view,
-            Path path,
-            int width,
-            int height,
-            int iterations) {
-        writePpm(domain, view, path, width, height, iterations);
+            MemoryView<?> view, Path path, int width, int height, int iterations) {
+        writePpm(view, path, width, height, iterations);
     }
 
     private static void writePpm(
-            MemoryDomain<MemorySegment> domain,
-            MemoryView<MemorySegment> view,
-            Path path,
-            int width,
-            int height,
-            int iterations) {
+            MemoryView<?> view, Path path, int width, int height, int iterations) {
         byte[] rgb = new byte[width * height * 3];
-        MemoryAccess<MemorySegment> access = domain.directAccess();
+        TensorTestReads.ReadBuffer readBuffer = TensorTestReads.readBuffer(view);
+        MemoryView<?> readableView = readBuffer.view();
+        MemoryAccess<Object> access = readBuffer.access();
+        Memory<Object> memory = memory(readableView);
         for (int h = 0; h < height; h++) {
             for (int w = 0; w < width; w++) {
                 long idx = (long) h * width + w;
-                long offset = Indexing.linearToOffset(view, idx);
-                float iter = access.readFloat(view.memory(), offset);
+                long offset = Indexing.linearToOffset(readableView, idx);
+                float iter = access.readFloat(memory, offset);
                 int[] color = mandelbrotColor(iter, iterations);
                 int i = (int) idx * 3;
                 rgb[i] = (byte) color[0];
@@ -143,6 +130,11 @@ public final class TestKernels {
         } catch (IOException e) {
             throw new RuntimeException("Failed to write PPM to " + path, e);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Memory<Object> memory(MemoryView<?> view) {
+        return (Memory<Object>) view.memory();
     }
 
     private static int[] mandelbrotColor(float iter, int iterations) {

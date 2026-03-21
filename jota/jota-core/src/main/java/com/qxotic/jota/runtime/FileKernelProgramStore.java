@@ -12,21 +12,14 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
 
-public final class FileKernelProgramStore implements KernelProgramStore {
+public record FileKernelProgramStore(Path root) implements KernelProgramStore {
 
     private static final String META_FILE = "program.meta";
     private static final String SOURCE_FILE = "program.src";
     private static final String BINARY_FILE = "program.bin";
 
-    private final Path root;
-
     public FileKernelProgramStore(Path root) {
         this.root = Objects.requireNonNull(root, "root");
-    }
-
-    @Override
-    public Path root() {
-        return root;
     }
 
     @Override

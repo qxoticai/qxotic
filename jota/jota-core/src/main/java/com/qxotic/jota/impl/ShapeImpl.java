@@ -341,15 +341,7 @@ final class ShapeImpl extends NestedTupleImpl<Shape> implements Shape {
         throw new IndexOutOfBoundsException("Mode index out of bounds: " + modeIndex);
     }
 
-    private static class ModeRange {
-        final int start;
-        final int end;
-
-        ModeRange(int start, int end) {
-            this.start = start;
-            this.end = end;
-        }
-    }
+    private record ModeRange(int start, int end) {}
 
     private static boolean isFlatNest(int[] nest) {
         if (nest == null) {

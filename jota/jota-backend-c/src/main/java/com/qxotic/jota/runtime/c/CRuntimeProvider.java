@@ -5,7 +5,6 @@ import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
 import com.qxotic.jota.runtime.spi.RuntimeProbe;
 import java.io.IOException;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,27 +34,18 @@ public final class CRuntimeProvider extends DeviceRuntimeProvider {
     }
 
     @Override
-    public DeviceRuntime create(long deviceIndex) {
-        return new CDeviceRuntime(deviceType().deviceIndex(deviceIndex));
+    protected DeviceRuntime createForDevice(com.qxotic.jota.Device device) {
+        return new CDeviceRuntime(device);
     }
 
     @Override
     public Map<String, String> properties(int deviceIndex) {
-        Runtime rt = Runtime.getRuntime();
-        var props = new LinkedHashMap<String, String>();
-        props.put("device.name", "C Host");
-        props.put("device.vendor", System.getProperty("os.name"));
-        props.put("device.architecture", System.getProperty("os.arch"));
-        props.put("memory.global.bytes", Long.toString(rt.maxMemory()));
-        props.put("compute.units", Integer.toString(rt.availableProcessors()));
-        props.put("device.kind", "cpu");
-        return Map.copyOf(props);
+        return CRuntimeMetadata.properties();
     }
 
     @Override
     public Set<String> capabilities(int deviceIndex) {
-        return Set.of(
-                "fp32", "fp64", "kernel.compilation", "native.runtime", "unified.memory", "cpu");
+        return CRuntimeMetadata.capabilities();
     }
 
     private static boolean isCommandAvailable(List<String> command) {

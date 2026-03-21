@@ -10,7 +10,6 @@ import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.runtime.BinaryOp;
 import com.qxotic.jota.runtime.UnaryOp;
 import java.util.Arrays;
-import java.util.Optional;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
@@ -41,34 +40,15 @@ final class TensorSupport {
         return Tensor.of(dstView);
     }
 
-    static Tensor broadcastLeftScalar(Tensor left, Tensor right) {
-        if (!left.isScalar() || right.isScalar()) {
-            return left;
+    private static Tensor broadcastScalar(Tensor tensor, Tensor other) {
+        if (!tensor.isScalar() || other.isScalar()) {
+            return tensor;
         }
-        Optional<Tensor> constant =
-                InternalTensorAccess.computation(left)
-                        .filter(ConstantComputation.class::isInstance)
-                        .map(ConstantComputation.class::cast)
-                        .map(c -> Tensor.full(c.value(), c.dataType(), right.shape()));
-        if (constant.isPresent()) {
-            return constant.get();
-        }
-        return left.broadcast(right.shape());
-    }
-
-    static Tensor broadcastRightScalar(Tensor left, Tensor right) {
-        if (!right.isScalar() || left.isScalar()) {
-            return right;
-        }
-        Optional<Tensor> constant =
-                InternalTensorAccess.computation(right)
-                        .filter(ConstantComputation.class::isInstance)
-                        .map(ConstantComputation.class::cast)
-                        .map(c -> Tensor.full(c.value(), c.dataType(), left.shape()));
-        if (constant.isPresent()) {
-            return constant.get();
-        }
-        return right.broadcast(left.shape());
+        return InternalTensorAccess.computation(tensor)
+                .filter(ConstantComputation.class::isInstance)
+                .map(ConstantComputation.class::cast)
+                .map(c -> Tensor.full(c.value(), c.dataType(), other.shape()))
+                .orElseGet(() -> tensor.broadcast(other.shape()));
     }
 
     static Tensor axisIndexGrid(Shape shape, int axis) {
@@ -88,42 +68,13 @@ final class TensorSupport {
         return input;
     }
 
-    static void requireSameIntegralType(DataType left, DataType right, String opName) {
-        TensorTypeSemantics.requireSameIntegralType(left, right, opName);
-    }
-
-    static void requireBooleanPair(DataType left, DataType right, String opName) {
-        TensorTypeSemantics.requireBooleanPair(left, right, opName);
-    }
-
-    static void requireIntegral(DataType dataType, String opName) {
-        TensorTypeSemantics.requireIntegral(dataType, opName);
-    }
-
-    static void requireFloatingPoint(DataType dataType, String opName) {
-        TensorTypeSemantics.requireFloatingPoint(dataType, opName);
-    }
-
-    static void requireNumericNonBool(DataType dataType, String opName) {
-        TensorTypeSemantics.requireNumericNonBool(dataType, opName);
-    }
-
-    static void requireBool(DataType dataType, String opName) {
-        TensorTypeSemantics.requireBool(dataType, opName);
-    }
-
-    static DataType resolveReductionAccumulator(
-            DataType inputType, DataType accumulatorType, String opName) {
-        return TensorTypeSemantics.resolveReductionAccumulator(inputType, accumulatorType, opName);
-    }
-
     static Tensor dispatchBinaryOp(
             Tensor self,
             Tensor other,
             BiFunction<Tensor, Tensor, Tensor> tracedOp,
             BiFunction<Tensor, Tensor, Tensor> eagerOp) {
-        Tensor left = broadcastLeftScalar(self, other);
-        Tensor right = broadcastRightScalar(self, other);
+        Tensor left = broadcastScalar(self, other);
+        Tensor right = broadcastScalar(other, self);
         if (Tracer.isTracing()) {
             return tracedOp.apply(left, right);
         }
@@ -134,13 +85,13 @@ final class TensorSupport {
             Tensor self, Number scalar, BiFunction<Tensor, Tensor, Tensor> binaryOp) {
         Tensor scalarTensor;
         if (scalar instanceof Integer value) {
-            scalarTensor = Tensor.broadcasted(value, self.shape());
+            scalarTensor = Tensor.full(value, self.shape());
         } else if (scalar instanceof Long value) {
-            scalarTensor = Tensor.broadcasted(value, self.shape());
+            scalarTensor = Tensor.full(value, self.shape());
         } else if (scalar instanceof Float value) {
-            scalarTensor = Tensor.broadcasted(value, self.shape());
+            scalarTensor = Tensor.full(value, self.shape());
         } else if (scalar instanceof Double value) {
-            scalarTensor = Tensor.broadcasted(value, self.shape());
+            scalarTensor = Tensor.full(value, self.shape());
         } else {
             throw new IllegalArgumentException("Unsupported scalar type: " + scalar.getClass());
         }

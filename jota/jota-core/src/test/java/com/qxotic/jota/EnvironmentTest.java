@@ -33,9 +33,9 @@ class EnvironmentTest {
 
     @Test
     void scopedEnvironmentOverridesDefaults() {
-        Device nativeDevice = Environment.global().runtimes().resolve("native");
+        Device nativeDevice = Environment.global().nativeDevice();
         Environment env =
-                new Environment(nativeDevice, DataType.FP64, Environment.global().runtimes());
+                Environment.of(nativeDevice, DataType.FP64, Environment.global().runtimes());
 
         Environment.with(
                 env,
@@ -57,10 +57,10 @@ class EnvironmentTest {
 
     @Test
     void constructorRejectsNonFloatingDefaultFloat() {
-        Device nativeDevice = Environment.global().runtimes().resolve("native");
+        Device nativeDevice = Environment.global().nativeDevice();
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new Environment(nativeDevice, DataType.I32, Environment.global().runtimes()));
+                () -> Environment.of(nativeDevice, DataType.I32, Environment.global().runtimes()));
     }
 
     @Test
@@ -68,7 +68,7 @@ class EnvironmentTest {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new Environment(DeviceType.C.deviceIndex(0), DataType.FP32, registry));
+                () -> Environment.of(DeviceType.C.deviceIndex(0), DataType.FP32, registry));
     }
 
     @Test
@@ -178,7 +178,7 @@ class EnvironmentTest {
         DeviceRuntimeProvider provider = new AlwaysAvailableProvider("opencl", DeviceType.OPENCL);
 
         Method method =
-                Environment.class.getDeclaredMethod(
+                EnvironmentImpl.class.getDeclaredMethod(
                         "registerProvider",
                         DefaultRuntimeRegistry.class,
                         DeviceRuntimeProvider.class,
@@ -187,7 +187,7 @@ class EnvironmentTest {
         method.setAccessible(true);
         method.invoke(null, registry, provider, Set.of(), Set.of("opencl"));
 
-        assertFalse(registry.hasRuntime("opencl"));
+        assertFalse(registry.hasRuntimeFor(DeviceType.OPENCL.deviceIndex(0)));
         assertTrue(
                 registry.diagnostics().stream()
                         .anyMatch(
@@ -205,7 +205,7 @@ class EnvironmentTest {
         DeviceRuntimeProvider provider = new AlwaysAvailableProvider("opencl", DeviceType.OPENCL);
 
         Method method =
-                Environment.class.getDeclaredMethod(
+                EnvironmentImpl.class.getDeclaredMethod(
                         "registerProvider",
                         DefaultRuntimeRegistry.class,
                         DeviceRuntimeProvider.class,
@@ -214,7 +214,7 @@ class EnvironmentTest {
         method.setAccessible(true);
         method.invoke(null, registry, provider, Set.of("opencl"), Set.of("opencl"));
 
-        assertFalse(registry.hasRuntime("opencl"));
+        assertFalse(registry.hasRuntimeFor(DeviceType.OPENCL.deviceIndex(0)));
         assertTrue(
                 registry.diagnostics().stream()
                         .anyMatch(
@@ -238,7 +238,7 @@ class EnvironmentTest {
     private static IllegalStateException invokeMissingNativeRuntimeException(
             DefaultRuntimeRegistry registry, String reason) throws Exception {
         Method method =
-                Environment.class.getDeclaredMethod(
+                EnvironmentImpl.class.getDeclaredMethod(
                         "missingNativeRuntimeException",
                         com.qxotic.jota.runtime.RuntimeRegistry.class,
                         String.class);
@@ -249,7 +249,7 @@ class EnvironmentTest {
     private static IllegalStateException invokeSelectNativeBackendFailure(
             DefaultRuntimeRegistry registry) throws Exception {
         Method method =
-                Environment.class.getDeclaredMethod(
+                EnvironmentImpl.class.getDeclaredMethod(
                         "selectNativeBackend", DefaultRuntimeRegistry.class);
         method.setAccessible(true);
         try {
@@ -265,7 +265,8 @@ class EnvironmentTest {
     private static Device invokeParseNativeBackendOverride(String rawValue) {
         try {
             Method method =
-                    Environment.class.getDeclaredMethod("parseNativeBackendOverride", String.class);
+                    EnvironmentImpl.class.getDeclaredMethod(
+                            "parseNativeBackendOverride", String.class);
             method.setAccessible(true);
             return (Device) method.invoke(null, rawValue);
         } catch (NoSuchMethodException | IllegalAccessException e) {
@@ -346,7 +347,7 @@ class EnvironmentTest {
         }
 
         @Override
-        public DeviceRuntime create(long deviceIndex) {
+        protected DeviceRuntime createForDevice(Device device) {
             return new StubDeviceRuntime(DomainFactory.ofMemorySegment(), dummyRuntime());
         }
     }

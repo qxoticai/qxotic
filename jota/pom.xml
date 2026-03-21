@@ -55,9 +55,6 @@
     <skipNative.backend.metal>true</skipNative.backend.metal>
     <skipNative.backend.opencl>true</skipNative.backend.opencl>
 
-    <!-- Core tests run by default -->
-    <skipTests.backend.core>false</skipTests.backend.core>
-
     <!-- Shared native backend build properties (overridden per backend module) -->
     <native.dir>${project.basedir}/src/main/native</native.dir>
     <native.build.dir>${native.dir}/build</native.build.dir>
@@ -160,7 +157,6 @@
         <jota.test.device>panama</jota.test.device>
         <jota.test.backends>single</jota.test.backends>
         <jota.native.backend>panama</jota.native.backend>
-        <skipTests.backend.core>true</skipTests.backend.core>
         <skipTests.backend.panama>false</skipTests.backend.panama>
       </properties>
     </profile>
@@ -172,7 +168,6 @@
         <jota.test.device>c</jota.test.device>
         <jota.test.backends>single</jota.test.backends>
         <jota.native.backend>c</jota.native.backend>
-        <skipTests.backend.core>true</skipTests.backend.core>
         <skipTests.backend.c>false</skipTests.backend.c>
         <skipNative.backend.c>false</skipNative.backend.c>
       </properties>
@@ -218,7 +213,6 @@ exit 1)</argument>
         <jota.test.device>hip</jota.test.device>
         <jota.test.backends>single</jota.test.backends>
         <jota.native.backend>panama</jota.native.backend>
-        <skipTests.backend.core>true</skipTests.backend.core>
         <skipTests.backend.hip>false</skipTests.backend.hip>
         <skipNative.backend.hip>false</skipNative.backend.hip>
       </properties>
@@ -265,7 +259,6 @@ exit 1)</argument>
         <jota.test.device>cuda</jota.test.device>
         <jota.test.backends>single</jota.test.backends>
         <jota.native.backend>panama</jota.native.backend>
-        <skipTests.backend.core>true</skipTests.backend.core>
         <skipTests.backend.cuda>false</skipTests.backend.cuda>
         <skipNative.backend.cuda>false</skipNative.backend.cuda>
       </properties>
@@ -296,7 +289,6 @@ exit 1)</argument>
         <jota.test.device>mojo</jota.test.device>
         <jota.test.backends>single</jota.test.backends>
         <jota.native.backend>panama</jota.native.backend>
-        <skipTests.backend.core>true</skipTests.backend.core>
         <skipTests.backend.mojo>false</skipTests.backend.mojo>
         <skipNative.backend.mojo>false</skipNative.backend.mojo>
         <skipNative.backend.hip>false</skipNative.backend.hip>
@@ -339,7 +331,6 @@ exit 1)</argument>
         <jota.test.device>metal</jota.test.device>
         <jota.test.backends>single</jota.test.backends>
         <jota.native.backend>panama</jota.native.backend>
-        <skipTests.backend.core>true</skipTests.backend.core>
         <skipTests.backend.metal>false</skipTests.backend.metal>
         <skipNative.backend.metal>false</skipNative.backend.metal>
       </properties>
@@ -386,7 +377,6 @@ exit 1)</argument>
         <jota.test.device>opencl</jota.test.device>
         <jota.test.backends>single</jota.test.backends>
         <jota.native.backend>panama</jota.native.backend>
-        <skipTests.backend.core>true</skipTests.backend.core>
         <skipTests.backend.opencl>false</skipTests.backend.opencl>
         <skipNative.backend.opencl>false</skipNative.backend.opencl>
       </properties>
@@ -433,13 +423,14 @@ exit 1)</argument>
         <!-- Enable all backends for testing -->
         <skipTests.backend.panama>false</skipTests.backend.panama>
         <skipTests.backend.c>false</skipTests.backend.c>
+        <skipTests.backend.hip>false</skipTests.backend.hip>
         <skipTests.backend.mojo>false</skipTests.backend.mojo>
         <skipTests.backend.opencl>false</skipTests.backend.opencl>
         <skipNative.backend.c>false</skipNative.backend.c>
+        <skipNative.backend.hip>false</skipNative.backend.hip>
         <skipNative.backend.opencl>false</skipNative.backend.opencl>
         <skipNative.backend.mojo>false</skipNative.backend.mojo>
-        <skipNative.backend.hip>false</skipNative.backend.hip>
-        <!-- HIP and Metal are platform-specific, handled by other profiles -->
+        <!-- CUDA and Metal remain platform/toolchain specific in -Pall -->
       </properties>
     </profile>
 

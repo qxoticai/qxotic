@@ -34,10 +34,19 @@ final class CMemoryAllocator implements MemoryAllocator<MemorySegment>, MemoryAr
 
     @Override
     public Memory<MemorySegment> allocateMemory(long byteSize, long byteAlignment) {
+        if (byteSize < 0) {
+            throw new IllegalArgumentException("invalid byteSize, must be >= 0");
+        }
         if (!isPowerOf2(byteAlignment)) {
             throw new IllegalArgumentException("invalid byteAlignment, not a power of 2");
         }
-        long mallocAddress = UNSAFE.allocateMemory(byteSize + byteAlignment - 1);
+        long allocationSize;
+        try {
+            allocationSize = Math.addExact(byteSize, byteAlignment - 1);
+        } catch (ArithmeticException e) {
+            throw new IllegalArgumentException("invalid allocation size (overflow)", e);
+        }
+        long mallocAddress = UNSAFE.allocateMemory(allocationSize);
         long alignedAddress = mallocAddress;
         if (alignedAddress % byteAlignment != 0) {
             alignedAddress += byteAlignment - (alignedAddress % byteAlignment);

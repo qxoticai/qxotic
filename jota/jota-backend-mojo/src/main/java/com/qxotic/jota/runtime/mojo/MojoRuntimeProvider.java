@@ -53,7 +53,7 @@ public final class MojoRuntimeProvider extends DeviceRuntimeProvider {
     }
 
     @Override
-    public DeviceRuntime create(long deviceIndex) {
+    protected DeviceRuntime createForDevice(com.qxotic.jota.Device device) {
         return new MojoDeviceRuntime();
     }
 

@@ -909,31 +909,20 @@ class TIRInterpreterTest {
     private static boolean supportsUnary(UnaryOperator op, DataType dtype) {
         if (dtype == DataType.FP32) {
             return switch (op) {
-                case NEGATE, ABS, EXP, LOG, SQRT, SQUARE, SIN, COS, TAN, TANH, RECIPROCAL -> true;
+                case NEGATE, ABS, EXP, LOG, SQRT, SIN, COS, TAN, TANH, RECIPROCAL -> true;
                 case LOGICAL_NOT, BITWISE_NOT -> false;
             };
         }
         if (dtype == DataType.I32) {
             return switch (op) {
                 case NEGATE, ABS, BITWISE_NOT -> true;
-                case EXP, LOG, SQRT, SQUARE, SIN, COS, TAN, TANH, RECIPROCAL, LOGICAL_NOT -> false;
+                case EXP, LOG, SQRT, SIN, COS, TAN, TANH, RECIPROCAL, LOGICAL_NOT -> false;
             };
         }
         if (dtype == DataType.BOOL) {
             return switch (op) {
                 case LOGICAL_NOT -> true;
-                case NEGATE,
-                        ABS,
-                        EXP,
-                        LOG,
-                        SQRT,
-                        SQUARE,
-                        SIN,
-                        COS,
-                        TAN,
-                        TANH,
-                        RECIPROCAL,
-                        BITWISE_NOT ->
+                case NEGATE, ABS, EXP, LOG, SQRT, SIN, COS, TAN, TANH, RECIPROCAL, BITWISE_NOT ->
                         false;
             };
         }

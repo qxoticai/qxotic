@@ -173,7 +173,7 @@ class ToOpTest {
                 !target.belongsTo(DeviceType.PANAMA),
                 "transfer tests require non-PANAMA configured target");
         assumeTrue(
-                Environment.current().runtimes().hasRuntime(target),
+                Environment.current().runtimes().hasRuntimeFor(target),
                 target + " runtime not registered in current environment");
         return target;
     }

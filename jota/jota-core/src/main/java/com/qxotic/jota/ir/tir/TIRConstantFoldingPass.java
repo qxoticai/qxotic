@@ -287,7 +287,6 @@ public final class TIRConstantFoldingPass implements TIRPass {
                             case NEGATE -> -a;
                             case ABS -> Math.abs(a);
                             case SQRT -> (float) Math.sqrt(a);
-                            case SQUARE -> a * a;
                             case EXP -> (float) Math.exp(a);
                             case LOG -> (float) Math.log(a);
                             case SIN -> (float) Math.sin(a);
@@ -306,7 +305,6 @@ public final class TIRConstantFoldingPass implements TIRPass {
                             case NEGATE -> -a;
                             case ABS -> Math.abs(a);
                             case SQRT -> Math.sqrt(a);
-                            case SQUARE -> a * a;
                             case EXP -> Math.exp(a);
                             case LOG -> Math.log(a);
                             case SIN -> Math.sin(a);
@@ -325,7 +323,6 @@ public final class TIRConstantFoldingPass implements TIRPass {
                         switch (op) {
                             case NEGATE -> -a;
                             case ABS -> Math.abs(a);
-                            case SQUARE -> a * a;
                             case LOGICAL_NOT -> a == 0 ? 1 : 0;
                             case BITWISE_NOT -> ~a;
                             default -> a;
@@ -337,7 +334,6 @@ public final class TIRConstantFoldingPass implements TIRPass {
                         switch (op) {
                             case NEGATE -> -a;
                             case ABS -> Math.abs(a);
-                            case SQUARE -> a * a;
                             case LOGICAL_NOT -> a == 0 ? 1 : 0;
                             case BITWISE_NOT -> ~a;
                             default -> a;

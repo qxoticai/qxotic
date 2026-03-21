@@ -95,14 +95,6 @@ public final class OpenClRuntime {
         return nativeSelectedDeviceName();
     }
 
-    /**
-     * @deprecated Use {@link #deviceName()} instead.
-     */
-    @Deprecated(forRemoval = true)
-    public static String selectedDeviceName() {
-        return deviceName();
-    }
-
     public static String selectedPlatformName() {
         requireAvailable();
         return nativeSelectedPlatformName();

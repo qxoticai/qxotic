@@ -44,11 +44,10 @@ class BooleansDomain implements MemoryDomain<boolean[]> {
 
     @Override
     public String toString() {
-        return new StringBuilder("Context{boolean[], device=")
-                .append(device())
-                .append(", directAccess=")
-                .append(directAccess() != null)
-                .append('}')
-                .toString();
+        return "Context{boolean[], device="
+                + device()
+                + ", directAccess="
+                + (directAccess() != null)
+                + '}';
     }
 }

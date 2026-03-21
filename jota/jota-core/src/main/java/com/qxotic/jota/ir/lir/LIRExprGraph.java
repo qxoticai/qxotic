@@ -198,10 +198,6 @@ public final class LIRExprGraph {
             case SQRT -> {
                 return scalarConst(fromDouble(Math.sqrt(toDouble(bits, type)), type), type);
             }
-            case SQUARE -> {
-                double value = toDouble(bits, type);
-                return scalarConst(fromDouble(value * value, type), type);
-            }
             case SIN -> {
                 return scalarConst(fromDouble(Math.sin(toDouble(bits, type)), type), type);
             }
@@ -307,7 +303,7 @@ public final class LIRExprGraph {
             return (short) ((short) left << (((int) right) & 15));
         }
         if (type == DataType.I32) {
-            return (int) left << (((int) right) & 31);
+            return (long) (int) left << (((int) right) & 31);
         }
         return left << (((int) right) & 63);
     }

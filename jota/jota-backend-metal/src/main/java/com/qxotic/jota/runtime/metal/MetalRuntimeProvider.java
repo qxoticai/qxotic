@@ -63,8 +63,8 @@ public final class MetalRuntimeProvider extends DeviceRuntimeProvider {
     }
 
     @Override
-    public DeviceRuntime create(long deviceIndex) {
-        return new MetalDeviceRuntime(deviceType().deviceIndex(deviceIndex));
+    protected DeviceRuntime createForDevice(com.qxotic.jota.Device device) {
+        return new MetalDeviceRuntime(device);
     }
 
     @Override

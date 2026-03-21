@@ -52,7 +52,7 @@ public final class Llama32HipCli {
 
     public static void main(String[] args) throws Exception {
         Options options = Options.parse(args);
-        if (!Environment.current().runtimes().hasRuntime(DeviceType.HIP.deviceIndex(0))) {
+        if (!Environment.current().runtimes().hasRuntimeFor(DeviceType.HIP.deviceIndex(0))) {
             throw new IllegalStateException(
                     "HIP runtime is not available. Build/load jota-runtime-hip and ROCm/HIP runtime"
                             + " first.");

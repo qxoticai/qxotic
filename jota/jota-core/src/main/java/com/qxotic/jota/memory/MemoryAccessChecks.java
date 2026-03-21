@@ -39,9 +39,7 @@ public final class MemoryAccessChecks {
             if (!condition) {
                 throw new IndexOutOfBoundsException(message);
             }
-        } else if (MODE == Mode.ASSERT) {
-            assert condition : message;
-        }
+        } else assert MODE != Mode.ASSERT || condition : message;
     }
 
     public static void checkReadOnly(boolean condition, String message) {
@@ -49,9 +47,7 @@ public final class MemoryAccessChecks {
             if (!condition) {
                 throw new UnsupportedOperationException(message);
             }
-        } else if (MODE == Mode.ASSERT) {
-            assert condition : message;
-        }
+        } else assert MODE != Mode.ASSERT || condition : message;
     }
 
     public static void checkAlignment(boolean condition, String message) {
@@ -59,9 +55,7 @@ public final class MemoryAccessChecks {
             if (!condition) {
                 throw new IllegalArgumentException(message);
             }
-        } else if (MODE == Mode.ASSERT) {
-            assert condition : message;
-        }
+        } else assert MODE != Mode.ASSERT || condition : message;
     }
 
     private static Mode resolveMode(String raw) {

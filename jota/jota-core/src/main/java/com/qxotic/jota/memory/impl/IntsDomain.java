@@ -44,11 +44,10 @@ class IntsDomain implements MemoryDomain<int[]> {
 
     @Override
     public String toString() {
-        return new StringBuilder("Context{int[], device=")
-                .append(device())
-                .append(", directAccess=")
-                .append(directAccess() != null)
-                .append('}')
-                .toString();
+        return "Context{int[], device="
+                + device()
+                + ", directAccess="
+                + (directAccess() != null)
+                + '}';
     }
 }

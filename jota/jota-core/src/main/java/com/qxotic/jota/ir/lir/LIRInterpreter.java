@@ -264,10 +264,6 @@ public final class LIRInterpreter {
             case EXP -> castFromDouble(Math.exp(toDouble(input)), type);
             case LOG -> castFromDouble(Math.log(toDouble(input)), type);
             case SQRT -> castFromDouble(Math.sqrt(toDouble(input)), type);
-            case SQUARE -> {
-                double value = toDouble(input);
-                yield castFromDouble(value * value, type);
-            }
             case SIN -> castFromDouble(Math.sin(toDouble(input)), type);
             case COS -> castFromDouble(Math.cos(toDouble(input)), type);
             case TAN -> castFromDouble(Math.tan(toDouble(input)), type);
@@ -313,7 +309,7 @@ public final class LIRInterpreter {
             return (short) ((short) left << (((int) right) & 15));
         }
         if (type == DataType.I32) {
-            return (int) left << (((int) right) & 31);
+            return (long) (int) left << (((int) right) & 31);
         }
         if (type == DataType.I64) {
             return left << (((int) right) & 63);
@@ -643,20 +639,20 @@ public final class LIRInterpreter {
             int scalarIndex = 0;
 
             for (LIRInput input : graph.inputs()) {
-                if (input instanceof ScalarInput scalarInput) {
+                if (input instanceof ScalarInput(int id, DataType dataType)) {
                     if (scalarIndex >= scalars.size()) {
                         throw new IllegalArgumentException(
                                 "Missing scalar input at index " + scalarIndex);
                     }
                     ScalarArg scalar = scalars.get(scalarIndex++);
-                    if (scalar.dataType() != scalarInput.dataType()) {
+                    if (scalar.dataType() != dataType) {
                         throw new IllegalArgumentException(
                                 "Scalar input type mismatch: expected "
-                                        + scalarInput.dataType()
+                                        + dataType
                                         + " but got "
                                         + scalar.dataType());
                     }
-                    scalarMap.put(scalarInput.id(), fromScalarArg(scalar, scalarInput.dataType()));
+                    scalarMap.put(id, fromScalarArg(scalar, dataType));
                 } else {
                     if (bufferIndex >= buffers.size()) {
                         throw new IllegalArgumentException(

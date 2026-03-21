@@ -62,7 +62,7 @@ final class Options {
         long benchmarkPauseMs = 0L;
         boolean stream = true;
         boolean trace = Boolean.getBoolean("com.qxotic.trace");
-        Device device = Environment.current().runtimeFor("native").device();
+        Device device = Environment.current().nativeDevice();
 
         for (int i = 0; i < args.length; i++) {
             String arg = args[i];
@@ -181,7 +181,7 @@ final class Options {
     private static Device parseDevice(String value) {
         String normalized = value == null ? "native" : value.trim().toLowerCase();
         return switch (normalized) {
-            case "native", "default", "auto" -> Environment.current().runtimeFor("native").device();
+            case "native", "default", "auto" -> Environment.current().nativeDevice();
             case "panama", "cpu" -> DeviceType.PANAMA.deviceIndex(0);
             case "c" -> DeviceType.C.deviceIndex(0);
             case "hip" -> DeviceType.HIP.deviceIndex(0);

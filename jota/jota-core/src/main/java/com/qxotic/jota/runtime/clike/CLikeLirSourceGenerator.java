@@ -470,7 +470,6 @@ public abstract class CLikeLirSourceGenerator {
             case EXP -> floatUnaryExpr(type, "exp", input);
             case LOG -> floatUnaryExpr(type, "log", input);
             case SQRT -> floatUnaryExpr(type, "sqrt", input);
-            case SQUARE -> squareExpr(type, input);
             case SIN -> floatUnaryExpr(type, "sin", input);
             case COS -> floatUnaryExpr(type, "cos", input);
             case TAN -> floatUnaryExpr(type, "tan", input);
@@ -660,14 +659,6 @@ public abstract class CLikeLirSourceGenerator {
             return "(" + expr + " < 0 ? -" + expr + " : " + expr + ")";
         }
         throw new UnsupportedOperationException("abs requires numeric type");
-    }
-
-    private String squareExpr(DataType type, String expr) {
-        if (type == DataType.FP16 || type == DataType.BF16) {
-            String f = renderFloat32ConversionExpression(type, expr);
-            return renderCastExpression(DataType.FP32, type, "(" + f + " * " + f + ")");
-        }
-        return "(" + expr + " * " + expr + ")";
     }
 
     private String reciprocalExpr(DataType type, String expr) {
