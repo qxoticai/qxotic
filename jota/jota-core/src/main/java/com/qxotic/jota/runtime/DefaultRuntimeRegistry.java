@@ -11,9 +11,6 @@ import java.util.function.Function;
 
 public final class DefaultRuntimeRegistry implements RuntimeRegistry {
 
-    /** name/alias → resolved concrete Device (e.g., "native" → Device(PANAMA, 0)) */
-    private final Map<String, Device> aliases = new ConcurrentHashMap<>();
-
     /** concrete device -> lazy factory */
     private final Map<Device, Function<Device, DeviceRuntime>> factories =
             new ConcurrentHashMap<>();
@@ -37,31 +34,6 @@ public final class DefaultRuntimeRegistry implements RuntimeRegistry {
         if (existing != null) {
             throw new IllegalStateException("Factory already registered for device " + device);
         }
-        // Auto-register the runtimeId as an alias → this concrete device (first one wins)
-        aliases.putIfAbsent(device.runtimeId(), device);
-    }
-
-    /**
-     * Registers an alias mapping.
-     *
-     * @param aliasId the alias name (e.g., "native", "default")
-     * @param target the concrete device to resolve to
-     */
-    public void registerAlias(String aliasId, Device target) {
-        Objects.requireNonNull(aliasId, "aliasId");
-        Objects.requireNonNull(target, "target");
-        aliases.put(aliasId.strip().toLowerCase(), target);
-    }
-
-    @Override
-    public Device resolve(String nameOrAlias) {
-        Objects.requireNonNull(nameOrAlias, "nameOrAlias");
-        String key = nameOrAlias.strip().toLowerCase();
-        Device resolved = aliases.get(key);
-        if (resolved == null) {
-            throw new IllegalStateException("No device registered for alias '" + nameOrAlias + "'");
-        }
-        return resolved;
     }
 
     @Override
@@ -92,23 +64,8 @@ public final class DefaultRuntimeRegistry implements RuntimeRegistry {
     }
 
     @Override
-    public DeviceRuntime runtimeFor(String nameOrAlias) {
-        return runtimeFor(resolve(nameOrAlias));
-    }
-
-    @Override
-    public boolean hasRuntime(Device device) {
+    public boolean hasRuntimeFor(Device device) {
         return factories.containsKey(device);
-    }
-
-    @Override
-    public boolean hasRuntime(String nameOrAlias) {
-        try {
-            Device concrete = resolve(nameOrAlias);
-            return factories.containsKey(concrete);
-        } catch (IllegalStateException e) {
-            return false;
-        }
     }
 
     @Override

@@ -76,6 +76,16 @@ public interface Stride extends NestedTuple<Stride> {
         return StrideFactory.template(shape, strides);
     }
 
+    /**
+     * Alias for {@link #of(Object...)} designed for static import, enabling a DSL-style syntax for
+     * constructing nested strides:
+     *
+     * <pre>{@code
+     * import static com.qxotic.jota.Stride.stride;
+     *
+     * Stride s = stride(1, stride(4, 5));
+     * }</pre>
+     */
     static Stride stride(Object... elements) {
         return of(elements);
     }

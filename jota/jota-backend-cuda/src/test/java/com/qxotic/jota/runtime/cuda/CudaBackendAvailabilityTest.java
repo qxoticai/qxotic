@@ -22,7 +22,7 @@ class CudaBackendAvailabilityTest {
                         "mvnd -Pcuda test",
                         details));
         assertTrue(
-                Environment.current().runtimes().hasRuntime("cuda"),
+                Environment.current().runtimes().hasRuntimeFor(DeviceType.CUDA.deviceIndex(0)),
                 canaryFailureMessage(
                         "[MISSING_SOFTWARE] CUDA runtime is not registered",
                         "mvnd -Pcuda test",
@@ -39,7 +39,11 @@ class CudaBackendAvailabilityTest {
                         "[UNSUPPORTED_HARDWARE] CUDA reported no visible device",
                         "mvnd -Pcuda test",
                         details));
-        assertTrue(Environment.current().runtimeFor("cuda").device().belongsTo(DeviceType.CUDA));
+        assertTrue(
+                Environment.current()
+                        .runtimeFor(DeviceType.CUDA.deviceIndex(0))
+                        .device()
+                        .belongsTo(DeviceType.CUDA));
     }
 
     private static String canaryFailureMessage(String reason, String command, String details) {
@@ -71,7 +75,7 @@ class CudaBackendAvailabilityTest {
                 + "\nCudaRuntime.isAvailable="
                 + CudaRuntime.isAvailable()
                 + "\nCUDA runtime registered="
-                + Environment.current().runtimes().hasRuntime("cuda")
+                + Environment.current().runtimes().hasRuntimeFor(DeviceType.CUDA.deviceIndex(0))
                 + "\nnvcc available="
                 + nvccAvailable;
     }

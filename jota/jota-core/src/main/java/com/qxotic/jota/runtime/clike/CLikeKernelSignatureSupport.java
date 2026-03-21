@@ -5,6 +5,7 @@ import com.qxotic.jota.ir.lir.LIRGraph;
 import com.qxotic.jota.ir.lir.LIRInput;
 import com.qxotic.jota.ir.lir.ScalarInput;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public final class CLikeKernelSignatureSupport {
@@ -40,9 +41,7 @@ public final class CLikeKernelSignatureSupport {
             int slot = graph.inputs().size() + i;
             args.add(outputArgumentRenderer.render(graph.outputs().get(i), i, slot));
         }
-        for (String trailingArg : trailingArgs) {
-            args.add(trailingArg);
-        }
+        Collections.addAll(args, trailingArgs);
         return String.join(", ", args);
     }
 
@@ -110,9 +109,7 @@ public final class CLikeKernelSignatureSupport {
                 args.add(inputArgumentRenderer.render(input, i, argumentSlot++));
             }
         }
-        for (String trailingArg : trailingArgs) {
-            args.add(trailingArg);
-        }
+        Collections.addAll(args, trailingArgs);
         return String.join(", ", args);
     }
 }

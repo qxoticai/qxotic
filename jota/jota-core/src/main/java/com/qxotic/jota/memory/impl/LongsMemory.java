@@ -44,11 +44,6 @@ final class LongsMemory implements Memory<long[]> {
 
     @Override
     public String toString() {
-        return new StringBuilder("Memory{long[], byteSize=")
-                .append(byteSize())
-                .append(", device=")
-                .append(device())
-                .append('}')
-                .toString();
+        return "Memory{long[], byteSize=" + byteSize() + ", device=" + device() + '}';
     }
 }

@@ -40,6 +40,16 @@ public interface Shape extends NestedTuple<Shape> {
         return ShapeFactory.scalar();
     }
 
+    /**
+     * Alias for {@link #of(Object...)} designed for static import, enabling a DSL-style syntax for
+     * constructing nested shapes:
+     *
+     * <pre>{@code
+     * import static com.qxotic.jota.Shape.shape;
+     *
+     * Shape s = shape(2, shape(3, 4), 5);
+     * }</pre>
+     */
     static Shape shape(Object... elements) {
         return of(elements);
     }

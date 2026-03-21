@@ -213,9 +213,7 @@ public final class ScratchVerificationPass {
             if (current instanceof SLoad load) {
                 buffers.add(load.buffer());
             }
-            for (LIRExprNode input : current.inputs()) {
-                stack.add(input);
-            }
+            Collections.addAll(stack, current.inputs());
         }
     }
 
@@ -250,9 +248,7 @@ public final class ScratchVerificationPass {
             if (current instanceof SLoad load) {
                 accessed.add(load.buffer());
             }
-            for (LIRExprNode input : current.inputs()) {
-                stack.add(input);
-            }
+            Collections.addAll(stack, current.inputs());
         }
     }
 
@@ -283,9 +279,7 @@ public final class ScratchVerificationPass {
             if (current instanceof SLoad load) {
                 read.add(load.buffer());
             }
-            for (LIRExprNode input : current.inputs()) {
-                stack.add(input);
-            }
+            Collections.addAll(stack, current.inputs());
         }
     }
 
@@ -416,9 +410,7 @@ public final class ScratchVerificationPass {
                     lastUse.merge(load.buffer(), idx, Math::max);
                 }
             }
-            for (LIRExprNode input : current.inputs()) {
-                stack.add(input);
-            }
+            Collections.addAll(stack, current.inputs());
         }
     }
 

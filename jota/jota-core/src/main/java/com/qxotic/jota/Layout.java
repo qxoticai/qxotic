@@ -300,23 +300,6 @@ public interface Layout {
     }
 
     /**
-     * Returns true if this layout spans a contiguous memory range [0, n-1].
-     *
-     * <p>This is the CuTe-style contiguity check: a layout is "contiguous" if all elements fit
-     * within a contiguous block of memory without gaps. Formally:
-     *
-     * <pre>sum((dim_i - 1) * stride_i) == totalElements - 1</pre>
-     *
-     * <p>This is more general than row-major contiguity. For example, (2, 2, 2):(4, 1, 2) spans [0,
-     * 7] contiguously even though iteration order is not linear.
-     *
-     * <p>Empty layouts (size == 0) are considered contiguous by convention.
-     */
-    default boolean spansContiguousRange() {
-        return isSpanContiguous();
-    }
-
-    /**
      * Returns true if this layout spans a gapless memory range.
      *
      * <p>This is a compactness check: the accessed offsets form a contiguous span, even if the
@@ -345,27 +328,6 @@ public interface Layout {
             totalElements *= dim;
         }
         return (maxOffset - minOffset) == totalElements - 1;
-    }
-
-    /**
-     * Returns true if this layout is contiguous in row-major order.
-     *
-     * <p>This is a stricter check than {@link #spansContiguousRange()}. A layout is row-major
-     * contiguous if:
-     *
-     * <ol>
-     *   <li>The rightmost (innermost) stride equals 1
-     *   <li>Each stride equals the product of all inner dimensions times their strides
-     * </ol>
-     *
-     * <p>Empty layouts (size == 0) are considered contiguous by convention.
-     *
-     * @deprecated Use {@link #spansContiguousRange()} for CuTe semantics, or check {@link
-     *     #isSuffixContiguous(int)} for specific modes.
-     */
-    @Deprecated
-    default boolean isContiguous() {
-        return spansContiguousRange();
     }
 
     /** Returns true if this layout is contiguous in row-major order. */

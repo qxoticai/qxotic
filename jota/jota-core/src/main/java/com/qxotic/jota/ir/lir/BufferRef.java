@@ -42,7 +42,7 @@ public record BufferRef(int id, DataType dataType, Layout layout) implements LIR
 
     /** Returns the flattened rank (total number of dimensions for memory access). */
     public int flatRank() {
-        return (int) layout.shape().flatRank();
+        return layout.shape().flatRank();
     }
 
     /** Returns the total number of elements. */

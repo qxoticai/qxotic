@@ -44,11 +44,10 @@ class BytesDomain implements MemoryDomain<byte[]> {
 
     @Override
     public String toString() {
-        return new StringBuilder("Context{byte[], device=")
-                .append(device())
-                .append(", directAccess=")
-                .append(directAccess() != null)
-                .append('}')
-                .toString();
+        return "Context{byte[], device="
+                + device()
+                + ", directAccess="
+                + (directAccess() != null)
+                + '}';
     }
 }

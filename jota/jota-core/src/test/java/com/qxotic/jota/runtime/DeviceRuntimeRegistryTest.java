@@ -28,33 +28,18 @@ class DeviceRuntimeRegistryTest {
         registry.registerFactory(logical, d -> runtime);
 
         assertSame(runtime, registry.runtimeFor(logical));
-        assertTrue(registry.hasRuntime(logical));
+        assertTrue(registry.hasRuntimeFor(logical));
     }
 
     @Test
-    void resolvesAliasToConcreteDevice() {
+    void resolvesRegisteredConcreteDevice() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         Device logical = DeviceType.PANAMA.deviceIndex(0);
         DeviceRuntime runtime = panamaRuntime(logical);
         registry.registerFactory(logical, d -> runtime);
 
-        // Auto-alias: "panama" → Device("panama", 0)
-        assertSame(runtime, registry.runtimeFor("panama"));
-        assertTrue(registry.hasRuntime("panama"));
-    }
-
-    @Test
-    void aliasResolutionIsTransitive() {
-        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        Device logical = DeviceType.PANAMA.deviceIndex(0);
-        DeviceRuntime runtime = panamaRuntime(logical);
-        registry.registerFactory(logical, d -> runtime);
-
-        // native → panama → panama:0
-        registry.registerAlias("native", logical);
-
-        assertSame(runtime, registry.runtimeFor("native"));
-        assertEquals(logical, registry.resolve("native"));
+        assertSame(runtime, registry.runtimeFor(logical));
+        assertTrue(registry.hasRuntimeFor(logical));
     }
 
     @Test
@@ -87,26 +72,9 @@ class DeviceRuntimeRegistryTest {
     }
 
     @Test
-    void hasRuntimeReturnsFalseForUnknownAlias() {
+    void hasRuntimeForReturnsFalseForUnknownDevice() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        assertFalse(registry.hasRuntime("cuda"));
-    }
-
-    @Test
-    void registerAliasCanSwitchTarget() {
-        DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
-        Device panamaLogical = DeviceType.PANAMA.deviceIndex(0);
-        Device cLogical = DeviceType.C.deviceIndex(0);
-        DeviceRuntime panamaRt = panamaRuntime(panamaLogical);
-        DeviceRuntime cRt = cRuntime(cLogical);
-        registry.registerFactory(panamaLogical, d -> panamaRt);
-        registry.registerFactory(cLogical, d -> cRt);
-
-        registry.registerAlias("native", panamaLogical);
-        assertSame(panamaRt, registry.runtimeFor("native"));
-
-        registry.registerAlias("native", cLogical);
-        assertSame(cRt, registry.runtimeFor("native"));
+        assertFalse(registry.hasRuntimeFor(DeviceType.CUDA.deviceIndex(0)));
     }
 
     @Test
@@ -114,7 +82,6 @@ class DeviceRuntimeRegistryTest {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         Device panamaLogical = DeviceType.PANAMA.deviceIndex(0);
         registry.registerFactory(panamaLogical, d -> panamaRuntime(panamaLogical));
-        registry.registerAlias("native", panamaLogical);
 
         assertTrue(registry.devices().contains(panamaLogical));
     }
@@ -144,11 +111,6 @@ class DeviceRuntimeRegistryTest {
     }
 
     private static DeviceRuntime panamaRuntime(Device device) {
-        return new StubDeviceRuntime(
-                device, DomainFactory.ofMemorySegment(), new NoopEngine(device));
-    }
-
-    private static DeviceRuntime cRuntime(Device device) {
         return new StubDeviceRuntime(
                 device, DomainFactory.ofMemorySegment(), new NoopEngine(device));
     }

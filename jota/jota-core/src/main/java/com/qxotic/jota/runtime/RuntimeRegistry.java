@@ -7,13 +7,7 @@ import java.util.Set;
 public interface RuntimeRegistry {
     DeviceRuntime runtimeFor(Device device);
 
-    DeviceRuntime runtimeFor(String nameOrAlias);
-
-    boolean hasRuntime(Device device);
-
-    boolean hasRuntime(String nameOrAlias);
-
-    Device resolve(String nameOrAlias);
+    boolean hasRuntimeFor(Device device);
 
     Set<Device> devices();
 

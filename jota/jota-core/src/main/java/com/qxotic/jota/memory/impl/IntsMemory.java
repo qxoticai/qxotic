@@ -44,11 +44,6 @@ final class IntsMemory implements Memory<int[]> {
 
     @Override
     public String toString() {
-        return new StringBuilder("Memory{int[], byteSize=")
-                .append(byteSize())
-                .append(", device=")
-                .append(device())
-                .append('}')
-                .toString();
+        return "Memory{int[], byteSize=" + byteSize() + ", device=" + device() + '}';
     }
 }

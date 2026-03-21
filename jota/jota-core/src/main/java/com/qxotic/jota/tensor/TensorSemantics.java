@@ -64,32 +64,6 @@ final class TensorSemantics {
         return reduced;
     }
 
-    static long[] projectReducedCoord(long[] inputCoord, boolean[] reducedMask, boolean keepDims) {
-        if (keepDims) {
-            long[] outputCoord = new long[inputCoord.length];
-            for (int i = 0; i < inputCoord.length; i++) {
-                outputCoord[i] = reducedMask[i] ? 0L : inputCoord[i];
-            }
-            return outputCoord;
-        }
-
-        int outputRank = 0;
-        for (int i = 0; i < inputCoord.length; i++) {
-            if (!reducedMask[i]) {
-                outputRank++;
-            }
-        }
-
-        long[] outputCoord = new long[outputRank];
-        int idx = 0;
-        for (int i = 0; i < inputCoord.length; i++) {
-            if (!reducedMask[i]) {
-                outputCoord[idx++] = inputCoord[i];
-            }
-        }
-        return outputCoord;
-    }
-
     static Shape requireCompatibleShape(Shape left, Shape right) {
         boolean leftIsTrueScalar = left.isScalar();
         boolean rightIsTrueScalar = right.isScalar();

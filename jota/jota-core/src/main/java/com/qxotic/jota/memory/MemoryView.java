@@ -37,7 +37,7 @@ public interface MemoryView<B> extends View {
     }
 
     default boolean isContiguous() {
-        return layout().isContiguous();
+        return layout().isSpanContiguous();
     }
 
     default boolean isSpanContiguous() {
@@ -188,11 +188,6 @@ public interface MemoryView<B> extends View {
 
     default MemoryView<B> withStride(Stride newStride) {
         return withLayout(Layout.of(shape(), newStride));
-    }
-
-    default MemoryView<B> broadcastTo(Shape targetShape) {
-        // Delegate to existing broadcast method for now
-        return broadcast(targetShape);
     }
 
     default String toString(MemoryAccess<B> memoryAccess) {

@@ -90,12 +90,6 @@ class TensorStaticFactoriesCoverageTest {
         assertTensor(Tensor.full(5, Shape.of(2, 2)), DataType.I32, Shape.of(2, 2));
         assertTensor(Tensor.full(7, DataType.I16, Shape.of(2, 2)), DataType.I16, Shape.of(2, 2));
 
-        // broadcasted overloads.
-        assertTensor(Tensor.broadcasted(1, Shape.of(2, 2)), DataType.I32, Shape.of(2, 2));
-        assertTensor(Tensor.broadcasted(1L, Shape.of(2, 2)), DataType.I64, Shape.of(2, 2));
-        assertTensor(Tensor.broadcasted(1.0f, Shape.of(2, 2)), DataType.FP32, Shape.of(2, 2));
-        assertTensor(Tensor.broadcasted(1.0, Shape.of(2, 2)), DataType.FP64, Shape.of(2, 2));
-
         // scalar overloads.
         assertTensor(Tensor.scalar(1), DataType.I32, Shape.scalar());
         assertTensor(Tensor.scalar(1.0f), DataType.FP32, Shape.scalar());

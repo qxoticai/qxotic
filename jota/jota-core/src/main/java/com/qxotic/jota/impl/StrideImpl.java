@@ -30,7 +30,7 @@ final class StrideImpl extends NestedTupleImpl<Stride> implements Stride {
         int modeIndex = Util.wrapAround(_modeIndex, rank());
 
         if (isFlat()) {
-            return StrideImpl.of(new long[] {flat[modeIndex]});
+            return StrideImpl.of(flat[modeIndex]);
         }
 
         ModeRange range = findModeRange(modeIndex);
@@ -95,7 +95,7 @@ final class StrideImpl extends NestedTupleImpl<Stride> implements Stride {
                 return stride;
             }
             if (elements[0] instanceof Number num) {
-                return StrideImpl.of(new long[] {num.longValue()});
+                return StrideImpl.of(num.longValue());
             }
             throw new IllegalArgumentException("Arguments must be Numbers or Strides");
         }
@@ -301,15 +301,7 @@ final class StrideImpl extends NestedTupleImpl<Stride> implements Stride {
         throw new IndexOutOfBoundsException("Mode index out of bounds: " + modeIndex);
     }
 
-    private static class ModeRange {
-        final int start;
-        final int end;
-
-        ModeRange(int start, int end) {
-            this.start = start;
-            this.end = end;
-        }
-    }
+    private record ModeRange(int start, int end) {}
 
     private static boolean isFlatNest(int[] nest) {
         if (nest == null) {

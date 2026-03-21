@@ -36,7 +36,7 @@ public final class AvailableBackends {
         }
 
         Set<Device> targets = new LinkedHashSet<>();
-        targets.add(current.resolveRuntime("native"));
+        targets.add(current.nativeDevice());
         for (DeviceType type :
                 List.of(
                         DeviceType.PANAMA,
@@ -46,10 +46,10 @@ public final class AvailableBackends {
                         DeviceType.MOJO,
                         DeviceType.OPENCL,
                         DeviceType.METAL)) {
-            if (!current.runtimes().hasRuntime(type.id())) {
+            Device device = type.deviceIndex(0);
+            if (!current.runtimes().hasRuntimeFor(device)) {
                 continue;
             }
-            Device device = current.resolveRuntime(type);
             if (isAvailable(current, device)) {
                 targets.add(device);
             }
@@ -69,7 +69,7 @@ public final class AvailableBackends {
                                 "xcrun", "-sdk", "macosx", "-find", "metallib"))) {
             return false;
         }
-        if (!environment.runtimes().hasRuntime(device)) {
+        if (!environment.runtimes().hasRuntimeFor(device)) {
             return false;
         }
         List<RuntimeDiagnostic> diagnostics =

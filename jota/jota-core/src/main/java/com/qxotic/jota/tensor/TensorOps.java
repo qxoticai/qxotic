@@ -244,8 +244,4 @@ interface TensorOps {
     Tensor to(Tensor x, Device device);
 
     Tensor contiguous(Tensor x);
-
-    //    Tensor quantize(Tensor x, DataType quantType);
-    //
-    //    Tensor dequantize(Tensor x, DataType targetType);
 }

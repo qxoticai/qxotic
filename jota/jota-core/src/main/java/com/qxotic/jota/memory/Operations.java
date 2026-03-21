@@ -99,7 +99,6 @@ interface BinaryOp {
     String name();
 
     BinaryOp ADD = new BinaryOpImpl("add");
-    ;
     BinaryOp MULTIPLY = new BinaryOpImpl("multiply");
     BinaryOp DIVIDE = new BinaryOpImpl("divide");
     BinaryOp SUBTRACT = new BinaryOpImpl("subtract");

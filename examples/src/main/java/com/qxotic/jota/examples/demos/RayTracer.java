@@ -59,9 +59,9 @@ public final class RayTracer {
         Shape shape = Shape.of(n, 1);
         Tensor[] dirs = generateRays(w, h, shape);
         Tensor rdx = dirs[0], rdy = dirs[1], rdz = dirs[2];
-        Tensor rox = broadcast(0f, shape),
-                roy = broadcast(-0.4f, shape),
-                roz = broadcast(2.2f, shape);
+        Tensor rox = Tensor.full(0f, shape),
+                roy = Tensor.full(-0.4f, shape),
+                roz = Tensor.full(2.2f, shape);
         Sphere[] spheres =
                 new Sphere[] {
                     new Sphere(0, -1000.5f, -3, 1000, 0.45f, 0.75f, 0.85f, 0.3f),
@@ -69,12 +69,12 @@ public final class RayTracer {
                     new Sphere(0, 0.4f, -1.2f, 0.3f, 0.9f, 0.9f, 0.1f, 0.4f),
                     new Sphere(0.7f, 0.25f, -1.4f, 0.35f, 0.1f, 0.7f, 1, 0.5f)
                 };
-        Tensor one = broadcast(1f, shape),
-                zero = broadcast(0f, shape),
-                half = broadcast(0.5f, shape);
-        Tensor eps = broadcast(EPS, shape),
-                huge = broadcast(HUGE, shape),
-                hugeHalf = broadcast(HUGE * 0.5f, shape);
+        Tensor one = Tensor.full(1f, shape),
+                zero = Tensor.full(0f, shape),
+                half = Tensor.full(0.5f, shape);
+        Tensor eps = Tensor.full(EPS, shape),
+                huge = Tensor.full(HUGE, shape),
+                hugeHalf = Tensor.full(HUGE * 0.5f, shape);
         Tensor accR = zero,
                 accG = zero,
                 accB = zero,
@@ -94,7 +94,7 @@ public final class RayTracer {
             accG = accG.add(thrG.multiply(skyT.multiply(0.4f).add(0.7f)).multiply(missF));
             accB = accB.add(thrB.multiply(skyT.multiply(0.85f).add(0.15f)).multiply(missF));
             Tensor ldx = hit.x.subtract(zero),
-                    ldy = hit.y.subtract(broadcast(5f, shape)),
+                    ldy = hit.y.subtract(Tensor.full(5f, shape)),
                     ldz = hit.z.subtract(zero);
             Tensor dist = ldx.square().add(ldy.square()).add(ldz.square()).add(0.1f).sqrt();
             ldx = ldx.divide(dist);
@@ -144,7 +144,7 @@ public final class RayTracer {
         for (int i = 0; i < h; i++) ys[i] = 1f - 2f * ((i + 0.5f) / h);
         Tensor px = Tensor.of(xs, Shape.of(1, w)).broadcast(Shape.of(h, w)).reshape(Shape.of(n, 1));
         Tensor py = Tensor.of(ys, Shape.of(h, 1)).broadcast(Shape.of(h, w)).reshape(Shape.of(n, 1));
-        Tensor dx = px.multiply(aspect * fov), dy = py.multiply(fov), dz = broadcast(-1f, shape);
+        Tensor dx = px.multiply(aspect * fov), dy = py.multiply(fov), dz = Tensor.full(-1f, shape);
         Tensor inv = dx.square().add(dy.square()).add(dz.square()).sqrt().reciprocal();
         return new Tensor[] {dx.multiply(inv), dy.multiply(inv), dz.multiply(inv)};
     }
@@ -166,10 +166,10 @@ public final class RayTracer {
         Tensor bestT = huge, bx = zero, by = zero, bz = zero, bnx = zero, bny = zero, bnz = zero;
         Tensor bar = zero, bag = zero, bab = zero, brefl = zero;
         for (Sphere s : spheres) {
-            Tensor cx = broadcast(s.cx, shape),
-                    cy = broadcast(s.cy, shape),
-                    cz = broadcast(s.cz, shape),
-                    r = broadcast(s.r, shape);
+            Tensor cx = Tensor.full(s.cx, shape),
+                    cy = Tensor.full(s.cy, shape),
+                    cz = Tensor.full(s.cz, shape),
+                    r = Tensor.full(s.r, shape);
             Tensor ocX = ox.subtract(cx), ocY = oy.subtract(cy), ocZ = oz.subtract(cz);
             Tensor a = dx.square().add(dy.square()).add(dz.square());
             Tensor b = ocX.multiply(dx).add(ocY.multiply(dy)).add(ocZ.multiply(dz)).multiply(2f);
@@ -205,10 +205,10 @@ public final class RayTracer {
             bnx = nx.multiply(better).add(bnx.multiply(worse));
             bny = ny.multiply(better).add(bny.multiply(worse));
             bnz = nz.multiply(better).add(bnz.multiply(worse));
-            bar = broadcast(s.ar, shape).multiply(better).add(bar.multiply(worse));
-            bag = broadcast(s.ag, shape).multiply(better).add(bag.multiply(worse));
-            bab = broadcast(s.ab, shape).multiply(better).add(bab.multiply(worse));
-            brefl = broadcast(s.refl, shape).multiply(better).add(brefl.multiply(worse));
+            bar = Tensor.full(s.ar, shape).multiply(better).add(bar.multiply(worse));
+            bag = Tensor.full(s.ag, shape).multiply(better).add(bag.multiply(worse));
+            bab = Tensor.full(s.ab, shape).multiply(better).add(bab.multiply(worse));
+            brefl = Tensor.full(s.refl, shape).multiply(better).add(brefl.multiply(worse));
         }
         return new Hit(bestT.lessThan(hugeHalf), bx, by, bz, bnx, bny, bnz, bar, bag, bab, brefl);
     }
@@ -226,10 +226,6 @@ public final class RayTracer {
                 MemoryView.of(
                         MemoryFactory.ofFloats(arr), DataType.FP32, Layout.rowMajor(view.shape())));
         return arr;
-    }
-
-    private static Tensor broadcast(float v, Shape s) {
-        return Tensor.broadcasted(v, s);
     }
 
     private record Sphere(

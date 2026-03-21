@@ -16,7 +16,7 @@ final class CudaTestAssumptions {
         String details = diagnosticsSummary(nvccAvailable);
         Assumptions.assumeTrue(CudaRuntime.isAvailable(), "CUDA runtime not available\n" + details);
         Assumptions.assumeTrue(
-                Environment.current().runtimes().hasRuntime("cuda"),
+                Environment.current().runtimes().hasRuntimeFor(DeviceType.CUDA.deviceIndex(0)),
                 "CUDA runtime is not registered\n" + details);
         Assumptions.assumeTrue(nvccAvailable, "nvcc not available\n" + details);
     }
@@ -39,7 +39,7 @@ final class CudaTestAssumptions {
                 + "\nCudaRuntime.isAvailable="
                 + CudaRuntime.isAvailable()
                 + "\nCUDA runtime registered="
-                + Environment.current().runtimes().hasRuntime("cuda")
+                + Environment.current().runtimes().hasRuntimeFor(DeviceType.CUDA.deviceIndex(0))
                 + "\nnvcc available="
                 + nvccAvailable;
     }

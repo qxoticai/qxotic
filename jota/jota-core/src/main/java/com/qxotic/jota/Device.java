@@ -28,10 +28,10 @@ public record Device(DeviceType type, long index) {
         if (this == other) {
             return true;
         }
-        if (!(other instanceof Device device)) {
+        if (!(other instanceof Device(DeviceType type1, long index1))) {
             return false;
         }
-        return index == device.index && type.equals(device.type);
+        return index == index1 && type.equals(type1);
     }
 
     @Override

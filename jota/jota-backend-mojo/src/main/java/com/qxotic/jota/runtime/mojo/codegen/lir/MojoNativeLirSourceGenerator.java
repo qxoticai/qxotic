@@ -360,7 +360,6 @@ final class MojoNativeLirSourceGenerator {
             case EXP -> "(2.718281828459045 ** " + in + ")"; // Approximate e^x
             case LOG -> "(log2(" + in + ") * 0.6931471805599453)"; // Approximate ln(x)
             case SQRT -> "sqrt(" + in + ")";
-            case SQUARE -> "(" + in + " * " + in + ")";
             case SIN -> emitTrig("sin", in, unary.input().dataType());
             case COS -> emitTrig("cos", in, unary.input().dataType());
             case TAN -> emitTrig("tan", in, unary.input().dataType());

@@ -276,7 +276,7 @@ class HipMatmulKernelSmokeTest {
 
     private static Environment hipEnvironment() {
         Environment current = Environment.current();
-        return new Environment(
+        return Environment.of(
                 DeviceType.HIP.deviceIndex(0), current.defaultFloat(), current.runtimes());
     }
 

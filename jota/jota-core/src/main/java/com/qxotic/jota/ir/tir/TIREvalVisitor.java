@@ -76,7 +76,6 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case EXP -> (float) Math.exp(a);
                         case LOG -> (float) Math.log(a);
                         case SQRT -> (float) Math.sqrt(a);
-                        case SQUARE -> a * a;
                         case SIN -> (float) Math.sin(a);
                         case COS -> (float) Math.cos(a);
                         case TAN -> (float) Math.tan(a);
@@ -107,7 +106,6 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case EXP -> Math.exp(a);
                         case LOG -> Math.log(a);
                         case SQRT -> Math.sqrt(a);
-                        case SQUARE -> a * a;
                         case SIN -> Math.sin(a);
                         case COS -> Math.cos(a);
                         case TAN -> Math.tan(a);
@@ -139,7 +137,6 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case EXP -> (float) Math.exp(a);
                         case LOG -> (float) Math.log(a);
                         case SQRT -> (float) Math.sqrt(a);
-                        case SQUARE -> a * a;
                         case SIN -> (float) Math.sin(a);
                         case COS -> (float) Math.cos(a);
                         case TAN -> (float) Math.tan(a);
@@ -172,7 +169,6 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                         case EXP -> (float) Math.exp(a);
                         case LOG -> (float) Math.log(a);
                         case SQRT -> (float) Math.sqrt(a);
-                        case SQUARE -> a * a;
                         case SIN -> (float) Math.sin(a);
                         case COS -> (float) Math.cos(a);
                         case TAN -> (float) Math.tan(a);
@@ -740,7 +736,7 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
                     switch (op) {
                         case LOGICAL_AND -> (byte) ((a != 0 && b != 0) ? 1 : 0);
                         case LOGICAL_OR -> (byte) ((a != 0 || b != 0) ? 1 : 0);
-                        case LOGICAL_XOR -> (byte) ((a != 0) != (b != 0) ? 1 : 0);
+                        case LOGICAL_XOR -> (byte) ((a == 0) == (b != 0) ? 1 : 0);
                         case ADD, SUBTRACT, MULTIPLY, DIVIDE, MIN, MAX, POW ->
                                 throw new UnsupportedOperationException(
                                         op + " not supported for BOOL");
@@ -1700,16 +1696,12 @@ final class TIREvalVisitor implements TIRVisitor<MemoryView<MemorySegment>> {
             int indicesRank = indices.shape().rank();
 
             // Fill dimensions before axis: copy directly from output
-            for (int i = 0; i < normalizedAxis; i++) {
-                inCoord[i] = outCoord[i];
-            }
+            if (normalizedAxis >= 0) System.arraycopy(outCoord, 0, inCoord, 0, normalizedAxis);
 
             // At axis position: lookup in indices tensor
             // Indices dimensions in output start at position 'normalizedAxis'
             long[] idxCoord = new long[indicesRank];
-            for (int j = 0; j < indicesRank; j++) {
-                idxCoord[j] = outCoord[normalizedAxis + j];
-            }
+            System.arraycopy(outCoord, normalizedAxis + 0, idxCoord, 0, indicesRank);
             long idxOffset = Indexing.coordToOffset(indices, idxCoord);
             inCoord[normalizedAxis] = readIndexValue(indices, idxOffset, indicesType);
 

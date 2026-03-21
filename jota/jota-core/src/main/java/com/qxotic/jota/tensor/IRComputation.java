@@ -13,10 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-final class IRComputation implements LazyComputation {
-
-    private final TIRGraph graph;
-    private final List<Tensor> inputTensors;
+record IRComputation(TIRGraph graph, List<Tensor> inputTensors) implements LazyComputation {
 
     IRComputation(TIRGraph graph, List<Tensor> inputTensors) {
         this.graph = Objects.requireNonNull(graph);
@@ -68,13 +65,5 @@ final class IRComputation implements LazyComputation {
         // result = new TIRValidationPass().run(result);
 
         return result;
-    }
-
-    TIRGraph graph() {
-        return graph;
-    }
-
-    List<Tensor> inputTensors() {
-        return inputTensors;
     }
 }

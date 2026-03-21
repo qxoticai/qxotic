@@ -300,7 +300,7 @@ class CMatmulKernelSmokeTest {
 
     private static Environment cEnvironment() {
         Environment current = Environment.current();
-        return new Environment(
+        return Environment.of(
                 DeviceType.C.deviceIndex(0), current.defaultFloat(), current.runtimes());
     }
 

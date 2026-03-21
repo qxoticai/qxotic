@@ -112,11 +112,11 @@ public final class BackendClassMatrixExtension implements ClassTemplateInvocatio
             Environment current = Environment.current();
             current.nativeRuntime();
             Assumptions.assumeTrue(
-                    current.runtimes().hasRuntime(target),
+                    current.runtimes().hasRuntimeFor(target),
                     "Backend runtime unavailable for " + target);
 
             Environment configured =
-                    new Environment(target, current.defaultFloat(), current.runtimes());
+                    Environment.of(target, current.defaultFloat(), current.runtimes());
             return Environment.with(
                     configured,
                     () -> {

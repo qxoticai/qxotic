@@ -57,12 +57,8 @@ final class DemoDevices {
         if (type == null) {
             return environment.nativeRuntime().device();
         }
-        if (!environment.runtimes().hasRuntime(type.id())) {
-            throw new IllegalStateException(
-                    unavailableDeviceMessage(environment, type.deviceIndex(0)));
-        }
-        Device parsed = environment.resolveRuntime(type);
-        if (!environment.runtimes().hasRuntime(parsed)) {
+        Device parsed = type.deviceIndex(0);
+        if (!environment.runtimes().hasRuntimeFor(parsed)) {
             throw new IllegalStateException(unavailableDeviceMessage(environment, parsed));
         }
         return parsed;
@@ -77,7 +73,7 @@ final class DemoDevices {
                 .append(environment.nativeRuntime().device().runtimeId());
 
         for (DeviceType backend : SUPPORTED_BACKENDS) {
-            if (environment.runtimes().hasRuntime(backend.id())) {
+            if (environment.runtimes().hasRuntimeFor(backend.deviceIndex(0))) {
                 output.append('\n').append("  - ").append(backend.id());
             }
         }

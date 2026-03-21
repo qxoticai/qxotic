@@ -5,10 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
-import com.qxotic.jota.runtime.RuntimeDiagnostic;
-import com.qxotic.jota.testutil.ConfiguredTestDevice;
 import com.qxotic.jota.testutil.ExternalToolChecks;
-import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
 class CBackendAvailabilityTest {
@@ -23,20 +20,18 @@ class CBackendAvailabilityTest {
                         "mvnd -Pc test",
                         details));
         assertTrue(
-                ConfiguredTestDevice.hasRuntime(DeviceType.C),
+                hasRuntime(DeviceType.C),
                 canaryFailureMessage(
                         "[MISSING_SOFTWARE] C runtime is not registered",
                         "mvnd -Pc test",
                         details));
         assertTrue(
-                isGccAvailable(),
+                isCompilerAvailable(),
                 canaryFailureMessage(
-                        "[MISSING_SOFTWARE] gcc not available", "mvnd -Pc test", details));
+                        "[MISSING_SOFTWARE] C compiler not available", "mvnd -Pc test", details));
         assertEquals(
                 DeviceType.C.deviceIndex(0),
-                Environment.current()
-                        .runtimeFor(ConfiguredTestDevice.resolve(DeviceType.C))
-                        .device());
+                Environment.current().runtimeFor(DeviceType.C.deviceIndex(0)).device());
     }
 
     private static String canaryFailureMessage(String reason, String command, String details) {
@@ -49,44 +44,21 @@ class CBackendAvailabilityTest {
     }
 
     private static String diagnosticsSummary() {
-        String cDiagnostics =
-                Environment.current().runtimeDiagnostics().stream()
-                        .filter(d -> d.deviceType().equals(DeviceType.C))
-                        .map(CBackendAvailabilityTest::formatDiagnostic)
-                        .collect(Collectors.joining("\n"));
-        if (cDiagnostics.isBlank()) {
-            cDiagnostics = "<none>";
-        }
         return "C diagnostics:\n"
-                + cDiagnostics
+                + "<see runtimeDiagnostics()>"
                 + "\nCNative.isAvailable="
                 + CNative.isAvailable()
                 + "\nC runtime registered="
-                + ConfiguredTestDevice.hasRuntime(DeviceType.C)
-                + "\ngcc available="
-                + isGccAvailable();
+                + hasRuntime(DeviceType.C)
+                + "\ncompiler available="
+                + isCompilerAvailable();
     }
 
-    private static String formatDiagnostic(RuntimeDiagnostic d) {
-        String cause =
-                d.probe().cause() == null
-                        ? ""
-                        : " cause="
-                                + d.probe().cause().getClass().getSimpleName()
-                                + ":"
-                                + d.probe().cause().getMessage();
-        String hint = d.probe().hint() == null ? "" : " hint=" + d.probe().hint();
-        return "- provider="
-                + d.providerId()
-                + " status="
-                + d.probe().status()
-                + " message="
-                + d.probe().message()
-                + hint
-                + cause;
+    private static boolean hasRuntime(DeviceType type) {
+        return Environment.current().runtimes().hasRuntimeFor(type.deviceIndex(0));
     }
 
-    private static boolean isGccAvailable() {
-        return ExternalToolChecks.hasVersionCommand("gcc");
+    private static boolean isCompilerAvailable() {
+        return ExternalToolChecks.hasVersionCommand(CKernelCompiler.resolveCompilerExecutable());
     }
 }

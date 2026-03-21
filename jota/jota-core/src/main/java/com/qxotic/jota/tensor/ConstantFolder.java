@@ -9,11 +9,52 @@ import com.qxotic.jota.ir.tir.ScalarConstant;
 import com.qxotic.jota.ir.tir.UnaryOperator;
 import com.qxotic.jota.runtime.BinaryOp;
 import com.qxotic.jota.runtime.UnaryOp;
+import java.util.Map;
 import java.util.Optional;
 
 final class ConstantFolder {
 
     private ConstantFolder() {}
+
+    // region Op mapping tables
+
+    private static final Map<BinaryOp, BinaryOperator> BINARY_OP_MAP =
+            Map.ofEntries(
+                    Map.entry(BinaryOp.ADD, BinaryOperator.ADD),
+                    Map.entry(BinaryOp.SUBTRACT, BinaryOperator.SUBTRACT),
+                    Map.entry(BinaryOp.MULTIPLY, BinaryOperator.MULTIPLY),
+                    Map.entry(BinaryOp.DIVIDE, BinaryOperator.DIVIDE),
+                    Map.entry(BinaryOp.MIN, BinaryOperator.MIN),
+                    Map.entry(BinaryOp.MAX, BinaryOperator.MAX),
+                    Map.entry(BinaryOp.POW, BinaryOperator.POW),
+                    Map.entry(BinaryOp.LOGICAL_AND, BinaryOperator.LOGICAL_AND),
+                    Map.entry(BinaryOp.LOGICAL_OR, BinaryOperator.LOGICAL_OR),
+                    Map.entry(BinaryOp.LOGICAL_XOR, BinaryOperator.LOGICAL_XOR),
+                    Map.entry(BinaryOp.BITWISE_AND, BinaryOperator.BITWISE_AND),
+                    Map.entry(BinaryOp.BITWISE_OR, BinaryOperator.BITWISE_OR),
+                    Map.entry(BinaryOp.BITWISE_XOR, BinaryOperator.BITWISE_XOR),
+                    Map.entry(BinaryOp.LEFT_SHIFT, BinaryOperator.SHIFT_LEFT),
+                    Map.entry(BinaryOp.RIGHT_SHIFT, BinaryOperator.SHIFT_RIGHT),
+                    Map.entry(BinaryOp.RIGHT_SHIFT_UNSIGNED, BinaryOperator.SHIFT_RIGHT_UNSIGNED),
+                    Map.entry(BinaryOp.EQUAL, BinaryOperator.EQUAL),
+                    Map.entry(BinaryOp.LESS_THAN, BinaryOperator.LESS_THAN));
+
+    private static final Map<UnaryOp, UnaryOperator> UNARY_OP_MAP =
+            Map.ofEntries(
+                    Map.entry(UnaryOp.NEGATE, UnaryOperator.NEGATE),
+                    Map.entry(UnaryOp.ABS, UnaryOperator.ABS),
+                    Map.entry(UnaryOp.EXP, UnaryOperator.EXP),
+                    Map.entry(UnaryOp.LOG, UnaryOperator.LOG),
+                    Map.entry(UnaryOp.SQRT, UnaryOperator.SQRT),
+                    Map.entry(UnaryOp.SIN, UnaryOperator.SIN),
+                    Map.entry(UnaryOp.COS, UnaryOperator.COS),
+                    Map.entry(UnaryOp.TAN, UnaryOperator.TAN),
+                    Map.entry(UnaryOp.TANH, UnaryOperator.TANH),
+                    Map.entry(UnaryOp.RECIPROCAL, UnaryOperator.RECIPROCAL),
+                    Map.entry(UnaryOp.LOGICAL_NOT, UnaryOperator.LOGICAL_NOT),
+                    Map.entry(UnaryOp.BITWISE_NOT, UnaryOperator.BITWISE_NOT));
+
+    // endregion Op mapping tables
 
     static Optional<ConstantComputation> asConstant(Tensor tensor) {
         return InternalTensorAccess.computation(tensor)
@@ -32,44 +73,6 @@ final class ConstantFolder {
         return new IRTensorImpl(sc, device);
     }
 
-    private static BinaryOperator toIRBinaryOp(BinaryOp op) {
-        if (op == BinaryOp.ADD) return BinaryOperator.ADD;
-        if (op == BinaryOp.SUBTRACT) return BinaryOperator.SUBTRACT;
-        if (op == BinaryOp.MULTIPLY) return BinaryOperator.MULTIPLY;
-        if (op == BinaryOp.DIVIDE) return BinaryOperator.DIVIDE;
-        if (op == BinaryOp.MIN) return BinaryOperator.MIN;
-        if (op == BinaryOp.MAX) return BinaryOperator.MAX;
-        if (op == BinaryOp.POW) return BinaryOperator.POW;
-        if (op == BinaryOp.LOGICAL_AND) return BinaryOperator.LOGICAL_AND;
-        if (op == BinaryOp.LOGICAL_OR) return BinaryOperator.LOGICAL_OR;
-        if (op == BinaryOp.LOGICAL_XOR) return BinaryOperator.LOGICAL_XOR;
-        if (op == BinaryOp.BITWISE_AND) return BinaryOperator.BITWISE_AND;
-        if (op == BinaryOp.BITWISE_OR) return BinaryOperator.BITWISE_OR;
-        if (op == BinaryOp.BITWISE_XOR) return BinaryOperator.BITWISE_XOR;
-        if (op == BinaryOp.LEFT_SHIFT) return BinaryOperator.SHIFT_LEFT;
-        if (op == BinaryOp.RIGHT_SHIFT) return BinaryOperator.SHIFT_RIGHT;
-        if (op == BinaryOp.RIGHT_SHIFT_UNSIGNED) return BinaryOperator.SHIFT_RIGHT_UNSIGNED;
-        if (op == BinaryOp.EQUAL) return BinaryOperator.EQUAL;
-        if (op == BinaryOp.LESS_THAN) return BinaryOperator.LESS_THAN;
-        return null;
-    }
-
-    private static UnaryOperator toIRUnaryOp(UnaryOp op) {
-        if (op == UnaryOp.NEGATE) return UnaryOperator.NEGATE;
-        if (op == UnaryOp.ABS) return UnaryOperator.ABS;
-        if (op == UnaryOp.EXP) return UnaryOperator.EXP;
-        if (op == UnaryOp.LOG) return UnaryOperator.LOG;
-        if (op == UnaryOp.SQRT) return UnaryOperator.SQRT;
-        if (op == UnaryOp.SQUARE) return UnaryOperator.SQUARE;
-        if (op == UnaryOp.SIN) return UnaryOperator.SIN;
-        if (op == UnaryOp.COS) return UnaryOperator.COS;
-        if (op == UnaryOp.TANH) return UnaryOperator.TANH;
-        if (op == UnaryOp.RECIPROCAL) return UnaryOperator.RECIPROCAL;
-        if (op == UnaryOp.LOGICAL_NOT) return UnaryOperator.LOGICAL_NOT;
-        if (op == UnaryOp.BITWISE_NOT) return UnaryOperator.BITWISE_NOT;
-        return null;
-    }
-
     private static Tensor broadcastedOf(Number value, DataType type, Shape shape) {
         if (shape.isScalar()) {
             if (type.isIntegral() || type == DataType.BOOL) {
@@ -79,6 +82,8 @@ final class ConstantFolder {
         }
         return Tensor.full(value, type, shape);
     }
+
+    // region Binary folding
 
     static Optional<Tensor> tryFoldBinaryOp(Tensor left, Tensor right, BinaryOp op) {
         Optional<ConstantComputation> leftConst = asConstant(left);
@@ -97,7 +102,7 @@ final class ConstantFolder {
         Optional<ScalarConstant> leftSc = asScalarConstant(left);
         Optional<ScalarConstant> rightSc = asScalarConstant(right);
         if (leftSc.isPresent() && rightSc.isPresent()) {
-            BinaryOperator irOp = toIRBinaryOp(op);
+            BinaryOperator irOp = BINARY_OP_MAP.get(op);
             if (irOp != null) {
                 ScalarConstant folded =
                         IRConstantFolder.foldBinary(irOp, leftSc.get(), rightSc.get());
@@ -111,108 +116,58 @@ final class ConstantFolder {
     }
 
     static Number evalBinary(Number a, Number b, DataType type, BinaryOp op) {
-        return switch (type) {
-            case DataType t when t == DataType.I8 ->
-                    (byte) evalByte(a.byteValue(), b.byteValue(), op);
-            case DataType t when t == DataType.I16 ->
-                    (short) evalShort(a.shortValue(), b.shortValue(), op);
-            case DataType t when t == DataType.I32 -> evalInt(a.intValue(), b.intValue(), op);
-            case DataType t when t == DataType.I64 -> evalLong(a.longValue(), b.longValue(), op);
-            case DataType t when t == DataType.FP16 || t == DataType.BF16 || t == DataType.FP32 ->
-                    evalFloat(a.floatValue(), b.floatValue(), op);
-            case DataType t when t == DataType.FP64 ->
-                    evalDouble(a.doubleValue(), b.doubleValue(), op);
-            default -> throw new UnsupportedOperationException("Unsupported type: " + type);
+        if (type == DataType.I8) return (byte) evalIntegral(a.byteValue(), b.byteValue(), 8, op);
+        if (type == DataType.I16)
+            return (short) evalIntegral(a.shortValue(), b.shortValue(), 16, op);
+        if (type == DataType.I32) return (int) evalIntegral(a.intValue(), b.intValue(), 32, op);
+        if (type == DataType.I64) return evalIntegral(a.longValue(), b.longValue(), 64, op);
+        if (type == DataType.FP16 || type == DataType.BF16 || type == DataType.FP32)
+            return (float) evalFPBinary(a.floatValue(), b.floatValue(), op);
+        if (type == DataType.FP64) return evalFPBinary(a.doubleValue(), b.doubleValue(), op);
+        throw new UnsupportedOperationException("Unsupported type: " + type);
+    }
+
+    private static long evalIntegral(long a, long b, int bitWidth, BinaryOp op) {
+        return switch (op) {
+            case ADD -> a + b;
+            case SUBTRACT -> a - b;
+            case MULTIPLY -> a * b;
+            case DIVIDE -> a / b;
+            case MIN -> Math.min(a, b);
+            case MAX -> Math.max(a, b);
+            case BITWISE_AND -> a & b;
+            case BITWISE_OR -> a | b;
+            case BITWISE_XOR -> a ^ b;
+            case LEFT_SHIFT -> a << (b & (bitWidth - 1));
+            case RIGHT_SHIFT -> a >> (b & (bitWidth - 1));
+            case RIGHT_SHIFT_UNSIGNED -> {
+                int s = (int) (b & (bitWidth - 1));
+                yield switch (bitWidth) {
+                    case 8 -> (a & 0xFFL) >>> s;
+                    case 16 -> (a & 0xFFFFL) >>> s;
+                    case 32 -> (a & 0xFFFFFFFFL) >>> s;
+                    default -> a >>> s;
+                };
+            }
+            default -> throw new UnsupportedOperationException("Cannot fold: " + op);
         };
     }
 
-    static byte evalByte(byte a, byte b, BinaryOp op) {
-        if (op == BinaryOp.ADD) return (byte) (a + b);
-        if (op == BinaryOp.SUBTRACT) return (byte) (a - b);
-        if (op == BinaryOp.MULTIPLY) return (byte) (a * b);
-        if (op == BinaryOp.DIVIDE) return (byte) (a / b);
-        if (op == BinaryOp.MIN) return (byte) Math.min(a, b);
-        if (op == BinaryOp.MAX) return (byte) Math.max(a, b);
-        if (op == BinaryOp.BITWISE_AND) return (byte) (a & b);
-        if (op == BinaryOp.BITWISE_OR) return (byte) (a | b);
-        if (op == BinaryOp.BITWISE_XOR) return (byte) (a ^ b);
-        int s = b & 7;
-        if (op == BinaryOp.LEFT_SHIFT) return (byte) (a << s);
-        if (op == BinaryOp.RIGHT_SHIFT) return (byte) (a >> s);
-        if (op == BinaryOp.RIGHT_SHIFT_UNSIGNED) return (byte) ((a & 0xFF) >>> s);
-        throw new UnsupportedOperationException("Cannot fold: " + op);
+    private static double evalFPBinary(double a, double b, BinaryOp op) {
+        return switch (op) {
+            case ADD -> a + b;
+            case SUBTRACT -> a - b;
+            case MULTIPLY -> a * b;
+            case DIVIDE -> a / b;
+            case MIN -> Math.min(a, b);
+            case MAX -> Math.max(a, b);
+            default -> throw new UnsupportedOperationException("Cannot fold: " + op);
+        };
     }
 
-    static short evalShort(short a, short b, BinaryOp op) {
-        if (op == BinaryOp.ADD) return (short) (a + b);
-        if (op == BinaryOp.SUBTRACT) return (short) (a - b);
-        if (op == BinaryOp.MULTIPLY) return (short) (a * b);
-        if (op == BinaryOp.DIVIDE) return (short) (a / b);
-        if (op == BinaryOp.MIN) return (short) Math.min(a, b);
-        if (op == BinaryOp.MAX) return (short) Math.max(a, b);
-        if (op == BinaryOp.BITWISE_AND) return (short) (a & b);
-        if (op == BinaryOp.BITWISE_OR) return (short) (a | b);
-        if (op == BinaryOp.BITWISE_XOR) return (short) (a ^ b);
-        int s = b & 15;
-        if (op == BinaryOp.LEFT_SHIFT) return (short) (a << s);
-        if (op == BinaryOp.RIGHT_SHIFT) return (short) (a >> s);
-        if (op == BinaryOp.RIGHT_SHIFT_UNSIGNED) return (short) ((a & 0xFFFF) >>> s);
-        throw new UnsupportedOperationException("Cannot fold: " + op);
-    }
+    // endregion Binary folding
 
-    static int evalInt(int a, int b, BinaryOp op) {
-        if (op == BinaryOp.ADD) return a + b;
-        if (op == BinaryOp.SUBTRACT) return a - b;
-        if (op == BinaryOp.MULTIPLY) return a * b;
-        if (op == BinaryOp.DIVIDE) return a / b;
-        if (op == BinaryOp.MIN) return Math.min(a, b);
-        if (op == BinaryOp.MAX) return Math.max(a, b);
-        if (op == BinaryOp.BITWISE_AND) return a & b;
-        if (op == BinaryOp.BITWISE_OR) return a | b;
-        if (op == BinaryOp.BITWISE_XOR) return a ^ b;
-        int s = b & 31;
-        if (op == BinaryOp.LEFT_SHIFT) return a << s;
-        if (op == BinaryOp.RIGHT_SHIFT) return a >> s;
-        if (op == BinaryOp.RIGHT_SHIFT_UNSIGNED) return a >>> s;
-        throw new UnsupportedOperationException("Cannot fold: " + op);
-    }
-
-    static long evalLong(long a, long b, BinaryOp op) {
-        if (op == BinaryOp.ADD) return a + b;
-        if (op == BinaryOp.SUBTRACT) return a - b;
-        if (op == BinaryOp.MULTIPLY) return a * b;
-        if (op == BinaryOp.DIVIDE) return a / b;
-        if (op == BinaryOp.MIN) return Math.min(a, b);
-        if (op == BinaryOp.MAX) return Math.max(a, b);
-        if (op == BinaryOp.BITWISE_AND) return a & b;
-        if (op == BinaryOp.BITWISE_OR) return a | b;
-        if (op == BinaryOp.BITWISE_XOR) return a ^ b;
-        int s = (int) (b & 63);
-        if (op == BinaryOp.LEFT_SHIFT) return a << s;
-        if (op == BinaryOp.RIGHT_SHIFT) return a >> s;
-        if (op == BinaryOp.RIGHT_SHIFT_UNSIGNED) return a >>> s;
-        throw new UnsupportedOperationException("Cannot fold: " + op);
-    }
-
-    static float evalFloat(float a, float b, BinaryOp op) {
-        if (op == BinaryOp.ADD) return a + b;
-        if (op == BinaryOp.SUBTRACT) return a - b;
-        if (op == BinaryOp.MULTIPLY) return a * b;
-        if (op == BinaryOp.DIVIDE) return a / b;
-        if (op == BinaryOp.MIN) return Math.min(a, b);
-        if (op == BinaryOp.MAX) return Math.max(a, b);
-        throw new UnsupportedOperationException("Cannot fold: " + op);
-    }
-
-    static double evalDouble(double a, double b, BinaryOp op) {
-        if (op == BinaryOp.ADD) return a + b;
-        if (op == BinaryOp.SUBTRACT) return a - b;
-        if (op == BinaryOp.MULTIPLY) return a * b;
-        if (op == BinaryOp.DIVIDE) return a / b;
-        if (op == BinaryOp.MIN) return Math.min(a, b);
-        if (op == BinaryOp.MAX) return Math.max(a, b);
-        throw new UnsupportedOperationException("Cannot fold: " + op);
-    }
+    // region Unary folding
 
     static Optional<Tensor> tryFoldUnaryOp(Tensor tensor, UnaryOp op) {
         Optional<ConstantComputation> constant = asConstant(tensor);
@@ -227,7 +182,7 @@ final class ConstantFolder {
 
         Optional<ScalarConstant> sc = asScalarConstant(tensor);
         if (sc.isPresent()) {
-            UnaryOperator irOp = toIRUnaryOp(op);
+            UnaryOperator irOp = UNARY_OP_MAP.get(op);
             if (irOp != null) {
                 ScalarConstant folded = IRConstantFolder.foldUnary(irOp, sc.get());
                 if (folded != null) {
@@ -240,77 +195,54 @@ final class ConstantFolder {
     }
 
     static Number evalUnary(Number a, DataType type, UnaryOp op) {
-        return switch (type) {
-            case DataType t when t == DataType.I8 -> evalByte(a.byteValue(), op);
-            case DataType t when t == DataType.I16 -> evalShort(a.shortValue(), op);
-            case DataType t when t == DataType.I32 -> evalInt(a.intValue(), op);
-            case DataType t when t == DataType.I64 -> evalLong(a.longValue(), op);
-            case DataType t when t == DataType.FP16 || t == DataType.BF16 || t == DataType.FP32 ->
-                    evalFloat(a.floatValue(), op);
-            case DataType t when t == DataType.FP64 -> evalDouble(a.doubleValue(), op);
-            case DataType t when t == DataType.BOOL -> (long) evalBool(a.longValue() != 0, op);
-            default -> throw new UnsupportedOperationException("Unsupported type: " + type);
+        if (type == DataType.BOOL) return (long) evalBool(a.longValue() != 0, op);
+        if (type.isIntegral()) return narrowIntegral(evalIntegralUnary(a.longValue(), op), type);
+        if (type == DataType.FP64) return evalFPUnary(a.doubleValue(), op);
+        // FP16, BF16, FP32: compute in double, return as float
+        if (type == DataType.FP16 || type == DataType.BF16 || type == DataType.FP32)
+            return (float) evalFPUnary(a.floatValue(), op);
+        throw new UnsupportedOperationException("Unsupported type: " + type);
+    }
+
+    private static long evalIntegralUnary(long a, UnaryOp op) {
+        return switch (op) {
+            case NEGATE -> -a;
+            case ABS -> Math.abs(a);
+            case BITWISE_NOT -> ~a;
+            default -> throw new UnsupportedOperationException("Unsupported unary op: " + op);
         };
     }
 
-    static byte evalByte(byte a, UnaryOp op) {
-        if (op == UnaryOp.NEGATE) return (byte) -a;
-        if (op == UnaryOp.ABS) return (byte) Math.abs(a);
-        if (op == UnaryOp.BITWISE_NOT) return (byte) ~a;
-        throw new UnsupportedOperationException("Unsupported unary op for I8: " + op);
+    private static Number narrowIntegral(long value, DataType type) {
+        if (type == DataType.I8) return (byte) value;
+        if (type == DataType.I16) return (short) value;
+        if (type == DataType.I32) return (int) value;
+        return value;
     }
 
-    static short evalShort(short a, UnaryOp op) {
-        if (op == UnaryOp.NEGATE) return (short) -a;
-        if (op == UnaryOp.ABS) return (short) Math.abs(a);
-        if (op == UnaryOp.BITWISE_NOT) return (short) ~a;
-        throw new UnsupportedOperationException("Unsupported unary op for I16: " + op);
+    private static double evalFPUnary(double a, UnaryOp op) {
+        return switch (op) {
+            case NEGATE -> -a;
+            case ABS -> Math.abs(a);
+            case EXP -> Math.exp(a);
+            case LOG -> Math.log(a);
+            case SQRT -> Math.sqrt(a);
+            case SIN -> Math.sin(a);
+            case COS -> Math.cos(a);
+            case TANH -> Math.tanh(a);
+            case RECIPROCAL -> 1.0 / a;
+            default -> throw new UnsupportedOperationException("Unsupported unary op: " + op);
+        };
     }
 
-    static int evalInt(int a, UnaryOp op) {
-        if (op == UnaryOp.NEGATE) return -a;
-        if (op == UnaryOp.ABS) return Math.abs(a);
-        if (op == UnaryOp.BITWISE_NOT) return ~a;
-        throw new UnsupportedOperationException("Unsupported unary op for I32: " + op);
-    }
-
-    static long evalLong(long a, UnaryOp op) {
-        if (op == UnaryOp.NEGATE) return -a;
-        if (op == UnaryOp.ABS) return Math.abs(a);
-        if (op == UnaryOp.BITWISE_NOT) return ~a;
-        throw new UnsupportedOperationException("Unsupported unary op for I64: " + op);
-    }
-
-    static float evalFloat(float a, UnaryOp op) {
-        if (op == UnaryOp.NEGATE) return -a;
-        if (op == UnaryOp.ABS) return Math.abs(a);
-        if (op == UnaryOp.EXP) return (float) Math.exp(a);
-        if (op == UnaryOp.LOG) return (float) Math.log(a);
-        if (op == UnaryOp.SQRT) return (float) Math.sqrt(a);
-        if (op == UnaryOp.SIN) return (float) Math.sin(a);
-        if (op == UnaryOp.COS) return (float) Math.cos(a);
-        if (op == UnaryOp.TANH) return (float) Math.tanh(a);
-        if (op == UnaryOp.RECIPROCAL) return 1.0f / a;
-        throw new UnsupportedOperationException("Unsupported unary op for FP32: " + op);
-    }
-
-    static double evalDouble(double a, UnaryOp op) {
-        if (op == UnaryOp.NEGATE) return -a;
-        if (op == UnaryOp.ABS) return Math.abs(a);
-        if (op == UnaryOp.EXP) return Math.exp(a);
-        if (op == UnaryOp.LOG) return Math.log(a);
-        if (op == UnaryOp.SQRT) return Math.sqrt(a);
-        if (op == UnaryOp.SIN) return Math.sin(a);
-        if (op == UnaryOp.COS) return Math.cos(a);
-        if (op == UnaryOp.TANH) return Math.tanh(a);
-        if (op == UnaryOp.RECIPROCAL) return 1.0 / a;
-        throw new UnsupportedOperationException("Unsupported unary op for FP64: " + op);
-    }
-
-    static byte evalBool(boolean a, UnaryOp op) {
+    private static byte evalBool(boolean a, UnaryOp op) {
         if (op == UnaryOp.LOGICAL_NOT) return (byte) (a ? 0 : 1);
         throw new UnsupportedOperationException("Unsupported unary op for BOOL: " + op);
     }
+
+    // endregion Unary folding
+
+    // region Compare folding
 
     static Optional<Tensor> tryFoldCompareOp(Tensor left, Tensor right, BinaryOp op) {
         Optional<ConstantComputation> leftConst = asConstant(left);
@@ -327,60 +259,27 @@ final class ConstantFolder {
     }
 
     static boolean evalCompare(Number a, Number b, DataType type, BinaryOp op) {
-        return switch (type) {
-            case DataType t when t == DataType.BOOL ->
-                    evalCompare(
-                            (byte) (a.longValue() != 0 ? 1 : 0),
-                            (byte) (b.longValue() != 0 ? 1 : 0),
-                            op);
-            case DataType t when t == DataType.I8 -> evalCompare(a.byteValue(), b.byteValue(), op);
-            case DataType t when t == DataType.I16 ->
-                    evalCompare(a.shortValue(), b.shortValue(), op);
-            case DataType t when t == DataType.I32 -> evalCompare(a.intValue(), b.intValue(), op);
-            case DataType t when t == DataType.I64 -> evalCompare(a.longValue(), b.longValue(), op);
-            case DataType t when t == DataType.FP16 || t == DataType.BF16 || t == DataType.FP32 ->
-                    evalCompare(a.floatValue(), b.floatValue(), op);
-            case DataType t when t == DataType.FP64 ->
-                    evalCompare(a.doubleValue(), b.doubleValue(), op);
-            default -> throw new UnsupportedOperationException("Unsupported type: " + type);
-        };
+        if (type.isIntegral() || type == DataType.BOOL) {
+            return evalCompareIntegral(a.longValue(), b.longValue(), op);
+        }
+        return evalCompareFP(a.doubleValue(), b.doubleValue(), op);
     }
 
-    static boolean evalCompare(byte a, byte b, BinaryOp op) {
+    private static boolean evalCompareIntegral(long a, long b, BinaryOp op) {
         if (op == BinaryOp.EQUAL) return a == b;
         if (op == BinaryOp.LESS_THAN) return a < b;
         throw new UnsupportedOperationException("Cannot fold compare: " + op);
     }
 
-    static boolean evalCompare(short a, short b, BinaryOp op) {
+    private static boolean evalCompareFP(double a, double b, BinaryOp op) {
         if (op == BinaryOp.EQUAL) return a == b;
         if (op == BinaryOp.LESS_THAN) return a < b;
         throw new UnsupportedOperationException("Cannot fold compare: " + op);
     }
 
-    static boolean evalCompare(int a, int b, BinaryOp op) {
-        if (op == BinaryOp.EQUAL) return a == b;
-        if (op == BinaryOp.LESS_THAN) return a < b;
-        throw new UnsupportedOperationException("Cannot fold compare: " + op);
-    }
+    // endregion Compare folding
 
-    static boolean evalCompare(long a, long b, BinaryOp op) {
-        if (op == BinaryOp.EQUAL) return a == b;
-        if (op == BinaryOp.LESS_THAN) return a < b;
-        throw new UnsupportedOperationException("Cannot fold compare: " + op);
-    }
-
-    static boolean evalCompare(float a, float b, BinaryOp op) {
-        if (op == BinaryOp.EQUAL) return a == b;
-        if (op == BinaryOp.LESS_THAN) return a < b;
-        throw new UnsupportedOperationException("Cannot fold compare: " + op);
-    }
-
-    static boolean evalCompare(double a, double b, BinaryOp op) {
-        if (op == BinaryOp.EQUAL) return a == b;
-        if (op == BinaryOp.LESS_THAN) return a < b;
-        throw new UnsupportedOperationException("Cannot fold compare: " + op);
-    }
+    // region Cast folding
 
     static Optional<Tensor> tryFoldCast(Tensor tensor, DataType targetType) {
         Optional<ConstantComputation> constant = asConstant(tensor);
@@ -402,18 +301,17 @@ final class ConstantFolder {
     }
 
     static Number cast(Number value, DataType targetType) {
-        return switch (targetType) {
-            case DataType t when t == DataType.I8 -> value.byteValue();
-            case DataType t when t == DataType.I16 -> value.shortValue();
-            case DataType t when t == DataType.I32 -> value.intValue();
-            case DataType t when t == DataType.I64 -> value.longValue();
-            case DataType t when t == DataType.FP16 || t == DataType.BF16 || t == DataType.FP32 ->
-                    value.floatValue();
-            case DataType t when t == DataType.FP64 -> value.doubleValue();
-            case DataType t when t == DataType.BOOL -> value.longValue() != 0 ? 1L : 0L;
-            default ->
-                    throw new UnsupportedOperationException(
-                            "Unsupported target type: " + targetType);
-        };
+        if (targetType == DataType.I8) return value.byteValue();
+        if (targetType == DataType.I16) return value.shortValue();
+        if (targetType == DataType.I32) return value.intValue();
+        if (targetType == DataType.I64) return value.longValue();
+        if (targetType == DataType.FP16
+                || targetType == DataType.BF16
+                || targetType == DataType.FP32) return value.floatValue();
+        if (targetType == DataType.FP64) return value.doubleValue();
+        if (targetType == DataType.BOOL) return value.longValue() != 0 ? 1L : 0L;
+        throw new UnsupportedOperationException("Unsupported target type: " + targetType);
     }
+
+    // endregion Cast folding
 }

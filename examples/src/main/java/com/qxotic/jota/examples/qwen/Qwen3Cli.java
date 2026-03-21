@@ -52,7 +52,7 @@ public final class Qwen3Cli {
         Options options = Options.parse(args);
         Environment env =
                 new Environment(
-                        Environment.current().runtimeFor("native").device(),
+                        Environment.current().nativeDevice(),
                         DataType.FP32,
                         Environment.current().runtimes());
         Environment.with(

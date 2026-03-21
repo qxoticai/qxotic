@@ -44,11 +44,6 @@ final class DoublesMemory implements Memory<double[]> {
 
     @Override
     public String toString() {
-        return new StringBuilder("Memory{double[], byteSize=")
-                .append(byteSize())
-                .append(", device=")
-                .append(device())
-                .append('}')
-                .toString();
+        return "Memory{double[], byteSize=" + byteSize() + ", device=" + device() + '}';
     }
 }

@@ -239,7 +239,7 @@ abstract class AbstractTensorImpl implements Tensor {
     // region Reduction / Linear Algebra Ops
 
     public Tensor argmax() {
-        TensorSupport.requireNumericNonBool(dataType(), "argmax");
+        TensorTypeSemantics.requireNumericNonBool(dataType(), "argmax");
         if (shape().rank() == 0) {
             return Tensor.scalar(0L, DataType.I64);
         }
@@ -252,7 +252,7 @@ abstract class AbstractTensorImpl implements Tensor {
     }
 
     public Tensor argmax(int _axis, boolean keepDims) {
-        TensorSupport.requireNumericNonBool(dataType(), "argmax");
+        TensorTypeSemantics.requireNumericNonBool(dataType(), "argmax");
         int axis = TensorSemantics.normalizeAxis(shape().rank(), _axis);
         long axisSize = shape().flatAt(axis);
 
@@ -266,7 +266,7 @@ abstract class AbstractTensorImpl implements Tensor {
     }
 
     public Tensor argmin() {
-        TensorSupport.requireNumericNonBool(dataType(), "argmin");
+        TensorTypeSemantics.requireNumericNonBool(dataType(), "argmin");
         if (shape().rank() == 0) {
             return Tensor.scalar(0L, DataType.I64);
         }
@@ -279,7 +279,7 @@ abstract class AbstractTensorImpl implements Tensor {
     }
 
     public Tensor argmin(int _axis, boolean keepDims) {
-        TensorSupport.requireNumericNonBool(dataType(), "argmin");
+        TensorTypeSemantics.requireNumericNonBool(dataType(), "argmin");
         int axis = TensorSemantics.normalizeAxis(shape().rank(), _axis);
         long axisSize = shape().flatAt(axis);
 
@@ -332,8 +332,8 @@ abstract class AbstractTensorImpl implements Tensor {
         Objects.requireNonNull(other, "other");
         Objects.requireNonNull(accumulatorType, "accumulatorType");
 
-        TensorSupport.requireNumericNonBool(dataType(), "dot");
-        TensorSupport.requireNumericNonBool(other.dataType(), "dot");
+        TensorTypeSemantics.requireNumericNonBool(dataType(), "dot");
+        TensorTypeSemantics.requireNumericNonBool(other.dataType(), "dot");
         if (dataType() != other.dataType()) {
             throw new IllegalArgumentException(
                     "dot requires same input dtypes, got "
@@ -358,7 +358,7 @@ abstract class AbstractTensorImpl implements Tensor {
         }
 
         DataType accType =
-                TensorSupport.resolveReductionAccumulator(dataType(), accumulatorType, "dot");
+                TensorTypeSemantics.resolveReductionAccumulator(dataType(), accumulatorType, "dot");
         Tensor left = cast(accType);
         Tensor right = other.cast(accType);
         if (Tracer.isTracing()) {
@@ -611,7 +611,7 @@ abstract class AbstractTensorImpl implements Tensor {
     // region Bitwise / Logical / Comparison Ops
 
     public Tensor bitwiseNot() {
-        TensorSupport.requireIntegral(dataType(), "bitwiseNot");
+        TensorTypeSemantics.requireIntegral(dataType(), "bitwiseNot");
         return TensorSupport.dispatchFoldedUnaryOp(
                 this,
                 UnaryOp.BITWISE_NOT,
@@ -620,7 +620,7 @@ abstract class AbstractTensorImpl implements Tensor {
     }
 
     public Tensor bitwiseAnd(Tensor other) {
-        TensorSupport.requireSameIntegralType(dataType(), other.dataType(), "bitwiseAnd");
+        TensorTypeSemantics.requireSameIntegralType(dataType(), other.dataType(), "bitwiseAnd");
         return TensorSupport.dispatchFoldedBinaryOp(
                 this,
                 other,
@@ -630,7 +630,7 @@ abstract class AbstractTensorImpl implements Tensor {
     }
 
     public Tensor bitwiseOr(Tensor other) {
-        TensorSupport.requireSameIntegralType(dataType(), other.dataType(), "bitwiseOr");
+        TensorTypeSemantics.requireSameIntegralType(dataType(), other.dataType(), "bitwiseOr");
         return TensorSupport.dispatchFoldedBinaryOp(
                 this,
                 other,
@@ -640,7 +640,7 @@ abstract class AbstractTensorImpl implements Tensor {
     }
 
     public Tensor bitwiseXor(Tensor other) {
-        TensorSupport.requireSameIntegralType(dataType(), other.dataType(), "bitwiseXor");
+        TensorTypeSemantics.requireSameIntegralType(dataType(), other.dataType(), "bitwiseXor");
         return TensorSupport.dispatchFoldedBinaryOp(
                 this,
                 other,
@@ -680,7 +680,7 @@ abstract class AbstractTensorImpl implements Tensor {
     }
 
     public Tensor logicalNot() {
-        TensorSupport.requireBool(dataType(), "logicalNot");
+        TensorTypeSemantics.requireBool(dataType(), "logicalNot");
         return TensorSupport.dispatchFoldedUnaryOp(
                 this,
                 UnaryOp.LOGICAL_NOT,
@@ -689,7 +689,7 @@ abstract class AbstractTensorImpl implements Tensor {
     }
 
     public Tensor logicalAnd(Tensor other) {
-        TensorSupport.requireBooleanPair(dataType(), other.dataType(), "logicalAnd");
+        TensorTypeSemantics.requireBooleanPair(dataType(), other.dataType(), "logicalAnd");
         return TensorSupport.dispatchBinaryOp(
                 this,
                 other,
@@ -698,7 +698,7 @@ abstract class AbstractTensorImpl implements Tensor {
     }
 
     public Tensor logicalOr(Tensor other) {
-        TensorSupport.requireBooleanPair(dataType(), other.dataType(), "logicalOr");
+        TensorTypeSemantics.requireBooleanPair(dataType(), other.dataType(), "logicalOr");
         return TensorSupport.dispatchBinaryOp(
                 this,
                 other,
@@ -707,7 +707,7 @@ abstract class AbstractTensorImpl implements Tensor {
     }
 
     public Tensor logicalXor(Tensor other) {
-        TensorSupport.requireBooleanPair(dataType(), other.dataType(), "logicalXor");
+        TensorTypeSemantics.requireBooleanPair(dataType(), other.dataType(), "logicalXor");
         return TensorSupport.dispatchBinaryOp(
                 this,
                 other,
@@ -737,7 +737,7 @@ abstract class AbstractTensorImpl implements Tensor {
     // region Selection / Reduction Ops
 
     public Tensor where(Tensor trueValue, Tensor falseValue) {
-        TensorSupport.requireBool(dataType(), "where condition");
+        TensorTypeSemantics.requireBool(dataType(), "where condition");
         if (trueValue.dataType() != falseValue.dataType()) {
             throw new IllegalArgumentException(
                     "where requires true and false values to have the same type, got "
@@ -796,7 +796,7 @@ abstract class AbstractTensorImpl implements Tensor {
     }
 
     public Tensor mean() {
-        TensorSupport.requireFloatingPoint(dataType(), "mean");
+        TensorTypeSemantics.requireFloatingPoint(dataType(), "mean");
         int rank = shape().rank();
         if (rank == 0) {
             return this;
@@ -810,7 +810,7 @@ abstract class AbstractTensorImpl implements Tensor {
     }
 
     public Tensor mean(boolean keepDims, int _axis, int... _axes) {
-        TensorSupport.requireFloatingPoint(dataType(), "mean");
+        TensorTypeSemantics.requireFloatingPoint(dataType(), "mean");
         int[] axes = TensorSemantics.normalizeReductionAxes(shape().rank(), _axis, _axes);
         long count = 1L;
         for (int axis : axes) {
@@ -859,31 +859,31 @@ abstract class AbstractTensorImpl implements Tensor {
     }
 
     public Tensor sqrt() {
-        TensorSupport.requireFloatingPoint(dataType(), "sqrt");
+        TensorTypeSemantics.requireFloatingPoint(dataType(), "sqrt");
         return TensorSupport.dispatchFoldedUnaryOp(
                 this, UnaryOp.SQRT, t -> TensorSupport.irOps().sqrt(t), Tensor::sqrt);
     }
 
     public Tensor sin() {
-        TensorSupport.requireFloatingPoint(dataType(), "sin");
+        TensorTypeSemantics.requireFloatingPoint(dataType(), "sin");
         return TensorSupport.dispatchFoldedUnaryOp(
                 this, UnaryOp.SIN, t -> TensorSupport.irOps().sin(t), Tensor::sin);
     }
 
     public Tensor cos() {
-        TensorSupport.requireFloatingPoint(dataType(), "cos");
+        TensorTypeSemantics.requireFloatingPoint(dataType(), "cos");
         return TensorSupport.dispatchFoldedUnaryOp(
                 this, UnaryOp.COS, t -> TensorSupport.irOps().cos(t), Tensor::cos);
     }
 
     public Tensor tanh() {
-        TensorSupport.requireFloatingPoint(dataType(), "tanh");
+        TensorTypeSemantics.requireFloatingPoint(dataType(), "tanh");
         return TensorSupport.dispatchFoldedUnaryOp(
                 this, UnaryOp.TANH, t -> TensorSupport.irOps().tanh(t), Tensor::tanh);
     }
 
     public Tensor reciprocal() {
-        TensorSupport.requireFloatingPoint(dataType(), "reciprocal");
+        TensorTypeSemantics.requireFloatingPoint(dataType(), "reciprocal");
         return TensorSupport.dispatchFoldedUnaryOp(
                 this,
                 UnaryOp.RECIPROCAL,

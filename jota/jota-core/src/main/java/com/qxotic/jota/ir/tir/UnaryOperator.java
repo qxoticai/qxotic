@@ -9,7 +9,6 @@ public enum UnaryOperator {
     EXP,
     LOG,
     SQRT,
-    SQUARE, // ?
     SIN,
     COS,
     TAN,

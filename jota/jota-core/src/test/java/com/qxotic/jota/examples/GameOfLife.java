@@ -155,7 +155,7 @@ public class GameOfLife {
         Pattern finalPattern = pattern;
         RenderMode finalRenderMode = renderMode;
         long start = System.currentTimeMillis();
-        Environment scoped = new Environment(backend, current.defaultFloat(), current.runtimes());
+        Environment scoped = Environment.of(backend, current.defaultFloat(), current.runtimes());
         try {
             Environment.with(
                     scoped,

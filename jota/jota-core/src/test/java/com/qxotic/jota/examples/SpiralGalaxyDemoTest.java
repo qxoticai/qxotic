@@ -4,17 +4,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
+import com.qxotic.jota.memory.Memory;
+import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.testutil.PpmWriter;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
 import com.qxotic.jota.testutil.TensorTestReads;
 import java.io.IOException;
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
@@ -82,15 +81,16 @@ class SpiralGalaxyDemoTest {
     }
 
     private static void writePPM(MemoryView<?> view, String filename) throws IOException {
-        MemoryView<?> hostView =
-                Tensor.of(view).to(Environment.current().nativeRuntime().device()).materialize();
-        MemorySegment segment = (MemorySegment) hostView.memory().base();
+        TensorTestReads.ReadBuffer buffer = TensorTestReads.readBuffer(view);
+        MemoryView<?> hostView = buffer.view();
+        MemoryAccess<Object> access = buffer.access();
+        Memory<Object> memory = memory(hostView);
         byte[] rgb = new byte[WIDTH * HEIGHT * 3];
         for (int h = 0; h < HEIGHT; h++) {
             for (int w = 0; w < WIDTH; w++) {
                 int idx = h * WIDTH + w;
                 long offset = Indexing.linearToOffset(hostView, idx);
-                float value = segment.get(ValueLayout.JAVA_FLOAT_UNALIGNED, offset);
+                float value = access.readFloat(memory, offset);
                 byte shade = (byte) clampToByte(value * 255.0f);
                 rgb[idx * 3] = shade;
                 rgb[idx * 3 + 1] = shade;
@@ -98,6 +98,11 @@ class SpiralGalaxyDemoTest {
             }
         }
         PpmWriter.write(Path.of(filename), WIDTH, HEIGHT, rgb);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Memory<Object> memory(MemoryView<?> view) {
+        return (Memory<Object>) view.memory();
     }
 
     private static int clampToByte(float value) {

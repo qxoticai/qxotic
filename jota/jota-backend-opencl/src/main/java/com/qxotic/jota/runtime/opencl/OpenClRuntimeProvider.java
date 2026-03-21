@@ -55,8 +55,8 @@ public final class OpenClRuntimeProvider extends DeviceRuntimeProvider {
     }
 
     @Override
-    public DeviceRuntime create(long deviceIndex) {
-        return new OpenClDeviceRuntime(deviceType().deviceIndex(deviceIndex));
+    protected DeviceRuntime createForDevice(com.qxotic.jota.Device device) {
+        return new OpenClDeviceRuntime(device);
     }
 
     @Override

@@ -6,9 +6,8 @@ import com.qxotic.jota.memory.*;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
 
-final class NativeMemoryDomain implements MemoryDomain<MemorySegment> {
-
-    private final MemoryAllocator<MemorySegment> memoryAllocator;
+record NativeMemoryDomain(MemoryAllocator<MemorySegment> memoryAllocator)
+        implements MemoryDomain<MemorySegment> {
 
     NativeMemoryDomain(MemoryAllocator<MemorySegment> memoryAllocator) {
         assert memoryAllocator.device().belongsTo(DeviceType.PANAMA)
@@ -19,11 +18,6 @@ final class NativeMemoryDomain implements MemoryDomain<MemorySegment> {
     @Override
     public Device device() {
         return memoryAllocator.device();
-    }
-
-    @Override
-    public MemoryAllocator<MemorySegment> memoryAllocator() {
-        return memoryAllocator;
     }
 
     @Override
@@ -45,11 +39,10 @@ final class NativeMemoryDomain implements MemoryDomain<MemorySegment> {
 
     @Override
     public String toString() {
-        return new StringBuilder("Context{MemorySegment, device=")
-                .append(device())
-                .append(", directAccess=")
-                .append(directAccess() != null)
-                .append('}')
-                .toString();
+        return "Context{MemorySegment, device="
+                + device()
+                + ", directAccess="
+                + (directAccess() != null)
+                + '}';
     }
 }

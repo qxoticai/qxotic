@@ -8,7 +8,6 @@ public enum UnaryOp {
     EXP,
     LOG,
     SQRT,
-    SQUARE,
     SIN,
     COS,
     TAN,

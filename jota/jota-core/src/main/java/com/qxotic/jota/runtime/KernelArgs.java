@@ -122,7 +122,7 @@ public final class KernelArgs {
             return (int) bits;
         }
         if (type == DataType.I64) {
-            return (long) bits;
+            return bits;
         }
         if (type == DataType.FP16) {
             return Float.float16ToFloat((short) bits);
@@ -159,7 +159,7 @@ public final class KernelArgs {
             return (int) bits;
         }
         if (type == DataType.I64) {
-            return (long) bits;
+            return bits;
         }
         if (type == DataType.FP16) {
             return Float.float16ToFloat((short) bits);

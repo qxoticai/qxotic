@@ -1096,22 +1096,6 @@ public interface Tensor {
         return TensorFactory.full(value, dtype, shape);
     }
 
-    static Tensor broadcasted(int value, Shape shape) {
-        return TensorFactory.broadcasted(value, shape);
-    }
-
-    static Tensor broadcasted(long value, Shape shape) {
-        return TensorFactory.broadcasted(value, shape);
-    }
-
-    static Tensor broadcasted(float value, Shape shape) {
-        return TensorFactory.broadcasted(value, shape);
-    }
-
-    static Tensor broadcasted(double value, Shape shape) {
-        return TensorFactory.broadcasted(value, shape);
-    }
-
     static Tensor scalar(int value) {
         return TensorFactory.scalar(value);
     }

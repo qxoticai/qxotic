@@ -4,18 +4,17 @@ import com.qxotic.jota.DataType;
 import java.util.Locale;
 import java.util.Objects;
 
-public final class ViewPrintOptions {
+public record ViewPrintOptions(
+        int maxElements,
+        int edgeItems,
+        boolean includeValues,
+        boolean includeMetadata,
+        ValueFormatter formatter) {
 
     public static final int DEFAULT_MAX_ELEMENTS = 64;
     public static final int DEFAULT_EDGE_ITEMS = 3;
 
     private static final DefaultValueFormatter DEFAULT_FORMATTER = new DefaultValueFormatter();
-
-    private final int maxElements;
-    private final int edgeItems;
-    private final boolean includeValues;
-    private final boolean includeMetadata;
-    private final ValueFormatter formatter;
 
     public ViewPrintOptions(
             int maxElements,
@@ -49,26 +48,6 @@ public final class ViewPrintOptions {
     public static ViewPrintOptions valuesOnly() {
         return new ViewPrintOptions(
                 DEFAULT_MAX_ELEMENTS, DEFAULT_EDGE_ITEMS, true, false, DEFAULT_FORMATTER);
-    }
-
-    public int maxElements() {
-        return maxElements;
-    }
-
-    public int edgeItems() {
-        return edgeItems;
-    }
-
-    public boolean includeValues() {
-        return includeValues;
-    }
-
-    public boolean includeMetadata() {
-        return includeMetadata;
-    }
-
-    public ValueFormatter formatter() {
-        return formatter;
     }
 
     private static final class DefaultValueFormatter implements ValueFormatter {

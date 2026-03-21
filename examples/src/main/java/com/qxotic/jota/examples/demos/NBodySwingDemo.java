@@ -53,7 +53,7 @@ public final class NBodySwingDemo {
             printRuntimeDiagnostics(global);
             return;
         }
-        if (!global.runtimes().hasRuntime(device)) {
+        if (!global.runtimes().hasRuntimeFor(device)) {
             throw new IllegalStateException(unavailableDeviceMessage(global, device));
         }
         try {

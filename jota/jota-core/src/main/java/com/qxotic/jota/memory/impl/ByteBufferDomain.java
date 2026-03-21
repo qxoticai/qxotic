@@ -5,9 +5,8 @@ import com.qxotic.jota.memory.*;
 import java.nio.ByteBuffer;
 import java.util.Objects;
 
-class ByteBufferDomain implements MemoryDomain<ByteBuffer> {
-
-    private final MemoryAllocator<ByteBuffer> memoryAllocator;
+record ByteBufferDomain(MemoryAllocator<ByteBuffer> memoryAllocator)
+        implements MemoryDomain<ByteBuffer> {
 
     ByteBufferDomain(MemoryAllocator<ByteBuffer> memoryAllocator) {
         this.memoryAllocator = Objects.requireNonNull(memoryAllocator);
@@ -16,11 +15,6 @@ class ByteBufferDomain implements MemoryDomain<ByteBuffer> {
     @Override
     public Device device() {
         return memoryAllocator.device();
-    }
-
-    @Override
-    public MemoryAllocator<ByteBuffer> memoryAllocator() {
-        return memoryAllocator;
     }
 
     @Override
@@ -40,11 +34,10 @@ class ByteBufferDomain implements MemoryDomain<ByteBuffer> {
 
     @Override
     public String toString() {
-        return new StringBuilder("Context{ByteBuffer, device=")
-                .append(device())
-                .append(", directAccess=")
-                .append(directAccess() != null)
-                .append('}')
-                .toString();
+        return "Context{ByteBuffer, device="
+                + device()
+                + ", directAccess="
+                + (directAccess() != null)
+                + '}';
     }
 }

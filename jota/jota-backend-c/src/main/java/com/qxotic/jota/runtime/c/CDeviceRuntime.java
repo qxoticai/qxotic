@@ -32,6 +32,11 @@ public final class CDeviceRuntime implements DeviceRuntime {
     }
 
     public CDeviceRuntime(CMemoryDomain memoryDomain) {
+        var probe = new CRuntimeProvider().probe();
+        if (!probe.isAvailable()) {
+            String hint = probe.hint() == null ? "" : " Hint: " + probe.hint();
+            throw new IllegalStateException("C backend unavailable: " + probe.message() + hint);
+        }
         this.memoryDomain = Objects.requireNonNull(memoryDomain, "memoryDomain");
         this.computeEngine = new CComputeEngine(memoryDomain);
         KernelBackend backend = new CKernelBackend();
@@ -68,26 +73,12 @@ public final class CDeviceRuntime implements DeviceRuntime {
 
     @Override
     public Map<String, String> properties() {
-        Runtime rt = Runtime.getRuntime();
-        return Map.of(
-                "device.name",
-                "C Host",
-                "device.vendor",
-                System.getProperty("os.name"),
-                "device.architecture",
-                System.getProperty("os.arch"),
-                "memory.global.bytes",
-                Long.toString(rt.maxMemory()),
-                "compute.units",
-                Integer.toString(rt.availableProcessors()),
-                "device.kind",
-                "cpu");
+        return CRuntimeMetadata.properties();
     }
 
     @Override
     public Set<String> capabilities() {
-        return Set.of(
-                "cpu", "fp32", "fp64", "kernel.compilation", "native.runtime", "unified.memory");
+        return CRuntimeMetadata.capabilities();
     }
 
     @Override

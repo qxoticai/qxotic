@@ -6,6 +6,7 @@ import com.qxotic.jota.runtime.KernelArgs;
 import com.qxotic.jota.runtime.KernelExecutable;
 import com.qxotic.jota.runtime.LaunchConfig;
 import java.lang.foreign.MemorySegment;
+import java.util.Arrays;
 import java.util.List;
 
 final class CKernelExecutable implements KernelExecutable {
@@ -21,40 +22,51 @@ final class CKernelExecutable implements KernelExecutable {
         if (functionPtr == 0L) {
             throw new IllegalStateException("C kernel function is null");
         }
-        long[] bufferPtrs = argsToBuffers(args);
-        long[] scalarBits = argsToScalars(args);
-        long scratchPtr = extractScratchPtr(args);
-        CNative.invokeKernel(functionPtr, bufferPtrs, scalarBits, scratchPtr);
+        PreparedArgs prepared = prepareArgs(args);
+        CNative.invokeKernel(
+                functionPtr,
+                prepared.bufferPointers(),
+                prepared.scalarBits(),
+                prepared.scratchPointer());
     }
 
     @Override
     public void close() {}
 
-    private static long[] argsToBuffers(KernelArgs args) {
-        return args.entries().stream()
-                .filter(entry -> entry.kind() == KernelArgs.Kind.BUFFER)
-                .mapToLong(entry -> CKernelExecutable.bufferPointer(entry))
-                .toArray();
-    }
-
-    private static long[] argsToScalars(KernelArgs args) {
-        return args.entries().stream()
-                .filter(entry -> entry.kind() == KernelArgs.Kind.SCALAR)
-                .mapToLong(entry -> (long) entry.value())
-                .toArray();
-    }
-
-    private static long extractScratchPtr(KernelArgs args) {
+    private static PreparedArgs prepareArgs(KernelArgs args) {
         List<KernelArgs.Entry> entries = args.entries();
         if (entries.isEmpty()) {
-            return 0L;
+            return new PreparedArgs(new long[0], new long[0], 0L);
         }
-        KernelArgs.Entry last = entries.getLast();
-        if (last.kind() == KernelArgs.Kind.METADATA && last.value() instanceof Number value) {
-            return value.longValue();
+        long[] bufferPointers = new long[entries.size()];
+        long[] scalarBits = new long[entries.size()];
+        int bufferCount = 0;
+        int scalarCount = 0;
+        long scratchPointer = 0L;
+        for (KernelArgs.Entry entry : entries) {
+            if (entry.kind() == KernelArgs.Kind.BUFFER) {
+                bufferPointers[bufferCount++] = bufferPointer(entry);
+                continue;
+            }
+            if (entry.kind() == KernelArgs.Kind.SCALAR) {
+                if (!(entry.value() instanceof Number value)) {
+                    throw new IllegalArgumentException(
+                            "Expected numeric scalar, got " + entry.value());
+                }
+                scalarBits[scalarCount++] = value.longValue();
+                continue;
+            }
+            if (entry.kind() == KernelArgs.Kind.METADATA && entry.value() instanceof Number value) {
+                scratchPointer = value.longValue();
+            }
         }
-        return 0L;
+        return new PreparedArgs(
+                Arrays.copyOf(bufferPointers, bufferCount),
+                Arrays.copyOf(scalarBits, scalarCount),
+                scratchPointer);
     }
+
+    private record PreparedArgs(long[] bufferPointers, long[] scalarBits, long scratchPointer) {}
 
     private static long bufferPointer(KernelArgs.Entry entry) {
         Object value = entry.value();

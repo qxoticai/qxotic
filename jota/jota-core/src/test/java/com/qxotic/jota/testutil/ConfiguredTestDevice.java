@@ -19,7 +19,7 @@ public final class ConfiguredTestDevice {
         String raw = System.getProperty(TEST_DEVICE_PROPERTY, "panama");
         String normalized = raw == null ? "panama" : raw.trim().toLowerCase();
         return switch (normalized) {
-            case "native" -> environment.resolveRuntime("native");
+            case "native" -> environment.nativeDevice();
             case "default" -> environment.defaultDevice();
             case "panama" -> resolvePreferredOrZero(environment, DeviceType.PANAMA);
             case "c" -> resolvePreferredOrZero(environment, DeviceType.C);
@@ -37,14 +37,15 @@ public final class ConfiguredTestDevice {
     }
 
     public static boolean hasRuntime(DeviceType type) {
-        return Environment.current().runtimes().hasRuntime(type.id());
+        return Environment.current().runtimes().hasRuntimeFor(type.deviceIndex(0));
     }
 
     private static Device resolvePreferredOrZero(Environment environment, DeviceType type) {
-        if (environment.runtimes().hasRuntime(type.id())) {
-            return environment.resolveRuntime(type);
+        Device preferred = type.deviceIndex(0);
+        if (environment.runtimes().hasRuntimeFor(preferred)) {
+            return preferred;
         }
-        return type.deviceIndex(0);
+        return preferred;
     }
 
     private static Device parseLogicalDevice(Environment environment, String raw) {

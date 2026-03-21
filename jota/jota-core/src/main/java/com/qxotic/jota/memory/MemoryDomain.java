@@ -120,8 +120,7 @@ public interface MemoryDomain<B> extends AutoCloseable {
                 dstContext.memoryOperations(),
                 dst.memory(),
                 dst.byteOffset(),
-                bytes,
-                nativeContext().memoryAllocator().allocateMemory(bytes));
+                bytes);
     }
 
     @SuppressWarnings("unchecked")

@@ -5,15 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Device;
 import com.qxotic.jota.Environment;
-import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
-import com.qxotic.jota.memory.MemoryAccess;
-import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.testutil.RunOnAllAvailableBackends;
+import com.qxotic.jota.testutil.TensorTestReads;
 import com.qxotic.jota.testutil.TestKernels;
-import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -42,26 +39,22 @@ class JuliaSetTest {
         MemoryView<?> output =
                 juliaTensorChunked(WIDTH, HEIGHT, ITERATIONS, TRACE_CHUNK).materialize();
 
-        MemoryDomain<MemorySegment> hostDomain = Environment.current().nativeMemoryDomain();
-        MemoryView<MemorySegment> hostView = toHost(output);
-        MemoryAccess<MemorySegment> access = hostDomain.directAccess();
-
         TestKernels.writePhoenixPpm(
-                hostDomain,
-                hostView,
+                output,
                 Path.of("target", "julia-" + backend.runtimeId() + "-lir.ppm"),
                 WIDTH,
                 HEIGHT,
                 ITERATIONS);
 
+        Tensor outputTensor = Tensor.of(output);
         assertEquals(
                 juliaIter(0, 0, WIDTH, HEIGHT, ITERATIONS),
-                access.readFloat(hostView.memory(), Indexing.linearToOffset(hostView, 0)),
+                TensorTestReads.readFloat(outputTensor, 0),
                 1e-3f);
         long center = (long) (HEIGHT / 2) * WIDTH + (WIDTH / 2);
         assertEquals(
                 juliaIter(HEIGHT / 2, WIDTH / 2, WIDTH, HEIGHT, ITERATIONS),
-                access.readFloat(hostView.memory(), Indexing.linearToOffset(hostView, center)),
+                TensorTestReads.readFloat(outputTensor, center),
                 1e-3f);
     }
 
@@ -133,11 +126,5 @@ class JuliaSetTest {
             zImag = nextImag;
         }
         return iterations - 1;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static MemoryView<MemorySegment> toHost(MemoryView<?> view) {
-        return (MemoryView<MemorySegment>)
-                Tensor.of(view).to(Environment.current().nativeRuntime().device()).materialize();
     }
 }

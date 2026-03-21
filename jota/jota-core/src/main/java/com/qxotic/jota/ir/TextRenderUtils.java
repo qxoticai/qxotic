@@ -216,7 +216,7 @@ public final class TextRenderUtils {
      * @return formatted buffer string
      */
     public static String formatBuffer(String prefix, int id, DataType dataType, Layout layout) {
-        int rank = (int) layout.shape().flatRank();
+        int rank = layout.shape().flatRank();
         long[] shape = new long[rank];
         long[] strides = new long[rank];
         long byteSize = dataType.byteSize();

@@ -83,9 +83,9 @@ public final class RayTracerPpmDemo {
         Tensor rayDirY = Tensor.of(dirYArr, pixShape);
         Tensor rayDirZ = Tensor.of(dirZArr, pixShape);
 
-        Tensor rayOriginX = Tensor.broadcasted(0.0f, pixShape);
-        Tensor rayOriginY = Tensor.broadcasted(0.05f, pixShape);
-        Tensor rayOriginZ = Tensor.broadcasted(2.8f, pixShape);
+        Tensor rayOriginX = Tensor.full(0.0f, pixShape);
+        Tensor rayOriginY = Tensor.full(0.05f, pixShape);
+        Tensor rayOriginZ = Tensor.full(2.8f, pixShape);
 
         Sphere[] spheres = {
             new Sphere(
@@ -108,12 +108,12 @@ public final class RayTracerPpmDemo {
                     0.16f, 0.18f, 0.0f)
         };
 
-        Tensor onePix = Tensor.broadcasted(1.0f, pixShape);
-        Tensor zeroPix = Tensor.broadcasted(0.0f, pixShape);
+        Tensor onePix = Tensor.full(1.0f, pixShape);
+        Tensor zeroPix = Tensor.full(0.0f, pixShape);
 
-        Tensor accumR = Tensor.broadcasted(0.0f, pixShape);
-        Tensor accumG = Tensor.broadcasted(0.0f, pixShape);
-        Tensor accumB = Tensor.broadcasted(0.0f, pixShape);
+        Tensor accumR = Tensor.full(0.0f, pixShape);
+        Tensor accumG = Tensor.full(0.0f, pixShape);
+        Tensor accumB = Tensor.full(0.0f, pixShape);
         Tensor throughputR = onePix;
         Tensor throughputG = onePix;
         Tensor throughputB = onePix;
@@ -164,8 +164,8 @@ public final class RayTracerPpmDemo {
             Tensor baseB =
                     hit.albedoB.multiply(invCheckerMask).add(hit.checkerB.multiply(checkerMask));
 
-            Tensor shade = Tensor.broadcasted(0.07f, pixShape);
-            Tensor spec = Tensor.broadcasted(0.0f, pixShape);
+            Tensor shade = Tensor.full(0.07f, pixShape);
+            Tensor spec = Tensor.full(0.0f, pixShape);
 
             shade =
                     shade.add(
@@ -246,16 +246,16 @@ public final class RayTracerPpmDemo {
             float lz,
             float intensity,
             Shape shape) {
-        Tensor ldx = Tensor.broadcasted(lx, shape).subtract(hitX);
-        Tensor ldy = Tensor.broadcasted(ly, shape).subtract(hitY);
-        Tensor ldz = Tensor.broadcasted(lz, shape).subtract(hitZ);
+        Tensor ldx = Tensor.full(lx, shape).subtract(hitX);
+        Tensor ldy = Tensor.full(ly, shape).subtract(hitY);
+        Tensor ldz = Tensor.full(lz, shape).subtract(hitZ);
         Tensor dist2 = ldx.square().add(ldy.square()).add(ldz.square()).add(0.05f);
         Tensor invDist = dist2.sqrt().reciprocal();
         ldx = ldx.multiply(invDist);
         ldy = ldy.multiply(invDist);
         ldz = ldz.multiply(invDist);
         Tensor ndotl = nx.multiply(ldx).add(ny.multiply(ldy)).add(nz.multiply(ldz));
-        Tensor lambert = ndotl.max(Tensor.broadcasted(0.0f, shape));
+        Tensor lambert = ndotl.max(Tensor.full(0.0f, shape));
         return lambert.multiply(invDist.square()).multiply(intensity);
     }
 
@@ -274,9 +274,9 @@ public final class RayTracerPpmDemo {
             float lz,
             float intensity,
             Shape shape) {
-        Tensor ldx = Tensor.broadcasted(lx, shape).subtract(hitX);
-        Tensor ldy = Tensor.broadcasted(ly, shape).subtract(hitY);
-        Tensor ldz = Tensor.broadcasted(lz, shape).subtract(hitZ);
+        Tensor ldx = Tensor.full(lx, shape).subtract(hitX);
+        Tensor ldy = Tensor.full(ly, shape).subtract(hitY);
+        Tensor ldz = Tensor.full(lz, shape).subtract(hitZ);
         Tensor invL =
                 ldx.square().add(ldy.square()).add(ldz.square()).add(0.05f).sqrt().reciprocal();
         ldx = ldx.multiply(invL);
@@ -296,7 +296,7 @@ public final class RayTracerPpmDemo {
         hz = hz.multiply(invH);
 
         Tensor ndoth = nx.multiply(hx).add(ny.multiply(hy)).add(nz.multiply(hz));
-        Tensor s = ndoth.max(Tensor.broadcasted(0.0f, shape));
+        Tensor s = ndoth.max(Tensor.full(0.0f, shape));
         Tensor s2 = s.square();
         Tensor s4 = s2.square();
         Tensor s8 = s4.square();
@@ -314,9 +314,9 @@ public final class RayTracerPpmDemo {
             Tensor dirZ,
             Sphere[] spheres,
             Shape shape) {
-        Tensor one = Tensor.broadcasted(1.0f, shape);
-        Tensor zero = Tensor.broadcasted(0.0f, shape);
-        Tensor bestT = Tensor.broadcasted(HUGE, shape);
+        Tensor one = Tensor.full(1.0f, shape);
+        Tensor zero = Tensor.full(0.0f, shape);
+        Tensor bestT = Tensor.full(HUGE, shape);
         Tensor bestNx = zero;
         Tensor bestNy = zero;
         Tensor bestNz = zero;
@@ -332,7 +332,7 @@ public final class RayTracerPpmDemo {
         Tensor bestCheckerB = zero;
 
         Tensor a = dirX.square().add(dirY.square()).add(dirZ.square());
-        Tensor epsTensor = Tensor.broadcasted(EPS, shape);
+        Tensor epsTensor = Tensor.full(EPS, shape);
 
         for (Sphere s : spheres) {
             Tensor ocx = originX.subtract(s.cx);
@@ -354,7 +354,7 @@ public final class RayTracerPpmDemo {
             Tensor tNear = b.negate().subtract(sqrtDisc).divide(denom);
             Tensor tFar = b.negate().add(sqrtDisc).divide(denom);
 
-            Tensor tCandidate = Tensor.broadcasted(HUGE, shape);
+            Tensor tCandidate = Tensor.full(HUGE, shape);
             Tensor nearValid = discPosMask.logicalAnd(tNear.greaterThan(epsTensor));
             Tensor nearMask = nearValid.cast(DataType.FP32);
             tCandidate = tNear.multiply(nearMask).add(tCandidate.multiply(one.subtract(nearMask)));
@@ -380,48 +380,48 @@ public final class RayTracerPpmDemo {
             bestNy = ny.multiply(better).add(bestNy.multiply(invBetter));
             bestNz = nz.multiply(better).add(bestNz.multiply(invBetter));
             bestAlbedoR =
-                    Tensor.broadcasted(s.r, shape)
+                    Tensor.full(s.r, shape)
                             .multiply(better)
                             .add(bestAlbedoR.multiply(invBetter));
             bestAlbedoG =
-                    Tensor.broadcasted(s.g, shape)
+                    Tensor.full(s.g, shape)
                             .multiply(better)
                             .add(bestAlbedoG.multiply(invBetter));
             bestAlbedoB =
-                    Tensor.broadcasted(s.b, shape)
+                    Tensor.full(s.b, shape)
                             .multiply(better)
                             .add(bestAlbedoB.multiply(invBetter));
             bestReflect =
-                    Tensor.broadcasted(s.reflectivity, shape)
+                    Tensor.full(s.reflectivity, shape)
                             .multiply(better)
                             .add(bestReflect.multiply(invBetter));
             bestEmission =
-                    Tensor.broadcasted(s.emission, shape)
+                    Tensor.full(s.emission, shape)
                             .multiply(better)
                             .add(bestEmission.multiply(invBetter));
             bestCheckerStrength =
-                    Tensor.broadcasted(s.checkerStrength, shape)
+                    Tensor.full(s.checkerStrength, shape)
                             .multiply(better)
                             .add(bestCheckerStrength.multiply(invBetter));
             bestCheckerScale =
-                    Tensor.broadcasted(s.checkerScale, shape)
+                    Tensor.full(s.checkerScale, shape)
                             .multiply(better)
                             .add(bestCheckerScale.multiply(invBetter));
             bestCheckerR =
-                    Tensor.broadcasted(s.checkerR, shape)
+                    Tensor.full(s.checkerR, shape)
                             .multiply(better)
                             .add(bestCheckerR.multiply(invBetter));
             bestCheckerG =
-                    Tensor.broadcasted(s.checkerG, shape)
+                    Tensor.full(s.checkerG, shape)
                             .multiply(better)
                             .add(bestCheckerG.multiply(invBetter));
             bestCheckerB =
-                    Tensor.broadcasted(s.checkerB, shape)
+                    Tensor.full(s.checkerB, shape)
                             .multiply(better)
                             .add(bestCheckerB.multiply(invBetter));
         }
 
-        Tensor hitMask = bestT.lessThan(Tensor.broadcasted(HUGE * 0.5f, shape));
+        Tensor hitMask = bestT.lessThan(Tensor.full(HUGE * 0.5f, shape));
         return new Hit(
                 hitMask,
                 bestT,

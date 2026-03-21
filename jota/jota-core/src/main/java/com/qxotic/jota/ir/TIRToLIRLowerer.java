@@ -195,7 +195,7 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
 
     /** Computes byte strides from a layout and data type. */
     private long[] toByteStrides(Layout layout, DataType dtype) {
-        int rank = (int) layout.shape().flatRank();
+        int rank = layout.shape().flatRank();
         long[] strides = new long[rank];
         long byteSize = dtype.byteSize();
         for (int i = 0; i < rank; i++) {
@@ -580,7 +580,7 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
         } else if (dtype == DataType.FP16 || dtype == DataType.BF16) {
             // For FP16/BF16, use short representation of -infinity
             // In FP16, 0xFC00 represents negative infinity
-            return (long) 0xFC00;
+            return 0xFC00;
         } else if (dtype == DataType.I32) {
             return Integer.MIN_VALUE;
         } else if (dtype == DataType.I64) {
@@ -750,9 +750,9 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
         return cacheScalar(
                 node,
                 () -> {
-                    int inputRank = (int) node.input().shape().flatRank();
-                    int outputRank = (int) node.shape().flatRank();
-                    int indicesRank = (int) node.indices().shape().flatRank();
+                    int inputRank = node.input().shape().flatRank();
+                    int outputRank = node.shape().flatRank();
+                    int indicesRank = node.indices().shape().flatRank();
                     int axis = Util.wrapAround(node.axis(), inputRank);
                     if (loopIndices.size() != outputRank) {
                         throw new IllegalStateException(
@@ -956,8 +956,8 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
                 // For other dims, pass through
                 Shape fromShape = broadcast.fromShape();
                 Shape toShape = broadcast.toShape();
-                int fromRank = (int) fromShape.flatRank();
-                int toRank = (int) toShape.flatRank();
+                int fromRank = fromShape.flatRank();
+                int toRank = toShape.flatRank();
                 int offset = toRank - fromRank;
 
                 List<LIRExprNode> result = new ArrayList<>();
@@ -1013,7 +1013,7 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
         }
         LIRExprNode linear = null;
         long stride = 1;
-        for (int i = (int) shape.flatRank() - 1; i >= 0; i--) {
+        for (int i = shape.flatRank() - 1; i >= 0; i--) {
             LIRExprNode term =
                     exprGraph.indexBinary(
                             IndexBinaryOp.MULTIPLY, indices.get(i), exprGraph.indexConst(stride));
@@ -1028,7 +1028,7 @@ public class TIRToLIRLowerer implements TIRVisitor<LIRExprNode> {
 
     /** Decomposes a linear index into multi-dimensional indices using row-major order. */
     private List<LIRExprNode> unflattenIndex(LIRExprNode linearIdx, Shape shape) {
-        int rank = (int) shape.flatRank();
+        int rank = shape.flatRank();
         if (rank == 0) {
             return List.of();
         }

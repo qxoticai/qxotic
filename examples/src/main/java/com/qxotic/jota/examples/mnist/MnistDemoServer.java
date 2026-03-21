@@ -49,7 +49,7 @@ public final class MnistDemoServer {
                                     throw new IllegalArgumentException(
                                             "Unknown backend: " + backend);
                         };
-        if (!current.runtimes().hasRuntime(device)) {
+        if (!current.runtimes().hasRuntimeFor(device)) {
             System.err.println(
                     "Requested backend "
                             + device
@@ -271,7 +271,7 @@ public final class MnistDemoServer {
                     case "panama", "cpu" -> DeviceType.PANAMA.deviceIndex(0);
                     default -> throw new IllegalArgumentException("Unknown backend: " + selected);
                 };
-        if (!baseEnvironment.runtimes().hasRuntime(device)) {
+        if (!baseEnvironment.runtimes().hasRuntimeFor(device)) {
             throw new IllegalArgumentException("Backend not available: " + selected);
         }
         return device;

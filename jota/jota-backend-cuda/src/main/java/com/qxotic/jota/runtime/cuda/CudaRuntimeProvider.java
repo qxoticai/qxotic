@@ -72,8 +72,8 @@ public final class CudaRuntimeProvider extends DeviceRuntimeProvider {
     }
 
     @Override
-    public DeviceRuntime create(long deviceIndex) {
-        return new CudaDeviceRuntime(deviceType().deviceIndex(deviceIndex));
+    protected DeviceRuntime createForDevice(com.qxotic.jota.Device device) {
+        return new CudaDeviceRuntime(device);
     }
 
     @Override

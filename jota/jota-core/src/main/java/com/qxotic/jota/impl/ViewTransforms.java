@@ -257,12 +257,11 @@ public final class ViewTransforms {
     /**
      * Returns true if the layout spans a contiguous memory range.
      *
-     * <p>Delegates to {@link Layout#spansContiguousRange()} for CuTe-style contiguity checking. A
-     * layout spans a contiguous range if all elements fit within a contiguous block of memory
+     * <p>A layout spans a contiguous range if all elements fit within a contiguous block of memory
      * without gaps: sum((dim_i - 1) * stride_i) == totalElements - 1.
      */
     private static boolean spansContiguousRange(Layout layout) {
-        return layout.spansContiguousRange();
+        return layout.isSpanContiguous();
     }
 
     private static boolean canReshapeWithoutCopy(

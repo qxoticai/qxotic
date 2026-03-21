@@ -322,39 +322,32 @@ final class LIRKernelCompiler {
         // Check if any input or output buffer has non-unit strides
         for (LIRInput input : graph.inputs()) {
             if (input instanceof BufferRef buffer) {
-                if (!isContiguousStride(buffer.byteStrides(), buffer.dataType())) {
+                if (!isContiguousBuffer(buffer)) {
                     return true;
                 }
             }
         }
         for (BufferRef buffer : graph.outputs()) {
-            if (!isContiguousStride(buffer.byteStrides(), buffer.dataType())) {
+            if (!isContiguousBuffer(buffer)) {
                 return true;
             }
         }
         return false;
     }
 
-    private boolean isContiguousStride(long[] strides, DataType dataType) {
-        long elementSize = dataType.byteSize();
-        long expectedStride = 1;
-        // Check if strides match contiguous layout (row-major with unit element strides)
-        for (int i = strides.length - 1; i >= 0; i--) {
-            if (strides[i] != expectedStride) {
+    private boolean isContiguousBuffer(BufferRef buffer) {
+        long[] strides = buffer.byteStrides();
+        int rank = strides.length;
+        if (rank == 0) {
+            return true;
+        }
+
+        long expectedStride = buffer.dataType().byteSize();
+        for (int axis = rank - 1; axis >= 0; axis--) {
+            if (strides[axis] != expectedStride) {
                 return false;
             }
-            expectedStride *= dataType.byteSize(); // This is wrong for multi-dim
-        }
-        // For simplicity, check if all strides are non-zero and not broadcasted
-        // A proper implementation would check if strides match contiguous layout
-        for (long stride : strides) {
-            if (stride == 0) { // broadcasted
-                return false;
-            }
-        }
-        // Check if the last stride equals element size (contiguous along last dimension)
-        if (strides.length > 0 && strides[strides.length - 1] != elementSize) {
-            return false;
+            expectedStride = Math.multiplyExact(expectedStride, buffer.shape().flatAt(axis));
         }
         return true;
     }
@@ -930,7 +923,6 @@ final class LIRKernelCompiler {
                 case EXP -> castFloating(type, "Math.exp(" + input + ")");
                 case LOG -> castFloating(type, "Math.log(" + input + ")");
                 case SQRT -> castFloating(type, "Math.sqrt(" + input + ")");
-                case SQUARE -> input + " * " + input;
                 case SIN -> castFloating(type, "Math.sin(" + input + ")");
                 case COS -> castFloating(type, "Math.cos(" + input + ")");
                 case TAN -> castFloating(type, "Math.tan(" + input + ")");

@@ -44,11 +44,10 @@ class DoublesDomain implements MemoryDomain<double[]> {
 
     @Override
     public String toString() {
-        return new StringBuilder("Context{double[], device=")
-                .append(device())
-                .append(", directAccess=")
-                .append(directAccess() != null)
-                .append('}')
-                .toString();
+        return "Context{double[], device="
+                + device()
+                + ", directAccess="
+                + (directAccess() != null)
+                + '}';
     }
 }
