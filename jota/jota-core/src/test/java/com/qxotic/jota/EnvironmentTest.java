@@ -39,8 +39,8 @@ class EnvironmentTest {
         Environment.with(
                 env,
                 () -> {
-                    assertEquals(nativeDevice, Device.defaultDevice());
-                    assertEquals(DataType.FP64, DataType.defaultFloat());
+                    assertEquals(nativeDevice, Environment.current().defaultDevice());
+                    assertEquals(DataType.FP64, Environment.current().defaultFloat());
                     return null;
                 });
     }

@@ -19,14 +19,6 @@ public record Device(DeviceType type, long index) {
         return type.id();
     }
 
-    public static Device defaultDevice() {
-        return Environment.current().defaultDevice();
-    }
-
-    public static Device nativeDevice() {
-        return Environment.current().nativeDevice();
-    }
-
     @Override
     public boolean equals(Object other) {
         if (this == other) {

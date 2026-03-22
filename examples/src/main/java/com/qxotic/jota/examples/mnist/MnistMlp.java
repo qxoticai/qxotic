@@ -37,7 +37,7 @@ final class MnistMlp {
 
     MnistMlp() {
         Weights hostWeights = Weights.load();
-        Device targetDevice = Device.defaultDevice();
+        Device targetDevice = Environment.current().defaultDevice();
         this.weights =
                 targetDevice.belongsTo(DeviceType.PANAMA)
                         ? hostWeights

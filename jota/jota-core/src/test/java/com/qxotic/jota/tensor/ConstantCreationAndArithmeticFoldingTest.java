@@ -208,7 +208,7 @@ class ConstantCreationAndArithmeticFoldingTest {
 
         assertTrue(TensorTestInternals.isLazy(tensor));
         assertTrue(TensorTestInternals.isScalarBroadcast(tensor));
-        assertEquals(DataType.defaultFloat(), tensor.dataType());
+        assertEquals(Environment.current().defaultFloat(), tensor.dataType());
         assertEquals(Shape.of(2, 3), tensor.shape());
     }
 
@@ -256,7 +256,7 @@ class ConstantCreationAndArithmeticFoldingTest {
 
         assertTrue(TensorTestInternals.isLazy(tensor));
         assertTrue(TensorTestInternals.isScalarBroadcast(tensor));
-        assertEquals(DataType.defaultFloat(), tensor.dataType());
+        assertEquals(Environment.current().defaultFloat(), tensor.dataType());
         assertEquals(Shape.of(3, 4), tensor.shape());
     }
 
