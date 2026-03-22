@@ -217,8 +217,7 @@ public final class MetalComputeEngine implements ComputeEngine {
         }
         @SuppressWarnings("unchecked")
         MemoryDomain<Object> srcDomain =
-                (MemoryDomain<Object>)
-                        Environment.memoryDomainFor(view.memory().device());
+                (MemoryDomain<Object>) Environment.memoryDomainFor(view.memory().device());
         @SuppressWarnings("unchecked")
         MemoryView<Object> srcView = (MemoryView<Object>) view;
         BufferSpec spec = computeBufferSpec(view.layout(), view.dataType());
@@ -255,8 +254,7 @@ public final class MetalComputeEngine implements ComputeEngine {
         }
         @SuppressWarnings("unchecked")
         MemoryDomain<Object> srcDomain =
-                (MemoryDomain<Object>)
-                        Environment.memoryDomainFor(view.memory().device());
+                (MemoryDomain<Object>) Environment.memoryDomainFor(view.memory().device());
         @SuppressWarnings("unchecked")
         MemoryView<Object> srcView = (MemoryView<Object>) view;
         BufferSpec spec = computeBufferSpec(view.layout(), view.dataType());

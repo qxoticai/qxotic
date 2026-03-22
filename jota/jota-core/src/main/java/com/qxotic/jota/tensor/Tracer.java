@@ -100,8 +100,7 @@ public final class Tracer {
             boolean scalarBroadcast = input.layout().stride().isAllZeros();
 
             if (scalarBroadcast
-                    && Environment.runtimeFor(input.device())
-                            .supportsNativeRuntimeAlias()) {
+                    && Environment.runtimeFor(input.device()).supportsNativeRuntimeAlias()) {
                 node = new ScalarInput(i, input.dataType(), input.shape());
             } else if (InternalTensorAccess.isMaterialized(input)
                     || InternalTensorAccess.computation(input).isEmpty()) {

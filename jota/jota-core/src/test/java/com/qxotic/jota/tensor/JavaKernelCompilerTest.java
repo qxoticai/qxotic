@@ -21,8 +21,7 @@ import org.junit.jupiter.api.Test;
 
 class JavaKernelCompilerTest {
 
-    @AutoClose
-    private final MemoryDomain<MemorySegment> domain = Environment.nativeMemoryDomain();
+    @AutoClose private final MemoryDomain<MemorySegment> domain = Environment.nativeMemoryDomain();
 
     private static Tensor tensorGelu(Tensor value) {
         Tensor cubic = value.multiply(value).multiply(value);
