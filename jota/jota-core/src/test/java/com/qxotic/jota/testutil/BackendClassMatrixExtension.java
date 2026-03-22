@@ -110,7 +110,7 @@ public final class BackendClassMatrixExtension implements ClassTemplateInvocatio
 
         private <T> T runInBackend(Invocation<T> invocation) throws Throwable {
             Environment current = Environment.current();
-            current.nativeRuntime();
+            Environment.nativeRuntime();
             Assumptions.assumeTrue(
                     current.runtimes().hasRuntimeFor(target),
                     "Backend runtime unavailable for " + target);

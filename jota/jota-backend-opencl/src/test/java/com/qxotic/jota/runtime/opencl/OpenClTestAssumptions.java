@@ -15,7 +15,7 @@ final class OpenClTestAssumptions {
         Assumptions.assumeTrue(
                 OpenClRuntime.isAvailable(), "OpenCL runtime not available\n" + details);
         Assumptions.assumeTrue(
-                Environment.current().runtimes().hasRuntimeFor(DeviceType.OPENCL.deviceIndex(0)),
+                Environment.hasRuntimeFor(DeviceType.OPENCL.deviceIndex(0)),
                 "OpenCL runtime is not registered\n" + details);
         Assumptions.assumeTrue(
                 OpenClRuntime.deviceCount() > 0, "No OpenCL CPU/GPU device visible\n" + details);
@@ -23,7 +23,7 @@ final class OpenClTestAssumptions {
 
     static String diagnosticsSummary() {
         String diagnostics =
-                Environment.current().runtimeDiagnostics().stream()
+                Environment.runtimeDiagnostics().stream()
                         .filter(d -> d.deviceType().equals(DeviceType.OPENCL))
                         .map(OpenClTestAssumptions::formatDiagnostic)
                         .collect(Collectors.joining("\n"));
@@ -35,7 +35,7 @@ final class OpenClTestAssumptions {
                 + "\nOpenCLRuntime.isAvailable="
                 + OpenClRuntime.isAvailable()
                 + "\nOpenCL runtime registered="
-                + Environment.current().runtimes().hasRuntimeFor(DeviceType.OPENCL.deviceIndex(0))
+                + Environment.hasRuntimeFor(DeviceType.OPENCL.deviceIndex(0))
                 + "\nOpenCL device count="
                 + (OpenClRuntime.isAvailable() ? OpenClRuntime.deviceCount() : 0)
                 + "\nOpenCL selected device type="

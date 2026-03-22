@@ -51,10 +51,7 @@ public final class Qwen3Cli {
     public static void main(String[] args) throws Exception {
         Options options = Options.parse(args);
         Environment env =
-                new Environment(
-                        Environment.current().nativeDevice(),
-                        DataType.FP32,
-                        Environment.current().runtimes());
+                Environment.withDefaultDevice(Environment.current().nativeDevice());
         Environment.with(
                 env,
                 () -> {
@@ -433,7 +430,7 @@ public final class Qwen3Cli {
         @SuppressWarnings("unchecked")
         MemoryAccess<MemorySegment> access =
                 (MemoryAccess<MemorySegment>)
-                        Environment.current().nativeMemoryDomain().directAccess();
+                        Environment.nativeMemoryDomain().directAccess();
         for (int i = 0; i < size; i++) {
             long off = Indexing.linearToOffset(host, i);
             out[i] = access.readFloat(host.memory(), off);
@@ -450,10 +447,10 @@ public final class Qwen3Cli {
         @SuppressWarnings("unchecked")
         MemoryDomain<Object> srcDomain =
                 (MemoryDomain<Object>)
-                        Environment.current().runtimeFor(view.memory().device()).memoryDomain();
+                        Environment.runtimeFor(view.memory().device()).memoryDomain();
         @SuppressWarnings("unchecked")
         MemoryView<Object> srcView = (MemoryView<Object>) view;
-        MemoryDomain<MemorySegment> hostDomain = Environment.current().nativeMemoryDomain();
+        MemoryDomain<MemorySegment> hostDomain = Environment.nativeMemoryDomain();
         MemoryView<MemorySegment> hostView =
                 MemoryView.of(
                         hostDomain.memoryAllocator().allocateMemory(view.dataType(), view.shape()),
@@ -521,7 +518,7 @@ public final class Qwen3Cli {
             this.keyCache = new MemoryView<?>[cfg.nLayers];
             this.valueCache = new MemoryView<?>[cfg.nLayers];
             MemoryDomain<?> domain =
-                    Environment.current().runtimeFor(Device.defaultDevice()).memoryDomain();
+                    Environment.runtimeFor(Device.defaultDevice()).memoryDomain();
             for (int i = 0; i < cfg.nLayers; i++) {
                 this.keyCache[i] =
                         MemoryView.of(
@@ -718,9 +715,9 @@ public final class Qwen3Cli {
         private static void copyTensorToView(Tensor src, MemoryView<?> dst) {
             MemoryView<?> srcView = src.materialize();
             MemoryDomain srcDomain =
-                    Environment.current().runtimeFor(srcView.memory().device()).memoryDomain();
+                    Environment.runtimeFor(srcView.memory().device()).memoryDomain();
             MemoryDomain dstDomain =
-                    Environment.current().runtimeFor(dst.memory().device()).memoryDomain();
+                    Environment.runtimeFor(dst.memory().device()).memoryDomain();
             MemoryDomain.copy(srcDomain, srcView, dstDomain, dst);
         }
     }

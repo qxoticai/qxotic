@@ -125,7 +125,7 @@ public interface MemoryDomain<B> extends AutoCloseable {
 
     @SuppressWarnings("unchecked")
     private static MemoryDomain<MemorySegment> nativeContext() {
-        return Environment.current().nativeMemoryDomain();
+        return Environment.nativeMemoryDomain();
     }
 
     private static <B> Device srcContextDevice(MemoryDomain<B> domain) {

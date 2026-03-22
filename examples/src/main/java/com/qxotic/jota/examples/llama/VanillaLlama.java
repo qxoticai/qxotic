@@ -77,7 +77,7 @@ public final class VanillaLlama {
     public static void main(String[] args) throws Exception {
         Options options = Options.parse(args);
         Environment env =
-                new Environment(options.device, DataType.FP32, Environment.current().runtimes());
+                Environment.withDefaultDevice(options.device);
         Environment.with(
                 env,
                 () -> {
@@ -570,7 +570,7 @@ public final class VanillaLlama {
         LlamaModel(Configuration configuration, Weights weights) {
             this.configuration = configuration;
             this.weights = weights;
-            this.domain = Environment.current().runtimeFor(Device.defaultDevice()).memoryDomain();
+            this.domain = Environment.runtimeFor(Device.defaultDevice()).memoryDomain();
             @SuppressWarnings("unchecked")
             MemoryAccess<MemorySegment> typedAccess =
                     (MemoryAccess<MemorySegment>) domain.directAccess();
@@ -1493,8 +1493,7 @@ public final class VanillaLlama {
 
         @SuppressWarnings({"rawtypes", "unchecked"})
         MemoryAccess access =
-                Environment.current()
-                        .runtimeFor(view.memory().device())
+                Environment.runtimeFor(view.memory().device())
                         .memoryDomain()
                         .directAccess();
         for (int i = 0; i < size; i++) {

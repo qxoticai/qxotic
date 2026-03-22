@@ -34,7 +34,7 @@ final class DemoDevices {
 
     static Device resolveDevice(Environment environment, String requested) {
         if (requested == null || requested.isBlank()) {
-            return environment.nativeRuntime().device();
+            return Environment.nativeRuntime().device();
         }
         String normalized = requested.trim().toLowerCase(Locale.ROOT);
         DeviceType type =
@@ -55,7 +55,7 @@ final class DemoDevices {
                                             + " metal, mojo");
                 };
         if (type == null) {
-            return environment.nativeRuntime().device();
+            return Environment.nativeRuntime().device();
         }
         Device parsed = type.deviceIndex(0);
         if (!environment.runtimes().hasRuntimeFor(parsed)) {
@@ -70,7 +70,7 @@ final class DemoDevices {
         output.append("Available and usable devices:");
         output.append('\n')
                 .append("  - native -> ")
-                .append(environment.nativeRuntime().device().runtimeId());
+                .append(Environment.nativeRuntime().device().runtimeId());
 
         for (DeviceType backend : SUPPORTED_BACKENDS) {
             if (environment.runtimes().hasRuntimeFor(backend.deviceIndex(0))) {
@@ -79,7 +79,7 @@ final class DemoDevices {
         }
 
         Set<DeviceType> unavailable = new LinkedHashSet<>();
-        List<RuntimeDiagnostic> diagnostics = environment.runtimeDiagnostics();
+        List<RuntimeDiagnostic> diagnostics = Environment.runtimeDiagnostics();
         for (RuntimeDiagnostic diagnostic : diagnostics) {
             if (!diagnostic.probe().isAvailable()
                     && SUPPORTED_BACKENDS.contains(diagnostic.deviceType())) {

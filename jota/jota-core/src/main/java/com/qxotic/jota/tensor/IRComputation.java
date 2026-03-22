@@ -34,7 +34,7 @@ record IRComputation(TIRGraph graph, List<Tensor> inputTensors) implements LazyC
     public MemoryView<?> execute() {
         Device device =
                 inputTensors.isEmpty() ? Device.defaultDevice() : inputTensors.get(0).device();
-        ComputeEngine computeEngine = Environment.current().computeEngineFor(device);
+        ComputeEngine computeEngine = Environment.computeEngineFor(device);
 
         // Optimize the graph before execution
         TIRGraph optimizedGraph = optimizeGraph(graph);

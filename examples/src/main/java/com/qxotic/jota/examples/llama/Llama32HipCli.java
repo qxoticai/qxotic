@@ -52,16 +52,12 @@ public final class Llama32HipCli {
 
     public static void main(String[] args) throws Exception {
         Options options = Options.parse(args);
-        if (!Environment.current().runtimes().hasRuntimeFor(DeviceType.HIP.deviceIndex(0))) {
+        if (!Environment.hasRuntimeFor(DeviceType.HIP.deviceIndex(0))) {
             throw new IllegalStateException(
                     "HIP runtime is not available. Build/load jota-runtime-hip and ROCm/HIP runtime"
                             + " first.");
         }
-        Environment env =
-                new Environment(
-                        DeviceType.HIP.deviceIndex(0),
-                        DataType.FP32,
-                        Environment.current().runtimes());
+        Environment env = Environment.withDefaultDevice(DeviceType.HIP.deviceIndex(0));
         Environment.with(
                 env,
                 () -> {
@@ -534,7 +530,7 @@ public final class Llama32HipCli {
             int size = Math.toIntExact(shape.size());
             float[] out = new float[size];
             MemoryAccess<MemorySegment> access =
-                    Environment.current().nativeMemoryDomain().directAccess();
+                    Environment.nativeMemoryDomain().directAccess();
             for (int i = 0; i < size; i++) {
                 out[i] = access.readFloat(mem, i * 4L);
             }
@@ -546,7 +542,7 @@ public final class Llama32HipCli {
 
     private static float[] toFloatArray(Tensor tensor) {
         MemoryView<?> view = tensor.materialize();
-        MemoryDomain<MemorySegment> nativeDomain = Environment.current().nativeMemoryDomain();
+        MemoryDomain<MemorySegment> nativeDomain = Environment.nativeMemoryDomain();
         // If the tensor is on a device (e.g. HIP GPU), copy it to host memory first.
         if (!view.memory().device().belongsTo(DeviceType.PANAMA)) {
             MemoryView<MemorySegment> hostView =
@@ -559,7 +555,7 @@ public final class Llama32HipCli {
             @SuppressWarnings("unchecked")
             MemoryDomain<Object> srcDomain =
                     (MemoryDomain<Object>)
-                            Environment.current().runtimeFor(view.memory().device()).memoryDomain();
+                            Environment.runtimeFor(view.memory().device()).memoryDomain();
             @SuppressWarnings("unchecked")
             MemoryView<Object> srcView = (MemoryView<Object>) view;
             MemoryDomain.copy(srcDomain, srcView, nativeDomain, hostView);
@@ -1785,10 +1781,10 @@ public final class Llama32HipCli {
         Llama32Model(LlamaConfig cfg, LlamaWeights w) {
             this.cfg = cfg;
             this.w = w;
-            this.runtime = Environment.current().runtimeFor(Device.defaultDevice());
+            this.runtime = Environment.runtimeFor(Device.defaultDevice());
             DeviceRuntime cRt;
             try {
-                cRt = Environment.current().runtimeFor(DeviceType.C.deviceIndex(0));
+                cRt = Environment.runtimeFor(DeviceType.C.deviceIndex(0));
             } catch (RuntimeException ex) {
                 cRt = null;
             }
@@ -2866,9 +2862,9 @@ public final class Llama32HipCli {
         private static void copyTensorToView(Tensor src, MemoryView<?> dst) {
             MemoryView<?> srcView = src.materialize();
             MemoryDomain srcDomain =
-                    Environment.current().runtimeFor(srcView.memory().device()).memoryDomain();
+                    Environment.runtimeFor(srcView.memory().device()).memoryDomain();
             MemoryDomain dstDomain =
-                    Environment.current().runtimeFor(dst.memory().device()).memoryDomain();
+                    Environment.runtimeFor(dst.memory().device()).memoryDomain();
             MemoryDomain.copy(srcDomain, srcView, dstDomain, dst);
         }
 
@@ -2915,11 +2911,10 @@ public final class Llama32HipCli {
             MemoryView<?> valueTransposed = valueMaterialized.transpose(0, 1);
 
             MemoryDomain srcDomain =
-                    Environment.current()
-                            .runtimeFor(valueTransposed.memory().device())
+                    Environment.runtimeFor(valueTransposed.memory().device())
                             .memoryDomain();
             MemoryDomain dstDomain =
-                    Environment.current().runtimeFor(dstSlice.memory().device()).memoryDomain();
+                    Environment.runtimeFor(dstSlice.memory().device()).memoryDomain();
             MemoryDomain.copy(srcDomain, valueTransposed, dstDomain, dstSlice);
         }
 
@@ -3028,7 +3023,7 @@ public final class Llama32HipCli {
                 return;
             }
             MemoryDomain domain =
-                    Environment.current().runtimeFor(view.memory().device()).memoryDomain();
+                    Environment.runtimeFor(view.memory().device()).memoryDomain();
             MemoryAccess access = domain.directAccess();
             if (access == null) {
                 return;

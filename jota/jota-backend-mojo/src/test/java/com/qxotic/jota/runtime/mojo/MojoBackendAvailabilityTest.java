@@ -30,8 +30,7 @@ class MojoBackendAvailabilityTest {
         assertTrue(ConfiguredTestDevice.hasRuntime(DeviceType.MOJO));
         assertEquals(
                 DeviceType.MOJO.deviceIndex(0),
-                Environment.current()
-                        .runtimeFor(ConfiguredTestDevice.resolve(DeviceType.MOJO))
+                Environment.runtimeFor(ConfiguredTestDevice.resolve(DeviceType.MOJO))
                         .device());
 
         Tensor onMojo =

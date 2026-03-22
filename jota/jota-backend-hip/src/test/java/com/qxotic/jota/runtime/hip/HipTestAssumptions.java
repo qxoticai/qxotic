@@ -16,7 +16,7 @@ final class HipTestAssumptions {
         String details = diagnosticsSummary(hipccAvailable);
         Assumptions.assumeTrue(HipRuntime.isAvailable(), "HIP runtime not available\n" + details);
         Assumptions.assumeTrue(
-                Environment.current().runtimes().hasRuntimeFor(DeviceType.HIP.deviceIndex(0)),
+                Environment.hasRuntimeFor(DeviceType.HIP.deviceIndex(0)),
                 "HIP runtime is not registered\n" + details);
         Assumptions.assumeTrue(hipccAvailable, "hipcc not available\n" + details);
     }
@@ -27,7 +27,7 @@ final class HipTestAssumptions {
 
     static String diagnosticsSummary(boolean hipccAvailable) {
         String hipDiagnostics =
-                Environment.current().runtimeDiagnostics().stream()
+                Environment.runtimeDiagnostics().stream()
                         .filter(d -> d.deviceType().equals(DeviceType.HIP))
                         .map(HipTestAssumptions::formatDiagnostic)
                         .collect(Collectors.joining("\n"));
@@ -39,7 +39,7 @@ final class HipTestAssumptions {
                 + "\nHipRuntime.isAvailable="
                 + HipRuntime.isAvailable()
                 + "\nHIP runtime registered="
-                + Environment.current().runtimes().hasRuntimeFor(DeviceType.HIP.deviceIndex(0))
+                + Environment.hasRuntimeFor(DeviceType.HIP.deviceIndex(0))
                 + "\nhipcc available="
                 + hipccAvailable;
     }

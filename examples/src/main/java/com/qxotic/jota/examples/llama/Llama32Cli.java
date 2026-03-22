@@ -53,7 +53,7 @@ public final class Llama32Cli {
     public static void main(String[] args) throws Exception {
         Options options = Options.parse(args);
         Environment env =
-                new Environment(options.device, DataType.FP32, Environment.current().runtimes());
+                Environment.withDefaultDevice(options.device);
         Environment.with(
                 env,
                 () -> {
@@ -518,7 +518,7 @@ public final class Llama32Cli {
             int size = Math.toIntExact(shape.size());
             float[] out = new float[size];
             MemoryAccess<MemorySegment> access =
-                    Environment.current().nativeMemoryDomain().directAccess();
+                    Environment.nativeMemoryDomain().directAccess();
             for (int i = 0; i < size; i++) {
                 out[i] = access.readFloat(mem, i * 4L);
             }
@@ -534,7 +534,7 @@ public final class Llama32Cli {
         MemoryView<MemorySegment> host = (MemoryView<MemorySegment>) view;
         @SuppressWarnings("unchecked")
         MemoryAccess<MemorySegment> access =
-                Environment.current().nativeMemoryDomain().directAccess();
+                Environment.nativeMemoryDomain().directAccess();
         int size = Math.toIntExact(host.shape().size());
         float[] out = new float[size];
         for (int i = 0; i < size; i++) {
@@ -1752,10 +1752,10 @@ public final class Llama32Cli {
         Llama32Model(LlamaConfig cfg, LlamaWeights w) {
             this.cfg = cfg;
             this.w = w;
-            this.runtime = Environment.current().runtimeFor(Device.defaultDevice());
+            this.runtime = Environment.runtimeFor(Device.defaultDevice());
             DeviceRuntime cRt;
             try {
-                cRt = Environment.current().runtimeFor(DeviceType.C.deviceIndex(0));
+                cRt = Environment.runtimeFor(DeviceType.C.deviceIndex(0));
             } catch (RuntimeException ex) {
                 cRt = null;
             }
@@ -2281,8 +2281,7 @@ public final class Llama32Cli {
 
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(qView.memory().device())
+                    Environment.runtimeFor(qView.memory().device())
                             .memoryDomain()
                             .directAccess();
             if (access == null) {
@@ -2861,8 +2860,7 @@ public final class Llama32Cli {
             }
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(table.memory().device())
+                    Environment.runtimeFor(table.memory().device())
                             .memoryDomain()
                             .directAccess();
             if (access == null) {
@@ -2889,8 +2887,7 @@ public final class Llama32Cli {
             }
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(inView.memory().device())
+                    Environment.runtimeFor(inView.memory().device())
                             .memoryDomain()
                             .directAccess();
             if (access == null) {
@@ -2924,8 +2921,7 @@ public final class Llama32Cli {
             }
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(a.memory().device())
+                    Environment.runtimeFor(a.memory().device())
                             .memoryDomain()
                             .directAccess();
             if (access == null) {
@@ -2957,8 +2953,7 @@ public final class Llama32Cli {
             int n = Math.toIntExact(weightOutIn.shape().size(1));
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(a.memory().device())
+                    Environment.runtimeFor(a.memory().device())
                             .memoryDomain()
                             .directAccess();
             if (access == null) {
@@ -2991,8 +2986,7 @@ public final class Llama32Cli {
             }
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(gate.memory().device())
+                    Environment.runtimeFor(gate.memory().device())
                             .memoryDomain()
                             .directAccess();
             if (access == null) {
@@ -3028,8 +3022,7 @@ public final class Llama32Cli {
 
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(keyView.memory().device())
+                    Environment.runtimeFor(keyView.memory().device())
                             .memoryDomain()
                             .directAccess();
             if (access == null) {
@@ -3064,8 +3057,7 @@ public final class Llama32Cli {
             }
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(inView.memory().device())
+                    Environment.runtimeFor(inView.memory().device())
                             .memoryDomain()
                             .directAccess();
             if (access == null) {
@@ -3181,7 +3173,7 @@ public final class Llama32Cli {
                 return;
             }
             MemoryDomain domain =
-                    Environment.current().runtimeFor(view.memory().device()).memoryDomain();
+                    Environment.runtimeFor(view.memory().device()).memoryDomain();
             MemoryAccess access = domain.directAccess();
             if (access == null) {
                 return;

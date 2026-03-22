@@ -14,8 +14,7 @@ import com.qxotic.jota.runtime.RuntimeDiagnostic;
 import com.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
 import com.qxotic.jota.runtime.spi.RuntimeProbe;
 import com.qxotic.jota.tensor.Tensor;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
+import java.lang.foreign.MemorySegment;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -87,7 +86,7 @@ class EnvironmentTest {
     }
 
     @Test
-    void missingNativeRuntimeMessageIncludesBackendFixesAndDiagnostics() throws Exception {
+    void missingNativeRuntimeMessageIncludesBackendFixesAndDiagnostics() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         registry.addDiagnostic(
                 new RuntimeDiagnostic(
@@ -105,7 +104,8 @@ class EnvironmentTest {
                                 "Include com.qxotic:jota-backend-c and make gcc available")));
 
         IllegalStateException error =
-                invokeMissingNativeRuntimeException(registry, "No compatible runtime available");
+                EnvironmentImpl.missingNativeRuntimeException(
+                        registry, "No compatible runtime available");
 
         String message = error.getMessage();
         assertNotNull(message);
@@ -120,12 +120,15 @@ class EnvironmentTest {
     }
 
     @Test
-    void unavailableOverrideMessageIncludesActionableBackendHints() throws Exception {
+    void unavailableOverrideMessageIncludesActionableBackendHints() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         String previous = System.getProperty("jota.native.backend");
         System.setProperty("jota.native.backend", "panama");
         try {
-            IllegalStateException error = invokeSelectNativeBackendFailure(registry);
+            IllegalStateException error =
+                    assertThrows(
+                            IllegalStateException.class,
+                            () -> EnvironmentImpl.selectNativeBackend(registry));
             String message = error.getMessage();
             assertNotNull(message);
             assertTrue(
@@ -143,7 +146,7 @@ class EnvironmentTest {
     }
 
     @Test
-    void missingNativeRuntimeMessageIncludesBackendExcludeProperty() throws Exception {
+    void missingNativeRuntimeMessageIncludesBackendExcludeProperty() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         String previousInclude = System.getProperty("jota.backends.include");
         String previous = System.getProperty("jota.backends.exclude");
@@ -151,7 +154,7 @@ class EnvironmentTest {
         System.setProperty("jota.backends.exclude", "panama,opencl");
         try {
             IllegalStateException error =
-                    invokeMissingNativeRuntimeException(
+                    EnvironmentImpl.missingNativeRuntimeException(
                             registry, "No compatible runtime available");
             String message = error.getMessage();
             assertNotNull(message);
@@ -173,19 +176,11 @@ class EnvironmentTest {
     }
 
     @Test
-    void excludedBackendIsNotRegisteredEvenWhenProviderIsAvailable() throws Exception {
+    void excludedBackendIsNotRegisteredEvenWhenProviderIsAvailable() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         DeviceRuntimeProvider provider = new AlwaysAvailableProvider("opencl", DeviceType.OPENCL);
 
-        Method method =
-                EnvironmentImpl.class.getDeclaredMethod(
-                        "registerProvider",
-                        DefaultRuntimeRegistry.class,
-                        DeviceRuntimeProvider.class,
-                        Set.class,
-                        Set.class);
-        method.setAccessible(true);
-        method.invoke(null, registry, provider, Set.of(), Set.of("opencl"));
+        EnvironmentImpl.registerProvider(registry, provider, Set.of(), Set.of("opencl"));
 
         assertFalse(registry.hasRuntimeFor(DeviceType.OPENCL.deviceIndex(0)));
         assertTrue(
@@ -200,19 +195,11 @@ class EnvironmentTest {
     }
 
     @Test
-    void excludeListTakesPriorityOverIncludeList() throws Exception {
+    void excludeListTakesPriorityOverIncludeList() {
         DefaultRuntimeRegistry registry = new DefaultRuntimeRegistry();
         DeviceRuntimeProvider provider = new AlwaysAvailableProvider("opencl", DeviceType.OPENCL);
 
-        Method method =
-                EnvironmentImpl.class.getDeclaredMethod(
-                        "registerProvider",
-                        DefaultRuntimeRegistry.class,
-                        DeviceRuntimeProvider.class,
-                        Set.class,
-                        Set.class);
-        method.setAccessible(true);
-        method.invoke(null, registry, provider, Set.of("opencl"), Set.of("opencl"));
+        EnvironmentImpl.registerProvider(registry, provider, Set.of("opencl"), Set.of("opencl"));
 
         assertFalse(registry.hasRuntimeFor(DeviceType.OPENCL.deviceIndex(0)));
         assertTrue(
@@ -231,52 +218,17 @@ class EnvironmentTest {
         IllegalArgumentException error =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> invokeParseNativeBackendOverride("hip"));
+                        () -> EnvironmentImpl.parseNativeBackendOverride("hip"));
         assertTrue(error.getMessage().contains("Supported values: auto, native, panama, c"));
     }
 
-    private static IllegalStateException invokeMissingNativeRuntimeException(
-            DefaultRuntimeRegistry registry, String reason) throws Exception {
-        Method method =
-                EnvironmentImpl.class.getDeclaredMethod(
-                        "missingNativeRuntimeException",
-                        com.qxotic.jota.runtime.RuntimeRegistry.class,
-                        String.class);
-        method.setAccessible(true);
-        return (IllegalStateException) method.invoke(null, registry, reason);
-    }
+    @Test
+    void nativeRuntimeAllocatesMemorySegmentBackedMemory() {
+        DeviceRuntime nativeRuntime = Environment.nativeRuntime();
+        var memory = Environment.nativeMemoryDomain().memoryAllocator().allocateMemory(16);
 
-    private static IllegalStateException invokeSelectNativeBackendFailure(
-            DefaultRuntimeRegistry registry) throws Exception {
-        Method method =
-                EnvironmentImpl.class.getDeclaredMethod(
-                        "selectNativeBackend", DefaultRuntimeRegistry.class);
-        method.setAccessible(true);
-        try {
-            method.invoke(null, registry);
-            fail("Expected selectNativeBackend to fail");
-            return new IllegalStateException("unreachable");
-        } catch (InvocationTargetException e) {
-            assertInstanceOf(IllegalStateException.class, e.getCause());
-            return (IllegalStateException) e.getCause();
-        }
-    }
-
-    private static Device invokeParseNativeBackendOverride(String rawValue) {
-        try {
-            Method method =
-                    EnvironmentImpl.class.getDeclaredMethod(
-                            "parseNativeBackendOverride", String.class);
-            method.setAccessible(true);
-            return (Device) method.invoke(null, rawValue);
-        } catch (NoSuchMethodException | IllegalAccessException e) {
-            throw new RuntimeException(e);
-        } catch (InvocationTargetException e) {
-            if (e.getCause() instanceof RuntimeException runtimeException) {
-                throw runtimeException;
-            }
-            throw new RuntimeException(e.getCause());
-        }
+        assertEquals(Environment.current().nativeDevice(), nativeRuntime.device());
+        assertInstanceOf(MemorySegment.class, memory.base());
     }
 
     private static ComputeEngine dummyRuntime() {

@@ -18,7 +18,7 @@ public final class AvailableBackends {
     public static List<Device> resolveTargets() {
         Environment current = Environment.current();
         // Hard baseline requirement for tests.
-        current.nativeRuntime();
+        Environment.nativeRuntime();
 
         Device configured = ConfiguredTestDevice.resolve();
         String modeRaw = System.getProperty(TEST_BACKENDS_MODE_PROPERTY, "single");

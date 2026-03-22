@@ -23,7 +23,7 @@ class TIRInterpreterTest {
 
     @BeforeAll
     static void setUp() {
-        memoryDomain = Environment.current().nativeMemoryDomain();
+        memoryDomain = Environment.nativeMemoryDomain();
         memoryAccess = memoryDomain.directAccess();
     }
 

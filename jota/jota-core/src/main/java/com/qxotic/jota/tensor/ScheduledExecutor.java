@@ -134,7 +134,7 @@ final class ScheduledExecutor {
         }
 
         MemoryDomain<Object> srcDomain = sourceDomainFor((Memory<Object>) view.memory());
-        MemoryDomain<Object> dstDomain = Environment.current().memoryDomainFor(targetDevice);
+        MemoryDomain<Object> dstDomain = Environment.memoryDomainFor(targetDevice);
         MemoryView<Object> srcView = (MemoryView<Object>) view;
         Memory<Object> dstMemory =
                 dstDomain.memoryAllocator().allocateMemory(view.dataType(), view.shape());
@@ -174,7 +174,7 @@ final class ScheduledExecutor {
                             MemoryAllocatorFactory.ofByteBuffer(byteBuffer.isDirect()));
         }
         if (base instanceof MemorySegment) {
-            return (MemoryDomain<B>) Environment.current().nativeMemoryDomain();
+            return (MemoryDomain<B>) Environment.nativeMemoryDomain();
         }
         throw new IllegalArgumentException(
                 "Unsupported memory backing type: " + base.getClass().getName());

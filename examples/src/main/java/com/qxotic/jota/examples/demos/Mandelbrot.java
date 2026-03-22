@@ -34,7 +34,7 @@ public final class Mandelbrot {
 
         Device backend = DemoDevices.resolveDevice(current, requestedBackend(args));
         Environment backendEnv =
-                new Environment(backend, current.defaultFloat(), current.runtimes());
+                Environment.of(backend, current.defaultFloat(), current.runtimes());
 
         long start = System.currentTimeMillis();
         byte[] rgb =
@@ -97,7 +97,7 @@ public final class Mandelbrot {
     private static byte[] toRGB(Tensor iterations) {
         MemoryView<MemorySegment> typedView = toNativeHostView(iterations.materialize());
         MemoryDomain<MemorySegment> domain =
-                (MemoryDomain<MemorySegment>) Environment.current().nativeRuntime().memoryDomain();
+                (MemoryDomain<MemorySegment>) Environment.nativeRuntime().memoryDomain();
         MemoryAccess<MemorySegment> access = domain.directAccess();
 
         byte[] rgb = new byte[HEIGHT * WIDTH * 3];
@@ -127,7 +127,7 @@ public final class Mandelbrot {
     @SuppressWarnings("unchecked")
     private static MemoryView<MemorySegment> toNativeHostView(MemoryView<?> view) {
         return (MemoryView<MemorySegment>)
-                Tensor.of(view).to(Environment.current().nativeRuntime().device()).materialize();
+                Tensor.of(view).to(Environment.nativeRuntime().device()).materialize();
     }
 
     private static String requestedBackend(String[] args) {

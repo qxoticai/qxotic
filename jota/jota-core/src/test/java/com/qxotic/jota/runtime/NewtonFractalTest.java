@@ -39,7 +39,7 @@ class NewtonFractalTest {
         MemoryView<?> output =
                 Tracer.trace(() -> newtonTensor(WIDTH, HEIGHT, ITERATIONS)).materialize();
 
-        MemoryDomain<MemorySegment> hostDomain = Environment.current().nativeMemoryDomain();
+        MemoryDomain<MemorySegment> hostDomain = Environment.nativeMemoryDomain();
         MemoryView<MemorySegment> hostView = toHost(output);
         MemoryAccess<MemorySegment> access = hostDomain.directAccess();
 
@@ -161,6 +161,6 @@ class NewtonFractalTest {
     @SuppressWarnings("unchecked")
     private static MemoryView<MemorySegment> toHost(MemoryView<?> view) {
         return (MemoryView<MemorySegment>)
-                Tensor.of(view).to(Environment.current().nativeRuntime().device()).materialize();
+                Tensor.of(view).to(Environment.nativeRuntime().device()).materialize();
     }
 }

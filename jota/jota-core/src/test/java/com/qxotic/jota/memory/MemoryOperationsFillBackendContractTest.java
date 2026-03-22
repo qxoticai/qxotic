@@ -153,7 +153,7 @@ class MemoryOperationsFillBackendContractTest {
     @SuppressWarnings("unchecked")
     private static <B> MemoryDomain<B> currentBackendDomain() {
         Environment env = Environment.current();
-        return (MemoryDomain<B>) env.memoryDomainFor(env.defaultDevice());
+        return (MemoryDomain<B>) Environment.memoryDomainFor(env.defaultDevice());
     }
 
     private static <B> Memory<MemorySegment> copyToHost(

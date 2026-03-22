@@ -28,7 +28,7 @@ final class TensorFactory {
     }
 
     private static MemoryDomain<?> defaultMemoryDomain() {
-        return Environment.current().runtimeFor(defaultDevice()).memoryDomain();
+        return Environment.runtimeFor(defaultDevice()).memoryDomain();
     }
 
     private static Tensor onDefaultDevice(Number value, DataType dataType, Shape shape) {

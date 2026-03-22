@@ -75,7 +75,7 @@ public final class TensorTestReads {
         @SuppressWarnings("unchecked")
         MemoryDomain<Object> srcDomain =
                 (MemoryDomain<Object>)
-                        Environment.current().runtimeFor(view.memory().device()).memoryDomain();
+                        Environment.runtimeFor(view.memory().device()).memoryDomain();
         MemoryAccess<Object> srcAccess = srcDomain.directAccess();
         if (srcAccess != null) {
             return new ReadContext(view, srcAccess);
@@ -92,7 +92,7 @@ public final class TensorTestReads {
                 (MemoryView<Object>) Tensor.of(view).to(readableDevice).materialize();
         @SuppressWarnings("unchecked")
         MemoryDomain<Object> hostDomain =
-                (MemoryDomain<Object>) environment.runtimeFor(readableDevice).memoryDomain();
+                (MemoryDomain<Object>) Environment.runtimeFor(readableDevice).memoryDomain();
         MemoryAccess<Object> hostAccess = hostDomain.directAccess();
         if (hostAccess == null) {
             throw new IllegalStateException(
@@ -116,7 +116,7 @@ public final class TensorTestReads {
             }
             @SuppressWarnings("unchecked")
             MemoryDomain<Object> domain =
-                    (MemoryDomain<Object>) environment.runtimeFor(candidate).memoryDomain();
+                    (MemoryDomain<Object>) Environment.runtimeFor(candidate).memoryDomain();
             if (domain.directAccess() != null) {
                 return candidate;
             }

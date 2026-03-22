@@ -38,7 +38,7 @@ public final class RayTracerPpmDemo {
         Device device = DemoDevices.resolveDevice(global, stringArg(args, "--device", null));
 
         try {
-            Environment.configureGlobal(new Environment(device, DataType.FP32, global.runtimes()));
+            Environment.configureGlobal(Environment.of(device, DataType.FP32, global.runtimes()));
         } catch (IllegalStateException ignored) {
         }
 
@@ -448,7 +448,7 @@ public final class RayTracerPpmDemo {
         @SuppressWarnings("unchecked")
         MemoryDomain<Object> srcDomain =
                 (MemoryDomain<Object>)
-                        Environment.current().runtimeFor(src.memory().device()).memoryDomain();
+                        Environment.runtimeFor(src.memory().device()).memoryDomain();
         @SuppressWarnings("unchecked")
         MemoryView<Object> srcView = (MemoryView<Object>) src;
 

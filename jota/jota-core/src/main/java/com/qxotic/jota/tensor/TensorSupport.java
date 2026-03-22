@@ -24,9 +24,8 @@ final class TensorSupport {
     @SuppressWarnings({"rawtypes", "unchecked"})
     static Tensor transferToDevice(Tensor source, Device targetDevice) {
         MemoryView srcView = source.materialize();
-        Environment environment = Environment.current();
-        MemoryDomain srcDomain = environment.runtimeFor(source.device()).memoryDomain();
-        MemoryDomain dstDomain = environment.runtimeFor(targetDevice).memoryDomain();
+        MemoryDomain srcDomain = Environment.runtimeFor(source.device()).memoryDomain();
+        MemoryDomain dstDomain = Environment.runtimeFor(targetDevice).memoryDomain();
 
         MemoryView dstView =
                 MemoryView.of(

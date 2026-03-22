@@ -63,7 +63,7 @@ public final class MnistDemoServer {
             throw new IllegalStateException("Backend not available: " + device);
         }
         Environment.configureGlobal(
-                new Environment(device, current.defaultFloat(), current.runtimes()));
+                Environment.of(device, current.defaultFloat(), current.runtimes()));
         return device;
     }
 
@@ -255,7 +255,7 @@ public final class MnistDemoServer {
         return backendEnvironments.computeIfAbsent(
                 device,
                 d ->
-                        new Environment(
+                        Environment.of(
                                 d, baseEnvironment.defaultFloat(), baseEnvironment.runtimes()));
     }
 

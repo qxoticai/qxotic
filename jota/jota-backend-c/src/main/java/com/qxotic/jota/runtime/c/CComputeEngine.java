@@ -157,7 +157,7 @@ public final class CComputeEngine implements ComputeEngine {
             @SuppressWarnings("unchecked")
             MemoryDomain<Object> srcContext =
                     (MemoryDomain<Object>)
-                            Environment.current().runtimeFor(view.memory().device()).memoryDomain();
+                            Environment.runtimeFor(view.memory().device()).memoryDomain();
             @SuppressWarnings("unchecked")
             MemoryView<Object> srcView = (MemoryView<Object>) view;
 

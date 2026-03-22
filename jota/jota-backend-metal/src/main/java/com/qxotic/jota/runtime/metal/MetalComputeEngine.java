@@ -98,7 +98,7 @@ public final class MetalComputeEngine implements ComputeEngine {
     }
 
     private MemoryView<?> executeWithInterpreterFallback(TIRGraph graph, List<Tensor> inputs) {
-        MemoryDomain<MemorySegment> hostDomain = Environment.current().nativeMemoryDomain();
+        MemoryDomain<MemorySegment> hostDomain = Environment.nativeMemoryDomain();
         List<MemoryView<?>> hostInputs = new ArrayList<>(inputs.size());
         for (var input : inputs) {
             MemoryView<?> view = input.materialize();
@@ -218,7 +218,7 @@ public final class MetalComputeEngine implements ComputeEngine {
         @SuppressWarnings("unchecked")
         MemoryDomain<Object> srcDomain =
                 (MemoryDomain<Object>)
-                        Environment.current().memoryDomainFor(view.memory().device());
+                        Environment.memoryDomainFor(view.memory().device());
         @SuppressWarnings("unchecked")
         MemoryView<Object> srcView = (MemoryView<Object>) view;
         BufferSpec spec = computeBufferSpec(view.layout(), view.dataType());
@@ -234,7 +234,7 @@ public final class MetalComputeEngine implements ComputeEngine {
 
     private static MemoryView<MemorySegment> toHost(
             MetalMemoryDomain metalDomain, MemoryView<MetalDevicePtr> view) {
-        MemoryDomain<MemorySegment> hostDomain = Environment.current().nativeMemoryDomain();
+        MemoryDomain<MemorySegment> hostDomain = Environment.nativeMemoryDomain();
         MemoryView<MemorySegment> hostView =
                 MemoryView.of(
                         hostDomain
@@ -256,7 +256,7 @@ public final class MetalComputeEngine implements ComputeEngine {
         @SuppressWarnings("unchecked")
         MemoryDomain<Object> srcDomain =
                 (MemoryDomain<Object>)
-                        Environment.current().memoryDomainFor(view.memory().device());
+                        Environment.memoryDomainFor(view.memory().device());
         @SuppressWarnings("unchecked")
         MemoryView<Object> srcView = (MemoryView<Object>) view;
         BufferSpec spec = computeBufferSpec(view.layout(), view.dataType());
@@ -277,9 +277,7 @@ public final class MetalComputeEngine implements ComputeEngine {
     }
 
     private static boolean shouldReturnHostOutput() {
-        return Environment.current()
-                .runtimeFor(Environment.current().defaultDevice())
-                .supportsNativeRuntimeAlias();
+        return Environment.defaultRuntime().supportsNativeRuntimeAlias();
     }
 
     private static List<MemoryView<?>> allocateOutputs(

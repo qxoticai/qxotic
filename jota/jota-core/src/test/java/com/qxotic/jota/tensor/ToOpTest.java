@@ -28,7 +28,7 @@ class ToOpTest {
 
     @BeforeAll
     static void setUpDomain() {
-        domain = Environment.current().nativeMemoryDomain();
+        domain = Environment.nativeMemoryDomain();
     }
 
     @Test
@@ -77,7 +77,7 @@ class ToOpTest {
         assertEquals(src.shape(), dst.shape());
         assertEquals(src.dataType(), dst.dataType());
         assertEquals(src.layout(), dst.layout());
-        assertTensorEqualsExact(src, dst.to(Environment.current().nativeRuntime().device()));
+        assertTensorEqualsExact(src, dst.to(Environment.nativeRuntime().device()));
     }
 
     @Test
@@ -91,7 +91,7 @@ class ToOpTest {
         assertEquals(src.shape(), dst.shape());
         assertEquals(src.dataType(), dst.dataType());
         assertEquals(src.layout(), dst.layout());
-        assertTensorEqualsExact(src, dst.to(Environment.current().nativeRuntime().device()));
+        assertTensorEqualsExact(src, dst.to(Environment.nativeRuntime().device()));
     }
 
     @Test
@@ -105,7 +105,7 @@ class ToOpTest {
         assertEquals(src.shape(), dst.shape());
         assertEquals(src.dataType(), dst.dataType());
         assertEquals(src.layout(), dst.layout());
-        assertTensorEqualsExact(src, dst.to(Environment.current().nativeRuntime().device()));
+        assertTensorEqualsExact(src, dst.to(Environment.nativeRuntime().device()));
     }
 
     @Test
@@ -120,7 +120,7 @@ class ToOpTest {
         assertEquals(src.shape(), dst.shape());
         assertEquals(src.dataType(), dst.dataType());
         assertEquals(src.layout(), dst.layout());
-        assertTensorEqualsExact(src, dst.to(Environment.current().nativeRuntime().device()));
+        assertTensorEqualsExact(src, dst.to(Environment.nativeRuntime().device()));
     }
 
     @Test
@@ -134,7 +134,7 @@ class ToOpTest {
         assertEquals(src.shape(), dst.shape());
         assertEquals(src.dataType(), dst.dataType());
         assertEquals(src.layout(), dst.layout());
-        assertTensorEqualsExact(src, dst.to(Environment.current().nativeRuntime().device()));
+        assertTensorEqualsExact(src, dst.to(Environment.nativeRuntime().device()));
     }
 
     @Test
@@ -149,7 +149,7 @@ class ToOpTest {
         assertEquals(src.dataType(), dst.dataType());
         assertEquals(src.layout(), dst.layout());
         assertEquals(0L, dst.shape().size());
-        assertTensorEqualsExact(src, dst.to(Environment.current().nativeRuntime().device()));
+        assertTensorEqualsExact(src, dst.to(Environment.nativeRuntime().device()));
     }
 
     @Test
@@ -162,7 +162,7 @@ class ToOpTest {
         for (DataType dtype : dtypes) {
             Tensor src =
                     Tensor.iota(18, DataType.I64).cast(dtype).view(Shape.of(3, 6)).transpose(0, 1);
-            Tensor roundTrip = src.to(target).to(Environment.current().nativeRuntime().device());
+            Tensor roundTrip = src.to(target).to(Environment.nativeRuntime().device());
             assertTensorEqualsExact(src, roundTrip);
         }
     }
@@ -173,7 +173,7 @@ class ToOpTest {
                 !target.belongsTo(DeviceType.PANAMA),
                 "transfer tests require non-PANAMA configured target");
         assumeTrue(
-                Environment.current().runtimes().hasRuntimeFor(target),
+                Environment.hasRuntimeFor(target),
                 target + " runtime not registered in current environment");
         return target;
     }

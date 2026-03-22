@@ -662,7 +662,7 @@ public class GameOfLife {
     private static float[] tensorToFloatArray(Tensor tensor) {
         MemoryView<MemorySegment> view = (MemoryView<MemorySegment>) tensor.materialize();
         MemoryDomain<MemorySegment> domain =
-                (MemoryDomain<MemorySegment>) Environment.current().nativeRuntime().memoryDomain();
+                (MemoryDomain<MemorySegment>) Environment.nativeRuntime().memoryDomain();
         MemoryAccess<MemorySegment> access = domain.directAccess();
 
         int size = (int) view.shape().size();

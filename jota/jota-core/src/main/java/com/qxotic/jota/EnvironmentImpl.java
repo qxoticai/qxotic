@@ -100,7 +100,7 @@ record EnvironmentImpl(
                 nativeBackend, nativeBackend, DataTypeImpl.defaultFloatValue(), registry);
     }
 
-    private static Device selectNativeBackend(DefaultRuntimeRegistry registry) {
+    static Device selectNativeBackend(DefaultRuntimeRegistry registry) {
         Device override = parseNativeBackendOverride(System.getProperty("jota.native.backend"));
         if (override != null) {
             if (!registry.hasRuntimeFor(override)) {
@@ -138,7 +138,7 @@ record EnvironmentImpl(
                                 : " in JVM runtime"));
     }
 
-    private static Device parseNativeBackendOverride(String rawValue) {
+    static Device parseNativeBackendOverride(String rawValue) {
         if (rawValue == null || rawValue.isBlank()) {
             return null;
         }
@@ -212,7 +212,7 @@ record EnvironmentImpl(
         return null;
     }
 
-    private static IllegalStateException missingNativeRuntimeException(
+    static IllegalStateException missingNativeRuntimeException(
             RuntimeRegistry registry, String reason) {
         StringBuilder message = new StringBuilder();
         message.append("Unable to configure native runtime. ").append(reason).append('.');
@@ -300,7 +300,7 @@ record EnvironmentImpl(
         return value.isEmpty() ? "<none>" : value;
     }
 
-    private static void registerProvider(
+    static void registerProvider(
             DefaultRuntimeRegistry registry,
             DeviceRuntimeProvider provider,
             Set<String> includedBackends,
