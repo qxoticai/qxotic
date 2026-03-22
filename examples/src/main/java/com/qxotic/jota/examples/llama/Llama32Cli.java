@@ -1752,7 +1752,7 @@ public final class Llama32Cli {
         Llama32Model(LlamaConfig cfg, LlamaWeights w) {
             this.cfg = cfg;
             this.w = w;
-            this.runtime = Environment.runtimeFor(Device.defaultDevice());
+            this.runtime = Environment.runtimeFor(Environment.current().defaultDevice());
             DeviceRuntime cRt;
             try {
                 cRt = Environment.runtimeFor(DeviceType.C.deviceIndex(0));

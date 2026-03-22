@@ -4,7 +4,6 @@ import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.TensorEntry;
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Device;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
@@ -570,14 +569,14 @@ public final class VanillaLlama {
         LlamaModel(Configuration configuration, Weights weights) {
             this.configuration = configuration;
             this.weights = weights;
-            this.domain = Environment.runtimeFor(Device.defaultDevice()).memoryDomain();
+            this.domain = Environment.runtimeFor(Environment.current().defaultDevice()).memoryDomain();
             @SuppressWarnings("unchecked")
             MemoryAccess<MemorySegment> typedAccess =
                     (MemoryAccess<MemorySegment>) domain.directAccess();
             this.access = typedAccess;
             if (this.access == null) {
                 throw new IllegalStateException(
-                        "No direct memory access for device " + Device.defaultDevice());
+                        "No direct memory access for device " + Environment.current().defaultDevice());
             }
             this.tokenTable = weights.tokenTable().materialize();
             this.output = weights.output().materialize();

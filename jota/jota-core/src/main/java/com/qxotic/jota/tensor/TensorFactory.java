@@ -24,7 +24,7 @@ final class TensorFactory {
     private TensorFactory() {}
 
     private static Device defaultDevice() {
-        return Device.defaultDevice();
+        return Environment.current().defaultDevice();
     }
 
     private static MemoryDomain<?> defaultMemoryDomain() {
@@ -93,7 +93,7 @@ final class TensorFactory {
     // region Random Creation
 
     static Tensor zeros(Shape shape) {
-        return zeros(DataType.defaultFloat(), shape);
+        return zeros(Environment.current().defaultFloat(), shape);
     }
 
     static Tensor zeros(DataType dtype, Shape shape) {
@@ -101,7 +101,7 @@ final class TensorFactory {
     }
 
     static Tensor ones(Shape shape) {
-        return ones(DataType.defaultFloat(), shape);
+        return ones(Environment.current().defaultFloat(), shape);
     }
 
     static Tensor ones(DataType dtype, Shape shape) {

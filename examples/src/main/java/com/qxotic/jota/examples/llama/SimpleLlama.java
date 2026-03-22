@@ -1491,7 +1491,7 @@ public final class SimpleLlama {
         LlamaModel(LlamaConfig cfg, LlamaWeights w) {
             this.cfg = cfg;
             this.w = w;
-            this.runtime = Environment.runtimeFor(Device.defaultDevice());
+            this.runtime = Environment.runtimeFor(Environment.current().defaultDevice());
             DeviceRuntime cRt;
             RuntimeException cRuntimeError = null;
             try {

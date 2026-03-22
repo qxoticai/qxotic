@@ -3,6 +3,7 @@ package com.qxotic.jota.tensor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.jota.DataType;
+import com.qxotic.jota.Environment;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.random.RandomKey;
@@ -29,9 +30,11 @@ class TensorStaticFactoriesCoverageTest {
         assertTensor(Tensor.of(view), DataType.FP32, Shape.of(2, 2));
 
         // Zero/one/iota.
-        assertTensor(Tensor.zeros(Shape.of(2, 3)), DataType.defaultFloat(), Shape.of(2, 3));
+        assertTensor(
+                Tensor.zeros(Shape.of(2, 3)), Environment.current().defaultFloat(), Shape.of(2, 3));
         assertTensor(Tensor.zeros(DataType.I32, Shape.of(2, 3)), DataType.I32, Shape.of(2, 3));
-        assertTensor(Tensor.ones(Shape.of(2, 3)), DataType.defaultFloat(), Shape.of(2, 3));
+        assertTensor(
+                Tensor.ones(Shape.of(2, 3)), Environment.current().defaultFloat(), Shape.of(2, 3));
         assertTensor(Tensor.ones(DataType.I64, Shape.of(2, 3)), DataType.I64, Shape.of(2, 3));
         assertTensor(Tensor.iota(5), DataType.I64, Shape.of(5));
         assertTensor(Tensor.iota(5, DataType.FP32), DataType.FP32, Shape.of(5));

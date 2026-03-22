@@ -4,7 +4,6 @@ import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.TensorEntry;
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.Device;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Layout;
@@ -518,7 +517,7 @@ public final class Qwen3Cli {
             this.keyCache = new MemoryView<?>[cfg.nLayers];
             this.valueCache = new MemoryView<?>[cfg.nLayers];
             MemoryDomain<?> domain =
-                    Environment.runtimeFor(Device.defaultDevice()).memoryDomain();
+                    Environment.runtimeFor(Environment.current().defaultDevice()).memoryDomain();
             for (int i = 0; i < cfg.nLayers; i++) {
                 this.keyCache[i] =
                         MemoryView.of(
