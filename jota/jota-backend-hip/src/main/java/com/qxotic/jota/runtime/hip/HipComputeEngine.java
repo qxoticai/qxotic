@@ -306,8 +306,7 @@ public final class HipComputeEngine implements ComputeEngine {
             return hipView;
         }
         @SuppressWarnings("unchecked")
-        MemoryDomain<Object> srcContext =
-                Environment.memoryDomainFor(view.memory().device());
+        MemoryDomain<Object> srcContext = Environment.memoryDomainFor(view.memory().device());
         @SuppressWarnings("unchecked")
         MemoryView<Object> srcView = (MemoryView<Object>) view;
         BufferSpec spec = computeBufferSpec(view.layout(), view.dataType());
@@ -330,8 +329,7 @@ public final class HipComputeEngine implements ComputeEngine {
     private static MemoryView<MemorySegment> toHost(
             MemoryDomain<MemorySegment> hostContext, MemoryView<?> view) {
         if (view.memory().base() instanceof MemorySegment
-                && Environment.runtimeFor(view.memory().device())
-                        .supportsNativeRuntimeAlias()) {
+                && Environment.runtimeFor(view.memory().device()).supportsNativeRuntimeAlias()) {
             @SuppressWarnings("unchecked")
             MemoryView<MemorySegment> hostView = (MemoryView<MemorySegment>) view;
             return hostView;
@@ -342,8 +340,7 @@ public final class HipComputeEngine implements ComputeEngine {
                         view.dataType(),
                         view.layout());
         @SuppressWarnings("unchecked")
-        MemoryDomain<Object> srcContext =
-                Environment.memoryDomainFor(view.memory().device());
+        MemoryDomain<Object> srcContext = Environment.memoryDomainFor(view.memory().device());
         @SuppressWarnings("unchecked")
         MemoryView<Object> srcView = (MemoryView<Object>) view;
         MemoryDomain.copy(srcContext, srcView, hostContext, dst);

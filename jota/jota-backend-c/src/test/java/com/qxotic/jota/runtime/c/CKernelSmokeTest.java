@@ -35,8 +35,7 @@ class CKernelSmokeTest {
 
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>)
-                        Environment.runtimeFor(DeviceType.C.deviceIndex(0))
-                                .memoryDomain();
+                        Environment.runtimeFor(DeviceType.C.deviceIndex(0)).memoryDomain();
         MemoryView<MemorySegment> inputView =
                 createFp32Input(domain, new float[] {-4f, -3f, -2f, -1f, 0f, 1f, 2f, 3f});
         Tensor input = Tensor.of(inputView);
@@ -70,8 +69,7 @@ class CKernelSmokeTest {
 
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>)
-                        Environment.runtimeFor(DeviceType.C.deviceIndex(0))
-                                .memoryDomain();
+                        Environment.runtimeFor(DeviceType.C.deviceIndex(0)).memoryDomain();
         MemoryView<MemorySegment> inputView = createFp16Input(domain, new float[] {1f, 2f, 3f, 4f});
         Tensor input = Tensor.of(inputView);
 
@@ -104,8 +102,7 @@ class CKernelSmokeTest {
 
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>)
-                        Environment.runtimeFor(DeviceType.C.deviceIndex(0))
-                                .memoryDomain();
+                        Environment.runtimeFor(DeviceType.C.deviceIndex(0)).memoryDomain();
         MemoryView<MemorySegment> inputView = createBf16Input(domain, new float[] {1f, 2f, 3f, 4f});
         Tensor input = Tensor.of(inputView);
 
@@ -153,8 +150,7 @@ class CKernelSmokeTest {
 
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>)
-                        Environment.runtimeFor(DeviceType.C.deviceIndex(0))
-                                .memoryDomain();
+                        Environment.runtimeFor(DeviceType.C.deviceIndex(0)).memoryDomain();
         MemoryAccess<MemorySegment> access = domain.directAccess();
 
         @SuppressWarnings("unchecked")
