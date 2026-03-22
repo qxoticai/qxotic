@@ -119,7 +119,7 @@ final class MnistMlp {
         @SuppressWarnings("unchecked")
         MemoryDomain<Object> srcDomain =
                 (MemoryDomain<Object>)
-                        Environment.current().runtimeFor(src.memory().device()).memoryDomain();
+                        Environment.runtimeFor(src.memory().device()).memoryDomain();
         @SuppressWarnings("unchecked")
         MemoryView<Object> srcView = (MemoryView<Object>) src;
 
@@ -232,11 +232,11 @@ final class MnistMlp {
             @SuppressWarnings("unchecked")
             MemoryDomain<Object> srcDomain =
                     (MemoryDomain<Object>)
-                            Environment.current().runtimeFor(src.memory().device()).memoryDomain();
+                            Environment.runtimeFor(src.memory().device()).memoryDomain();
             @SuppressWarnings("unchecked")
             MemoryDomain<Object> dstDomain =
                     (MemoryDomain<Object>)
-                            Environment.current().runtimeFor(targetDevice).memoryDomain();
+                            Environment.runtimeFor(targetDevice).memoryDomain();
             @SuppressWarnings("unchecked")
             MemoryView<Object> srcView = (MemoryView<Object>) src;
 

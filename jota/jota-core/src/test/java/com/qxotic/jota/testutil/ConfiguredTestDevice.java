@@ -37,7 +37,7 @@ public final class ConfiguredTestDevice {
     }
 
     public static boolean hasRuntime(DeviceType type) {
-        return Environment.current().runtimes().hasRuntimeFor(type.deviceIndex(0));
+        return Environment.hasRuntimeFor(type.deviceIndex(0));
     }
 
     private static Device resolvePreferredOrZero(Environment environment, DeviceType type) {

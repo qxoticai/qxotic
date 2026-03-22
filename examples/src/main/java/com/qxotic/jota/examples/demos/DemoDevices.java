@@ -82,7 +82,7 @@ public final class DemoDevices {
         }
 
         Set<DeviceType> unavailable = new LinkedHashSet<>();
-        List<RuntimeDiagnostic> diagnostics = environment.runtimeDiagnostics();
+        List<RuntimeDiagnostic> diagnostics = Environment.runtimeDiagnostics();
         for (RuntimeDiagnostic diagnostic : diagnostics) {
             if (!diagnostic.probe().isAvailable()) {
                 unavailable.add(diagnostic.deviceType());
@@ -130,7 +130,7 @@ public final class DemoDevices {
     }
 
     private static List<RuntimeDiagnostic> diagnosticsFor(Environment environment, Device device) {
-        return environment.runtimeDiagnostics().stream()
+        return environment.runtimes().diagnostics().stream()
                 .filter(diagnostic -> diagnostic.deviceType().equals(device.type()))
                 .toList();
     }

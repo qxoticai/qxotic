@@ -48,8 +48,7 @@ record ConstantComputation(long rawBits, DataType dataType, Shape shape, Device 
 
     @Override
     public MemoryView<?> execute() {
-        Environment environment = Environment.current();
-        MemoryDomain<?> memoryDomain = environment.memoryDomainFor(device);
+        MemoryDomain<?> memoryDomain = Environment.memoryDomainFor(device);
         return allocateAndFill(memoryDomain);
     }
 
@@ -183,7 +182,7 @@ record ConstantComputation(long rawBits, DataType dataType, Shape shape, Device 
             if (!environment.runtimes().hasRuntimeFor(candidate)) {
                 continue;
             }
-            MemoryDomain<?> domain = environment.runtimeFor(candidate).memoryDomain();
+            MemoryDomain<?> domain = Environment.runtimeFor(candidate).memoryDomain();
             if (domain.directAccess() != null) {
                 return domain;
             }

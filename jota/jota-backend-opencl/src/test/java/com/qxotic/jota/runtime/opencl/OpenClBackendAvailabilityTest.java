@@ -17,7 +17,7 @@ class OpenClBackendAvailabilityTest {
                 canaryFailureMessage(
                         "OpenCL JNI runtime not available", "mvnd -Popencl test", details));
         assertTrue(
-                Environment.current().runtimes().hasRuntimeFor(DeviceType.OPENCL.deviceIndex(0)),
+                Environment.hasRuntimeFor(DeviceType.OPENCL.deviceIndex(0)),
                 canaryFailureMessage(
                         "OpenCL runtime is not registered", "mvnd -Popencl test", details));
         assertTrue(
@@ -46,8 +46,7 @@ class OpenClBackendAvailabilityTest {
                 canaryFailureMessage(
                         "OpenCL device listing is empty", "mvnd -Popencl test", details));
         assertTrue(
-                Environment.current()
-                        .runtimeFor(DeviceType.OPENCL.deviceIndex(0))
+                Environment.runtimeFor(DeviceType.OPENCL.deviceIndex(0))
                         .device()
                         .belongsTo(DeviceType.OPENCL));
     }

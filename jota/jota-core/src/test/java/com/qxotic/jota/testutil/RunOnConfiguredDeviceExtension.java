@@ -32,7 +32,7 @@ public final class RunOnConfiguredDeviceExtension implements InvocationIntercept
     private static void runInConfiguredDevice(Invocation<Void> invocation) throws Throwable {
         Device targetDevice = ConfiguredTestDevice.resolve();
         Environment current = Environment.current();
-        current.nativeRuntime();
+        Environment.nativeRuntime();
         Assumptions.assumeTrue(
                 current.runtimes().hasRuntimeFor(targetDevice),
                 "Configured test device '"

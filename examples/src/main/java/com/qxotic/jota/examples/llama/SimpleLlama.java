@@ -228,11 +228,7 @@ public final class SimpleLlama {
 
     public static void main(String[] args) throws Exception {
         Options options = Options.parse(args);
-        Environment env =
-                new Environment(
-                        DeviceType.PANAMA.deviceIndex(0),
-                        DataType.FP32,
-                        Environment.current().runtimes());
+        Environment env = Environment.withDefaultDevice(DeviceType.PANAMA.deviceIndex(0));
         Environment.with(
                 env,
                 () -> {
@@ -1495,11 +1491,11 @@ public final class SimpleLlama {
         LlamaModel(LlamaConfig cfg, LlamaWeights w) {
             this.cfg = cfg;
             this.w = w;
-            this.runtime = Environment.current().runtimeFor(Device.defaultDevice());
+            this.runtime = Environment.runtimeFor(Device.defaultDevice());
             DeviceRuntime cRt;
             RuntimeException cRuntimeError = null;
             try {
-                cRt = Environment.current().runtimeFor(DeviceType.C.deviceIndex(0));
+                cRt = Environment.runtimeFor(DeviceType.C.deviceIndex(0));
             } catch (RuntimeException ex) {
                 cRt = null;
                 cRuntimeError = ex;
@@ -2221,8 +2217,7 @@ public final class SimpleLlama {
             MemoryView<?> tokenTable = w.tokenTable().materialize();
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(tokenTable.memory().device())
+                    Environment.runtimeFor(tokenTable.memory().device())
                             .memoryDomain()
                             .directAccess();
             int dim = cfg.dim();
@@ -2242,8 +2237,7 @@ public final class SimpleLlama {
                 MemoryView<?> batchBuf, int index, MemoryView<?> singleBuf, int n) {
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(batchBuf.memory().device())
+                    Environment.runtimeFor(batchBuf.memory().device())
                             .memoryDomain()
                             .directAccess();
             int batchStride = PREFILL_BATCH_SIZE;
@@ -2262,8 +2256,7 @@ public final class SimpleLlama {
                 MemoryView<?> singleBuf, int index, MemoryView<?> batchBuf, int n) {
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(singleBuf.memory().device())
+                    Environment.runtimeFor(singleBuf.memory().device())
                             .memoryDomain()
                             .directAccess();
             long singleOffset = singleBuf.byteOffset();
@@ -2298,8 +2291,7 @@ public final class SimpleLlama {
             MemoryView<?> wv = weight.materialize();
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(input.memory().device())
+                    Environment.runtimeFor(input.memory().device())
                             .memoryDomain()
                             .directAccess();
             int batchStride = PREFILL_BATCH_SIZE;
@@ -2335,8 +2327,7 @@ public final class SimpleLlama {
                 int ffnDim) {
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(gateBuf.memory().device())
+                    Environment.runtimeFor(gateBuf.memory().device())
                             .memoryDomain()
                             .directAccess();
             MemorySegment gateSeg = ((MemoryView<MemorySegment>) gateBuf).memory().base();
@@ -2423,8 +2414,7 @@ public final class SimpleLlama {
 
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(A.memory().device())
+                    Environment.runtimeFor(A.memory().device())
                             .memoryDomain()
                             .directAccess();
 
@@ -2537,8 +2527,7 @@ public final class SimpleLlama {
         private void batchGemmWeightStationaryJava(
                 MemoryView<?> A, MemoryView<?> B, MemoryView<?> C, int batchSize, int m, int n) {
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(A.memory().device())
+                    Environment.runtimeFor(A.memory().device())
                             .memoryDomain()
                             .directAccess();
             MemorySegment aSeg = ((MemoryView<MemorySegment>) A).memory().base();
@@ -2885,8 +2874,7 @@ public final class SimpleLlama {
                 int dim) {
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(batchBuf.memory().device())
+                    Environment.runtimeFor(batchBuf.memory().device())
                             .memoryDomain()
                             .directAccess();
             int headDim = cfg.headDim();
@@ -2927,8 +2915,7 @@ public final class SimpleLlama {
                 int position) {
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(batchKBuf.memory().device())
+                    Environment.runtimeFor(batchKBuf.memory().device())
                             .memoryDomain()
                             .directAccess();
 
@@ -2982,8 +2969,7 @@ public final class SimpleLlama {
 
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(qBuf.memory().device())
+                    Environment.runtimeFor(qBuf.memory().device())
                             .memoryDomain()
                             .directAccess();
             MemorySegment keySeg = ((MemoryView<MemorySegment>) keyCache).memory().base();
@@ -3156,8 +3142,7 @@ public final class SimpleLlama {
                 int n) {
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(aBatch.memory().device())
+                    Environment.runtimeFor(aBatch.memory().device())
                             .memoryDomain()
                             .directAccess();
 
@@ -3185,8 +3170,7 @@ public final class SimpleLlama {
             MemoryView<?> tokenTable = w.tokenTable().materialize();
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(tokenTable.memory().device())
+                    Environment.runtimeFor(tokenTable.memory().device())
                             .memoryDomain()
                             .directAccess();
             int dim = cfg.dim();
@@ -3206,8 +3190,7 @@ public final class SimpleLlama {
             MemoryView<?> wv = weight.materialize();
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(xv.memory().device())
+                    Environment.runtimeFor(xv.memory().device())
                             .memoryDomain()
                             .directAccess();
             int dim = cfg.dim();
@@ -3330,8 +3313,7 @@ public final class SimpleLlama {
 
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(scratch.ffnGateBuf.memory().device())
+                    Environment.runtimeFor(scratch.ffnGateBuf.memory().device())
                             .memoryDomain()
                             .directAccess();
 
@@ -3398,8 +3380,7 @@ public final class SimpleLlama {
 
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(A.memory().device())
+                    Environment.runtimeFor(A.memory().device())
                             .memoryDomain()
                             .directAccess();
 
@@ -3647,8 +3628,7 @@ public final class SimpleLlama {
 
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(qView.memory().device())
+                    Environment.runtimeFor(qView.memory().device())
                             .memoryDomain()
                             .directAccess();
             MemorySegment keySeg = ((MemoryView<MemorySegment>) key).memory().base();
@@ -3982,8 +3962,7 @@ public final class SimpleLlama {
             MemoryView<?> in = input.materialize();
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(in.memory().device())
+                    Environment.runtimeFor(in.memory().device())
                             .memoryDomain()
                             .directAccess();
             int headDim = cfg.headDim();
@@ -4023,8 +4002,7 @@ public final class SimpleLlama {
             MemoryView<?> valueCacheView = state.valueCache[layer];
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(kv.memory().device())
+                    Environment.runtimeFor(kv.memory().device())
                             .memoryDomain()
                             .directAccess();
             long kBase = kv.byteOffset();
@@ -4051,8 +4029,7 @@ public final class SimpleLlama {
         private void addInto(MemoryView<?> a, MemoryView<?> b, MemoryView<?> out, int n) {
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(a.memory().device())
+                    Environment.runtimeFor(a.memory().device())
                             .memoryDomain()
                             .directAccess();
             long aBase = a.byteOffset();
@@ -4084,8 +4061,7 @@ public final class SimpleLlama {
         int sample(MemoryView<?> logits) {
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.current()
-                            .runtimeFor(logits.memory().device())
+                    Environment.runtimeFor(logits.memory().device())
                             .memoryDomain()
                             .directAccess();
             long base = logits.byteOffset();
@@ -4418,7 +4394,7 @@ public final class SimpleLlama {
             int size = Math.toIntExact(shape.size());
             float[] out = new float[size];
             MemoryAccess<MemorySegment> access =
-                    Environment.current().nativeMemoryDomain().directAccess();
+                    Environment.nativeMemoryDomain().directAccess();
             for (int i = 0; i < size; i++) {
                 out[i] = access.readFloat(mem, i * 4L);
             }
@@ -4434,7 +4410,7 @@ public final class SimpleLlama {
         MemoryView<MemorySegment> host = (MemoryView<MemorySegment>) view;
         @SuppressWarnings("unchecked")
         MemoryAccess<MemorySegment> access =
-                Environment.current().nativeMemoryDomain().directAccess();
+                Environment.nativeMemoryDomain().directAccess();
         int size = Math.toIntExact(host.shape().size());
         float[] out = new float[size];
         for (int i = 0; i < size; i++) {

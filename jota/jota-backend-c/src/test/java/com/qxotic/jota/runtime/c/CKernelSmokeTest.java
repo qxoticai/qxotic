@@ -35,8 +35,7 @@ class CKernelSmokeTest {
 
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>)
-                        Environment.current()
-                                .runtimeFor(DeviceType.C.deviceIndex(0))
+                        Environment.runtimeFor(DeviceType.C.deviceIndex(0))
                                 .memoryDomain();
         MemoryView<MemorySegment> inputView =
                 createFp32Input(domain, new float[] {-4f, -3f, -2f, -1f, 0f, 1f, 2f, 3f});
@@ -71,8 +70,7 @@ class CKernelSmokeTest {
 
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>)
-                        Environment.current()
-                                .runtimeFor(DeviceType.C.deviceIndex(0))
+                        Environment.runtimeFor(DeviceType.C.deviceIndex(0))
                                 .memoryDomain();
         MemoryView<MemorySegment> inputView = createFp16Input(domain, new float[] {1f, 2f, 3f, 4f});
         Tensor input = Tensor.of(inputView);
@@ -106,8 +104,7 @@ class CKernelSmokeTest {
 
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>)
-                        Environment.current()
-                                .runtimeFor(DeviceType.C.deviceIndex(0))
+                        Environment.runtimeFor(DeviceType.C.deviceIndex(0))
                                 .memoryDomain();
         MemoryView<MemorySegment> inputView = createBf16Input(domain, new float[] {1f, 2f, 3f, 4f});
         Tensor input = Tensor.of(inputView);
@@ -156,8 +153,7 @@ class CKernelSmokeTest {
 
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>)
-                        Environment.current()
-                                .runtimeFor(DeviceType.C.deviceIndex(0))
+                        Environment.runtimeFor(DeviceType.C.deviceIndex(0))
                                 .memoryDomain();
         MemoryAccess<MemorySegment> access = domain.directAccess();
 

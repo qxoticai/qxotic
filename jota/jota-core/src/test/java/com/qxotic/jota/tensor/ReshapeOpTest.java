@@ -25,7 +25,7 @@ class ReshapeOpTest {
 
     @BeforeAll
     static void setUpDomain() {
-        domain = Environment.current().nativeMemoryDomain();
+        domain = Environment.nativeMemoryDomain();
     }
 
     @Test

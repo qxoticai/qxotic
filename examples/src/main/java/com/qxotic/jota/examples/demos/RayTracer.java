@@ -27,7 +27,7 @@ public final class RayTracer {
         Device device = DemoDevices.resolveDevice(global, stringArg(args, "--device", null));
 
         // Use scoped environment to properly select backend
-        Environment env = new Environment(device, DataType.FP32, global.runtimes());
+        Environment env = Environment.of(device, DataType.FP32, global.runtimes());
         long start = System.nanoTime();
         try {
             Environment.with(
@@ -220,7 +220,7 @@ public final class RayTracer {
         MemoryView<Object> src = (MemoryView<Object>) view;
         MemoryDomain.copy(
                 (MemoryDomain<Object>)
-                        Environment.current().runtimeFor(view.memory().device()).memoryDomain(),
+                        Environment.runtimeFor(view.memory().device()).memoryDomain(),
                 src,
                 DomainFactory.ofFloats(),
                 MemoryView.of(

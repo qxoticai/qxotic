@@ -22,7 +22,7 @@ class HipBackendAvailabilityTest {
                         "mvnd -Phip test",
                         details));
         assertTrue(
-                Environment.current().runtimes().hasRuntimeFor(DeviceType.HIP.deviceIndex(0)),
+                Environment.hasRuntimeFor(DeviceType.HIP.deviceIndex(0)),
                 canaryFailureMessage(
                         "[MISSING_SOFTWARE] HIP runtime is not registered",
                         "mvnd -Phip test",
@@ -40,8 +40,7 @@ class HipBackendAvailabilityTest {
                         "mvnd -Phip test",
                         details));
         assertTrue(
-                Environment.current()
-                        .runtimeFor(DeviceType.HIP.deviceIndex(0))
+                Environment.runtimeFor(DeviceType.HIP.deviceIndex(0))
                         .device()
                         .belongsTo(DeviceType.HIP));
     }
@@ -63,7 +62,7 @@ class HipBackendAvailabilityTest {
 
     private static String diagnosticsSummary(boolean hipccAvailable) {
         String hipDiagnostics =
-                Environment.current().runtimeDiagnostics().stream()
+                Environment.runtimeDiagnostics().stream()
                         .filter(d -> d.deviceType().equals(DeviceType.HIP))
                         .map(HipBackendAvailabilityTest::formatDiagnostic)
                         .collect(Collectors.joining("\n"));
@@ -75,7 +74,7 @@ class HipBackendAvailabilityTest {
                 + "\nHipRuntime.isAvailable="
                 + HipRuntime.isAvailable()
                 + "\nHIP runtime registered="
-                + Environment.current().runtimes().hasRuntimeFor(DeviceType.HIP.deviceIndex(0))
+                + Environment.hasRuntimeFor(DeviceType.HIP.deviceIndex(0))
                 + "\nhipcc available="
                 + hipccAvailable;
     }

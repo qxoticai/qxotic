@@ -57,8 +57,7 @@ final class Sampler {
         }
         @SuppressWarnings({"rawtypes", "unchecked"})
         MemoryAccess access =
-                Environment.current()
-                        .runtimeFor(logitsView.memory().device())
+                Environment.runtimeFor(logitsView.memory().device())
                         .memoryDomain()
                         .directAccess();
         if (access == null) {

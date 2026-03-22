@@ -61,7 +61,7 @@ final class StridedCopy {
             MemoryDomain<B> domain, MemoryView<B> src, MemoryView<B> dst) {
         DataType dtype = src.dataType();
         Shape shape = src.shape();
-        MemoryDomain<MemorySegment> hostDomain = Environment.current().nativeMemoryDomain();
+        MemoryDomain<MemorySegment> hostDomain = Environment.nativeMemoryDomain();
         MemoryOperations<B> deviceOps = domain.memoryOperations();
         MemoryAccess<MemorySegment> hostAccess = hostDomain.directAccess();
 

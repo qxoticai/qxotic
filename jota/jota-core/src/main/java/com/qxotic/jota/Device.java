@@ -23,6 +23,10 @@ public record Device(DeviceType type, long index) {
         return Environment.current().defaultDevice();
     }
 
+    public static Device nativeDevice() {
+        return Environment.current().nativeDevice();
+    }
+
     @Override
     public boolean equals(Object other) {
         if (this == other) {

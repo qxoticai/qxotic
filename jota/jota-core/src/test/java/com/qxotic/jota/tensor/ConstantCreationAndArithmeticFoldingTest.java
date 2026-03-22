@@ -530,9 +530,9 @@ class ConstantCreationAndArithmeticFoldingTest {
     void canary() {
         Tensor scalar = Tensor.scalar(3.14f);
         Tensor reciprocal = scalar.reciprocal();
-        MemoryAccess access = Environment.current().nativeMemoryDomain().directAccess();
+        MemoryAccess access = Environment.nativeMemoryDomain().directAccess();
         MemoryView<?> printable =
-                reciprocal.to(Environment.current().nativeRuntime().device()).materialize();
+                reciprocal.to(Environment.nativeRuntime().device()).materialize();
         System.out.println(MemoryViewPrinter.toString(printable, access));
     }
 

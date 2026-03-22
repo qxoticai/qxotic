@@ -48,7 +48,7 @@ class MojoNativeCompileModeTest {
         System.setProperty("jota.mojo.native.compile.mode", "native");
 
         DeviceRuntime runtime =
-                Environment.current().runtimeFor(ConfiguredTestDevice.resolve(DeviceType.MOJO));
+                Environment.runtimeFor(ConfiguredTestDevice.resolve(DeviceType.MOJO));
         KernelService kernelService = runtime.kernelService().orElseThrow();
 
         Tensor left =

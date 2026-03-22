@@ -24,7 +24,7 @@ class MetalBackendAvailabilityTest {
                 canaryFailureMessage(
                         "Metal JNI runtime not available", "mvnd -Pmetal test", details));
         assertTrue(
-                Environment.current().runtimes().hasRuntimeFor(DeviceType.METAL.deviceIndex(0)),
+                Environment.hasRuntimeFor(DeviceType.METAL.deviceIndex(0)),
                 canaryFailureMessage(
                         "Metal runtime is not registered", "mvnd -Pmetal test", details));
         assertTrue(
@@ -50,8 +50,7 @@ class MetalBackendAvailabilityTest {
                         "mvnd -Pmetal test",
                         details));
         assertTrue(
-                Environment.current()
-                        .runtimeFor(DeviceType.METAL.deviceIndex(0))
+                Environment.runtimeFor(DeviceType.METAL.deviceIndex(0))
                         .device()
                         .belongsTo(DeviceType.METAL));
     }

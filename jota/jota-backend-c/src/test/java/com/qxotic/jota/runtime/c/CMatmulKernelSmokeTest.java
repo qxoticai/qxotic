@@ -309,8 +309,7 @@ class CMatmulKernelSmokeTest {
         MemoryView<MemorySegment> typed = (MemoryView<MemorySegment>) view;
         MemoryDomain<MemorySegment> domain =
                 (MemoryDomain<MemorySegment>)
-                        Environment.current()
-                                .runtimeFor(DeviceType.C.deviceIndex(0))
+                        Environment.runtimeFor(DeviceType.C.deviceIndex(0))
                                 .memoryDomain();
         MemoryAccess<MemorySegment> access = domain.directAccess();
         long offset = Indexing.linearToOffset(typed, linearIndex);

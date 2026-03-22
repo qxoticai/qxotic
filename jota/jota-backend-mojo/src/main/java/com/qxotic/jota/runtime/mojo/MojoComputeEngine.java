@@ -209,7 +209,7 @@ final class MojoComputeEngine<T> implements ComputeEngine {
         @SuppressWarnings("unchecked")
         MemoryDomain<Object> srcDomain =
                 (MemoryDomain<Object>)
-                        Environment.current().memoryDomainFor(view.memory().device());
+                        Environment.memoryDomainFor(view.memory().device());
         @SuppressWarnings("unchecked")
         MemoryView<Object> srcView = (MemoryView<Object>) view;
         BufferSpec spec = computeBufferSpec(view.layout(), view.dataType());
@@ -231,7 +231,7 @@ final class MojoComputeEngine<T> implements ComputeEngine {
 
     private static <T> MemoryView<MemorySegment> toHost(
             MemoryDomain<T> deviceDomain, MemoryView<T> view) {
-        MemoryDomain<MemorySegment> hostDomain = Environment.current().nativeMemoryDomain();
+        MemoryDomain<MemorySegment> hostDomain = Environment.nativeMemoryDomain();
         MemoryView<MemorySegment> hostView =
                 MemoryView.of(
                         hostDomain
@@ -244,9 +244,7 @@ final class MojoComputeEngine<T> implements ComputeEngine {
     }
 
     private static boolean shouldReturnHostOutput() {
-        return Environment.current()
-                .runtimeFor(Environment.current().defaultDevice())
-                .supportsNativeRuntimeAlias();
+        return Environment.defaultRuntime().supportsNativeRuntimeAlias();
     }
 
     private static <T> List<MemoryView<?>> allocateOutputs(

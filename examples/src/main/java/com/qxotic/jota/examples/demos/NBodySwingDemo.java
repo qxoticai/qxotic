@@ -57,7 +57,7 @@ public final class NBodySwingDemo {
             throw new IllegalStateException(unavailableDeviceMessage(global, device));
         }
         try {
-            Environment.configureGlobal(new Environment(device, DataType.FP32, global.runtimes()));
+            Environment.configureGlobal(Environment.of(device, DataType.FP32, global.runtimes()));
         } catch (IllegalStateException ignored) {
         }
 
@@ -157,7 +157,7 @@ public final class NBodySwingDemo {
 
     private static void printRuntimeDiagnostics(Environment environment) {
         System.out.println("Runtime availability:");
-        for (RuntimeDiagnostic diagnostic : environment.runtimeDiagnostics()) {
+        for (RuntimeDiagnostic diagnostic : Environment.runtimeDiagnostics()) {
             String status = diagnostic.probe().status().name().toLowerCase();
             String line =
                     "- "
@@ -176,7 +176,7 @@ public final class NBodySwingDemo {
     private static String unavailableDeviceMessage(Environment environment, Device device) {
         StringBuilder message =
                 new StringBuilder("Requested device runtime is not available: " + device + "\n");
-        for (RuntimeDiagnostic diagnostic : environment.runtimeDiagnostics()) {
+        for (RuntimeDiagnostic diagnostic : Environment.runtimeDiagnostics()) {
             if (!diagnostic.deviceType().equals(device.type())) {
                 continue;
             }
@@ -533,7 +533,7 @@ public final class NBodySwingDemo {
             @SuppressWarnings("unchecked")
             MemoryDomain<Object> srcDomain =
                     (MemoryDomain<Object>)
-                            Environment.current().runtimeFor(src.memory().device()).memoryDomain();
+                            Environment.runtimeFor(src.memory().device()).memoryDomain();
             @SuppressWarnings("unchecked")
             MemoryView<Object> srcView = (MemoryView<Object>) src;
 

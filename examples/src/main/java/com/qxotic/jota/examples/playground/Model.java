@@ -24,7 +24,7 @@ public interface Model<Configuration, Weights, State> {
 
         Tensor result = mlp.forward(Tensor.of(new float[] {7}).view(Shape.of(1, 1)), null);
         MemoryAccess memoryAccess =
-                Environment.current().nativeRuntime().memoryDomain().directAccess();
+                Environment.nativeRuntime().memoryDomain().directAccess();
         String string = MemoryViewPrinter.toString(result.materialize(), memoryAccess);
         System.out.println(string);
 

@@ -27,7 +27,7 @@ class LIRInterpreterTraceTest {
 
     @Test
     void interpretsTracedGelu() {
-        MemoryDomain<MemorySegment> domain = Environment.current().nativeMemoryDomain();
+        MemoryDomain<MemorySegment> domain = Environment.nativeMemoryDomain();
         MemoryView<MemorySegment> input =
                 MemoryHelpers.arange(domain, DataType.FP32, 4).view(Shape.flat(4));
         Tensor inputTensor = Tensor.of(input);
@@ -48,7 +48,7 @@ class LIRInterpreterTraceTest {
 
     @Test
     void interpretsTracedMandelbrot() {
-        MemoryDomain<MemorySegment> domain = Environment.current().nativeMemoryDomain();
+        MemoryDomain<MemorySegment> domain = Environment.nativeMemoryDomain();
         Tensor traced =
                 Tracer.trace(
                         List.of(),

@@ -20,7 +20,7 @@ class LIRInterpreterTest {
 
     @Test
     void executesElementwiseAdd() {
-        MemoryDomain<MemorySegment> domain = Environment.current().nativeMemoryDomain();
+        MemoryDomain<MemorySegment> domain = Environment.nativeMemoryDomain();
         MemoryView<MemorySegment> left =
                 MemoryHelpers.arange(domain, DataType.FP32, 4).view(Shape.flat(4));
         MemoryView<MemorySegment> right =
@@ -61,7 +61,7 @@ class LIRInterpreterTest {
 
     @Test
     void executesReductionWithIterArgs() {
-        MemoryDomain<MemorySegment> domain = Environment.current().nativeMemoryDomain();
+        MemoryDomain<MemorySegment> domain = Environment.nativeMemoryDomain();
         MemoryView<MemorySegment> input =
                 MemoryHelpers.arange(domain, DataType.FP32, 4).view(Shape.flat(4));
         MemoryView<MemorySegment> out = MemoryHelpers.zeros(domain, DataType.FP32, Shape.flat(1));
@@ -104,7 +104,7 @@ class LIRInterpreterTest {
 
     @Test
     void supportsScalarInputs() {
-        MemoryDomain<MemorySegment> domain = Environment.current().nativeMemoryDomain();
+        MemoryDomain<MemorySegment> domain = Environment.nativeMemoryDomain();
         MemoryView<MemorySegment> input =
                 MemoryHelpers.arange(domain, DataType.FP32, 3).view(Shape.flat(3));
         MemoryView<MemorySegment> out = MemoryHelpers.zeros(domain, DataType.FP32, Shape.flat(3));

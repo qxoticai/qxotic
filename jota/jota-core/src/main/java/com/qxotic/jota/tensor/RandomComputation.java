@@ -59,7 +59,7 @@ final class RandomComputation implements LazyComputation {
     @Override
     public MemoryView<?> execute() {
         long n = shape.size();
-        MemoryDomain<?> memoryDomain = Environment.current().memoryDomainFor(device);
+        MemoryDomain<?> memoryDomain = Environment.memoryDomainFor(device);
         if (dtype == DataType.FP32) {
             float[] out = new float[Math.toIntExact(n)];
             fillFp32(out);

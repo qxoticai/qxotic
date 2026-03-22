@@ -213,7 +213,7 @@ public final class LIRKernelArgsBuilder {
             segment = memSegment;
         } else {
             @SuppressWarnings("unchecked")
-            MemoryDomain<MemorySegment> hostContext = Environment.current().nativeMemoryDomain();
+            MemoryDomain<MemorySegment> hostContext = Environment.nativeMemoryDomain();
             @SuppressWarnings("unchecked")
             MemoryDomain<Object> srcContext = sourceDomainFor((Memory<Object>) view.memory());
             @SuppressWarnings("unchecked")
@@ -289,7 +289,7 @@ public final class LIRKernelArgsBuilder {
                             MemoryAllocatorFactory.ofByteBuffer(byteBuffer.isDirect()));
         }
         if (base instanceof MemorySegment) {
-            return (MemoryDomain<B>) Environment.current().nativeMemoryDomain();
+            return (MemoryDomain<B>) Environment.nativeMemoryDomain();
         }
         throw new IllegalArgumentException(
                 "Unsupported memory backing type: " + base.getClass().getName());

@@ -137,11 +137,11 @@ class BitwiseOpTest {
             return TensorTestReads.readByte(tensor, index);
         }
         if (dataType == DataType.I16) {
-            Tensor materialized = tensor.to(Environment.current().nativeRuntime().device());
+            Tensor materialized = tensor.to(Environment.nativeRuntime().device());
             return (short) TensorTestReads.readLong(materialized.cast(DataType.I64), index);
         }
         if (dataType == DataType.I32) {
-            Tensor materialized = tensor.to(Environment.current().nativeRuntime().device());
+            Tensor materialized = tensor.to(Environment.nativeRuntime().device());
             return (int) TensorTestReads.readLong(materialized.cast(DataType.I64), index);
         }
         if (dataType == DataType.I64) {

@@ -307,7 +307,7 @@ public final class HipComputeEngine implements ComputeEngine {
         }
         @SuppressWarnings("unchecked")
         MemoryDomain<Object> srcContext =
-                Environment.current().memoryDomainFor(view.memory().device());
+                Environment.memoryDomainFor(view.memory().device());
         @SuppressWarnings("unchecked")
         MemoryView<Object> srcView = (MemoryView<Object>) view;
         BufferSpec spec = computeBufferSpec(view.layout(), view.dataType());
@@ -330,8 +330,7 @@ public final class HipComputeEngine implements ComputeEngine {
     private static MemoryView<MemorySegment> toHost(
             MemoryDomain<MemorySegment> hostContext, MemoryView<?> view) {
         if (view.memory().base() instanceof MemorySegment
-                && Environment.current()
-                        .runtimeFor(view.memory().device())
+                && Environment.runtimeFor(view.memory().device())
                         .supportsNativeRuntimeAlias()) {
             @SuppressWarnings("unchecked")
             MemoryView<MemorySegment> hostView = (MemoryView<MemorySegment>) view;
@@ -344,7 +343,7 @@ public final class HipComputeEngine implements ComputeEngine {
                         view.layout());
         @SuppressWarnings("unchecked")
         MemoryDomain<Object> srcContext =
-                Environment.current().memoryDomainFor(view.memory().device());
+                Environment.memoryDomainFor(view.memory().device());
         @SuppressWarnings("unchecked")
         MemoryView<Object> srcView = (MemoryView<Object>) view;
         MemoryDomain.copy(srcContext, srcView, hostContext, dst);
@@ -352,12 +351,11 @@ public final class HipComputeEngine implements ComputeEngine {
     }
 
     private static boolean shouldReturnHostOutput() {
-        Device defaultDevice = Environment.current().defaultDevice();
-        return Environment.current().runtimeFor(defaultDevice).supportsNativeRuntimeAlias();
+        return Environment.defaultRuntime().supportsNativeRuntimeAlias();
     }
 
     private static MemoryView<?> toHost(HipMemoryDomain hipContext, MemoryView<HipDevicePtr> view) {
-        MemoryDomain<MemorySegment> hostContext = Environment.current().nativeMemoryDomain();
+        MemoryDomain<MemorySegment> hostContext = Environment.nativeMemoryDomain();
         MemoryView<MemorySegment> hostView =
                 MemoryView.of(
                         hostContext

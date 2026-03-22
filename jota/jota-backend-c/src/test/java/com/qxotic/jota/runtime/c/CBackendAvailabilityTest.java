@@ -31,7 +31,7 @@ class CBackendAvailabilityTest {
                         "[MISSING_SOFTWARE] C compiler not available", "mvnd -Pc test", details));
         assertEquals(
                 DeviceType.C.deviceIndex(0),
-                Environment.current().runtimeFor(DeviceType.C.deviceIndex(0)).device());
+                Environment.runtimeFor(DeviceType.C.deviceIndex(0)).device());
     }
 
     private static String canaryFailureMessage(String reason, String command, String details) {
@@ -55,7 +55,7 @@ class CBackendAvailabilityTest {
     }
 
     private static boolean hasRuntime(DeviceType type) {
-        return Environment.current().runtimes().hasRuntimeFor(type.deviceIndex(0));
+        return Environment.hasRuntimeFor(type.deviceIndex(0));
     }
 
     private static boolean isCompilerAvailable() {

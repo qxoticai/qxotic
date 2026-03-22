@@ -20,7 +20,7 @@ final class MetalTestAssumptions {
         Assumptions.assumeTrue(
                 MetalRuntime.isAvailable(), "Metal runtime not available\n" + details);
         Assumptions.assumeTrue(
-                Environment.current().runtimes().hasRuntimeFor(DeviceType.METAL.deviceIndex(0)),
+                Environment.hasRuntimeFor(DeviceType.METAL.deviceIndex(0)),
                 "Metal runtime is not registered\n" + details);
         Assumptions.assumeTrue(xcrunAvailable, "xcrun not available\n" + details);
         Assumptions.assumeTrue(
@@ -44,7 +44,7 @@ final class MetalTestAssumptions {
     static String diagnosticsSummary(
             boolean xcrunAvailable, boolean metalCompilerAvailable, boolean metallibToolAvailable) {
         String diagnostics =
-                Environment.current().runtimeDiagnostics().stream()
+                Environment.runtimeDiagnostics().stream()
                         .filter(d -> d.deviceType().equals(DeviceType.METAL))
                         .map(MetalTestAssumptions::formatDiagnostic)
                         .collect(Collectors.joining("\n"));
@@ -56,7 +56,7 @@ final class MetalTestAssumptions {
                 + "\nMetalRuntime.isAvailable="
                 + MetalRuntime.isAvailable()
                 + "\nMetal runtime registered="
-                + Environment.current().runtimes().hasRuntimeFor(DeviceType.METAL.deviceIndex(0))
+                + Environment.hasRuntimeFor(DeviceType.METAL.deviceIndex(0))
                 + "\nxcrun available="
                 + xcrunAvailable
                 + "\nmetal tool available="

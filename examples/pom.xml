@@ -33,6 +33,37 @@
       <groupId>com.qxotic</groupId>
       <artifactId>tokenizers</artifactId>
     </dependency>
+
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-backend-c</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-backend-hip</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-backend-metal</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-backend-panama</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-backend-cuda</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jota-backend-opencl</artifactId>
+    </dependency>
+
   </dependencies>
 
   <build>
