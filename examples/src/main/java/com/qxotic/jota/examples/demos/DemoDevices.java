@@ -35,6 +35,69 @@ public final class DemoDevices {
         return environment.defaultDevice();
     }
 
+    public static String requestedBackend(String[] args) {
+        for (int i = 0; i < args.length; i++) {
+            String arg = args[i];
+            if (arg == null || arg.isBlank()) {
+                continue;
+            }
+            if ("--list-devices".equalsIgnoreCase(arg)) {
+                continue;
+            }
+            if (arg.startsWith("--backend=")) {
+                return arg.substring("--backend=".length());
+            }
+            if (arg.startsWith("--device=")) {
+                return arg.substring("--device=".length());
+            }
+            if ("--backend".equalsIgnoreCase(arg) || "--device".equalsIgnoreCase(arg)) {
+                if (i + 1 < args.length) {
+                    return args[i + 1];
+                }
+                continue;
+            }
+            if (!arg.startsWith("--")) {
+                return arg;
+            }
+        }
+        return null;
+    }
+
+    public static void configureBackendFilterFromArgs(String[] args) {
+        configureBackendFilter(requestedBackend(args), hasListDevicesFlag(args));
+    }
+
+    public static void configureBackendFilter(String requested, boolean listDevices) {
+        if (listDevices) {
+            return;
+        }
+        String include = System.getProperty("jota.backends.include");
+        if (include != null && !include.isBlank()) {
+            return;
+        }
+
+        String nativeBackend = requiredNativeBackendId();
+        if (requested == null || requested.isBlank()) {
+            System.setProperty("jota.backends.include", nativeBackend);
+            return;
+        }
+
+        String normalized = requested.trim().toLowerCase(Locale.ROOT);
+        if ("native".equals(normalized)
+                || "default".equals(normalized)
+                || "auto".equals(normalized)) {
+            System.setProperty("jota.backends.include", nativeBackend);
+            return;
+        }
+
+        String selected = parseDeviceToken(normalized).id();
+        if (selected.equals(nativeBackend)) {
+            System.setProperty("jota.backends.include", selected);
+            return;
+        }
+        System.setProperty("jota.backends.include", nativeBackend + "," + selected);
+    }
+
     public static Device resolveDevice(Environment environment, String requested) {
         if (requested == null || requested.isBlank()) {
             return defaultDevice(environment);
@@ -144,5 +207,12 @@ public final class DemoDevices {
             }
         }
         return null;
+    }
+
+    private static String requiredNativeBackendId() {
+        String imageCode = System.getProperty("org.graalvm.nativeimage.imagecode");
+        return (imageCode == null || imageCode.isBlank())
+                ? DeviceType.PANAMA.id()
+                : DeviceType.C.id();
     }
 }
