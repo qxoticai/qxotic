@@ -128,8 +128,8 @@ JSON `null` becomes a special sentinel value `Json.NULL` (not Java `null`):
 Map<String, Object> obj = Json.parseMap("{\"value\":null}");
 Object value = obj.get("value");
 
-// Check for JSON null
-if (Json.isNull(value)) {
+// Check for JSON null using reference equality
+if (value == Json.NULL) {
     // Key exists, value is JSON null
 }
 

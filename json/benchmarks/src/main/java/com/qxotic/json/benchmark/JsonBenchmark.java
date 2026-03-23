@@ -4,8 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qxotic.format.json.Json;
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -49,10 +47,10 @@ public class JsonBenchmark {
     public void setup() throws IOException {
         jacksonMapper = new ObjectMapper();
 
-        // Load generated test JSON files
-        smallJson = loadResource("small.json");
-        mediumJson = loadResource("medium.json");
-        largeJson = loadResource("large.json");
+        // Generate test JSON data in memory
+        smallJson = JsonDataGenerator.generateSmallJson();
+        mediumJson = JsonDataGenerator.generateMediumJson();
+        largeJson = JsonDataGenerator.generateLargeJson();
 
         // Pre-parse for serialization benchmarks
         qxoticSmallParsed = Json.parseMap(smallJson);
@@ -66,15 +64,6 @@ public class JsonBenchmark {
         jacksonSmallMap = jacksonMapper.readValue(smallJson, Map.class);
         jacksonMediumList = jacksonMapper.readValue(mediumJson, List.class);
         jacksonLargeMap = jacksonMapper.readValue(largeJson, Map.class);
-    }
-
-    private String loadResource(String name) throws IOException {
-        try (InputStream is = getClass().getClassLoader().getResourceAsStream(name)) {
-            if (is == null) {
-                throw new IOException("Resource not found: " + name);
-            }
-            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
-        }
     }
 
     // ==================== PARSING BENCHMARKS ====================
