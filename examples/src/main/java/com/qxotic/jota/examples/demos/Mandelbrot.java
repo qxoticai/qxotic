@@ -26,15 +26,20 @@ public final class Mandelbrot {
     private Mandelbrot() {}
 
     public static void main(String[] args) throws IOException {
+        String requested = DemoDevices.requestedBackend(args);
+        boolean listDevices = DemoDevices.hasListDevicesFlag(args);
+        DemoDevices.configureBackendFilter(requested, listDevices);
+
         Environment current = Environment.current();
-        if (DemoDevices.hasListDevicesFlag(args)) {
+        if (listDevices) {
             System.out.println(DemoDevices.listDevices(current));
             return;
         }
 
-        Device backend = DemoDevices.resolveDevice(current, requestedBackend(args));
+        Device backend = DemoDevices.resolveDevice(current, requested);
         Environment backendEnv =
-                Environment.of(backend, current.defaultFloat(), current.runtimes());
+                Environment.of(
+                        current.nativeDevice(), backend, current.defaultFloat(), current.runtimes());
 
         long start = System.currentTimeMillis();
         byte[] rgb =
@@ -128,23 +133,5 @@ public final class Mandelbrot {
     private static MemoryView<MemorySegment> toNativeHostView(MemoryView<?> view) {
         return (MemoryView<MemorySegment>)
                 Tensor.of(view).to(Environment.nativeRuntime().device()).materialize();
-    }
-
-    private static String requestedBackend(String[] args) {
-        for (String arg : args) {
-            if (arg == null || arg.isBlank()) {
-                continue;
-            }
-            if ("--list-devices".equalsIgnoreCase(arg)) {
-                continue;
-            }
-            if (arg.startsWith("--backend=")) {
-                return arg.substring("--backend=".length());
-            }
-            if (!arg.startsWith("--")) {
-                return arg;
-            }
-        }
-        return null;
     }
 }
