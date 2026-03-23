@@ -1,41 +1,15 @@
 package com.qxotic.json.benchmark;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.*;
 
 /**
- * Generates JSON test files for benchmarks. Run during build to generate files dynamically instead
- * of storing in repo.
+ * Generates JSON test data for benchmarks in memory. Uses fixed seed for reproducible results.
  */
 public class JsonDataGenerator {
 
     private static final Random RANDOM = new Random(42); // Fixed seed for reproducibility
 
-    public static void main(String[] args) throws IOException {
-        Path outputDir = Paths.get(args.length > 0 ? args[0] : "target/test-classes");
-        Files.createDirectories(outputDir);
-
-        System.out.println("Generating JSON benchmark data...");
-
-        // Generate small.json - single user object
-        generateSmallJson(outputDir.resolve("small.json"));
-        System.out.println("Generated small.json");
-
-        // Generate medium.json - array of 100 users
-        generateMediumJson(outputDir.resolve("medium.json"));
-        System.out.println("Generated medium.json");
-
-        // Generate large.json - complex nested structure
-        generateLargeJson(outputDir.resolve("large.json"));
-        System.out.println("Generated large.json");
-
-        System.out.println("Done!");
-    }
-
-    private static void generateSmallJson(Path path) throws IOException {
+    public static String generateSmallJson() {
         StringBuilder sb = new StringBuilder();
         sb.append("{\n");
         sb.append("  \"id\": \"user-12345\",\n");
@@ -55,10 +29,10 @@ public class JsonDataGenerator {
         sb.append("    \"updated\": null\n");
         sb.append("  }\n");
         sb.append("}\n");
-        Files.writeString(path, sb.toString());
+        return sb.toString();
     }
 
-    private static void generateMediumJson(Path path) throws IOException {
+    public static String generateMediumJson() {
         StringBuilder sb = new StringBuilder();
         sb.append("[\n");
 
@@ -100,10 +74,10 @@ public class JsonDataGenerator {
         }
 
         sb.append("\n]\n");
-        Files.writeString(path, sb.toString());
+        return sb.toString();
     }
 
-    private static void generateLargeJson(Path path) throws IOException {
+    public static String generateLargeJson() {
         StringBuilder sb = new StringBuilder();
         sb.append("{\n");
         sb.append("  \"version\": \"2.0\",\n");
@@ -122,7 +96,7 @@ public class JsonDataGenerator {
 
         sb.append("\n  ]\n");
         sb.append("}\n");
-        Files.writeString(path, sb.toString());
+        return sb.toString();
     }
 
     private static void generateOrganization(StringBuilder sb, int orgId) {
