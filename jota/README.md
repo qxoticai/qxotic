@@ -2,6 +2,7 @@
 
 [![Java](https://img.shields.io/badge/Java-25+-blue)](https://openjdk.org/projects/jdk/25/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
+[![GraalVM](https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F)](https://www.graalvm.org/latest/reference-manual/native-image/)
 
 Jota is a tensor library for the JVM, heavily inspired by tinygrad and JAX.
 Supports multiple backends with first-class GraalVM's Native Image support.
@@ -30,7 +31,7 @@ The Java language is too rigid for implementing a usable DSL to generate kernels
 
 ## Quick Example
 
-[Mandelbrot.java](https://github.com/qxoticai/qxotic/blob/main/examples/src/main/java/com/qxotic/jota/examples/demos/Mandelbrot.java#L72-L96)
+[Mandelbrot.java](https://github.com/qxoticai/qxotic/blob/main/examples/src/main/java/com/qxotic/jota/examples/demos/Mandelbrot.java#L71-L94)
 produces the following C kernel https://gist.github.com/mukel/beb94917ae62dd0791afc84abe6829e2
 
 <p align="center">
