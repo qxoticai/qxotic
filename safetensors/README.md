@@ -2,6 +2,7 @@
 
 [![Java](https://img.shields.io/badge/Java-11+-blue)](https://openjdk.org/projects/jdk/11/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
+[![GraalVM](https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F)](https://www.graalvm.org/latest/reference-manual/native-image/)
 
 A pure Java library for reading and writing HuggingFace's [Safetensors](https://github.com/huggingface/safetensors) format.
 
