@@ -67,7 +67,6 @@
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jota-graal</artifactId>
-      <version>0.1.0</version>
     </dependency>
 
   </dependencies>
@@ -97,6 +96,7 @@
   </build>
 
   <profiles>
+    <!-- JVM builds keep Panama as default runtime backend. -->
     <profile>
       <id>jvm-panama</id>
       <activation>
@@ -110,6 +110,7 @@
       </dependencies>
     </profile>
 
+    <!-- Native image builds activate this profile to disable the default JVM Panama profile. -->
     <profile>
       <id>native-image</id>
     </profile>
