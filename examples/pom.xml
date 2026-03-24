@@ -51,11 +51,6 @@
 
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>jota-backend-panama</artifactId>
-    </dependency>
-
-    <dependency>
-      <groupId>com.qxotic</groupId>
       <artifactId>jota-backend-cuda</artifactId>
     </dependency>
 
@@ -100,4 +95,23 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <profile>
+      <id>jvm-panama</id>
+      <activation>
+        <activeByDefault>true</activeByDefault>
+      </activation>
+      <dependencies>
+        <dependency>
+          <groupId>com.qxotic</groupId>
+          <artifactId>jota-backend-panama</artifactId>
+        </dependency>
+      </dependencies>
+    </profile>
+
+    <profile>
+      <id>native-image</id>
+    </profile>
+  </profiles>
 </project>
