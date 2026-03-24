@@ -75,8 +75,7 @@ public final class VanillaLlama {
 
     public static void main(String[] args) throws Exception {
         Options options = Options.parse(args);
-        Environment env =
-                Environment.withDefaultDevice(options.device);
+        Environment env = Environment.withDefaultDevice(options.device);
         Environment.with(
                 env,
                 () -> {
@@ -569,14 +568,16 @@ public final class VanillaLlama {
         LlamaModel(Configuration configuration, Weights weights) {
             this.configuration = configuration;
             this.weights = weights;
-            this.domain = Environment.runtimeFor(Environment.current().defaultDevice()).memoryDomain();
+            this.domain =
+                    Environment.runtimeFor(Environment.current().defaultDevice()).memoryDomain();
             @SuppressWarnings("unchecked")
             MemoryAccess<MemorySegment> typedAccess =
                     (MemoryAccess<MemorySegment>) domain.directAccess();
             this.access = typedAccess;
             if (this.access == null) {
                 throw new IllegalStateException(
-                        "No direct memory access for device " + Environment.current().defaultDevice());
+                        "No direct memory access for device "
+                                + Environment.current().defaultDevice());
             }
             this.tokenTable = weights.tokenTable().materialize();
             this.output = weights.output().materialize();
@@ -1492,9 +1493,7 @@ public final class VanillaLlama {
 
         @SuppressWarnings({"rawtypes", "unchecked"})
         MemoryAccess access =
-                Environment.runtimeFor(view.memory().device())
-                        .memoryDomain()
-                        .directAccess();
+                Environment.runtimeFor(view.memory().device()).memoryDomain().directAccess();
         for (int i = 0; i < size; i++) {
             out[i] = access.readFloat(view.memory(), view.byteOffset() + (long) i * Float.BYTES);
         }

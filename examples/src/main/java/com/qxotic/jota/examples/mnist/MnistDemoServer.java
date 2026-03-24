@@ -254,9 +254,7 @@ public final class MnistDemoServer {
     private Environment environmentFor(Device device) {
         return backendEnvironments.computeIfAbsent(
                 device,
-                d ->
-                        Environment.of(
-                                d, baseEnvironment.defaultFloat(), baseEnvironment.runtimes()));
+                d -> Environment.of(d, baseEnvironment.defaultFloat(), baseEnvironment.runtimes()));
     }
 
     private Device backendForRequest(HttpExchange exchange) {

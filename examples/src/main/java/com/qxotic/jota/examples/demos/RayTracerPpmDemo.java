@@ -380,17 +380,11 @@ public final class RayTracerPpmDemo {
             bestNy = ny.multiply(better).add(bestNy.multiply(invBetter));
             bestNz = nz.multiply(better).add(bestNz.multiply(invBetter));
             bestAlbedoR =
-                    Tensor.full(s.r, shape)
-                            .multiply(better)
-                            .add(bestAlbedoR.multiply(invBetter));
+                    Tensor.full(s.r, shape).multiply(better).add(bestAlbedoR.multiply(invBetter));
             bestAlbedoG =
-                    Tensor.full(s.g, shape)
-                            .multiply(better)
-                            .add(bestAlbedoG.multiply(invBetter));
+                    Tensor.full(s.g, shape).multiply(better).add(bestAlbedoG.multiply(invBetter));
             bestAlbedoB =
-                    Tensor.full(s.b, shape)
-                            .multiply(better)
-                            .add(bestAlbedoB.multiply(invBetter));
+                    Tensor.full(s.b, shape).multiply(better).add(bestAlbedoB.multiply(invBetter));
             bestReflect =
                     Tensor.full(s.reflectivity, shape)
                             .multiply(better)
@@ -447,8 +441,7 @@ public final class RayTracerPpmDemo {
 
         @SuppressWarnings("unchecked")
         MemoryDomain<Object> srcDomain =
-                (MemoryDomain<Object>)
-                        Environment.runtimeFor(src.memory().device()).memoryDomain();
+                (MemoryDomain<Object>) Environment.runtimeFor(src.memory().device()).memoryDomain();
         @SuppressWarnings("unchecked")
         MemoryView<Object> srcView = (MemoryView<Object>) src;
 

@@ -23,8 +23,7 @@ public interface Model<Configuration, Weights, State> {
                                 "ppdown", Tensor.of(new float[] {5}).view(Shape.of(1, 1)), null));
 
         Tensor result = mlp.forward(Tensor.of(new float[] {7}).view(Shape.of(1, 1)), null);
-        MemoryAccess memoryAccess =
-                Environment.nativeRuntime().memoryDomain().directAccess();
+        MemoryAccess memoryAccess = Environment.nativeRuntime().memoryDomain().directAccess();
         String string = MemoryViewPrinter.toString(result.materialize(), memoryAccess);
         System.out.println(string);
 

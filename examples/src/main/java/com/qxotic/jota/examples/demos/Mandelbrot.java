@@ -39,7 +39,10 @@ public final class Mandelbrot {
         Device backend = DemoDevices.resolveDevice(current, requested);
         Environment backendEnv =
                 Environment.of(
-                        current.nativeDevice(), backend, current.defaultFloat(), current.runtimes());
+                        current.nativeDevice(),
+                        backend,
+                        current.defaultFloat(),
+                        current.runtimes());
 
         long start = System.currentTimeMillis();
         byte[] rgb =
