@@ -529,8 +529,7 @@ public final class Llama32HipCli {
                     MemoryView.of(mem, 0, DataType.FP32, Layout.rowMajor(shape));
             int size = Math.toIntExact(shape.size());
             float[] out = new float[size];
-            MemoryAccess<MemorySegment> access =
-                    Environment.nativeMemoryDomain().directAccess();
+            MemoryAccess<MemorySegment> access = Environment.nativeMemoryDomain().directAccess();
             for (int i = 0; i < size; i++) {
                 out[i] = access.readFloat(mem, i * 4L);
             }
@@ -2863,8 +2862,7 @@ public final class Llama32HipCli {
             MemoryView<?> srcView = src.materialize();
             MemoryDomain srcDomain =
                     Environment.runtimeFor(srcView.memory().device()).memoryDomain();
-            MemoryDomain dstDomain =
-                    Environment.runtimeFor(dst.memory().device()).memoryDomain();
+            MemoryDomain dstDomain = Environment.runtimeFor(dst.memory().device()).memoryDomain();
             MemoryDomain.copy(srcDomain, srcView, dstDomain, dst);
         }
 
@@ -2911,8 +2909,7 @@ public final class Llama32HipCli {
             MemoryView<?> valueTransposed = valueMaterialized.transpose(0, 1);
 
             MemoryDomain srcDomain =
-                    Environment.runtimeFor(valueTransposed.memory().device())
-                            .memoryDomain();
+                    Environment.runtimeFor(valueTransposed.memory().device()).memoryDomain();
             MemoryDomain dstDomain =
                     Environment.runtimeFor(dstSlice.memory().device()).memoryDomain();
             MemoryDomain.copy(srcDomain, valueTransposed, dstDomain, dstSlice);
@@ -3022,8 +3019,7 @@ public final class Llama32HipCli {
             if (view.dataType() != DataType.FP32) {
                 return;
             }
-            MemoryDomain domain =
-                    Environment.runtimeFor(view.memory().device()).memoryDomain();
+            MemoryDomain domain = Environment.runtimeFor(view.memory().device()).memoryDomain();
             MemoryAccess access = domain.directAccess();
             if (access == null) {
                 return;

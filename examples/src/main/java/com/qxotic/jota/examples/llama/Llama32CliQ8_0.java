@@ -67,8 +67,7 @@ public final class Llama32CliQ8_0 {
 
     public static void main(String[] args) throws Exception {
         Options options = Options.parse(args);
-        Environment env =
-                Environment.withDefaultDevice(options.device);
+        Environment env = Environment.withDefaultDevice(options.device);
         Environment.with(
                 env,
                 () -> {
@@ -671,8 +670,7 @@ public final class Llama32CliQ8_0 {
         @SuppressWarnings("unchecked")
         MemoryView<MemorySegment> host = (MemoryView<MemorySegment>) view;
         @SuppressWarnings("unchecked")
-        MemoryAccess<MemorySegment> access =
-                Environment.nativeMemoryDomain().directAccess();
+        MemoryAccess<MemorySegment> access = Environment.nativeMemoryDomain().directAccess();
         int size = Math.toIntExact(host.shape().size());
         float[] out = new float[size];
         for (int i = 0; i < size; i++) {
@@ -2729,9 +2727,7 @@ public final class Llama32CliQ8_0 {
 
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.runtimeFor(qView.memory().device())
-                            .memoryDomain()
-                            .directAccess();
+                    Environment.runtimeFor(qView.memory().device()).memoryDomain().directAccess();
             if (access == null) {
                 throw new IllegalStateException("attention requires direct memory access");
             }
@@ -3373,9 +3369,7 @@ public final class Llama32CliQ8_0 {
             }
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.runtimeFor(table.memory().device())
-                            .memoryDomain()
-                            .directAccess();
+                    Environment.runtimeFor(table.memory().device()).memoryDomain().directAccess();
             if (access == null) {
                 throw new IllegalStateException("embedding path requires direct memory access");
             }
@@ -3400,9 +3394,7 @@ public final class Llama32CliQ8_0 {
             }
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.runtimeFor(inView.memory().device())
-                            .memoryDomain()
-                            .directAccess();
+                    Environment.runtimeFor(inView.memory().device()).memoryDomain().directAccess();
             if (access == null) {
                 throw new IllegalStateException("rmsNormInto requires direct memory access");
             }
@@ -3434,9 +3426,7 @@ public final class Llama32CliQ8_0 {
             }
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.runtimeFor(a.memory().device())
-                            .memoryDomain()
-                            .directAccess();
+                    Environment.runtimeFor(a.memory().device()).memoryDomain().directAccess();
             if (access == null) {
                 throw new IllegalStateException("addInto requires direct memory access");
             }
@@ -3471,9 +3461,7 @@ public final class Llama32CliQ8_0 {
             int n = Math.toIntExact(weightOutIn.shape().size(1));
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.runtimeFor(a.memory().device())
-                            .memoryDomain()
-                            .directAccess();
+                    Environment.runtimeFor(a.memory().device()).memoryDomain().directAccess();
             if (access == null) {
                 throw new IllegalStateException("project fallback requires direct memory access");
             }
@@ -3542,9 +3530,7 @@ public final class Llama32CliQ8_0 {
             }
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.runtimeFor(gate.memory().device())
-                            .memoryDomain()
-                            .directAccess();
+                    Environment.runtimeFor(gate.memory().device()).memoryDomain().directAccess();
             if (access == null) {
                 throw new IllegalStateException("swiglu fallback requires direct memory access");
             }
@@ -3578,9 +3564,7 @@ public final class Llama32CliQ8_0 {
 
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.runtimeFor(keyView.memory().device())
-                            .memoryDomain()
-                            .directAccess();
+                    Environment.runtimeFor(keyView.memory().device()).memoryDomain().directAccess();
             if (access == null) {
                 throw new IllegalStateException("KV cache write requires direct memory access");
             }
@@ -3613,9 +3597,7 @@ public final class Llama32CliQ8_0 {
             }
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.runtimeFor(inView.memory().device())
-                            .memoryDomain()
-                            .directAccess();
+                    Environment.runtimeFor(inView.memory().device()).memoryDomain().directAccess();
             if (access == null) {
                 return x;
             }
@@ -3732,8 +3714,7 @@ public final class Llama32CliQ8_0 {
             if (view.dataType() != DataType.FP32) {
                 return;
             }
-            MemoryDomain domain =
-                    Environment.runtimeFor(view.memory().device()).memoryDomain();
+            MemoryDomain domain = Environment.runtimeFor(view.memory().device()).memoryDomain();
             MemoryAccess access = domain.directAccess();
             if (access == null) {
                 return;

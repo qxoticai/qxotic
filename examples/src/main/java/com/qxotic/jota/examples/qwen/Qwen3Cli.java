@@ -49,8 +49,7 @@ public final class Qwen3Cli {
 
     public static void main(String[] args) throws Exception {
         Options options = Options.parse(args);
-        Environment env =
-                Environment.withDefaultDevice(Environment.current().nativeDevice());
+        Environment env = Environment.withDefaultDevice(Environment.current().nativeDevice());
         Environment.with(
                 env,
                 () -> {
@@ -428,8 +427,7 @@ public final class Qwen3Cli {
         float[] out = new float[size];
         @SuppressWarnings("unchecked")
         MemoryAccess<MemorySegment> access =
-                (MemoryAccess<MemorySegment>)
-                        Environment.nativeMemoryDomain().directAccess();
+                (MemoryAccess<MemorySegment>) Environment.nativeMemoryDomain().directAccess();
         for (int i = 0; i < size; i++) {
             long off = Indexing.linearToOffset(host, i);
             out[i] = access.readFloat(host.memory(), off);
@@ -715,8 +713,7 @@ public final class Qwen3Cli {
             MemoryView<?> srcView = src.materialize();
             MemoryDomain srcDomain =
                     Environment.runtimeFor(srcView.memory().device()).memoryDomain();
-            MemoryDomain dstDomain =
-                    Environment.runtimeFor(dst.memory().device()).memoryDomain();
+            MemoryDomain dstDomain = Environment.runtimeFor(dst.memory().device()).memoryDomain();
             MemoryDomain.copy(srcDomain, srcView, dstDomain, dst);
         }
     }

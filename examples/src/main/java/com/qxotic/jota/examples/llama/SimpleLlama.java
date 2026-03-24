@@ -2291,9 +2291,7 @@ public final class SimpleLlama {
             MemoryView<?> wv = weight.materialize();
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.runtimeFor(input.memory().device())
-                            .memoryDomain()
-                            .directAccess();
+                    Environment.runtimeFor(input.memory().device()).memoryDomain().directAccess();
             int batchStride = PREFILL_BATCH_SIZE;
 
             long inBase = input.byteOffset();
@@ -2327,9 +2325,7 @@ public final class SimpleLlama {
                 int ffnDim) {
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.runtimeFor(gateBuf.memory().device())
-                            .memoryDomain()
-                            .directAccess();
+                    Environment.runtimeFor(gateBuf.memory().device()).memoryDomain().directAccess();
             MemorySegment gateSeg = ((MemoryView<MemorySegment>) gateBuf).memory().base();
             MemorySegment upSeg = ((MemoryView<MemorySegment>) upBuf).memory().base();
             MemorySegment outSeg = ((MemoryView<MemorySegment>) outBuf).memory().base();
@@ -2414,9 +2410,7 @@ public final class SimpleLlama {
 
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.runtimeFor(A.memory().device())
-                            .memoryDomain()
-                            .directAccess();
+                    Environment.runtimeFor(A.memory().device()).memoryDomain().directAccess();
 
             MemorySegment aSeg = ((MemoryView<MemorySegment>) A).memory().base();
             MemorySegment bSeg = ((MemoryView<MemorySegment>) B).memory().base();
@@ -2527,9 +2521,7 @@ public final class SimpleLlama {
         private void batchGemmWeightStationaryJava(
                 MemoryView<?> A, MemoryView<?> B, MemoryView<?> C, int batchSize, int m, int n) {
             MemoryAccess access =
-                    Environment.runtimeFor(A.memory().device())
-                            .memoryDomain()
-                            .directAccess();
+                    Environment.runtimeFor(A.memory().device()).memoryDomain().directAccess();
             MemorySegment aSeg = ((MemoryView<MemorySegment>) A).memory().base();
 
             long aBase = A.byteOffset();
@@ -2969,9 +2961,7 @@ public final class SimpleLlama {
 
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.runtimeFor(qBuf.memory().device())
-                            .memoryDomain()
-                            .directAccess();
+                    Environment.runtimeFor(qBuf.memory().device()).memoryDomain().directAccess();
             MemorySegment keySeg = ((MemoryView<MemorySegment>) keyCache).memory().base();
             MemorySegment valueSeg = ((MemoryView<MemorySegment>) valueCache).memory().base();
 
@@ -3142,9 +3132,7 @@ public final class SimpleLlama {
                 int n) {
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.runtimeFor(aBatch.memory().device())
-                            .memoryDomain()
-                            .directAccess();
+                    Environment.runtimeFor(aBatch.memory().device()).memoryDomain().directAccess();
 
             int batchStride = PREFILL_BATCH_SIZE;
             long aBase = aBatch.byteOffset();
@@ -3190,9 +3178,7 @@ public final class SimpleLlama {
             MemoryView<?> wv = weight.materialize();
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.runtimeFor(xv.memory().device())
-                            .memoryDomain()
-                            .directAccess();
+                    Environment.runtimeFor(xv.memory().device()).memoryDomain().directAccess();
             int dim = cfg.dim();
             long xBase = xv.byteOffset();
             long wBase = wv.byteOffset();
@@ -3380,9 +3366,7 @@ public final class SimpleLlama {
 
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.runtimeFor(A.memory().device())
-                            .memoryDomain()
-                            .directAccess();
+                    Environment.runtimeFor(A.memory().device()).memoryDomain().directAccess();
 
             MemorySegment aSeg = ((MemoryView<MemorySegment>) A).memory().base();
             MemorySegment xSeg = ((MemoryView<MemorySegment>) x).memory().base();
@@ -3628,9 +3612,7 @@ public final class SimpleLlama {
 
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.runtimeFor(qView.memory().device())
-                            .memoryDomain()
-                            .directAccess();
+                    Environment.runtimeFor(qView.memory().device()).memoryDomain().directAccess();
             MemorySegment keySeg = ((MemoryView<MemorySegment>) key).memory().base();
             MemorySegment valueSeg = ((MemoryView<MemorySegment>) value).memory().base();
 
@@ -3962,9 +3944,7 @@ public final class SimpleLlama {
             MemoryView<?> in = input.materialize();
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.runtimeFor(in.memory().device())
-                            .memoryDomain()
-                            .directAccess();
+                    Environment.runtimeFor(in.memory().device()).memoryDomain().directAccess();
             int headDim = cfg.headDim();
             long inBase = in.byteOffset();
             long outBase = outBuf.byteOffset();
@@ -4002,9 +3982,7 @@ public final class SimpleLlama {
             MemoryView<?> valueCacheView = state.valueCache[layer];
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.runtimeFor(kv.memory().device())
-                            .memoryDomain()
-                            .directAccess();
+                    Environment.runtimeFor(kv.memory().device()).memoryDomain().directAccess();
             long kBase = kv.byteOffset();
             long vBase = vv.byteOffset();
             long keyCacheBase = keyCacheView.byteOffset();
@@ -4029,9 +4007,7 @@ public final class SimpleLlama {
         private void addInto(MemoryView<?> a, MemoryView<?> b, MemoryView<?> out, int n) {
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.runtimeFor(a.memory().device())
-                            .memoryDomain()
-                            .directAccess();
+                    Environment.runtimeFor(a.memory().device()).memoryDomain().directAccess();
             long aBase = a.byteOffset();
             long bBase = b.byteOffset();
             long outBase = out.byteOffset();
@@ -4061,9 +4037,7 @@ public final class SimpleLlama {
         int sample(MemoryView<?> logits) {
             @SuppressWarnings({"rawtypes", "unchecked"})
             MemoryAccess access =
-                    Environment.runtimeFor(logits.memory().device())
-                            .memoryDomain()
-                            .directAccess();
+                    Environment.runtimeFor(logits.memory().device()).memoryDomain().directAccess();
             long base = logits.byteOffset();
 
             float[] probs = new float[vocabSize];
@@ -4393,8 +4367,7 @@ public final class SimpleLlama {
                     MemoryView.of(mem, 0, DataType.FP32, Layout.rowMajor(shape));
             int size = Math.toIntExact(shape.size());
             float[] out = new float[size];
-            MemoryAccess<MemorySegment> access =
-                    Environment.nativeMemoryDomain().directAccess();
+            MemoryAccess<MemorySegment> access = Environment.nativeMemoryDomain().directAccess();
             for (int i = 0; i < size; i++) {
                 out[i] = access.readFloat(mem, i * 4L);
             }
@@ -4409,8 +4382,7 @@ public final class SimpleLlama {
         @SuppressWarnings("unchecked")
         MemoryView<MemorySegment> host = (MemoryView<MemorySegment>) view;
         @SuppressWarnings("unchecked")
-        MemoryAccess<MemorySegment> access =
-                Environment.nativeMemoryDomain().directAccess();
+        MemoryAccess<MemorySegment> access = Environment.nativeMemoryDomain().directAccess();
         int size = Math.toIntExact(host.shape().size());
         float[] out = new float[size];
         for (int i = 0; i < size; i++) {
