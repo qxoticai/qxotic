@@ -1,0 +1,7 @@
+[
+  {
+    "name": "com.qxotic.jota.runtime.cuda.CudaRuntimeProvider",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true
+  }
+]

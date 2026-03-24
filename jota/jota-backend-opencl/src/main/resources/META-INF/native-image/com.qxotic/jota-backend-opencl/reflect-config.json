@@ -1,0 +1,7 @@
+[
+  {
+    "name": "com.qxotic.jota.runtime.opencl.OpenClRuntimeProvider",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true
+  }
+]
