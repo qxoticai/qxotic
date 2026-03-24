@@ -3,12 +3,6 @@
     "includes": [
       {
         "pattern": "META-INF/services/com.qxotic.jota.runtime.spi.DeviceRuntimeProvider"
-      },
-      {
-        "pattern": "META-INF/services/.*"
-      },
-      {
-        "pattern": "META-INF/native-image/.*"
       }
     ]
   }
