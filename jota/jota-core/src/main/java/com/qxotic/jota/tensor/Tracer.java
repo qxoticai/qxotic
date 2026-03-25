@@ -1,6 +1,9 @@
 package com.qxotic.jota.tensor;
 
+import com.qxotic.jota.DataType;
+import com.qxotic.jota.Device;
 import com.qxotic.jota.Environment;
+import com.qxotic.jota.Layout;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.ir.tir.IotaConstant;
 import com.qxotic.jota.ir.tir.RandomUniformOp;
@@ -88,6 +91,63 @@ public final class Tracer {
                 output.dataType(),
                 output.layout(),
                 output.device());
+    }
+
+    /**
+     * Traces a no-input function and returns a reusable {@link Supplier}. Everything captured
+     * during tracing that is not an input is baked in as a constant.
+     */
+    public static Supplier<Tensor> traceFunction(Supplier<Tensor> fn) {
+        Function<List<Tensor>, Tensor> traced = traceFunction(List.of(), unused -> fn.get());
+        return () -> traced.apply(List.of());
+    }
+
+    /**
+     * Traces a single-input function and returns a reusable {@link Function}. The input's
+     * shape/layout is considered constant; its data is dynamic.
+     */
+    public static Function<Tensor, Tensor> traceFunction(
+            Tensor input, Function<Tensor, Tensor> fn) {
+        Function<List<Tensor>, Tensor> traced =
+                traceFunction(List.of(input), tensors -> fn.apply(tensors.get(0)));
+        return t -> traced.apply(List.of(t));
+    }
+
+    /**
+     * Traces a two-input function and returns a reusable {@link BiFunction}. The inputs'
+     * shapes/layouts are considered constant; their data is dynamic.
+     */
+    public static BiFunction<Tensor, Tensor, Tensor> traceFunction(
+            Tensor left, Tensor right, BiFunction<Tensor, Tensor, Tensor> fn) {
+        Objects.requireNonNull(left, "left");
+        Objects.requireNonNull(right, "right");
+        Objects.requireNonNull(fn, "fn");
+        Function<List<Tensor>, Tensor> traced =
+                traceFunction(
+                        List.of(left, right), tensors -> fn.apply(tensors.get(0), tensors.get(1)));
+        return (l, r) -> traced.apply(List.of(l, r));
+    }
+
+    /**
+     * Traces a multi-input function and returns a reusable {@link Function}. The inputs'
+     * shapes/layouts are considered constant; their data is dynamic. Everything not part of the
+     * inputs is baked in as a constant at trace time.
+     */
+    public static Function<List<Tensor>, Tensor> traceFunction(
+            List<Tensor> inputs, Function<List<Tensor>, Tensor> fn) {
+        TraceInputs traceInputs = traceInputs(inputs);
+        Tensor output = withIR(() -> fn.apply(new ArrayList<>(traceInputs.tensors())));
+        TIRGraph graph =
+                new TIRGraph(traceInputs.nodes(), List.of(InternalTensorAccess.irNode(output)));
+        DataType outputDType = output.dataType();
+        Layout outputLayout = output.layout();
+        Device outputDevice = output.device();
+        return newInputs ->
+                TensorFactory.lazy(
+                        new IRComputation(graph, newInputs),
+                        outputDType,
+                        outputLayout,
+                        outputDevice);
     }
 
     private static TraceInputs traceInputs(List<Tensor> inputs) {
