@@ -1,6 +1,7 @@
 package com.qxotic.tokenizers.impl;
 
 import com.qxotic.tokenizers.IntSequence;
+import com.qxotic.tokenizers.IntSequences;
 import java.util.Objects;
 
 /**
@@ -56,7 +57,8 @@ public abstract class AbstractIntSequence implements IntSequence {
         if (this == other) {
             return true;
         }
-        return other instanceof IntSequence that && IntSequence.contentEquals(this, that);
+        return other instanceof IntSequence
+                && IntSequences.contentEquals(this, (IntSequence) other);
     }
 
     /**
@@ -69,6 +71,6 @@ public abstract class AbstractIntSequence implements IntSequence {
      */
     @Override
     public int compareTo(IntSequence other) {
-        return IntSequence.compare(this, Objects.requireNonNull(other));
+        return IntSequences.compare(this, Objects.requireNonNull(other));
     }
 }

@@ -43,7 +43,7 @@ public class Llama3ChatFormat extends ChatFormat {
         builder.addAll(this.tokenizer.encode(role.name()));
         builder.add(endHeader);
         builder.addAll(this.tokenizer.encode("\n\n"));
-        return builder;
+        return builder.asSequenceView();
     }
 
     @Override
@@ -52,7 +52,7 @@ public class Llama3ChatFormat extends ChatFormat {
         builder.addAll(encodeHeader(message.role()));
         builder.addAll(this.tokenizer.encode(message.textContent().strip()));
         builder.add(endOfTurn);
-        return builder;
+        return builder.asSequenceView();
     }
 
     @Override

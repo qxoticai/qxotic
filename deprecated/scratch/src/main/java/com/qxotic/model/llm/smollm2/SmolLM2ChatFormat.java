@@ -78,7 +78,7 @@ public class SmolLM2ChatFormat extends ChatFormat {
         builder.addAll(this.tokenizer.encode(message.textContent().strip()));
         builder.add(this.imEnd);
         builder.addAll(this.tokenizer.encode("\n"));
-        return builder;
+        return builder.asSequenceView();
     }
 
     @Override

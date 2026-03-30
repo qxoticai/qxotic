@@ -1,6 +1,8 @@
 package com.qxotic.tokenizers.impl;
 
 import com.qxotic.tokenizers.IntSequence;
+import java.util.Arrays;
+import java.util.Objects;
 
 /** An implementation of IntSequence backed by an array. */
 final class ArrayIntSequence extends AbstractIntSequence {
@@ -26,6 +28,7 @@ final class ArrayIntSequence extends AbstractIntSequence {
      * @param length the length of the sequence
      */
     ArrayIntSequence(int[] array, int offset, int length) {
+        Objects.requireNonNull(array, "array");
         if (offset < 0) {
             throw new IllegalArgumentException("Offset cannot be negative");
         }
@@ -55,17 +58,25 @@ final class ArrayIntSequence extends AbstractIntSequence {
     }
 
     @Override
-    public IntSequence subSequence(int start, int end) {
-        if (start < 0) {
+    public IntSequence subSequence(int startInclusive, int endExclusive) {
+        if (startInclusive < 0) {
             throw new IndexOutOfBoundsException("Start index cannot be negative");
         }
-        if (end > length) {
+        if (endExclusive > length) {
             throw new IndexOutOfBoundsException("End index exceeds length");
         }
-        if (start > end) {
+        if (startInclusive > endExclusive) {
             throw new IndexOutOfBoundsException("Start index greater than end index");
         }
+        if (startInclusive == endExclusive) {
+            return ImplAccessor.empty();
+        }
 
-        return new ArrayIntSequence(array, offset + start, end - start);
+        return new ArrayIntSequence(array, offset + startInclusive, endExclusive - startInclusive);
+    }
+
+    @Override
+    public int[] toArray() {
+        return Arrays.copyOfRange(array, offset, offset + length);
     }
 }
