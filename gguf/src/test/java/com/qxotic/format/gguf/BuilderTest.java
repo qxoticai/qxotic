@@ -47,6 +47,44 @@ public class BuilderTest extends GGUFTest {
     }
 
     @Test
+    public void testAlignmentInvalidValues() {
+        Builder builder = Builder.newBuilder();
+
+        // Not power of 2
+        assertThrows(IllegalArgumentException.class, () -> builder.setAlignment(3));
+        assertThrows(IllegalArgumentException.class, () -> builder.setAlignment(5));
+        assertThrows(IllegalArgumentException.class, () -> builder.setAlignment(6));
+        assertThrows(IllegalArgumentException.class, () -> builder.setAlignment(100));
+
+        // Zero
+        assertThrows(IllegalArgumentException.class, () -> builder.setAlignment(0));
+
+        // Negative
+        assertThrows(IllegalArgumentException.class, () -> builder.setAlignment(-1));
+        assertThrows(IllegalArgumentException.class, () -> builder.setAlignment(-32));
+    }
+
+    @Test
+    public void testAlignmentPowerOfTwo() {
+        Builder builder = Builder.newBuilder();
+
+        // Valid powers of 2
+        assertDoesNotThrow(() -> builder.setAlignment(1));
+        assertDoesNotThrow(() -> builder.setAlignment(2));
+        assertDoesNotThrow(() -> builder.setAlignment(4));
+        assertDoesNotThrow(() -> builder.setAlignment(8));
+        assertDoesNotThrow(() -> builder.setAlignment(16));
+        assertDoesNotThrow(() -> builder.setAlignment(32));
+        assertDoesNotThrow(() -> builder.setAlignment(64));
+        assertDoesNotThrow(() -> builder.setAlignment(128));
+        assertDoesNotThrow(() -> builder.setAlignment(256));
+        assertDoesNotThrow(() -> builder.setAlignment(512));
+        assertDoesNotThrow(() -> builder.setAlignment(1024));
+        assertDoesNotThrow(() -> builder.setAlignment(2048));
+        assertDoesNotThrow(() -> builder.setAlignment(4096));
+    }
+
+    @Test
     public void testFromGGUF() {
         GGUF expected = putValues(Builder.newBuilder()).build();
         GGUF rebuilt = Builder.newBuilder(expected).build();
@@ -598,5 +636,64 @@ public class BuilderTest extends GGUFTest {
         assertFalse(toCheck.containsTensor("new_tensor"));
         assertEquals(GGMLType.F32, toCheck.getTensor("tensor").ggmlType());
         assertEquals(2, toCheck.getVersion());
+    }
+
+    @Test
+    public void testBuildWithoutRecomputingOffsets() {
+        TensorEntry t1 = TensorEntry.create("t1", new long[] {10}, GGMLType.F32, 100);
+        TensorEntry t2 = TensorEntry.create("t2", new long[] {20}, GGMLType.F32, 200);
+
+        GGUF gguf = Builder.newBuilder().putTensor(t1).putTensor(t2).build(false);
+
+        // Original offsets preserved
+        assertEquals(100, gguf.getTensor("t1").offset());
+        assertEquals(200, gguf.getTensor("t2").offset());
+    }
+
+    @Test
+    public void testBuildWithRecomputingOffsets() {
+        TensorEntry t1 = TensorEntry.create("t1", new long[] {10}, GGMLType.F32, 100);
+        TensorEntry t2 = TensorEntry.create("t2", new long[] {20}, GGMLType.F32, 200);
+
+        GGUF gguf = Builder.newBuilder().putTensor(t1).putTensor(t2).build(true);
+
+        // Offsets recomputed (start at 0 with alignment)
+        assertEquals(0, gguf.getTensor("t1").offset());
+        // t2 starts after t1's data (40 bytes) aligned to 32 = 64
+        assertEquals(64, gguf.getTensor("t2").offset());
+    }
+
+    @Test
+    public void testBuildDefaultRecomputesOffsets() {
+        TensorEntry t1 = TensorEntry.create("t1", new long[] {10}, GGMLType.F32, 100);
+
+        GGUF gguf = Builder.newBuilder().putTensor(t1).build();
+
+        // Default build() should recompute offsets
+        assertEquals(0, gguf.getTensor("t1").offset());
+    }
+
+    @Test
+    public void testRemoveNonExistentKey() {
+        Builder builder = Builder.newBuilder().putString("key", "value");
+
+        // Should not throw
+        assertDoesNotThrow(() -> builder.removeKey("nonexistent"));
+
+        // Original key still there
+        assertTrue(builder.containsKey("key"));
+    }
+
+    @Test
+    public void testRemoveNonExistentTensor() {
+        Builder builder =
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("t", new long[] {1}, GGMLType.F32, 0));
+
+        // Should not throw
+        assertDoesNotThrow(() -> builder.removeTensor("nonexistent"));
+
+        // Original tensor still there
+        assertTrue(builder.containsTensor("t"));
     }
 }
