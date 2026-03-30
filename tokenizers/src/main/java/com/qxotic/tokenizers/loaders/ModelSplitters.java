@@ -87,16 +87,36 @@ public final class ModelSplitters {
             return null;
         }
         String normalized = modelType.trim().toLowerCase();
-        return switch (normalized) {
-            case "llama", "llama-bpe", "mistral", "mixtral", "phi", "phi3", "dbrx" -> LLAMA3;
-            case "qwen", "qwen2", "qwen3" -> QWEN2;
-            case "smollm", "smollm2" -> SMOLLM2;
-            case "tekken" -> TEKKEN;
-            case "refact", "granite" -> REFACT;
-            case "gemma", "gemma2", "gemma3" -> IDENTITY;
-            case "default" -> DEFAULT_BPE;
-            default -> null;
-        };
+        switch (normalized) {
+            case "llama":
+            case "llama-bpe":
+            case "mistral":
+            case "mixtral":
+            case "phi":
+            case "phi3":
+            case "dbrx":
+                return LLAMA3;
+            case "qwen":
+            case "qwen2":
+            case "qwen3":
+                return QWEN2;
+            case "smollm":
+            case "smollm2":
+                return SMOLLM2;
+            case "tekken":
+                return TEKKEN;
+            case "refact":
+            case "granite":
+                return REFACT;
+            case "gemma":
+            case "gemma2":
+            case "gemma3":
+                return IDENTITY;
+            case "default":
+                return DEFAULT_BPE;
+            default:
+                return null;
+        }
     }
 
     private static Splitter sequence(String[] patterns) {

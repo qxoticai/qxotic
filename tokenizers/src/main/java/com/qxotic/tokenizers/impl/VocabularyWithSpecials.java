@@ -1,8 +1,8 @@
 package com.qxotic.tokenizers.impl;
 
+import com.qxotic.tokenizers.TokenType;
 import com.qxotic.tokenizers.Vocabulary;
 import com.qxotic.tokenizers.advanced.StandardTokenType;
-import com.qxotic.tokenizers.advanced.TokenType;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -30,7 +30,8 @@ class VocabularyWithSpecials implements Vocabulary {
     static Vocabulary create(Vocabulary innerVocabulary, Map<String, Integer> specialToIndex) {
         if (specialToIndex.isEmpty()) {
             return innerVocabulary;
-        } else if (innerVocabulary instanceof VocabularyWithSpecials innerWithSpecials) {
+        } else if (innerVocabulary instanceof VocabularyWithSpecials) {
+            VocabularyWithSpecials innerWithSpecials = (VocabularyWithSpecials) innerVocabulary;
             Map<String, Integer> combinedSpecials = new HashMap<>(innerWithSpecials.specialToIndex);
             // No overlap.
             assert specialToIndex.keySet().stream()

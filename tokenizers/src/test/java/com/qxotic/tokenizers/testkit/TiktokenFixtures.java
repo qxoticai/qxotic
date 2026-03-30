@@ -147,7 +147,7 @@ public final class TiktokenFixtures {
                     ClassicBPE.classicFromTiktoken(
                             ranks,
                             fixture.specialTokens(),
-                            Normalizer.IDENTITY,
+                            Normalizer.identity(),
                             RegexSplitter.create(fixture.pattern()));
         }
         return CLASSIC_R50K_TOKENIZER;

@@ -1,8 +1,9 @@
 package com.qxotic.tokenizers;
 
-import com.qxotic.tokenizers.advanced.TokenType;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
+import java.util.OptionalInt;
 
 /**
  * Represents a vocabulary for text tokenization, providing bidirectional mapping between token IDs
@@ -59,6 +60,26 @@ public interface Vocabulary extends Iterable<Map.Entry<String, Integer>> {
      * @return true if the token exists in the vocabulary, false otherwise
      */
     boolean contains(String text);
+
+    /**
+     * Looks up the string representation of a token by ID, returning empty if not found.
+     *
+     * @param id the numeric identifier of the token
+     * @return an Optional containing the token string, or empty if the ID is not in the vocabulary
+     */
+    default Optional<String> findToken(int id) {
+        return contains(id) ? Optional.of(token(id)) : Optional.empty();
+    }
+
+    /**
+     * Looks up the numeric ID for a token string, returning empty if not found.
+     *
+     * @param text the string representation of the token
+     * @return an OptionalInt containing the token ID, or empty if the text is not in the vocabulary
+     */
+    default OptionalInt findId(String text) {
+        return contains(text) ? OptionalInt.of(id(text)) : OptionalInt.empty();
+    }
 
     /**
      * Determines if the token with the given ID belongs to a specific token type. The default

@@ -129,7 +129,7 @@ public class FileCache {
     }
 
     private static String bytesToHex(byte[] bytes) {
-        StringBuilder hex = new StringBuilder();
+        StringBuilder hex = new StringBuilder(bytes.length * 2);
         for (byte b : bytes) {
             hex.append(String.format("%02x", b));
         }

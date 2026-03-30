@@ -75,7 +75,7 @@ public class TestSliceFile {
         return ClassicBPE.classicFromTiktoken(
                 mergeableRanks,
                 java.util.Map.of("<|endoftext|>", 50256),
-                Normalizer.IDENTITY,
+                Normalizer.identity(),
                 RegexSplitter.create(R50K_PATTERN));
     }
 }

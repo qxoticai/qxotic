@@ -75,7 +75,7 @@ public abstract class AbstractTokenizer implements Tokenizer {
      * @throws NullPointerException if vocabulary is null
      */
     protected AbstractTokenizer(Vocabulary vocabulary) {
-        this(vocabulary, Normalizer.IDENTITY, Splitter.identity());
+        this(vocabulary, Normalizer.identity(), Splitter.identity());
     }
 
     @Override

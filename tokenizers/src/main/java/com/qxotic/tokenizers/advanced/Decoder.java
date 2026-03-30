@@ -43,17 +43,18 @@ public interface Decoder {
     String decode(IntSequence tokens, Vocabulary vocabulary);
 
     /** A simple decoder that just concatenates token strings. */
-    Decoder CANONICAL =
-            (tokens, vocab) -> {
-                StringBuilder sb = new StringBuilder();
-                for (int i = 0; i < tokens.length(); i++) {
-                    String token = vocab.token(tokens.intAt(i));
-                    if (token != null) {
-                        sb.append(token);
-                    }
+    static Decoder canonical() {
+        return (tokens, vocab) -> {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < tokens.length(); i++) {
+                String token = vocab.token(tokens.intAt(i));
+                if (token != null) {
+                    sb.append(token);
                 }
-                return sb.toString();
-            };
+            }
+            return sb.toString();
+        };
+    }
 
     /**
      * Creates a ByteLevel decoder that reverses byte-level encoding. This is used by GPT-2 and
@@ -65,6 +66,13 @@ public interface Decoder {
         return fromCodec(SymbolCodec.BYTE_LEVEL);
     }
 
+    /**
+     * Creates a decoder that concatenates token strings and then decodes them using the given
+     * codec.
+     *
+     * @param codec the symbol codec to apply after concatenation
+     * @return a decoder backed by the given codec
+     */
     static Decoder fromCodec(SymbolCodec codec) {
         return (tokens, vocab) -> {
             StringBuilder sb = new StringBuilder();

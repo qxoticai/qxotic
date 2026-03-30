@@ -1,5 +1,6 @@
 package com.qxotic.tokenizers;
 
+import com.qxotic.tokenizers.advanced.TokenizerPipeline;
 import java.nio.charset.StandardCharsets;
 import java.util.NoSuchElementException;
 
@@ -13,6 +14,15 @@ import java.util.NoSuchElementException;
  * consistency in both directions (encoding and decoding).
  */
 public interface Tokenizer {
+
+    /**
+     * Creates a new builder for assembling a tokenizer pipeline.
+     *
+     * @return a new {@link TokenizerPipeline.Builder}
+     */
+    static TokenizerPipeline.Builder builder() {
+        return new TokenizerPipeline.Builder();
+    }
 
     /**
      * Returns the vocabulary used by this tokenizer for encoding and decoding operations.

@@ -47,13 +47,12 @@ public class ClassicBPE {
         return parts;
     }
 
-    private static Map<IntPair, GPT2Tokenizer.MergeRank> buildMerges(
-            Map<String, Integer> mergeableRanks) {
-        Map<IntPair, GPT2Tokenizer.MergeRank> merges = new HashMap<>();
-
+    private static LongLongMap buildMerges(Map<String, Integer> mergeableRanks) {
         List<Map.Entry<String, Integer>> entries = new ArrayList<>(mergeableRanks.entrySet());
         entries.sort(Comparator.comparingInt(Map.Entry::getValue));
 
+        // Collect keys and values for bulk construction.
+        List<long[]> collected = new ArrayList<>();
         for (Map.Entry<String, Integer> entry : entries) {
             if (entry.getKey().length() == 1) {
                 continue;
@@ -63,12 +62,17 @@ public class ClassicBPE {
             int left = mergeableRanks.get(result.get(0));
             int right = mergeableRanks.get(result.get(1));
             int mergeIndex = mergeableRanks.get(entry.getKey());
-            merges.put(
-                    new IntPair(left, right),
-                    new GPT2Tokenizer.MergeRank(mergeIndex, entry.getValue()));
+            collected.add(
+                    new long[] {IntPair.of(left, right), IntPair.of(mergeIndex, entry.getValue())});
         }
 
-        return merges;
+        long[] keys = new long[collected.size()];
+        long[] values = new long[collected.size()];
+        for (int i = 0; i < collected.size(); i++) {
+            keys[i] = collected.get(i)[0];
+            values[i] = collected.get(i)[1];
+        }
+        return new LongLongMap(keys, values);
     }
 
     public static Map<String, Integer> loadMergeableRanks(String blobPath, String expectedHash)
@@ -83,7 +87,7 @@ public class ClassicBPE {
             Map<String, Integer> specialTokens,
             Normalizer normalizer,
             Splitter splitter) {
-        Map<IntPair, GPT2Tokenizer.MergeRank> merges = buildMerges(mergeableRanks);
+        LongLongMap merges = buildMerges(mergeableRanks);
         Vocabulary vocabulary =
                 VocabularyWithSpecials.create(new VocabularyImpl(mergeableRanks), specialTokens);
         return new GPT2Tokenizer(vocabulary, normalizer, splitter, merges);

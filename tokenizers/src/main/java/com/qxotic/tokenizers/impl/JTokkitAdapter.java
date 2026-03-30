@@ -88,7 +88,9 @@ class JTokkitAdapter implements Tokenizer {
         try {
             return encoding.decodeBytes(intArrayList);
         } catch (IllegalArgumentException e) {
-            throw new NoSuchElementException(e);
+            NoSuchElementException nsee = new NoSuchElementException(e.getMessage());
+            nsee.initCause(e);
+            throw nsee;
         }
     }
 

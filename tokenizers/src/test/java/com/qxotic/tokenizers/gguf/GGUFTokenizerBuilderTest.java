@@ -10,7 +10,11 @@ import com.qxotic.tokenizers.gguf.TestDataManager.TestModel;
 import com.qxotic.tokenizers.gguf.TestDataManager.TokenizerMetadata;
 import com.qxotic.tokenizers.impl.*;
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -100,7 +104,7 @@ public class GGUFTokenizerBuilderTest {
         Vocabulary vocabulary = new VocabularyImpl(tokenToId);
 
         // Build merge ranks from merges
-        Map<IntPair, GPT2Tokenizer.MergeRank> merges = new HashMap<>();
+        List<long[]> keyValuePairs = new ArrayList<>();
         if (tokenizerMeta.merges() != null) {
             for (int rank = 0; rank < tokenizerMeta.merges().length; rank++) {
                 String merge = tokenizerMeta.merges()[rank];
@@ -112,18 +116,27 @@ public class GGUFTokenizerBuilderTest {
                         String merged = parts[0] + parts[1];
                         Integer mergedId = tokenToId.get(merged);
                         if (mergedId != null) {
-                            merges.put(
-                                    new IntPair(leftId, rightId),
-                                    new GPT2Tokenizer.MergeRank(mergedId, rank));
+                            keyValuePairs.add(
+                                    new long[] {
+                                        IntPair.of(leftId, rightId), IntPair.of(mergedId, rank)
+                                    });
                         }
                     }
                 }
             }
         }
+        long[] keys = new long[keyValuePairs.size()];
+        long[] values = new long[keyValuePairs.size()];
+        for (int i = 0; i < keyValuePairs.size(); i++) {
+            keys[i] = keyValuePairs.get(i)[0];
+            values[i] = keyValuePairs.get(i)[1];
+        }
+        LongLongMap merges = new LongLongMap(keys, values);
 
         // Create GPT2-style tokenizer with model-specific pre-tokenizer
         Splitter splitter = ModelTextSplitters.createSplitter(model);
-        Tokenizer tokenizer = new GPT2Tokenizer(vocabulary, Normalizer.IDENTITY, splitter, merges);
+        Tokenizer tokenizer =
+                new GPT2Tokenizer(vocabulary, Normalizer.identity(), splitter, merges);
 
         assertNotNull(tokenizer, "Tokenizer should be created");
         assertNotNull(tokenizer.vocabulary(), "Tokenizer should have vocabulary");
@@ -160,9 +173,9 @@ public class GGUFTokenizerBuilderTest {
         Tokenizer tokenizer =
                 new GPT2Tokenizer(
                         vocabulary,
-                        Normalizer.IDENTITY,
+                        Normalizer.identity(),
                         splitter,
-                        Collections.emptyMap() // No merges for basic test
+                        new LongLongMap(new long[0], new long[0]) // No merges for basic test
                         );
 
         // Test encoding a simple string character by character

@@ -1,8 +1,8 @@
 package com.qxotic.tokenizers.impl;
 
+import com.qxotic.tokenizers.TokenType;
 import com.qxotic.tokenizers.Vocabulary;
 import com.qxotic.tokenizers.advanced.StandardTokenType;
-import com.qxotic.tokenizers.advanced.TokenType;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -86,8 +86,8 @@ public class VocabularyImpl implements Vocabulary {
     public boolean isTokenOfType(int tokenId, TokenType tokenType) {
         token(tokenId);
         if (tokenTypes != null) {
-            if (tokenType instanceof StandardTokenType standardTokenType) {
-                return this.tokenTypes[tokenId] == standardTokenType.getId();
+            if (tokenType instanceof StandardTokenType) {
+                return this.tokenTypes[tokenId] == ((StandardTokenType) tokenType).getId();
             }
         }
         return Vocabulary.super.isTokenOfType(tokenId, tokenType);
