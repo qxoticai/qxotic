@@ -63,7 +63,7 @@ jbang scripts/gguf.java hf unsloth/Qwen3-0.6B-GGUF/Q8_0 --no-tensors
 
 ## Documentation
 
-See [docs/DOCUMENTATION.md](docs/DOCUMENTATION.md) for complete API documentation with detailed examples:
+See [docs/index.md](docs/index.md) for complete API documentation with detailed examples:
 
 - Reading from files, channels, and URLs
 - Accessing metadata with type-safe getters
