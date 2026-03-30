@@ -20,17 +20,14 @@ import java.util.stream.Collectors;
 /** Example implementation of a BPE tokenizer for GPT2. */
 public class GPT2Tokenizer extends AbstractTokenizer {
 
-    public record MergeRank(int mergedTokenIndex, int rank) {}
-
-    private final Map<IntPair, MergeRank> merges;
+    private final LongLongMap merges;
     private final SymbolCodec symbolCodec;
-    private static final boolean useJavaReplacement = false;
 
     public GPT2Tokenizer(
             Vocabulary vocabulary,
             Normalizer normalizer,
             Splitter splitter,
-            Map<IntPair, MergeRank> mergeRanks) {
+            LongLongMap mergeRanks) {
         this(vocabulary, normalizer, splitter, mergeRanks, SymbolCodec.BYTE_LEVEL);
     }
 
@@ -38,7 +35,7 @@ public class GPT2Tokenizer extends AbstractTokenizer {
             Vocabulary vocabulary,
             Normalizer normalizer,
             Splitter splitter,
-            Map<IntPair, MergeRank> mergeRanks,
+            LongLongMap mergeRanks,
             SymbolCodec symbolCodec) {
         super(vocabulary, normalizer, splitter);
         this.merges = mergeRanks;
@@ -49,7 +46,7 @@ public class GPT2Tokenizer extends AbstractTokenizer {
             Vocabulary vocabulary,
             Normalizer normalizer,
             Splitter splitter,
-            List<IntPair> mergeRanks) {
+            List<long[]> mergeRanks) {
         this(vocabulary, normalizer, splitter, mergeRanks, SymbolCodec.BYTE_LEVEL);
     }
 
@@ -57,22 +54,25 @@ public class GPT2Tokenizer extends AbstractTokenizer {
             Vocabulary vocabulary,
             Normalizer normalizer,
             Splitter splitter,
-            List<IntPair> mergeRanks,
+            List<long[]> mergeRanks,
             SymbolCodec symbolCodec) {
         super(vocabulary, normalizer, splitter);
-        this.merges = new HashMap<>(mergeRanks.size());
         this.symbolCodec = symbolCodec;
+        long[] keys = new long[mergeRanks.size()];
+        long[] values = new long[mergeRanks.size()];
         for (int rank = 0; rank < mergeRanks.size(); rank++) {
-            IntPair pair = mergeRanks.get(rank);
-            int leftIndex = pair.left();
-            int rightIndex = pair.right();
+            long pair = mergeRanks.get(rank)[0];
+            int leftIndex = IntPair.left(pair);
+            int rightIndex = IntPair.right(pair);
             String leftString = vocabulary.token(leftIndex);
             assert leftString != null;
             String rightString = vocabulary.token(rightIndex);
             assert rightString != null;
             int mergeIndex = vocabulary.id(leftString + rightString);
-            this.merges.put(pair, new MergeRank(mergeIndex, rank));
+            keys[rank] = pair;
+            values[rank] = IntPair.of(mergeIndex, rank);
         }
+        this.merges = new LongLongMap(keys, values);
     }
 
     /**
@@ -145,7 +145,7 @@ public class GPT2Tokenizer extends AbstractTokenizer {
     }
 
     private IntSequence encodeChunk(CharSequence chunk) {
-        if (chunk.isEmpty()) {
+        if (chunk.length() == 0) {
             return IntSequence.empty();
         }
 
@@ -163,24 +163,27 @@ public class GPT2Tokenizer extends AbstractTokenizer {
 
         while (size >= 2) {
             // find the pair with the lowest merge rank
-            MergeRank bestMergeRank = null;
+            long bestValue = IntPair.NONE;
+            int bestRank = Integer.MAX_VALUE;
             int startPosition = 0;
             for (int i = 0; i + 1 < size; ++i) {
-                IntPair candidatePair = new IntPair(tokens[i], tokens[i + 1]);
-                MergeRank candidateMergeRank = merges.get(candidatePair);
-                if (candidateMergeRank != null
-                        && (bestMergeRank == null
-                                || candidateMergeRank.rank() < bestMergeRank.rank())) {
-                    bestMergeRank = candidateMergeRank;
-                    startPosition = i;
+                long candidateKey = IntPair.of(tokens[i], tokens[i + 1]);
+                long candidateValue = merges.get(candidateKey);
+                if (candidateValue != IntPair.NONE) {
+                    int candidateRank = IntPair.right(candidateValue);
+                    if (candidateRank < bestRank) {
+                        bestValue = candidateValue;
+                        bestRank = candidateRank;
+                        startPosition = i;
+                    }
                 }
             }
-            if (bestMergeRank == null) {
+            if (bestValue == IntPair.NONE) {
                 // nothing else can be merged anymore
                 break;
             }
             // otherwise let's merge the best pair (lowest rank)
-            tokens[startPosition] = bestMergeRank.mergedTokenIndex();
+            tokens[startPosition] = IntPair.left(bestValue);
             System.arraycopy(
                     tokens, startPosition + 2, tokens, startPosition + 1, size - startPosition - 2);
             --size;
@@ -193,11 +196,10 @@ public class GPT2Tokenizer extends AbstractTokenizer {
 
     @Override
     protected IntSequence encodeImpl(CharSequence text) {
-        byte[] rawBytes =
-                useJavaReplacement
-                        ? text.toString().getBytes(StandardCharsets.UTF_8) // use ?
-                        : getBytesWithReplacement(
-                                text, REPLACEMENT_BYTES); // use \uFFFD (EF BF BD in UTF8)
+        // Use U+FFFD (EF BF BD in UTF-8) for malformed surrogates, matching Python reference
+        // implementations (tiktoken, HuggingFace). Note: String.getBytes(UTF_8) would use '?'
+        // (0x3F) instead, which produces different token IDs.
+        byte[] rawBytes = getBytesWithReplacement(text, REPLACEMENT_BYTES);
         String encodedSymbols = symbolCodec.encodeBytes(rawBytes);
         return encodeChunk(encodedSymbols);
     }

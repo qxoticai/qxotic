@@ -45,7 +45,7 @@ class TokenizerPipelineTest {
         Vocabulary vocab =
                 createSimpleVocabulary(
                         new String[] {"[UNK]", "Hello", " ", "world"}, new int[] {0, 1, 2, 3});
-        Decoder decoder = Decoder.CANONICAL;
+        Decoder decoder = Decoder.canonical();
 
         String result = decoder.decode(IntSequence.of(1, 2, 3), vocab);
         assertEquals("Hello world", result);
@@ -112,7 +112,7 @@ class TokenizerPipelineTest {
                         .splitter(Splitter.identity())
                         .encoder(encoder)
                         .vocabulary(vocab)
-                        .decoder(Decoder.CANONICAL)
+                        .decoder(Decoder.canonical())
                         .build();
 
         IntSequence tokens = pipeline.encode("Hello World");
@@ -127,11 +127,11 @@ class TokenizerPipelineTest {
 
     @Test
     void pipelineComponentsAccessible() {
-        Normalizer normalizer = Normalizer.IDENTITY;
+        Normalizer normalizer = Normalizer.identity();
         Splitter splitter = Splitter.identity();
         Vocabulary vocab = createSimpleVocabulary(new String[] {"[UNK]"}, new int[] {0});
         Encoder encoder = chunk -> IntSequence.empty();
-        Decoder decoder = Decoder.CANONICAL;
+        Decoder decoder = Decoder.canonical();
 
         TokenizerPipeline pipeline =
                 new TokenizerPipeline.Builder()

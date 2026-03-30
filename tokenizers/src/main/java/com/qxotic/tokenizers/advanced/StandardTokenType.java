@@ -1,5 +1,7 @@
 package com.qxotic.tokenizers.advanced;
 
+import com.qxotic.tokenizers.TokenType;
+
 /**
  * Standard token types as defined by the GGUF specification in <a
  * href="https://github.com/ggerganov/llama.cpp">llama.cpp</a>. These types categorize different

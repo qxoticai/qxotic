@@ -3,17 +3,16 @@ package com.qxotic.tokenizers.advanced;
 import java.text.Normalizer.Form;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.function.Function;
 
 @FunctionalInterface
-public interface Normalizer extends Function<CharSequence, CharSequence> {
+public interface Normalizer {
 
-    /** Strict default: no text transformation. */
-    Normalizer IDENTITY = text -> text;
+    /** Applies this normalizer to the given text. */
+    CharSequence apply(CharSequence text);
 
     /** Strict default: no text transformation. */
     static Normalizer identity() {
-        return IDENTITY;
+        return text -> text;
     }
 
     /** Lossy transform. Opt-in only. */

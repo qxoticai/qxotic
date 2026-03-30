@@ -28,7 +28,7 @@ import java.util.Objects;
  *     .splitter(Splitter.identity())
  *     .encoder(chunk -> encodeChunk(chunk, vocab, merges))
  *     .vocabulary(vocab)
- *     .decoder(Decoder.CANONICAL)
+ *     .decoder(Decoder.canonical())
  *     .build();
  *
  * IntSequence tokens = pipeline.encode("Hello, world!");
@@ -110,11 +110,11 @@ public final class TokenizerPipeline implements Tokenizer {
 
     /** Builder for creating TokenizerPipeline instances. */
     public static class Builder {
-        private Normalizer normalizer = Normalizer.IDENTITY;
+        private Normalizer normalizer = Normalizer.identity();
         private Splitter splitter = Splitter.identity();
         private Encoder encoder;
         private Vocabulary vocabulary;
-        private Decoder decoder = Decoder.CANONICAL;
+        private Decoder decoder = Decoder.canonical();
 
         /** Sets the normalizer. */
         public Builder normalizer(Normalizer normalizer) {

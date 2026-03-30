@@ -37,20 +37,4 @@ public class Tiktoken {
             Map<String, Integer> specialTokens) {
         return JTokkitAdapter.create(name, splitPattern, mergeableRanks, specialTokens);
     }
-
-    //    public static Map<String, Integer> loadFromJSON(String json) {
-    //        Map<String, Integer> mergeableRanks = new HashMap<>();
-    //
-    //        Map<String, ?> parse = (Map<String, ?>) JSON.parse(json);
-    //        List<Map<String, ?>> vocab = (List<Map<String, ?>>) parse.get("vocab");
-    //        for (Map<String, ?> entry : vocab) {
-    //            int rank = ((Number) entry.get("rank")).intValue();
-    //            String base64TokenBytes = (String) entry.get("token_bytes");
-    //            byte[] tokenBytes = Base64.getDecoder().decode(base64TokenBytes);
-    //            String token = ByteEncoding.bytesToString(tokenBytes);
-    //            mergeableRanks.put(token, rank);
-    //        }
-    //
-    //        return mergeableRanks;
-    //    }
 }

@@ -80,7 +80,7 @@ public class TestSlice30_40M {
         return ClassicBPE.classicFromTiktoken(
                 mergeableRanks,
                 java.util.Map.of("<|endoftext|>", 50256),
-                Normalizer.IDENTITY,
+                Normalizer.identity(),
                 RegexSplitter.create(R50K_PATTERN));
     }
 }
