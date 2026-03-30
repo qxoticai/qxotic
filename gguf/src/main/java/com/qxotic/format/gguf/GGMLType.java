@@ -306,20 +306,12 @@ public enum GGMLType {
     // Public API
     // ============================================================
 
-    /**
-     * Returns the GGML type ID (equivalent to ordinal in the {@code ggml_type} enum).
-     *
-     * @return the type ID (0-based index)
-     */
+    /** Returns the GGML type ID (equivalent to ordinal in the {@code ggml_type} enum). */
     public int getId() {
         return ordinal();
     }
 
-    /**
-     * Returns the size in bytes for all elements in a block.
-     *
-     * @return the block byte size
-     */
+    /** Returns the size in bytes for all elements in a block. */
     public int getBlockByteSize() {
         return blockByteSize;
     }
@@ -329,8 +321,6 @@ public enum GGMLType {
      *
      * <p>For primitive types (F32, F16, I8, etc.), this returns 1. For quantized types, this is
      * typically 32 or 256.
-     *
-     * @return the number of elements per block
      */
     public int getElementsPerBlock() {
         return elementsPerBlock;
@@ -339,8 +329,6 @@ public enum GGMLType {
     /**
      * Returns whether this type is a quantized format. Quantized types have more than one element
      * per block.
-     *
-     * @return {@code true} if this is a quantized type
      */
     public boolean isQuantized() {
         return elementsPerBlock > 1;
@@ -358,8 +346,6 @@ public enum GGMLType {
      *   <li>Q4_0: 4.5 bpw
      *   <li>IQ2_XXS: 2.0625 bpw
      * </ul>
-     *
-     * @return the bits per weight
      */
     public double getBitsPerWeight() {
         return (blockByteSize * 8.0) / elementsPerBlock;
@@ -368,8 +354,6 @@ public enum GGMLType {
     /**
      * Returns the GGMLType for the given type ID.
      *
-     * @param id the GGML type ID (0-based index)
-     * @return the corresponding GGMLType
      * @throws ArrayIndexOutOfBoundsException if the ID is invalid
      */
     public static GGMLType fromId(int id) {
@@ -383,8 +367,6 @@ public enum GGMLType {
     /**
      * Calculates the byte size required to store a tensor of this type with the given shape.
      *
-     * @param shape the tensor dimensions
-     * @return the byte size required
      * @throws ArithmeticException if the result overflows
      * @throws IllegalArgumentException if element count is not a multiple of elements per block
      */
@@ -399,8 +381,6 @@ public enum GGMLType {
     /**
      * Calculates the byte size required to store the given number of elements.
      *
-     * @param numberOfElements the total number of elements
-     * @return the byte size required
      * @throws ArithmeticException if the result overflows
      * @throws IllegalArgumentException if element count is not a multiple of elements per block
      */
@@ -420,8 +400,6 @@ public enum GGMLType {
     /**
      * Calculates the number of elements that can be stored in the given byte size.
      *
-     * @param byteSize the available byte size
-     * @return the number of elements that can be stored
      * @throws IllegalArgumentException if byte size is not a multiple of block byte size
      */
     public long elementsForByteSize(long byteSize) {

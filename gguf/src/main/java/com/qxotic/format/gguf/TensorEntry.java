@@ -36,23 +36,12 @@ public final class TensorEntry {
         this.offset = offset;
     }
 
-    /**
-     * Constructs a new {@link TensorEntry} with the specified parameters.
-     *
-     * @param name the name identifier of the tensor
-     * @param shape the dimensions of the tensor as an array of longs
-     * @param ggmlType the data type of the tensor elements
-     * @param offset the byte offset where this tensor's data begins in the file
-     */
+    /** Constructs a new {@link TensorEntry} with the specified parameters. */
     public static TensorEntry create(String name, long[] shape, GGMLType ggmlType, long offset) {
         return new TensorEntry(name, shape, ggmlType, offset);
     }
 
-    /**
-     * Returns the name identifier of the tensor.
-     *
-     * @return the tensor name
-     */
+    /** Returns the name identifier of the tensor. */
     public String name() {
         return name;
     }
@@ -62,8 +51,6 @@ public final class TensorEntry {
      *
      * <p>The returned array represents the size of each dimension. For example, [768, 32000]
      * represents a 2D tensor with 768 rows and 32000 columns.
-     *
-     * @return the tensor's shape as an array of longs
      */
     public long[] shape() {
         return shape.clone();
@@ -73,18 +60,12 @@ public final class TensorEntry {
      * Returns the data type of the tensor.
      *
      * <p>Tensors can be {@link GGMLType#isQuantized() quantized} e.g. {@link GGMLType#Q8_0}.
-     *
-     * @return the GGML data type
      */
     public GGMLType ggmlType() {
         return this.ggmlType;
     }
 
-    /**
-     * Alias for {@link #ggmlType()}.
-     *
-     * @return the GGML data type
-     */
+    /** Alias for {@link #ggmlType()}. */
     public GGMLType type() {
         return this.ggmlType;
     }
@@ -92,8 +73,6 @@ public final class TensorEntry {
     /**
      * Returns the byte offset where this tensor's data begins with respect to {@link
      * GGUF#getTensorDataOffset()}.
-     *
-     * @return the byte offset of the tensor data
      */
     public long offset() {
         return this.offset;
@@ -103,8 +82,6 @@ public final class TensorEntry {
      * Returns the byte size required to store this tensor's data.
      *
      * <p>This is a convenience method equivalent to {@code ggmlType().byteSizeForShape(shape())}.
-     *
-     * @return the byte size of the tensor data
      */
     public long byteSize() {
         return this.ggmlType.byteSizeForShape(this.shape);
@@ -113,11 +90,8 @@ public final class TensorEntry {
     /**
      * Compares this {@link TensorEntry} with another object for equality.
      *
-     * <p>Two TensorInfo objects are considered equal if they have the same name, shape, type, and
+     * <p>Two TensorEntry objects are considered equal if they have the same name, shape, type, and
      * offset.
-     *
-     * @param other the object to compare with
-     * @return true if the objects are equal, false otherwise
      */
     @Override
     public boolean equals(Object other) {
@@ -135,11 +109,7 @@ public final class TensorEntry {
         }
     }
 
-    /**
-     * Returns a hash code value for this {@link TensorEntry}.
-     *
-     * @return a hash code value for this object
-     */
+    /** Returns a hash code value for this {@link TensorEntry}. */
     @Override
     public int hashCode() {
         return Objects.hash(name, Arrays.hashCode(shape), ggmlType, offset);
@@ -149,10 +119,8 @@ public final class TensorEntry {
      * Returns a string representation of this {@link TensorEntry}.
      *
      * <p>The string includes the tensor's name, shape, type, and offset in hexadecimal. For
-     * example: <i>"TensorInfo{name='token_embd.weight', shape=[768, 32000], ggmlType=F32,
+     * example: <i>"TensorEntry{name='token_embd.weight', shape=[768, 32000], ggmlType=F32,
      * offset=0x12300}"</i>
-     *
-     * @return a string representation of this object
      */
     @Override
     public String toString() {
@@ -181,9 +149,6 @@ public final class TensorEntry {
      * TensorEntry original = gguf.getTensor("weights");
      * TensorEntry moved = original.withOffset(1024);
      * }</pre>
-     *
-     * @param newOffset the new byte offset relative to the tensor data section start
-     * @return a new TensorEntry with the same name, shape, and ggmlType but different offset
      */
     public TensorEntry withOffset(long newOffset) {
         return new TensorEntry(this.name, this.shape, this.ggmlType, newOffset);
