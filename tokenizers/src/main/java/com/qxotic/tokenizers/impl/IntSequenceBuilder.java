@@ -3,40 +3,31 @@ package com.qxotic.tokenizers.impl;
 import com.qxotic.tokenizers.IntSequence;
 import java.util.Arrays;
 
-/**
- * A builder for creating IntSequences. The build is an IntSequence itself, a view over unmodifiable
- * data.
- */
-final class IntSequenceBuilder extends AbstractIntSequence implements IntSequence.Builder {
+/** A builder for creating IntSequences. */
+final class IntSequenceBuilder implements IntSequence.Builder {
+    private static final int DEFAULT_CAPACITY = 8;
+    private static final int MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8;
+    private static final int[] EMPTY = {};
+
     private int[] data;
     private int size;
-
-    private static final int DEFAULT_CAPACITY = 8;
-    private static final int[] DEFAULTCAPACITY_EMPTY_ELEMENTDATA = {};
-
-    private IntSequenceBuilder(int[] data, int size) {
-        this.data = data;
-        this.size = size;
-    }
 
     IntSequenceBuilder(int capacity) {
         if (capacity < 0) {
             throw new IllegalArgumentException("negative capacity");
         }
-        this.data = new int[Math.max(1, capacity)];
+        this.data = capacity == 0 ? EMPTY : new int[capacity];
         this.size = 0;
     }
 
     IntSequenceBuilder() {
-        this.data = DEFAULTCAPACITY_EMPTY_ELEMENTDATA;
+        this.data = EMPTY;
         this.size = 0;
     }
 
     @Override
     public IntSequenceBuilder add(int value) {
-        if (this.size == data.length) {
-            grow(size + 1);
-        }
+        ensureCapacity(size + 1);
         this.data[this.size++] = value;
         return this;
     }
@@ -46,92 +37,98 @@ final class IntSequenceBuilder extends AbstractIntSequence implements IntSequenc
         if (minCapacity < 0) {
             throw new IllegalArgumentException("negative capacity");
         }
-        if (minCapacity > data.length
-                && !(data == DEFAULTCAPACITY_EMPTY_ELEMENTDATA
-                        && minCapacity <= DEFAULT_CAPACITY)) {
+        if (minCapacity > data.length) {
             grow(minCapacity);
         }
     }
 
-    private static final int SOFT_MAX_ARRAY_LENGTH = Integer.MAX_VALUE - 8;
-
-    private static int newLength(int oldLength, int minGrowth, int prefGrowth) {
-        // preconditions not checked because of inlining
-        // assert oldLength >= 0
-        // assert minGrowth > 0
-        int prefLength = oldLength + Math.max(minGrowth, prefGrowth); // might overflow
-        if (0 < prefLength && prefLength <= SOFT_MAX_ARRAY_LENGTH) {
-            return prefLength;
-        } else {
-            // put code cold in a separate method
-            return hugeLength(oldLength, minGrowth);
+    private void grow(int minCapacity) {
+        int oldCapacity = data.length;
+        int newCapacity =
+                oldCapacity == 0
+                        ? Math.max(DEFAULT_CAPACITY, minCapacity)
+                        : oldCapacity + (oldCapacity >> 1);
+        if (newCapacity < minCapacity) {
+            newCapacity = minCapacity;
         }
+        if (newCapacity > MAX_ARRAY_SIZE) {
+            newCapacity = hugeCapacity(minCapacity);
+        }
+        data = Arrays.copyOf(data, newCapacity);
     }
 
-    private static int hugeLength(int oldLength, int minGrowth) {
-        int minLength = oldLength + minGrowth;
-        if (minLength < 0) { // overflow
-            throw new OutOfMemoryError(
-                    "Required array length " + oldLength + " + " + minGrowth + " is too large");
-        } else if (minLength <= SOFT_MAX_ARRAY_LENGTH) {
-            return SOFT_MAX_ARRAY_LENGTH;
-        } else {
-            return minLength;
+    private static int hugeCapacity(int minCapacity) {
+        if (minCapacity < 0) {
+            throw new OutOfMemoryError("Required array size too large");
         }
-    }
-
-    /**
-     * Increases the capacity to ensure that it can hold at least the number of elements specified
-     * by the minimum capacity argument.
-     *
-     * @param minCapacity the desired minimum capacity
-     * @throws OutOfMemoryError if minCapacity is less than zero
-     */
-    private int[] grow(int minCapacity) {
-        int oldCapacity = this.data.length;
-        if (oldCapacity > 0 || this.data != DEFAULTCAPACITY_EMPTY_ELEMENTDATA) {
-            int newCapacity =
-                    newLength(
-                            oldCapacity,
-                            minCapacity - oldCapacity, /* minimum growth */
-                            oldCapacity >> 1 /* preferred growth */);
-            return this.data = Arrays.copyOf(this.data, newCapacity);
-        } else {
-            return this.data = new int[Math.max(DEFAULT_CAPACITY, minCapacity)];
-        }
+        return minCapacity > MAX_ARRAY_SIZE ? Integer.MAX_VALUE : MAX_ARRAY_SIZE;
     }
 
     public IntSequence build() {
-        return new ArrayIntSequence(Arrays.copyOf(this.data, length()));
+        return new ArrayIntSequence(Arrays.copyOf(this.data, size));
     }
 
     @Override
-    public int intAt(int index) {
-        if (index < 0 || index >= this.size) {
-            throw new IndexOutOfBoundsException("Index: " + index + ", Length: " + this.size);
-        }
-        return this.data[index];
-    }
-
-    @Override
-    public int length() {
+    public int size() {
         return size;
     }
 
     @Override
-    public IntSequence subSequence(int start, int end) {
-        if (start < 0 || end < start || end > length()) {
-            throw new IllegalArgumentException(
-                    "Invalid subSequence range [" + start + ", " + end + ")");
-        }
-        if (start == end) {
-            return ImplAccessor.empty();
-        }
-        return new ArrayIntSequence(this.data, start, end - start);
+    public IntSequence snapshot() {
+        return new BuilderSequenceView(this, 0, size, false);
     }
 
     @Override
-    public int[] toArray() {
-        return Arrays.copyOf(this.data, this.size);
+    public IntSequence asSequenceView() {
+        return new BuilderSequenceView(this, 0, 0, true);
+    }
+
+    private static final class BuilderSequenceView extends AbstractIntSequence {
+        private final IntSequenceBuilder builder;
+        private final int offset;
+        private final int fixedLength;
+        private final boolean live;
+
+        private BuilderSequenceView(
+                IntSequenceBuilder builder, int offset, int fixedLength, boolean live) {
+            this.builder = builder;
+            this.offset = offset;
+            this.fixedLength = fixedLength;
+            this.live = live;
+        }
+
+        @Override
+        public int intAt(int index) {
+            int length = length();
+            if (index < 0 || index >= length) {
+                throw new IndexOutOfBoundsException("Index: " + index + ", Length: " + length);
+            }
+            return builder.data[offset + index];
+        }
+
+        @Override
+        public int length() {
+            return live ? builder.size - offset : fixedLength;
+        }
+
+        @Override
+        public IntSequence subSequence(int startInclusive, int endExclusive) {
+            int length = length();
+            if (startInclusive < 0 || endExclusive < startInclusive || endExclusive > length) {
+                throw new IndexOutOfBoundsException(
+                        "Invalid subSequence range [" + startInclusive + ", " + endExclusive + ")");
+            }
+            if (startInclusive == endExclusive) {
+                return ImplAccessor.empty();
+            }
+            return new BuilderSequenceView(
+                    builder, offset + startInclusive, endExclusive - startInclusive, false);
+        }
+
+        @Override
+        public int[] toArray() {
+            int length = length();
+            return Arrays.copyOfRange(builder.data, offset, offset + length);
+        }
     }
 }

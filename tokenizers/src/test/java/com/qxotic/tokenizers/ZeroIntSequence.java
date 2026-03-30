@@ -27,10 +27,10 @@ final class ZeroIntSequence extends AbstractIntSequence {
     }
 
     @Override
-    public IntSequence subSequence(int start, int end) {
-        if (start < 0 || end < 0 || start > end) {
+    public IntSequence subSequence(int startInclusive, int endExclusive) {
+        if (startInclusive < 0 || endExclusive < 0 || startInclusive > endExclusive) {
             throw new IllegalArgumentException("slice out of range");
         }
-        return new ZeroIntSequence(end - start);
+        return new ZeroIntSequence(endExclusive - startInclusive);
     }
 }

@@ -22,7 +22,7 @@ final class ListIntSequence extends AbstractIntSequence {
     }
 
     @Override
-    public IntSequence subSequence(int start, int end) {
-        return new ListIntSequence(list.subList(start, end));
+    public IntSequence subSequence(int startInclusive, int endExclusive) {
+        return new ListIntSequence(list.subList(startInclusive, endExclusive));
     }
 }
