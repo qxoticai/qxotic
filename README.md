@@ -1,7 +1,9 @@
-# [Quixotic AI](https://qxotic.ai)
+# [Quixotic AI][website]
 
-[![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
-[![GraalVM](https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F)](https://www.graalvm.org/latest/reference-manual/native-image/)
+[![License][badge-license]](LICENSE)
+[![GraalVM Native Image][badge-native-image]](https://www.graalvm.org/latest/reference-manual/native-image/)
+[![Qxotic AI on X][badge-x]][social-x]
+[![Qxotic AI on Bluesky][badge-bluesky]][social-bluesky]
 
 **AI sovereignty for the JVM.**
 
@@ -47,3 +49,13 @@ The tensor engine supports multiple backends, packaged as separate artifacts:
 Just include the backend JAR on the classpath, it becomes available automatically. No `-Djava.library.path` required.
 
 For GraalVM Native Image, add `jota-graal`.
+
+[website]: https://qxotic.ai
+
+[social-x]: https://x.com/qxoticai
+[social-bluesky]: https://bsky.app/profile/qxotic.ai
+
+[badge-x]: https://img.shields.io/badge/-grey?logo=X
+[badge-bluesky]: https://img.shields.io/badge/-grey?logo=bluesky&logoColor=f5f5f5
+[badge-license]: https://img.shields.io/badge/license-Apache%202.0-green
+[badge-native-image]: https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F
