@@ -5,7 +5,7 @@
 [![License][badge-license]](LICENSE)
 [![GraalVM Native Image][badge-native-image]](https://www.graalvm.org/latest/reference-manual/native-image/)
 
-Strict, minimal JSON parser and writer for Java. Parses JSON directly into standard Java collections—**zero dependencies**, **RFC 8259 compliant**.
+Strict, minimal JSON parser and writer for Java. Parses JSON directly into standard Java collections. **Zero dependencies**, **RFC 8259 compliant**.
 
 ```java
 // Parse JSON in one line
