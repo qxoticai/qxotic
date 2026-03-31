@@ -64,18 +64,18 @@ class SafetensorsFormatter {
         sb.append("  tensors: {\n");
 
         for (TensorEntry tensor : tensors) {
-            sb.append("    ").append(tensor.name()).append(": ");
-            sb.append(tensor.dtype()).append('[');
-
-            // Format shape dimensions
-            long[] shape = tensor.shape();
-            for (int i = 0; i < shape.length; i++) {
-                if (i > 0) sb.append(", ");
-                sb.append(shape[i]);
-            }
-            sb.append("]");
-            sb.append(" @ offset=0x").append(Long.toHexString(tensor.byteOffset()));
-            sb.append("\n");
+            sb.append("    ")
+                    .append(tensor.name())
+                    .append(": ")
+                    .append(tensor.dtype())
+                    .append('[')
+                    .append(
+                            java.util.Arrays.stream(tensor.shape())
+                                    .mapToObj(Long::toString)
+                                    .collect(java.util.stream.Collectors.joining(", ")))
+                    .append("] @ offset=0x")
+                    .append(Long.toHexString(tensor.byteOffset()))
+                    .append("\n");
         }
 
         sb.append("  }\n");

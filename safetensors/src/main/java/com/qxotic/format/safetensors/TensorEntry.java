@@ -3,11 +3,7 @@ package com.qxotic.format.safetensors;
 import java.util.Arrays;
 import java.util.Objects;
 
-/**
- * Metadata about a tensor in a safetensors file.
- *
- * <p>Offset is relative to the data section start (see {@link Safetensors#getTensorDataOffset()}).
- */
+/** Metadata about a tensor in a safetensors file. */
 public final class TensorEntry {
     private final String name;
     private final DType dtype;
@@ -21,15 +17,7 @@ public final class TensorEntry {
         this.byteOffset = byteOffset;
     }
 
-    /**
-     * Creates a tensor entry.
-     *
-     * @param name tensor name
-     * @param dtype tensor data type
-     * @param shape tensor shape (empty array means scalar)
-     * @param offset byte offset relative to tensor data section start
-     * @return immutable tensor entry
-     */
+    /** Creates a tensor entry. */
     public static TensorEntry create(String name, DType dtype, long[] shape, long offset) {
         return new TensorEntry(
                 Objects.requireNonNull(name, "name"),
@@ -38,43 +26,25 @@ public final class TensorEntry {
                 offset);
     }
 
-    /**
-     * @return tensor name
-     */
     public String name() {
         return name;
     }
 
-    /**
-     * @return tensor data type
-     */
     public DType dtype() {
         return dtype;
     }
 
-    /**
-     * Returns tensor shape.
-     *
-     * @return defensive copy of the shape array
-     */
+    /** Returns tensor shape (defensive copy). */
     public long[] shape() {
         return shape.clone();
     }
 
-    /**
-     * @return byte offset relative to the tensor data section start
-     */
     public long byteOffset() {
         return byteOffset;
     }
 
     /**
-     * Returns the total number of elements in this tensor.
-     *
-     * <p>Computes the product of all dimensions in the shape. An empty shape (scalar) returns 1.
-     * Throws {@link ArithmeticException} on overflow.
-     *
-     * @return total number of elements
+     * Total number of elements (product of shape dimensions, 1 for scalars). Throws on overflow.
      */
     public long totalNumberOfElements() {
         return Arrays.stream(shape).reduce(1L, Math::multiplyExact);
@@ -98,8 +68,7 @@ public final class TensorEntry {
 
     @Override
     public String toString() {
-        return "TensorEntry{"
-                + "name="
+        return "TensorEntry{name="
                 + name
                 + ", dtype="
                 + dtype
@@ -108,33 +77,15 @@ public final class TensorEntry {
                 + ", offset=0x"
                 + Long.toHexString(byteOffset)
                 + ", byteSize="
-                + dtype.byteSizeForShape(shape)
+                + byteSize()
                 + '}';
     }
 
-    /**
-     * @return tensor payload size in bytes
-     */
     public long byteSize() {
         return dtype.byteSizeForShape(shape);
     }
 
-    /**
-     * Creates a copy of this tensor entry with a different byte offset.
-     *
-     * <p>This is useful when rearranging tensors in a safetensors file. All other properties (name,
-     * dtype, shape) remain unchanged.
-     *
-     * <p>Example usage:
-     *
-     * <pre>{@code
-     * TensorEntry original = safetensors.getTensor("weights");
-     * TensorEntry moved = original.withOffset(1024);
-     * }</pre>
-     *
-     * @param newOffset the new byte offset relative to the tensor data section start
-     * @return a new TensorEntry with the same name, dtype, and shape but different offset
-     */
+    /** Creates a copy with a different byte offset. */
     public TensorEntry withOffset(long newOffset) {
         return new TensorEntry(this.name, this.dtype, this.shape, newOffset);
     }

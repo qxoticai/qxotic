@@ -65,17 +65,11 @@ final class WriterImpl {
                             "shape", toList(entry.shape()),
                             "data_offsets", List.of(start, end)));
         }
-        String header = Json.stringify(json, false);
-        byte[] headerBytes = header.getBytes(StandardCharsets.UTF_8);
-        return headerBytes;
+        return Json.stringify(json, false).getBytes(StandardCharsets.UTF_8);
     }
 
     private static List<Long> toList(long[] values) {
-        List<Long> list = new java.util.ArrayList<>(values.length);
-        for (long value : values) {
-            list.add(value);
-        }
-        return list;
+        return java.util.Arrays.stream(values).boxed().toList();
     }
 
     private void writeFully(WritableByteChannel byteChannel, ByteBuffer byteBuffer)

@@ -148,4 +148,71 @@ public class TensorEntryTest {
 
         assertEquals(Long.MAX_VALUE, modified.byteOffset());
     }
+
+    @Test
+    public void testToString() {
+        TensorEntry entry = TensorEntry.create("weights", DType.F32, new long[] {10, 20}, 100);
+        String str = entry.toString();
+        assertTrue(str.contains("name=weights"));
+        assertTrue(str.contains("dtype=F32"));
+        assertTrue(str.contains("shape=[10, 20]"));
+        assertTrue(str.contains("offset=0x64")); // 100 in hex
+        assertTrue(str.contains("byteSize=800"));
+    }
+
+    @Test
+    public void testToStringScalar() {
+        TensorEntry entry = TensorEntry.create("bias", DType.F64, new long[] {}, 0);
+        String str = entry.toString();
+        assertTrue(str.contains("name=bias"));
+        assertTrue(str.contains("dtype=F64"));
+        assertTrue(str.contains("shape=[]"));
+        assertTrue(str.contains("offset=0x0"));
+    }
+
+    @Test
+    public void testEqualsSelf() {
+        TensorEntry entry = TensorEntry.create("a", DType.F32, new long[] {1}, 0);
+        assertEquals(entry, entry);
+    }
+
+    @Test
+    public void testEqualsNull() {
+        TensorEntry entry = TensorEntry.create("a", DType.F32, new long[] {1}, 0);
+        assertNotEquals(entry, null);
+    }
+
+    @Test
+    public void testEqualsWrongType() {
+        TensorEntry entry = TensorEntry.create("a", DType.F32, new long[] {1}, 0);
+        assertNotEquals(entry, "not a tensor");
+    }
+
+    @Test
+    public void testEqualsDifferentName() {
+        TensorEntry a = TensorEntry.create("x", DType.F32, new long[] {1}, 0);
+        TensorEntry b = TensorEntry.create("y", DType.F32, new long[] {1}, 0);
+        assertNotEquals(a, b);
+    }
+
+    @Test
+    public void testEqualsDifferentDtype() {
+        TensorEntry a = TensorEntry.create("x", DType.F32, new long[] {1}, 0);
+        TensorEntry b = TensorEntry.create("x", DType.F64, new long[] {1}, 0);
+        assertNotEquals(a, b);
+    }
+
+    @Test
+    public void testEqualsDifferentShape() {
+        TensorEntry a = TensorEntry.create("x", DType.F32, new long[] {2, 3}, 0);
+        TensorEntry b = TensorEntry.create("x", DType.F32, new long[] {3, 2}, 0);
+        assertNotEquals(a, b);
+    }
+
+    @Test
+    public void testEqualsDifferentOffset() {
+        TensorEntry a = TensorEntry.create("x", DType.F32, new long[] {1}, 0);
+        TensorEntry b = TensorEntry.create("x", DType.F32, new long[] {1}, 100);
+        assertNotEquals(a, b);
+    }
 }
