@@ -14,148 +14,66 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Interface for reading and writing Safetensors headers (metadata + tensor entries).
- *
- * <p>This API works on headers only. It reads and writes metadata plus tensor descriptors ({@link
- * TensorEntry}) and does not read or write tensor payload bytes.
- *
- * <p>Format specification:
- *
- * <ul>
- *   <li>8 bytes: header size (N) as unsigned little-endian 64-bit integer
- *   <li>N bytes: JSON UTF-8 header (must start with '{', may have trailing 0x20 padding)
- *   <li>Rest: tensor payload bytes
- * </ul>
- *
- * <p>Duplicate JSON keys in headers follow the underlying JSON parser policy (last key wins).
+ * Reads and writes Safetensors headers (metadata + tensor descriptors). Works on headers only;
+ * tensor payload bytes are not accessed.
  *
  * @see <a href="https://github.com/huggingface/safetensors">Safetensors specification</a>
  */
 public interface Safetensors {
 
-    /**
-     * Returns the byte offset where tensor payload begins. This is always {@code 8 + headerSize}.
-     *
-     * @return byte offset to start of tensor payload bytes
-     */
+    /** Byte offset where tensor payload begins ({@code 8 + headerSize}). */
     long getTensorDataOffset();
 
-    /**
-     * Returns tensor alignment in bytes.
-     *
-     * <p>If {@code __alignment__} is not present in metadata, this is the default alignment.
-     *
-     * @return alignment in bytes
-     */
+    /** Tensor alignment in bytes. */
     int getAlignment();
 
-    /**
-     * Returns metadata from the __metadata__ key. Per spec, all values must be strings.
-     *
-     * @return unmodifiable map of metadata, empty if no __metadata__ present
-     */
+    /** Metadata from the __metadata__ key (unmodifiable, empty if absent). */
     Map<String, String> getMetadata();
 
-    /**
-     * Returns all tensors in this file, order is preserved.
-     *
-     * @return unmodifiable collection of tensor information
-     */
+    /** All tensors in this file (unmodifiable, order preserved). */
     Collection<TensorEntry> getTensors();
 
-    /**
-     * Returns information for a specific tensor.
-     *
-     * @param tensorName the tensor name
-     * @return tensor information, or null if not found
-     */
+    /** Returns tensor information, or null if not found. */
     TensorEntry getTensor(String tensorName);
 
-    /**
-     * Checks if a tensor exists.
-     *
-     * @param tensorName the tensor name
-     * @return true if tensor exists
-     */
     default boolean containsTensor(String tensorName) {
         return getTensor(tensorName) != null;
     }
 
     /**
-     * Returns the absolute byte offset where the tensor's data begins in the safetensors file.
-     *
-     * <p>This is a convenience method equivalent to {@code getTensorDataOffset() +
-     * tensor.byteOffset()}.
-     *
-     * <p>Example usage when reading tensor data:
-     *
-     * <pre>{@code
-     * Safetensors st = Safetensors.read(path);
-     * TensorEntry tensor = st.getTensor("weights");
-     * long absoluteOffset = st.absoluteOffset(tensor);
-     * // Use absoluteOffset to read from file channel
-     * }</pre>
-     *
-     * @param tensor the tensor entry
-     * @return the absolute byte offset in the file
-     * @throws NullPointerException if tensor is null
+     * Absolute byte offset where tensor data begins ({@code getTensorDataOffset() +
+     * tensor.byteOffset()}).
      */
     default long absoluteOffset(TensorEntry tensor) {
         Objects.requireNonNull(tensor, "tensor");
         return getTensorDataOffset() + tensor.byteOffset();
     }
 
-    /**
-     * Reads safetensors metadata from a channel. Only reads the header (8 bytes + N bytes JSON),
-     * not tensor payload data.
-     *
-     * @param channel the channel to read from
-     * @return safetensors metadata
-     * @throws IOException if I/O error or format violation
-     */
+    /** Reads safetensors metadata from a channel (header only, not tensor payload). */
     static Safetensors read(ReadableByteChannel channel) throws IOException {
         Objects.requireNonNull(channel, "channel");
         return ImplAccessor.read(channel);
     }
 
-    /**
-     * Reads safetensors metadata from a file.
-     *
-     * @param path the file path
-     * @return safetensors metadata
-     * @throws IOException if I/O error or format violation
-     */
+    /** Reads safetensors metadata from a file. */
     static Safetensors read(Path path) throws IOException {
         Objects.requireNonNull(path, "path");
         try (ReadableByteChannel channel =
                 Channels.newChannel(
                         new BufferedInputStream(
                                 Files.newInputStream(path, StandardOpenOption.READ), 1 << 16))) {
-            // Files.newByteChannel(path, StandardOpenOption.READ)) {
             return read(channel);
         }
     }
 
-    /**
-     * Writes a Safetensors header to a {@link WritableByteChannel}.
-     *
-     * @param safetensors the Safetensors instance to write
-     * @param byteChannel the channel to write to
-     * @throws IOException if an I/O error occurs during writing
-     */
+    /** Writes a Safetensors header to a channel. */
     static void write(Safetensors safetensors, WritableByteChannel byteChannel) throws IOException {
         Objects.requireNonNull(safetensors, "safetensors");
         Objects.requireNonNull(byteChannel, "byteChannel");
         ImplAccessor.write(safetensors, byteChannel);
     }
 
-    /**
-     * Writes a Safetensors header to a file at the specified path.
-     *
-     * @param safetensors the Safetensors instance to write
-     * @param modelPath the path where the Safetensors file should be written
-     * @throws IOException if an I/O error occurs during writing
-     */
+    /** Writes a Safetensors header to a file. */
     static void write(Safetensors safetensors, Path modelPath) throws IOException {
         Objects.requireNonNull(safetensors, "safetensors");
         Objects.requireNonNull(modelPath, "modelPath");

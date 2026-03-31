@@ -293,4 +293,29 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
         assertEquals(0, st.getTensor("tensor1").byteOffset());
         assertEquals(64, st.getTensor("tensor2").byteOffset());
     }
+
+    @Test
+    public void testContainsTensorWhenExists() {
+        Safetensors st =
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("embedding", DType.F32, new long[] {100}, 0))
+                        .build();
+        assertTrue(st.containsTensor("embedding"));
+        assertFalse(st.containsTensor("nonexistent"));
+    }
+
+    @Test
+    public void testBuilderGetMetadata() {
+        Builder builder = Builder.newBuilder().putMetadataKey("key", "value");
+        Map<String, String> metadata = builder.getMetadata();
+        assertEquals("value", metadata.get("key"));
+        assertThrows(UnsupportedOperationException.class, () -> metadata.put("x", "y"));
+    }
+
+    @Test
+    public void testBuilderGetMetadataEmpty() {
+        Builder builder = Builder.newBuilder();
+        Map<String, String> metadata = builder.getMetadata();
+        assertTrue(metadata.isEmpty());
+    }
 }

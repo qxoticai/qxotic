@@ -63,7 +63,6 @@ class ReaderImpl {
         }
         headerBuffer.flip();
 
-        // Validate header starts with '{'
         if (headerBuffer.get(0) != (byte) '{') {
             throw new SafetensorsFormatException("Invalid header: must start with '{' (0x7B)");
         }

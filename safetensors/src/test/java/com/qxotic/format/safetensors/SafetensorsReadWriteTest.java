@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.Channels;
+import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
@@ -495,6 +496,61 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
         TensorEntry tensor = st.getTensor("tensor");
         assertArrayEquals(new long[] {10}, tensor.shape());
         assertEquals(40, tensor.byteSize());
+    }
+
+    @Test
+    public void testPartialHeaderRead() throws IOException {
+        // Create channel that returns fewer bytes than header size
+        byte[] data = new byte[8]; // Just the size prefix
+        ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN).putLong(1000L); // Claim 1000 bytes
+        ByteArrayInputStream bais = new ByteArrayInputStream(data);
+        ReadableByteChannel channel = Channels.newChannel(bais);
+
+        assertThrows(IOException.class, () -> Safetensors.read(channel));
+    }
+
+    @Test
+    public void testTensorSizeMismatch() {
+        // F32[2,2] = 16 bytes, but data_offsets says 10 bytes
+        String json = "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[2,2],\"data_offsets\":[0,10]}}";
+        byte[] bytes = createSafetensorsBytes(json);
+        assertThrows(SafetensorsFormatException.class, () -> readFromBytes(bytes));
+    }
+
+    @Test
+    public void testNegativeEndOffset() {
+        String json = "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[1],\"data_offsets\":[0,-1]}}";
+        byte[] bytes = createSafetensorsBytes(json);
+        assertThrows(SafetensorsFormatException.class, () -> readFromBytes(bytes));
+    }
+
+    @Test
+    public void testBeginGreaterThanEnd() {
+        String json = "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[1],\"data_offsets\":[10,5]}}";
+        byte[] bytes = createSafetensorsBytes(json);
+        assertThrows(SafetensorsFormatException.class, () -> readFromBytes(bytes));
+    }
+
+    @Test
+    public void testNegativeBeginOffset() {
+        String json = "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[1],\"data_offsets\":[-5,4]}}";
+        byte[] bytes = createSafetensorsBytes(json);
+        assertThrows(SafetensorsFormatException.class, () -> readFromBytes(bytes));
+    }
+
+    @Test
+    public void testDoubleInShape() {
+        // JSON with Double values in shape array
+        String json = "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[1.5],\"data_offsets\":[0,4]}}";
+        byte[] bytes = createSafetensorsBytes(json);
+        assertThrows(SafetensorsFormatException.class, () -> readFromBytes(bytes));
+    }
+
+    @Test
+    public void testNaNInShape() {
+        String json = "{\"tensor\":{\"dtype\":\"F32\",\"shape\":[null],\"data_offsets\":[0,4]}}";
+        byte[] bytes = createSafetensorsBytes(json);
+        assertThrows(SafetensorsFormatException.class, () -> readFromBytes(bytes));
     }
 
     private byte[] createSafetensorsBytes(String json) {
