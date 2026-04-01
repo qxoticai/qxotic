@@ -1,9 +1,9 @@
 package com.qxotic.jota.examples.tokenizer;
 
-import com.qxotic.tokenizers.IntSequence;
-import com.qxotic.tokenizers.Tokenizer;
-import com.qxotic.tokenizers.Vocabulary;
-import com.qxotic.tokenizers.impl.Tiktoken;
+import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.Vocabulary;
+import com.qxotic.toknroll.impl.Tiktoken;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;

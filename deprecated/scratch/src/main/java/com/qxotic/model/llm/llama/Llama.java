@@ -4,7 +4,7 @@ import com.qxotic.span.FloatMatrixView;
 import com.qxotic.span.FloatSpan;
 import com.qxotic.span.FloatUnaryOperator;
 import com.qxotic.span.KernelOps;
-import com.qxotic.tokenizers.IntSequence;
+import com.qxotic.toknroll.IntSequence;
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
 

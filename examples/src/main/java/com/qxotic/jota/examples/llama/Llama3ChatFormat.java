@@ -1,9 +1,9 @@
 package com.qxotic.jota.examples.llama;
 
-import com.qxotic.tokenizers.IntSequence;
-import com.qxotic.tokenizers.Tokenizer;
-import com.qxotic.tokenizers.Vocabulary;
-import com.qxotic.tokenizers.advanced.StandardTokenType;
+import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.Vocabulary;
+import com.qxotic.toknroll.advanced.StandardTokenType;
 import java.util.OptionalInt;
 import java.util.Set;
 

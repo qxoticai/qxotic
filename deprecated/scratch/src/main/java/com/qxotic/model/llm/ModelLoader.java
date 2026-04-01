@@ -1,6 +1,6 @@
 package com.qxotic.model.llm;
 
-import com.qxotic.tokenizers.Tokenizer;
+import com.qxotic.toknroll.Tokenizer;
 
 public interface ModelLoader<M extends Model<C, W, S>, C, W, S> {
     M loadModel(C configuration);

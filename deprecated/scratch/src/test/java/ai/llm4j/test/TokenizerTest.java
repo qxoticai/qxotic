@@ -1,7 +1,7 @@
 package ai.llm4j.test;
 
 import com.qxotic.model.llm.ChatFormat;
-import com.qxotic.tokenizers.Tokenizer;
+import com.qxotic.toknroll.Tokenizer;
 import java.util.stream.Stream;
 
 public abstract class TokenizerTest {

@@ -3,7 +3,7 @@ package com.qxotic.model.llm;
 import com.qxotic.model.llm.generic.ChatMLFormat;
 import com.qxotic.model.llm.llama.Llama;
 import com.qxotic.model.llm.llama.TraceDebug;
-import com.qxotic.tokenizers.IntSequence;
+import com.qxotic.toknroll.IntSequence;
 import java.util.List;
 import java.util.Scanner;
 import java.util.Set;

@@ -10,7 +10,7 @@
   <name>Quixotic AI Parent</name>
   <description>Java toolkit for local LLM inference on the JVM</description>
   <url>https://qxotic.ai</url>
-  <inceptionYear>2025</inceptionYear>
+  <inceptionYear>2026</inceptionYear>
 
   <organization>
     <name>Quixotic AI</name>
@@ -38,7 +38,9 @@
     <module>gguf</module>
     <module>json</module>
     <module>safetensors</module>
-    <module>tokenizers</module>
+    <module>toknroll</module>
+    <module>toknroll/toknroll-gguf</module>
+    <module>toknroll/toknroll-safetensors</module>
     <module>jota</module>
     <module>examples</module>
 
@@ -211,7 +213,17 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
-        <artifactId>tokenizers</artifactId>
+        <artifactId>toknroll</artifactId>
+        <version>${qxotic.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>toknroll-gguf</artifactId>
+        <version>${qxotic.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>toknroll-safetensors</artifactId>
         <version>${qxotic.version}</version>
       </dependency>
       <dependency>

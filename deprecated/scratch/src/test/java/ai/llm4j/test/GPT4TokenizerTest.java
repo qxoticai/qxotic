@@ -3,12 +3,12 @@ package ai.llm4j.test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.model.llm.llama.Timer;
-import com.qxotic.tokenizers.IntSequence;
-import com.qxotic.tokenizers.Tokenizer;
-import com.qxotic.tokenizers.advanced.Normalizer;
-import com.qxotic.tokenizers.impl.ClassicBPE;
-import com.qxotic.tokenizers.impl.RegexSplitter;
-import com.qxotic.tokenizers.impl.Tiktoken;
+import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.advanced.Normalizer;
+import com.qxotic.toknroll.impl.ClassicBPE;
+import com.qxotic.toknroll.impl.RegexSplitter;
+import com.qxotic.toknroll.impl.Tiktoken;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

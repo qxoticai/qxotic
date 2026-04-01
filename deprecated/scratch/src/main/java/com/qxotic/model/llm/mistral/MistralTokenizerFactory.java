@@ -4,9 +4,9 @@ import com.google.auto.service.AutoService;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.model.llm.GGUFTokenizerFactory;
 import com.qxotic.model.llm.TokenizerFactory;
-import com.qxotic.tokenizers.Tokenizer;
-import com.qxotic.tokenizers.advanced.Normalizer;
-import com.qxotic.tokenizers.advanced.Splitter;
+import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.advanced.Normalizer;
+import com.qxotic.toknroll.advanced.Splitter;
 
 // Implementation for Mistral tokenizer
 @AutoService(TokenizerFactory.class)
