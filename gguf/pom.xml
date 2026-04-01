@@ -11,6 +11,30 @@
   <artifactId>gguf</artifactId>
   <name>Quixotic GGUF</name>
   <description>GGUF (GGML Universal Format) library for reading/writing llama.cpp .gguf files</description>
+  <url>https://github.com/qxoticai/qxotic</url>
+
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <name>Quixotic AI Team</name>
+      <organization>Quixotic AI</organization>
+      <organizationUrl>https://qxotic.ai</organizationUrl>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:https://github.com/qxoticai/qxotic.git</connection>
+    <developerConnection>scm:git:https://github.com/qxoticai/qxotic.git</developerConnection>
+    <tag>HEAD</tag>
+    <url>https://github.com/qxoticai/qxotic</url>
+  </scm>
 
   <dependencies>
     <dependency>
@@ -19,4 +43,22 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <configuration>
+          <source>11</source>
+          <show>public</show>
+          <nohelp>true</nohelp>
+          <failOnError>false</failOnError>
+          <doclint>none</doclint>
+          <legacyMode>true</legacyMode>
+          <excludePackageNames>com.qxotic.format.gguf.impl</excludePackageNames>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>

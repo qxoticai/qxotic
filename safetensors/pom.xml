@@ -23,4 +23,19 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <configuration>
+          <excludePackageNames>com.qxotic.format.safetensors.impl</excludePackageNames>
+          <sourceFileExcludes>
+            <sourceFileExclude>**/module-info.java</sourceFileExclude>
+          </sourceFileExcludes>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>
