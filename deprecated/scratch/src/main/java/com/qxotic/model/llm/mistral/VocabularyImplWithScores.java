@@ -1,6 +1,6 @@
 package com.qxotic.model.llm.mistral;
 
-import com.qxotic.tokenizers.impl.VocabularyImpl;
+import com.qxotic.toknroll.impl.VocabularyImpl;
 
 public class VocabularyImplWithScores extends VocabularyImpl {
 

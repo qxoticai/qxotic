@@ -5,8 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.model.llm.ChatFormat;
 import com.qxotic.model.llm.llama.Llama3ChatFormat;
-import com.qxotic.tokenizers.IntSequence;
-import com.qxotic.tokenizers.Tokenizer;
+import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Tokenizer;
 import java.util.List;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.params.ParameterizedTest;

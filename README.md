@@ -26,7 +26,7 @@ The JVM powers global finance, big data, and mission-critical infrastructure. Qu
 | Module | Description                                               |
 |--------|-----------------------------------------------------------|
 | [`jota`](./jota) | Tensor engine with CPU/GPU backends                       |
-| [`tokenizers`](./tokenizers) | TikToken-compatible, BPE and common LLM tokenizers        |
+| [`toknroll`](./toknroll) | TikToken-compatible, BPE and common LLM tokenizers        |
 | [`gguf`](./gguf) | Pure Java read/write for llama.cpp's GGUF model format    |
 | [`safetensors`](./safetensors) | Pure Java read/write for HuggingFace's Safetensors format |
 

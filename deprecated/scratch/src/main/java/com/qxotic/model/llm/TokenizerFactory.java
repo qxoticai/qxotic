@@ -1,8 +1,8 @@
 package com.qxotic.model.llm;
 
-import com.qxotic.tokenizers.Tokenizer;
-import com.qxotic.tokenizers.advanced.Normalizer;
-import com.qxotic.tokenizers.advanced.Splitter;
+import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.advanced.Normalizer;
+import com.qxotic.toknroll.advanced.Splitter;
 
 // TokenizerFactory interface that implementations will need to implement
 public interface TokenizerFactory<Source> {

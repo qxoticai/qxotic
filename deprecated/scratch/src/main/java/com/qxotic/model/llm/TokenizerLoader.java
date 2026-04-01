@@ -2,9 +2,9 @@ package com.qxotic.model.llm;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.model.llm.mistral.MistralTokenizerFactory;
-import com.qxotic.tokenizers.Tokenizer;
-import com.qxotic.tokenizers.advanced.Normalizer;
-import com.qxotic.tokenizers.advanced.Splitter;
+import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.advanced.Normalizer;
+import com.qxotic.toknroll.advanced.Splitter;
 import java.util.List;
 import java.util.Optional;
 import java.util.ServiceLoader;

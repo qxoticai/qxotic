@@ -9,7 +9,7 @@ import com.qxotic.model.llm.llama.Llama3ChatFormat;
 import com.qxotic.model.llm.mistral.MistralChatFormat;
 import com.qxotic.model.llm.phi3.Phi3ChatFormat;
 import com.qxotic.model.llm.qwen3.DeepSeekFormat;
-import com.qxotic.tokenizers.Tokenizer;
+import com.qxotic.toknroll.Tokenizer;
 import java.util.stream.Stream;
 
 public class GenericGGUFLoader

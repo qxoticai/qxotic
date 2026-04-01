@@ -1,9 +1,9 @@
 package com.qxotic.model.llm.generic;
 
 import com.qxotic.model.llm.ChatFormat;
-import com.qxotic.tokenizers.IntSequence;
-import com.qxotic.tokenizers.Tokenizer;
-import com.qxotic.tokenizers.Vocabulary;
+import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.Vocabulary;
 import java.util.Set;
 
 /** Utility tailored for the Chat Markup Language (ChatML) prompt format. */

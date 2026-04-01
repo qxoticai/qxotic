@@ -1,10 +1,10 @@
 package com.qxotic.model.llm.mistral;
 
-import com.qxotic.tokenizers.IntSequence;
-import com.qxotic.tokenizers.advanced.Normalizer;
-import com.qxotic.tokenizers.advanced.Splitter;
-import com.qxotic.tokenizers.advanced.StandardTokenType;
-import com.qxotic.tokenizers.impl.AbstractTokenizer;
+import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.advanced.Normalizer;
+import com.qxotic.toknroll.advanced.Splitter;
+import com.qxotic.toknroll.advanced.StandardTokenType;
+import com.qxotic.toknroll.impl.AbstractTokenizer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;

@@ -4,8 +4,8 @@ import com.google.auto.service.AutoService;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.model.llm.GGUFTextSplitterFactory;
 import com.qxotic.model.llm.TextSplitterFactory;
-import com.qxotic.tokenizers.advanced.Splitter;
-import com.qxotic.tokenizers.impl.RegexSplitter;
+import com.qxotic.toknroll.advanced.Splitter;
+import com.qxotic.toknroll.impl.RegexSplitter;
 
 @AutoService(TextSplitterFactory.class)
 public class Qwen2TextSplitterFactory implements GGUFTextSplitterFactory {

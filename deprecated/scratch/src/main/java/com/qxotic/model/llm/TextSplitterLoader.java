@@ -8,7 +8,7 @@ import com.qxotic.model.llm.granite.RefactTextSplitterFactory;
 import com.qxotic.model.llm.llama.LlamaBPETextSplitterFactory;
 import com.qxotic.model.llm.qwen2.Qwen2TextSplitterFactory;
 import com.qxotic.model.llm.smollm2.SmolLMTextSplitterFactory;
-import com.qxotic.tokenizers.advanced.Splitter;
+import com.qxotic.toknroll.advanced.Splitter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;

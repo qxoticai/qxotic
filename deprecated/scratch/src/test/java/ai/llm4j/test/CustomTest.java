@@ -2,8 +2,8 @@ package ai.llm4j.test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.tokenizers.IntSequence;
-import com.qxotic.tokenizers.Tokenizer;
+import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Tokenizer;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;

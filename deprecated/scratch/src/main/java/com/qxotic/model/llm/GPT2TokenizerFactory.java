@@ -2,13 +2,13 @@ package com.qxotic.model.llm;
 
 import com.google.auto.service.AutoService;
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.tokenizers.Tokenizer;
-import com.qxotic.tokenizers.Vocabulary;
-import com.qxotic.tokenizers.advanced.Normalizer;
-import com.qxotic.tokenizers.advanced.Splitter;
-import com.qxotic.tokenizers.impl.GPT2Tokenizer;
-import com.qxotic.tokenizers.impl.IntPair;
-import com.qxotic.tokenizers.impl.VocabularyImpl;
+import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.Vocabulary;
+import com.qxotic.toknroll.advanced.Normalizer;
+import com.qxotic.toknroll.advanced.Splitter;
+import com.qxotic.toknroll.impl.GPT2Tokenizer;
+import com.qxotic.toknroll.impl.IntPair;
+import com.qxotic.toknroll.impl.VocabularyImpl;
 import java.util.Arrays;
 import java.util.List;
 

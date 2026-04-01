@@ -9,7 +9,7 @@ import com.qxotic.model.llm.llama.RoPE;
 import com.qxotic.model.llm.llama.Timer;
 import com.qxotic.span.FloatMatrixView;
 import com.qxotic.span.FloatSpan;
-import com.qxotic.tokenizers.Tokenizer;
+import com.qxotic.toknroll.Tokenizer;
 import java.util.Arrays;
 
 public class Phi3Loader extends BaseLlamaLoader {

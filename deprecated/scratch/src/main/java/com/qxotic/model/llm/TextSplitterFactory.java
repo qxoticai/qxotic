@@ -1,6 +1,6 @@
 package com.qxotic.model.llm;
 
-import com.qxotic.tokenizers.advanced.Splitter;
+import com.qxotic.toknroll.advanced.Splitter;
 
 // TextSplitterFactory interface
 public interface TextSplitterFactory<Source> {
