@@ -7,10 +7,7 @@ import java.math.BigInteger;
 import java.util.*;
 import org.junit.jupiter.api.Test;
 
-/**
- * Comprehensive edge case tests for JSON parsing and stringify. Tests corner cases not covered in
- * other test files.
- */
+/** Edge case tests for JSON parsing and stringify. */
 class JsonEdgeCaseTests {
 
     // ===== Number Edge Cases =====

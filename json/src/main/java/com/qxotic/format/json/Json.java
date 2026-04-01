@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.*;
 
-/** Beautiful, minimal JSON parser and printer. RFC 8259 compliant, elegant, and fast. */
+/** Minimal JSON parser and printer. RFC 8259 compliant. */
 public final class Json {
 
     private Json() {}
@@ -581,7 +581,7 @@ public final class Json {
                 return Double.parseDouble(lexeme);
             }
 
-            // Integer — inline Long accumulation over validated digits
+            // Integer - inline Long accumulation over validated digits
             int i = start;
             boolean negative = input.charAt(i) == '-';
             if (negative) i++;

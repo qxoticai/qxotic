@@ -95,7 +95,7 @@ class JsonSpecComplianceTest {
         e = assertThrows(Json.ParseException.class, () -> Json.parse("00123"));
         assertTrue(e.getMessage().contains("Leading zeros"));
 
-        // Negative zero is allowed (parses as 0L — no negative zero for integers)
+        // Negative zero is allowed (parses as 0L - no negative zero for integers)
         Object parsed = Json.parse("-0");
         assertEquals(0L, parsed);
     }
