@@ -3,7 +3,11 @@ package com.qxotic.format.gguf.impl;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.MetadataValueType;
 import com.qxotic.format.gguf.TensorEntry;
-import java.util.*;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
 
 final class GGUFImpl implements GGUF {
     private final int version;

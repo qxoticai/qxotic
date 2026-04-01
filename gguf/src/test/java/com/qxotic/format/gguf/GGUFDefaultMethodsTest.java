@@ -4,9 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.Test;
 
-/**
- * Tests for GGUF interface default methods and edge cases.
- */
+/** Tests for GGUF interface default methods and edge cases. */
 public class GGUFDefaultMethodsTest {
 
     @Test
