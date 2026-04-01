@@ -25,7 +25,11 @@ import java.util.Set;
  *     specification</a>
  */
 public interface GGUF {
-    /** Returns the version number of the GGUF instance. */
+    /**
+     * Returns the version number of the GGUF instance.
+     *
+     * @return the GGUF format version
+     */
     int getVersion();
 
     /**
@@ -33,6 +37,8 @@ public interface GGUF {
      * alignment value.
      *
      * <p>The alignment determines the byte alignment requirements for tensor data.
+     *
+     * @return the alignment value in bytes
      */
     default int getAlignment() {
         if (containsKey(ImplAccessor.alignmentKey())) {
@@ -42,10 +48,18 @@ public interface GGUF {
         return ImplAccessor.defaultAlignment();
     }
 
-    /** Returns the byte offset where tensor data begins in the GGUF file. */
+    /**
+     * Returns the byte offset where tensor data begins in the GGUF file.
+     *
+     * @return the tensor data offset in bytes
+     */
     long getTensorDataOffset();
 
-    /** Returns a set of all metadata keys present in the GGUF metadata, order is preserved. */
+    /**
+     * Returns a set of all metadata keys present in the GGUF metadata, order is preserved.
+     *
+     * @return the metadata keys
+     */
     Set<String> getMetadataKeys();
 
     /**

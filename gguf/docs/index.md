@@ -42,7 +42,7 @@ for (TensorEntry tensor : gguf.getTensors()) {
 
 // Get specific tensor info
 TensorEntry weights = gguf.getTensor("token_embd.weight");
-long filePosition = weights.absoluteOffset(gguf);
+long filePosition = gguf.absoluteOffset(weights);
 long byteSize = weights.byteSize();
 ```
 
@@ -246,13 +246,7 @@ Write a complete GGUF file (metadata only):
 
 ### Alignment
 
-Alignment determines the byte boundary where tensor data must start in the GGUF file. This is important for performance:
-
-- **Memory access**: Aligned data can be read more efficiently by the CPU
-- **SIMD operations**: Vector instructions often require aligned memory addresses
-- **GPU transfers**: Aligned data transfers faster to GPU memory
-
-The alignment value must be a power of 2 (e.g., 32, 64, 128). The default is 32 bytes. When writing, padding bytes are automatically added between tensors to ensure each tensor starts at an aligned address:
+Tensor data must start at aligned byte boundaries for efficient CPU/GPU access. The alignment value must be a power of 2 (default: 32 bytes). Padding is added automatically between tensors:
 
 ```
 [Tensor 1 Data][padding][Tensor 2 Data][padding][Tensor 3 Data]
@@ -296,7 +290,7 @@ This library writes GGUF metadata only. Tensor data must be written separately a
 
 #### Writing from ByteBuffer
 
-The simplest approach - write metadata, seek to the tensor's position, then write the data:
+Write metadata, then seek to the tensor's position and write the data:
 
 ```java
 --8<-- "WritingSnippets.java:write-tensor-buffer"
@@ -313,7 +307,7 @@ try (FileChannel channel = FileChannel.open(Path.of("output.gguf"),
 
     for (TensorEntry tensor : gguf.getTensors()) {
         ByteBuffer data = getTensorData(tensor.name()); // your data source
-        channel.position(tensor.absoluteOffset(gguf));
+        channel.position(gguf.absoluteOffset(tensor));
         channel.write(data);
     }
 }
@@ -334,20 +328,6 @@ try {
 } catch (GGUFFormatException e) {
     System.err.println("Invalid GGUF file: " + e.getMessage());
 }
-```
-
-## Validation
-
-### Quick Validation
-
-```java
---8<-- "ValidationSnippets.java:quick-validate"
-```
-
-### Comprehensive Validation
-
-```java
---8<-- "ValidationSnippets.java:comprehensive-validate"
 ```
 
 ## Thread Safety

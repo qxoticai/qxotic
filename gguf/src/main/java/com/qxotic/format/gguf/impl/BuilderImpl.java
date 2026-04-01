@@ -1,8 +1,8 @@
 package com.qxotic.format.gguf.impl;
 
 import com.qxotic.format.gguf.Builder;
-import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.GGMLType;
+import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.MetadataValueType;
 import com.qxotic.format.gguf.TensorEntry;
 import java.lang.reflect.Array;
