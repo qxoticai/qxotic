@@ -1,156 +1,8 @@
 # JSON
 
-Strict, minimal JSON parser and printer for Java. RFC 8259 compliant, zero dependencies.
+Strict, minimal JSON parser and printer for Java. RFC 8259 compliant, zero dependencies, single class.
 
-## Features
-
-- **RFC 8259 compliant**: Strict parsing, no deviations
-- **Type-safe APIs**: `parseMap()`, `parseList()`, typed root parsing
-- **Precise decimals**: `BigDecimal` by default, optional `Double`
-- **Detailed errors**: Line/column positions with source context
-- **Zero dependencies**: Single class, no external requirements
-
-## What is JSON?
-
-JSON (JavaScript Object Notation) is a lightweight data interchange format. This library provides:
-
-- **Parsing**: Convert JSON strings to Java objects
-- **Serialization**: Convert Java objects to JSON strings
-- **Validation**: Check JSON validity without parsing
-- **Type mapping**: JSON values map to specific Java types
-
-!!! info "Library Scope"
-    This library provides **parsing and serialization only**. It does **not**:
-    - Schema validation (beyond JSON syntax)
-    - Streaming/chunked parsing
-    - Custom type adapters
-
-## Quick Start
-
-```java
-import com.qxotic.format.json.Json;
-
-import java.util.Map;
-
-// Parse JSON string
-Map<String, Object> config = Json.parseMap("{\"host\":\"localhost\",\"port\":8080}");
-
-String host = (String) config.get("host");
-Long port = (Long) config.get("port");
-
-// Serialize back to JSON
-String json = Json.stringify(config);
-```
-
-## Java Type Mappings
-
-JSON values are mapped to Java types as follows:
-
-### Objects
-
-JSON objects become `Map<String, Object>`:
-
-```java
-// {"name": "alice", "age": 30}
-Map<String, Object> person = Json.parseMap(json);
-String name = (String) person.get("name");
-Long age = (Long) person.get("age");
-```
-
-The map implementation preserves insertion order (LinkedHashMap).
-
-### Arrays
-
-JSON arrays become `List<Object>`:
-
-```java
-// [1, 2, 3]
-List<Object> numbers = Json.parseList(json);
-Long first = (Long) numbers.get(0);
-```
-
-### Strings
-
-JSON strings become `String`:
-
-```java
-// "hello world"
-String text = Json.parseString(json);
-```
-
-### Numbers
-
-JSON numbers become different Java types based on value:
-
-| JSON Value | Java Type | Example |
-|------------|-----------|---------|
-| Integer within `long` range | `Long` | `42` → `Long` |
-| Integer exceeds `long` range | `BigInteger` | `99999999999999999999` → `BigInteger` |
-| Decimal (default) | `BigDecimal` | `3.14159` → `BigDecimal` |
-| Decimal (optional) | `Double` | `3.14159` → `Double` |
-
-```java
-// Integer - fits in long
-Number small = Json.parseNumber("42");
-// small instanceof Long
-
-// Integer - exceeds long range
-Number big = Json.parseNumber("99999999999999999999");
-// big instanceof BigInteger
-
-// Decimal - precise (default)
-Number precise = Json.parseNumber("0.1");
-// precise instanceof BigDecimal
-
-// Decimal - fast approximation
-Json.ParseOptions fast = Json.options().decimalsAsBigDecimal(false);
-Number approx = Json.parseNumber("0.1", fast);
-// approx instanceof Double
-```
-
-!!! tip "Decimal Precision"
-    Use `BigDecimal` (default) for financial or scientific data requiring exact precision. Use `Double` for better performance when approximate precision is acceptable.
-
-### Booleans
-
-JSON booleans become `Boolean`:
-
-```java
-// true or false
-Boolean active = Json.parseBoolean("true");
-```
-
-### Null
-
-JSON `null` becomes a special sentinel value `Json.NULL` (not Java `null`):
-
-```java
-Map<String, Object> obj = Json.parseMap("{\"value\":null}");
-Object value = obj.get("value");
-
-// Check for JSON null using reference equality
-if (value == Json.NULL) {
-    // Key exists, value is JSON null
-}
-
-// Distinguish from missing key
-Object missing = obj.get("missing");
-if (missing == null) {
-    // Key doesn't exist
-}
-```
-
-## Type Mapping Summary
-
-| JSON Type | Default Java Type | Notes |
-|-----------|-------------------|-------|
-| `object` | `Map<String, Object>` | Insertion order preserved |
-| `array` | `List<Object>` | ArrayList implementation |
-| `string` | `String` | Unicode fully supported |
-| `number` (integer) | `Long` or `BigInteger` | Auto-promotes if too large |
-| `number` (decimal) | `BigDecimal` | Precise; use options for `Double` |
-| `boolean` | `Boolean` | `true` or `false` |
-| `null` | `Json.NULL` | Sentinel value, not Java `null` |
+Parses JSON directly into standard Java types: `Map` for objects, `List` for arrays, `String`, `Long`/`BigInteger`, `BigDecimal`, `Boolean`, and `Json.NULL`. No custom node objects, just the collections and values you already use.
 
 ## Installation
 
@@ -173,147 +25,89 @@ if (missing == null) {
 === "Mill"
 
     ```scala
-    ivy"com.qxotic::json:0.1.0"
+    mvn"com.qxotic:json:0.1.0"
     ```
 
-## Parsing JSON
-
-### Generic Parsing
+## Quick Start
 
 ```java
---8<-- "json/src/test/java/com/qxotic/format/json/Snippets.java:parse-generic"
+--8<-- "Snippets.java:quick-start"
 ```
 
-### Typed Root Parsing
+## Parsing
+
+Parse any JSON value:
 
 ```java
---8<-- "json/src/test/java/com/qxotic/format/json/Snippets.java:parse-typed-root"
+--8<-- "Snippets.java:parse-generic"
 ```
 
-### Query Methods
-
-Navigate nested structures safely with type-safe query methods:
+Use typed methods when you know the root type:
 
 ```java
---8<-- "json/src/test/java/com/qxotic/format/json/Snippets.java:query-methods"
+--8<-- "Snippets.java:parse-typed-root"
 ```
 
-### Object Access Patterns
+Validate without parsing:
 
 ```java
---8<-- "json/src/test/java/com/qxotic/format/json/Snippets.java:parse-object-access"
+--8<-- "Snippets.java:parse-validation"
 ```
 
-### Validation
+## Query Methods
+
+Access nested values without casting:
 
 ```java
---8<-- "json/src/test/java/com/qxotic/format/json/Snippets.java:parse-validation"
+--8<-- "Snippets.java:query-methods"
+```
+
+## Serialization
+
+```java
+--8<-- "Snippets.java:stringify-basic"
+```
+
+## Type Mapping
+
+| JSON | Java | Notes |
+|------|------|-------|
+| `object` | `Map<String, Object>` | LinkedHashMap, insertion order preserved |
+| `array` | `List<Object>` | ArrayList |
+| `string` | `String` | |
+| `number` (integer) | `Long` / `BigInteger` | Auto-promotes on overflow |
+| `number` (decimal) | `BigDecimal` | `Double` with `decimalsAsBigDecimal(false)` |
+| `boolean` | `Boolean` | |
+| `null` | `Json.NULL` | Sentinel, not Java `null` |
+
+## Null Handling
+
+```java
+--8<-- "Snippets.java:null-handling"
 ```
 
 ## Parse Options
 
-### Basic Options
-
 ```java
---8<-- "json/src/test/java/com/qxotic/format/json/Snippets.java:parse-options-basic"
+--8<-- "Snippets.java:parse-options-basic"
 ```
 
-### Decimal Handling
-
-```java
---8<-- "json/src/test/java/com/qxotic/format/json/Snippets.java:parse-options-decimals"
-```
-
-### Depth Limiting
-
-```java
---8<-- "json/src/test/java/com/qxotic/format/json/Snippets.java:parse-options-depth"
-```
-
-### Duplicate Key Handling
-
-```java
---8<-- "json/src/test/java/com/qxotic/format/json/Snippets.java:parse-options-duplicate"
-```
-
-## Serializing to JSON
-
-### Basic Serialization
-
-```java
---8<-- "json/src/test/java/com/qxotic/format/json/Snippets.java:stringify-basic"
-```
-
-### Pretty Printing
-
-```java
---8<-- "json/src/test/java/com/qxotic/format/json/Snippets.java:stringify-pretty"
-```
-
-### Round-Trip Example
-
-```java
---8<-- "json/src/test/java/com/qxotic/format/json/Snippets.java:round-trip"
-```
-
-## Data Model Details
-
-### Working with Numbers
-
-```java
---8<-- "json/src/test/java/com/qxotic/format/json/Snippets.java:data-model"
-```
-
-### Null Handling
-
-```java
---8<-- "json/src/test/java/com/qxotic/format/json/Snippets.java:null-handling"
-```
+| Option | Default | Description |
+|--------|---------|-------------|
+| `maxDepth(int)` | 1000 | Maximum nesting depth |
+| `decimalsAsBigDecimal(boolean)` | true | `BigDecimal` or `Double` for decimals |
+| `failOnDuplicateKeys(boolean)` | false | Reject duplicate object keys |
 
 ## Error Handling
 
-### Parse Exceptions
+`Json.ParseException` includes position, line, column, and a visual caret:
 
 ```java
---8<-- "json/src/test/java/com/qxotic/format/json/Snippets.java:error-handling"
+--8<-- "Snippets.java:error-handling"
 ```
 
-### Common Error Types
+Serialization rejects cyclic structures and `NaN`/`Infinity`:
 
 ```java
---8<-- "json/src/test/java/com/qxotic/format/json/Snippets.java:error-types"
+--8<-- "Snippets.java:stringify-validation"
 ```
-
-## Validation Constraints
-
-### Cyclic Structure Detection
-
-```java
---8<-- "json/src/test/java/com/qxotic/format/json/Snippets.java:stringify-validation"
-```
-
-## Unicode Support
-
-```java
---8<-- "json/src/test/java/com/qxotic/format/json/Snippets.java:unicode"
-```
-
-## GGUF Integration Example
-
-```java
---8<-- "json/src/test/java/com/qxotic/format/json/Snippets.java:gguf-integration"
-```
-
-## Thread Safety
-
-!!! info "Concurrency"
-    - `Json` class methods are **thread-safe** and can be called concurrently
-    - `ParseOptions` instances are **immutable** and reusable across threads
-    - Parsed objects (Map, List) are standard Java collections - not thread-safe for concurrent modification
-
-## Next Steps
-
-- [Parsing Guide](guides/parsing.md) - Parse options, typed roots, validation, query methods
-- [Serialization Guide](guides/serialization.md) - Compact vs pretty, round-trips
-- [Error Handling](guides/error-handling.md) - Exception details, common errors
-- [Migration Guide](guides/migration.md) - Moving from Jackson, Gson, or org.json

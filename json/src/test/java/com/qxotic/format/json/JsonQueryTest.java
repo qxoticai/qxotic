@@ -7,7 +7,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/** Comprehensive tests for the new query API and type check methods. */
+/** Tests for query API and type check methods. */
 class JsonQueryTest {
 
     // ============== Query String Tests ==============

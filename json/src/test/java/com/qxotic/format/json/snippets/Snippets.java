@@ -1,17 +1,15 @@
-package com.qxotic.format.json;
+package com.qxotic.format.json.snippets;
+
+import com.qxotic.format.json.Json;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
-/**
- * Documentation snippets for Json module.
- *
- * <p>All code in docs/ must reference snippets from this file. Never write code directly in
- * Markdown.
- */
+/** Code snippets referenced from docs/. */
 @SuppressWarnings("unused")
 class Snippets {
 
@@ -100,6 +98,29 @@ class Snippets {
     }
 
     private void process(Map<String, Object> data) {}
+
+    // ========== QUERY METHODS ==========
+
+    void queryMethods() {
+        // --8<-- [start:query-methods]
+        Map<String, Object> data =
+                Json.parseMap(
+                        "{\"user\":{\"profile\":{\"name\":\"alice\",\"age\":30},\"active\":true}}");
+
+        // Type-safe nested access, no casting needed
+        Optional<String> name = Json.queryString(data, "user", "profile", "name");
+        Optional<Number> age = Json.queryNumber(data, "user", "profile", "age");
+        Optional<Boolean> active = Json.queryBoolean(data, "user", "active");
+        Optional<Map<String, Object>> profile = Json.queryMap(data, "user", "profile");
+
+        // Missing keys return empty Optional
+        Optional<String> missing = Json.queryString(data, "user", "email");
+        // missing.isPresent() == false
+
+        // Use with defaults
+        String email = Json.queryString(data, "user", "email").orElse("unknown");
+        // --8<-- [end:query-methods]
+    }
 
     // ========== PARSE OPTIONS ==========
 

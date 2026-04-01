@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.*;
 import org.junit.jupiter.api.Test;
 
-/** Additional tests for comprehensive coverage of Json parsing and serialization. */
+/** Tests for Json parsing and serialization. */
 class JsonCompleteTest {
 
     // ===== Null.toString() coverage =====
