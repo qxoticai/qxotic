@@ -1,7 +1,7 @@
 site_name: GGUF
 site_description: A Java library for reading and writing GGUF files
-repo_url: https://github.com/qxoticai/llama4j
-repo_name: qxoticai/llama4j
+repo_url: https://github.com/qxoticai/qxotic
+repo_name: qxoticai/qxotic
 edit_uri: edit/main/gguf/docs/
 
 theme:
