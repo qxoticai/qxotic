@@ -9,11 +9,8 @@ import com.qxotic.toknroll.impl.BpeSymbolEncoder;
 import com.qxotic.toknroll.impl.ClassicBPE;
 import com.qxotic.toknroll.impl.FastTikToken;
 import com.qxotic.toknroll.impl.GenericBPE;
-import com.qxotic.toknroll.impl.Tiktoken;
-import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
-import java.util.regex.Pattern;
 
 /** High-level factory methods for building {@link Tokenizer} instances. */
 public final class Tokenizers {
@@ -27,63 +24,6 @@ public final class Tokenizers {
     /** Creates a builder for advanced tokenizer pipeline composition around a base tokenizer. */
     public static TokenizationPipeline.Builder pipeline(Tokenizer baseTokenizer) {
         return TokenizationPipeline.builder(Objects.requireNonNull(baseTokenizer, "baseTokenizer"));
-    }
-
-    /**
-     * Creates a JTokkit-backed tokenizer from TikToken data.
-     *
-     * @param name tokenizer name
-     * @param mergeableRanks mergeable token ranks
-     * @param splitPattern tokenizer split pattern
-     * @param specialTokens special token to id mapping
-     */
-    public static Tokenizer fromTiktoken(
-            String name,
-            Map<String, Integer> mergeableRanks,
-            Pattern splitPattern,
-            Map<String, Integer> specialTokens) {
-        return Tiktoken.createFromTiktoken(
-                Objects.requireNonNull(name, "name"),
-                Objects.requireNonNull(mergeableRanks, "mergeableRanks"),
-                Objects.requireNonNull(splitPattern, "splitPattern"),
-                Objects.requireNonNull(specialTokens, "specialTokens"));
-    }
-
-    /**
-     * Creates a JTokkit-backed tokenizer from TikToken data with no explicit special tokens.
-     *
-     * <p>Special token map defaults to empty.
-     */
-    public static Tokenizer fromTiktoken(
-            String name, Map<String, Integer> mergeableRanks, Pattern splitPattern) {
-        return fromTiktoken(name, mergeableRanks, splitPattern, Collections.emptyMap());
-    }
-
-    /**
-     * Creates a JTokkit-backed tokenizer from TikToken data.
-     *
-     * @param splitPattern tokenizer split regex pattern
-     */
-    public static Tokenizer fromTiktoken(
-            String name,
-            Map<String, Integer> mergeableRanks,
-            String splitPattern,
-            Map<String, Integer> specialTokens) {
-        return fromTiktoken(
-                name,
-                mergeableRanks,
-                Pattern.compile(Objects.requireNonNull(splitPattern, "splitPattern")),
-                specialTokens);
-    }
-
-    /**
-     * Creates a JTokkit-backed tokenizer from TikToken data with no explicit special tokens.
-     *
-     * <p>Special token map defaults to empty.
-     */
-    public static Tokenizer fromTiktoken(
-            String name, Map<String, Integer> mergeableRanks, String splitPattern) {
-        return fromTiktoken(name, mergeableRanks, splitPattern, Collections.emptyMap());
     }
 
     /**

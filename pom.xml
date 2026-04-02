@@ -39,6 +39,7 @@
     <module>json</module>
     <module>safetensors</module>
     <module>toknroll</module>
+    <module>toknroll/toknroll-jtokkit</module>
     <module>toknroll/toknroll-gguf</module>
     <module>toknroll/toknroll-safetensors</module>
     <module>jota</module>
@@ -214,6 +215,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll</artifactId>
+        <version>${qxotic.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>toknroll-jtokkit</artifactId>
         <version>${qxotic.version}</version>
       </dependency>
       <dependency>

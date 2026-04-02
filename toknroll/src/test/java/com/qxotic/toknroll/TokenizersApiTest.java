@@ -15,7 +15,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.text.Normalizer.Form;
 import java.util.Map;
-import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 class TokenizersApiTest {
@@ -62,38 +61,6 @@ class TokenizersApiTest {
         assertThrows(NullPointerException.class, () -> tokenizer.encodeInto(text, null));
         assertThrows(
                 NullPointerException.class, () -> tokenizer.encodeInto((CharSequence) null, out));
-    }
-
-    @Test
-    void fromTiktokenFacadeBuildsWorkingTokenizer() throws Exception {
-        Map<String, Integer> mergeableRanks =
-                ClassicBPE.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
-
-        Tokenizer tokenizer =
-                Tokenizers.fromTiktoken(
-                        R50K_NAME, mergeableRanks, Pattern.compile(R50K_PATTERN), R50K_SPECIALS);
-
-        String text = "The quick brown fox";
-        IntSequence tokens = tokenizer.encode(text);
-        assertEquals(text, tokenizer.decode(tokens));
-        assertEquals(tokens.length(), tokenizer.countTokens(text));
-    }
-
-    @Test
-    void fromTiktokenOverloadsWork() throws Exception {
-        Map<String, Integer> mergeableRanks =
-                ClassicBPE.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
-
-        Tokenizer tokenizerWithRegexString =
-                Tokenizers.fromTiktoken(R50K_NAME, mergeableRanks, R50K_PATTERN, R50K_SPECIALS);
-        Tokenizer tokenizerWithImplicitSpecials =
-                Tokenizers.fromTiktoken(R50K_NAME + "-nospecial", mergeableRanks, R50K_PATTERN);
-
-        String text = "From overloads";
-        assertEquals(text, tokenizerWithRegexString.decode(tokenizerWithRegexString.encode(text)));
-        assertEquals(
-                text,
-                tokenizerWithImplicitSpecials.decode(tokenizerWithImplicitSpecials.encode(text)));
     }
 
     @Test
@@ -147,18 +114,6 @@ class TokenizersApiTest {
         Map<String, Integer> ranks = Map.of("a", 0);
         Tokenizer tokenizer =
                 createTokenizer(R50K_NAME, R50K_FILE, R50K_HASH, R50K_PATTERN, R50K_SPECIALS);
-        assertThrows(
-                NullPointerException.class,
-                () -> Tokenizers.fromTiktoken(null, ranks, Pattern.compile("."), Map.of()));
-        assertThrows(
-                NullPointerException.class,
-                () -> Tokenizers.fromTiktoken("x", null, Pattern.compile("."), Map.of()));
-        assertThrows(
-                NullPointerException.class,
-                () -> Tokenizers.fromTiktoken("x", ranks, (Pattern) null, Map.of()));
-        assertThrows(
-                NullPointerException.class,
-                () -> Tokenizers.fromTiktoken("x", ranks, Pattern.compile("."), null));
         assertThrows(
                 NullPointerException.class,
                 () -> Tokenizers.classicBpe(ranks, Map.of(), (String) null));
@@ -272,8 +227,7 @@ class TokenizersApiTest {
         try {
             Map<String, Integer> mergeableRanks =
                     ClassicBPE.loadMergeableRanks(resourcePath(file).toString(), hash);
-            return Tokenizers.fromTiktoken(
-                    name, mergeableRanks, Pattern.compile(pattern), specials);
+            return Tokenizers.fastBpe(mergeableRanks, specials, pattern);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to create tokenizer " + name, e);
         }

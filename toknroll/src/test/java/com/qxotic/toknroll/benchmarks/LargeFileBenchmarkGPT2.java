@@ -2,12 +2,11 @@ package com.qxotic.toknroll.benchmarks;
 
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.Tokenizers;
 import com.qxotic.toknroll.impl.ClassicBPE;
-import com.qxotic.toknroll.impl.Tiktoken;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.regex.Pattern;
 
 /**
  * Large file benchmark for testing GPT-2 (r50k_base) tokenizer performance on the enwik9 dataset.
@@ -132,11 +131,10 @@ public class LargeFileBenchmarkGPT2 {
 
         var mergeableRanks = ClassicBPE.loadMergeableRanks(tiktokenPath.toString(), R50K_BASE_HASH);
 
-        return Tiktoken.createFromTiktoken(
-                "r50k_base",
+        return Tokenizers.fastBpe(
                 mergeableRanks,
-                Pattern.compile(R50K_PATTERN),
-                java.util.Map.of("<|endoftext|>", 50256));
+                java.util.Map.of("<|endoftext|>", 50256),
+                R50K_PATTERN);
     }
 
     private static double average(double[] values) {

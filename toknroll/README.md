@@ -1,10 +1,10 @@
-# Quixotic Tok’n’Roll
+# Tok’n’Roll
 
 [![Java](https://img.shields.io/badge/Java-17+-blue)](https://openjdk.org/projects/jdk/17/)
 [![GraalVM](https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F)](https://www.graalvm.org/latest/reference-manual/native-image/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
-> The best tokenizer is no tokenizer at all; in the meantime, this library bridges the gap.
+> *The best tokenizer is no tokenizer at all; in the meantime, this library bridges the gap.*
 
 Tok’n’Roll (`toknroll`) is a pure Java library for LLM tokenization with a focus on TikToken compatibility, predictable behavior, and good runtime performance.
 
@@ -14,7 +14,7 @@ not ship model catalogs or downloaded tokenizer assets.
 ## Features
 
 - TikToken-compatible BPE tokenization
-- Backed by [JTokkit](https://github.com/knuddelsgmbh/jtokkit) for fast production paths
+- Optional [JTokkit](https://github.com/knuddelsgmbh/jtokkit) adapter module for compatibility paths
 - Includes a classic GPT-2 style BPE implementation
 - Strong test coverage against reference tokenizers
 - `IntSequence` API to avoid unnecessary boxing/copying
@@ -53,6 +53,7 @@ TikToken encoding fixtures used in tests include `r50k_base`, `p50k_base`, `cl10
 
 Optional utility modules:
 
+- `com.qxotic:toknroll-jtokkit` for `Tokenizers.fromTiktoken(...)` via JTokkit-backed compatibility
 - `com.qxotic:toknroll-gguf` for building tokenizers from GGUF metadata (bring your own `.gguf`)
 - `com.qxotic:toknroll-safetensors` for building tokenizers from HuggingFace tokenizer files (bring your own `tokenizer.json` and companion files)
 
@@ -62,16 +63,10 @@ Ground-truth fixtures are generated with `./generate-ground-truth.py`:
 - `src/test/resources/ground_truth_tokens.json` for OpenAI tokenizer families
 - `src/test/resources/ground_truth_model_families.json` for modern model families (Gemma 3, Qwen 3.5, Phi-4, Mistral Tekken) when optional Python dependencies are installed
 
-Optional dependencies for model-family fixtures:
+Python dependencies for benchmarks and model-family fixtures (`uv`, local `.venv`):
 
 ```bash
-pip install transformers tokenizers huggingface_hub mistral-common
-```
-
-Python benchmark optional deps (in local `.venv`):
-
-```bash
-uv pip install --python .venv/bin/python tiktoken tokenizers mistral-common tokie
+uv pip install --python .venv/bin/python -r requirements.txt
 ```
 
 ### Quick API examples
