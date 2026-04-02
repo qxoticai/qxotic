@@ -11,7 +11,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 
 public final class TiktokenFixtures {
 
@@ -130,11 +129,11 @@ public final class TiktokenFixtures {
                     EncodingFixture fixture = encoding(name);
                     Map<String, Integer> ranks =
                             loadMergeableRanks(fixture.fileName(), fixture.hash());
-                    return Tokenizers.fromTiktoken(
-                            fixture.name(),
+                    return Tokenizers.fastBpe(
                             ranks,
-                            Pattern.compile(fixture.pattern(), Pattern.UNICODE_CHARACTER_CLASS),
-                            fixture.specialTokens());
+                            fixture.specialTokens(),
+                            Normalizer.identity(),
+                            RegexSplitter.create(fixture.pattern()));
                 });
     }
 
@@ -202,8 +201,10 @@ public final class TiktokenFixtures {
         return Collections.unmodifiableMap(encoding(encodingName).specialTokens());
     }
 
-    public static Pattern splitPattern(String encodingName) {
-        return Pattern.compile(encoding(encodingName).pattern(), Pattern.UNICODE_CHARACTER_CLASS);
+    public static java.util.regex.Pattern splitPattern(String encodingName) {
+        return java.util.regex.Pattern.compile(
+                encoding(encodingName).pattern(),
+                java.util.regex.Pattern.UNICODE_CHARACTER_CLASS);
     }
 
     private static Path resourcePath(String fileName) {

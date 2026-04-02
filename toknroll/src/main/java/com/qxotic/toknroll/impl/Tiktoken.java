@@ -1,12 +1,10 @@
 package com.qxotic.toknroll.impl;
 
-import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.advanced.ByteEncoding;
 import java.io.BufferedReader;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.regex.Pattern;
 
 public class Tiktoken {
 
@@ -30,11 +28,4 @@ public class Tiktoken {
         return mergeableRanks;
     }
 
-    public static Tokenizer createFromTiktoken(
-            String name,
-            Map<String, Integer> mergeableRanks,
-            Pattern splitPattern,
-            Map<String, Integer> specialTokens) {
-        return JTokkitAdapter.create(name, splitPattern, mergeableRanks, specialTokens);
-    }
 }

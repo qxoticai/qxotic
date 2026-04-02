@@ -2,11 +2,10 @@ package com.qxotic.toknroll.benchmarks;
 
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.Tokenizers;
 import com.qxotic.toknroll.impl.ClassicBPE;
-import com.qxotic.toknroll.impl.Tiktoken;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Pattern;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.infra.Blackhole;
 
@@ -75,16 +74,15 @@ public class TokenizerBenchmark {
             var mergeableRanks =
                     ClassicBPE.loadMergeableRanks(tiktokenPath.toString(), CL100K_BASE_HASH);
 
-            return Tiktoken.createFromTiktoken(
-                    "cl100k_base",
+            return Tokenizers.fastBpe(
                     mergeableRanks,
-                    Pattern.compile(CL100K_PATTERN),
                     java.util.Map.of(
                             "<|endoftext|>", 100257,
                             "<|fim_prefix|>", 100258,
                             "<|fim_middle|>", 100259,
                             "<|fim_suffix|>", 100260,
-                            "<|endofprompt|>", 100276));
+                            "<|endofprompt|>", 100276),
+                    CL100K_PATTERN);
         } catch (Exception e) {
             throw new RuntimeException("Failed to create tokenizer", e);
         }
