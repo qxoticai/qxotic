@@ -87,16 +87,20 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
     /**
      * Returns a primitive iterator over the integers in this sequence.
      *
+     * <p>The iterator captures the sequence length at creation time. Iteration does not extend to
+     * elements appended after iterator creation.
+     *
      * @return a PrimitiveIterator.OfInt instance for this sequence
      */
     @Override
     default PrimitiveIterator.OfInt iterator() {
+        final int iterationLength = length();
         return new PrimitiveIterator.OfInt() {
             private int index = 0;
 
             @Override
             public boolean hasNext() {
-                return index < length();
+                return index < iterationLength;
             }
 
             @Override
@@ -410,10 +414,15 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
             return this;
         }
 
-        /** Adds all elements from another builder. */
+        /**
+         * Adds all elements from another builder.
+         *
+         * <p>The source builder is read as a fixed-size snapshot at call time.
+         */
         default Builder addAll(Builder elems) {
-            return addAll(Objects.requireNonNull(elems, "elems").asSequenceView());
+            return addAll(Objects.requireNonNull(elems, "elems").snapshot());
         }
+
     }
 
     /**
