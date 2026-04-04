@@ -27,5 +27,4 @@ public class Tiktoken {
 
         return mergeableRanks;
     }
-
 }

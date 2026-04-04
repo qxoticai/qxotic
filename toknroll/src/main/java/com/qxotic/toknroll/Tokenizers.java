@@ -190,7 +190,8 @@ public final class Tokenizers {
      * Wraps a tokenizer with an explicit text transform applied before {@link Tokenizer#encode}.
      *
      * <p>This is the opt-in path for potentially lossy input mutation such as Unicode normalization
-     * or case folding.
+     * or case folding. Such mutation can break round-trip integrity and is generally discouraged
+     * unless explicitly desired.
      */
     public static Tokenizer withTextTransform(Tokenizer tokenizer, Normalizer transform) {
         return pipeline(Objects.requireNonNull(tokenizer, "tokenizer"))

@@ -78,7 +78,9 @@ class SplitterComponentTest {
                 List.of(
                         Splitter.regex("\\s+|[,.!?]"),
                         Splitter.regex("\\p{N}{1,3}| ?\\p{L}+| ?[^\\s\\p{L}\\p{N}]+|\\s+"),
-                        Splitter.regex("(?:'[sdmt]|ll|ve|re)| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+"));
+                        Splitter.regex(
+                                "(?:'[sdmt]|ll|ve|re)| ?\\p{L}+| ?\\p{N}+|"
+                                        + " ?[^\\s\\p{L}\\p{N}]+|\\s+"));
 
         for (int i = 0; i < splitters.size(); i++) {
             Splitter splitter = splitters.get(i);

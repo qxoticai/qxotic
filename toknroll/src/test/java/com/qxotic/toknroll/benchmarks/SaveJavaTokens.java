@@ -72,8 +72,6 @@ public class SaveJavaTokens {
         var mergeableRanks = ClassicBPE.loadMergeableRanks(tiktokenPath.toString(), R50K_BASE_HASH);
 
         return Tokenizers.fastBpe(
-                mergeableRanks,
-                java.util.Map.of("<|endoftext|>", 50256),
-                R50K_PATTERN);
+                mergeableRanks, java.util.Map.of("<|endoftext|>", 50256), R50K_PATTERN);
     }
 }

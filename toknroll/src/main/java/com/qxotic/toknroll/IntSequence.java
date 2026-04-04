@@ -1,14 +1,7 @@
 package com.qxotic.toknroll;
 
 import com.qxotic.toknroll.impl.ImplAccessor;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.NoSuchElementException;
-import java.util.Objects;
-import java.util.PrimitiveIterator;
-import java.util.Spliterator;
-import java.util.Spliterators;
+import java.util.*;
 import java.util.function.IntConsumer;
 import java.util.stream.IntStream;
 import java.util.stream.StreamSupport;
@@ -453,15 +446,11 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
      * @return a string representation of this sequence
      */
     default String toString(CharSequence delimiter, CharSequence prefix, CharSequence suffix) {
-        StringBuilder sb = new StringBuilder(prefix);
+        StringJoiner joiner = new StringJoiner(delimiter, prefix, suffix);
         int length = length();
-        if (length > 0) {
-            sb.append(intAt(0));
-            for (int i = 1; i < length; ++i) {
-                sb.append(delimiter);
-                sb.append(intAt(i));
-            }
+        for (int i = 0; i < length; ++i) {
+            joiner.add(Integer.toString(intAt(i)));
         }
-        return sb.append(suffix).toString();
+        return joiner.toString();
     }
 }
