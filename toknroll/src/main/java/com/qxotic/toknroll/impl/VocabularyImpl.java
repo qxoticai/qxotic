@@ -30,11 +30,42 @@ public class VocabularyImpl implements Vocabulary {
     }
 
     private static String[] computeTokens(Map<String, Integer> tokenToId) {
-        String[] tokens = new String[tokenToId.size()];
+        int maxId = -1;
         for (Map.Entry<String, Integer> entry : tokenToId.entrySet()) {
-            tokens[entry.getValue()] = entry.getKey();
+            Integer id = entry.getValue();
+            if (id == null) {
+                throw new IllegalArgumentException("token id cannot be null for token: " + entry.getKey());
+            }
+            if (id < 0) {
+                throw new IllegalArgumentException(
+                        "token id must be non-negative for token: "
+                                + entry.getKey()
+                                + " ("
+                                + id
+                                + ")");
+            }
+            if (id > maxId) {
+                maxId = id;
+            }
         }
-        assert Arrays.stream(tokens).noneMatch(Objects::isNull);
+
+        String[] tokens = new String[Math.max(0, maxId + 1)];
+        for (Map.Entry<String, Integer> entry : tokenToId.entrySet()) {
+            int id = entry.getValue();
+            String token = entry.getKey();
+            String previous = tokens[id];
+            if (previous != null && !previous.equals(token)) {
+                throw new IllegalArgumentException(
+                        "Duplicate token id "
+                                + id
+                                + " for tokens '"
+                                + previous
+                                + "' and '"
+                                + token
+                                + "'");
+            }
+            tokens[id] = token;
+        }
         return tokens;
     }
 
@@ -55,7 +86,11 @@ public class VocabularyImpl implements Vocabulary {
         if (Integer.compareUnsigned(tokenId, this.tokens.length) >= 0) {
             throw new NoSuchElementException(String.valueOf(tokenId));
         }
-        return tokens[tokenId];
+        String token = tokens[tokenId];
+        if (token == null) {
+            throw new NoSuchElementException(String.valueOf(tokenId));
+        }
+        return token;
     }
 
     @Override
