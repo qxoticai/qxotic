@@ -66,7 +66,7 @@ final class Llama3ChatFormat {
                 b.add(t);
             }
         }
-        return tokenizer.decode(b);
+        return tokenizer.decode(b.build());
     }
 
     String echo(IntSequence tokens) {

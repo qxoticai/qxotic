@@ -1,7 +1,6 @@
 package com.qxotic.format.json.snippets;
 
 import com.qxotic.format.json.Json;
-
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.LinkedHashMap;

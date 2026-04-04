@@ -117,6 +117,6 @@ public abstract class ChatFormat {
                 builder.add(tokenIndex);
             }
         }
-        return this.tokenizer.decode(builder);
+        return this.tokenizer.decode(builder.build());
     }
 }

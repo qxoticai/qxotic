@@ -34,7 +34,8 @@ public class VocabularyImpl implements Vocabulary {
         for (Map.Entry<String, Integer> entry : tokenToId.entrySet()) {
             Integer id = entry.getValue();
             if (id == null) {
-                throw new IllegalArgumentException("token id cannot be null for token: " + entry.getKey());
+                throw new IllegalArgumentException(
+                        "token id cannot be null for token: " + entry.getKey());
             }
             if (id < 0) {
                 throw new IllegalArgumentException(

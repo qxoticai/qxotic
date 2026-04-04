@@ -21,11 +21,16 @@ class TokenizerSpecialTokenCornerCaseTest {
         String[] texts = {"<|endoftext|>", "Hello <|endoftext|> world", "Start <|endoftext|> end"};
         for (String text : texts) {
             IntSequence encoded = tokenizer.encode(text);
-            assertEquals(text, tokenizer.decode(encoded), namedTokenizer.name() + " round-trip " + text);
+            assertEquals(
+                    text, tokenizer.decode(encoded), namedTokenizer.name() + " round-trip " + text);
             for (Integer specialId : specials.values()) {
                 assertTrue(
                         !containsId(encoded, specialId),
-                        namedTokenizer.name() + " should not emit special id " + specialId + " for text " + text);
+                        namedTokenizer.name()
+                                + " should not emit special id "
+                                + specialId
+                                + " for text "
+                                + text);
             }
         }
     }
