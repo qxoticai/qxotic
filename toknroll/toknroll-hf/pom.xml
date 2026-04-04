@@ -9,7 +9,7 @@
     <relativePath>../../pom.xml</relativePath>
   </parent>
 
-  <artifactId>toknroll-safetensors</artifactId>
+  <artifactId>toknroll-hf</artifactId>
   <name>Quixotic Tok’n’Roll Safetensors Utilities</name>
   <description>HuggingFace tokenizer builders for qxotic toknroll</description>
 
