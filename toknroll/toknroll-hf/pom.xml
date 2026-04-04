@@ -10,8 +10,8 @@
   </parent>
 
   <artifactId>toknroll-hf</artifactId>
-  <name>Quixotic Tok’n’Roll HuggingFace Utilities</name>
-  <description>HuggingFace tokenizer builders for qxotic toknroll</description>
+  <name>Tok'n'Roll HuggingFace Utilities</name>
+  <description>HuggingFace tokenizer support Tok'n'Roll</description>
 
   <dependencies>
     <dependency>

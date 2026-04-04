@@ -1,4 +1,4 @@
-# Tok’n’Roll
+# Tok'n'Roll
 
 [![Java](https://img.shields.io/badge/Java-17+-blue)](https://openjdk.org/projects/jdk/17/)
 [![GraalVM](https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F)](https://www.graalvm.org/latest/reference-manual/native-image/)
@@ -6,7 +6,7 @@
 
 > *The best tokenizer is no tokenizer at all; in the meantime, this library bridges the gap.*
 
-Tok’n’Roll (`toknroll`) is a pure Java library for LLM tokenization with a focus on TikToken compatibility, predictable behavior, and good runtime performance.
+Tok'n'Roll (`toknroll`) is a pure Java library for LLM tokenization with a focus on TikToken compatibility, predictable behavior, and good runtime performance.
 
 This module is intentionally minimal: it provides the tokenizer API and core algorithms, but does
 not ship model catalogs or downloaded tokenizer assets.

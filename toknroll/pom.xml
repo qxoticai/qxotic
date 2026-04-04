@@ -11,8 +11,8 @@
 
   <artifactId>toknroll-aggregator</artifactId>
   <packaging>pom</packaging>
-  <name>Quixotic Tok’n’Roll Aggregator</name>
-  <description>TikToken-compatible BPE tokenization for LLMs</description>
+  <name>Tok'n'Roll Aggregator</name>
+  <description>TikToken-compatible, customizable BPE tokenization for LLMs</description>
 
   <modules>
     <module>toknroll-core</module>

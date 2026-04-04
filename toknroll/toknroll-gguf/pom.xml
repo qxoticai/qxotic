@@ -10,8 +10,8 @@
   </parent>
 
   <artifactId>toknroll-gguf</artifactId>
-  <name>Quixotic Tok’n’Roll GGUF Utilities</name>
-  <description>GGUF tokenizer builders for qxotic toknroll</description>
+  <name>Tok'n'Roll GGUF Utilities</name>
+  <description>GGUF tokenizer loader for Tok'n'Roll</description>
 
   <dependencies>
     <dependency>

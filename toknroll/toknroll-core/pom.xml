@@ -10,8 +10,8 @@
   </parent>
 
   <artifactId>toknroll</artifactId>
-  <name>Quixotic Tok’n’Roll</name>
-  <description>TikToken-compatible BPE tokenization for LLMs</description>
+  <name>Tok'n'Roll Core</name>
+  <description>TikToken-compatible, customizable BPE tokenization for LLMs</description>
 
   <dependencies>
     <dependency>

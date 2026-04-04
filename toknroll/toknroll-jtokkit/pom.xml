@@ -10,8 +10,8 @@
   </parent>
 
   <artifactId>toknroll-jtokkit</artifactId>
-  <name>Quixotic Tok’n’Roll JTokkit Adapter</name>
-  <description>JTokkit adapter backend for qxotic toknroll</description>
+  <name>Tok'n'Roll JTokkit Adapter</name>
+  <description>JTokkit adapter for Tok'n'Roll</description>
 
   <dependencies>
     <dependency>
