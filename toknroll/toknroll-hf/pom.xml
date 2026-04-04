@@ -4,13 +4,13 @@
 
   <parent>
     <groupId>com.qxotic</groupId>
-    <artifactId>qxotic-parent</artifactId>
+    <artifactId>toknroll-aggregator</artifactId>
     <version>0.1.0</version>
-    <relativePath>../../pom.xml</relativePath>
+    <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>toknroll-hf</artifactId>
-  <name>Quixotic Tok’n’Roll Safetensors Utilities</name>
+  <name>Quixotic Tok’n’Roll HuggingFace Utilities</name>
   <description>HuggingFace tokenizer builders for qxotic toknroll</description>
 
   <dependencies>

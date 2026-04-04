@@ -6,79 +6,24 @@
     <groupId>com.qxotic</groupId>
     <artifactId>qxotic-parent</artifactId>
     <version>0.1.0</version>
+    <relativePath>../pom.xml</relativePath>
   </parent>
 
-  <artifactId>toknroll</artifactId>
-  <name>Quixotic Tok’n’Roll</name>
+  <artifactId>toknroll-aggregator</artifactId>
+  <packaging>pom</packaging>
+  <name>Quixotic Tok’n’Roll Aggregator</name>
   <description>TikToken-compatible BPE tokenization for LLMs</description>
 
+  <modules>
+    <module>toknroll-core</module>
+    <module>toknroll-jtokkit</module>
+    <module>toknroll-gguf</module>
+    <module>toknroll-hf</module>
+  </modules>
+
   <properties>
-    <!-- Tokenizers requires Java 11 -->
-    <maven.compiler.source>11</maven.compiler.source>
-    <maven.compiler.target>11</maven.compiler.target>
+    <!-- Tok'n'Roll targets Java 11 bytecode -->
     <maven.compiler.release>11</maven.compiler.release>
   </properties>
-
-  <dependencies>
-    <dependency>
-      <groupId>com.knuddels</groupId>
-      <artifactId>jtokkit</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.junit.jupiter</groupId>
-      <artifactId>junit-jupiter</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>gguf</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>json</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>safetensors</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.openjdk.jmh</groupId>
-      <artifactId>jmh-core</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.openjdk.jmh</groupId>
-      <artifactId>jmh-generator-annprocess</artifactId>
-      <scope>test</scope>
-    </dependency>
-  </dependencies>
-
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <executions>
-          <execution>
-            <id>default-testCompile</id>
-            <configuration>
-              <release>17</release>
-              <annotationProcessorPaths>
-                <path>
-                  <groupId>org.openjdk.jmh</groupId>
-                  <artifactId>jmh-generator-annprocess</artifactId>
-                  <version>${jmh.version}</version>
-                </path>
-              </annotationProcessorPaths>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-    </plugins>
-  </build>
 
 </project>
