@@ -32,9 +32,15 @@ class FastTikTokenLargeMergeRegressionTest {
         for (String sample : largeSamples()) {
             IntSequence expected = classic.encode(sample);
             IntSequence actual = fast.encode(sample);
-            assertEquals(expected, actual, () -> "encoding=" + encoding + " sampleHash=" + sample.hashCode());
+            assertEquals(
+                    expected,
+                    actual,
+                    () -> "encoding=" + encoding + " sampleHash=" + sample.hashCode());
             assertEquals(sample, fast.decode(actual), () -> "round-trip encoding=" + encoding);
-            assertEquals(expected.length(), fast.countTokens(sample), () -> "count encoding=" + encoding);
+            assertEquals(
+                    expected.length(),
+                    fast.countTokens(sample),
+                    () -> "count encoding=" + encoding);
         }
     }
 
@@ -51,7 +57,9 @@ class FastTikTokenLargeMergeRegressionTest {
     private static String randomAscii(int length, long seed) {
         Random random = new Random(seed);
         char[] chars = new char[length];
-        String alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,!?;:-_()[]{}\\n\\t";
+        String alphabet =
+                "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,!?;:-_()[]{}\\n"
+                        + "\\t";
         for (int i = 0; i < length; i++) {
             chars[i] = alphabet.charAt(random.nextInt(alphabet.length()));
         }

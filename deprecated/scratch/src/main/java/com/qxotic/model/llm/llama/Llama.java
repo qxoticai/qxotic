@@ -1017,7 +1017,7 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
     @Override
     public void ingestTokens(Weights weights, State state, int[] tokens) {
         assert tokens.length > 0;
-        batchedForwardImpl(weights, state, tokens, state.ingestedTokens.length(), false);
+        batchedForwardImpl(weights, state, tokens, state.ingestedTokens.size(), false);
         state.ingestedTokens.addAll(IntSequence.of(tokens));
         state.latestIngestedTokenBatchIndex = tokens.length - 1;
     }
@@ -1027,8 +1027,8 @@ public class Llama extends AbstractModel<Llama.Configuration, Llama.Weights, Lla
         batchedForwardImpl(
                 weights,
                 state,
-                new int[] {state.ingestedTokens.getLast()},
-                state.ingestedTokens.length() - 1,
+                new int[] {state.ingestedTokens.asSequenceView().getLast()},
+                state.ingestedTokens.size() - 1,
                 true);
     }
 }

@@ -38,7 +38,9 @@ public final class JTokkitTokenizers {
                 mergeableRanks.entrySet().stream()
                         .collect(
                                 Collectors.toMap(
-                                        entry -> SymbolCodec.BYTE_LEVEL.decodeSymbols(entry.getKey()),
+                                        entry ->
+                                                SymbolCodec.BYTE_LEVEL.decodeSymbols(
+                                                        entry.getKey()),
                                         Map.Entry::getValue));
 
         GptBytePairEncodingParams params =
@@ -79,7 +81,8 @@ public final class JTokkitTokenizers {
             Map<String, Integer> mergeableRanks, Map<String, Integer> specialTokens) {
         int maxMergeableIndex =
                 mergeableRanks.values().stream().mapToInt(Integer::intValue).max().orElse(0);
-        int maxSpecialIndex = specialTokens.values().stream().mapToInt(Integer::intValue).max().orElse(0);
+        int maxSpecialIndex =
+                specialTokens.values().stream().mapToInt(Integer::intValue).max().orElse(0);
         int maxIndex = Math.max(maxMergeableIndex, maxSpecialIndex);
 
         String[] tokens = new String[maxIndex + 1];
@@ -113,7 +116,9 @@ public final class JTokkitTokenizers {
                 CharSequence text, int startInclusive, int endExclusive, IntSequence.Builder out) {
             Objects.requireNonNull(text, "text");
             Objects.requireNonNull(out, "out");
-            if (startInclusive < 0 || endExclusive < startInclusive || endExclusive > text.length()) {
+            if (startInclusive < 0
+                    || endExclusive < startInclusive
+                    || endExclusive > text.length()) {
                 throw new IndexOutOfBoundsException(
                         "Invalid range ["
                                 + startInclusive
@@ -202,15 +207,15 @@ public final class JTokkitTokenizers {
         private final Map<String, Integer> specialToIndex;
         private final Map<Integer, String> indexToSpecial;
 
-        private VocabularyWithSpecials(Vocabulary innerVocabulary, Map<String, Integer> specialToIndex) {
+        private VocabularyWithSpecials(
+                Vocabulary innerVocabulary, Map<String, Integer> specialToIndex) {
             this.innerVocabulary = innerVocabulary;
             this.specialToIndex = Map.copyOf(specialToIndex);
             this.indexToSpecial =
                     specialToIndex.entrySet().stream()
                             .collect(
                                     Collectors.toUnmodifiableMap(
-                                            Map.Entry::getValue,
-                                            Map.Entry::getKey));
+                                            Map.Entry::getValue, Map.Entry::getKey));
         }
 
         private static Vocabulary create(
@@ -265,7 +270,8 @@ public final class JTokkitTokenizers {
         @Override
         public Iterator<Map.Entry<String, Integer>> iterator() {
             return new Iterator<>() {
-                private final Iterator<Map.Entry<String, Integer>> inner = innerVocabulary.iterator();
+                private final Iterator<Map.Entry<String, Integer>> inner =
+                        innerVocabulary.iterator();
                 private final Iterator<Map.Entry<String, Integer>> special =
                         specialToIndex.entrySet().iterator();
 

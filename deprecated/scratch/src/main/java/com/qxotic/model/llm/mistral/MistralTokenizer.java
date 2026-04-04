@@ -5,6 +5,7 @@ import com.qxotic.toknroll.advanced.Normalizer;
 import com.qxotic.toknroll.advanced.Splitter;
 import com.qxotic.toknroll.advanced.StandardTokenType;
 import com.qxotic.toknroll.impl.AbstractTokenizer;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,14 +32,22 @@ public class MistralTokenizer extends AbstractTokenizer {
         this.byte0 = vocabulary.id("<0x00>");
     }
 
-    @Override
-    public IntSequence encode(String text) {
-        return encodeImpl(text.replace(' ', '▁'));
+    public IntSequence encode(CharSequence text) {
+        return encodeImpl(text.toString().replace(' ', '▁'));
     }
 
     @Override
-    public byte[] decodeBytes(IntSequence tokens) {
-        return decode(tokens).getBytes(StandardCharsets.UTF_8);
+    public int decodeBytesInto(IntSequence tokens, int tokenStartIndex, ByteBuffer out) {
+        if (tokenStartIndex < 0 || tokenStartIndex >= tokens.length()) {
+            return 0;
+        }
+        String decoded = decode(tokens.subSequence(tokenStartIndex, tokens.length()));
+        byte[] bytes = decoded.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length > out.remaining()) {
+            throw new IllegalArgumentException("Not enough space in output buffer");
+        }
+        out.put(bytes);
+        return tokens.length() - tokenStartIndex;
     }
 
     @Override

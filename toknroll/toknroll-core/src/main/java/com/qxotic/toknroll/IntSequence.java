@@ -422,7 +422,6 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
         default Builder addAll(Builder elems) {
             return addAll(Objects.requireNonNull(elems, "elems").snapshot());
         }
-
     }
 
     /**

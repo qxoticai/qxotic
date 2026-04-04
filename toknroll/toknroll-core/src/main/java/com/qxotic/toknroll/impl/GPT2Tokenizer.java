@@ -44,10 +44,7 @@ public class GPT2Tokenizer extends AbstractTokenizer {
     }
 
     public GPT2Tokenizer(
-            Vocabulary vocabulary,
-            Normalizer normalizer,
-            Splitter splitter,
-            List<long[]> mergeRanks) {
+            Vocabulary vocabulary, Normalizer normalizer, Splitter splitter, List<?> mergeRanks) {
         this(vocabulary, normalizer, splitter, mergeRanks, SymbolCodec.BYTE_LEVEL);
     }
 
@@ -55,14 +52,14 @@ public class GPT2Tokenizer extends AbstractTokenizer {
             Vocabulary vocabulary,
             Normalizer normalizer,
             Splitter splitter,
-            List<long[]> mergeRanks,
+            List<?> mergeRanks,
             SymbolCodec symbolCodec) {
         super(vocabulary, normalizer, splitter);
         this.symbolCodec = symbolCodec;
         long[] keys = new long[mergeRanks.size()];
         long[] values = new long[mergeRanks.size()];
         for (int rank = 0; rank < mergeRanks.size(); rank++) {
-            long pair = mergeRanks.get(rank)[0];
+            long pair = toPair(mergeRanks.get(rank));
             int leftIndex = IntPair.left(pair);
             int rightIndex = IntPair.right(pair);
             String leftString = vocabulary.token(leftIndex);
@@ -75,6 +72,22 @@ public class GPT2Tokenizer extends AbstractTokenizer {
         }
         this.merges = new LongLongMap(keys, values);
         this.decodedTokenBytesCache = new byte[vocabulary.size()][];
+    }
+
+    private static long toPair(Object value) {
+        if (value instanceof long[]) {
+            long[] arr = (long[]) value;
+            if (arr.length == 0) {
+                throw new IllegalArgumentException("merge pair array cannot be empty");
+            }
+            return arr[0];
+        }
+        if (value instanceof IntPair) {
+            IntPair pair = (IntPair) value;
+            return IntPair.of(pair.first(), pair.second());
+        }
+        throw new IllegalArgumentException(
+                "Unsupported merge pair type: " + (value == null ? "null" : value.getClass()));
     }
 
     /**

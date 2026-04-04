@@ -72,8 +72,8 @@ public class RunInteractive {
                             state,
                             batchSize,
                             startPosition,
-                            conversationTokens.subSequence(
-                                    startPosition, conversationTokens.length()),
+                            conversationTokens.asSequenceView().subSequence(
+                                    startPosition, conversationTokens.size()),
                             options.maxTokens(),
                             sampler,
                             onPromptToken,
@@ -82,7 +82,7 @@ public class RunInteractive {
             // Include stop token in the conversation history, but not in the response displayed to
             // the user.
             conversationTokens.addAll(responseTokens);
-            startPosition = conversationTokens.length();
+            startPosition = conversationTokens.size();
             Integer stopToken = null;
             if (!responseTokens.isEmpty() && stopTokens.contains(responseTokens.getLast())) {
                 stopToken = responseTokens.getLast();
@@ -182,7 +182,7 @@ public class RunInteractive {
         }
 
         int promptTokensCount = promptIndex;
-        int generatedTokensCount = generatedTokens.length();
+        int generatedTokensCount = generatedTokens.size();
 
         long nowNanos = System.nanoTime();
         long promptNanos = startGenNanos - startAllNanos;
@@ -196,6 +196,6 @@ public class RunInteractive {
                 generatedTokensCount / (genNanos / 1_000_000_000.0),
                 generatedTokensCount);
 
-        return generatedTokens;
+        return generatedTokens.build();
     }
 }

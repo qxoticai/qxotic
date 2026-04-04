@@ -7,12 +7,15 @@ import java.util.Objects;
 @FunctionalInterface
 public interface Normalizer {
 
+    /** Backward-compatible identity constant. */
+    Normalizer IDENTITY = text -> text;
+
     /** Applies this normalizer to the given text. */
     CharSequence apply(CharSequence text);
 
     /** Strict default: no text transformation. */
     static Normalizer identity() {
-        return text -> text;
+        return IDENTITY;
     }
 
     /** Lossy transform. Opt-in only. */

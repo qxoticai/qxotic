@@ -5,8 +5,7 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.model.llm.GGUFTextSplitterFactory;
 import com.qxotic.model.llm.TextSplitterFactory;
 import com.qxotic.toknroll.advanced.Splitter;
-import com.qxotic.toknroll.impl.RegexSplitter;
-import java.util.Arrays;
+import com.qxotic.toknroll.loaders.ModelSplitters;
 
 // Implementation for default pre-tokenizer
 @AutoService(TextSplitterFactory.class)
@@ -18,10 +17,6 @@ public class DefaultTextSplitterFactory implements GGUFTextSplitterFactory {
 
     @Override
     public Splitter createTextSplitter(GGUF gguf) {
-        Splitter[] splitters =
-                Arrays.stream(RegexSplitter.DEFAULT_BPE_SPLITS)
-                        .map(RegexSplitter::create)
-                        .toArray(Splitter[]::new);
-        return Splitter.sequence(splitters);
+        return ModelSplitters.LLAMA3;
     }
 }
