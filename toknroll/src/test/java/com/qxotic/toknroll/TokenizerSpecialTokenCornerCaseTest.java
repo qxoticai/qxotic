@@ -2,7 +2,6 @@ package com.qxotic.toknroll;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
@@ -14,17 +13,30 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 class TokenizerSpecialTokenCornerCaseTest {
 
-    @ParameterizedTest(name = "special token rejected in encode {0}")
+    @ParameterizedTest(name = "special token text is encoded as regular text {0}")
     @MethodSource("tokenizers")
-    void specialTokenTextIsRejectedDuringEncode(TiktokenFixtures.NamedTokenizer namedTokenizer) {
+    void specialTokenTextIsEncodedAsRegularText(TiktokenFixtures.NamedTokenizer namedTokenizer) {
         Tokenizer tokenizer = namedTokenizer.tokenizer();
+        Map<String, Integer> specials = fixture(namedTokenizer).specialTokens();
         String[] texts = {"<|endoftext|>", "Hello <|endoftext|> world", "Start <|endoftext|> end"};
         for (String text : texts) {
-            assertThrows(
-                    UnsupportedOperationException.class,
-                    () -> tokenizer.encode(text),
-                    namedTokenizer.name() + " should reject " + text);
+            IntSequence encoded = tokenizer.encode(text);
+            assertEquals(text, tokenizer.decode(encoded), namedTokenizer.name() + " round-trip " + text);
+            for (Integer specialId : specials.values()) {
+                assertTrue(
+                        !containsId(encoded, specialId),
+                        namedTokenizer.name() + " should not emit special id " + specialId + " for text " + text);
+            }
         }
+    }
+
+    private static boolean containsId(IntSequence encoded, int tokenId) {
+        for (int i = 0; i < encoded.length(); i++) {
+            if (encoded.intAt(i) == tokenId) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @ParameterizedTest(name = "special token decode {0}")
