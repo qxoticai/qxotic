@@ -602,6 +602,12 @@ public final class FastTikToken extends AbstractTokenizer {
                 prev[rightNext] = left;
             }
 
+            // Fully detach the removed right node so stale heap candidates that still reference
+            // it are invalidated and cannot merge an unreachable node.
+            prev[right] = NO_INDEX;
+            next[right] = NO_INDEX;
+            edgeStamp[right] = 0;
+
             tokenCount--;
 
             if (leftPrev != NO_INDEX) {
@@ -720,7 +726,7 @@ public final class FastTikToken extends AbstractTokenizer {
 
         while (idx > 0) {
             int parent = (idx - 1) >>> 1;
-            if (s.heapRank[parent] <= rank) {
+            if (!heapLess(rank, node, s.heapRank[parent], s.heapNode[parent])) {
                 break;
             }
             s.heapRank[idx] = s.heapRank[parent];
@@ -741,10 +747,15 @@ public final class FastTikToken extends AbstractTokenizer {
             int child = (idx << 1) + 1;
             int rightChild = child + 1;
 
-            if (rightChild < s.heapSize && s.heapRank[rightChild] < s.heapRank[child]) {
+            if (rightChild < s.heapSize
+                    && heapLess(
+                            s.heapRank[rightChild],
+                            s.heapNode[rightChild],
+                            s.heapRank[child],
+                            s.heapNode[child])) {
                 child = rightChild;
             }
-            if (s.heapRank[child] >= rank) {
+            if (!heapLess(s.heapRank[child], s.heapNode[child], rank, node)) {
                 break;
             }
 
@@ -755,6 +766,15 @@ public final class FastTikToken extends AbstractTokenizer {
 
         s.heapRank[idx] = rank;
         s.heapNode[idx] = node;
+    }
+
+    private static boolean heapLess(int rankA, long nodeA, int rankB, long nodeB) {
+        if (rankA != rankB) {
+            return rankA < rankB;
+        }
+        int leftA = (int) (nodeA >>> 32);
+        int leftB = (int) (nodeB >>> 32);
+        return leftA < leftB;
     }
 
     private static int utf8EncodeRange(
