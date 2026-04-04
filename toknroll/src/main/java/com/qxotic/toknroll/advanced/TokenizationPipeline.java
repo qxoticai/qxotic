@@ -11,6 +11,10 @@ import java.util.function.Function;
 /**
  * Composed tokenizer pipeline that can apply optional input and token transforms around a base
  * tokenizer.
+ *
+ * <p>By default, core tokenizer usage targets round-trip integrity for ordinary text. Adding a
+ * {@link Normalizer} and/or token {@code postProcessor} is an explicit opt-in that may be lossy and
+ * is generally discouraged unless mutation is intentionally required.
  */
 public final class TokenizationPipeline implements Tokenizer {
 

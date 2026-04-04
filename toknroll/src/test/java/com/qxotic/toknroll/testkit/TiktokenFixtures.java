@@ -203,8 +203,7 @@ public final class TiktokenFixtures {
 
     public static java.util.regex.Pattern splitPattern(String encodingName) {
         return java.util.regex.Pattern.compile(
-                encoding(encodingName).pattern(),
-                java.util.regex.Pattern.UNICODE_CHARACTER_CLASS);
+                encoding(encodingName).pattern(), java.util.regex.Pattern.UNICODE_CHARACTER_CLASS);
     }
 
     private static Path resourcePath(String fileName) {

@@ -33,10 +33,11 @@ Core splitters are range-preserving partitioners (no text transformation).
 
 ## Design guarantees
 
-- Fidelity-first API: `decode(encode(text)) == text` for regular text inputs
+- Round-trip integrity for regular text inputs: `decode(encode(text)) == text`
 - Deterministic behavior: same text, same token IDs
 - No hidden rewrites in core tokenizer behavior (no implicit trim/prefix/suffix injection)
-- `decodeBytes(...)` is the authoritative lossless decode API for byte-level workflows
+- `decodeBytes(...)` is the authoritative byte-exact decode API for byte-level workflows
+- Explicit opt-in transforms are supported via `Normalizer` and pipeline post-processors; these can be lossy and are generally discouraged unless you intentionally want mutated input/output token streams
 
 ## Dependency
 
@@ -78,6 +79,19 @@ Tokenizer tokenizer = Tokenizers.classicBpe(mergeableRanks, specialTokens, split
 
 ```java
 Tokenizer tokenizer = JTokkitTokenizers.fromTiktoken(name, mergeableRanks, splitPattern, specialTokens);
+```
+
+## Specials API (explicit control-token path)
+
+For detailed behavior and design rationale, see `docs/SPECIALS.md`.
+
+```java
+Tokenizer tokenizer = Tokenizers.fastBpe(mergeableRanks, specialTokens, splitPatternRegex);
+
+// Compile once, reuse many times.
+Specials specials = Specials.compile(tokenizer.vocabulary(), specialTokens.keySet());
+
+IntSequence withSpecials = specials.encode(tokenizer, "hello <|endoftext|>");
 ```
 
 ## Benchmarks (JMH)

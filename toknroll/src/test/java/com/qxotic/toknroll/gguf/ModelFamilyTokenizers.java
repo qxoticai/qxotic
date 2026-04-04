@@ -1188,7 +1188,9 @@ public final class ModelFamilyTokenizers {
                                 return;
                             }
                             for (String segment : segments) {
-                                if (segment == null || segment.isEmpty() || cursor >= endExclusive) {
+                                if (segment == null
+                                        || segment.isEmpty()
+                                        || cursor >= endExclusive) {
                                     continue;
                                 }
                                 int end = cursor + segment.length();
@@ -1358,7 +1360,8 @@ public final class ModelFamilyTokenizers {
         private static boolean isWordBoundary(
                 CharSequence text, int start, int end, int regionEndExclusive) {
             boolean leftOk = start == 0 || !isWord(Character.codePointBefore(text, start));
-            boolean rightOk = end >= regionEndExclusive || !isWord(Character.codePointAt(text, end));
+            boolean rightOk =
+                    end >= regionEndExclusive || !isWord(Character.codePointAt(text, end));
             return leftOk && rightOk;
         }
 

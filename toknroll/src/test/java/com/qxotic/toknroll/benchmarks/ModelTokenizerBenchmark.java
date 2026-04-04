@@ -5,10 +5,10 @@ import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
 import com.qxotic.toknroll.advanced.Normalizer;
 import com.qxotic.toknroll.advanced.Splitter;
+import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
 import com.qxotic.toknroll.impl.FastLlama3Splitter;
 import com.qxotic.toknroll.impl.FastQwen35Splitter;
 import com.qxotic.toknroll.impl.FastR50kSplitter;
-import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
 import com.qxotic.toknroll.loaders.ModelSplitters;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.text.Normalizer.Form;
@@ -43,7 +43,8 @@ public class ModelTokenizerBenchmark {
     private static final String LLAMA3_HF_MODEL_REF = "unsloth/Llama-3.2-1B-Instruct";
     private static final String LLAMA3_HF_REVISION = "5a8abab4a5d6f164389b1079fb721cfab8d7126c";
     private static final String QWEN35_HF_MODEL_REF = "Qwen/Qwen3-0.6B";
-    private static final String MISTRAL_TEKKEN_HF_MODEL_REF = "mistralai/ministral-8b-instruct-2410";
+    private static final String MISTRAL_TEKKEN_HF_MODEL_REF =
+            "mistralai/ministral-8b-instruct-2410";
     private static final String MISTRAL_TEKKEN_HF_REVISION =
             "2f494a194c5b980dfb9772cb92d26cbb671fce5a";
 
@@ -144,16 +145,14 @@ public class ModelTokenizerBenchmark {
             Splitter fastSplitter,
             String implementation) {
         Tokenizer fidelityGguf =
-                ModelFamilyTokenizers
-                        .create(familyId)
+                ModelFamilyTokenizers.create(familyId)
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
                                                 "Failed to load GGUF tokenizer for " + familyId));
         switch (implementation) {
             case "jtokkit":
-                return ModelFamilyTokenizers
-                        .createFromHfFiles(familyId, hfModelRef, hfRevision)
+                return ModelFamilyTokenizers.createFromHfFiles(familyId, hfModelRef, hfRevision)
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(

@@ -11,8 +11,8 @@ import com.qxotic.toknroll.impl.FastQwen35Splitter;
 import com.qxotic.toknroll.impl.FastR50kSplitter;
 import com.qxotic.toknroll.impl.RegexSplitter;
 import com.qxotic.toknroll.loaders.ModelSplitters;
-import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import com.qxotic.toknroll.testkit.TestCorpora;
+import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.text.Normalizer.Form;
 import java.util.List;
 import java.util.Map;
@@ -23,7 +23,8 @@ class ModelTokenizerAgreementTest {
     private static final String LLAMA3_HF_MODEL_REF = "unsloth/Llama-3.2-1B-Instruct";
     private static final String LLAMA3_HF_REVISION = "5a8abab4a5d6f164389b1079fb721cfab8d7126c";
     private static final String QWEN35_HF_MODEL_REF = "Qwen/Qwen3-0.6B";
-    private static final String MISTRAL_TEKKEN_HF_MODEL_REF = "mistralai/ministral-8b-instruct-2410";
+    private static final String MISTRAL_TEKKEN_HF_MODEL_REF =
+            "mistralai/ministral-8b-instruct-2410";
     private static final String MISTRAL_TEKKEN_HF_REVISION =
             "2f494a194c5b980dfb9772cb92d26cbb671fce5a";
     private static final List<String> MODELS =
@@ -38,7 +39,8 @@ class ModelTokenizerAgreementTest {
                 int[] classic = compared.classic().encodeToArray(text);
                 int[] fast = compared.fast().encodeToArray(text);
 
-                assertArrayEquals(jtokkit, classic, "jtokkit!=classic for " + model + " on: " + text);
+                assertArrayEquals(
+                        jtokkit, classic, "jtokkit!=classic for " + model + " on: " + text);
                 assertArrayEquals(jtokkit, fast, "jtokkit!=fast for " + model + " on: " + text);
                 assertEquals(
                         jtokkit.length,
@@ -65,7 +67,8 @@ class ModelTokenizerAgreementTest {
                     TiktokenFixtures.createJtokkitTokenizer("r50k_base"),
                     Tokenizers.classicBpe(
                             ranks, specials, Normalizer.identity(), RegexSplitter.create(pattern)),
-                    Tokenizers.fastBpe(ranks, specials, Normalizer.identity(), FastR50kSplitter.INSTANCE));
+                    Tokenizers.fastBpe(
+                            ranks, specials, Normalizer.identity(), FastR50kSplitter.INSTANCE));
         }
         if ("llama3".equals(model)) {
             return modelNative(
@@ -101,14 +104,19 @@ class ModelTokenizerAgreementTest {
             Normalizer normalizer,
             Splitter fastSplitter) {
         Tokenizer fidelity =
-                ModelFamilyTokenizers
-                        .create(familyId)
-                        .orElseThrow(() -> new IllegalStateException("Missing GGUF tokenizer for " + familyId));
+                ModelFamilyTokenizers.create(familyId)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "Missing GGUF tokenizer for " + familyId));
         Tokenizer hf =
-                ModelFamilyTokenizers
-                        .createFromHfFiles(familyId, hfModelRef, hfRevision)
-                        .orElseThrow(() -> new IllegalStateException("Missing HF tokenizer for " + familyId));
-        Tokenizer fast = Tokenizers.pipeline(fidelity).normalizer(normalizer).splitter(fastSplitter).build();
+                ModelFamilyTokenizers.createFromHfFiles(familyId, hfModelRef, hfRevision)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "Missing HF tokenizer for " + familyId));
+        Tokenizer fast =
+                Tokenizers.pipeline(fidelity).normalizer(normalizer).splitter(fastSplitter).build();
         return new ComparedTokenizers(hf, fidelity, fast);
     }
 
