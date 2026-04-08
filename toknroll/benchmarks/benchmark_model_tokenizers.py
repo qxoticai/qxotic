@@ -7,13 +7,14 @@ This script targets end-to-end tokenizer workloads similar to the Java/JMH model
 
 Reported throughput metrics include:
 - ops/s
+- tokens/s
 - chars/s
 - MB/s and MiB/s
 
 Examples:
-  python benchmark_model_tokenizers.py
-  python benchmark_model_tokenizers.py --duration 2.0 --warmup 0.5 --size 16k
-  python benchmark_model_tokenizers.py --models gpt2,qwen35 --backends tiktoken,hf
+  python benchmarks/benchmark_model_tokenizers.py
+  python benchmarks/benchmark_model_tokenizers.py --duration 2.0 --warmup 0.5 --size 16k
+  python benchmarks/benchmark_model_tokenizers.py --models gpt2,qwen35 --backends hf,mistral-common
 """
 
 from __future__ import annotations
@@ -100,7 +101,9 @@ class Result:
     size: str
     op: str
     text_chars: int
+    token_count: int
     ops_per_s: float
+    tokens_per_s: float
     chars_per_s: float
     mb_per_s: float
     mib_per_s: float
@@ -114,10 +117,14 @@ class Summary:
     size: str
     op: str
     text_chars: int
+    token_count: int
     samples: int
     ops_per_s_mean: float
     ops_per_s_median: float
     ops_per_s_stdev: float
+    tokens_per_s_mean: float
+    tokens_per_s_median: float
+    tokens_per_s_stdev: float
     chars_per_s_mean: float
     chars_per_s_median: float
     chars_per_s_stdev: float
@@ -128,11 +135,10 @@ class Summary:
 def make_tiktoken_adapter(model: str) -> Optional[Adapter]:
     if tiktoken is None:
         return None
+    # Strict source matching: only expose adapters when tokenizer source matches the model family.
+    # Do not map non-OpenAI models to OpenAI encodings (e.g. qwen35 -> o200k_base).
     enc_name = {
         "gpt2": "r50k_base",
-        "llama3": "cl100k_base",
-        "qwen35": "o200k_base",
-        "mistral-tekken": "o200k_base",
     }.get(model)
     if enc_name is None:
         return None
@@ -186,10 +192,6 @@ def make_tokie_adapter(model: str) -> Optional[Adapter]:
 
     candidates = {
         "gpt2": ["gpt2"],
-        # OpenAI-compatible encodings for apples-to-apples with tiktoken.
-        "llama3": ["Xenova/text-embedding-ada-002"],
-        "qwen35": ["Xenova/gpt-4o"],
-        "mistral-tekken": ["Xenova/gpt-4o"],
     }.get(model, [])
 
     for repo in candidates:
@@ -200,7 +202,7 @@ def make_tokie_adapter(model: str) -> Optional[Adapter]:
                 model=model,
                 model_ref=repo,
                 encode=lambda text, t=tok: list(t.encode(text).ids),
-                decode=lambda ids, t=tok: t.decode(list(ids)),
+                decode=lambda ids, t=tok: t.decode(list(ids)) or "",
             )
         except Exception:
             continue
@@ -253,8 +255,9 @@ def benchmark_encode(
     warmup_s: float,
     run_s: float,
 ) -> Result:
+    token_count = max(1, len(adapter.encode(text)))
     run_loop(warmup_s, lambda: len(adapter.encode(text)))
-    ops, _units, elapsed = run_loop(run_s, lambda: len(adapter.encode(text)))
+    ops, units, elapsed = run_loop(run_s, lambda: len(adapter.encode(text)))
     chars_per_s = (ops * len(text)) / elapsed
     return Result(
         backend=adapter.backend,
@@ -263,7 +266,9 @@ def benchmark_encode(
         size=size,
         op="encode",
         text_chars=len(text),
+        token_count=token_count,
         ops_per_s=ops / elapsed,
+        tokens_per_s=units / elapsed,
         chars_per_s=chars_per_s,
         mb_per_s=chars_per_s / 1_000_000.0,
         mib_per_s=chars_per_s / (1024.0 * 1024.0),
@@ -279,10 +284,16 @@ def benchmark_decode(
     run_s: float,
 ) -> Result:
     tokens = adapter.encode(text)
+    token_count = max(1, len(tokens))
     decoded_once = adapter.decode(tokens)
     decoded_chars = max(1, len(decoded_once))
-    run_loop(warmup_s, lambda: len(adapter.decode(tokens)))
-    ops, _units, elapsed = run_loop(run_s, lambda: len(adapter.decode(tokens)))
+
+    def decode_and_count() -> int:
+        adapter.decode(tokens)
+        return token_count
+
+    run_loop(warmup_s, decode_and_count)
+    ops, units, elapsed = run_loop(run_s, decode_and_count)
     chars_per_s = (ops * decoded_chars) / elapsed
     return Result(
         backend=adapter.backend,
@@ -291,7 +302,9 @@ def benchmark_decode(
         size=size,
         op="decode",
         text_chars=decoded_chars,
+        token_count=token_count,
         ops_per_s=ops / elapsed,
+        tokens_per_s=units / elapsed,
         chars_per_s=chars_per_s,
         mb_per_s=chars_per_s / 1_000_000.0,
         mib_per_s=chars_per_s / (1024.0 * 1024.0),
@@ -306,7 +319,9 @@ def format_table(rows: List[Result]) -> str:
         "size",
         "op",
         "chars",
+        "tokens",
         "ops/s",
+        "tokens/s",
         "chars/s",
         "MB/s",
         "MiB/s",
@@ -314,22 +329,40 @@ def format_table(rows: List[Result]) -> str:
     out = ["  ".join(headers)]
     for r in rows:
         out.append(
-            f"{r.backend:14}  {r.model:14}  {r.corpus:10}  {r.size:5}  {r.op:6}  {r.text_chars:6d}  "
-            f"{r.ops_per_s:10.1f}  {r.chars_per_s:12.1f}  {r.mb_per_s:8.2f}  {r.mib_per_s:8.2f}"
+            f"{r.backend:14}  {r.model:14}  {r.corpus:10}  {r.size:5}  {r.op:6}  {r.text_chars:6d}  {r.token_count:6d}  "
+            f"{r.ops_per_s:10.1f}  {r.tokens_per_s:10.1f}  {r.chars_per_s:12.1f}  {r.mb_per_s:8.2f}  {r.mib_per_s:8.2f}"
         )
     return "\n".join(out)
 
 
 def summarize(rows: List[Result]) -> List[Summary]:
-    grouped: Dict[tuple[str, str, str, str, str, int], List[Result]] = {}
+    grouped: Dict[tuple[str, str, str, str, str, int, int], List[Result]] = {}
     for row in rows:
         grouped.setdefault(
-            (row.backend, row.model, row.corpus, row.size, row.op, row.text_chars), []
+            (
+                row.backend,
+                row.model,
+                row.corpus,
+                row.size,
+                row.op,
+                row.text_chars,
+                row.token_count,
+            ),
+            [],
         ).append(row)
 
     out: List[Summary] = []
-    for (backend, model, corpus, size, op, text_chars), samples in grouped.items():
+    for (
+        backend,
+        model,
+        corpus,
+        size,
+        op,
+        text_chars,
+        token_count,
+    ), samples in grouped.items():
         ops_values = [x.ops_per_s for x in samples]
+        token_values = [x.tokens_per_s for x in samples]
         chars_values = [x.chars_per_s for x in samples]
         out.append(
             Summary(
@@ -339,11 +372,17 @@ def summarize(rows: List[Result]) -> List[Summary]:
                 size=size,
                 op=op,
                 text_chars=text_chars,
+                token_count=token_count,
                 samples=len(samples),
                 ops_per_s_mean=statistics.mean(ops_values),
                 ops_per_s_median=statistics.median(ops_values),
                 ops_per_s_stdev=statistics.stdev(ops_values)
                 if len(ops_values) > 1
+                else 0.0,
+                tokens_per_s_mean=statistics.mean(token_values),
+                tokens_per_s_median=statistics.median(token_values),
+                tokens_per_s_stdev=statistics.stdev(token_values)
+                if len(token_values) > 1
                 else 0.0,
                 chars_per_s_mean=statistics.mean(chars_values),
                 chars_per_s_median=statistics.median(chars_values),
@@ -367,9 +406,11 @@ def format_summary_table(rows: List[Summary]) -> str:
         "op",
         "n",
         "chars",
+        "tokens",
         "ops/s mean",
         "ops/s med",
         "ops/s sd",
+        "tokens/s mean",
         "chars/s mean",
         "MB/s",
         "MiB/s",
@@ -377,9 +418,9 @@ def format_summary_table(rows: List[Summary]) -> str:
     out = ["  ".join(headers)]
     for r in rows:
         out.append(
-            f"{r.backend:14}  {r.model:14}  {r.corpus:10}  {r.size:5}  {r.op:6}  {r.samples:2d}  {r.text_chars:6d}  "
+            f"{r.backend:14}  {r.model:14}  {r.corpus:10}  {r.size:5}  {r.op:6}  {r.samples:2d}  {r.text_chars:6d}  {r.token_count:6d}  "
             f"{r.ops_per_s_mean:10.1f}  {r.ops_per_s_median:10.1f}  {r.ops_per_s_stdev:9.1f}  "
-            f"{r.chars_per_s_mean:12.1f}  {r.mb_per_s_mean:8.2f}  {r.mib_per_s_mean:8.2f}"
+            f"{r.tokens_per_s_mean:12.1f}  {r.chars_per_s_mean:12.1f}  {r.mb_per_s_mean:8.2f}  {r.mib_per_s_mean:8.2f}"
         )
     return "\n".join(out)
 
@@ -396,21 +437,31 @@ def write_csv(path: str, rows: List[Result], summaries: List[Summary]) -> None:
                 "size",
                 "op",
                 "chars",
+                "tokens",
                 "sample",
                 "ops_per_s",
+                "tokens_per_s",
                 "chars_per_s",
                 "mb_per_s",
                 "mib_per_s",
             ]
         )
-        grouped: Dict[tuple[str, str, str, str, str, int], List[Result]] = {}
+        grouped: Dict[tuple[str, str, str, str, str, int, int], List[Result]] = {}
         for row in rows:
             grouped.setdefault(
-                (row.backend, row.model, row.corpus, row.size, row.op, row.text_chars),
+                (
+                    row.backend,
+                    row.model,
+                    row.corpus,
+                    row.size,
+                    row.op,
+                    row.text_chars,
+                    row.token_count,
+                ),
                 [],
             ).append(row)
         for key, values in grouped.items():
-            backend, model, corpus, size, op, chars = key
+            backend, model, corpus, size, op, chars, tokens = key
             for index, value in enumerate(values, start=1):
                 writer.writerow(
                     [
@@ -421,8 +472,10 @@ def write_csv(path: str, rows: List[Result], summaries: List[Summary]) -> None:
                         size,
                         op,
                         chars,
+                        tokens,
                         index,
                         f"{value.ops_per_s:.6f}",
+                        f"{value.tokens_per_s:.6f}",
                         f"{value.chars_per_s:.6f}",
                         f"{value.mb_per_s:.6f}",
                         f"{value.mib_per_s:.6f}",
@@ -438,8 +491,10 @@ def write_csv(path: str, rows: List[Result], summaries: List[Summary]) -> None:
                     summary.size,
                     summary.op,
                     summary.text_chars,
+                    summary.token_count,
                     summary.samples,
                     f"{summary.ops_per_s_mean:.6f}",
+                    f"{summary.tokens_per_s_mean:.6f}",
                     f"{summary.chars_per_s_mean:.6f}",
                     f"{summary.mb_per_s_mean:.6f}",
                     f"{summary.mib_per_s_mean:.6f}",
@@ -481,7 +536,10 @@ def main() -> int:
     parser.add_argument(
         "--backends",
         default="tiktoken,tokie,hf,mistral-common",
-        help="comma-separated backends: tiktoken,tokie,hf,mistral-common",
+        help=(
+            "comma-separated backends: tiktoken,tokie,hf,mistral-common "
+            "(tiktoken/tokie only available for gpt2 with strict source matching)"
+        ),
     )
     parser.add_argument("--csv", default=None, help="optional CSV output path")
     args = parser.parse_args()

@@ -14,6 +14,7 @@ import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.text.Normalizer.Form;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import org.openjdk.jmh.annotations.AuxCounters;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -31,6 +32,15 @@ import org.openjdk.jmh.infra.Blackhole;
 /**
  * End-to-end benchmark for model tokenizer profiles (encode/decode/count), inspired by benchmark
  * comparisons used by tiktoken/HF/Mistral ecosystems.
+ *
+ * <p>Implementation semantics:
+ *
+ * <ul>
+ *   <li>{@code reference}: model-matching baseline tokenizer (JTokkit for GPT-2; HF files for
+ *       model-native families)
+ *   <li>{@code classic}: Tok'n'Roll model-native tokenizer
+ *   <li>{@code fast}: Tok'n'Roll fast pipeline over model-native vocabulary
+ * </ul>
  */
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
@@ -40,6 +50,17 @@ import org.openjdk.jmh.infra.Blackhole;
 @State(Scope.Benchmark)
 public class ModelTokenizerBenchmark {
 
+    @State(Scope.Thread)
+    @AuxCounters(AuxCounters.Type.EVENTS)
+    public static class DecodeCounters {
+        public long decodedTokens;
+
+        @Setup(Level.Iteration)
+        public void reset() {
+            decodedTokens = 0L;
+        }
+    }
+
     private static final String LLAMA3_HF_MODEL_REF = "unsloth/Llama-3.2-1B-Instruct";
     private static final String LLAMA3_HF_REVISION = "5a8abab4a5d6f164389b1079fb721cfab8d7126c";
     private static final String QWEN35_HF_MODEL_REF = "Qwen/Qwen3-0.6B";
@@ -48,7 +69,7 @@ public class ModelTokenizerBenchmark {
     private static final String MISTRAL_TEKKEN_HF_REVISION =
             "2f494a194c5b980dfb9772cb92d26cbb671fce5a";
 
-    @Param({"jtokkit", "classic", "fast"})
+    @Param({"reference", "classic", "fast"})
     public String implementation;
 
     @Param({"gpt2", "llama3", "qwen35", "mistral-tekken"})
@@ -84,8 +105,9 @@ public class ModelTokenizerBenchmark {
     }
 
     @Benchmark
-    public void decode(Blackhole blackhole) {
+    public void decode(Blackhole blackhole, DecodeCounters counters) {
         blackhole.consume(tokenizer.decode(encoded));
+        counters.decodedTokens += encoded.length();
     }
 
     @Benchmark
@@ -126,7 +148,7 @@ public class ModelTokenizerBenchmark {
         }
 
         switch (implementation) {
-            case "jtokkit":
+            case "reference":
                 return TiktokenFixtures.createJtokkitTokenizer("r50k_base");
             case "classic":
                 return classic("r50k_base", Normalizer.identity(), ModelSplitters.DEFAULT_BPE);
@@ -151,7 +173,7 @@ public class ModelTokenizerBenchmark {
                                         new IllegalStateException(
                                                 "Failed to load GGUF tokenizer for " + familyId));
         switch (implementation) {
-            case "jtokkit":
+            case "reference":
                 return ModelFamilyTokenizers.createFromHfFiles(familyId, hfModelRef, hfRevision)
                         .orElseThrow(
                                 () ->

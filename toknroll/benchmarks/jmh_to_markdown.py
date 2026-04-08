@@ -2,7 +2,7 @@
 """Convert JMH JSON output from ModelTokenizerBenchmark into markdown tables.
 
 Example:
-  python scripts/jmh_to_markdown.py \
+  python benchmarks/jmh_to_markdown.py \
     --input target/jmh-model-tokenizers.json \
     --output target/jmh-model-tokenizers.md
 """
@@ -24,7 +24,8 @@ class RawRow:
     size: str
     implementation: str
     operation: str
-    ops_per_s: float
+    throughput: float
+    unit: str
 
 
 def parse_operation(benchmark_name: str) -> str:
@@ -60,14 +61,25 @@ def load_rows(path: Path) -> List[RawRow]:
         ):
             continue
 
+        operation = parse_operation(benchmark)
+        throughput = float(score)
+        unit = "ops/s"
+        if operation == "decode":
+            secondary = (item.get("secondaryMetrics") or {}).get("decodedTokens") or {}
+            decoded_tokens_score = secondary.get("score")
+            if decoded_tokens_score is not None:
+                throughput = float(decoded_tokens_score)
+                unit = "tokens/s"
+
         rows.append(
             RawRow(
                 model=model,
                 corpus=corpus,
                 size=size,
                 implementation=implementation,
-                operation=parse_operation(benchmark),
-                ops_per_s=float(score),
+                operation=operation,
+                throughput=throughput,
+                unit=unit,
             )
         )
 
@@ -78,14 +90,21 @@ def load_rows(path: Path) -> List[RawRow]:
 
 
 def aggregate(rows: Iterable[RawRow]) -> List[RawRow]:
-    grouped: Dict[Tuple[str, str, str, str, str], List[float]] = defaultdict(list)
+    grouped: Dict[Tuple[str, str, str, str, str, str], List[float]] = defaultdict(list)
     for row in rows:
-        key = (row.model, row.corpus, row.size, row.implementation, row.operation)
-        grouped[key].append(row.ops_per_s)
+        key = (
+            row.model,
+            row.corpus,
+            row.size,
+            row.implementation,
+            row.operation,
+            row.unit,
+        )
+        grouped[key].append(row.throughput)
 
     out: List[RawRow] = []
     for key, values in grouped.items():
-        model, corpus, size, implementation, operation = key
+        model, corpus, size, implementation, operation, unit = key
         out.append(
             RawRow(
                 model=model,
@@ -93,7 +112,8 @@ def aggregate(rows: Iterable[RawRow]) -> List[RawRow]:
                 size=size,
                 implementation=implementation,
                 operation=operation,
-                ops_per_s=sum(values) / len(values),
+                throughput=sum(values) / len(values),
+                unit=unit,
             )
         )
 
@@ -110,7 +130,13 @@ def aggregate(rows: Iterable[RawRow]) -> List[RawRow]:
 
 
 def impl_sort_key(name: str) -> int:
-    order = {"jtokkit": 0, "classic": 1, "fast": 2}
+    order = {
+        "reference": 0,
+        "jtokkit": 0,
+        "jtokkit-adapter": 1,
+        "classic": 2,
+        "fast": 3,
+    }
     return order.get(name, 999)
 
 
@@ -124,19 +150,21 @@ def build_markdown(rows: List[RawRow], baseline: str) -> str:
     by_key: Dict[Tuple[str, str, str, str], Dict[str, float]] = defaultdict(dict)
     for row in rows:
         key = (row.model, row.corpus, row.size, row.operation)
-        by_key[key][row.implementation] = row.ops_per_s
+        by_key[key][row.implementation] = row.throughput
 
     lines: List[str] = []
     lines.append("# JMH Model Tokenizer Benchmark Report")
     lines.append("")
-    lines.append("## Raw Throughput (ops/s)")
+    lines.append("## Raw Throughput")
     lines.append("")
-    lines.append("| model | corpus | size | operation | implementation | ops/s |")
-    lines.append("|---|---|---|---|---|---:|")
+    lines.append(
+        "| model | corpus | size | operation | implementation | throughput | unit |"
+    )
+    lines.append("|---|---|---|---|---|---:|---|")
     for row in rows:
         lines.append(
             f"| {row.model} | {row.corpus} | {row.size} | {row.operation} |"
-            f" {row.implementation} | {row.ops_per_s:.2f} |"
+            f" {row.implementation} | {row.throughput:.2f} | {row.unit} |"
         )
 
     lines.append("")

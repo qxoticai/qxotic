@@ -2,6 +2,7 @@ package com.qxotic.toknroll.loaders;
 
 import com.qxotic.toknroll.advanced.Splitter;
 import com.qxotic.toknroll.impl.FastQwen35Splitter;
+import com.qxotic.toknroll.impl.FastTekkenSplitter;
 import java.util.Arrays;
 import java.util.regex.Pattern;
 
@@ -64,18 +65,6 @@ public final class ModelSplitters {
     private static final String[] REFACT_PATTERNS = {
         "\\p{N}", "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)"
     };
-    private static final String[] TEKKEN_PATTERNS = {
-        "[^\\r"
-            + "\\n"
-            + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]*[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]+|[^\\r"
-            + "\\n"
-            + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]+[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]*|\\p{N}|"
-            + " ?[^\\s\\p{L}\\p{N}]+[\\r"
-            + "\\n"
-            + "/]*|\\s*[\\r"
-            + "\\n"
-            + "]+|\\s+(?!\\S)|\\s+"
-    };
     private static final String[] DEFAULT_BPE_SPLITS = {
         "[\\p{P}\\$\\+<=>\\^~\\|]+",
         "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)",
@@ -91,7 +80,7 @@ public final class ModelSplitters {
     public static final Splitter QWEN35 = FastQwen35Splitter.INSTANCE;
     public static final Splitter SMOLLM2 = sequence(SMOLLM2_PATTERNS);
     public static final Splitter REFACT = sequence(REFACT_PATTERNS);
-    public static final Splitter TEKKEN = sequence(TEKKEN_PATTERNS);
+    public static final Splitter TEKKEN = FastTekkenSplitter.INSTANCE;
     public static final Splitter MISTRAL_TEKKEN = TEKKEN;
     public static final Splitter DEEPSEEK_LATEST = QWEN35;
     public static final Splitter KIMI_25 = QWEN35;

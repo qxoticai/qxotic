@@ -24,7 +24,7 @@ public final class GenericBpeTokenizer extends AbstractTokenizer {
 
     private final BpeMergeTable mergeTable;
     private final BpeSymbolEncoder symbolEncoder;
-    private final byte[][] decodedTokenBytesCache;
+    private final byte[][] tokenBytesById;
     private final int tinyChunkThreshold;
     private final int largeChunkThreshold;
     private final AtomicReference<Scratch> scratchSlot = new AtomicReference<>();
@@ -56,7 +56,7 @@ public final class GenericBpeTokenizer extends AbstractTokenizer {
         super(vocabulary, normalizer, splitter);
         this.mergeTable = Objects.requireNonNull(mergeTable, "mergeTable");
         this.symbolEncoder = Objects.requireNonNull(symbolEncoder, "symbolEncoder");
-        this.decodedTokenBytesCache = new byte[vocabulary.size()][];
+        this.tokenBytesById = buildTokenBytesById(vocabulary, symbolEncoder);
         this.tinyChunkThreshold = Math.max(1, Math.min(3, tinyChunkThreshold));
         this.largeChunkThreshold = Math.max(8, largeChunkThreshold);
     }
@@ -157,15 +157,11 @@ public final class GenericBpeTokenizer extends AbstractTokenizer {
         int length = tokens.length();
 
         byte[] out = new byte[totalBytes];
-        ByteBuffer buffer = ByteBuffer.wrap(out);
-        int tokenIndex = 0;
-        while (tokenIndex < length) {
-            int consumed = decodeBytesInto(tokens, tokenIndex, buffer);
-            if (consumed <= 0) {
-                throw new IllegalStateException(
-                        "decodeBytesInto made no progress at token " + tokenIndex);
-            }
-            tokenIndex += consumed;
+        int offset = 0;
+        for (int i = 0; i < length; i++) {
+            byte[] chunk = tokenBytes(tokens.intAt(i));
+            System.arraycopy(chunk, 0, out, offset, chunk.length);
+            offset += chunk.length;
         }
         return out;
     }
@@ -218,17 +214,30 @@ public final class GenericBpeTokenizer extends AbstractTokenizer {
     }
 
     private byte[] tokenBytes(int tokenId) {
-        if (tokenId < 0
-                || tokenId >= decodedTokenBytesCache.length
-                || !vocabulary().contains(tokenId)) {
+        if (tokenId < 0 || tokenId >= tokenBytesById.length) {
             throw new NoSuchElementException(String.valueOf(tokenId));
         }
-        byte[] cached = decodedTokenBytesCache[tokenId];
-        if (cached == null) {
-            cached = symbolEncoder.decodeTokenBytes(tokenId, vocabulary());
-            decodedTokenBytesCache[tokenId] = cached;
+        byte[] bytes = tokenBytesById[tokenId];
+        if (bytes == null) {
+            throw new NoSuchElementException(String.valueOf(tokenId));
         }
-        return cached;
+        return bytes;
+    }
+
+    private static byte[][] buildTokenBytesById(
+            Vocabulary vocabulary, BpeSymbolEncoder symbolEncoder) {
+        int maxId = -1;
+        for (java.util.Map.Entry<String, Integer> entry : vocabulary) {
+            if (entry.getValue() > maxId) {
+                maxId = entry.getValue();
+            }
+        }
+        byte[][] table = new byte[Math.max(0, maxId + 1)][];
+        for (java.util.Map.Entry<String, Integer> entry : vocabulary) {
+            int tokenId = entry.getValue();
+            table[tokenId] = symbolEncoder.decodeTokenBytes(tokenId, vocabulary);
+        }
+        return table;
     }
 
     private static IllegalArgumentException insufficientSpace(

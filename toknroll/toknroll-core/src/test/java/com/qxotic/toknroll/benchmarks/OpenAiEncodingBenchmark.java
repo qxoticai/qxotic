@@ -1,5 +1,10 @@
 package com.qxotic.toknroll.benchmarks;
 
+import com.knuddels.jtokkit.Encodings;
+import com.knuddels.jtokkit.api.Encoding;
+import com.knuddels.jtokkit.api.EncodingRegistry;
+import com.knuddels.jtokkit.api.EncodingType;
+import com.knuddels.jtokkit.api.IntArrayList;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
@@ -11,6 +16,7 @@ import com.qxotic.toknroll.impl.FastR50kSplitter;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import org.openjdk.jmh.annotations.AuxCounters;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -34,7 +40,18 @@ import org.openjdk.jmh.infra.Blackhole;
 @State(Scope.Benchmark)
 public class OpenAiEncodingBenchmark {
 
-    @Param({"jtokkit", "classic", "generic", "fast"})
+    @State(Scope.Thread)
+    @AuxCounters(AuxCounters.Type.EVENTS)
+    public static class DecodeCounters {
+        public long decodedTokens;
+
+        @Setup(Level.Iteration)
+        public void reset() {
+            decodedTokens = 0L;
+        }
+    }
+
+    @Param({"jtokkit", "jtokkit-adapter", "classic", "generic", "fast"})
     public String implementation;
 
     @Param({"r50k_base", "cl100k_base", "o200k_base"})
@@ -47,23 +64,43 @@ public class OpenAiEncodingBenchmark {
     public String size;
 
     private Tokenizer tokenizer;
+    private Encoding jtokkitEncoding;
     private String text;
     private IntSequence encoded;
+    private IntArrayList jtokkitEncoded;
 
     @Setup(Level.Trial)
     public void setup() {
-        tokenizer = createTokenizer(implementation, encoding);
         text = resize(seedText(corpus), targetLength(size));
+        if ("jtokkit".equals(implementation)) {
+            jtokkitEncoding = createDirectJtokkitEncoding(encoding);
+            tokenizer = null;
+            jtokkitEncoded = jtokkitEncoding.encode(text);
+            encoded = null;
+            return;
+        }
+
+        jtokkitEncoding = null;
+        tokenizer = createTokenizer(implementation, encoding);
         encoded = tokenizer.encode(text);
+        jtokkitEncoded = null;
     }
 
     @Benchmark
     public void encode(Blackhole blackhole) {
+        if (jtokkitEncoding != null) {
+            blackhole.consume(jtokkitEncoding.encode(text));
+            return;
+        }
         blackhole.consume(tokenizer.encode(text));
     }
 
     @Benchmark
     public void encodeInto(Blackhole blackhole) {
+        if (jtokkitEncoding != null) {
+            blackhole.consume(jtokkitEncoding.encode(text).size());
+            return;
+        }
         IntSequence.Builder builder = IntSequence.newBuilder(encoded.length() + 16);
         tokenizer.encodeInto(text, builder);
         blackhole.consume(builder.size());
@@ -71,17 +108,30 @@ public class OpenAiEncodingBenchmark {
 
     @Benchmark
     public void countTokens(Blackhole blackhole) {
+        if (jtokkitEncoding != null) {
+            blackhole.consume(jtokkitEncoding.countTokens(text));
+            return;
+        }
         blackhole.consume(tokenizer.countTokens(text));
     }
 
     @Benchmark
-    public void decode(Blackhole blackhole) {
+    public void decode(Blackhole blackhole, DecodeCounters counters) {
+        if (jtokkitEncoding != null) {
+            blackhole.consume(jtokkitEncoding.decode(jtokkitEncoded));
+            counters.decodedTokens += jtokkitEncoded.size();
+            return;
+        }
         blackhole.consume(tokenizer.decode(encoded));
+        counters.decodedTokens += encoded.length();
     }
 
     private static Tokenizer createTokenizer(String implementation, String encoding) {
         switch (implementation) {
             case "jtokkit":
+                throw new IllegalArgumentException(
+                        "Use implementation=jtokkit for direct benchmark path");
+            case "jtokkit-adapter":
                 return TiktokenFixtures.createJtokkitTokenizer(encoding);
             case "classic":
                 return TiktokenFixtures.createClassicTokenizer(encoding);
@@ -98,6 +148,20 @@ public class OpenAiEncodingBenchmark {
                         genericRanks, genericSpecials, Normalizer.identity(), genericSplitter);
             default:
                 throw new IllegalArgumentException("Unsupported implementation: " + implementation);
+        }
+    }
+
+    private static Encoding createDirectJtokkitEncoding(String encoding) {
+        EncodingRegistry registry = Encodings.newDefaultEncodingRegistry();
+        switch (encoding) {
+            case "r50k_base":
+                return registry.getEncoding(EncodingType.R50K_BASE);
+            case "cl100k_base":
+                return registry.getEncoding(EncodingType.CL100K_BASE);
+            case "o200k_base":
+                return registry.getEncoding(EncodingType.O200K_BASE);
+            default:
+                throw new IllegalArgumentException("Unsupported encoding: " + encoding);
         }
     }
 
