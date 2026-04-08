@@ -21,7 +21,7 @@ public class GPT2Tokenizer extends AbstractTokenizer {
 
     private final LongLongMap merges;
     private final SymbolCodec symbolCodec;
-    private final byte[][] decodedTokenBytesCache;
+    private final byte[][] tokenBytesById;
 
     public GPT2Tokenizer(
             Vocabulary vocabulary,
@@ -40,7 +40,7 @@ public class GPT2Tokenizer extends AbstractTokenizer {
         super(vocabulary, normalizer, splitter);
         this.merges = mergeRanks;
         this.symbolCodec = symbolCodec;
-        this.decodedTokenBytesCache = new byte[vocabulary.size()][];
+        this.tokenBytesById = buildTokenBytesById(vocabulary, symbolCodec);
     }
 
     public GPT2Tokenizer(
@@ -71,7 +71,7 @@ public class GPT2Tokenizer extends AbstractTokenizer {
             values[rank] = IntPair.of(mergeIndex, rank);
         }
         this.merges = new LongLongMap(keys, values);
-        this.decodedTokenBytesCache = new byte[vocabulary.size()][];
+        this.tokenBytesById = buildTokenBytesById(vocabulary, symbolCodec);
     }
 
     private static long toPair(Object value) {
@@ -257,15 +257,11 @@ public class GPT2Tokenizer extends AbstractTokenizer {
         int length = tokens.length();
 
         byte[] out = new byte[totalBytes];
-        ByteBuffer buffer = ByteBuffer.wrap(out);
-        int tokenIndex = 0;
-        while (tokenIndex < length) {
-            int consumed = decodeBytesInto(tokens, tokenIndex, buffer);
-            if (consumed <= 0) {
-                throw new IllegalStateException(
-                        "decodeBytesInto made no progress at token " + tokenIndex);
-            }
-            tokenIndex += consumed;
+        int offset = 0;
+        for (int i = 0; i < length; i++) {
+            byte[] chunk = tokenBytes(tokens.intAt(i));
+            System.arraycopy(chunk, 0, out, offset, chunk.length);
+            offset += chunk.length;
         }
         return out;
     }
@@ -313,17 +309,29 @@ public class GPT2Tokenizer extends AbstractTokenizer {
     }
 
     private byte[] tokenBytes(int tokenId) {
-        if (tokenId < 0
-                || tokenId >= decodedTokenBytesCache.length
-                || !vocabulary().contains(tokenId)) {
+        if (tokenId < 0 || tokenId >= tokenBytesById.length) {
             throw new NoSuchElementException(String.valueOf(tokenId));
         }
-        byte[] cached = decodedTokenBytesCache[tokenId];
-        if (cached == null) {
-            cached = symbolCodec.decodeSymbols(vocabulary().token(tokenId));
-            decodedTokenBytesCache[tokenId] = cached;
+        byte[] bytes = tokenBytesById[tokenId];
+        if (bytes == null) {
+            throw new NoSuchElementException(String.valueOf(tokenId));
         }
-        return cached;
+        return bytes;
+    }
+
+    private static byte[][] buildTokenBytesById(Vocabulary vocabulary, SymbolCodec symbolCodec) {
+        int maxId = -1;
+        for (Map.Entry<String, Integer> entry : vocabulary) {
+            if (entry.getValue() > maxId) {
+                maxId = entry.getValue();
+            }
+        }
+        byte[][] table = new byte[Math.max(0, maxId + 1)][];
+        for (Map.Entry<String, Integer> entry : vocabulary) {
+            int tokenId = entry.getValue();
+            table[tokenId] = symbolCodec.decodeSymbols(entry.getKey());
+        }
+        return table;
     }
 
     private static IllegalArgumentException insufficientSpace(

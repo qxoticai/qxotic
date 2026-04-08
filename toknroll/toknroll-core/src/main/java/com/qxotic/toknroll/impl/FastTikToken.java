@@ -32,6 +32,8 @@ public final class FastTikToken extends AbstractTokenizer {
             "qxotic.tokenizer.fast.largeChunkThreshold";
     public static final String TINY_CHUNK_THRESHOLD_PROPERTY =
             "qxotic.tokenizer.fast.tinyChunkThreshold";
+    public static final String EXACT_LOOKUP_ENABLED_PROPERTY =
+            "qxotic.tokenizer.fast.exactLookupEnabled";
 
     private static final byte REPLACEMENT_B0 = (byte) 0xEF;
     private static final byte REPLACEMENT_B1 = (byte) 0xBF;
@@ -44,6 +46,7 @@ public final class FastTikToken extends AbstractTokenizer {
     private final LongLongMap merges;
     private final int[] singleByteTokenId;
     private final byte[][] tokenBytesById;
+    private final ExactTokenLookup exactTokenLookup;
     private final int tinyChunkThreshold;
     private final int largeChunkThreshold;
     private final ConcurrentLinkedQueue<Scratch> scratchPool = new ConcurrentLinkedQueue<>();
@@ -55,6 +58,7 @@ public final class FastTikToken extends AbstractTokenizer {
             LongLongMap merges,
             int[] singleByteTokenId,
             byte[][] tokenBytesById,
+            ExactTokenLookup exactTokenLookup,
             int tinyChunkThreshold,
             int largeChunkThreshold) {
         super(vocabulary, normalizer, splitter);
@@ -64,6 +68,7 @@ public final class FastTikToken extends AbstractTokenizer {
             throw new IllegalArgumentException("singleByteTokenId length must be 256");
         }
         this.tokenBytesById = Objects.requireNonNull(tokenBytesById, "tokenBytesById");
+        this.exactTokenLookup = Objects.requireNonNull(exactTokenLookup, "exactTokenLookup");
         this.tinyChunkThreshold = Math.max(1, Math.min(3, tinyChunkThreshold));
         this.largeChunkThreshold = Math.max(8, largeChunkThreshold);
     }
@@ -74,7 +79,8 @@ public final class FastTikToken extends AbstractTokenizer {
             Splitter splitter,
             LongLongMap merges,
             int[] singleByteTokenId,
-            byte[][] tokenBytesById) {
+            byte[][] tokenBytesById,
+            ExactTokenLookup exactTokenLookup) {
         this(
                 vocabulary,
                 normalizer,
@@ -82,6 +88,7 @@ public final class FastTikToken extends AbstractTokenizer {
                 merges,
                 singleByteTokenId,
                 tokenBytesById,
+                exactTokenLookup,
                 DEFAULT_TINY_CHUNK_THRESHOLD,
                 DEFAULT_LARGE_CHUNK_THRESHOLD);
     }
@@ -102,6 +109,12 @@ public final class FastTikToken extends AbstractTokenizer {
         Vocabulary vocabulary =
                 VocabularyWithSpecials.create(new VocabularyImpl(mergeableRanks), specialTokens);
         byte[][] tokenBytesById = buildTokenBytesById(vocabulary, SymbolCodec.BYTE_LEVEL);
+        boolean exactLookupEnabled =
+                Boolean.parseBoolean(System.getProperty(EXACT_LOOKUP_ENABLED_PROPERTY, "true"));
+        ExactTokenLookup exactTokenLookup =
+                exactLookupEnabled
+                        ? ExactTokenLookup.fromMergeableRanks(mergeableRanks)
+                        : ExactTokenLookup.EMPTY;
         int tinyThreshold =
                 Integer.getInteger(TINY_CHUNK_THRESHOLD_PROPERTY, DEFAULT_TINY_CHUNK_THRESHOLD);
         int threshold =
@@ -114,6 +127,7 @@ public final class FastTikToken extends AbstractTokenizer {
                 merges,
                 singleByteTokenId,
                 tokenBytesById,
+                exactTokenLookup,
                 tinyThreshold,
                 threshold);
     }
@@ -210,15 +224,12 @@ public final class FastTikToken extends AbstractTokenizer {
         }
 
         byte[] out = new byte[totalBytes];
-        ByteBuffer buffer = ByteBuffer.wrap(out);
-        int tokenIndex = 0;
-        while (tokenIndex < length) {
-            int consumed = decodeBytesInto(tokens, tokenIndex, buffer);
-            if (consumed <= 0) {
-                throw new IllegalStateException(
-                        "decodeBytesInto made no progress at token " + tokenIndex);
-            }
-            tokenIndex += consumed;
+        int offset = 0;
+        for (int i = 0; i < length; i++) {
+            int tokenId = tokens.intAt(i);
+            byte[] tokenBytes = tokenBytesById[tokenId];
+            System.arraycopy(tokenBytes, 0, out, offset, tokenBytes.length);
+            offset += tokenBytes.length;
         }
         return out;
     }
@@ -300,6 +311,15 @@ public final class FastTikToken extends AbstractTokenizer {
         int byteLength = utf8EncodeRange(source, startInclusive, endExclusive, s);
         if (byteLength == 0) {
             return 0;
+        }
+        if (byteLength > tinyChunkThreshold) {
+            int exactTokenId = exactTokenLookup.find(s.utf8Bytes, byteLength);
+            if (exactTokenId >= 0) {
+                if (keepOutput) {
+                    out.add(exactTokenId);
+                }
+                return 1;
+            }
         }
         if (byteLength <= tinyChunkThreshold) {
             return keepOutput
@@ -470,10 +490,10 @@ public final class FastTikToken extends AbstractTokenizer {
         int i = 0;
         int unrollLimit = size & ~3;
         for (; i < unrollLimit; i += 4) {
-            tokens[i] = singleByteTokenId[bytes[i] & 0xFF];
-            tokens[i + 1] = singleByteTokenId[bytes[i + 1] & 0xFF];
-            tokens[i + 2] = singleByteTokenId[bytes[i + 2] & 0xFF];
             tokens[i + 3] = singleByteTokenId[bytes[i + 3] & 0xFF];
+            tokens[i + 2] = singleByteTokenId[bytes[i + 2] & 0xFF];
+            tokens[i + 1] = singleByteTokenId[bytes[i + 1] & 0xFF];
+            tokens[i] = singleByteTokenId[bytes[i] & 0xFF];
         }
         for (; i < size; i++) {
             tokens[i] = singleByteTokenId[bytes[i] & 0xFF];
@@ -491,28 +511,25 @@ public final class FastTikToken extends AbstractTokenizer {
             int scan = 0;
             int scanLimit = pairCount & ~3;
             for (; scan < scanLimit; scan += 4) {
-                int mergedRank = pairRanks[scan];
+                int mergedRank = pairRanks[scan + 3];
                 if (mergedRank >= 0 && mergedRank < bestRank) {
                     bestRank = mergedRank;
-                    bestPos = scan;
+                    bestPos = scan + 3;
                 }
-
-                mergedRank = pairRanks[scan + 1];
-                if (mergedRank >= 0 && mergedRank < bestRank) {
-                    bestRank = mergedRank;
-                    bestPos = scan + 1;
-                }
-
                 mergedRank = pairRanks[scan + 2];
                 if (mergedRank >= 0 && mergedRank < bestRank) {
                     bestRank = mergedRank;
                     bestPos = scan + 2;
                 }
-
-                mergedRank = pairRanks[scan + 3];
+                mergedRank = pairRanks[scan + 1];
                 if (mergedRank >= 0 && mergedRank < bestRank) {
                     bestRank = mergedRank;
-                    bestPos = scan + 3;
+                    bestPos = scan + 1;
+                }
+                mergedRank = pairRanks[scan];
+                if (mergedRank >= 0 && mergedRank < bestRank) {
+                    bestRank = mergedRank;
+                    bestPos = scan;
                 }
             }
             for (; scan < pairCount; scan++) {
@@ -1039,6 +1056,116 @@ public final class FastTikToken extends AbstractTokenizer {
                 c = c + (c >>> 1);
             }
             return c;
+        }
+    }
+
+    private static final class ExactTokenLookup {
+        private static final ExactTokenLookup EMPTY =
+                new ExactTokenLookup(new byte[0][], new int[0], new int[0], 0, 0);
+
+        private final byte[][] keys;
+        private final int[] ids;
+        private final int[] hashes;
+        private final int mask;
+        private final int maxTokenBytes;
+
+        private ExactTokenLookup(byte[][] keys, int[] ids, int[] hashes, int mask, int maxTokenBytes) {
+            this.keys = keys;
+            this.ids = ids;
+            this.hashes = hashes;
+            this.mask = mask;
+            this.maxTokenBytes = maxTokenBytes;
+        }
+
+        static ExactTokenLookup fromMergeableRanks(Map<String, Integer> mergeableRanks) {
+            if (mergeableRanks.isEmpty()) {
+                return EMPTY;
+            }
+
+            int capacity = 1;
+            int needed = Math.max(16, mergeableRanks.size() * 2);
+            while (capacity < needed) {
+                capacity <<= 1;
+            }
+
+            byte[][] keys = new byte[capacity][];
+            int[] ids = new int[capacity];
+            int[] hashes = new int[capacity];
+            Arrays.fill(ids, NO_TOKEN);
+            int mask = capacity - 1;
+            int maxTokenBytes = 0;
+
+            for (Map.Entry<String, Integer> entry : mergeableRanks.entrySet()) {
+                byte[] tokenBytes = SymbolCodec.BYTE_LEVEL.decodeSymbols(entry.getKey());
+                if (tokenBytes.length == 0) {
+                    continue;
+                }
+                if (tokenBytes.length > maxTokenBytes) {
+                    maxTokenBytes = tokenBytes.length;
+                }
+
+                int hash = hashBytes(tokenBytes, tokenBytes.length);
+                int slot = hash & mask;
+                while (ids[slot] != NO_TOKEN) {
+                    byte[] existing = keys[slot];
+                    if (hashes[slot] == hash && bytesEqual(existing, tokenBytes, tokenBytes.length)) {
+                        break;
+                    }
+                    slot = (slot + 1) & mask;
+                }
+                keys[slot] = tokenBytes;
+                ids[slot] = entry.getValue();
+                hashes[slot] = hash;
+            }
+
+            return new ExactTokenLookup(keys, ids, hashes, mask, maxTokenBytes);
+        }
+
+        int find(byte[] bytes, int length) {
+            if (length <= 0 || length > maxTokenBytes || ids.length == 0) {
+                return NO_TOKEN;
+            }
+            int hash = hashBytes(bytes, length);
+            int slot = hash & mask;
+            while (ids[slot] != NO_TOKEN) {
+                if (hashes[slot] == hash && bytesEqual(keys[slot], bytes, length)) {
+                    return ids[slot];
+                }
+                slot = (slot + 1) & mask;
+            }
+            return NO_TOKEN;
+        }
+
+        private static int hashBytes(byte[] bytes, int length) {
+            // Hot path favors short ASCII-ish chunks; specialize tiny lengths to reduce loop overhead.
+            switch (length) {
+                case 1:
+                    return 31 + bytes[0];
+                case 2:
+                    return ((31 + bytes[0]) * 31) + bytes[1];
+                case 3:
+                    return (((31 + bytes[0]) * 31) + bytes[1]) * 31 + bytes[2];
+                case 4:
+                    return ((((31 + bytes[0]) * 31) + bytes[1]) * 31 + bytes[2]) * 31 + bytes[3];
+                default:
+                    int h = 1;
+                    for (int i = 0; i < length; i++) {
+                        h = 31 * h + bytes[i];
+                    }
+                    return h;
+            }
+        }
+
+        private static boolean bytesEqual(byte[] a, byte[] b, int length) {
+            if (a == null || a.length != length) {
+                return false;
+            }
+            for (int i = 0; i < length; i++) {
+                if (a[i] != b[i]) {
+                    return false;
+                }
+            }
+            return true;
         }
     }
 }
