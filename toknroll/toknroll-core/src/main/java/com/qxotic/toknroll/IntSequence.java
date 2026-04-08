@@ -7,19 +7,11 @@ import java.util.stream.IntStream;
 import java.util.stream.StreamSupport;
 
 /**
- * A sequence of integer values providing uniform, read-only access to different kinds of integer
- * collections. This interface combines the functionality of both primitive int arrays and Integer
- * collections while maintaining efficient memory usage and performance characteristics.
+ * A read-only sequence of {@code int} values.
  *
- * <p>The interface provides:
- *
- * <ul>
- *   <li>Read-only access to sequence elements
- *   <li>Conversion methods to arrays and collections
- *   <li>Stream processing capabilities
- *   <li>Builder pattern for creating sequences
- *   <li>Core operations for composition and partial copying
- * </ul>
+ * <p>Sequences are ordered lexicographically (element-by-element; a prefix sequence compares less
+ * than any longer sequence that starts with it), consistent with {@link Arrays#compare(int[],
+ * int[])}.
  */
 public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> {
 
@@ -288,11 +280,6 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
         for (int i = 0; i < sequenceLength; i++) {
             action.accept(intAt(i));
         }
-    }
-
-    /** Creates an IntStream containing this sequence values. */
-    default IntStream toIntStream() {
-        return stream();
     }
 
     /** Returns whether this sequence starts with the given prefix. */

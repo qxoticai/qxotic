@@ -302,19 +302,6 @@ public class IntSequenceTest {
     }
 
     @Test
-    void testToIntStream() {
-        IntSequence sequence = IntSequence.of(1, 2, 3, 4);
-        assertEquals(10, sequence.toIntStream().sum());
-    }
-
-    @Test
-    void testToIntStreamMatchesStream() {
-        IntSequence sequence = IntSequence.of(10, 20, 30);
-        assertEquals(sequence.stream().sum(), sequence.toIntStream().sum());
-        assertEquals(sequence.stream().count(), sequence.toIntStream().count());
-    }
-
-    @Test
     void testConcatStartsWithEndsWith() {
         IntSequence left = IntSequence.of(1, 2);
         IntSequence right = IntSequence.of(3, 4);
