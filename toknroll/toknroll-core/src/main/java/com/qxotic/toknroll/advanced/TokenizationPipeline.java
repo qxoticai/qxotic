@@ -6,35 +6,30 @@ import com.qxotic.toknroll.Vocabulary;
 import java.nio.ByteBuffer;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.Function;
 
 /**
- * Composed tokenizer pipeline that can apply optional input and token transforms around a base
+ * Composed tokenizer pipeline that applies optional normalization and splitting around a base
  * tokenizer.
  *
  * <p>By default, core tokenizer usage targets round-trip integrity for ordinary text. Adding a
- * {@link Normalizer} and/or token {@code postProcessor} is an explicit opt-in that may be lossy and
- * is generally discouraged unless mutation is intentionally required.
+ * {@link Normalizer} is an explicit opt-in that may be lossy and is generally discouraged unless
+ * mutation is intentionally required.
  */
 public final class TokenizationPipeline implements Tokenizer {
 
     private final Tokenizer baseTokenizer;
     private final Normalizer normalizer;
     private final Splitter splitter;
-    private final Function<IntSequence, IntSequence> postProcessor;
     private final boolean hasNormalizer;
     private final boolean hasSplitter;
-    private final boolean hasPostProcessor;
 
     private TokenizationPipeline(Builder builder) {
         this.baseTokenizer =
                 Objects.requireNonNull(builder.baseTokenizer, "baseTokenizer is required");
         this.normalizer = builder.normalizer;
         this.splitter = builder.splitter;
-        this.postProcessor = builder.postProcessor;
         this.hasNormalizer = normalizer != null;
         this.hasSplitter = splitter != null;
-        this.hasPostProcessor = postProcessor != null;
     }
 
     public static Builder builder() {
@@ -57,10 +52,6 @@ public final class TokenizationPipeline implements Tokenizer {
         return Optional.ofNullable(splitter);
     }
 
-    public Optional<Function<IntSequence, IntSequence>> postProcessor() {
-        return Optional.ofNullable(postProcessor);
-    }
-
     @Override
     public void encodeInto(
             CharSequence text, int startInclusive, int endExclusive, IntSequence.Builder out) {
@@ -76,28 +67,19 @@ public final class TokenizationPipeline implements Tokenizer {
                             + text.length());
         }
 
-        if (!hasNormalizer && !hasSplitter && !hasPostProcessor) {
+        if (!hasNormalizer && !hasSplitter) {
             baseTokenizer.encodeInto(text, startInclusive, endExclusive, out);
             return;
         }
 
-        CharSequence current = text.subSequence(startInclusive, endExclusive);
-
+        CharSequence current =
+                (startInclusive == 0 && endExclusive == text.length())
+                        ? text
+                        : text.subSequence(startInclusive, endExclusive);
         if (hasNormalizer) {
             current = normalizer.apply(current);
         }
-
-        if (!hasPostProcessor) {
-            encodeNormalizedInto(current, out);
-            return;
-        }
-
-        IntSequence.Builder temp = IntSequence.newBuilder();
-        encodeNormalizedInto(current, temp);
-        IntSequence processed =
-                Objects.requireNonNull(
-                        postProcessor.apply(temp.build()), "postProcessor returned null");
-        out.addAll(processed);
+        encodeNormalizedInto(current, out);
     }
 
     private void encodeNormalizedInto(CharSequence normalizedText, IntSequence.Builder out) {
@@ -114,6 +96,34 @@ public final class TokenizationPipeline implements Tokenizer {
     }
 
     @Override
+    public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
+        Objects.requireNonNull(text, "text");
+        if (!hasNormalizer && !hasSplitter) {
+            return baseTokenizer.countTokens(text, startInclusive, endExclusive);
+        }
+
+        CharSequence current =
+                (startInclusive == 0 && endExclusive == text.length())
+                        ? text
+                        : text.subSequence(startInclusive, endExclusive);
+        if (hasNormalizer) {
+            current = normalizer.apply(current);
+        }
+        if (!hasSplitter) {
+            return baseTokenizer.countTokens(current, 0, current.length());
+        }
+        int[] total = {0};
+        final CharSequence normalized = current;
+        splitter.splitAll(
+                normalized,
+                0,
+                normalized.length(),
+                (source, chunkStart, chunkEnd) ->
+                        total[0] += baseTokenizer.countTokens(source, chunkStart, chunkEnd));
+        return total[0];
+    }
+
+    @Override
     public String decode(IntSequence tokens) {
         return baseTokenizer.decode(tokens);
     }
@@ -121,11 +131,6 @@ public final class TokenizationPipeline implements Tokenizer {
     @Override
     public byte[] decodeBytes(IntSequence tokens) {
         return baseTokenizer.decodeBytes(tokens);
-    }
-
-    @Override
-    public int countTokens(CharSequence text) {
-        return encode(text).length();
     }
 
     @Override
@@ -143,12 +148,22 @@ public final class TokenizationPipeline implements Tokenizer {
         return baseTokenizer.vocabulary();
     }
 
+    @Override
+    public String toString() {
+        return "Pipeline[norm="
+                + hasNormalizer
+                + ", split="
+                + hasSplitter
+                + ", "
+                + baseTokenizer
+                + "]";
+    }
+
     /** Builder for {@link TokenizationPipeline}. */
     public static final class Builder {
         private Tokenizer baseTokenizer;
         private Normalizer normalizer;
         private Splitter splitter;
-        private Function<IntSequence, IntSequence> postProcessor;
 
         public Optional<Tokenizer> baseTokenizer() {
             return Optional.ofNullable(baseTokenizer);
@@ -176,16 +191,6 @@ public final class TokenizationPipeline implements Tokenizer {
         /** Sets or replaces the splitter used by this builder. */
         public Builder splitter(Splitter splitter) {
             this.splitter = Objects.requireNonNull(splitter, "splitter");
-            return this;
-        }
-
-        public Optional<Function<IntSequence, IntSequence>> postProcessor() {
-            return Optional.ofNullable(postProcessor);
-        }
-
-        /** Sets or replaces the token post-processor used by this builder. */
-        public Builder postProcessor(Function<IntSequence, IntSequence> postProcessor) {
-            this.postProcessor = Objects.requireNonNull(postProcessor, "postProcessor");
             return this;
         }
 

@@ -1,7 +1,5 @@
 package com.qxotic.toknroll.benchmarks;
 
-import com.qxotic.toknroll.advanced.Normalizer;
-import com.qxotic.toknroll.advanced.Splitter;
 import com.qxotic.toknroll.impl.FastTikToken;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.nio.charset.StandardCharsets;
@@ -49,10 +47,7 @@ public class FastTikTokenMergeBenchmark {
     public void setup() {
         Map<String, Integer> ranks = TiktokenFixtures.mergeableRanks(encoding);
         Map<String, Integer> specials = TiktokenFixtures.specialTokens(encoding);
-        tokenizer =
-                (FastTikToken)
-                        FastTikToken.fromTiktoken(
-                                ranks, specials, Normalizer.identity(), Splitter.identity());
+        tokenizer = FastTikToken.fromTiktoken(ranks, specials);
         bytes = resize(seedBytes(corpus), bytesLength);
     }
 

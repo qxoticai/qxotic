@@ -83,7 +83,8 @@ public interface Vocabulary extends Iterable<Map.Entry<String, Integer>> {
 
     /**
      * Determines if the token with the given ID belongs to a specific token type. The default
-     * implementation returns false, indicating no type information is available.
+     * implementation returns {@code false} for any present ID, indicating no type information is
+     * available.
      *
      * @param id the numeric identifier of the token to check
      * @param type the token type to check against
@@ -91,6 +92,9 @@ public interface Vocabulary extends Iterable<Map.Entry<String, Integer>> {
      * @throws NoSuchElementException if the ID is not present in the vocabulary
      */
     default boolean isTokenOfType(int id, TokenType type) {
+        if (!contains(id)) {
+            throw new NoSuchElementException("Token id not found: " + id);
+        }
         return false;
     }
 }

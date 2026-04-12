@@ -106,8 +106,8 @@ class TokenizerDefaultsTest {
         }
 
         @Override
-        public int countTokens(CharSequence text) {
-            return text.length();
+        public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
+            return endExclusive - startInclusive;
         }
 
         @Override

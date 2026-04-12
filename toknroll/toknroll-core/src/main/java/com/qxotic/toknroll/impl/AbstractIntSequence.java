@@ -62,12 +62,8 @@ public abstract class AbstractIntSequence implements IntSequence {
     }
 
     /**
-     * Compares this sequence with another sequence lexicographically. The comparison is based on
-     * the values of the elements of the sequences.
-     *
-     * @param other the sequence to compare with
-     * @return a negative value if this sequence is less than the other sequence, zero if they are
-     *     equal, or a positive value if this sequence is greater
+     * Compares this sequence with {@code other} lexicographically: element-by-element, with a
+     * strict prefix comparing less than the longer sequence.
      */
     @Override
     public int compareTo(IntSequence other) {

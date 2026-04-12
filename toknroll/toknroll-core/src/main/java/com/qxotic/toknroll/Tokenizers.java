@@ -12,7 +12,13 @@ import com.qxotic.toknroll.impl.GenericBPE;
 import java.util.Map;
 import java.util.Objects;
 
-/** High-level factory methods for building {@link Tokenizer} instances. */
+/**
+ * Factory methods for building {@link Tokenizer} instances from TikToken-style merge ranks.
+ *
+ * <p>For most use cases, prefer {@link #fastBpe} — it is the fastest TikToken-compatible
+ * implementation. Use {@link #classicBpe} only when exact GPT-2 native behaviour is required, and
+ * {@link #genericBpe} when a pluggable {@link com.qxotic.toknroll.advanced.SymbolCodec} is needed.
+ */
 public final class Tokenizers {
     private Tokenizers() {}
 
@@ -27,59 +33,32 @@ public final class Tokenizers {
     }
 
     /**
-     * Creates the native/classic GPT-2 style BPE tokenizer from TikToken data.
+     * Creates a {@link TokenizationPipeline} wrapping the optimized flat-array TikToken-compatible
+     * BPE tokenizer. Prefer this over {@link #classicBpe} and {@link #genericBpe} for
+     * TikToken-compatible encodings.
      *
      * @param mergeableRanks mergeable token ranks
      * @param specialTokens special token to id mapping
-     * @param normalizer text normalizer
-     * @param splitter text splitter
-     */
-    public static Tokenizer classicBpe(
-            Map<String, Integer> mergeableRanks,
-            Map<String, Integer> specialTokens,
-            Normalizer normalizer,
-            Splitter splitter) {
-        return ClassicBPE.classicFromTiktoken(
-                Objects.requireNonNull(mergeableRanks, "mergeableRanks"),
-                Objects.requireNonNull(specialTokens, "specialTokens"),
-                Objects.requireNonNull(normalizer, "normalizer"),
-                Objects.requireNonNull(splitter, "splitter"));
-    }
-
-    /**
-     * Creates the native/classic GPT-2 style BPE tokenizer from TikToken data.
-     *
-     * <p>Uses {@link Normalizer#identity()}.
-     */
-    public static Tokenizer classicBpe(
-            Map<String, Integer> mergeableRanks,
-            Map<String, Integer> specialTokens,
-            Splitter splitter) {
-        return classicBpe(mergeableRanks, specialTokens, Normalizer.identity(), splitter);
-    }
-
-    /**
-     * Creates the optimized flat-array TikToken-compatible BPE tokenizer from TikToken data.
-     *
-     * @param mergeableRanks mergeable token ranks
-     * @param specialTokens special token to id mapping
-     * @param normalizer text normalizer
-     * @param splitter text splitter
+     * @param normalizer text normalizer applied before splitting
+     * @param splitter text splitter applied before BPE encoding
      */
     public static Tokenizer fastBpe(
             Map<String, Integer> mergeableRanks,
             Map<String, Integer> specialTokens,
             Normalizer normalizer,
             Splitter splitter) {
-        return FastTikToken.fromTiktoken(
-                Objects.requireNonNull(mergeableRanks, "mergeableRanks"),
-                Objects.requireNonNull(specialTokens, "specialTokens"),
-                Objects.requireNonNull(normalizer, "normalizer"),
-                Objects.requireNonNull(splitter, "splitter"));
+        return TokenizationPipeline.builder(
+                        FastTikToken.fromTiktoken(
+                                Objects.requireNonNull(mergeableRanks, "mergeableRanks"),
+                                Objects.requireNonNull(specialTokens, "specialTokens")))
+                .normalizer(Objects.requireNonNull(normalizer, "normalizer"))
+                .splitter(Objects.requireNonNull(splitter, "splitter"))
+                .build();
     }
 
     /**
-     * Creates the optimized flat-array TikToken-compatible BPE tokenizer from TikToken data.
+     * Creates a {@link TokenizationPipeline} wrapping the optimized flat-array TikToken-compatible
+     * BPE tokenizer.
      *
      * <p>Uses {@link Normalizer#identity()}.
      */
@@ -91,9 +70,10 @@ public final class Tokenizers {
     }
 
     /**
-     * Creates the optimized flat-array TikToken-compatible BPE tokenizer from TikToken data.
+     * Creates a {@link TokenizationPipeline} wrapping the optimized flat-array TikToken-compatible
+     * BPE tokenizer.
      *
-     * <p>Uses {@link Normalizer#identity()}.
+     * <p>Uses {@link Normalizer#identity()} and a regex splitter.
      */
     public static Tokenizer fastBpe(
             Map<String, Integer> mergeableRanks,
@@ -103,25 +83,74 @@ public final class Tokenizers {
     }
 
     /**
-     * Creates a generic/reusable BPE tokenizer from TikToken-style merge ranks.
+     * Creates a {@link TokenizationPipeline} wrapping the native/classic GPT-2 style BPE tokenizer.
      *
-     * <p>Unlike {@link #fastBpe(Map, Map, Normalizer, Splitter)}, this implementation is optimized
-     * for flexibility and pluggable symbol codecs.
+     * @param mergeableRanks mergeable token ranks
+     * @param specialTokens special token to id mapping
+     * @param normalizer text normalizer applied before splitting
+     * @param splitter text splitter applied before BPE encoding
+     */
+    public static Tokenizer classicBpe(
+            Map<String, Integer> mergeableRanks,
+            Map<String, Integer> specialTokens,
+            Normalizer normalizer,
+            Splitter splitter) {
+        return TokenizationPipeline.builder(
+                        ClassicBPE.classicFromTiktoken(
+                                Objects.requireNonNull(mergeableRanks, "mergeableRanks"),
+                                Objects.requireNonNull(specialTokens, "specialTokens")))
+                .normalizer(Objects.requireNonNull(normalizer, "normalizer"))
+                .splitter(Objects.requireNonNull(splitter, "splitter"))
+                .build();
+    }
+
+    /**
+     * Creates a {@link TokenizationPipeline} wrapping the native/classic GPT-2 style BPE tokenizer.
+     *
+     * <p>Uses {@link Normalizer#identity()}.
+     */
+    public static Tokenizer classicBpe(
+            Map<String, Integer> mergeableRanks,
+            Map<String, Integer> specialTokens,
+            Splitter splitter) {
+        return classicBpe(mergeableRanks, specialTokens, Normalizer.identity(), splitter);
+    }
+
+    /**
+     * Creates a {@link TokenizationPipeline} wrapping the native/classic GPT-2 style BPE tokenizer.
+     *
+     * <p>Uses {@link Normalizer#identity()} and a regex splitter.
+     */
+    public static Tokenizer classicBpe(
+            Map<String, Integer> mergeableRanks,
+            Map<String, Integer> specialTokens,
+            String splitPattern) {
+        return classicBpe(mergeableRanks, specialTokens, Splitter.regex(splitPattern));
+    }
+
+    /**
+     * Creates a {@link TokenizationPipeline} wrapping a generic/reusable BPE tokenizer from
+     * TikToken-style merge ranks.
+     *
+     * <p>Unlike {@link #fastBpe}, this implementation is optimized for flexibility and pluggable
+     * symbol codecs.
      */
     public static Tokenizer genericBpe(
             Map<String, Integer> mergeableRanks,
             Map<String, Integer> specialTokens,
             Normalizer normalizer,
             Splitter splitter) {
-        return GenericBPE.fromTiktoken(
-                Objects.requireNonNull(mergeableRanks, "mergeableRanks"),
-                Objects.requireNonNull(specialTokens, "specialTokens"),
-                Objects.requireNonNull(normalizer, "normalizer"),
-                Objects.requireNonNull(splitter, "splitter"));
+        return TokenizationPipeline.builder(
+                        GenericBPE.fromTiktoken(
+                                Objects.requireNonNull(mergeableRanks, "mergeableRanks"),
+                                Objects.requireNonNull(specialTokens, "specialTokens")))
+                .normalizer(Objects.requireNonNull(normalizer, "normalizer"))
+                .splitter(Objects.requireNonNull(splitter, "splitter"))
+                .build();
     }
 
     /**
-     * Creates a generic/reusable BPE tokenizer from TikToken-style merge ranks.
+     * Creates a {@link TokenizationPipeline} wrapping a generic/reusable BPE tokenizer.
      *
      * <p>Uses {@link Normalizer#identity()}.
      */
@@ -133,7 +162,7 @@ public final class Tokenizers {
     }
 
     /**
-     * Creates a generic/reusable BPE tokenizer from TikToken-style merge ranks.
+     * Creates a {@link TokenizationPipeline} wrapping a generic/reusable BPE tokenizer.
      *
      * <p>Uses {@link Normalizer#identity()} and a regex splitter.
      */
@@ -144,46 +173,44 @@ public final class Tokenizers {
         return genericBpe(mergeableRanks, specialTokens, Splitter.regex(splitPattern));
     }
 
-    /** Creates a generic/reusable BPE tokenizer with an explicit symbol codec. */
+    /**
+     * Creates a {@link TokenizationPipeline} wrapping a generic/reusable BPE tokenizer with an
+     * explicit symbol codec.
+     */
     public static Tokenizer genericBpe(
             Map<String, Integer> mergeableRanks,
             Map<String, Integer> specialTokens,
             Normalizer normalizer,
             Splitter splitter,
             SymbolCodec symbolCodec) {
-        return GenericBPE.fromTiktoken(
-                Objects.requireNonNull(mergeableRanks, "mergeableRanks"),
-                Objects.requireNonNull(specialTokens, "specialTokens"),
-                Objects.requireNonNull(normalizer, "normalizer"),
-                Objects.requireNonNull(splitter, "splitter"),
-                Objects.requireNonNull(symbolCodec, "symbolCodec"));
+        return TokenizationPipeline.builder(
+                        GenericBPE.fromTiktoken(
+                                Objects.requireNonNull(mergeableRanks, "mergeableRanks"),
+                                Objects.requireNonNull(specialTokens, "specialTokens"),
+                                Objects.requireNonNull(symbolCodec, "symbolCodec")))
+                .normalizer(Objects.requireNonNull(normalizer, "normalizer"))
+                .splitter(Objects.requireNonNull(splitter, "splitter"))
+                .build();
     }
 
-    /** Creates a generic/reusable BPE tokenizer from explicit components. */
+    /**
+     * Creates a {@link TokenizationPipeline} wrapping a generic/reusable BPE tokenizer from
+     * explicit components.
+     */
     public static Tokenizer genericBpe(
             Vocabulary vocabulary,
             Normalizer normalizer,
             Splitter splitter,
             BpeMergeTable mergeTable,
             BpeSymbolEncoder symbolEncoder) {
-        return GenericBPE.create(
-                Objects.requireNonNull(vocabulary, "vocabulary"),
-                Objects.requireNonNull(normalizer, "normalizer"),
-                Objects.requireNonNull(splitter, "splitter"),
-                Objects.requireNonNull(mergeTable, "mergeTable"),
-                Objects.requireNonNull(symbolEncoder, "symbolEncoder"));
-    }
-
-    /**
-     * Creates the native/classic GPT-2 style BPE tokenizer from TikToken data.
-     *
-     * <p>Uses {@link Normalizer#identity()}.
-     */
-    public static Tokenizer classicBpe(
-            Map<String, Integer> mergeableRanks,
-            Map<String, Integer> specialTokens,
-            String splitPattern) {
-        return classicBpe(mergeableRanks, specialTokens, Splitter.regex(splitPattern));
+        return TokenizationPipeline.builder(
+                        GenericBPE.create(
+                                Objects.requireNonNull(vocabulary, "vocabulary"),
+                                Objects.requireNonNull(mergeTable, "mergeTable"),
+                                Objects.requireNonNull(symbolEncoder, "symbolEncoder")))
+                .normalizer(Objects.requireNonNull(normalizer, "normalizer"))
+                .splitter(Objects.requireNonNull(splitter, "splitter"))
+                .build();
     }
 
     /**

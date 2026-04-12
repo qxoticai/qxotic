@@ -1,10 +1,7 @@
 package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.IntSequence;
-import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
-import com.qxotic.toknroll.advanced.Normalizer;
-import com.qxotic.toknroll.advanced.Splitter;
 import com.qxotic.toknroll.advanced.SymbolCodec;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -53,15 +50,13 @@ public final class FastTikToken extends AbstractTokenizer {
 
     public FastTikToken(
             Vocabulary vocabulary,
-            Normalizer normalizer,
-            Splitter splitter,
             LongLongMap merges,
             int[] singleByteTokenId,
             byte[][] tokenBytesById,
             ExactTokenLookup exactTokenLookup,
             int tinyChunkThreshold,
             int largeChunkThreshold) {
-        super(vocabulary, normalizer, splitter);
+        super(vocabulary);
         this.merges = Objects.requireNonNull(merges, "merges");
         this.singleByteTokenId = Objects.requireNonNull(singleByteTokenId, "singleByteTokenId");
         if (singleByteTokenId.length != 256) {
@@ -75,16 +70,12 @@ public final class FastTikToken extends AbstractTokenizer {
 
     public FastTikToken(
             Vocabulary vocabulary,
-            Normalizer normalizer,
-            Splitter splitter,
             LongLongMap merges,
             int[] singleByteTokenId,
             byte[][] tokenBytesById,
             ExactTokenLookup exactTokenLookup) {
         this(
                 vocabulary,
-                normalizer,
-                splitter,
                 merges,
                 singleByteTokenId,
                 tokenBytesById,
@@ -93,15 +84,10 @@ public final class FastTikToken extends AbstractTokenizer {
                 DEFAULT_LARGE_CHUNK_THRESHOLD);
     }
 
-    public static Tokenizer fromTiktoken(
-            Map<String, Integer> mergeableRanks,
-            Map<String, Integer> specialTokens,
-            Normalizer normalizer,
-            Splitter splitter) {
+    public static FastTikToken fromTiktoken(
+            Map<String, Integer> mergeableRanks, Map<String, Integer> specialTokens) {
         Objects.requireNonNull(mergeableRanks, "mergeableRanks");
         Objects.requireNonNull(specialTokens, "specialTokens");
-        Objects.requireNonNull(normalizer, "normalizer");
-        Objects.requireNonNull(splitter, "splitter");
 
         BuildArtifacts artifacts = buildArtifacts(mergeableRanks);
         LongLongMap merges = artifacts.merges;
@@ -122,8 +108,6 @@ public final class FastTikToken extends AbstractTokenizer {
 
         return new FastTikToken(
                 vocabulary,
-                normalizer,
-                splitter,
                 merges,
                 singleByteTokenId,
                 tokenBytesById,
@@ -167,40 +151,21 @@ public final class FastTikToken extends AbstractTokenizer {
         if (startInclusive < 0 || endExclusive < startInclusive || endExclusive > text.length()) {
             throw invalidRange(startInclusive, endExclusive, text.length());
         }
-
-        CharSequence normalized =
-                startInclusive == 0 && endExclusive == text.length()
-                        ? normalizer.apply(text)
-                        : normalizer.apply(text.subSequence(startInclusive, endExclusive));
-
         Scratch s = acquireScratch();
         try {
-            out.ensureCapacity(out.size() + Math.max(8, normalized.length()));
-            splitter.splitAll(
-                    normalized,
-                    0,
-                    normalized.length(),
-                    (source, chunkStart, chunkEnd) ->
-                            encodeChunkRange(source, chunkStart, chunkEnd, out, true, s));
+            out.ensureCapacity(out.size() + Math.max(8, endExclusive - startInclusive));
+            encodeChunkRange(text, startInclusive, endExclusive, out, true, s);
         } finally {
             releaseScratch(s);
         }
     }
 
     @Override
-    public int countTokens(CharSequence text) {
+    public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
         Objects.requireNonNull(text, "text");
-        CharSequence normalizedPart = normalizer.apply(text);
         Scratch s = acquireScratch();
         try {
-            s.countAccumulator = 0;
-            splitter.splitAll(
-                    normalizedPart,
-                    0,
-                    normalizedPart.length(),
-                    (source, chunkStart, chunkEnd) ->
-                            s.countAccumulator += countChunkRange(source, chunkStart, chunkEnd, s));
-            return s.countAccumulator;
+            return countChunkRange(text, startInclusive, endExclusive, s);
         } finally {
             releaseScratch(s);
         }
@@ -1069,7 +1034,8 @@ public final class FastTikToken extends AbstractTokenizer {
         private final int mask;
         private final int maxTokenBytes;
 
-        private ExactTokenLookup(byte[][] keys, int[] ids, int[] hashes, int mask, int maxTokenBytes) {
+        private ExactTokenLookup(
+                byte[][] keys, int[] ids, int[] hashes, int mask, int maxTokenBytes) {
             this.keys = keys;
             this.ids = ids;
             this.hashes = hashes;
@@ -1108,7 +1074,8 @@ public final class FastTikToken extends AbstractTokenizer {
                 int slot = hash & mask;
                 while (ids[slot] != NO_TOKEN) {
                     byte[] existing = keys[slot];
-                    if (hashes[slot] == hash && bytesEqual(existing, tokenBytes, tokenBytes.length)) {
+                    if (hashes[slot] == hash
+                            && bytesEqual(existing, tokenBytes, tokenBytes.length)) {
                         break;
                     }
                     slot = (slot + 1) & mask;
@@ -1137,7 +1104,8 @@ public final class FastTikToken extends AbstractTokenizer {
         }
 
         private static int hashBytes(byte[] bytes, int length) {
-            // Hot path favors short ASCII-ish chunks; specialize tiny lengths to reduce loop overhead.
+            // Hot path favors short ASCII-ish chunks; specialize tiny lengths to reduce loop
+            // overhead.
             switch (length) {
                 case 1:
                     return 31 + bytes[0];

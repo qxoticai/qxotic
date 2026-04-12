@@ -4,8 +4,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.toknroll.*;
-import com.qxotic.toknroll.advanced.Normalizer;
 import com.qxotic.toknroll.advanced.Splitter;
+import com.qxotic.toknroll.advanced.TokenizationPipeline;
 import com.qxotic.toknroll.gguf.TestDataManager.TestModel;
 import com.qxotic.toknroll.gguf.TestDataManager.TokenizerMetadata;
 import com.qxotic.toknroll.impl.*;
@@ -136,7 +136,9 @@ public class GGUFTokenizerBuilderTest {
         // Create GPT2-style tokenizer with model-specific pre-tokenizer
         Splitter splitter = ModelTextSplitters.createSplitter(model);
         Tokenizer tokenizer =
-                new GPT2Tokenizer(vocabulary, Normalizer.identity(), splitter, merges);
+                TokenizationPipeline.builder(new GPT2Tokenizer(vocabulary, merges))
+                        .splitter(splitter)
+                        .build();
 
         assertNotNull(tokenizer, "Tokenizer should be created");
         assertNotNull(tokenizer.vocabulary(), "Tokenizer should have vocabulary");
@@ -171,12 +173,11 @@ public class GGUFTokenizerBuilderTest {
         // Create a simple tokenizer with model-specific pre-tokenizer
         Splitter splitter = ModelTextSplitters.createSplitter(model);
         Tokenizer tokenizer =
-                new GPT2Tokenizer(
-                        vocabulary,
-                        Normalizer.identity(),
-                        splitter,
-                        new LongLongMap(new long[0], new long[0]) // No merges for basic test
-                        );
+                TokenizationPipeline.builder(
+                                new GPT2Tokenizer(
+                                        vocabulary, new LongLongMap(new long[0], new long[0])))
+                        .splitter(splitter)
+                        .build();
 
         // Test encoding a simple string character by character
         String testText = "Hi";

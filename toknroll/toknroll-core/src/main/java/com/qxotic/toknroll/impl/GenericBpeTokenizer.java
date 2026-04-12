@@ -2,8 +2,6 @@ package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Vocabulary;
-import com.qxotic.toknroll.advanced.Normalizer;
-import com.qxotic.toknroll.advanced.Splitter;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.NoSuchElementException;
@@ -30,15 +28,9 @@ public final class GenericBpeTokenizer extends AbstractTokenizer {
     private final AtomicReference<Scratch> scratchSlot = new AtomicReference<>();
 
     public GenericBpeTokenizer(
-            Vocabulary vocabulary,
-            Normalizer normalizer,
-            Splitter splitter,
-            BpeMergeTable mergeTable,
-            BpeSymbolEncoder symbolEncoder) {
+            Vocabulary vocabulary, BpeMergeTable mergeTable, BpeSymbolEncoder symbolEncoder) {
         this(
                 vocabulary,
-                normalizer,
-                splitter,
                 mergeTable,
                 symbolEncoder,
                 Integer.getInteger(TINY_CHUNK_THRESHOLD_PROPERTY, DEFAULT_TINY_CHUNK_THRESHOLD),
@@ -47,13 +39,11 @@ public final class GenericBpeTokenizer extends AbstractTokenizer {
 
     public GenericBpeTokenizer(
             Vocabulary vocabulary,
-            Normalizer normalizer,
-            Splitter splitter,
             BpeMergeTable mergeTable,
             BpeSymbolEncoder symbolEncoder,
             int tinyChunkThreshold,
             int largeChunkThreshold) {
-        super(vocabulary, normalizer, splitter);
+        super(vocabulary);
         this.mergeTable = Objects.requireNonNull(mergeTable, "mergeTable");
         this.symbolEncoder = Objects.requireNonNull(symbolEncoder, "symbolEncoder");
         this.tokenBytesById = buildTokenBytesById(vocabulary, symbolEncoder);
@@ -80,49 +70,12 @@ public final class GenericBpeTokenizer extends AbstractTokenizer {
     }
 
     @Override
-    public void encodeInto(
-            CharSequence text, int startInclusive, int endExclusive, IntSequence.Builder out) {
+    public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
         Objects.requireNonNull(text, "text");
-        Objects.requireNonNull(out, "out");
-        requireValidRange(text, startInclusive, endExclusive);
-
-        CharSequence normalized =
-                startInclusive == 0 && endExclusive == text.length()
-                        ? normalizer.apply(text)
-                        : normalizer.apply(text.subSequence(startInclusive, endExclusive));
-
         Scratch s = acquireScratch();
         try {
-            out.ensureCapacity(out.size() + Math.max(8, normalized.length()));
-            splitter.splitAll(
-                    normalized,
-                    0,
-                    normalized.length(),
-                    (source, chunkStart, chunkEnd) -> {
-                        int size = encodeInitialTokens(source, chunkStart, chunkEnd, s);
-                        mergeChunk(s.encodedTokens, size, out, true, s);
-                    });
-        } finally {
-            releaseScratch(s);
-        }
-    }
-
-    @Override
-    public int countTokens(CharSequence text) {
-        Objects.requireNonNull(text, "text");
-        CharSequence normalized = normalizer.apply(text);
-        Scratch s = acquireScratch();
-        try {
-            s.countAccumulator = 0;
-            splitter.splitAll(
-                    normalized,
-                    0,
-                    normalized.length(),
-                    (source, startInclusive, endExclusive) -> {
-                        int size = encodeInitialTokens(source, startInclusive, endExclusive, s);
-                        s.countAccumulator += mergeChunk(s.encodedTokens, size, null, false, s);
-                    });
-            return s.countAccumulator;
+            int size = encodeInitialTokens(text, startInclusive, endExclusive, s);
+            return mergeChunk(s.encodedTokens, size, null, false, s);
         } finally {
             releaseScratch(s);
         }
@@ -269,18 +222,6 @@ public final class GenericBpeTokenizer extends AbstractTokenizer {
         return keepOutput
                 ? encodeLarge(inputTokens, size, out, s)
                 : countLarge(inputTokens, size, s);
-    }
-
-    private static void requireValidRange(CharSequence text, int startInclusive, int endExclusive) {
-        if (startInclusive < 0 || endExclusive < startInclusive || endExclusive > text.length()) {
-            throw new IndexOutOfBoundsException(
-                    "Invalid range ["
-                            + startInclusive
-                            + ", "
-                            + endExclusive
-                            + ") for text length "
-                            + text.length());
-        }
     }
 
     private int mergeTiny(int[] tokens, int size, IntSequence.Builder out, boolean keepOutput) {

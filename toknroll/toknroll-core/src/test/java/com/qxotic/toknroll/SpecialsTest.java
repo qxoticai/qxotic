@@ -315,6 +315,13 @@ class SpecialsTest {
             out.put(bytes);
             return 1;
         }
+
+        @Override
+        public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
+            IntSequence.Builder out = IntSequence.newBuilder();
+            encodeInto(text, startInclusive, endExclusive, out);
+            return out.size();
+        }
     }
 
     private static final class MapVocabulary implements Vocabulary {
