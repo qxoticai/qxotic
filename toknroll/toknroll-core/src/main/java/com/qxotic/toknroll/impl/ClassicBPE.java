@@ -1,9 +1,6 @@
 package com.qxotic.toknroll.impl;
 
-import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
-import com.qxotic.toknroll.advanced.Normalizer;
-import com.qxotic.toknroll.advanced.Splitter;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -82,14 +79,11 @@ public class ClassicBPE {
                 new BufferedReader(new InputStreamReader(new ByteArrayInputStream(bytes))));
     }
 
-    public static Tokenizer classicFromTiktoken(
-            Map<String, Integer> mergeableRanks,
-            Map<String, Integer> specialTokens,
-            Normalizer normalizer,
-            Splitter splitter) {
+    public static GPT2Tokenizer classicFromTiktoken(
+            Map<String, Integer> mergeableRanks, Map<String, Integer> specialTokens) {
         LongLongMap merges = buildMerges(mergeableRanks);
         Vocabulary vocabulary =
                 VocabularyWithSpecials.create(new VocabularyImpl(mergeableRanks), specialTokens);
-        return new GPT2Tokenizer(vocabulary, normalizer, splitter, merges);
+        return new GPT2Tokenizer(vocabulary, merges);
     }
 }

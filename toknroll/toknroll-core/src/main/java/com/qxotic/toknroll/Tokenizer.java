@@ -24,18 +24,21 @@ public interface Tokenizer {
             CharSequence text, int startInclusive, int endExclusive, IntSequence.Builder out);
 
     /**
-     * Writes decoded bytes for tokens starting at {@code tokenStartIndex} into {@code out}.
+     * Writes decoded bytes for tokens {@code [tokenStartIndex, ...)} into {@code out}, stopping
+     * when the buffer is full or the sequence is exhausted.
      *
-     * <p>Returns consumed token count. Returns {@code 0} only when {@code tokenStartIndex ==
-     * tokens.length()}. Implementations must not write partial token bytes.
+     * <p>Returns the number of tokens consumed (always ≥ 1) unless {@code tokenStartIndex ==
+     * tokens.length()}, in which case returns {@code 0}. Implementations never write partial token
+     * bytes: a token is either written in full or skipped entirely.
      *
-     * <p>If the next token cannot fit and no token is consumed, throws {@link
-     * IllegalArgumentException}. If some tokens are consumed, implementations may return early.
+     * <p>Callers that need to decode the full sequence should loop, advancing {@code
+     * tokenStartIndex} by the return value each iteration until {@code tokenStartIndex ==
+     * tokens.length()}.
      *
      * @throws IndexOutOfBoundsException if {@code tokenStartIndex} is outside {@code [0,
      *     tokens.length()]}
-     * @throws IllegalArgumentException if the next token does not fit in {@code out.remaining()}
-     *     and no token was consumed
+     * @throws IllegalArgumentException if the first token at {@code tokenStartIndex} does not fit
+     *     in {@code out.remaining()} (i.e., no progress can be made)
      */
     int decodeBytesInto(IntSequence tokens, int tokenStartIndex, ByteBuffer out);
 
@@ -48,13 +51,24 @@ public interface Tokenizer {
         return 0.5f;
     }
 
-    /** Returns token count for encoding {@code text}. Must match {@code encode(text).length()}. */
+    /**
+     * Returns token count for encoding {@code text}.
+     *
+     * <p>Equivalent to {@code countTokens(text, 0, text.length())}.
+     */
     default int countTokens(CharSequence text) {
         Objects.requireNonNull(text, "text");
-        IntSequence.Builder out = IntSequence.newBuilder(estimateInitialTokenCapacity(text));
-        encodeInto(text, out);
-        return out.size();
+        return countTokens(text, 0, text.length());
     }
+
+    /**
+     * Returns token count for encoding {@code text[startInclusive, endExclusive)}.
+     *
+     * <p>Must equal {@code encode(text.subSequence(startInclusive, endExclusive)).length()}.
+     *
+     * @throws IndexOutOfBoundsException if the slice range is invalid
+     */
+    int countTokens(CharSequence text, int startInclusive, int endExclusive);
 
     /**
      * Returns decoded byte count for {@code tokens}. Must match {@code decodeBytes(tokens).length}.
@@ -92,19 +106,24 @@ public interface Tokenizer {
     /** Encodes text into an immutable token sequence. */
     default IntSequence encode(CharSequence text) {
         Objects.requireNonNull(text, "text");
-        IntSequence.Builder out = IntSequence.newBuilder(estimateInitialTokenCapacity(text));
+        IntSequence.Builder out =
+                IntSequence.newBuilder(estimateInitialTokenCapacity(text.length()));
         encodeInto(text, out);
         return out.build();
     }
 
-    private int estimateInitialTokenCapacity(CharSequence text) {
-        int charCount = text.length();
+    private int estimateInitialTokenCapacity(int charCount) {
         float ratio = Math.max(1.0e-6f, expectedTokensPerChar());
         int predicted = (int) Math.ceil(charCount * ratio * 1.15f) + 8;
         return Math.max(8, predicted);
     }
 
-    /** Encodes text and returns token IDs as an array. */
+    /**
+     * Encodes {@code text} and returns token IDs as a plain {@code int[]}.
+     *
+     * <p>Equivalent to {@code encode(text).toArray()}. For performance-sensitive paths, prefer
+     * {@link #encodeInto} to avoid the intermediate allocation.
+     */
     default int[] encodeToArray(CharSequence text) {
         return encode(text).toArray();
     }

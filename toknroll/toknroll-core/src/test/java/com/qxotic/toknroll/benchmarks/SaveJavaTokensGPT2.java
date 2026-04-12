@@ -2,9 +2,8 @@ package com.qxotic.toknroll.benchmarks;
 
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.advanced.Normalizer;
+import com.qxotic.toknroll.Tokenizers;
 import com.qxotic.toknroll.impl.ClassicBPE;
-import com.qxotic.toknroll.impl.RegexSplitter;
 import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.nio.file.Files;
@@ -75,11 +74,7 @@ public class SaveJavaTokensGPT2 {
 
         var mergeableRanks = ClassicBPE.loadMergeableRanks(tiktokenPath.toString(), R50K_BASE_HASH);
 
-        // Use the native GPT2Tokenizer via ClassicBPE
-        return ClassicBPE.classicFromTiktoken(
-                mergeableRanks,
-                java.util.Map.of("<|endoftext|>", 50256),
-                Normalizer.identity(),
-                RegexSplitter.create(R50K_PATTERN));
+        return Tokenizers.classicBpe(
+                mergeableRanks, java.util.Map.of("<|endoftext|>", 50256), R50K_PATTERN);
     }
 }

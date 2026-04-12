@@ -9,6 +9,7 @@ import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.advanced.Normalizer;
 import com.qxotic.toknroll.advanced.Splitter;
 import com.qxotic.toknroll.advanced.StandardTokenType;
+import com.qxotic.toknroll.advanced.TokenizationPipeline;
 import com.qxotic.toknroll.gguf.TestDataManager.TestModel;
 import com.qxotic.toknroll.gguf.TestDataManager.TokenizerMetadata;
 import com.qxotic.toknroll.impl.GPT2Tokenizer;
@@ -961,11 +962,13 @@ public final class ModelFamilyTokenizers {
             LongLongMap merges) {
         Vocabulary vocabulary =
                 new VocabularyImpl(metadata.tokens(), metadata.scores(), metadata.tokenTypes());
-        Tokenizer base = new GPT2Tokenizer(vocabulary, Normalizer.identity(), splitter, merges);
-        Tokenizer normalized =
-                normalizer == null
-                        ? base
-                        : Tokenizers.pipeline(base).normalizer(normalizer).build();
+        TokenizationPipeline.Builder pipelineBuilder =
+                TokenizationPipeline.builder(new GPT2Tokenizer(vocabulary, merges))
+                        .splitter(splitter);
+        if (normalizer != null) {
+            pipelineBuilder.normalizer(normalizer);
+        }
+        Tokenizer normalized = pipelineBuilder.build();
         return wrapWithSpecialTokenInjection(normalized, specialTokenMode);
     }
 
@@ -1124,8 +1127,10 @@ public final class ModelFamilyTokenizers {
             }
 
             @Override
-            public int countTokens(CharSequence text) {
-                return encode(text.toString()).length();
+            public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
+                IntSequence.Builder out = IntSequence.newBuilder();
+                encodeInto(text, startInclusive, endExclusive, out);
+                return out.size();
             }
 
             @Override
@@ -1385,10 +1390,11 @@ public final class ModelFamilyTokenizers {
         }
 
         @Override
-        public int countTokens(CharSequence text) {
+        public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
             Objects.requireNonNull(text, "text");
-            IntSequence.Builder out = IntSequence.newBuilder(Math.max(8, text.length()));
-            encodeInto(text, 0, text.length(), out);
+            IntSequence.Builder out =
+                    IntSequence.newBuilder(Math.max(8, endExclusive - startInclusive));
+            encodeInto(text, startInclusive, endExclusive, out);
             return out.size();
         }
 

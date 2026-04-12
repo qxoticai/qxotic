@@ -17,7 +17,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -70,7 +69,6 @@ class TokenizationPipelineTest {
         assertThrows(NullPointerException.class, () -> builder.baseTokenizer(null));
         assertThrows(NullPointerException.class, () -> builder.normalizer(null));
         assertThrows(NullPointerException.class, () -> builder.splitter(null));
-        assertThrows(NullPointerException.class, () -> builder.postProcessor(null));
     }
 
     @Test
@@ -85,25 +83,31 @@ class TokenizationPipelineTest {
     }
 
     @Test
-    void pipelineAppliesNormalizerSplitterAndPostProcessor() {
-        Tokenizer base = createWholeChunkTokenizer(Map.of("é", 10, "world", 11, "<eos>", 99));
-        Function<IntSequence, IntSequence> eosAppender =
-                tokens -> {
-                    IntSequence.Builder out = IntSequence.newBuilder();
-                    out.addAll(tokens);
-                    out.add(99);
-                    return out.build();
-                };
+    void pipelineAppliesNormalizerAndSplitter() {
+        Tokenizer base = createWholeChunkTokenizer(Map.of("é", 10, "world", 11));
 
         TokenizationPipeline pipeline =
                 TokenizationPipeline.builder(base)
                         .normalizer(Normalizer.unicode(Form.NFKC))
                         .splitter(Splitter.sequence(spaceOnlySplitter()))
-                        .postProcessor(eosAppender)
                         .build();
 
         IntSequence tokens = pipeline.encode("e\u0301 world");
-        assertArrayEquals(new int[] {10, 11, 99}, tokens.toArray());
+        assertArrayEquals(new int[] {10, 11}, tokens.toArray());
+    }
+
+    @Test
+    void pipelineCountTokensMatchesEncodeOnSlice() {
+        Tokenizer base = createWholeChunkTokenizer(Map.of("hello", 1, "world", 2));
+        TokenizationPipeline pipeline =
+                TokenizationPipeline.builder(base)
+                        .splitter(Splitter.sequence(spaceOnlySplitter()))
+                        .build();
+
+        String text = "hello world";
+        assertEquals(pipeline.encode(text).length(), pipeline.countTokens(text));
+        assertEquals(
+                pipeline.encode(text.subSequence(0, 5)).length(), pipeline.countTokens(text, 0, 5));
     }
 
     @Test
@@ -132,16 +136,13 @@ class TokenizationPipelineTest {
         assertEquals(Optional.of(base), builder.baseTokenizer());
         assertTrue(builder.normalizer().isEmpty());
         assertTrue(builder.splitter().isEmpty());
-        assertTrue(builder.postProcessor().isEmpty());
 
         Normalizer normalizer = Normalizer.lowercase();
         Splitter splitter = Splitter.identity();
-        Function<IntSequence, IntSequence> post = Function.identity();
 
-        builder.normalizer(normalizer).splitter(splitter).postProcessor(post);
+        builder.normalizer(normalizer).splitter(splitter);
         assertEquals(Optional.of(normalizer), builder.normalizer());
         assertEquals(Optional.of(splitter), builder.splitter());
-        assertEquals(Optional.of(post), builder.postProcessor());
     }
 
     @Test
@@ -169,7 +170,6 @@ class TokenizationPipelineTest {
         assertArrayEquals(base.encodeToArray("hello world"), pipeline.encodeToArray("hello world"));
         assertFalse(pipeline.normalizer().isPresent());
         assertFalse(pipeline.splitter().isPresent());
-        assertFalse(pipeline.postProcessor().isPresent());
     }
 
     private Vocabulary createSimpleVocabulary(String[] tokens, int[] ids) {
@@ -308,8 +308,8 @@ class TokenizationPipelineTest {
             }
 
             @Override
-            public int countTokens(CharSequence text) {
-                return encode(text).length();
+            public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
+                return encode(text.subSequence(startInclusive, endExclusive)).length();
             }
 
             @Override

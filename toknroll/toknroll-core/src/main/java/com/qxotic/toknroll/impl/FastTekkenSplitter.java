@@ -14,15 +14,15 @@ public final class FastTekkenSplitter implements Splitter {
 
     private static final String TEKKEN_PATTERN =
             "[^\\r"
-                    + "\\n"
-                    + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]*[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]+|[^\\r"
-                    + "\\n"
-                    + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]+[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]*|\\p{N}|"
-                    + " ?[^\\s\\p{L}\\p{N}]+[\\r"
-                    + "\\n"
-                    + "/]*|\\s*[\\r"
-                    + "\\n"
-                    + "]+|\\s+(?!\\S)|\\s+";
+                + "\\n"
+                + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]*[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]+|[^\\r"
+                + "\\n"
+                + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]+[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]*|\\p{N}|"
+                + " ?[^\\s\\p{L}\\p{N}]+[\\r"
+                + "\\n"
+                + "/]*|\\s*[\\r"
+                + "\\n"
+                + "]+|\\s+(?!\\S)|\\s+";
 
     private static final Pattern TEKKEN_COMPILED = Pattern.compile(TEKKEN_PATTERN);
     public static final FastTekkenSplitter INSTANCE = new FastTekkenSplitter();

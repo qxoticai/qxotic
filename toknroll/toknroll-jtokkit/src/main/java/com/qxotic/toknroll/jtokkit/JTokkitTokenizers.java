@@ -107,8 +107,9 @@ public final class JTokkitTokenizers {
         }
 
         @Override
-        public int countTokens(CharSequence text) {
-            return encoding.countTokens(Objects.requireNonNull(text, "text").toString());
+        public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
+            Objects.requireNonNull(text, "text");
+            return encoding.countTokens(text.subSequence(startInclusive, endExclusive).toString());
         }
 
         @Override

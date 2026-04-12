@@ -1,8 +1,6 @@
 package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.*;
-import com.qxotic.toknroll.advanced.Normalizer;
-import com.qxotic.toknroll.advanced.Splitter;
 import com.qxotic.toknroll.advanced.StandardTokenType;
 import com.qxotic.toknroll.advanced.SymbolCodec;
 import java.nio.ByteBuffer;
@@ -23,38 +21,23 @@ public class GPT2Tokenizer extends AbstractTokenizer {
     private final SymbolCodec symbolCodec;
     private final byte[][] tokenBytesById;
 
-    public GPT2Tokenizer(
-            Vocabulary vocabulary,
-            Normalizer normalizer,
-            Splitter splitter,
-            LongLongMap mergeRanks) {
-        this(vocabulary, normalizer, splitter, mergeRanks, SymbolCodec.BYTE_LEVEL);
+    public GPT2Tokenizer(Vocabulary vocabulary, LongLongMap mergeRanks) {
+        this(vocabulary, mergeRanks, SymbolCodec.BYTE_LEVEL);
     }
 
-    public GPT2Tokenizer(
-            Vocabulary vocabulary,
-            Normalizer normalizer,
-            Splitter splitter,
-            LongLongMap mergeRanks,
-            SymbolCodec symbolCodec) {
-        super(vocabulary, normalizer, splitter);
+    public GPT2Tokenizer(Vocabulary vocabulary, LongLongMap mergeRanks, SymbolCodec symbolCodec) {
+        super(vocabulary);
         this.merges = mergeRanks;
         this.symbolCodec = symbolCodec;
         this.tokenBytesById = buildTokenBytesById(vocabulary, symbolCodec);
     }
 
-    public GPT2Tokenizer(
-            Vocabulary vocabulary, Normalizer normalizer, Splitter splitter, List<?> mergeRanks) {
-        this(vocabulary, normalizer, splitter, mergeRanks, SymbolCodec.BYTE_LEVEL);
+    public GPT2Tokenizer(Vocabulary vocabulary, List<?> mergeRanks) {
+        this(vocabulary, mergeRanks, SymbolCodec.BYTE_LEVEL);
     }
 
-    public GPT2Tokenizer(
-            Vocabulary vocabulary,
-            Normalizer normalizer,
-            Splitter splitter,
-            List<?> mergeRanks,
-            SymbolCodec symbolCodec) {
-        super(vocabulary, normalizer, splitter);
+    public GPT2Tokenizer(Vocabulary vocabulary, List<?> mergeRanks, SymbolCodec symbolCodec) {
+        super(vocabulary);
         this.symbolCodec = symbolCodec;
         long[] keys = new long[mergeRanks.size()];
         long[] values = new long[mergeRanks.size()];
@@ -214,11 +197,6 @@ public class GPT2Tokenizer extends AbstractTokenizer {
         IntSequence.Builder out = IntSequence.newBuilder(Math.max(8, text.length()));
         encodeImplInto(text, out);
         return out.build();
-    }
-
-    @Override
-    public int countTokens(CharSequence text) {
-        return encode(Objects.requireNonNull(text, "text")).length();
     }
 
     @Override

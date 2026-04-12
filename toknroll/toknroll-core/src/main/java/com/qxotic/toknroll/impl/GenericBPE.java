@@ -1,9 +1,6 @@
 package com.qxotic.toknroll.impl;
 
-import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
-import com.qxotic.toknroll.advanced.Normalizer;
-import com.qxotic.toknroll.advanced.Splitter;
 import com.qxotic.toknroll.advanced.SymbolCodec;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -16,25 +13,17 @@ public final class GenericBPE {
 
     private GenericBPE() {}
 
-    public static Tokenizer fromTiktoken(
-            Map<String, Integer> mergeableRanks,
-            Map<String, Integer> specialTokens,
-            Normalizer normalizer,
-            Splitter splitter) {
-        return fromTiktoken(
-                mergeableRanks, specialTokens, normalizer, splitter, SymbolCodec.BYTE_LEVEL);
+    public static GenericBpeTokenizer fromTiktoken(
+            Map<String, Integer> mergeableRanks, Map<String, Integer> specialTokens) {
+        return fromTiktoken(mergeableRanks, specialTokens, SymbolCodec.BYTE_LEVEL);
     }
 
-    public static Tokenizer fromTiktoken(
+    public static GenericBpeTokenizer fromTiktoken(
             Map<String, Integer> mergeableRanks,
             Map<String, Integer> specialTokens,
-            Normalizer normalizer,
-            Splitter splitter,
             SymbolCodec symbolCodec) {
         Objects.requireNonNull(mergeableRanks, "mergeableRanks");
         Objects.requireNonNull(specialTokens, "specialTokens");
-        Objects.requireNonNull(normalizer, "normalizer");
-        Objects.requireNonNull(splitter, "splitter");
         Objects.requireNonNull(symbolCodec, "symbolCodec");
 
         BpeMergeTable mergeTable = new LongLongBpeMergeTable(buildMerges(mergeableRanks));
@@ -44,21 +33,15 @@ public final class GenericBPE {
                 symbolCodec == SymbolCodec.BYTE_LEVEL
                         ? new DirectByteBpeSymbolEncoder(vocabulary)
                         : new CodecBpeSymbolEncoder(symbolCodec);
-        return create(vocabulary, normalizer, splitter, mergeTable, symbolEncoder);
+        return create(vocabulary, mergeTable, symbolEncoder);
     }
 
-    public static Tokenizer create(
-            Vocabulary vocabulary,
-            Normalizer normalizer,
-            Splitter splitter,
-            BpeMergeTable mergeTable,
-            BpeSymbolEncoder symbolEncoder) {
+    public static GenericBpeTokenizer create(
+            Vocabulary vocabulary, BpeMergeTable mergeTable, BpeSymbolEncoder symbolEncoder) {
         Objects.requireNonNull(vocabulary, "vocabulary");
-        Objects.requireNonNull(normalizer, "normalizer");
-        Objects.requireNonNull(splitter, "splitter");
         Objects.requireNonNull(mergeTable, "mergeTable");
         Objects.requireNonNull(symbolEncoder, "symbolEncoder");
-        return new GenericBpeTokenizer(vocabulary, normalizer, splitter, mergeTable, symbolEncoder);
+        return new GenericBpeTokenizer(vocabulary, mergeTable, symbolEncoder);
     }
 
     private static LongLongMap buildMerges(Map<String, Integer> mergeableRanks) {

@@ -52,6 +52,11 @@ public interface Specials {
     /** Returns an immutable view of configured special token strings. */
     Set<String> tokens();
 
+    /** Returns {@code true} if no special tokens are configured. */
+    default boolean isEmpty() {
+        return tokens().isEmpty();
+    }
+
     /**
      * Encodes text with special-token injection and appends token IDs into {@code out}.
      *
@@ -73,7 +78,9 @@ public interface Specials {
     default IntSequence encode(Tokenizer tokenizer, CharSequence text) {
         Objects.requireNonNull(tokenizer, "tokenizer");
         Objects.requireNonNull(text, "text");
-        IntSequence.Builder out = IntSequence.newBuilder();
+        float ratio = Math.max(1.0e-6f, tokenizer.expectedTokensPerChar());
+        int capacity = Math.max(8, (int) Math.ceil(text.length() * ratio * 1.15f) + 8);
+        IntSequence.Builder out = IntSequence.newBuilder(capacity);
         encodeInto(tokenizer, text, out);
         return out.build();
     }
