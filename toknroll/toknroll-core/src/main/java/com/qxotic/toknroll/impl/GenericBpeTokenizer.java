@@ -9,7 +9,7 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 
 /** Generic, reusable BPE tokenizer implementation. */
-public final class GenericBpeTokenizer extends AbstractTokenizer {
+public final class GenericBpeTokenizer extends AbstractTokenizationModel {
 
     public static final String LARGE_CHUNK_THRESHOLD_PROPERTY =
             "qxotic.tokenizer.generic.largeChunkThreshold";

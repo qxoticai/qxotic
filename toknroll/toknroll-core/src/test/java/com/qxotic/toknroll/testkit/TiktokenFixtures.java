@@ -2,7 +2,6 @@ package com.qxotic.toknroll.testkit;
 
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
-import com.qxotic.toknroll.advanced.Normalizer;
 import com.qxotic.toknroll.impl.ClassicBPE;
 import com.qxotic.toknroll.impl.RegexSplitter;
 import java.net.URISyntaxException;
@@ -132,7 +131,6 @@ public final class TiktokenFixtures {
                     return Tokenizers.fastBpe(
                             ranks,
                             fixture.specialTokens(),
-                            Normalizer.identity(),
                             RegexSplitter.create(fixture.pattern()));
                 });
     }
@@ -157,7 +155,6 @@ public final class TiktokenFixtures {
                     return Tokenizers.classicBpe(
                             ranks,
                             fixture.specialTokens(),
-                            Normalizer.identity(),
                             RegexSplitter.create(fixture.pattern()));
                 });
     }

@@ -182,10 +182,8 @@ public class ModelTokenizerBenchmark {
             case "classic":
                 return fidelityGguf;
             case "fast":
-                return Tokenizers.pipeline(fidelityGguf)
-                        .normalizer(normalizer)
-                        .splitter(fastSplitter)
-                        .build();
+                return Tokenizers.withSplitter(
+                        Tokenizers.withTextTransform(fidelityGguf, normalizer), fastSplitter);
             default:
                 throw new IllegalArgumentException("Unsupported implementation: " + implementation);
         }
@@ -197,7 +195,8 @@ public class ModelTokenizerBenchmark {
             com.qxotic.toknroll.advanced.Splitter splitter) {
         Map<String, Integer> ranks = TiktokenFixtures.mergeableRanks(encoding);
         Map<String, Integer> specials = TiktokenFixtures.specialTokens(encoding);
-        return Tokenizers.classicBpe(ranks, specials, normalizer, splitter);
+        return Tokenizers.withTextTransform(
+                Tokenizers.classicBpe(ranks, specials, splitter), normalizer);
     }
 
     private static Tokenizer fast(
@@ -206,7 +205,8 @@ public class ModelTokenizerBenchmark {
             com.qxotic.toknroll.advanced.Splitter splitter) {
         Map<String, Integer> ranks = TiktokenFixtures.mergeableRanks(encoding);
         Map<String, Integer> specials = TiktokenFixtures.specialTokens(encoding);
-        return Tokenizers.fastBpe(ranks, specials, normalizer, splitter);
+        return Tokenizers.withTextTransform(
+                Tokenizers.fastBpe(ranks, specials, splitter), normalizer);
     }
 
     private static int targetLength(String size) {

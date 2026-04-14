@@ -65,10 +65,8 @@ class ModelTokenizerAgreementTest {
             String pattern = TiktokenFixtures.encoding("r50k_base").pattern();
             return new ComparedTokenizers(
                     TiktokenFixtures.createJtokkitTokenizer("r50k_base"),
-                    Tokenizers.classicBpe(
-                            ranks, specials, Normalizer.identity(), RegexSplitter.create(pattern)),
-                    Tokenizers.fastBpe(
-                            ranks, specials, Normalizer.identity(), FastR50kSplitter.INSTANCE));
+                    Tokenizers.classicBpe(ranks, specials, RegexSplitter.create(pattern)),
+                    Tokenizers.fastBpe(ranks, specials, FastR50kSplitter.INSTANCE));
         }
         if ("llama3".equals(model)) {
             return modelNative(
@@ -116,7 +114,8 @@ class ModelTokenizerAgreementTest {
                                         new IllegalStateException(
                                                 "Missing HF tokenizer for " + familyId));
         Tokenizer fast =
-                Tokenizers.pipeline(fidelity).normalizer(normalizer).splitter(fastSplitter).build();
+                Tokenizers.withSplitter(
+                        Tokenizers.withTextTransform(fidelity, normalizer), fastSplitter);
         return new ComparedTokenizers(hf, fidelity, fast);
     }
 

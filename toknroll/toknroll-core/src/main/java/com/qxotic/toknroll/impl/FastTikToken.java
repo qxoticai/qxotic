@@ -23,7 +23,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  *   <li>Large chunks: min-heap + intrusive list over primitive arrays
  * </ul>
  */
-public final class FastTikToken extends AbstractTokenizer {
+public final class FastTikToken extends AbstractTokenizationModel {
 
     public static final String LARGE_CHUNK_THRESHOLD_PROPERTY =
             "qxotic.tokenizer.fast.largeChunkThreshold";
@@ -476,25 +476,25 @@ public final class FastTikToken extends AbstractTokenizer {
             int scan = 0;
             int scanLimit = pairCount & ~3;
             for (; scan < scanLimit; scan += 4) {
-                int mergedRank = pairRanks[scan + 3];
+                int mergedRank = pairRanks[scan];
                 if (mergedRank >= 0 && mergedRank < bestRank) {
                     bestRank = mergedRank;
-                    bestPos = scan + 3;
-                }
-                mergedRank = pairRanks[scan + 2];
-                if (mergedRank >= 0 && mergedRank < bestRank) {
-                    bestRank = mergedRank;
-                    bestPos = scan + 2;
+                    bestPos = scan;
                 }
                 mergedRank = pairRanks[scan + 1];
                 if (mergedRank >= 0 && mergedRank < bestRank) {
                     bestRank = mergedRank;
                     bestPos = scan + 1;
                 }
-                mergedRank = pairRanks[scan];
+                mergedRank = pairRanks[scan + 2];
                 if (mergedRank >= 0 && mergedRank < bestRank) {
                     bestRank = mergedRank;
-                    bestPos = scan;
+                    bestPos = scan + 2;
+                }
+                mergedRank = pairRanks[scan + 3];
+                if (mergedRank >= 0 && mergedRank < bestRank) {
+                    bestRank = mergedRank;
+                    bestPos = scan + 3;
                 }
             }
             for (; scan < pairCount; scan++) {

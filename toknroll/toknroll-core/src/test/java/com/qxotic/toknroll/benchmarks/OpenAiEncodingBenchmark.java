@@ -8,7 +8,6 @@ import com.knuddels.jtokkit.api.IntArrayList;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
-import com.qxotic.toknroll.advanced.Normalizer;
 import com.qxotic.toknroll.advanced.Splitter;
 import com.qxotic.toknroll.impl.FastCl100kSplitter;
 import com.qxotic.toknroll.impl.FastO200kSplitter;
@@ -57,7 +56,7 @@ public class OpenAiEncodingBenchmark {
     @Param({"r50k_base", "cl100k_base", "o200k_base"})
     public String encoding;
 
-    @Param({"chat", "code", "json", "prose", "wiki"})
+    @Param({"chat", "code", "json", "prose", "wiki", "unicode"})
     public String corpus;
 
     @Param({"1k", "32k"})
@@ -139,13 +138,12 @@ public class OpenAiEncodingBenchmark {
                 Map<String, Integer> ranks = TiktokenFixtures.mergeableRanks(encoding);
                 Map<String, Integer> specials = TiktokenFixtures.specialTokens(encoding);
                 Splitter splitter = fastSplitterForEncoding(encoding);
-                return Tokenizers.fastBpe(ranks, specials, Normalizer.identity(), splitter);
+                return Tokenizers.fastBpe(ranks, specials, splitter);
             case "generic":
                 Map<String, Integer> genericRanks = TiktokenFixtures.mergeableRanks(encoding);
                 Map<String, Integer> genericSpecials = TiktokenFixtures.specialTokens(encoding);
                 Splitter genericSplitter = fastSplitterForEncoding(encoding);
-                return Tokenizers.genericBpe(
-                        genericRanks, genericSpecials, Normalizer.identity(), genericSplitter);
+                return Tokenizers.genericBpe(genericRanks, genericSpecials, genericSplitter);
             default:
                 throw new IllegalArgumentException("Unsupported implementation: " + implementation);
         }
@@ -207,6 +205,12 @@ public class OpenAiEncodingBenchmark {
                 return "In computer science, tokenization is the process of converting a sequence"
                         + " of characters into a sequence of tokens, often for parsing or"
                         + " language model preprocessing.";
+            case "unicode":
+                return "你好，世界。こんにちは世界。안녕하세요 세계. Привет, мир! مرحبا بالعالم. "
+                        + "नमस्ते दुनिया। Bonjour le monde! Olá mundo! Καλημέρα κόσμε. "
+                        + "cafe\u0301 naive fiance\u0301 coo\u0308perate. "
+                        + "Emoji test: 😀😅🤣🥲🤖🚀✨🔥🌍🧠👩‍💻👨‍👩‍👧‍👦🏳️‍🌈🇯🇵🇨🇳🇮🇳🇧🇷. "
+                        + "Mixed symbols: — – • … «quotes» 『引用』 （テスト） 【测试】\n";
             default:
                 throw new IllegalArgumentException("Unsupported corpus: " + corpus);
         }
