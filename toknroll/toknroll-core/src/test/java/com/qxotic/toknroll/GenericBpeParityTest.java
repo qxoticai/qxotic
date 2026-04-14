@@ -2,7 +2,6 @@ package com.qxotic.toknroll;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.toknroll.advanced.Normalizer;
 import com.qxotic.toknroll.advanced.Splitter;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.util.List;
@@ -24,7 +23,6 @@ class GenericBpeParityTest {
                 Tokenizers.genericBpe(
                         TiktokenFixtures.mergeableRanks(encoding),
                         TiktokenFixtures.specialTokens(encoding),
-                        Normalizer.identity(),
                         splitter);
 
         List<String> samples =

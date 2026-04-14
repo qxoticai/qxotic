@@ -9,39 +9,36 @@ import java.util.Optional;
 
 /**
  * Composed tokenizer pipeline that applies optional normalization and splitting around a base
- * tokenizer.
+ * {@link TokenizationModel}.
  *
- * <p>By default, core tokenizer usage targets round-trip integrity for ordinary text. Adding a
- * {@link Normalizer} is an explicit opt-in that may be lossy and is generally discouraged unless
- * mutation is intentionally required.
+ * <p>Implements {@link Tokenizer} but not {@link TokenizationModel}, so it cannot be nested as a
+ * model inside another pipeline.
+ *
+ * <p>Optional mutation phases (for example, Unicode normalization) can be configured in the
+ * pipeline and are applied before chunk splitting and model encoding.
  */
 public final class TokenizationPipeline implements Tokenizer {
 
-    private final Tokenizer baseTokenizer;
+    private final TokenizationModel model;
     private final Normalizer normalizer;
     private final Splitter splitter;
     private final boolean hasNormalizer;
     private final boolean hasSplitter;
 
     private TokenizationPipeline(Builder builder) {
-        this.baseTokenizer =
-                Objects.requireNonNull(builder.baseTokenizer, "baseTokenizer is required");
+        this.model = Objects.requireNonNull(builder.model, "model is required");
         this.normalizer = builder.normalizer;
         this.splitter = builder.splitter;
         this.hasNormalizer = normalizer != null;
         this.hasSplitter = splitter != null;
     }
 
-    public static Builder builder() {
-        return new Builder();
+    public static Builder builder(TokenizationModel model) {
+        return new Builder(Objects.requireNonNull(model, "model"));
     }
 
-    public static Builder builder(Tokenizer baseTokenizer) {
-        return new Builder().baseTokenizer(baseTokenizer);
-    }
-
-    public Tokenizer baseTokenizer() {
-        return baseTokenizer;
+    public TokenizationModel model() {
+        return model;
     }
 
     public Optional<Normalizer> normalizer() {
@@ -68,7 +65,7 @@ public final class TokenizationPipeline implements Tokenizer {
         }
 
         if (!hasNormalizer && !hasSplitter) {
-            baseTokenizer.encodeInto(text, startInclusive, endExclusive, out);
+            model.encodeInto(text, startInclusive, endExclusive, out);
             return;
         }
 
@@ -84,7 +81,7 @@ public final class TokenizationPipeline implements Tokenizer {
 
     private void encodeNormalizedInto(CharSequence normalizedText, IntSequence.Builder out) {
         if (!hasSplitter) {
-            baseTokenizer.encodeInto(normalizedText, out);
+            model.encodeInto(normalizedText, out);
             return;
         }
         splitter.splitAll(
@@ -92,14 +89,14 @@ public final class TokenizationPipeline implements Tokenizer {
                 0,
                 normalizedText.length(),
                 (source, chunkStart, chunkEnd) ->
-                        baseTokenizer.encodeInto(source, chunkStart, chunkEnd, out));
+                        model.encodeInto(source, chunkStart, chunkEnd, out));
     }
 
     @Override
     public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
         Objects.requireNonNull(text, "text");
         if (!hasNormalizer && !hasSplitter) {
-            return baseTokenizer.countTokens(text, startInclusive, endExclusive);
+            return model.countTokens(text, startInclusive, endExclusive);
         }
 
         CharSequence current =
@@ -110,68 +107,60 @@ public final class TokenizationPipeline implements Tokenizer {
             current = normalizer.apply(current);
         }
         if (!hasSplitter) {
-            return baseTokenizer.countTokens(current, 0, current.length());
+            return model.countTokens(current, 0, current.length());
         }
         int[] total = {0};
-        final CharSequence normalized = current;
         splitter.splitAll(
-                normalized,
+                current,
                 0,
-                normalized.length(),
+                current.length(),
                 (source, chunkStart, chunkEnd) ->
-                        total[0] += baseTokenizer.countTokens(source, chunkStart, chunkEnd));
+                        total[0] += model.countTokens(source, chunkStart, chunkEnd));
         return total[0];
     }
 
     @Override
     public String decode(IntSequence tokens) {
-        return baseTokenizer.decode(tokens);
+        return model.decode(tokens);
     }
 
     @Override
     public byte[] decodeBytes(IntSequence tokens) {
-        return baseTokenizer.decodeBytes(tokens);
+        return model.decodeBytes(tokens);
     }
 
     @Override
     public int countBytes(IntSequence tokens) {
-        return baseTokenizer.countBytes(tokens);
+        return model.countBytes(tokens);
     }
 
     @Override
     public int decodeBytesInto(IntSequence tokens, int tokenStartIndex, ByteBuffer out) {
-        return baseTokenizer.decodeBytesInto(tokens, tokenStartIndex, out);
+        return model.decodeBytesInto(tokens, tokenStartIndex, out);
     }
 
     @Override
     public Vocabulary vocabulary() {
-        return baseTokenizer.vocabulary();
+        return model.vocabulary();
     }
 
     @Override
     public String toString() {
-        return "Pipeline[norm="
-                + hasNormalizer
-                + ", split="
-                + hasSplitter
-                + ", "
-                + baseTokenizer
-                + "]";
+        return "Pipeline[norm=" + hasNormalizer + ", split=" + hasSplitter + ", " + model + "]";
     }
 
     /** Builder for {@link TokenizationPipeline}. */
     public static final class Builder {
-        private Tokenizer baseTokenizer;
+        private final TokenizationModel model;
         private Normalizer normalizer;
         private Splitter splitter;
 
-        public Optional<Tokenizer> baseTokenizer() {
-            return Optional.ofNullable(baseTokenizer);
+        private Builder(TokenizationModel model) {
+            this.model = model;
         }
 
-        public Builder baseTokenizer(Tokenizer tokenizer) {
-            this.baseTokenizer = Objects.requireNonNull(tokenizer, "baseTokenizer");
-            return this;
+        public TokenizationModel model() {
+            return model;
         }
 
         public Optional<Normalizer> normalizer() {
@@ -195,11 +184,6 @@ public final class TokenizationPipeline implements Tokenizer {
         }
 
         public TokenizationPipeline build() {
-            if (baseTokenizer == null) {
-                throw new IllegalStateException(
-                        "TokenizationPipeline.Builder is missing required component:"
-                                + " baseTokenizer");
-            }
             return new TokenizationPipeline(this);
         }
     }

@@ -9,9 +9,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.toknroll.advanced.Normalizer;
 import com.qxotic.toknroll.advanced.Splitter;
+import com.qxotic.toknroll.advanced.TokenizationModel;
 import com.qxotic.toknroll.advanced.TokenizationPipeline;
 import java.nio.ByteBuffer;
-import java.text.Normalizer.Form;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -56,51 +56,34 @@ class TokenizationPipelineTest {
     }
 
     @Test
-    void pipelineBuilderRequiresBaseTokenizer() {
-        IllegalStateException none =
-                assertThrows(
-                        IllegalStateException.class, () -> TokenizationPipeline.builder().build());
-        assertTrue(none.getMessage().contains("baseTokenizer"));
+    void pipelineBuilderRejectsNullModel() {
+        assertThrows(NullPointerException.class, () -> TokenizationPipeline.builder(null));
     }
 
     @Test
-    void pipelineBuilderRejectsNullComponentsEarly() {
-        TokenizationPipeline.Builder builder = TokenizationPipeline.builder();
-        assertThrows(NullPointerException.class, () -> builder.baseTokenizer(null));
-        assertThrows(NullPointerException.class, () -> builder.normalizer(null));
-        assertThrows(NullPointerException.class, () -> builder.splitter(null));
+    void pipelineBuilderRejectsNullSplitter() {
+        TokenizationModel model = createWholeChunkModel(Map.of("hello", 1));
+        assertThrows(
+                NullPointerException.class,
+                () -> TokenizationPipeline.builder(model).splitter(null));
     }
 
     @Test
     void pipelineMinimalConfigWorks() {
-        Tokenizer base = createWholeChunkTokenizer(Map.of("hello", 1, "world", 2));
-        TokenizationPipeline pipeline = TokenizationPipeline.builder(base).build();
+        TokenizationModel model = createWholeChunkModel(Map.of("hello", 1, "world", 2));
+        Tokenizer pipeline = TokenizationPipeline.builder(model).build();
 
         IntSequence tokens = pipeline.encode("hello");
         assertEquals(1, tokens.length());
         assertEquals(1, tokens.intAt(0));
-        assertSame(base.vocabulary(), pipeline.vocabulary());
-    }
-
-    @Test
-    void pipelineAppliesNormalizerAndSplitter() {
-        Tokenizer base = createWholeChunkTokenizer(Map.of("é", 10, "world", 11));
-
-        TokenizationPipeline pipeline =
-                TokenizationPipeline.builder(base)
-                        .normalizer(Normalizer.unicode(Form.NFKC))
-                        .splitter(Splitter.sequence(spaceOnlySplitter()))
-                        .build();
-
-        IntSequence tokens = pipeline.encode("e\u0301 world");
-        assertArrayEquals(new int[] {10, 11}, tokens.toArray());
+        assertSame(model.vocabulary(), pipeline.vocabulary());
     }
 
     @Test
     void pipelineCountTokensMatchesEncodeOnSlice() {
-        Tokenizer base = createWholeChunkTokenizer(Map.of("hello", 1, "world", 2));
-        TokenizationPipeline pipeline =
-                TokenizationPipeline.builder(base)
+        TokenizationModel model = createWholeChunkModel(Map.of("hello", 1, "world", 2));
+        Tokenizer pipeline =
+                TokenizationPipeline.builder(model)
                         .splitter(Splitter.sequence(spaceOnlySplitter()))
                         .build();
 
@@ -111,10 +94,22 @@ class TokenizationPipelineTest {
     }
 
     @Test
-    void pipelineCountAndArrayConvenienceMethodsMatchCoreMethods() {
-        Tokenizer base = createWholeChunkTokenizer(Map.of("hello", 200, "world", 201));
+    void pipelineAppliesNormalizerBeforeSplitter() {
+        TokenizationModel model = createWholeChunkModel(Map.of("hello", 10, "world", 11));
         Tokenizer pipeline =
-                TokenizationPipeline.builder(base)
+                TokenizationPipeline.builder(model)
+                        .normalizer(Normalizer.lowercase())
+                        .splitter(Splitter.sequence(spaceOnlySplitter()))
+                        .build();
+
+        assertArrayEquals(new int[] {10, 11}, pipeline.encodeToArray("HELLO WORLD"));
+    }
+
+    @Test
+    void pipelineCountAndArrayConvenienceMethodsMatchCoreMethods() {
+        TokenizationModel model = createWholeChunkModel(Map.of("hello", 200, "world", 201));
+        Tokenizer pipeline =
+                TokenizationPipeline.builder(model)
                         .splitter(Splitter.sequence(spaceOnlySplitter()))
                         .build();
 
@@ -130,46 +125,25 @@ class TokenizationPipelineTest {
 
     @Test
     void builderGettersExposeCurrentConfiguration() {
-        Tokenizer base = createWholeChunkTokenizer(Map.of("x", 1));
-        TokenizationPipeline.Builder builder = TokenizationPipeline.builder().baseTokenizer(base);
+        TokenizationModel model = createWholeChunkModel(Map.of("x", 1));
+        TokenizationPipeline.Builder builder = TokenizationPipeline.builder(model);
 
-        assertEquals(Optional.of(base), builder.baseTokenizer());
-        assertTrue(builder.normalizer().isEmpty());
+        assertSame(model, builder.model());
         assertTrue(builder.splitter().isEmpty());
 
-        Normalizer normalizer = Normalizer.lowercase();
         Splitter splitter = Splitter.identity();
-
-        builder.normalizer(normalizer).splitter(splitter);
-        assertEquals(Optional.of(normalizer), builder.normalizer());
+        builder.splitter(splitter);
         assertEquals(Optional.of(splitter), builder.splitter());
     }
 
     @Test
-    void normalizerReplacementAndExplicitSequenceCompositionWork() {
-        Tokenizer base = createWholeChunkTokenizer(Map.of("é", 5));
-        TokenizationPipeline.Builder builder = TokenizationPipeline.builder(base);
+    void pipelineWithNoStagesUsesModelOutput() {
+        TokenizationModel model = createWholeChunkModel(Map.of("hello world", 7));
+        Tokenizer pipeline = TokenizationPipeline.builder(model).build();
 
-        builder.normalizer(Normalizer.lowercase());
-        Normalizer append = Normalizer.unicode(Form.NFC);
-        Normalizer combined =
-                builder.normalizer()
-                        .map(current -> Normalizer.sequence(current, append))
-                        .orElse(append);
-        builder.normalizer(combined);
-
-        IntSequence tokens = builder.build().encode("E\u0301");
-        assertArrayEquals(new int[] {5}, tokens.toArray());
-    }
-
-    @Test
-    void pipelineWithNoStagesUsesBaseTokenizerOutput() {
-        Tokenizer base = createWholeChunkTokenizer(Map.of("hello world", 7));
-        TokenizationPipeline pipeline = TokenizationPipeline.builder(base).build();
-
-        assertArrayEquals(base.encodeToArray("hello world"), pipeline.encodeToArray("hello world"));
-        assertFalse(pipeline.normalizer().isPresent());
-        assertFalse(pipeline.splitter().isPresent());
+        assertArrayEquals(
+                model.encodeToArray("hello world"), pipeline.encodeToArray("hello world"));
+        assertFalse(((TokenizationPipeline) pipeline).splitter().isPresent());
     }
 
     private Vocabulary createSimpleVocabulary(String[] tokens, int[] ids) {
@@ -252,9 +226,9 @@ class TokenizationPipelineTest {
         };
     }
 
-    private Tokenizer createWholeChunkTokenizer(Map<String, Integer> tokens) {
+    private TokenizationModel createWholeChunkModel(Map<String, Integer> tokens) {
         Vocabulary vocab = createVocabularyFromMap(tokens);
-        return new Tokenizer() {
+        return new TokenizationModel() {
             @Override
             public Vocabulary vocabulary() {
                 return vocab;

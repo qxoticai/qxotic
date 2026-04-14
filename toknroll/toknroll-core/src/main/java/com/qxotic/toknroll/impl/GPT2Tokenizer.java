@@ -15,7 +15,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /** Example implementation of a BPE tokenizer for GPT2. */
-public class GPT2Tokenizer extends AbstractTokenizer {
+public class GPT2Tokenizer extends AbstractTokenizationModel {
 
     private final LongLongMap merges;
     private final SymbolCodec symbolCodec;

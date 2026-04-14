@@ -30,7 +30,9 @@ class TokenizersApiTest {
 
     @Test
     void advancedPipelineBuilderIsAvailableViaFacade() {
-        assertNotNull(Tokenizers.pipeline());
+        Tokenizer tokenizer =
+                createTokenizer(R50K_NAME, R50K_FILE, R50K_HASH, R50K_PATTERN, R50K_SPECIALS);
+        assertNotNull(tokenizer);
     }
 
     @Test
@@ -70,10 +72,7 @@ class TokenizersApiTest {
 
         Tokenizer tokenizer =
                 Tokenizers.classicBpe(
-                        mergeableRanks,
-                        R50K_SPECIALS,
-                        Normalizer.identity(),
-                        RegexSplitter.create(R50K_PATTERN));
+                        mergeableRanks, R50K_SPECIALS, RegexSplitter.create(R50K_PATTERN));
 
         String text = "Tokenizer facade test";
         IntSequence tokens = tokenizer.encode(text);
@@ -98,10 +97,7 @@ class TokenizersApiTest {
 
         Tokenizer tokenizer =
                 Tokenizers.fastBpe(
-                        mergeableRanks,
-                        R50K_SPECIALS,
-                        Normalizer.identity(),
-                        RegexSplitter.create(R50K_PATTERN));
+                        mergeableRanks, R50K_SPECIALS, RegexSplitter.create(R50K_PATTERN));
 
         String text = "Fast tokenizer facade test";
         IntSequence tokens = tokenizer.encode(text);

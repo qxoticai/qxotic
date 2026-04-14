@@ -1178,41 +1178,37 @@ public final class ModelFamilyTokenizers {
 
     private static Tokenizer withPreSegmentation(
             Tokenizer tokenizer, Function<String, List<String>> segmenter) {
-        return Tokenizers.pipeline(tokenizer)
-                .splitter(
-                        (text, startInclusive, endExclusive, consumer) -> {
-                            if (startInclusive >= endExclusive) {
-                                return;
-                            }
-                            int cursor = startInclusive;
-                            String slice =
-                                    text.subSequence(startInclusive, endExclusive).toString();
-                            List<String> segments = segmenter.apply(slice);
-                            if (segments == null || segments.isEmpty()) {
-                                consumer.accept(text, startInclusive, endExclusive);
-                                return;
-                            }
-                            for (String segment : segments) {
-                                if (segment == null
-                                        || segment.isEmpty()
-                                        || cursor >= endExclusive) {
-                                    continue;
-                                }
-                                int end = cursor + segment.length();
-                                if (end > endExclusive) {
-                                    end = endExclusive;
-                                }
-                                if (end <= cursor) {
-                                    continue;
-                                }
-                                consumer.accept(text, cursor, end);
-                                cursor = end;
-                            }
-                            if (cursor < endExclusive) {
-                                consumer.accept(text, cursor, endExclusive);
-                            }
-                        })
-                .build();
+        return Tokenizers.withSplitter(
+                tokenizer,
+                (text, startInclusive, endExclusive, consumer) -> {
+                    if (startInclusive >= endExclusive) {
+                        return;
+                    }
+                    int cursor = startInclusive;
+                    String slice = text.subSequence(startInclusive, endExclusive).toString();
+                    List<String> segments = segmenter.apply(slice);
+                    if (segments == null || segments.isEmpty()) {
+                        consumer.accept(text, startInclusive, endExclusive);
+                        return;
+                    }
+                    for (String segment : segments) {
+                        if (segment == null || segment.isEmpty() || cursor >= endExclusive) {
+                            continue;
+                        }
+                        int end = cursor + segment.length();
+                        if (end > endExclusive) {
+                            end = endExclusive;
+                        }
+                        if (end <= cursor) {
+                            continue;
+                        }
+                        consumer.accept(text, cursor, end);
+                        cursor = end;
+                    }
+                    if (cursor < endExclusive) {
+                        consumer.accept(text, cursor, endExclusive);
+                    }
+                });
     }
 
     private static List<String> segmentThaiRuns(String text) {

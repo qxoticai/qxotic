@@ -25,7 +25,6 @@ class FastTikTokenParityTest {
                 Tokenizers.fastBpe(
                         TiktokenFixtures.mergeableRanks(encoding),
                         TiktokenFixtures.specialTokens(encoding),
-                        com.qxotic.toknroll.advanced.Normalizer.identity(),
                         splitter);
 
         List<String> samples =

@@ -31,6 +31,8 @@ IMPL_ORDER = ["fast", "classic"]
 
 PREFERRED_COMPARISONS = [
     ("gpt2", "tiktoken", "Tok'n'Roll vs TikToken"),
+    ("gpt2", "tiktoken-rs", "Tok'n'Roll vs TikToken-RS"),
+    ("gpt2", "tokie", "Tok'n'Roll vs Tokie"),
     ("gpt2", "hf-tokenizers", "Tok'n'Roll vs HuggingFace"),
     ("llama3", "hf-tokenizers", "Tok'n'Roll vs HuggingFace"),
     ("qwen35", "hf-tokenizers", "Tok'n'Roll vs HuggingFace"),
