@@ -1,7 +1,6 @@
 package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.advanced.Splitter;
-import java.util.Objects;
 import java.util.regex.Pattern;
 
 /**
@@ -9,35 +8,26 @@ import java.util.regex.Pattern;
  *
  * <p>Falls back to regex for non-ASCII slices to preserve Unicode behavior.
  */
-public final class FastR50kSplitter implements Splitter {
+public final class FastR50kSplitter extends AbstractFastAsciiRegexSplitter {
 
     private static final String R50K_PATTERN =
             "'(?:[sdmt]|ll|ve|re)| ?\\p{L}++| ?\\p{N}++|"
                     + " ?[^\\s\\p{L}\\p{N}]++|\\s++$|\\s+(?!\\S)|\\s";
 
-    public static final FastR50kSplitter INSTANCE = new FastR50kSplitter();
-
     private static final Pattern R50K_COMPILED = Pattern.compile(R50K_PATTERN);
 
-    private FastR50kSplitter() {}
+    public static final FastR50kSplitter INSTANCE = new FastR50kSplitter();
+
+    private FastR50kSplitter() {
+        super(R50K_COMPILED);
+    }
 
     @Override
-    public void splitAll(
+    protected void splitAscii(
             CharSequence text,
             int startInclusive,
             int endExclusive,
             Splitter.SplitConsumer consumer) {
-        Objects.requireNonNull(text, "text");
-        Objects.requireNonNull(consumer, "consumer");
-        SplitterSupport.validateRange(text, startInclusive, endExclusive);
-        if (startInclusive == endExclusive) {
-            return;
-        }
-
-        if (SplitterSupport.containsNonAscii(text, startInclusive, endExclusive)) {
-            splitRegex(text, startInclusive, endExclusive, consumer);
-            return;
-        }
 
         int i = startInclusive;
         while (i < endExclusive) {
@@ -53,28 +43,19 @@ public final class FastR50kSplitter implements Splitter {
             if (c == ' ' && i + 1 < endExclusive) {
                 char n = text.charAt(i + 1);
                 if (SplitterSupport.isAsciiLetter(n)) {
-                    int end = i + 2;
-                    while (end < endExclusive && SplitterSupport.isAsciiLetter(text.charAt(end))) {
-                        end++;
-                    }
+                    int end = SplitterSupport.scanAsciiLetters(text, i + 2, endExclusive);
                     consumer.accept(text, i, end);
                     i = end;
                     continue;
                 }
                 if (SplitterSupport.isAsciiDigit(n)) {
-                    int end = i + 2;
-                    while (end < endExclusive && SplitterSupport.isAsciiDigit(text.charAt(end))) {
-                        end++;
-                    }
+                    int end = SplitterSupport.scanAsciiDigits(text, i + 2, endExclusive);
                     consumer.accept(text, i, end);
                     i = end;
                     continue;
                 }
                 if (SplitterSupport.isAsciiSymbol(n)) {
-                    int end = i + 2;
-                    while (end < endExclusive && SplitterSupport.isAsciiSymbol(text.charAt(end))) {
-                        end++;
-                    }
+                    int end = SplitterSupport.scanAsciiSymbols(text, i + 2, endExclusive);
                     consumer.accept(text, i, end);
                     i = end;
                     continue;
@@ -82,30 +63,21 @@ public final class FastR50kSplitter implements Splitter {
             }
 
             if (SplitterSupport.isAsciiLetter(c)) {
-                int end = i + 1;
-                while (end < endExclusive && SplitterSupport.isAsciiLetter(text.charAt(end))) {
-                    end++;
-                }
+                int end = SplitterSupport.scanAsciiLetters(text, i + 1, endExclusive);
                 consumer.accept(text, i, end);
                 i = end;
                 continue;
             }
 
             if (SplitterSupport.isAsciiDigit(c)) {
-                int end = i + 1;
-                while (end < endExclusive && SplitterSupport.isAsciiDigit(text.charAt(end))) {
-                    end++;
-                }
+                int end = SplitterSupport.scanAsciiDigits(text, i + 1, endExclusive);
                 consumer.accept(text, i, end);
                 i = end;
                 continue;
             }
 
             if (SplitterSupport.isAsciiSymbol(c)) {
-                int end = i + 1;
-                while (end < endExclusive && SplitterSupport.isAsciiSymbol(text.charAt(end))) {
-                    end++;
-                }
+                int end = SplitterSupport.scanAsciiSymbols(text, i + 1, endExclusive);
                 consumer.accept(text, i, end);
                 i = end;
                 continue;
@@ -113,10 +85,7 @@ public final class FastR50kSplitter implements Splitter {
 
             // Whitespace handling mirrors: \s++$ | \s+(?!\S) | \s
             if (SplitterSupport.isAsciiWhitespace(c)) {
-                int end = i + 1;
-                while (end < endExclusive && SplitterSupport.isAsciiWhitespace(text.charAt(end))) {
-                    end++;
-                }
+                int end = SplitterSupport.scanAsciiWhitespace(text, i + 1, endExclusive);
                 if (end == endExclusive) {
                     consumer.accept(text, i, end);
                     i = end;
@@ -132,14 +101,6 @@ public final class FastR50kSplitter implements Splitter {
             consumer.accept(text, i, i + 1);
             i++;
         }
-    }
-
-    private void splitRegex(
-            CharSequence text,
-            int startInclusive,
-            int endExclusive,
-            Splitter.SplitConsumer consumer) {
-        SplitterSupport.splitRegex(R50K_COMPILED, text, startInclusive, endExclusive, consumer);
     }
 
     private static int apostropheChunkLength(CharSequence text, int i, int endExclusive) {

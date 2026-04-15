@@ -112,4 +112,68 @@ final class SplitterSupport {
     static boolean isAsciiSymbolNoSpace(char c) {
         return c < 128 && ASCII_SYMBOL_NO_SPACE[c] != 0;
     }
+
+    static int scanAsciiLetters(CharSequence text, int startInclusive, int endExclusive) {
+        int end = startInclusive;
+        while (end < endExclusive && isAsciiLetter(text.charAt(end))) {
+            end++;
+        }
+        return end;
+    }
+
+    static int scanAsciiDigits(CharSequence text, int startInclusive, int endExclusive) {
+        int end = startInclusive;
+        while (end < endExclusive && isAsciiDigit(text.charAt(end))) {
+            end++;
+        }
+        return end;
+    }
+
+    static int scanAsciiSymbols(CharSequence text, int startInclusive, int endExclusive) {
+        int end = startInclusive;
+        while (end < endExclusive && isAsciiSymbol(text.charAt(end))) {
+            end++;
+        }
+        return end;
+    }
+
+    static int scanAsciiSymbolsNoSpace(CharSequence text, int startInclusive, int endExclusive) {
+        int end = startInclusive;
+        while (end < endExclusive && isAsciiSymbolNoSpace(text.charAt(end))) {
+            end++;
+        }
+        return end;
+    }
+
+    static int scanAsciiWhitespace(CharSequence text, int startInclusive, int endExclusive) {
+        int end = startInclusive;
+        while (end < endExclusive && isAsciiWhitespace(text.charAt(end))) {
+            end++;
+        }
+        return end;
+    }
+
+    static int scanTrailingCrLf(CharSequence text, int startInclusive, int endExclusive) {
+        int end = startInclusive;
+        while (end < endExclusive) {
+            char ch = text.charAt(end);
+            if (ch != '\r' && ch != '\n') {
+                break;
+            }
+            end++;
+        }
+        return end;
+    }
+
+    static int scanTrailingCrLfSlash(CharSequence text, int startInclusive, int endExclusive) {
+        int end = startInclusive;
+        while (end < endExclusive) {
+            char ch = text.charAt(end);
+            if (ch != '\r' && ch != '\n' && ch != '/') {
+                break;
+            }
+            end++;
+        }
+        return end;
+    }
 }

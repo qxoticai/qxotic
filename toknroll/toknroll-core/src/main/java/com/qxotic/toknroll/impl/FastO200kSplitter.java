@@ -1,7 +1,6 @@
 package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.advanced.Splitter;
-import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -10,7 +9,7 @@ import java.util.regex.Pattern;
  *
  * <p>Falls back to regex for non-ASCII slices to preserve Unicode behavior.
  */
-public final class FastO200kSplitter implements Splitter {
+public final class FastO200kSplitter extends AbstractFastAsciiRegexSplitter {
 
     private static final String O200K_PATTERN =
             String.join(
@@ -30,26 +29,16 @@ public final class FastO200kSplitter implements Splitter {
     private static final Pattern O200K_COMPILED = Pattern.compile(O200K_PATTERN);
     public static final FastO200kSplitter INSTANCE = new FastO200kSplitter();
 
-    private FastO200kSplitter() {}
+    private FastO200kSplitter() {
+        super(O200K_COMPILED);
+    }
 
     @Override
-    public void splitAll(
+    protected void splitAscii(
             CharSequence text,
             int startInclusive,
             int endExclusive,
             Splitter.SplitConsumer consumer) {
-        Objects.requireNonNull(text, "text");
-        Objects.requireNonNull(consumer, "consumer");
-        SplitterSupport.validateRange(text, startInclusive, endExclusive);
-        if (startInclusive == endExclusive) {
-            return;
-        }
-
-        if (SplitterSupport.containsNonAscii(text, startInclusive, endExclusive)) {
-            splitRegex(text, startInclusive, endExclusive, consumer);
-            return;
-        }
-
         int i = startInclusive;
         Matcher matcher = null;
         while (i < endExclusive) {
@@ -57,11 +46,9 @@ public final class FastO200kSplitter implements Splitter {
 
             if (SplitterSupport.isAsciiDigit(c)) {
                 int end = i + 1;
-                if (end < endExclusive && SplitterSupport.isAsciiDigit(text.charAt(end))) {
+                int maxEnd = Math.min(i + 3, endExclusive);
+                while (end < maxEnd && SplitterSupport.isAsciiDigit(text.charAt(end))) {
                     end++;
-                    if (end < endExclusive && SplitterSupport.isAsciiDigit(text.charAt(end))) {
-                        end++;
-                    }
                 }
                 consumer.accept(text, i, end);
                 i = end;
@@ -89,36 +76,16 @@ public final class FastO200kSplitter implements Splitter {
             if (c == ' '
                     && i + 1 < endExclusive
                     && SplitterSupport.isAsciiSymbolNoSpace(text.charAt(i + 1))) {
-                int end = i + 2;
-                while (end < endExclusive
-                        && SplitterSupport.isAsciiSymbolNoSpace(text.charAt(end))) {
-                    end++;
-                }
-                while (end < endExclusive) {
-                    char ch = text.charAt(end);
-                    if (ch != '\r' && ch != '\n' && ch != '/') {
-                        break;
-                    }
-                    end++;
-                }
+                int end = SplitterSupport.scanAsciiSymbolsNoSpace(text, i + 2, endExclusive);
+                end = SplitterSupport.scanTrailingCrLfSlash(text, end, endExclusive);
                 consumer.accept(text, i, end);
                 i = end;
                 continue;
             }
 
             if (SplitterSupport.isAsciiSymbolNoSpace(c)) {
-                int end = i + 1;
-                while (end < endExclusive
-                        && SplitterSupport.isAsciiSymbolNoSpace(text.charAt(end))) {
-                    end++;
-                }
-                while (end < endExclusive) {
-                    char ch = text.charAt(end);
-                    if (ch != '\r' && ch != '\n' && ch != '/') {
-                        break;
-                    }
-                    end++;
-                }
+                int end = SplitterSupport.scanAsciiSymbolsNoSpace(text, i + 1, endExclusive);
+                end = SplitterSupport.scanTrailingCrLfSlash(text, end, endExclusive);
                 consumer.accept(text, i, end);
                 i = end;
                 continue;
@@ -137,14 +104,6 @@ public final class FastO200kSplitter implements Splitter {
                 i++;
             }
         }
-    }
-
-    private void splitRegex(
-            CharSequence text,
-            int startInclusive,
-            int endExclusive,
-            Splitter.SplitConsumer consumer) {
-        SplitterSupport.splitRegex(O200K_COMPILED, text, startInclusive, endExclusive, consumer);
     }
 
     private static int scanAsciiWordWithSuffix(CharSequence text, int start, int endExclusive) {
