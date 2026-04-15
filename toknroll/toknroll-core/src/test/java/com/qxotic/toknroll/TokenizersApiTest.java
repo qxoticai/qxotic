@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.toknroll.advanced.Normalizer;
 import com.qxotic.toknroll.impl.ClassicBPE;
 import com.qxotic.toknroll.impl.RegexSplitter;
 import java.net.URISyntaxException;
@@ -96,7 +95,7 @@ class TokenizersApiTest {
                 ClassicBPE.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
 
         Tokenizer tokenizer =
-                Tokenizers.fastBpe(
+                Tokenizers.tikToken(
                         mergeableRanks, R50K_SPECIALS, RegexSplitter.create(R50K_PATTERN));
 
         String text = "Fast tokenizer facade test";
@@ -115,12 +114,7 @@ class TokenizersApiTest {
                 () -> Tokenizers.classicBpe(ranks, Map.of(), (String) null));
         assertThrows(
                 NullPointerException.class,
-                () -> Tokenizers.fastBpe(ranks, Map.of(), (String) null));
-        assertThrows(
-                NullPointerException.class,
-                () -> Tokenizers.withTextTransform(null, Normalizer.identity()));
-        assertThrows(
-                NullPointerException.class, () -> Tokenizers.withTextTransform(tokenizer, null));
+                () -> Tokenizers.tikToken(ranks, Map.of(), (String) null));
         assertThrows(NullPointerException.class, () -> tokenizer.decode((IntSequence) null));
     }
 
@@ -193,10 +187,18 @@ class TokenizersApiTest {
     }
 
     @Test
-    void lossyTransformIsExplicitAndSeparateFromBaseTokenizer() {
+    void lossyTransformIsExplicitAndSeparateFromBaseTokenizer() throws Exception {
+        Map<String, Integer> mergeableRanks =
+                ClassicBPE.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
+        TokenizationModel model = ClassicBPE.classicFromTiktoken(mergeableRanks, R50K_SPECIALS);
+
         Tokenizer base =
-                createTokenizer(R50K_NAME, R50K_FILE, R50K_HASH, R50K_PATTERN, R50K_SPECIALS);
-        Tokenizer nfcTransformed = Tokenizers.withTextTransform(base, Normalizer.unicode(Form.NFC));
+                Tokenizers.pipeline(model).splitter(RegexSplitter.create(R50K_PATTERN)).build();
+        Tokenizer nfcTransformed =
+                Tokenizers.pipeline(model)
+                        .normalizer(Normalizer.unicode(Form.NFC))
+                        .splitter(RegexSplitter.create(R50K_PATTERN))
+                        .build();
 
         String decomposed = "e\u0301";
         String composed = "é";
@@ -223,7 +225,7 @@ class TokenizersApiTest {
         try {
             Map<String, Integer> mergeableRanks =
                     ClassicBPE.loadMergeableRanks(resourcePath(file).toString(), hash);
-            return Tokenizers.fastBpe(mergeableRanks, specials, pattern);
+            return Tokenizers.tikToken(mergeableRanks, specials, pattern);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to create tokenizer " + name, e);
         }

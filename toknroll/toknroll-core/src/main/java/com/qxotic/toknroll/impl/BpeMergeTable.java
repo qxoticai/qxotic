@@ -1,8 +1,7 @@
 package com.qxotic.toknroll.impl;
 
-/** Lookup table for merge candidates in BPE. */
-public interface BpeMergeTable {
-
-    /** Returns packed merge info or {@link IntPair#NONE} when absent. */
-    long mergeInfo(int leftTokenId, int rightTokenId);
-}
+/**
+ * @deprecated use {@link com.qxotic.toknroll.advanced.BpeMergeTable}.
+ */
+@Deprecated(forRemoval = false, since = "0.1.0")
+public interface BpeMergeTable extends com.qxotic.toknroll.advanced.BpeMergeTable {}

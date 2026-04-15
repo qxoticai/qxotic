@@ -1,8 +1,5 @@
-package com.qxotic.toknroll.advanced;
+package com.qxotic.toknroll;
 
-import com.qxotic.toknroll.IntSequence;
-import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.Vocabulary;
 import java.nio.ByteBuffer;
 import java.util.Objects;
 import java.util.Optional;

@@ -3,7 +3,6 @@ package com.qxotic.toknroll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.toknroll.advanced.Splitter;
 import com.qxotic.toknroll.impl.CodePointSymbolEncoder;
 import com.qxotic.toknroll.impl.LongLongBpeMergeTable;
 import com.qxotic.toknroll.impl.LongLongMap;

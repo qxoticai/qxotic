@@ -2,7 +2,6 @@ package com.qxotic.toknroll;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import com.qxotic.toknroll.advanced.Splitter;
 import com.qxotic.toknroll.loaders.ModelSplitters;
 import com.qxotic.toknroll.testkit.SplitterParityHarness;
 import java.util.regex.Pattern;

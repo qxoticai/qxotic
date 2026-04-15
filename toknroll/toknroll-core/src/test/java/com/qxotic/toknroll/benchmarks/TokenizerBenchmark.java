@@ -74,7 +74,7 @@ public class TokenizerBenchmark {
             var mergeableRanks =
                     ClassicBPE.loadMergeableRanks(tiktokenPath.toString(), CL100K_BASE_HASH);
 
-            return Tokenizers.fastBpe(
+            return Tokenizers.tikToken(
                     mergeableRanks,
                     java.util.Map.of(
                             "<|endoftext|>", 100257,

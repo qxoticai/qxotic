@@ -1,7 +1,7 @@
 package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.*;
-import com.qxotic.toknroll.advanced.TokenizationModel;
+import com.qxotic.toknroll.TokenizationModel;
 import java.util.Objects;
 
 /**
@@ -9,7 +9,7 @@ import java.util.Objects;
  *
  * <p>Provides vocabulary management and a default encoding pipeline. Subclasses implement the core
  * chunk-level encoding logic via {@link #encodeImplInto(CharSequence, IntSequence.Builder)}.
- * Splitting is handled externally by {@link com.qxotic.toknroll.advanced.TokenizationPipeline}.
+ * Splitting is handled externally by {@link com.qxotic.toknroll.TokenizationPipeline}.
  *
  * <p>Implementations need to provide:
  *

@@ -349,8 +349,7 @@ public class IntSequenceTest {
         assertArrayEquals(new int[] {1, 2, 3}, IntSequence.concatAll(a, b).toArray());
 
         assertThrows(NullPointerException.class, () -> a.concat((IntSequence) null));
-        assertThrows(
-                NullPointerException.class, () -> IntSequence.concatAll((IntSequence[]) null));
+        assertThrows(NullPointerException.class, () -> IntSequence.concatAll((IntSequence[]) null));
         assertThrows(NullPointerException.class, () -> IntSequence.concatAll(a, null, b));
     }
 

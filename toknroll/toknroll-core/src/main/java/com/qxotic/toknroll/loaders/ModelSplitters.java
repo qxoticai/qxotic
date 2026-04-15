@@ -1,6 +1,6 @@
 package com.qxotic.toknroll.loaders;
 
-import com.qxotic.toknroll.advanced.Splitter;
+import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.impl.FastQwen35Splitter;
 import com.qxotic.toknroll.impl.FastTekkenSplitter;
 import java.util.Arrays;

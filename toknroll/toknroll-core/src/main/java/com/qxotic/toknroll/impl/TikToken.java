@@ -2,7 +2,6 @@ package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
-import com.qxotic.toknroll.advanced.ByteEncoding;
 import java.io.BufferedReader;
 import java.util.Base64;
 import java.util.Collections;
@@ -10,9 +9,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-public class Tiktoken {
+/**
+ * @deprecated Internal compatibility shim; use {@code com.qxotic.toknroll.Tokenizers}.
+ */
+@Deprecated(forRemoval = false, since = "0.1.0")
+public class TikToken {
 
-    private Tiktoken() {}
+    private TikToken() {}
 
     public static Map<String, Integer> loadMergeableRanks(BufferedReader reader) {
         Map<String, Integer> mergeableRanks = new HashMap<>();
@@ -40,7 +43,7 @@ public class Tiktoken {
             Map<String, Integer> mergeableRanks,
             Pattern splitPattern,
             Map<String, Integer> specialTokens) {
-        return Tokenizers.fastBpe(
+        return Tokenizers.tikToken(
                 mergeableRanks,
                 specialTokens == null ? Collections.emptyMap() : specialTokens,
                 splitPattern.pattern());

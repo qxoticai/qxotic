@@ -3,7 +3,6 @@ package com.qxotic.toknroll;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
-import com.qxotic.toknroll.advanced.Splitter;
 import com.qxotic.toknroll.loaders.ModelSplitters;
 import com.qxotic.toknroll.loaders.SplitterRegistry;
 import org.junit.jupiter.api.Test;

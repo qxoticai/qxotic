@@ -2,7 +2,6 @@ package com.qxotic.toknroll;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.toknroll.advanced.Splitter;
 import com.qxotic.toknroll.impl.FastQwen35Splitter;
 import com.qxotic.toknroll.testkit.TestCorpora;
 import java.util.ArrayList;

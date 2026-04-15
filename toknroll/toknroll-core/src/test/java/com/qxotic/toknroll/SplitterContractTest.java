@@ -2,7 +2,6 @@ package com.qxotic.toknroll;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import com.qxotic.toknroll.advanced.Splitter;
 import org.junit.jupiter.api.Test;
 
 class SplitterContractTest {

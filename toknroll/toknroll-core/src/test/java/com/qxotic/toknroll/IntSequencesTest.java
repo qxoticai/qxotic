@@ -9,8 +9,7 @@ class IntSequencesTest {
     @Test
     void concatAllHandlesEmptyAndNulls() {
         assertEquals(IntSequence.empty(), IntSequence.concatAll());
-        assertThrows(
-                NullPointerException.class, () -> IntSequence.concatAll((IntSequence[]) null));
+        assertThrows(NullPointerException.class, () -> IntSequence.concatAll((IntSequence[]) null));
         assertThrows(
                 NullPointerException.class,
                 () -> IntSequence.concatAll(IntSequence.of(1), null, IntSequence.of(2)));
@@ -19,8 +18,7 @@ class IntSequencesTest {
     @Test
     void concatAllProducesExpectedOrder() {
         IntSequence mergedAll =
-                IntSequence.concatAll(
-                        IntSequence.of(1), IntSequence.of(2), IntSequence.of(3, 4));
+                IntSequence.concatAll(IntSequence.of(1), IntSequence.of(2), IntSequence.of(3, 4));
         assertArrayEquals(new int[] {1, 2, 3, 4}, mergedAll.toArray());
 
         IntSequence mergedWithEmpty =
@@ -31,14 +29,10 @@ class IntSequencesTest {
     @Test
     void concatAllRejectsNullInputs() {
         assertThrows(
-                NullPointerException.class,
-                () -> IntSequence.concatAll(null, IntSequence.of(1)));
+                NullPointerException.class, () -> IntSequence.concatAll(null, IntSequence.of(1)));
         assertThrows(
-                NullPointerException.class,
-                () -> IntSequence.concatAll(IntSequence.of(1), null));
-        assertThrows(
-                NullPointerException.class,
-                () -> IntSequence.concatAll((IntSequence[]) null));
+                NullPointerException.class, () -> IntSequence.concatAll(IntSequence.of(1), null));
+        assertThrows(NullPointerException.class, () -> IntSequence.concatAll((IntSequence[]) null));
     }
 
     @Test

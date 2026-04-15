@@ -1,4 +1,4 @@
-package com.qxotic.toknroll.advanced;
+package com.qxotic.toknroll.impl;
 
 import java.nio.charset.StandardCharsets;
 

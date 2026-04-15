@@ -2,7 +2,6 @@ package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Vocabulary;
-import com.qxotic.toknroll.advanced.SymbolCodec;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -25,12 +24,9 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  */
 public final class FastTikToken extends AbstractTokenizationModel {
 
-    public static final String LARGE_CHUNK_THRESHOLD_PROPERTY =
-            "qxotic.tokenizer.fast.largeChunkThreshold";
-    public static final String TINY_CHUNK_THRESHOLD_PROPERTY =
-            "qxotic.tokenizer.fast.tinyChunkThreshold";
-    public static final String EXACT_LOOKUP_ENABLED_PROPERTY =
-            "qxotic.tokenizer.fast.exactLookupEnabled";
+    public static final String LARGE_CHUNK_THRESHOLD_PROPERTY = "toknroll.fast.largeChunkThreshold";
+    public static final String TINY_CHUNK_THRESHOLD_PROPERTY = "toknroll.fast.tinyChunkThreshold";
+    public static final String EXACT_LOOKUP_ENABLED_PROPERTY = "toknroll.fast.exactLookupEnabled";
 
     private static final byte REPLACEMENT_B0 = (byte) 0xEF;
     private static final byte REPLACEMENT_B1 = (byte) 0xBF;

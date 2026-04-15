@@ -1,6 +1,7 @@
-package com.qxotic.toknroll.advanced;
+package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
 

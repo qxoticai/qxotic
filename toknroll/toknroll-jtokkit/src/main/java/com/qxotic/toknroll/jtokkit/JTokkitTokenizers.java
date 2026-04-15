@@ -6,15 +6,12 @@ import com.knuddels.jtokkit.api.EncodingRegistry;
 import com.knuddels.jtokkit.api.GptBytePairEncodingParams;
 import com.knuddels.jtokkit.api.IntArrayList;
 import com.qxotic.toknroll.IntSequence;
-import com.qxotic.toknroll.TokenType;
 import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.Tokenizers;
 import com.qxotic.toknroll.Vocabulary;
-import com.qxotic.toknroll.advanced.StandardTokenType;
-import com.qxotic.toknroll.advanced.SymbolCodec;
-import com.qxotic.toknroll.impl.VocabularyImpl;
+import com.qxotic.toknroll.impl.SymbolCodec;
 import java.nio.ByteBuffer;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
@@ -50,7 +47,9 @@ public final class JTokkitTokenizers {
         encodingRegistry.registerGptBytePairEncoding(params);
 
         Encoding encoding = encodingRegistry.getEncoding(name).orElseThrow();
-        Vocabulary vocabulary = createVocabulary(mergeableRanks, specialTokens);
+        Vocabulary vocabulary =
+                Tokenizers.tikToken(mergeableRanks, specialTokens, splitPattern.pattern())
+                        .vocabulary();
 
         return new Adapter(vocabulary, encoding);
     }
@@ -75,21 +74,6 @@ public final class JTokkitTokenizers {
     public static Tokenizer fromTiktoken(
             String name, Map<String, Integer> mergeableRanks, String splitPattern) {
         return fromTiktoken(name, mergeableRanks, splitPattern, Collections.emptyMap());
-    }
-
-    private static Vocabulary createVocabulary(
-            Map<String, Integer> mergeableRanks, Map<String, Integer> specialTokens) {
-        int maxMergeableIndex =
-                mergeableRanks.values().stream().mapToInt(Integer::intValue).max().orElse(0);
-        int maxSpecialIndex =
-                specialTokens.values().stream().mapToInt(Integer::intValue).max().orElse(0);
-        int maxIndex = Math.max(maxMergeableIndex, maxSpecialIndex);
-
-        String[] tokens = new String[maxIndex + 1];
-        for (Map.Entry<String, Integer> entry : mergeableRanks.entrySet()) {
-            tokens[entry.getValue()] = entry.getKey();
-        }
-        return VocabularyWithSpecials.create(new VocabularyImpl(tokens), specialTokens);
     }
 
     private static final class Adapter implements Tokenizer {
@@ -200,95 +184,6 @@ public final class JTokkitTokenizers {
         @Override
         public String toString() {
             return "Tiktoken (JTokkit): " + encoding.getName();
-        }
-    }
-
-    private static final class VocabularyWithSpecials implements Vocabulary {
-        private final Vocabulary innerVocabulary;
-        private final Map<String, Integer> specialToIndex;
-        private final Map<Integer, String> indexToSpecial;
-
-        private VocabularyWithSpecials(
-                Vocabulary innerVocabulary, Map<String, Integer> specialToIndex) {
-            this.innerVocabulary = innerVocabulary;
-            this.specialToIndex = Map.copyOf(specialToIndex);
-            this.indexToSpecial =
-                    specialToIndex.entrySet().stream()
-                            .collect(
-                                    Collectors.toUnmodifiableMap(
-                                            Map.Entry::getValue, Map.Entry::getKey));
-        }
-
-        private static Vocabulary create(
-                Vocabulary innerVocabulary, Map<String, Integer> specialToIndex) {
-            if (specialToIndex.isEmpty()) {
-                return innerVocabulary;
-            }
-            return new VocabularyWithSpecials(innerVocabulary, specialToIndex);
-        }
-
-        @Override
-        public int size() {
-            return innerVocabulary.size() + specialToIndex.size();
-        }
-
-        @Override
-        public String token(int tokenIndex) {
-            String tokenString = indexToSpecial.get(tokenIndex);
-            if (tokenString != null) {
-                return tokenString;
-            }
-            return innerVocabulary.token(tokenIndex);
-        }
-
-        @Override
-        public int id(String tokenString) {
-            Integer tokenIndex = specialToIndex.get(tokenString);
-            if (tokenIndex != null) {
-                return tokenIndex;
-            }
-            return innerVocabulary.id(tokenString);
-        }
-
-        @Override
-        public boolean contains(int tokenIndex) {
-            return indexToSpecial.containsKey(tokenIndex) || innerVocabulary.contains(tokenIndex);
-        }
-
-        @Override
-        public boolean contains(String tokenString) {
-            return specialToIndex.containsKey(tokenString) || innerVocabulary.contains(tokenString);
-        }
-
-        @Override
-        public boolean isTokenOfType(int tokenIndex, TokenType tokenType) {
-            if (indexToSpecial.containsKey(tokenIndex)) {
-                return tokenType == StandardTokenType.CONTROL;
-            }
-            return innerVocabulary.isTokenOfType(tokenIndex, tokenType);
-        }
-
-        @Override
-        public Iterator<Map.Entry<String, Integer>> iterator() {
-            return new Iterator<>() {
-                private final Iterator<Map.Entry<String, Integer>> inner =
-                        innerVocabulary.iterator();
-                private final Iterator<Map.Entry<String, Integer>> special =
-                        specialToIndex.entrySet().iterator();
-
-                @Override
-                public boolean hasNext() {
-                    return inner.hasNext() || special.hasNext();
-                }
-
-                @Override
-                public Map.Entry<String, Integer> next() {
-                    if (inner.hasNext()) {
-                        return inner.next();
-                    }
-                    return special.next();
-                }
-            };
         }
     }
 }

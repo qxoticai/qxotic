@@ -3,7 +3,7 @@ package com.qxotic.toknroll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.toknroll.advanced.SymbolCodec;
+import com.qxotic.toknroll.impl.SymbolCodec;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 

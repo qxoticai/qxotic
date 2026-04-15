@@ -1,7 +1,8 @@
 package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.Vocabulary;
-import com.qxotic.toknroll.advanced.SymbolCodec;
+import com.qxotic.toknroll.advanced.BpeMergeTable;
+import com.qxotic.toknroll.advanced.BpeSymbolEncoder;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -41,7 +42,29 @@ public final class GenericBPE {
         Objects.requireNonNull(vocabulary, "vocabulary");
         Objects.requireNonNull(mergeTable, "mergeTable");
         Objects.requireNonNull(symbolEncoder, "symbolEncoder");
-        return new GenericBpeTokenizer(vocabulary, mergeTable, symbolEncoder);
+
+        com.qxotic.toknroll.impl.BpeMergeTable mergeTableImpl =
+                (mergeTable instanceof com.qxotic.toknroll.impl.BpeMergeTable)
+                        ? (com.qxotic.toknroll.impl.BpeMergeTable) mergeTable
+                        : mergeTable::mergeInfo;
+
+        com.qxotic.toknroll.impl.BpeSymbolEncoder symbolEncoderImpl =
+                (symbolEncoder instanceof com.qxotic.toknroll.impl.BpeSymbolEncoder)
+                        ? (com.qxotic.toknroll.impl.BpeSymbolEncoder) symbolEncoder
+                        : new com.qxotic.toknroll.impl.BpeSymbolEncoder() {
+                            @Override
+                            public int[] encodeChunkToTokenIds(
+                                    CharSequence chunk, Vocabulary vocabulary) {
+                                return symbolEncoder.encodeChunkToTokenIds(chunk, vocabulary);
+                            }
+
+                            @Override
+                            public byte[] decodeTokenBytes(int tokenId, Vocabulary vocabulary) {
+                                return symbolEncoder.decodeTokenBytes(tokenId, vocabulary);
+                            }
+                        };
+
+        return new GenericBpeTokenizer(vocabulary, mergeTableImpl, symbolEncoderImpl);
     }
 
     private static LongLongMap buildMerges(Map<String, Integer> mergeableRanks) {

@@ -2,8 +2,8 @@ package com.qxotic.toknroll;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.toknroll.advanced.Decoder;
-import com.qxotic.toknroll.advanced.SymbolCodec;
+import com.qxotic.toknroll.impl.Decoder;
+import com.qxotic.toknroll.impl.SymbolCodec;
 import java.util.Iterator;
 import java.util.Map;
 import org.junit.jupiter.api.Test;

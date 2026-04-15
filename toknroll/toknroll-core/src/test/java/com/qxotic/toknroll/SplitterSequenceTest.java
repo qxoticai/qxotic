@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import com.qxotic.toknroll.advanced.Splitter;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;

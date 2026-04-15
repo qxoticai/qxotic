@@ -1,6 +1,6 @@
 package com.qxotic.toknroll.loaders;
 
-import com.qxotic.toknroll.advanced.Splitter;
+import com.qxotic.toknroll.Splitter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 

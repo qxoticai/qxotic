@@ -1,6 +1,6 @@
 package com.qxotic.toknroll.gguf;
 
-import com.qxotic.toknroll.advanced.Splitter;
+import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.impl.RegexSplitter;
 import java.util.Arrays;
 import java.util.regex.Pattern;

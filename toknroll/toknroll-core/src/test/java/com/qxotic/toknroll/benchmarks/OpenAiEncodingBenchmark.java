@@ -6,9 +6,9 @@ import com.knuddels.jtokkit.api.EncodingRegistry;
 import com.knuddels.jtokkit.api.EncodingType;
 import com.knuddels.jtokkit.api.IntArrayList;
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
-import com.qxotic.toknroll.advanced.Splitter;
 import com.qxotic.toknroll.impl.FastCl100kSplitter;
 import com.qxotic.toknroll.impl.FastO200kSplitter;
 import com.qxotic.toknroll.impl.FastR50kSplitter;
@@ -138,7 +138,7 @@ public class OpenAiEncodingBenchmark {
                 Map<String, Integer> ranks = TiktokenFixtures.mergeableRanks(encoding);
                 Map<String, Integer> specials = TiktokenFixtures.specialTokens(encoding);
                 Splitter splitter = fastSplitterForEncoding(encoding);
-                return Tokenizers.fastBpe(ranks, specials, splitter);
+                return Tokenizers.tikToken(ranks, specials, splitter);
             case "generic":
                 Map<String, Integer> genericRanks = TiktokenFixtures.mergeableRanks(encoding);
                 Map<String, Integer> genericSpecials = TiktokenFixtures.specialTokens(encoding);

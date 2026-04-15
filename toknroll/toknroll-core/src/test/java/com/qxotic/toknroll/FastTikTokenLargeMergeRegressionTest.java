@@ -2,7 +2,6 @@ package com.qxotic.toknroll;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.toknroll.advanced.Splitter;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.util.List;
 import java.util.Random;
@@ -15,7 +14,7 @@ class FastTikTokenLargeMergeRegressionTest {
     @ValueSource(strings = {"r50k_base", "cl100k_base", "o200k_base"})
     void fastLargePathMatchesClassicTokenizer(String encoding) {
         Tokenizer fast =
-                Tokenizers.fastBpe(
+                Tokenizers.tikToken(
                         TiktokenFixtures.mergeableRanks(encoding),
                         TiktokenFixtures.specialTokens(encoding),
                         Splitter.regex(TiktokenFixtures.splitPattern(encoding)));

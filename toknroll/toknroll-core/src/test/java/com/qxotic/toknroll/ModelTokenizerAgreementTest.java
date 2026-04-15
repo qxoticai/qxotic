@@ -3,8 +3,6 @@ package com.qxotic.toknroll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.toknroll.advanced.Normalizer;
-import com.qxotic.toknroll.advanced.Splitter;
 import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
 import com.qxotic.toknroll.impl.FastLlama3Splitter;
 import com.qxotic.toknroll.impl.FastQwen35Splitter;
@@ -66,7 +64,7 @@ class ModelTokenizerAgreementTest {
             return new ComparedTokenizers(
                     TiktokenFixtures.createJtokkitTokenizer("r50k_base"),
                     Tokenizers.classicBpe(ranks, specials, RegexSplitter.create(pattern)),
-                    Tokenizers.fastBpe(ranks, specials, FastR50kSplitter.INSTANCE));
+                    Tokenizers.tikToken(ranks, specials, FastR50kSplitter.INSTANCE));
         }
         if ("llama3".equals(model)) {
             return modelNative(
@@ -113,10 +111,82 @@ class ModelTokenizerAgreementTest {
                                 () ->
                                         new IllegalStateException(
                                                 "Missing HF tokenizer for " + familyId));
-        Tokenizer fast =
-                Tokenizers.withSplitter(
-                        Tokenizers.withTextTransform(fidelity, normalizer), fastSplitter);
+        Tokenizer fast = withSplitter(withTextTransform(fidelity, normalizer), fastSplitter);
         return new ComparedTokenizers(hf, fidelity, fast);
+    }
+
+    private static Tokenizer withTextTransform(Tokenizer tokenizer, Normalizer transform) {
+        return new Tokenizer() {
+            @Override
+            public Vocabulary vocabulary() {
+                return tokenizer.vocabulary();
+            }
+
+            @Override
+            public void encodeInto(
+                    CharSequence text,
+                    int startInclusive,
+                    int endExclusive,
+                    IntSequence.Builder out) {
+                CharSequence slice = text.subSequence(startInclusive, endExclusive);
+                CharSequence transformed = transform.apply(slice);
+                tokenizer.encodeInto(transformed, 0, transformed.length(), out);
+            }
+
+            @Override
+            public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
+                CharSequence slice = text.subSequence(startInclusive, endExclusive);
+                CharSequence transformed = transform.apply(slice);
+                return tokenizer.countTokens(transformed, 0, transformed.length());
+            }
+
+            @Override
+            public int decodeBytesInto(
+                    IntSequence tokens, int tokenStartIndex, java.nio.ByteBuffer out) {
+                return tokenizer.decodeBytesInto(tokens, tokenStartIndex, out);
+            }
+        };
+    }
+
+    private static Tokenizer withSplitter(Tokenizer tokenizer, Splitter splitter) {
+        return new Tokenizer() {
+            @Override
+            public Vocabulary vocabulary() {
+                return tokenizer.vocabulary();
+            }
+
+            @Override
+            public void encodeInto(
+                    CharSequence text,
+                    int startInclusive,
+                    int endExclusive,
+                    IntSequence.Builder out) {
+                splitter.splitAll(
+                        text,
+                        startInclusive,
+                        endExclusive,
+                        (source, chunkStart, chunkEnd) ->
+                                tokenizer.encodeInto(source, chunkStart, chunkEnd, out));
+            }
+
+            @Override
+            public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
+                int[] total = {0};
+                splitter.splitAll(
+                        text,
+                        startInclusive,
+                        endExclusive,
+                        (source, chunkStart, chunkEnd) ->
+                                total[0] += tokenizer.countTokens(source, chunkStart, chunkEnd));
+                return total[0];
+            }
+
+            @Override
+            public int decodeBytesInto(
+                    IntSequence tokens, int tokenStartIndex, java.nio.ByteBuffer out) {
+                return tokenizer.decodeBytesInto(tokens, tokenStartIndex, out);
+            }
+        };
     }
 
     private static final class ComparedTokenizers {
