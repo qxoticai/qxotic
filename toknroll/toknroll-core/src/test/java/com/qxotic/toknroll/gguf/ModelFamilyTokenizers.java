@@ -3,13 +3,12 @@ package com.qxotic.toknroll.gguf;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.json.Json;
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Normalizer;
+import com.qxotic.toknroll.Splitter;
+import com.qxotic.toknroll.TokenizationPipeline;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.Tokenizers;
 import com.qxotic.toknroll.Vocabulary;
-import com.qxotic.toknroll.advanced.Normalizer;
-import com.qxotic.toknroll.advanced.Splitter;
 import com.qxotic.toknroll.advanced.StandardTokenType;
-import com.qxotic.toknroll.advanced.TokenizationPipeline;
 import com.qxotic.toknroll.gguf.TestDataManager.TestModel;
 import com.qxotic.toknroll.gguf.TestDataManager.TokenizerMetadata;
 import com.qxotic.toknroll.impl.GPT2Tokenizer;
@@ -1178,8 +1177,7 @@ public final class ModelFamilyTokenizers {
 
     private static Tokenizer withPreSegmentation(
             Tokenizer tokenizer, Function<String, List<String>> segmenter) {
-        return Tokenizers.withSplitter(
-                tokenizer,
+        Splitter splitter =
                 (text, startInclusive, endExclusive, consumer) -> {
                     if (startInclusive >= endExclusive) {
                         return;
@@ -1208,7 +1206,46 @@ public final class ModelFamilyTokenizers {
                     if (cursor < endExclusive) {
                         consumer.accept(text, cursor, endExclusive);
                     }
-                });
+                };
+
+        return new Tokenizer() {
+            @Override
+            public Vocabulary vocabulary() {
+                return tokenizer.vocabulary();
+            }
+
+            @Override
+            public void encodeInto(
+                    CharSequence text,
+                    int startInclusive,
+                    int endExclusive,
+                    IntSequence.Builder out) {
+                splitter.splitAll(
+                        text,
+                        startInclusive,
+                        endExclusive,
+                        (source, chunkStart, chunkEnd) ->
+                                tokenizer.encodeInto(source, chunkStart, chunkEnd, out));
+            }
+
+            @Override
+            public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
+                int[] total = {0};
+                splitter.splitAll(
+                        text,
+                        startInclusive,
+                        endExclusive,
+                        (source, chunkStart, chunkEnd) ->
+                                total[0] += tokenizer.countTokens(source, chunkStart, chunkEnd));
+                return total[0];
+            }
+
+            @Override
+            public int decodeBytesInto(
+                    IntSequence tokens, int tokenStartIndex, java.nio.ByteBuffer out) {
+                return tokenizer.decodeBytesInto(tokens, tokenStartIndex, out);
+            }
+        };
     }
 
     private static List<String> segmentThaiRuns(String text) {

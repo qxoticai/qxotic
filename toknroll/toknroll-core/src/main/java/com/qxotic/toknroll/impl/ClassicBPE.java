@@ -7,6 +7,10 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.*;
 
+/**
+ * @deprecated Internal implementation detail; use {@code com.qxotic.toknroll.Tokenizers}.
+ */
+@Deprecated(forRemoval = false, since = "0.1.0")
 public class ClassicBPE {
 
     private static List<String> bpe(
@@ -75,7 +79,7 @@ public class ClassicBPE {
     public static Map<String, Integer> loadMergeableRanks(String blobPath, String expectedHash)
             throws IOException, InterruptedException {
         byte[] bytes = FileCache.readFileCached(blobPath, expectedHash);
-        return Tiktoken.loadMergeableRanks(
+        return TikToken.loadMergeableRanks(
                 new BufferedReader(new InputStreamReader(new ByteArrayInputStream(bytes))));
     }
 

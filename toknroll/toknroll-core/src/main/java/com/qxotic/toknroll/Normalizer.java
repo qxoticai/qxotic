@@ -1,4 +1,4 @@
-package com.qxotic.toknroll.advanced;
+package com.qxotic.toknroll;
 
 import java.text.Normalizer.Form;
 import java.util.Locale;

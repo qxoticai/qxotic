@@ -7,10 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.toknroll.advanced.Normalizer;
-import com.qxotic.toknroll.advanced.Splitter;
-import com.qxotic.toknroll.advanced.TokenizationModel;
-import com.qxotic.toknroll.advanced.TokenizationPipeline;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Iterator;

@@ -3,7 +3,6 @@ package com.qxotic.toknroll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
-import com.qxotic.toknroll.advanced.Splitter;
 import com.qxotic.toknroll.impl.RegexSplitter;
 import com.qxotic.toknroll.testkit.SplitterContractHarness;
 import com.qxotic.toknroll.testkit.TestCorpora;

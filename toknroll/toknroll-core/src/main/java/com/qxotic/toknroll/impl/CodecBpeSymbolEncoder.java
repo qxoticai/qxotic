@@ -1,7 +1,6 @@
 package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.Vocabulary;
-import com.qxotic.toknroll.advanced.SymbolCodec;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;

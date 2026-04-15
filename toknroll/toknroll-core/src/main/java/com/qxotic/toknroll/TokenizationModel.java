@@ -1,6 +1,4 @@
-package com.qxotic.toknroll.advanced;
-
-import com.qxotic.toknroll.Tokenizer;
+package com.qxotic.toknroll;
 
 /**
  * Marker interface for pure tokenization models (chunk encoders).

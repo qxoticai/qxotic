@@ -9,7 +9,7 @@ import java.util.Objects;
  * <p>Provides vocabulary management and a default encoding pipeline. Subclasses implement the core
  * chunk-level encoding logic via {@link #encodeImplInto(CharSequence, IntSequence.Builder)}.
  * Normalization and splitting are handled externally by {@link
- * com.qxotic.toknroll.advanced.TokenizationPipeline}.
+ * com.qxotic.toknroll.TokenizationPipeline}.
  *
  * <p>Implementations need to provide:
  *

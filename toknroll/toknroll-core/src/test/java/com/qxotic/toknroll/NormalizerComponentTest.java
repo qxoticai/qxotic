@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import com.qxotic.toknroll.advanced.Normalizer;
 import java.text.Normalizer.Form;
 import org.junit.jupiter.api.Test;
 

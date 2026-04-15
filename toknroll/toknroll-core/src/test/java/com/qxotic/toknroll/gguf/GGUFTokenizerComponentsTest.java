@@ -4,10 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Vocabulary;
-import com.qxotic.toknroll.advanced.ByteEncoding;
-import com.qxotic.toknroll.advanced.Decoder;
-import com.qxotic.toknroll.advanced.Splitter;
+import com.qxotic.toknroll.impl.ByteEncoding;
+import com.qxotic.toknroll.impl.Decoder;
 import com.qxotic.toknroll.impl.RegexSplitter;
 import java.nio.charset.StandardCharsets;
 import java.util.Iterator;

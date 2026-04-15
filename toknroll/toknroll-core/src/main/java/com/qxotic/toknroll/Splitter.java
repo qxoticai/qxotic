@@ -1,4 +1,4 @@
-package com.qxotic.toknroll.advanced;
+package com.qxotic.toknroll;
 
 import com.qxotic.toknroll.impl.RegexSplitter;
 import java.util.ArrayList;

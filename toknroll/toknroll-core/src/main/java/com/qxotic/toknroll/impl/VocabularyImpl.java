@@ -7,6 +7,10 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+/**
+ * @deprecated Internal implementation detail; rely on {@code Vocabulary} from tokenizers.
+ */
+@Deprecated(forRemoval = false, since = "0.1.0")
 public class VocabularyImpl implements Vocabulary {
     protected final String[] tokens;
     protected final float[] scores;

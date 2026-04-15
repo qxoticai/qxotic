@@ -4,8 +4,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.toknroll.*;
-import com.qxotic.toknroll.advanced.Splitter;
-import com.qxotic.toknroll.advanced.TokenizationPipeline;
+import com.qxotic.toknroll.Splitter;
+import com.qxotic.toknroll.TokenizationPipeline;
 import com.qxotic.toknroll.gguf.TestDataManager.TestModel;
 import com.qxotic.toknroll.gguf.TestDataManager.TokenizerMetadata;
 import com.qxotic.toknroll.impl.*;

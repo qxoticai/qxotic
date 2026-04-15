@@ -1,6 +1,6 @@
 package com.qxotic.toknroll.impl;
 
-import com.qxotic.toknroll.advanced.Splitter;
+import com.qxotic.toknroll.Splitter;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 

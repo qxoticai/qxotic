@@ -2,7 +2,6 @@ package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.*;
 import com.qxotic.toknroll.advanced.StandardTokenType;
-import com.qxotic.toknroll.advanced.SymbolCodec;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
@@ -14,7 +13,10 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-/** Example implementation of a BPE tokenizer for GPT2. */
+/**
+ * @deprecated Internal implementation detail; use {@code com.qxotic.toknroll.Tokenizers}.
+ */
+@Deprecated(forRemoval = false, since = "0.1.0")
 public class GPT2Tokenizer extends AbstractTokenizationModel {
 
     private final LongLongMap merges;

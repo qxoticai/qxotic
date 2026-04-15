@@ -7,7 +7,7 @@ import java.util.Objects;
 /**
  * Tokenizer contract with four core operations: {@link #encodeInto(CharSequence, int, int,
  * IntSequence.Builder)}, {@link #decodeBytesInto(IntSequence, int, ByteBuffer)}, {@link
- * #countTokens(CharSequence)}, and {@link #countBytes(IntSequence)}.
+ * #countTokens(CharSequence, int, int)}, and {@link #countBytes(IntSequence)}.
  *
  * <p>All other methods are convenience wrappers built on top of these operations.
  */

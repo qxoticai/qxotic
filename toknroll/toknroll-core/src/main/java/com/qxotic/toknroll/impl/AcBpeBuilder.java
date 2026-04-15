@@ -1,6 +1,5 @@
 package com.qxotic.toknroll.impl;
 
-import com.qxotic.toknroll.advanced.SymbolCodec;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;

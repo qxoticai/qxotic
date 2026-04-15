@@ -128,7 +128,7 @@ public final class TiktokenFixtures {
                     EncodingFixture fixture = encoding(name);
                     Map<String, Integer> ranks =
                             loadMergeableRanks(fixture.fileName(), fixture.hash());
-                    return Tokenizers.fastBpe(
+                    return Tokenizers.tikToken(
                             ranks,
                             fixture.specialTokens(),
                             RegexSplitter.create(fixture.pattern()));
