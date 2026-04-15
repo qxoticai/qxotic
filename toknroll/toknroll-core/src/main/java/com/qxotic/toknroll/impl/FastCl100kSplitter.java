@@ -1,7 +1,6 @@
 package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.advanced.Splitter;
-import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -10,7 +9,7 @@ import java.util.regex.Pattern;
  *
  * <p>Uses a fast ASCII path for dominant token classes and regex matching fallback where needed.
  */
-public final class FastCl100kSplitter implements Splitter {
+public final class FastCl100kSplitter extends AbstractFastAsciiRegexSplitter {
 
     private static final String CL100K_PATTERN =
             "'(?i:[sdmt]|ll|ve|re)|[^\\r"
@@ -26,34 +25,12 @@ public final class FastCl100kSplitter implements Splitter {
 
     public static final FastCl100kSplitter INSTANCE = new FastCl100kSplitter();
 
-    private FastCl100kSplitter() {}
+    private FastCl100kSplitter() {
+        super(CL100K_COMPILED);
+    }
 
     @Override
-    public void splitAll(
-            CharSequence text,
-            int startInclusive,
-            int endExclusive,
-            Splitter.SplitConsumer consumer) {
-        Objects.requireNonNull(text, "text");
-        Objects.requireNonNull(consumer, "consumer");
-        SplitterSupport.validateRange(text, startInclusive, endExclusive);
-
-        if (SplitterSupport.containsNonAscii(text, startInclusive, endExclusive)) {
-            splitRegex(text, startInclusive, endExclusive, consumer);
-            return;
-        }
-        splitAscii(text, startInclusive, endExclusive, consumer);
-    }
-
-    private void splitRegex(
-            CharSequence text,
-            int startInclusive,
-            int endExclusive,
-            Splitter.SplitConsumer consumer) {
-        SplitterSupport.splitRegex(CL100K_COMPILED, text, startInclusive, endExclusive, consumer);
-    }
-
-    private void splitAscii(
+    protected void splitAscii(
             CharSequence text,
             int startInclusive,
             int endExclusive,
@@ -72,10 +49,7 @@ public final class FastCl100kSplitter implements Splitter {
             }
 
             if (SplitterSupport.isAsciiLetter(c)) {
-                int end = i + 1;
-                while (end < endExclusive && SplitterSupport.isAsciiLetter(text.charAt(end))) {
-                    end++;
-                }
+                int end = SplitterSupport.scanAsciiLetters(text, i + 1, endExclusive);
                 consumer.accept(text, i, end);
                 i = end;
                 continue;
@@ -86,10 +60,7 @@ public final class FastCl100kSplitter implements Splitter {
                     && !SplitterSupport.isAsciiDigit(c)
                     && i + 1 < endExclusive
                     && SplitterSupport.isAsciiLetter(text.charAt(i + 1))) {
-                int end = i + 2;
-                while (end < endExclusive && SplitterSupport.isAsciiLetter(text.charAt(end))) {
-                    end++;
-                }
+                int end = SplitterSupport.scanAsciiLetters(text, i + 2, endExclusive);
                 consumer.accept(text, i, end);
                 i = end;
                 continue;
@@ -97,11 +68,9 @@ public final class FastCl100kSplitter implements Splitter {
 
             if (SplitterSupport.isAsciiDigit(c)) {
                 int end = i + 1;
-                if (end < endExclusive && SplitterSupport.isAsciiDigit(text.charAt(end))) {
+                int maxEnd = Math.min(i + 3, endExclusive);
+                while (end < maxEnd && SplitterSupport.isAsciiDigit(text.charAt(end))) {
                     end++;
-                    if (end < endExclusive && SplitterSupport.isAsciiDigit(text.charAt(end))) {
-                        end++;
-                    }
                 }
                 consumer.accept(text, i, end);
                 i = end;
@@ -111,36 +80,16 @@ public final class FastCl100kSplitter implements Splitter {
             if (c == ' '
                     && i + 1 < endExclusive
                     && SplitterSupport.isAsciiSymbolNoSpace(text.charAt(i + 1))) {
-                int end = i + 2;
-                while (end < endExclusive
-                        && SplitterSupport.isAsciiSymbolNoSpace(text.charAt(end))) {
-                    end++;
-                }
-                while (end < endExclusive) {
-                    char ch = text.charAt(end);
-                    if (ch != '\r' && ch != '\n') {
-                        break;
-                    }
-                    end++;
-                }
+                int end = SplitterSupport.scanAsciiSymbolsNoSpace(text, i + 2, endExclusive);
+                end = SplitterSupport.scanTrailingCrLf(text, end, endExclusive);
                 consumer.accept(text, i, end);
                 i = end;
                 continue;
             }
 
             if (SplitterSupport.isAsciiSymbolNoSpace(c)) {
-                int end = i + 1;
-                while (end < endExclusive
-                        && SplitterSupport.isAsciiSymbolNoSpace(text.charAt(end))) {
-                    end++;
-                }
-                while (end < endExclusive) {
-                    char ch = text.charAt(end);
-                    if (ch != '\r' && ch != '\n') {
-                        break;
-                    }
-                    end++;
-                }
+                int end = SplitterSupport.scanAsciiSymbolsNoSpace(text, i + 1, endExclusive);
+                end = SplitterSupport.scanTrailingCrLf(text, end, endExclusive);
                 consumer.accept(text, i, end);
                 i = end;
                 continue;
