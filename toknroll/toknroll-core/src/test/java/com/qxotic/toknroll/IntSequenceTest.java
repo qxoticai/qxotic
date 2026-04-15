@@ -314,7 +314,7 @@ public class IntSequenceTest {
         assertFalse(merged.endsWith(IntSequence.of(2, 3)));
 
         IntSequence all =
-                IntSequences.concat(IntSequence.of(1), IntSequence.of(), IntSequence.of(2));
+                IntSequence.concatAll(IntSequence.of(1), IntSequence.of(), IntSequence.of(2));
         assertArrayEquals(new int[] {1, 2}, all.toArray());
     }
 
@@ -341,25 +341,25 @@ public class IntSequenceTest {
 
         assertSame(a, a.concat(IntSequence.empty()));
         assertSame(b, IntSequence.empty().concat(b));
-        assertEquals(IntSequence.empty(), IntSequences.concatAll());
+        assertEquals(IntSequence.empty(), IntSequence.concatAll());
         assertEquals(
                 IntSequence.empty(),
-                IntSequences.concatAll(IntSequence.empty(), IntSequence.empty()));
+                IntSequence.concatAll(IntSequence.empty(), IntSequence.empty()));
 
-        assertArrayEquals(new int[] {1, 2, 3}, IntSequences.concat(a, b).toArray());
+        assertArrayEquals(new int[] {1, 2, 3}, IntSequence.concatAll(a, b).toArray());
 
         assertThrows(NullPointerException.class, () -> a.concat((IntSequence) null));
         assertThrows(
-                NullPointerException.class, () -> IntSequences.concatAll((IntSequence[]) null));
-        assertThrows(NullPointerException.class, () -> IntSequences.concat(a, null, b));
+                NullPointerException.class, () -> IntSequence.concatAll((IntSequence[]) null));
+        assertThrows(NullPointerException.class, () -> IntSequence.concatAll(a, null, b));
     }
 
     @Test
     void testCompareAvoidsOverflow() {
         IntSequence min = IntSequence.of(Integer.MIN_VALUE);
         IntSequence max = IntSequence.of(Integer.MAX_VALUE);
-        assertTrue(IntSequences.compare(min, max) < 0);
-        assertTrue(IntSequences.compare(max, min) > 0);
+        assertTrue(IntSequence.compare(min, max) < 0);
+        assertTrue(IntSequence.compare(max, min) > 0);
     }
 
     @Test

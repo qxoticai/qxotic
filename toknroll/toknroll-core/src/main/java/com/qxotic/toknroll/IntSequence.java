@@ -194,6 +194,62 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
         return ImplAccessor.wrap(array);
     }
 
+    /** Concatenates all provided sequences in order. */
+    static IntSequence concatAll(IntSequence... sequences) {
+        Objects.requireNonNull(sequences, "sequences");
+        if (sequences.length == 0) {
+            return IntSequence.empty();
+        }
+        int total = 0;
+        for (IntSequence sequence : sequences) {
+            total = Math.addExact(total, Objects.requireNonNull(sequence, "sequence").length());
+        }
+        if (total == 0) {
+            return IntSequence.empty();
+        }
+        int[] merged = new int[total];
+        int offset = 0;
+        for (IntSequence sequence : sequences) {
+            int length = sequence.length();
+            sequence.copyTo(merged, offset, length);
+            offset += length;
+        }
+        return IntSequence.wrap(merged);
+    }
+
+    /** Compares two sequences for content equality. */
+    static boolean contentEquals(IntSequence first, IntSequence second) {
+        if (Objects.requireNonNull(first) == Objects.requireNonNull(second)) {
+            return true;
+        }
+        int length = first.length();
+        if (length != second.length()) {
+            return false;
+        }
+        for (int i = 0; i < length; i++) {
+            if (first.intAt(i) != second.intAt(i)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Compares two sequences lexicographically. */
+    static int compare(IntSequence first, IntSequence second) {
+        if (Objects.requireNonNull(first) == Objects.requireNonNull(second)) {
+            return 0;
+        }
+        int commonLength = Math.min(first.length(), second.length());
+        for (int i = 0; i < commonLength; i++) {
+            int fi = first.intAt(i);
+            int si = second.intAt(i);
+            if (fi != si) {
+                return Integer.compare(fi, si);
+            }
+        }
+        return Integer.compare(first.length(), second.length());
+    }
+
     /**
      * Returns the first integer in this sequence.
      *

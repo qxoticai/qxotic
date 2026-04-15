@@ -3,7 +3,7 @@ package com.qxotic.toknroll.impl;
 import com.qxotic.toknroll.IntSequence;
 import java.util.Arrays;
 
-/** A builder for creating IntSequences. */
+/** A builder for creating {@link IntSequence} instances. */
 final class IntSequenceBuilder implements IntSequence.Builder {
     private static final int DEFAULT_CAPACITY = 8;
     private static final int MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8;
