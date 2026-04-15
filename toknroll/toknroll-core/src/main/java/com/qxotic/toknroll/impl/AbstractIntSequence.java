@@ -1,7 +1,6 @@
 package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.IntSequence;
-import com.qxotic.toknroll.IntSequences;
 import java.util.Objects;
 
 /**
@@ -57,8 +56,7 @@ public abstract class AbstractIntSequence implements IntSequence {
         if (this == other) {
             return true;
         }
-        return other instanceof IntSequence
-                && IntSequences.contentEquals(this, (IntSequence) other);
+        return other instanceof IntSequence && IntSequence.contentEquals(this, (IntSequence) other);
     }
 
     /**
@@ -67,6 +65,6 @@ public abstract class AbstractIntSequence implements IntSequence {
      */
     @Override
     public int compareTo(IntSequence other) {
-        return IntSequences.compare(this, Objects.requireNonNull(other));
+        return IntSequence.compare(this, Objects.requireNonNull(other));
     }
 }
