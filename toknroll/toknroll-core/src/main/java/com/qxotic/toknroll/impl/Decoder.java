@@ -1,9 +1,11 @@
 package com.qxotic.toknroll.impl;
 
+import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
+import java.nio.charset.StandardCharsets;
 
 /**
  * A functional interface for decoding operations that convert token sequences back to readable
@@ -64,17 +66,6 @@ public interface Decoder {
      * @return a ByteLevel decoder
      */
     static Decoder byteLevel() {
-        return fromCodec(SymbolCodec.BYTE_LEVEL);
-    }
-
-    /**
-     * Creates a decoder that concatenates token strings and then decodes them using the given
-     * codec.
-     *
-     * @param codec the symbol codec to apply after concatenation
-     * @return a decoder backed by the given codec
-     */
-    static Decoder fromCodec(SymbolCodec codec) {
         return (tokens, vocab) -> {
             StringBuilder sb = new StringBuilder();
             for (int i = 0; i < tokens.length(); i++) {
@@ -83,7 +74,7 @@ public interface Decoder {
                     sb.append(token);
                 }
             }
-            return codec.decodeToText(sb.toString());
+            return new String(ByteLevel.decode(sb.toString()), StandardCharsets.UTF_8);
         };
     }
 

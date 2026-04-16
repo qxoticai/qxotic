@@ -1,5 +1,6 @@
 package com.qxotic.toknroll;
 
+import static com.qxotic.toknroll.testkit.SplitterTestUtils.splitAllToList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
@@ -16,7 +17,7 @@ class SplitterComponentTest {
     @Test
     void sequenceWithNoStagesReturnsIdentity() {
         Splitter splitter = Splitter.sequence();
-        List<CharSequence> chunks = splitter.splitAllToListEagerly("abc");
+        List<CharSequence> chunks = splitAllToList(splitter, "abc");
         assertEquals(1, chunks.size());
         assertEquals("abc", chunks.get(0).toString());
     }
@@ -29,7 +30,7 @@ class SplitterComponentTest {
                     consumer.accept(text, start + 2, start + 4);
                 };
 
-        List<CharSequence> tokens = splitter.splitAllToListEagerly("aaaa");
+        List<CharSequence> tokens = splitAllToList(splitter, "aaaa");
         assertEquals(2, tokens.size());
         assertEquals("aa", tokens.get(0).toString());
         assertEquals("aa", tokens.get(1).toString());
@@ -39,7 +40,7 @@ class SplitterComponentTest {
     void regexSplitterSplitsInput() {
         Splitter splitter = RegexSplitter.create("\\s+|[,.!?]");
 
-        List<CharSequence> tokens = splitter.splitAllToListEagerly("Hello, world!");
+        List<CharSequence> tokens = splitAllToList(splitter, "Hello, world!");
         assertEquals("Hello", tokens.get(0).toString());
         assertEquals(" ", tokens.get(2).toString());
         assertEquals("!", tokens.get(tokens.size() - 1).toString());
@@ -51,7 +52,7 @@ class SplitterComponentTest {
         Splitter splitter = RegexSplitter.create("\\s+|[,.!?]");
 
         List<String> chunksBySplit =
-                splitter.splitAllToListEagerly(input).stream()
+                splitAllToList(splitter, input).stream()
                         .map(Object::toString)
                         .collect(Collectors.toList());
         List<String> chunksByRange = new ArrayList<>();

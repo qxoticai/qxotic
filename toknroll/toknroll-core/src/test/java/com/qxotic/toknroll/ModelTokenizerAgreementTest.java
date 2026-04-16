@@ -11,6 +11,7 @@ import com.qxotic.toknroll.impl.RegexSplitter;
 import com.qxotic.toknroll.loaders.ModelSplitters;
 import com.qxotic.toknroll.testkit.TestCorpora;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
+import com.qxotic.toknroll.testkit.TokenizerAdapters;
 import java.text.Normalizer.Form;
 import java.util.List;
 import java.util.Map;
@@ -34,20 +35,17 @@ class ModelTokenizerAgreementTest {
             ComparedTokenizers compared = comparedTokenizersForModel(model);
             for (String text : TestCorpora.MODEL_TOKENIZER_AGREEMENT_TEXTS) {
                 int[] jtokkit = compared.jtokkit().encodeToArray(text);
-                int[] classic = compared.classic().encodeToArray(text);
+                int[] bpe = compared.bpe().encodeToArray(text);
                 int[] fast = compared.fast().encodeToArray(text);
 
-                assertArrayEquals(
-                        jtokkit, classic, "jtokkit!=classic for " + model + " on: " + text);
+                assertArrayEquals(jtokkit, bpe, "jtokkit!=bpe for " + model + " on: " + text);
                 assertArrayEquals(jtokkit, fast, "jtokkit!=fast for " + model + " on: " + text);
                 assertEquals(
                         jtokkit.length,
                         compared.jtokkit().countTokens(text),
                         "countTokens mismatch jtokkit");
                 assertEquals(
-                        classic.length,
-                        compared.classic().countTokens(text),
-                        "countTokens mismatch classic");
+                        bpe.length, compared.bpe().countTokens(text), "countTokens mismatch bpe");
                 assertEquals(
                         fast.length,
                         compared.fast().countTokens(text),
@@ -63,7 +61,7 @@ class ModelTokenizerAgreementTest {
             String pattern = TiktokenFixtures.encoding("r50k_base").pattern();
             return new ComparedTokenizers(
                     TiktokenFixtures.createJtokkitTokenizer("r50k_base"),
-                    Tokenizers.classicBpe(ranks, specials, RegexSplitter.create(pattern)),
+                    Tokenizers.bpe(ranks, specials, RegexSplitter.create(pattern)),
                     Tokenizers.tikToken(ranks, specials, FastR50kSplitter.INSTANCE));
         }
         if ("llama3".equals(model)) {
@@ -111,92 +109,20 @@ class ModelTokenizerAgreementTest {
                                 () ->
                                         new IllegalStateException(
                                                 "Missing HF tokenizer for " + familyId));
-        Tokenizer fast = withSplitter(withTextTransform(fidelity, normalizer), fastSplitter);
+        Tokenizer fast =
+                TokenizerAdapters.withSplitter(
+                        TokenizerAdapters.withNormalizer(fidelity, normalizer), fastSplitter);
         return new ComparedTokenizers(hf, fidelity, fast);
-    }
-
-    private static Tokenizer withTextTransform(Tokenizer tokenizer, Normalizer transform) {
-        return new Tokenizer() {
-            @Override
-            public Vocabulary vocabulary() {
-                return tokenizer.vocabulary();
-            }
-
-            @Override
-            public void encodeInto(
-                    CharSequence text,
-                    int startInclusive,
-                    int endExclusive,
-                    IntSequence.Builder out) {
-                CharSequence slice = text.subSequence(startInclusive, endExclusive);
-                CharSequence transformed = transform.apply(slice);
-                tokenizer.encodeInto(transformed, 0, transformed.length(), out);
-            }
-
-            @Override
-            public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
-                CharSequence slice = text.subSequence(startInclusive, endExclusive);
-                CharSequence transformed = transform.apply(slice);
-                return tokenizer.countTokens(transformed, 0, transformed.length());
-            }
-
-            @Override
-            public int decodeBytesInto(
-                    IntSequence tokens, int tokenStartIndex, java.nio.ByteBuffer out) {
-                return tokenizer.decodeBytesInto(tokens, tokenStartIndex, out);
-            }
-        };
-    }
-
-    private static Tokenizer withSplitter(Tokenizer tokenizer, Splitter splitter) {
-        return new Tokenizer() {
-            @Override
-            public Vocabulary vocabulary() {
-                return tokenizer.vocabulary();
-            }
-
-            @Override
-            public void encodeInto(
-                    CharSequence text,
-                    int startInclusive,
-                    int endExclusive,
-                    IntSequence.Builder out) {
-                splitter.splitAll(
-                        text,
-                        startInclusive,
-                        endExclusive,
-                        (source, chunkStart, chunkEnd) ->
-                                tokenizer.encodeInto(source, chunkStart, chunkEnd, out));
-            }
-
-            @Override
-            public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
-                int[] total = {0};
-                splitter.splitAll(
-                        text,
-                        startInclusive,
-                        endExclusive,
-                        (source, chunkStart, chunkEnd) ->
-                                total[0] += tokenizer.countTokens(source, chunkStart, chunkEnd));
-                return total[0];
-            }
-
-            @Override
-            public int decodeBytesInto(
-                    IntSequence tokens, int tokenStartIndex, java.nio.ByteBuffer out) {
-                return tokenizer.decodeBytesInto(tokens, tokenStartIndex, out);
-            }
-        };
     }
 
     private static final class ComparedTokenizers {
         private final Tokenizer jtokkit;
-        private final Tokenizer classic;
+        private final Tokenizer bpe;
         private final Tokenizer fast;
 
-        private ComparedTokenizers(Tokenizer jtokkit, Tokenizer classic, Tokenizer fast) {
+        private ComparedTokenizers(Tokenizer jtokkit, Tokenizer bpe, Tokenizer fast) {
             this.jtokkit = jtokkit;
-            this.classic = classic;
+            this.bpe = bpe;
             this.fast = fast;
         }
 
@@ -204,8 +130,8 @@ class ModelTokenizerAgreementTest {
             return jtokkit;
         }
 
-        private Tokenizer classic() {
-            return classic;
+        private Tokenizer bpe() {
+            return bpe;
         }
 
         private Tokenizer fast() {

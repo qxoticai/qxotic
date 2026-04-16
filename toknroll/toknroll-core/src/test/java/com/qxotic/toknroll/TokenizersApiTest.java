@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.toknroll.impl.ClassicBPE;
-import com.qxotic.toknroll.impl.RegexSplitter;
 import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -65,13 +64,12 @@ class TokenizersApiTest {
     }
 
     @Test
-    void classicBpeFacadeBuildsWorkingTokenizer() throws Exception {
+    void bpeFacadeBuildsWorkingTokenizer() throws Exception {
         Map<String, Integer> mergeableRanks =
                 ClassicBPE.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
 
         Tokenizer tokenizer =
-                Tokenizers.classicBpe(
-                        mergeableRanks, R50K_SPECIALS, RegexSplitter.create(R50K_PATTERN));
+                Tokenizers.bpe(mergeableRanks, R50K_SPECIALS, Splitter.regex(R50K_PATTERN));
 
         String text = "Tokenizer facade test";
         IntSequence tokens = tokenizer.encode(text);
@@ -80,11 +78,12 @@ class TokenizersApiTest {
     }
 
     @Test
-    void classicBpeRegexStringOverloadWorks() throws Exception {
+    void bpeWithRegexSplitterWorks() throws Exception {
         Map<String, Integer> mergeableRanks =
                 ClassicBPE.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
 
-        Tokenizer tokenizer = Tokenizers.classicBpe(mergeableRanks, R50K_SPECIALS, R50K_PATTERN);
+        Tokenizer tokenizer =
+                Tokenizers.bpe(mergeableRanks, R50K_SPECIALS, Splitter.regex(R50K_PATTERN));
         String text = "Classic overload";
         assertEquals(text, tokenizer.decode(tokenizer.encode(text)));
     }
@@ -95,8 +94,7 @@ class TokenizersApiTest {
                 ClassicBPE.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
 
         Tokenizer tokenizer =
-                Tokenizers.tikToken(
-                        mergeableRanks, R50K_SPECIALS, RegexSplitter.create(R50K_PATTERN));
+                Tokenizers.tikToken(mergeableRanks, R50K_SPECIALS, Splitter.regex(R50K_PATTERN));
 
         String text = "Fast tokenizer facade test";
         IntSequence tokens = tokenizer.encode(text);
@@ -105,16 +103,72 @@ class TokenizersApiTest {
     }
 
     @Test
+    void tikTokenFromRankedTokenTableWorks() {
+        String[] rankedTokens = new String[257];
+        for (int i = 0; i < 256; i++) {
+            rankedTokens[i] = String.valueOf(ByteLevel.encodeSingle((byte) i));
+        }
+        rankedTokens[256] = "ab";
+
+        Tokenizer tokenizer = Tokenizers.tikToken(rankedTokens, Splitter.identity());
+
+        IntSequence encoded = tokenizer.encode("ab");
+        assertArrayEquals(new int[] {256}, encoded.toArray());
+        assertEquals("ab", tokenizer.decode(encoded));
+    }
+
+    @Test
+    void tikTokenFromRankedTokenTableSupportsTokenTypes() {
+        String[] rankedTokens = new String[258];
+        int[] tokenTypes = new int[258];
+        for (int i = 0; i < 256; i++) {
+            rankedTokens[i] = String.valueOf(ByteLevel.encodeSingle((byte) i));
+            tokenTypes[i] = 1;
+        }
+        rankedTokens[256] = "<SPECIAL_A>";
+        tokenTypes[256] = 3;
+        rankedTokens[257] = "<SPECIAL_B>";
+        tokenTypes[257] = 3;
+
+        Tokenizer tokenizer = Tokenizers.tikToken(rankedTokens, tokenTypes, Splitter.identity());
+
+        assertEquals(256, tokenizer.vocabulary().id("<SPECIAL_A>"));
+        assertEquals(257, tokenizer.vocabulary().id("<SPECIAL_B>"));
+        assertEquals("<SPECIAL_A><SPECIAL_B>", tokenizer.decode(IntSequence.of(256, 257)));
+    }
+
+    @Test
+    void tikTokenFromRankedTokenTablePromotesByteSingletonsEvenWhenNonNormalType() {
+        String[] rankedTokens = new String[256];
+        int[] tokenTypes = new int[256];
+        for (int i = 0; i < 256; i++) {
+            rankedTokens[i] = String.valueOf(ByteLevel.encodeSingle((byte) i));
+            tokenTypes[i] = 1;
+        }
+        tokenTypes[192] = 4;
+        tokenTypes[255] = 4;
+
+        Tokenizer tokenizer = Tokenizers.tikToken(rankedTokens, tokenTypes, Splitter.identity());
+        assertArrayEquals(
+                new int[] {195, 128, 195, 191}, tokenizer.encode("\u00C0\u00FF").toArray());
+    }
+
+    @Test
     void tokenizersFactoryMethodsValidateNulls() {
         Map<String, Integer> ranks = Map.of("a", 0);
         Tokenizer tokenizer =
                 createTokenizer(R50K_NAME, R50K_FILE, R50K_HASH, R50K_PATTERN, R50K_SPECIALS);
         assertThrows(
-                NullPointerException.class,
-                () -> Tokenizers.classicBpe(ranks, Map.of(), (String) null));
+                NullPointerException.class, () -> Tokenizers.bpe(ranks, Map.of(), (Splitter) null));
         assertThrows(
                 NullPointerException.class,
-                () -> Tokenizers.tikToken(ranks, Map.of(), (String) null));
+                () -> Tokenizers.tikToken(ranks, Map.of(), (Splitter) null));
+        assertThrows(
+                NullPointerException.class,
+                () -> Tokenizers.tikToken((String[]) null, Splitter.identity()));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Tokenizers.tikToken(new String[] {"a"}, new int[] {}, Splitter.identity()));
         assertThrows(NullPointerException.class, () -> tokenizer.decode((IntSequence) null));
     }
 
@@ -193,11 +247,11 @@ class TokenizersApiTest {
         TokenizationModel model = ClassicBPE.classicFromTiktoken(mergeableRanks, R50K_SPECIALS);
 
         Tokenizer base =
-                Tokenizers.pipeline(model).splitter(RegexSplitter.create(R50K_PATTERN)).build();
+                TokenizationPipeline.builder(model).splitter(Splitter.regex(R50K_PATTERN)).build();
         Tokenizer nfcTransformed =
-                Tokenizers.pipeline(model)
+                TokenizationPipeline.builder(model)
                         .normalizer(Normalizer.unicode(Form.NFC))
-                        .splitter(RegexSplitter.create(R50K_PATTERN))
+                        .splitter(Splitter.regex(R50K_PATTERN))
                         .build();
 
         String decomposed = "e\u0301";
@@ -225,7 +279,7 @@ class TokenizersApiTest {
         try {
             Map<String, Integer> mergeableRanks =
                     ClassicBPE.loadMergeableRanks(resourcePath(file).toString(), hash);
-            return Tokenizers.tikToken(mergeableRanks, specials, pattern);
+            return Tokenizers.tikToken(mergeableRanks, specials, Splitter.regex(pattern));
         } catch (Exception e) {
             throw new IllegalStateException("Failed to create tokenizer " + name, e);
         }

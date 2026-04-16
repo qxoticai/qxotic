@@ -2,8 +2,8 @@ package com.qxotic.toknroll.testkit;
 
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
+import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.impl.ClassicBPE;
-import com.qxotic.toknroll.impl.RegexSplitter;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.util.Collections;
@@ -131,31 +131,31 @@ public final class TiktokenFixtures {
                     return Tokenizers.tikToken(
                             ranks,
                             fixture.specialTokens(),
-                            RegexSplitter.create(fixture.pattern()));
+                            Splitter.regex(fixture.pattern()));
                 });
     }
 
-    private static Tokenizer CLASSIC_R50K_TOKENIZER = null;
-    private static final java.util.Map<String, Tokenizer> CLASSIC_TOKENIZER_CACHE = new HashMap<>();
+    private static Tokenizer BPE_R50K_TOKENIZER = null;
+    private static final java.util.Map<String, Tokenizer> BPE_TOKENIZER_CACHE = new HashMap<>();
 
-    public static Tokenizer createClassicR50kTokenizer() {
-        if (CLASSIC_R50K_TOKENIZER == null) {
-            CLASSIC_R50K_TOKENIZER = createClassicTokenizer("r50k_base");
+    public static Tokenizer createBpeR50kTokenizer() {
+        if (BPE_R50K_TOKENIZER == null) {
+            BPE_R50K_TOKENIZER = createBpeTokenizer("r50k_base");
         }
-        return CLASSIC_R50K_TOKENIZER;
+        return BPE_R50K_TOKENIZER;
     }
 
-    public static Tokenizer createClassicTokenizer(String encodingName) {
-        return CLASSIC_TOKENIZER_CACHE.computeIfAbsent(
+    public static Tokenizer createBpeTokenizer(String encodingName) {
+        return BPE_TOKENIZER_CACHE.computeIfAbsent(
                 encodingName,
                 name -> {
                     EncodingFixture fixture = encoding(name);
                     Map<String, Integer> ranks =
                             loadMergeableRanks(fixture.fileName(), fixture.hash());
-                    return Tokenizers.classicBpe(
+                    return Tokenizers.bpe(
                             ranks,
                             fixture.specialTokens(),
-                            RegexSplitter.create(fixture.pattern()));
+                            Splitter.regex(fixture.pattern()));
                 });
     }
 

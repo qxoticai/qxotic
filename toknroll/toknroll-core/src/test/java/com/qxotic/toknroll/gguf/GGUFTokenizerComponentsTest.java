@@ -1,12 +1,13 @@
 package com.qxotic.toknroll.gguf;
 
+import static com.qxotic.toknroll.testkit.SplitterTestUtils.splitAllToList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Vocabulary;
-import com.qxotic.toknroll.impl.ByteEncoding;
 import com.qxotic.toknroll.impl.Decoder;
 import com.qxotic.toknroll.impl.RegexSplitter;
 import java.nio.charset.StandardCharsets;
@@ -24,9 +25,9 @@ class GGUFTokenizerComponentsTest {
 
         String text = "v 1234";
         List<String> qwenTokens =
-                qwen.splitAllToListEagerly(text).stream().map(CharSequence::toString).toList();
+                splitAllToList(qwen, text).stream().map(CharSequence::toString).toList();
         List<String> llamaTokens =
-                llama.splitAllToListEagerly(text).stream().map(CharSequence::toString).toList();
+                splitAllToList(llama, text).stream().map(CharSequence::toString).toList();
 
         // Qwen pattern uses single digits; Llama/Tekken uses 1..3 digit chunks.
         assertTrue(qwenTokens.stream().anyMatch(t -> t.contains("1")));
@@ -38,9 +39,7 @@ class GGUFTokenizerComponentsTest {
     void tekkenLlamaPatternHandlesContractions() {
         Splitter splitter = RegexSplitter.create(ModelTextSplitters.LLAMA3_PATTERN);
         List<String> tokens =
-                splitter.splitAllToListEagerly("I'm ready").stream()
-                        .map(CharSequence::toString)
-                        .toList();
+                splitAllToList(splitter, "I'm ready").stream().map(CharSequence::toString).toList();
         assertTrue(tokens.stream().anyMatch(t -> t.contains("'m")));
     }
 
@@ -55,7 +54,7 @@ class GGUFTokenizerComponentsTest {
     @Test
     void byteLevelDecoderRoundTripsUtf8() {
         String input = "Hello 🌍";
-        String encoded = ByteEncoding.bytesToString(input.getBytes(StandardCharsets.UTF_8));
+        String encoded = ByteLevel.encode(input.getBytes(StandardCharsets.UTF_8));
         Vocabulary vocab = simpleVocabulary(Map.of(encoded, 1));
 
         String decoded = Decoder.byteLevel().decode(IntSequence.of(1), vocab);
@@ -67,7 +66,7 @@ class GGUFTokenizerComponentsTest {
         Splitter splitter = ModelTextSplitters.createSplitter("qwen3");
 
         String input = "Hello, world";
-        List<CharSequence> tokens = splitter.splitAllToListEagerly(input);
+        List<CharSequence> tokens = splitAllToList(splitter, input);
 
         assertTrue(tokens.size() >= 2);
         String rebuilt =

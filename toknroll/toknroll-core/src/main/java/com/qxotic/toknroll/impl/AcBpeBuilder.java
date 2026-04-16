@@ -1,5 +1,6 @@
 package com.qxotic.toknroll.impl;
 
+import com.qxotic.toknroll.ByteLevel;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -49,7 +50,7 @@ public final class AcBpeBuilder {
         List<TokenEntry> others = new ArrayList<>(Math.max(1024, maxTokens));
 
         for (Map.Entry<String, Integer> e : mergeableRanks.entrySet()) {
-            byte[] bytes = SymbolCodec.BYTE_LEVEL.decodeSymbols(e.getKey());
+            byte[] bytes = ByteLevel.decode(e.getKey());
             if (bytes.length == 1) {
                 singletons.add(new TokenEntry(bytes, e.getValue()));
                 singleByteTokenId[bytes[0] & 0xFF] = e.getValue();

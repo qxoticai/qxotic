@@ -1,6 +1,6 @@
 package com.qxotic.toknroll.benchmarks;
 
-import com.qxotic.toknroll.impl.FastTikToken;
+import com.qxotic.toknroll.impl.TikTokenModel;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -19,7 +19,7 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 
-/** Isolates FastTikToken BPE merge loop on raw bytes. */
+/** Isolates TikTokenModel BPE merge loop on raw bytes. */
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
 @Warmup(iterations = 3, time = 1)
@@ -40,14 +40,14 @@ public class FastTikTokenMergeBenchmark {
     @Param({"chat", "code", "random", "repetitive"})
     public String corpus;
 
-    private FastTikToken tokenizer;
+    private TikTokenModel tokenizer;
     private byte[] bytes;
 
     @Setup(Level.Trial)
     public void setup() {
         Map<String, Integer> ranks = TiktokenFixtures.mergeableRanks(encoding);
         Map<String, Integer> specials = TiktokenFixtures.specialTokens(encoding);
-        tokenizer = FastTikToken.fromTiktoken(ranks, specials);
+        tokenizer = TikTokenModel.fromTiktoken(ranks, specials);
         bytes = resize(seedBytes(corpus), bytesLength);
     }
 

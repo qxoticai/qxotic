@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.toknroll.impl.SymbolCodec;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.nio.charset.StandardCharsets;
 import java.util.stream.Stream;
@@ -41,7 +40,7 @@ class TokenizerFidelityTest {
     @ParameterizedTest(name = "invalid utf8 bytes {0}")
     @MethodSource("tokenizers")
     void decodeBytesIsAuthoritativeForNonUtf8TokenSequences(String name, Tokenizer tokenizer) {
-        String byteSymbol = SymbolCodec.BYTE_LEVEL.encodeBytes(new byte[] {(byte) 0xFF});
+        String byteSymbol = ByteLevel.encode(new byte[] {(byte) 0xFF});
         Assumptions.assumeTrue(
                 tokenizer.vocabulary().contains(byteSymbol),
                 name + " does not expose direct 0xFF byte token");
@@ -54,10 +53,8 @@ class TokenizerFidelityTest {
     }
 
     private static Stream<Arguments> tokenizers() {
-        Stream<Arguments> classic =
-                Stream.of(
-                        Arguments.of(
-                                "classic-r50k", TiktokenFixtures.createClassicR50kTokenizer()));
+        Stream<Arguments> bpe =
+                Stream.of(Arguments.of("bpe-r50k", TiktokenFixtures.createBpeR50kTokenizer()));
         Stream<String> encodingNames =
                 Stream.of("r50k_base", "p50k_base", "p50k_edit", "cl100k_base", "o200k_base");
         Stream<Arguments> jtokkit =
@@ -66,6 +63,6 @@ class TokenizerFidelityTest {
                                 Arguments.of(
                                         "jtokkit-" + name,
                                         TiktokenFixtures.createJtokkitTokenizer(name)));
-        return Stream.concat(classic, jtokkit);
+        return Stream.concat(bpe, jtokkit);
     }
 }

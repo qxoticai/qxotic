@@ -13,7 +13,7 @@ public final class ModelTokenizerTokenCountProbe {
         String size = args.length > 1 ? args[1] : "32k";
 
         String[] models = {"gpt2", "llama3", "qwen35", "mistral-tekken"};
-        String[] implementations = {"reference", "classic", "fast"};
+        String[] implementations = {"reference", "bpe", "fast"};
 
         Field encodedField = ModelTokenizerBenchmark.class.getDeclaredField("encoded");
         encodedField.setAccessible(true);

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.toknroll.impl.CodePointSymbolEncoder;
+import com.qxotic.toknroll.impl.GenericBPE;
 import com.qxotic.toknroll.impl.LongLongBpeMergeTable;
 import com.qxotic.toknroll.impl.LongLongMap;
 import com.qxotic.toknroll.impl.VocabularyImpl;
@@ -27,11 +28,13 @@ class GenericBpeCodePointTest {
         LongLongMap map = new LongLongMap(keys, values);
 
         Tokenizer tokenizer =
-                Tokenizers.genericBpe(
-                        vocabulary,
-                        Splitter.identity(),
-                        new LongLongBpeMergeTable(map),
-                        new CodePointSymbolEncoder());
+                TokenizationPipeline.builder(
+                                GenericBPE.create(
+                                        vocabulary,
+                                        new LongLongBpeMergeTable(map),
+                                        new CodePointSymbolEncoder()))
+                        .splitter(Splitter.identity())
+                        .build();
 
         IntSequence tokens = tokenizer.encode("ab🙂ab");
         assertArrayEquals(new int[] {2, 3, 2}, tokens.toArray());

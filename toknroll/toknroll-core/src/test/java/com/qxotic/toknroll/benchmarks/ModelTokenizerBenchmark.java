@@ -5,13 +5,13 @@ import com.qxotic.toknroll.Normalizer;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
-import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
 import com.qxotic.toknroll.impl.FastLlama3Splitter;
 import com.qxotic.toknroll.impl.FastQwen35Splitter;
 import com.qxotic.toknroll.impl.FastR50kSplitter;
 import com.qxotic.toknroll.loaders.ModelSplitters;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
+import com.qxotic.toknroll.testkit.TokenizerAdapters;
 import java.text.Normalizer.Form;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -39,7 +39,7 @@ import org.openjdk.jmh.infra.Blackhole;
  * <ul>
  *   <li>{@code reference}: model-matching baseline tokenizer (JTokkit for GPT-2; HF files for
  *       model-native families)
- *   <li>{@code classic}: Tok'n'Roll model-native tokenizer
+ *   <li>{@code bpe}: Tok'n'Roll model-native tokenizer
  *   <li>{@code fast}: Tok'n'Roll fast pipeline over model-native vocabulary
  * </ul>
  */
@@ -70,7 +70,7 @@ public class ModelTokenizerBenchmark {
     private static final String MISTRAL_TEKKEN_HF_REVISION =
             "2f494a194c5b980dfb9772cb92d26cbb671fce5a";
 
-    @Param({"reference", "classic", "fast"})
+    @Param({"reference", "bpe", "fast"})
     public String implementation;
 
     @Param({"gpt2", "llama3", "qwen35", "mistral-tekken"})
@@ -151,8 +151,8 @@ public class ModelTokenizerBenchmark {
         switch (implementation) {
             case "reference":
                 return TiktokenFixtures.createJtokkitTokenizer("r50k_base");
-            case "classic":
-                return classic("r50k_base", Normalizer.identity(), ModelSplitters.DEFAULT_BPE);
+            case "bpe":
+                return bpe("r50k_base", Normalizer.identity(), ModelSplitters.DEFAULT_BPE);
             case "fast":
                 return fast("r50k_base", Normalizer.identity(), FastR50kSplitter.INSTANCE);
             default:
@@ -180,101 +180,30 @@ public class ModelTokenizerBenchmark {
                                 () ->
                                         new IllegalStateException(
                                                 "Failed to load HF tokenizer for " + familyId));
-            case "classic":
+            case "bpe":
                 return fidelityGguf;
             case "fast":
-                return withSplitter(withTextTransform(fidelityGguf, normalizer), fastSplitter);
+                return TokenizerAdapters.withSplitter(
+                        TokenizerAdapters.withNormalizer(fidelityGguf, normalizer), fastSplitter);
             default:
                 throw new IllegalArgumentException("Unsupported implementation: " + implementation);
         }
     }
 
-    private static Tokenizer classic(
+    private static Tokenizer bpe(
             String encoding, Normalizer normalizer, com.qxotic.toknroll.Splitter splitter) {
         Map<String, Integer> ranks = TiktokenFixtures.mergeableRanks(encoding);
         Map<String, Integer> specials = TiktokenFixtures.specialTokens(encoding);
-        return withTextTransform(Tokenizers.classicBpe(ranks, specials, splitter), normalizer);
+        return TokenizerAdapters.withNormalizer(
+                Tokenizers.bpe(ranks, specials, splitter), normalizer);
     }
 
     private static Tokenizer fast(
             String encoding, Normalizer normalizer, com.qxotic.toknroll.Splitter splitter) {
         Map<String, Integer> ranks = TiktokenFixtures.mergeableRanks(encoding);
         Map<String, Integer> specials = TiktokenFixtures.specialTokens(encoding);
-        return withTextTransform(Tokenizers.tikToken(ranks, specials, splitter), normalizer);
-    }
-
-    private static Tokenizer withTextTransform(Tokenizer tokenizer, Normalizer transform) {
-        return new Tokenizer() {
-            @Override
-            public Vocabulary vocabulary() {
-                return tokenizer.vocabulary();
-            }
-
-            @Override
-            public void encodeInto(
-                    CharSequence text,
-                    int startInclusive,
-                    int endExclusive,
-                    IntSequence.Builder out) {
-                CharSequence slice = text.subSequence(startInclusive, endExclusive);
-                CharSequence transformed = transform.apply(slice);
-                tokenizer.encodeInto(transformed, 0, transformed.length(), out);
-            }
-
-            @Override
-            public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
-                CharSequence slice = text.subSequence(startInclusive, endExclusive);
-                CharSequence transformed = transform.apply(slice);
-                return tokenizer.countTokens(transformed, 0, transformed.length());
-            }
-
-            @Override
-            public int decodeBytesInto(
-                    IntSequence tokens, int tokenStartIndex, java.nio.ByteBuffer out) {
-                return tokenizer.decodeBytesInto(tokens, tokenStartIndex, out);
-            }
-        };
-    }
-
-    private static Tokenizer withSplitter(Tokenizer tokenizer, Splitter splitter) {
-        return new Tokenizer() {
-            @Override
-            public Vocabulary vocabulary() {
-                return tokenizer.vocabulary();
-            }
-
-            @Override
-            public void encodeInto(
-                    CharSequence text,
-                    int startInclusive,
-                    int endExclusive,
-                    IntSequence.Builder out) {
-                splitter.splitAll(
-                        text,
-                        startInclusive,
-                        endExclusive,
-                        (source, chunkStart, chunkEnd) ->
-                                tokenizer.encodeInto(source, chunkStart, chunkEnd, out));
-            }
-
-            @Override
-            public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
-                int[] total = {0};
-                splitter.splitAll(
-                        text,
-                        startInclusive,
-                        endExclusive,
-                        (source, chunkStart, chunkEnd) ->
-                                total[0] += tokenizer.countTokens(source, chunkStart, chunkEnd));
-                return total[0];
-            }
-
-            @Override
-            public int decodeBytesInto(
-                    IntSequence tokens, int tokenStartIndex, java.nio.ByteBuffer out) {
-                return tokenizer.decodeBytesInto(tokens, tokenStartIndex, out);
-            }
-        };
+        return TokenizerAdapters.withNormalizer(
+                Tokenizers.tikToken(ranks, specials, splitter), normalizer);
     }
 
     private static int targetLength(String size) {

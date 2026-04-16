@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 
 class GPT2TokenizerTest {
     private Tokenizer createGPT2Tokenizer() {
-        return TiktokenFixtures.createClassicR50kTokenizer();
+        return TiktokenFixtures.createBpeR50kTokenizer();
     }
 
     private Tokenizer createJTokkitTokenizer() {
@@ -31,10 +31,9 @@ class GPT2TokenizerTest {
                     "Token at position " + i + " should be " + expectedTokens[i]);
         }
 
-        TokenizerAssertions.assertRoundTrip(tokenizer, text, "classic r50k known sample");
-        TokenizerAssertions.assertCountMatchesEncode(tokenizer, text, "classic r50k known sample");
-        TokenizerAssertions.assertTokensInVocabulary(
-                tokenizer, tokens, "classic r50k known sample");
+        TokenizerAssertions.assertRoundTrip(tokenizer, text, "bpe r50k known sample");
+        TokenizerAssertions.assertCountMatchesEncode(tokenizer, text, "bpe r50k known sample");
+        TokenizerAssertions.assertTokensInVocabulary(tokenizer, tokens, "bpe r50k known sample");
     }
 
     @Test

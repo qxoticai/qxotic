@@ -1,6 +1,7 @@
 package com.qxotic.toknroll.benchmarks;
 
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
 import com.qxotic.toknroll.impl.ClassicBPE;
@@ -71,7 +72,9 @@ public class TestSliceFile {
 
         var mergeableRanks = ClassicBPE.loadMergeableRanks(tiktokenPath.toString(), R50K_BASE_HASH);
 
-        return Tokenizers.classicBpe(
-                mergeableRanks, java.util.Map.of("<|endoftext|>", 50256), R50K_PATTERN);
+        return Tokenizers.bpe(
+                mergeableRanks,
+                java.util.Map.of("<|endoftext|>", 50256),
+                Splitter.regex(R50K_PATTERN));
     }
 }

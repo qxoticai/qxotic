@@ -50,7 +50,7 @@ public class OpenAiEncodingBenchmark {
         }
     }
 
-    @Param({"jtokkit", "jtokkit-adapter", "classic", "generic", "fast"})
+    @Param({"jtokkit", "jtokkit-adapter", "bpe", "fast"})
     public String implementation;
 
     @Param({"r50k_base", "cl100k_base", "o200k_base"})
@@ -132,18 +132,13 @@ public class OpenAiEncodingBenchmark {
                         "Use implementation=jtokkit for direct benchmark path");
             case "jtokkit-adapter":
                 return TiktokenFixtures.createJtokkitTokenizer(encoding);
-            case "classic":
-                return TiktokenFixtures.createClassicTokenizer(encoding);
+            case "bpe":
+                return TiktokenFixtures.createBpeTokenizer(encoding);
             case "fast":
                 Map<String, Integer> ranks = TiktokenFixtures.mergeableRanks(encoding);
                 Map<String, Integer> specials = TiktokenFixtures.specialTokens(encoding);
                 Splitter splitter = fastSplitterForEncoding(encoding);
                 return Tokenizers.tikToken(ranks, specials, splitter);
-            case "generic":
-                Map<String, Integer> genericRanks = TiktokenFixtures.mergeableRanks(encoding);
-                Map<String, Integer> genericSpecials = TiktokenFixtures.specialTokens(encoding);
-                Splitter genericSplitter = fastSplitterForEncoding(encoding);
-                return Tokenizers.genericBpe(genericRanks, genericSpecials, genericSplitter);
             default:
                 throw new IllegalArgumentException("Unsupported implementation: " + implementation);
         }
