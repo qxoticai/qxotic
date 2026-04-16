@@ -55,6 +55,19 @@ public class TensorEntryTest {
     }
 
     @Test
+    public void testTotalNumberOfElements() {
+        TensorEntry entry = TensorEntry.create("w", new long[] {4, 5, 6}, GGMLType.F32, 0);
+        assertEquals(120, entry.totalNumberOfElements());
+    }
+
+    @Test
+    public void testTotalNumberOfElementsOverflow() {
+        TensorEntry entry =
+                TensorEntry.create("w", new long[] {Long.MAX_VALUE, 2}, GGMLType.F32, 0);
+        assertThrows(ArithmeticException.class, entry::totalNumberOfElements);
+    }
+
+    @Test
     public void testTypeAlias() {
         TensorEntry entry = TensorEntry.create("w", new long[] {10}, GGMLType.F16, 0);
         assertEquals(entry.ggmlType(), entry.type());

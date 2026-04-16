@@ -365,20 +365,6 @@ public enum GGMLType {
     }
 
     /**
-     * Calculates the byte size required to store a tensor of this type with the given shape.
-     *
-     * @throws ArithmeticException if the result overflows
-     * @throws IllegalArgumentException if element count is not a multiple of elements per block
-     */
-    public long byteSizeForShape(long[] shape) {
-        long elementCount = 1;
-        for (long dim : shape) {
-            elementCount = Math.multiplyExact(elementCount, dim);
-        }
-        return byteSizeFor(elementCount);
-    }
-
-    /**
      * Calculates the byte size required to store the given number of elements.
      *
      * @throws ArithmeticException if the result overflows

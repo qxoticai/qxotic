@@ -293,7 +293,7 @@ final class BuilderImpl extends AbstractBuilder {
             String name = entry.getKey();
             TensorEntry tensorEntry = entry.getValue();
             GGMLType ggmlType = tensorEntry.ggmlType();
-            long byteSize = ggmlType.byteSizeForShape(tensorEntry.shape());
+            long byteSize = tensorEntry.byteSize();
             newTensorInfos.put(
                     name, TensorEntry.create(name, tensorEntry.shape(), ggmlType, tensorOffset));
             tensorOffset += byteSize;

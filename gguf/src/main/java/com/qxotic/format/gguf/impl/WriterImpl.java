@@ -198,6 +198,7 @@ final class WriterImpl {
                                     ('a' <= cp && cp <= 'z')
                                             || ('0' <= cp && cp <= '9')
                                             || cp == '_'
+                                            || cp == '-'
                                             || cp == '.')) {
                 throw new IllegalArgumentException("Invalid metadata key format: " + key);
             }

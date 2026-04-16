@@ -93,6 +93,7 @@ dump*.json
 *.tmp
 *.temp
 *.cache
+*.kate-swp
 
 # Generated images
 *.ppm
