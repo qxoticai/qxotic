@@ -167,6 +167,7 @@ final class ReaderImpl {
                                     ('a' <= cp && cp <= 'z')
                                             || ('0' <= cp && cp <= '9')
                                             || cp == '_'
+                                            || cp == '-'
                                             || cp == '.')) {
                 throw new GGUFFormatException("Invalid metadata key format: " + key);
             }

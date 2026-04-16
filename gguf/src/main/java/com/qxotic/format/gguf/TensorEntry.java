@@ -103,12 +103,29 @@ public final class TensorEntry {
     /**
      * Returns the byte size required to store this tensor's data.
      *
-     * <p>This is a convenience method equivalent to {@code ggmlType().byteSizeForShape(shape())}.
+     * <p>This is a convenience method equivalent to {@code
+     * ggmlType().byteSizeFor(totalNumberOfElements())}.
      *
      * @return the byte size of the tensor data
      */
     public long byteSize() {
-        return this.ggmlType.byteSizeForShape(this.shape);
+        return this.ggmlType.byteSizeFor(totalNumberOfElements());
+    }
+
+    /**
+     * Returns the total number of elements represented by this tensor shape.
+     *
+     * <p>This is the product of all dimensions. For an empty shape, the result is 1.
+     *
+     * @return the total number of elements
+     * @throws ArithmeticException if the result overflows
+     */
+    public long totalNumberOfElements() {
+        long total = 1;
+        for (long dim : this.shape) {
+            total = Math.multiplyExact(total, dim);
+        }
+        return total;
     }
 
     /**

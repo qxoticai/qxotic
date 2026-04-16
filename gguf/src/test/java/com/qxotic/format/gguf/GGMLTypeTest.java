@@ -82,24 +82,8 @@ public class GGMLTypeTest {
     }
 
     @Test
-    public void testByteSizeForShape() {
-        assertEquals(800, GGMLType.F32.byteSizeForShape(new long[] {10, 20}));
-        // 4*4*4*4 = 256 elements, which is 8 blocks of 32 for Q4_0
-        assertEquals(144, GGMLType.Q4_0.byteSizeForShape(new long[] {4, 4, 4, 4}));
-    }
-
-    @Test
     public void testByteSizeForOverflow() {
         assertThrows(ArithmeticException.class, () -> GGMLType.F32.byteSizeFor(Long.MAX_VALUE));
-    }
-
-    @Test
-    public void testByteSizeForShapeOverflow() {
-        assertThrows(
-                ArithmeticException.class,
-                () ->
-                        GGMLType.F32.byteSizeForShape(
-                                new long[] {Integer.MAX_VALUE, Integer.MAX_VALUE}));
     }
 
     @Test
