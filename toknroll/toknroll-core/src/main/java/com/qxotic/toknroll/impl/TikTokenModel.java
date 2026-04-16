@@ -1,5 +1,6 @@
 package com.qxotic.toknroll.impl;
 
+import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Vocabulary;
 import java.nio.ByteBuffer;
@@ -22,7 +23,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  *   <li>Large chunks: min-heap + intrusive list over primitive arrays
  * </ul>
  */
-public final class FastTikToken extends AbstractTokenizationModel {
+public final class TikTokenModel extends AbstractTokenizationModel {
 
     public static final String LARGE_CHUNK_THRESHOLD_PROPERTY = "toknroll.fast.largeChunkThreshold";
     public static final String TINY_CHUNK_THRESHOLD_PROPERTY = "toknroll.fast.tinyChunkThreshold";
@@ -44,7 +45,7 @@ public final class FastTikToken extends AbstractTokenizationModel {
     private final int largeChunkThreshold;
     private final ConcurrentLinkedQueue<Scratch> scratchPool = new ConcurrentLinkedQueue<>();
 
-    public FastTikToken(
+    public TikTokenModel(
             Vocabulary vocabulary,
             LongLongMap merges,
             int[] singleByteTokenId,
@@ -64,7 +65,7 @@ public final class FastTikToken extends AbstractTokenizationModel {
         this.largeChunkThreshold = Math.max(8, largeChunkThreshold);
     }
 
-    public FastTikToken(
+    public TikTokenModel(
             Vocabulary vocabulary,
             LongLongMap merges,
             int[] singleByteTokenId,
@@ -80,7 +81,7 @@ public final class FastTikToken extends AbstractTokenizationModel {
                 DEFAULT_LARGE_CHUNK_THRESHOLD);
     }
 
-    public static FastTikToken fromTiktoken(
+    public static TikTokenModel fromTiktoken(
             Map<String, Integer> mergeableRanks, Map<String, Integer> specialTokens) {
         Objects.requireNonNull(mergeableRanks, "mergeableRanks");
         Objects.requireNonNull(specialTokens, "specialTokens");
@@ -90,7 +91,7 @@ public final class FastTikToken extends AbstractTokenizationModel {
         int[] singleByteTokenId = buildSingleByteTokenMap(mergeableRanks);
         Vocabulary vocabulary =
                 VocabularyWithSpecials.create(new VocabularyImpl(mergeableRanks), specialTokens);
-        byte[][] tokenBytesById = buildTokenBytesById(vocabulary, SymbolCodec.BYTE_LEVEL);
+        byte[][] tokenBytesById = buildTokenBytesById(vocabulary);
         boolean exactLookupEnabled =
                 Boolean.parseBoolean(System.getProperty(EXACT_LOOKUP_ENABLED_PROPERTY, "true"));
         ExactTokenLookup exactTokenLookup =
@@ -102,7 +103,7 @@ public final class FastTikToken extends AbstractTokenizationModel {
         int threshold =
                 Integer.getInteger(LARGE_CHUNK_THRESHOLD_PROPERTY, DEFAULT_LARGE_CHUNK_THRESHOLD);
 
-        return new FastTikToken(
+        return new TikTokenModel(
                 vocabulary,
                 merges,
                 singleByteTokenId,
@@ -896,7 +897,7 @@ public final class FastTikToken extends AbstractTokenizationModel {
         int[] map = new int[256];
         Arrays.fill(map, NO_TOKEN);
         for (Map.Entry<String, Integer> entry : mergeableRanks.entrySet()) {
-            byte[] bytes = SymbolCodec.BYTE_LEVEL.decodeSymbols(entry.getKey());
+            byte[] bytes = ByteLevel.decode(entry.getKey());
             if (bytes.length == 1) {
                 map[bytes[0] & 0xFF] = entry.getValue();
             }
@@ -928,7 +929,7 @@ public final class FastTikToken extends AbstractTokenizationModel {
         return new IllegalArgumentException("Missing singleton byte token for value " + value);
     }
 
-    private static byte[][] buildTokenBytesById(Vocabulary vocabulary, SymbolCodec symbolCodec) {
+    private static byte[][] buildTokenBytesById(Vocabulary vocabulary) {
         int maxId = -1;
         for (Map.Entry<String, Integer> e : vocabulary) {
             if (e.getValue() > maxId) {
@@ -937,7 +938,7 @@ public final class FastTikToken extends AbstractTokenizationModel {
         }
         byte[][] table = new byte[Math.max(0, maxId + 1)][];
         for (Map.Entry<String, Integer> e : vocabulary) {
-            table[e.getValue()] = symbolCodec.decodeSymbols(e.getKey());
+            table[e.getValue()] = ByteLevel.decode(e.getKey());
         }
         return table;
     }
@@ -1058,7 +1059,7 @@ public final class FastTikToken extends AbstractTokenizationModel {
             int maxTokenBytes = 0;
 
             for (Map.Entry<String, Integer> entry : mergeableRanks.entrySet()) {
-                byte[] tokenBytes = SymbolCodec.BYTE_LEVEL.decodeSymbols(entry.getKey());
+                byte[] tokenBytes = ByteLevel.decode(entry.getKey());
                 if (tokenBytes.length == 0) {
                     continue;
                 }
@@ -1124,6 +1125,7 @@ public final class FastTikToken extends AbstractTokenizationModel {
             if (a == null || a.length != length) {
                 return false;
             }
+
             for (int i = 0; i < length; i++) {
                 if (a[i] != b[i]) {
                     return false;

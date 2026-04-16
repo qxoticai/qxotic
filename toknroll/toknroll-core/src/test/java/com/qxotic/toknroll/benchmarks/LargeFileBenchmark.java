@@ -1,6 +1,7 @@
 package com.qxotic.toknroll.benchmarks;
 
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
 import com.qxotic.toknroll.impl.ClassicBPE;
@@ -152,7 +153,7 @@ public class LargeFileBenchmark {
                         "<|fim_middle|>", 100259,
                         "<|fim_suffix|>", 100260,
                         "<|endofprompt|>", 100276),
-                CL100K_PATTERN);
+                Splitter.regex(CL100K_PATTERN));
     }
 
     private static double average(double[] values) {

@@ -15,8 +15,8 @@ class TokenizerContractTest {
 
     private static List<TokenizerSpec> buildTokenizers() {
         List<TokenizerSpec> specs = new ArrayList<>();
-        Tokenizer classic = TiktokenFixtures.createClassicR50kTokenizer();
-        specs.add(new TokenizerSpec("classic-r50k", classic));
+        Tokenizer bpe = TiktokenFixtures.createBpeR50kTokenizer();
+        specs.add(new TokenizerSpec("bpe-r50k", bpe));
 
         for (TiktokenFixtures.EncodingFixture fixture : TiktokenFixtures.encodings()) {
             specs.add(

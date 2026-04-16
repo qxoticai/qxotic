@@ -16,24 +16,13 @@ public final class GenericBPE {
 
     public static GenericBpeTokenizer fromTiktoken(
             Map<String, Integer> mergeableRanks, Map<String, Integer> specialTokens) {
-        return fromTiktoken(mergeableRanks, specialTokens, SymbolCodec.BYTE_LEVEL);
-    }
-
-    public static GenericBpeTokenizer fromTiktoken(
-            Map<String, Integer> mergeableRanks,
-            Map<String, Integer> specialTokens,
-            SymbolCodec symbolCodec) {
         Objects.requireNonNull(mergeableRanks, "mergeableRanks");
         Objects.requireNonNull(specialTokens, "specialTokens");
-        Objects.requireNonNull(symbolCodec, "symbolCodec");
 
         BpeMergeTable mergeTable = new LongLongBpeMergeTable(buildMerges(mergeableRanks));
         Vocabulary vocabulary =
                 VocabularyWithSpecials.create(new VocabularyImpl(mergeableRanks), specialTokens);
-        BpeSymbolEncoder symbolEncoder =
-                symbolCodec == SymbolCodec.BYTE_LEVEL
-                        ? new DirectByteBpeSymbolEncoder(vocabulary)
-                        : new CodecBpeSymbolEncoder(symbolCodec);
+        BpeSymbolEncoder symbolEncoder = new DirectByteBpeSymbolEncoder(vocabulary);
         return create(vocabulary, mergeTable, symbolEncoder);
     }
 

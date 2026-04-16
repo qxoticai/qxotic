@@ -5,11 +5,12 @@ import com.knuddels.jtokkit.api.Encoding;
 import com.knuddels.jtokkit.api.EncodingRegistry;
 import com.knuddels.jtokkit.api.GptBytePairEncodingParams;
 import com.knuddels.jtokkit.api.IntArrayList;
+import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
 import com.qxotic.toknroll.Vocabulary;
-import com.qxotic.toknroll.impl.SymbolCodec;
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.Map;
@@ -35,9 +36,7 @@ public final class JTokkitTokenizers {
                 mergeableRanks.entrySet().stream()
                         .collect(
                                 Collectors.toMap(
-                                        entry ->
-                                                SymbolCodec.BYTE_LEVEL.decodeSymbols(
-                                                        entry.getKey()),
+                                        entry -> ByteLevel.decode(entry.getKey()),
                                         Map.Entry::getValue));
 
         GptBytePairEncodingParams params =
@@ -48,7 +47,7 @@ public final class JTokkitTokenizers {
 
         Encoding encoding = encodingRegistry.getEncoding(name).orElseThrow();
         Vocabulary vocabulary =
-                Tokenizers.tikToken(mergeableRanks, specialTokens, splitPattern.pattern())
+                Tokenizers.tikToken(mergeableRanks, specialTokens, Splitter.regex(splitPattern))
                         .vocabulary();
 
         return new Adapter(vocabulary, encoding);

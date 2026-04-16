@@ -1,5 +1,7 @@
 package com.qxotic.toknroll.impl;
 
+import com.qxotic.toknroll.ByteLevel;
+import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
 import java.io.BufferedReader;
@@ -26,7 +28,7 @@ public class TikToken {
                             String[] parts = line.split(" ");
                             assert parts.length == 2;
                             byte[] bytes = Base64.getDecoder().decode(parts[0]);
-                            String key = ByteEncoding.bytesToString(bytes);
+                            String key = ByteLevel.encode(bytes);
 
                             int value = Integer.parseInt(parts[1]);
                             assert !mergeableRanks.containsKey(key);
@@ -46,6 +48,6 @@ public class TikToken {
         return Tokenizers.tikToken(
                 mergeableRanks,
                 specialTokens == null ? Collections.emptyMap() : specialTokens,
-                splitPattern.pattern());
+                Splitter.regex(splitPattern));
     }
 }

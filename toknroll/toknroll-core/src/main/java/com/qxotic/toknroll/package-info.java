@@ -8,6 +8,7 @@
  *   <li>TikToken BPE tokenizer support
  *   <li>High-level tokenizer factories and lossy pipeline wrappers via {@link
  *       com.qxotic.toknroll.Tokenizers}
+ *   <li>Byte-level symbol utility via {@link com.qxotic.toknroll.ByteLevel}
  *   <li>Vocabulary management
  *   <li>Compatibility with OpenAI, Llama, Mistral, and other models
  *   <li>Matches Python reference implementations

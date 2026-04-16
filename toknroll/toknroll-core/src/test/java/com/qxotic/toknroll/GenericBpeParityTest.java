@@ -2,6 +2,7 @@ package com.qxotic.toknroll;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.qxotic.toknroll.impl.GenericBPE;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -9,7 +10,7 @@ import org.junit.jupiter.api.Test;
 class GenericBpeParityTest {
 
     @Test
-    void genericBpeMatchesJtokkitOnRepresentativeSamples() {
+    void genericEngineMatchesJtokkitOnRepresentativeSamples() {
         assertEncodingParity("r50k_base");
         assertEncodingParity("cl100k_base");
         assertEncodingParity("o200k_base");
@@ -19,10 +20,12 @@ class GenericBpeParityTest {
         Tokenizer reference = TiktokenFixtures.createJtokkitTokenizer(encoding);
         Splitter splitter = Splitter.regex(TiktokenFixtures.splitPattern(encoding));
         Tokenizer generic =
-                Tokenizers.genericBpe(
-                        TiktokenFixtures.mergeableRanks(encoding),
-                        TiktokenFixtures.specialTokens(encoding),
-                        splitter);
+                TokenizationPipeline.builder(
+                                GenericBPE.fromTiktoken(
+                                        TiktokenFixtures.mergeableRanks(encoding),
+                                        TiktokenFixtures.specialTokens(encoding)))
+                        .splitter(splitter)
+                        .build();
 
         List<String> samples =
                 List.of(

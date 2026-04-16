@@ -20,6 +20,9 @@ import java.util.Set;
  * round-trip integrity for ordinary text and free from special-token policy. In TikToken terms,
  * {@link Tokenizer#encode(CharSequence)} corresponds to an ordinary-text path, while {@link
  * #encode(Tokenizer, CharSequence)} provides an explicit special-aware path.
+ *
+ * <p>Special-aware encoding is deterministic but policy-driven. It is not part of the ordinary text
+ * round-trip guarantee.
  */
 public interface Specials {
 

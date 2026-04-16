@@ -19,14 +19,14 @@ class FastTikTokenLargeMergeRegressionTest {
                         TiktokenFixtures.specialTokens(encoding),
                         Splitter.regex(TiktokenFixtures.splitPattern(encoding)));
 
-        Tokenizer classic =
-                Tokenizers.classicBpe(
+        Tokenizer bpe =
+                Tokenizers.bpe(
                         TiktokenFixtures.mergeableRanks(encoding),
                         TiktokenFixtures.specialTokens(encoding),
                         Splitter.regex(TiktokenFixtures.splitPattern(encoding)));
 
         for (String sample : largeSamples()) {
-            IntSequence expected = classic.encode(sample);
+            IntSequence expected = bpe.encode(sample);
             IntSequence actual = fast.encode(sample);
             assertEquals(
                     expected,

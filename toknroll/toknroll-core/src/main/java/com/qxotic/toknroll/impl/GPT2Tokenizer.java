@@ -20,27 +20,16 @@ import java.util.stream.Collectors;
 public class GPT2Tokenizer extends AbstractTokenizationModel {
 
     private final LongLongMap merges;
-    private final SymbolCodec symbolCodec;
     private final byte[][] tokenBytesById;
 
     public GPT2Tokenizer(Vocabulary vocabulary, LongLongMap mergeRanks) {
-        this(vocabulary, mergeRanks, SymbolCodec.BYTE_LEVEL);
-    }
-
-    public GPT2Tokenizer(Vocabulary vocabulary, LongLongMap mergeRanks, SymbolCodec symbolCodec) {
         super(vocabulary);
         this.merges = mergeRanks;
-        this.symbolCodec = symbolCodec;
-        this.tokenBytesById = buildTokenBytesById(vocabulary, symbolCodec);
+        this.tokenBytesById = buildTokenBytesById(vocabulary);
     }
 
     public GPT2Tokenizer(Vocabulary vocabulary, List<?> mergeRanks) {
-        this(vocabulary, mergeRanks, SymbolCodec.BYTE_LEVEL);
-    }
-
-    public GPT2Tokenizer(Vocabulary vocabulary, List<?> mergeRanks, SymbolCodec symbolCodec) {
         super(vocabulary);
-        this.symbolCodec = symbolCodec;
         long[] keys = new long[mergeRanks.size()];
         long[] values = new long[mergeRanks.size()];
         for (int rank = 0; rank < mergeRanks.size(); rank++) {
@@ -56,7 +45,7 @@ public class GPT2Tokenizer extends AbstractTokenizationModel {
             values[rank] = IntPair.of(mergeIndex, rank);
         }
         this.merges = new LongLongMap(keys, values);
-        this.tokenBytesById = buildTokenBytesById(vocabulary, symbolCodec);
+        this.tokenBytesById = buildTokenBytesById(vocabulary);
     }
 
     private static long toPair(Object value) {
@@ -207,7 +196,7 @@ public class GPT2Tokenizer extends AbstractTokenizationModel {
         // implementations (tiktoken, HuggingFace). Note: String.getBytes(UTF_8) would use '?'
         // (0x3F) instead, which produces different token IDs.
         byte[] rawBytes = getBytesWithReplacement(text, REPLACEMENT_BYTES);
-        String encodedSymbols = symbolCodec.encodeBytes(rawBytes);
+        String encodedSymbols = ByteLevel.encode(rawBytes);
         encodeChunkInto(encodedSymbols, out);
     }
 
@@ -299,7 +288,7 @@ public class GPT2Tokenizer extends AbstractTokenizationModel {
         return bytes;
     }
 
-    private static byte[][] buildTokenBytesById(Vocabulary vocabulary, SymbolCodec symbolCodec) {
+    private static byte[][] buildTokenBytesById(Vocabulary vocabulary) {
         int maxId = -1;
         for (Map.Entry<String, Integer> entry : vocabulary) {
             if (entry.getValue() > maxId) {
@@ -309,7 +298,7 @@ public class GPT2Tokenizer extends AbstractTokenizationModel {
         byte[][] table = new byte[Math.max(0, maxId + 1)][];
         for (Map.Entry<String, Integer> entry : vocabulary) {
             int tokenId = entry.getValue();
-            table[tokenId] = symbolCodec.decodeSymbols(entry.getKey());
+            table[tokenId] = ByteLevel.decode(entry.getKey());
         }
         return table;
     }

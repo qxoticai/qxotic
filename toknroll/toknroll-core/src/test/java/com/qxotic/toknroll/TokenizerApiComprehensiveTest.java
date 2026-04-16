@@ -78,10 +78,8 @@ class TokenizerApiComprehensiveTest {
     }
 
     private static Stream<Arguments> tokenizers() {
-        Stream<Arguments> classic =
-                Stream.of(
-                        Arguments.of(
-                                "classic-r50k", TiktokenFixtures.createClassicR50kTokenizer()));
+        Stream<Arguments> bpe =
+                Stream.of(Arguments.of("bpe-r50k", TiktokenFixtures.createBpeR50kTokenizer()));
         Stream<String> encodingNames =
                 Stream.of("r50k_base", "p50k_base", "p50k_edit", "cl100k_base", "o200k_base");
         Stream<Arguments> jtokkit =
@@ -90,6 +88,6 @@ class TokenizerApiComprehensiveTest {
                                 Arguments.of(
                                         "jtokkit-" + name,
                                         TiktokenFixtures.createJtokkitTokenizer(name)));
-        return Stream.concat(classic, jtokkit);
+        return Stream.concat(bpe, jtokkit);
     }
 }

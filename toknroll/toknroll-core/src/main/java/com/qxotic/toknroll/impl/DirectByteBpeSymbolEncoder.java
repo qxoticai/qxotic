@@ -1,5 +1,6 @@
 package com.qxotic.toknroll.impl;
 
+import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.Vocabulary;
 import java.util.Arrays;
 
@@ -65,7 +66,7 @@ public final class DirectByteBpeSymbolEncoder implements BpeSymbolEncoder {
 
     @Override
     public byte[] decodeTokenBytes(int tokenId, Vocabulary vocabulary) {
-        return SymbolCodec.BYTE_LEVEL.decodeSymbols(vocabulary.token(tokenId));
+        return ByteLevel.decode(vocabulary.token(tokenId));
     }
 
     private int utf8EncodeTokenIdsRange(
@@ -117,7 +118,7 @@ public final class DirectByteBpeSymbolEncoder implements BpeSymbolEncoder {
         int[] map = new int[256];
         Arrays.fill(map, -1);
         for (int i = 0; i < 256; i++) {
-            String symbol = SymbolCodec.BYTE_LEVEL.encodeBytes(new byte[] {(byte) i});
+            String symbol = ByteLevel.encode(new byte[] {(byte) i});
             map[i] = vocabulary.id(symbol);
         }
         return map;

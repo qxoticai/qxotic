@@ -1,5 +1,7 @@
 package com.qxotic.toknroll.gguf;
 
+import static com.qxotic.toknroll.testkit.SplitterTestUtils.splitAllToList;
+
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.json.Json;
 import com.qxotic.toknroll.IntSequence;
@@ -1288,7 +1290,7 @@ public final class ModelFamilyTokenizers {
 
     private static List<String> segmentDeepSeekV3WithNelGrouping(String text) {
         List<CharSequence> base =
-                ModelTextSplitters.createSplitter("deepseek-v3").splitAllToListEagerly(text);
+                splitAllToList(ModelTextSplitters.createSplitter("deepseek-v3"), text);
         List<String> chunks = new ArrayList<>(base.size());
         for (CharSequence cs : base) {
             chunks.add(cs.toString());

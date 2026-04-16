@@ -1,8 +1,6 @@
 package com.qxotic.toknroll;
 
 import com.qxotic.toknroll.impl.RegexSplitter;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
@@ -47,23 +45,6 @@ public interface Splitter {
     default void splitAll(CharSequence text, SplitConsumer consumer) {
         Objects.requireNonNull(text, "text");
         splitAll(text, 0, text.length(), consumer);
-    }
-
-    /**
-     * Eager convenience helper that materializes all chunks into a list.
-     *
-     * <p>Prefer {@link #splitAll(CharSequence, int, int, SplitConsumer)} on hot paths to avoid list
-     * allocation.
-     */
-    @Deprecated(forRemoval = false)
-    default List<CharSequence> splitAllToListEagerly(CharSequence text) {
-        Objects.requireNonNull(text, "text");
-        List<CharSequence> chunks = new ArrayList<>();
-        splitAll(
-                text,
-                (source, startInclusive, endExclusive) ->
-                        chunks.add(source.subSequence(startInclusive, endExclusive)));
-        return chunks;
     }
 
     /** Strict default: single chunk, no rewrite. */

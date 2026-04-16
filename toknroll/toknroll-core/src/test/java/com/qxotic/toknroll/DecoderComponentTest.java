@@ -3,7 +3,6 @@ package com.qxotic.toknroll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.toknroll.impl.Decoder;
-import com.qxotic.toknroll.impl.SymbolCodec;
 import java.util.Iterator;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -11,16 +10,16 @@ import org.junit.jupiter.api.Test;
 class DecoderComponentTest {
 
     @Test
-    void fromCodecUsesIdentityCodec() {
+    void canonicalConcatenatesTokens() {
         Vocabulary vocab = simpleVocabulary(Map.of("hello", 1, " world", 2));
-        Decoder decoder = Decoder.fromCodec(SymbolCodec.IDENTITY);
+        Decoder decoder = Decoder.canonical();
         assertEquals("hello world", decoder.decode(IntSequence.of(1, 2), vocab));
     }
 
     @Test
     void byteLevelDecodesUtf8Content() {
         String input = "Hi 🌍";
-        String encoded = SymbolCodec.BYTE_LEVEL.encodeText(input);
+        String encoded = ByteLevel.encode(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         Vocabulary vocab = simpleVocabulary(Map.of(encoded, 5));
 
         String decoded = Decoder.byteLevel().decode(IntSequence.of(5), vocab);

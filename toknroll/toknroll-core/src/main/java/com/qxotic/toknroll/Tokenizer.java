@@ -5,11 +5,16 @@ import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
 /**
- * Tokenizer contract with four core operations: {@link #encodeInto(CharSequence, int, int,
- * IntSequence.Builder)}, {@link #decodeBytesInto(IntSequence, int, ByteBuffer)}, {@link
+ * Practical tokenizer contract with four core operations: {@link #encodeInto(CharSequence, int,
+ * int, IntSequence.Builder)}, {@link #decodeBytesInto(IntSequence, int, ByteBuffer)}, {@link
  * #countTokens(CharSequence, int, int)}, and {@link #countBytes(IntSequence)}.
  *
  * <p>All other methods are convenience wrappers built on top of these operations.
+ *
+ * <p>This interface is intentionally flexible: implementations may apply model-specific policy,
+ * normalization, special-token handling, or lossy text paths. As a result, text-level
+ * reversibility is not guaranteed in general (see {@link TokenizationModel} for the strict,
+ * reversible model contract).
  */
 public interface Tokenizer {
 
@@ -103,7 +108,9 @@ public interface Tokenizer {
         encodeInto(text, 0, text.length(), out);
     }
 
-    /** Encodes text into an immutable token sequence. */
+    /**
+     * Encodes text into an immutable token sequence using the ordinary (non-special-aware) path.
+     */
     default IntSequence encode(CharSequence text) {
         Objects.requireNonNull(text, "text");
         IntSequence.Builder out =
@@ -158,7 +165,12 @@ public interface Tokenizer {
         return decodeBytes(IntSequence.wrap(Objects.requireNonNull(tokens, "tokens")));
     }
 
-    /** Decodes tokens into UTF-8 text. */
+    /**
+     * Decodes tokens into UTF-8 text.
+     *
+     * <p>This text decode is convenient but may be lossy for arbitrary token sequences. Use {@link
+     * #decodeBytes(IntSequence)} when full byte fidelity is required.
+     */
     default String decode(IntSequence tokens) {
         return new String(
                 decodeBytes(Objects.requireNonNull(tokens, "tokens")), StandardCharsets.UTF_8);
