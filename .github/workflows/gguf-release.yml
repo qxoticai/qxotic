@@ -6,15 +6,18 @@ on:
       - 'gguf-v*'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: gguf-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  verify:
-    name: Verify gguf module
+  release:
+    name: Verify and release gguf
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,22 +29,11 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Run tests
-        run: mvn -B -ntp -pl gguf -am test
+      - name: Verify formatting and tests
+        run: mvn -B -ntp -f gguf/pom.xml spotless:check test
 
-  publish:
-    name: Publish gguf to Maven Central
-    needs: verify
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/gguf-v')
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK and Maven Central credentials
+      - name: Set up Maven Central credentials
+        if: startsWith(github.ref, 'refs/tags/gguf-v')
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -54,7 +46,8 @@ jobs:
           gpg-passphrase: GPG_PASSPHRASE
 
       - name: Deploy gguf release
-        run: mvn -B -ntp -pl gguf -am -Prelease -DskipTests -Dspotless.check.skip=true deploy
+        if: startsWith(github.ref, 'refs/tags/gguf-v')
+        run: mvn -B -ntp -f gguf/pom.xml -Prelease -DskipTests deploy
         env:
           MAVEN_USERNAME: ${{ secrets.OSSRH_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.OSSRH_TOKEN }}
