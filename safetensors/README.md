@@ -48,7 +48,8 @@ Safetensors st = Safetensors.read(Path.of("model.safetensors"));
 System.out.println(st.getAlignment());
 System.out.println(st.getTensorDataOffset());
 System.out.println(st.getMetadata());
-System.out.println(st.getTensor("model.embed_tokens.weight"));
+TensorEntry tensor = st.requireTensor("model.embed_tokens.weight");
+System.out.println(tensor.byteSize());
 ```
 
 ---
@@ -72,7 +73,7 @@ Use `SafetensorsIndex` to resolve which shard contains each tensor:
 
 ```java
 SafetensorsIndex index = SafetensorsIndex.load(Path.of("/path/to/model-dir"));
-Path shard = index.getSafetensorsPath("model.layers.0.self_attn.q_proj.weight");
+Path shard = index.requireSafetensorsPath("model.layers.0.self_attn.q_proj.weight");
 ```
 
 The index loader handles both:

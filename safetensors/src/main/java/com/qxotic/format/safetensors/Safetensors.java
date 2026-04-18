@@ -12,6 +12,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Reads and writes Safetensors headers (metadata + tensor descriptors). Works on headers only;
@@ -24,7 +25,7 @@ public interface Safetensors {
     /** Byte offset where tensor payload begins ({@code 8 + headerSize}). */
     long getTensorDataOffset();
 
-    /** Tensor alignment in bytes. */
+    /** Tensor alignment in bytes (defaults to 1 when __alignment__ is absent). */
     int getAlignment();
 
     /** Metadata from the __metadata__ key (unmodifiable, empty if absent). */
@@ -35,6 +36,19 @@ public interface Safetensors {
 
     /** Returns tensor information, or null if not found. */
     TensorEntry getTensor(String tensorName);
+
+    /** Returns tensor information as an Optional. */
+    default Optional<TensorEntry> findTensor(String tensorName) {
+        Objects.requireNonNull(tensorName, "tensorName");
+        return Optional.ofNullable(getTensor(tensorName));
+    }
+
+    /** Returns tensor information, or throws if not found. */
+    default TensorEntry requireTensor(String tensorName) {
+        Objects.requireNonNull(tensorName, "tensorName");
+        return findTensor(tensorName)
+                .orElseThrow(() -> new IllegalArgumentException("tensor not found: " + tensorName));
+    }
 
     default boolean containsTensor(String tensorName) {
         return getTensor(tensorName) != null;

@@ -4,7 +4,7 @@ import com.qxotic.format.safetensors.SafetensorsFormatException;
 import java.util.Map;
 
 final class AlignmentSupport {
-    static final int DEFAULT_VALUE = 32;
+    static final int DEFAULT_VALUE = 1;
     static final String KEY = "__alignment__";
 
     private AlignmentSupport() {}

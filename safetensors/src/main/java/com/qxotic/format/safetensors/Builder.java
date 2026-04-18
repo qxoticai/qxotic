@@ -4,6 +4,7 @@ import com.qxotic.format.safetensors.impl.ImplAccessor;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -50,7 +51,7 @@ public interface Builder extends Cloneable {
         return this;
     }
 
-    /** Returns the current alignment (default value if __alignment__ is absent). */
+    /** Returns the current alignment (defaults to 1 if __alignment__ is absent). */
     default int getAlignment() {
         String alignment = getMetadataValue(ImplAccessor.alignmentKey());
         if (alignment != null) {
@@ -74,6 +75,19 @@ public interface Builder extends Cloneable {
     /** Returns tensor information by name, or null if absent. */
     TensorEntry getTensor(String tensorName);
 
+    /** Returns tensor information by name as an Optional. */
+    default Optional<TensorEntry> findTensor(String tensorName) {
+        Objects.requireNonNull(tensorName, "tensorName");
+        return Optional.ofNullable(getTensor(tensorName));
+    }
+
+    /** Returns tensor information by name, or throws if absent. */
+    default TensorEntry requireTensor(String tensorName) {
+        Objects.requireNonNull(tensorName, "tensorName");
+        return findTensor(tensorName)
+                .orElseThrow(() -> new IllegalArgumentException("tensor not found: " + tensorName));
+    }
+
     /** Gets all tensors (unmodifiable, order preserved). */
     Collection<TensorEntry> getTensors();
 
@@ -85,6 +99,12 @@ public interface Builder extends Cloneable {
 
     /** Returns one metadata value, or null if absent. */
     String getMetadataValue(String key);
+
+    /** Returns one metadata value as an Optional. */
+    default Optional<String> findMetadataValue(String key) {
+        Objects.requireNonNull(key, "key");
+        return Optional.ofNullable(getMetadataValue(key));
+    }
 
     /** Removes one metadata key. */
     Builder removeMetadataKey(String key);
