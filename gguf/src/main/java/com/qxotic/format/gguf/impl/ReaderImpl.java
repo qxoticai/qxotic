@@ -20,7 +20,7 @@ final class ReaderImpl {
     static final int ALIGNMENT_DEFAULT_VALUE = 32; // must be a power of 2
     static final String ALIGNMENT_KEY = "general.alignment";
 
-    private static final List<Integer> SUPPORTED_GGUF_VERSIONS = List.of(2, 3);
+    private static final List<Integer> SUPPORTED_GGUF_VERSIONS = List.of(3);
     private int version;
     private int alignment;
     private Map<String, Object> metadata;
