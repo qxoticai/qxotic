@@ -6,35 +6,13 @@
     <groupId>com.qxotic</groupId>
     <artifactId>qxotic-parent</artifactId>
     <version>0.1.0</version>
+    <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>gguf</artifactId>
   <name>Quixotic GGUF</name>
-  <description>GGUF (GGML Universal Forma library for reading/writing llama.cpp .gguf files</description>
+  <description>Java library for reading and writing GGUF metadata and tensor descriptors for llama.cpp model files.</description>
   <url>https://github.com/qxoticai/qxotic</url>
-
-  <licenses>
-    <license>
-      <name>Apache License, Version 2.0</name>
-      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
-      <distribution>repo</distribution>
-    </license>
-  </licenses>
-
-  <developers>
-    <developer>
-      <name>Quixotic AI</name>
-      <organization>Quixotic AI</organization>
-      <organizationUrl>https://qxotic.ai</organizationUrl>
-    </developer>
-  </developers>
-
-  <scm>
-    <connection>scm:git:https://github.com/qxoticai/qxotic.git</connection>
-    <developerConnection>scm:git:https://github.com/qxoticai/qxotic.git</developerConnection>
-    <tag>HEAD</tag>
-    <url>https://github.com/qxoticai/qxotic</url>
-  </scm>
 
   <dependencies>
     <dependency>
