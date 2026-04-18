@@ -443,7 +443,7 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
 
     @Test
     public void testHeaderDoesNotPersistDefaultAlignment() throws IOException {
-        Safetensors st = Builder.newBuilder().setAlignment(32).build();
+        Safetensors st = Builder.newBuilder().setAlignment(1).build();
         String header = readHeaderJson(writeToBytes(st));
         assertFalse(header.contains("\"__alignment__\""));
     }

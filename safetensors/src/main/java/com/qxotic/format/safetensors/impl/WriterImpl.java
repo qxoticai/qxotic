@@ -13,6 +13,7 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 final class WriterImpl {
     private final ByteBuffer headerSizeBuffer =
@@ -69,7 +70,7 @@ final class WriterImpl {
     }
 
     private static List<Long> toList(long[] values) {
-        return java.util.Arrays.stream(values).boxed().toList();
+        return java.util.Arrays.stream(values).boxed().collect(Collectors.toList());
     }
 
     private void writeFully(WritableByteChannel byteChannel, ByteBuffer byteBuffer)

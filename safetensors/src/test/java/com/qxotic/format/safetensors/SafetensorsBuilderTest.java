@@ -11,7 +11,7 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
     @Test
     public void testEmpty() {
         Safetensors st = Builder.newBuilder().build();
-        assertEquals(32, st.getAlignment());
+        assertEquals(1, st.getAlignment());
         assertTrue(st.getTensors().isEmpty());
         assertTrue(st.getMetadata().isEmpty());
         assertFalse(st.containsTensor("foo"));
@@ -29,14 +29,14 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
     @Test
     public void testAlignment() {
         Builder builder = Builder.newBuilder().putMetadataKey("foo", "bar");
-        assertEquals(32, builder.getAlignment());
+        assertEquals(1, builder.getAlignment());
         builder.setAlignment(4096);
         assertEquals(4096, builder.getAlignment());
         assertEquals("4096", builder.getMetadataValue("__alignment__"));
 
         assertTrue(builder.getMetadataKeys().contains("__alignment__"));
         builder.removeMetadataKey("__alignment__");
-        assertEquals(32, builder.getAlignment());
+        assertEquals(1, builder.getAlignment());
     }
 
     @Test
@@ -223,7 +223,7 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
         Safetensors st = builder.build(true);
 
         assertEquals(0, st.getTensor("tensor1").byteOffset());
-        assertEquals(64, st.getTensor("tensor2").byteOffset());
+        assertEquals(40, st.getTensor("tensor2").byteOffset());
     }
 
     @Test
@@ -235,7 +235,7 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
                         .putTensor(TensorEntry.create("large", DType.F32, new long[] {20}, 0));
 
         Safetensors st = builder.build(true);
-        assertEquals(32, st.getAlignment());
+        assertEquals(1, st.getAlignment());
 
         TensorEntry small = st.getTensor("small");
         TensorEntry medium = st.getTensor("medium");
@@ -244,10 +244,10 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
         assertEquals(0, small.byteOffset());
         assertEquals(5, small.byteSize());
 
-        assertEquals(32, medium.byteOffset());
+        assertEquals(5, medium.byteOffset());
         assertEquals(20, medium.byteSize());
 
-        assertEquals(64, large.byteOffset());
+        assertEquals(25, large.byteOffset());
         assertEquals(80, large.byteSize());
     }
 
@@ -291,7 +291,7 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
         Safetensors st = builder.build();
 
         assertEquals(0, st.getTensor("tensor1").byteOffset());
-        assertEquals(64, st.getTensor("tensor2").byteOffset());
+        assertEquals(40, st.getTensor("tensor2").byteOffset());
     }
 
     @Test
@@ -302,6 +302,10 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
                         .build();
         assertTrue(st.containsTensor("embedding"));
         assertFalse(st.containsTensor("nonexistent"));
+        assertTrue(st.findTensor("embedding").isPresent());
+        assertFalse(st.findTensor("nonexistent").isPresent());
+        assertEquals("embedding", st.requireTensor("embedding").name());
+        assertThrows(IllegalArgumentException.class, () -> st.requireTensor("nonexistent"));
     }
 
     @Test
@@ -309,7 +313,21 @@ public class SafetensorsBuilderTest extends SafetensorsTest {
         Builder builder = Builder.newBuilder().putMetadataKey("key", "value");
         Map<String, String> metadata = builder.getMetadata();
         assertEquals("value", metadata.get("key"));
+        assertTrue(builder.findMetadataValue("key").isPresent());
+        assertFalse(builder.findMetadataValue("missing").isPresent());
         assertThrows(UnsupportedOperationException.class, () -> metadata.put("x", "y"));
+    }
+
+    @Test
+    public void testBuilderFindAndRequireTensor() {
+        Builder builder =
+                Builder.newBuilder()
+                        .putTensor(TensorEntry.create("existing", DType.F16, new long[] {1}, 0));
+
+        assertTrue(builder.findTensor("existing").isPresent());
+        assertFalse(builder.findTensor("missing").isPresent());
+        assertEquals("existing", builder.requireTensor("existing").name());
+        assertThrows(IllegalArgumentException.class, () -> builder.requireTensor("missing"));
     }
 
     @Test

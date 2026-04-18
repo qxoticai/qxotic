@@ -42,6 +42,9 @@ public class SafetensorsIndexTest extends SafetensorsTest {
         assertTrue(tensorNames.contains("layer2.weight"));
         assertEquals(modelFile, index.getSafetensorsPath("layer1.weight"));
         assertEquals(modelFile, index.getSafetensorsPath("layer2.weight"));
+        assertTrue(index.containsTensor("layer1.weight"));
+        assertTrue(index.findSafetensorsPath("layer1.weight").isPresent());
+        assertEquals(modelFile, index.requireSafetensorsPath("layer1.weight"));
     }
 
     @Test
@@ -142,6 +145,11 @@ public class SafetensorsIndexTest extends SafetensorsTest {
 
         SafetensorsIndex index = SafetensorsIndex.load(tempDir);
         assertNull(index.getSafetensorsPath("nonexistent.weight"));
+        assertFalse(index.containsTensor("nonexistent.weight"));
+        assertFalse(index.findSafetensorsPath("nonexistent.weight").isPresent());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> index.requireSafetensorsPath("nonexistent.weight"));
     }
 
     @Test
