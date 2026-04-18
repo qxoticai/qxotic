@@ -114,7 +114,7 @@ Map<String, Object> data = Json.parseMap(json);
 Optional<String> city = Json.queryString(data, "user", "address", "city");
 // Returns Optional.of("NYC")
 
-Optional<Long> age = Json.queryLong(data, "user", "age");
+Optional<Number> age = Json.queryNumber(data, "user", "age");
 // Returns Optional.empty() (not present)
 ```
 
