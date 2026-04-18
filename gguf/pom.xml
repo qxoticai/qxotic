@@ -10,7 +10,7 @@
 
   <artifactId>gguf</artifactId>
   <name>Quixotic GGUF</name>
-  <description>GGUF (GGML Universal Format) library for reading/writing llama.cpp .gguf files</description>
+  <description>GGUF (GGML Universal Forma library for reading/writing llama.cpp .gguf files</description>
   <url>https://github.com/qxoticai/qxotic</url>
 
   <licenses>
@@ -23,7 +23,7 @@
 
   <developers>
     <developer>
-      <name>Quixotic AI Team</name>
+      <name>Quixotic AI</name>
       <organization>Quixotic AI</organization>
       <organizationUrl>https://qxotic.ai</organizationUrl>
     </developer>
