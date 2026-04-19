@@ -145,14 +145,21 @@ class FastSplitterExhaustiveParityTest {
 
     private static Stream<SplitterCase> splitterCases() {
         return Stream.of(
-                new SplitterCase("r50k", FastR50kSplitter.INSTANCE, Splitter.regex(R50K_PATTERN)),
+                new SplitterCase(
+                        "r50k",
+                        FastR50kSplitter.INSTANCE,
+                        Splitter.regex(
+                                Pattern.compile(R50K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS))),
                 new SplitterCase(
                         "cl100k",
                         FastCl100kSplitter.INSTANCE,
                         Splitter.regex(
                                 Pattern.compile(CL100K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS))),
                 new SplitterCase(
-                        "o200k", FastO200kSplitter.INSTANCE, Splitter.regex(O200K_PATTERN)));
+                        "o200k",
+                        FastO200kSplitter.INSTANCE,
+                        Splitter.regex(
+                                Pattern.compile(O200K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS))));
     }
 
     private static final class SplitterCase {

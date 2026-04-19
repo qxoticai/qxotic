@@ -8,6 +8,7 @@ import com.qxotic.toknroll.impl.FastR50kSplitter;
 import com.qxotic.toknroll.loaders.ModelSplitters;
 import com.qxotic.toknroll.testkit.SplitterContractHarness;
 import com.qxotic.toknroll.testkit.TestCorpora;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -33,7 +34,10 @@ class SplitterContractHarnessTest {
 
     private static Stream<SplitterCase> strictCases() {
         return Stream.of(
-                new SplitterCase("regex", Splitter.regex("\\s+|[,.!?]")),
+                new SplitterCase(
+                        "regex",
+                        Splitter.regex(
+                                Pattern.compile("\\s+|[,.!?]", Pattern.UNICODE_CHARACTER_CLASS))),
                 new SplitterCase("fast-r50k", FastR50kSplitter.INSTANCE),
                 new SplitterCase("fast-llama3", FastLlama3Splitter.INSTANCE),
                 new SplitterCase("fast-cl100k", FastCl100kSplitter.INSTANCE),

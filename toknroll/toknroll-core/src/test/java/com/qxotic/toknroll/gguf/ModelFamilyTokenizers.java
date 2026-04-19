@@ -4,18 +4,18 @@ import static com.qxotic.toknroll.testkit.SplitterTestUtils.splitAllToList;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.json.Json;
+import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Normalizer;
 import com.qxotic.toknroll.Splitter;
+import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.TokenizationPipeline;
 import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.Tokenizers;
 import com.qxotic.toknroll.Vocabulary;
-import com.qxotic.toknroll.advanced.StandardTokenType;
 import com.qxotic.toknroll.gguf.TestDataManager.TestModel;
 import com.qxotic.toknroll.gguf.TestDataManager.TokenizerMetadata;
-import com.qxotic.toknroll.impl.GPT2Tokenizer;
-import com.qxotic.toknroll.impl.IntPair;
-import com.qxotic.toknroll.impl.LongLongMap;
+import com.qxotic.toknroll.impl.SentencePieceBpeModel;
 import com.qxotic.toknroll.impl.VocabularyImpl;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -24,10 +24,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.Normalizer.Form;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -55,6 +55,10 @@ public final class ModelFamilyTokenizers {
         }
     }
 
+    public static Optional<Tokenizer> createFast(String familyId) {
+        return create(familyId);
+    }
+
     public static Optional<Tokenizer> createFromHfFiles(
             String familyId, String modelRef, String revision) {
         try {
@@ -75,8 +79,16 @@ public final class ModelFamilyTokenizers {
             if ("alibaba.qwen3_5".equals(familyId)) {
                 return fromQwen35();
             }
-            if ("deepseek.v3_0324".equals(familyId)) {
+            if ("deepseek.v3_2".equals(familyId)) {
                 return fromDeepSeekV3();
+            }
+            if ("mistral.v0_3".equals(familyId)) {
+                return fromHfTokenizerJson(
+                        "mistralai/Mistral-7B-Instruct-v0.3",
+                        "main",
+                        "llama",
+                        Normalizer.identity(),
+                        SpecialTokenMode.EXACT_LITERAL);
             }
 
             ModelFamilySpec modelSpec = MODEL_FAMILY_SPECS.get(familyId);
@@ -109,12 +121,17 @@ public final class ModelFamilyTokenizers {
             String familyId, String modelRef, String revision) {
         try {
             if ("google.gemma3".equals(familyId)) {
-                return fromGemma3();
+                return fromHfTokenizerJson(
+                        modelRef,
+                        revision,
+                        "identity",
+                        Normalizer.identity(),
+                        SpecialTokenMode.EXACT_LITERAL);
             }
             if ("alibaba.qwen3_5".equals(familyId)) {
                 return fromHfQwen35(modelRef, revision);
             }
-            if ("deepseek.v3_0324".equals(familyId)) {
+            if ("deepseek.v3_2".equals(familyId)) {
                 return fromHfDeepSeekV3(modelRef, revision);
             }
 
@@ -155,13 +172,6 @@ public final class ModelFamilyTokenizers {
         return buildTokenizer(metadata, splitterModelType, normalizer, specialTokenMode);
     }
 
-    private static Tokenizer fromGemma3() throws IOException, InterruptedException {
-        GGUF gguf = DATA.getOrDownloadMetadata(TestModel.GEMMA_3_4B_UNSLOTH);
-        TokenizerMetadata metadata = TestDataManager.extractTokenizerMetadata(gguf);
-        Tokenizer base = buildGemmaTokenizer(metadata);
-        return wrapWithSpecialTokenInjection(base, SpecialTokenMode.EXACT_LITERAL);
-    }
-
     private static Tokenizer fromGemma4() throws IOException, InterruptedException {
         String[] urls = {
             "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-e2b-it-Q8_0.gguf",
@@ -173,8 +183,7 @@ public final class ModelFamilyTokenizers {
                         DATA.getOrDownloadMetadata(
                                 cacheKey("google_gemma4_v1", i, urls[i]), urls[i]);
                 TokenizerMetadata metadata = TestDataManager.extractTokenizerMetadata(gguf);
-                Tokenizer base = buildGemmaTokenizer(metadata);
-                return wrapWithSpecialTokenInjection(base, SpecialTokenMode.EXACT_LITERAL);
+                return buildGemma4Tokenizer(metadata);
             } catch (IOException e) {
                 // try next source
             }
@@ -182,38 +191,42 @@ public final class ModelFamilyTokenizers {
         throw new IOException("No accessible gemma4 GGUF metadata source");
     }
 
+    private static Tokenizer fromGemma3() throws IOException, InterruptedException {
+        GGUF gguf = DATA.getOrDownloadMetadata(TestModel.GEMMA_3_4B_UNSLOTH);
+        TokenizerMetadata metadata = TestDataManager.extractTokenizerMetadata(gguf);
+        Tokenizer base = buildGemma3Tokenizer(metadata);
+        return wrapWithSpecialTokenInjection(
+                base, SpecialTokenMode.EXACT_LITERAL, Set.of(StandardTokenType.USER_DEFINED));
+    }
+
     private static Tokenizer fromQwen35() throws IOException, InterruptedException {
-        Tokenizer base =
-                fromModel(
-                        TestModel.QWEN3_0_6B,
-                        "qwen3.5",
-                        Normalizer.unicode(Form.NFC),
-                        SpecialTokenMode.EXACT_LITERAL);
-        return withThaiSegmentation(base);
+        return fromModel(
+                TestModel.QWEN3_0_6B,
+                "qwen3.5",
+                Normalizer.unicode(Form.NFC),
+                SpecialTokenMode.EXACT_LITERAL);
     }
 
     private static Tokenizer fromHfQwen35(String modelRef, String revision)
             throws IOException, InterruptedException {
-        Tokenizer base =
-                fromHfTokenizerJson(
-                        modelRef,
-                        revision,
-                        "qwen3.5",
-                        Normalizer.unicode(Form.NFC),
-                        SpecialTokenMode.EXACT_LITERAL);
-        return withThaiSegmentation(base);
+        return fromHfTokenizerJson(
+                modelRef,
+                revision,
+                "qwen3.5",
+                Normalizer.unicode(Form.NFC),
+                SpecialTokenMode.EXACT_LITERAL);
     }
 
     private static Tokenizer fromDeepSeekV3() throws IOException, InterruptedException {
         String[] urls = {
-            "https://huggingface.co/lmstudio-community/DeepSeek-V3-0324-GGUF/resolve/main/DeepSeek-V3-0324-Q4_K_M-00001-of-00011.gguf",
-            "https://huggingface.co/unsloth/DeepSeek-V3-0324-GGUF/resolve/main/Q4_K_M/DeepSeek-V3-0324-Q4_K_M-00001-of-00011.gguf"
+            "https://huggingface.co/unsloth/DeepSeek-V3.2-GGUF/resolve/main/Q4_K_M/DeepSeek-V3.2-Q4_K_M-00001-of-00011.gguf",
+            "https://huggingface.co/unsloth/DeepSeek-V3.2-GGUF/resolve/main/DeepSeek-V3.2-Q4_K_M-00001-of-00011.gguf"
         };
         for (int i = 0; i < urls.length; i++) {
             try {
                 GGUF gguf =
                         DATA.getOrDownloadMetadata(
-                                cacheKey("deepseek_v3_0324_v1", i, urls[i]), urls[i]);
+                                cacheKey("deepseek_v3_2_v1", i, urls[i]), urls[i]);
                 TokenizerMetadata metadata = TestDataManager.extractTokenizerMetadata(gguf);
                 Tokenizer base =
                         buildTokenizer(
@@ -226,7 +239,7 @@ public final class ModelFamilyTokenizers {
                 // try next source
             }
         }
-        throw new IOException("No accessible deepseek v3 GGUF metadata source");
+        throw new IOException("No accessible deepseek v3.2 GGUF metadata source");
     }
 
     private static Tokenizer fromHfDeepSeekV3(String modelRef, String revision)
@@ -239,10 +252,6 @@ public final class ModelFamilyTokenizers {
                         Normalizer.identity(),
                         SpecialTokenMode.EXACT_LITERAL);
         return withDeepSeekSegmentation(base);
-    }
-
-    private static Tokenizer withThaiSegmentation(Tokenizer tokenizer) {
-        return withPreSegmentation(tokenizer, ModelFamilyTokenizers::segmentThaiRuns);
     }
 
     private static Tokenizer withDeepSeekSegmentation(Tokenizer tokenizer) {
@@ -346,6 +355,33 @@ public final class ModelFamilyTokenizers {
 
         mergeSpecialTokensFromMaps(modelRef, rev, tokens, tokenTypes, addedTokenSpecs);
 
+        // Preprocess SentencePiece-style <0xNN> byte tokens for TikTokenModel compatibility.
+        // Byte tokens are converted to GPT-2 byte-level symbols; if a symbol already exists in
+        // the vocabulary, the <0xNN> token is removed (no merges reference byte tokens in Mistral).
+        Set<String> vocabSet = java.util.Collections.newSetFromMap(new java.util.LinkedHashMap<>());
+        for (String tok : tokens) {
+            if (tok != null) {
+                vocabSet.add(tok);
+            }
+        }
+        for (int i = 0; i < tokens.length; i++) {
+            String tok = tokens[i];
+            if (tok != null && tok.length() == 6 && tok.startsWith("<0x") && tok.endsWith(">")) {
+                try {
+                    int byteValue = Integer.parseInt(tok.substring(3, 5), 16);
+                    String symbol = String.valueOf(ByteLevel.encodeSingle((byte) byteValue));
+                    if (vocabSet.contains(symbol)) {
+                        tokens[i] = null;
+                    } else {
+                        vocabSet.remove(tok);
+                        vocabSet.add(symbol);
+                        tokens[i] = symbol;
+                    }
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        }
+
         String[] merges = extractMerges(model.get("merges"));
         TokenizerMetadata metadata =
                 new TokenizerMetadata(
@@ -376,6 +412,10 @@ public final class ModelFamilyTokenizers {
                 && modelRef.startsWith("ibm-granite/")) {
             effectiveSplitter = ModelTextSplitters.createSplitter("gpt2");
         }
+        boolean hasMetaspace = hasMetaspacePreTokenizer(root.get("pre_tokenizer"));
+        if (hasMetaspace) {
+            effectiveSplitter = Splitter.identity();
+        }
         if (effectiveSplitter == null) {
             effectiveSplitter = ModelTextSplitters.createSplitter(splitterModelType);
         }
@@ -383,6 +423,84 @@ public final class ModelFamilyTokenizers {
         Tokenizer base =
                 buildTokenizer(
                         metadata, effectiveNormalizer, effectiveSplitter, inferredSpecialMode);
+        if (hasMetaspace) {
+            Tokenizer metaspaceBase = base;
+            base =
+                    new Tokenizer() {
+                        @Override
+                        public Vocabulary vocabulary() {
+                            return metaspaceBase.vocabulary();
+                        }
+
+                        @Override
+                        public void encodeInto(
+                                CharSequence text,
+                                int startInclusive,
+                                int endExclusive,
+                                IntSequence.Builder out) {
+                            // Apply Metaspace: replace spaces with ▁ and prepend ▁
+                            String segment =
+                                    text.subSequence(startInclusive, endExclusive).toString();
+                            String replaced = '\u2581' + segment.replace(' ', '\u2581');
+                            metaspaceBase.encodeInto(replaced, 0, replaced.length(), out);
+                        }
+
+                        @Override
+                        public String decode(IntSequence tokens) {
+                            // Replace ▁ with spaces after decoding
+                            String decoded = metaspaceBase.decode(tokens).replace('\u2581', ' ');
+                            // Strip leading space added by prepend_scheme="first"
+                            return decoded.length() > 0 && decoded.charAt(0) == ' '
+                                    ? decoded.substring(1)
+                                    : decoded;
+                        }
+
+                        @Override
+                        public byte[] decodeBytes(IntSequence tokens) {
+                            return decode(tokens).getBytes(StandardCharsets.UTF_8);
+                        }
+
+                        @Override
+                        public int decodeBytesInto(
+                                IntSequence tokens, int tokenStartIndex, ByteBuffer out) {
+                            int length = tokens.length();
+                            if (tokenStartIndex < 0 || tokenStartIndex > length) {
+                                throw new IndexOutOfBoundsException(
+                                        "tokenStartIndex: " + tokenStartIndex);
+                            }
+                            if (tokenStartIndex == length) {
+                                return 0;
+                            }
+                            byte[] bytes = decodeBytes(tokens.subSequence(tokenStartIndex, length));
+                            if (bytes.length > out.remaining()) {
+                                throw new IllegalArgumentException("Not enough output space");
+                            }
+                            out.put(bytes);
+                            return length - tokenStartIndex;
+                        }
+
+                        @Override
+                        public int countTokens(
+                                CharSequence text, int startInclusive, int endExclusive) {
+                            String replaced =
+                                    text.subSequence(startInclusive, endExclusive)
+                                            .toString()
+                                            .replace(' ', '\u2581');
+                            return metaspaceBase.countTokens(replaced, 0, replaced.length());
+                        }
+
+                        @Override
+                        public int countBytes(IntSequence tokens) {
+                            return metaspaceBase.countBytes(tokens);
+                        }
+
+                        @Override
+                        public float expectedTokensPerChar() {
+                            return metaspaceBase.expectedTokensPerChar();
+                        }
+                    };
+        }
+
         if (fallbackSpecialMode == SpecialTokenMode.NONE) {
             return base;
         }
@@ -577,6 +695,33 @@ public final class ModelFamilyTokenizers {
         }
         String needle = (String) literal;
         return text -> text.toString().replace(needle, content);
+    }
+
+    private static boolean hasMetaspacePreTokenizer(Object preTokenizerObj) {
+        if (!(preTokenizerObj instanceof Map<?, ?>)) {
+            return false;
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> preTokenizer = (Map<String, Object>) preTokenizerObj;
+        String type = (String) preTokenizer.get("type");
+        if ("Metaspace".equals(type)) {
+            return true;
+        }
+        if ("Sequence".equals(type)) {
+            Object childrenObj = preTokenizer.get("pretokenizers");
+            if (childrenObj instanceof List<?>) {
+                for (Object childObj : (List<?>) childrenObj) {
+                    if (childObj instanceof Map<?, ?>) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> child = (Map<String, Object>) childObj;
+                        if ("Metaspace".equals(child.get("type"))) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private static Splitter parseHfPreTokenizer(Object preTokenizerObj) {
@@ -898,6 +1043,15 @@ public final class ModelFamilyTokenizers {
                         "No accessible mistral pre-tekken GGUF metadata source",
                         "https://huggingface.co/unsloth/Mistral-Small-24B-Instruct-2501-GGUF/resolve/main/Mistral-Small-24B-Instruct-2501-Q4_K_M.gguf",
                         "https://huggingface.co/unsloth/Mistral-Small-3.1-24B-Instruct-2503-GGUF/resolve/main/Mistral-Small-3.1-24B-Instruct-2503-Q4_K_M.gguf"));
+        specs.put(
+                "mistral.v0_3",
+                new UrlFamilySpec(
+                        "mistral_v0_3_v1",
+                        "llama",
+                        Normalizer.identity(),
+                        SpecialTokenMode.EXACT_LITERAL,
+                        "No accessible Mistral 7B v0.3 GGUF metadata source",
+                        "https://huggingface.co/bartowski/Mistral-7B-Instruct-v0.3-GGUF/resolve/main/Mistral-7B-Instruct-v0.3-Q4_K_M.gguf"));
         return java.util.Collections.unmodifiableMap(specs);
     }
 
@@ -936,7 +1090,7 @@ public final class ModelFamilyTokenizers {
             tokenToId.put(tokens[i], i);
         }
 
-        LongLongMap merges = buildMerges(metadata, tokenToId);
+        List<Tokenizers.MergeRule> merges = buildMerges(metadata, tokenToId);
         Splitter splitter = ModelTextSplitters.createSplitter(splitterModelType);
         return buildTokenizer(metadata, normalizer, splitter, specialTokenMode, merges);
     }
@@ -951,7 +1105,7 @@ public final class ModelFamilyTokenizers {
         for (int i = 0; i < tokens.length; i++) {
             tokenToId.put(tokens[i], i);
         }
-        LongLongMap merges = buildMerges(metadata, tokenToId);
+        List<Tokenizers.MergeRule> merges = buildMerges(metadata, tokenToId);
         return buildTokenizer(metadata, normalizer, splitter, specialTokenMode, merges);
     }
 
@@ -960,11 +1114,10 @@ public final class ModelFamilyTokenizers {
             Normalizer normalizer,
             Splitter splitter,
             SpecialTokenMode specialTokenMode,
-            LongLongMap merges) {
-        Vocabulary vocabulary =
-                new VocabularyImpl(metadata.tokens(), metadata.scores(), metadata.tokenTypes());
+            List<Tokenizers.MergeRule> merges) {
+        Vocabulary vocabulary = new VocabularyImpl(metadata.tokens(), metadata.tokenTypes());
         TokenizationPipeline.Builder pipelineBuilder =
-                TokenizationPipeline.builder(new GPT2Tokenizer(vocabulary, merges))
+                TokenizationPipeline.builder(Tokenizers.tikTokenModel(vocabulary, merges))
                         .splitter(splitter);
         if (normalizer != null) {
             pipelineBuilder.normalizer(normalizer);
@@ -973,16 +1126,34 @@ public final class ModelFamilyTokenizers {
         return wrapWithSpecialTokenInjection(normalized, specialTokenMode);
     }
 
-    private static Tokenizer buildGemmaTokenizer(TokenizerMetadata metadata) {
-        VocabularyImpl vocabulary =
-                new VocabularyImpl(metadata.tokens(), metadata.scores(), metadata.tokenTypes());
+    private static Tokenizer buildGemma4Tokenizer(TokenizerMetadata metadata) {
+        return buildGemmaSentencePieceTokenizer(metadata, Normalizer.unicode(Form.NFC));
+    }
+
+    private static Tokenizer buildGemma3Tokenizer(TokenizerMetadata metadata) {
+        return buildGemmaSentencePieceTokenizer(metadata, Normalizer.identity());
+    }
+
+    private static Tokenizer buildGemmaSentencePieceTokenizer(
+            TokenizerMetadata metadata, Normalizer normalizer) {
+        VocabularyImpl vocabulary = new VocabularyImpl(metadata.tokens(), metadata.tokenTypes());
         float[] scores = metadata.scores();
-        int byte0 = vocabulary.contains("<0x00>") ? vocabulary.id("<0x00>") : -1;
+        if (scores == null || scores.length < vocabulary.size()) {
+            scores = new float[vocabulary.size()];
+        }
+        SentencePieceBpeModel model = SentencePieceBpeModel.fromVocabulary(vocabulary, scores);
+        Tokenizer base =
+                TokenizationPipeline.builder(model)
+                        .normalizer(
+                                Normalizer.sequence(
+                                        normalizer, text -> text.toString().replace(' ', '\u2581')))
+                        .splitter(Splitter.identity())
+                        .build();
 
         return new Tokenizer() {
             @Override
             public Vocabulary vocabulary() {
-                return vocabulary;
+                return base.vocabulary();
             }
 
             @Override
@@ -991,118 +1162,12 @@ public final class ModelFamilyTokenizers {
                     int startInclusive,
                     int endExclusive,
                     IntSequence.Builder out) {
-                out.addAll(encode(text.subSequence(startInclusive, endExclusive).toString()));
-            }
-
-            public IntSequence encode(String text) {
-                String metaspace = text.replace(' ', '\u2581');
-                List<Integer> ids = new ArrayList<>();
-
-                for (int pos = 0; pos < metaspace.length(); ) {
-                    if (metaspace.charAt(pos) == '\u2581') {
-                        int end = pos;
-                        while (end < metaspace.length() && metaspace.charAt(end) == '\u2581') {
-                            end++;
-                        }
-                        int runLength = end - pos;
-                        if (runLength > 1) {
-                            String spaces = " ".repeat(runLength);
-                            if (vocabulary.contains(spaces)) {
-                                ids.add(vocabulary.id(spaces));
-                                pos = end;
-                                continue;
-                            }
-                        }
-                    }
-
-                    if (metaspace.charAt(pos) == '<') {
-                        int close = metaspace.indexOf('>', pos + 1);
-                        if (close > pos && close - pos <= 32) {
-                            String tag = metaspace.substring(pos, close + 1);
-                            if (vocabulary.contains(tag)) {
-                                ids.add(vocabulary.id(tag));
-                                pos = close + 1;
-                                continue;
-                            }
-                        }
-                    }
-
-                    int cp = metaspace.codePointAt(pos);
-                    String s = new String(Character.toChars(cp));
-                    if (vocabulary.contains(s)) {
-                        ids.add(vocabulary.id(s));
-                    } else {
-                        if (byte0 < 0) {
-                            throw new NoSuchElementException("Missing <0x00> byte fallback token");
-                        }
-                        for (byte b : s.getBytes(StandardCharsets.UTF_8)) {
-                            ids.add(Byte.toUnsignedInt(b) + byte0);
-                        }
-                    }
-                    pos += Character.charCount(cp);
-                }
-
-                while (ids.size() >= 2) {
-                    float bestScore = -1.0e10f;
-                    int bestId = -1;
-                    int bestPos = -1;
-
-                    for (int i = 0; i + 1 < ids.size(); i++) {
-                        String merged =
-                                vocabulary.token(ids.get(i)) + vocabulary.token(ids.get(i + 1));
-                        if (!vocabulary.contains(merged)) {
-                            continue;
-                        }
-                        int mergedId = vocabulary.id(merged);
-                        float score =
-                                scores != null && mergedId < scores.length ? scores[mergedId] : 0f;
-                        if (score > bestScore) {
-                            bestScore = score;
-                            bestId = mergedId;
-                            bestPos = i;
-                        }
-                    }
-
-                    if (bestPos < 0) {
-                        break;
-                    }
-
-                    ids.set(bestPos, bestId);
-                    ids.remove(bestPos + 1);
-                }
-
-                int[] out = new int[ids.size()];
-                for (int i = 0; i < ids.size(); i++) {
-                    out[i] = ids.get(i);
-                }
-                return IntSequence.wrap(out);
+                base.encodeInto(text, startInclusive, endExclusive, out);
             }
 
             @Override
             public String decode(IntSequence tokens) {
-                StringBuilder sb = new StringBuilder();
-                java.io.ByteArrayOutputStream byteRun = new java.io.ByteArrayOutputStream();
-                for (int i = 0; i < tokens.length(); i++) {
-                    int id = tokens.intAt(i);
-                    String token = vocabulary.token(id);
-                    if (vocabulary.isTokenOfType(id, StandardTokenType.BYTE)
-                            && token.length() == 6
-                            && token.startsWith("<0x")
-                            && token.endsWith(">")) {
-                        String hex = token.substring(3, 5);
-                        byteRun.write(Integer.parseInt(hex, 16));
-                    } else {
-                        if (byteRun.size() > 0) {
-                            sb.append(byteRun.toString(StandardCharsets.UTF_8));
-                            byteRun.reset();
-                        }
-                        sb.append(token.replace('\u2581', ' '));
-                    }
-                }
-                if (byteRun.size() > 0) {
-                    sb.append(byteRun.toString(StandardCharsets.UTF_8));
-                }
-                return sb.toString();
+                return base.decode(tokens).replace('\u2581', ' ');
             }
 
             @Override
@@ -1129,20 +1194,31 @@ public final class ModelFamilyTokenizers {
 
             @Override
             public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
-                IntSequence.Builder out = IntSequence.newBuilder();
-                encodeInto(text, startInclusive, endExclusive, out);
-                return out.size();
+                return base.countTokens(text, startInclusive, endExclusive);
             }
 
             @Override
             public int countBytes(IntSequence tokens) {
-                return decodeBytes(tokens).length;
+                return base.countBytes(tokens);
+            }
+
+            @Override
+            public float expectedTokensPerChar() {
+                return base.expectedTokensPerChar();
             }
         };
     }
 
     private static Tokenizer wrapWithSpecialTokenInjection(
             Tokenizer tokenizer, SpecialTokenMode specialTokenMode) {
+        return wrapWithSpecialTokenInjection(
+                tokenizer, specialTokenMode, Set.of(StandardTokenType.CONTROL));
+    }
+
+    private static Tokenizer wrapWithSpecialTokenInjection(
+            Tokenizer tokenizer,
+            SpecialTokenMode specialTokenMode,
+            Set<StandardTokenType> includedTokenTypes) {
         if (specialTokenMode == SpecialTokenMode.NONE) {
             return tokenizer;
         }
@@ -1152,7 +1228,15 @@ public final class ModelFamilyTokenizers {
             if (e.getKey() == null || e.getKey().isEmpty()) {
                 continue;
             }
-            if (vocabulary.isTokenOfType(e.getValue(), StandardTokenType.CONTROL)) {
+            int tokenId = e.getValue();
+            boolean include = false;
+            for (StandardTokenType tokenType : includedTokenTypes) {
+                if (vocabulary.isTokenOfType(tokenId, tokenType)) {
+                    include = true;
+                    break;
+                }
+            }
+            if (include) {
                 specials.add(e.getKey());
             }
         }
@@ -1250,44 +1334,6 @@ public final class ModelFamilyTokenizers {
         };
     }
 
-    private static List<String> segmentThaiRuns(String text) {
-        List<String> out = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        for (int i = 0; i < text.length(); ) {
-            int cp = text.codePointAt(i);
-            int cpLen = Character.charCount(cp);
-            if (cp == ' ' && i + cpLen < text.length()) {
-                int nextCp = text.codePointAt(i + cpLen);
-                if (isThaiCodePoint(nextCp)) {
-                    if (current.length() > 0) {
-                        out.add(current.toString());
-                        current.setLength(0);
-                    }
-                    out.add(" ");
-                    i += cpLen;
-                    continue;
-                }
-            }
-            if (isThaiCodePoint(cp)) {
-                if (current.length() > 0) {
-                    out.add(current.toString());
-                    current.setLength(0);
-                }
-                out.add(new String(Character.toChars(cp)));
-            } else {
-                current.appendCodePoint(cp);
-            }
-            i += cpLen;
-        }
-        if (current.length() > 0) {
-            out.add(current.toString());
-        }
-        if (out.isEmpty()) {
-            out.add(text);
-        }
-        return out;
-    }
-
     private static List<String> segmentDeepSeekV3WithNelGrouping(String text) {
         List<CharSequence> base =
                 splitAllToList(ModelTextSplitters.createSplitter("deepseek-v3"), text);
@@ -1311,10 +1357,6 @@ public final class ModelFamilyTokenizers {
         return merged;
     }
 
-    private static boolean isThaiCodePoint(int codePoint) {
-        return codePoint >= 0x0E00 && codePoint <= 0x0E7F;
-    }
-
     private static final class SpecialAwareTokenizer implements Tokenizer {
         private final Tokenizer delegate;
         private final Set<String> specials;
@@ -1334,6 +1376,10 @@ public final class ModelFamilyTokenizers {
             this.specialPattern =
                     Pattern.compile(
                             specials.stream()
+                                    .sorted(
+                                            Comparator.comparingInt(String::length)
+                                                    .reversed()
+                                                    .thenComparing(Comparator.naturalOrder()))
                                     .map(Pattern::quote)
                                     .collect(Collectors.joining("|", "(", ")")));
         }
@@ -1439,13 +1485,13 @@ public final class ModelFamilyTokenizers {
         }
     }
 
-    private static LongLongMap buildMerges(
+    private static List<Tokenizers.MergeRule> buildMerges(
             TokenizerMetadata metadata, Map<String, Integer> tokenToId) {
-        List<long[]> pairs = new ArrayList<>();
-        String[] merges = metadata.merges();
-        if (merges != null) {
-            for (int rank = 0; rank < merges.length; rank++) {
-                String[] parts = merges[rank].split(" ");
+        List<Tokenizers.MergeRule> merges = new ArrayList<>();
+        String[] mergeSpecs = metadata.merges();
+        if (mergeSpecs != null) {
+            for (int rank = 0; rank < mergeSpecs.length; rank++) {
+                String[] parts = mergeSpecs[rank].split(" ");
                 if (parts.length != 2) {
                     continue;
                 }
@@ -1453,17 +1499,11 @@ public final class ModelFamilyTokenizers {
                 Integer rightId = tokenToId.get(parts[1]);
                 Integer mergedId = tokenToId.get(parts[0] + parts[1]);
                 if (leftId != null && rightId != null && mergedId != null) {
-                    pairs.add(new long[] {IntPair.of(leftId, rightId), IntPair.of(mergedId, rank)});
+                    merges.add(new Tokenizers.MergeRule(leftId, rightId, rank));
                 }
             }
         }
-        long[] keys = new long[pairs.size()];
-        long[] values = new long[pairs.size()];
-        for (int i = 0; i < pairs.size(); i++) {
-            keys[i] = pairs.get(i)[0];
-            values[i] = pairs.get(i)[1];
-        }
-        return new LongLongMap(keys, values);
+        return merges;
     }
 
     private record ModelFamilySpec(

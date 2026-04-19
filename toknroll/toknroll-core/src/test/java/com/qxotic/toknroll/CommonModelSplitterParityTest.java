@@ -2,6 +2,7 @@ package com.qxotic.toknroll;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import com.qxotic.toknroll.gguf.ModelTextSplitters;
 import com.qxotic.toknroll.loaders.ModelSplitters;
 import com.qxotic.toknroll.testkit.SplitterParityHarness;
 import java.util.regex.Pattern;
@@ -20,14 +21,7 @@ class CommonModelSplitterParityTest {
                     + "\\n"
                     + "]+|\\s+(?!\\S)|\\s+";
 
-    private static final String QWEN35_PATTERN =
-            "(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])|[^\\r"
-                    + "\\n"
-                    + "\\p{L}\\p{N}]?[\\p{L}\\p{M}]+|\\p{N}| ?[^\\s\\p{L}\\p{M}\\p{N}]+[\\r"
-                    + "\\n"
-                    + "]*|\\s*[\\r"
-                    + "\\n"
-                    + "]+|\\s+(?!\\S)|\\s+";
+    private static final String QWEN35_PATTERN = ModelTextSplitters.QWEN35_PATTERN;
 
     private static final String[] SMOLLM3_PATTERNS = {
         "\\p{N}", "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)"
@@ -60,28 +54,58 @@ class CommonModelSplitterParityTest {
 
     private static Stream<Case> cases() {
         return Stream.of(
-                new Case("llama3", Splitter.regex(LLAMA3_PATTERN)),
-                new Case("qwen3.5", Splitter.regex(QWEN35_PATTERN)),
-                new Case("deepseek-r1", Splitter.regex(QWEN35_PATTERN)),
-                new Case("kimi-2.5", Splitter.regex(QWEN35_PATTERN)),
+                new Case(
+                        "llama3",
+                        Splitter.regex(
+                                Pattern.compile(LLAMA3_PATTERN, Pattern.UNICODE_CHARACTER_CLASS))),
+                new Case(
+                        "qwen3.5",
+                        Splitter.regex(
+                                Pattern.compile(QWEN35_PATTERN, Pattern.UNICODE_CHARACTER_CLASS))),
+                new Case(
+                        "deepseek-r1",
+                        Splitter.regex(
+                                Pattern.compile(QWEN35_PATTERN, Pattern.UNICODE_CHARACTER_CLASS))),
+                new Case(
+                        "kimi-2.5",
+                        Splitter.regex(
+                                Pattern.compile(QWEN35_PATTERN, Pattern.UNICODE_CHARACTER_CLASS))),
                 new Case("gemma4", Splitter.identity()),
                 new Case(
                         "mistral-tekken",
                         Splitter.sequence(
                                 Stream.of(TEKKEN_PATTERNS)
-                                        .map(p -> Splitter.regex(Pattern.compile(p)))
+                                        .map(
+                                                p ->
+                                                        Splitter.regex(
+                                                                Pattern.compile(
+                                                                        p,
+                                                                        Pattern
+                                                                                .UNICODE_CHARACTER_CLASS)))
                                         .toArray(Splitter[]::new))),
                 new Case(
                         "granite4",
                         Splitter.sequence(
                                 Stream.of(REFACT_PATTERNS)
-                                        .map(p -> Splitter.regex(Pattern.compile(p)))
+                                        .map(
+                                                p ->
+                                                        Splitter.regex(
+                                                                Pattern.compile(
+                                                                        p,
+                                                                        Pattern
+                                                                                .UNICODE_CHARACTER_CLASS)))
                                         .toArray(Splitter[]::new))),
                 new Case(
                         "smollm3",
                         Splitter.sequence(
                                 Stream.of(SMOLLM3_PATTERNS)
-                                        .map(p -> Splitter.regex(Pattern.compile(p)))
+                                        .map(
+                                                p ->
+                                                        Splitter.regex(
+                                                                Pattern.compile(
+                                                                        p,
+                                                                        Pattern
+                                                                                .UNICODE_CHARACTER_CLASS)))
                                         .toArray(Splitter[]::new))));
     }
 

@@ -18,14 +18,9 @@ class FastTikTokenParityTest {
         assertEncodingParity("o200k_base", FastO200kSplitter.INSTANCE);
     }
 
-    private static void assertEncodingParity(
-            String encoding, com.qxotic.toknroll.Splitter splitter) {
+    private static void assertEncodingParity(String encoding, Splitter splitter) {
         Tokenizer reference = TiktokenFixtures.createJtokkitTokenizer(encoding);
-        Tokenizer fast =
-                Tokenizers.tikToken(
-                        TiktokenFixtures.mergeableRanks(encoding),
-                        TiktokenFixtures.specialTokens(encoding),
-                        splitter);
+        Tokenizer fast = TiktokenFixtures.createTikTokenTokenizer(encoding, splitter);
 
         List<String> samples =
                 List.of(

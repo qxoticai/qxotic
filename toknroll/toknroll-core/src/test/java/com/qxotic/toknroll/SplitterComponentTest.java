@@ -1,6 +1,5 @@
 package com.qxotic.toknroll;
 
-import static com.qxotic.toknroll.testkit.SplitterTestUtils.splitAllToList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
@@ -9,6 +8,7 @@ import com.qxotic.toknroll.testkit.SplitterContractHarness;
 import com.qxotic.toknroll.testkit.TestCorpora;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
@@ -17,7 +17,7 @@ class SplitterComponentTest {
     @Test
     void sequenceWithNoStagesReturnsIdentity() {
         Splitter splitter = Splitter.sequence();
-        List<CharSequence> chunks = splitAllToList(splitter, "abc");
+        List<CharSequence> chunks = splitter.splitAllToListEagerly("abc");
         assertEquals(1, chunks.size());
         assertEquals("abc", chunks.get(0).toString());
     }
@@ -30,7 +30,7 @@ class SplitterComponentTest {
                     consumer.accept(text, start + 2, start + 4);
                 };
 
-        List<CharSequence> tokens = splitAllToList(splitter, "aaaa");
+        List<CharSequence> tokens = splitter.splitAllToListEagerly("aaaa");
         assertEquals(2, tokens.size());
         assertEquals("aa", tokens.get(0).toString());
         assertEquals("aa", tokens.get(1).toString());
@@ -38,9 +38,11 @@ class SplitterComponentTest {
 
     @Test
     void regexSplitterSplitsInput() {
-        Splitter splitter = RegexSplitter.create("\\s+|[,.!?]");
+        Splitter splitter =
+                RegexSplitter.create(
+                        Pattern.compile("\\s+|[,.!?]", Pattern.UNICODE_CHARACTER_CLASS));
 
-        List<CharSequence> tokens = splitAllToList(splitter, "Hello, world!");
+        List<CharSequence> tokens = splitter.splitAllToListEagerly("Hello, world!");
         assertEquals("Hello", tokens.get(0).toString());
         assertEquals(" ", tokens.get(2).toString());
         assertEquals("!", tokens.get(tokens.size() - 1).toString());
@@ -49,10 +51,12 @@ class SplitterComponentTest {
     @Test
     void splitRangesPreservesChunkBoundaries() {
         String input = "Hello, world!";
-        Splitter splitter = RegexSplitter.create("\\s+|[,.!?]");
+        Splitter splitter =
+                RegexSplitter.create(
+                        Pattern.compile("\\s+|[,.!?]", Pattern.UNICODE_CHARACTER_CLASS));
 
         List<String> chunksBySplit =
-                splitAllToList(splitter, input).stream()
+                splitter.splitAllToListEagerly(input).stream()
                         .map(Object::toString)
                         .collect(Collectors.toList());
         List<String> chunksByRange = new ArrayList<>();
@@ -67,7 +71,9 @@ class SplitterComponentTest {
     @Test
     void splitAllUsesOriginalSourceReference() {
         CharSequence input = new StringBuilder("ab cd");
-        Splitter splitter = Splitter.sequence(Splitter.regex("\\s+"));
+        Splitter splitter =
+                Splitter.sequence(
+                        Splitter.regex(Pattern.compile("\\s+", Pattern.UNICODE_CHARACTER_CLASS)));
 
         splitter.splitAll(input, (source, start, end) -> assertSame(input, source));
     }
@@ -76,11 +82,17 @@ class SplitterComponentTest {
     void regexSplittersRespectCornerCaseContracts() {
         List<Splitter> splitters =
                 List.of(
-                        Splitter.regex("\\s+|[,.!?]"),
-                        Splitter.regex("\\p{N}{1,3}| ?\\p{L}+| ?[^\\s\\p{L}\\p{N}]+|\\s+"),
                         Splitter.regex(
-                                "(?:'[sdmt]|ll|ve|re)| ?\\p{L}+| ?\\p{N}+|"
-                                        + " ?[^\\s\\p{L}\\p{N}]+|\\s+"));
+                                Pattern.compile("\\s+|[,.!?]", Pattern.UNICODE_CHARACTER_CLASS)),
+                        Splitter.regex(
+                                Pattern.compile(
+                                        "\\p{N}{1,3}| ?\\p{L}+| ?[^\\s\\p{L}\\p{N}]+|\\s+",
+                                        Pattern.UNICODE_CHARACTER_CLASS)),
+                        Splitter.regex(
+                                Pattern.compile(
+                                        "(?:'[sdmt]|ll|ve|re)| ?\\p{L}+| ?\\p{N}+|"
+                                                + " ?[^\\s\\p{L}\\p{N}]+|\\s+",
+                                        Pattern.UNICODE_CHARACTER_CLASS)));
 
         for (int i = 0; i < splitters.size(); i++) {
             Splitter splitter = splitters.get(i);

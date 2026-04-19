@@ -8,10 +8,9 @@ import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.TokenizationPipeline;
 import com.qxotic.toknroll.gguf.TestDataManager.TestModel;
 import com.qxotic.toknroll.gguf.TestDataManager.TokenizerMetadata;
-import com.qxotic.toknroll.impl.*;
+import com.qxotic.toknroll.impl.VocabularyImpl;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -81,62 +80,15 @@ public class GGUFTokenizerBuilderTest {
             tokenToId.put(tokenizerMeta.tokens()[i], i);
         }
 
-        // Build special tokens map
-        Map<String, Integer> specialTokens = new HashMap<>();
-        if (tokenizerMeta.bosTokenId() != null) {
-            specialTokens.put(
-                    tokenizerMeta.tokens()[tokenizerMeta.bosTokenId()], tokenizerMeta.bosTokenId());
-        }
-        if (tokenizerMeta.eosTokenId() != null) {
-            specialTokens.put(
-                    tokenizerMeta.tokens()[tokenizerMeta.eosTokenId()], tokenizerMeta.eosTokenId());
-        }
-        if (tokenizerMeta.padTokenId() != null) {
-            specialTokens.put(
-                    tokenizerMeta.tokens()[tokenizerMeta.padTokenId()], tokenizerMeta.padTokenId());
-        }
-        if (tokenizerMeta.unkTokenId() != null) {
-            specialTokens.put(
-                    tokenizerMeta.tokens()[tokenizerMeta.unkTokenId()], tokenizerMeta.unkTokenId());
-        }
-
         // Create vocabulary (special tokens are included in the main vocabulary for GGUF)
         Vocabulary vocabulary = new VocabularyImpl(tokenToId);
 
-        // Build merge ranks from merges
-        List<long[]> keyValuePairs = new ArrayList<>();
-        if (tokenizerMeta.merges() != null) {
-            for (int rank = 0; rank < tokenizerMeta.merges().length; rank++) {
-                String merge = tokenizerMeta.merges()[rank];
-                String[] parts = merge.split(" ");
-                if (parts.length == 2) {
-                    Integer leftId = tokenToId.get(parts[0]);
-                    Integer rightId = tokenToId.get(parts[1]);
-                    if (leftId != null && rightId != null) {
-                        String merged = parts[0] + parts[1];
-                        Integer mergedId = tokenToId.get(merged);
-                        if (mergedId != null) {
-                            keyValuePairs.add(
-                                    new long[] {
-                                        IntPair.of(leftId, rightId), IntPair.of(mergedId, rank)
-                                    });
-                        }
-                    }
-                }
-            }
-        }
-        long[] keys = new long[keyValuePairs.size()];
-        long[] values = new long[keyValuePairs.size()];
-        for (int i = 0; i < keyValuePairs.size(); i++) {
-            keys[i] = keyValuePairs.get(i)[0];
-            values[i] = keyValuePairs.get(i)[1];
-        }
-        LongLongMap merges = new LongLongMap(keys, values);
+        List<Tokenizers.MergeRule> merges = buildMergeRules(tokenizerMeta, tokenToId);
 
         // Create GPT2-style tokenizer with model-specific pre-tokenizer
         Splitter splitter = ModelTextSplitters.createSplitter(model);
         Tokenizer tokenizer =
-                TokenizationPipeline.builder(new GPT2Tokenizer(vocabulary, merges))
+                TokenizationPipeline.builder(Tokenizers.tikTokenModel(vocabulary, merges))
                         .splitter(splitter)
                         .build();
 
@@ -173,9 +125,7 @@ public class GGUFTokenizerBuilderTest {
         // Create a simple tokenizer with model-specific pre-tokenizer
         Splitter splitter = ModelTextSplitters.createSplitter(model);
         Tokenizer tokenizer =
-                TokenizationPipeline.builder(
-                                new GPT2Tokenizer(
-                                        vocabulary, new LongLongMap(new long[0], new long[0])))
+                TokenizationPipeline.builder(Tokenizers.tikTokenModel(vocabulary, List.of()))
                         .splitter(splitter)
                         .build();
 
@@ -232,5 +182,26 @@ public class GGUFTokenizerBuilderTest {
             assertTrue(vocabulary.contains(padId), "PAD token ID should be in vocabulary");
             assertNotNull(vocabulary.token(padId), "PAD token string should not be null");
         }
+    }
+
+    private static List<Tokenizers.MergeRule> buildMergeRules(
+            TokenizerMetadata tokenizerMeta, Map<String, Integer> tokenToId) {
+        List<Tokenizers.MergeRule> merges = new ArrayList<>();
+        if (tokenizerMeta.merges() == null) {
+            return merges;
+        }
+        for (int rank = 0; rank < tokenizerMeta.merges().length; rank++) {
+            String[] parts = tokenizerMeta.merges()[rank].split(" ");
+            if (parts.length != 2) {
+                continue;
+            }
+            Integer leftId = tokenToId.get(parts[0]);
+            Integer rightId = tokenToId.get(parts[1]);
+            Integer mergedId = tokenToId.get(parts[0] + parts[1]);
+            if (leftId != null && rightId != null && mergedId != null) {
+                merges.add(new Tokenizers.MergeRule(leftId, rightId, rank));
+            }
+        }
+        return merges;
     }
 }

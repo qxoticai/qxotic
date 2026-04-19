@@ -7,14 +7,12 @@ import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
 import com.qxotic.toknroll.impl.FastLlama3Splitter;
 import com.qxotic.toknroll.impl.FastQwen35Splitter;
 import com.qxotic.toknroll.impl.FastR50kSplitter;
-import com.qxotic.toknroll.impl.RegexSplitter;
 import com.qxotic.toknroll.loaders.ModelSplitters;
 import com.qxotic.toknroll.testkit.TestCorpora;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import com.qxotic.toknroll.testkit.TokenizerAdapters;
 import java.text.Normalizer.Form;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class ModelTokenizerAgreementTest {
@@ -56,13 +54,11 @@ class ModelTokenizerAgreementTest {
 
     private static ComparedTokenizers comparedTokenizersForModel(String model) {
         if ("gpt2".equals(model)) {
-            Map<String, Integer> ranks = TiktokenFixtures.mergeableRanks("r50k_base");
-            Map<String, Integer> specials = TiktokenFixtures.specialTokens("r50k_base");
-            String pattern = TiktokenFixtures.encoding("r50k_base").pattern();
             return new ComparedTokenizers(
                     TiktokenFixtures.createJtokkitTokenizer("r50k_base"),
-                    Tokenizers.bpe(ranks, specials, RegexSplitter.create(pattern)),
-                    Tokenizers.tikToken(ranks, specials, FastR50kSplitter.INSTANCE));
+                    TiktokenFixtures.createTikTokenTokenizer("r50k_base"),
+                    TiktokenFixtures.createTikTokenTokenizer(
+                            "r50k_base", FastR50kSplitter.INSTANCE));
         }
         if ("llama3".equals(model)) {
             return modelNative(

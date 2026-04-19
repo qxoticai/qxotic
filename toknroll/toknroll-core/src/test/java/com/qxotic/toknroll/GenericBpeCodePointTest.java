@@ -3,11 +3,8 @@ package com.qxotic.toknroll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.toknroll.impl.CodePointSymbolEncoder;
-import com.qxotic.toknroll.impl.GenericBPE;
-import com.qxotic.toknroll.impl.LongLongBpeMergeTable;
-import com.qxotic.toknroll.impl.LongLongMap;
 import com.qxotic.toknroll.impl.VocabularyImpl;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -23,16 +20,10 @@ class GenericBpeCodePointTest {
                                 "ab", 2,
                                 "🙂", 3));
 
-        long[] keys = {(((long) 0) << 32) | 1L};
-        long[] values = {(((long) 2) << 32) | 0L};
-        LongLongMap map = new LongLongMap(keys, values);
+        List<Tokenizers.MergeRule> merges = List.of(new Tokenizers.MergeRule(0, 1, 0));
 
         Tokenizer tokenizer =
-                TokenizationPipeline.builder(
-                                GenericBPE.create(
-                                        vocabulary,
-                                        new LongLongBpeMergeTable(map),
-                                        new CodePointSymbolEncoder()))
+                TokenizationPipeline.builder(Tokenizers.sentencePieceBpeModel(vocabulary, merges))
                         .splitter(Splitter.identity())
                         .build();
 

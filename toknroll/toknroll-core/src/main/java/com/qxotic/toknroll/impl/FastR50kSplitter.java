@@ -14,7 +14,8 @@ public final class FastR50kSplitter extends AbstractFastAsciiRegexSplitter {
             "'(?:[sdmt]|ll|ve|re)| ?\\p{L}++| ?\\p{N}++|"
                     + " ?[^\\s\\p{L}\\p{N}]++|\\s++$|\\s+(?!\\S)|\\s";
 
-    private static final Pattern R50K_COMPILED = Pattern.compile(R50K_PATTERN);
+    private static final Pattern R50K_COMPILED =
+            Pattern.compile(R50K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS);
 
     public static final FastR50kSplitter INSTANCE = new FastR50kSplitter();
 

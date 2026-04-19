@@ -6,6 +6,7 @@ import com.qxotic.toknroll.impl.FastR50kSplitter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 class FastR50kSplitterTest {
@@ -17,7 +18,8 @@ class FastR50kSplitterTest {
     @Test
     void matchesRegexSplitterForRepresentativeInputs() {
         Splitter fast = FastR50kSplitter.INSTANCE;
-        Splitter regex = Splitter.regex(R50K_PATTERN);
+        Splitter regex =
+                Splitter.regex(Pattern.compile(R50K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
 
         List<String> samples =
                 List.of(
@@ -40,7 +42,8 @@ class FastR50kSplitterTest {
     @Test
     void matchesRegexSplitterForRandomAsciiInputs() {
         Splitter fast = FastR50kSplitter.INSTANCE;
-        Splitter regex = Splitter.regex(R50K_PATTERN);
+        Splitter regex =
+                Splitter.regex(Pattern.compile(R50K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         Random rnd = new Random(12345L);
 
         for (int n = 0; n < 2_000; n++) {

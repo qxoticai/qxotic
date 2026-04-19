@@ -1,0 +1,40 @@
+package com.qxotic.toknroll.impl;
+
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Splitter;
+import com.qxotic.toknroll.TokenizationPipeline;
+import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.Tokenizers;
+import com.qxotic.toknroll.Vocabulary;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+
+class GenericBpeCodePointTest {
+
+    @Test
+    void supportsCodePointBasedSymbolsViaPluggableEncoder() {
+        Vocabulary vocabulary =
+                new VocabularyImpl(
+                        Map.of(
+                                "a", 0,
+                                "b", 1,
+                                "ab", 2,
+                                "🙂", 3));
+
+        List<Tokenizers.MergeRule> merges = List.of(new Tokenizers.MergeRule(0, 1, 0));
+
+        Tokenizer tokenizer =
+                TokenizationPipeline.builder(Tokenizers.sentencePieceBpeModel(vocabulary, merges))
+                        .splitter(Splitter.identity())
+                        .build();
+
+        IntSequence tokens = tokenizer.encode("ab🙂ab");
+        assertArrayEquals(new int[] {2, 3, 2}, tokens.toArray());
+        assertEquals(3, tokenizer.countTokens("ab🙂ab"));
+        assertEquals("ab🙂ab", tokenizer.decode(tokens));
+    }
+}

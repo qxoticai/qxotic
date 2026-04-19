@@ -4,7 +4,7 @@ package com.qxotic.toknroll.impl;
  * Immutable open-addressing hash map from {@code long} keys (packed {@link IntPair}) to {@code
  * long} values. Backed by flat primitive arrays with no object overhead.
  */
-public final class LongLongMap {
+final class LongLongMap {
 
     private static final long EMPTY = 0L;
 
@@ -14,7 +14,7 @@ public final class LongLongMap {
     private final int maxProbe;
 
     /** Bulk-constructs the map from parallel key/value arrays. */
-    public LongLongMap(long[] keys, long[] values) {
+    LongLongMap(long[] keys, long[] values) {
         if (keys.length != values.length) {
             throw new IllegalArgumentException("keys and values must have the same length");
         }
@@ -65,7 +65,7 @@ public final class LongLongMap {
      * Returns the value associated with {@code key}, or {@link IntPair#NONE} ({@code -1L}) if
      * absent.
      */
-    public final long get(long key) {
+    final long get(long key) {
         long biasedKey = key + 1;
         long[] t = table;
         int c = capacity;
@@ -101,7 +101,7 @@ public final class LongLongMap {
     }
 
     /** Convenience overload for packed int pair keys. */
-    public final long getPair(int left, int right) {
+    final long getPair(int left, int right) {
         long key = ((long) left << 32) | (right & 0xFFFFFFFFL);
         long biasedKey = key + 1;
         long[] t = table;

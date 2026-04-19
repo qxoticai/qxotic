@@ -56,9 +56,9 @@ public final class ModelTextSplitters {
 
     /** Qwen 3.5 pattern from llama.cpp pre-tokenizer definitions. */
     public static final String QWEN35_PATTERN =
-            "(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])|[^\\r"
+            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r"
                     + "\\n"
-                    + "\\p{L}\\p{N}]?[\\p{L}\\p{M}]+|\\p{N}| ?[^\\s\\p{L}\\p{M}\\p{N}]+[\\r"
+                    + "\\p{L}\\p{N}]?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\\r"
                     + "\\n"
                     + "]*|\\s*[\\r"
                     + "\\n"
@@ -126,15 +126,18 @@ public final class ModelTextSplitters {
                 || "phi".equals(normalizedType)
                 || "phi3".equals(normalizedType)
                 || "phi4".equals(normalizedType)) {
-            return RegexSplitter.create(LLAMA3_PATTERN);
+            return RegexSplitter.create(
+                    Pattern.compile(LLAMA3_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         }
         if ("qwen".equals(normalizedType)
                 || "qwen2".equals(normalizedType)
                 || "qwen3".equals(normalizedType)) {
-            return RegexSplitter.create(QWEN2_PATTERN);
+            return RegexSplitter.create(
+                    Pattern.compile(QWEN2_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         }
         if ("qwen3.5".equals(normalizedType) || "qwen3_5".equals(normalizedType)) {
-            return RegexSplitter.create(QWEN35_PATTERN);
+            return RegexSplitter.create(
+                    Pattern.compile(QWEN35_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         }
         if ("deepseek-v3".equals(normalizedType)
                 || "deepseek_v3".equals(normalizedType)
@@ -142,7 +145,8 @@ public final class ModelTextSplitters {
             return createDeepSeekV3Splitter();
         }
         if ("tekken".equals(normalizedType)) {
-            return RegexSplitter.create(TEKKEN_PATTERN);
+            return RegexSplitter.create(
+                    Pattern.compile(TEKKEN_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         }
         if ("gemma".equals(normalizedType)
                 || "gemma2".equals(normalizedType)
@@ -153,13 +157,15 @@ public final class ModelTextSplitters {
             return createSmolLMSplitter();
         }
         if ("smollm3".equals(normalizedType)) {
-            return RegexSplitter.create(LLAMA3_PATTERN);
+            return RegexSplitter.create(
+                    Pattern.compile(LLAMA3_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         }
         if ("granite".equals(normalizedType)
                 || "granite4".equals(normalizedType)
                 || "granite4.0".equals(normalizedType)
                 || "gpt2".equals(normalizedType)) {
-            return RegexSplitter.create(GPT2_PATTERN);
+            return RegexSplitter.create(
+                    Pattern.compile(GPT2_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         }
         return Splitter.identity();
     }
@@ -173,13 +179,15 @@ public final class ModelTextSplitters {
     public static Splitter createSplitter(TestDataManager.TestModel model) {
         if (model == TestDataManager.TestModel.QWEN3_0_6B
                 || model == TestDataManager.TestModel.QWEN2_5_0_5B) {
-            return RegexSplitter.create(QWEN35_PATTERN);
+            return RegexSplitter.create(
+                    Pattern.compile(QWEN35_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         }
         if (model == TestDataManager.TestModel.GEMMA_3_4B_UNSLOTH) {
             return createGemmaSplitter();
         }
         if (model == TestDataManager.TestModel.MISTRAL_3_3B_BARTOWSKI) {
-            return RegexSplitter.create(TEKKEN_PATTERN);
+            return RegexSplitter.create(
+                    Pattern.compile(TEKKEN_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         }
         return Splitter.identity();
     }
@@ -198,14 +206,24 @@ public final class ModelTextSplitters {
     /** Creates a SmolLM-specific splitter using multiple patterns. */
     private static Splitter createSmolLMSplitter() {
         Splitter[] splitters =
-                Arrays.stream(SMOLLM2_PATTERNS).map(RegexSplitter::create).toArray(Splitter[]::new);
+                Arrays.stream(SMOLLM2_PATTERNS)
+                        .map(
+                                pattern ->
+                                        RegexSplitter.create(
+                                                Pattern.compile(
+                                                        pattern, Pattern.UNICODE_CHARACTER_CLASS)))
+                        .toArray(Splitter[]::new);
         return Splitter.sequence(splitters);
     }
 
     private static Splitter createDeepSeekV3Splitter() {
         Splitter[] splitters =
                 Arrays.stream(DEEPSEEK_V3_PATTERNS)
-                        .map(pattern -> RegexSplitter.create(Pattern.compile(pattern)))
+                        .map(
+                                pattern ->
+                                        RegexSplitter.create(
+                                                Pattern.compile(
+                                                        pattern, Pattern.UNICODE_CHARACTER_CLASS)))
                         .toArray(Splitter[]::new);
         return Splitter.sequence(splitters);
     }

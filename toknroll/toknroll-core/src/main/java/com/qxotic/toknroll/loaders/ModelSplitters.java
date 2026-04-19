@@ -72,8 +72,10 @@ public final class ModelSplitters {
         "[0-9][0-9][0-9]"
     };
 
-    private static final Pattern LLAMA3_COMPILED = Pattern.compile(LLAMA3_PATTERN);
-    private static final Pattern QWEN2_COMPILED = Pattern.compile(QWEN2_PATTERN);
+    private static final Pattern LLAMA3_COMPILED =
+            Pattern.compile(LLAMA3_PATTERN, Pattern.UNICODE_CHARACTER_CLASS);
+    private static final Pattern QWEN2_COMPILED =
+            Pattern.compile(QWEN2_PATTERN, Pattern.UNICODE_CHARACTER_CLASS);
 
     public static final Splitter LLAMA3 = Splitter.regex(LLAMA3_COMPILED);
     public static final Splitter QWEN2 = Splitter.regex(QWEN2_COMPILED);
@@ -157,6 +159,12 @@ public final class ModelSplitters {
 
     private static Splitter sequence(String[] patterns) {
         return Splitter.sequence(
-                Arrays.stream(patterns).map(Splitter::regex).toArray(Splitter[]::new));
+                Arrays.stream(patterns)
+                        .map(
+                                p ->
+                                        Splitter.regex(
+                                                Pattern.compile(
+                                                        p, Pattern.UNICODE_CHARACTER_CLASS)))
+                        .toArray(Splitter[]::new));
     }
 }

@@ -4,10 +4,8 @@ import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Vocabulary;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.Comparator;
-import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
@@ -27,7 +25,6 @@ public final class TikTokenModel extends AbstractTokenizationModel {
 
     public static final String LARGE_CHUNK_THRESHOLD_PROPERTY = "toknroll.fast.largeChunkThreshold";
     public static final String TINY_CHUNK_THRESHOLD_PROPERTY = "toknroll.fast.tinyChunkThreshold";
-    public static final String EXACT_LOOKUP_ENABLED_PROPERTY = "toknroll.fast.exactLookupEnabled";
 
     private static final byte REPLACEMENT_B0 = (byte) 0xEF;
     private static final byte REPLACEMENT_B1 = (byte) 0xBF;
@@ -41,31 +38,33 @@ public final class TikTokenModel extends AbstractTokenizationModel {
     private final int[] singleByteTokenId;
     private final byte[][] tokenBytesById;
     private final ExactTokenLookup exactTokenLookup;
+    private final boolean ignoreMerges;
     private final int tinyChunkThreshold;
     private final int largeChunkThreshold;
     private final ConcurrentLinkedQueue<Scratch> scratchPool = new ConcurrentLinkedQueue<>();
 
-    public TikTokenModel(
+    TikTokenModel(
             Vocabulary vocabulary,
             LongLongMap merges,
             int[] singleByteTokenId,
             byte[][] tokenBytesById,
             ExactTokenLookup exactTokenLookup,
+            boolean ignoreMerges,
             int tinyChunkThreshold,
             int largeChunkThreshold) {
-        super(vocabulary);
-        this.merges = Objects.requireNonNull(merges, "merges");
-        this.singleByteTokenId = Objects.requireNonNull(singleByteTokenId, "singleByteTokenId");
-        if (singleByteTokenId.length != 256) {
-            throw new IllegalArgumentException("singleByteTokenId length must be 256");
-        }
-        this.tokenBytesById = Objects.requireNonNull(tokenBytesById, "tokenBytesById");
-        this.exactTokenLookup = Objects.requireNonNull(exactTokenLookup, "exactTokenLookup");
-        this.tinyChunkThreshold = Math.max(1, Math.min(3, tinyChunkThreshold));
-        this.largeChunkThreshold = Math.max(8, largeChunkThreshold);
+        this(
+                vocabulary,
+                merges,
+                singleByteTokenId,
+                tokenBytesById,
+                exactTokenLookup,
+                ignoreMerges,
+                tinyChunkThreshold,
+                largeChunkThreshold,
+                0.5f);
     }
 
-    public TikTokenModel(
+    TikTokenModel(
             Vocabulary vocabulary,
             LongLongMap merges,
             int[] singleByteTokenId,
@@ -77,27 +76,64 @@ public final class TikTokenModel extends AbstractTokenizationModel {
                 singleByteTokenId,
                 tokenBytesById,
                 exactTokenLookup,
+                false,
                 DEFAULT_TINY_CHUNK_THRESHOLD,
-                DEFAULT_LARGE_CHUNK_THRESHOLD);
+                DEFAULT_LARGE_CHUNK_THRESHOLD,
+                0.5f);
     }
 
-    public static TikTokenModel fromTiktoken(
-            Map<String, Integer> mergeableRanks, Map<String, Integer> specialTokens) {
-        Objects.requireNonNull(mergeableRanks, "mergeableRanks");
-        Objects.requireNonNull(specialTokens, "specialTokens");
+    TikTokenModel(
+            Vocabulary vocabulary,
+            LongLongMap merges,
+            int[] singleByteTokenId,
+            byte[][] tokenBytesById,
+            ExactTokenLookup exactTokenLookup,
+            boolean ignoreMerges,
+            int tinyChunkThreshold,
+            int largeChunkThreshold,
+            float expectedTokensPerChar) {
+        super(vocabulary, expectedTokensPerChar);
+        this.merges = Objects.requireNonNull(merges, "merges");
+        this.singleByteTokenId = Objects.requireNonNull(singleByteTokenId, "singleByteTokenId");
+        if (singleByteTokenId.length != 256) {
+            throw new IllegalArgumentException("singleByteTokenId length must be 256");
+        }
+        this.tokenBytesById = Objects.requireNonNull(tokenBytesById, "tokenBytesById");
+        this.exactTokenLookup = Objects.requireNonNull(exactTokenLookup, "exactTokenLookup");
+        this.ignoreMerges = ignoreMerges;
+        this.tinyChunkThreshold = Math.max(1, Math.min(3, tinyChunkThreshold));
+        this.largeChunkThreshold = Math.max(8, largeChunkThreshold);
+    }
 
-        BuildArtifacts artifacts = buildArtifacts(mergeableRanks);
-        LongLongMap merges = artifacts.merges;
-        int[] singleByteTokenId = buildSingleByteTokenMap(mergeableRanks);
-        Vocabulary vocabulary =
-                VocabularyWithSpecials.create(new VocabularyImpl(mergeableRanks), specialTokens);
+    private static float estimateTokensPerChar(int vocabSize) {
+        // Heuristic based on measured ratios for known encodings:
+        // r50k/p50k (~50k): 0.42, cl100k (~100k): 0.34,
+        // llama3/qwen3.5/smollm3 (~128-150k): 0.32, o200k (~200k): 0.29
+        if (vocabSize <= 60000) {
+            return 0.42f;
+        } else if (vocabSize <= 110000) {
+            return 0.34f;
+        } else if (vocabSize <= 150000) {
+            return 0.32f;
+        } else {
+            return 0.29f;
+        }
+    }
+
+    static TikTokenModel fromVocabularyAndMerges(Vocabulary vocabulary, LongLongMap merges) {
+        return fromVocabularyAndMerges(vocabulary, merges, false);
+    }
+
+    static TikTokenModel fromVocabularyAndMerges(
+            Vocabulary vocabulary, LongLongMap merges, boolean ignoreMerges) {
+        Objects.requireNonNull(vocabulary, "vocabulary");
+        Objects.requireNonNull(merges, "merges");
+
+        int[] singleByteTokenId = buildSingleByteTokenMap(vocabulary);
         byte[][] tokenBytesById = buildTokenBytesById(vocabulary);
-        boolean exactLookupEnabled =
-                Boolean.parseBoolean(System.getProperty(EXACT_LOOKUP_ENABLED_PROPERTY, "true"));
         ExactTokenLookup exactTokenLookup =
-                exactLookupEnabled
-                        ? ExactTokenLookup.fromMergeableRanks(mergeableRanks)
-                        : ExactTokenLookup.EMPTY;
+                ignoreMerges ? ExactTokenLookup.fromVocabulary(vocabulary) : ExactTokenLookup.EMPTY;
+
         int tinyThreshold =
                 Integer.getInteger(TINY_CHUNK_THRESHOLD_PROPERTY, DEFAULT_TINY_CHUNK_THRESHOLD);
         int threshold =
@@ -109,13 +145,10 @@ public final class TikTokenModel extends AbstractTokenizationModel {
                 singleByteTokenId,
                 tokenBytesById,
                 exactTokenLookup,
+                ignoreMerges,
                 tinyThreshold,
-                threshold);
-    }
-
-    @Override
-    public float expectedTokensPerChar() {
-        return 0.6f;
+                threshold,
+                estimateTokensPerChar(vocabulary.size()));
     }
 
     @Override
@@ -274,7 +307,15 @@ public final class TikTokenModel extends AbstractTokenizationModel {
         if (byteLength == 0) {
             return 0;
         }
-        if (byteLength > tinyChunkThreshold) {
+        if (ignoreMerges && byteLength > 0) {
+            int exactTokenId = exactTokenLookup.find(s.utf8Bytes, byteLength);
+            if (exactTokenId >= 0) {
+                if (keepOutput) {
+                    out.add(exactTokenId);
+                }
+                return 1;
+            }
+        } else if (byteLength > tinyChunkThreshold) {
             int exactTokenId = exactTokenLookup.find(s.utf8Bytes, byteLength);
             if (exactTokenId >= 0) {
                 if (keepOutput) {
@@ -313,41 +354,45 @@ public final class TikTokenModel extends AbstractTokenizationModel {
             int t0 = singleByteTokenId[bytes[0] & 0xFF];
             int t1 = singleByteTokenId[bytes[1] & 0xFF];
             int t2 = singleByteTokenId[bytes[2] & 0xFF];
-            int merge01 = (int) merges.getPair(t0, t1);
-            int merge12 = (int) merges.getPair(t1, t2);
+            long merge01 = merges.getPair(t0, t1);
+            long merge12 = merges.getPair(t1, t2);
+            int merge01Rank = mergeRank(merge01);
+            int merge12Rank = mergeRank(merge12);
 
-            if (merge01 < 0 && merge12 < 0) {
+            if (merge01Rank < 0 && merge12Rank < 0) {
                 out.add(t0);
                 out.add(t1);
                 out.add(t2);
                 return 3;
             }
 
-            if (merge12 < 0 || (merge01 >= 0 && merge01 <= merge12)) {
-                int merge012 = (int) merges.getPair(merge01, t2);
-                if (merge012 >= 0) {
-                    out.add(merge012);
+            if (merge12Rank < 0 || (merge01Rank >= 0 && merge01Rank <= merge12Rank)) {
+                int merge01Id = mergeId(merge01);
+                long merge012 = merges.getPair(merge01Id, t2);
+                if (mergeRank(merge012) >= 0) {
+                    out.add(mergeId(merge012));
                     return 1;
                 }
-                out.add(merge01);
+                out.add(merge01Id);
                 out.add(t2);
                 return 2;
             }
 
-            int merge012 = (int) merges.getPair(t0, merge12);
-            if (merge012 >= 0) {
-                out.add(merge012);
+            int merge12Id = mergeId(merge12);
+            long merge012 = merges.getPair(t0, merge12Id);
+            if (mergeRank(merge012) >= 0) {
+                out.add(mergeId(merge012));
                 return 1;
             }
             out.add(t0);
-            out.add(merge12);
+            out.add(merge12Id);
             return 2;
         }
         int t0 = singleByteTokenId[bytes[0] & 0xFF];
         int t1 = singleByteTokenId[bytes[1] & 0xFF];
-        int mergedRank = (int) merges.getPair(t0, t1);
-        if (mergedRank >= 0) {
-            out.add(mergedRank);
+        long mergedValue = merges.getPair(t0, t1);
+        if (mergeRank(mergedValue) >= 0) {
+            out.add(mergeId(mergedValue));
             return 1;
         }
         out.add(t0);
@@ -363,20 +408,22 @@ public final class TikTokenModel extends AbstractTokenizationModel {
             int t0 = singleByteTokenId[bytes[0] & 0xFF];
             int t1 = singleByteTokenId[bytes[1] & 0xFF];
             int t2 = singleByteTokenId[bytes[2] & 0xFF];
-            int merge01 = (int) merges.getPair(t0, t1);
-            int merge12 = (int) merges.getPair(t1, t2);
+            long merge01 = merges.getPair(t0, t1);
+            long merge12 = merges.getPair(t1, t2);
+            int merge01Rank = mergeRank(merge01);
+            int merge12Rank = mergeRank(merge12);
 
-            if (merge01 < 0 && merge12 < 0) {
+            if (merge01Rank < 0 && merge12Rank < 0) {
                 return 3;
             }
-            if (merge12 < 0 || (merge01 >= 0 && merge01 <= merge12)) {
-                return merges.getPair(merge01, t2) >= 0 ? 1 : 2;
+            if (merge12Rank < 0 || (merge01Rank >= 0 && merge01Rank <= merge12Rank)) {
+                return mergeRank(merges.getPair(mergeId(merge01), t2)) >= 0 ? 1 : 2;
             }
-            return merges.getPair(t0, merge12) >= 0 ? 1 : 2;
+            return mergeRank(merges.getPair(t0, mergeId(merge12))) >= 0 ? 1 : 2;
         }
         int t0 = singleByteTokenId[bytes[0] & 0xFF];
         int t1 = singleByteTokenId[bytes[1] & 0xFF];
-        return merges.getPair(t0, t1) >= 0 ? 1 : 2;
+        return mergeRank(merges.getPair(t0, t1)) >= 0 ? 1 : 2;
     }
 
     /**
@@ -445,8 +492,10 @@ public final class TikTokenModel extends AbstractTokenizationModel {
         }
         s.ensureTokens(byteLength);
         s.ensurePairRanks(byteLength - 1);
+        s.ensurePairMergeIds(byteLength - 1);
         int[] tokens = s.tokens;
         int[] pairRanks = s.pairRanks;
+        int[] pairMergeIds = s.pairMergeIds;
         int size = byteLength;
 
         int i = 0;
@@ -462,7 +511,9 @@ public final class TikTokenModel extends AbstractTokenizationModel {
         }
 
         for (i = 0; i + 1 < size; i++) {
-            pairRanks[i] = (int) merges.getPair(tokens[i], tokens[i + 1]);
+            long mergedValue = merges.getPair(tokens[i], tokens[i + 1]);
+            pairRanks[i] = mergeRank(mergedValue);
+            pairMergeIds[i] = mergeIdOrNone(mergedValue);
         }
 
         while (size >= 2) {
@@ -509,21 +560,26 @@ public final class TikTokenModel extends AbstractTokenizationModel {
                 break;
             }
 
-            tokens[bestPos] = bestRank;
+            tokens[bestPos] = pairMergeIds[bestPos];
             int tail = size - bestPos - 2;
             if (tail > 0) {
                 System.arraycopy(tokens, bestPos + 2, tokens, bestPos + 1, tail);
                 System.arraycopy(pairRanks, bestPos + 1, pairRanks, bestPos, tail);
+                System.arraycopy(pairMergeIds, bestPos + 1, pairMergeIds, bestPos, tail);
             }
 
             size--;
             int newPairCount = size - 1;
 
             if (bestPos > 0) {
-                pairRanks[bestPos - 1] = (int) merges.getPair(tokens[bestPos - 1], tokens[bestPos]);
+                long mergedValue = merges.getPair(tokens[bestPos - 1], tokens[bestPos]);
+                pairRanks[bestPos - 1] = mergeRank(mergedValue);
+                pairMergeIds[bestPos - 1] = mergeIdOrNone(mergedValue);
             }
             if (bestPos < newPairCount) {
-                pairRanks[bestPos] = (int) merges.getPair(tokens[bestPos], tokens[bestPos + 1]);
+                long mergedValue = merges.getPair(tokens[bestPos], tokens[bestPos + 1]);
+                pairRanks[bestPos] = mergeRank(mergedValue);
+                pairMergeIds[bestPos] = mergeIdOrNone(mergedValue);
             }
         }
 
@@ -555,18 +611,19 @@ public final class TikTokenModel extends AbstractTokenizationModel {
         int[] edgeStamp = s.edgeStamp;
         int[] edgeRight = s.edgeRight;
         int[] edgeRank = s.edgeRank;
+        int[] edgeMergeId = s.edgeMergeId;
 
         initLargeNodes(bytes, n, token, prev, next, edgeStamp);
 
         s.heapSize = 0;
         for (int left = 0; left + 1 < n; left++) {
-            refreshEdge(left, token, next, edgeStamp, edgeRight, edgeRank, s);
+            refreshEdge(left, token, next, edgeStamp, edgeRight, edgeRank, edgeMergeId, s);
         }
 
         int tokenCount = n;
-        while (tokenCount > 1 && popMinCandidate(edgeStamp, s)) {
+        while (tokenCount > 1 && popMinCandidate(edgeStamp, edgeMergeId, s)) {
             int left = s.popLeft;
-            int mergeId = s.popRank;
+            int mergeId = s.popMergeId;
 
             int right = next[left];
             if (right == NO_INDEX) {
@@ -590,9 +647,9 @@ public final class TikTokenModel extends AbstractTokenizationModel {
             tokenCount--;
 
             if (leftPrev != NO_INDEX) {
-                refreshEdge(leftPrev, token, next, edgeStamp, edgeRight, edgeRank, s);
+                refreshEdge(leftPrev, token, next, edgeStamp, edgeRight, edgeRank, edgeMergeId, s);
             }
-            refreshEdge(left, token, next, edgeStamp, edgeRight, edgeRank, s);
+            refreshEdge(left, token, next, edgeStamp, edgeRight, edgeRank, edgeMergeId, s);
         }
 
         if (keepOutput) {
@@ -648,19 +705,25 @@ public final class TikTokenModel extends AbstractTokenizationModel {
             int[] edgeStamp,
             int[] edgeRight,
             int[] edgeRank,
+            int[] edgeMergeId,
             Scratch s) {
         int right = next[left];
         if (right == NO_INDEX) {
             edgeStamp[left] = 0;
             return;
         }
-        int mergedRank = (int) merges.getPair(token[left], token[right]);
+        long mergedValue = merges.getPair(token[left], token[right]);
+        int mergedRank = mergeRank(mergedValue);
         if (mergedRank < 0) {
             edgeStamp[left] = 0;
             return;
         }
+        int mergedId = mergeId(mergedValue);
 
-        if (edgeStamp[left] != 0 && edgeRight[left] == right && edgeRank[left] == mergedRank) {
+        if (edgeStamp[left] != 0
+                && edgeRight[left] == right
+                && edgeRank[left] == mergedRank
+                && edgeMergeId[left] == mergedId) {
             return;
         }
 
@@ -668,10 +731,11 @@ public final class TikTokenModel extends AbstractTokenizationModel {
         edgeStamp[left] = stamp;
         edgeRight[left] = right;
         edgeRank[left] = mergedRank;
+        edgeMergeId[left] = mergedId;
         heapPush(mergedRank, left, stamp, s);
     }
 
-    private boolean popMinCandidate(int[] edgeStamp, Scratch s) {
+    private boolean popMinCandidate(int[] edgeStamp, int[] edgeMergeId, Scratch s) {
         while (s.heapSize > 0) {
             int rank = s.heapRank[0];
             long node = s.heapNode[0];
@@ -691,6 +755,7 @@ public final class TikTokenModel extends AbstractTokenizationModel {
 
             s.popLeft = left;
             s.popRank = rank;
+            s.popMergeId = edgeMergeId[left];
             return true;
         }
         return false;
@@ -805,101 +870,34 @@ public final class TikTokenModel extends AbstractTokenizationModel {
         return dp;
     }
 
-    private static BuildArtifacts buildArtifacts(Map<String, Integer> mergeableRanks) {
-        List<Map.Entry<String, Integer>> entries = new ArrayList<>(mergeableRanks.entrySet());
-        entries.sort(Comparator.comparingInt(Map.Entry::getValue));
-
-        int maxId = -1;
-        for (Map.Entry<String, Integer> e : entries) {
-            if (e.getValue() > maxId) {
-                maxId = e.getValue();
-            }
-        }
-        long[] keys = new long[Math.max(16, entries.size())];
-        long[] values = new long[keys.length];
-        int size = 0;
-
-        for (Map.Entry<String, Integer> entry : entries) {
-            String token = entry.getKey();
-            int rank = entry.getValue();
-            if (token.length() <= 1) {
-                continue;
-            }
-            List<String> parts = bpeSplit(mergeableRanks, token, rank);
-            if (parts.size() != 2) {
-                continue;
-            }
-            Integer left = mergeableRanks.get(parts.get(0));
-            Integer right = mergeableRanks.get(parts.get(1));
-            if (left == null || right == null) {
-                continue;
-            }
-
-            if (size == keys.length) {
-                int newCap = keys.length + (keys.length >>> 1);
-                keys = Arrays.copyOf(keys, newCap);
-                values = Arrays.copyOf(values, newCap);
-            }
-
-            keys[size] = IntPair.of(left, right);
-            values[size] = rank;
-            size++;
-        }
-
-        return new BuildArtifacts(
-                new LongLongMap(Arrays.copyOf(keys, size), Arrays.copyOf(values, size)));
+    private static int mergeRank(long mergeValue) {
+        return mergeValue == IntPair.NONE ? NO_TOKEN : IntPair.right(mergeValue);
     }
 
-    private static final class BuildArtifacts {
-        final LongLongMap merges;
-
-        BuildArtifacts(LongLongMap merges) {
-            this.merges = merges;
-        }
+    private static int mergeId(long mergeValue) {
+        return IntPair.left(mergeValue);
     }
 
-    private static List<String> bpeSplit(
-            Map<String, Integer> mergeableRanks, String token, Integer maxRank) {
-        List<String> parts = new ArrayList<>(token.length());
-        for (int i = 0; i < token.length(); i++) {
-            parts.add(String.valueOf(token.charAt(i)));
-        }
-
-        while (true) {
-            Integer bestPos = null;
-            Integer bestRank = null;
-            String bestMerged = null;
-            for (int i = 0; i + 1 < parts.size(); i++) {
-                String merged = parts.get(i) + parts.get(i + 1);
-                Integer rank = mergeableRanks.get(merged);
-                if (rank != null && (bestRank == null || rank < bestRank)) {
-                    bestPos = i;
-                    bestRank = rank;
-                    bestMerged = merged;
-                }
-            }
-
-            if (bestRank == null || (maxRank != null && bestRank >= maxRank)) {
-                break;
-            }
-
-            List<String> newParts = new ArrayList<>(parts.size() - 1);
-            newParts.addAll(parts.subList(0, bestPos));
-            newParts.add(bestMerged);
-            newParts.addAll(parts.subList(bestPos + 2, parts.size()));
-            parts = newParts;
-        }
-
-        return parts;
+    private static int mergeIdOrNone(long mergeValue) {
+        return mergeValue == IntPair.NONE ? NO_TOKEN : IntPair.left(mergeValue);
     }
 
-    private static int[] buildSingleByteTokenMap(Map<String, Integer> mergeableRanks) {
+    private static int[] buildSingleByteTokenMap(Vocabulary vocabulary) {
         int[] map = new int[256];
         Arrays.fill(map, NO_TOKEN);
-        for (Map.Entry<String, Integer> entry : mergeableRanks.entrySet()) {
-            byte[] bytes = ByteLevel.decode(entry.getKey());
-            if (bytes.length == 1) {
-                map[bytes[0] & 0xFF] = entry.getValue();
+        for (Map.Entry<String, Integer> entry : vocabulary) {
+            byte[] bytes = decodeByteLevelOrNull(entry.getKey());
+            if (bytes == null) {
+                continue;
+            }
+            if (bytes.length != 1) {
+                continue;
+            }
+            int value = bytes[0] & 0xFF;
+            int tokenId = entry.getValue();
+            int current = map[value];
+            if (current == NO_TOKEN || tokenId < current) {
+                map[value] = tokenId;
             }
         }
         for (int i = 0; i < 256; i++) {
@@ -938,21 +936,33 @@ public final class TikTokenModel extends AbstractTokenizationModel {
         }
         byte[][] table = new byte[Math.max(0, maxId + 1)][];
         for (Map.Entry<String, Integer> e : vocabulary) {
-            table[e.getValue()] = ByteLevel.decode(e.getKey());
+            byte[] bytes = decodeByteLevelOrNull(e.getKey());
+            table[e.getValue()] =
+                    bytes != null ? bytes : e.getKey().getBytes(StandardCharsets.UTF_8);
         }
         return table;
+    }
+
+    private static byte[] decodeByteLevelOrNull(String token) {
+        try {
+            return ByteLevel.decode(token);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     private static final class Scratch {
         byte[] utf8Bytes = new byte[0];
         int[] tokens = new int[0];
         int[] pairRanks = new int[0];
+        int[] pairMergeIds = new int[0];
         int[] token = new int[0];
         int[] prev = new int[0];
         int[] next = new int[0];
         int[] edgeStamp = new int[0];
         int[] edgeRight = new int[0];
         int[] edgeRank = new int[0];
+        int[] edgeMergeId = new int[0];
         int stampCounter = 1;
 
         int[] heapRank = new int[0];
@@ -961,6 +971,7 @@ public final class TikTokenModel extends AbstractTokenizationModel {
 
         int popLeft;
         int popRank;
+        int popMergeId;
         int countAccumulator;
 
         void ensureUtf8(int needed) {
@@ -981,6 +992,12 @@ public final class TikTokenModel extends AbstractTokenizationModel {
             }
         }
 
+        void ensurePairMergeIds(int needed) {
+            if (pairMergeIds.length < needed) {
+                pairMergeIds = new int[grow(pairMergeIds.length, needed)];
+            }
+        }
+
         void ensureNodes(int needed) {
             if (token.length < needed) {
                 int cap = grow(token.length, needed);
@@ -990,6 +1007,7 @@ public final class TikTokenModel extends AbstractTokenizationModel {
                 edgeStamp = new int[cap];
                 edgeRight = new int[cap];
                 edgeRank = new int[cap];
+                edgeMergeId = new int[cap];
             }
             ensureHeapSize(Math.max(8, needed * 4));
         }
@@ -1059,6 +1077,47 @@ public final class TikTokenModel extends AbstractTokenizationModel {
             int maxTokenBytes = 0;
 
             for (Map.Entry<String, Integer> entry : mergeableRanks.entrySet()) {
+                byte[] tokenBytes = ByteLevel.decode(entry.getKey());
+                if (tokenBytes.length == 0) {
+                    continue;
+                }
+                if (tokenBytes.length > maxTokenBytes) {
+                    maxTokenBytes = tokenBytes.length;
+                }
+
+                int hash = hashBytes(tokenBytes, tokenBytes.length);
+                int slot = hash & mask;
+                while (ids[slot] != NO_TOKEN) {
+                    byte[] existing = keys[slot];
+                    if (hashes[slot] == hash
+                            && bytesEqual(existing, tokenBytes, tokenBytes.length)) {
+                        break;
+                    }
+                    slot = (slot + 1) & mask;
+                }
+                keys[slot] = tokenBytes;
+                ids[slot] = entry.getValue();
+                hashes[slot] = hash;
+            }
+
+            return new ExactTokenLookup(keys, ids, hashes, mask, maxTokenBytes);
+        }
+
+        static ExactTokenLookup fromVocabulary(Vocabulary vocabulary) {
+            int capacity = 1;
+            int needed = Math.max(16, vocabulary.size() * 2);
+            while (capacity < needed) {
+                capacity <<= 1;
+            }
+
+            byte[][] keys = new byte[capacity][];
+            int[] ids = new int[capacity];
+            int[] hashes = new int[capacity];
+            Arrays.fill(ids, NO_TOKEN);
+            int mask = capacity - 1;
+            int maxTokenBytes = 0;
+
+            for (Map.Entry<String, Integer> entry : vocabulary) {
                 byte[] tokenBytes = ByteLevel.decode(entry.getKey());
                 if (tokenBytes.length == 0) {
                     continue;

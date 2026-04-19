@@ -6,13 +6,15 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 class SplitterSequenceTest {
 
     @Test
     void sequenceWithSingleSplitterReturnsSameInstance() {
-        Splitter splitter = Splitter.regex("\\s+");
+        Splitter splitter =
+                Splitter.regex(Pattern.compile("\\s+", Pattern.UNICODE_CHARACTER_CLASS));
 
         Splitter sequence = Splitter.sequence(splitter);
 
@@ -22,7 +24,8 @@ class SplitterSequenceTest {
     @Test
     void splitAllRangeUsesAbsoluteOffsetsOnOriginalSource() {
         CharSequence text = "ab cd ef";
-        Splitter splitter = Splitter.regex("\\s+");
+        Splitter splitter =
+                Splitter.regex(Pattern.compile("\\s+", Pattern.UNICODE_CHARACTER_CLASS));
         List<String> chunks = new ArrayList<>();
 
         splitter.splitAll(
@@ -39,8 +42,8 @@ class SplitterSequenceTest {
 
     @Test
     void sequenceAppliesEachStageToPreviousRanges() {
-        Splitter comma = Splitter.regex(",");
-        Splitter space = Splitter.regex("\\s+");
+        Splitter comma = Splitter.regex(Pattern.compile(",", Pattern.UNICODE_CHARACTER_CLASS));
+        Splitter space = Splitter.regex(Pattern.compile("\\s+", Pattern.UNICODE_CHARACTER_CLASS));
         Splitter seq = Splitter.sequence(comma, space);
         List<String> chunks = new ArrayList<>();
 

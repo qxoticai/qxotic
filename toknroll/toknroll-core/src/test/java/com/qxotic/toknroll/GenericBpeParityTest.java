@@ -2,7 +2,7 @@ package com.qxotic.toknroll;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.toknroll.impl.GenericBPE;
+import com.qxotic.toknroll.impl.TiktokenReconstruction;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -19,11 +19,14 @@ class GenericBpeParityTest {
     private static void assertEncodingParity(String encoding) {
         Tokenizer reference = TiktokenFixtures.createJtokkitTokenizer(encoding);
         Splitter splitter = Splitter.regex(TiktokenFixtures.splitPattern(encoding));
+        Vocabulary vocabulary =
+                TiktokenReconstruction.vocabulary(
+                        TiktokenFixtures.mergeableRanks(encoding),
+                        TiktokenFixtures.specialTokens(encoding));
+        List<Tokenizers.MergeRule> merges =
+                TiktokenReconstruction.mergeRules(TiktokenFixtures.mergeableRanks(encoding));
         Tokenizer generic =
-                TokenizationPipeline.builder(
-                                GenericBPE.fromTiktoken(
-                                        TiktokenFixtures.mergeableRanks(encoding),
-                                        TiktokenFixtures.specialTokens(encoding)))
+                TokenizationPipeline.builder(Tokenizers.tikTokenModel(vocabulary, merges))
                         .splitter(splitter)
                         .build();
 

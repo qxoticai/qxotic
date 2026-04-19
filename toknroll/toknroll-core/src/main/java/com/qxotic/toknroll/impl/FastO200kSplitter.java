@@ -26,7 +26,8 @@ public final class FastO200kSplitter extends AbstractFastAsciiRegexSplitter {
                     "\\s+(?!\\S)",
                     "\\s+");
 
-    private static final Pattern O200K_COMPILED = Pattern.compile(O200K_PATTERN);
+    private static final Pattern O200K_COMPILED =
+            Pattern.compile(O200K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS);
     public static final FastO200kSplitter INSTANCE = new FastO200kSplitter();
 
     private FastO200kSplitter() {

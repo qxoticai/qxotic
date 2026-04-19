@@ -6,13 +6,16 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.toknroll.impl.ClassicBPE;
+import com.qxotic.toknroll.impl.TiktokenFiles;
+import com.qxotic.toknroll.impl.TiktokenReconstruction;
 import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.text.Normalizer.Form;
+import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 class TokenizersApiTest {
@@ -64,12 +67,16 @@ class TokenizersApiTest {
     }
 
     @Test
-    void bpeFacadeBuildsWorkingTokenizer() throws Exception {
+    void pipelineFacadeBuildsWorkingTokenizer() throws Exception {
         Map<String, Integer> mergeableRanks =
-                ClassicBPE.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
+                TiktokenFiles.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
 
         Tokenizer tokenizer =
-                Tokenizers.bpe(mergeableRanks, R50K_SPECIALS, Splitter.regex(R50K_PATTERN));
+                createTikTokenTokenizer(
+                        mergeableRanks,
+                        R50K_SPECIALS,
+                        Splitter.regex(
+                                Pattern.compile(R50K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS)));
 
         String text = "Tokenizer facade test";
         IntSequence tokens = tokenizer.encode(text);
@@ -78,23 +85,31 @@ class TokenizersApiTest {
     }
 
     @Test
-    void bpeWithRegexSplitterWorks() throws Exception {
+    void pipelineWithRegexSplitterWorks() throws Exception {
         Map<String, Integer> mergeableRanks =
-                ClassicBPE.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
+                TiktokenFiles.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
 
         Tokenizer tokenizer =
-                Tokenizers.bpe(mergeableRanks, R50K_SPECIALS, Splitter.regex(R50K_PATTERN));
+                createTikTokenTokenizer(
+                        mergeableRanks,
+                        R50K_SPECIALS,
+                        Splitter.regex(
+                                Pattern.compile(R50K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS)));
         String text = "Classic overload";
         assertEquals(text, tokenizer.decode(tokenizer.encode(text)));
     }
 
     @Test
-    void fastBpeFacadeBuildsWorkingTokenizer() throws Exception {
+    void tikTokenModelFacadeBuildsWorkingTokenizer() throws Exception {
         Map<String, Integer> mergeableRanks =
-                ClassicBPE.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
+                TiktokenFiles.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
 
         Tokenizer tokenizer =
-                Tokenizers.tikToken(mergeableRanks, R50K_SPECIALS, Splitter.regex(R50K_PATTERN));
+                createTikTokenTokenizer(
+                        mergeableRanks,
+                        R50K_SPECIALS,
+                        Splitter.regex(
+                                Pattern.compile(R50K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS)));
 
         String text = "Fast tokenizer facade test";
         IntSequence tokens = tokenizer.encode(text);
@@ -103,73 +118,48 @@ class TokenizersApiTest {
     }
 
     @Test
-    void tikTokenFromRankedTokenTableWorks() {
-        String[] rankedTokens = new String[257];
-        for (int i = 0; i < 256; i++) {
-            rankedTokens[i] = String.valueOf(ByteLevel.encodeSingle((byte) i));
-        }
-        rankedTokens[256] = "ab";
-
-        Tokenizer tokenizer = Tokenizers.tikToken(rankedTokens, Splitter.identity());
-
-        IntSequence encoded = tokenizer.encode("ab");
-        assertArrayEquals(new int[] {256}, encoded.toArray());
-        assertEquals("ab", tokenizer.decode(encoded));
-    }
-
-    @Test
-    void tikTokenFromRankedTokenTableSupportsTokenTypes() {
-        String[] rankedTokens = new String[258];
-        int[] tokenTypes = new int[258];
-        for (int i = 0; i < 256; i++) {
-            rankedTokens[i] = String.valueOf(ByteLevel.encodeSingle((byte) i));
-            tokenTypes[i] = 1;
-        }
-        rankedTokens[256] = "<SPECIAL_A>";
-        tokenTypes[256] = 3;
-        rankedTokens[257] = "<SPECIAL_B>";
-        tokenTypes[257] = 3;
-
-        Tokenizer tokenizer = Tokenizers.tikToken(rankedTokens, tokenTypes, Splitter.identity());
-
-        assertEquals(256, tokenizer.vocabulary().id("<SPECIAL_A>"));
-        assertEquals(257, tokenizer.vocabulary().id("<SPECIAL_B>"));
-        assertEquals("<SPECIAL_A><SPECIAL_B>", tokenizer.decode(IntSequence.of(256, 257)));
-    }
-
-    @Test
-    void tikTokenFromRankedTokenTablePromotesByteSingletonsEvenWhenNonNormalType() {
-        String[] rankedTokens = new String[256];
-        int[] tokenTypes = new int[256];
-        for (int i = 0; i < 256; i++) {
-            rankedTokens[i] = String.valueOf(ByteLevel.encodeSingle((byte) i));
-            tokenTypes[i] = 1;
-        }
-        tokenTypes[192] = 4;
-        tokenTypes[255] = 4;
-
-        Tokenizer tokenizer = Tokenizers.tikToken(rankedTokens, tokenTypes, Splitter.identity());
-        assertArrayEquals(
-                new int[] {195, 128, 195, 191}, tokenizer.encode("\u00C0\u00FF").toArray());
-    }
-
-    @Test
     void tokenizersFactoryMethodsValidateNulls() {
-        Map<String, Integer> ranks = Map.of("a", 0);
+        Vocabulary vocabulary = Tokenizers.vocabulary("a");
         Tokenizer tokenizer =
                 createTokenizer(R50K_NAME, R50K_FILE, R50K_HASH, R50K_PATTERN, R50K_SPECIALS);
-        assertThrows(
-                NullPointerException.class, () -> Tokenizers.bpe(ranks, Map.of(), (Splitter) null));
-        assertThrows(
-                NullPointerException.class,
-                () -> Tokenizers.tikToken(ranks, Map.of(), (Splitter) null));
+        assertThrows(NullPointerException.class, () -> Tokenizers.tikTokenModel(null, List.of()));
         assertThrows(
                 NullPointerException.class,
-                () -> Tokenizers.tikToken((String[]) null, Splitter.identity()));
+                () -> Tokenizers.tikTokenModel(vocabulary, (List<Tokenizers.MergeRule>) null));
+        assertThrows(NullPointerException.class, () -> Tokenizers.pipeline(null));
+        assertThrows(NullPointerException.class, () -> tokenizer.decode((IntSequence) null));
+    }
+
+    @Test
+    void vocabularyVarargsAssignsIdsByPosition() {
+        Vocabulary vocabulary = Tokenizers.vocabulary("a", "b", "c");
+
+        assertEquals(3, vocabulary.size());
+        assertEquals(0, vocabulary.id("a"));
+        assertEquals(1, vocabulary.id("b"));
+        assertEquals(2, vocabulary.id("c"));
+        assertEquals("b", vocabulary.token(1));
+    }
+
+    @Test
+    void vocabularyVarargsWithSpecialTokensIncludesControls() {
+        Vocabulary vocabulary = Tokenizers.vocabulary(Map.of("<|eot|>", 10), "a", "b", "c");
+
+        assertEquals(4, vocabulary.size());
+        assertEquals(10, vocabulary.id("<|eot|>"));
+        assertEquals("<|eot|>", vocabulary.token(10));
+        assertEquals(2, vocabulary.id("c"));
+    }
+
+    @Test
+    void vocabularyVarargsRejectsDuplicatesAndSpecialOverlaps() {
+        assertThrows(IllegalArgumentException.class, () -> Tokenizers.vocabulary("a", "a"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> Tokenizers.tikToken(new String[] {"a"}, new int[] {}, Splitter.identity()));
-        assertThrows(NullPointerException.class, () -> tokenizer.decode((IntSequence) null));
+                () -> Tokenizers.vocabulary(Map.of("a", 99), "a", "b"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Tokenizers.vocabulary(Map.of("<|eot|>", 1), "a", "b"));
     }
 
     @Test
@@ -243,15 +233,26 @@ class TokenizersApiTest {
     @Test
     void lossyTransformIsExplicitAndSeparateFromBaseTokenizer() throws Exception {
         Map<String, Integer> mergeableRanks =
-                ClassicBPE.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
-        TokenizationModel model = ClassicBPE.classicFromTiktoken(mergeableRanks, R50K_SPECIALS);
+                TiktokenFiles.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
+        Vocabulary vocabulary = TiktokenReconstruction.vocabulary(mergeableRanks, R50K_SPECIALS);
+        TokenizationModel model =
+                Tokenizers.tikTokenModel(
+                        vocabulary, TiktokenReconstruction.mergeRules(mergeableRanks));
 
         Tokenizer base =
-                TokenizationPipeline.builder(model).splitter(Splitter.regex(R50K_PATTERN)).build();
+                TokenizationPipeline.builder(model)
+                        .splitter(
+                                Splitter.regex(
+                                        Pattern.compile(
+                                                R50K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS)))
+                        .build();
         Tokenizer nfcTransformed =
                 TokenizationPipeline.builder(model)
                         .normalizer(Normalizer.unicode(Form.NFC))
-                        .splitter(Splitter.regex(R50K_PATTERN))
+                        .splitter(
+                                Splitter.regex(
+                                        Pattern.compile(
+                                                R50K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS)))
                         .build();
 
         String decomposed = "e\u0301";
@@ -278,11 +279,23 @@ class TokenizersApiTest {
             String name, String file, String hash, String pattern, Map<String, Integer> specials) {
         try {
             Map<String, Integer> mergeableRanks =
-                    ClassicBPE.loadMergeableRanks(resourcePath(file).toString(), hash);
-            return Tokenizers.tikToken(mergeableRanks, specials, Splitter.regex(pattern));
+                    TiktokenFiles.loadMergeableRanks(resourcePath(file).toString(), hash);
+            return createTikTokenTokenizer(
+                    mergeableRanks,
+                    specials,
+                    Splitter.regex(Pattern.compile(pattern, Pattern.UNICODE_CHARACTER_CLASS)));
         } catch (Exception e) {
             throw new IllegalStateException("Failed to create tokenizer " + name, e);
         }
+    }
+
+    private static Tokenizer createTikTokenTokenizer(
+            Map<String, Integer> mergeableRanks, Map<String, Integer> specials, Splitter splitter) {
+        Vocabulary vocabulary = TiktokenReconstruction.vocabulary(mergeableRanks, specials);
+        TokenizationModel model =
+                Tokenizers.tikTokenModel(
+                        vocabulary, TiktokenReconstruction.mergeRules(mergeableRanks));
+        return Tokenizers.pipeline(model).splitter(splitter).build();
     }
 
     private static Path resourcePath(String fileName) {

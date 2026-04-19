@@ -1,6 +1,5 @@
 package com.qxotic.toknroll.gguf;
 
-import static com.qxotic.toknroll.testkit.SplitterTestUtils.splitAllToList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -14,20 +13,28 @@ import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 class GGUFTokenizerComponentsTest {
 
     @Test
     void qwenAndLlamaPatternsSplitNumbersDifferently() {
-        Splitter qwen = RegexSplitter.create(ModelTextSplitters.QWEN2_PATTERN);
-        Splitter llama = RegexSplitter.create(ModelTextSplitters.LLAMA3_PATTERN);
+        Splitter qwen =
+                RegexSplitter.create(
+                        Pattern.compile(
+                                ModelTextSplitters.QWEN2_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
+        Splitter llama =
+                RegexSplitter.create(
+                        Pattern.compile(
+                                ModelTextSplitters.LLAMA3_PATTERN,
+                                Pattern.UNICODE_CHARACTER_CLASS));
 
         String text = "v 1234";
         List<String> qwenTokens =
-                splitAllToList(qwen, text).stream().map(CharSequence::toString).toList();
+                qwen.splitAllToListEagerly(text).stream().map(CharSequence::toString).toList();
         List<String> llamaTokens =
-                splitAllToList(llama, text).stream().map(CharSequence::toString).toList();
+                llama.splitAllToListEagerly(text).stream().map(CharSequence::toString).toList();
 
         // Qwen pattern uses single digits; Llama/Tekken uses 1..3 digit chunks.
         assertTrue(qwenTokens.stream().anyMatch(t -> t.contains("1")));
@@ -37,9 +44,15 @@ class GGUFTokenizerComponentsTest {
 
     @Test
     void tekkenLlamaPatternHandlesContractions() {
-        Splitter splitter = RegexSplitter.create(ModelTextSplitters.LLAMA3_PATTERN);
+        Splitter splitter =
+                RegexSplitter.create(
+                        Pattern.compile(
+                                ModelTextSplitters.LLAMA3_PATTERN,
+                                Pattern.UNICODE_CHARACTER_CLASS));
         List<String> tokens =
-                splitAllToList(splitter, "I'm ready").stream().map(CharSequence::toString).toList();
+                splitter.splitAllToListEagerly("I'm ready").stream()
+                        .map(CharSequence::toString)
+                        .toList();
         assertTrue(tokens.stream().anyMatch(t -> t.contains("'m")));
     }
 
@@ -66,7 +79,7 @@ class GGUFTokenizerComponentsTest {
         Splitter splitter = ModelTextSplitters.createSplitter("qwen3");
 
         String input = "Hello, world";
-        List<CharSequence> tokens = splitAllToList(splitter, input);
+        List<CharSequence> tokens = splitter.splitAllToListEagerly(input);
 
         assertTrue(tokens.size() >= 2);
         String rebuilt =

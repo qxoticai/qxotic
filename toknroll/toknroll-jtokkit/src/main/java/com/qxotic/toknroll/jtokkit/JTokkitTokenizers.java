@@ -7,7 +7,6 @@ import com.knuddels.jtokkit.api.GptBytePairEncodingParams;
 import com.knuddels.jtokkit.api.IntArrayList;
 import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.IntSequence;
-import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
 import com.qxotic.toknroll.Vocabulary;
@@ -46,9 +45,7 @@ public final class JTokkitTokenizers {
         encodingRegistry.registerGptBytePairEncoding(params);
 
         Encoding encoding = encodingRegistry.getEncoding(name).orElseThrow();
-        Vocabulary vocabulary =
-                Tokenizers.tikToken(mergeableRanks, specialTokens, Splitter.regex(splitPattern))
-                        .vocabulary();
+        Vocabulary vocabulary = rankedVocabulary(mergeableRanks, specialTokens);
 
         return new Adapter(vocabulary, encoding);
     }
@@ -73,6 +70,61 @@ public final class JTokkitTokenizers {
     public static Tokenizer fromTiktoken(
             String name, Map<String, Integer> mergeableRanks, String splitPattern) {
         return fromTiktoken(name, mergeableRanks, splitPattern, Collections.emptyMap());
+    }
+
+    private static Vocabulary rankedVocabulary(
+            Map<String, Integer> mergeableRanks, Map<String, Integer> specialTokens) {
+        int maxRank = -1;
+        for (Map.Entry<String, Integer> entry : mergeableRanks.entrySet()) {
+            String token =
+                    Objects.requireNonNull(entry.getKey(), "mergeableRanks contains null key");
+            Integer rank =
+                    Objects.requireNonNull(
+                            entry.getValue(),
+                            "mergeableRanks contains null rank for token '" + token + "'");
+            if (rank < 0) {
+                throw new IllegalArgumentException(
+                        "mergeable rank must be non-negative for token '"
+                                + token
+                                + "' ("
+                                + rank
+                                + ")");
+            }
+            maxRank = Math.max(maxRank, rank);
+        }
+
+        String[] tokens = new String[Math.max(0, maxRank + 1)];
+        for (Map.Entry<String, Integer> entry : mergeableRanks.entrySet()) {
+            String token = entry.getKey();
+            int rank = entry.getValue();
+            String previous = tokens[rank];
+            if (previous != null && !previous.equals(token)) {
+                throw new IllegalArgumentException(
+                        "duplicate mergeable rank "
+                                + rank
+                                + " for tokens '"
+                                + previous
+                                + "' and '"
+                                + token
+                                + "'");
+            }
+            tokens[rank] = token;
+        }
+
+        int missing = -1;
+        for (int i = 0; i < tokens.length; i++) {
+            if (tokens[i] == null) {
+                missing = i;
+                break;
+            }
+        }
+        if (missing >= 0) {
+            throw new IllegalArgumentException("mergeableRanks must cover contiguous ids from 0");
+        }
+
+        return specialTokens.isEmpty()
+                ? Tokenizers.vocabulary(tokens)
+                : Tokenizers.vocabulary(specialTokens, tokens);
     }
 
     private static final class Adapter implements Tokenizer {

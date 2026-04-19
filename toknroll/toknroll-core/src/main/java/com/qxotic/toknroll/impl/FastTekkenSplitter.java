@@ -24,7 +24,8 @@ public final class FastTekkenSplitter implements Splitter {
                 + "\\n"
                 + "]+|\\s+(?!\\S)|\\s+";
 
-    private static final Pattern TEKKEN_COMPILED = Pattern.compile(TEKKEN_PATTERN);
+    private static final Pattern TEKKEN_COMPILED =
+            Pattern.compile(TEKKEN_PATTERN, Pattern.UNICODE_CHARACTER_CLASS);
     public static final FastTekkenSplitter INSTANCE = new FastTekkenSplitter();
 
     private FastTekkenSplitter() {}

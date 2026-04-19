@@ -117,6 +117,11 @@ public final class TokenizationPipeline implements Tokenizer {
     }
 
     @Override
+    public float expectedTokensPerChar() {
+        return model.expectedTokensPerChar();
+    }
+
+    @Override
     public String decode(IntSequence tokens) {
         return model.decode(tokens);
     }

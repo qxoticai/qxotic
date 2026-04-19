@@ -1,6 +1,5 @@
 package com.qxotic.toknroll;
 
-import static com.qxotic.toknroll.testkit.SplitterTestUtils.splitAllToList;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -24,7 +23,7 @@ class TokenizationPipelineTest {
     @Test
     void splitterIdentityReturnsSingleChunk() {
         Splitter splitter = Splitter.identity();
-        List<CharSequence> chunks = splitAllToList(splitter, "Hello world");
+        List<CharSequence> chunks = splitter.splitAllToListEagerly("Hello world");
 
         assertEquals(1, chunks.size());
         assertEquals("Hello world", chunks.get(0).toString());
@@ -46,7 +45,7 @@ class TokenizationPipelineTest {
                 };
         Splitter splitter = Splitter.sequence(spaceSplitter);
 
-        List<CharSequence> chunks = splitAllToList(splitter, "Hello world test");
+        List<CharSequence> chunks = splitter.splitAllToListEagerly("Hello world test");
         assertEquals(
                 List.of("Hello", "world", "test"),
                 chunks.stream().map(Object::toString).collect(Collectors.toList()));

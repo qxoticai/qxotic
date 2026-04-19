@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 class DecoderComponentTest {
 
     @Test
-    void canonicalConcatenatesTokens() {
+    void canonicalDecoderConcatenatesTokens() {
         Vocabulary vocab = simpleVocabulary(Map.of("hello", 1, " world", 2));
         Decoder decoder = Decoder.canonical();
         assertEquals("hello world", decoder.decode(IntSequence.of(1, 2), vocab));

@@ -17,10 +17,6 @@ public final class RegexSplitter implements Splitter {
         return new RegexSplitter(Objects.requireNonNull(pattern, "pattern"));
     }
 
-    public static RegexSplitter create(String regexPattern) {
-        return new RegexSplitter(Pattern.compile(regexPattern, Pattern.UNICODE_CHARACTER_CLASS));
-    }
-
     @Override
     public void splitAll(
             CharSequence text,

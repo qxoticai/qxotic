@@ -14,19 +14,13 @@ class FastTikTokenLargeMergeRegressionTest {
     @ValueSource(strings = {"r50k_base", "cl100k_base", "o200k_base"})
     void fastLargePathMatchesClassicTokenizer(String encoding) {
         Tokenizer fast =
-                Tokenizers.tikToken(
-                        TiktokenFixtures.mergeableRanks(encoding),
-                        TiktokenFixtures.specialTokens(encoding),
-                        Splitter.regex(TiktokenFixtures.splitPattern(encoding)));
+                TiktokenFixtures.createTikTokenTokenizer(
+                        encoding, Splitter.regex(TiktokenFixtures.splitPattern(encoding)));
 
-        Tokenizer bpe =
-                Tokenizers.bpe(
-                        TiktokenFixtures.mergeableRanks(encoding),
-                        TiktokenFixtures.specialTokens(encoding),
-                        Splitter.regex(TiktokenFixtures.splitPattern(encoding)));
+        Tokenizer baseline = TiktokenFixtures.createTikTokenTokenizer(encoding);
 
         for (String sample : largeSamples()) {
-            IntSequence expected = bpe.encode(sample);
+            IntSequence expected = baseline.encode(sample);
             IntSequence actual = fast.encode(sample);
             assertEquals(
                     expected,

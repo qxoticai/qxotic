@@ -11,13 +11,14 @@ public final class FastQwen35Splitter implements Splitter {
     private static final String QWEN35_PATTERN =
             "(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])|[^\\r"
                     + "\\n"
-                    + "\\p{L}\\p{N}]?[\\p{L}\\p{M}]+|\\p{N}| ?[^\\s\\p{L}\\p{M}\\p{N}]+[\\r"
+                    + "\\p{L}\\p{N}]?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\\r"
                     + "\\n"
                     + "]*|\\s*[\\r"
                     + "\\n"
                     + "]+|\\s+(?!\\S)|\\s+";
 
-    private static final Pattern QWEN35_COMPILED = Pattern.compile(QWEN35_PATTERN);
+    private static final Pattern QWEN35_COMPILED =
+            Pattern.compile(QWEN35_PATTERN, Pattern.UNICODE_CHARACTER_CLASS);
     public static final FastQwen35Splitter INSTANCE = new FastQwen35Splitter();
 
     private FastQwen35Splitter() {}

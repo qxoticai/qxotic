@@ -1,6 +1,8 @@
 package com.qxotic.toknroll;
 
 import com.qxotic.toknroll.impl.RegexSplitter;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
@@ -47,6 +49,13 @@ public interface Splitter {
         splitAll(text, 0, text.length(), consumer);
     }
 
+    default List<CharSequence> splitAllToListEagerly(CharSequence text) {
+        Objects.requireNonNull(text, "text");
+        List<CharSequence> out = new ArrayList<>();
+        splitAll(text, (source, start, end) -> out.add(source.subSequence(start, end)));
+        return out;
+    }
+
     /** Strict default: single chunk, no rewrite. */
     static Splitter identity() {
         return (text, startInclusive, endExclusive, consumer) -> {
@@ -63,11 +72,6 @@ public interface Splitter {
     static Splitter regex(Pattern pattern) {
         Objects.requireNonNull(pattern, "pattern");
         return RegexSplitter.create(pattern);
-    }
-
-    static Splitter regex(String regexPattern) {
-        Objects.requireNonNull(regexPattern, "regexPattern");
-        return regex(Pattern.compile(regexPattern));
     }
 
     static Splitter sequence(Splitter... splitters) {

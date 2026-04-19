@@ -1,10 +1,5 @@
 package com.qxotic.toknroll.benchmarks;
 
-import com.knuddels.jtokkit.Encodings;
-import com.knuddels.jtokkit.api.Encoding;
-import com.knuddels.jtokkit.api.EncodingRegistry;
-import com.knuddels.jtokkit.api.EncodingType;
-import com.knuddels.jtokkit.api.IntArrayList;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
@@ -12,6 +7,7 @@ import com.qxotic.toknroll.Tokenizers;
 import com.qxotic.toknroll.impl.FastCl100kSplitter;
 import com.qxotic.toknroll.impl.FastO200kSplitter;
 import com.qxotic.toknroll.impl.FastR50kSplitter;
+import com.qxotic.toknroll.impl.TiktokenReconstruction;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -30,7 +26,7 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 
-/** Apples-to-apples OpenAI encoding benchmark (r50k/cl100k/o200k). */
+/** OpenAI encoding benchmark (r50k/cl100k/o200k) for Tok'n'Roll. */
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
 @Warmup(iterations = 3, time = 1)
@@ -50,7 +46,7 @@ public class OpenAiEncodingBenchmark {
         }
     }
 
-    @Param({"jtokkit", "jtokkit-adapter", "bpe", "fast"})
+    @Param({"fast"})
     public String implementation;
 
     @Param({"r50k_base", "cl100k_base", "o200k_base"})
@@ -63,99 +59,47 @@ public class OpenAiEncodingBenchmark {
     public String size;
 
     private Tokenizer tokenizer;
-    private Encoding jtokkitEncoding;
     private String text;
     private IntSequence encoded;
-    private IntArrayList jtokkitEncoded;
 
     @Setup(Level.Trial)
     public void setup() {
         text = resize(seedText(corpus), targetLength(size));
-        if ("jtokkit".equals(implementation)) {
-            jtokkitEncoding = createDirectJtokkitEncoding(encoding);
-            tokenizer = null;
-            jtokkitEncoded = jtokkitEncoding.encode(text);
-            encoded = null;
-            return;
-        }
-
-        jtokkitEncoding = null;
-        tokenizer = createTokenizer(implementation, encoding);
+        tokenizer = createTokenizer(encoding);
         encoded = tokenizer.encode(text);
-        jtokkitEncoded = null;
     }
 
     @Benchmark
     public void encode(Blackhole blackhole) {
-        if (jtokkitEncoding != null) {
-            blackhole.consume(jtokkitEncoding.encode(text));
-            return;
-        }
         blackhole.consume(tokenizer.encode(text));
     }
 
     @Benchmark
     public void encodeInto(Blackhole blackhole) {
-        if (jtokkitEncoding != null) {
-            blackhole.consume(jtokkitEncoding.encode(text).size());
-            return;
-        }
-        IntSequence.Builder builder = IntSequence.newBuilder(encoded.length() + 16);
-        tokenizer.encodeInto(text, builder);
-        blackhole.consume(builder.size());
+        blackhole.consume(tokenizer.encode(text).length());
     }
 
     @Benchmark
     public void countTokens(Blackhole blackhole) {
-        if (jtokkitEncoding != null) {
-            blackhole.consume(jtokkitEncoding.countTokens(text));
-            return;
-        }
         blackhole.consume(tokenizer.countTokens(text));
     }
 
     @Benchmark
     public void decode(Blackhole blackhole, DecodeCounters counters) {
-        if (jtokkitEncoding != null) {
-            blackhole.consume(jtokkitEncoding.decode(jtokkitEncoded));
-            counters.decodedTokens += jtokkitEncoded.size();
-            return;
-        }
         blackhole.consume(tokenizer.decode(encoded));
         counters.decodedTokens += encoded.length();
     }
 
-    private static Tokenizer createTokenizer(String implementation, String encoding) {
-        switch (implementation) {
-            case "jtokkit":
-                throw new IllegalArgumentException(
-                        "Use implementation=jtokkit for direct benchmark path");
-            case "jtokkit-adapter":
-                return TiktokenFixtures.createJtokkitTokenizer(encoding);
-            case "bpe":
-                return TiktokenFixtures.createBpeTokenizer(encoding);
-            case "fast":
-                Map<String, Integer> ranks = TiktokenFixtures.mergeableRanks(encoding);
-                Map<String, Integer> specials = TiktokenFixtures.specialTokens(encoding);
-                Splitter splitter = fastSplitterForEncoding(encoding);
-                return Tokenizers.tikToken(ranks, specials, splitter);
-            default:
-                throw new IllegalArgumentException("Unsupported implementation: " + implementation);
-        }
-    }
-
-    private static Encoding createDirectJtokkitEncoding(String encoding) {
-        EncodingRegistry registry = Encodings.newDefaultEncodingRegistry();
-        switch (encoding) {
-            case "r50k_base":
-                return registry.getEncoding(EncodingType.R50K_BASE);
-            case "cl100k_base":
-                return registry.getEncoding(EncodingType.CL100K_BASE);
-            case "o200k_base":
-                return registry.getEncoding(EncodingType.O200K_BASE);
-            default:
-                throw new IllegalArgumentException("Unsupported encoding: " + encoding);
-        }
+    private static Tokenizer createTokenizer(String encoding) {
+        Map<String, Integer> ranks = TiktokenFixtures.mergeableRanks(encoding);
+        Map<String, Integer> specials = TiktokenFixtures.specialTokens(encoding);
+        Splitter splitter = fastSplitterForEncoding(encoding);
+        return Tokenizers.pipeline(
+                        Tokenizers.tikTokenModel(
+                                TiktokenReconstruction.vocabulary(ranks, specials),
+                                TiktokenReconstruction.mergeRules(ranks)))
+                .splitter(splitter)
+                .build();
     }
 
     private static Splitter fastSplitterForEncoding(String encoding) {
@@ -201,7 +145,7 @@ public class OpenAiEncodingBenchmark {
                         + " of characters into a sequence of tokens, often for parsing or"
                         + " language model preprocessing.";
             case "unicode":
-                return "你好，世界。こんにちは世界。안녕하세요 세계. Привет, мир! مرحبا بالعالم. "
+                return "你好,世界。こんにちは世界。안녕하세요 세계. Привет, мир! مرحبا بالعالم. "
                         + "नमस्ते दुनिया। Bonjour le monde! Olá mundo! Καλημέρα κόσμε. "
                         + "cafe\u0301 naive fiance\u0301 coo\u0308perate. "
                         + "Emoji test: 😀😅🤣🥲🤖🚀✨🔥🌍🧠👩‍💻👨‍👩‍👧‍👦🏳️‍🌈🇯🇵🇨🇳🇮🇳🇧🇷. "
