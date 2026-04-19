@@ -1,125 +1,121 @@
 package com.qxotic.toknroll;
 
-import com.qxotic.toknroll.impl.ClassicBPE;
-import com.qxotic.toknroll.impl.TikTokenModel;
+import com.qxotic.toknroll.impl.ImplAccessor;
+import com.qxotic.toknroll.impl.VocabularyImpl;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
-/**
- * Factory methods for building {@link Tokenizer} instances from TikToken-style merge ranks.
- *
- * <p>For most use cases, prefer {@link #tikToken} — it is the fastest TikToken-compatible
- * implementation. Use {@link #bpe} only when exact GPT-2 native behaviour is required.
- */
 public final class Tokenizers {
     private Tokenizers() {}
 
-    /**
-     * Creates a {@link Tokenizer} wrapping the optimized flat-array TikToken-compatible BPE
-     * tokenizer. Prefer this over {@link #bpe} for TikToken-compatible encodings.
-     *
-     * @param mergeableRanks mergeable token ranks
-     * @param specialTokens special token to id mapping
-     * @param splitter text splitter applied before BPE encoding
-     */
-    public static Tokenizer tikToken(
-            Map<String, Integer> mergeableRanks,
-            Map<String, Integer> specialTokens,
-            Splitter splitter) {
-        Splitter checkedSplitter = Objects.requireNonNull(splitter, "splitter");
-        return buildTokenizer(
-                TikTokenModel.fromTiktoken(
-                        Objects.requireNonNull(mergeableRanks, "mergeableRanks"),
-                        Objects.requireNonNull(specialTokens, "specialTokens")),
-                checkedSplitter);
+    public static Vocabulary vocabulary(String... tokens) {
+        return new VocabularyImpl(indexVocabulary(tokens));
     }
 
-    /**
-     * Creates a TikToken-compatible tokenizer from a ranked token table.
-     *
-     * <p>{@code rankedTokens[tokenId]} provides the token string for each rank/id. All tokens are
-     * treated as mergeable.
-     *
-     * <p>This constructor builds runtime merge behavior from token ranks (ids). It is intended for
-     * compiled/token-table formats and does not preserve original merge-list provenance.
-     */
-    public static Tokenizer tikToken(String[] rankedTokens, Splitter splitter) {
-        return tikToken(rankedTokens, null, splitter);
+    public static Vocabulary vocabulary(Map<String, Integer> specialTokens, String... tokens) {
+        Map<String, Integer> tokenToId = indexVocabulary(tokens);
+        return ImplAccessor.createVocabularyWithSpecials(
+                tokenToId, validateSpecialTokens(specialTokens, tokenToId));
     }
 
-    /**
-     * Creates a TikToken-compatible tokenizer from a ranked token table and optional token types.
-     *
-     * <p>{@code rankedTokens[tokenId]} provides the token string for each rank/id.
-     *
-     * <p>When {@code tokenTypes} is provided, entries with type {@code 1} are treated as mergeable
-     * tokens and all other types are treated as special tokens, except byte-level singleton symbols
-     * which are always treated as mergeable.
-     *
-     * <p>Important: this API reconstructs effective BPE merge priority from token ranks. It is
-     * equivalent to rank-table tokenizers, but it does not guarantee reconstruction of an original
-     * explicit merges list in non-canonical formats.
-     *
-     * <p>Special-token representation is caller-controlled. This constructor keeps special token
-     * strings exactly as provided and does not apply byte-level encoding/decoding to them.
-     */
-    public static Tokenizer tikToken(String[] rankedTokens, int[] tokenTypes, Splitter splitter) {
-        Objects.requireNonNull(rankedTokens, "rankedTokens");
-        if (tokenTypes != null && tokenTypes.length != rankedTokens.length) {
-            throw new IllegalArgumentException(
-                    "tokenTypes length ("
-                            + tokenTypes.length
-                            + ") must match rankedTokens length ("
-                            + rankedTokens.length
-                            + ")");
-        }
-
-        Map<String, Integer> mergeableRanks = new LinkedHashMap<>(rankedTokens.length * 2);
-        Map<String, Integer> specialTokens = new LinkedHashMap<>();
-
-        for (int tokenId = 0; tokenId < rankedTokens.length; tokenId++) {
-            String token = Objects.requireNonNull(rankedTokens[tokenId], "rankedTokens[tokenId]");
-            if (tokenTypes == null || tokenTypes[tokenId] == 1 || isByteLevelSingleton(token)) {
-                mergeableRanks.put(token, tokenId);
-            } else {
-                specialTokens.put(token, tokenId);
+    private static Map<String, Integer> indexVocabulary(String[] tokens) {
+        Objects.requireNonNull(tokens, "tokens");
+        Map<String, Integer> tokenToId = new LinkedHashMap<>(tokens.length);
+        for (int i = 0; i < tokens.length; i++) {
+            String token = Objects.requireNonNull(tokens[i], "tokens[" + i + "]");
+            Integer previousId = tokenToId.putIfAbsent(token, i);
+            if (previousId != null) {
+                throw new IllegalArgumentException(
+                        "Duplicate token '" + token + "' at indexes " + previousId + " and " + i);
             }
         }
-
-        return tikToken(mergeableRanks, specialTokens, splitter);
+        return tokenToId;
     }
 
-    private static boolean isByteLevelSingleton(String token) {
-        try {
-            return ByteLevel.decode(token).length == 1;
-        } catch (IllegalArgumentException e) {
-            return false;
+    private static Map<String, Integer> validateSpecialTokens(
+            Map<String, Integer> specialTokens, Map<String, Integer> tokenToId) {
+        Objects.requireNonNull(specialTokens, "specialTokens");
+        if (specialTokens.isEmpty()) {
+            return specialTokens;
         }
+
+        Map<String, Integer> validatedSpecials = new LinkedHashMap<>(specialTokens.size());
+        Set<Integer> seenIds = new HashSet<>();
+        for (Map.Entry<String, Integer> entry : specialTokens.entrySet()) {
+            String token =
+                    Objects.requireNonNull(entry.getKey(), "specialTokens contains null key");
+            Integer tokenId =
+                    Objects.requireNonNull(
+                            entry.getValue(),
+                            "specialTokens contains null id for token '" + token + "'");
+            if (tokenId < 0) {
+                throw new IllegalArgumentException(
+                        "special token id must be non-negative for token '"
+                                + token
+                                + "' ("
+                                + tokenId
+                                + ")");
+            }
+            if (tokenToId.containsKey(token)) {
+                throw new IllegalArgumentException(
+                        "special token overlaps with vocabulary token: '" + token + "'");
+            }
+            if (tokenToId.containsValue(tokenId)) {
+                throw new IllegalArgumentException(
+                        "special token id overlaps with vocabulary id: " + tokenId);
+            }
+            if (!seenIds.add(tokenId)) {
+                throw new IllegalArgumentException("Duplicate special token id: " + tokenId);
+            }
+            validatedSpecials.put(token, tokenId);
+        }
+
+        return validatedSpecials;
     }
 
-    /**
-     * Creates a {@link Tokenizer} wrapping the native GPT-2 style BPE tokenizer.
-     *
-     * @param mergeableRanks mergeable token ranks
-     * @param specialTokens special token to id mapping
-     * @param splitter text splitter applied before BPE encoding
-     */
-    public static Tokenizer bpe(
-            Map<String, Integer> mergeableRanks,
-            Map<String, Integer> specialTokens,
-            Splitter splitter) {
-        Splitter checkedSplitter = Objects.requireNonNull(splitter, "splitter");
-        return buildTokenizer(
-                ClassicBPE.classicFromTiktoken(
-                        Objects.requireNonNull(mergeableRanks, "mergeableRanks"),
-                        Objects.requireNonNull(specialTokens, "specialTokens")),
-                checkedSplitter);
+    public static TokenizationModel tikTokenModel(Vocabulary vocabulary, List<MergeRule> merges) {
+        return ImplAccessor.createTikTokenModel(vocabulary, merges, false);
     }
 
-    private static Tokenizer buildTokenizer(TokenizationModel model, Splitter splitter) {
-        return TokenizationPipeline.builder(model)
-                .splitter(Objects.requireNonNull(splitter, "splitter"))
-                .build();
+    public static TokenizationModel tikTokenModel(
+            Vocabulary vocabulary, List<MergeRule> merges, boolean ignoreMerges) {
+        return ImplAccessor.createTikTokenModel(vocabulary, merges, ignoreMerges);
+    }
+
+    public static TokenizationModel sentencePieceBpeModel(
+            Vocabulary vocabulary, List<MergeRule> merges) {
+        return ImplAccessor.createSentencePieceBpeModel(vocabulary, merges);
+    }
+
+    public static TokenizationPipeline.Builder pipeline(TokenizationModel model) {
+        return TokenizationPipeline.builder(model);
+    }
+
+    public static final class MergeRule {
+        private final int leftId;
+        private final int rightId;
+        private final int rank;
+
+        public MergeRule(int leftId, int rightId, int rank) {
+            this.leftId = leftId;
+            this.rightId = rightId;
+            this.rank = rank;
+        }
+
+        public int leftId() {
+            return leftId;
+        }
+
+        public int rightId() {
+            return rightId;
+        }
+
+        public int rank() {
+            return rank;
+        }
     }
 }

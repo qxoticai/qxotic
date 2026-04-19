@@ -1,15 +1,18 @@
 package com.qxotic.toknroll.testkit;
 
+import com.qxotic.toknroll.Splitter;
+import com.qxotic.toknroll.TokenizationModel;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
-import com.qxotic.toknroll.Splitter;
-import com.qxotic.toknroll.impl.ClassicBPE;
+import com.qxotic.toknroll.impl.TiktokenFiles;
+import com.qxotic.toknroll.impl.TiktokenReconstruction;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 public final class TiktokenFixtures {
 
@@ -72,19 +75,19 @@ public final class TiktokenFixtures {
                             "r50k_base.tiktoken",
                             R50K_BASE_HASH,
                             R50K_PATTERN,
-                            java.util.Map.of(ENDOFTEXT, 50256)),
+                            Map.of(ENDOFTEXT, 50256)),
                     new EncodingFixture(
                             "p50k_base",
                             "p50k_base.tiktoken",
                             P50K_BASE_HASH,
                             R50K_PATTERN,
-                            java.util.Map.of(ENDOFTEXT, 50256)),
+                            Map.of(ENDOFTEXT, 50256)),
                     new EncodingFixture(
                             "p50k_edit",
                             "p50k_base.tiktoken",
                             P50K_BASE_HASH,
                             R50K_PATTERN,
-                            java.util.Map.of(
+                            Map.of(
                                     ENDOFTEXT, 50256,
                                     FIM_PREFIX, 50281,
                                     FIM_MIDDLE, 50282,
@@ -94,7 +97,7 @@ public final class TiktokenFixtures {
                             "cl100k_base.tiktoken",
                             CL100K_BASE_HASH,
                             CL100K_PATTERN,
-                            java.util.Map.of(
+                            Map.of(
                                     ENDOFTEXT, 100257,
                                     FIM_PREFIX, 100258,
                                     FIM_MIDDLE, 100259,
@@ -105,13 +108,12 @@ public final class TiktokenFixtures {
                             "o200k_base.tiktoken",
                             O200K_BASE_HASH,
                             O200K_PATTERN,
-                            java.util.Map.of(ENDOFTEXT, 199999, ENDOFPROMPT, 200018)));
+                            Map.of(ENDOFTEXT, 199999, ENDOFPROMPT, 200018)));
 
-    private static final java.util.Map<String, Map<String, Integer>> MERGEABLE_RANKS_CACHE =
-            new HashMap<>();
+    private static final Map<String, Map<String, Integer>> MERGEABLE_RANKS_CACHE = new HashMap<>();
 
     // Cache for tokenizer instances to avoid recreating them for each test
-    private static final java.util.Map<String, Tokenizer> TOKENIZER_CACHE = new HashMap<>();
+    private static final Map<String, Tokenizer> TOKENIZER_CACHE = new HashMap<>();
 
     public static List<EncodingFixture> encodings() {
         return ENCODINGS;
@@ -122,21 +124,11 @@ public final class TiktokenFixtures {
     }
 
     public static Tokenizer createJtokkitTokenizer(String encodingName) {
-        return TOKENIZER_CACHE.computeIfAbsent(
-                encodingName,
-                name -> {
-                    EncodingFixture fixture = encoding(name);
-                    Map<String, Integer> ranks =
-                            loadMergeableRanks(fixture.fileName(), fixture.hash());
-                    return Tokenizers.tikToken(
-                            ranks,
-                            fixture.specialTokens(),
-                            Splitter.regex(fixture.pattern()));
-                });
+        return TOKENIZER_CACHE.computeIfAbsent(encodingName, TiktokenFixtures::createTikTokenTokenizer);
     }
 
     private static Tokenizer BPE_R50K_TOKENIZER = null;
-    private static final java.util.Map<String, Tokenizer> BPE_TOKENIZER_CACHE = new HashMap<>();
+    private static final Map<String, Tokenizer> BPE_TOKENIZER_CACHE = new HashMap<>();
 
     public static Tokenizer createBpeR50kTokenizer() {
         if (BPE_R50K_TOKENIZER == null) {
@@ -146,17 +138,31 @@ public final class TiktokenFixtures {
     }
 
     public static Tokenizer createBpeTokenizer(String encodingName) {
-        return BPE_TOKENIZER_CACHE.computeIfAbsent(
-                encodingName,
-                name -> {
-                    EncodingFixture fixture = encoding(name);
-                    Map<String, Integer> ranks =
-                            loadMergeableRanks(fixture.fileName(), fixture.hash());
-                    return Tokenizers.bpe(
-                            ranks,
-                            fixture.specialTokens(),
-                            Splitter.regex(fixture.pattern()));
-                });
+        return BPE_TOKENIZER_CACHE.computeIfAbsent(encodingName, TiktokenFixtures::createTikTokenTokenizer);
+    }
+
+    public static Tokenizer createTikTokenTokenizer(String encodingName, Splitter splitter) {
+        EncodingFixture fixture = encoding(encodingName);
+        return createTikTokenTokenizer(
+                mergeableRanks(encodingName), fixture.specialTokens(), splitter);
+    }
+
+    public static Tokenizer createTikTokenTokenizer(String encodingName) {
+        EncodingFixture fixture = encoding(encodingName);
+        return createTikTokenTokenizer(
+                mergeableRanks(encodingName),
+                fixture.specialTokens(),
+                Splitter.regex(
+                        Pattern.compile(fixture.pattern(), Pattern.UNICODE_CHARACTER_CLASS)));
+    }
+
+    public static Tokenizer createTikTokenTokenizer(
+            Map<String, Integer> ranks, Map<String, Integer> specials, Splitter splitter) {
+        TokenizationModel model =
+                Tokenizers.tikTokenModel(
+                        TiktokenReconstruction.vocabulary(ranks, specials),
+                        TiktokenReconstruction.mergeRules(ranks));
+        return Tokenizers.pipeline(model).splitter(splitter).build();
     }
 
     private static List<NamedTokenizer> ALL_JTOKKIT_TOKENIZERS = null;
@@ -180,7 +186,7 @@ public final class TiktokenFixtures {
                 fileName,
                 key -> {
                     try {
-                        return ClassicBPE.loadMergeableRanks(
+                        return TiktokenFiles.loadMergeableRanks(
                                 resourcePath(fileName).toString(), expectedHash);
                     } catch (Exception e) {
                         throw new IllegalStateException(
@@ -198,9 +204,8 @@ public final class TiktokenFixtures {
         return Collections.unmodifiableMap(encoding(encodingName).specialTokens());
     }
 
-    public static java.util.regex.Pattern splitPattern(String encodingName) {
-        return java.util.regex.Pattern.compile(
-                encoding(encodingName).pattern(), java.util.regex.Pattern.UNICODE_CHARACTER_CLASS);
+    public static Pattern splitPattern(String encodingName) {
+        return Pattern.compile(encoding(encodingName).pattern(), Pattern.UNICODE_CHARACTER_CLASS);
     }
 
     private static Path resourcePath(String fileName) {

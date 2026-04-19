@@ -1,8 +1,8 @@
 package com.qxotic.toknroll.impl;
 
+import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.TokenType;
 import com.qxotic.toknroll.Vocabulary;
-import com.qxotic.toknroll.advanced.StandardTokenType;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;

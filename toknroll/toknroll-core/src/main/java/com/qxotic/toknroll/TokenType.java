@@ -27,6 +27,6 @@ package com.qxotic.toknroll;
  * }
  * }</pre>
  *
- * @see com.qxotic.toknroll.advanced.StandardTokenType
+ * @see StandardTokenType
  */
 public interface TokenType {}

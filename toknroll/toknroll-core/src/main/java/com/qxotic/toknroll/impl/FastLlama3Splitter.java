@@ -21,7 +21,8 @@ public final class FastLlama3Splitter implements Splitter {
                     + "\\n"
                     + "]+|\\s+(?!\\S)|\\s+";
 
-    private static final Pattern LLAMA3_COMPILED = Pattern.compile(LLAMA3_PATTERN);
+    private static final Pattern LLAMA3_COMPILED =
+            Pattern.compile(LLAMA3_PATTERN, Pattern.UNICODE_CHARACTER_CLASS);
     public static final FastLlama3Splitter INSTANCE = new FastLlama3Splitter();
 
     private FastLlama3Splitter() {}

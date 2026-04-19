@@ -7,6 +7,7 @@ import com.qxotic.toknroll.testkit.TestCorpora;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 class FastQwen35SplitterTest {
@@ -23,7 +24,8 @@ class FastQwen35SplitterTest {
     @Test
     void matchesRegexSplitterForRepresentativeInputs() {
         Splitter fast = FastQwen35Splitter.INSTANCE;
-        Splitter regex = Splitter.regex(QWEN35_PATTERN);
+        Splitter regex =
+                Splitter.regex(Pattern.compile(QWEN35_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
 
         for (String sample : TestCorpora.QWEN35_SPLITTER_REPRESENTATIVE_SAMPLES) {
             assertEquals(tokens(regex, sample), tokens(fast, sample), sample);
@@ -33,7 +35,8 @@ class FastQwen35SplitterTest {
     @Test
     void matchesRegexSplitterForRandomMixedInputs() {
         Splitter fast = FastQwen35Splitter.INSTANCE;
-        Splitter regex = Splitter.regex(QWEN35_PATTERN);
+        Splitter regex =
+                Splitter.regex(Pattern.compile(QWEN35_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         Random rnd = new Random(20260403L);
 
         for (int n = 0; n < 2_000; n++) {

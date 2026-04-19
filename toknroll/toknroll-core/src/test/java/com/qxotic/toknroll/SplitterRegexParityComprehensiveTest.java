@@ -1,5 +1,6 @@
 package com.qxotic.toknroll;
 
+import com.qxotic.toknroll.gguf.ModelTextSplitters;
 import com.qxotic.toknroll.impl.FastCl100kSplitter;
 import com.qxotic.toknroll.impl.FastLlama3Splitter;
 import com.qxotic.toknroll.impl.FastO200kSplitter;
@@ -35,14 +36,7 @@ class SplitterRegexParityComprehensiveTest {
                     + "\\n"
                     + "]|\\s+(?!\\S)|\\s";
 
-    private static final String QWEN35_PATTERN =
-            "(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])|[^\\r"
-                    + "\\n"
-                    + "\\p{L}\\p{N}]?[\\p{L}\\p{M}]+|\\p{N}| ?[^\\s\\p{L}\\p{M}\\p{N}]+[\\r"
-                    + "\\n"
-                    + "]*|\\s*[\\r"
-                    + "\\n"
-                    + "]+|\\s+(?!\\S)|\\s+";
+    private static final String QWEN35_PATTERN = ModelTextSplitters.QWEN35_PATTERN;
 
     private static final String O200K_PATTERN =
             String.join(
@@ -68,18 +62,31 @@ class SplitterRegexParityComprehensiveTest {
 
     private static Stream<SplitterCase> splitterCases() {
         return Stream.of(
-                new SplitterCase("r50k", FastR50kSplitter.INSTANCE, Splitter.regex(R50K_PATTERN)),
                 new SplitterCase(
-                        "llama3", FastLlama3Splitter.INSTANCE, Splitter.regex(LLAMA3_PATTERN)),
+                        "r50k",
+                        FastR50kSplitter.INSTANCE,
+                        Splitter.regex(
+                                Pattern.compile(R50K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS))),
+                new SplitterCase(
+                        "llama3",
+                        FastLlama3Splitter.INSTANCE,
+                        Splitter.regex(
+                                Pattern.compile(LLAMA3_PATTERN, Pattern.UNICODE_CHARACTER_CLASS))),
                 new SplitterCase(
                         "cl100k",
                         FastCl100kSplitter.INSTANCE,
                         Splitter.regex(
                                 Pattern.compile(CL100K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS))),
                 new SplitterCase(
-                        "qwen35", FastQwen35Splitter.INSTANCE, Splitter.regex(QWEN35_PATTERN)),
+                        "qwen35",
+                        FastQwen35Splitter.INSTANCE,
+                        Splitter.regex(
+                                Pattern.compile(QWEN35_PATTERN, Pattern.UNICODE_CHARACTER_CLASS))),
                 new SplitterCase(
-                        "o200k", FastO200kSplitter.INSTANCE, Splitter.regex(O200K_PATTERN)));
+                        "o200k",
+                        FastO200kSplitter.INSTANCE,
+                        Splitter.regex(
+                                Pattern.compile(O200K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS))));
     }
 
     private static final class SplitterCase {

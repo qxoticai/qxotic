@@ -16,11 +16,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 class TokenizerGoldenTest {
 
     private static final TiktokenGoldenFixture FIXTURE = TiktokenGoldenFixture.load();
-    private static final List<EncodingSpec> ENCODINGS =
-            List.of(
-                    new EncodingSpec("r50k_base", Integer.MAX_VALUE),
-                    new EncodingSpec("cl100k_base", 25),
-                    new EncodingSpec("o200k_base", 25));
+    private static final List<String> ENCODINGS = List.of("r50k_base", "cl100k_base", "o200k_base");
 
     @ParameterizedTest(name = "golden {0}/{1}")
     @MethodSource("goldenCases")
@@ -51,12 +47,11 @@ class TokenizerGoldenTest {
 
     static Stream<Arguments> goldenCases() {
         List<Arguments> args = new ArrayList<>();
-        for (EncodingSpec spec : ENCODINGS) {
-            int limit = Math.min(spec.maxCases(), FIXTURE.getCases(spec.name()).size());
-            for (CaseData c : FIXTURE.getSampledCases(spec.name(), limit)) {
+        for (String encoding : ENCODINGS) {
+            for (CaseData c : FIXTURE.getCases(encoding)) {
                 args.add(
                         Arguments.of(
-                                spec.name(),
+                                encoding,
                                 c.caseId(),
                                 c.inputText(),
                                 c.tokens(),
@@ -67,6 +62,4 @@ class TokenizerGoldenTest {
         }
         return args.stream();
     }
-
-    private record EncodingSpec(String name, int maxCases) {}
 }

@@ -9,7 +9,7 @@ import java.util.Objects;
  *
  * <p>Provides vocabulary management and a default encoding pipeline. Subclasses implement the core
  * chunk-level encoding logic via {@link #encodeImplInto(CharSequence, IntSequence.Builder)}.
- * Splitting is handled externally by {@link com.qxotic.toknroll.TokenizationPipeline}.
+ * Splitting is handled externally by {@link TokenizationPipeline}.
  *
  * <p>Implementations need to provide:
  *
@@ -23,6 +23,8 @@ public abstract class AbstractTokenizationModel implements TokenizationModel {
     /** The vocabulary used for token lookup. */
     protected final Vocabulary vocabulary;
 
+    private final float expectedTokensPerChar;
+
     /**
      * Creates a new tokenization model with the given vocabulary.
      *
@@ -30,7 +32,25 @@ public abstract class AbstractTokenizationModel implements TokenizationModel {
      * @throws NullPointerException if vocabulary is null
      */
     protected AbstractTokenizationModel(Vocabulary vocabulary) {
+        this(vocabulary, 0.5f);
+    }
+
+    /**
+     * Creates a new tokenization model with the given vocabulary and expected tokens-per-char
+     * ratio.
+     *
+     * @param vocabulary the vocabulary for token lookup
+     * @param expectedTokensPerChar expected tokens per character for preallocation hints
+     * @throws NullPointerException if vocabulary is null
+     */
+    protected AbstractTokenizationModel(Vocabulary vocabulary, float expectedTokensPerChar) {
         this.vocabulary = Objects.requireNonNull(vocabulary, "vocabulary");
+        this.expectedTokensPerChar = expectedTokensPerChar;
+    }
+
+    @Override
+    public float expectedTokensPerChar() {
+        return expectedTokensPerChar;
     }
 
     @Override

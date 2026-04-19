@@ -4,12 +4,16 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
-import com.qxotic.toknroll.impl.ClassicBPE;
+import com.qxotic.toknroll.Vocabulary;
+import com.qxotic.toknroll.impl.TiktokenFiles;
+import com.qxotic.toknroll.impl.TiktokenReconstruction;
 import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Map;
+import java.util.regex.Pattern;
 
 /** Test Java tokenization on the exact slice file from Python. */
 public class TestSliceFile {
@@ -70,11 +74,17 @@ public class TestSliceFile {
                                 .getResource("tiktoken/r50k_base.tiktoken")
                                 .toURI());
 
-        var mergeableRanks = ClassicBPE.loadMergeableRanks(tiktokenPath.toString(), R50K_BASE_HASH);
+        var mergeableRanks =
+                TiktokenFiles.loadMergeableRanks(tiktokenPath.toString(), R50K_BASE_HASH);
 
-        return Tokenizers.bpe(
-                mergeableRanks,
-                java.util.Map.of("<|endoftext|>", 50256),
-                Splitter.regex(R50K_PATTERN));
+        Vocabulary vocabulary =
+                TiktokenReconstruction.vocabulary(mergeableRanks, Map.of("<|endoftext|>", 50256));
+        return Tokenizers.pipeline(
+                        Tokenizers.tikTokenModel(
+                                vocabulary, TiktokenReconstruction.mergeRules(mergeableRanks)))
+                .splitter(
+                        Splitter.regex(
+                                Pattern.compile(R50K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS)))
+                .build();
     }
 }

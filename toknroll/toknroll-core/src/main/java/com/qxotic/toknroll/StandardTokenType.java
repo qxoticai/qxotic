@@ -1,6 +1,4 @@
-package com.qxotic.toknroll.advanced;
-
-import com.qxotic.toknroll.TokenType;
+package com.qxotic.toknroll;
 
 /**
  * Standard token types as defined by the GGUF specification in <a

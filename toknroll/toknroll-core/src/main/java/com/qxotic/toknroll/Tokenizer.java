@@ -12,9 +12,9 @@ import java.util.Objects;
  * <p>All other methods are convenience wrappers built on top of these operations.
  *
  * <p>This interface is intentionally flexible: implementations may apply model-specific policy,
- * normalization, special-token handling, or lossy text paths. As a result, text-level
- * reversibility is not guaranteed in general (see {@link TokenizationModel} for the strict,
- * reversible model contract).
+ * normalization, special-token handling, or lossy text paths. As a result, text-level reversibility
+ * is not guaranteed in general (see {@link TokenizationModel} for the strict, reversible model
+ * contract).
  */
 public interface Tokenizer {
 

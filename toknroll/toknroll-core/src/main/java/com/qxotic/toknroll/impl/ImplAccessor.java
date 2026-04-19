@@ -1,7 +1,11 @@
 package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.TokenizationModel;
+import com.qxotic.toknroll.Tokenizers;
+import com.qxotic.toknroll.Vocabulary;
 import java.util.List;
+import java.util.Map;
 
 public final class ImplAccessor {
 
@@ -26,5 +30,28 @@ public final class ImplAccessor {
 
     public static IntSequence wrap(List<Integer> list) {
         return new ListIntSequence(list);
+    }
+
+    public static Vocabulary createVocabularyWithSpecials(
+            Map<String, Integer> tokenToId, Map<String, Integer> specialTokens) {
+        return VocabularyWithSpecials.create(new VocabularyImpl(tokenToId), specialTokens);
+    }
+
+    public static TokenizationModel createTikTokenModel(
+            Vocabulary vocabulary, List<Tokenizers.MergeRule> merges, boolean ignoreMerges) {
+        LongLongMap packed =
+                merges.isEmpty()
+                        ? new LongLongMap(new long[0], new long[0])
+                        : TiktokenReconstruction.packTikTokenMerges(vocabulary, merges);
+        return TikTokenModel.fromVocabularyAndMerges(vocabulary, packed, ignoreMerges);
+    }
+
+    public static TokenizationModel createSentencePieceBpeModel(
+            Vocabulary vocabulary, List<Tokenizers.MergeRule> merges) {
+        LongLongMap packed =
+                merges.isEmpty()
+                        ? new LongLongMap(new long[0], new long[0])
+                        : TiktokenReconstruction.packSentencePieceMerges(vocabulary, merges);
+        return SentencePieceBpeModel.fromVocabularyAndMerges(vocabulary, packed);
     }
 }

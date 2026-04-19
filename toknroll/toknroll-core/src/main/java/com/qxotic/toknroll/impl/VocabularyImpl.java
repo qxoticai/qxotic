@@ -1,8 +1,8 @@
 package com.qxotic.toknroll.impl;
 
+import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.TokenType;
 import com.qxotic.toknroll.Vocabulary;
-import com.qxotic.toknroll.advanced.StandardTokenType;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -13,24 +13,21 @@ import java.util.stream.IntStream;
 @Deprecated(forRemoval = false, since = "0.1.0")
 public class VocabularyImpl implements Vocabulary {
     protected final String[] tokens;
-    protected final float[] scores;
     protected final Map<String, Integer> tokenToId;
     protected final int[] tokenTypes;
 
-    private VocabularyImpl(
-            String[] tokens, float[] scores, Map<String, Integer> tokenToId, int[] tokenTypes) {
+    private VocabularyImpl(String[] tokens, Map<String, Integer> tokenToId, int[] tokenTypes) {
         this.tokens = tokens;
-        this.scores = scores;
         this.tokenToId = Collections.unmodifiableMap(tokenToId);
         this.tokenTypes = tokenTypes;
     }
 
     public VocabularyImpl(String... tokens) {
-        this(tokens, null, null);
+        this(tokens, computeTokenMap(tokens), null);
     }
 
     public VocabularyImpl(Map<String, Integer> tokenToId) {
-        this(computeTokens(tokenToId), null, tokenToId, null);
+        this(computeTokens(tokenToId), tokenToId, null);
     }
 
     private static String[] computeTokens(Map<String, Integer> tokenToId) {
@@ -74,9 +71,8 @@ public class VocabularyImpl implements Vocabulary {
         return tokens;
     }
 
-    public VocabularyImpl(String[] vocabulary, float[] scores, int[] tokenTypes) {
-        this(vocabulary, scores, computeTokenMap(vocabulary), tokenTypes);
-        assert scores == null || scores.length == vocabulary.length;
+    public VocabularyImpl(String[] vocabulary, int[] tokenTypes) {
+        this(vocabulary, computeTokenMap(vocabulary), tokenTypes);
         assert tokenTypes == null || tokenTypes.length == vocabulary.length;
     }
 

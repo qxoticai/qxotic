@@ -4,16 +4,19 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Normalizer;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.Tokenizers;
 import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
 import com.qxotic.toknroll.impl.FastLlama3Splitter;
+import com.qxotic.toknroll.impl.FastO200kSplitter;
 import com.qxotic.toknroll.impl.FastQwen35Splitter;
 import com.qxotic.toknroll.impl.FastR50kSplitter;
 import com.qxotic.toknroll.loaders.ModelSplitters;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import com.qxotic.toknroll.testkit.TokenizerAdapters;
 import java.text.Normalizer.Form;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import org.openjdk.jmh.annotations.AuxCounters;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -51,6 +54,11 @@ import org.openjdk.jmh.infra.Blackhole;
 @State(Scope.Benchmark)
 public class ModelTokenizerBenchmark {
 
+    private static final boolean VERIFY_OUTPUTS =
+            Boolean.parseBoolean(System.getProperty("toknroll.bench.verify", "true"));
+    private static final ConcurrentHashMap<String, Tokenizer> REFERENCE_CACHE =
+            new ConcurrentHashMap<>();
+
     @State(Scope.Thread)
     @AuxCounters(AuxCounters.Type.EVENTS)
     public static class DecodeCounters {
@@ -65,6 +73,9 @@ public class ModelTokenizerBenchmark {
     private static final String LLAMA3_HF_MODEL_REF = "unsloth/Llama-3.2-1B-Instruct";
     private static final String LLAMA3_HF_REVISION = "5a8abab4a5d6f164389b1079fb721cfab8d7126c";
     private static final String QWEN35_HF_MODEL_REF = "Qwen/Qwen3-0.6B";
+    private static final String GEMMA4_HF_MODEL_REF = "google/gemma-4-e2b-it";
+    private static final String GPT_OSS_HF_MODEL_REF = "openai/gpt-oss-20b";
+    private static final String MISTRAL_V03_HF_MODEL_REF = "mistralai/Mistral-7B-Instruct-v0.3";
     private static final String MISTRAL_TEKKEN_HF_MODEL_REF =
             "mistralai/ministral-8b-instruct-2410";
     private static final String MISTRAL_TEKKEN_HF_REVISION =
@@ -73,7 +84,7 @@ public class ModelTokenizerBenchmark {
     @Param({"reference", "bpe", "fast"})
     public String implementation;
 
-    @Param({"gpt2", "llama3", "qwen35", "mistral-tekken"})
+    @Param({"gpt2", "gpt-oss", "llama3", "qwen35", "gemma4", "mistral-v03-spbpe", "mistral-tekken"})
     public String model;
 
     @Param({"chat", "code", "json", "prose", "wiki"})
@@ -90,7 +101,115 @@ public class ModelTokenizerBenchmark {
     public void setup() {
         tokenizer = createModelTokenizer(model, implementation);
         text = resize(seedText(corpus), targetLength(size));
+        if (VERIFY_OUTPUTS) {
+            verifyBenchmarkTokenizer(model, tokenizer, text);
+        }
         encoded = tokenizer.encode(text);
+    }
+
+    private static void verifyBenchmarkTokenizer(
+            String model, Tokenizer candidate, String benchmarkText) {
+        Tokenizer reference =
+                REFERENCE_CACHE.computeIfAbsent(
+                        model, ModelTokenizerBenchmark::createReferenceTokenizer);
+        for (String probe : verificationCases(model, benchmarkText)) {
+            int[] expected = reference.encodeToArray(probe);
+            int[] actual = candidate.encodeToArray(probe);
+            if (!Arrays.equals(expected, actual)) {
+                throw new IllegalStateException(
+                        "Benchmark tokenizer mismatch for model="
+                                + model
+                                + " probe="
+                                + summarizeProbe(probe)
+                                + " expected="
+                                + summarizeIds(expected)
+                                + " actual="
+                                + summarizeIds(actual));
+            }
+        }
+    }
+
+    private static Tokenizer createReferenceTokenizer(String model) {
+        switch (model) {
+            case "gpt2":
+                return TiktokenFixtures.createJtokkitTokenizer("r50k_base");
+            case "gpt-oss":
+                return ModelFamilyTokenizers.createFromHfFiles(
+                                "openai.gpt-oss", GPT_OSS_HF_MODEL_REF, null)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "HF reference unavailable for openai.gpt-oss"));
+            case "qwen35":
+                return ModelFamilyTokenizers.createFromHfFiles(
+                                "alibaba.qwen3_5", QWEN35_HF_MODEL_REF, null)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "HF reference unavailable for alibaba.qwen3_5"));
+            case "gemma4":
+                return ModelFamilyTokenizers.createFromHfFiles(
+                                "google.gemma4", GEMMA4_HF_MODEL_REF, null)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "HF reference unavailable for google.gemma4"));
+            case "llama3":
+                return ModelFamilyTokenizers.createFromHfFiles(
+                                "meta.llama3", LLAMA3_HF_MODEL_REF, LLAMA3_HF_REVISION)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "HF reference unavailable for meta.llama3"));
+            case "mistral-v03-spbpe":
+                return ModelFamilyTokenizers.createFromHfFiles(
+                                "mistral.v0_3_spbpe", MISTRAL_V03_HF_MODEL_REF, null)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "HF reference unavailable for mistral.v0_3_spbpe"));
+            case "mistral-tekken":
+                return ModelFamilyTokenizers.createFromHfFiles(
+                                "mistral.tekken",
+                                MISTRAL_TEKKEN_HF_MODEL_REF,
+                                MISTRAL_TEKKEN_HF_REVISION)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "HF reference unavailable for mistral.tekken"));
+            default:
+                throw new IllegalArgumentException("Unsupported model: " + model);
+        }
+    }
+
+    private static List<String> verificationCases(String model, String benchmarkText) {
+        if ("qwen35".equals(model) || "gpt-oss".equals(model)) {
+            return Arrays.asList(
+                    benchmarkText,
+                    "Hello, world!",
+                    "<|endoftext|>",
+                    "<|fim_prefix|>Hello<|fim_suffix|>World<|fim_middle|>",
+                    "Hello\n\nWorld");
+        }
+        if ("gemma4".equals(model)) {
+            return Arrays.asList(
+                    benchmarkText,
+                    "Hello, World!",
+                    "Hello  World",
+                    "Hello\n\nWorld",
+                    "<html><body>Hello</body></html>");
+        }
+        return Arrays.asList(benchmarkText, "Hello, world!", "Hello\nWorld", "e\u0301 != é");
+    }
+
+    private static String summarizeProbe(String probe) {
+        String compact = probe.replace("\n", "\\n").replace("\t", "\\t");
+        return compact.length() <= 80 ? compact : compact.substring(0, 77) + "...";
+    }
+
+    private static String summarizeIds(int[] ids) {
+        int max = Math.min(ids.length, 16);
+        return Arrays.toString(Arrays.copyOf(ids, max)) + (ids.length > max ? "..." : "");
     }
 
     @Benchmark
@@ -127,6 +246,14 @@ public class ModelTokenizerBenchmark {
                     implementation);
         }
         if ("qwen35".equals(model)) {
+            if ("fast".equals(implementation)) {
+                return ModelFamilyTokenizers.createFast("alibaba.qwen3_5")
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "Failed to load fast tokenizer for"
+                                                        + " alibaba.qwen3_5"));
+            }
             return modelNativeTokenizer(
                     "alibaba.qwen3_5",
                     QWEN35_HF_MODEL_REF,
@@ -143,6 +270,21 @@ public class ModelTokenizerBenchmark {
                     Normalizer.identity(),
                     ModelSplitters.TEKKEN,
                     implementation);
+        }
+        if ("mistral-v03-spbpe".equals(model)) {
+            return modelNativeTokenizer(
+                    "mistral.v0_3_spbpe",
+                    MISTRAL_V03_HF_MODEL_REF,
+                    null,
+                    Normalizer.identity(),
+                    ModelSplitters.LLAMA3,
+                    implementation);
+        }
+        if ("gemma4".equals(model)) {
+            return gemma4Tokenizer(implementation);
+        }
+        if ("gpt-oss".equals(model)) {
+            return gptOssTokenizer(implementation);
         }
         if (!"gpt2".equals(model)) {
             throw new IllegalArgumentException("Unsupported model: " + model);
@@ -190,20 +332,53 @@ public class ModelTokenizerBenchmark {
         }
     }
 
-    private static Tokenizer bpe(
-            String encoding, Normalizer normalizer, com.qxotic.toknroll.Splitter splitter) {
-        Map<String, Integer> ranks = TiktokenFixtures.mergeableRanks(encoding);
-        Map<String, Integer> specials = TiktokenFixtures.specialTokens(encoding);
-        return TokenizerAdapters.withNormalizer(
-                Tokenizers.bpe(ranks, specials, splitter), normalizer);
+    private static Tokenizer gemma4Tokenizer(String implementation) {
+        Tokenizer fidelityGguf =
+                ModelFamilyTokenizers.create("google.gemma4")
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "Failed to load GGUF tokenizer for google.gemma4"));
+        if ("reference".equals(implementation)
+                || "bpe".equals(implementation)
+                || "fast".equals(implementation)) {
+            return fidelityGguf;
+        }
+        throw new IllegalArgumentException("Unsupported implementation: " + implementation);
     }
 
-    private static Tokenizer fast(
-            String encoding, Normalizer normalizer, com.qxotic.toknroll.Splitter splitter) {
+    private static Tokenizer gptOssTokenizer(String implementation) {
+        switch (implementation) {
+            case "reference":
+                return ModelFamilyTokenizers.createFromHfFiles(
+                                "openai.gpt-oss", GPT_OSS_HF_MODEL_REF, null)
+                        .orElseGet(
+                                () ->
+                                        fast(
+                                                "o200k_base",
+                                                Normalizer.identity(),
+                                                FastO200kSplitter.INSTANCE));
+            case "bpe":
+                return bpe("o200k_base", Normalizer.identity(), FastO200kSplitter.INSTANCE);
+            case "fast":
+                return fast("o200k_base", Normalizer.identity(), FastO200kSplitter.INSTANCE);
+            default:
+                throw new IllegalArgumentException("Unsupported implementation: " + implementation);
+        }
+    }
+
+    private static Tokenizer bpe(String encoding, Normalizer normalizer, Splitter splitter) {
         Map<String, Integer> ranks = TiktokenFixtures.mergeableRanks(encoding);
         Map<String, Integer> specials = TiktokenFixtures.specialTokens(encoding);
         return TokenizerAdapters.withNormalizer(
-                Tokenizers.tikToken(ranks, specials, splitter), normalizer);
+                TiktokenFixtures.createTikTokenTokenizer(ranks, specials, splitter), normalizer);
+    }
+
+    private static Tokenizer fast(String encoding, Normalizer normalizer, Splitter splitter) {
+        Map<String, Integer> ranks = TiktokenFixtures.mergeableRanks(encoding);
+        Map<String, Integer> specials = TiktokenFixtures.specialTokens(encoding);
+        return TokenizerAdapters.withNormalizer(
+                TiktokenFixtures.createTikTokenTokenizer(ranks, specials, splitter), normalizer);
     }
 
     private static int targetLength(String size) {

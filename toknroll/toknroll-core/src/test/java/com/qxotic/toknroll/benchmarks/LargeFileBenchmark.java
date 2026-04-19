@@ -4,10 +4,13 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
-import com.qxotic.toknroll.impl.ClassicBPE;
+import com.qxotic.toknroll.impl.TiktokenFiles;
+import com.qxotic.toknroll.impl.TiktokenReconstruction;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * Large file benchmark for testing tokenizer performance on the enwik9 dataset. This benchmark
@@ -143,17 +146,23 @@ public class LargeFileBenchmark {
                                 .toURI());
 
         var mergeableRanks =
-                ClassicBPE.loadMergeableRanks(tiktokenPath.toString(), CL100K_BASE_HASH);
+                TiktokenFiles.loadMergeableRanks(tiktokenPath.toString(), CL100K_BASE_HASH);
 
-        return Tokenizers.tikToken(
-                mergeableRanks,
-                java.util.Map.of(
+        Map<String, Integer> specials =
+                Map.of(
                         "<|endoftext|>", 100257,
                         "<|fim_prefix|>", 100258,
                         "<|fim_middle|>", 100259,
                         "<|fim_suffix|>", 100260,
-                        "<|endofprompt|>", 100276),
-                Splitter.regex(CL100K_PATTERN));
+                        "<|endofprompt|>", 100276);
+        return Tokenizers.pipeline(
+                        Tokenizers.tikTokenModel(
+                                TiktokenReconstruction.vocabulary(mergeableRanks, specials),
+                                TiktokenReconstruction.mergeRules(mergeableRanks)))
+                .splitter(
+                        Splitter.regex(
+                                Pattern.compile(CL100K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS)))
+                .build();
     }
 
     private static double average(double[] values) {
