@@ -3,13 +3,8 @@ package com.qxotic.toknroll.gguf;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.toknroll.ByteLevel;
-import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Vocabulary;
-import com.qxotic.toknroll.impl.Decoder;
-import com.qxotic.toknroll.impl.RegexSplitter;
-import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -21,11 +16,11 @@ class GGUFTokenizerComponentsTest {
     @Test
     void qwenAndLlamaPatternsSplitNumbersDifferently() {
         Splitter qwen =
-                RegexSplitter.create(
+                Splitter.regex(
                         Pattern.compile(
                                 ModelTextSplitters.QWEN2_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         Splitter llama =
-                RegexSplitter.create(
+                Splitter.regex(
                         Pattern.compile(
                                 ModelTextSplitters.LLAMA3_PATTERN,
                                 Pattern.UNICODE_CHARACTER_CLASS));
@@ -45,7 +40,7 @@ class GGUFTokenizerComponentsTest {
     @Test
     void tekkenLlamaPatternHandlesContractions() {
         Splitter splitter =
-                RegexSplitter.create(
+                Splitter.regex(
                         Pattern.compile(
                                 ModelTextSplitters.LLAMA3_PATTERN,
                                 Pattern.UNICODE_CHARACTER_CLASS));
@@ -54,24 +49,6 @@ class GGUFTokenizerComponentsTest {
                         .map(CharSequence::toString)
                         .toList();
         assertTrue(tokens.stream().anyMatch(t -> t.contains("'m")));
-    }
-
-    @Test
-    void metaspaceDecoderDecodesLlamaStyleTokens() {
-        Vocabulary vocab = simpleVocabulary(Map.of("▁Hello", 1, "▁world", 2));
-        Decoder decoder = Decoder.metaspace('▁', true);
-        String text = decoder.decode(IntSequence.of(1, 2), vocab);
-        assertEquals(" Hello world", text);
-    }
-
-    @Test
-    void byteLevelDecoderRoundTripsUtf8() {
-        String input = "Hello 🌍";
-        String encoded = ByteLevel.encode(input.getBytes(StandardCharsets.UTF_8));
-        Vocabulary vocab = simpleVocabulary(Map.of(encoded, 1));
-
-        String decoded = Decoder.byteLevel().decode(IntSequence.of(1), vocab);
-        assertEquals(input, decoded);
     }
 
     @Test

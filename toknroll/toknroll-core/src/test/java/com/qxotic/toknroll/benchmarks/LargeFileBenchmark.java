@@ -4,8 +4,7 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
-import com.qxotic.toknroll.impl.TiktokenFiles;
-import com.qxotic.toknroll.impl.TiktokenReconstruction;
+import com.qxotic.toknroll.loaders.TiktokenLoaders;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -146,7 +145,7 @@ public class LargeFileBenchmark {
                                 .toURI());
 
         var mergeableRanks =
-                TiktokenFiles.loadMergeableRanks(tiktokenPath.toString(), CL100K_BASE_HASH);
+                TiktokenLoaders.loadMergeableRanks(tiktokenPath.toString(), CL100K_BASE_HASH);
 
         Map<String, Integer> specials =
                 Map.of(
@@ -157,8 +156,8 @@ public class LargeFileBenchmark {
                         "<|endofprompt|>", 100276);
         return Tokenizers.pipeline(
                         Tokenizers.tikTokenModel(
-                                TiktokenReconstruction.vocabulary(mergeableRanks, specials),
-                                TiktokenReconstruction.mergeRules(mergeableRanks)))
+                                TiktokenLoaders.vocabulary(mergeableRanks, specials),
+                                TiktokenLoaders.mergeRules(mergeableRanks)))
                 .splitter(
                         Splitter.regex(
                                 Pattern.compile(CL100K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS)))

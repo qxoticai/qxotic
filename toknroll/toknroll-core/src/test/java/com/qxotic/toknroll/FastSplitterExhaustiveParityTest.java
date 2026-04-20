@@ -2,9 +2,7 @@ package com.qxotic.toknroll;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.toknroll.impl.FastCl100kSplitter;
-import com.qxotic.toknroll.impl.FastO200kSplitter;
-import com.qxotic.toknroll.impl.FastR50kSplitter;
+import com.qxotic.toknroll.impl.FastSplitters;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -147,17 +145,17 @@ class FastSplitterExhaustiveParityTest {
         return Stream.of(
                 new SplitterCase(
                         "r50k",
-                        FastR50kSplitter.INSTANCE,
+                        FastSplitters.r50k(),
                         Splitter.regex(
                                 Pattern.compile(R50K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS))),
                 new SplitterCase(
                         "cl100k",
-                        FastCl100kSplitter.INSTANCE,
+                        FastSplitters.cl100k(),
                         Splitter.regex(
                                 Pattern.compile(CL100K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS))),
                 new SplitterCase(
                         "o200k",
-                        FastO200kSplitter.INSTANCE,
+                        FastSplitters.o200k(),
                         Splitter.regex(
                                 Pattern.compile(O200K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS))));
     }

@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
  *
  * <p>Falls back to regex for non-ASCII slices to preserve Unicode behavior.
  */
-public final class FastO200kSplitter extends AbstractFastAsciiRegexSplitter {
+final class FastO200kSplitter extends AbstractFastAsciiRegexSplitter {
 
     private static final String O200K_PATTERN =
             String.join(

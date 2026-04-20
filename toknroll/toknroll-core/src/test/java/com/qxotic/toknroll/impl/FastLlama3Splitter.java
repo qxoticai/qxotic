@@ -5,23 +5,27 @@ import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Fast ASCII-oriented splitter for the Qwen 3.5 pre-tokenizer regex. */
-public final class FastQwen35Splitter implements Splitter {
+/**
+ * Fast ASCII-oriented splitter approximating the LLAMA3 pre-tokenizer regex.
+ *
+ * <p>Falls back to regex for non-ASCII slices to preserve Unicode behavior.
+ */
+final class FastLlama3Splitter implements Splitter {
 
-    private static final String QWEN35_PATTERN =
+    private static final String LLAMA3_PATTERN =
             "(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])|[^\\r"
                     + "\\n"
-                    + "\\p{L}\\p{N}]?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\\r"
+                    + "\\p{L}\\p{N}]?\\p{L}+|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r"
                     + "\\n"
                     + "]*|\\s*[\\r"
                     + "\\n"
                     + "]+|\\s+(?!\\S)|\\s+";
 
-    private static final Pattern QWEN35_COMPILED =
-            Pattern.compile(QWEN35_PATTERN, Pattern.UNICODE_CHARACTER_CLASS);
-    public static final FastQwen35Splitter INSTANCE = new FastQwen35Splitter();
+    private static final Pattern LLAMA3_COMPILED =
+            Pattern.compile(LLAMA3_PATTERN, Pattern.UNICODE_CHARACTER_CLASS);
+    public static final FastLlama3Splitter INSTANCE = new FastLlama3Splitter();
 
-    private FastQwen35Splitter() {}
+    private FastLlama3Splitter() {}
 
     @Override
     public void splitAll(
@@ -53,9 +57,12 @@ public final class FastQwen35Splitter implements Splitter {
                 continue;
             }
 
-            // [^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+
+            // [^\r\n\p{L}\p{N}]?\p{L}+
             if (SplitterSupport.isAsciiLetter(c)) {
-                int end = consumeAsciiLetterRun(text, i + 1, endExclusive);
+                int end = i + 1;
+                while (end < endExclusive && SplitterSupport.isAsciiLetter(text.charAt(end))) {
+                    end++;
+                }
                 consumer.accept(text, i, end);
                 i = end;
                 continue;
@@ -65,37 +72,69 @@ public final class FastQwen35Splitter implements Splitter {
                     && !SplitterSupport.isAsciiDigit(c)
                     && i + 1 < endExclusive
                     && SplitterSupport.isAsciiLetter(text.charAt(i + 1))) {
-                int end = consumeAsciiLetterRun(text, i + 2, endExclusive);
+                int end = i + 2;
+                while (end < endExclusive && SplitterSupport.isAsciiLetter(text.charAt(end))) {
+                    end++;
+                }
                 consumer.accept(text, i, end);
                 i = end;
                 continue;
             }
 
-            // \p{N}
+            // \p{N}{1,3}
             if (SplitterSupport.isAsciiDigit(c)) {
-                consumer.accept(text, i, i + 1);
-                i++;
+                int end = i + 1;
+                if (end < endExclusive && SplitterSupport.isAsciiDigit(text.charAt(end))) {
+                    end++;
+                    if (end < endExclusive && SplitterSupport.isAsciiDigit(text.charAt(end))) {
+                        end++;
+                    }
+                }
+                consumer.accept(text, i, end);
+                i = end;
                 continue;
             }
 
-            //  ?[^\s\p{L}\p{M}\p{N}]+[\r\n]*
+            //  ?[^\s\p{L}\p{N}]+[\r\n]*
             if (c == ' '
                     && i + 1 < endExclusive
                     && SplitterSupport.isAsciiSymbolNoSpace(text.charAt(i + 1))) {
-                int end = consumeAsciiSymbolRunAndTrailingNewlines(text, i + 2, endExclusive);
+                int end = i + 2;
+                while (end < endExclusive
+                        && SplitterSupport.isAsciiSymbolNoSpace(text.charAt(end))) {
+                    end++;
+                }
+                while (end < endExclusive) {
+                    char ch = text.charAt(end);
+                    if (ch != '\r' && ch != '\n') {
+                        break;
+                    }
+                    end++;
+                }
                 consumer.accept(text, i, end);
                 i = end;
                 continue;
             }
             if (SplitterSupport.isAsciiSymbolNoSpace(c)) {
-                int end = consumeAsciiSymbolRunAndTrailingNewlines(text, i + 1, endExclusive);
+                int end = i + 1;
+                while (end < endExclusive
+                        && SplitterSupport.isAsciiSymbolNoSpace(text.charAt(end))) {
+                    end++;
+                }
+                while (end < endExclusive) {
+                    char ch = text.charAt(end);
+                    if (ch != '\r' && ch != '\n') {
+                        break;
+                    }
+                    end++;
+                }
                 consumer.accept(text, i, end);
                 i = end;
                 continue;
             }
 
             if (matcher == null) {
-                matcher = QWEN35_COMPILED.matcher(text);
+                matcher = LLAMA3_COMPILED.matcher(text);
             }
             matcher.region(i, endExclusive);
             if (matcher.lookingAt()) {
@@ -114,7 +153,7 @@ public final class FastQwen35Splitter implements Splitter {
             int startInclusive,
             int endExclusive,
             Splitter.SplitConsumer consumer) {
-        SplitterSupport.splitRegex(QWEN35_COMPILED, text, startInclusive, endExclusive, consumer);
+        SplitterSupport.splitRegex(LLAMA3_COMPILED, text, startInclusive, endExclusive, consumer);
     }
 
     private static int apostropheChunkLength(CharSequence text, int i, int endExclusive) {
@@ -143,29 +182,5 @@ public final class FastQwen35Splitter implements Splitter {
             return 3;
         }
         return 0;
-    }
-
-    private static int consumeAsciiLetterRun(CharSequence text, int i, int endExclusive) {
-        int end = i;
-        while (end < endExclusive && SplitterSupport.isAsciiLetter(text.charAt(end))) {
-            end++;
-        }
-        return end;
-    }
-
-    private static int consumeAsciiSymbolRunAndTrailingNewlines(
-            CharSequence text, int i, int endExclusive) {
-        int end = i;
-        while (end < endExclusive && SplitterSupport.isAsciiSymbolNoSpace(text.charAt(end))) {
-            end++;
-        }
-        while (end < endExclusive) {
-            char ch = text.charAt(end);
-            if (ch != '\r' && ch != '\n') {
-                break;
-            }
-            end++;
-        }
-        return end;
     }
 }

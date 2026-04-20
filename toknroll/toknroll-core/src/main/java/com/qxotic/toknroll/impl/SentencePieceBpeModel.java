@@ -27,7 +27,7 @@ import java.util.Objects;
  *       a primitive binary min-heap.
  * </ul>
  */
-public final class SentencePieceBpeModel extends AbstractTokenizationModel {
+final class SentencePieceBpeModel extends AbstractTokenizationModel {
 
     private static final String BYTE_00_TOKEN = "<0x00>";
     private static final int BMP_SIZE = 1 << 16;
@@ -186,15 +186,15 @@ public final class SentencePieceBpeModel extends AbstractTokenizationModel {
     }
 
     private static float estimateTokensPerChar(int vocabSize) {
-        // Heuristic based on measured ratios for known SPBPE models:
-        // gemma3/4 (~256k): 0.31, llama3 (~128k): 0.31,
-        // granite4_0/phi4 (~100k): 0.34, mistral v0.3 (~32k): 0.33
+        // Heuristic based on observed SPBPE corpora token density.
+        // Values are conservative because capacity estimation includes
+        // an additional safety factor.
         if (vocabSize <= 50000) {
-            return 0.33f;
+            return 0.31f;
         } else if (vocabSize <= 150000) {
-            return 0.31f;
+            return 0.29f;
         } else {
-            return 0.31f;
+            return 0.28f;
         }
     }
 
@@ -215,9 +215,16 @@ public final class SentencePieceBpeModel extends AbstractTokenizationModel {
 
     @Override
     protected IntSequence encodeImpl(CharSequence text) {
-        IntSequence.Builder out = IntSequence.newBuilder(Math.max(8, text.length()));
+        IntSequence.Builder out =
+                IntSequence.newBuilder(estimateInitialTokenCapacity(text.length()));
         encodeImplInto(text, out);
         return out.build();
+    }
+
+    private int estimateInitialTokenCapacity(int charCount) {
+        float ratio = Math.max(1.0e-6f, expectedTokensPerChar());
+        int predicted = (int) Math.ceil(charCount * ratio * 1.15f) + 8;
+        return Math.max(8, predicted);
     }
 
     @Override

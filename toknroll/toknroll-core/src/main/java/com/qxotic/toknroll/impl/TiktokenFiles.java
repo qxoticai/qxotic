@@ -10,7 +10,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /** Utilities for loading .tiktoken mergeable ranks files. */
-public final class TiktokenFiles {
+final class TiktokenFiles {
 
     private TiktokenFiles() {}
 

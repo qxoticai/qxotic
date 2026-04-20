@@ -3,12 +3,7 @@ package com.qxotic.toknroll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.toknroll.gguf.ModelTextSplitters;
-import com.qxotic.toknroll.impl.FastCl100kSplitter;
-import com.qxotic.toknroll.impl.FastLlama3Splitter;
-import com.qxotic.toknroll.impl.FastO200kSplitter;
-import com.qxotic.toknroll.impl.FastQwen35Splitter;
-import com.qxotic.toknroll.impl.FastR50kSplitter;
-import com.qxotic.toknroll.impl.FastTekkenSplitter;
+import com.qxotic.toknroll.impl.FastSplitters;
 import com.qxotic.toknroll.loaders.ModelSplitters;
 import java.util.ArrayList;
 import java.util.List;
@@ -80,12 +75,12 @@ class SplitterUnicodeWhitespaceRegressionTest {
 
     static Stream<Arguments> splitterCases() {
         return Stream.of(
-                Arguments.of("r50k", FastR50kSplitter.INSTANCE, r50kRegex()),
-                Arguments.of("cl100k", FastCl100kSplitter.INSTANCE, cl100kRegex()),
-                Arguments.of("o200k", FastO200kSplitter.INSTANCE, o200kRegex()),
-                Arguments.of("llama3", FastLlama3Splitter.INSTANCE, llama3Regex()),
-                Arguments.of("qwen35", FastQwen35Splitter.INSTANCE, qwen35Regex()),
-                Arguments.of("tekken", FastTekkenSplitter.INSTANCE, tekkenRegex()));
+                Arguments.of("r50k", FastSplitters.r50k(), r50kRegex()),
+                Arguments.of("cl100k", FastSplitters.cl100k(), cl100kRegex()),
+                Arguments.of("o200k", FastSplitters.o200k(), o200kRegex()),
+                Arguments.of("llama3", FastSplitters.llama3(), llama3Regex()),
+                Arguments.of("qwen35", FastSplitters.qwen35(), qwen35Regex()),
+                Arguments.of("tekken", FastSplitters.tekken(), tekkenRegex()));
     }
 
     static Stream<Arguments> modelSplitterCases() {

@@ -1,11 +1,7 @@
 package com.qxotic.toknroll;
 
 import com.qxotic.toknroll.gguf.ModelTextSplitters;
-import com.qxotic.toknroll.impl.FastCl100kSplitter;
-import com.qxotic.toknroll.impl.FastLlama3Splitter;
-import com.qxotic.toknroll.impl.FastO200kSplitter;
-import com.qxotic.toknroll.impl.FastQwen35Splitter;
-import com.qxotic.toknroll.impl.FastR50kSplitter;
+import com.qxotic.toknroll.impl.FastSplitters;
 import com.qxotic.toknroll.testkit.SplitterParityHarness;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -64,27 +60,27 @@ class SplitterRegexParityComprehensiveTest {
         return Stream.of(
                 new SplitterCase(
                         "r50k",
-                        FastR50kSplitter.INSTANCE,
+                        FastSplitters.r50k(),
                         Splitter.regex(
                                 Pattern.compile(R50K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS))),
                 new SplitterCase(
                         "llama3",
-                        FastLlama3Splitter.INSTANCE,
+                        FastSplitters.llama3(),
                         Splitter.regex(
                                 Pattern.compile(LLAMA3_PATTERN, Pattern.UNICODE_CHARACTER_CLASS))),
                 new SplitterCase(
                         "cl100k",
-                        FastCl100kSplitter.INSTANCE,
+                        FastSplitters.cl100k(),
                         Splitter.regex(
                                 Pattern.compile(CL100K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS))),
                 new SplitterCase(
                         "qwen35",
-                        FastQwen35Splitter.INSTANCE,
+                        FastSplitters.qwen35(),
                         Splitter.regex(
                                 Pattern.compile(QWEN35_PATTERN, Pattern.UNICODE_CHARACTER_CLASS))),
                 new SplitterCase(
                         "o200k",
-                        FastO200kSplitter.INSTANCE,
+                        FastSplitters.o200k(),
                         Splitter.regex(
                                 Pattern.compile(O200K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS))));
     }

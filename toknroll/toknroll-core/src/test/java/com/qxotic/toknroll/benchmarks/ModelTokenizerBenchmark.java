@@ -5,10 +5,7 @@ import com.qxotic.toknroll.Normalizer;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
-import com.qxotic.toknroll.impl.FastLlama3Splitter;
-import com.qxotic.toknroll.impl.FastO200kSplitter;
-import com.qxotic.toknroll.impl.FastQwen35Splitter;
-import com.qxotic.toknroll.impl.FastR50kSplitter;
+import com.qxotic.toknroll.impl.FastSplitters;
 import com.qxotic.toknroll.loaders.ModelSplitters;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import com.qxotic.toknroll.testkit.TokenizerAdapters;
@@ -242,7 +239,7 @@ public class ModelTokenizerBenchmark {
                     LLAMA3_HF_MODEL_REF,
                     LLAMA3_HF_REVISION,
                     Normalizer.identity(),
-                    FastLlama3Splitter.INSTANCE,
+                    FastSplitters.llama3(),
                     implementation);
         }
         if ("qwen35".equals(model)) {
@@ -259,7 +256,7 @@ public class ModelTokenizerBenchmark {
                     QWEN35_HF_MODEL_REF,
                     null,
                     Normalizer.unicode(Form.NFC),
-                    FastQwen35Splitter.INSTANCE,
+                    FastSplitters.qwen35(),
                     implementation);
         }
         if ("mistral-tekken".equals(model)) {
@@ -296,7 +293,7 @@ public class ModelTokenizerBenchmark {
             case "bpe":
                 return bpe("r50k_base", Normalizer.identity(), ModelSplitters.DEFAULT_BPE);
             case "fast":
-                return fast("r50k_base", Normalizer.identity(), FastR50kSplitter.INSTANCE);
+                return fast("r50k_base", Normalizer.identity(), FastSplitters.r50k());
             default:
                 throw new IllegalArgumentException("Unsupported implementation: " + implementation);
         }
@@ -357,11 +354,11 @@ public class ModelTokenizerBenchmark {
                                         fast(
                                                 "o200k_base",
                                                 Normalizer.identity(),
-                                                FastO200kSplitter.INSTANCE));
+                                                FastSplitters.o200k()));
             case "bpe":
-                return bpe("o200k_base", Normalizer.identity(), FastO200kSplitter.INSTANCE);
+                return bpe("o200k_base", Normalizer.identity(), FastSplitters.o200k());
             case "fast":
-                return fast("o200k_base", Normalizer.identity(), FastO200kSplitter.INSTANCE);
+                return fast("o200k_base", Normalizer.identity(), FastSplitters.o200k());
             default:
                 throw new IllegalArgumentException("Unsupported implementation: " + implementation);
         }

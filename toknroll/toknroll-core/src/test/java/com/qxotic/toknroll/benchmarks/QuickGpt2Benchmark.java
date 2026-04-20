@@ -2,7 +2,7 @@ package com.qxotic.toknroll.benchmarks;
 
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.impl.FastR50kSplitter;
+import com.qxotic.toknroll.impl.FastSplitters;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.util.Map;
 
@@ -11,8 +11,7 @@ public class QuickGpt2Benchmark {
         Map<String, Integer> ranks = TiktokenFixtures.mergeableRanks("r50k_base");
         Map<String, Integer> specials = TiktokenFixtures.specialTokens("r50k_base");
         Tokenizer tokenizer =
-                TiktokenFixtures.createTikTokenTokenizer(
-                        ranks, specials, FastR50kSplitter.INSTANCE);
+                TiktokenFixtures.createTikTokenTokenizer(ranks, specials, FastSplitters.r50k());
 
         String seed = "<|system|>You are helpful.<|user|>Compare tokenizer throughput and latency.";
         StringBuilder sb = new StringBuilder(16384);

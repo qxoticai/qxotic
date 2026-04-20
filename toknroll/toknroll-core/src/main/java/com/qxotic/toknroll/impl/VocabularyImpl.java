@@ -11,7 +11,7 @@ import java.util.stream.IntStream;
  * @deprecated Internal implementation detail; rely on {@code Vocabulary} from tokenizers.
  */
 @Deprecated(forRemoval = false, since = "0.1.0")
-public class VocabularyImpl implements Vocabulary {
+class VocabularyImpl implements Vocabulary {
     protected final String[] tokens;
     protected final Map<String, Integer> tokenToId;
     protected final int[] tokenTypes;

@@ -14,7 +14,7 @@ import java.util.Objects;
  *
  * @see IntSequence
  */
-public abstract class AbstractIntSequence implements IntSequence {
+abstract class AbstractIntSequence implements IntSequence {
 
     /**
      * Returns a string representation of this sequence using default delimiters. The elements are

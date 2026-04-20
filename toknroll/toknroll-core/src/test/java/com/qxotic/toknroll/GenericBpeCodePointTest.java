@@ -3,7 +3,7 @@ package com.qxotic.toknroll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.toknroll.impl.VocabularyImpl;
+import com.qxotic.toknroll.impl.ImplAccessor;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -13,7 +13,7 @@ class GenericBpeCodePointTest {
     @Test
     void supportsCodePointBasedSymbolsViaPluggableEncoder() {
         Vocabulary vocabulary =
-                new VocabularyImpl(
+                ImplAccessor.createVocabulary(
                         Map.of(
                                 "a", 0,
                                 "b", 1,

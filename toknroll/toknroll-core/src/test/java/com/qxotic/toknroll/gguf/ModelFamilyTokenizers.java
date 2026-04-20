@@ -9,14 +9,14 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Normalizer;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.StandardTokenType;
+import com.qxotic.toknroll.TokenizationModel;
 import com.qxotic.toknroll.TokenizationPipeline;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.gguf.TestDataManager.TestModel;
 import com.qxotic.toknroll.gguf.TestDataManager.TokenizerMetadata;
-import com.qxotic.toknroll.impl.SentencePieceBpeModel;
-import com.qxotic.toknroll.impl.VocabularyImpl;
+import com.qxotic.toknroll.impl.ImplAccessor;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -1115,7 +1115,8 @@ public final class ModelFamilyTokenizers {
             Splitter splitter,
             SpecialTokenMode specialTokenMode,
             List<Tokenizers.MergeRule> merges) {
-        Vocabulary vocabulary = new VocabularyImpl(metadata.tokens(), metadata.tokenTypes());
+        Vocabulary vocabulary =
+                ImplAccessor.createVocabulary(metadata.tokens(), metadata.tokenTypes());
         TokenizationPipeline.Builder pipelineBuilder =
                 TokenizationPipeline.builder(Tokenizers.tikTokenModel(vocabulary, merges))
                         .splitter(splitter);
@@ -1136,12 +1137,13 @@ public final class ModelFamilyTokenizers {
 
     private static Tokenizer buildGemmaSentencePieceTokenizer(
             TokenizerMetadata metadata, Normalizer normalizer) {
-        VocabularyImpl vocabulary = new VocabularyImpl(metadata.tokens(), metadata.tokenTypes());
+        Vocabulary vocabulary =
+                ImplAccessor.createVocabulary(metadata.tokens(), metadata.tokenTypes());
         float[] scores = metadata.scores();
         if (scores == null || scores.length < vocabulary.size()) {
             scores = new float[vocabulary.size()];
         }
-        SentencePieceBpeModel model = SentencePieceBpeModel.fromVocabulary(vocabulary, scores);
+        TokenizationModel model = Tokenizers.sentencePieceBpeModel(vocabulary, scores);
         Tokenizer base =
                 TokenizationPipeline.builder(model)
                         .normalizer(
@@ -1331,6 +1333,11 @@ public final class ModelFamilyTokenizers {
                     IntSequence tokens, int tokenStartIndex, java.nio.ByteBuffer out) {
                 return tokenizer.decodeBytesInto(tokens, tokenStartIndex, out);
             }
+
+            @Override
+            public float expectedTokensPerChar() {
+                return tokenizer.expectedTokensPerChar();
+            }
         };
     }
 
@@ -1432,7 +1439,8 @@ public final class ModelFamilyTokenizers {
         }
 
         public IntSequence encode(String text) {
-            IntSequence.Builder out = IntSequence.newBuilder(Math.max(8, text.length()));
+            IntSequence.Builder out =
+                    IntSequence.newBuilder(estimateInitialTokenCapacity(text.length()));
             encodeSpecialAware(text, 0, text.length(), out);
             return out.build();
         }
@@ -1474,9 +1482,21 @@ public final class ModelFamilyTokenizers {
         public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
             Objects.requireNonNull(text, "text");
             IntSequence.Builder out =
-                    IntSequence.newBuilder(Math.max(8, endExclusive - startInclusive));
+                    IntSequence.newBuilder(
+                            estimateInitialTokenCapacity(endExclusive - startInclusive));
             encodeInto(text, startInclusive, endExclusive, out);
             return out.size();
+        }
+
+        @Override
+        public float expectedTokensPerChar() {
+            return delegate.expectedTokensPerChar();
+        }
+
+        private int estimateInitialTokenCapacity(int charCount) {
+            float ratio = Math.max(1.0e-6f, expectedTokensPerChar());
+            int predicted = (int) Math.ceil(charCount * ratio * 1.15f) + 8;
+            return Math.max(8, predicted);
         }
 
         @Override

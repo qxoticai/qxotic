@@ -4,9 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
-import com.qxotic.toknroll.impl.FastLlama3Splitter;
-import com.qxotic.toknroll.impl.FastQwen35Splitter;
-import com.qxotic.toknroll.impl.FastR50kSplitter;
+import com.qxotic.toknroll.impl.FastSplitters;
 import com.qxotic.toknroll.loaders.ModelSplitters;
 import com.qxotic.toknroll.testkit.TestCorpora;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
@@ -57,8 +55,7 @@ class ModelTokenizerAgreementTest {
             return new ComparedTokenizers(
                     TiktokenFixtures.createJtokkitTokenizer("r50k_base"),
                     TiktokenFixtures.createTikTokenTokenizer("r50k_base"),
-                    TiktokenFixtures.createTikTokenTokenizer(
-                            "r50k_base", FastR50kSplitter.INSTANCE));
+                    TiktokenFixtures.createTikTokenTokenizer("r50k_base", FastSplitters.r50k()));
         }
         if ("llama3".equals(model)) {
             return modelNative(
@@ -66,7 +63,7 @@ class ModelTokenizerAgreementTest {
                     LLAMA3_HF_MODEL_REF,
                     LLAMA3_HF_REVISION,
                     Normalizer.identity(),
-                    FastLlama3Splitter.INSTANCE);
+                    FastSplitters.llama3());
         }
         if ("qwen35".equals(model)) {
             return modelNative(
@@ -74,7 +71,7 @@ class ModelTokenizerAgreementTest {
                     QWEN35_HF_MODEL_REF,
                     null,
                     Normalizer.unicode(Form.NFC),
-                    FastQwen35Splitter.INSTANCE);
+                    FastSplitters.qwen35());
         }
         if ("mistral-tekken".equals(model)) {
             return modelNative(

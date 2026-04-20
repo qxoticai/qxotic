@@ -8,7 +8,7 @@ import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.TokenizationPipeline;
 import com.qxotic.toknroll.gguf.TestDataManager.TestModel;
 import com.qxotic.toknroll.gguf.TestDataManager.TokenizerMetadata;
-import com.qxotic.toknroll.impl.VocabularyImpl;
+import com.qxotic.toknroll.impl.ImplAccessor;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -48,7 +48,7 @@ public class GGUFTokenizerBuilderTest {
             tokenToId.put(tokenizerMeta.tokens()[i], i);
         }
 
-        Vocabulary vocabulary = new VocabularyImpl(tokenToId);
+        Vocabulary vocabulary = ImplAccessor.createVocabulary(tokenToId);
 
         // Verify vocabulary size
         assertEquals(
@@ -81,7 +81,7 @@ public class GGUFTokenizerBuilderTest {
         }
 
         // Create vocabulary (special tokens are included in the main vocabulary for GGUF)
-        Vocabulary vocabulary = new VocabularyImpl(tokenToId);
+        Vocabulary vocabulary = ImplAccessor.createVocabulary(tokenToId);
 
         List<Tokenizers.MergeRule> merges = buildMergeRules(tokenizerMeta, tokenToId);
 
@@ -120,7 +120,7 @@ public class GGUFTokenizerBuilderTest {
             tokenToId.put(tokenizerMeta.tokens()[i], i);
         }
 
-        Vocabulary vocabulary = new VocabularyImpl(tokenToId);
+        Vocabulary vocabulary = ImplAccessor.createVocabulary(tokenToId);
 
         // Create a simple tokenizer with model-specific pre-tokenizer
         Splitter splitter = ModelTextSplitters.createSplitter(model);
@@ -158,7 +158,7 @@ public class GGUFTokenizerBuilderTest {
             tokenToId.put(tokenizerMeta.tokens()[i], i);
         }
 
-        Vocabulary vocabulary = new VocabularyImpl(tokenToId);
+        Vocabulary vocabulary = ImplAccessor.createVocabulary(tokenToId);
 
         // Verify BOS token
         if (tokenizerMeta.bosTokenId() != null) {

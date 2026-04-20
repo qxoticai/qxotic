@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
  *
  * <p>Falls back to regex for non-ASCII slices to preserve Unicode behavior.
  */
-public final class FastTekkenSplitter implements Splitter {
+final class FastTekkenSplitter implements Splitter {
 
     private static final String TEKKEN_PATTERN =
             "[^\\r"

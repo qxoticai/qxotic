@@ -42,6 +42,11 @@ public final class TokenizerAdapters {
             public int decodeBytesInto(IntSequence tokens, int tokenStartIndex, ByteBuffer out) {
                 return tokenizer.decodeBytesInto(tokens, tokenStartIndex, out);
             }
+
+            @Override
+            public float expectedTokensPerChar() {
+                return tokenizer.expectedTokensPerChar();
+            }
         };
     }
 
@@ -83,6 +88,11 @@ public final class TokenizerAdapters {
             @Override
             public int decodeBytesInto(IntSequence tokens, int tokenStartIndex, ByteBuffer out) {
                 return tokenizer.decodeBytesInto(tokens, tokenStartIndex, out);
+            }
+
+            @Override
+            public float expectedTokensPerChar() {
+                return tokenizer.expectedTokensPerChar();
             }
         };
     }
