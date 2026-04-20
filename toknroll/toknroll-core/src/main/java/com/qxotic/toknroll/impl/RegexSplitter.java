@@ -5,7 +5,7 @@ import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public final class RegexSplitter implements Splitter {
+final class RegexSplitter implements Splitter {
 
     private final Pattern pattern;
 

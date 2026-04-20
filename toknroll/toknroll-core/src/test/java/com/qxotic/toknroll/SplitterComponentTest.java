@@ -3,7 +3,6 @@ package com.qxotic.toknroll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
-import com.qxotic.toknroll.impl.RegexSplitter;
 import com.qxotic.toknroll.testkit.SplitterContractHarness;
 import com.qxotic.toknroll.testkit.TestCorpora;
 import java.util.ArrayList;
@@ -39,8 +38,7 @@ class SplitterComponentTest {
     @Test
     void regexSplitterSplitsInput() {
         Splitter splitter =
-                RegexSplitter.create(
-                        Pattern.compile("\\s+|[,.!?]", Pattern.UNICODE_CHARACTER_CLASS));
+                Splitter.regex(Pattern.compile("\\s+|[,.!?]", Pattern.UNICODE_CHARACTER_CLASS));
 
         List<CharSequence> tokens = splitter.splitAllToListEagerly("Hello, world!");
         assertEquals("Hello", tokens.get(0).toString());
@@ -52,8 +50,7 @@ class SplitterComponentTest {
     void splitRangesPreservesChunkBoundaries() {
         String input = "Hello, world!";
         Splitter splitter =
-                RegexSplitter.create(
-                        Pattern.compile("\\s+|[,.!?]", Pattern.UNICODE_CHARACTER_CLASS));
+                Splitter.regex(Pattern.compile("\\s+|[,.!?]", Pattern.UNICODE_CHARACTER_CLASS));
 
         List<String> chunksBySplit =
                 splitter.splitAllToListEagerly(input).stream()

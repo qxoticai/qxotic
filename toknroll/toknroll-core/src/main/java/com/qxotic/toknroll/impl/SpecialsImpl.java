@@ -15,7 +15,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public final class SpecialsImpl implements Specials {
+final class SpecialsImpl implements Specials {
     private static final SpecialsImpl NONE = new SpecialsImpl(Set.of(), Map.of(), null);
 
     private final Set<String> tokens;

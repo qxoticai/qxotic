@@ -18,7 +18,7 @@ import java.util.Objects;
  *   <li>The decoding logic via {@link #decodeBytesInto(IntSequence, int, java.nio.ByteBuffer)}
  * </ul>
  */
-public abstract class AbstractTokenizationModel implements TokenizationModel {
+abstract class AbstractTokenizationModel implements TokenizationModel {
 
     /** The vocabulary used for token lookup. */
     protected final Vocabulary vocabulary;

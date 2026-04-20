@@ -2,7 +2,7 @@ package com.qxotic.toknroll;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.toknroll.impl.FastLlama3Splitter;
+import com.qxotic.toknroll.impl.FastSplitters;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -22,7 +22,7 @@ class FastLlama3SplitterTest {
 
     @Test
     void matchesRegexSplitterForRepresentativeInputs() {
-        Splitter fast = FastLlama3Splitter.INSTANCE;
+        Splitter fast = FastSplitters.llama3();
         Splitter regex =
                 Splitter.regex(Pattern.compile(LLAMA3_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
 
@@ -46,7 +46,7 @@ class FastLlama3SplitterTest {
 
     @Test
     void matchesRegexSplitterForRandomAsciiInputs() {
-        Splitter fast = FastLlama3Splitter.INSTANCE;
+        Splitter fast = FastSplitters.llama3();
         Splitter regex =
                 Splitter.regex(Pattern.compile(LLAMA3_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         Random rnd = new Random(424242L);

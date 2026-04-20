@@ -1,8 +1,6 @@
 package com.qxotic.toknroll;
 
-import com.qxotic.toknroll.impl.AbstractIntSequence;
-
-final class EmptyIntSequence extends AbstractIntSequence {
+final class EmptyIntSequence implements IntSequence {
 
     private static final EmptyIntSequence EMPTY = new EmptyIntSequence();
 
@@ -28,5 +26,10 @@ final class EmptyIntSequence extends AbstractIntSequence {
             throw new IllegalArgumentException("invalid slice range");
         }
         return this;
+    }
+
+    @Override
+    public int compareTo(IntSequence other) {
+        return IntSequence.compare(this, other);
     }
 }

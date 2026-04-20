@@ -206,264 +206,148 @@ class Gemma3Adapter:
         return None
 
 
+# Single source of truth for both tiktoken and model-family fixtures.
+GOLDEN_TEST_STRINGS = [
+    "",
+    "Hello",
+    "Hello, World!",
+    "Hello World",
+    "Hello   World",
+    "Hello\n\nWorld",
+    "The quick brown fox jumps over the lazy dog",
+    "'Hello' \"World\"",
+    "Hello (World) [Test] {Data}",
+    "12345",
+    "3.14159 -42 +7e10 1,000,000",
+    "2024-01-15",
+    "$1,234.56",
+    "0xDEADBEEF",
+    "www.example.com",
+    "user@example.com",
+    "<|endoftext|>",
+    "<|fim_prefix|>Hello<|fim_suffix|>World<|fim_middle|>",
+    "[THINK]T1[/THINK]",
+    '[TOOL_CALLS]{"name":"F1","arguments":{}}',
+    '[TOOL_RESULTS]{"content":"R1","call_id":"123"}',
+    "   ",
+    "\t\t\t",
+    "\n\n\n",
+    "Hello\r\nWorld",
+    "line1\rline2\r\nline3\nline4",
+    "NBSP only: a\u00a0b\u00a0c",
+    "NEL only: a\u0085b\u0085c",
+    "Ogham space mark: a\u1680b\u1680c",
+    "en/em quads: a\u2000b\u2001c",
+    "figure space: a\u2007b\u2007c",
+    "thin/hair spaces: a\u2009b\u200ac",
+    "line separator: a\u2028b",
+    "paragraph separator: a\u2029b",
+    "narrow no-break space: a\u202fb\u202fc",
+    "medium mathematical space: a\u205fb",
+    "ideographic space: a\u3000b",
+    "mixed unicode spaces: a\u00a0\u2007\u202f\u3000b",
+    "CR LF CRLF NEL LS PS: a\rb\nc\r\nd\u0085e\u2028f\u2029g",
+    "Hello\u0000World",
+    "zero-width controls: a\u200bb\u200cc\u200dd\ufeffe",
+    "bidi marks: A\u200eB\u200fC",
+    "directional isolates: A\u2066B\u2069 C\u2067D\u2069",
+    "word joiner + zwnbsp: a\u2060b\ufeffc",
+    "café",
+    "naïve",
+    "e\u0301 != é",
+    "\u00f1 n\u0303",
+    "العربية",
+    "arabic detailed: مرحبًا بالعالم، كيف الحال؟ الإصدار ٢٫٥ جاهز.",
+    "arabic with tatweel: العـــــربية",
+    "arabic harakat: العَرَبِيَّةُ",
+    "arabic numerals: ٠١٢٣٤٥٦٧٨٩",
+    "שלום עולם",
+    "hebrew detailed: שלום עולם, מה שלומך? גרסה 2.5 מוכנה.",
+    "rtl mix العربية English עברית 123",
+    "हैलो वर्ल्ड",
+    "क्‍ष",
+    "ไทยภาษาไทย without spaces",
+    "thai detailed: สวัสดีชาวโลก วันนี้อากาศดีมาก ไปเดินเล่นกันไหม",
+    "thai with digits: เวอร์ชัน 2.5 เปิดตัววันที่ 03/04/2026",
+    "thai tone marks: ก่า ก้า ก๊า ก๋า",
+    "vietnamese: Xin chào thế giới, hôm nay trời đẹp quá!",
+    "vietnamese combining: tiếng Việt có dấu",
+    "日本語",
+    "中文",
+    "한국어",
+    "Hello世界",
+    "🎉🎊",
+    "Hello🌍World",
+    "👋👨‍👩‍👧‍👦👨‍💻",
+    "👩🏽‍💻👨🏻‍🚀🧑🏿‍🔬",
+    "🏳️‍🌈🏴‍☠️",
+    "🏳️‍⚧️",
+    "🇺🇳🇺🇸🇯🇵",
+    "1️⃣2️⃣3️⃣#️⃣*️⃣",
+    "print('Hello World')",
+    "function test() { return 42; }",
+    "<html><body>Hello</body></html>",
+    '<div class="x">\n  <p>Hi</p>\n</div>',
+    "<!doctype html><title>x</title><p>tiny</p>",
+    '{"key": "value"}',
+    "# Heading",
+    "**bold**",
+    "`code`",
+    "[link](http://example.com)",
+    "But ird and ปี   ird   ด",
+    "Line 1\nLine 2\nLine 3\nLine 4\nLine 5",
+    "E=mc²",
+    "H₂O",
+    "∞ ± × ÷",
+    "$100 €200 £300 ¥400",
+    "© ® ™",
+    "plain ascii words",
+    "It's we're THEY'LL I'd",
+    "don't I'M WE'RE THEY'LL",
+    "digits 0 1 12 123 1234 12345 123456",
+    "long digits 123456789012345678901234567890",
+    "numeric mix v1beta2 build42 x86_64 arm64",
+    "versions: v1 v2.5 v10.12.003 build-20260403",
+    "dates and times: 2026-04-03 23:59:59 03/04/2026",
+    "unicode digits ١٢٣ ۱۲۳ १२३ １２３",
+    "tabs\t\tspaces  end",
+    "leading separators ,,,hello",
+    "trailing separators world!!!",
+    "adjacent separators !!!???...,,;;::",
+    "boundary punctuation (start) [token] (end)",
+    "path/to/api/v2.5.1?x=1&y=22",
+    "slashes and CRLF: a/b\\c\r\nnext",
+    'json: {"a":1,"b":[true,false,null]}',
+    "code: for(i=0;i<10;i++){sum+=i;} // done",
+    "a\u0000b\u0001c\u001fd",
+    "emoji 😀 fallback",
+    "emoji 👨‍👩‍👧‍👦 and flags 🇺🇳🇯🇵",
+    "ZWJ family 👨‍👩‍👧‍👦 + kiss 👩‍❤️‍💋‍👨",
+    "skin tones 👍🏻👍🏽👍🏿",
+    "keycaps 1️⃣ 2️⃣ #️⃣ *️⃣",
+    "variation selectors ✊︎ ✊️",
+    "combining e\u0301 vs é, n\u0303 vs ñ",
+    "combining without base: \u0301\u0308\u0304",
+    "normalization pairs: é e\u0301 Å A\u030a Å",
+    "rtl عربي עברית فارسی",
+    "rtl punctuation mix: العربية؛ עברית، فارسی؟ yes/no.",
+    "cjk 你好 日本語 한글",
+    "japanese mixed: 今日は良い天気です。カタカナとひらがな、そして漢字。",
+    "japanese numbers: 第3版は2026年4月3日に公開されました。",
+    "arabic with nbsp: مرحبًا\u00a0بالعالم",
+    "thai with nbsp: สวัสดี\u00a0ชาวโลก",
+    "vietnamese with nbsp: Xin\u00a0chào\u00a0thế\u00a0giới",
+    "emoji + unicode spaces: 😀\u00a0😀\u202f😀\u3000😀",
+    "spaces  \t\n\r\n  end",
+]
+
+
 def generate_test_cases(encoding_name, max_cases=100):
     """Generate test cases for an encoding."""
     enc = get_encoding(encoding_name)
     if not enc:
         return {}
-
-    # Test strings covering various scenarios
-    test_strings = [
-        # Basic ASCII and whitespace
-        "",  # Empty string
-        "Hello",  # Simple ASCII
-        "Hello, World!",  # With punctuation
-        "Hello World",  # With space
-        "   ",  # Only spaces
-        "Hello\nWorld",  # With newline
-        "Hello\tWorld",  # With tab
-        "12345",  # Numbers
-        "Hello123",  # Mixed alphanumeric
-        "!@#$%",  # Special chars
-        "Hello   World",  # Multiple spaces
-        "Hello\n\nWorld",  # Multiple newlines
-        "The quick brown fox jumps over the lazy dog",  # Classic pangram
-        "This is a longer test string with multiple words to test tokenization",  # Long string
-        "<|endoftext|>",  # Special token
-        # International text
-        "日本語",  # Japanese
-        "中文",  # Chinese
-        "العربية",  # Arabic
-        "🎉🎊",  # Emojis
-        "café",  # Accented characters
-        "naïve",  # Special characters
-        "Hello\u0000World",  # Null byte (will be replaced in JSON)
-        "a" * 100,  # Long repeated character
-        "ab" * 50,  # Long repeated pattern
-        "<|fim_prefix|>Hello<|fim_suffix|>World<|fim_middle|>",  # FIM tokens (if applicable)
-        # Additional comprehensive test strings
-        "Hello  World",  # Double space
-        "Hello\r\nWorld",  # Windows line ending
-        " Hello ",  # Leading/trailing spaces
-        "\t\t\t",  # Only tabs
-        "\n\n\n",  # Only newlines
-        "A",  # Single character
-        "AB",  # Two characters
-        "ABC",  # Three characters
-        "hello world",  # Lowercase
-        "HELLO WORLD",  # Uppercase
-        "Hello World!",  # With exclamation
-        "Hello, World?",  # With question mark
-        "Hello; World.",  # With semicolon and period
-        "'Hello' \"World\"",  # With quotes
-        "Hello (World) [Test] {Data}",  # With brackets
-        "Hello+World=Test",  # With operators
-        "Hello/World\\Test",  # With slashes
-        "Hello: World;",  # With colon
-        "www.example.com",  # URL-like
-        "user@example.com",  # Email-like
-        "192.168.1.1",  # IP-like
-        "2024-01-15",  # Date-like
-        "12:34:56",  # Time-like
-        "$1,234.56",  # Currency
-        "50%",  # Percentage
-        "Hello_World",  # Underscores
-        "Hello-World",  # Hyphens
-        "Hello--World",  # Double hyphens
-        "__init__",  # Python dunder
-        "test_function_name",  # Snake case
-        "TestClassName",  # Camel case
-        "CONSTANT_NAME",  # Constant case
-        # Numbers and special numeric formats
-        "0",  # Single digit
-        "00",  # Leading zeros
-        "007",  # James Bond
-        "3.14159",  # Pi
-        "-42",  # Negative
-        "+42",  # Positive
-        "1e10",  # Scientific notation
-        "0xDEADBEEF",  # Hexadecimal
-        "0b101010",  # Binary
-        "0o755",  # Octal
-        "123-456-7890",  # Phone number-like
-        "(123) 456-7890",  # Formatted phone
-        "1/2/2024",  # Date format
-        "12:00 AM",  # Time format
-        # Control and special characters
-        "Hello\x01World",  # SOH control char
-        "Hello\x1fWorld",  # US control char
-        "Hello\x7fWorld",  # DEL char
-        "\x00\x01\x02",  # Null and control chars
-        "\u00a0",  # Non-breaking space
-        " \u00850",  # NEL control character edge
-        "\u200b",  # Zero width space
-        "\ufeff",  # BOM (Byte Order Mark)
-        "Hello\u3000World",  # Ideographic space
-        "\ufffd",  # Replacement char
-        # Extended Unicode and mixed scripts
-        "Héllo Wörld",  # Mixed European accents
-        "Привет мир",  # Russian
-        "Γειά σου Κόσμε",  # Greek
-        "שלום עולם",  # Hebrew (RTL)
-        "हैलो वर्ल्ड",  # Hindi
-        "வணக்கம்",  # Tamil
-        "한국어",  # Korean
-        "ไทย",  # Thai
-        "Tiếng Việt",  # Vietnamese
-        "עבריתالعربية",  # Mixed RTL scripts
-        "Hello世界",  # Mixed English-Chinese
-        "Hello🌍World",  # Earth emoji
-        "👋👨‍👩‍👧‍👦👨‍💻",  # Complex emojis
-        "🏳️‍🌈🏴‍☠️",  # Flag emojis
-        "\U0001f600\U0001f601\U0001f602",  # Emojis by codepoint
-        "👩🏽‍💻👨🏻‍🚀🧑🏿‍🔬",  # Emoji ZWJ + skin tones
-        "1️⃣2️⃣3️⃣#️⃣*️⃣",  # Keycap emojis
-        "❤️🧡💛💚💙💜🖤🤍🤎",  # Variation selector heart emojis
-        "🏳️‍⚧️",  # Trans flag sequence
-        "🇺🇳🇺🇸🇯🇵",  # Regional indicator flags
-        "🫠🫡🪿",  # Newer emoji code points
-        # Zalgo and special Unicode
-        "H̷̛̪e̷̛̪l̷̛̪l̷̛̪ơ̷̪",  # Zalgo text (combining marks)
-        "ℌ𝔢𝔩𝔩𝔬",  # Mathematical fraktur
-        "Ｈｅｌｌｏ",  # Fullwidth ASCII
-        "🄷🄴🄻🄻🄾",  # Enclosed alphanumerics
-        "ⓗⓔⓛⓛⓞ",  # Circled letters
-        "🅷🅴🅻🅻🅾",  # Negative circled
-        "e\u0301 != é",  # Combining mark vs precomposed
-        "\u00f1 n\u0303",  # Alternate composition forms
-        "क्‍ष",  # Devanagari with ZWJ
-        "\u200fabc\u200edef",  # RTL/LTR marks in text
-        "\u2066left-to-right isolate\u2069",  # Bidi isolate markers
-        "\u2028line-separator\u2029paragraph",  # Unicode line separators
-        # Code and markup
-        "print('Hello World')",  # Python code
-        "function test() { return 42; }",  # JavaScript code
-        "<html><body>Hello</body></html>",  # HTML
-        "<?xml version='1.0'?>",  # XML
-        "SELECT * FROM table WHERE id = 1",  # SQL
-        "int main() { return 0; }",  # C code
-        "# This is a comment",  # Python comment
-        "// This is a comment",  # JS comment
-        "/* Block comment */",  # Block comment
-        "`SELECT * FROM users`",  # Backtick string
-        "Hello ${name}",  # Template literal
-        "${variable}",  # Variable interpolation
-        "{{template}}",  # Jinja/template syntax
-        "{% if true %}",  # Django template
-        # JSON and data formats
-        '{"key": "value"}',  # Simple JSON
-        '{"a": 1, "b": 2}',  # JSON with numbers
-        "[1, 2, 3, 4, 5]",  # JSON array
-        '{"nested": {"key": "value"}}',  # Nested JSON
-        "true false null",  # JSON literals
-        # Markdown and formatting
-        "# Heading",  # Markdown heading
-        "## Subheading",  # Markdown subheading
-        "**bold**",  # Bold markdown
-        "*italic*",  # Italic markdown
-        "`code`",  # Inline code
-        "```code block```",  # Code block
-        "[link](http://example.com)",  # Markdown link
-        "> quote",  # Blockquote
-        "- list item",  # List item
-        "1. ordered item",  # Ordered list
-        "---",  # Horizontal rule
-        # Mixed and edge cases
-        "Hello" + "\t" * 10 + "World",  # Many tabs
-        "Hello\n\n\n\nWorld",  # Multiple newlines
-        "today\n ",  # tiktoken regex whitespace edge
-        "today\n \n",  # tiktoken newline-space-newline edge
-        "today\n  \n",  # tiktoken double-space newline edge
-        " ",  # Single space
-        "  ",  # Double space
-        "   ",  # Triple space
-        "\n",  # Single newline
-        "\r",  # Single carriage return
-        "\r\n",  # CRLF
-        "a b c d e f g h i j",  # Many single chars
-        "word " * 20,  # Repeated word
-        "sentence one. sentence two. sentence three.",  # Multiple sentences
-        "UPPER lower MiXeD",  # Mixed case
-        # Special tokens and markers
-        "[PAD] [UNK] [CLS] [SEP] [MASK]",  # BERT special tokens
-        "<s> </s> <pad> <unk>",  # T5 special tokens
-        "<|user|>Hello<|assistant|>Hi there<|end|>",  # Chat format
-        "<|system|>You are helpful<|end|>",  # System prompt
-        "<|im_start|>user<|im_end|>",  # IM tokens
-        "[INST] Hello [/INST]",  # Instruction tokens
-        "<<SYS>> System <</SYS>>",  # System tokens
-        "<|startoftext|><|endoftext|>",  # Text markers
-        "<|endoftext|> hello <|fim_prefix|>",  # tiktoken special token edge
-        "<|endoftext|> hello <|fim_prefix|> there <|fim_middle|>",  # mixed specials
-        "[THINK]T1[/THINK]",  # reasoning delimiters
-        '[TOOL_CALLS]{"name":"F1","arguments":{}}',  # tool-call marker JSON
-        '[TOOL_RESULTS]{"content":"R1","call_id":"123"}',  # tool-result marker JSON
-        "But ird and ปี   ird   ด",  # llama/qwen integration spacing + Thai edge
-        # Long and repetitive patterns
-        "A" * 1000,  # Very long single char
-        "Hello World " * 100,  # Repeated phrase
-        "abc" * 100,  # Repeated pattern
-        "0123456789" * 20,  # Repeated digits
-        "word1 word2 word3 word4 word5 " * 50,  # Many different words
-        # Boundary and edge cases
-        "Hello\x00",  # Ends with null
-        "\x00Hello",  # Starts with null
-        "\x00",  # Only null
-        "Hello\xff",  # Ends with high byte
-        "\xffHello",  # Starts with high byte
-        "\xff",  # Only high byte
-        # Complex mixed content
-        "Check out https://example.com/path?query=value&other=123",  # URL with params
-        "Email me at user.name+tag@example.co.uk",  # Complex email
-        "Price: $1,299.99 (was $1,599.99)",  # Price with parentheses
-        "Ref: #123 @user mention",  # Social media refs
-        "C++ Java C# F# A++",  # Programming languages
-        "AT&T 3M 7-Eleven",  # Company names with symbols
-        "It's " + '"working"' + " they're",  # Mixed quotes
-        "Line 1\nLine 2\nLine 3\nLine 4\nLine 5",  # Multiple lines
-        "Tab\tSeparated\tValues\tHere",  # TSV-like
-        "Column 1    Column 2    Column 3",  # Aligned columns
-        # Unicode categories test
-        "ⅧⅨⅩ",  # Roman numerals
-        "①②③",  # Circled numbers
-        "⑴⑵⑶",  # Parenthesized numbers
-        "⒈⒉⒊",  # Digit full stops
-        "«Hello»",  # Guillemets
-        '"Hello"',  # German quotes
-        "'Hello'",  # Single quotes
-        '"Hello"',  # Double quotes
-        "`Hello'",  # Mixed quotes
-        # Mathematical and scientific
-        "E=mc²",  # Einstein
-        "H₂O",  # Water formula
-        "∑∏∫∂",  # Math symbols
-        "αβγδε",  # Greek letters
-        "∞ ± × ÷",  # Math operators
-        "≤ ≥ ≠ ≈",  # Comparisons
-        "→ ← ↑ ↓",  # Arrows
-        "✓ ✗ ✔ ✘",  # Check marks
-        "★ ☆ ✡ ✦",  # Stars
-        "♠ ♥ ♦ ♣",  # Card suits
-        # Currency and commercial
-        "$100 €200 £300 ¥400",  # Major currencies
-        "₹500 ₹",  # Rupee
-        "₽600",  # Ruble
-        "₩700",  # Won
-        "₺800",  # Lira
-        "© ® ™ ℠",  # Intellectual property
-        "§ ¶ † ‡",  # Legal/footnote
-        "№ №.",  # Numero
-        "°C °F",  # Temperature
-        "㎏ ㎎ ㎖ ㎗",  # Units
-        # Rare and unusual
-        "𐍈𐍉𐍊",  # Gothic (if supported)
-        "𒀀𒀁𒀂",  # Cuneiform (if supported)
-        "𓀀𓀁𓀂",  # Egyptian hieroglyphs (if supported)
-        "𝄞𝄢𝄪",  # Musical notation (if supported)
-        "⏰⏱⏲⏳",  # Clock symbols
-        "☀☁☂☃",  # Weather
-        "✈✉✊✋",  # Transport and signs
-    ]
+    test_strings = GOLDEN_TEST_STRINGS
 
     cases = {}
 
@@ -505,112 +389,7 @@ def generate_test_cases(encoding_name, max_cases=100):
 
 
 def generate_cases_with_adapter(adapter, max_cases=100):
-    test_strings = [
-        # Basic ASCII and whitespace
-        "",
-        "Hello",
-        "Hello, World!",
-        "Hello World",
-        "   ",
-        "Hello\nWorld",
-        "Hello\tWorld",
-        "12345",
-        "Hello123",
-        "!@#$%",
-        "Hello   World",
-        "Hello\n\nWorld",
-        "today\n ",
-        "today\n \n",
-        "today\n  \n",
-        "The quick brown fox jumps over the lazy dog",
-        "This is a longer test string with multiple words to test tokenization",
-        "<|endoftext|>",
-        "日本語",
-        "中文",
-        "العربية",
-        "🎉🎊",
-        "café",
-        "naïve",
-        "Hello\u0000World",
-        "a" * 100,
-        "ab" * 50,
-        "<|fim_prefix|>Hello<|fim_suffix|>World<|fim_middle|>",
-        "Hello  World",
-        "Hello\r\nWorld",
-        " Hello ",
-        "\t\t\t",
-        "\n\n\n",
-        "A",
-        "AB",
-        "ABC",
-        "hello world",
-        "HELLO WORLD",
-        "Hello World!",
-        "Hello, World?",
-        "Hello; World.",
-        "'Hello' \"World\"",
-        "Hello (World) [Test] {Data}",
-        "Hello+World=Test",
-        "Hello/World\\Test",
-        "www.example.com",
-        "user@example.com",
-        "192.168.1.1",
-        "2024-01-15",
-        "$1,234.56",
-        "Hello_World",
-        "Hello-World",
-        "test_function_name",
-        "TestClassName",
-        "0xDEADBEEF",
-        "\u00a0",
-        " \u00850",
-        "\u200b",
-        "\ufeff",
-        "Привет мир",
-        "Γειά σου Κόσμε",
-        "שלום עולם",
-        "हैलो वर्ल्ड",
-        "한국어",
-        "Hello世界",
-        "Hello🌍World",
-        "👋👨‍👩‍👧‍👦👨‍💻",
-        "🏳️‍🌈🏴‍☠️",
-        "H̷̛̪e̷̛̪l̷̛̪l̷̛̪ơ̷̪",
-        "print('Hello World')",
-        "function test() { return 42; }",
-        "<html><body>Hello</body></html>",
-        '{"key": "value"}',
-        "# Heading",
-        "**bold**",
-        "`code`",
-        "[link](http://example.com)",
-        "word " * 20,
-        "A" * 1000,
-        "<|endoftext|> hello <|fim_prefix|>",
-        "<|endoftext|> hello <|fim_prefix|> there <|fim_middle|>",
-        "[THINK]T1[/THINK]",
-        '[TOOL_CALLS]{"name":"F1","arguments":{}}',
-        '[TOOL_RESULTS]{"content":"R1","call_id":"123"}',
-        "But ird and ปี   ird   ด",
-        "Line 1\nLine 2\nLine 3\nLine 4\nLine 5",
-        "E=mc²",
-        "H₂O",
-        "∞ ± × ÷",
-        "$100 €200 £300 ¥400",
-        "© ® ™",
-        "👩🏽‍💻👨🏻‍🚀🧑🏿‍🔬",
-        "1️⃣2️⃣3️⃣#️⃣*️⃣",
-        "❤️🧡💛💚💙💜🖤🤍🤎",
-        "🏳️‍⚧️",
-        "🇺🇳🇺🇸🇯🇵",
-        "🫠🫡🪿",
-        "e\u0301 != é",
-        "\u00f1 n\u0303",
-        "क्‍ष",
-        "\u200fabc\u200edef",
-        "\u2066left-to-right isolate\u2069",
-        "\u2028line-separator\u2029paragraph",
-    ]
+    test_strings = GOLDEN_TEST_STRINGS
 
     cases = {}
     for i, text in enumerate(test_strings):
@@ -642,9 +421,8 @@ def generate_model_family_ground_truth():
             "family_id": "google.gemma3",
             "backend": "gemma3",
             "revision": "main",
-            "max_cases": 100,
+            "max_cases": len(GOLDEN_TEST_STRINGS),
             "model_candidates": [
-                "unsloth/gemma-3-4b-it",
                 "google/gemma-3-4b-it",
                 "google/gemma-3-1b-it",
             ],
@@ -653,14 +431,14 @@ def generate_model_family_ground_truth():
             "family_id": "alibaba.qwen3_5",
             "backend": "hf",
             "revision": "main",
-            "max_cases": 100,
+            "max_cases": len(GOLDEN_TEST_STRINGS),
             "model_candidates": ["Qwen/Qwen3.5-0.6B", "Qwen/Qwen3-0.6B"],
         },
         {
             "family_id": "meta.llama3",
             "backend": "hf",
             "revision": "main",
-            "max_cases": 100,
+            "max_cases": len(GOLDEN_TEST_STRINGS),
             "model_candidates": [
                 "meta-llama/Llama-3.2-1B-Instruct",
                 "meta-llama/Llama-3.1-8B-Instruct",
@@ -672,7 +450,7 @@ def generate_model_family_ground_truth():
             "family_id": "moonshot.kimi2_5",
             "backend": "hf",
             "revision": "main",
-            "max_cases": 100,
+            "max_cases": len(GOLDEN_TEST_STRINGS),
             "model_candidates": [
                 "moonshotai/Kimi-K2.5",
                 "moonshotai/Kimi-K2-Instruct-0905",
@@ -683,7 +461,7 @@ def generate_model_family_ground_truth():
             "family_id": "ibm.granite4_0",
             "backend": "hf",
             "revision": "main",
-            "max_cases": 100,
+            "max_cases": len(GOLDEN_TEST_STRINGS),
             "model_candidates": [
                 "ibm-granite/granite-4.0-h-1b",
                 "ibm-granite/granite-4.0-1b",
@@ -693,7 +471,7 @@ def generate_model_family_ground_truth():
             "family_id": "huggingface.smollm3",
             "backend": "hf",
             "revision": "main",
-            "max_cases": 100,
+            "max_cases": len(GOLDEN_TEST_STRINGS),
             "model_candidates": [
                 "HuggingFaceTB/SmolLM3-3B",
                 "HuggingFaceTB/SmolLM3-3B-Base",
@@ -703,7 +481,7 @@ def generate_model_family_ground_truth():
             "family_id": "mistral.gpt2_pretekken",
             "backend": "hf",
             "revision": "main",
-            "max_cases": 100,
+            "max_cases": len(GOLDEN_TEST_STRINGS),
             "model_candidates": [
                 "mistralai/Mistral-Small-24B-Instruct-2501",
                 "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
@@ -711,12 +489,21 @@ def generate_model_family_ground_truth():
             ],
         },
         {
-            "family_id": "deepseek.v3_0324",
+            "family_id": "mistral.v0_3",
             "backend": "hf",
             "revision": "main",
-            "max_cases": 100,
+            "max_cases": len(GOLDEN_TEST_STRINGS),
             "model_candidates": [
-                "deepseek-ai/DeepSeek-V3-0324",
+                "mistralai/Mistral-7B-Instruct-v0.3",
+            ],
+        },
+        {
+            "family_id": "deepseek.v3_2",
+            "backend": "hf",
+            "revision": "main",
+            "max_cases": len(GOLDEN_TEST_STRINGS),
+            "model_candidates": [
+                "deepseek-ai/DeepSeek-V3.1",
                 "deepseek-ai/DeepSeek-V3",
                 "deepseek-ai/DeepSeek-R1-0528",
             ],
@@ -725,14 +512,14 @@ def generate_model_family_ground_truth():
             "family_id": "microsoft.phi4",
             "backend": "hf",
             "revision": "main",
-            "max_cases": 100,
+            "max_cases": len(GOLDEN_TEST_STRINGS),
             "model_candidates": ["microsoft/phi-4", "microsoft/Phi-4-mini-instruct"],
         },
         {
             "family_id": "mistral.tekken",
             "backend": "mistral-common",
             "revision": "main",
-            "max_cases": 100,
+            "max_cases": len(GOLDEN_TEST_STRINGS),
             "model_candidates": [
                 "mistralai/ministral-8b-instruct-2410",
                 "mistralai/open-mistral-nemo-2407",
@@ -797,9 +584,9 @@ def main():
 
     # Encodings to generate
     encodings = {
-        "r50k_base": 150,  # GPT-2
-        "cl100k_base": 100,  # GPT-4, ChatGPT
-        "o200k_base": 100,  # GPT-4o
+        "r50k_base": len(GOLDEN_TEST_STRINGS),  # GPT-2
+        "cl100k_base": len(GOLDEN_TEST_STRINGS),  # GPT-4, ChatGPT
+        "o200k_base": len(GOLDEN_TEST_STRINGS),  # GPT-4o
     }
 
     ground_truth = {}

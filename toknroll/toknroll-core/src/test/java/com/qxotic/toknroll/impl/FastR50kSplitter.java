@@ -8,7 +8,7 @@ import java.util.regex.Pattern;
  *
  * <p>Falls back to regex for non-ASCII slices to preserve Unicode behavior.
  */
-public final class FastR50kSplitter extends AbstractFastAsciiRegexSplitter {
+final class FastR50kSplitter extends AbstractFastAsciiRegexSplitter {
 
     private static final String R50K_PATTERN =
             "'(?:[sdmt]|ll|ve|re)| ?\\p{L}++| ?\\p{N}++|"

@@ -13,7 +13,7 @@ import java.util.Objects;
 import java.util.Set;
 
 /** Internal helpers to reconstruct merges from tiktoken mergeable ranks. */
-public final class TiktokenReconstruction {
+final class TiktokenReconstruction {
 
     private TiktokenReconstruction() {}
 

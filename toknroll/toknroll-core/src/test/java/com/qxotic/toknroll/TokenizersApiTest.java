@@ -6,8 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.toknroll.impl.TiktokenFiles;
-import com.qxotic.toknroll.impl.TiktokenReconstruction;
+import com.qxotic.toknroll.loaders.TiktokenLoaders;
 import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -69,7 +68,7 @@ class TokenizersApiTest {
     @Test
     void pipelineFacadeBuildsWorkingTokenizer() throws Exception {
         Map<String, Integer> mergeableRanks =
-                TiktokenFiles.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
+                TiktokenLoaders.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
 
         Tokenizer tokenizer =
                 createTikTokenTokenizer(
@@ -87,7 +86,7 @@ class TokenizersApiTest {
     @Test
     void pipelineWithRegexSplitterWorks() throws Exception {
         Map<String, Integer> mergeableRanks =
-                TiktokenFiles.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
+                TiktokenLoaders.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
 
         Tokenizer tokenizer =
                 createTikTokenTokenizer(
@@ -102,7 +101,7 @@ class TokenizersApiTest {
     @Test
     void tikTokenModelFacadeBuildsWorkingTokenizer() throws Exception {
         Map<String, Integer> mergeableRanks =
-                TiktokenFiles.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
+                TiktokenLoaders.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
 
         Tokenizer tokenizer =
                 createTikTokenTokenizer(
@@ -233,11 +232,10 @@ class TokenizersApiTest {
     @Test
     void lossyTransformIsExplicitAndSeparateFromBaseTokenizer() throws Exception {
         Map<String, Integer> mergeableRanks =
-                TiktokenFiles.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
-        Vocabulary vocabulary = TiktokenReconstruction.vocabulary(mergeableRanks, R50K_SPECIALS);
+                TiktokenLoaders.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
+        Vocabulary vocabulary = TiktokenLoaders.vocabulary(mergeableRanks, R50K_SPECIALS);
         TokenizationModel model =
-                Tokenizers.tikTokenModel(
-                        vocabulary, TiktokenReconstruction.mergeRules(mergeableRanks));
+                Tokenizers.tikTokenModel(vocabulary, TiktokenLoaders.mergeRules(mergeableRanks));
 
         Tokenizer base =
                 TokenizationPipeline.builder(model)
@@ -279,7 +277,7 @@ class TokenizersApiTest {
             String name, String file, String hash, String pattern, Map<String, Integer> specials) {
         try {
             Map<String, Integer> mergeableRanks =
-                    TiktokenFiles.loadMergeableRanks(resourcePath(file).toString(), hash);
+                    TiktokenLoaders.loadMergeableRanks(resourcePath(file).toString(), hash);
             return createTikTokenTokenizer(
                     mergeableRanks,
                     specials,
@@ -291,10 +289,9 @@ class TokenizersApiTest {
 
     private static Tokenizer createTikTokenTokenizer(
             Map<String, Integer> mergeableRanks, Map<String, Integer> specials, Splitter splitter) {
-        Vocabulary vocabulary = TiktokenReconstruction.vocabulary(mergeableRanks, specials);
+        Vocabulary vocabulary = TiktokenLoaders.vocabulary(mergeableRanks, specials);
         TokenizationModel model =
-                Tokenizers.tikTokenModel(
-                        vocabulary, TiktokenReconstruction.mergeRules(mergeableRanks));
+                Tokenizers.tikTokenModel(vocabulary, TiktokenLoaders.mergeRules(mergeableRanks));
         return Tokenizers.pipeline(model).splitter(splitter).build();
     }
 

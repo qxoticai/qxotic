@@ -1,11 +1,12 @@
-package com.qxotic.toknroll;
+package com.qxotic.toknroll.impl;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.StandardTokenType;
+import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
-import com.qxotic.toknroll.impl.SentencePieceBpeModel;
-import com.qxotic.toknroll.impl.VocabularyImpl;
 import java.util.Optional;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;

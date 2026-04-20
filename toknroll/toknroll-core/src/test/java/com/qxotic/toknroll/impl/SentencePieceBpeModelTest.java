@@ -1,12 +1,13 @@
-package com.qxotic.toknroll;
+package com.qxotic.toknroll.impl;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.toknroll.impl.SentencePieceBpeModel;
-import com.qxotic.toknroll.impl.VocabularyImpl;
+import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.StandardTokenType;
+import com.qxotic.toknroll.Vocabulary;
 import org.junit.jupiter.api.Test;
 
 class SentencePieceBpeModelTest {

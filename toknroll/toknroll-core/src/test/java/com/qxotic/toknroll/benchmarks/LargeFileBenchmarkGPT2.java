@@ -4,8 +4,7 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
-import com.qxotic.toknroll.impl.TiktokenFiles;
-import com.qxotic.toknroll.impl.TiktokenReconstruction;
+import com.qxotic.toknroll.loaders.TiktokenLoaders;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -134,13 +133,13 @@ public class LargeFileBenchmarkGPT2 {
                                 .toURI());
 
         var mergeableRanks =
-                TiktokenFiles.loadMergeableRanks(tiktokenPath.toString(), R50K_BASE_HASH);
+                TiktokenLoaders.loadMergeableRanks(tiktokenPath.toString(), R50K_BASE_HASH);
 
         Map<String, Integer> specials = Map.of("<|endoftext|>", 50256);
         return Tokenizers.pipeline(
                         Tokenizers.tikTokenModel(
-                                TiktokenReconstruction.vocabulary(mergeableRanks, specials),
-                                TiktokenReconstruction.mergeRules(mergeableRanks)))
+                                TiktokenLoaders.vocabulary(mergeableRanks, specials),
+                                TiktokenLoaders.mergeRules(mergeableRanks)))
                 .splitter(
                         Splitter.regex(
                                 Pattern.compile(R50K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS)))

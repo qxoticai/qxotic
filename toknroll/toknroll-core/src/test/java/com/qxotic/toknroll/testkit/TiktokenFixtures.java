@@ -4,8 +4,7 @@ import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.TokenizationModel;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
-import com.qxotic.toknroll.impl.TiktokenFiles;
-import com.qxotic.toknroll.impl.TiktokenReconstruction;
+import com.qxotic.toknroll.loaders.TiktokenLoaders;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.util.Collections;
@@ -124,7 +123,8 @@ public final class TiktokenFixtures {
     }
 
     public static Tokenizer createJtokkitTokenizer(String encodingName) {
-        return TOKENIZER_CACHE.computeIfAbsent(encodingName, TiktokenFixtures::createTikTokenTokenizer);
+        return TOKENIZER_CACHE.computeIfAbsent(
+                encodingName, TiktokenFixtures::createTikTokenTokenizer);
     }
 
     private static Tokenizer BPE_R50K_TOKENIZER = null;
@@ -138,7 +138,8 @@ public final class TiktokenFixtures {
     }
 
     public static Tokenizer createBpeTokenizer(String encodingName) {
-        return BPE_TOKENIZER_CACHE.computeIfAbsent(encodingName, TiktokenFixtures::createTikTokenTokenizer);
+        return BPE_TOKENIZER_CACHE.computeIfAbsent(
+                encodingName, TiktokenFixtures::createTikTokenTokenizer);
     }
 
     public static Tokenizer createTikTokenTokenizer(String encodingName, Splitter splitter) {
@@ -160,8 +161,8 @@ public final class TiktokenFixtures {
             Map<String, Integer> ranks, Map<String, Integer> specials, Splitter splitter) {
         TokenizationModel model =
                 Tokenizers.tikTokenModel(
-                        TiktokenReconstruction.vocabulary(ranks, specials),
-                        TiktokenReconstruction.mergeRules(ranks));
+                        TiktokenLoaders.vocabulary(ranks, specials),
+                        TiktokenLoaders.mergeRules(ranks));
         return Tokenizers.pipeline(model).splitter(splitter).build();
     }
 
@@ -186,7 +187,7 @@ public final class TiktokenFixtures {
                 fileName,
                 key -> {
                     try {
-                        return TiktokenFiles.loadMergeableRanks(
+                        return TiktokenLoaders.loadMergeableRanks(
                                 resourcePath(fileName).toString(), expectedHash);
                     } catch (Exception e) {
                         throw new IllegalStateException(

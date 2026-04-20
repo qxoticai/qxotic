@@ -2,9 +2,7 @@ package com.qxotic.toknroll;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.toknroll.impl.FastCl100kSplitter;
-import com.qxotic.toknroll.impl.FastO200kSplitter;
-import com.qxotic.toknroll.impl.FastR50kSplitter;
+import com.qxotic.toknroll.impl.FastSplitters;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -13,9 +11,9 @@ class FastTikTokenParityTest {
 
     @Test
     void matchesJtokkitForRepresentativeSamples() {
-        assertEncodingParity("r50k_base", FastR50kSplitter.INSTANCE);
-        assertEncodingParity("cl100k_base", FastCl100kSplitter.INSTANCE);
-        assertEncodingParity("o200k_base", FastO200kSplitter.INSTANCE);
+        assertEncodingParity("r50k_base", FastSplitters.r50k());
+        assertEncodingParity("cl100k_base", FastSplitters.cl100k());
+        assertEncodingParity("o200k_base", FastSplitters.o200k());
     }
 
     private static void assertEncodingParity(String encoding, Splitter splitter) {

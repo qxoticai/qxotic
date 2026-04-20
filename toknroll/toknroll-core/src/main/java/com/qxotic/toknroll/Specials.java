@@ -1,6 +1,6 @@
 package com.qxotic.toknroll;
 
-import com.qxotic.toknroll.impl.SpecialsImpl;
+import com.qxotic.toknroll.impl.ImplAccessor;
 import java.util.Objects;
 import java.util.Set;
 
@@ -28,7 +28,7 @@ public interface Specials {
 
     /** Returns a singleton instance with no configured specials. */
     static Specials none() {
-        return SpecialsImpl.none();
+        return ImplAccessor.specialsNone();
     }
 
     /**
@@ -47,7 +47,7 @@ public interface Specials {
      * @throws IllegalArgumentException if validation fails
      */
     static Specials compile(Vocabulary vocabulary, Set<String> specials) {
-        return SpecialsImpl.compile(
+        return ImplAccessor.compileSpecials(
                 Objects.requireNonNull(vocabulary, "vocabulary"),
                 Objects.requireNonNull(specials, "specials"));
     }

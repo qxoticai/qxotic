@@ -1,8 +1,7 @@
 package com.qxotic.toknroll.loaders;
 
 import com.qxotic.toknroll.Splitter;
-import com.qxotic.toknroll.impl.FastQwen35Splitter;
-import com.qxotic.toknroll.impl.FastTekkenSplitter;
+import com.qxotic.toknroll.impl.FastSplitters;
 import java.util.Arrays;
 import java.util.regex.Pattern;
 
@@ -79,10 +78,10 @@ public final class ModelSplitters {
 
     public static final Splitter LLAMA3 = Splitter.regex(LLAMA3_COMPILED);
     public static final Splitter QWEN2 = Splitter.regex(QWEN2_COMPILED);
-    public static final Splitter QWEN35 = FastQwen35Splitter.INSTANCE;
+    public static final Splitter QWEN35 = FastSplitters.qwen35();
     public static final Splitter SMOLLM2 = sequence(SMOLLM2_PATTERNS);
     public static final Splitter REFACT = sequence(REFACT_PATTERNS);
-    public static final Splitter TEKKEN = FastTekkenSplitter.INSTANCE;
+    public static final Splitter TEKKEN = FastSplitters.tekken();
     public static final Splitter MISTRAL_TEKKEN = TEKKEN;
     public static final Splitter DEEPSEEK_LATEST = QWEN35;
     public static final Splitter KIMI_25 = QWEN35;

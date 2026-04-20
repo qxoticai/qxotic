@@ -1,7 +1,6 @@
 package com.qxotic.toknroll.gguf;
 
 import com.qxotic.toknroll.Splitter;
-import com.qxotic.toknroll.impl.RegexSplitter;
 import java.util.Arrays;
 import java.util.regex.Pattern;
 
@@ -126,18 +125,15 @@ public final class ModelTextSplitters {
                 || "phi".equals(normalizedType)
                 || "phi3".equals(normalizedType)
                 || "phi4".equals(normalizedType)) {
-            return RegexSplitter.create(
-                    Pattern.compile(LLAMA3_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
+            return Splitter.regex(Pattern.compile(LLAMA3_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         }
         if ("qwen".equals(normalizedType)
                 || "qwen2".equals(normalizedType)
                 || "qwen3".equals(normalizedType)) {
-            return RegexSplitter.create(
-                    Pattern.compile(QWEN2_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
+            return Splitter.regex(Pattern.compile(QWEN2_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         }
         if ("qwen3.5".equals(normalizedType) || "qwen3_5".equals(normalizedType)) {
-            return RegexSplitter.create(
-                    Pattern.compile(QWEN35_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
+            return Splitter.regex(Pattern.compile(QWEN35_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         }
         if ("deepseek-v3".equals(normalizedType)
                 || "deepseek_v3".equals(normalizedType)
@@ -145,8 +141,7 @@ public final class ModelTextSplitters {
             return createDeepSeekV3Splitter();
         }
         if ("tekken".equals(normalizedType)) {
-            return RegexSplitter.create(
-                    Pattern.compile(TEKKEN_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
+            return Splitter.regex(Pattern.compile(TEKKEN_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         }
         if ("gemma".equals(normalizedType)
                 || "gemma2".equals(normalizedType)
@@ -157,15 +152,13 @@ public final class ModelTextSplitters {
             return createSmolLMSplitter();
         }
         if ("smollm3".equals(normalizedType)) {
-            return RegexSplitter.create(
-                    Pattern.compile(LLAMA3_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
+            return Splitter.regex(Pattern.compile(LLAMA3_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         }
         if ("granite".equals(normalizedType)
                 || "granite4".equals(normalizedType)
                 || "granite4.0".equals(normalizedType)
                 || "gpt2".equals(normalizedType)) {
-            return RegexSplitter.create(
-                    Pattern.compile(GPT2_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
+            return Splitter.regex(Pattern.compile(GPT2_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         }
         return Splitter.identity();
     }
@@ -179,15 +172,13 @@ public final class ModelTextSplitters {
     public static Splitter createSplitter(TestDataManager.TestModel model) {
         if (model == TestDataManager.TestModel.QWEN3_0_6B
                 || model == TestDataManager.TestModel.QWEN2_5_0_5B) {
-            return RegexSplitter.create(
-                    Pattern.compile(QWEN35_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
+            return Splitter.regex(Pattern.compile(QWEN35_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         }
         if (model == TestDataManager.TestModel.GEMMA_3_4B_UNSLOTH) {
             return createGemmaSplitter();
         }
         if (model == TestDataManager.TestModel.MISTRAL_3_3B_BARTOWSKI) {
-            return RegexSplitter.create(
-                    Pattern.compile(TEKKEN_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
+            return Splitter.regex(Pattern.compile(TEKKEN_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         }
         return Splitter.identity();
     }
@@ -209,7 +200,7 @@ public final class ModelTextSplitters {
                 Arrays.stream(SMOLLM2_PATTERNS)
                         .map(
                                 pattern ->
-                                        RegexSplitter.create(
+                                        Splitter.regex(
                                                 Pattern.compile(
                                                         pattern, Pattern.UNICODE_CHARACTER_CLASS)))
                         .toArray(Splitter[]::new);
@@ -221,7 +212,7 @@ public final class ModelTextSplitters {
                 Arrays.stream(DEEPSEEK_V3_PATTERNS)
                         .map(
                                 pattern ->
-                                        RegexSplitter.create(
+                                        Splitter.regex(
                                                 Pattern.compile(
                                                         pattern, Pattern.UNICODE_CHARACTER_CLASS)))
                         .toArray(Splitter[]::new);

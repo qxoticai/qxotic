@@ -1,7 +1,6 @@
 package com.qxotic.toknroll;
 
 import com.qxotic.toknroll.impl.ImplAccessor;
-import com.qxotic.toknroll.impl.VocabularyImpl;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -13,7 +12,7 @@ public final class Tokenizers {
     private Tokenizers() {}
 
     public static Vocabulary vocabulary(String... tokens) {
-        return new VocabularyImpl(indexVocabulary(tokens));
+        return ImplAccessor.createVocabulary(indexVocabulary(tokens));
     }
 
     public static Vocabulary vocabulary(Map<String, Integer> specialTokens, String... tokens) {
@@ -89,6 +88,10 @@ public final class Tokenizers {
     public static TokenizationModel sentencePieceBpeModel(
             Vocabulary vocabulary, List<MergeRule> merges) {
         return ImplAccessor.createSentencePieceBpeModel(vocabulary, merges);
+    }
+
+    public static TokenizationModel sentencePieceBpeModel(Vocabulary vocabulary, float[] scores) {
+        return ImplAccessor.createSentencePieceBpeModel(vocabulary, scores);
     }
 
     public static TokenizationPipeline.Builder pipeline(TokenizationModel model) {

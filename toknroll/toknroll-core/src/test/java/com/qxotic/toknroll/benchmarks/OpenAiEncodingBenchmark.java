@@ -4,10 +4,8 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
-import com.qxotic.toknroll.impl.FastCl100kSplitter;
-import com.qxotic.toknroll.impl.FastO200kSplitter;
-import com.qxotic.toknroll.impl.FastR50kSplitter;
-import com.qxotic.toknroll.impl.TiktokenReconstruction;
+import com.qxotic.toknroll.impl.FastSplitters;
+import com.qxotic.toknroll.loaders.TiktokenLoaders;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -96,8 +94,8 @@ public class OpenAiEncodingBenchmark {
         Splitter splitter = fastSplitterForEncoding(encoding);
         return Tokenizers.pipeline(
                         Tokenizers.tikTokenModel(
-                                TiktokenReconstruction.vocabulary(ranks, specials),
-                                TiktokenReconstruction.mergeRules(ranks)))
+                                TiktokenLoaders.vocabulary(ranks, specials),
+                                TiktokenLoaders.mergeRules(ranks)))
                 .splitter(splitter)
                 .build();
     }
@@ -105,11 +103,11 @@ public class OpenAiEncodingBenchmark {
     private static Splitter fastSplitterForEncoding(String encoding) {
         switch (encoding) {
             case "r50k_base":
-                return FastR50kSplitter.INSTANCE;
+                return FastSplitters.r50k();
             case "cl100k_base":
-                return FastCl100kSplitter.INSTANCE;
+                return FastSplitters.cl100k();
             case "o200k_base":
-                return FastO200kSplitter.INSTANCE;
+                return FastSplitters.o200k();
             default:
                 return Splitter.regex(TiktokenFixtures.splitPattern(encoding));
         }

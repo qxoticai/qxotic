@@ -1,8 +1,6 @@
 package com.qxotic.toknroll;
 
-import com.qxotic.toknroll.impl.AbstractIntSequence;
-
-final class ZeroIntSequence extends AbstractIntSequence {
+final class ZeroIntSequence implements IntSequence {
 
     private final int length;
 
@@ -32,5 +30,10 @@ final class ZeroIntSequence extends AbstractIntSequence {
             throw new IllegalArgumentException("slice out of range");
         }
         return new ZeroIntSequence(endExclusive - startInclusive);
+    }
+
+    @Override
+    public int compareTo(IntSequence other) {
+        return IntSequence.compare(this, other);
     }
 }

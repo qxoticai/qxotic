@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
  *
  * <p>Uses a fast ASCII path for dominant token classes and regex matching fallback where needed.
  */
-public final class FastCl100kSplitter extends AbstractFastAsciiRegexSplitter {
+final class FastCl100kSplitter extends AbstractFastAsciiRegexSplitter {
 
     private static final String CL100K_PATTERN =
             "'(?i:[sdmt]|ll|ve|re)|[^\\r"

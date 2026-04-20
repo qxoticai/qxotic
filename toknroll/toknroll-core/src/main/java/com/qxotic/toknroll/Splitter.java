@@ -1,6 +1,6 @@
 package com.qxotic.toknroll;
 
-import com.qxotic.toknroll.impl.RegexSplitter;
+import com.qxotic.toknroll.impl.ImplAccessor;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -71,7 +71,7 @@ public interface Splitter {
 
     static Splitter regex(Pattern pattern) {
         Objects.requireNonNull(pattern, "pattern");
-        return RegexSplitter.create(pattern);
+        return ImplAccessor.createRegexSplitter(pattern);
     }
 
     static Splitter sequence(Splitter... splitters) {
