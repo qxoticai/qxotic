@@ -1,6 +1,10 @@
 package com.qxotic.jota.examples.demos;
 
-import com.qxotic.jota.*;
+import com.qxotic.jota.DataType;
+import com.qxotic.jota.Device;
+import com.qxotic.jota.Environment;
+import com.qxotic.jota.Indexing;
+import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;

@@ -97,16 +97,17 @@ public class OpenAiEncodingBenchmark {
             case "toknroll-fast":
                 return createToknrollTokenizer(encoding, true);
             default:
-                throw new IllegalArgumentException(
-                        "Unsupported implementation: " + implementation);
+                throw new IllegalArgumentException("Unsupported implementation: " + implementation);
         }
     }
 
     private static Tokenizer createToknrollTokenizer(String encoding, boolean fast) {
         Map<String, Integer> ranks = TiktokenFixtures.mergeableRanks(encoding);
         Map<String, Integer> specials = TiktokenFixtures.specialTokens(encoding);
-        Splitter splitter = fast ? fastSplitterForEncoding(encoding) : Splitter.regex(
-                TiktokenFixtures.splitPattern(encoding));
+        Splitter splitter =
+                fast
+                        ? fastSplitterForEncoding(encoding)
+                        : Splitter.regex(TiktokenFixtures.splitPattern(encoding));
         return Tokenizers.pipeline(
                         Tokenizers.tikTokenModel(
                                 TiktokenLoaders.vocabulary(ranks, specials),

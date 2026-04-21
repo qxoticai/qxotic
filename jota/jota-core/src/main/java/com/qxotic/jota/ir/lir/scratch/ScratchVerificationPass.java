@@ -1,7 +1,26 @@
 package com.qxotic.jota.ir.lir.scratch;
 
-import com.qxotic.jota.ir.lir.*;
-import java.util.*;
+import com.qxotic.jota.ir.lir.Block;
+import com.qxotic.jota.ir.lir.BufferRef;
+import com.qxotic.jota.ir.lir.LIRExprNode;
+import com.qxotic.jota.ir.lir.LIRGraph;
+import com.qxotic.jota.ir.lir.LIRInput;
+import com.qxotic.jota.ir.lir.LoopIterArg;
+import com.qxotic.jota.ir.lir.SLoad;
+import com.qxotic.jota.ir.lir.Store;
+import com.qxotic.jota.ir.lir.StructuredFor;
+import com.qxotic.jota.ir.lir.Yield;
+
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Verification pass for scratch memory usage in LIR graphs.

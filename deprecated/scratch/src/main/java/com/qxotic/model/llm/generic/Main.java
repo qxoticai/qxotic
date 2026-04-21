@@ -1,12 +1,19 @@
 package com.qxotic.model.llm.generic;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.model.llm.*;
+import com.qxotic.model.llm.ChatFormat;
+import com.qxotic.model.llm.Model;
+import com.qxotic.model.llm.Options;
+import com.qxotic.model.llm.RunInteractive;
+import com.qxotic.model.llm.SpanLoader;
+import com.qxotic.model.llm.TensorLoader;
+import com.qxotic.model.llm.TextSplitterLoader;
+import com.qxotic.model.llm.TokenizerLoader;
 import com.qxotic.model.llm.llama.Llama;
 import com.qxotic.model.llm.llama.Sampler2;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.advanced.Normalizer;
-import com.qxotic.toknroll.advanced.Splitter;
+import com.qxotic.toknroll.Normalizer;
+import com.qxotic.toknroll.Splitter;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;

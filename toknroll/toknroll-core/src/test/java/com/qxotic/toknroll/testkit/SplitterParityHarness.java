@@ -25,7 +25,8 @@ public final class SplitterParityHarness {
     private static void compareRepresentative(
             String name, Splitter splitter, Splitter sourceOfTruth) {
         for (String sample : REPRESENTATIVE_SAMPLES) {
-            assertRangesMatch(name + " representative", splitter, sourceOfTruth, sample, 0, sample.length());
+            assertRangesMatch(
+                    name + " representative", splitter, sourceOfTruth, sample, 0, sample.length());
         }
     }
 
@@ -56,7 +57,8 @@ public final class SplitterParityHarness {
                 sb.append((char) (9 + rnd.nextInt(118)));
             }
             String sample = sb.toString();
-            assertRangesMatch(name + " random-ascii", splitter, sourceOfTruth, sample, 0, sample.length());
+            assertRangesMatch(
+                    name + " random-ascii", splitter, sourceOfTruth, sample, 0, sample.length());
         }
     }
 
@@ -65,7 +67,8 @@ public final class SplitterParityHarness {
         Random rnd = new Random(seed);
         for (int n = 0; n < iterations; n++) {
             String sample = randomUnicodeString(rnd, 80);
-            assertRangesMatch(name + " random-unicode", splitter, sourceOfTruth, sample, 0, sample.length());
+            assertRangesMatch(
+                    name + " random-unicode", splitter, sourceOfTruth, sample, 0, sample.length());
         }
     }
 

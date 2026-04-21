@@ -6,6 +6,7 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.toknroll.gguf.TestDataManager.TestModel;
 import com.qxotic.toknroll.gguf.TestDataManager.TokenizerMetadata;
 import java.io.IOException;
+import java.nio.file.Files;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -157,7 +158,7 @@ public class GGUFTokenizerTest {
                 gguf2.getMetadataKeys().size(),
                 "Metadata key count should match");
         assertTrue(
-                java.nio.file.Files.exists(
+                Files.exists(
                         dataManager.getCachePath().resolve(model.getCacheKey() + ".gguf.partial")),
                 "Expected metadata file in cache");
     }

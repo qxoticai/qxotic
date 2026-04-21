@@ -4,6 +4,8 @@ import com.qxotic.jota.runtime.KernelBackend;
 import com.qxotic.jota.runtime.KernelCacheKey;
 import com.qxotic.jota.runtime.KernelExecutable;
 import com.qxotic.jota.runtime.KernelProgram;
+import com.qxotic.jota.runtime.hip.HipRuntime;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -252,8 +254,8 @@ final class MojoKernelBackend implements KernelBackend {
         }
         // Compute default from current HIP device
         try {
-            int deviceIndex = com.qxotic.jota.runtime.hip.HipRuntime.currentDevice();
-            String deviceArch = com.qxotic.jota.runtime.hip.HipRuntime.deviceArchName(deviceIndex);
+            int deviceIndex = HipRuntime.currentDevice();
+            String deviceArch = HipRuntime.deviceArchName(deviceIndex);
             if (deviceArch != null && !deviceArch.isBlank()) {
                 return deviceArch.trim();
             }

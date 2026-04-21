@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
 
 public final class TokenizerDemoServer {
@@ -141,7 +142,7 @@ public final class TokenizerDemoServer {
         server.createContext("/api/tokenizers", this::handleListTokenizers);
         server.createContext("/api/tokenize", this::handleTokenize);
         server.createContext("/api/decode", this::handleDecode);
-        server.setExecutor(java.util.concurrent.Executors.newFixedThreadPool(4));
+        server.setExecutor(Executors.newFixedThreadPool(4));
         server.start();
         System.out.println("Tokenizer demo running on http://localhost:" + PORT);
     }

@@ -9,6 +9,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
 class GGUFTokenizerComponentsTest {
@@ -59,19 +60,14 @@ class GGUFTokenizerComponentsTest {
         List<CharSequence> tokens = splitter.splitAllToListEagerly(input);
 
         assertTrue(tokens.size() >= 2);
-        String rebuilt =
-                tokens.stream()
-                        .map(CharSequence::toString)
-                        .collect(java.util.stream.Collectors.joining());
+        String rebuilt = tokens.stream().map(CharSequence::toString).collect(Collectors.joining());
         assertEquals(input, rebuilt);
     }
 
     private static Vocabulary simpleVocabulary(Map<String, Integer> tokenToId) {
         Map<Integer, String> idToToken =
                 tokenToId.entrySet().stream()
-                        .collect(
-                                java.util.stream.Collectors.toMap(
-                                        Map.Entry::getValue, Map.Entry::getKey));
+                        .collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey));
         return new Vocabulary() {
             @Override
             public String token(int id) {

@@ -1,7 +1,11 @@
 package com.qxotic.jota.memory.impl;
 
 import com.qxotic.jota.Device;
-import com.qxotic.jota.memory.*;
+import com.qxotic.jota.memory.MemoryAccess;
+import com.qxotic.jota.memory.MemoryAllocator;
+import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.memory.MemoryOperations;
+
 import java.nio.ByteBuffer;
 import java.util.Objects;
 

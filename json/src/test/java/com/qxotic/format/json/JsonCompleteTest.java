@@ -1,9 +1,11 @@
 package com.qxotic.format.json;
 
-import static org.junit.jupiter.api.Assertions.*;
-
-import java.util.*;
 import org.junit.jupiter.api.Test;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 /** Tests for Json parsing and serialization. */
 class JsonCompleteTest {

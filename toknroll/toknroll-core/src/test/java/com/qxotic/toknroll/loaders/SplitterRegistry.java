@@ -1,7 +1,12 @@
 package com.qxotic.toknroll.loaders;
 
 import com.qxotic.toknroll.Splitter;
-import java.util.*;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**

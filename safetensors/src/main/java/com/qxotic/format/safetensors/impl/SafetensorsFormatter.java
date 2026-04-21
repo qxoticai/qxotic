@@ -3,7 +3,10 @@ package com.qxotic.format.safetensors.impl;
 import com.qxotic.format.json.Json;
 import com.qxotic.format.safetensors.Safetensors;
 import com.qxotic.format.safetensors.TensorEntry;
+
+import java.util.Arrays;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /** Provides formatting for Safetensors instances with simple parameter-based control. */
 class SafetensorsFormatter {
@@ -70,9 +73,9 @@ class SafetensorsFormatter {
                     .append(tensor.dtype())
                     .append('[')
                     .append(
-                            java.util.Arrays.stream(tensor.shape())
+                            Arrays.stream(tensor.shape())
                                     .mapToObj(Long::toString)
-                                    .collect(java.util.stream.Collectors.joining(", ")))
+                                    .collect(Collectors.joining(", ")))
                     .append("] @ offset=0x")
                     .append(Long.toHexString(tensor.byteOffset()))
                     .append("\n");

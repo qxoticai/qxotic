@@ -8,7 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -143,8 +145,8 @@ class TokenizationPipelineTest {
     }
 
     private Vocabulary createSimpleVocabulary(String[] tokens, int[] ids) {
-        Map<String, Integer> tokenToId = new java.util.HashMap<>();
-        Map<Integer, String> idToToken = new java.util.HashMap<>();
+        Map<String, Integer> tokenToId = new HashMap<>();
+        Map<Integer, String> idToToken = new HashMap<>();
         for (int i = 0; i < tokens.length; i++) {
             tokenToId.put(tokens[i], ids[i]);
             idToToken.put(ids[i], tokens[i]);
@@ -184,7 +186,7 @@ class TokenizationPipelineTest {
     }
 
     private Vocabulary createVocabularyFromMap(Map<String, Integer> tokenMap) {
-        Map<Integer, String> idToToken = new java.util.HashMap<>();
+        Map<Integer, String> idToToken = new HashMap<>();
         for (Map.Entry<String, Integer> entry : tokenMap.entrySet()) {
             idToToken.put(entry.getValue(), entry.getKey());
         }
@@ -257,7 +259,7 @@ class TokenizationPipelineTest {
 
             @Override
             public byte[] decodeBytes(IntSequence tokensSeq) {
-                return decode(tokensSeq).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                return decode(tokensSeq).getBytes(StandardCharsets.UTF_8);
             }
 
             @Override

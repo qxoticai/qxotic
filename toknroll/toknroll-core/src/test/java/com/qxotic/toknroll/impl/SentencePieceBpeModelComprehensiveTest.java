@@ -7,6 +7,7 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
+import java.text.Normalizer;
 import java.util.Optional;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -312,7 +313,7 @@ class SentencePieceBpeModelComprehensiveTest {
             IntSequence encoded = tokenizer.get().encode(text);
             String decoded = tokenizer.get().decode(encoded);
             assertEquals(
-                    java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFC),
+                    Normalizer.normalize(text, Normalizer.Form.NFC),
                     decoded,
                     "Round-trip failed for tricky case: [" + text + "]");
             assertEquals(

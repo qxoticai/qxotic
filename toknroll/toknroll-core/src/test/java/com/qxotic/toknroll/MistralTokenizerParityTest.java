@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
 import com.qxotic.toknroll.testkit.FamilyGoldenFixture;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Tag;
@@ -33,11 +34,11 @@ class MistralTokenizerParityTest {
                                 + ": text='"
                                 + c.text()
                                 + "' golden="
-                                + java.util.Arrays.toString(c.tokens())
+                                + Arrays.toString(c.tokens())
                                 + " actual="
-                                + java.util.Arrays.toString(actual));
+                                + Arrays.toString(actual));
             }
-            if (java.util.Arrays.equals(c.tokens(), actual)) {
+            if (Arrays.equals(c.tokens(), actual)) {
                 exact++;
             }
             assertEquals(

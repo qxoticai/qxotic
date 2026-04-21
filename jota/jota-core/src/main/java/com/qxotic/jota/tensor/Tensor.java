@@ -1,6 +1,10 @@
 package com.qxotic.jota.tensor;
 
-import com.qxotic.jota.*;
+import com.qxotic.jota.DataType;
+import com.qxotic.jota.Device;
+import com.qxotic.jota.Layout;
+import com.qxotic.jota.Shape;
+import com.qxotic.jota.Stride;
 import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.random.RandomKey;
 

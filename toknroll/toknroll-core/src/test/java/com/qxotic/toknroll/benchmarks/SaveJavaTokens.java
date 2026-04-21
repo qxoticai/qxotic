@@ -7,6 +7,7 @@ import com.qxotic.toknroll.Tokenizers;
 import com.qxotic.toknroll.loaders.TiktokenLoaders;
 import java.io.BufferedWriter;
 import java.io.FileWriter;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -37,7 +38,7 @@ public class SaveJavaTokens {
         // Read file
         Path filePath = Paths.get(FILE_PATH);
         byte[] fileBytes = Files.readAllBytes(filePath);
-        String text = new String(fileBytes, java.nio.charset.StandardCharsets.UTF_8);
+        String text = new String(fileBytes, StandardCharsets.UTF_8);
 
         System.out.printf("File: %s%n", FILE_PATH);
         System.out.printf("Characters: %,d%n", text.length());

@@ -1,14 +1,18 @@
 package com.qxotic.jota;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import com.qxotic.jota.memory.*;
+import com.qxotic.jota.memory.MemoryAccess;
+import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.memory.MemoryViewPrinter;
 import com.qxotic.jota.memory.impl.DomainFactory;
 import com.qxotic.jota.memory.impl.MemoryFactory;
 import com.qxotic.jota.memory.impl.MemoryViewFactory;
-import java.util.Arrays;
 import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.Test;
+
+import java.util.Arrays;
+
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class JotaTest {
 

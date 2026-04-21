@@ -101,14 +101,15 @@ public final class ModelTextSplitters {
     /** Kimi K2 pre-tokenizer pattern (gpt2 + custom Han-aware letter handling). */
     public static final String KIMI_K2_PATTERN =
             "[\\p{IsHan}]+|[^\\r"
-                    + "\\n"
-                    + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}&&[^\\p{IsHan}]]*[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}&&[^\\p{IsHan}]]+(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])?|[^\\r"
-                    + "\\n"
-                    + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}&&[^\\p{IsHan}]]+[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}&&[^\\p{IsHan}]]*(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])?|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r"
-                    + "\\n"
-                    + "]*|\\s*[\\r"
-                    + "\\n"
-                    + "]+|\\s+(?!\\S)|\\s+";
+                + "\\n"
+                + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}&&[^\\p{IsHan}]]*[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}&&[^\\p{IsHan}]]+(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])?|[^\\r"
+                + "\\n"
+                + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}&&[^\\p{IsHan}]]+[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}&&[^\\p{IsHan}]]*(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])?|\\p{N}{1,3}|"
+                + " ?[^\\s\\p{L}\\p{N}]+[\\r"
+                + "\\n"
+                + "]*|\\s*[\\r"
+                + "\\n"
+                + "]+|\\s+(?!\\S)|\\s+";
 
     /**
      * Gemma pattern - used by Gemma models (SentencePiece-based). Gemma uses a different

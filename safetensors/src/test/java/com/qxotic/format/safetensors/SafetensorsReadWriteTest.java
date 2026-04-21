@@ -9,6 +9,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
+import java.nio.channels.WritableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
@@ -45,12 +46,12 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
         assertThrows(NullPointerException.class, () -> Safetensors.read((Path) null));
         assertThrows(
                 NullPointerException.class,
-                () -> Safetensors.read((java.nio.channels.ReadableByteChannel) null));
+                () -> Safetensors.read((ReadableByteChannel) null));
         assertThrows(NullPointerException.class, () -> Safetensors.write(null, out));
         assertThrows(NullPointerException.class, () -> Safetensors.write(st, (Path) null));
         assertThrows(
                 NullPointerException.class,
-                () -> Safetensors.write(st, (java.nio.channels.WritableByteChannel) null));
+                () -> Safetensors.write(st, (WritableByteChannel) null));
         assertThrows(
                 NullPointerException.class,
                 () -> TensorEntry.create(null, DType.F32, new long[] {1}, 0));

@@ -2,8 +2,11 @@ package com.qxotic.jota.ir.tir;
 
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Layout;
-import com.qxotic.jota.memory.*;
+import com.qxotic.jota.memory.Memory;
+import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.memory.MemoryView;
+import com.qxotic.jota.memory.ScopedMemoryAllocatorArena;
 import com.qxotic.jota.runtime.nativeimpl.NativeMemoryFactory;
 import java.lang.foreign.MemorySegment;
 import java.util.HashMap;

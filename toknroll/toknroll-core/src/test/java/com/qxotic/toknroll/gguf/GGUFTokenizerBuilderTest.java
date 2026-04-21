@@ -3,9 +3,12 @@ package com.qxotic.toknroll.gguf;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.toknroll.*;
+import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.TokenizationPipeline;
+import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.Tokenizers;
+import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.gguf.TestDataManager.TestModel;
 import com.qxotic.toknroll.gguf.TestDataManager.TokenizerMetadata;
 import com.qxotic.toknroll.impl.ImplAccessor;

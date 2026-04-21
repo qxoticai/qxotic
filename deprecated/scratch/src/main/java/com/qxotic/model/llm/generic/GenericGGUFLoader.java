@@ -1,7 +1,12 @@
 package com.qxotic.model.llm.generic;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.model.llm.*;
+import com.qxotic.model.llm.AbstractGGUFLoader;
+import com.qxotic.model.llm.ChatFormat;
+import com.qxotic.model.llm.Loader;
+import com.qxotic.model.llm.Model;
+import com.qxotic.model.llm.ModelLoader;
+import com.qxotic.model.llm.SpanLoader;
 import com.qxotic.model.llm.apertus.ApertusChatFormat;
 import com.qxotic.model.llm.gemma3.GemmaChatFormat;
 import com.qxotic.model.llm.granite.GraniteChatFormat;
