@@ -113,6 +113,7 @@ public final class TiktokenFixtures {
 
     // Cache for tokenizer instances to avoid recreating them for each test
     private static final Map<String, Tokenizer> TOKENIZER_CACHE = new HashMap<>();
+    private static final Map<String, Tokenizer> JTOKKIT_CACHE = new HashMap<>();
 
     public static List<EncodingFixture> encodings() {
         return ENCODINGS;
@@ -122,9 +123,118 @@ public final class TiktokenFixtures {
         return ENCODINGS.stream().filter(e -> e.name().equals(name)).findFirst().orElseThrow();
     }
 
+    /** Creates a real JTokkit-backed tokenizer (not Tok'n'Roll native). */
     public static Tokenizer createJtokkitTokenizer(String encodingName) {
+        return JTOKKIT_CACHE.computeIfAbsent(
+                encodingName,
+                name -> {
+                    EncodingFixture fixture = encoding(name);
+                    return createJtokkitTokenizerInternal(
+                            name, mergeableRanks(name), splitPattern(name), fixture.specialTokens());
+                });
+    }
+
+    private static Tokenizer createJtokkitTokenizerInternal(
+            String name,
+            Map<String, Integer> mergeableRanks,
+            Pattern splitPattern,
+            Map<String, Integer> specialTokens) {
+        try {
+            com.knuddels.jtokkit.api.EncodingRegistry registry =
+                    com.knuddels.jtokkit.Encodings.newLazyEncodingRegistry();
+            Map<byte[], Integer> rawRanks = new HashMap<>();
+            for (Map.Entry<String, Integer> e : mergeableRanks.entrySet()) {
+                rawRanks.put(com.qxotic.toknroll.ByteLevel.decode(e.getKey()), e.getValue());
+            }
+            com.knuddels.jtokkit.api.GptBytePairEncodingParams params =
+                    new com.knuddels.jtokkit.api.GptBytePairEncodingParams(
+                            name, splitPattern, rawRanks, specialTokens);
+            registry.registerGptBytePairEncoding(params);
+            com.knuddels.jtokkit.api.Encoding encoding =
+                    registry.getEncoding(name).orElseThrow();
+            return new JTokkitAdapter(encoding);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to create JTokkit tokenizer for " + name, e);
+        }
+    }
+
+    private static final class JTokkitAdapter implements Tokenizer {
+        private final com.knuddels.jtokkit.api.Encoding encoding;
+
+        JTokkitAdapter(com.knuddels.jtokkit.api.Encoding encoding) {
+            this.encoding = encoding;
+        }
+
+        @Override
+        public com.qxotic.toknroll.Vocabulary vocabulary() {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
+            return encoding.countTokens(
+                    text.subSequence(startInclusive, endExclusive).toString());
+        }
+
+        @Override
+        public void encodeInto(
+                CharSequence text,
+                int startInclusive,
+                int endExclusive,
+                com.qxotic.toknroll.IntSequence.Builder out) {
+            String slice = text.subSequence(startInclusive, endExclusive).toString();
+            com.knuddels.jtokkit.api.IntArrayList encoded = encoding.encode(slice);
+            int size = encoded.size();
+            out.ensureCapacity(out.size() + size);
+            for (int i = 0; i < size; i++) {
+                out.add(encoded.get(i));
+            }
+        }
+
+        @Override
+        public int countBytes(com.qxotic.toknroll.IntSequence tokens) {
+            com.knuddels.jtokkit.api.IntArrayList list =
+                    new com.knuddels.jtokkit.api.IntArrayList(tokens.length());
+            for (int i = 0; i < tokens.length(); i++) {
+                list.add(tokens.intAt(i));
+            }
+            return encoding.decodeBytes(list).length;
+        }
+
+        @Override
+        public int decodeBytesInto(
+                com.qxotic.toknroll.IntSequence tokens,
+                int tokenStartIndex,
+                java.nio.ByteBuffer out) {
+            int length = tokens.length();
+            if (tokenStartIndex == length) {
+                return 0;
+            }
+            int consumed = 0;
+            com.knuddels.jtokkit.api.IntArrayList oneToken =
+                    new com.knuddels.jtokkit.api.IntArrayList(1);
+            for (int i = tokenStartIndex; i < length; i++) {
+                oneToken.clear();
+                oneToken.add(tokens.intAt(i));
+                byte[] chunk = encoding.decodeBytes(oneToken);
+                if (chunk.length > out.remaining()) {
+                    if (consumed == 0) {
+                        throw new IllegalArgumentException(
+                                "Not enough output space for token at index " + i);
+                    }
+                    break;
+                }
+                out.put(chunk);
+                consumed++;
+            }
+            return consumed;
+        }
+    }
+
+    /** Creates a Tok'n'Roll native TikTokenModel tokenizer. */
+    public static Tokenizer createTikTokenTokenizer(String encodingName) {
         return TOKENIZER_CACHE.computeIfAbsent(
-                encodingName, TiktokenFixtures::createTikTokenTokenizer);
+                encodingName, TiktokenFixtures::createTikTokenTokenizerInternal);
     }
 
     private static Tokenizer BPE_R50K_TOKENIZER = null;
@@ -137,24 +247,26 @@ public final class TiktokenFixtures {
         return BPE_R50K_TOKENIZER;
     }
 
+    /** @deprecated Use {@link #createTikTokenTokenizer(String)} instead. */
+    @Deprecated
     public static Tokenizer createBpeTokenizer(String encodingName) {
         return BPE_TOKENIZER_CACHE.computeIfAbsent(
-                encodingName, TiktokenFixtures::createTikTokenTokenizer);
+                encodingName, TiktokenFixtures::createTikTokenTokenizerInternal);
     }
 
-    public static Tokenizer createTikTokenTokenizer(String encodingName, Splitter splitter) {
-        EncodingFixture fixture = encoding(encodingName);
-        return createTikTokenTokenizer(
-                mergeableRanks(encodingName), fixture.specialTokens(), splitter);
-    }
-
-    public static Tokenizer createTikTokenTokenizer(String encodingName) {
+    private static Tokenizer createTikTokenTokenizerInternal(String encodingName) {
         EncodingFixture fixture = encoding(encodingName);
         return createTikTokenTokenizer(
                 mergeableRanks(encodingName),
                 fixture.specialTokens(),
                 Splitter.regex(
                         Pattern.compile(fixture.pattern(), Pattern.UNICODE_CHARACTER_CLASS)));
+    }
+
+    public static Tokenizer createTikTokenTokenizer(String encodingName, Splitter splitter) {
+        EncodingFixture fixture = encoding(encodingName);
+        return createTikTokenTokenizer(
+                mergeableRanks(encodingName), fixture.specialTokens(), splitter);
     }
 
     public static Tokenizer createTikTokenTokenizer(

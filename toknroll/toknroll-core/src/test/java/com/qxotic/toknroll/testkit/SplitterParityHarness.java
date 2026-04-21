@@ -1,6 +1,7 @@
 package com.qxotic.toknroll.testkit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import com.qxotic.toknroll.Splitter;
 import java.util.ArrayList;
@@ -24,10 +25,7 @@ public final class SplitterParityHarness {
     private static void compareRepresentative(
             String name, Splitter splitter, Splitter sourceOfTruth) {
         for (String sample : REPRESENTATIVE_SAMPLES) {
-            assertEquals(
-                    tokens(sourceOfTruth, sample),
-                    tokens(splitter, sample),
-                    name + " representative :: " + sample);
+            assertRangesMatch(name + " representative", splitter, sourceOfTruth, sample, 0, sample.length());
         }
     }
 
@@ -43,10 +41,7 @@ public final class SplitterParityHarness {
             for (int[] range : ranges) {
                 int start = Math.min(range[0], len);
                 int end = Math.min(Math.max(start, range[1]), len);
-                assertEquals(
-                        tokens(sourceOfTruth, sample, start, end),
-                        tokens(splitter, sample, start, end),
-                        name + " range " + start + ".." + end + " :: " + sample);
+                assertRangesMatch(name + " range", splitter, sourceOfTruth, sample, start, end);
             }
         }
     }
@@ -61,10 +56,7 @@ public final class SplitterParityHarness {
                 sb.append((char) (9 + rnd.nextInt(118)));
             }
             String sample = sb.toString();
-            assertEquals(
-                    tokens(sourceOfTruth, sample),
-                    tokens(splitter, sample),
-                    name + " random-ascii :: " + sample);
+            assertRangesMatch(name + " random-ascii", splitter, sourceOfTruth, sample, 0, sample.length());
         }
     }
 
@@ -73,11 +65,67 @@ public final class SplitterParityHarness {
         Random rnd = new Random(seed);
         for (int n = 0; n < iterations; n++) {
             String sample = randomUnicodeString(rnd, 80);
-            assertEquals(
-                    tokens(sourceOfTruth, sample),
-                    tokens(splitter, sample),
-                    name + " random-unicode :: " + sample);
+            assertRangesMatch(name + " random-unicode", splitter, sourceOfTruth, sample, 0, sample.length());
         }
+    }
+
+    private static void assertRangesMatch(
+            String context,
+            Splitter splitter,
+            Splitter sourceOfTruth,
+            String text,
+            int start,
+            int end) {
+        List<Range> expected = ranges(sourceOfTruth, text, start, end);
+        List<Range> actual = ranges(splitter, text, start, end);
+        if (!expected.equals(actual)) {
+            int mismatch = firstMismatch(expected, actual);
+            StringBuilder sb = new StringBuilder(256);
+            sb.append(context)
+                    .append(" mismatch at range ")
+                    .append(start)
+                    .append("..")
+                    .append(end)
+                    .append(" in text: ")
+                    .append(escape(text));
+            if (mismatch >= 0) {
+                sb.append("\nexpected[")
+                        .append(mismatch)
+                        .append("]=")
+                        .append(rangeDebug(expected, mismatch, text));
+                sb.append("\nactual[")
+                        .append(mismatch)
+                        .append("]=")
+                        .append(rangeDebug(actual, mismatch, text));
+            }
+            fail(sb.toString());
+        }
+        assertEquals(expected, actual);
+    }
+
+    private static int firstMismatch(List<Range> expected, List<Range> actual) {
+        int common = Math.min(expected.size(), actual.size());
+        for (int i = 0; i < common; i++) {
+            if (!expected.get(i).equals(actual.get(i))) {
+                return i;
+            }
+        }
+        return expected.size() == actual.size() ? -1 : common;
+    }
+
+    private static String rangeDebug(List<Range> ranges, int index, String text) {
+        if (index < 0 || index >= ranges.size()) {
+            return "<missing>";
+        }
+        Range r = ranges.get(index);
+        return r.start + ".." + r.end + " '" + escape(text.substring(r.start, r.end)) + "'";
+    }
+
+    private static String escape(String text) {
+        return text.replace("\\", "\\\\")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t");
     }
 
     private static String randomUnicodeString(Random rnd, int maxCodePoints) {
@@ -121,5 +169,43 @@ public final class SplitterParityHarness {
         splitter.splitAll(
                 text, start, end, (source, s, e) -> out.add(source.subSequence(s, e).toString()));
         return out;
+    }
+
+    private static List<Range> ranges(Splitter splitter, String text, int start, int end) {
+        List<Range> out = new ArrayList<>();
+        splitter.splitAll(text, start, end, (source, s, e) -> out.add(new Range(s, e)));
+        return out;
+    }
+
+    private static final class Range {
+        final int start;
+        final int end;
+
+        Range(int start, int end) {
+            this.start = start;
+            this.end = end;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (!(obj instanceof Range)) {
+                return false;
+            }
+            Range other = (Range) obj;
+            return start == other.start && end == other.end;
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * start + end;
+        }
+
+        @Override
+        public String toString() {
+            return start + ".." + end;
+        }
     }
 }
