@@ -1,11 +1,11 @@
 package com.qxotic.toknroll.benchmarks;
 
-import com.qxotic.toknroll.*;
+import com.qxotic.toknroll.IntSequence;
+import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
-import java.io.*;
-import java.nio.file.*;
-import java.util.*;
+import java.util.List;
+import java.util.Optional;
 
 public class MeasureTokensPerCharLarge {
 

@@ -70,7 +70,7 @@ final class WriterImpl {
     }
 
     private static List<Long> toList(long[] values) {
-        return java.util.Arrays.stream(values).boxed().collect(Collectors.toList());
+        return Arrays.stream(values).boxed().collect(Collectors.toList());
     }
 
     private void writeFully(WritableByteChannel byteChannel, ByteBuffer byteBuffer)

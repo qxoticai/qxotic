@@ -14,8 +14,10 @@ import java.net.URLDecoder;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
 
 public final class MnistDemoServer {
     private static final int PORT = 8080;
@@ -41,7 +43,7 @@ public final class MnistDemoServer {
         Device device =
                 backend == null || backend.isBlank()
                         ? current.defaultDevice()
-                        : switch (backend.toLowerCase(java.util.Locale.ROOT)) {
+                        : switch (backend.toLowerCase(Locale.ROOT)) {
                             case "hip" -> DeviceType.HIP.deviceIndex(0);
                             case "c" -> DeviceType.C.deviceIndex(0);
                             case "panama", "cpu" -> DeviceType.PANAMA.deviceIndex(0);
@@ -76,7 +78,7 @@ public final class MnistDemoServer {
         server.createContext("/infer", this::handleInfer);
         server.createContext("/benchmark", this::handleBenchmark);
         server.createContext("/debug", this::handleDebug);
-        server.setExecutor(java.util.concurrent.Executors.newFixedThreadPool(4));
+        server.setExecutor(Executors.newFixedThreadPool(4));
         server.start();
         System.out.println("MNIST demo running on http://localhost:" + PORT);
     }
@@ -203,7 +205,7 @@ public final class MnistDemoServer {
         builder.append("\"min\":").append(formatFloat(min)).append(',');
         builder.append("\"max\":").append(formatFloat(max)).append(',');
         builder.append("\"mean\":")
-                .append(String.format(java.util.Locale.ROOT, "%.6f", mean))
+                .append(String.format(Locale.ROOT, "%.6f", mean))
                 .append(',');
         builder.append("\"nonzero\":").append(nonzero).append(',');
         builder.append("\"first\":[");
@@ -263,7 +265,7 @@ public final class MnistDemoServer {
             return defaultDevice;
         }
         Device device =
-                switch (selected.toLowerCase(java.util.Locale.ROOT)) {
+                switch (selected.toLowerCase(Locale.ROOT)) {
                     case "hip" -> DeviceType.HIP.deviceIndex(0);
                     case "c" -> DeviceType.C.deviceIndex(0);
                     case "panama", "cpu" -> DeviceType.PANAMA.deviceIndex(0);
@@ -349,7 +351,7 @@ public final class MnistDemoServer {
     }
 
     private String formatFloat(float value) {
-        return String.format(java.util.Locale.ROOT, "%.6f", value);
+        return String.format(Locale.ROOT, "%.6f", value);
     }
 
     private void serveResource(HttpExchange exchange, String resource, String contentType)

@@ -9,6 +9,7 @@ import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
 import com.qxotic.toknroll.testkit.FamilyGoldenFixture;
 import com.qxotic.toknroll.testkit.FamilyGoldenFixture.CaseData;
 import com.qxotic.toknroll.testkit.FamilyGoldenFixture.Family;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Tag;
@@ -29,7 +30,7 @@ class LlamaTokenizerParityTest {
         int exact = 0;
         for (CaseData c : cases) {
             int[] actual = gguf.get().encodeToArray(c.text());
-            if (java.util.Arrays.equals(c.tokens(), actual)) {
+            if (Arrays.equals(c.tokens(), actual)) {
                 exact++;
             }
             assertEquals(

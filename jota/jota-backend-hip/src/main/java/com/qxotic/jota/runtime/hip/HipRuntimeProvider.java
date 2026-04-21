@@ -1,5 +1,6 @@
 package com.qxotic.jota.runtime.hip;
 
+import com.qxotic.jota.Device;
 import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.runtime.DeviceRuntime;
 import com.qxotic.jota.runtime.spi.DeviceRuntimeProvider;
@@ -61,7 +62,7 @@ public final class HipRuntimeProvider extends DeviceRuntimeProvider {
     }
 
     @Override
-    protected DeviceRuntime createForDevice(com.qxotic.jota.Device device) {
+    protected DeviceRuntime createForDevice(Device device) {
         return new HipDeviceRuntime(device);
     }
 

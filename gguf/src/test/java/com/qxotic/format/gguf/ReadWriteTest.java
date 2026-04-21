@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
@@ -266,7 +267,7 @@ public class ReadWriteTest extends GGUFTest {
     public void testTruncatedHeaderThrows() throws IOException {
         byte[] ggufBytes = writeToBytes(Builder.newBuilder().putString("foo", "bar").build());
         for (int len = 0; len < 24; len++) {
-            byte[] truncated = java.util.Arrays.copyOf(ggufBytes, len);
+            byte[] truncated = Arrays.copyOf(ggufBytes, len);
             assertThrows(IOException.class, () -> readFromBytes(truncated));
         }
     }
@@ -274,7 +275,7 @@ public class ReadWriteTest extends GGUFTest {
     @Test
     public void testTruncatedMetadataPayloadThrows() throws IOException {
         byte[] ggufBytes = rawGguf(0, new byte[][] {metadataString("foo", "bar")});
-        byte[] truncated = java.util.Arrays.copyOf(ggufBytes, ggufBytes.length - 1);
+        byte[] truncated = Arrays.copyOf(ggufBytes, ggufBytes.length - 1);
         assertThrows(IOException.class, () -> readFromBytes(truncated));
     }
 
@@ -297,7 +298,7 @@ public class ReadWriteTest extends GGUFTest {
                         1,
                         new byte[0][],
                         new byte[][] {tensorInfo("w", new long[] {2, 3}, GGMLType.F32, 0)});
-        byte[] truncated = java.util.Arrays.copyOf(full, full.length - 1);
+        byte[] truncated = Arrays.copyOf(full, full.length - 1);
         assertThrows(IOException.class, () -> readFromBytes(truncated));
     }
 

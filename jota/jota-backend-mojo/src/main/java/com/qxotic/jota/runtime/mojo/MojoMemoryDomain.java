@@ -1,6 +1,7 @@
 package com.qxotic.jota.runtime.mojo;
 
 import com.qxotic.jota.Device;
+import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryDomain;
@@ -55,7 +56,7 @@ final class MojoMemoryDomain<T> implements MemoryDomain<T> {
             @SuppressWarnings("unchecked")
             MemoryView<T> unwrapped =
                     MemoryView.of(
-                            (com.qxotic.jota.memory.Memory<T>) mojoMemory.delegate(),
+                            (Memory<T>) mojoMemory.delegate(),
                             view.byteOffset(),
                             view.dataType(),
                             view.layout());

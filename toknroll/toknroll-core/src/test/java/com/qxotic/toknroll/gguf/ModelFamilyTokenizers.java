@@ -24,9 +24,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.Normalizer.Form;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -303,7 +306,7 @@ public final class ModelFamilyTokenizers {
         }
 
         int[] tokenTypes = new int[tokens.length];
-        java.util.Arrays.fill(tokenTypes, StandardTokenType.NORMAL.getId());
+        Arrays.fill(tokenTypes, StandardTokenType.NORMAL.getId());
         SpecialTokenMode inferredSpecialMode = fallbackSpecialMode;
         Map<String, AddedTokenSpec> addedTokenSpecs = new LinkedHashMap<>();
 
@@ -322,8 +325,8 @@ public final class ModelFamilyTokenizers {
                 }
                 int id = ((Number) idObj).intValue();
                 if (id >= tokens.length) {
-                    tokens = java.util.Arrays.copyOf(tokens, id + 1);
-                    tokenTypes = java.util.Arrays.copyOf(tokenTypes, id + 1);
+                    tokens = Arrays.copyOf(tokens, id + 1);
+                    tokenTypes = Arrays.copyOf(tokenTypes, id + 1);
                     for (int i = 0; i < tokenTypes.length; i++) {
                         if (tokenTypes[i] == 0) {
                             tokenTypes[i] = StandardTokenType.NORMAL.getId();
@@ -361,7 +364,7 @@ public final class ModelFamilyTokenizers {
         // Preprocess SentencePiece-style <0xNN> byte tokens for TikTokenModel compatibility.
         // Byte tokens are converted to GPT-2 byte-level symbols; if a symbol already exists in
         // the vocabulary, the <0xNN> token is removed (no merges reference byte tokens in Mistral).
-        Set<String> vocabSet = java.util.Collections.newSetFromMap(new java.util.LinkedHashMap<>());
+        Set<String> vocabSet = Collections.newSetFromMap(new LinkedHashMap<>());
         for (String tok : tokens) {
             if (tok != null) {
                 vocabSet.add(tok);
@@ -977,7 +980,7 @@ public final class ModelFamilyTokenizers {
                         "tekken",
                         Normalizer.identity(),
                         SpecialTokenMode.NONE));
-        return java.util.Collections.unmodifiableMap(specs);
+        return Collections.unmodifiableMap(specs);
     }
 
     private static Map<String, UrlFamilySpec> createUrlFamilySpecs() {
@@ -1055,7 +1058,7 @@ public final class ModelFamilyTokenizers {
                         SpecialTokenMode.EXACT_LITERAL,
                         "No accessible Mistral 7B v0.3 GGUF metadata source",
                         "https://huggingface.co/bartowski/Mistral-7B-Instruct-v0.3-GGUF/resolve/main/Mistral-7B-Instruct-v0.3-Q8_0.gguf"));
-        return java.util.Collections.unmodifiableMap(specs);
+        return Collections.unmodifiableMap(specs);
     }
 
     private static Tokenizer fromUrls(
@@ -1284,10 +1287,12 @@ public final class ModelFamilyTokenizers {
                     }
 
                     @Override
-                    public int decodeBytesInto(IntSequence tokens, int tokenStartIndex, ByteBuffer out) {
+                    public int decodeBytesInto(
+                            IntSequence tokens, int tokenStartIndex, ByteBuffer out) {
                         int length = tokens.length();
                         if (tokenStartIndex < 0 || tokenStartIndex > length) {
-                            throw new IndexOutOfBoundsException("tokenStartIndex: " + tokenStartIndex);
+                            throw new IndexOutOfBoundsException(
+                                    "tokenStartIndex: " + tokenStartIndex);
                         }
                         if (tokenStartIndex == length) {
                             return 0;
@@ -1301,7 +1306,8 @@ public final class ModelFamilyTokenizers {
                     }
 
                     @Override
-                    public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
+                    public int countTokens(
+                            CharSequence text, int startInclusive, int endExclusive) {
                         return base.countTokens(text, startInclusive, endExclusive);
                     }
 
@@ -1333,7 +1339,7 @@ public final class ModelFamilyTokenizers {
             return tokenizer;
         }
         Vocabulary vocabulary = tokenizer.vocabulary();
-        Set<String> specials = new java.util.LinkedHashSet<>();
+        Set<String> specials = new LinkedHashSet<>();
         for (Map.Entry<String, Integer> e : vocabulary) {
             if (e.getKey() == null || e.getKey().isEmpty()) {
                 continue;
@@ -1358,7 +1364,7 @@ public final class ModelFamilyTokenizers {
 
     private static Tokenizer wrapWithAddedTokenSpecs(
             Tokenizer tokenizer, Map<String, AddedTokenSpec> specs) {
-        Set<String> specials = new java.util.LinkedHashSet<>();
+        Set<String> specials = new LinkedHashSet<>();
         for (Map.Entry<String, AddedTokenSpec> e : specs.entrySet()) {
             if (e.getValue().special()) {
                 specials.add(e.getKey());
@@ -1437,8 +1443,7 @@ public final class ModelFamilyTokenizers {
             }
 
             @Override
-            public int decodeBytesInto(
-                    IntSequence tokens, int tokenStartIndex, java.nio.ByteBuffer out) {
+            public int decodeBytesInto(IntSequence tokens, int tokenStartIndex, ByteBuffer out) {
                 return tokenizer.decodeBytesInto(tokens, tokenStartIndex, out);
             }
 

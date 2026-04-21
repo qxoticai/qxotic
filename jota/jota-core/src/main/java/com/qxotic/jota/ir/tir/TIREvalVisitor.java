@@ -1,6 +1,11 @@
 package com.qxotic.jota.ir.tir;
 
-import com.qxotic.jota.*;
+import com.qxotic.jota.BFloat16;
+import com.qxotic.jota.DataType;
+import com.qxotic.jota.Indexing;
+import com.qxotic.jota.Layout;
+import com.qxotic.jota.Shape;
+import com.qxotic.jota.Util;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryView;

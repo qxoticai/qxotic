@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
@@ -165,7 +166,7 @@ class ExternalCorpusTest {
                             "https://codeload.github.com/%s/zip/%s",
                             entry.repo(),
                             entry.revision());
-            try (InputStream in = new BufferedInputStream(new java.net.URL(url).openStream())) {
+            try (InputStream in = new BufferedInputStream(new URL(url).openStream())) {
                 Files.copy(in, zipPath, StandardCopyOption.REPLACE_EXISTING);
             }
 

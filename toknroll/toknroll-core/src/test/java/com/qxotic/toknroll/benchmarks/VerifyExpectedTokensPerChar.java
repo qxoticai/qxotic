@@ -1,9 +1,10 @@
 package com.qxotic.toknroll.benchmarks;
 
-import com.qxotic.toknroll.*;
+import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
-import java.util.*;
+import java.util.List;
+import java.util.Optional;
 
 public class VerifyExpectedTokensPerChar {
     public static void main(String[] args) {

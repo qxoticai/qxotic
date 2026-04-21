@@ -5,6 +5,7 @@ import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
 import com.qxotic.toknroll.loaders.TiktokenLoaders;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -47,7 +48,7 @@ public class LargeFileBenchmark {
         // Read file
         Path filePath = Paths.get(FILE_PATH);
         byte[] fileBytes = Files.readAllBytes(filePath);
-        String text = new String(fileBytes, java.nio.charset.StandardCharsets.UTF_8);
+        String text = new String(fileBytes, StandardCharsets.UTF_8);
         long fileSizeBytes = fileBytes.length;
         double fileSizeMB = fileSizeBytes / (1024.0 * 1024.0);
 

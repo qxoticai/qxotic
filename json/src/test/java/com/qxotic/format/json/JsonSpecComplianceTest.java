@@ -1,10 +1,14 @@
 package com.qxotic.format.json;
 
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
-import java.util.*;
-import org.junit.jupiter.api.Test;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * RFC 8259 JSON specification compliance tests. Tests strict adherence to the JSON specification.

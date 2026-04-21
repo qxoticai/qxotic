@@ -3,7 +3,12 @@ package com.qxotic.jota.examples.llama;
 import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.TensorEntry;
-import com.qxotic.jota.*;
+import com.qxotic.jota.DataType;
+import com.qxotic.jota.DeviceType;
+import com.qxotic.jota.Environment;
+import com.qxotic.jota.Indexing;
+import com.qxotic.jota.Layout;
+import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
@@ -34,11 +39,23 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Random;
 import java.util.Scanner;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.Phaser;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.BiConsumer;
+import java.util.function.IntConsumer;
+
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
@@ -93,8 +110,8 @@ public final class SimpleLlama {
             if (!enabled) {
                 return "";
             }
-            Map<String, Long> nanos = new java.util.HashMap<>();
-            Map<String, Long> counts = new java.util.HashMap<>();
+            Map<String, Long> nanos = new HashMap<>();
+            Map<String, Long> counts = new HashMap<>();
             for (Map.Entry<String, LongAdder> entry : nanosByKey.entrySet()) {
                 nanos.put(entry.getKey(), entry.getValue().sum());
             }
@@ -108,8 +125,8 @@ public final class SimpleLlama {
             if (!enabled) {
                 return new Snapshot(Map.of(), Map.of());
             }
-            Map<String, Long> nanos = new java.util.HashMap<>();
-            Map<String, Long> counts = new java.util.HashMap<>();
+            Map<String, Long> nanos = new HashMap<>();
+            Map<String, Long> counts = new HashMap<>();
             for (Map.Entry<String, LongAdder> entry : nanosByKey.entrySet()) {
                 nanos.put(entry.getKey(), entry.getValue().sum());
             }
@@ -123,8 +140,8 @@ public final class SimpleLlama {
             if (!enabled) {
                 return "";
             }
-            Map<String, Long> nanosDelta = new java.util.HashMap<>();
-            Map<String, Long> countsDelta = new java.util.HashMap<>();
+            Map<String, Long> nanosDelta = new HashMap<>();
+            Map<String, Long> countsDelta = new HashMap<>();
 
             for (Map.Entry<String, LongAdder> entry : nanosByKey.entrySet()) {
                 String key = entry.getKey();
@@ -167,13 +184,13 @@ public final class SimpleLlama {
                                 details.append("  ")
                                         .append(key)
                                         .append(": ")
-                                        .append(String.format(java.util.Locale.ROOT, "%.3f ms", ms))
+                                        .append(String.format(Locale.ROOT, "%.3f ms", ms))
                                         .append(" (count=")
                                         .append(count)
                                         .append(", avg=")
                                         .append(
                                                 String.format(
-                                                        java.util.Locale.ROOT, "%.3f us", avgUs))
+                                                        Locale.ROOT, "%.3f us", avgUs))
                                         .append(")\n");
                             });
 
@@ -188,12 +205,12 @@ public final class SimpleLlama {
             details.append("  gemm.total: ")
                     .append(
                             String.format(
-                                    java.util.Locale.ROOT, "%.3f ms", gemmNanos / 1_000_000.0))
+                                    Locale.ROOT, "%.3f ms", gemmNanos / 1_000_000.0))
                     .append("\n")
                     .append("  rest.total: ")
                     .append(
                             String.format(
-                                    java.util.Locale.ROOT, "%.3f ms", restNanos / 1_000_000.0))
+                                    Locale.ROOT, "%.3f ms", restNanos / 1_000_000.0))
                     .append("\n");
 
             return details.toString();
@@ -1195,8 +1212,8 @@ public final class SimpleLlama {
                 ThreadLocal.withInitial(GemmScratch::new);
         private static final ThreadLocal<AttentionScratch> ATTN_SCRATCH =
                 ThreadLocal.withInitial(AttentionScratch::new);
-        private static final java.util.concurrent.ExecutorService EXEC =
-                java.util.concurrent.Executors.newFixedThreadPool(
+        private static final ExecutorService EXEC =
+                Executors.newFixedThreadPool(
                         THREADS,
                         r -> {
                             Thread t = new Thread(r, "llama-gemv");
@@ -1210,10 +1227,10 @@ public final class SimpleLlama {
             private final int parallelism;
             private final int workerCount;
             private final Thread[] workers;
-            private final java.util.concurrent.Phaser phaser;
-            private final java.util.concurrent.atomic.AtomicReference<Throwable> error =
-                    new java.util.concurrent.atomic.AtomicReference<>();
-            private volatile java.util.function.IntConsumer task;
+            private final Phaser phaser;
+            private final AtomicReference<Throwable> error =
+                    new AtomicReference<>();
+            private volatile IntConsumer task;
             private volatile int count;
             private volatile int chunk;
             private volatile boolean shutdown;
@@ -1221,7 +1238,7 @@ public final class SimpleLlama {
             ParallelIndexPool(int parallelism, String threadPrefix) {
                 this.parallelism = Math.max(1, parallelism);
                 this.workerCount = Math.max(0, this.parallelism - 1);
-                this.phaser = new java.util.concurrent.Phaser(this.workerCount + 1);
+                this.phaser = new Phaser(this.workerCount + 1);
                 this.workers = new Thread[this.workerCount];
                 for (int i = 0; i < this.workerCount; i++) {
                     final int workerId = i + 1;
@@ -1232,7 +1249,7 @@ public final class SimpleLlama {
                 }
             }
 
-            void forRange(int count, int minParallelCount, java.util.function.IntConsumer task) {
+            void forRange(int count, int minParallelCount, IntConsumer task) {
                 if (count <= 0) {
                     return;
                 }
@@ -1279,7 +1296,7 @@ public final class SimpleLlama {
             }
 
             private void runSlice(int workerId) {
-                java.util.function.IntConsumer localTask = task;
+                IntConsumer localTask = task;
                 int localCount = count;
                 int localChunk = chunk;
                 int start = workerId * localChunk;
@@ -1552,7 +1569,7 @@ public final class SimpleLlama {
             int safeBlasRequired = blasRequired ? 1 : 0;
             long safeBlasMinWork = Math.max(1L, blasMinWork);
             return String.format(
-                    java.util.Locale.ROOT,
+                    Locale.ROOT,
                     """
                     #include <stdint.h>
                     #include <stddef.h>
@@ -1750,7 +1767,7 @@ public final class SimpleLlama {
             int safeBlasRequired = blasRequired ? 1 : 0;
             long safeBlasMinWork = Math.max(1L, blasMinWork);
             return String.format(
-                    java.util.Locale.ROOT,
+                    Locale.ROOT,
                     """
                     #include <stdint.h>
                     #include <stddef.h>
@@ -2538,7 +2555,7 @@ public final class SimpleLlama {
             int mBlocks = (m + tileM - 1) / tileM;
             long work = (long) batchSize * m * n;
 
-            java.util.function.BiConsumer<Integer, Integer> blockKernel =
+            BiConsumer<Integer, Integer> blockKernel =
                     (bb, mb) -> {
                         int mStart = mb * tileM;
                         int mEnd = Math.min(m, mStart + tileM);
@@ -2756,7 +2773,7 @@ public final class SimpleLlama {
         }
 
         private void parallelForBatched(
-                int batchSize, int rows, java.util.function.BiConsumer<Integer, Integer> body) {
+                int batchSize, int rows, BiConsumer<Integer, Integer> body) {
             int total = batchSize * rows;
             if (total <= 0) {
                 return;
@@ -2782,8 +2799,8 @@ public final class SimpleLlama {
             }
             int workers = Math.min(THREADS, total);
             int chunk = (total + workers - 1) / workers;
-            java.util.List<java.util.concurrent.Future<?>> futures =
-                    new java.util.ArrayList<>(workers);
+            List<Future<?>> futures =
+                    new ArrayList<>(workers);
             for (int w = 0; w < workers; w++) {
                 int start = w * chunk;
                 int end = Math.min(total, start + chunk);
@@ -2798,19 +2815,19 @@ public final class SimpleLlama {
                                     }
                                 }));
             }
-            for (java.util.concurrent.Future<?> future : futures) {
+            for (Future<?> future : futures) {
                 try {
                     future.get();
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
                     throw new RuntimeException("GEMV worker interrupted", ex);
-                } catch (java.util.concurrent.ExecutionException ex) {
+                } catch (ExecutionException ex) {
                     throw new RuntimeException("GEMV worker failed", ex.getCause());
                 }
             }
         }
 
-        private void parallelForBatch(int batchSize, java.util.function.IntConsumer body) {
+        private void parallelForBatch(int batchSize, IntConsumer body) {
             // Don't parallelize for small batches (overhead not worth it)
             if (batchSize < 4) {
                 for (int i = 0; i < batchSize; i++) {
@@ -2831,8 +2848,8 @@ public final class SimpleLlama {
                 return;
             }
             int chunk = (batchSize + workers - 1) / workers;
-            java.util.List<java.util.concurrent.Future<?>> futures =
-                    new java.util.ArrayList<>(workers);
+            List<Future<?>> futures =
+                    new ArrayList<>(workers);
             for (int w = 0; w < workers; w++) {
                 int start = w * chunk;
                 int end = Math.min(batchSize, start + chunk);
@@ -2845,13 +2862,13 @@ public final class SimpleLlama {
                                     }
                                 }));
             }
-            for (java.util.concurrent.Future<?> future : futures) {
+            for (Future<?> future : futures) {
                 try {
                     future.get();
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
                     throw new RuntimeException("Batch worker interrupted", ex);
-                } catch (java.util.concurrent.ExecutionException ex) {
+                } catch (ExecutionException ex) {
                     throw new RuntimeException("Batch worker failed", ex.getCause());
                 }
             }
@@ -3551,12 +3568,12 @@ public final class SimpleLlama {
                     });
         }
 
-        private static void parallelForRows(int rows, java.util.function.IntConsumer body) {
+        private static void parallelForRows(int rows, IntConsumer body) {
             parallelForRows(rows, THREADS, body);
         }
 
         private static void parallelForRows(
-                int rows, int maxWorkers, java.util.function.IntConsumer body) {
+                int rows, int maxWorkers, IntConsumer body) {
             if (rows <= 1) {
                 for (int row = 0; row < rows; row++) {
                     body.accept(row);
@@ -3569,8 +3586,8 @@ public final class SimpleLlama {
             }
             int workers = Math.min(Math.max(1, maxWorkers), rows);
             int chunk = (rows + workers - 1) / workers;
-            java.util.List<java.util.concurrent.Future<?>> futures =
-                    new java.util.ArrayList<>(workers);
+            List<Future<?>> futures =
+                    new ArrayList<>(workers);
             for (int w = 0; w < workers; w++) {
                 int start = w * chunk;
                 int end = Math.min(rows, start + chunk);
@@ -3583,13 +3600,13 @@ public final class SimpleLlama {
                                     }
                                 }));
             }
-            for (java.util.concurrent.Future<?> future : futures) {
+            for (Future<?> future : futures) {
                 try {
                     future.get();
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
                     throw new RuntimeException("GEMV worker interrupted", ex);
-                } catch (java.util.concurrent.ExecutionException ex) {
+                } catch (ExecutionException ex) {
                     throw new RuntimeException("GEMV worker failed", ex.getCause());
                 }
             }
@@ -3629,7 +3646,7 @@ public final class SimpleLlama {
             int vecBoundHead = SPECIES.loopBound(headDim);
 
             int nHeads = cfg.nHeads();
-            java.util.function.IntConsumer headKernel =
+            IntConsumer headKernel =
                     head -> {
                         int kvHead = head / kvMul;
                         int kvHeadOffset = kvHead * headDim;
@@ -4024,14 +4041,14 @@ public final class SimpleLlama {
         private final float temperature;
         private final float topP;
         private final int seed;
-        private final java.util.Random random;
+        private final Random random;
 
         Sampler(int vocabSize, float temperature, float topP, int seed) {
             this.vocabSize = vocabSize;
             this.temperature = temperature;
             this.topP = topP;
             this.seed = seed;
-            this.random = new java.util.Random(seed);
+            this.random = new Random(seed);
         }
 
         int sample(MemoryView<?> logits) {

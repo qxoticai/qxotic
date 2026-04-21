@@ -5,6 +5,7 @@ import com.qxotic.jota.Device;
 import com.qxotic.jota.DeviceType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Layout;
+import com.qxotic.jota.Shape;
 import com.qxotic.jota.ir.TIRToLIRLowerer;
 import com.qxotic.jota.ir.lir.LIRGraph;
 import com.qxotic.jota.ir.lir.LIRInput;
@@ -15,6 +16,7 @@ import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
 import com.qxotic.jota.ir.lir.scratch.ScratchVerificationPass;
 import com.qxotic.jota.ir.tir.TIRGraph;
 import com.qxotic.jota.ir.tir.TIRInterpreter;
+import com.qxotic.jota.ir.tir.TensorInput;
 import com.qxotic.jota.memory.Memory;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryView;
@@ -139,7 +141,7 @@ public final class OpenClComputeEngine implements ComputeEngine {
         long bytes = scratchLayout.requiresScratch() ? scratchLayout.alignedTotalByteSize() : 1L;
         Memory<OpenClDevicePtr> memory = domain.memoryAllocator().allocateMemory(bytes, 1);
         return MemoryView.of(
-                memory, 0, DataType.I8, Layout.rowMajor(com.qxotic.jota.Shape.of(bytes)));
+                memory, 0, DataType.I8, Layout.rowMajor(Shape.of(bytes)));
     }
 
     private static List<Layout> graphInputLayouts(TIRGraph graph) {
@@ -149,7 +151,7 @@ public final class OpenClComputeEngine implements ComputeEngine {
                 layouts.add(null);
                 continue;
             }
-            if (input instanceof com.qxotic.jota.ir.tir.TensorInput tensorInput) {
+            if (input instanceof TensorInput tensorInput) {
                 layouts.add(tensorInput.layout());
                 continue;
             }

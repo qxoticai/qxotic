@@ -1,11 +1,12 @@
 package com.qxotic.format.json;
 
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.util.*;
-import org.junit.jupiter.api.Test;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * JSONTestSuite compliance tests. Tests critical edge cases identified from JSONTestSuite research.

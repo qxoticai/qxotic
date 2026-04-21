@@ -4,7 +4,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+
+import com.qxotic.jota.Device;
+import com.qxotic.jota.memory.MemoryDomain;
 import org.junit.jupiter.api.Test;
 
 class RuntimeMetadataTest {
@@ -38,12 +42,12 @@ class RuntimeMetadataTest {
         DeviceRuntime runtime =
                 new DeviceRuntime() {
                     @Override
-                    public com.qxotic.jota.Device device() {
+                    public Device device() {
                         return null;
                     }
 
                     @Override
-                    public com.qxotic.jota.memory.MemoryDomain<?> memoryDomain() {
+                    public MemoryDomain<?> memoryDomain() {
                         return null;
                     }
 
@@ -53,8 +57,8 @@ class RuntimeMetadataTest {
                     }
 
                     @Override
-                    public java.util.Optional<KernelService> kernelService() {
-                        return java.util.Optional.empty();
+                    public Optional<KernelService> kernelService() {
+                        return Optional.empty();
                     }
                 };
 

@@ -1,13 +1,41 @@
 package com.qxotic.jota.runtime.panama;
 
 import com.qxotic.jota.DataType;
-import com.qxotic.jota.ir.lir.*;
+import com.qxotic.jota.ir.lir.Block;
+import com.qxotic.jota.ir.lir.BufferRef;
+import com.qxotic.jota.ir.lir.IBinary;
+import com.qxotic.jota.ir.lir.IConst;
+import com.qxotic.jota.ir.lir.IFromScalar;
+import com.qxotic.jota.ir.lir.IVar;
+import com.qxotic.jota.ir.lir.IndexBinaryOp;
+import com.qxotic.jota.ir.lir.LIRExprGraph;
+import com.qxotic.jota.ir.lir.LIRExprKind;
+import com.qxotic.jota.ir.lir.LIRExprNode;
+import com.qxotic.jota.ir.lir.LIRGraph;
+import com.qxotic.jota.ir.lir.LIRInput;
+import com.qxotic.jota.ir.lir.LIRTextRenderer;
+import com.qxotic.jota.ir.lir.LoopIterArg;
+import com.qxotic.jota.ir.lir.SBinary;
+import com.qxotic.jota.ir.lir.SCast;
+import com.qxotic.jota.ir.lir.SConst;
+import com.qxotic.jota.ir.lir.SFromIndex;
+import com.qxotic.jota.ir.lir.SInput;
+import com.qxotic.jota.ir.lir.SLoad;
+import com.qxotic.jota.ir.lir.SRef;
+import com.qxotic.jota.ir.lir.STernary;
+import com.qxotic.jota.ir.lir.SUnary;
+import com.qxotic.jota.ir.lir.ScalarInput;
+import com.qxotic.jota.ir.lir.Store;
+import com.qxotic.jota.ir.lir.StructuredFor;
+import com.qxotic.jota.ir.lir.Yield;
 import com.qxotic.jota.ir.lir.scratch.ScratchLayout;
 import com.qxotic.jota.ir.tir.BinaryOperator;
 import com.qxotic.jota.runtime.JavaKernel;
 import com.qxotic.jota.runtime.KernelCache;
 import com.qxotic.jota.runtime.KernelCacheEntry;
 import com.qxotic.jota.runtime.KernelCacheKey;
+
+import javax.tools.*;
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
@@ -18,24 +46,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.IdentityHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.regex.Pattern;
-import javax.tools.Diagnostic;
-import javax.tools.DiagnosticCollector;
-import javax.tools.JavaCompiler;
-import javax.tools.JavaFileObject;
-import javax.tools.StandardJavaFileManager;
-import javax.tools.ToolProvider;
 
 final class LIRKernelCompiler {
 

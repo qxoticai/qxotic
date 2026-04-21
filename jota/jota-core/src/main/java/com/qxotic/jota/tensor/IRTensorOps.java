@@ -1,8 +1,22 @@
 package com.qxotic.jota.tensor;
 
-import com.qxotic.jota.*;
+import com.qxotic.jota.DataType;
+import com.qxotic.jota.Device;
+import com.qxotic.jota.Shape;
 import com.qxotic.jota.impl.ViewTransforms;
-import com.qxotic.jota.ir.tir.*;
+import com.qxotic.jota.ir.tir.BinaryOp;
+import com.qxotic.jota.ir.tir.BinaryOperator;
+import com.qxotic.jota.ir.tir.CastOp;
+import com.qxotic.jota.ir.tir.Contiguous;
+import com.qxotic.jota.ir.tir.GatherOp;
+import com.qxotic.jota.ir.tir.ReductionOp;
+import com.qxotic.jota.ir.tir.ReductionOperator;
+import com.qxotic.jota.ir.tir.TIRNode;
+import com.qxotic.jota.ir.tir.TernaryOp;
+import com.qxotic.jota.ir.tir.TernaryOperator;
+import com.qxotic.jota.ir.tir.UnaryOp;
+import com.qxotic.jota.ir.tir.UnaryOperator;
+import com.qxotic.jota.ir.tir.ViewTransform;
 
 final class IRTensorOps implements TensorOps {
 
@@ -412,7 +426,7 @@ final class IRTensorOps implements TensorOps {
 
     private Tensor unaryOp(Tensor x, UnaryOperator op) {
         IRTensorImpl tensor = requireIRTensor(x);
-        TIRNode node = new com.qxotic.jota.ir.tir.UnaryOp(op, tensor.node(), tensor.shape());
+        TIRNode node = new UnaryOp(op, tensor.node(), tensor.shape());
         return new IRTensorImpl(node, tensor.device());
     }
 
@@ -425,7 +439,7 @@ final class IRTensorOps implements TensorOps {
                         left.dataType(), right.dataType(), op.name());
         TIRNode leftNode = maybeCast(left.node(), targetType);
         TIRNode rightNode = maybeCast(right.node(), targetType);
-        TIRNode node = new com.qxotic.jota.ir.tir.BinaryOp(op, leftNode, rightNode, outputShape);
+        TIRNode node = new BinaryOp(op, leftNode, rightNode, outputShape);
         return new IRTensorImpl(node, left.device());
     }
 
@@ -438,7 +452,7 @@ final class IRTensorOps implements TensorOps {
                         left.dataType(), right.dataType(), op.name());
         TIRNode leftNode = maybeCast(left.node(), targetType);
         TIRNode rightNode = maybeCast(right.node(), targetType);
-        TIRNode node = new com.qxotic.jota.ir.tir.BinaryOp(op, leftNode, rightNode, outputShape);
+        TIRNode node = new BinaryOp(op, leftNode, rightNode, outputShape);
         return new IRTensorImpl(node, left.device());
     }
 
@@ -449,7 +463,7 @@ final class IRTensorOps implements TensorOps {
         Shape outputShape = requireCompatibleShape(left, right);
         TIRNode leftNode = left.node();
         TIRNode rightNode = right.node();
-        TIRNode node = new com.qxotic.jota.ir.tir.BinaryOp(op, leftNode, rightNode, outputShape);
+        TIRNode node = new BinaryOp(op, leftNode, rightNode, outputShape);
         return new IRTensorImpl(node, left.device());
     }
 
@@ -507,7 +521,7 @@ final class IRTensorOps implements TensorOps {
         Shape outputShape = requireCompatibleShape(left, right);
         TIRNode leftNode = left.node();
         TIRNode rightNode = right.node();
-        TIRNode node = new com.qxotic.jota.ir.tir.BinaryOp(op, leftNode, rightNode, outputShape);
+        TIRNode node = new BinaryOp(op, leftNode, rightNode, outputShape);
         return new IRTensorImpl(node, left.device());
     }
 
@@ -518,7 +532,7 @@ final class IRTensorOps implements TensorOps {
         Shape outputShape = requireCompatibleShape(left, right);
         TIRNode leftNode = left.node();
         TIRNode rightNode = maybeCast(right.node(), DataType.I32);
-        TIRNode node = new com.qxotic.jota.ir.tir.BinaryOp(op, leftNode, rightNode, outputShape);
+        TIRNode node = new BinaryOp(op, leftNode, rightNode, outputShape);
         return new IRTensorImpl(node, left.device());
     }
 }

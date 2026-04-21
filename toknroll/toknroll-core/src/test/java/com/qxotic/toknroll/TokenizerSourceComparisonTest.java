@@ -7,6 +7,7 @@ import com.qxotic.toknroll.testkit.FamilyGoldenFixture;
 import com.qxotic.toknroll.testkit.FamilyGoldenFixture.CaseData;
 import com.qxotic.toknroll.testkit.FamilyGoldenFixture.Family;
 import com.qxotic.toknroll.testkit.FamilyTestSpecs;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Tag;
@@ -59,7 +60,7 @@ class TokenizerSourceComparisonTest {
         for (CaseData c : cases) {
             try {
                 int[] actual = tokenizer.encodeToArray(c.text());
-                if (java.util.Arrays.equals(c.tokens(), actual)) {
+                if (Arrays.equals(c.tokens(), actual)) {
                     exact++;
                 }
                 checked++;

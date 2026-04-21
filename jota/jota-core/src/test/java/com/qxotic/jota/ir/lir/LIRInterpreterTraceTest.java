@@ -1,23 +1,27 @@
 package com.qxotic.jota.ir.lir;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.ir.TIRToLIRLowerer;
 import com.qxotic.jota.ir.tir.TIRGraph;
-import com.qxotic.jota.memory.*;
+import com.qxotic.jota.memory.Memory;
+import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryDomain;
+import com.qxotic.jota.memory.MemoryHelpers;
+import com.qxotic.jota.memory.MemoryView;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.TensorTracing;
 import com.qxotic.jota.tensor.Tracer;
 import com.qxotic.jota.testutil.TestKernels;
+import org.junit.jupiter.api.Test;
+
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
 import java.util.List;
-import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class LIRInterpreterTraceTest {
 

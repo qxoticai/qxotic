@@ -2,6 +2,7 @@ package com.qxotic.toknroll;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -47,7 +48,7 @@ public class IntSequenceTest {
 
     @Test
     void testWrapList() {
-        List<Integer> list = new java.util.ArrayList<>(Arrays.asList(1, 2, 3));
+        List<Integer> list = new ArrayList<>(Arrays.asList(1, 2, 3));
         IntSequence sequence = IntSequence.wrap(list);
         assertEquals(list, sequence.toList());
 
@@ -75,7 +76,7 @@ public class IntSequenceTest {
 
     @Test
     void testCopyOfList() {
-        List<Integer> source = new java.util.ArrayList<>(Arrays.asList(1, 2, 3));
+        List<Integer> source = new ArrayList<>(Arrays.asList(1, 2, 3));
         IntSequence sequence = IntSequence.copyOf(source);
         source.set(0, 99);
         assertArrayEquals(new int[] {1, 2, 3}, sequence.toArray());

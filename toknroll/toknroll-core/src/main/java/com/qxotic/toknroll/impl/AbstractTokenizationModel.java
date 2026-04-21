@@ -1,7 +1,9 @@
 package com.qxotic.toknroll.impl;
 
-import com.qxotic.toknroll.*;
+import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.TokenizationModel;
+import com.qxotic.toknroll.TokenizationPipeline;
+import com.qxotic.toknroll.Vocabulary;
 import java.util.Objects;
 
 /**
