@@ -58,7 +58,20 @@ final class LongLongMap {
             }
         }
 
-        this.maxProbe = observedMaxProbe;
+        // Compute actual max probe after all insertions, since Robin Hood swaps can
+        // displace items to larger probe distances than observed during insertion.
+        int actualMaxProbe = 0;
+        for (int i = 0; i < capacity; i++) {
+            long stored = table[i];
+            if (stored != EMPTY) {
+                int ideal = hash(stored - 1) & mask;
+                int probe = (i - ideal) & mask;
+                if (probe > actualMaxProbe) {
+                    actualMaxProbe = probe;
+                }
+            }
+        }
+        this.maxProbe = actualMaxProbe;
     }
 
     /**
