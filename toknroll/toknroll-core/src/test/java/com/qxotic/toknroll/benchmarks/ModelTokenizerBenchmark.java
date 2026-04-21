@@ -31,16 +31,15 @@ import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 
 /**
- * End-to-end benchmark for model tokenizer profiles (encode/decode/count), inspired by benchmark
- * comparisons used by tiktoken/HF/Mistral ecosystems.
+ * End-to-end benchmark for model tokenizer profiles (encode/decode/count).
  *
- * <p>Implementation semantics:
+ * <p>Implementation parameter semantics:
  *
  * <ul>
- *   <li>{@code reference}: model-matching baseline tokenizer (JTokkit for GPT-2; HF files for
- *       model-native families)
- *   <li>{@code bpe}: Tok'n'Roll model-native tokenizer
- *   <li>{@code fast}: Tok'n'Roll fast pipeline over model-native vocabulary
+ *   <li>{@code jtokkit}: JTokkit reference implementation (GPT-2 only)
+ *   <li>{@code hf-transformers}: HuggingFace Transformers reference (model-native families)
+ *   <li>{@code toknroll-bpe}: Tok'n'Roll native tokenizer with default splitter
+ *   <li>{@code toknroll-fast}: Tok'n'Roll with optimized fast splitter
  * </ul>
  */
 @BenchmarkMode(Mode.Throughput)
@@ -78,7 +77,7 @@ public class ModelTokenizerBenchmark {
     private static final String MISTRAL_TEKKEN_HF_REVISION =
             "2f494a194c5b980dfb9772cb92d26cbb671fce5a";
 
-    @Param({"reference", "bpe", "fast"})
+    @Param({"jtokkit", "toknroll-bpe", "toknroll-fast"})
     public String implementation;
 
     @Param({"gpt2", "gpt-oss", "llama3", "qwen35", "gemma4", "mistral-v03-spbpe", "mistral-tekken"})
@@ -288,11 +287,11 @@ public class ModelTokenizerBenchmark {
         }
 
         switch (implementation) {
-            case "reference":
+            case "jtokkit":
                 return TiktokenFixtures.createJtokkitTokenizer("r50k_base");
-            case "bpe":
+            case "toknroll-bpe":
                 return bpe("r50k_base", Normalizer.identity(), ModelSplitters.DEFAULT_BPE);
-            case "fast":
+            case "toknroll-fast":
                 return fast("r50k_base", Normalizer.identity(), FastSplitters.r50k());
             default:
                 throw new IllegalArgumentException("Unsupported implementation: " + implementation);
@@ -313,15 +312,15 @@ public class ModelTokenizerBenchmark {
                                         new IllegalStateException(
                                                 "Failed to load GGUF tokenizer for " + familyId));
         switch (implementation) {
-            case "reference":
+            case "hf-transformers":
                 return ModelFamilyTokenizers.createFromHfFiles(familyId, hfModelRef, hfRevision)
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
                                                 "Failed to load HF tokenizer for " + familyId));
-            case "bpe":
+            case "toknroll-bpe":
                 return fidelityGguf;
-            case "fast":
+            case "toknroll-fast":
                 return TokenizerAdapters.withSplitter(
                         TokenizerAdapters.withNormalizer(fidelityGguf, normalizer), fastSplitter);
             default:
@@ -336,9 +335,9 @@ public class ModelTokenizerBenchmark {
                                 () ->
                                         new IllegalStateException(
                                                 "Failed to load GGUF tokenizer for google.gemma4"));
-        if ("reference".equals(implementation)
-                || "bpe".equals(implementation)
-                || "fast".equals(implementation)) {
+        if ("hf-transformers".equals(implementation)
+                || "toknroll-bpe".equals(implementation)
+                || "toknroll-fast".equals(implementation)) {
             return fidelityGguf;
         }
         throw new IllegalArgumentException("Unsupported implementation: " + implementation);
@@ -346,7 +345,7 @@ public class ModelTokenizerBenchmark {
 
     private static Tokenizer gptOssTokenizer(String implementation) {
         switch (implementation) {
-            case "reference":
+            case "hf-transformers":
                 return ModelFamilyTokenizers.createFromHfFiles(
                                 "openai.gpt-oss", GPT_OSS_HF_MODEL_REF, null)
                         .orElseGet(
@@ -355,9 +354,9 @@ public class ModelTokenizerBenchmark {
                                                 "o200k_base",
                                                 Normalizer.identity(),
                                                 FastSplitters.o200k()));
-            case "bpe":
+            case "toknroll-bpe":
                 return bpe("o200k_base", Normalizer.identity(), FastSplitters.o200k());
-            case "fast":
+            case "toknroll-fast":
                 return fast("o200k_base", Normalizer.identity(), FastSplitters.o200k());
             default:
                 throw new IllegalArgumentException("Unsupported implementation: " + implementation);

@@ -175,7 +175,7 @@ final class TikTokenModel extends AbstractTokenizationModel {
         IntSequence.Builder out = IntSequence.newBuilder(estimateInitialTokenCapacity(text.length()));
         Scratch s = acquireScratch();
         try {
-            encodeChunkRange(text, 0, text.length(), out, true, s);
+            encodeChunkRange(text, 0, text.length(), out, s);
         } finally {
             releaseScratch(s);
         }
@@ -186,7 +186,7 @@ final class TikTokenModel extends AbstractTokenizationModel {
     protected void encodeImplInto(CharSequence text, IntSequence.Builder out) {
         Scratch s = acquireScratch();
         try {
-            encodeChunkRange(text, 0, text.length(), out, true, s);
+            encodeChunkRange(text, 0, text.length(), out, s);
         } finally {
             releaseScratch(s);
         }
@@ -204,7 +204,7 @@ final class TikTokenModel extends AbstractTokenizationModel {
         try {
             out.ensureCapacity(
                     out.size() + estimateInitialTokenCapacity(endExclusive - startInclusive));
-            encodeChunkRange(text, startInclusive, endExclusive, out, true, s);
+            encodeChunkRange(text, startInclusive, endExclusive, out, s);
         } finally {
             releaseScratch(s);
         }
@@ -319,12 +319,15 @@ final class TikTokenModel extends AbstractTokenizationModel {
         return "Fast TikToken BPE";
     }
 
+    // ---------------------------------------------------------------------
+    // Encode / count dispatch
+    // ---------------------------------------------------------------------
+
     private int encodeChunkRange(
             CharSequence source,
             int startInclusive,
             int endExclusive,
             IntSequence.Builder out,
-            boolean keepOutput,
             Scratch s) {
         if (startInclusive >= endExclusive) {
             return 0;
@@ -333,42 +336,39 @@ final class TikTokenModel extends AbstractTokenizationModel {
         if (byteLength == 0) {
             return 0;
         }
-        if (ignoreMerges && byteLength > 0) {
+        if (shouldTryExactLookup(byteLength)) {
             int exactTokenId = exactTokenLookup.find(s.utf8Bytes, byteLength);
             if (exactTokenId >= 0) {
-                if (keepOutput) {
-                    out.add(exactTokenId);
-                }
-                return 1;
-            }
-        } else if (byteLength > tinyChunkThreshold) {
-            int exactTokenId = exactTokenLookup.find(s.utf8Bytes, byteLength);
-            if (exactTokenId >= 0) {
-                if (keepOutput) {
-                    out.add(exactTokenId);
-                }
+                out.add(exactTokenId);
                 return 1;
             }
         }
         if (byteLength <= tinyChunkThreshold) {
-            return keepOutput
-                    ? encodeTiny(s.utf8Bytes, byteLength, out)
-                    : countTiny(s.utf8Bytes, byteLength);
+            return encodeTiny(s.utf8Bytes, byteLength, out);
         }
         if (byteLength < largeChunkThreshold) {
-            return keepOutput
-                    ? encodeSmall(s.utf8Bytes, byteLength, out, s)
-                    : countSmall(s.utf8Bytes, byteLength, s);
+            return encodeSmall(s.utf8Bytes, byteLength, out, s);
         }
-        return keepOutput
-                ? encodeLarge(s.utf8Bytes, byteLength, out, s)
-                : countLarge(s.utf8Bytes, byteLength, s);
+        return encodeLarge(s.utf8Bytes, byteLength, out, s);
     }
 
     private int countChunkRange(
             CharSequence source, int startInclusive, int endExclusive, Scratch s) {
-        return encodeChunkRange(source, startInclusive, endExclusive, null, false, s);
+        if (startInclusive >= endExclusive) {
+            return 0;
+        }
+        IntSequence.Builder tmp =
+                IntSequence.newBuilder(estimateInitialTokenCapacity(endExclusive - startInclusive));
+        return encodeChunkRange(source, startInclusive, endExclusive, tmp, s);
     }
+
+    private boolean shouldTryExactLookup(int byteLength) {
+        return byteLength > 0 && (ignoreMerges || byteLength > tinyChunkThreshold);
+    }
+
+    // ---------------------------------------------------------------------
+    // Tiny / small path
+    // ---------------------------------------------------------------------
 
     private int encodeTiny(byte[] bytes, int byteLength, IntSequence.Builder out) {
         if (byteLength == 1) {
@@ -426,32 +426,6 @@ final class TikTokenModel extends AbstractTokenizationModel {
         return 2;
     }
 
-    private int countTiny(byte[] bytes, int byteLength) {
-        if (byteLength == 1) {
-            return 1;
-        }
-        if (byteLength == 3) {
-            int t0 = singleByteTokenId[bytes[0] & 0xFF];
-            int t1 = singleByteTokenId[bytes[1] & 0xFF];
-            int t2 = singleByteTokenId[bytes[2] & 0xFF];
-            long merge01 = merges.getPair(t0, t1);
-            long merge12 = merges.getPair(t1, t2);
-            int merge01Rank = mergeRank(merge01);
-            int merge12Rank = mergeRank(merge12);
-
-            if (merge01Rank < 0 && merge12Rank < 0) {
-                return 3;
-            }
-            if (merge12Rank < 0 || (merge01Rank >= 0 && merge01Rank <= merge12Rank)) {
-                return mergeRank(merges.getPair(mergeId(merge01), t2)) >= 0 ? 1 : 2;
-            }
-            return mergeRank(merges.getPair(t0, mergeId(merge12))) >= 0 ? 1 : 2;
-        }
-        int t0 = singleByteTokenId[bytes[0] & 0xFF];
-        int t1 = singleByteTokenId[bytes[1] & 0xFF];
-        return mergeRank(merges.getPair(t0, t1)) >= 0 ? 1 : 2;
-    }
-
     private Scratch acquireScratch() {
         if (!scratchReuseEnabled || isCurrentThreadVirtual()) {
             return new Scratch();
@@ -489,24 +463,18 @@ final class TikTokenModel extends AbstractTokenizationModel {
     }
 
     private int encodeSmall(byte[] bytes, int byteLength, IntSequence.Builder out, Scratch s) {
-        return mergeSmall(bytes, byteLength, out, true, s);
-    }
-
-    private int countSmall(byte[] bytes, int byteLength, Scratch s) {
-        return mergeSmall(bytes, byteLength, null, false, s);
+        return mergeSmall(bytes, byteLength, out, s);
     }
 
     private int mergeSmall(
-            byte[] bytes, int byteLength, IntSequence.Builder out, boolean keepOutput, Scratch s) {
+            byte[] bytes, int byteLength, IntSequence.Builder out, Scratch s) {
         if (byteLength == 0) {
             return 0;
         }
         s.ensureTokens(byteLength);
-        s.ensurePairRanks(byteLength - 1);
-        s.ensurePairMergeIds(byteLength - 1);
+        s.ensurePairData(byteLength - 1);
         int[] tokens = s.tokens;
-        int[] pairRanks = s.pairRanks;
-        int[] pairMergeIds = s.pairMergeIds;
+        long[] pairMergeIdRank = s.pairMergeIdRank;
         int size = byteLength;
 
         int i = 0;
@@ -522,9 +490,7 @@ final class TikTokenModel extends AbstractTokenizationModel {
         }
 
         for (i = 0; i + 1 < size; i++) {
-            long mergedValue = merges.getPair(tokens[i], tokens[i + 1]);
-            pairRanks[i] = mergeRank(mergedValue);
-            pairMergeIds[i] = mergeIdOrNone(mergedValue);
+            pairMergeIdRank[i] = merges.getPair(tokens[i], tokens[i + 1]);
         }
 
         while (size >= 2) {
@@ -535,29 +501,29 @@ final class TikTokenModel extends AbstractTokenizationModel {
             int scan = 0;
             int scanLimit = pairCount & ~3;
             for (; scan < scanLimit; scan += 4) {
-                int mergedRank = pairRanks[scan];
+                int mergedRank = (int) pairMergeIdRank[scan];
                 if (mergedRank >= 0 && mergedRank < bestRank) {
                     bestRank = mergedRank;
                     bestPos = scan;
                 }
-                mergedRank = pairRanks[scan + 1];
+                mergedRank = (int) pairMergeIdRank[scan + 1];
                 if (mergedRank >= 0 && mergedRank < bestRank) {
                     bestRank = mergedRank;
                     bestPos = scan + 1;
                 }
-                mergedRank = pairRanks[scan + 2];
+                mergedRank = (int) pairMergeIdRank[scan + 2];
                 if (mergedRank >= 0 && mergedRank < bestRank) {
                     bestRank = mergedRank;
                     bestPos = scan + 2;
                 }
-                mergedRank = pairRanks[scan + 3];
+                mergedRank = (int) pairMergeIdRank[scan + 3];
                 if (mergedRank >= 0 && mergedRank < bestRank) {
                     bestRank = mergedRank;
                     bestPos = scan + 3;
                 }
             }
             for (; scan < pairCount; scan++) {
-                int mergedRank = pairRanks[scan];
+                int mergedRank = (int) pairMergeIdRank[scan];
                 if (mergedRank < 0) {
                     continue;
                 }
@@ -571,48 +537,41 @@ final class TikTokenModel extends AbstractTokenizationModel {
                 break;
             }
 
-            tokens[bestPos] = pairMergeIds[bestPos];
+            tokens[bestPos] = (int) (pairMergeIdRank[bestPos] >>> 32);
             int tail = size - bestPos - 2;
             if (tail > 0) {
                 System.arraycopy(tokens, bestPos + 2, tokens, bestPos + 1, tail);
-                System.arraycopy(pairRanks, bestPos + 1, pairRanks, bestPos, tail);
-                System.arraycopy(pairMergeIds, bestPos + 1, pairMergeIds, bestPos, tail);
+                System.arraycopy(pairMergeIdRank, bestPos + 1, pairMergeIdRank, bestPos, tail);
             }
 
             size--;
             int newPairCount = size - 1;
 
             if (bestPos > 0) {
-                long mergedValue = merges.getPair(tokens[bestPos - 1], tokens[bestPos]);
-                pairRanks[bestPos - 1] = mergeRank(mergedValue);
-                pairMergeIds[bestPos - 1] = mergeIdOrNone(mergedValue);
+                pairMergeIdRank[bestPos - 1] = merges.getPair(tokens[bestPos - 1], tokens[bestPos]);
             }
             if (bestPos < newPairCount) {
-                long mergedValue = merges.getPair(tokens[bestPos], tokens[bestPos + 1]);
-                pairRanks[bestPos] = mergeRank(mergedValue);
-                pairMergeIds[bestPos] = mergeIdOrNone(mergedValue);
+                pairMergeIdRank[bestPos] = merges.getPair(tokens[bestPos], tokens[bestPos + 1]);
             }
         }
 
-        if (keepOutput) {
-            out.ensureCapacity(out.size() + size);
-            for (int outIdx = 0; outIdx < size; outIdx++) {
-                out.add(tokens[outIdx]);
-            }
+        out.ensureCapacity(out.size() + size);
+        for (int outIdx = 0; outIdx < size; outIdx++) {
+            out.add(tokens[outIdx]);
         }
         return size;
     }
 
     private int encodeLarge(byte[] bytes, int byteLength, IntSequence.Builder out, Scratch s) {
-        return mergeLarge(bytes, byteLength, out, true, s);
+        return mergeLarge(bytes, byteLength, out, s);
     }
 
-    private int countLarge(byte[] bytes, int byteLength, Scratch s) {
-        return mergeLarge(bytes, byteLength, null, false, s);
-    }
+    // ---------------------------------------------------------------------
+    // Large path
+    // ---------------------------------------------------------------------
 
     private int mergeLarge(
-            byte[] bytes, int byteLength, IntSequence.Builder out, boolean keepOutput, Scratch s) {
+            byte[] bytes, int byteLength, IntSequence.Builder out, Scratch s) {
         int n = byteLength;
         s.ensureNodes(n);
 
@@ -663,11 +622,9 @@ final class TikTokenModel extends AbstractTokenizationModel {
             refreshEdge(left, token, next, edgeStamp, edgeRight, edgeRank, edgeMergeId, s);
         }
 
-        if (keepOutput) {
-            out.ensureCapacity(out.size() + tokenCount);
-            for (int idx = 0; idx != NO_INDEX; idx = next[idx]) {
-                out.add(token[idx]);
-            }
+        out.ensureCapacity(out.size() + tokenCount);
+        for (int idx = 0; idx != NO_INDEX; idx = next[idx]) {
+            out.add(token[idx]);
         }
 
         return tokenCount;
@@ -881,7 +838,7 @@ final class TikTokenModel extends AbstractTokenizationModel {
     }
 
     private static int mergeRank(long mergeValue) {
-        return mergeValue == IntPair.NONE ? NO_TOKEN : IntPair.right(mergeValue);
+        return IntPair.right(mergeValue);
     }
 
     private static int mergeId(long mergeValue) {
@@ -889,8 +846,12 @@ final class TikTokenModel extends AbstractTokenizationModel {
     }
 
     private static int mergeIdOrNone(long mergeValue) {
-        return mergeValue == IntPair.NONE ? NO_TOKEN : IntPair.left(mergeValue);
+        return IntPair.left(mergeValue);
     }
+
+    // ---------------------------------------------------------------------
+    // Lookup table builders
+    // ---------------------------------------------------------------------
 
     private static int[] buildSingleByteTokenMap(Vocabulary vocabulary) {
         int[] map = new int[256];
@@ -961,11 +922,14 @@ final class TikTokenModel extends AbstractTokenizationModel {
         }
     }
 
+    // ---------------------------------------------------------------------
+    // Scratch + exact-token lookup
+    // ---------------------------------------------------------------------
+
     private static final class Scratch {
         byte[] utf8Bytes = new byte[0];
         int[] tokens = new int[0];
-        int[] pairRanks = new int[0];
-        int[] pairMergeIds = new int[0];
+        long[] pairMergeIdRank = new long[0];
         int[] token = new int[0];
         int[] prev = new int[0];
         int[] next = new int[0];
@@ -994,15 +958,9 @@ final class TikTokenModel extends AbstractTokenizationModel {
             }
         }
 
-        void ensurePairRanks(int needed) {
-            if (pairRanks.length < needed) {
-                pairRanks = new int[grow(pairRanks.length, needed)];
-            }
-        }
-
-        void ensurePairMergeIds(int needed) {
-            if (pairMergeIds.length < needed) {
-                pairMergeIds = new int[grow(pairMergeIds.length, needed)];
+        void ensurePairData(int needed) {
+            if (pairMergeIdRank.length < needed) {
+                pairMergeIdRank = new long[grow(pairMergeIdRank.length, needed)];
             }
         }
 
@@ -1049,8 +1007,7 @@ final class TikTokenModel extends AbstractTokenizationModel {
         int maxRetainedElements() {
             int max = utf8Bytes.length;
             max = Math.max(max, tokens.length);
-            max = Math.max(max, pairRanks.length);
-            max = Math.max(max, pairMergeIds.length);
+            max = Math.max(max, pairMergeIdRank.length);
             max = Math.max(max, token.length);
             max = Math.max(max, prev.length);
             max = Math.max(max, next.length);

@@ -98,6 +98,18 @@ public final class ModelTextSplitters {
     public static final String GPT2_PATTERN =
             "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+";
 
+    /** Kimi K2 pre-tokenizer pattern (gpt2 + custom Han-aware letter handling). */
+    public static final String KIMI_K2_PATTERN =
+            "[\\p{IsHan}]+|[^\\r"
+                    + "\\n"
+                    + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}&&[^\\p{IsHan}]]*[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}&&[^\\p{IsHan}]]+(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])?|[^\\r"
+                    + "\\n"
+                    + "\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}&&[^\\p{IsHan}]]+[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}&&[^\\p{IsHan}]]*(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])?|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r"
+                    + "\\n"
+                    + "]*|\\s*[\\r"
+                    + "\\n"
+                    + "]+|\\s+(?!\\S)|\\s+";
+
     /**
      * Gemma pattern - used by Gemma models (SentencePiece-based). Gemma uses a different
      * tokenization approach but we use Llama3 pattern as a reasonable approximation for testing.
@@ -159,6 +171,10 @@ public final class ModelTextSplitters {
                 || "granite4.0".equals(normalizedType)
                 || "gpt2".equals(normalizedType)) {
             return Splitter.regex(Pattern.compile(GPT2_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
+        }
+        if ("kimi-k2".equals(normalizedType) || "kimi_k2".equals(normalizedType)) {
+            return Splitter.regex(
+                    Pattern.compile(KIMI_K2_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         }
         return Splitter.identity();
     }

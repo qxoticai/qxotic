@@ -154,6 +154,9 @@ final class SplitterSupport {
     }
 
     static int scanTrailingCrLf(CharSequence text, int startInclusive, int endExclusive) {
+        if (text instanceof String) {
+            return scanTrailingCrLfInString((String) text, startInclusive, endExclusive);
+        }
         int end = startInclusive;
         while (end < endExclusive) {
             char ch = text.charAt(end);
@@ -166,6 +169,9 @@ final class SplitterSupport {
     }
 
     static int scanTrailingCrLfSlash(CharSequence text, int startInclusive, int endExclusive) {
+        if (text instanceof String) {
+            return scanTrailingCrLfSlashInString((String) text, startInclusive, endExclusive);
+        }
         int end = startInclusive;
         while (end < endExclusive) {
             char ch = text.charAt(end);
@@ -175,5 +181,58 @@ final class SplitterSupport {
             end++;
         }
         return end;
+    }
+
+    private static int scanTrailingCrLfInString(String text, int startInclusive, int endExclusive) {
+        int firstNewline = indexOfCrLf(text, startInclusive, endExclusive);
+        if (firstNewline != startInclusive) {
+            return startInclusive;
+        }
+        int end = startInclusive + 1;
+        while (end < endExclusive) {
+            char ch = text.charAt(end);
+            if (ch != '\r' && ch != '\n') {
+                break;
+            }
+            end++;
+        }
+        return end;
+    }
+
+    private static int scanTrailingCrLfSlashInString(
+            String text, int startInclusive, int endExclusive) {
+        if (startInclusive >= endExclusive) {
+            return startInclusive;
+        }
+        char first = text.charAt(startInclusive);
+        if (first != '\r' && first != '\n' && first != '/') {
+            return startInclusive;
+        }
+        int end = startInclusive + 1;
+        while (end < endExclusive) {
+            char ch = text.charAt(end);
+            if (ch != '\r' && ch != '\n' && ch != '/') {
+                break;
+            }
+            end++;
+        }
+        return end;
+    }
+
+    private static int indexOfCrLf(String text, int startInclusive, int endExclusive) {
+        if (startInclusive >= endExclusive) {
+            return -1;
+        }
+        int nl = text.indexOf('\n', startInclusive);
+        int cr = text.indexOf('\r', startInclusive);
+        int best;
+        if (nl < 0) {
+            best = cr;
+        } else if (cr < 0) {
+            best = nl;
+        } else {
+            best = nl < cr ? nl : cr;
+        }
+        return (best >= 0 && best < endExclusive) ? best : -1;
     }
 }

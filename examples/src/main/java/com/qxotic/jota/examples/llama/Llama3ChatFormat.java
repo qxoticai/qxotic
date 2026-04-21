@@ -3,7 +3,7 @@ package com.qxotic.jota.examples.llama;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
-import com.qxotic.toknroll.advanced.StandardTokenType;
+import com.qxotic.toknroll.StandardTokenType;
 import java.util.OptionalInt;
 import java.util.Set;
 

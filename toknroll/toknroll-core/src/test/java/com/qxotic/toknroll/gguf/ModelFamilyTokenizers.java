@@ -25,6 +25,7 @@ import java.nio.file.Path;
 import java.text.Normalizer.Form;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -83,14 +84,8 @@ public final class ModelFamilyTokenizers {
                 return fromDeepSeekV3();
             }
             if ("mistral.v0_3".equals(familyId)) {
-                return fromHfTokenizerJson(
-                        "mistralai/Mistral-7B-Instruct-v0.3",
-                        "main",
-                        "llama",
-                        Normalizer.identity(),
-                        SpecialTokenMode.EXACT_LITERAL);
+                return fromMistralV03();
             }
-
             ModelFamilySpec modelSpec = MODEL_FAMILY_SPECS.get(familyId);
             if (modelSpec != null) {
                 return fromModel(
@@ -219,8 +214,8 @@ public final class ModelFamilyTokenizers {
 
     private static Tokenizer fromDeepSeekV3() throws IOException, InterruptedException {
         String[] urls = {
-            "https://huggingface.co/unsloth/DeepSeek-V3.2-GGUF/resolve/main/Q4_K_M/DeepSeek-V3.2-Q4_K_M-00001-of-00011.gguf",
-            "https://huggingface.co/unsloth/DeepSeek-V3.2-GGUF/resolve/main/DeepSeek-V3.2-Q4_K_M-00001-of-00011.gguf"
+            "https://huggingface.co/unsloth/DeepSeek-V3.2-GGUF/resolve/main/Q4_K_M/DeepSeek-V3.2-Q4_K_M-00001-of-00009.gguf",
+            "https://huggingface.co/unsloth/DeepSeek-V3.2-GGUF/resolve/main/BF16/DeepSeek-V3.2-BF16-00001-of-00030.gguf"
         };
         for (int i = 0; i < urls.length; i++) {
             try {
@@ -252,6 +247,14 @@ public final class ModelFamilyTokenizers {
                         Normalizer.identity(),
                         SpecialTokenMode.EXACT_LITERAL);
         return withDeepSeekSegmentation(base);
+    }
+
+    private static Tokenizer fromMistralV03() throws IOException, InterruptedException {
+        String url =
+                "https://huggingface.co/bartowski/Mistral-7B-Instruct-v0.3-GGUF/resolve/main/Mistral-7B-Instruct-v0.3-Q8_0.gguf";
+        GGUF gguf = DATA.getOrDownloadMetadata(cacheKey("mistral_v0_3_v1", 0, url), url);
+        TokenizerMetadata metadata = TestDataManager.extractTokenizerMetadata(gguf);
+        return buildMistralSentencePieceTokenizer(metadata);
     }
 
     private static Tokenizer withDeepSeekSegmentation(Tokenizer tokenizer) {
@@ -1006,7 +1009,7 @@ public final class ModelFamilyTokenizers {
                 "moonshot.kimi2_5",
                 new UrlFamilySpec(
                         "moonshot_kimi2_5_v1",
-                        "llama",
+                        "kimi-k2",
                         Normalizer.identity(),
                         SpecialTokenMode.EXACT_LITERAL,
                         "No accessible kimi2.5 GGUF metadata source",
@@ -1051,7 +1054,7 @@ public final class ModelFamilyTokenizers {
                         Normalizer.identity(),
                         SpecialTokenMode.EXACT_LITERAL,
                         "No accessible Mistral 7B v0.3 GGUF metadata source",
-                        "https://huggingface.co/bartowski/Mistral-7B-Instruct-v0.3-GGUF/resolve/main/Mistral-7B-Instruct-v0.3-Q4_K_M.gguf"));
+                        "https://huggingface.co/bartowski/Mistral-7B-Instruct-v0.3-GGUF/resolve/main/Mistral-7B-Instruct-v0.3-Q8_0.gguf"));
         return java.util.Collections.unmodifiableMap(specs);
     }
 
@@ -1139,11 +1142,26 @@ public final class ModelFamilyTokenizers {
             TokenizerMetadata metadata, Normalizer normalizer) {
         Vocabulary vocabulary =
                 ImplAccessor.createVocabulary(metadata.tokens(), metadata.tokenTypes());
-        float[] scores = metadata.scores();
-        if (scores == null || scores.length < vocabulary.size()) {
-            scores = new float[vocabulary.size()];
+
+        Map<String, Integer> tokenToId = new HashMap<>();
+        for (Map.Entry<String, Integer> e : vocabulary) {
+            if (e.getKey() != null && e.getValue() != null) {
+                tokenToId.put(e.getKey(), e.getValue());
+            }
         }
-        TokenizationModel model = Tokenizers.sentencePieceBpeModel(vocabulary, scores);
+        List<Tokenizers.MergeRule> merges = buildMerges(metadata, tokenToId);
+
+        TokenizationModel model;
+        if (!merges.isEmpty()) {
+            model = Tokenizers.sentencePieceBpeModel(vocabulary, merges);
+        } else {
+            float[] scores = metadata.scores();
+            if (scores == null || scores.length < vocabulary.size()) {
+                scores = new float[vocabulary.size()];
+            }
+            model = Tokenizers.sentencePieceBpeModel(vocabulary, scores);
+        }
+
         Tokenizer base =
                 TokenizationPipeline.builder(model)
                         .normalizer(
@@ -1209,6 +1227,96 @@ public final class ModelFamilyTokenizers {
                 return base.expectedTokensPerChar();
             }
         };
+    }
+
+    private static Tokenizer buildMistralSentencePieceTokenizer(TokenizerMetadata metadata) {
+        Vocabulary vocabulary =
+                ImplAccessor.createVocabulary(metadata.tokens(), metadata.tokenTypes());
+        float[] scores = metadata.scores();
+        if (scores == null || scores.length < vocabulary.size()) {
+            scores = new float[vocabulary.size()];
+        }
+
+        TokenizationModel model = Tokenizers.sentencePieceBpeModel(vocabulary, scores);
+        Tokenizer base =
+                TokenizationPipeline.builder(model)
+                        .normalizer(
+                                text -> {
+                                    String source = text.toString();
+                                    if (source.isEmpty()) {
+                                        return source;
+                                    }
+                                    String replaced = source.replace(' ', '\u2581');
+                                    return replaced.charAt(0) == '\u2581'
+                                            ? replaced
+                                            : '\u2581' + replaced;
+                                })
+                        .splitter(Splitter.identity())
+                        .build();
+
+        Tokenizer wrapped =
+                new Tokenizer() {
+                    @Override
+                    public Vocabulary vocabulary() {
+                        return base.vocabulary();
+                    }
+
+                    @Override
+                    public void encodeInto(
+                            CharSequence text,
+                            int startInclusive,
+                            int endExclusive,
+                            IntSequence.Builder out) {
+                        base.encodeInto(text, startInclusive, endExclusive, out);
+                    }
+
+                    @Override
+                    public String decode(IntSequence tokens) {
+                        String decoded = base.decode(tokens).replace('\u2581', ' ');
+                        return decoded.isEmpty() || decoded.charAt(0) != ' '
+                                ? decoded
+                                : decoded.substring(1);
+                    }
+
+                    @Override
+                    public byte[] decodeBytes(IntSequence tokens) {
+                        return decode(tokens).getBytes(StandardCharsets.UTF_8);
+                    }
+
+                    @Override
+                    public int decodeBytesInto(IntSequence tokens, int tokenStartIndex, ByteBuffer out) {
+                        int length = tokens.length();
+                        if (tokenStartIndex < 0 || tokenStartIndex > length) {
+                            throw new IndexOutOfBoundsException("tokenStartIndex: " + tokenStartIndex);
+                        }
+                        if (tokenStartIndex == length) {
+                            return 0;
+                        }
+                        byte[] bytes = decodeBytes(tokens.subSequence(tokenStartIndex, length));
+                        if (bytes.length > out.remaining()) {
+                            throw new IllegalArgumentException("Not enough output space");
+                        }
+                        out.put(bytes);
+                        return length - tokenStartIndex;
+                    }
+
+                    @Override
+                    public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
+                        return base.countTokens(text, startInclusive, endExclusive);
+                    }
+
+                    @Override
+                    public int countBytes(IntSequence tokens) {
+                        return base.countBytes(tokens);
+                    }
+
+                    @Override
+                    public float expectedTokensPerChar() {
+                        return base.expectedTokensPerChar();
+                    }
+                };
+
+        return wrapWithSpecialTokenInjection(wrapped, SpecialTokenMode.EXACT_LITERAL);
     }
 
     private static Tokenizer wrapWithSpecialTokenInjection(

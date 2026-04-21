@@ -3,7 +3,7 @@ package com.qxotic.model.llm.mistral;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.advanced.Normalizer;
 import com.qxotic.toknroll.advanced.Splitter;
-import com.qxotic.toknroll.advanced.StandardTokenType;
+import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.impl.AbstractTokenizer;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;

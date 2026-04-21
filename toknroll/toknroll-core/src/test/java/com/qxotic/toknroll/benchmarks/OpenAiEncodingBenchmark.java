@@ -24,7 +24,7 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 
-/** OpenAI encoding benchmark (r50k/cl100k/o200k) for Tok'n'Roll. */
+/** OpenAI encoding benchmark (r50k/cl100k/o200k) comparing JTokkit vs Tok'n'Roll. */
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
 @Warmup(iterations = 3, time = 1)
@@ -44,7 +44,7 @@ public class OpenAiEncodingBenchmark {
         }
     }
 
-    @Param({"fast"})
+    @Param({"jtokkit", "toknroll-bpe", "toknroll-fast"})
     public String implementation;
 
     @Param({"r50k_base", "cl100k_base", "o200k_base"})
@@ -53,7 +53,7 @@ public class OpenAiEncodingBenchmark {
     @Param({"chat", "code", "json", "prose", "wiki", "unicode"})
     public String corpus;
 
-    @Param({"1k", "32k"})
+    @Param({"1k", "16k", "32k"})
     public String size;
 
     private Tokenizer tokenizer;
@@ -63,7 +63,7 @@ public class OpenAiEncodingBenchmark {
     @Setup(Level.Trial)
     public void setup() {
         text = resize(seedText(corpus), targetLength(size));
-        tokenizer = createTokenizer(encoding);
+        tokenizer = createTokenizer(encoding, implementation);
         encoded = tokenizer.encode(text);
     }
 
@@ -88,10 +88,25 @@ public class OpenAiEncodingBenchmark {
         counters.decodedTokens += encoded.length();
     }
 
-    private static Tokenizer createTokenizer(String encoding) {
+    private static Tokenizer createTokenizer(String encoding, String implementation) {
+        switch (implementation) {
+            case "jtokkit":
+                return TiktokenFixtures.createJtokkitTokenizer(encoding);
+            case "toknroll-bpe":
+                return createToknrollTokenizer(encoding, false);
+            case "toknroll-fast":
+                return createToknrollTokenizer(encoding, true);
+            default:
+                throw new IllegalArgumentException(
+                        "Unsupported implementation: " + implementation);
+        }
+    }
+
+    private static Tokenizer createToknrollTokenizer(String encoding, boolean fast) {
         Map<String, Integer> ranks = TiktokenFixtures.mergeableRanks(encoding);
         Map<String, Integer> specials = TiktokenFixtures.specialTokens(encoding);
-        Splitter splitter = fastSplitterForEncoding(encoding);
+        Splitter splitter = fast ? fastSplitterForEncoding(encoding) : Splitter.regex(
+                TiktokenFixtures.splitPattern(encoding));
         return Tokenizers.pipeline(
                         Tokenizers.tikTokenModel(
                                 TiktokenLoaders.vocabulary(ranks, specials),
@@ -117,6 +132,8 @@ public class OpenAiEncodingBenchmark {
         switch (size) {
             case "1k":
                 return 1024;
+            case "16k":
+                return 16 * 1024;
             case "32k":
                 return 32 * 1024;
             default:

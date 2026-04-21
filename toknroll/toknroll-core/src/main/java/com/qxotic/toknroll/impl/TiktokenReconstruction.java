@@ -4,6 +4,7 @@ import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.Tokenizers;
 import com.qxotic.toknroll.Vocabulary;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -162,8 +163,8 @@ final class TiktokenReconstruction {
         }
 
         if (size < keys.length) {
-            keys = java.util.Arrays.copyOf(keys, size);
-            values = java.util.Arrays.copyOf(values, size);
+            keys = Arrays.copyOf(keys, size);
+            values = Arrays.copyOf(values, size);
         }
         return new LongLongMap(keys, values);
     }
