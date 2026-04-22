@@ -2,7 +2,6 @@ package com.qxotic.toknroll.benchmarks;
 
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.impl.FastSplitters;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
@@ -30,7 +29,7 @@ import org.openjdk.jmh.infra.Blackhole;
 public class O200kSplitterOnlyBenchmark {
 
     @Param({"enwik8", "enwik9"})
-    public String dataset;
+    public String corpus;
 
     private String text;
     private int bytes;
@@ -39,12 +38,11 @@ public class O200kSplitterOnlyBenchmark {
     @Setup(Level.Trial)
     public void setup() {
         try {
-            Path path = "enwik9".equals(dataset) ? EnwikPaths.enwik9() : EnwikPaths.enwik8();
-            byte[] data = Files.readAllBytes(path);
-            this.bytes = data.length;
-            this.text = new String(data, StandardCharsets.UTF_8);
+            Path path = WikiCorpusPaths.forCorpus(corpus);
+            this.bytes = Math.toIntExact(Files.size(path));
+            this.text = WikiBenchmarkSupport.readUtf8(path);
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to load benchmark dataset: " + dataset, e);
+            throw new IllegalStateException("Failed to load benchmark corpus: " + corpus, e);
         }
         this.splitter = FastSplitters.o200k();
     }

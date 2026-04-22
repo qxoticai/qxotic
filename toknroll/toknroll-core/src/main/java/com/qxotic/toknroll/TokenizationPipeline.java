@@ -7,12 +7,6 @@ import java.util.Optional;
 /**
  * Composed tokenizer pipeline that applies optional normalization and splitting around a base
  * {@link TokenizationModel}.
- *
- * <p>Implements {@link Tokenizer} but not {@link TokenizationModel}, so it cannot be nested as a
- * model inside another pipeline.
- *
- * <p>Optional mutation phases (for example, Unicode normalization) can be configured in the
- * pipeline and are applied before chunk splitting and model encoding.
  */
 public final class TokenizationPipeline implements Tokenizer {
 
@@ -22,12 +16,18 @@ public final class TokenizationPipeline implements Tokenizer {
     private final boolean hasNormalizer;
     private final boolean hasSplitter;
 
-    private TokenizationPipeline(Builder builder) {
-        this.model = Objects.requireNonNull(builder.model, "model is required");
-        this.normalizer = builder.normalizer;
-        this.splitter = builder.splitter;
+    private TokenizationPipeline(
+            TokenizationModel model, Normalizer normalizer, Splitter splitter) {
+        this.model = Objects.requireNonNull(model, "model is required");
+        this.normalizer = normalizer;
+        this.splitter = splitter;
         this.hasNormalizer = normalizer != null;
         this.hasSplitter = splitter != null;
+    }
+
+    static TokenizationPipeline create(
+            TokenizationModel model, Normalizer normalizer, Splitter splitter) {
+        return new TokenizationPipeline(model, normalizer, splitter);
     }
 
     public static Builder builder(TokenizationModel model) {
@@ -51,29 +51,14 @@ public final class TokenizationPipeline implements Tokenizer {
             CharSequence text, int startInclusive, int endExclusive, IntSequence.Builder out) {
         Objects.requireNonNull(text, "text");
         Objects.requireNonNull(out, "out");
-        if (startInclusive < 0 || endExclusive < startInclusive || endExclusive > text.length()) {
-            throw new IndexOutOfBoundsException(
-                    "Invalid range ["
-                            + startInclusive
-                            + ", "
-                            + endExclusive
-                            + ") for text length "
-                            + text.length());
-        }
+        validateRange(text, startInclusive, endExclusive);
 
         if (!hasNormalizer && !hasSplitter) {
             model.encodeInto(text, startInclusive, endExclusive, out);
             return;
         }
 
-        CharSequence current =
-                (startInclusive == 0 && endExclusive == text.length())
-                        ? text
-                        : text.subSequence(startInclusive, endExclusive);
-        if (hasNormalizer) {
-            current = normalizer.apply(current);
-        }
-        encodeNormalizedInto(current, out);
+        encodeNormalizedInto(normalizeSlice(text, startInclusive, endExclusive), out);
     }
 
     private void encodeNormalizedInto(CharSequence normalizedText, IntSequence.Builder out) {
@@ -92,17 +77,12 @@ public final class TokenizationPipeline implements Tokenizer {
     @Override
     public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
         Objects.requireNonNull(text, "text");
+        validateRange(text, startInclusive, endExclusive);
         if (!hasNormalizer && !hasSplitter) {
             return model.countTokens(text, startInclusive, endExclusive);
         }
 
-        CharSequence current =
-                (startInclusive == 0 && endExclusive == text.length())
-                        ? text
-                        : text.subSequence(startInclusive, endExclusive);
-        if (hasNormalizer) {
-            current = normalizer.apply(current);
-        }
+        CharSequence current = normalizeSlice(text, startInclusive, endExclusive);
         if (!hasSplitter) {
             return model.countTokens(current, 0, current.length());
         }
@@ -151,6 +131,26 @@ public final class TokenizationPipeline implements Tokenizer {
         return "Pipeline[norm=" + hasNormalizer + ", split=" + hasSplitter + ", " + model + "]";
     }
 
+    private void validateRange(CharSequence text, int startInclusive, int endExclusive) {
+        if (startInclusive < 0 || endExclusive < startInclusive || endExclusive > text.length()) {
+            throw new IndexOutOfBoundsException(
+                    "Invalid range ["
+                            + startInclusive
+                            + ", "
+                            + endExclusive
+                            + ") for text length "
+                            + text.length());
+        }
+    }
+
+    private CharSequence normalizeSlice(CharSequence text, int startInclusive, int endExclusive) {
+        CharSequence current =
+                (startInclusive == 0 && endExclusive == text.length())
+                        ? text
+                        : text.subSequence(startInclusive, endExclusive);
+        return hasNormalizer ? normalizer.apply(current) : current;
+    }
+
     /** Builder for {@link TokenizationPipeline}. */
     public static final class Builder {
         private final TokenizationModel model;
@@ -186,7 +186,7 @@ public final class TokenizationPipeline implements Tokenizer {
         }
 
         public TokenizationPipeline build() {
-            return new TokenizationPipeline(this);
+            return TokenizationPipeline.create(model, normalizer, splitter);
         }
     }
 }
