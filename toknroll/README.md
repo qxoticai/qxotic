@@ -66,7 +66,11 @@ uv pip install --python .venv/bin/python -r requirements.txt
 ## Quick API examples
 
 ```java
-Tokenizer tokenizer = Tokenizers.fastBpe(mergeableRanks, specialTokens, splitPatternRegex);
+Vocabulary vocab = Tokenizers.vocabulary(specialTokens, rankedTokens);
+TokenizationModel model = Tokenizers.tikTokenModel(vocab, mergeRules);
+Tokenizer tokenizer = Tokenizers.pipeline(model)
+    .splitter(Splitter.regex(splitPatternRegex))
+    .build();
 
 int[] ids = tokenizer.encodeToArray("Hello world");
 String text = tokenizer.decode(ids);
@@ -74,7 +78,8 @@ byte[] raw = tokenizer.decodeBytes(ids);
 ```
 
 ```java
-Tokenizer tokenizer = Tokenizers.classicBpe(mergeableRanks, specialTokens, splitter);
+TokenizationModel spModel = Tokenizers.sentencePieceBpeModel(vocab, mergeRules);
+Tokenizer tokenizer = Tokenizers.pipeline(spModel).splitter(splitter).build();
 ```
 
 ```java
@@ -86,7 +91,9 @@ Tokenizer tokenizer = JTokkitTokenizers.fromTiktoken(name, mergeableRanks, split
 For detailed behavior and design rationale, see `docs/SPECIALS.md`.
 
 ```java
-Tokenizer tokenizer = Tokenizers.fastBpe(mergeableRanks, specialTokens, splitPatternRegex);
+Tokenizer tokenizer = Tokenizers.pipeline(model)
+    .splitter(Splitter.regex(splitPatternRegex))
+    .build();
 
 // Compile once, reuse many times.
 Specials specials = Specials.compile(tokenizer.vocabulary(), specialTokens.keySet());
