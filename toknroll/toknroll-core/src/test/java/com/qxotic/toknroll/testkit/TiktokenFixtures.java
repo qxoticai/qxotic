@@ -20,6 +20,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 
 public final class TiktokenFixtures {
@@ -161,7 +162,8 @@ public final class TiktokenFixtures {
                     new GptBytePairEncodingParams(name, splitPattern, rawRanks, specialTokens);
             registry.registerGptBytePairEncoding(params);
             Encoding encoding = registry.getEncoding(name).orElseThrow();
-            return new JTokkitAdapter(encoding);
+            Vocabulary vocabulary = TiktokenLoaders.vocabulary(mergeableRanks, specialTokens);
+            return new JTokkitAdapter(encoding, vocabulary);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to create JTokkit tokenizer for " + name, e);
         }
@@ -169,26 +171,28 @@ public final class TiktokenFixtures {
 
     private static final class JTokkitAdapter implements Tokenizer {
         private final Encoding encoding;
+        private final Vocabulary vocabulary;
 
-        JTokkitAdapter(Encoding encoding) {
+        JTokkitAdapter(Encoding encoding, Vocabulary vocabulary) {
             this.encoding = encoding;
+            this.vocabulary = vocabulary;
         }
 
         @Override
         public Vocabulary vocabulary() {
-            throw new UnsupportedOperationException();
+            return vocabulary;
         }
 
         @Override
         public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
-            return encoding.countTokens(text.subSequence(startInclusive, endExclusive).toString());
+            return encoding.countTokensOrdinary(text.subSequence(startInclusive, endExclusive).toString());
         }
 
         @Override
         public void encodeInto(
                 CharSequence text, int startInclusive, int endExclusive, IntSequence.Builder out) {
             String slice = text.subSequence(startInclusive, endExclusive).toString();
-            IntArrayList encoded = encoding.encode(slice);
+            IntArrayList encoded = encoding.encodeOrdinary(slice);
             int size = encoded.size();
             out.ensureCapacity(out.size() + size);
             for (int i = 0; i < size; i++) {
@@ -291,7 +295,7 @@ public final class TiktokenFixtures {
                                             new NamedTokenizer(
                                                     "jtokkit-" + e.name(),
                                                     createJtokkitTokenizer(e.name())))
-                            .toList();
+                            .collect(Collectors.toList());
         }
         return ALL_JTOKKIT_TOKENIZERS;
     }

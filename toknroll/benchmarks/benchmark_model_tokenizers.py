@@ -174,7 +174,7 @@ def make_hf_adapter(model: str, revision: str) -> Optional[Adapter]:
             "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
             "NousResearch/Llama-3.2-1B",
         ],
-        "qwen35": ["Qwen/Qwen3.5-0.6B", "Qwen/Qwen3-0.6B"],
+        "qwen35": ["Qwen/Qwen3.5-0.8B", "Qwen/Qwen3.5-0.6B", "Qwen/Qwen3-0.6B"],
         "mistral-tekken": [
             "mistralai/ministral-8b-instruct-2410",
             "mistralai/open-mistral-nemo-2407",

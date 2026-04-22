@@ -3,9 +3,9 @@ package com.qxotic.toknroll.impl;
 import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Vocabulary;
+import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -25,8 +25,7 @@ final class TikTokenModel extends AbstractTokenizationModel {
 
     public static final String LARGE_CHUNK_THRESHOLD_PROPERTY = "toknroll.fast.largeChunkThreshold";
     public static final String TINY_CHUNK_THRESHOLD_PROPERTY = "toknroll.fast.tinyChunkThreshold";
-    public static final String SCRATCH_REUSE_ENABLED_PROPERTY =
-            "toknroll.fast.scratchReuseEnabled";
+    public static final String SCRATCH_REUSE_ENABLED_PROPERTY = "toknroll.fast.scratchReuseEnabled";
     public static final String SCRATCH_MAX_RETAINED_ELEMENTS_PROPERTY =
             "toknroll.fast.scratchMaxRetainedElements";
 
@@ -51,45 +50,6 @@ final class TikTokenModel extends AbstractTokenizationModel {
     private final boolean scratchReuseEnabled;
     private final int scratchMaxRetainedElements;
     private final ThreadLocal<Scratch> scratchThreadLocal = ThreadLocal.withInitial(Scratch::new);
-
-    TikTokenModel(
-            Vocabulary vocabulary,
-            LongLongMap merges,
-            int[] singleByteTokenId,
-            byte[][] tokenBytesById,
-            ExactTokenLookup exactTokenLookup,
-            boolean ignoreMerges,
-            int tinyChunkThreshold,
-            int largeChunkThreshold) {
-        this(
-                vocabulary,
-                merges,
-                singleByteTokenId,
-                tokenBytesById,
-                exactTokenLookup,
-                ignoreMerges,
-                tinyChunkThreshold,
-                largeChunkThreshold,
-                0.5f);
-    }
-
-    TikTokenModel(
-            Vocabulary vocabulary,
-            LongLongMap merges,
-            int[] singleByteTokenId,
-            byte[][] tokenBytesById,
-            ExactTokenLookup exactTokenLookup) {
-        this(
-                vocabulary,
-                merges,
-                singleByteTokenId,
-                tokenBytesById,
-                exactTokenLookup,
-                false,
-                DEFAULT_TINY_CHUNK_THRESHOLD,
-                DEFAULT_LARGE_CHUNK_THRESHOLD,
-                0.5f);
-    }
 
     TikTokenModel(
             Vocabulary vocabulary,
@@ -172,7 +132,8 @@ final class TikTokenModel extends AbstractTokenizationModel {
 
     @Override
     protected IntSequence encodeImpl(CharSequence text) {
-        IntSequence.Builder out = IntSequence.newBuilder(estimateInitialTokenCapacity(text.length()));
+        IntSequence.Builder out =
+                IntSequence.newBuilder(estimateInitialTokenCapacity(text.length()));
         Scratch s = acquireScratch();
         try {
             encodeChunkRange(text, 0, text.length(), out, s);
@@ -245,13 +206,7 @@ final class TikTokenModel extends AbstractTokenizationModel {
         }
 
         byte[] out = new byte[totalBytes];
-        int offset = 0;
-        for (int i = 0; i < length; i++) {
-            int tokenId = tokens.intAt(i);
-            byte[] tokenBytes = tokenBytesById[tokenId];
-            System.arraycopy(tokenBytes, 0, out, offset, tokenBytes.length);
-            offset += tokenBytes.length;
-        }
+        decodeBytesInto(tokens, 0, ByteBuffer.wrap(out));
         return out;
     }
 
@@ -466,8 +421,7 @@ final class TikTokenModel extends AbstractTokenizationModel {
         return mergeSmall(bytes, byteLength, out, s);
     }
 
-    private int mergeSmall(
-            byte[] bytes, int byteLength, IntSequence.Builder out, Scratch s) {
+    private int mergeSmall(byte[] bytes, int byteLength, IntSequence.Builder out, Scratch s) {
         if (byteLength == 0) {
             return 0;
         }
@@ -570,8 +524,7 @@ final class TikTokenModel extends AbstractTokenizationModel {
     // Large path
     // ---------------------------------------------------------------------
 
-    private int mergeLarge(
-            byte[] bytes, int byteLength, IntSequence.Builder out, Scratch s) {
+    private int mergeLarge(byte[] bytes, int byteLength, IntSequence.Builder out, Scratch s) {
         int n = byteLength;
         s.ensureNodes(n);
 
@@ -842,10 +795,6 @@ final class TikTokenModel extends AbstractTokenizationModel {
     }
 
     private static int mergeId(long mergeValue) {
-        return IntPair.left(mergeValue);
-    }
-
-    private static int mergeIdOrNone(long mergeValue) {
         return IntPair.left(mergeValue);
     }
 

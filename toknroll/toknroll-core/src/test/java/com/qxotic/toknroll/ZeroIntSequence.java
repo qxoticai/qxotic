@@ -36,4 +36,21 @@ final class ZeroIntSequence implements IntSequence {
     public int compareTo(IntSequence other) {
         return IntSequence.compare(this, other);
     }
+
+    @Override
+    public boolean equals(Object other) {
+        if (this == other) {
+            return true;
+        }
+        return other instanceof IntSequence && IntSequence.contentEquals(this, (IntSequence) other);
+    }
+
+    @Override
+    public int hashCode() {
+        int hash = 1;
+        for (int i = 0; i < length; i++) {
+            hash = hash * 31;
+        }
+        return hash;
+    }
 }
