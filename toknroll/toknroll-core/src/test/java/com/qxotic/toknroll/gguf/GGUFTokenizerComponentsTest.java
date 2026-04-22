@@ -28,9 +28,13 @@ class GGUFTokenizerComponentsTest {
 
         String text = "v 1234";
         List<String> qwenTokens =
-                qwen.splitAllToListEagerly(text).stream().map(CharSequence::toString).toList();
+                qwen.splitAllToListEagerly(text).stream()
+                        .map(CharSequence::toString)
+                        .collect(Collectors.toList());
         List<String> llamaTokens =
-                llama.splitAllToListEagerly(text).stream().map(CharSequence::toString).toList();
+                llama.splitAllToListEagerly(text).stream()
+                        .map(CharSequence::toString)
+                        .collect(Collectors.toList());
 
         // Qwen pattern uses single digits; Llama/Tekken uses 1..3 digit chunks.
         assertTrue(qwenTokens.stream().anyMatch(t -> t.contains("1")));
@@ -48,7 +52,7 @@ class GGUFTokenizerComponentsTest {
         List<String> tokens =
                 splitter.splitAllToListEagerly("I'm ready").stream()
                         .map(CharSequence::toString)
-                        .toList();
+                        .collect(Collectors.toList());
         assertTrue(tokens.stream().anyMatch(t -> t.contains("'m")));
     }
 

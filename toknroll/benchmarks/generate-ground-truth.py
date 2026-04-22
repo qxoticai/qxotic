@@ -432,7 +432,11 @@ def generate_model_family_ground_truth():
             "backend": "hf",
             "revision": "main",
             "max_cases": len(GOLDEN_TEST_STRINGS),
-            "model_candidates": ["Qwen/Qwen3.5-0.6B", "Qwen/Qwen3-0.6B"],
+            "model_candidates": [
+                "Qwen/Qwen3.5-0.8B",
+                "Qwen/Qwen3.5-0.6B",
+                "Qwen/Qwen3-0.6B",
+            ],
         },
         {
             "family_id": "meta.llama3",

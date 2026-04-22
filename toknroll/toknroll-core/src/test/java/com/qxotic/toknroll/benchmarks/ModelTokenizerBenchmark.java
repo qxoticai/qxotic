@@ -68,7 +68,7 @@ public class ModelTokenizerBenchmark {
 
     private static final String LLAMA3_HF_MODEL_REF = "unsloth/Llama-3.2-1B-Instruct";
     private static final String LLAMA3_HF_REVISION = "5a8abab4a5d6f164389b1079fb721cfab8d7126c";
-    private static final String QWEN35_HF_MODEL_REF = "Qwen/Qwen3-0.6B";
+    private static final String QWEN35_HF_MODEL_REF = "Qwen/Qwen3.5-0.8B";
     private static final String GEMMA4_HF_MODEL_REF = "google/gemma-4-e2b-it";
     private static final String GPT_OSS_HF_MODEL_REF = "openai/gpt-oss-20b";
     private static final String MISTRAL_V03_HF_MODEL_REF = "mistralai/Mistral-7B-Instruct-v0.3";

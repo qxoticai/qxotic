@@ -198,11 +198,14 @@ public final class ModelFamilyTokenizers {
     }
 
     private static Tokenizer fromQwen35() throws IOException, InterruptedException {
-        return fromModel(
-                TestModel.QWEN3_0_6B,
+        return fromUrls(
+                "alibaba_qwen3_5_v1",
                 "qwen3.5",
                 Normalizer.unicode(Form.NFC),
-                SpecialTokenMode.EXACT_LITERAL);
+                SpecialTokenMode.EXACT_LITERAL,
+                "No accessible Qwen3.5 GGUF metadata source",
+                "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q8_0.gguf",
+                "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf");
     }
 
     private static Tokenizer fromHfQwen35(String modelRef, String revision)
@@ -966,13 +969,6 @@ public final class ModelFamilyTokenizers {
         // Source: transformers Qwen2 tokenizer implementation delegates to tokenizer.json backend
         // config (normalizer=NFC):
         // https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen2/tokenization_qwen2.py
-        specs.put(
-                "alibaba.qwen3_5",
-                new ModelFamilySpec(
-                        TestModel.QWEN3_0_6B,
-                        "qwen3.5",
-                        Normalizer.unicode(Form.NFC),
-                        SpecialTokenMode.EXACT_LITERAL));
         specs.put(
                 "mistral.tekken",
                 new ModelFamilySpec(

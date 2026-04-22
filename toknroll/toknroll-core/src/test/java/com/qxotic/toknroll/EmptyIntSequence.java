@@ -32,4 +32,17 @@ final class EmptyIntSequence implements IntSequence {
     public int compareTo(IntSequence other) {
         return IntSequence.compare(this, other);
     }
+
+    @Override
+    public boolean equals(Object other) {
+        if (this == other) {
+            return true;
+        }
+        return other instanceof IntSequence && IntSequence.contentEquals(this, (IntSequence) other);
+    }
+
+    @Override
+    public int hashCode() {
+        return 1;
+    }
 }

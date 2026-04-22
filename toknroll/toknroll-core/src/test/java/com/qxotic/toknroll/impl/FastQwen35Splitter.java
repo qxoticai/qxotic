@@ -11,7 +11,7 @@ final class FastQwen35Splitter implements Splitter {
     private static final String QWEN35_PATTERN =
             "(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])|[^\\r"
                     + "\\n"
-                    + "\\p{L}\\p{N}]?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\\r"
+                    + "\\p{L}\\p{N}]?[\\p{L}\\p{M}]+|\\p{N}| ?[^\\s\\p{L}\\p{M}\\p{N}]+[\\r"
                     + "\\n"
                     + "]*|\\s*[\\r"
                     + "\\n"

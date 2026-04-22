@@ -17,7 +17,7 @@ class ModelTokenizerAgreementTest {
 
     private static final String LLAMA3_HF_MODEL_REF = "unsloth/Llama-3.2-1B-Instruct";
     private static final String LLAMA3_HF_REVISION = "5a8abab4a5d6f164389b1079fb721cfab8d7126c";
-    private static final String QWEN35_HF_MODEL_REF = "Qwen/Qwen3-0.6B";
+    private static final String QWEN35_HF_MODEL_REF = "Qwen/Qwen3.5-0.8B";
     private static final String MISTRAL_TEKKEN_HF_MODEL_REF =
             "mistralai/ministral-8b-instruct-2410";
     private static final String MISTRAL_TEKKEN_HF_REVISION =

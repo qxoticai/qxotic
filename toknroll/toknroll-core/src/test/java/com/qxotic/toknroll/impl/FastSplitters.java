@@ -10,6 +10,10 @@ public final class FastSplitters {
         return FastCl100kSplitter.INSTANCE;
     }
 
+    public static Splitter o100k() {
+        return FastCl100kSplitter.INSTANCE;
+    }
+
     public static Splitter r50k() {
         return FastR50kSplitter.INSTANCE;
     }
