@@ -5,11 +5,11 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-final class EnwikPaths {
+final class WikiCorpusPaths {
 
     private static final String HOME = System.getProperty("user.home");
 
-    private EnwikPaths() {}
+    private WikiCorpusPaths() {}
 
     static Path enwik8() {
         return resolve(
@@ -23,6 +23,16 @@ final class EnwikPaths {
                 "enwik9",
                 "toknroll.enwik9.path",
                 Path.of(HOME, ".cache", "qxotic", "tokenizers", "corpus", "enwik9"));
+    }
+
+    static Path forCorpus(String corpus) {
+        if ("enwik8".equals(corpus)) {
+            return enwik8();
+        }
+        if ("enwik9".equals(corpus)) {
+            return enwik9();
+        }
+        throw new IllegalArgumentException("Unsupported corpus: " + corpus);
     }
 
     private static Path resolve(String name, String property, Path... fallbacks) {
