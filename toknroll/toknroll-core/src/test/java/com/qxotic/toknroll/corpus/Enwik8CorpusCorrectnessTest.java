@@ -92,7 +92,7 @@ class Enwik8CorpusCorrectnessTest {
         }
     }
 
-    // ==================== TikToken Encodings ====================
+    // ==================== Tiktoken Encodings ====================
 
     static Stream<Arguments> tiktokenEncodings() {
         return Stream.of(

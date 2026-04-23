@@ -9,7 +9,7 @@ import java.util.Random;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-class FastTikTokenLargeMergeRegressionTest {
+class FastTiktokenLargeMergeRegressionTest {
 
     @ParameterizedTest(name = "large merge parity {0}")
     @ValueSource(strings = {"r50k_base", "cl100k_base", "o200k_base"})

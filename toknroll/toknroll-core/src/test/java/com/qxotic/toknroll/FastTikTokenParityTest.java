@@ -7,7 +7,7 @@ import com.qxotic.toknroll.testkit.TestTokenizers;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-class FastTikTokenParityTest {
+class FastTiktokenParityTest {
 
     @Test
     void matchesJtokkitForRepresentativeSamples() {

@@ -236,10 +236,10 @@ public final class TiktokenFixtures {
         }
     }
 
-    /** Creates a Tok'n'Roll native TikTokenModel tokenizer. */
-    public static Tokenizer createTikTokenTokenizer(String encodingName) {
+    /** Creates a Tok'n'Roll native TiktokenModel tokenizer. */
+    public static Tokenizer createTiktokenTokenizer(String encodingName) {
         return TOKENIZER_CACHE.computeIfAbsent(
-                encodingName, TiktokenFixtures::createTikTokenTokenizerInternal);
+                encodingName, TiktokenFixtures::createTiktokenTokenizerInternal);
     }
 
     private static Tokenizer BPE_R50K_TOKENIZER = null;
@@ -253,33 +253,33 @@ public final class TiktokenFixtures {
     }
 
     /**
-     * @deprecated Use {@link #createTikTokenTokenizer(String)} instead.
+     * @deprecated Use {@link #createTiktokenTokenizer(String)} instead.
      */
     @Deprecated
     public static Tokenizer createBpeTokenizer(String encodingName) {
         return BPE_TOKENIZER_CACHE.computeIfAbsent(
-                encodingName, TiktokenFixtures::createTikTokenTokenizerInternal);
+                encodingName, TiktokenFixtures::createTiktokenTokenizerInternal);
     }
 
-    private static Tokenizer createTikTokenTokenizerInternal(String encodingName) {
+    private static Tokenizer createTiktokenTokenizerInternal(String encodingName) {
         EncodingFixture fixture = encoding(encodingName);
-        return createTikTokenTokenizer(
+        return createTiktokenTokenizer(
                 mergeableRanks(encodingName),
                 fixture.specialTokens(),
                 Splitter.regex(
                         Pattern.compile(fixture.pattern(), Pattern.UNICODE_CHARACTER_CLASS)));
     }
 
-    public static Tokenizer createTikTokenTokenizer(String encodingName, Splitter splitter) {
+    public static Tokenizer createTiktokenTokenizer(String encodingName, Splitter splitter) {
         EncodingFixture fixture = encoding(encodingName);
-        return createTikTokenTokenizer(
+        return createTiktokenTokenizer(
                 mergeableRanks(encodingName), fixture.specialTokens(), splitter);
     }
 
-    public static Tokenizer createTikTokenTokenizer(
+    public static Tokenizer createTiktokenTokenizer(
             Map<String, Integer> ranks, Map<String, Integer> specials, Splitter splitter) {
         TokenizationModel model =
-                Tokenizers.tikTokenModel(
+                Tokenizers.tiktokenModel(
                         TiktokenLoaders.vocabulary(ranks, specials),
                         TiktokenLoaders.mergeRules(ranks));
         return Tokenizers.pipeline(model).splitter(splitter).build();

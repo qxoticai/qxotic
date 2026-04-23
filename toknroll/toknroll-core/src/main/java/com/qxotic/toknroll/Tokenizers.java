@@ -76,13 +76,13 @@ public final class Tokenizers {
         return validatedSpecials;
     }
 
-    public static TokenizationModel tikTokenModel(Vocabulary vocabulary, List<MergeRule> merges) {
-        return ImplAccessor.createTikTokenModel(vocabulary, merges, false);
+    public static TokenizationModel tiktokenModel(Vocabulary vocabulary, List<MergeRule> merges) {
+        return ImplAccessor.createTiktokenModel(vocabulary, merges, false);
     }
 
-    public static TokenizationModel tikTokenModel(
+    public static TokenizationModel tiktokenModel(
             Vocabulary vocabulary, List<MergeRule> merges, boolean ignoreMerges) {
-        return ImplAccessor.createTikTokenModel(vocabulary, merges, ignoreMerges);
+        return ImplAccessor.createTiktokenModel(vocabulary, merges, ignoreMerges);
     }
 
     public static TokenizationModel sentencePieceBpeModel(
@@ -104,6 +104,12 @@ public final class Tokenizers {
         private final int rank;
 
         public MergeRule(int leftId, int rightId, int rank) {
+            if (leftId < 0) {
+                throw new IllegalArgumentException("leftId must be non-negative: " + leftId);
+            }
+            if (rightId < 0) {
+                throw new IllegalArgumentException("rightId must be non-negative: " + rightId);
+            }
             this.leftId = leftId;
             this.rightId = rightId;
             this.rank = rank;

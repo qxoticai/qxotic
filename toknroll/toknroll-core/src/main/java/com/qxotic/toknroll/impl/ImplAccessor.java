@@ -71,13 +71,13 @@ public final class ImplAccessor {
         return new VocabularyImpl(tokens, tokenTypes);
     }
 
-    public static TokenizationModel createTikTokenModel(
+    public static TokenizationModel createTiktokenModel(
             Vocabulary vocabulary, List<Tokenizers.MergeRule> merges, boolean ignoreMerges) {
         LongLongMap packed =
                 merges.isEmpty()
                         ? new LongLongMap(new long[0], new long[0])
-                        : TiktokenReconstruction.packTikTokenMerges(vocabulary, merges);
-        return TikTokenModel.fromVocabularyAndMerges(vocabulary, packed, ignoreMerges);
+                        : TiktokenReconstruction.packTiktokenMerges(vocabulary, merges);
+        return TiktokenModel.fromVocabularyAndMerges(vocabulary, packed, ignoreMerges);
     }
 
     public static TokenizationModel createSentencePieceBpeModel(
@@ -114,7 +114,7 @@ public final class ImplAccessor {
     @Deprecated(forRemoval = false, since = "0.1.0")
     public static Map<String, Integer> loadMergeableRanks(String blobPath, String expectedHash)
             throws IOException, InterruptedException {
-        return loadTikTokenMergeableRanks(blobPath, expectedHash);
+        return loadTiktokenMergeableRanks(blobPath, expectedHash);
     }
 
     /**
@@ -124,7 +124,7 @@ public final class ImplAccessor {
      */
     @Deprecated(forRemoval = false, since = "0.1.0")
     public static Map<String, Integer> loadMergeableRanks(BufferedReader reader) {
-        return loadTikTokenMergeableRanks(reader);
+        return loadTiktokenMergeableRanks(reader);
     }
 
     /**
@@ -135,7 +135,7 @@ public final class ImplAccessor {
     @Deprecated(forRemoval = false, since = "0.1.0")
     public static Vocabulary tiktokenVocabulary(
             Map<String, Integer> mergeableRanks, Map<String, Integer> specialTokens) {
-        return reconstructTikTokenVocabulary(mergeableRanks, specialTokens);
+        return reconstructTiktokenVocabulary(mergeableRanks, specialTokens);
     }
 
     /**
@@ -146,24 +146,24 @@ public final class ImplAccessor {
     @Deprecated(forRemoval = false, since = "0.1.0")
     public static List<Tokenizers.MergeRule> tiktokenMergeRules(
             Map<String, Integer> mergeableRanks) {
-        return reconstructTikTokenMergeRules(mergeableRanks);
+        return reconstructTiktokenMergeRules(mergeableRanks);
     }
 
-    public static Map<String, Integer> loadTikTokenMergeableRanks(
+    public static Map<String, Integer> loadTiktokenMergeableRanks(
             String blobPath, String expectedHash) throws IOException, InterruptedException {
         return TiktokenFiles.loadMergeableRanks(blobPath, expectedHash);
     }
 
-    public static Map<String, Integer> loadTikTokenMergeableRanks(BufferedReader reader) {
+    public static Map<String, Integer> loadTiktokenMergeableRanks(BufferedReader reader) {
         return TiktokenFiles.loadMergeableRanks(reader);
     }
 
-    public static Vocabulary reconstructTikTokenVocabulary(
+    public static Vocabulary reconstructTiktokenVocabulary(
             Map<String, Integer> mergeableRanks, Map<String, Integer> specialTokens) {
         return TiktokenReconstruction.vocabulary(mergeableRanks, specialTokens);
     }
 
-    public static List<Tokenizers.MergeRule> reconstructTikTokenMergeRules(
+    public static List<Tokenizers.MergeRule> reconstructTiktokenMergeRules(
             Map<String, Integer> mergeableRanks) {
         return TiktokenReconstruction.mergeRules(mergeableRanks);
     }

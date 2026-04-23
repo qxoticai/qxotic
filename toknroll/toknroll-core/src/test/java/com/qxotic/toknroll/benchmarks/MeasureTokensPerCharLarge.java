@@ -66,7 +66,7 @@ public class MeasureTokensPerCharLarge {
     };
 
     public static void main(String[] args) {
-        System.out.println("=== TikToken Encodings ===");
+        System.out.println("=== Tiktoken Encodings ===");
         for (String enc :
                 List.of("r50k_base", "p50k_base", "p50k_edit", "cl100k_base", "o200k_base")) {
             try {

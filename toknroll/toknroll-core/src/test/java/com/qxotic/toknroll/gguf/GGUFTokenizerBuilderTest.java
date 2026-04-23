@@ -91,7 +91,7 @@ public class GGUFTokenizerBuilderTest {
         // Create GPT2-style tokenizer with model-specific pre-tokenizer
         Splitter splitter = ModelTextSplitters.createSplitter(model);
         Tokenizer tokenizer =
-                TokenizationPipeline.builder(Tokenizers.tikTokenModel(vocabulary, merges))
+                TokenizationPipeline.builder(Tokenizers.tiktokenModel(vocabulary, merges))
                         .splitter(splitter)
                         .build();
 
@@ -128,7 +128,7 @@ public class GGUFTokenizerBuilderTest {
         // Create a simple tokenizer with model-specific pre-tokenizer
         Splitter splitter = ModelTextSplitters.createSplitter(model);
         Tokenizer tokenizer =
-                TokenizationPipeline.builder(Tokenizers.tikTokenModel(vocabulary, List.of()))
+                TokenizationPipeline.builder(Tokenizers.tiktokenModel(vocabulary, List.of()))
                         .splitter(splitter)
                         .build();
 

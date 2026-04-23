@@ -85,7 +85,7 @@ public class TestSlice30_40M {
         Vocabulary vocabulary =
                 TiktokenLoaders.vocabulary(mergeableRanks, Map.of("<|endoftext|>", 50256));
         return Tokenizers.pipeline(
-                        Tokenizers.tikTokenModel(
+                        Tokenizers.tiktokenModel(
                                 vocabulary, TiktokenLoaders.mergeRules(mergeableRanks)))
                 .splitter(
                         Splitter.regex(

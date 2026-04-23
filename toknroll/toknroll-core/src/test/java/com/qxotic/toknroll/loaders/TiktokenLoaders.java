@@ -17,26 +17,26 @@ public final class TiktokenLoaders {
     /** Loads mergeable ranks from a local path or HTTP(S) URL. */
     public static Map<String, Integer> loadMergeableRanks(String blobPath, String expectedHash)
             throws IOException, InterruptedException {
-        return ImplAccessor.loadTikTokenMergeableRanks(
+        return ImplAccessor.loadTiktokenMergeableRanks(
                 Objects.requireNonNull(blobPath, "blobPath"), expectedHash);
     }
 
     /** Loads mergeable ranks from an already-open reader. */
     public static Map<String, Integer> loadMergeableRanks(BufferedReader reader) {
-        return ImplAccessor.loadTikTokenMergeableRanks(Objects.requireNonNull(reader, "reader"));
+        return ImplAccessor.loadTiktokenMergeableRanks(Objects.requireNonNull(reader, "reader"));
     }
 
-    /** Reconstructs a vocabulary from TikToken ranks plus optional specials. */
+    /** Reconstructs a vocabulary from Tiktoken ranks plus optional specials. */
     public static Vocabulary vocabulary(
             Map<String, Integer> mergeableRanks, Map<String, Integer> specialTokens) {
-        return ImplAccessor.reconstructTikTokenVocabulary(
+        return ImplAccessor.reconstructTiktokenVocabulary(
                 Objects.requireNonNull(mergeableRanks, "mergeableRanks"),
                 Objects.requireNonNull(specialTokens, "specialTokens"));
     }
 
-    /** Reconstructs merge rules from TikToken mergeable ranks. */
+    /** Reconstructs merge rules from Tiktoken mergeable ranks. */
     public static List<Tokenizers.MergeRule> mergeRules(Map<String, Integer> mergeableRanks) {
-        return ImplAccessor.reconstructTikTokenMergeRules(
+        return ImplAccessor.reconstructTiktokenMergeRules(
                 Objects.requireNonNull(mergeableRanks, "mergeableRanks"));
     }
 }

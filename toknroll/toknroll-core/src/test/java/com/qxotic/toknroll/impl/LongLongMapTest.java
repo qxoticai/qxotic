@@ -73,7 +73,7 @@ class LongLongMapTest {
         }
     }
 
-    /** Verifies correctness with TikToken-style packed int pair keys. */
+    /** Verifies correctness with Tiktoken-style packed int pair keys. */
     @Test
     void packedIntPairKeysLookupCorrectness() {
         Random random = new Random(456);

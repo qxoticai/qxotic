@@ -369,7 +369,7 @@ public final class ModelFamilyTokenizers {
 
         mergeSpecialTokensFromMaps(modelRef, rev, tokens, tokenTypes, addedTokenSpecs);
 
-        // Preprocess SentencePiece-style <0xNN> byte tokens for TikTokenModel compatibility.
+        // Preprocess SentencePiece-style <0xNN> byte tokens for TiktokenModel compatibility.
         // Byte tokens are converted to GPT-2 byte-level symbols; if a symbol already exists in
         // the vocabulary, the <0xNN> token is removed (no merges reference byte tokens in Mistral).
         Set<String> vocabSet = Collections.newSetFromMap(new LinkedHashMap<>());
@@ -1125,7 +1125,7 @@ public final class ModelFamilyTokenizers {
         Vocabulary vocabulary =
                 ImplAccessor.createVocabulary(metadata.tokens(), metadata.tokenTypes());
         TokenizationPipeline.Builder pipelineBuilder =
-                TokenizationPipeline.builder(Tokenizers.tikTokenModel(vocabulary, merges))
+                TokenizationPipeline.builder(Tokenizers.tiktokenModel(vocabulary, merges))
                         .splitter(splitter);
         if (normalizer != null) {
             pipelineBuilder.normalizer(normalizer);

@@ -4,12 +4,12 @@
 [![GraalVM Native Image][badge-native-image]](https://www.graalvm.org/latest/reference-manual/native-image/)
 [![License][badge-license]](../../LICENSE)
 
-`toknroll-jtokkit` provides optional JTokkit-backed TikToken adapter APIs for Tok'n'Roll.
+`toknroll-jtokkit` provides optional JTokkit-backed Tiktoken adapter APIs for Tok'n'Roll.
 
 ## What it provides
 
 - Optional adapter module for `JTokkitTokenizers.fromTiktoken(...)`
-- Uses JTokkit under the hood for TikToken-compatible behavior
+- Uses JTokkit under the hood for Tiktoken-compatible behavior
 - Kept separate so core `toknroll` stays minimal
 
 ## Quick use
