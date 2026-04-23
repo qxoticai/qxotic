@@ -1,34 +1,35 @@
 # Tok'n'Roll
 
-[![Java](https://img.shields.io/badge/Java-17+-blue)](https://openjdk.org/projects/jdk/17/)
+[![Java](https://img.shields.io/badge/Java-11+-blue)](https://openjdk.org/projects/jdk/11/)
 [![GraalVM](https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F)](https://www.graalvm.org/latest/reference-manual/native-image/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
-Tok'n'Roll is a fast, pure Java tokenizer library for LLMs. No native dependencies, no JNI, no Python runtime. Just a JAR that works everywhere Java 17+ runs.
+A clean, extensible API with optimized BPE implementations for LLM tokenizers. Pure Java, zero native dependencies.
 
 ## Why Tok'n'Roll?
 
-- **Fast.** Hand-optimized fast paths for common model families. Competitive with native tokenizers.
+- **Fast.** Optimized fast paths for common model families. Competitive with native tokenizers.
 - **Pure Java, zero dependencies.** No C extensions, no Rust bindings, no JNI. The core library has no external dependencies.
-- **Easy to extend.** Add a new tokenizer in minutes: plug in your split regex, vocabulary, and merge rules. The library handles the rest.
-- **Clean, composable API.** Build tokenizers from reusable components. Start simple, stay clean, but keep the flexibility to handle edge cases when you need it.
-
+- **Clean, composable API.** Build tokenizers from sound, reusable components. Pristine by default, with pragmatic escape hatches when you need them.
 
 ## Benchmarks
 
-Tok'n'Roll API accomodates for zero-allocation, zero-copy implementations. Fast paths avoid regex overhead for common ASCII patterns, and the BPE merge engine is optimized for both small and large inputs guaranteed worst-case O(n lg n) complexity.  
-Single-thread benchmarks:
+#### Single-thread
+These benchmartks show the standard encode/decode paths (string-to-tokens) using a single thread. The BPE merge engine ensures guaranteed worst-case `O(n log n)` complexity.  
+**Note:** Zero-allocation, zero-copy APIs are available for even higher throughput.
 
-<img width="1423" height="559" alt="Image" src="https://github.com/user-attachments/assets/d92e330b-5555-406d-add6-6880ed4a4438" />
+<img width="1424" height="536" alt="Image" src="https://github.com/user-attachments/assets/1ef13e40-1bee-4cb3-9c88-48e9b05b15f5" />
 
-<img width="1423" height="559" alt="Image" src="https://github.com/user-attachments/assets/bcf0024a-2ea3-456f-8da6-cd599fc61f55" />
+<img width="1424" height="536" alt="Image" src="https://github.com/user-attachments/assets/29ff3107-8d81-465f-ad93-f3bd3bca275b" />
 
-Note about multi-threading: Tok'n'Roll tokenizers are trivial to parallelize via batching and the strongly recommended way to do it.  
-While discouraged, the Tok'n'Roll API perfectly supports multi-threaded implementations (no batching), as some other libraries do.
 
-<img width="1423" height="476" alt="Image" src="https://github.com/user-attachments/assets/08592366-6dd0-4b1a-aa43-2a4fec2ab191" />
+#### Multi-thread
+The recommended way to parallelize Tok'n'Roll tokenizers is via batching, which is trivial to implement.  
+While discouraged, the Tok'n'Roll API also supports multi-threaded implementations (no batching), as some other libraries do.
 
-<img width="1423" height="476" alt="Image" src="https://github.com/user-attachments/assets/284666d1-41d9-4673-bfa7-24f22ddab274" />
+<img width="1424" height="451" alt="Image" src="https://github.com/user-attachments/assets/69d543d8-be25-4c1f-8163-b159d3daadd8" />
+
+<img width="1425" height="451" alt="Image" src="https://github.com/user-attachments/assets/753543f6-146e-454e-94d7-8221b2f7a736" />
 
 
 ## Quick Start
