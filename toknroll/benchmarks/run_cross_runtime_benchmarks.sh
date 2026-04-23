@@ -44,7 +44,7 @@ echo "[python] running benchmark_model_tokenizers.py"
   --sizes "$BENCH_SIZES" \
   --corpora "$BENCH_CORPORA" \
   --models "$BENCH_MODELS" \
-  --backends tiktoken,tiktoken-rs,tokie,hf,mistral-common \
+  --implementations tiktoken,tokie,hf-tokenizers,mistral-common \
   --csv "$ROOT_DIR/target/python-tokenizers.csv"
 
 echo "[charts] building cross-runtime plots"

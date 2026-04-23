@@ -5,10 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
 import com.qxotic.toknroll.testkit.FamilyGoldenFixture;
 import com.qxotic.toknroll.testkit.FamilyGoldenFixture.CaseData;
 import com.qxotic.toknroll.testkit.FamilyGoldenFixture.Family;
+import com.qxotic.toknroll.testkit.TestTokenizers;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -23,7 +23,7 @@ class LlamaTokenizerParityTest {
 
     @Test
     void ggufLlama3MatchesGoldenFixture() {
-        Optional<Tokenizer> gguf = ModelFamilyTokenizers.create(FAMILY_ID);
+        Optional<Tokenizer> gguf = TestTokenizers.modelFamily(FAMILY_ID);
         assumeTrue(gguf.isPresent(), "GGUF tokenizer unavailable for " + FAMILY_ID);
 
         List<CaseData> cases = sampledCases();
@@ -48,10 +48,9 @@ class LlamaTokenizerParityTest {
         Family family = FIXTURE.families().get(FAMILY_ID);
         assumeTrue(family != null, "Missing fixture family " + FAMILY_ID);
 
-        Optional<Tokenizer> gguf = ModelFamilyTokenizers.create(FAMILY_ID);
+        Optional<Tokenizer> gguf = TestTokenizers.modelFamily(FAMILY_ID);
         Optional<Tokenizer> hf =
-                ModelFamilyTokenizers.createFromHfFiles(
-                        FAMILY_ID, family.modelRef(), family.revision());
+                TestTokenizers.modelFamilyFromHf(FAMILY_ID, family.modelRef(), family.revision());
 
         assumeTrue(gguf.isPresent(), "GGUF tokenizer unavailable for " + FAMILY_ID);
         assumeTrue(hf.isPresent(), "HF tokenizer unavailable for " + FAMILY_ID);

@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.toknroll.testkit.TiktokenFixtures;
+import com.qxotic.toknroll.testkit.TestTokenizers;
 import java.util.stream.Stream;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -81,16 +81,14 @@ class TokenizerApiComprehensiveTest {
         Stream<Arguments> tiktokenR50k =
                 Stream.of(
                         Arguments.of(
-                                "tiktoken-r50k",
-                                TiktokenFixtures.createJtokkitTokenizer("r50k_base")));
+                                "tiktoken-r50k", TestTokenizers.tiktokenReference("r50k_base")));
         Stream<String> encodingNames =
                 Stream.of("r50k_base", "p50k_base", "p50k_edit", "cl100k_base", "o200k_base");
         Stream<Arguments> jtokkit =
                 encodingNames.map(
                         name ->
                                 Arguments.of(
-                                        "jtokkit-" + name,
-                                        TiktokenFixtures.createJtokkitTokenizer(name)));
+                                        "jtokkit-" + name, TestTokenizers.tiktokenReference(name)));
         return Stream.concat(tiktokenR50k, jtokkit);
     }
 }

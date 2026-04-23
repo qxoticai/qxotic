@@ -3,11 +3,11 @@ package com.qxotic.toknroll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
 import com.qxotic.toknroll.testkit.FamilyGoldenFixture;
 import com.qxotic.toknroll.testkit.FamilyGoldenFixture.CaseData;
 import com.qxotic.toknroll.testkit.FamilyTestSpecs;
 import com.qxotic.toknroll.testkit.FamilyTestSpecs.FamilySpec;
+import com.qxotic.toknroll.testkit.TestTokenizers;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -222,7 +222,7 @@ class TokenizerFamilyGoldenTest {
     }
 
     private static Tokenizer requireTokenizer(String familyId) {
-        Optional<Tokenizer> maybeTokenizer = ModelFamilyTokenizers.create(familyId);
+        Optional<Tokenizer> maybeTokenizer = TestTokenizers.modelFamily(familyId);
         Assumptions.assumeTrue(
                 maybeTokenizer.isPresent(), "Tokenizer not available for " + familyId);
         return maybeTokenizer.get();

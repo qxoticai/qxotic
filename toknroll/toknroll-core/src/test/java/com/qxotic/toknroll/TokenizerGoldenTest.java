@@ -3,7 +3,7 @@ package com.qxotic.toknroll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.toknroll.testkit.TiktokenFixtures;
+import com.qxotic.toknroll.testkit.TestTokenizers;
 import com.qxotic.toknroll.testkit.TiktokenGoldenFixture;
 import com.qxotic.toknroll.testkit.TiktokenGoldenFixture.CaseData;
 import java.util.ArrayList;
@@ -29,7 +29,7 @@ class TokenizerGoldenTest {
             byte[] expectedDecodedBytes,
             int expectedTokenCount) {
 
-        Tokenizer tokenizer = TiktokenFixtures.createJtokkitTokenizer(encoding);
+        Tokenizer tokenizer = TestTokenizers.tiktokenReference(encoding);
         IntSequence tokens = tokenizer.encode(text);
 
         assertArrayEquals(expectedTokens, tokens.toArray(), encoding + "/" + caseId + " tokens");

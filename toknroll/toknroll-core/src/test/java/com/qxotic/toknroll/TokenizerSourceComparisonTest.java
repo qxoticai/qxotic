@@ -2,11 +2,11 @@ package com.qxotic.toknroll;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
 import com.qxotic.toknroll.testkit.FamilyGoldenFixture;
 import com.qxotic.toknroll.testkit.FamilyGoldenFixture.CaseData;
 import com.qxotic.toknroll.testkit.FamilyGoldenFixture.Family;
 import com.qxotic.toknroll.testkit.FamilyTestSpecs;
+import com.qxotic.toknroll.testkit.TestTokenizers;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -28,9 +28,9 @@ class TokenizerSourceComparisonTest {
                 continue;
             }
 
-            Optional<Tokenizer> gguf = ModelFamilyTokenizers.create(familyId);
+            Optional<Tokenizer> gguf = TestTokenizers.modelFamily(familyId);
             Optional<Tokenizer> hf =
-                    ModelFamilyTokenizers.createFromHfFiles(
+                    TestTokenizers.modelFamilyFromHf(
                             familyId, family.modelRef(), family.revision());
             if (gguf.isEmpty() || hf.isEmpty()) {
                 continue;

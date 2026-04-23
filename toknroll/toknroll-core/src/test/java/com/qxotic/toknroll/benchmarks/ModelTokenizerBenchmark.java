@@ -4,9 +4,9 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Normalizer;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
 import com.qxotic.toknroll.impl.FastSplitters;
 import com.qxotic.toknroll.loaders.ModelSplitters;
+import com.qxotic.toknroll.testkit.TestTokenizers;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import com.qxotic.toknroll.testkit.TokenizerAdapters;
 import java.text.Normalizer.Form;
@@ -128,44 +128,43 @@ public class ModelTokenizerBenchmark {
     private static Tokenizer createReferenceTokenizer(String model) {
         switch (model) {
             case "gpt2":
-                return TiktokenFixtures.createJtokkitTokenizer("r50k_base");
+                return TestTokenizers.tiktokenReference("r50k_base");
             case "gpt-oss":
-                return ModelFamilyTokenizers.createFromHfFiles(
+                return TestTokenizers.modelFamilyFromHf(
                                 "openai.gpt-oss", GPT_OSS_HF_MODEL_REF, null)
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
                                                 "HF reference unavailable for openai.gpt-oss"));
             case "qwen35":
-                return ModelFamilyTokenizers.createFromHfFiles(
+                return TestTokenizers.modelFamilyFromHf(
                                 "alibaba.qwen3_5", QWEN35_HF_MODEL_REF, null)
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
                                                 "HF reference unavailable for alibaba.qwen3_5"));
             case "gemma4":
-                return ModelFamilyTokenizers.createFromHfFiles(
-                                "google.gemma4", GEMMA4_HF_MODEL_REF, null)
+                return TestTokenizers.modelFamilyFromHf("google.gemma4", GEMMA4_HF_MODEL_REF, null)
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
                                                 "HF reference unavailable for google.gemma4"));
             case "llama3":
-                return ModelFamilyTokenizers.createFromHfFiles(
+                return TestTokenizers.modelFamilyFromHf(
                                 "meta.llama3", LLAMA3_HF_MODEL_REF, LLAMA3_HF_REVISION)
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
                                                 "HF reference unavailable for meta.llama3"));
             case "mistral-v03-spbpe":
-                return ModelFamilyTokenizers.createFromHfFiles(
+                return TestTokenizers.modelFamilyFromHf(
                                 "mistral.v0_3_spbpe", MISTRAL_V03_HF_MODEL_REF, null)
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
                                                 "HF reference unavailable for mistral.v0_3_spbpe"));
             case "mistral-tekken":
-                return ModelFamilyTokenizers.createFromHfFiles(
+                return TestTokenizers.modelFamilyFromHf(
                                 "mistral.tekken",
                                 MISTRAL_TEKKEN_HF_MODEL_REF,
                                 MISTRAL_TEKKEN_HF_REVISION)
@@ -243,7 +242,7 @@ public class ModelTokenizerBenchmark {
         }
         if ("qwen35".equals(model)) {
             if ("fast".equals(implementation)) {
-                return ModelFamilyTokenizers.createFast("alibaba.qwen3_5")
+                return TestTokenizers.modelFamilyFast("alibaba.qwen3_5")
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
@@ -288,7 +287,7 @@ public class ModelTokenizerBenchmark {
 
         switch (implementation) {
             case "jtokkit":
-                return TiktokenFixtures.createJtokkitTokenizer("r50k_base");
+                return TestTokenizers.tiktokenReference("r50k_base");
             case "toknroll-bpe":
                 return bpe("r50k_base", Normalizer.identity(), ModelSplitters.DEFAULT_BPE);
             case "toknroll-fast":
@@ -306,14 +305,14 @@ public class ModelTokenizerBenchmark {
             Splitter fastSplitter,
             String implementation) {
         Tokenizer fidelityGguf =
-                ModelFamilyTokenizers.create(familyId)
+                TestTokenizers.modelFamily(familyId)
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
                                                 "Failed to load GGUF tokenizer for " + familyId));
         switch (implementation) {
             case "hf-transformers":
-                return ModelFamilyTokenizers.createFromHfFiles(familyId, hfModelRef, hfRevision)
+                return TestTokenizers.modelFamilyFromHf(familyId, hfModelRef, hfRevision)
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
@@ -330,7 +329,7 @@ public class ModelTokenizerBenchmark {
 
     private static Tokenizer gemma4Tokenizer(String implementation) {
         Tokenizer fidelityGguf =
-                ModelFamilyTokenizers.create("google.gemma4")
+                TestTokenizers.modelFamily("google.gemma4")
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
@@ -346,7 +345,7 @@ public class ModelTokenizerBenchmark {
     private static Tokenizer gptOssTokenizer(String implementation) {
         switch (implementation) {
             case "hf-transformers":
-                return ModelFamilyTokenizers.createFromHfFiles(
+                return TestTokenizers.modelFamilyFromHf(
                                 "openai.gpt-oss", GPT_OSS_HF_MODEL_REF, null)
                         .orElseGet(
                                 () ->
@@ -367,14 +366,14 @@ public class ModelTokenizerBenchmark {
         Map<String, Integer> ranks = TiktokenFixtures.mergeableRanks(encoding);
         Map<String, Integer> specials = TiktokenFixtures.specialTokens(encoding);
         return TokenizerAdapters.withNormalizer(
-                TiktokenFixtures.createTikTokenTokenizer(ranks, specials, splitter), normalizer);
+                TestTokenizers.tiktoken(ranks, specials, splitter), normalizer);
     }
 
     private static Tokenizer fast(String encoding, Normalizer normalizer, Splitter splitter) {
         Map<String, Integer> ranks = TiktokenFixtures.mergeableRanks(encoding);
         Map<String, Integer> specials = TiktokenFixtures.specialTokens(encoding);
         return TokenizerAdapters.withNormalizer(
-                TiktokenFixtures.createTikTokenTokenizer(ranks, specials, splitter), normalizer);
+                TestTokenizers.tiktoken(ranks, specials, splitter), normalizer);
     }
 
     private static int targetLength(String size) {

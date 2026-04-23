@@ -8,9 +8,8 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.corpus.Enwik8Corpus.Chunk;
 import com.qxotic.toknroll.corpus.GroundTruthData.Entry;
-import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
 import com.qxotic.toknroll.impl.FastSplitters;
-import com.qxotic.toknroll.testkit.TiktokenFixtures;
+import com.qxotic.toknroll.testkit.TestTokenizers;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -44,7 +43,7 @@ import org.junit.jupiter.params.provider.MethodSource;
  * <p>Ground truth data must be generated first by running:
  *
  * <pre>
- *   python scripts/generate_enwik8_ground_truth.py
+ *   python benchmarks/generate_enwik8_ground_truth.py
  * </pre>
  *
  * <p>Tests are tagged with "corpus" and "slow" to avoid running in normal CI.
@@ -270,7 +269,7 @@ class Enwik8CorpusCorrectnessTest {
                 "Ground truth not found: " + groundTruthFile);
         if (gt == null) return;
 
-        Optional<Tokenizer> maybeTokenizer = ModelFamilyTokenizers.create(familyId);
+        Optional<Tokenizer> maybeTokenizer = TestTokenizers.modelFamily(familyId);
         assumeTrue(maybeTokenizer.isPresent(), "Tokenizer not available for family: " + familyId);
         Tokenizer tokenizer = maybeTokenizer.get();
 
@@ -306,7 +305,7 @@ class Enwik8CorpusCorrectnessTest {
                 "Ground truth not found: " + groundTruthFile);
         if (gt == null) return;
 
-        Optional<Tokenizer> maybeTokenizer = ModelFamilyTokenizers.create(familyId);
+        Optional<Tokenizer> maybeTokenizer = TestTokenizers.modelFamily(familyId);
         assumeTrue(maybeTokenizer.isPresent(), "Tokenizer not available for family: " + familyId);
         Tokenizer tokenizer = maybeTokenizer.get();
 
@@ -340,7 +339,7 @@ class Enwik8CorpusCorrectnessTest {
                 "Ground truth not found: " + groundTruthFile);
         if (gt == null) return;
 
-        Optional<Tokenizer> maybeTokenizer = ModelFamilyTokenizers.create(familyId);
+        Optional<Tokenizer> maybeTokenizer = TestTokenizers.modelFamily(familyId);
         assumeTrue(maybeTokenizer.isPresent(), "Tokenizer not available for family: " + familyId);
         Tokenizer tokenizer = maybeTokenizer.get();
 
@@ -404,14 +403,11 @@ class Enwik8CorpusCorrectnessTest {
                     // Ground truth comes from Python tiktoken
                     switch (enc) {
                         case "r50k_base":
-                            return TiktokenFixtures.createTikTokenTokenizer(
-                                    "r50k_base", FastSplitters.r50k());
+                            return TestTokenizers.tiktoken("r50k_base", FastSplitters.r50k());
                         case "cl100k_base":
-                            return TiktokenFixtures.createTikTokenTokenizer(
-                                    "cl100k_base", FastSplitters.cl100k());
+                            return TestTokenizers.tiktoken("cl100k_base", FastSplitters.cl100k());
                         case "o200k_base":
-                            return TiktokenFixtures.createTikTokenTokenizer(
-                                    "o200k_base", FastSplitters.o200k());
+                            return TestTokenizers.tiktoken("o200k_base", FastSplitters.o200k());
                         default:
                             throw new IllegalArgumentException("Unknown encoding: " + enc);
                     }

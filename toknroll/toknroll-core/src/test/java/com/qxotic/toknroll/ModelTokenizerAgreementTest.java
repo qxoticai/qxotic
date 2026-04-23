@@ -3,11 +3,10 @@ package com.qxotic.toknroll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
 import com.qxotic.toknroll.impl.FastSplitters;
 import com.qxotic.toknroll.loaders.ModelSplitters;
 import com.qxotic.toknroll.testkit.TestCorpora;
-import com.qxotic.toknroll.testkit.TiktokenFixtures;
+import com.qxotic.toknroll.testkit.TestTokenizers;
 import com.qxotic.toknroll.testkit.TokenizerAdapters;
 import java.text.Normalizer.Form;
 import java.util.List;
@@ -56,9 +55,9 @@ class ModelTokenizerAgreementTest {
     private static ComparedTokenizers comparedTokenizersForModel(String model) {
         if ("gpt2".equals(model)) {
             return new ComparedTokenizers(
-                    TiktokenFixtures.createTikTokenTokenizer("r50k_base"),
-                    TiktokenFixtures.createTikTokenTokenizer("r50k_base"),
-                    TiktokenFixtures.createTikTokenTokenizer("r50k_base", FastSplitters.r50k()));
+                    TestTokenizers.tiktoken("r50k_base"),
+                    TestTokenizers.tiktoken("r50k_base"),
+                    TestTokenizers.tiktoken("r50k_base", FastSplitters.r50k()));
         }
         if ("llama3".equals(model)) {
             return modelNative(
@@ -94,13 +93,13 @@ class ModelTokenizerAgreementTest {
             Normalizer normalizer,
             Splitter fastSplitter) {
         Tokenizer fidelity =
-                ModelFamilyTokenizers.create(familyId)
+                TestTokenizers.modelFamily(familyId)
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
                                                 "Missing GGUF tokenizer for " + familyId));
         Tokenizer hf =
-                ModelFamilyTokenizers.createFromHfFiles(familyId, hfModelRef, hfRevision)
+                TestTokenizers.modelFamilyFromHf(familyId, hfModelRef, hfRevision)
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(

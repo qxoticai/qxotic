@@ -2,8 +2,7 @@ package com.qxotic.toknroll.benchmarks;
 
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
-import com.qxotic.toknroll.testkit.TiktokenFixtures;
+import com.qxotic.toknroll.testkit.TestTokenizers;
 import java.util.List;
 import java.util.Optional;
 
@@ -71,7 +70,7 @@ public class MeasureTokensPerCharLarge {
         for (String enc :
                 List.of("r50k_base", "p50k_base", "p50k_edit", "cl100k_base", "o200k_base")) {
             try {
-                Tokenizer t = TiktokenFixtures.createJtokkitTokenizer(enc);
+                Tokenizer t = TestTokenizers.tiktokenReference(enc);
                 measure(t, enc);
             } catch (Exception e) {
                 System.out.println(enc + ": ERROR - " + e.getMessage());
@@ -95,7 +94,7 @@ public class MeasureTokensPerCharLarge {
         };
         for (String family : families) {
             try {
-                Optional<Tokenizer> opt = ModelFamilyTokenizers.create(family);
+                Optional<Tokenizer> opt = TestTokenizers.modelFamily(family);
                 if (opt.isPresent()) {
                     measure(opt.get(), family);
                 } else {

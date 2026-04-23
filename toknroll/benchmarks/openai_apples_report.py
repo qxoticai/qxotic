@@ -253,7 +253,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--python-backends",
-        default="tiktoken,tiktoken-rs,tokie,hf-tokenizers,mistral-common",
+        default="tiktoken,tokie,hf-tokenizers,mistral-common",
         help="comma-separated Python backends to include",
     )
     args = parser.parse_args()

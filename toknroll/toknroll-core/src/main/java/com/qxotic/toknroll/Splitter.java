@@ -69,6 +69,13 @@ public interface Splitter {
         };
     }
 
+    /**
+     * Creates a splitter backed by a regex that emits full-match spans.
+     *
+     * <p>For performance-sensitive splitters, prefer non-capturing groups ({@code (?:...)}) when
+     * grouping is needed. Capturing groups are allowed and do not change splitter correctness here,
+     * but they can add regex engine bookkeeping overhead.
+     */
     static Splitter regex(Pattern pattern) {
         Objects.requireNonNull(pattern, "pattern");
         return ImplAccessor.createRegexSplitter(pattern);

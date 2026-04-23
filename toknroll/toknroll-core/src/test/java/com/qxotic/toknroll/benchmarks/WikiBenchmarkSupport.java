@@ -3,7 +3,7 @@ package com.qxotic.toknroll.benchmarks;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.impl.FastSplitters;
-import com.qxotic.toknroll.testkit.TiktokenFixtures;
+import com.qxotic.toknroll.testkit.TestTokenizers;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -22,8 +22,7 @@ final class WikiBenchmarkSupport {
     }
 
     static Tokenizer createTokenizer(String encoding, boolean parallel) {
-        Tokenizer tokenizer =
-                TiktokenFixtures.createTikTokenTokenizer(encoding, splitterForEncoding(encoding));
+        Tokenizer tokenizer = TestTokenizers.tiktoken(encoding, splitterForEncoding(encoding));
         return parallel ? ParallelBenchmarkPipelines.from(tokenizer) : tokenizer;
     }
 

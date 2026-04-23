@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.qxotic.toknroll.testkit.TestTokenizers;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.nio.charset.StandardCharsets;
 import java.util.stream.Stream;
@@ -61,8 +62,7 @@ class TokenizerFidelityTest {
                 encodingNames.map(
                         name ->
                                 Arguments.of(
-                                        "jtokkit-" + name,
-                                        TiktokenFixtures.createJtokkitTokenizer(name)));
+                                        "jtokkit-" + name, TestTokenizers.tiktokenReference(name)));
         return Stream.concat(bpe, jtokkit);
     }
 }

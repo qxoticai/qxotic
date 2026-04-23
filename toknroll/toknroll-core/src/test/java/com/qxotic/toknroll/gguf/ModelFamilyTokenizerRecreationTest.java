@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.testkit.FamilyTestSpecs;
+import com.qxotic.toknroll.testkit.TestTokenizers;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -20,7 +21,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 /**
  * Smoke contract tests for family tokenizer recreation.
  *
- * <p>These tests intentionally delegate tokenizer creation to {@link ModelFamilyTokenizers} so all
+ * <p>These tests intentionally delegate tokenizer creation to {@link TestTokenizers} so all
  * recreation logic has a single source of truth.
  */
 @Tag("network")
@@ -31,7 +32,7 @@ class ModelFamilyTokenizerRecreationTest {
     @ParameterizedTest(name = "recreate tokenizer family {0}")
     @MethodSource("families")
     void recreateTokenizerFromModelFamilyMetadata(String familyId) {
-        Optional<Tokenizer> maybeTokenizer = ModelFamilyTokenizers.create(familyId);
+        Optional<Tokenizer> maybeTokenizer = TestTokenizers.modelFamily(familyId);
         Assumptions.assumeTrue(maybeTokenizer.isPresent(), familyId + " tokenizer not available");
 
         Tokenizer tokenizer = maybeTokenizer.get();

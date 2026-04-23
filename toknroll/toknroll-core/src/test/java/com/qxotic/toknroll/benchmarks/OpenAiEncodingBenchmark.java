@@ -6,6 +6,7 @@ import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Tokenizers;
 import com.qxotic.toknroll.impl.FastSplitters;
 import com.qxotic.toknroll.loaders.TiktokenLoaders;
+import com.qxotic.toknroll.testkit.TestTokenizers;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -91,7 +92,7 @@ public class OpenAiEncodingBenchmark {
     private static Tokenizer createTokenizer(String encoding, String implementation) {
         switch (implementation) {
             case "jtokkit":
-                return TiktokenFixtures.createJtokkitTokenizer(encoding);
+                return TestTokenizers.tiktokenReference(encoding);
             case "toknroll-bpe":
                 return createToknrollTokenizer(encoding, false);
             case "toknroll-fast":

@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
+import com.qxotic.toknroll.testkit.TestTokenizers;
 import java.text.Normalizer;
 import java.util.Optional;
 import org.junit.jupiter.api.Tag;
@@ -176,7 +176,7 @@ class SentencePieceBpeModelComprehensiveTest {
     @Tag("network")
     void gemma4BasicRoundTrips() {
         String familyId = "google.gemma4";
-        Optional<Tokenizer> tokenizer = ModelFamilyTokenizers.create(familyId);
+        Optional<Tokenizer> tokenizer = TestTokenizers.modelFamily(familyId);
         assumeTrue(tokenizer.isPresent(), "Gemma4 tokenizer unavailable");
 
         String[] testCases = {
@@ -205,7 +205,7 @@ class SentencePieceBpeModelComprehensiveTest {
     @Tag("network")
     void gemma4TrickyStrings() {
         String familyId = "google.gemma4";
-        Optional<Tokenizer> tokenizer = ModelFamilyTokenizers.create(familyId);
+        Optional<Tokenizer> tokenizer = TestTokenizers.modelFamily(familyId);
         assumeTrue(tokenizer.isPresent(), "Gemma4 tokenizer unavailable");
 
         String[] trickyCases = {
@@ -328,7 +328,7 @@ class SentencePieceBpeModelComprehensiveTest {
     @Tag("network")
     void gemma4LongTextRoundTrip() {
         String familyId = "google.gemma4";
-        Optional<Tokenizer> tokenizer = ModelFamilyTokenizers.create(familyId);
+        Optional<Tokenizer> tokenizer = TestTokenizers.modelFamily(familyId);
         assumeTrue(tokenizer.isPresent(), "Gemma4 tokenizer unavailable");
 
         StringBuilder sb = new StringBuilder();
@@ -351,7 +351,7 @@ class SentencePieceBpeModelComprehensiveTest {
     @Tag("network")
     void mistralV03SpBpeBasicRoundTrips() {
         String familyId = "mistral.v0_3_spbpe";
-        Optional<Tokenizer> tokenizer = ModelFamilyTokenizers.create(familyId);
+        Optional<Tokenizer> tokenizer = TestTokenizers.modelFamily(familyId);
         assumeTrue(tokenizer.isPresent(), "Mistral v0.3 tokenizer unavailable");
 
         String[] testCases = {
@@ -381,7 +381,7 @@ class SentencePieceBpeModelComprehensiveTest {
     @Tag("network")
     void mistralV03SpBpeTrickyStrings() {
         String familyId = "mistral.v0_3_spbpe";
-        Optional<Tokenizer> tokenizer = ModelFamilyTokenizers.create(familyId);
+        Optional<Tokenizer> tokenizer = TestTokenizers.modelFamily(familyId);
         assumeTrue(tokenizer.isPresent(), "Mistral v0.3 tokenizer unavailable");
 
         String[] trickyCases = {
@@ -501,7 +501,7 @@ class SentencePieceBpeModelComprehensiveTest {
     @Tag("network")
     void mistralV03SpBpeLongText() {
         String familyId = "mistral.v0_3_spbpe";
-        Optional<Tokenizer> tokenizer = ModelFamilyTokenizers.create(familyId);
+        Optional<Tokenizer> tokenizer = TestTokenizers.modelFamily(familyId);
         assumeTrue(tokenizer.isPresent(), "Mistral v0.3 tokenizer unavailable");
 
         // Generate text that will produce >128 tokens to trigger fast path
