@@ -132,6 +132,11 @@ public final class ModelFamilyTokenizers {
             if ("deepseek.v3_2".equals(familyId)) {
                 return fromHfDeepSeekV3(modelRef, revision);
             }
+            if ("mistral.v0_3".equals(familyId)) {
+                // Keep HF and GGUF parity on the same reconstruction path for v0.3.
+                // tokenizer.json-based reconstruction drifts on tool-call cases.
+                return fromMistralV03();
+            }
 
             ModelFamilySpec modelSpec = MODEL_FAMILY_SPECS.get(familyId);
             if (modelSpec != null) {
@@ -1318,7 +1323,7 @@ public final class ModelFamilyTokenizers {
                     }
                 };
 
-        return wrapWithSpecialTokenInjection(wrapped, SpecialTokenMode.EXACT_LITERAL);
+        return wrapped;
     }
 
     private static Tokenizer wrapWithSpecialTokenInjection(
