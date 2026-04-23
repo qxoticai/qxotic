@@ -95,6 +95,42 @@ final class FastCl100kSplitter extends AbstractFastAsciiRegexSplitter {
                 continue;
             }
 
+            // Handle whitespace runs (space, tab, etc.)
+            if (SplitterSupport.isAsciiWhitespace(c)) {
+                int end = SplitterSupport.scanAsciiWhitespace(text, i + 1, endExclusive);
+                if (end == endExclusive) {
+                    // Trailing whitespace: consume as single token
+                    consumer.accept(text, i, end);
+                    i = end;
+                    continue;
+                }
+                // Check for \s*[\r\n] pattern: find last \r or \n in the whitespace run
+                int lastNewline = -1;
+                for (int j = end - 1; j >= i; j--) {
+                    char ch = text.charAt(j);
+                    if (ch == '\r' || ch == '\n') {
+                        lastNewline = j;
+                        break;
+                    }
+                }
+                if (lastNewline >= 0) {
+                    // Match \s*[\r\n]: consume up to and including the last \r or \n
+                    consumer.accept(text, i, lastNewline + 1);
+                    i = lastNewline + 1;
+                    continue;
+                }
+                // Non-trailing whitespace run of 2+ chars: split last char separately
+                if (end - i >= 2) {
+                    consumer.accept(text, i, end - 1);
+                    i = end - 1;
+                    continue;
+                }
+                // Single whitespace char
+                consumer.accept(text, i, end);
+                i = end;
+                continue;
+            }
+
             if (matcher == null) {
                 matcher = CL100K_COMPILED.matcher(text);
             }
