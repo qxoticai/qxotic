@@ -30,18 +30,21 @@ class ModelTokenizerAgreementTest {
         for (String model : MODELS) {
             ComparedTokenizers compared = comparedTokenizersForModel(model);
             for (String text : TestCorpora.MODEL_TOKENIZER_AGREEMENT_TEXTS) {
-                int[] jtokkit = compared.jtokkit().encodeToArray(text);
-                int[] bpe = compared.bpe().encodeToArray(text);
+                int[] reference = compared.reference().encodeToArray(text);
+                int[] fidelity = compared.fidelity().encodeToArray(text);
                 int[] fast = compared.fast().encodeToArray(text);
 
-                assertArrayEquals(jtokkit, bpe, "jtokkit!=bpe for " + model + " on: " + text);
-                assertArrayEquals(jtokkit, fast, "jtokkit!=fast for " + model + " on: " + text);
+                assertArrayEquals(
+                        reference, fidelity, "reference!=fidelity for " + model + " on: " + text);
+                assertArrayEquals(reference, fast, "reference!=fast for " + model + " on: " + text);
                 assertEquals(
-                        jtokkit.length,
-                        compared.jtokkit().countTokens(text),
-                        "countTokens mismatch jtokkit");
+                        reference.length,
+                        compared.reference().countTokens(text),
+                        "countTokens mismatch reference");
                 assertEquals(
-                        bpe.length, compared.bpe().countTokens(text), "countTokens mismatch bpe");
+                        fidelity.length,
+                        compared.fidelity().countTokens(text),
+                        "countTokens mismatch fidelity");
                 assertEquals(
                         fast.length,
                         compared.fast().countTokens(text),
@@ -53,7 +56,7 @@ class ModelTokenizerAgreementTest {
     private static ComparedTokenizers comparedTokenizersForModel(String model) {
         if ("gpt2".equals(model)) {
             return new ComparedTokenizers(
-                    TiktokenFixtures.createJtokkitTokenizer("r50k_base"),
+                    TiktokenFixtures.createTikTokenTokenizer("r50k_base"),
                     TiktokenFixtures.createTikTokenTokenizer("r50k_base"),
                     TiktokenFixtures.createTikTokenTokenizer("r50k_base", FastSplitters.r50k()));
         }
@@ -109,22 +112,22 @@ class ModelTokenizerAgreementTest {
     }
 
     private static final class ComparedTokenizers {
-        private final Tokenizer jtokkit;
-        private final Tokenizer bpe;
+        private final Tokenizer reference;
+        private final Tokenizer fidelity;
         private final Tokenizer fast;
 
-        private ComparedTokenizers(Tokenizer jtokkit, Tokenizer bpe, Tokenizer fast) {
-            this.jtokkit = jtokkit;
-            this.bpe = bpe;
+        private ComparedTokenizers(Tokenizer reference, Tokenizer fidelity, Tokenizer fast) {
+            this.reference = reference;
+            this.fidelity = fidelity;
             this.fast = fast;
         }
 
-        private Tokenizer jtokkit() {
-            return jtokkit;
+        private Tokenizer reference() {
+            return reference;
         }
 
-        private Tokenizer bpe() {
-            return bpe;
+        private Tokenizer fidelity() {
+            return fidelity;
         }
 
         private Tokenizer fast() {
