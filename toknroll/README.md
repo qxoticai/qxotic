@@ -4,42 +4,34 @@
 [![GraalVM](https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F)](https://www.graalvm.org/latest/reference-manual/native-image/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
-> *The best tokenizer is no tokenizer at all; in the meantime, this library bridges the gap.*
+Tok'n'Roll is a fast, pure Java tokenizer library for LLMs. No native dependencies, no JNI, no Python runtime. Just a JAR that works everywhere Java 17+ runs.
 
-Tok'n'Roll (`toknroll`) is a pure Java library for LLM tokenization with a focus on TikToken compatibility, predictable behavior, and good runtime performance.
+## Why Tok'n'Roll?
 
-This module is intentionally minimal: it provides the tokenizer API and core algorithms, but does
-not ship model catalogs or downloaded tokenizer assets.
+- **Fast.** Hand-optimized fast paths for common model families. Competitive with native tokenizers.
+- **Pure Java, zero dependencies.** No C extensions, no Rust bindings, no JNI. The core library has no external dependencies.
+- **Easy to extend.** Add a new tokenizer in minutes: plug in your split regex, vocabulary, and merge rules. The library handles the rest.
+- **Clean, composable API.** Build tokenizers from reusable components. Start simple, stay clean, but keep the flexibility to handle edge cases when you need it.
 
-## Features
 
-- Pure Java tokenizer core with predictable behavior
-- Fast TikToken-compatible BPE implementation
-- Optional adapter modules for JTokkit, GGUF, and Safetensors
-- `IntSequence` API to reduce boxing and copying
-- GraalVM Native Image support
+## Benchmarks
 
-## Supported families
+Tok'n'Roll API accomodates for zero-allocation, zero-copy implementations. Fast paths avoid regex overhead for common ASCII patterns, and the BPE merge engine is optimized for both small and large inputs guaranteed worst-case O(n lg n) complexity.  
+Single-thread benchmarks:
 
-Built-in splitter presets are available for common model families:
+<img width="1423" height="559" alt="Image" src="https://github.com/user-attachments/assets/d92e330b-5555-406d-add6-6880ed4a4438" />
 
-- Llama / Mistral / Mixtral / Phi / DBRX
-- Qwen 2/3
-- SmolLM
-- Gemma
-- Tekken / Refact / Granite
+<img width="1423" height="559" alt="Image" src="https://github.com/user-attachments/assets/bcf0024a-2ea3-456f-8da6-cd599fc61f55" />
 
-Core splitters are range-preserving partitioners (no text transformation).
+Note about multi-threading: Tok'n'Roll tokenizers are trivial to parallelize via batching and the strongly recommended way to do it.  
+While discouraged, the Tok'n'Roll API perfectly supports multi-threaded implementations (no batching), as some other libraries do.
 
-## Design guarantees
+<img width="1423" height="476" alt="Image" src="https://github.com/user-attachments/assets/08592366-6dd0-4b1a-aa43-2a4fec2ab191" />
 
-- Round-trip integrity for regular text inputs: `decode(encode(text)) == text`
-- Deterministic behavior: same text, same token IDs
-- No hidden rewrites in core tokenizer behavior (no implicit trim/prefix/suffix injection)
-- `decodeBytes(...)` is the authoritative byte-exact decode API for byte-level workflows
-- Explicit opt-in transforms are supported via `Normalizer` and pipeline post-processors; these can be lossy and are generally discouraged unless you intentionally want mutated input/output token streams
+<img width="1423" height="476" alt="Image" src="https://github.com/user-attachments/assets/284666d1-41d9-4673-bfa7-24f22ddab274" />
 
-## Dependency
+
+## Quick Start
 
 ```xml
 <dependency>
@@ -49,72 +41,32 @@ Core splitters are range-preserving partitioners (no text transformation).
 </dependency>
 ```
 
-Optional modules:
-
-- `com.qxotic:toknroll-jtokkit` for `JTokkitTokenizers.fromTiktoken(...)`
-- `com.qxotic:toknroll-gguf` for tokenizers from GGUF metadata
-- `com.qxotic:toknroll-hf` for tokenizers from HuggingFace tokenizer files
-
-Tip: fetch official TikToken files with `./download-tiktoken.sh`.
-
-Python dependencies for benchmarks and model-family fixtures (`uv`, local `.venv`):
-
-```bash
-uv pip install --python .venv/bin/python -r requirements.txt
-```
-
-## Quick API examples
-
 ```java
+// Build a tokenizer from your model files
 Vocabulary vocab = Tokenizers.vocabulary(specialTokens, rankedTokens);
 TokenizationModel model = Tokenizers.tikTokenModel(vocab, mergeRules);
+
 Tokenizer tokenizer = Tokenizers.pipeline(model)
-    .splitter(Splitter.regex(splitPatternRegex))
+    .splitter(FastSplitters.cl100k())  // or r50k(), o200k(), llama3(), qwen35(), ...
     .build();
 
-int[] ids = tokenizer.encodeToArray("Hello world");
-String text = tokenizer.decode(ids);
-byte[] raw = tokenizer.decodeBytes(ids);
+// Use it
+int[] tokens = tokenizer.encodeToArray("Hello world");
+String text = tokenizer.decode(tokens);
 ```
 
-```java
-TokenizationModel spModel = Tokenizers.sentencePieceBpeModel(vocab, mergeRules);
-Tokenizer tokenizer = Tokenizers.pipeline(spModel).splitter(splitter).build();
-```
+## Tested Implementations
 
-```java
-Tokenizer tokenizer = JTokkitTokenizers.fromTiktoken(name, mergeableRanks, splitPattern, specialTokens);
-```
+The test suite includes verified, token-perfect implementations backed by comprehensive parity tests against the Python implementations for:
 
-## Specials API (explicit control-token path)
+- **OpenAI** – tiktoken (GPT-2, GPT-3.5, GPT-4, GPT-4o)
+- **Google** – Gemma 3 & 4
+- **Alibaba** – Qwen 3.5+
+- **Moonshot AI** – Kimi 2.5+
+- **DeepSeek** – DeepSeek 3.2
+- **Mistral AI** – pre-Tekken and Tekken tokenizers
+- **IBM** – Granite 4+
+- **Meta** – Llama 3+
+- **Microsoft** – Phi 4+
+- **HuggingFace** – SmolLM3
 
-For detailed behavior and design rationale, see `docs/SPECIALS.md`.
-
-```java
-Tokenizer tokenizer = Tokenizers.pipeline(model)
-    .splitter(Splitter.regex(splitPatternRegex))
-    .build();
-
-// Compile once, reuse many times.
-Specials specials = Specials.compile(tokenizer.vocabulary(), specialTokens.keySet());
-
-IntSequence withSpecials = specials.encode(tokenizer, "hello <|endoftext|>");
-```
-
-## Benchmarks (JMH)
-
-Primary benchmark: `ModelTokenizerBenchmark` under `src/test/java/com/qxotic/toknroll/benchmarks`.
-
-Results template: `BENCHMARK_RESULTS_TEMPLATE.md`.
-
-Run from Maven:
-
-```bash
-mvn -pl toknroll -DskipTests test-compile
-mvn -pl toknroll -Dexec.mainClass=com.qxotic.toknroll.benchmarks.TokenizerBenchmarkRunner -Dexec.classpathScope=test exec:java
-
-# Optional: convert JMH JSON to markdown
-python toknroll/scripts/jmh_to_markdown.py \
-  --input toknroll/target/jmh-model-tokenizers.json \
-  --output toknroll/target/jmh-model-tokenizers.md
-```
