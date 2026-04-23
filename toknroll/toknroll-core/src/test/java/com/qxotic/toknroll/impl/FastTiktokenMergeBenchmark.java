@@ -19,14 +19,14 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 
-/** Benchmarks TikTokenModel encoding on fixed-size corpus slices. */
+/** Benchmarks TiktokenModel encoding on fixed-size corpus slices. */
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
 @Warmup(iterations = 3, time = 1)
 @Measurement(iterations = 5, time = 1)
 @Fork(value = 1)
 @State(Scope.Benchmark)
-public class FastTikTokenMergeBenchmark {
+public class FastTiktokenMergeBenchmark {
 
     @Param({"r50k_base", "cl100k_base", "o200k_base"})
     public String encoding;
@@ -37,7 +37,7 @@ public class FastTikTokenMergeBenchmark {
     @Param({"chat", "code", "random", "repetitive"})
     public String corpus;
 
-    private TikTokenModel tokenizer;
+    private TiktokenModel tokenizer;
     private byte[] bytes;
     private String text;
 
@@ -46,8 +46,8 @@ public class FastTikTokenMergeBenchmark {
         Map<String, Integer> ranks = TiktokenFixtures.mergeableRanks(encoding);
         Map<String, Integer> specials = TiktokenFixtures.specialTokens(encoding);
         tokenizer =
-                (TikTokenModel)
-                        Tokenizers.tikTokenModel(
+                (TiktokenModel)
+                        Tokenizers.tiktokenModel(
                                 TiktokenReconstruction.vocabulary(ranks, specials),
                                 TiktokenReconstruction.mergeRules(ranks));
         bytes = resize(seedBytes(corpus), bytesLength);

@@ -34,17 +34,17 @@ public final class TestTokenizers {
     }
 
     public static Tokenizer tiktoken(String encoding) {
-        return TiktokenFixtures.createTikTokenTokenizer(encoding);
+        return TiktokenFixtures.createTiktokenTokenizer(encoding);
     }
 
     public static Tokenizer tiktoken(String encoding, Splitter splitter) {
-        return TiktokenFixtures.createTikTokenTokenizer(encoding, splitter);
+        return TiktokenFixtures.createTiktokenTokenizer(encoding, splitter);
     }
 
     public static Tokenizer tiktoken(
             Map<String, Integer> mergeableRanks,
             Map<String, Integer> specialTokens,
             Splitter splitter) {
-        return TiktokenFixtures.createTikTokenTokenizer(mergeableRanks, specialTokens, splitter);
+        return TiktokenFixtures.createTiktokenTokenizer(mergeableRanks, specialTokens, splitter);
     }
 }

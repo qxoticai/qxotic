@@ -78,7 +78,7 @@ final class TiktokenReconstruction {
         return merges;
     }
 
-    static LongLongMap packTikTokenMerges(
+    static LongLongMap packTiktokenMerges(
             Vocabulary vocabulary, List<Tokenizers.MergeRule> merges) {
         return packMerges(vocabulary, merges, false);
     }

@@ -110,7 +110,7 @@ public class OpenAiEncodingBenchmark {
                         ? fastSplitterForEncoding(encoding)
                         : Splitter.regex(TiktokenFixtures.splitPattern(encoding));
         return Tokenizers.pipeline(
-                        Tokenizers.tikTokenModel(
+                        Tokenizers.tiktokenModel(
                                 TiktokenLoaders.vocabulary(ranks, specials),
                                 TiktokenLoaders.mergeRules(ranks)))
                 .splitter(splitter)

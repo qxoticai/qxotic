@@ -78,7 +78,7 @@ public class SaveJavaTokens {
 
         Map<String, Integer> specials = Map.of("<|endoftext|>", 50256);
         return Tokenizers.pipeline(
-                        Tokenizers.tikTokenModel(
+                        Tokenizers.tiktokenModel(
                                 TiktokenLoaders.vocabulary(mergeableRanks, specials),
                                 TiktokenLoaders.mergeRules(mergeableRanks)))
                 .splitter(

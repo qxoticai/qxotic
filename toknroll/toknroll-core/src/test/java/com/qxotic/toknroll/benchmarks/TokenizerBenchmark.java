@@ -96,7 +96,7 @@ public class TokenizerBenchmark {
                             "<|fim_suffix|>", 100260,
                             "<|endofprompt|>", 100276);
             return Tokenizers.pipeline(
-                            Tokenizers.tikTokenModel(
+                            Tokenizers.tiktokenModel(
                                     TiktokenLoaders.vocabulary(mergeableRanks, specials),
                                     TiktokenLoaders.mergeRules(mergeableRanks)))
                     .splitter(

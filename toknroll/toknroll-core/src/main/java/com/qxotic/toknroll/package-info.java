@@ -5,7 +5,7 @@
  *
  * <ul>
  *   <li>IntSequence-first tokenizer API via {@link com.qxotic.toknroll.Tokenizer}
- *   <li>TikToken BPE tokenizer support
+ *   <li>Tiktoken BPE tokenizer support
  *   <li>High-level tokenizer factories and lossy pipeline wrappers via {@link
  *       com.qxotic.toknroll.Tokenizers}
  *   <li>Byte-level symbol utility via {@link com.qxotic.toknroll.ByteLevel}

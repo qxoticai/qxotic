@@ -12,7 +12,7 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 
 /**
- * Fast, flat-array TikToken-compatible BPE tokenizer.
+ * Fast, flat-array Tiktoken-compatible BPE tokenizer.
  *
  * <p>Implements a dual-path merge strategy:
  *
@@ -21,7 +21,7 @@ import java.util.Objects;
  *   <li>Large chunks: min-heap + intrusive list over primitive arrays
  * </ul>
  */
-final class TikTokenModel extends AbstractTokenizationModel {
+final class TiktokenModel extends AbstractTokenizationModel {
 
     public static final String LARGE_CHUNK_THRESHOLD_PROPERTY = "toknroll.fast.largeChunkThreshold";
     public static final String TINY_CHUNK_THRESHOLD_PROPERTY = "toknroll.fast.tinyChunkThreshold";
@@ -51,7 +51,7 @@ final class TikTokenModel extends AbstractTokenizationModel {
     private final int scratchMaxRetainedElements;
     private final ThreadLocal<Scratch> scratchThreadLocal = ThreadLocal.withInitial(Scratch::new);
 
-    TikTokenModel(
+    TiktokenModel(
             Vocabulary vocabulary,
             LongLongMap merges,
             int[] singleByteTokenId,
@@ -99,11 +99,11 @@ final class TikTokenModel extends AbstractTokenizationModel {
         }
     }
 
-    static TikTokenModel fromVocabularyAndMerges(Vocabulary vocabulary, LongLongMap merges) {
+    static TiktokenModel fromVocabularyAndMerges(Vocabulary vocabulary, LongLongMap merges) {
         return fromVocabularyAndMerges(vocabulary, merges, false);
     }
 
-    static TikTokenModel fromVocabularyAndMerges(
+    static TiktokenModel fromVocabularyAndMerges(
             Vocabulary vocabulary, LongLongMap merges, boolean ignoreMerges) {
         Objects.requireNonNull(vocabulary, "vocabulary");
         Objects.requireNonNull(merges, "merges");
@@ -118,7 +118,7 @@ final class TikTokenModel extends AbstractTokenizationModel {
         int threshold =
                 Integer.getInteger(LARGE_CHUNK_THRESHOLD_PROPERTY, DEFAULT_LARGE_CHUNK_THRESHOLD);
 
-        return new TikTokenModel(
+        return new TiktokenModel(
                 vocabulary,
                 merges,
                 singleByteTokenId,
@@ -271,7 +271,7 @@ final class TikTokenModel extends AbstractTokenizationModel {
 
     @Override
     public String toString() {
-        return "Fast TikToken BPE";
+        return "Fast Tiktoken BPE";
     }
 
     // ---------------------------------------------------------------------
