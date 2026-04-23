@@ -3,6 +3,7 @@ package com.qxotic.toknroll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.toknroll.loaders.TiktokenLoaders;
+import com.qxotic.toknroll.testkit.TestTokenizers;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -17,7 +18,7 @@ class GenericBpeParityTest {
     }
 
     private static void assertEncodingParity(String encoding) {
-        Tokenizer reference = TiktokenFixtures.createJtokkitTokenizer(encoding);
+        Tokenizer reference = TestTokenizers.tiktokenReference(encoding);
         Splitter splitter = Splitter.regex(TiktokenFixtures.splitPattern(encoding));
         Vocabulary vocabulary =
                 TiktokenLoaders.vocabulary(

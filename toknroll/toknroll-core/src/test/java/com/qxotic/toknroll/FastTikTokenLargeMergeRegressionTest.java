@@ -2,6 +2,7 @@ package com.qxotic.toknroll;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.qxotic.toknroll.testkit.TestTokenizers;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.util.List;
 import java.util.Random;
@@ -14,10 +15,10 @@ class FastTikTokenLargeMergeRegressionTest {
     @ValueSource(strings = {"r50k_base", "cl100k_base", "o200k_base"})
     void fastLargePathMatchesClassicTokenizer(String encoding) {
         Tokenizer fast =
-                TiktokenFixtures.createTikTokenTokenizer(
+                TestTokenizers.tiktoken(
                         encoding, Splitter.regex(TiktokenFixtures.splitPattern(encoding)));
 
-        Tokenizer baseline = TiktokenFixtures.createTikTokenTokenizer(encoding);
+        Tokenizer baseline = TestTokenizers.tiktoken(encoding);
 
         for (String sample : largeSamples()) {
             IntSequence expected = baseline.encode(sample);

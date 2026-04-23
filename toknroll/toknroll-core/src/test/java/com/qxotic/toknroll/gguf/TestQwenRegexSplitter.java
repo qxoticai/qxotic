@@ -3,6 +3,7 @@ package com.qxotic.toknroll.gguf;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.testkit.TestTokenizers;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -47,7 +48,7 @@ public class TestQwenRegexSplitter {
             "<|system|>You are helpful.<|user|>Compare tokenizer throughput and latency.",
         };
 
-        Optional<Tokenizer> maybeBase = ModelFamilyTokenizers.create("alibaba.qwen3_5");
+        Optional<Tokenizer> maybeBase = TestTokenizers.modelFamily("alibaba.qwen3_5");
         if (maybeBase.isEmpty()) {
             throw new IllegalStateException("Qwen 3.5 tokenizer unavailable");
         }

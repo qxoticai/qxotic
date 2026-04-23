@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Benchmark model tokenizers across tiktoken, tiktoken-rs, tokie, HF tokenizers, and mistral-common.
+"""Benchmark model tokenizers across Python tokenizer libraries.
 
 This script targets end-to-end tokenizer workloads similar to the Java/JMH model benchmark:
 - encode throughput
@@ -14,7 +14,7 @@ Reported throughput metrics include:
 Examples:
   python benchmarks/benchmark_model_tokenizers.py
   python benchmarks/benchmark_model_tokenizers.py --duration 2.0 --warmup 0.5 --size 16k
-  python benchmarks/benchmark_model_tokenizers.py --models gpt2,qwen35 --backends hf,mistral-common
+  python benchmarks/benchmark_model_tokenizers.py --models gpt2,qwen35 --implementations hf-tokenizers,mistral-common
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ import statistics
 import sys
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence
 
 
 try:
@@ -47,15 +47,6 @@ try:
     import tokie  # type: ignore[import-not-found]
 except Exception:
     tokie = None
-
-try:
-    import tiktoken_rs  # type: ignore[import-not-found]
-except Exception:
-    try:
-        import tiktokenrs as tiktoken_rs  # type: ignore[import-not-found]
-    except Exception:
-        tiktoken_rs = None
-
 
 SIZE_TO_CHARS = {
     "512": 512,
@@ -220,92 +211,6 @@ def make_tokie_adapter(model: str) -> Optional[Adapter]:
         except Exception:
             continue
     return None
-
-
-def make_tiktoken_rs_adapter(model: str) -> Optional[Adapter]:
-    if tiktoken_rs is None:
-        return None
-
-    enc_name = {
-        "gpt2": "r50k_base",
-    }.get(model)
-    if enc_name is None:
-        return None
-
-    # The Python API surface for tiktoken-rs wrappers varies across packages.
-    # Try a few common factory names and method names, then adapt to our shape.
-    encoder = None
-    factory_candidates = [
-        ("get_encoding", (enc_name,)),
-        ("encoding_for_model", ("gpt2",)),
-        ("get_bpe_from_model", ("gpt2",)),
-    ]
-    for factory_name, factory_args in factory_candidates:
-        factory = getattr(tiktoken_rs, factory_name, None)
-        if callable(factory):
-            try:
-                encoder = factory(*factory_args)
-                break
-            except Exception:
-                continue
-    if encoder is None:
-        return None
-
-    def encode_ids(text: str) -> List[int]:
-        for method_name in (
-            "encode",
-            "encode_ordinary",
-            "encode_with_special_tokens",
-        ):
-            method = getattr(encoder, method_name, None)
-            if callable(method):
-                result = method(text)
-                if isinstance(result, (list, tuple)):
-                    return [int(x) for x in result]
-                try:
-                    result_any: Any = result
-                    return [int(x) for x in list(result_any)]
-                except TypeError as exc:
-                    raise RuntimeError(
-                        "tiktoken-rs encode returned a non-iterable result"
-                    ) from exc
-        raise RuntimeError(
-            "tiktoken-rs encoder does not expose a supported encode method"
-        )
-
-    def decode_ids(ids: Sequence[int]) -> str:
-        method = getattr(encoder, "decode", None)
-        if callable(method):
-            decoded = method(list(ids))
-            if isinstance(decoded, bytes):
-                return decoded.decode("utf-8", errors="replace")
-            return str(decoded)
-
-        bytes_method = getattr(encoder, "decode_bytes", None)
-        if callable(bytes_method):
-            decoded = bytes_method(list(ids))
-            if isinstance(decoded, bytes):
-                return decoded.decode("utf-8", errors="replace")
-            return str(decoded)
-
-        raise RuntimeError(
-            "tiktoken-rs encoder does not expose a supported decode method"
-        )
-
-    try:
-        # Smoke-check once so unsupported wrappers are rejected early.
-        probe = encode_ids("hello world")
-        _ = decode_ids(probe)
-    except Exception:
-        return None
-
-    return Adapter(
-        backend="tiktoken-rs",
-        model=model,
-        model_ref=enc_name,
-        encode=encode_ids,
-        decode=decode_ids,
-    )
 
 
 def make_mistral_adapter(model: str, revision: str) -> Optional[Adapter]:
@@ -633,12 +538,9 @@ def main() -> int:
         help="comma-separated model profiles",
     )
     parser.add_argument(
-        "--backends",
-        default="tiktoken,tiktoken-rs,tokie,hf,mistral-common",
-        help=(
-            "comma-separated backends: tiktoken,tiktoken-rs,tokie,hf,mistral-common "
-            "(tiktoken/tiktoken-rs/tokie currently exposed for gpt2 with strict source matching)"
-        ),
+        "--implementations",
+        default="tiktoken,tokie,hf-tokenizers,mistral-common",
+        help="comma-separated Python implementations (tiktoken,tokie,hf-tokenizers,mistral-common)",
     )
     parser.add_argument("--csv", default=None, help="optional CSV output path")
     args = parser.parse_args()
@@ -647,7 +549,7 @@ def main() -> int:
         raise SystemExit("--repeats must be >= 1")
 
     models = [m.strip() for m in args.models.split(",") if m.strip()]
-    backends = {b.strip() for b in args.backends.split(",") if b.strip()}
+    implementations = {b.strip() for b in args.implementations.split(",") if b.strip()}
     sizes = (
         [s.strip() for s in args.sizes.split(",") if s.strip()]
         if args.sizes
@@ -665,16 +567,30 @@ def main() -> int:
         if corpus not in CORPUS_SEEDS:
             raise SystemExit(f"Unsupported corpus in --corpora: {corpus}")
 
+    unknown = sorted(
+        implementations
+        - {
+            "tiktoken",
+            "tokie",
+            "hf-tokenizers",
+            "mistral-common",
+        }
+    )
+    if unknown:
+        raise SystemExit(
+            "Unsupported values in --implementations: "
+            + ", ".join(unknown)
+            + ". Supported: tiktoken,tokie,hf-tokenizers,mistral-common"
+        )
+
     builders: Dict[str, Callable[[str], Optional[Adapter]]] = {}
-    if "tiktoken" in backends:
+    if "tiktoken" in implementations:
         builders["tiktoken"] = make_tiktoken_adapter
-    if "tiktoken-rs" in backends:
-        builders["tiktoken-rs"] = make_tiktoken_rs_adapter
-    if "tokie" in backends:
+    if "tokie" in implementations:
         builders["tokie"] = make_tokie_adapter
-    if "hf" in backends:
+    if "hf-tokenizers" in implementations:
         builders["hf-tokenizers"] = lambda m: make_hf_adapter(m, args.revision)
-    if "mistral-common" in backends:
+    if "mistral-common" in implementations:
         builders["mistral-common"] = lambda m: make_mistral_adapter(m, args.revision)
 
     rows: List[Result] = []

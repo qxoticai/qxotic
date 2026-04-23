@@ -2,7 +2,7 @@ package com.qxotic.toknroll.benchmarks;
 
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
+import com.qxotic.toknroll.testkit.TestTokenizers;
 
 public class QuickSpBpeBenchmark {
     public static void main(String[] args) {
@@ -19,7 +19,7 @@ public class QuickSpBpeBenchmark {
 
     static void benchmark(String model, String text) {
         Tokenizer tokenizer =
-                ModelFamilyTokenizers.create(model)
+                TestTokenizers.modelFamily(model)
                         .orElseThrow(() -> new IllegalStateException("Failed to load " + model));
 
         // Warmup

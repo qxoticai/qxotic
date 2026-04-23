@@ -1,5 +1,6 @@
 package com.qxotic.toknroll;
 
+import com.qxotic.toknroll.testkit.TestTokenizers;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import com.qxotic.toknroll.testkit.TokenizerAssertions;
 import java.util.ArrayList;
@@ -15,14 +16,14 @@ class TokenizerContractTest {
 
     private static List<TokenizerSpec> buildTokenizers() {
         List<TokenizerSpec> specs = new ArrayList<>();
-        Tokenizer tiktokenR50k = TiktokenFixtures.createJtokkitTokenizer("r50k_base");
+        Tokenizer tiktokenR50k = TestTokenizers.tiktokenReference("r50k_base");
         specs.add(new TokenizerSpec("tiktoken-r50k", tiktokenR50k));
 
         for (TiktokenFixtures.EncodingFixture fixture : TiktokenFixtures.encodings()) {
             specs.add(
                     new TokenizerSpec(
                             "jtokkit-" + fixture.name(),
-                            TiktokenFixtures.createJtokkitTokenizer(fixture.name())));
+                            TestTokenizers.tiktokenReference(fixture.name())));
         }
         return List.copyOf(specs);
     }

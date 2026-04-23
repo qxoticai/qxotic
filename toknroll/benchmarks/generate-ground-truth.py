@@ -66,35 +66,11 @@ def resolve_hf_revision(model_id, revision):
         return revision
 
 
-class TiktokenAdapter:
-    def __init__(self, encoding_name):
-        self.encoding_name = encoding_name
-        self.enc = get_encoding(encoding_name)
-
-    def available(self):
-        return self.enc is not None
-
-    def encode(self, text):
-        return self.enc.encode(text)
-
-    def decode(self, tokens):
-        return self.enc.decode(tokens)
-
-    def decode_bytes(self, tokens):
-        decoded_bytes = self.enc.decode_tokens_bytes(tokens)
-        flat = []
-        for b in decoded_bytes:
-            if len(b) == 1:
-                flat.append(b[0])
-            else:
-                flat.extend(b)
-        return flat
-
-
 class HFAdapter:
-    def __init__(self, model_candidates, revision="main"):
+    def __init__(self, model_candidates, revision="main", split_special_tokens=False):
         self.model_candidates = model_candidates
         self.revision = revision
+        self.split_special_tokens = split_special_tokens
         self.tokenizer = None
         self.model_id = None
         self.resolved_revision = None
@@ -115,7 +91,11 @@ class HFAdapter:
         return False
 
     def encode(self, text):
-        return self.tokenizer.encode(text, add_special_tokens=False)
+        return self.tokenizer.encode(
+            text,
+            add_special_tokens=False,
+            split_special_tokens=self.split_special_tokens,
+        )
 
     def decode(self, tokens):
         return self.tokenizer.decode(
@@ -358,8 +338,8 @@ def generate_test_cases(encoding_name, max_cases=100):
             # Handle null bytes for JSON
             safe_text = text.replace("\x00", "\ufffd")
 
-            # Tokenize (keep default special-token checks)
-            tokens = enc.encode(safe_text)
+            # Tokenize as raw text (no special-token auto handling)
+            tokens = enc.encode(safe_text, disallowed_special=())
 
             # Decode
             decoded = enc.decode(tokens)
@@ -496,6 +476,7 @@ def generate_model_family_ground_truth():
             "family_id": "mistral.v0_3",
             "backend": "hf",
             "revision": "main",
+            "split_special_tokens": True,
             "max_cases": len(GOLDEN_TEST_STRINGS),
             "model_candidates": [
                 "mistralai/Mistral-7B-Instruct-v0.3",
@@ -550,7 +531,11 @@ def generate_model_family_ground_truth():
         backend = family["backend"]
         print(f"Generating family ground truth for {family_id} ({backend})...")
         if backend == "hf":
-            adapter = HFAdapter(family["model_candidates"], revision=family["revision"])
+            adapter = HFAdapter(
+                family["model_candidates"],
+                revision=family["revision"],
+                split_special_tokens=family.get("split_special_tokens", False),
+            )
         elif backend == "gemma3":
             adapter = Gemma3Adapter(
                 family["model_candidates"], revision=family["revision"]

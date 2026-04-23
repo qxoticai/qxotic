@@ -3,7 +3,7 @@ package com.qxotic.toknroll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.toknroll.impl.FastSplitters;
-import com.qxotic.toknroll.testkit.TiktokenFixtures;
+import com.qxotic.toknroll.testkit.TestTokenizers;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -17,8 +17,8 @@ class FastTikTokenParityTest {
     }
 
     private static void assertEncodingParity(String encoding, Splitter splitter) {
-        Tokenizer reference = TiktokenFixtures.createJtokkitTokenizer(encoding);
-        Tokenizer fast = TiktokenFixtures.createTikTokenTokenizer(encoding, splitter);
+        Tokenizer reference = TestTokenizers.tiktokenReference(encoding);
+        Tokenizer fast = TestTokenizers.tiktoken(encoding, splitter);
 
         List<String> samples =
                 List.of(

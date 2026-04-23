@@ -6,7 +6,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Typed reader for {@code ground_truth_tokens.json}. */
+/**
+ * Typed reader for {@code ground_truth_tokens.json}.
+ *
+ * <p>If the fixture is not available on the test classpath, regenerate it with
+ * {@code python benchmarks/generate-ground-truth.py}.
+ */
 public final class TiktokenGoldenFixture {
 
     private final Map<String, List<CaseData>> encodings;
