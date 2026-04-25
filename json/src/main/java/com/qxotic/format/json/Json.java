@@ -124,6 +124,132 @@ public final class Json {
         return sb.toString();
     }
 
+    /**
+     * Escape a raw Java string for use inside a JSON string value. Does not add surrounding quotes.
+     */
+    public static String escapeString(CharSequence s) {
+        Objects.requireNonNull(s, "s");
+        int start = 0;
+        StringBuilder sb = null;
+        for (int i = 0; i < s.length(); i++) {
+            String escape = escapeFor(s.charAt(i));
+            if (escape != null) {
+                if (sb == null) {
+                    sb = new StringBuilder(s.length() + 16);
+                }
+                sb.append(s, start, i);
+                sb.append(escape);
+                start = i + 1;
+            }
+        }
+        if (sb == null) {
+            return s.toString();
+        }
+        sb.append(s, start, s.length());
+        return sb.toString();
+    }
+
+    /** Unescape a JSON-escaped string back to raw Java text. Does not remove surrounding quotes. */
+    public static String unescapeString(CharSequence s) {
+        Objects.requireNonNull(s, "s");
+        int backslash = (s instanceof String) ? ((String) s).indexOf('\\') : indexOfBackslash(s);
+        if (backslash == -1) {
+            return s.toString();
+        }
+
+        StringBuilder sb = new StringBuilder(s.length());
+        sb.append(s, 0, backslash);
+        int pos = backslash;
+
+        while (pos < s.length()) {
+            char ch = s.charAt(pos++);
+            if (ch != '\\') {
+                sb.append(ch);
+                continue;
+            }
+            if (pos >= s.length()) {
+                throw new IllegalArgumentException("Invalid escape sequence");
+            }
+            switch (s.charAt(pos++)) {
+                case '"':
+                    sb.append('"');
+                    break;
+                case '\\':
+                    sb.append('\\');
+                    break;
+                case '/':
+                    sb.append('/');
+                    break;
+                case 'b':
+                    sb.append('\b');
+                    break;
+                case 'f':
+                    sb.append('\f');
+                    break;
+                case 'n':
+                    sb.append('\n');
+                    break;
+                case 'r':
+                    sb.append('\r');
+                    break;
+                case 't':
+                    sb.append('\t');
+                    break;
+                case 'u':
+                    int code = parseHex4(s, pos);
+                    pos += 4;
+                    if (Character.isHighSurrogate((char) code)) {
+                        if (pos + 6 > s.length()
+                                || s.charAt(pos) != '\\'
+                                || s.charAt(pos + 1) != 'u') {
+                            throw new IllegalArgumentException("Lone surrogate");
+                        }
+                        pos += 2;
+                        int low = parseHex4(s, pos);
+                        pos += 4;
+                        if (!Character.isLowSurrogate((char) low)) {
+                            throw new IllegalArgumentException(
+                                    "Unexpected character after high surrogate");
+                        }
+                        sb.appendCodePoint(Character.toCodePoint((char) code, (char) low));
+                    } else if (Character.isLowSurrogate((char) code)) {
+                        throw new IllegalArgumentException("Lone surrogate");
+                    } else {
+                        sb.append((char) code);
+                    }
+                    break;
+                default:
+                    throw new IllegalArgumentException("Invalid escape sequence");
+            }
+        }
+
+        return sb.toString();
+    }
+
+    private static int indexOfBackslash(CharSequence s) {
+        for (int i = 0; i < s.length(); i++) {
+            if (s.charAt(i) == '\\') {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static int parseHex4(CharSequence s, int pos) {
+        if (pos + 4 > s.length()) {
+            throw new IllegalArgumentException("Incomplete Unicode escape");
+        }
+        int result = 0;
+        for (int i = 0; i < 4; i++) {
+            int digit = Character.digit(s.charAt(pos + i), 16);
+            if (digit < 0) {
+                throw new IllegalArgumentException("Invalid hex digit");
+            }
+            result = (result << 4) | digit;
+        }
+        return result;
+    }
+
     private static int estimateSize(Object value) {
         if (value instanceof Map) {
             return Math.max(64, ((Map<?, ?>) value).size() * 32);
@@ -755,7 +881,7 @@ public final class Json {
 
     private static String unicodeEscape(int cp) {
         String hex = Integer.toHexString(cp);
-        return "\\u" + "0000".substring(hex.length()) + hex;
+        return "\\u" + "0000".substring(hex.length()) + hex.toUpperCase();
     }
 
     private static void print(

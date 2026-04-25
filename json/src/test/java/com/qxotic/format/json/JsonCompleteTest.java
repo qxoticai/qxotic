@@ -157,8 +157,8 @@ class JsonCompleteTest {
     void testStringifyWithControlCharacters() {
         // Control characters that need unicode escape
         assertEquals("\"\\u0000\"", Json.stringify("\u0000", false));
-        assertEquals("\"\\u001f\"", Json.stringify("\u001f", false)); // lowercase hex
-        assertEquals("\"\\u007f\"", Json.stringify("\u007f", false)); // lowercase hex
+        assertEquals("\"\\u001F\"", Json.stringify("\u001f", false)); // uppercase hex
+        assertEquals("\"\\u007F\"", Json.stringify("\u007f", false)); // uppercase hex
     }
 
     // ===== print() unsupported type error =====
