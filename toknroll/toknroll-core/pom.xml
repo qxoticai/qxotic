@@ -11,9 +11,14 @@
 
   <artifactId>toknroll</artifactId>
   <name>Tok'n'Roll Core</name>
-  <description>TikToken-compatible, customizable BPE tokenization for LLMs</description>
+  <description>Tiktoken-compatible, customizable BPE tokenization for LLMs</description>
 
   <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>toknroll-testkit</artifactId>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>com.knuddels</groupId>
       <artifactId>jtokkit</artifactId>
@@ -55,12 +60,19 @@
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <skipTests>${toknroll.skipDependentTests}</skipTests>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <executions>
           <execution>
             <id>default-testCompile</id>
             <configuration>
-              <release>17</release>
+              <release>${maven.compiler.testRelease}</release>
               <annotationProcessorPaths>
                 <path>
                   <groupId>org.openjdk.jmh</groupId>

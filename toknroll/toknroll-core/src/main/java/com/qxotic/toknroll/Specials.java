@@ -17,7 +17,7 @@ import java.util.Set;
  * vocabulary mapping for the compiled special tokens; otherwise behavior is undefined.
  *
  * <p>This API is intentionally separate from {@link Tokenizer} to keep core tokenization focused on
- * round-trip integrity for ordinary text and free from special-token policy. In TikToken terms,
+ * round-trip integrity for ordinary text and free from special-token policy. In Tiktoken terms,
  * {@link Tokenizer#encode(CharSequence)} corresponds to an ordinary-text path, while {@link
  * #encode(Tokenizer, CharSequence)} provides an explicit special-aware path.
  *
@@ -82,7 +82,12 @@ public interface Specials {
         Objects.requireNonNull(tokenizer, "tokenizer");
         Objects.requireNonNull(text, "text");
         float ratio = Math.max(1.0e-6f, tokenizer.expectedTokensPerChar());
-        int capacity = Math.max(8, (int) Math.ceil(text.length() * ratio * 1.15f) + 8);
+        double estimated = Math.ceil(text.length() * (double) ratio * 1.15d) + 8d;
+        if (estimated > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException(
+                    "Estimated token capacity exceeds int range: " + estimated);
+        }
+        int capacity = Math.max(8, (int) estimated);
         IntSequence.Builder out = IntSequence.newBuilder(capacity);
         encodeInto(tokenizer, text, out);
         return out.build();

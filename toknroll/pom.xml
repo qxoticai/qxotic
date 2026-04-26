@@ -12,10 +12,12 @@
   <artifactId>toknroll-aggregator</artifactId>
   <packaging>pom</packaging>
   <name>Tok'n'Roll Aggregator</name>
-  <description>TikToken-compatible, customizable BPE tokenization for LLMs</description>
+  <description>Tiktoken-compatible, customizable BPE tokenization for LLMs</description>
 
   <modules>
     <module>toknroll-core</module>
+    <module>toknroll-testkit</module>
+    <module>toknroll-benchmarks</module>
     <module>toknroll-jtokkit</module>
     <module>toknroll-gguf</module>
     <module>toknroll-hf</module>
@@ -24,6 +26,51 @@
   <properties>
     <!-- Tok'n'Roll targets Java 11 bytecode -->
     <maven.compiler.release>11</maven.compiler.release>
+    <maven.compiler.testRelease>17</maven.compiler.testRelease>
+    <!-- Keep test dependency versions resolvable when importing only toknroll/ in IDE -->
+    <junit.version>6.0.3</junit.version>
+    <!-- Allows skipping tests in reactor-built dependency modules from submodule runs. -->
+    <toknroll.skipDependentTests>false</toknroll.skipDependentTests>
+    <surefire.baseExcludedGroups>local-external,network</surefire.baseExcludedGroups>
+    <surefire.excludedGroups>${surefire.baseExcludedGroups}</surefire.excludedGroups>
   </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>${junit.version}</version>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>toknroll</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>toknroll-hf</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>toknroll-testkit</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <excludedGroups>${surefire.excludedGroups}</excludedGroups>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 
 </project>

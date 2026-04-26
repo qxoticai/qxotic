@@ -1,5 +1,7 @@
 package com.qxotic.toknroll.impl;
 
+import java.util.function.LongConsumer;
+
 /**
  * Immutable open-addressing hash map from {@code long} keys (packed {@link IntPair}) to {@code
  * long} values. Backed by flat primitive arrays with no object overhead.
@@ -147,6 +149,14 @@ final class LongLongMap {
             }
 
             slot = (slot + 1) & m;
+        }
+    }
+
+    final void forEachValue(LongConsumer consumer) {
+        for (int i = 0; i < capacity; i++) {
+            if (table[i] != EMPTY) {
+                consumer.accept(table[capacity + i]);
+            }
         }
     }
 

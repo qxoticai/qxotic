@@ -77,10 +77,12 @@ public final class Tokenizers {
     }
 
     public static TokenizationModel tiktokenModel(Vocabulary vocabulary, List<MergeRule> merges) {
-        return ImplAccessor.createTiktokenModel(vocabulary, merges, false);
+        return tiktokenModel(vocabulary, merges, false);
     }
 
-    public static TokenizationModel tiktokenModel(
+    // Internal escape hatch for no-merge construction behavior.
+    // Keep for now; this may be removed in a future cleanup if no valid use case remains.
+    private static TokenizationModel tiktokenModel(
             Vocabulary vocabulary, List<MergeRule> merges, boolean ignoreMerges) {
         return ImplAccessor.createTiktokenModel(vocabulary, merges, ignoreMerges);
     }

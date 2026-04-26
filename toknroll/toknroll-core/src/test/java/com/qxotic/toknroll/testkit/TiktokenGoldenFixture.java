@@ -10,7 +10,7 @@ import java.util.Map;
  * Typed reader for {@code ground_truth_tokens.json}.
  *
  * <p>If the fixture is not available on the test classpath, regenerate it with {@code python
- * benchmarks/generate-ground-truth.py}.
+ * benchmarks/generate_ground_truth.py}.
  */
 public final class TiktokenGoldenFixture {
 

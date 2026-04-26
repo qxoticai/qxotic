@@ -1,6 +1,5 @@
 package com.qxotic.toknroll;
 
-import com.qxotic.toknroll.gguf.ModelTextSplitters;
 import com.qxotic.toknroll.impl.FastSplitters;
 import com.qxotic.toknroll.testkit.SplitterParityHarness;
 import java.util.regex.Pattern;
@@ -32,7 +31,14 @@ class SplitterRegexParityComprehensiveTest {
                     + "\\n"
                     + "]|\\s+(?!\\S)|\\s";
 
-    private static final String QWEN35_PATTERN = ModelTextSplitters.QWEN35_PATTERN;
+    private static final String QWEN35_PATTERN =
+            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r"
+                    + "\\n"
+                    + "\\p{L}\\p{N}]?[\\p{L}\\p{M}]+|\\p{N}| ?[^\\s\\p{L}\\p{M}\\p{N}]+[\\r"
+                    + "\\n"
+                    + "]*|\\s*[\\r"
+                    + "\\n"
+                    + "]+|\\s+(?!\\S)|\\s+";
 
     private static final String O200K_PATTERN =
             String.join(

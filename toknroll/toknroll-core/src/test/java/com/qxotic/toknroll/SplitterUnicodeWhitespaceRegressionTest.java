@@ -2,7 +2,6 @@ package com.qxotic.toknroll;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.toknroll.gguf.ModelTextSplitters;
 import com.qxotic.toknroll.impl.FastSplitters;
 import com.qxotic.toknroll.loaders.ModelSplitters;
 import java.util.ArrayList;
@@ -27,6 +26,15 @@ import org.junit.jupiter.params.provider.MethodSource;
  * chunks, 4 tokens).
  */
 class SplitterUnicodeWhitespaceRegressionTest {
+
+    private static final String QWEN35_PATTERN =
+            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r"
+                    + "\\n"
+                    + "\\p{L}\\p{N}]?[\\p{L}\\p{M}]+|\\p{N}| ?[^\\s\\p{L}\\p{M}\\p{N}]+[\\r"
+                    + "\\n"
+                    + "]*|\\s*[\\r"
+                    + "\\n"
+                    + "]+|\\s+(?!\\S)|\\s+";
 
     // NEL (U+0085) — Next Line, Unicode whitespace missed by Java's default \s
     private static final char NEL = '\u0085';
@@ -141,9 +149,7 @@ class SplitterUnicodeWhitespaceRegressionTest {
     }
 
     private static Splitter qwen35Regex() {
-        return Splitter.regex(
-                Pattern.compile(
-                        ModelTextSplitters.QWEN35_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
+        return Splitter.regex(Pattern.compile(QWEN35_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
     }
 
     private static Splitter tekkenRegex() {

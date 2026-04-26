@@ -111,7 +111,11 @@ final class TiktokenModel extends AbstractTokenizationModel {
         int[] singleByteTokenId = buildSingleByteTokenMap(vocabulary);
         byte[][] tokenBytesById = buildTokenBytesById(vocabulary);
         ExactTokenLookup exactTokenLookup =
-                ignoreMerges ? ExactTokenLookup.fromVocabulary(vocabulary) : ExactTokenLookup.EMPTY;
+                ignoreMerges
+                        ? ExactTokenLookup.fromVocabulary(vocabulary)
+                        : ExactTokenLookup.fromVocabulary(
+                                vocabulary,
+                                buildMergeReachableMask(singleByteTokenId, tokenBytesById, merges));
 
         int tinyThreshold =
                 Integer.getInteger(TINY_CHUNK_THRESHOLD_PROPERTY, DEFAULT_TINY_CHUNK_THRESHOLD);
@@ -847,6 +851,24 @@ final class TiktokenModel extends AbstractTokenizationModel {
         return new IllegalArgumentException("Missing singleton byte token for value " + value);
     }
 
+    private static boolean[] buildMergeReachableMask(
+            int[] singleByteTokenId, byte[][] tokenBytesById, LongLongMap merges) {
+        boolean[] include = new boolean[tokenBytesById.length];
+        for (int id : singleByteTokenId) {
+            if (id >= 0 && id < include.length) {
+                include[id] = true;
+            }
+        }
+        merges.forEachValue(
+                value -> {
+                    int mergedId = IntPair.left(value);
+                    if (mergedId >= 0 && mergedId < include.length) {
+                        include[mergedId] = true;
+                    }
+                });
+        return include;
+    }
+
     private static byte[][] buildTokenBytesById(Vocabulary vocabulary) {
         int maxId = -1;
         for (Map.Entry<String, Integer> e : vocabulary) {
@@ -989,52 +1011,11 @@ final class TiktokenModel extends AbstractTokenizationModel {
             this.maxTokenBytes = maxTokenBytes;
         }
 
-        static ExactTokenLookup fromMergeableRanks(Map<String, Integer> mergeableRanks) {
-            if (mergeableRanks.isEmpty()) {
-                return EMPTY;
-            }
-
-            int capacity = 1;
-            int needed = Math.max(16, mergeableRanks.size() * 2);
-            while (capacity < needed) {
-                capacity <<= 1;
-            }
-
-            byte[][] keys = new byte[capacity][];
-            int[] ids = new int[capacity];
-            int[] hashes = new int[capacity];
-            Arrays.fill(ids, NO_TOKEN);
-            int mask = capacity - 1;
-            int maxTokenBytes = 0;
-
-            for (Map.Entry<String, Integer> entry : mergeableRanks.entrySet()) {
-                byte[] tokenBytes = ByteLevel.decode(entry.getKey());
-                if (tokenBytes.length == 0) {
-                    continue;
-                }
-                if (tokenBytes.length > maxTokenBytes) {
-                    maxTokenBytes = tokenBytes.length;
-                }
-
-                int hash = hashBytes(tokenBytes, tokenBytes.length);
-                int slot = hash & mask;
-                while (ids[slot] != NO_TOKEN) {
-                    byte[] existing = keys[slot];
-                    if (hashes[slot] == hash
-                            && bytesEqual(existing, tokenBytes, tokenBytes.length)) {
-                        break;
-                    }
-                    slot = (slot + 1) & mask;
-                }
-                keys[slot] = tokenBytes;
-                ids[slot] = entry.getValue();
-                hashes[slot] = hash;
-            }
-
-            return new ExactTokenLookup(keys, ids, hashes, mask, maxTokenBytes);
+        static ExactTokenLookup fromVocabulary(Vocabulary vocabulary) {
+            return fromVocabulary(vocabulary, null);
         }
 
-        static ExactTokenLookup fromVocabulary(Vocabulary vocabulary) {
+        static ExactTokenLookup fromVocabulary(Vocabulary vocabulary, boolean[] includeTokenId) {
             int capacity = 1;
             int needed = Math.max(16, vocabulary.size() * 2);
             while (capacity < needed) {
@@ -1049,6 +1030,13 @@ final class TiktokenModel extends AbstractTokenizationModel {
             int maxTokenBytes = 0;
 
             for (Map.Entry<String, Integer> entry : vocabulary) {
+                int tokenId = entry.getValue();
+                if (includeTokenId != null
+                        && (tokenId < 0
+                                || tokenId >= includeTokenId.length
+                                || !includeTokenId[tokenId])) {
+                    continue;
+                }
                 byte[] tokenBytes = ByteLevel.decode(entry.getKey());
                 if (tokenBytes.length == 0) {
                     continue;
@@ -1068,7 +1056,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
                     slot = (slot + 1) & mask;
                 }
                 keys[slot] = tokenBytes;
-                ids[slot] = entry.getValue();
+                ids[slot] = tokenId;
                 hashes[slot] = hash;
             }
 

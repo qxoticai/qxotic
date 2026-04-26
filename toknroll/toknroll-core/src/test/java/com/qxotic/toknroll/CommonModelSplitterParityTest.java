@@ -2,7 +2,6 @@ package com.qxotic.toknroll;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import com.qxotic.toknroll.gguf.ModelTextSplitters;
 import com.qxotic.toknroll.loaders.ModelSplitters;
 import com.qxotic.toknroll.testkit.SplitterParityHarness;
 import java.util.regex.Pattern;
@@ -21,7 +20,14 @@ class CommonModelSplitterParityTest {
                     + "\\n"
                     + "]+|\\s+(?!\\S)|\\s+";
 
-    private static final String QWEN35_PATTERN = ModelTextSplitters.QWEN35_PATTERN;
+    private static final String QWEN35_PATTERN =
+            "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r"
+                    + "\\n"
+                    + "\\p{L}\\p{N}]?[\\p{L}\\p{M}]+|\\p{N}| ?[^\\s\\p{L}\\p{M}\\p{N}]+[\\r"
+                    + "\\n"
+                    + "]*|\\s*[\\r"
+                    + "\\n"
+                    + "]+|\\s+(?!\\S)|\\s+";
 
     private static final String[] SMOLLM3_PATTERNS = {
         "\\p{N}", "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)"
