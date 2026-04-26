@@ -12,13 +12,14 @@ This script:
 4. Saves ground truth JSON files for Java comparison tests
 
 Requirements:
-    pip install tiktoken transformers torch
+    pip install tiktoken tokenizers requests
 """
 
 import argparse
 import json
 import hashlib
 import os
+import re
 import sys
 import urllib.request
 import zipfile
@@ -111,67 +112,222 @@ def tokenize_with_tiktoken(text: str, encoding) -> Tuple[List[int], str]:
 def get_hf_tokenizer(
     model_name: str, revision: Optional[str] = None, cache_root: Optional[Path] = None
 ):
-    """Get HuggingFace tokenizer."""
-    from transformers import AutoTokenizer
-
-    kwargs: Dict[str, object] = {"trust_remote_code": True}
-    if revision:
-        kwargs["revision"] = revision
+    """Get HuggingFace tokenizer using raw assets only."""
+    json_error: Optional[Exception] = None
     try:
-        return AutoTokenizer.from_pretrained(model_name, **kwargs)
-    except Exception as e:
-        print(f"  Warning: Failed to load tokenizer via AutoTokenizer: {e}")
-        print(f"  Falling back to tokenizer.json direct load...")
         return load_tokenizer_from_json(model_name, revision, cache_root)
+    except Exception as exc:
+        json_error = exc
+        print(f"  Warning: Failed to load tokenizer.json directly: {json_error}")
+        print("  Trying tiktoken.model fallback...")
+    try:
+        return load_tokenizer_from_tiktoken_model(model_name, revision, cache_root)
+    except Exception as tik_err:
+        raise RuntimeError(
+            f"Failed to load raw tokenizer assets for {model_name}: "
+            f"tokenizer.json error={json_error}; tiktoken.model error={tik_err}"
+        ) from tik_err
 
 
 def load_tokenizer_from_json(
     model_name: str, revision: Optional[str] = None, cache_root: Optional[Path] = None
 ):
     """Load tokenizer directly from tokenizer.json file."""
-    import requests
-
     rev = revision or "main"
-    url = f"https://huggingface.co/{model_name}/resolve/{rev}/tokenizer.json"
-
-    headers = {}
-    hf_token = os.environ.get("HF_TOKEN")
-    if hf_token:
-        headers["Authorization"] = f"Bearer {hf_token}"
-
-    effective_cache_root = cache_root or resolve_under_test_artifacts()
-    tokenizer_json_cache = (
-        effective_cache_root / "ground-truth" / "downloads" / "tokenizer-json"
+    json_path = _download_hf_file(
+        model_name, rev, "tokenizer.json", cache_root, cache_group="tokenizer-json"
     )
-    tokenizer_json_cache.mkdir(parents=True, exist_ok=True)
-    url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()
-    json_path = tokenizer_json_cache / f"{url_hash}.json"
-
-    if not json_path.exists():
-        response = requests.get(url, headers=headers)
-        if response.status_code != 200:
-            raise RuntimeError(
-                f"Failed to download tokenizer.json from {url}: {response.status_code}"
-            )
-        json_path.write_bytes(response.content)
 
     from tokenizers import Tokenizer as HFTokenizer
 
     tokenizer = HFTokenizer.from_file(str(json_path))
 
-    # Wrap to match AutoTokenizer interface
+    # Wrap to provide encode/decode interface expected by this script.
     class TokenizerWrapper:
         def __init__(self, inner):
             self.inner = inner
 
         def encode(self, text, add_special_tokens=False):
-            encoded = self.inner.encode(text)
+            encoded = self.inner.encode(text, add_special_tokens=add_special_tokens)
             return encoded.ids
 
         def decode(self, tokens, clean_up_tokenization_spaces=False):
             return self.inner.decode(tokens)
 
     return TokenizerWrapper(tokenizer)
+
+
+def load_tokenizer_from_tiktoken_model(
+    model_name: str, revision: Optional[str] = None, cache_root: Optional[Path] = None
+):
+    import tiktoken
+    from tiktoken import load as tiktoken_load
+
+    rev = revision or "main"
+    tiktoken_path = _download_hf_file(
+        model_name,
+        rev,
+        "tiktoken.model",
+        cache_root,
+        cache_group="tiktoken-model",
+    )
+    mergeable_ranks = tiktoken_load.load_tiktoken_bpe(str(tiktoken_path))
+
+    tokenizer_config = _try_load_hf_json(
+        model_name, rev, "tokenizer_config.json", cache_root
+    )
+    pat_str = _resolve_tiktoken_pat_str(model_name, rev, tokenizer_config, cache_root)
+    special_tokens = _extract_special_tokens(tokenizer_config)
+
+    encoding = tiktoken.Encoding(
+        name=model_name,
+        pat_str=pat_str,
+        mergeable_ranks=mergeable_ranks,
+        special_tokens=special_tokens,
+    )
+
+    class TiktokenWrapper:
+        def __init__(self, inner):
+            self.inner = inner
+
+        def encode(self, text, add_special_tokens=False):
+            if add_special_tokens:
+                return self.inner.encode(text, allowed_special="all")
+            return self.inner.encode(text, disallowed_special=())
+
+        def decode(self, tokens, clean_up_tokenization_spaces=False):
+            return self.inner.decode(tokens)
+
+    return TiktokenWrapper(encoding)
+
+
+def _download_hf_file(
+    model_name: str,
+    revision: str,
+    filename: str,
+    cache_root: Optional[Path],
+    cache_group: str,
+) -> Path:
+    import requests
+
+    url = f"https://huggingface.co/{model_name}/resolve/{revision}/{filename}"
+    headers = {}
+    hf_token = os.environ.get("HF_TOKEN")
+    if hf_token:
+        headers["Authorization"] = f"Bearer {hf_token}"
+
+    effective_cache_root = cache_root or resolve_under_test_artifacts()
+    cache_dir = effective_cache_root / "ground-truth" / "downloads" / cache_group
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    suffix = Path(filename).suffix
+    out_path = cache_dir / f"{url_hash}{suffix}"
+    if out_path.exists():
+        return out_path
+
+    response = requests.get(url, headers=headers)
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Failed to download {filename} from {url}: {response.status_code}"
+        )
+    out_path.write_bytes(response.content)
+    return out_path
+
+
+def _try_load_hf_json(
+    model_name: str,
+    revision: str,
+    filename: str,
+    cache_root: Optional[Path],
+) -> Optional[Dict[str, Any]]:
+    try:
+        path = _download_hf_file(
+            model_name,
+            revision,
+            filename,
+            cache_root,
+            cache_group="tokenizer-config",
+        )
+    except Exception:
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _extract_special_tokens(
+    tokenizer_config: Optional[Dict[str, Any]],
+) -> Dict[str, int]:
+    if not tokenizer_config:
+        return {}
+    added_tokens_decoder = tokenizer_config.get("added_tokens_decoder")
+    if not isinstance(added_tokens_decoder, dict):
+        return {}
+    out: Dict[str, int] = {}
+    for token_id_str, token_spec in added_tokens_decoder.items():
+        try:
+            token_id = int(token_id_str)
+        except Exception:
+            continue
+        if isinstance(token_spec, dict):
+            content = token_spec.get("content")
+            if isinstance(content, str):
+                out[content] = token_id
+    return out
+
+
+def _resolve_tiktoken_pat_str(
+    model_name: str,
+    revision: str,
+    tokenizer_config: Optional[Dict[str, Any]],
+    cache_root: Optional[Path],
+) -> str:
+    if isinstance(tokenizer_config, dict):
+        pat_str = tokenizer_config.get("pat_str")
+        if isinstance(pat_str, str) and pat_str:
+            return pat_str
+
+        auto_map = tokenizer_config.get("auto_map")
+        if isinstance(auto_map, dict):
+            auto_tokenizer = auto_map.get("AutoTokenizer")
+            class_ref: Optional[str] = None
+            if isinstance(auto_tokenizer, list) and auto_tokenizer:
+                class_ref = auto_tokenizer[0]
+            elif isinstance(auto_tokenizer, str):
+                class_ref = auto_tokenizer
+
+            if isinstance(class_ref, str) and "." in class_ref:
+                module_name = class_ref.split(".", 1)[0]
+                module_path = _download_hf_file(
+                    model_name,
+                    revision,
+                    f"{module_name}.py",
+                    cache_root,
+                    cache_group="tokenizer-module",
+                )
+                source = module_path.read_text(encoding="utf-8")
+                extracted = _parse_pat_str_from_python_module(source)
+                if extracted:
+                    return extracted
+
+    raise RuntimeError(
+        f"Could not resolve pat_str for tiktoken.model in {model_name}; "
+        "tokenizer_config.json must include pat_str or auto_map.AutoTokenizer module with pat_str"
+    )
+
+
+def _parse_pat_str_from_python_module(source: str) -> Optional[str]:
+    start = source.find('pat_str = "|".join([')
+    if start < 0:
+        return None
+    end = source.find("])", start)
+    if end < 0:
+        return None
+    block = source[start:end]
+    parts = re.findall(r'r"""(.*?)"""', block, flags=re.DOTALL)
+    if not parts:
+        return None
+    return "|".join(parts)
 
 
 def tokenize_with_hf(text: str, tokenizer) -> Tuple[List[int], str]:

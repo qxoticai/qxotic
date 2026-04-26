@@ -131,6 +131,7 @@ public final class HuggingFaceTokenizerLoader {
 
         List<Tokenizers.MergeRule> merges =
                 buildMerges(entries.tokens, extractMerges(model.get("merges")));
+        boolean ignoreMerges = Boolean.TRUE.equals(model.get("ignore_merges"));
         Vocabulary vocabulary = ImplAccessor.createVocabulary(entries.tokens, entries.tokenTypes);
         TokenizationModel tokenizationModel;
         if (sentencePieceStyle) {
@@ -140,7 +141,8 @@ public final class HuggingFaceTokenizerLoader {
             splitter = Splitter.identity();
         } else {
             try {
-                tokenizationModel = Tokenizers.tiktokenModel(vocabulary, merges);
+                tokenizationModel =
+                        ImplAccessor.createTiktokenModel(vocabulary, merges, ignoreMerges);
             } catch (IllegalArgumentException e) {
                 if (Boolean.getBoolean("toknroll.hf.debug")) {
                     System.err.println(
@@ -653,10 +655,6 @@ public final class HuggingFaceTokenizerLoader {
             String regexPattern =
                     adaptRegexForTokenizerClass((String) regex, tokenizerClass, modelRefHint);
             Pattern pattern = Pattern.compile(regexPattern, Pattern.UNICODE_CHARACTER_CLASS);
-            if (("Removed".equals(behavior) && invert)
-                    || ("Isolated".equals(behavior) && !invert)) {
-                return Splitter.regex(pattern);
-            }
             return (text, startInclusive, endExclusive, consumer) -> {
                 String source = text.subSequence(startInclusive, endExclusive).toString();
                 for (Span span : splitByPatternWithBehavior(source, pattern, behavior, invert)) {
