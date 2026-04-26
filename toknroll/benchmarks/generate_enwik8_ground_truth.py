@@ -23,12 +23,14 @@ import sys
 import urllib.request
 import zipfile
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+from cache_paths import resolve_under_test_artifacts
 
 
-def get_cache_dir() -> Path:
+def get_cache_dir(cache_root_override: Optional[str] = None) -> Path:
     """Get the cache directory for enwik8 data."""
-    cache = Path.home() / ".cache" / "qxotic" / "tokenizers" / "corpus"
+    cache = resolve_under_test_artifacts("corpus", override=cache_root_override)
     cache.mkdir(parents=True, exist_ok=True)
     return cache
 
@@ -88,7 +90,7 @@ def generate_chunks(
     return chunks
 
 
-def get_tiktoken_encodings() -> Dict[str, any]:
+def get_tiktoken_encodings() -> Dict[str, Any]:
     """Get available tiktoken encodings."""
     import tiktoken
 
@@ -106,11 +108,13 @@ def tokenize_with_tiktoken(text: str, encoding) -> Tuple[List[int], str]:
     return tokens, decoded
 
 
-def get_hf_tokenizer(model_name: str, revision: Optional[str] = None):
+def get_hf_tokenizer(
+    model_name: str, revision: Optional[str] = None, cache_root: Optional[Path] = None
+):
     """Get HuggingFace tokenizer."""
     from transformers import AutoTokenizer
 
-    kwargs = {"trust_remote_code": True}
+    kwargs: Dict[str, object] = {"trust_remote_code": True}
     if revision:
         kwargs["revision"] = revision
     try:
@@ -118,14 +122,14 @@ def get_hf_tokenizer(model_name: str, revision: Optional[str] = None):
     except Exception as e:
         print(f"  Warning: Failed to load tokenizer via AutoTokenizer: {e}")
         print(f"  Falling back to tokenizer.json direct load...")
-        return load_tokenizer_from_json(model_name, revision)
+        return load_tokenizer_from_json(model_name, revision, cache_root)
 
 
-def load_tokenizer_from_json(model_name: str, revision: Optional[str] = None):
+def load_tokenizer_from_json(
+    model_name: str, revision: Optional[str] = None, cache_root: Optional[Path] = None
+):
     """Load tokenizer directly from tokenizer.json file."""
     import requests
-    import tempfile
-    import os
 
     rev = revision or "main"
     url = f"https://huggingface.co/{model_name}/resolve/{rev}/tokenizer.json"
@@ -135,36 +139,39 @@ def load_tokenizer_from_json(model_name: str, revision: Optional[str] = None):
     if hf_token:
         headers["Authorization"] = f"Bearer {hf_token}"
 
-    response = requests.get(url, headers=headers)
-    if response.status_code != 200:
-        raise RuntimeError(
-            f"Failed to download tokenizer.json from {url}: {response.status_code}"
-        )
+    effective_cache_root = cache_root or resolve_under_test_artifacts()
+    tokenizer_json_cache = (
+        effective_cache_root / "ground-truth" / "downloads" / "tokenizer-json"
+    )
+    tokenizer_json_cache.mkdir(parents=True, exist_ok=True)
+    url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    json_path = tokenizer_json_cache / f"{url_hash}.json"
 
-    with tempfile.NamedTemporaryFile(mode="wb", suffix=".json", delete=False) as f:
-        f.write(response.content)
-        temp_path = f.name
+    if not json_path.exists():
+        response = requests.get(url, headers=headers)
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"Failed to download tokenizer.json from {url}: {response.status_code}"
+            )
+        json_path.write_bytes(response.content)
 
-    try:
-        from tokenizers import Tokenizer as HFTokenizer
+    from tokenizers import Tokenizer as HFTokenizer
 
-        tokenizer = HFTokenizer.from_file(temp_path)
+    tokenizer = HFTokenizer.from_file(str(json_path))
 
-        # Wrap to match AutoTokenizer interface
-        class TokenizerWrapper:
-            def __init__(self, inner):
-                self.inner = inner
+    # Wrap to match AutoTokenizer interface
+    class TokenizerWrapper:
+        def __init__(self, inner):
+            self.inner = inner
 
-            def encode(self, text, add_special_tokens=False):
-                encoded = self.inner.encode(text)
-                return encoded.ids
+        def encode(self, text, add_special_tokens=False):
+            encoded = self.inner.encode(text)
+            return encoded.ids
 
-            def decode(self, tokens, clean_up_tokenization_spaces=False):
-                return self.inner.decode(tokens)
+        def decode(self, tokens, clean_up_tokenization_spaces=False):
+            return self.inner.decode(tokens)
 
-        return TokenizerWrapper(tokenizer)
-    finally:
-        os.unlink(temp_path)
+    return TokenizerWrapper(tokenizer)
 
 
 def tokenize_with_hf(text: str, tokenizer) -> Tuple[List[int], str]:
@@ -188,6 +195,7 @@ def generate_ground_truth(
     hf_models: Dict[str, Tuple[str, Optional[str]]],
     chunk_sizes: List[int],
     samples_per_size: int,
+    cache_root: Optional[Path] = None,
 ) -> None:
     """Generate ground truth files for all tokenizers."""
 
@@ -266,7 +274,9 @@ def generate_ground_truth(
         for family_id, (model_name, revision) in hf_models.items():
             print(f"  Loading {family_id} ({model_name})...")
             try:
-                tokenizer = get_hf_tokenizer(model_name, revision)
+                tokenizer = get_hf_tokenizer(
+                    model_name, revision, cache_root=cache_root
+                )
                 results = []
 
                 for i, (offset, size, chunk_data) in enumerate(chunks):
@@ -339,6 +349,11 @@ def main():
         default=",,",
         help="Comma-separated HF revisions (empty for default)",
     )
+    parser.add_argument(
+        "--cache-root",
+        default=os.environ.get("TOKNROLL_TEST_CACHE_ROOT", ""),
+        help="Cache root override (defaults to OS-specific qxotic/toknroll/test-artifacts)",
+    )
 
     args = parser.parse_args()
 
@@ -365,7 +380,10 @@ def main():
     for family, model_ref, revision in zip(families, model_refs, revisions):
         hf_models[family] = (model_ref, revision)
 
-    cache_dir = get_cache_dir()
+    cache_root_override = args.cache_root.strip() or None
+    cache_root = resolve_under_test_artifacts(override=cache_root_override)
+
+    cache_dir = get_cache_dir(cache_root_override=cache_root_override)
     enwik8_path = download_enwik8(cache_dir)
 
     generate_ground_truth(
@@ -375,6 +393,7 @@ def main():
         hf_models=hf_models,
         chunk_sizes=chunk_sizes,
         samples_per_size=args.samples_per_size,
+        cache_root=cache_root,
     )
 
     print("\nGround truth generation complete!")

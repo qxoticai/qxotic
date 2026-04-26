@@ -30,8 +30,8 @@ SIZE_ORDER = ["1k", "2k", "4k", "8k", "16k", "32k"]
 IMPL_ORDER = ["fast", "classic"]
 
 PREFERRED_COMPARISONS = [
-    ("gpt2", "tiktoken", "Tok'n'Roll vs TikToken"),
-    ("gpt2", "tokie", "Tok'n'Roll vs Tokie"),
+    ("gpt2", "tiktoken", "Tok'n'Roll vs tiktoken"),
+    ("gpt2", "tokie", "Tok'n'Roll vs tokie"),
     ("gpt2", "hf-tokenizers", "Tok'n'Roll vs HuggingFace"),
     ("llama3", "hf-tokenizers", "Tok'n'Roll vs HuggingFace"),
     ("qwen35", "hf-tokenizers", "Tok'n'Roll vs HuggingFace"),

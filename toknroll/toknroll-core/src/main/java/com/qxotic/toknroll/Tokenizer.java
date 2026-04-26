@@ -121,7 +121,12 @@ public interface Tokenizer {
 
     private int estimateInitialTokenCapacity(int charCount) {
         float ratio = Math.max(1.0e-6f, expectedTokensPerChar());
-        int predicted = (int) Math.ceil(charCount * ratio * 1.15f) + 8;
+        double estimated = Math.ceil(charCount * (double) ratio * 1.15d) + 8d;
+        if (estimated > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException(
+                    "Estimated token capacity exceeds int range: " + estimated);
+        }
+        int predicted = (int) estimated;
         return Math.max(8, predicted);
     }
 

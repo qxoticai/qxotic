@@ -2,9 +2,7 @@ package com.qxotic.toknroll.testkit;
 
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.gguf.ModelFamilyTokenizers;
 import java.util.Map;
-import java.util.Optional;
 
 /**
  * Single entry point for tokenizer construction in tests.
@@ -15,19 +13,6 @@ import java.util.Optional;
 public final class TestTokenizers {
 
     private TestTokenizers() {}
-
-    public static Optional<Tokenizer> modelFamily(String familyId) {
-        return ModelFamilyTokenizers.create(familyId);
-    }
-
-    public static Optional<Tokenizer> modelFamilyFast(String familyId) {
-        return ModelFamilyTokenizers.createFast(familyId);
-    }
-
-    public static Optional<Tokenizer> modelFamilyFromHf(
-            String familyId, String hfModelRef, String hfRevision) {
-        return ModelFamilyTokenizers.createFromHfFiles(familyId, hfModelRef, hfRevision);
-    }
 
     public static Tokenizer tiktokenReference(String encoding) {
         return TiktokenFixtures.createJtokkitTokenizer(encoding);
