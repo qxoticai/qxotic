@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -46,6 +47,93 @@ class HuggingFaceTokenizerLoaderTest {
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.load(modelDir);
         assertEquals(1, tokenizer.vocabulary().size());
+    }
+
+    @Test
+    void ignoreMergesTrue_prefersExistingWholeToken() throws IOException {
+        Path tokenizerJson =
+                Files.writeString(
+                        tempDir.resolve("tokenizer.json"),
+                        buildByteLevelTokenizerJson(true),
+                        StandardCharsets.UTF_8);
+
+        Tokenizer tokenizer = HuggingFaceTokenizerLoader.load(tokenizerJson);
+        assertArrayEquals(new int[] {256}, tokenizer.encode("ab").toArray());
+    }
+
+    @Test
+    void ignoreMergesFalse_keepsBytePairPathOnly() throws IOException {
+        Path tokenizerJson =
+                Files.writeString(
+                        tempDir.resolve("tokenizer.json"),
+                        buildByteLevelTokenizerJson(false),
+                        StandardCharsets.UTF_8);
+
+        Tokenizer tokenizer = HuggingFaceTokenizerLoader.load(tokenizerJson);
+        assertArrayEquals(new int[] {97, 98}, tokenizer.encode("ab").toArray());
+    }
+
+    @Test
+    void ignoreMergesTrue_stillAppliesRegularMergesWhenWholeTokenMissing() throws IOException {
+        Path tokenizerJson =
+                Files.writeString(
+                        tempDir.resolve("tokenizer.json"),
+                        buildByteLevelTokenizerJsonWithAbMerge(true),
+                        StandardCharsets.UTF_8);
+
+        Tokenizer tokenizer = HuggingFaceTokenizerLoader.load(tokenizerJson);
+        assertArrayEquals(new int[] {256, 99}, tokenizer.encode("abc").toArray());
+    }
+
+    private static String buildByteLevelTokenizerJson(boolean ignoreMerges) {
+        StringBuilder vocab = new StringBuilder();
+        for (int b = 0; b < 256; b++) {
+            if (b > 0) {
+                vocab.append(',');
+            }
+            vocab.append('"')
+                    .append(escapeJsonChar(ByteLevel.encodeSingle((byte) b)))
+                    .append('"')
+                    .append(':')
+                    .append(b);
+        }
+        vocab.append(",\"ab\":256");
+        return "{\"model\":{\"type\":\"BPE\",\"ignore_merges\":"
+                + ignoreMerges
+                + ",\"vocab\":{"
+                + vocab
+                + "},\"merges\":[]}}";
+    }
+
+    private static String buildByteLevelTokenizerJsonWithAbMerge(boolean ignoreMerges) {
+        StringBuilder vocab = new StringBuilder();
+        for (int b = 0; b < 256; b++) {
+            if (b > 0) {
+                vocab.append(',');
+            }
+            vocab.append('"')
+                    .append(escapeJsonChar(ByteLevel.encodeSingle((byte) b)))
+                    .append('"')
+                    .append(':')
+                    .append(b);
+        }
+        vocab.append(",\"ab\":256");
+        return "{\"model\":{\"type\":\"BPE\",\"ignore_merges\":"
+                + ignoreMerges
+                + ",\"vocab\":{"
+                + vocab
+                + "},\"merges\":[[\"a\",\"b\"]]}}";
+    }
+
+    private static String escapeJsonChar(char c) {
+        switch (c) {
+            case '"':
+                return "\\\"";
+            case '\\':
+                return "\\\\";
+            default:
+                return String.valueOf(c);
+        }
     }
 
     @Test

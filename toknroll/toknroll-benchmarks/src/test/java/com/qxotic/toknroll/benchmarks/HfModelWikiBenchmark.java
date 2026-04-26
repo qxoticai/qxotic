@@ -108,7 +108,7 @@ public class HfModelWikiBenchmark {
                         "microsoft", "phi-4", "main", false, false);
             case "deepseek.v3_2":
                 return HuggingFaceTokenizerLoader.fromPretrained(
-                        "deepseek-ai", "DeepSeek-V3.1", "main", false, false);
+                        "deepseek-ai", "DeepSeek-V3.2", "main", false, false);
             case "mistral.v0_3_spbpe":
                 return HuggingFaceTokenizerLoader.fromPretrained(
                         "mistralai", "Mistral-7B-Instruct-v0.3", "main", false, false);

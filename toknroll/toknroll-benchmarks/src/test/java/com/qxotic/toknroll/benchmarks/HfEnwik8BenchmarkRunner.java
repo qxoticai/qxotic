@@ -28,7 +28,7 @@ public final class HfEnwik8BenchmarkRunner {
                     new ModelSpec("google.gemma4", "google", "gemma-4-e2b-it", "main"),
                     new ModelSpec("huggingface.smollm3", "HuggingFaceTB", "SmolLM3-3B", "main"),
                     new ModelSpec("microsoft.phi4", "microsoft", "phi-4", "main"),
-                    new ModelSpec("deepseek.v3_2", "deepseek-ai", "DeepSeek-V3.1", "main"),
+                    new ModelSpec("deepseek.v3_2", "deepseek-ai", "DeepSeek-V3.2", "main"),
                     new ModelSpec("moonshot.kimi2_6", "moonshotai", "Kimi-K2.6", "main"),
                     new ModelSpec(
                             "mistral.v0_3_spbpe", "mistralai", "Mistral-7B-Instruct-v0.3", "main"),
@@ -41,7 +41,8 @@ public final class HfEnwik8BenchmarkRunner {
         String warmupText = corpus.substring(0, Math.min(corpus.length(), 262_144));
         double corpusMb = corpus.length() / 1_000_000.0;
 
-        System.out.println("family,model_ref,chars,tokens,encode_s,encode_mb_s,count_s,count_mtoks_s");
+        System.out.println(
+                "family,model_ref,chars,tokens,encode_s,encode_mb_s,count_s,count_mtoks_s");
         for (ModelSpec spec : COMMON_MODELS) {
             String modelRef = spec.user + "/" + spec.repo;
             try {

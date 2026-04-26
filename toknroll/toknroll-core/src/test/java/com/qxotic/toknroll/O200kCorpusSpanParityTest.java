@@ -3,8 +3,8 @@ package com.qxotic.toknroll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
-import com.qxotic.toknroll.testkit.corpus.Enwik8Corpus;
 import com.qxotic.toknroll.impl.FastSplitters;
+import com.qxotic.toknroll.testkit.corpus.Enwik8Corpus;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;

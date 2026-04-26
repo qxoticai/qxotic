@@ -32,7 +32,7 @@ Tip: use `.venv/bin/python` for benchmark scripts to keep environments isolated.
 - `plot_cross_runtime.py`: PNG charts from Java JSON + Python CSV.
 - `openai_apples_report.py`: apples-to-apples markdown report from Java JSON + Python CSV.
 - `jmh_to_markdown.py`: converts JMH JSON to markdown tables.
-- `generate-ground-truth.py`: regenerates tokenizer ground-truth fixtures used by tests.
+- `generate_ground_truth.py`: regenerates tokenizer ground-truth fixtures used by tests.
 - `generate_enwik8_ground_truth.py`: regenerates enwik8 golden test artifacts.
 
 ## Wiki Corpus Benchmarks (enwik8/enwik9)
@@ -205,7 +205,7 @@ Common focused runs:
 Tokenizer fixtures:
 
 ```bash
-python benchmarks/generate-ground-truth.py
+python benchmarks/generate_ground_truth.py
 ```
 
 Enwik8 corpus fixtures:
