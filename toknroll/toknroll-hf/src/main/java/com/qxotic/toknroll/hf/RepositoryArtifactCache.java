@@ -25,8 +25,6 @@ final class RepositoryArtifactCache {
     private static final String HF_TOKEN_ENV = "HF_TOKEN";
     private static final String MODELSCOPE_TOKEN_PROPERTY = "toknroll.modelscope.token";
     private static final String MODELSCOPE_TOKEN_ENV = "MODELSCOPE_TOKEN";
-    private static final String GITHUB_TOKEN_PROPERTY = "toknroll.github.token";
-    private static final String GITHUB_TOKEN_ENV = "GITHUB_TOKEN";
     private static final String DEFAULT_CACHE_DIR = "cache";
 
     private final Path cacheRoot;
@@ -103,7 +101,7 @@ final class RepositoryArtifactCache {
             boolean offlineOnly,
             boolean forceRefresh)
             throws IOException {
-        String resolvedRevision = normalizeRevision(revision);
+        String resolvedRevision = normalizeModelScopeRevision(revision);
         String url =
                 "https://www.modelscope.cn/models/"
                         + requireSegment(user, "user")
@@ -127,42 +125,6 @@ final class RepositoryArtifactCache {
                 url,
                 target,
                 authHeaders(resolveToken(MODELSCOPE_TOKEN_PROPERTY, MODELSCOPE_TOKEN_ENV)),
-                offlineOnly,
-                forceRefresh);
-    }
-
-    Path fetchGitHub(
-            String user,
-            String repository,
-            String revision,
-            String file,
-            boolean offlineOnly,
-            boolean forceRefresh)
-            throws IOException {
-        String resolvedRevision = normalizeRevision(revision);
-        String url =
-                "https://raw.githubusercontent.com/"
-                        + requireSegment(user, "user")
-                        + "/"
-                        + requireSegment(repository, "repository")
-                        + "/"
-                        + resolvedRevision
-                        + "/"
-                        + normalizeFilePath(file);
-
-        Path target =
-                cacheRoot
-                        .resolve("repository-artifacts")
-                        .resolve("github")
-                        .resolve(requireSegment(user, "user"))
-                        .resolve(requireSegment(repository, "repository"))
-                        .resolve(resolvedRevision);
-        target = appendRelative(target, normalizeFilePath(file));
-
-        return fetchToPath(
-                url,
-                target,
-                authHeaders(resolveToken(GITHUB_TOKEN_PROPERTY, GITHUB_TOKEN_ENV)),
                 offlineOnly,
                 forceRefresh);
     }
@@ -258,8 +220,21 @@ final class RepositoryArtifactCache {
     }
 
     private static String normalizeRevision(String revision) {
-        if (revision == null || revision.isBlank()) {
+        if (revision == null) {
             return "main";
+        }
+        if (revision.isBlank()) {
+            throw new IllegalArgumentException("revision must be null or non-blank");
+        }
+        return revision;
+    }
+
+    private static String normalizeModelScopeRevision(String revision) {
+        if (revision == null) {
+            return "master";
+        }
+        if (revision.isBlank()) {
+            throw new IllegalArgumentException("revision must be null or non-blank");
         }
         return revision;
     }
