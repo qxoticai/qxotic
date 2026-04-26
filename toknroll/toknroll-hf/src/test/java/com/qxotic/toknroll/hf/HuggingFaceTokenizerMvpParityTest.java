@@ -43,6 +43,12 @@ class HuggingFaceTokenizerMvpParityTest {
                     new ModelSpec(
                             "mistralai/ministral-8b-instruct-2410",
                             "hf_mistral_tekken_ground_truth.json"),
+                    new ModelSpec("zai-org/GLM-5.1", "hf_zai_glm5_1_ground_truth.json"),
+                    new ModelSpec(
+                            "MiniMaxAI/MiniMax-M2.7", "hf_minimax_m2_7_ground_truth.json"),
+                    new ModelSpec(
+                            "XiaomiMiMo/MiMo-V2-Flash",
+                            "hf_xiaomi_mimo_v2_flash_ground_truth.json"),
                     new ModelSpec("openai/gpt-oss-20b", "hf_openai_gpt_oss_ground_truth.json"),
                     new ModelSpec("google/gemma-4-e2b-it", "hf_google_gemma4_ground_truth.json"));
 

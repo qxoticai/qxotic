@@ -27,11 +27,15 @@ public final class HfEnwik8BenchmarkRunner {
                     new ModelSpec("alibaba.qwen3_5", "Qwen", "Qwen3.5-0.8B", "main"),
                     new ModelSpec("google.gemma4", "google", "gemma-4-e2b-it", "main"),
                     new ModelSpec("huggingface.smollm3", "HuggingFaceTB", "SmolLM3-3B", "main"),
+                    new ModelSpec("ibm.granite4_0", "ibm-granite", "granite-4.0-h-1b", "main"),
                     new ModelSpec("microsoft.phi4", "microsoft", "phi-4", "main"),
                     new ModelSpec("deepseek.v3_2", "deepseek-ai", "DeepSeek-V3.2", "main"),
+                    new ModelSpec("deepseek.v4_pro", "deepseek-ai", "DeepSeek-V4-Pro", "main"),
                     new ModelSpec("moonshot.kimi2_6", "moonshotai", "Kimi-K2.6", "main"),
                     new ModelSpec(
                             "mistral.v0_3_spbpe", "mistralai", "Mistral-7B-Instruct-v0.3", "main"),
+                    new ModelSpec(
+                            "mistral.tekken", "mistralai", "ministral-8b-instruct-2410", "main"),
                     new ModelSpec("openai.gpt-oss", "openai", "gpt-oss-20b", "main"));
 
     private HfEnwik8BenchmarkRunner() {}
