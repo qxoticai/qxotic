@@ -83,34 +83,34 @@ public class HfModelWikiBenchmark {
     private static Tokenizer loadTokenizer(String familyId) {
         switch (familyId) {
             case "openai.gpt-oss":
-                return HuggingFaceTokenizerLoader.fromPretrained(
+                return HuggingFaceTokenizerLoader.fromHuggingFace(
                         "openai", "gpt-oss-20b", "main", false, false);
             case "meta.llama3":
-                return HuggingFaceTokenizerLoader.fromPretrained(
+                return HuggingFaceTokenizerLoader.fromHuggingFace(
                         "unsloth", "Llama-3.2-1B-Instruct", "main", false, false);
             case "moonshot.kimi2_6":
-                return HuggingFaceTokenizerLoader.fromPretrained(
+                return HuggingFaceTokenizerLoader.fromHuggingFace(
                         "moonshotai", "Kimi-K2.6", "main", false, false);
             case "huggingface.smollm3":
-                return HuggingFaceTokenizerLoader.fromPretrained(
+                return HuggingFaceTokenizerLoader.fromHuggingFace(
                         "HuggingFaceTB", "SmolLM3-3B", "main", false, false);
             case "alibaba.qwen3_5":
-                return HuggingFaceTokenizerLoader.fromPretrained(
+                return HuggingFaceTokenizerLoader.fromHuggingFace(
                         "Qwen", "Qwen3.5-0.8B", "main", false, false);
             case "google.gemma4":
-                return HuggingFaceTokenizerLoader.fromPretrained(
+                return HuggingFaceTokenizerLoader.fromHuggingFace(
                         "google", "gemma-4-e2b-it", "main", false, false);
             case "ibm.granite4_0":
-                return HuggingFaceTokenizerLoader.fromPretrained(
+                return HuggingFaceTokenizerLoader.fromHuggingFace(
                         "ibm-granite", "granite-4.0-h-1b", "main", false, false);
             case "microsoft.phi4":
-                return HuggingFaceTokenizerLoader.fromPretrained(
+                return HuggingFaceTokenizerLoader.fromHuggingFace(
                         "microsoft", "phi-4", "main", false, false);
             case "deepseek.v3_2":
-                return HuggingFaceTokenizerLoader.fromPretrained(
+                return HuggingFaceTokenizerLoader.fromHuggingFace(
                         "deepseek-ai", "DeepSeek-V3.2", "main", false, false);
             case "mistral.v0_3_spbpe":
-                return HuggingFaceTokenizerLoader.fromPretrained(
+                return HuggingFaceTokenizerLoader.fromHuggingFace(
                         "mistralai", "Mistral-7B-Instruct-v0.3", "main", false, false);
             default:
                 throw new IllegalArgumentException("Unsupported HF model family: " + familyId);

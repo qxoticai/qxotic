@@ -137,7 +137,7 @@ class HuggingFaceFamilyGoldenTest {
                     Assumptions.assumeTrue(
                             parts.length == 2,
                             "Invalid model_ref for " + familyId + ": " + effectiveModelRef);
-                    return HuggingFaceTokenizerLoader.fromPretrained(
+                    return HuggingFaceTokenizerLoader.fromHuggingFace(
                             parts[0], parts[1], effectiveRevision, false, false);
                 });
     }

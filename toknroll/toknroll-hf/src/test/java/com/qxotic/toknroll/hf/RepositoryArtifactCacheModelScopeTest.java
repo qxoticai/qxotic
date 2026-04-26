@@ -18,12 +18,7 @@ class RepositoryArtifactCacheModelScopeTest {
 
         Path tokenizerJson =
                 cache.fetchModelScope(
-                        "deepseek-ai",
-                        "DeepSeek-V4-Pro",
-                        null,
-                        "tokenizer.json",
-                        false,
-                        false);
+                        "deepseek-ai", "DeepSeek-V4-Pro", null, "tokenizer.json", false, false);
 
         assertTrue(Files.exists(tokenizerJson), "Expected tokenizer.json to be downloaded");
         String text = Files.readString(tokenizerJson, StandardCharsets.UTF_8);

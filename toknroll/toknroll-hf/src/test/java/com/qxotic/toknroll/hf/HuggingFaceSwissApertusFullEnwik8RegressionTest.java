@@ -64,7 +64,7 @@ class HuggingFaceSwissApertusFullEnwik8RegressionTest {
         }
 
         Tokenizer tokenizer =
-                HuggingFaceTokenizerLoader.fromPretrained(
+                HuggingFaceTokenizerLoader.fromHuggingFace(
                         "swiss-ai", "Apertus-8B-Instruct-2509", "main", false, false);
         int[] actual = tokenizer.encodeToArray(text);
 
