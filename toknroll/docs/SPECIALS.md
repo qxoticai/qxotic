@@ -8,10 +8,10 @@
 - Control-token handling stays explicit and opt-in instead of being hidden in default encode behavior.
 - Call sites remain auditable: plain text encoding and special-aware encoding are distinct operations.
 
-## TikToken mapping
+## Tiktoken mapping
 
-- `tokenizer.encode(text)` is analogous to TikToken ordinary-text encoding (`encode_ordinary(...)`).
-- `specials.encode(tokenizer, text)` is analogous to TikToken special-aware encoding (`encode(..., allowed_special="all")`).
+- `tokenizer.encode(text)` is analogous to Tiktoken ordinary-text encoding (`encode_ordinary(...)`).
+- `specials.encode(tokenizer, text)` is analogous to Tiktoken special-aware encoding (`encode(..., allowed_special="all")`).
 
 ## Usage
 

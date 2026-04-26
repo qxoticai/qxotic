@@ -1,5 +1,6 @@
 package com.qxotic.toknroll.hf;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -55,7 +56,7 @@ class RepositoryArtifactCacheTest {
                         () ->
                                 cache.fetchUrl(
                                         "https://example.com/never-used", Map.of(), true, false));
-        assertTrue(error.getMessage().contains("Offline mode"));
+        assertTrue(error.getMessage().contains("useCacheOnly=true"));
     }
 
     @Test
@@ -72,6 +73,26 @@ class RepositoryArtifactCacheTest {
         assertEquals(first, second);
         assertEquals(2, hits.get(), "forceRefresh should trigger second download");
         assertEquals("2", Files.readString(second, StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void fetchUrl_cachesBinaryPayloadUnchanged() throws Exception {
+        byte[] payload =
+                new byte[] {0x00, (byte) 0xFF, 0x10, 0x00, 0x7F, (byte) 0x80, 0x55, (byte) 0xAA};
+        startServer(
+                "/binary",
+                exchange -> {
+                    exchange.sendResponseHeaders(200, payload.length);
+                    try (OutputStream out = exchange.getResponseBody()) {
+                        out.write(payload);
+                    }
+                });
+
+        RepositoryArtifactCache cache = RepositoryArtifactCache.create(tempDir);
+        String url = "http://localhost:" + server.getAddress().getPort() + "/binary";
+
+        Path path = cache.fetchUrl(url, Map.of(), false, false);
+        assertArrayEquals(payload, Files.readAllBytes(path));
     }
 
     @Test
@@ -96,6 +117,22 @@ class RepositoryArtifactCacheTest {
                 cache.fetchUrl(
                         url, Map.of("Authorization", List.of("Bearer secret")), false, false);
         assertEquals("ok", Files.readString(path, StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void fetchHuggingFace_blankRevisionRejected() {
+        RepositoryArtifactCache cache = RepositoryArtifactCache.create(tempDir);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> cache.fetchHuggingFace("user", "repo", "   ", "tokenizer.json", true, false));
+    }
+
+    @Test
+    void fetchModelScope_blankRevisionRejected() {
+        RepositoryArtifactCache cache = RepositoryArtifactCache.create(tempDir);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> cache.fetchModelScope("user", "repo", "   ", "tokenizer.json", true, false));
     }
 
     private void startServer(String route, ThrowingHandler handler) throws IOException {

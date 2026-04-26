@@ -58,7 +58,7 @@ class HuggingFaceLlamaNoSpecialsRegressionTest {
         }
 
         Tokenizer tokenizer =
-                HuggingFaceTokenizerLoader.fromPretrained(
+                HuggingFaceTokenizerLoader.fromHuggingFace(
                         "unsloth", "Llama-3.2-1B-Instruct", "main", false, false);
         int[] actual = tokenizer.encodeToArray(text);
 

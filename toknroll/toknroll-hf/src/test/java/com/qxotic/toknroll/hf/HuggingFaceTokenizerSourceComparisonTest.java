@@ -63,10 +63,10 @@ class HuggingFaceTokenizerSourceComparisonTest {
             }
 
             Tokenizer pinned =
-                    HuggingFaceTokenizerLoader.fromPretrained(
+                    HuggingFaceTokenizerLoader.fromHuggingFace(
                             user, repository, pinnedRevision, false, false);
             Tokenizer main =
-                    HuggingFaceTokenizerLoader.fromPretrained(
+                    HuggingFaceTokenizerLoader.fromHuggingFace(
                             user, repository, "main", false, false);
 
             List<CaseData> cases = FIXTURE.getCases(familyId);

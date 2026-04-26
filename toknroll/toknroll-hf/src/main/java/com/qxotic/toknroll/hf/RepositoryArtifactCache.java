@@ -28,12 +28,10 @@ final class RepositoryArtifactCache {
     private static final String DEFAULT_CACHE_DIR = "cache";
 
     private final Path cacheRoot;
-    private final HttpClient httpClient;
+    private volatile HttpClient httpClient;
 
     private RepositoryArtifactCache(Path cacheRoot) {
         this.cacheRoot = cacheRoot;
-        this.httpClient =
-                HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build();
     }
 
     static RepositoryArtifactCache create() {
@@ -47,22 +45,23 @@ final class RepositoryArtifactCache {
     Path fetchUrl(
             String url,
             Map<String, List<String>> headers,
-            boolean offlineOnly,
+            boolean useCacheOnly,
             boolean forceRefresh)
             throws IOException {
         Objects.requireNonNull(url, "url");
         String key = sha256(url);
         Path target =
                 cacheRoot.resolve("repository-artifacts").resolve("url").resolve(key + ".bin");
-        return fetchToPath(url, target, headers, offlineOnly, forceRefresh);
+        return fetchToPath("url", url, target, headers, useCacheOnly, forceRefresh);
     }
 
+    /** Fetches and caches one file from a HuggingFace repository revision. */
     Path fetchHuggingFace(
             String user,
             String repository,
             String revision,
             String file,
-            boolean offlineOnly,
+            boolean useCacheOnly,
             boolean forceRefresh)
             throws IOException {
         String resolvedRevision = normalizeRevision(revision);
@@ -86,19 +85,26 @@ final class RepositoryArtifactCache {
         target = appendRelative(target, normalizeFilePath(file));
 
         return fetchToPath(
+                "huggingface",
                 url,
                 target,
                 authHeaders(resolveToken(HF_TOKEN_PROPERTY, HF_TOKEN_ENV)),
-                offlineOnly,
+                useCacheOnly,
                 forceRefresh);
     }
 
+    /**
+     * Fetches and caches one file from a ModelScope repository revision.
+     *
+     * <p>When {@code revision} is {@code null}, ModelScope defaults to {@code master}. Explicit
+     * revision strings (including {@code main}) are not rewritten.
+     */
     Path fetchModelScope(
             String user,
             String repository,
             String revision,
             String file,
-            boolean offlineOnly,
+            boolean useCacheOnly,
             boolean forceRefresh)
             throws IOException {
         String resolvedRevision = normalizeModelScopeRevision(revision);
@@ -122,26 +128,29 @@ final class RepositoryArtifactCache {
         target = appendRelative(target, normalizeFilePath(file));
 
         return fetchToPath(
+                "modelscope",
                 url,
                 target,
                 authHeaders(resolveToken(MODELSCOPE_TOKEN_PROPERTY, MODELSCOPE_TOKEN_ENV)),
-                offlineOnly,
+                useCacheOnly,
                 forceRefresh);
     }
 
     private Path fetchToPath(
+            String source,
             String url,
             Path target,
             Map<String, List<String>> headers,
-            boolean offlineOnly,
+            boolean useCacheOnly,
             boolean forceRefresh)
             throws IOException {
         Path normalizedTarget = target.toAbsolutePath().normalize();
         if (!forceRefresh && Files.exists(normalizedTarget)) {
             return normalizedTarget;
         }
-        if (offlineOnly) {
-            throw new IOException("Offline mode enabled and artifact not cached: " + url);
+        if (useCacheOnly) {
+            throw new IOException(
+                    "[" + source + "] useCacheOnly=true and artifact not cached: " + url);
         }
 
         Files.createDirectories(normalizedTarget.getParent());
@@ -161,15 +170,23 @@ final class RepositoryArtifactCache {
 
         HttpResponse<byte[]> response;
         try {
-            response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
+            response =
+                    getOrCreateHttpClient()
+                            .send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IOException("Interrupted while downloading " + url, e);
+            throw new IOException("[" + source + "] Interrupted while downloading " + url, e);
         }
 
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             throw new IOException(
-                    "Failed to download " + url + " (HTTP " + response.statusCode() + ")");
+                    "["
+                            + source
+                            + "] Failed to download "
+                            + url
+                            + " (HTTP "
+                            + response.statusCode()
+                            + ")");
         }
 
         Path partial =
@@ -182,6 +199,23 @@ final class RepositoryArtifactCache {
                 StandardCopyOption.REPLACE_EXISTING,
                 StandardCopyOption.ATOMIC_MOVE);
         return normalizedTarget;
+    }
+
+    private HttpClient getOrCreateHttpClient() {
+        HttpClient client = httpClient;
+        if (client == null) {
+            synchronized (this) {
+                client = httpClient;
+                if (client == null) {
+                    client =
+                            HttpClient.newBuilder()
+                                    .followRedirects(HttpClient.Redirect.NORMAL)
+                                    .build();
+                    httpClient = client;
+                }
+            }
+        }
+        return client;
     }
 
     private static Map<String, List<String>> authHeaders(String token) {
@@ -229,6 +263,11 @@ final class RepositoryArtifactCache {
         return revision;
     }
 
+    /**
+     * Normalizes a ModelScope revision.
+     *
+     * <p>{@code null -> master}. Blank values are rejected.
+     */
     private static String normalizeModelScopeRevision(String revision) {
         if (revision == null) {
             return "master";

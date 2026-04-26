@@ -28,12 +28,36 @@ import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Builds a Tok'n'Roll {@link Tokenizer} from local HuggingFace tokenizer files. */
+/**
+ * Builds a Tok'n'Roll {@link Tokenizer} from HuggingFace tokenizer-format assets.
+ *
+ * <p>Supported loading modes:
+ *
+ * <ul>
+ *   <li>Local: load from a model directory containing {@code tokenizer.json} or from a direct
+ *       {@code tokenizer.json} path.
+ *   <li>Remote HuggingFace: fetch tokenizer artifacts from HuggingFace repositories.
+ *   <li>Remote ModelScope: fetch tokenizer artifacts from ModelScope repositories.
+ * </ul>
+ *
+ * <p>Remote artifacts are cached on disk via {@link RepositoryArtifactCache}. Cache policy:
+ *
+ * <ul>
+ *   <li>If a requested artifact already exists in cache and {@code forceRefresh=false}, the cached
+ *       file is reused.
+ *   <li>If {@code forceRefresh=true}, the artifact is re-downloaded and cache is replaced.
+ *   <li>If {@code useCacheOnly=true}, network is never used; loading fails on cache miss.
+ * </ul>
+ */
 public final class HuggingFaceTokenizerLoader {
-    private static final String DEFAULT_REVISION = "main";
+    private static final String DEFAULT_HUGGING_FACE_REVISION = "main";
+    private static final String SOURCE_HUGGING_FACE = "huggingface";
+    private static final String SOURCE_MODELSCOPE = "modelscope";
     private static final String TOKENIZER_JSON = "tokenizer.json";
     private static final String TIKTOKEN_MODEL_FILE = "tiktoken.model";
     private static final String TOKENIZER_CONFIG_JSON = "tokenizer_config.json";
+    private static final String TOKENIZER_CONFIG_PAT_STR = "pat_str";
+    private static final int UNICODE_REGEX_FLAGS = Pattern.UNICODE_CHARACTER_CLASS;
     private static final String[] OPTIONAL_TOKENIZER_FILES = {
         TOKENIZER_CONFIG_JSON, "special_tokens_map.json", "added_tokens.json"
     };
@@ -41,72 +65,154 @@ public final class HuggingFaceTokenizerLoader {
     private HuggingFaceTokenizerLoader() {}
 
     /**
-     * Loads a tokenizer from a HuggingFace model directory or a direct tokenizer.json path.
+     * Loads a tokenizer from the local filesystem.
      *
-     * <p>The loader is strict and fails fast when unsupported tokenizer features are encountered.
+     * <p>Accepts either a model directory containing {@code tokenizer.json} or a direct {@code
+     * tokenizer.json} path. The loader is strict and fails fast when unsupported tokenizer features
+     * are encountered.
+     *
+     * @param modelDirOrTokenizerJson model directory or direct {@code tokenizer.json} path
+     * @return loaded tokenizer
+     * @throws IllegalArgumentException if local files are invalid or unsupported
+     * @throws TokenizerLoadException if local file I/O fails
      */
-    public static Tokenizer load(Path modelDirOrTokenizerJson) {
+    public static Tokenizer fromLocal(Path modelDirOrTokenizerJson) {
         Objects.requireNonNull(modelDirOrTokenizerJson, "modelDirOrTokenizerJson");
         try {
-            return loadUnchecked(modelDirOrTokenizerJson.toAbsolutePath().normalize(), null);
+            return loadUnchecked(modelDirOrTokenizerJson.toAbsolutePath().normalize());
         } catch (IOException e) {
-            throw new IllegalArgumentException(
-                    "Failed to load HuggingFace tokenizer from " + modelDirOrTokenizerJson, e);
+            throw new TokenizerLoadException(
+                    "[local] Failed to load HuggingFace tokenizer from " + modelDirOrTokenizerJson,
+                    e);
         }
     }
 
-    public static Tokenizer fromPretrained(String user, String repository) {
-        return fromPretrained(user, repository, DEFAULT_REVISION, false, false);
+    /**
+     * Loads a tokenizer from a remote HuggingFace repository at the default revision ({@code
+     * main).
+     *
+     * <p>Equivalent to calling {@link #fromHuggingFace(String, String, String, boolean, boolean)}
+     * with {@code revision="main"}, {@code useCacheOnly=false}, and {@code forceRefresh=false}.
+     */
+    public static Tokenizer fromHuggingFace(String user, String repository) {
+        return fromHuggingFace(user, repository, DEFAULT_HUGGING_FACE_REVISION, false, false);
     }
 
-    public static Tokenizer fromPretrained(
+    /**
+     * Loads a tokenizer from a remote ModelScope repository at the default revision ({@code
+     * master).
+     *
+     * <p>Equivalent to calling {@link #fromModelScope(String, String, String, boolean, boolean)}
+     * with {@code revision=null} (resolved to {@code master}), {@code useCacheOnly=false}, and
+     * {@code forceRefresh=false}.
+     */
+    public static Tokenizer fromModelScope(String user, String repository) {
+        return fromModelScope(user, repository, null, false, false);
+    }
+
+    /**
+     * Loads a tokenizer from a remote HuggingFace repository.
+     *
+     * <p>The loader first attempts {@code tokenizer.json}. If it is not found (HTTP 404), it falls
+     * back to {@code tiktoken.model} reconstruction plus optional metadata from {@code
+     * tokenizer_config.json}.
+     *
+     * @param user repository owner/namespace on HuggingFace
+     * @param repository repository name on HuggingFace
+     * @param revision git revision, tag, or branch; {@code null} defaults to {@code main}
+     * @param useCacheOnly when {@code true}, only cached artifacts are used
+     * @param forceRefresh when {@code true}, cached files are re-downloaded
+     * @return loaded tokenizer
+     * @throws IllegalArgumentException if tokenizer content is invalid or unsupported
+     * @throws TokenizerLoadException if remote fetch or file I/O fails
+     * @implNote This method uses {@link RepositoryArtifactCache} for artifact caching.
+     */
+    public static Tokenizer fromHuggingFace(
             String user,
             String repository,
             String revision,
-            boolean offlineOnly,
+            boolean useCacheOnly,
+            boolean forceRefresh) {
+        return loadFromRemoteSource(
+                SOURCE_HUGGING_FACE, user, repository, revision, useCacheOnly, forceRefresh);
+    }
+
+    /**
+     * Loads a tokenizer from a remote ModelScope repository.
+     *
+     * <p>The loader first attempts {@code tokenizer.json}. If it is not found (HTTP 404), it falls
+     * back to {@code tiktoken.model} reconstruction plus optional metadata from {@code
+     * tokenizer_config.json}.
+     *
+     * @param user repository owner/namespace on ModelScope
+     * @param repository repository name on ModelScope
+     * @param revision git revision, tag, or branch; {@code null} defaults to {@code master}
+     * @param useCacheOnly when {@code true}, only cached artifacts are used
+     * @param forceRefresh when {@code true}, cached files are re-downloaded
+     * @return loaded tokenizer
+     * @throws IllegalArgumentException if tokenizer content is invalid or unsupported
+     * @throws TokenizerLoadException if remote fetch or file I/O fails
+     * @implNote This method uses {@link RepositoryArtifactCache} for artifact caching.
+     */
+    public static Tokenizer fromModelScope(
+            String user,
+            String repository,
+            String revision,
+            boolean useCacheOnly,
+            boolean forceRefresh) {
+        return loadFromRemoteSource(
+                SOURCE_MODELSCOPE, user, repository, revision, useCacheOnly, forceRefresh);
+    }
+
+    private static Tokenizer loadFromRemoteSource(
+            String source,
+            String user,
+            String repository,
+            String revision,
+            boolean useCacheOnly,
             boolean forceRefresh) {
         RepositoryArtifactCache cache = RepositoryArtifactCache.create();
+        String modelRef = user + "/" + repository;
         try {
             Path tokenizerJson;
             try {
                 tokenizerJson =
-                        cache.fetchHuggingFace(
+                        fetchFromSource(
+                                source,
+                                cache,
                                 user,
                                 repository,
                                 revision,
                                 TOKENIZER_JSON,
-                                offlineOnly,
+                                useCacheOnly,
                                 forceRefresh);
             } catch (IOException e) {
-                if (isNotFoundError(e)) {
-                    return loadFromHfTiktokenModel(
-                            cache, user, repository, revision, offlineOnly, forceRefresh);
+                if (shouldFallbackToTiktokenModel(e, useCacheOnly)) {
+                    return loadFromTiktokenModel(
+                            source, cache, user, repository, revision, useCacheOnly, forceRefresh);
                 }
                 throw e;
             }
-            for (String file : OPTIONAL_TOKENIZER_FILES) {
-                try {
-                    cache.fetchHuggingFace(
-                            user, repository, revision, file, offlineOnly, forceRefresh);
-                } catch (IOException e) {
-                    if (!isNotFoundError(e)) {
-                        throw e;
-                    }
-                }
-            }
-            return loadUnchecked(tokenizerJson, user + "/" + repository);
+            fetchOptionalTokenizerArtifacts(
+                    source, cache, user, repository, revision, useCacheOnly, forceRefresh);
+            return loadUnchecked(tokenizerJson);
         } catch (IOException e) {
-            throw new IllegalArgumentException(
-                    "Failed to load HuggingFace tokenizer for " + user + "/" + repository, e);
+            throw new TokenizerLoadException(
+                    "["
+                            + source
+                            + "] Failed to load tokenizer for "
+                            + modelRef
+                            + "@"
+                            + String.valueOf(revision),
+                    e);
         }
     }
 
     @SuppressWarnings("unchecked")
-    private static Tokenizer loadUnchecked(Path input, String modelRefHint) throws IOException {
+    private static Tokenizer loadUnchecked(Path input) throws IOException {
         Path tokenizerJson = resolveTokenizerJsonPath(input);
 
         Map<String, Object> root = parseObject(tokenizerJson);
-        String tokenizerClass = loadTokenizerClass(tokenizerJson.getParent());
         Map<String, Object> model = asObject(root.get("model"), "tokenizer.json:model");
         String modelType = asString(model.get("type"), "tokenizer.json:model.type");
         if (!"BPE".equals(modelType)) {
@@ -127,7 +233,7 @@ public final class HuggingFaceTokenizerLoader {
         Normalizer normalizer = parseNormalizer(normalizerObj);
         Object preTokenizerObj = root.get("pre_tokenizer");
         boolean hasMetaspace = hasMetaspacePreTokenizer(preTokenizerObj);
-        Splitter splitter = parsePreTokenizer(preTokenizerObj, tokenizerClass, modelRefHint);
+        Splitter splitter = parsePreTokenizer(preTokenizerObj);
 
         List<Tokenizers.MergeRule> merges =
                 buildMerges(entries.tokens, extractMerges(model.get("merges")));
@@ -144,13 +250,6 @@ public final class HuggingFaceTokenizerLoader {
                 tokenizationModel =
                         ImplAccessor.createTiktokenModel(vocabulary, merges, ignoreMerges);
             } catch (IllegalArgumentException e) {
-                if (Boolean.getBoolean("toknroll.hf.debug")) {
-                    System.err.println(
-                            "[hf-loader] tiktokenModel fallback to sentencePieceBpeModel for "
-                                    + modelRefHint
-                                    + ": "
-                                    + e.getMessage());
-                }
                 tokenizationModel = Tokenizers.sentencePieceBpeModel(vocabulary, merges);
             }
         }
@@ -172,35 +271,64 @@ public final class HuggingFaceTokenizerLoader {
         return tokenizer;
     }
 
+    /**
+     * Internal fallback loader for repositories that ship {@code tiktoken.model} instead of {@code
+     * tokenizer.json}.
+     */
     @SuppressWarnings("unchecked")
-    private static Tokenizer loadFromHfTiktokenModel(
+    static Tokenizer loadFromHfTiktokenModel(
             RepositoryArtifactCache cache,
             String user,
             String repository,
             String revision,
-            boolean offlineOnly,
+            boolean useCacheOnly,
+            boolean forceRefresh)
+            throws IOException {
+        return loadFromTiktokenModel(
+                SOURCE_HUGGING_FACE, cache, user, repository, revision, useCacheOnly, forceRefresh);
+    }
+
+    /**
+     * Internal fallback loader for ModelScope repositories that ship {@code tiktoken.model} instead
+     * of {@code tokenizer.json}.
+     */
+    @SuppressWarnings("unchecked")
+    static Tokenizer loadFromModelScopeTiktokenModel(
+            RepositoryArtifactCache cache,
+            String user,
+            String repository,
+            String revision,
+            boolean useCacheOnly,
+            boolean forceRefresh)
+            throws IOException {
+        return loadFromTiktokenModel(
+                SOURCE_MODELSCOPE, cache, user, repository, revision, useCacheOnly, forceRefresh);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Tokenizer loadFromTiktokenModel(
+            String source,
+            RepositoryArtifactCache cache,
+            String user,
+            String repository,
+            String revision,
+            boolean useCacheOnly,
             boolean forceRefresh)
             throws IOException {
         Path tiktokenModel =
-                cache.fetchHuggingFace(
-                        user, repository, revision, TIKTOKEN_MODEL_FILE, offlineOnly, forceRefresh);
+                fetchFromSource(
+                        source,
+                        cache,
+                        user,
+                        repository,
+                        revision,
+                        TIKTOKEN_MODEL_FILE,
+                        useCacheOnly,
+                        forceRefresh);
 
-        Map<String, Object> tokenizerConfig = null;
-        try {
-            Path tokenizerConfigPath =
-                    cache.fetchHuggingFace(
-                            user,
-                            repository,
-                            revision,
-                            TOKENIZER_CONFIG_JSON,
-                            offlineOnly,
-                            forceRefresh);
-            tokenizerConfig = parseObject(tokenizerConfigPath);
-        } catch (IOException e) {
-            if (!isNotFoundError(e)) {
-                throw e;
-            }
-        }
+        Map<String, Object> tokenizerConfig =
+                loadOptionalTokenizerConfig(
+                        source, cache, user, repository, revision, useCacheOnly, forceRefresh);
 
         Map<String, Integer> mergeableRanks;
         try (BufferedReader reader =
@@ -208,62 +336,178 @@ public final class HuggingFaceTokenizerLoader {
             mergeableRanks = ImplAccessor.loadTiktokenMergeableRanks(reader);
         }
 
-        Map<String, Integer> specialTokens = new LinkedHashMap<>();
-        if (tokenizerConfig != null) {
-            Object addedDecoderObj = tokenizerConfig.get("added_tokens_decoder");
-            if (addedDecoderObj instanceof Map<?, ?>) {
-                for (Map.Entry<?, ?> entry : ((Map<?, ?>) addedDecoderObj).entrySet()) {
-                    if (!(entry.getKey() instanceof String)
-                            || !(entry.getValue() instanceof Map<?, ?>)) {
-                        continue;
-                    }
-                    int id;
-                    try {
-                        id = Integer.parseInt((String) entry.getKey());
-                    } catch (NumberFormatException ignored) {
-                        continue;
-                    }
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> tokenMap = (Map<String, Object>) entry.getValue();
-                    Object content = tokenMap.get("content");
-                    if (content instanceof String) {
-                        specialTokens.put((String) content, id);
-                    }
-                }
-            }
-        }
-
         Vocabulary vocabulary =
-                ImplAccessor.reconstructTiktokenVocabulary(mergeableRanks, specialTokens);
+                ImplAccessor.reconstructTiktokenVocabulary(
+                        mergeableRanks, extractSpecialTokens(tokenizerConfig));
         List<Tokenizers.MergeRule> merges =
                 ImplAccessor.reconstructTiktokenMergeRules(mergeableRanks);
 
         TokenizationPipeline.Builder pipeline =
                 TokenizationPipeline.builder(Tokenizers.tiktokenModel(vocabulary, merges));
         String patStr =
-                tryResolvePatStr(
+                resolvePatStr(
+                        source,
                         cache,
                         user,
                         repository,
                         revision,
                         tokenizerConfig,
-                        offlineOnly,
+                        useCacheOnly,
                         forceRefresh);
-        if (patStr != null && !patStr.isEmpty()) {
-            pipeline.splitter(
-                    Splitter.regex(Pattern.compile(patStr, Pattern.UNICODE_CHARACTER_CLASS)));
-        }
+        pipeline.splitter(Splitter.regex(Pattern.compile(patStr, UNICODE_REGEX_FLAGS)));
         return pipeline.build();
     }
 
+    private static void fetchOptionalTokenizerArtifacts(
+            String source,
+            RepositoryArtifactCache cache,
+            String user,
+            String repository,
+            String revision,
+            boolean useCacheOnly,
+            boolean forceRefresh)
+            throws IOException {
+        for (String file : OPTIONAL_TOKENIZER_FILES) {
+            try {
+                fetchFromSource(
+                        source,
+                        cache,
+                        user,
+                        repository,
+                        revision,
+                        file,
+                        useCacheOnly,
+                        forceRefresh);
+            } catch (IOException e) {
+                if (!isNotFoundError(e)) {
+                    throw e;
+                }
+            }
+        }
+    }
+
+    private static Map<String, Object> loadOptionalTokenizerConfig(
+            String source,
+            RepositoryArtifactCache cache,
+            String user,
+            String repository,
+            String revision,
+            boolean useCacheOnly,
+            boolean forceRefresh)
+            throws IOException {
+        try {
+            Path tokenizerConfigPath =
+                    fetchFromSource(
+                            source,
+                            cache,
+                            user,
+                            repository,
+                            revision,
+                            TOKENIZER_CONFIG_JSON,
+                            useCacheOnly,
+                            forceRefresh);
+            return parseObject(tokenizerConfigPath);
+        } catch (IOException e) {
+            if (isNotFoundError(e)) {
+                return null;
+            }
+            throw e;
+        }
+    }
+
     @SuppressWarnings("unchecked")
-    private static String tryResolvePatStr(
+    private static Map<String, Integer> extractSpecialTokens(Map<String, Object> tokenizerConfig) {
+        Map<String, Integer> specialTokens = new LinkedHashMap<>();
+        if (tokenizerConfig == null) {
+            return specialTokens;
+        }
+        Object addedDecoderObj = tokenizerConfig.get("added_tokens_decoder");
+        if (!(addedDecoderObj instanceof Map<?, ?>)) {
+            return specialTokens;
+        }
+        for (Map.Entry<?, ?> entry : ((Map<?, ?>) addedDecoderObj).entrySet()) {
+            if (!(entry.getKey() instanceof String) || !(entry.getValue() instanceof Map<?, ?>)) {
+                continue;
+            }
+            int id;
+            try {
+                id = Integer.parseInt((String) entry.getKey());
+            } catch (NumberFormatException ignored) {
+                continue;
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> tokenMap = (Map<String, Object>) entry.getValue();
+            Object content = tokenMap.get("content");
+            if (content instanceof String) {
+                specialTokens.put((String) content, id);
+            }
+        }
+        return specialTokens;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String resolvePatStr(
+            String source,
             RepositoryArtifactCache cache,
             String user,
             String repository,
             String revision,
             Map<String, Object> tokenizerConfig,
-            boolean offlineOnly,
+            boolean useCacheOnly,
+            boolean forceRefresh)
+            throws IOException {
+        String directPatStr = parsePatStrFromTokenizerConfig(tokenizerConfig);
+        if (directPatStr != null) {
+            return directPatStr;
+        }
+        String modulePatStr =
+                tryResolvePatStrFromAutoMapModule(
+                        source,
+                        cache,
+                        user,
+                        repository,
+                        revision,
+                        tokenizerConfig,
+                        useCacheOnly,
+                        forceRefresh);
+        if (modulePatStr != null) {
+            return modulePatStr;
+        }
+        throw new IllegalArgumentException(
+                "["
+                        + source
+                        + "] tiktoken.model fallback requires pat_str for "
+                        + user
+                        + "/"
+                        + repository
+                        + "@"
+                        + String.valueOf(revision)
+                        + " (not found in tokenizer_config.json.pat_str or auto_map module)");
+    }
+
+    private static String parsePatStrFromTokenizerConfig(Map<String, Object> tokenizerConfig) {
+        if (tokenizerConfig == null) {
+            return null;
+        }
+        Object patStrObj = tokenizerConfig.get(TOKENIZER_CONFIG_PAT_STR);
+        if (patStrObj instanceof String) {
+            String patStr = ((String) patStrObj).trim();
+            if (!patStr.isEmpty()) {
+                return adaptRegexForJava(patStr);
+            }
+        }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String tryResolvePatStrFromAutoMapModule(
+            String source,
+            RepositoryArtifactCache cache,
+            String user,
+            String repository,
+            String revision,
+            Map<String, Object> tokenizerConfig,
+            boolean useCacheOnly,
             boolean forceRefresh)
             throws IOException {
         if (tokenizerConfig == null) {
@@ -290,19 +534,57 @@ public final class HuggingFaceTokenizerLoader {
         Path modulePath;
         try {
             modulePath =
-                    cache.fetchHuggingFace(
-                            user, repository, revision, moduleFile, offlineOnly, forceRefresh);
+                    fetchFromSource(
+                            source,
+                            cache,
+                            user,
+                            repository,
+                            revision,
+                            moduleFile,
+                            useCacheOnly,
+                            forceRefresh);
         } catch (IOException e) {
             if (isNotFoundError(e)) {
                 return null;
             }
             throw e;
         }
-        String source = Files.readString(modulePath, StandardCharsets.UTF_8);
-        return parsePatStrFromPythonModule(source);
+        String moduleSource = Files.readString(modulePath, StandardCharsets.UTF_8);
+        return parsePatStrFromPythonModule(moduleSource);
     }
 
-    private static String parsePatStrFromPythonModule(String source) {
+    private static String adaptRegexForJava(String pattern) {
+        return pattern.replace("\\p{Han}", "\\p{IsHan}");
+    }
+
+    private static Path fetchFromSource(
+            String source,
+            RepositoryArtifactCache cache,
+            String user,
+            String repository,
+            String revision,
+            String file,
+            boolean useCacheOnly,
+            boolean forceRefresh)
+            throws IOException {
+        if (SOURCE_HUGGING_FACE.equals(source)) {
+            return cache.fetchHuggingFace(
+                    user, repository, revision, file, useCacheOnly, forceRefresh);
+        }
+        if (SOURCE_MODELSCOPE.equals(source)) {
+            return cache.fetchModelScope(
+                    user, repository, revision, file, useCacheOnly, forceRefresh);
+        }
+        throw new IllegalArgumentException("Unsupported source: " + source);
+    }
+
+    /**
+     * Extracts and flattens Python {@code pat_str = "|".join([...])} definitions.
+     *
+     * <p>The extracted pattern is adapted for Java's regex flavor by rewriting {@code \p{Han}} to
+     * {@code \p{IsHan}}.
+     */
+    static String parsePatStrFromPythonModule(String source) {
         int start = source.indexOf("pat_str = \"|\".join([");
         if (start < 0) {
             return null;
@@ -321,7 +603,7 @@ public final class HuggingFaceTokenizerLoader {
             return null;
         }
         String pattern = String.join("|", parts);
-        return pattern.replace("\\p{Han}", "\\p{IsHan}");
+        return adaptRegexForJava(pattern);
     }
 
     @SuppressWarnings("unchecked")
@@ -440,23 +722,6 @@ public final class HuggingFaceTokenizerLoader {
         return input;
     }
 
-    private static String loadTokenizerClass(Path modelDir) throws IOException {
-        if (modelDir == null) {
-            return null;
-        }
-        Path tokenizerConfigPath = modelDir.resolve(TOKENIZER_CONFIG_JSON);
-        if (!Files.exists(tokenizerConfigPath)) {
-            return null;
-        }
-        try {
-            Map<String, Object> config = parseObject(tokenizerConfigPath);
-            Object value = config.get("tokenizer_class");
-            return value instanceof String ? (String) value : null;
-        } catch (RuntimeException e) {
-            return null;
-        }
-    }
-
     @SuppressWarnings("unchecked")
     private static Map<String, Object> parseObject(Path file) throws IOException {
         String json = Files.readString(file, StandardCharsets.UTF_8);
@@ -496,6 +761,17 @@ public final class HuggingFaceTokenizerLoader {
 
     private static boolean isNotFoundError(IOException e) {
         return e.getMessage() != null && e.getMessage().contains("HTTP 404");
+    }
+
+    private static boolean shouldFallbackToTiktokenModel(IOException e, boolean useCacheOnly) {
+        if (isNotFoundError(e)) {
+            return true;
+        }
+        return useCacheOnly && isArtifactNotCachedError(e);
+    }
+
+    private static boolean isArtifactNotCachedError(IOException e) {
+        return e.getMessage() != null && e.getMessage().contains("artifact not cached");
     }
 
     private static Normalizer parseNormalizer(Object normalizerObj) {
@@ -590,8 +866,7 @@ public final class HuggingFaceTokenizerLoader {
         return false;
     }
 
-    private static Splitter parsePreTokenizer(
-            Object preTokenizerObj, String tokenizerClass, String modelRefHint) {
+    private static Splitter parsePreTokenizer(Object preTokenizerObj) {
         if (preTokenizerObj == null || preTokenizerObj == Json.NULL) {
             return null;
         }
@@ -604,9 +879,9 @@ public final class HuggingFaceTokenizerLoader {
         String type = asString(preTokenizer.get("type"), "tokenizer.json:pre_tokenizer.type");
         switch (type) {
             case "Split":
-                return parseSplitPreTokenizer(preTokenizer, tokenizerClass, modelRefHint);
+                return parseSplitPreTokenizer(preTokenizer);
             case "Sequence":
-                return parseSequencePreTokenizer(preTokenizer, tokenizerClass, modelRefHint);
+                return parseSequencePreTokenizer(preTokenizer);
             case "ByteLevel":
                 return Splitter.identity();
             case "Metaspace":
@@ -619,8 +894,7 @@ public final class HuggingFaceTokenizerLoader {
         }
     }
 
-    private static Splitter parseSequencePreTokenizer(
-            Map<String, Object> preTokenizer, String tokenizerClass, String modelRefHint) {
+    private static Splitter parseSequencePreTokenizer(Map<String, Object> preTokenizer) {
         Object childrenObj = preTokenizer.get("pretokenizers");
         if (!(childrenObj instanceof List<?>)) {
             throw new IllegalArgumentException(
@@ -628,7 +902,7 @@ public final class HuggingFaceTokenizerLoader {
         }
         List<Splitter> splitters = new ArrayList<>();
         for (Object childObj : (List<?>) childrenObj) {
-            Splitter child = parsePreTokenizer(childObj, tokenizerClass, modelRefHint);
+            Splitter child = parsePreTokenizer(childObj);
             if (child != null) {
                 splitters.add(child);
             }
@@ -639,8 +913,7 @@ public final class HuggingFaceTokenizerLoader {
     }
 
     @SuppressWarnings("unchecked")
-    private static Splitter parseSplitPreTokenizer(
-            Map<String, Object> preTokenizer, String tokenizerClass, String modelRefHint) {
+    private static Splitter parseSplitPreTokenizer(Map<String, Object> preTokenizer) {
         Object patternObj = preTokenizer.get("pattern");
         if (!(patternObj instanceof Map<?, ?>)) {
             throw new IllegalArgumentException(
@@ -652,9 +925,8 @@ public final class HuggingFaceTokenizerLoader {
 
         Object regex = patternMap.get("Regex");
         if (regex instanceof String) {
-            String regexPattern =
-                    adaptRegexForTokenizerClass((String) regex, tokenizerClass, modelRefHint);
-            Pattern pattern = Pattern.compile(regexPattern, Pattern.UNICODE_CHARACTER_CLASS);
+            String regexPattern = (String) regex;
+            Pattern pattern = Pattern.compile(regexPattern, UNICODE_REGEX_FLAGS);
             return (text, startInclusive, endExclusive, consumer) -> {
                 String source = text.subSequence(startInclusive, endExclusive).toString();
                 for (Span span : splitByPatternWithBehavior(source, pattern, behavior, invert)) {
@@ -682,14 +954,6 @@ public final class HuggingFaceTokenizerLoader {
         throw new IllegalArgumentException(
                 "Unsupported tokenizer config at tokenizer.json:pre_tokenizer.pattern (only Regex"
                         + " and String are supported)");
-    }
-
-    private static String adaptRegexForTokenizerClass(
-            String regex, String tokenizerClass, String modelRefHint) {
-        if (regex == null || tokenizerClass == null) {
-            return regex;
-        }
-        return regex;
     }
 
     private static List<Span> splitByLiteral(

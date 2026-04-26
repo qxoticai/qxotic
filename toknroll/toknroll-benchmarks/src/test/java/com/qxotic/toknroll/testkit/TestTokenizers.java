@@ -78,7 +78,7 @@ public final class TestTokenizers {
     private static Optional<Tokenizer> loadFromHf(HfSpec spec) {
         try {
             return Optional.of(
-                    HuggingFaceTokenizerLoader.fromPretrained(
+                    HuggingFaceTokenizerLoader.fromHuggingFace(
                             spec.user(), spec.repository(), spec.revision(), false, false));
         } catch (RuntimeException e) {
             return Optional.empty();

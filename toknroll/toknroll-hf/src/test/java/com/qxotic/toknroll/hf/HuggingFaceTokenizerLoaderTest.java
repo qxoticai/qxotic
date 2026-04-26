@@ -32,7 +32,7 @@ class HuggingFaceTokenizerLoaderTest {
                             + "}",
                         StandardCharsets.UTF_8);
 
-        Tokenizer tokenizer = HuggingFaceTokenizerLoader.load(tokenizerJson);
+        Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
 
         assertArrayEquals(new int[] {2}, tokenizer.encode("ab").toArray());
     }
@@ -45,7 +45,7 @@ class HuggingFaceTokenizerLoaderTest {
                 "{\"model\":{\"type\":\"BPE\",\"vocab\":{\"a\":0},\"merges\":[]}}",
                 StandardCharsets.UTF_8);
 
-        Tokenizer tokenizer = HuggingFaceTokenizerLoader.load(modelDir);
+        Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(modelDir);
         assertEquals(1, tokenizer.vocabulary().size());
     }
 
@@ -57,7 +57,7 @@ class HuggingFaceTokenizerLoaderTest {
                         buildByteLevelTokenizerJson(true),
                         StandardCharsets.UTF_8);
 
-        Tokenizer tokenizer = HuggingFaceTokenizerLoader.load(tokenizerJson);
+        Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
         assertArrayEquals(new int[] {256}, tokenizer.encode("ab").toArray());
     }
 
@@ -69,7 +69,7 @@ class HuggingFaceTokenizerLoaderTest {
                         buildByteLevelTokenizerJson(false),
                         StandardCharsets.UTF_8);
 
-        Tokenizer tokenizer = HuggingFaceTokenizerLoader.load(tokenizerJson);
+        Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
         assertArrayEquals(new int[] {97, 98}, tokenizer.encode("ab").toArray());
     }
 
@@ -81,7 +81,7 @@ class HuggingFaceTokenizerLoaderTest {
                         buildByteLevelTokenizerJsonWithAbMerge(true),
                         StandardCharsets.UTF_8);
 
-        Tokenizer tokenizer = HuggingFaceTokenizerLoader.load(tokenizerJson);
+        Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
         assertArrayEquals(new int[] {256, 99}, tokenizer.encode("abc").toArray());
     }
 
@@ -147,7 +147,7 @@ class HuggingFaceTokenizerLoaderTest {
         IllegalArgumentException error =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> HuggingFaceTokenizerLoader.load(tokenizerJson));
+                        () -> HuggingFaceTokenizerLoader.fromLocal(tokenizerJson));
         assertTrue(error.getMessage().contains("model.type"));
     }
 
@@ -165,7 +165,7 @@ class HuggingFaceTokenizerLoaderTest {
         IllegalArgumentException error =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> HuggingFaceTokenizerLoader.load(tokenizerJson));
+                        () -> HuggingFaceTokenizerLoader.fromLocal(tokenizerJson));
         assertTrue(error.getMessage().contains("pre_tokenizer.type"));
     }
 
@@ -175,7 +175,7 @@ class HuggingFaceTokenizerLoaderTest {
         IllegalArgumentException error =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> HuggingFaceTokenizerLoader.load(emptyDir));
+                        () -> HuggingFaceTokenizerLoader.fromLocal(emptyDir));
         assertTrue(error.getMessage().contains("Missing tokenizer.json"));
     }
 }

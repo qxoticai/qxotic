@@ -20,7 +20,7 @@ class HuggingFaceTokenizerAdditionalSupportTest {
     @MethodSource("additionalSupportModels")
     void supportsCoreTokenizerContracts(String user, String repo, String sampleText) {
         Tokenizer tokenizer =
-                HuggingFaceTokenizerLoader.fromPretrained(user, repo, "main", false, false);
+                HuggingFaceTokenizerLoader.fromHuggingFace(user, repo, "main", false, false);
 
         IntSequence encoded = tokenizer.encode(sampleText);
         assertFalse(encoded.isEmpty());

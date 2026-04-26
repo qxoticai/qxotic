@@ -51,7 +51,7 @@ public final class HfEnwik8BenchmarkRunner {
             String modelRef = spec.user + "/" + spec.repo;
             try {
                 Tokenizer tokenizer =
-                        HuggingFaceTokenizerLoader.fromPretrained(
+                        HuggingFaceTokenizerLoader.fromHuggingFace(
                                 spec.user, spec.repo, spec.revision, false, false);
 
                 tokenizer.encode(warmupText);
