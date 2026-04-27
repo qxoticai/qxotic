@@ -76,6 +76,16 @@ public final class Tokenizers {
         return validatedSpecials;
     }
 
+    /**
+     * Creates a tiktoken/GPT-2 style BPE model.
+     *
+     * <p><strong>Important:</strong> every token surface in {@code vocabulary} must already be
+     * byte-level encoded (see {@link ByteLevel#encode(byte[])}). The model validates this invariant
+     * at construction and throws if any token is not a valid byte-level symbol string (see {@link
+     * ByteLevel#isValidEncoding(String)}).
+     *
+     * @throws IllegalArgumentException if {@code vocabulary} contains non-bytelevel token strings
+     */
     public static TokenizationModel tiktokenModel(Vocabulary vocabulary, List<MergeRule> merges) {
         return tiktokenModel(vocabulary, merges, false);
     }

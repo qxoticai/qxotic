@@ -5,7 +5,6 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Vocabulary;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -107,6 +106,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
             Vocabulary vocabulary, LongLongMap merges, boolean ignoreMerges) {
         Objects.requireNonNull(vocabulary, "vocabulary");
         Objects.requireNonNull(merges, "merges");
+        validateByteLevelVocabulary(vocabulary);
 
         int[] singleByteTokenId = buildSingleByteTokenMap(vocabulary);
         byte[][] tokenBytesById = buildTokenBytesById(vocabulary);
@@ -810,10 +810,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
         int[] map = new int[256];
         Arrays.fill(map, NO_TOKEN);
         for (Map.Entry<String, Integer> entry : vocabulary) {
-            byte[] bytes = decodeByteLevelOrNull(entry.getKey());
-            if (bytes == null) {
-                continue;
-            }
+            byte[] bytes = ByteLevel.decode(entry.getKey());
             if (bytes.length != 1) {
                 continue;
             }
@@ -878,19 +875,61 @@ final class TiktokenModel extends AbstractTokenizationModel {
         }
         byte[][] table = new byte[Math.max(0, maxId + 1)][];
         for (Map.Entry<String, Integer> e : vocabulary) {
-            byte[] bytes = decodeByteLevelOrNull(e.getKey());
-            table[e.getValue()] =
-                    bytes != null ? bytes : e.getKey().getBytes(StandardCharsets.UTF_8);
+            table[e.getValue()] = ByteLevel.decode(e.getKey());
         }
         return table;
     }
 
-    private static byte[] decodeByteLevelOrNull(String token) {
-        try {
-            return ByteLevel.decode(token);
-        } catch (IllegalArgumentException e) {
-            return null;
+    private static void validateByteLevelVocabulary(Vocabulary vocabulary) {
+        for (Map.Entry<String, Integer> entry : vocabulary) {
+            String token = entry.getKey();
+            if (ByteLevel.isValidEncoding(token)) {
+                continue;
+            }
+            throw new IllegalArgumentException(
+                    "Tiktoken vocabulary contains non-bytelevel token at id "
+                            + entry.getValue()
+                            + ": "
+                            + escapeToken(token));
         }
+    }
+
+    private static String escapeToken(String token) {
+        StringBuilder out = new StringBuilder(token.length() * 2 + 2);
+        out.append('"');
+        for (int i = 0; i < token.length(); i++) {
+            char ch = token.charAt(i);
+            if (ch >= 0x20 && ch <= 0x7E && ch != '\\' && ch != '"') {
+                out.append(ch);
+                continue;
+            }
+            switch (ch) {
+                case '\\':
+                    out.append("\\\\");
+                    break;
+                case '"':
+                    out.append("\\\"");
+                    break;
+                case '\n':
+                    out.append("\\n");
+                    break;
+                case '\r':
+                    out.append("\\r");
+                    break;
+                case '\t':
+                    out.append("\\t");
+                    break;
+                default:
+                    out.append("\\u");
+                    String hex = Integer.toHexString(ch).toUpperCase();
+                    for (int p = hex.length(); p < 4; p++) {
+                        out.append('0');
+                    }
+                    out.append(hex);
+            }
+        }
+        out.append('"');
+        return out.toString();
     }
 
     // ---------------------------------------------------------------------

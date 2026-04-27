@@ -145,16 +145,10 @@ public interface Splitter {
                                             + chunkEnd
                                             + ") with cursor "
                                             + cursor[0]);
-                    assert chunkEnd > chunkStart
-                            : "Child splitter emitted empty range ["
-                                    + chunkStart
-                                    + ", "
-                                    + chunkEnd
-                                    + ") inside parent range ["
-                                    + startInclusive
-                                    + ", "
-                                    + endExclusive
-                                    + ")";
+                    // Skip empty ranges emitted by child splitters (e.g., for empty input).
+                    if (chunkEnd == chunkStart) {
+                        return;
+                    }
                     cursor[0] = chunkEnd;
                     applySequence(splitters, stage + 1, source, chunkStart, chunkEnd, consumer);
                 });

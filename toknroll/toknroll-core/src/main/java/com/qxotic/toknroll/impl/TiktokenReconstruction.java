@@ -3,9 +3,11 @@ package com.qxotic.toknroll.impl;
 import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.Tokenizers;
 import com.qxotic.toknroll.Vocabulary;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -100,6 +102,9 @@ final class TiktokenReconstruction {
         long[] values = new long[checkedMerges.size()];
         int size = 0;
 
+        Map<ByteArrayKey, Integer> tokenIdByByteSurface =
+                sentencePiece ? Map.of() : buildByteSurfaceIndex(checkedVocabulary);
+
         Set<Long> pairKeys = new HashSet<>(checkedMerges.size() * 2);
         Set<Integer> ranks = new HashSet<>(checkedMerges.size() * 2);
         int maxRank = -1;
@@ -132,8 +137,25 @@ final class TiktokenReconstruction {
                 throw new IllegalArgumentException("Duplicate merge rank: " + rank);
             }
 
-            String mergedToken = checkedVocabulary.token(leftId) + checkedVocabulary.token(rightId);
-            if (!checkedVocabulary.contains(mergedToken)) {
+            String leftToken = checkedVocabulary.token(leftId);
+            String rightToken = checkedVocabulary.token(rightId);
+            String mergedToken = leftToken + rightToken;
+            int mergedId;
+            if (checkedVocabulary.contains(mergedToken)) {
+                mergedId = checkedVocabulary.id(mergedToken);
+            } else if (!sentencePiece) {
+                mergedId = mergedIdByByteSurface(tokenIdByByteSurface, leftToken, rightToken);
+                if (mergedId < 0) {
+                    throw new IllegalArgumentException(
+                            "Merged token not found in vocabulary for pair ("
+                                    + leftId
+                                    + ", "
+                                    + rightId
+                                    + "): '"
+                                    + mergedToken
+                                    + "'");
+                }
+            } else {
                 throw new IllegalArgumentException(
                         "Merged token not found in vocabulary for pair ("
                                 + leftId
@@ -143,7 +165,6 @@ final class TiktokenReconstruction {
                                 + mergedToken
                                 + "'");
             }
-            int mergedId = checkedVocabulary.id(mergedToken);
             keys[size] = pairKey;
             values[size] =
                     sentencePiece
@@ -167,6 +188,64 @@ final class TiktokenReconstruction {
             values = Arrays.copyOf(values, size);
         }
         return new LongLongMap(keys, values);
+    }
+
+    private static Map<ByteArrayKey, Integer> buildByteSurfaceIndex(Vocabulary vocabulary) {
+        Map<ByteArrayKey, Integer> out = new HashMap<>();
+        for (Map.Entry<String, Integer> entry : vocabulary) {
+            byte[] bytes = tokenBytesLikeModel(entry.getKey());
+            ByteArrayKey key = new ByteArrayKey(bytes);
+            Integer existing = out.get(key);
+            if (existing == null || entry.getValue() < existing) {
+                out.put(key, entry.getValue());
+            }
+        }
+        return out;
+    }
+
+    private static int mergedIdByByteSurface(
+            Map<ByteArrayKey, Integer> tokenIdByByteSurface, String leftToken, String rightToken) {
+        byte[] left = tokenBytesLikeModel(leftToken);
+        byte[] right = tokenBytesLikeModel(rightToken);
+        byte[] merged = Arrays.copyOf(left, left.length + right.length);
+        System.arraycopy(right, 0, merged, left.length, right.length);
+        Integer id = tokenIdByByteSurface.get(new ByteArrayKey(merged));
+        return id == null ? -1 : id;
+    }
+
+    private static byte[] tokenBytesLikeModel(String token) {
+        try {
+            return ByteLevel.decode(token);
+        } catch (RuntimeException ignored) {
+            return token.getBytes(StandardCharsets.UTF_8);
+        }
+    }
+
+    private static final class ByteArrayKey {
+        private final byte[] bytes;
+        private final int hash;
+
+        private ByteArrayKey(byte[] bytes) {
+            this.bytes = bytes;
+            this.hash = Arrays.hashCode(bytes);
+        }
+
+        @Override
+        public int hashCode() {
+            return hash;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (this == other) {
+                return true;
+            }
+            if (!(other instanceof ByteArrayKey)) {
+                return false;
+            }
+            ByteArrayKey o = (ByteArrayKey) other;
+            return Arrays.equals(bytes, o.bytes);
+        }
     }
 
     private static String tokenForId(Map<String, Integer> tokenToId, int id) {
