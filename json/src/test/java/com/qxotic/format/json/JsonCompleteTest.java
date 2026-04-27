@@ -1,11 +1,10 @@
 package com.qxotic.format.json;
 
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.HashMap;
 import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
 
 /** Tests for Json parsing and serialization. */
 class JsonCompleteTest {
@@ -155,10 +154,11 @@ class JsonCompleteTest {
 
     @Test
     void testStringifyWithControlCharacters() {
-        // Control characters that need unicode escape
+        // Control characters (0x00-0x1F) need unicode escape per RFC 8259
         assertEquals("\"\\u0000\"", Json.stringify("\u0000", false));
         assertEquals("\"\\u001F\"", Json.stringify("\u001f", false)); // uppercase hex
-        assertEquals("\"\\u007F\"", Json.stringify("\u007f", false)); // uppercase hex
+        // DEL (0x7F) is NOT a control character per RFC 8259; not escaped
+        assertEquals("\"\u007f\"", Json.stringify("\u007f", false));
     }
 
     // ===== print() unsupported type error =====

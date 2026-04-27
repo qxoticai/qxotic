@@ -59,4 +59,21 @@ class JsonApiSimplificationTest {
         assertSame(Json.NULL, parsed);
         assertNotNull(Json.NULL);
     }
+
+    @Test
+    void testParseOptionsImmutability() {
+        Json.ParseOptions defaults = Json.ParseOptions.defaults();
+        Json.ParseOptions shallow = defaults.maxDepth(10);
+        Json.ParseOptions strict = defaults.failOnDuplicateKeys(true);
+
+        // Original must be unchanged
+        assertEquals(1000, defaults.maxDepth());
+        assertFalse(defaults.failOnDuplicateKeys());
+
+        // Derived instances must have new values
+        assertEquals(10, shallow.maxDepth());
+        assertFalse(shallow.failOnDuplicateKeys());
+        assertTrue(strict.failOnDuplicateKeys());
+        assertEquals(1000, strict.maxDepth());
+    }
 }
