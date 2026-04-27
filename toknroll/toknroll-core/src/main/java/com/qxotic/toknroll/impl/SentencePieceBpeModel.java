@@ -8,6 +8,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -43,8 +44,6 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
     private final String[] tokensById;
     private final Map<String, Integer> tokenToId;
     private final LongLongMap packedMerges;
-    private final float[] tokenScores;
-    private final boolean dynamicScoreMerges;
     private final int[] bmpSingletonIds;
     private final boolean[] isByteToken;
 
@@ -60,8 +59,6 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
             String[] tokensById,
             Map<String, Integer> tokenToId,
             LongLongMap packedMerges,
-            float[] tokenScores,
-            boolean dynamicScoreMerges,
             int[] bmpSingletonIds,
             boolean[] isByteToken,
             float expectedTokensPerChar) {
@@ -70,8 +67,6 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
         this.tokensById = tokensById;
         this.tokenToId = tokenToId;
         this.packedMerges = packedMerges;
-        this.tokenScores = tokenScores;
-        this.dynamicScoreMerges = dynamicScoreMerges;
         this.bmpSingletonIds = bmpSingletonIds;
         this.isByteToken = isByteToken;
     }
@@ -84,9 +79,9 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
     /**
      * Compatibility factory used by tests that define SentencePiece merges via token scores.
      *
-     * <p>When explicit merges are unavailable, this follows llama.cpp SPM-style dynamic merges:
-     * adjacent symbols are merged if their concatenation exists in vocabulary, choosing the highest
-     * merged-token score first.
+     * <p>When explicit merges are unavailable, this reconstructs a ranked merge table from
+     * vocabulary + scores and then applies the normal greedy merge engine. This preserves
+     * score-priority behavior while avoiding per-step dynamic pair rescans.
      */
     public static SentencePieceBpeModel fromVocabulary(Vocabulary vocabulary, float[] scores) {
         Objects.requireNonNull(vocabulary, "vocabulary");
@@ -109,18 +104,15 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
                             + maxId);
         }
 
-        return create(vocabulary, new LongLongMap(new long[0], new long[0]), scores, true);
+        return create(vocabulary, new LongLongMap(new long[0], new long[0]), scores);
     }
 
     private static SentencePieceBpeModel create(Vocabulary vocabulary, LongLongMap directMerges) {
-        return create(vocabulary, directMerges, null, false);
+        return create(vocabulary, directMerges, null);
     }
 
     private static SentencePieceBpeModel create(
-            Vocabulary vocabulary,
-            LongLongMap directMerges,
-            float[] tokenScores,
-            boolean dynamicScoreMerges) {
+            Vocabulary vocabulary, LongLongMap directMerges, float[] tokenScores) {
         Objects.requireNonNull(vocabulary, "vocabulary");
 
         int size = vocabulary.size();
@@ -151,7 +143,10 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
             }
         }
 
-        LongLongMap packedMerges = directMerges;
+        LongLongMap packedMerges =
+                tokenScores == null
+                        ? directMerges
+                        : buildPackedMergesFromScores(tokenToId, tokenScores);
 
         boolean[] isByteToken = new boolean[size];
         int[] byteTokenIds = new int[BYTE_FALLBACK_SIZE];
@@ -178,11 +173,90 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
                 tokensById,
                 tokenToId,
                 packedMerges,
-                tokenScores,
-                dynamicScoreMerges,
                 bmpSingletonIds,
                 isByteToken,
                 estimateTokensPerChar(vocabulary.size()));
+    }
+
+    private static LongLongMap buildPackedMergesFromScores(
+            Map<String, Integer> tokenToId, float[] tokenScores) {
+        Objects.requireNonNull(tokenToId, "tokenToId");
+        Objects.requireNonNull(tokenScores, "tokenScores");
+
+        Map<Long, Integer> pairToMergedId = new LinkedHashMap<>();
+        for (Map.Entry<String, Integer> entry : tokenToId.entrySet()) {
+            String merged = entry.getKey();
+            Integer mergedIdObj = entry.getValue();
+            if (merged == null || mergedIdObj == null || merged.length() < 2) {
+                continue;
+            }
+            int mergedId = mergedIdObj;
+            float mergedScore = tokenScores[mergedId];
+            if (!Float.isFinite(mergedScore)) {
+                continue;
+            }
+
+            int split = Character.charCount(merged.codePointAt(0));
+            while (split < merged.length()) {
+                Integer leftId = tokenToId.get(merged.substring(0, split));
+                Integer rightId = tokenToId.get(merged.substring(split));
+                if (leftId != null && rightId != null) {
+                    long pair = IntPair.of(leftId, rightId);
+                    pairToMergedId.putIfAbsent(pair, mergedId);
+                }
+                split += Character.charCount(merged.codePointAt(split));
+            }
+        }
+
+        if (pairToMergedId.isEmpty()) {
+            return new LongLongMap(new long[0], new long[0]);
+        }
+
+        long[] keys = new long[pairToMergedId.size()];
+        int[] mergedIds = new int[pairToMergedId.size()];
+        int write = 0;
+        for (Map.Entry<Long, Integer> entry : pairToMergedId.entrySet()) {
+            keys[write] = entry.getKey();
+            mergedIds[write] = entry.getValue();
+            write++;
+        }
+
+        Integer[] order = new Integer[mergedIds.length];
+        for (int i = 0; i < order.length; i++) {
+            order[i] = i;
+        }
+        Arrays.sort(
+                order,
+                (a, b) -> {
+                    float as = tokenScores[mergedIds[a]];
+                    float bs = tokenScores[mergedIds[b]];
+                    int cmp = Float.compare(bs, as);
+                    if (cmp != 0) {
+                        return cmp;
+                    }
+                    return Integer.compare(mergedIds[a], mergedIds[b]);
+                });
+
+        int[] ranks = new int[mergedIds.length];
+        int rank = -1;
+        int prevBits = 0;
+        boolean first = true;
+        for (int idx : order) {
+            int bits = Float.floatToRawIntBits(tokenScores[mergedIds[idx]]);
+            if (first || bits != prevBits) {
+                rank++;
+                prevBits = bits;
+                first = false;
+            }
+            ranks[idx] = rank;
+        }
+
+        long[] values = new long[mergedIds.length];
+        for (int i = 0; i < mergedIds.length; i++) {
+            values[i] = packMerge(ranks[i], mergedIds[i]);
+        }
+
+        return new LongLongMap(keys, values);
     }
 
     private static float estimateTokensPerChar(int vocabSize) {
@@ -262,9 +336,6 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
         if (length < 2) {
             return Arrays.copyOf(ids, length);
         }
-        if (dynamicScoreMerges) {
-            return mergeGreedySimpleDynamic(ids, length);
-        }
         switch (MERGE_STRATEGY) {
             case SIMPLE:
                 return mergeGreedySimple(ids, length);
@@ -333,42 +404,6 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
                 if (rank < bestRank || (rank == bestRank && i < bestPos)) {
                     bestRank = rank;
                     bestMerged = unpackMergedId(packed);
-                    bestPos = i;
-                }
-            }
-
-            if (bestPos < 0) {
-                break;
-            }
-
-            work[bestPos] = bestMerged;
-            if (bestPos + 1 < len - 1) {
-                System.arraycopy(work, bestPos + 2, work, bestPos + 1, len - bestPos - 2);
-            }
-            len--;
-        }
-
-        return Arrays.copyOf(work, len);
-    }
-
-    private int[] mergeGreedySimpleDynamic(int[] ids, int length) {
-        int[] work = ids;
-        int len = length;
-
-        while (true) {
-            int bestPos = -1;
-            int bestMerged = -1;
-            float bestScore = Float.NEGATIVE_INFINITY;
-
-            for (int i = 0; i + 1 < len; i++) {
-                int mergedId = resolveMergedTokenId(work[i], work[i + 1]);
-                if (mergedId < 0) {
-                    continue;
-                }
-                float score = tokenScores[mergedId];
-                if (score > bestScore || (score == bestScore && i < bestPos)) {
-                    bestScore = score;
-                    bestMerged = mergedId;
                     bestPos = i;
                 }
             }
@@ -781,22 +816,6 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
 
     private boolean isByteTokenId(int tokenId) {
         return tokenId >= 0 && tokenId < isByteToken.length && isByteToken[tokenId];
-    }
-
-    private int resolveMergedTokenId(int leftId, int rightId) {
-        if (leftId < 0
-                || rightId < 0
-                || leftId >= tokensById.length
-                || rightId >= tokensById.length) {
-            return -1;
-        }
-        String left = tokensById[leftId];
-        String right = tokensById[rightId];
-        if (left == null || right == null) {
-            return -1;
-        }
-        Integer mergedId = tokenToId.get(left + right);
-        return mergedId == null ? -1 : mergedId;
     }
 
     private int requireByteFallbackTokenId(int unsignedByte) {

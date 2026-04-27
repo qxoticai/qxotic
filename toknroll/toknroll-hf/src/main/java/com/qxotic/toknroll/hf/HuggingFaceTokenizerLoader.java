@@ -58,6 +58,7 @@ public final class HuggingFaceTokenizerLoader {
     private static final String TOKENIZER_CONFIG_JSON = "tokenizer_config.json";
     private static final String TOKENIZER_CONFIG_PAT_STR = "pat_str";
     private static final int UNICODE_REGEX_FLAGS = Pattern.UNICODE_CHARACTER_CLASS;
+    private static final char METASPACE = '\u2581';
     private static final String[] OPTIONAL_TOKENIZER_FILES = {
         TOKENIZER_CONFIG_JSON, "special_tokens_map.json", "added_tokens.json"
     };
@@ -1133,17 +1134,13 @@ public final class HuggingFaceTokenizerLoader {
                     int startInclusive,
                     int endExclusive,
                     IntSequence.Builder out) {
-                String segment = text.subSequence(startInclusive, endExclusive).toString();
-                String replaced = '\u2581' + segment.replace(' ', '\u2581');
+                String replaced = applyMetaspace(text, startInclusive, endExclusive, true);
                 base.encodeInto(replaced, 0, replaced.length(), out);
             }
 
             @Override
             public String decode(IntSequence tokens) {
-                String decoded = base.decode(tokens).replace('\u2581', ' ');
-                return decoded.length() > 0 && decoded.charAt(0) == ' '
-                        ? decoded.substring(1)
-                        : decoded;
+                return normalizeMetaspaceDecoded(base.decode(tokens), true);
             }
 
             @Override
@@ -1170,10 +1167,7 @@ public final class HuggingFaceTokenizerLoader {
 
             @Override
             public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
-                String replaced =
-                        text.subSequence(startInclusive, endExclusive)
-                                .toString()
-                                .replace(' ', '\u2581');
+                String replaced = applyMetaspace(text, startInclusive, endExclusive, true);
                 return base.countTokens(replaced, 0, replaced.length());
             }
 
@@ -1190,7 +1184,22 @@ public final class HuggingFaceTokenizerLoader {
     }
 
     private static Tokenizer wrapSentencePieceDecode(Tokenizer base) {
-        return wrapDecoded(base, s -> s.replace('▁', ' '));
+        return wrapDecoded(base, s -> normalizeMetaspaceDecoded(s, false));
+    }
+
+    private static String applyMetaspace(
+            CharSequence text, int startInclusive, int endExclusive, boolean prependMarker) {
+        String segment = text.subSequence(startInclusive, endExclusive).toString();
+        String replaced = segment.replace(' ', METASPACE);
+        return prependMarker ? METASPACE + replaced : replaced;
+    }
+
+    private static String normalizeMetaspaceDecoded(String decoded, boolean trimLeadingSpace) {
+        String normalized = decoded.replace(METASPACE, ' ');
+        if (trimLeadingSpace && normalized.length() > 0 && normalized.charAt(0) == ' ') {
+            return normalized.substring(1);
+        }
+        return normalized;
     }
 
     private static Tokenizer wrapDecoded(Tokenizer base, Function<String, String> decodeTransform) {

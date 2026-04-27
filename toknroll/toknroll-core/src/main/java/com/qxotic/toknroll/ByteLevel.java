@@ -56,6 +56,30 @@ public final class ByteLevel {
         return bytes;
     }
 
+    /**
+     * Checks whether a string is a valid GPT-2 byte-level symbol sequence.
+     *
+     * <p>Returns {@code true} if every character in {@code symbols} can be decoded by {@link
+     * #decodeSingle(char)}. Returns {@code false} for any character outside the byte-level mapping.
+     *
+     * @param symbols candidate symbol string
+     * @return {@code true} if {@code symbols} is valid byte-level encoding
+     */
+    public static boolean isValidEncoding(CharSequence symbols) {
+        Objects.requireNonNull(symbols, "symbols");
+        for (int i = 0; i < symbols.length(); ++i) {
+            char ch = symbols.charAt(i);
+            if (ch >= FAST_BYTE_DECODER.length) {
+                return false;
+            }
+            byte decoded = FAST_BYTE_DECODER[ch];
+            if (decoded == 0 && ch != BYTE_ZERO_SYMBOL) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private static Map<Integer, Integer> bytesToUnicode() {
         List<Integer> bs = new ArrayList<>();
         boolean[] used = new boolean[256];
