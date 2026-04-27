@@ -233,7 +233,7 @@ class JsonStringTest {
         assertEquals("\\t", Json.escapeString("\t")); // case '\t'
         assertEquals("\\u0000", Json.escapeString("\u0000")); // control ch < 0x20
         assertEquals("\\u001F", Json.escapeString("\u001F")); // control ch < 0x20
-        assertEquals("\\u007F", Json.escapeString("\u007F")); // ch == 0x7F
+        assertEquals("\u007F", Json.escapeString("\u007F")); // DEL (0x7F) not escaped
         assertEquals("hello", Json.escapeString("hello")); // default: no escape
         assertEquals("/", Json.escapeString("/")); // default: slash not escaped
         assertEquals("", Json.escapeString("")); // empty

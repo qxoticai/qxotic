@@ -1,12 +1,11 @@
 package com.qxotic.format.json;
 
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
 
 /**
  * JSONTestSuite compliance tests. Tests critical edge cases identified from JSONTestSuite research.
@@ -491,8 +490,8 @@ class JsonTestSuiteComplianceTest {
         // ISO Latin-1 characters are valid Unicode
         // Test a range of Latin-1 characters
         for (int i = 0x20; i <= 0xFF; i++) {
-            // Skip control characters (0x00-0x1F) and DEL (0x7F)
-            if ((i >= 0x00 && i <= 0x1F) || i == 0x7F) continue;
+            // Skip control characters (0x00-0x1F)
+            if (i >= 0x00 && i <= 0x1F) continue;
 
             char c = (char) i;
             // Skip quote and backslash as they need to be escaped in JSON strings
