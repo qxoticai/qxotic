@@ -872,7 +872,7 @@ public final class Json {
             case '\t':
                 return ESCAPE_TAB;
             default:
-                if (ch < 0x20 || ch == 0x7F) {
+                if (ch < 0x20) {
                     return unicodeEscape(ch);
                 }
                 return null;
@@ -1037,36 +1037,40 @@ public final class Json {
         /** Default maximum object/array nesting depth. */
         public static final int DEFAULT_MAX_DEPTH = 1000;
 
-        private boolean decimalsAsBigDecimal = true;
-        private int maxDepth = DEFAULT_MAX_DEPTH;
-        private boolean failOnDuplicateKeys;
+        private final boolean decimalsAsBigDecimal;
+        private final int maxDepth;
+        private final boolean failOnDuplicateKeys;
 
-        private ParseOptions() {}
+        private ParseOptions(boolean decimalsAsBigDecimal, int maxDepth, boolean failOnDuplicateKeys) {
+            this.decimalsAsBigDecimal = decimalsAsBigDecimal;
+            this.maxDepth = maxDepth;
+            this.failOnDuplicateKeys = failOnDuplicateKeys;
+        }
 
         /** Create default parse options. */
         public static ParseOptions defaults() {
-            return new ParseOptions();
+            return new ParseOptions(true, DEFAULT_MAX_DEPTH, false);
         }
 
-        /** Set whether decimals parse as {@code BigDecimal} (true) or {@code Double} (false). */
+        /**
+         * Return new options with {@code decimalsAsBigDecimal} set.
+         * When true, decimals parse as {@code BigDecimal}; when false, as {@code Double}.
+         */
         public ParseOptions decimalsAsBigDecimal(boolean enabled) {
-            this.decimalsAsBigDecimal = enabled;
-            return this;
+            return new ParseOptions(enabled, this.maxDepth, this.failOnDuplicateKeys);
         }
 
-        /** Set maximum object/array nesting depth. Must be positive. */
+        /** Return new options with {@code maxDepth} set. Must be positive. */
         public ParseOptions maxDepth(int depth) {
             if (depth <= 0) {
                 throw new IllegalArgumentException("Maximum parsing depth must be positive");
             }
-            this.maxDepth = depth;
-            return this;
+            return new ParseOptions(this.decimalsAsBigDecimal, depth, this.failOnDuplicateKeys);
         }
 
-        /** Set whether duplicate object keys are rejected. */
+        /** Return new options with {@code failOnDuplicateKeys} set. */
         public ParseOptions failOnDuplicateKeys(boolean enabled) {
-            this.failOnDuplicateKeys = enabled;
-            return this;
+            return new ParseOptions(this.decimalsAsBigDecimal, this.maxDepth, enabled);
         }
 
         /** Return whether decimals parse as {@code BigDecimal}. */
