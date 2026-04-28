@@ -13,11 +13,12 @@ import java.util.Objects;
 /**
  * Fast, flat-array Tiktoken-compatible BPE tokenizer.
  *
- * <p>Implements a dual-path merge strategy:
+ * <p>Dual-path merge strategy:
  *
  * <ul>
- *   <li>Small chunks: in-place scan/merge (low constant overhead)
- *   <li>Large chunks: min-heap + intrusive list over primitive arrays
+ *   <li>Tiny chunks (≤3 bytes): hardcoded merge logic for 1–3 bytes.
+ *   <li>Small chunks (4–95 bytes): in-place scan/merge over primitive arrays.
+ *   <li>Large chunks (≥96 bytes): min-heap + intrusive linked list.
  * </ul>
  */
 final class TiktokenModel extends AbstractTokenizationModel {
@@ -28,9 +29,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
     public static final String SCRATCH_MAX_RETAINED_ELEMENTS_PROPERTY =
             "toknroll.fast.scratchMaxRetainedElements";
 
-    private static final byte REPLACEMENT_B0 = (byte) 0xEF;
-    private static final byte REPLACEMENT_B1 = (byte) 0xBF;
-    private static final byte REPLACEMENT_B2 = (byte) 0xBD;
+    private static final byte[] REPLACEMENT_UTF8 = {(byte) 0xEF, (byte) 0xBF, (byte) 0xBD};
     private static final int DEFAULT_LARGE_CHUNK_THRESHOLD = 96;
     private static final int DEFAULT_TINY_CHUNK_THRESHOLD = 3;
     private static final int DEFAULT_SCRATCH_MAX_RETAINED_ELEMENTS = 128 * 1024;
@@ -84,9 +83,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
     }
 
     private static float estimateTokensPerChar(int vocabSize) {
-        // Heuristic based on observed GPT-family corpora token density.
-        // Values are intentionally conservative because final capacity estimation
-        // applies an additional safety factor.
+        // Conservative heuristic for GPT-family corpora token density.
         if (vocabSize <= 60000) {
             return 0.34f;
         } else if (vocabSize <= 110000) {
@@ -177,12 +174,6 @@ final class TiktokenModel extends AbstractTokenizationModel {
         }
     }
 
-    private int estimateInitialTokenCapacity(int charCount) {
-        float ratio = Math.max(1.0e-6f, expectedTokensPerChar());
-        int predicted = (int) Math.ceil(charCount * ratio * 1.15f) + 8;
-        return Math.max(8, predicted);
-    }
-
     @Override
     public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
         Objects.requireNonNull(text, "text");
@@ -192,28 +183,6 @@ final class TiktokenModel extends AbstractTokenizationModel {
         } finally {
             releaseScratch(s);
         }
-    }
-
-    @Override
-    public byte[] decodeBytes(IntSequence tokens) {
-        Objects.requireNonNull(tokens, "tokens");
-        int length = tokens.length();
-        int totalBytes = 0;
-        for (int i = 0; i < length; i++) {
-            int tokenId = tokens.intAt(i);
-            byte[] tokenBytes =
-                    (tokenId >= 0 && tokenId < tokenBytesById.length)
-                            ? tokenBytesById[tokenId]
-                            : null;
-            if (tokenBytes == null) {
-                throw unknownToken(tokenId);
-            }
-            totalBytes += tokenBytes.length;
-        }
-
-        byte[] out = new byte[totalBytes];
-        decodeBytesInto(tokens, 0, ByteBuffer.wrap(out));
-        return out;
     }
 
     @Override
@@ -280,9 +249,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
         return "Fast Tiktoken BPE";
     }
 
-    // ---------------------------------------------------------------------
-    // Encode / count dispatch
-    // ---------------------------------------------------------------------
+    // ---- Encode / count dispatch ----
 
     private int encodeChunkRange(
             CharSequence source,
@@ -327,9 +294,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
         return byteLength > 0 && (ignoreMerges || byteLength > tinyChunkThreshold);
     }
 
-    // ---------------------------------------------------------------------
-    // Tiny / small path
-    // ---------------------------------------------------------------------
+    // ---- Tiny / small path ----
 
     private int encodeTiny(byte[] bytes, int byteLength, IntSequence.Builder out) {
         if (byteLength == 1) {
@@ -526,9 +491,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
         return mergeLarge(bytes, byteLength, out, s);
     }
 
-    // ---------------------------------------------------------------------
-    // Large path
-    // ---------------------------------------------------------------------
+    // ---- Large path ----
 
     private int mergeLarge(byte[] bytes, int byteLength, IntSequence.Builder out, Scratch s) {
         int n = byteLength;
@@ -738,15 +701,6 @@ final class TiktokenModel extends AbstractTokenizationModel {
         s.heapNode[idx] = node;
     }
 
-    private static boolean heapLess(int rankA, long nodeA, int rankB, long nodeB) {
-        if (rankA != rankB) {
-            return rankA < rankB;
-        }
-        int leftA = (int) (nodeA >>> 32);
-        int leftB = (int) (nodeB >>> 32);
-        return leftA < leftB;
-    }
-
     private static int utf8EncodeRange(
             CharSequence source, int startInclusive, int endExclusive, Scratch scratch) {
         int maxLen = (endExclusive - startInclusive) << 2;
@@ -778,15 +732,13 @@ final class TiktokenModel extends AbstractTokenizationModel {
                         continue;
                     }
                 }
-                dst[dp++] = REPLACEMENT_B0;
-                dst[dp++] = REPLACEMENT_B1;
-                dst[dp++] = REPLACEMENT_B2;
+                System.arraycopy(REPLACEMENT_UTF8, 0, dst, dp, 3);
+                dp += 3;
                 continue;
             }
             if (Character.isLowSurrogate(c)) {
-                dst[dp++] = REPLACEMENT_B0;
-                dst[dp++] = REPLACEMENT_B1;
-                dst[dp++] = REPLACEMENT_B2;
+                System.arraycopy(REPLACEMENT_UTF8, 0, dst, dp, 3);
+                dp += 3;
                 continue;
             }
             dst[dp++] = (byte) (0xE0 | (c >>> 12));
@@ -804,9 +756,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
         return IntPair.left(mergeValue);
     }
 
-    // ---------------------------------------------------------------------
-    // Lookup table builders
-    // ---------------------------------------------------------------------
+    // ---- Lookup table builders ----
 
     private static int[] buildSingleByteTokenMap(Vocabulary vocabulary) {
         int[] map = new int[256];
@@ -936,9 +886,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
         return out.toString();
     }
 
-    // ---------------------------------------------------------------------
-    // Scratch + exact-token lookup
-    // ---------------------------------------------------------------------
+    // ---- Scratch + exact-token lookup ----
 
     private static final class Scratch {
         byte[] utf8Bytes = new byte[0];

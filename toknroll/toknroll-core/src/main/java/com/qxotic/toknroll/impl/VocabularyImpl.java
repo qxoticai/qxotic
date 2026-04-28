@@ -10,10 +10,7 @@ import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-/**
- * @deprecated Internal implementation detail; rely on {@code Vocabulary} from tokenizers.
- */
-@Deprecated(forRemoval = false, since = "0.1.0")
+/** Internal implementation of {@link Vocabulary} backed by flat arrays. */
 class VocabularyImpl implements Vocabulary {
     protected final String[] tokens;
     protected final Map<String, Integer> tokenToId;
@@ -86,6 +83,7 @@ class VocabularyImpl implements Vocabulary {
                 .collect(Collectors.toUnmodifiableMap(i -> vocabulary[i], i -> i));
     }
 
+    @Override
     public String token(int tokenId) {
         if (Integer.compareUnsigned(tokenId, this.tokens.length) >= 0) {
             throw new NoSuchElementException(String.valueOf(tokenId));

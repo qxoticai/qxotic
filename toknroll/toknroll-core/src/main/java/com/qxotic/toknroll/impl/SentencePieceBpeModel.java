@@ -11,16 +11,15 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 
 /**
  * SentencePiece-flavored BPE model.
  *
- * <p>This model is intentionally strict: vocabulary symbols and merge rules are consumed exactly as
- * provided. Any external normalization (for example metaspace conversions such as {@code '▁' <-> '
- * '}) must be applied by callers before creating the model.
+ * <p>Strict vocabulary/merge consumption — callers must apply metaspace normalization externally.
  *
- * <p>Two merge strategies:
+ * <p>Dual merge strategy:
  *
  * <ul>
  *   <li>Short sequences (≤128 tokens): simple O(n²) scan-and-shift.
@@ -46,6 +45,8 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
     private final LongLongMap packedMerges;
     private final int[] bmpSingletonIds;
     private final boolean[] isByteToken;
+    private final byte[][] tokenBytesById;
+    private final byte[] byteTokenRawValue;
 
     private enum MergeStrategy {
         AUTO,
@@ -61,6 +62,8 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
             LongLongMap packedMerges,
             int[] bmpSingletonIds,
             boolean[] isByteToken,
+            byte[][] tokenBytesById,
+            byte[] byteTokenRawValue,
             float expectedTokensPerChar) {
         super(vocabulary, expectedTokensPerChar);
         this.byteTokenIds = byteTokenIds;
@@ -69,6 +72,8 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
         this.packedMerges = packedMerges;
         this.bmpSingletonIds = bmpSingletonIds;
         this.isByteToken = isByteToken;
+        this.tokenBytesById = tokenBytesById;
+        this.byteTokenRawValue = byteTokenRawValue;
     }
 
     static SentencePieceBpeModel fromVocabularyAndMerges(
@@ -117,23 +122,21 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
 
         int size = vocabulary.size();
         String[] tokensById = new String[size];
-        Map<String, Integer> rawTokenToId = new HashMap<>(Math.max(16, size * 2));
+        Map<String, Integer> tokenToId = new HashMap<>(Math.max(16, size * 2));
         for (Map.Entry<String, Integer> entry : vocabulary) {
             String token = entry.getKey();
             Integer id = entry.getValue();
             if (token != null && id != null) {
-                rawTokenToId.put(token, id);
+                tokenToId.put(token, id);
                 if (id >= 0 && id < size) {
                     tokensById[id] = token;
                 }
             }
         }
 
-        Map<String, Integer> tokenToId = new HashMap<>(rawTokenToId);
-
         int[] bmpSingletonIds = new int[BMP_SIZE];
         Arrays.fill(bmpSingletonIds, -1);
-        for (Map.Entry<String, Integer> entry : rawTokenToId.entrySet()) {
+        for (Map.Entry<String, Integer> entry : tokenToId.entrySet()) {
             String token = entry.getKey();
             if (token.codePointCount(0, token.length()) == 1) {
                 int cp = token.codePointAt(0);
@@ -162,10 +165,39 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
             }
         }
 
-        if (rawTokenToId.containsKey(BYTE_00_TOKEN) && byteTokenIds[0] < 0) {
+        if (tokenToId.containsKey(BYTE_00_TOKEN) && byteTokenIds[0] < 0) {
             throw new IllegalArgumentException("Token <0x00> exists but is not marked as BYTE");
         }
         validateByteFallbackTable(byteTokenIds);
+
+        byte[][] tokenBytesById = new byte[size][];
+        byte[] byteTokenRawValue = new byte[size];
+        Arrays.fill(byteTokenRawValue, (byte) -1);
+        for (int i = 0; i < size; i++) {
+            String token = tokensById[i];
+            if (token == null) {
+                continue;
+            }
+            if (isByteToken[i]) {
+                byteTokenRawValue[i] = parseByteToken(token);
+                tokenBytesById[i] = new byte[] {byteTokenRawValue[i]};
+            } else {
+                tokenBytesById[i] = token.getBytes(StandardCharsets.UTF_8);
+            }
+        }
+
+        for (int i = 0; i < size; i++) {
+            if (isByteToken[i] || tokensById[i] == null) {
+                continue;
+            }
+            byte[] encoded = tokenBytesById[i];
+            if (encoded != null && encoded.length == 1) {
+                int ubyte = encoded[0] & 0xFF;
+                if (byteTokenIds[ubyte] < 0) {
+                    byteTokenIds[ubyte] = i;
+                }
+            }
+        }
 
         return new SentencePieceBpeModel(
                 vocabulary,
@@ -175,6 +207,8 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
                 packedMerges,
                 bmpSingletonIds,
                 isByteToken,
+                tokenBytesById,
+                byteTokenRawValue,
                 estimateTokensPerChar(vocabulary.size()));
     }
 
@@ -260,9 +294,7 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
     }
 
     private static float estimateTokensPerChar(int vocabSize) {
-        // Heuristic based on observed SPBPE corpora token density.
-        // Values are conservative because capacity estimation includes
-        // an additional safety factor.
+        // Conservative heuristic for SP-BPE corpora token density.
         if (vocabSize <= 50000) {
             return 0.31f;
         } else if (vocabSize <= 150000) {
@@ -295,12 +327,6 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
         return out.build();
     }
 
-    private int estimateInitialTokenCapacity(int charCount) {
-        float ratio = Math.max(1.0e-6f, expectedTokensPerChar());
-        int predicted = (int) Math.ceil(charCount * ratio * 1.15f) + 8;
-        return Math.max(8, predicted);
-    }
-
     @Override
     protected void encodeImplInto(CharSequence text, IntSequence.Builder out) {
         int textLen = text.length();
@@ -322,7 +348,7 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
                                 .getBytes(StandardCharsets.UTF_8);
                 ids = ensureCapacity(ids, size + utf8.length);
                 for (byte b : utf8) {
-                    ids[size++] = requireByteFallbackTokenId(Byte.toUnsignedInt(b));
+                    ids[size++] = resolveByteTokenId(Byte.toUnsignedInt(b));
                 }
             }
             pos += charCount;
@@ -385,7 +411,11 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
         }
     }
 
-    /** Simple path: scan all adjacent pairs, pick the best (lowest rank), shift array. */
+    /**
+     * Simple O(n²) merge path.
+     *
+     * <p>Scans all adjacent pairs each iteration, picks the lowest-rank merge, shifts array left.
+     */
     private int[] mergeGreedySimple(int[] ids, int length) {
         int[] work = ids;
         int len = length;
@@ -425,7 +455,10 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
     // ---- Fast merge path: edge-cached linked list + min-heap ----
 
     /**
-     * Fast path: intrusive doubly-linked list with per-node edge cache and a primitive min-heap.
+     * Fast O(n log n) merge path.
+     *
+     * <p>Intrusive doubly-linked list over primitive arrays, per-node edge cache, and a binary
+     * min-heap. Stale heap entries are skipped on pop.
      */
     private int[] mergeGreedyFast(int[] ids, int length) {
         Scratch s = new Scratch();
@@ -551,7 +584,7 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
             }
 
             if (edgeStamp[left] != stamp) {
-                continue; // stale
+                continue; // stale entry
             }
 
             s.popLeft = left;
@@ -615,18 +648,9 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
         s.heapNode[idx] = node;
     }
 
-    /** Returns true if candidate A has higher priority (lower rank, then lower left index). */
-    private static boolean heapLess(int rankA, long nodeA, int rankB, long nodeB) {
-        if (rankA != rankB) {
-            return rankA < rankB;
-        }
-        int leftA = (int) (nodeA >>> 32);
-        int leftB = (int) (nodeB >>> 32);
-        return leftA < leftB;
-    }
-
     // ---- Scratch buffer pool ----
 
+    /** Reusable working memory for the fast merge path. Not thread-safe. */
     private static final class Scratch {
         int[] tokenIds = new int[0];
         int[] prev = new int[0];
@@ -656,6 +680,7 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
             ensureHeapSize(Math.max(8, needed * 4));
         }
 
+        /** Increments the stamp counter, resetting the array on overflow. */
         int nextStamp(int[] stampArray) {
             int s = ++stampCounter;
             if (s == 0) {
@@ -674,6 +699,7 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
             }
         }
 
+        /** Grows a capacity value by 1.5× until it meets {@code needed}. */
         private static int grow(int current, int needed) {
             int c = Math.max(8, current);
             while (c < needed) {
@@ -683,7 +709,7 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
         }
     }
 
-    // ---- Decode methods (unchanged) ----
+    // ---- Decode methods ----
 
     @Override
     public String decode(IntSequence tokens) {
@@ -693,15 +719,17 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
 
         for (int i = 0; i < tokens.length(); i++) {
             int tokenId = tokens.intAt(i);
-            String token = tokenText(tokenId);
+            if (tokenId < 0 || tokenId >= tokensById.length || tokensById[tokenId] == null) {
+                throw new IllegalArgumentException("Unknown token id: " + tokenId);
+            }
             if (isByteTokenId(tokenId)) {
-                byteRun.write(parseByteToken(token));
+                byteRun.write(byteTokenRawValue[tokenId]);
             } else {
                 if (byteRun.size() > 0) {
                     sb.append(byteRun.toString(StandardCharsets.UTF_8));
                     byteRun.reset();
                 }
-                sb.append(token);
+                sb.append(tokensById[tokenId]);
             }
         }
 
@@ -709,11 +737,6 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
             sb.append(byteRun.toString(StandardCharsets.UTF_8));
         }
         return sb.toString();
-    }
-
-    @Override
-    public byte[] decodeBytes(IntSequence tokens) {
-        return decode(tokens).getBytes(StandardCharsets.UTF_8);
     }
 
     @Override
@@ -734,29 +757,33 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
 
         while (index < length) {
             int tokenId = tokens.intAt(index);
-            String token = tokenText(tokenId);
+            if (tokenId < 0
+                    || tokenId >= tokenBytesById.length
+                    || tokenBytesById[tokenId] == null) {
+                throw new IllegalArgumentException("Unknown token id: " + tokenId);
+            }
 
             byte[] piece;
             int consumed;
 
-            if (isByteTokenId(tokenId)) {
+            if (byteTokenRawValue[tokenId] >= 0) {
                 int runEnd = index + 1;
-                while (runEnd < length) {
-                    int nextId = tokens.intAt(runEnd);
-                    if (!isByteTokenId(nextId)) {
-                        break;
-                    }
+                while (runEnd < length && byteTokenRawValue[tokens.intAt(runEnd)] >= 0) {
                     runEnd++;
                 }
 
-                byte[] raw = new byte[runEnd - index];
-                for (int i = index; i < runEnd; i++) {
-                    raw[i - index] = parseByteToken(tokenText(tokens.intAt(i)));
+                if (runEnd - index == 1) {
+                    piece = tokenBytesById[tokenId];
+                } else {
+                    byte[] raw = new byte[runEnd - index];
+                    for (int i = index; i < runEnd; i++) {
+                        raw[i - index] = byteTokenRawValue[tokens.intAt(i)];
+                    }
+                    piece = raw;
                 }
-                piece = new String(raw, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8);
                 consumed = runEnd - index;
             } else {
-                piece = token.getBytes(StandardCharsets.UTF_8);
+                piece = tokenBytesById[tokenId];
                 consumed = 1;
             }
 
@@ -777,11 +804,24 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
 
     @Override
     public int countBytes(IntSequence tokens) {
-        return decodeBytes(tokens).length;
+        int total = 0;
+        for (int i = 0; i < tokens.length(); i++) {
+            int id = tokens.intAt(i);
+            byte[] bytes = tokenBytesById[id];
+            if (bytes != null) {
+                total += bytes.length;
+            }
+        }
+        return total;
+    }
+
+    private static NoSuchElementException unknownToken(int tokenId) {
+        return new NoSuchElementException("Unknown token id: " + tokenId);
     }
 
     // ---- Utilities ----
 
+    /** Doubles an int array's capacity until it meets {@code needed}. */
     private static int[] ensureCapacity(int[] array, int needed) {
         if (needed <= array.length) {
             return array;
@@ -793,18 +833,12 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
         return Arrays.copyOf(array, next);
     }
 
-    private String tokenText(int id) {
-        String token = tokenTextOrNull(id);
-        if (token == null) {
-            throw new IllegalArgumentException("Unknown token id: " + id);
-        }
-        return token;
-    }
-
-    private String tokenTextOrNull(int id) {
-        return (id >= 0 && id < tokensById.length) ? tokensById[id] : null;
-    }
-
+    /**
+     * Resolves a single codepoint to its token id.
+     *
+     * <p>BMP codepoints use the flat {@code bmpSingletonIds} array. Supplementary codepoints fall
+     * back to the {@code tokenToId} HashMap (which allocates a temporary String).
+     */
     private Integer resolveCodePointTokenId(
             CharSequence text, int pos, int codePoint, int charCount) {
         if (codePoint < bmpSingletonIds.length) {
@@ -818,13 +852,13 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
         return tokenId >= 0 && tokenId < isByteToken.length && isByteToken[tokenId];
     }
 
-    private int requireByteFallbackTokenId(int unsignedByte) {
-        int byteTokenId = byteTokenIds[unsignedByte];
-        if (byteTokenId < 0) {
+    private int resolveByteTokenId(int unsignedByte) {
+        int id = byteTokenIds[unsignedByte];
+        if (id < 0) {
             throw new IllegalArgumentException(
-                    String.format("Missing byte fallback token <0x%02X>", unsignedByte));
+                    String.format("Missing byte token <0x%02X>", unsignedByte));
         }
-        return byteTokenId;
+        return id;
     }
 
     private static boolean isByteToken(Vocabulary vocabulary, int tokenId, String token) {

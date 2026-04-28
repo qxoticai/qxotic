@@ -13,10 +13,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.UUID;
 
-/**
- * @deprecated Internal helper for legacy tiktoken asset loading.
- */
-@Deprecated(forRemoval = false, since = "0.1.0")
+/** Internal helper for legacy tiktoken asset loading. */
 class FileCache {
     private static final String DEFAULT_CACHE_DIR = "data-gym-cache";
 
