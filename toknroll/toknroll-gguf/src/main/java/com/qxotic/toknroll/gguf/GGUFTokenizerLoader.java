@@ -18,7 +18,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
-import java.util.function.UnaryOperator;
 
 /** Builds Tok'n'Roll tokenizers from GGUF metadata. */
 public final class GGUFTokenizerLoader {
@@ -292,8 +291,7 @@ public final class GGUFTokenizerLoader {
                         .splitter(splitter)
                         .build();
 
-        // SPM models with metaspace normalization need decode wrapping to convert
-        // ▁ back to spaces.
+        // SPM models with metaspace normalization need decode wrapping.
         if (PRE_DEFAULT.equals(preKey) && MODEL_LLAMA.equals(modelKey)) {
             tokenizer = wrapSentencePieceDecode(tokenizer);
         }
@@ -302,24 +300,7 @@ public final class GGUFTokenizerLoader {
     }
 
     private static Tokenizer wrapSentencePieceDecode(Tokenizer base) {
-        return wrapDecoded(base, decoded -> normalizeMetaspaceDecoded(decoded, true));
-    }
-
-    private static String normalizeMetaspaceDecoded(String decoded, boolean trimLeadingSpace) {
-        String normalized = decoded.replace(METASPACE, ' ');
-        if (trimLeadingSpace && normalized.length() > 0 && normalized.charAt(0) == ' ') {
-            return normalized.substring(1);
-        }
-        return normalized;
-    }
-
-    private static Tokenizer wrapDecoded(Tokenizer base, UnaryOperator<String> decodeTransform) {
-        return new Tokenizer() {
-            @Override
-            public Vocabulary vocabulary() {
-                return base.vocabulary();
-            }
-
+        return new TransformedTokenizer(base) {
             @Override
             public void encodeInto(
                     CharSequence text,
@@ -330,47 +311,108 @@ public final class GGUFTokenizerLoader {
             }
 
             @Override
-            public String decode(IntSequence tokens) {
-                return decodeTransform.apply(base.decode(tokens));
-            }
-
-            @Override
-            public byte[] decodeBytes(IntSequence tokens) {
-                return decode(tokens).getBytes(StandardCharsets.UTF_8);
-            }
-
-            @Override
-            public int decodeBytesInto(IntSequence tokens, int tokenStartIndex, ByteBuffer out) {
-                int length = tokens.length();
-                if (tokenStartIndex < 0 || tokenStartIndex > length) {
-                    throw new IndexOutOfBoundsException("tokenStartIndex: " + tokenStartIndex);
-                }
-                if (tokenStartIndex == length) {
-                    return 0;
-                }
-                byte[] bytes = decodeBytes(tokens.subSequence(tokenStartIndex, length));
-                if (bytes.length > out.remaining()) {
-                    throw new IllegalArgumentException("Not enough output space");
-                }
-                out.put(bytes);
-                return length - tokenStartIndex;
+            protected String transformDecoded(String decoded, boolean atStartOfText) {
+                return normalizeMetaspaceDecoded(decoded, atStartOfText);
             }
 
             @Override
             public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
                 return base.countTokens(text, startInclusive, endExclusive);
             }
-
-            @Override
-            public int countBytes(IntSequence tokens) {
-                return base.countBytes(tokens);
-            }
-
-            @Override
-            public float expectedTokensPerChar() {
-                return base.expectedTokensPerChar();
-            }
         };
+    }
+
+    private static String normalizeMetaspaceDecoded(String decoded, boolean trimLeadingSpace) {
+        String normalized = decoded.replace(METASPACE, ' ');
+        if (trimLeadingSpace && normalized.length() > 0 && normalized.charAt(0) == ' ') {
+            return normalized.substring(1);
+        }
+        return normalized;
+    }
+
+    /**
+     * Wrapper contract:
+     *
+     * <ul>
+     *   <li>decode/decodeBytes/countBytes/decodeBytesInto all use transformed decode semantics.
+     *   <li>Metaspace leading-space trim is applied only at sequence start ({@code atStartOfText}).
+     * </ul>
+     */
+    private abstract static class TransformedTokenizer implements Tokenizer {
+        protected final Tokenizer base;
+
+        TransformedTokenizer(Tokenizer base) {
+            this.base = base;
+        }
+
+        protected abstract String transformDecoded(String decoded, boolean atStartOfText);
+
+        @Override
+        public Vocabulary vocabulary() {
+            return base.vocabulary();
+        }
+
+        @Override
+        public String decode(IntSequence tokens) {
+            return transformDecoded(base.decode(tokens), true);
+        }
+
+        @Override
+        public byte[] decodeBytes(IntSequence tokens) {
+            return decode(tokens).getBytes(StandardCharsets.UTF_8);
+        }
+
+        @Override
+        public int decodeBytesInto(IntSequence tokens, int tokenStartIndex, ByteBuffer out) {
+            int length = tokens.length();
+            if (tokenStartIndex < 0 || tokenStartIndex > length) {
+                throw new IndexOutOfBoundsException("tokenStartIndex: " + tokenStartIndex);
+            }
+            if (tokenStartIndex == length) {
+                return 0;
+            }
+
+            int remaining = out.remaining();
+            boolean atStartOfText = tokenStartIndex == 0;
+
+            byte[] firstTokenBytes =
+                    transformedBytes(tokens, tokenStartIndex, tokenStartIndex + 1, atStartOfText);
+            if (firstTokenBytes.length > remaining) {
+                throw new IllegalArgumentException("Not enough output space");
+            }
+
+            int lo = tokenStartIndex + 1;
+            int hi = length;
+            while (lo < hi) {
+                int mid = lo + ((hi - lo + 1) >>> 1);
+                int size = transformedBytes(tokens, tokenStartIndex, mid, atStartOfText).length;
+                if (size <= remaining) {
+                    lo = mid;
+                } else {
+                    hi = mid - 1;
+                }
+            }
+
+            byte[] bytes = transformedBytes(tokens, tokenStartIndex, lo, atStartOfText);
+            out.put(bytes);
+            return lo - tokenStartIndex;
+        }
+
+        private byte[] transformedBytes(
+                IntSequence tokens, int startInclusive, int endExclusive, boolean atStartOfText) {
+            String decoded = base.decode(tokens.subSequence(startInclusive, endExclusive));
+            return transformDecoded(decoded, atStartOfText).getBytes(StandardCharsets.UTF_8);
+        }
+
+        @Override
+        public int countBytes(IntSequence tokens) {
+            return decodeBytes(tokens).length;
+        }
+
+        @Override
+        public float expectedTokensPerChar() {
+            return base.expectedTokensPerChar();
+        }
     }
 
     private String resolvePreTokenizerKey(GGUF gguf, String modelKey) {

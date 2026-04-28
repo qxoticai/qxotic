@@ -50,6 +50,7 @@ class ByteLevelTest {
                 assertThrows(
                         IllegalArgumentException.class,
                         () -> Tokenizers.tiktokenModel(vocabulary, List.of()));
-        assertTrue(error.getMessage().contains("non-bytelevel token"));
+        assertTrue(error.getMessage().contains("All vocabulary tokens must be byte-level"));
+        assertTrue(error.getMessage().contains("id 256"));
     }
 }

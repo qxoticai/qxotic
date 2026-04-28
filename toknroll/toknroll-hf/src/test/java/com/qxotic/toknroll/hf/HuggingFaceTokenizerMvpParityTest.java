@@ -70,9 +70,11 @@ class HuggingFaceTokenizerMvpParityTest {
         byte[] corpusBytes = loadCorpusBytes();
 
         for (ModelSpec modelSpec : MODELS) {
+            System.err.println("Loading " + modelSpec.modelRef);
             Tokenizer tokenizer =
                     HuggingFaceTokenizerLoader.fromHuggingFace(
                             modelSpec.user, modelSpec.repository, "main", false, false);
+            System.err.println("Testing invariants for " + modelSpec.modelRef);
             assertSmokeInvariants(modelSpec.modelRef, tokenizer);
 
             Path goldenPath =

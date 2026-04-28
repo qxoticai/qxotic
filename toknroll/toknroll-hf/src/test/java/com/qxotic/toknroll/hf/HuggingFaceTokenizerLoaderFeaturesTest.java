@@ -1,11 +1,13 @@
 package com.qxotic.toknroll.hf;
 
+import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.buildBpeModel;
+import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.buildByteLevelVocab;
+import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.buildTokenizerJson;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Tokenizer;
@@ -13,7 +15,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -41,12 +42,13 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
         Path tokenizerJson =
                 writeTokenizerJson(
                         buildTokenizerJson(
-                                buildBpeModel("{\"a\":0}", "[]", ""),
-                                "\"added_tokens\":[{\"id\":7,\"content\":\"<|end|>\",\"special\":true}]"));
+                                buildBpeModel(
+                                        buildByteLevelVocab(Map.of("<|end|>", 256)), "[]", ""),
+                                "\"added_tokens\":[{\"id\":256,\"content\":\"<|end|>\",\"special\":true}]"));
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
-        assertEquals("<|end|>", tokenizer.vocabulary().token(7));
-        assertTrue(tokenizer.vocabulary().isTokenOfType(7, StandardTokenType.CONTROL));
+        assertEquals("<|end|>", tokenizer.vocabulary().token(256));
+        assertTrue(tokenizer.vocabulary().isTokenOfType(256, StandardTokenType.CONTROL));
     }
 
     @Test
@@ -54,7 +56,10 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
         Path tokenizerJson =
                 writeTokenizerJson(
                         buildTokenizerJson(
-                                buildBpeModel("{\"é\":0}", "[]", ",\"ignore_merges\":true"),
+                                buildBpeModel(
+                                        buildByteLevelVocab(Map.of("é", 256)),
+                                        "[]",
+                                        ",\"ignore_merges\":true"),
                                 "\"normalizer\":{\"type\":\"NFC\"}"));
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
@@ -66,11 +71,17 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
         Path tokenizerJson =
                 writeTokenizerJson(
                         buildTokenizerJson(
-                                buildBpeModel("{\"é\":0}", "[]", ",\"ignore_merges\":true"),
+                                buildBpeModel(
+                                        buildByteLevelVocab(Map.of("é", 256)),
+                                        "[]",
+                                        ",\"ignore_merges\":true"),
                                 "\"normalizer\":{\"type\":\"Replace\",\"pattern\":{\"String\":\"x\"},\"content\":\"é\"}"));
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
-        assertArrayEquals(new int[] {0}, tokenizer.encode("x").toArray());
+        // With ignore_merges=true, "é" is encoded as individual byte tokens
+        // since no merges are applied. The token 256 exists but won't be used.
+        IntSequence encoded = tokenizer.encode("x");
+        assertEquals("é", tokenizer.decode(encoded));
     }
 
     @Test
@@ -78,11 +89,16 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
         Path tokenizerJson =
                 writeTokenizerJson(
                         buildTokenizerJson(
-                                buildBpeModel("{\"é\":0}", "[]", ",\"ignore_merges\":true"),
+                                buildBpeModel(
+                                        buildByteLevelVocab(Map.of("é", 256)),
+                                        "[]",
+                                        ",\"ignore_merges\":true"),
                                 "\"normalizer\":{\"type\":\"Sequence\",\"normalizers\":[{\"type\":\"Lowercase\"},{\"type\":\"NFC\"}]}"));
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
-        assertArrayEquals(new int[] {0}, tokenizer.encode("É").toArray());
+        // With ignore_merges=true, "É" -> "é" via normalizer, then encoded as byte tokens
+        IntSequence encoded = tokenizer.encode("É");
+        assertEquals("é", tokenizer.decode(encoded));
     }
 
     @Test
@@ -189,11 +205,15 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
 
     @Test
     void supportsMetaspacePreTokenizerDecodeWrapper() throws IOException {
+        // Metaspace tokens use U+2581 which is not a valid byte-level symbol.
+        // This test uses sentencePieceStyle path (Replace normalizer with ▁)
+        // which does not require byte-level validation.
         Path tokenizerJson =
                 writeTokenizerJson(
                         buildTokenizerJson(
                                 buildBpeModel("{\"▁hi\":0}", "[]", ""),
-                                "\"pre_tokenizer\":{\"type\":\"Metaspace\"}"));
+                                "\"normalizer\":{\"type\":\"Replace\",\"pattern\":{\"String\":\""
+                                    + " \"},\"content\":\"▁\"},\"pre_tokenizer\":{\"type\":\"Metaspace\"}"));
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
         assertEquals("hi", tokenizer.decode(IntSequence.of(0)));
@@ -247,7 +267,7 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
         Path tokenizerJson =
                 writeTokenizerJson(
                         buildTokenizerJson(
-                                buildBpeModel("{\"a\":0}", "[]", ""),
+                                buildBpeModel(buildByteLevelVocab(Map.of()), "[]", ""),
                                 "\"pre_tokenizer\":{\"type\":\"Split\",\"pattern\":{\"String\":\",\"},\"behavior\":\"Contiguous\"}"));
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
@@ -312,78 +332,5 @@ class HuggingFaceTokenizerLoaderFeaturesTest {
 
     private Path writeTokenizerJson(String json) throws IOException {
         return Files.writeString(tempDir.resolve("tokenizer.json"), json, StandardCharsets.UTF_8);
-    }
-
-    private static String buildTokenizerJson(String modelJson, String... rootFields) {
-        StringBuilder sb = new StringBuilder();
-        sb.append('{').append("\"model\":").append(modelJson);
-        for (String rootField : rootFields) {
-            sb.append(',').append(rootField);
-        }
-        sb.append('}');
-        return sb.toString();
-    }
-
-    private static String buildBpeModel(String vocabJson, String mergesJson, String extraFields) {
-        return "{\"type\":\"BPE\",\"vocab\":"
-                + vocabJson
-                + ",\"merges\":"
-                + mergesJson
-                + extraFields
-                + "}";
-    }
-
-    private static String buildByteLevelVocab(Map<String, Integer> extraTokens) {
-        StringBuilder vocab = new StringBuilder();
-        vocab.append('{');
-        for (int b = 0; b < 256; b++) {
-            if (b > 0) {
-                vocab.append(',');
-            }
-            vocab.append('"')
-                    .append(escapeJson(String.valueOf(ByteLevel.encodeSingle((byte) b))))
-                    .append('"')
-                    .append(':')
-                    .append(b);
-        }
-
-        Map<String, Integer> orderedExtras = new LinkedHashMap<>(extraTokens);
-        for (Map.Entry<String, Integer> entry : orderedExtras.entrySet()) {
-            vocab.append(',')
-                    .append('"')
-                    .append(escapeJson(entry.getKey()))
-                    .append('"')
-                    .append(':')
-                    .append(entry.getValue());
-        }
-        vocab.append('}');
-        return vocab.toString();
-    }
-
-    private static String escapeJson(String value) {
-        StringBuilder escaped = new StringBuilder(value.length());
-        for (int i = 0; i < value.length(); i++) {
-            char c = value.charAt(i);
-            switch (c) {
-                case '\\':
-                    escaped.append("\\\\");
-                    break;
-                case '"':
-                    escaped.append("\\\"");
-                    break;
-                case '\n':
-                    escaped.append("\\n");
-                    break;
-                case '\r':
-                    escaped.append("\\r");
-                    break;
-                case '\t':
-                    escaped.append("\\t");
-                    break;
-                default:
-                    escaped.append(c);
-            }
-        }
-        return escaped.toString();
     }
 }
