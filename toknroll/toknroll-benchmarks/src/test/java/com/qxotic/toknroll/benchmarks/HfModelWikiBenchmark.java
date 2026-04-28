@@ -3,7 +3,11 @@ package com.qxotic.toknroll.benchmarks;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.hf.HuggingFaceTokenizerLoader;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -26,6 +30,54 @@ import org.openjdk.jmh.infra.Blackhole;
 @Fork(1)
 @State(Scope.Benchmark)
 public class HfModelWikiBenchmark {
+
+    private static final Map<String, ModelSpec> MODEL_SPECS =
+            Map.ofEntries(
+                    Map.entry("openai.gpt-oss", new ModelSpec("openai", "gpt-oss-20b", "main")),
+                    Map.entry(
+                            "meta.llama3",
+                            new ModelSpec("unsloth", "Llama-3.2-1B-Instruct", "main")),
+                    Map.entry("moonshot.kimi2_6", new ModelSpec("moonshotai", "Kimi-K2.6", "main")),
+                    Map.entry(
+                            "huggingface.smollm3",
+                            new ModelSpec("HuggingFaceTB", "SmolLM3-3B", "main")),
+                    Map.entry("alibaba.qwen3_5", new ModelSpec("Qwen", "Qwen3.5-0.8B", "main")),
+                    Map.entry("google.gemma4", new ModelSpec("google", "gemma-4-e2b-it", "main")),
+                    Map.entry(
+                            "ibm.granite4_0",
+                            new ModelSpec("ibm-granite", "granite-4.0-h-1b", "main")),
+                    Map.entry("microsoft.phi4", new ModelSpec("microsoft", "phi-4", "main")),
+                    Map.entry(
+                            "deepseek.v3_2", new ModelSpec("deepseek-ai", "DeepSeek-V3.2", "main")),
+                    Map.entry(
+                            "mistral.v0_3_spbpe",
+                            new ModelSpec("mistralai", "Mistral-7B-Instruct-v0.3", "main")));
+
+    private static final Set<String> PARAM_MODEL_FAMILIES =
+            Set.of(
+                    "openai.gpt-oss",
+                    "meta.llama3",
+                    "moonshot.kimi2_6",
+                    "huggingface.smollm3",
+                    "alibaba.qwen3_5",
+                    "google.gemma4",
+                    "ibm.granite4_0",
+                    "microsoft.phi4",
+                    "deepseek.v3_2",
+                    "mistral.v0_3_spbpe");
+
+    // JMH @Param values are annotation literals, so keep this explicit set and fail fast if it
+    // drifts from MODEL_SPECS.
+    static {
+        if (!new LinkedHashSet<>(MODEL_SPECS.keySet())
+                .equals(new LinkedHashSet<>(PARAM_MODEL_FAMILIES))) {
+            throw new IllegalStateException(
+                    "HfModelWikiBenchmark model map and @Param values drifted. map="
+                            + MODEL_SPECS.keySet()
+                            + " param="
+                            + PARAM_MODEL_FAMILIES);
+        }
+    }
 
     @Param({"enwik8"})
     public String corpus;
@@ -54,9 +106,7 @@ public class HfModelWikiBenchmark {
     @Setup(Level.Trial)
     public void setup() {
         try {
-            String corpusText = WikiBenchmarkSupport.loadCorpusText(corpus);
-            int maxChars = Math.min(corpusText.length(), sliceMiB * 1024 * 1024);
-            text = corpusText.substring(0, maxChars);
+            text = WikiBenchmarkSupport.loadCorpusSlice(corpus, sliceMiB);
             tokenizer = loadTokenizer(modelFamily);
             encoded = tokenizer.encode(text);
         } catch (Exception e) {
@@ -81,39 +131,19 @@ public class HfModelWikiBenchmark {
     }
 
     private static Tokenizer loadTokenizer(String familyId) {
-        switch (familyId) {
-            case "openai.gpt-oss":
-                return HuggingFaceTokenizerLoader.fromHuggingFace(
-                        "openai", "gpt-oss-20b", "main", false, false);
-            case "meta.llama3":
-                return HuggingFaceTokenizerLoader.fromHuggingFace(
-                        "unsloth", "Llama-3.2-1B-Instruct", "main", false, false);
-            case "moonshot.kimi2_6":
-                return HuggingFaceTokenizerLoader.fromHuggingFace(
-                        "moonshotai", "Kimi-K2.6", "main", false, false);
-            case "huggingface.smollm3":
-                return HuggingFaceTokenizerLoader.fromHuggingFace(
-                        "HuggingFaceTB", "SmolLM3-3B", "main", false, false);
-            case "alibaba.qwen3_5":
-                return HuggingFaceTokenizerLoader.fromHuggingFace(
-                        "Qwen", "Qwen3.5-0.8B", "main", false, false);
-            case "google.gemma4":
-                return HuggingFaceTokenizerLoader.fromHuggingFace(
-                        "google", "gemma-4-e2b-it", "main", false, false);
-            case "ibm.granite4_0":
-                return HuggingFaceTokenizerLoader.fromHuggingFace(
-                        "ibm-granite", "granite-4.0-h-1b", "main", false, false);
-            case "microsoft.phi4":
-                return HuggingFaceTokenizerLoader.fromHuggingFace(
-                        "microsoft", "phi-4", "main", false, false);
-            case "deepseek.v3_2":
-                return HuggingFaceTokenizerLoader.fromHuggingFace(
-                        "deepseek-ai", "DeepSeek-V3.2", "main", false, false);
-            case "mistral.v0_3_spbpe":
-                return HuggingFaceTokenizerLoader.fromHuggingFace(
-                        "mistralai", "Mistral-7B-Instruct-v0.3", "main", false, false);
-            default:
-                throw new IllegalArgumentException("Unsupported HF model family: " + familyId);
+        ModelSpec spec = MODEL_SPECS.get(familyId);
+        if (spec == null) {
+            throw new IllegalArgumentException(
+                    "Unsupported HF model family: "
+                            + familyId
+                            + ". Supported: "
+                            + MODEL_SPECS.keySet().stream()
+                                    .sorted()
+                                    .collect(Collectors.joining(", ")));
         }
+        return HuggingFaceTokenizerLoader.fromHuggingFace(
+                spec.user(), spec.repository(), spec.revision(), false, false);
     }
+
+    private record ModelSpec(String user, String repository, String revision) {}
 }

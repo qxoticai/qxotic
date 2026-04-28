@@ -21,6 +21,12 @@ final class WikiBenchmarkSupport {
         return readUtf8(WikiCorpusPaths.forCorpus(corpus));
     }
 
+    static String loadCorpusSlice(String corpus, int sliceMiB) throws IOException {
+        String corpusText = loadCorpusText(corpus);
+        int maxChars = Math.min(corpusText.length(), sliceMiB * 1024 * 1024);
+        return corpusText.substring(0, maxChars);
+    }
+
     static Tokenizer createTokenizer(String encoding, boolean parallel) {
         Tokenizer tokenizer = TestTokenizers.tiktoken(encoding, splitterForEncoding(encoding));
         return parallel ? ParallelBenchmarkPipelines.from(tokenizer) : tokenizer;

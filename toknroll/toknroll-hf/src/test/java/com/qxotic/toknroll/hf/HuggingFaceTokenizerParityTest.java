@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 
 @Tag("slow")
 @Tag("local-external")
-class HuggingFaceTokenizerMvpParityTest {
+class HuggingFaceTokenizerParityTest {
 
     private static final Path CORE_GOLDEN_ENWIK8_DIR =
             Path.of("..", "toknroll-core", "src", "test", "resources", "golden", "enwik8");
@@ -63,7 +63,7 @@ class HuggingFaceTokenizerMvpParityTest {
                     new ModelSpec("google/gemma-4-e2b-it", "hf_google_gemma4_ground_truth.json"));
 
     @Test
-    void parityOnMvpModels() throws Exception {
+    void parityOnModels() throws Exception {
         assertTrue(
                 Files.isDirectory(CORE_GOLDEN_ENWIK8_DIR),
                 "Missing golden dir: " + CORE_GOLDEN_ENWIK8_DIR);
