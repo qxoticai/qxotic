@@ -4,10 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.toknroll.IntSequence;
-import com.qxotic.toknroll.Specials;
-import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.testkit.FamilyGoldenFixture;
 import com.qxotic.toknroll.testkit.FamilyGoldenFixture.CaseData;
 import com.qxotic.toknroll.testkit.FamilyGoldenFixture.Family;
@@ -15,10 +12,7 @@ import com.qxotic.toknroll.testkit.FamilyTestSpecs;
 import com.qxotic.toknroll.testkit.FamilyTestSpecs.FamilySpec;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Assumptions;
@@ -34,13 +28,6 @@ class HuggingFaceFamilyGoldenTest {
     private static final FamilyGoldenFixture FIXTURE = FamilyGoldenFixture.load();
     private static final ConcurrentHashMap<String, Tokenizer> TOKENIZERS =
             new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<String, Specials> FAMILY_SPECIALS =
-            new ConcurrentHashMap<>();
-    private static final Set<String> BRACKET_SPECIAL_FAMILIES = Set.of("mistral.gpt2_pretekken");
-    private static final Map<String, String> MODEL_REF_OVERRIDES =
-            Map.of(
-                    "google/gemma-3-4b-it", "unsloth/gemma-3-4b-it",
-                    "meta-llama/Llama-3.2-1B-Instruct", "unsloth/Llama-3.2-1B-Instruct");
 
     @ParameterizedTest(name = "hf family token parity budget {0}")
     @MethodSource("familyParityBudgets")
@@ -63,7 +50,7 @@ class HuggingFaceFamilyGoldenTest {
         for (CaseData c : cases) {
             int[] actual;
             try {
-                actual = encodeFamilyAware(familyId, tokenizer, c.text()).toArray();
+                actual = tokenizer.encode(c.text()).toArray();
             } catch (RuntimeException ex) {
                 encodeErrors++;
                 if (encodeErrorDetails.size() < 3) {
@@ -130,50 +117,13 @@ class HuggingFaceFamilyGoldenTest {
         return TOKENIZERS.computeIfAbsent(
                 familyId,
                 ignored -> {
-                    String effectiveModelRef = MODEL_REF_OVERRIDES.getOrDefault(modelRef, modelRef);
-                    String[] parts = effectiveModelRef.split("/", 2);
-                    String effectiveRevision =
-                            effectiveModelRef.equals(modelRef) ? revision : "main";
+                    String[] parts = modelRef.split("/", 2);
                     Assumptions.assumeTrue(
                             parts.length == 2,
-                            "Invalid model_ref for " + familyId + ": " + effectiveModelRef);
+                            "Invalid model_ref for " + familyId + ": " + modelRef);
                     return HuggingFaceTokenizerLoader.fromHuggingFace(
-                            parts[0], parts[1], effectiveRevision, false, false);
+                            parts[0], parts[1], revision, false, false);
                 });
-    }
-
-    private static IntSequence encodeFamilyAware(
-            String familyId, Tokenizer tokenizer, String text) {
-        Specials specials =
-                FAMILY_SPECIALS.computeIfAbsent(
-                        familyId, ignored -> compileControlSpecials(familyId, tokenizer));
-        if (specials.isEmpty()) {
-            return tokenizer.encode(text);
-        }
-        return specials.encode(tokenizer, text);
-    }
-
-    private static Specials compileControlSpecials(String familyId, Tokenizer tokenizer) {
-        Set<String> specials = new LinkedHashSet<>();
-        Vocabulary vocabulary = tokenizer.vocabulary();
-        for (Map.Entry<String, Integer> e : vocabulary) {
-            String token = e.getKey();
-            if (token == null || token.isEmpty()) {
-                continue;
-            }
-            if (vocabulary.isTokenOfType(e.getValue(), StandardTokenType.CONTROL)
-                    || looksLikeSpecialToken(familyId, token)) {
-                specials.add(token);
-            }
-        }
-        if (specials.isEmpty()) {
-            return Specials.none();
-        }
-        try {
-            return Specials.compile(vocabulary, specials);
-        } catch (IllegalArgumentException ignored) {
-            return Specials.none();
-        }
     }
 
     private static String describeFirstDiff(Tokenizer tokenizer, CaseData expected, int[] actual) {
@@ -219,20 +169,5 @@ class HuggingFaceFamilyGoldenTest {
     private static String compact(String text) {
         String t = text.replace("\n", "\\n").replace("\t", "\\t");
         return t.length() <= 32 ? t : t.substring(0, 29) + "...";
-    }
-
-    private static boolean looksLikeSpecialToken(String familyId, String token) {
-        if (token.length() < 3) {
-            return false;
-        }
-        if (token.startsWith("<|") && token.endsWith("|>")) {
-            return true;
-        }
-        if (BRACKET_SPECIAL_FAMILIES.contains(familyId)
-                && token.startsWith("[")
-                && token.endsWith("]")) {
-            return token.equals(token.toUpperCase());
-        }
-        return false;
     }
 }

@@ -1,16 +1,19 @@
 package com.qxotic.toknroll.hf;
 
+import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.buildBpeModel;
+import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.buildByteLevelVocab;
+import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.buildTokenizerJson;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -23,18 +26,12 @@ class HuggingFaceTokenizerLoaderTest {
         Path tokenizerJson =
                 Files.writeString(
                         tempDir.resolve("tokenizer.json"),
-                        "{\"model\":{\"type\":\"BPE\","
-                            + "\"vocab\":{\"a\":0,\"b\":1,\"ab\":2,\"<|end|>\":3},"
-                            + "\"merges\":[[\"a\",\"b\"]]},\"pre_tokenizer\":{\"type\":\"Split\","
-                            + "\"pattern\":{\"Regex\":\"[ab<|end|>]+\"},\"behavior\":\"Removed\","
-                            + "\"invert\":true},"
-                            + "\"added_tokens\":[{\"id\":3,\"content\":\"<|end|>\",\"special\":true}]"
-                            + "}",
+                        buildByteLevelTokenizerJsonWithAbToken(),
                         StandardCharsets.UTF_8);
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(tokenizerJson);
 
-        assertArrayEquals(new int[] {2}, tokenizer.encode("ab").toArray());
+        assertArrayEquals(new int[] {256}, tokenizer.encode("ab").toArray());
     }
 
     @Test
@@ -42,11 +39,11 @@ class HuggingFaceTokenizerLoaderTest {
         Path modelDir = Files.createDirectory(tempDir.resolve("model"));
         Files.writeString(
                 modelDir.resolve("tokenizer.json"),
-                "{\"model\":{\"type\":\"BPE\",\"vocab\":{\"a\":0},\"merges\":[]}}",
+                buildByteLevelTokenizerJson(true),
                 StandardCharsets.UTF_8);
 
         Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromLocal(modelDir);
-        assertEquals(1, tokenizer.vocabulary().size());
+        assertEquals(257, tokenizer.vocabulary().size());
     }
 
     @Test
@@ -86,54 +83,27 @@ class HuggingFaceTokenizerLoaderTest {
     }
 
     private static String buildByteLevelTokenizerJson(boolean ignoreMerges) {
-        StringBuilder vocab = new StringBuilder();
-        for (int b = 0; b < 256; b++) {
-            if (b > 0) {
-                vocab.append(',');
-            }
-            vocab.append('"')
-                    .append(escapeJsonChar(ByteLevel.encodeSingle((byte) b)))
-                    .append('"')
-                    .append(':')
-                    .append(b);
-        }
-        vocab.append(",\"ab\":256");
-        return "{\"model\":{\"type\":\"BPE\",\"ignore_merges\":"
-                + ignoreMerges
-                + ",\"vocab\":{"
-                + vocab
-                + "},\"merges\":[]}}";
+        return buildTokenizerJson(
+                buildBpeModel(
+                        buildByteLevelVocab(Map.of("ab", 256)),
+                        "[]",
+                        ",\"ignore_merges\":" + ignoreMerges));
     }
 
     private static String buildByteLevelTokenizerJsonWithAbMerge(boolean ignoreMerges) {
-        StringBuilder vocab = new StringBuilder();
-        for (int b = 0; b < 256; b++) {
-            if (b > 0) {
-                vocab.append(',');
-            }
-            vocab.append('"')
-                    .append(escapeJsonChar(ByteLevel.encodeSingle((byte) b)))
-                    .append('"')
-                    .append(':')
-                    .append(b);
-        }
-        vocab.append(",\"ab\":256");
-        return "{\"model\":{\"type\":\"BPE\",\"ignore_merges\":"
-                + ignoreMerges
-                + ",\"vocab\":{"
-                + vocab
-                + "},\"merges\":[[\"a\",\"b\"]]}}";
+        return buildTokenizerJson(
+                buildBpeModel(
+                        buildByteLevelVocab(Map.of("ab", 256)),
+                        "[[\"a\",\"b\"]]",
+                        ",\"ignore_merges\":" + ignoreMerges));
     }
 
-    private static String escapeJsonChar(char c) {
-        switch (c) {
-            case '"':
-                return "\\\"";
-            case '\\':
-                return "\\\\";
-            default:
-                return String.valueOf(c);
-        }
+    private static String buildByteLevelTokenizerJsonWithAbToken() {
+        return buildTokenizerJson(
+                buildBpeModel(
+                        buildByteLevelVocab(Map.of("ab", 256)),
+                        "[[\"a\",\"b\"]]",
+                        ",\"ignore_merges\":false"));
     }
 
     @Test

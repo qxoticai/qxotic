@@ -1,10 +1,12 @@
 package com.qxotic.toknroll.hf;
 
+import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.escapeJson;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -22,18 +24,34 @@ class HuggingFaceTokenizerModelScopeSupportTest {
 
     @Test
     void fromModelScope_defaultsToMasterRevision() throws IOException {
+        // Build a proper byte-level vocabulary with all 256 byte tokens
+        StringBuilder vocabBuilder = new StringBuilder();
+        vocabBuilder.append("{");
+        for (int b = 0; b < 256; b++) {
+            if (b > 0) {
+                vocabBuilder.append(",");
+            }
+            vocabBuilder.append("\"");
+            vocabBuilder.append(escapeJson(String.valueOf(ByteLevel.encodeSingle((byte) b))));
+            vocabBuilder.append("\":");
+            vocabBuilder.append(b);
+        }
+        vocabBuilder.append(",\"a\":256}");
+
         writeModelScopeCacheFile(
                 "org",
                 "repo",
                 "master",
                 "tokenizer.json",
-                "{\"model\":{\"type\":\"BPE\",\"vocab\":{\"a\":0},\"merges\":[]}}");
+                "{\"model\":{\"type\":\"BPE\",\"vocab\":"
+                        + vocabBuilder
+                        + ",\"merges\":[],\"ignore_merges\":true}}");
 
         String previous = System.getProperty(CACHE_ROOT_PROPERTY);
         System.setProperty(CACHE_ROOT_PROPERTY, tempDir.toString());
         try {
             Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromModelScope("org", "repo");
-            assertEquals(1, tokenizer.vocabulary().size());
+            assertEquals(257, tokenizer.vocabulary().size());
         } finally {
             restoreProperty(CACHE_ROOT_PROPERTY, previous);
         }

@@ -84,7 +84,7 @@ public final class Tokenizers {
      * at construction and throws if any token is not a valid byte-level symbol string (see {@link
      * ByteLevel#isValidEncoding(String)}).
      *
-     * @throws IllegalArgumentException if {@code vocabulary} contains non-bytelevel token strings
+     * @throws IllegalArgumentException if {@code vocabulary} contains non-byte-level token strings
      */
     public static TokenizationModel tiktokenModel(Vocabulary vocabulary, List<MergeRule> merges) {
         return tiktokenModel(vocabulary, merges, false);

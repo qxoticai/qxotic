@@ -1,6 +1,7 @@
 package com.qxotic.toknroll.hf;
 
 import com.qxotic.format.json.Json;
+import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Normalizer;
 import com.qxotic.toknroll.Splitter;
@@ -24,7 +25,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -236,6 +236,15 @@ public final class HuggingFaceTokenizerLoader {
         boolean hasMetaspace = hasMetaspacePreTokenizer(preTokenizerObj);
         Splitter splitter = parsePreTokenizer(preTokenizerObj);
 
+        if (!sentencePieceStyle) {
+            for (int i = 0; i < entries.tokens.length; i++) {
+                if (entries.tokens[i] == null) {
+                    continue;
+                }
+                entries.tokens[i] = canonicalizeByteLevelSurface(entries.tokens[i]);
+            }
+        }
+
         List<Tokenizers.MergeRule> merges =
                 buildMerges(entries.tokens, extractMerges(model.get("merges")));
         boolean ignoreMerges = Boolean.TRUE.equals(model.get("ignore_merges"));
@@ -247,12 +256,7 @@ public final class HuggingFaceTokenizerLoader {
             normalizer = Normalizer.sequence(base, text -> text.toString().replace(' ', '\u2581'));
             splitter = Splitter.identity();
         } else {
-            try {
-                tokenizationModel =
-                        ImplAccessor.createTiktokenModel(vocabulary, merges, ignoreMerges);
-            } catch (IllegalArgumentException e) {
-                tokenizationModel = Tokenizers.sentencePieceBpeModel(vocabulary, merges);
-            }
+            tokenizationModel = ImplAccessor.createTiktokenModel(vocabulary, merges, ignoreMerges);
         }
 
         TokenizationPipeline.Builder builder = TokenizationPipeline.builder(tokenizationModel);
@@ -440,10 +444,17 @@ public final class HuggingFaceTokenizerLoader {
             Map<String, Object> tokenMap = (Map<String, Object>) entry.getValue();
             Object content = tokenMap.get("content");
             if (content instanceof String) {
-                specialTokens.put((String) content, id);
+                specialTokens.put(canonicalizeByteLevelSurface((String) content), id);
             }
         }
         return specialTokens;
+    }
+
+    private static String canonicalizeByteLevelSurface(String token) {
+        if (ByteLevel.isValidEncoding(token)) {
+            return token;
+        }
+        return ByteLevel.encode(token.getBytes(StandardCharsets.UTF_8));
     }
 
     @SuppressWarnings("unchecked")
@@ -627,37 +638,39 @@ public final class HuggingFaceTokenizerLoader {
 
         int[] tokenTypes = new int[tokens.length];
         Arrays.fill(tokenTypes, StandardTokenType.NORMAL.getId());
-        if (!(addedTokensObj instanceof List<?>)) {
-            return new TokenEntries(tokens, tokenTypes);
-        }
 
-        for (Object obj : (List<?>) addedTokensObj) {
-            if (!(obj instanceof Map<?, ?>)) {
-                continue;
-            }
-            Map<String, Object> added = (Map<String, Object>) obj;
-            Object idObj = added.get("id");
-            Object contentObj = added.get("content");
-            if (!(idObj instanceof Number) || !(contentObj instanceof String)) {
-                continue;
-            }
+        if (addedTokensObj instanceof List<?>) {
+            for (Object obj : (List<?>) addedTokensObj) {
+                if (!(obj instanceof Map<?, ?>)) {
+                    continue;
+                }
+                Map<String, Object> added = (Map<String, Object>) obj;
+                Object idObj = added.get("id");
+                Object contentObj = added.get("content");
+                if (!(idObj instanceof Number) || !(contentObj instanceof String)) {
+                    continue;
+                }
 
-            int id = ((Number) idObj).intValue();
-            if (id >= tokens.length) {
-                int oldLength = tokens.length;
-                tokens = Arrays.copyOf(tokens, id + 1);
-                tokenTypes = Arrays.copyOf(tokenTypes, id + 1);
-                Arrays.fill(
-                        tokenTypes, oldLength, tokenTypes.length, StandardTokenType.NORMAL.getId());
-            }
-            boolean special = Boolean.TRUE.equals(added.get("special"));
-            if (tokens[id] == null || special) {
-                // Keep decode semantics aligned for explicit special/control tokens,
-                // but do not clobber normal vocab entries.
-                tokens[id] = (String) contentObj;
-            }
-            if (special) {
-                tokenTypes[id] = StandardTokenType.CONTROL.getId();
+                int id = ((Number) idObj).intValue();
+                if (id >= tokens.length) {
+                    int oldLength = tokens.length;
+                    tokens = Arrays.copyOf(tokens, id + 1);
+                    tokenTypes = Arrays.copyOf(tokenTypes, id + 1);
+                    Arrays.fill(
+                            tokenTypes,
+                            oldLength,
+                            tokenTypes.length,
+                            StandardTokenType.NORMAL.getId());
+                }
+                boolean special = Boolean.TRUE.equals(added.get("special"));
+                if (tokens[id] == null || special) {
+                    // Keep decode semantics aligned for explicit special/control tokens,
+                    // but do not clobber normal vocab entries.
+                    tokens[id] = (String) contentObj;
+                }
+                if (special) {
+                    tokenTypes[id] = StandardTokenType.CONTROL.getId();
+                }
             }
         }
 
@@ -1122,69 +1135,53 @@ public final class HuggingFaceTokenizerLoader {
     }
 
     private static Tokenizer wrapMetaspace(Tokenizer base) {
-        return new Tokenizer() {
-            @Override
-            public Vocabulary vocabulary() {
-                return base.vocabulary();
-            }
-
+        return new TransformedTokenizer(base) {
             @Override
             public void encodeInto(
                     CharSequence text,
                     int startInclusive,
                     int endExclusive,
                     IntSequence.Builder out) {
-                String replaced = applyMetaspace(text, startInclusive, endExclusive, true);
+                String replaced =
+                        applyMetaspace(text, startInclusive, endExclusive, startInclusive == 0);
                 base.encodeInto(replaced, 0, replaced.length(), out);
             }
 
             @Override
-            public String decode(IntSequence tokens) {
-                return normalizeMetaspaceDecoded(base.decode(tokens), true);
-            }
-
-            @Override
-            public byte[] decodeBytes(IntSequence tokens) {
-                return decode(tokens).getBytes(StandardCharsets.UTF_8);
-            }
-
-            @Override
-            public int decodeBytesInto(IntSequence tokens, int tokenStartIndex, ByteBuffer out) {
-                int length = tokens.length();
-                if (tokenStartIndex < 0 || tokenStartIndex > length) {
-                    throw new IndexOutOfBoundsException("tokenStartIndex: " + tokenStartIndex);
-                }
-                if (tokenStartIndex == length) {
-                    return 0;
-                }
-                byte[] bytes = decodeBytes(tokens.subSequence(tokenStartIndex, length));
-                if (bytes.length > out.remaining()) {
-                    throw new IllegalArgumentException("Not enough output space");
-                }
-                out.put(bytes);
-                return length - tokenStartIndex;
+            protected String transformDecoded(String decoded, boolean atStartOfText) {
+                return normalizeMetaspaceDecoded(decoded, atStartOfText);
             }
 
             @Override
             public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
-                String replaced = applyMetaspace(text, startInclusive, endExclusive, true);
+                String replaced =
+                        applyMetaspace(text, startInclusive, endExclusive, startInclusive == 0);
                 return base.countTokens(replaced, 0, replaced.length());
-            }
-
-            @Override
-            public int countBytes(IntSequence tokens) {
-                return base.countBytes(tokens);
-            }
-
-            @Override
-            public float expectedTokensPerChar() {
-                return base.expectedTokensPerChar();
             }
         };
     }
 
     private static Tokenizer wrapSentencePieceDecode(Tokenizer base) {
-        return wrapDecoded(base, s -> normalizeMetaspaceDecoded(s, false));
+        return new TransformedTokenizer(base) {
+            @Override
+            public void encodeInto(
+                    CharSequence text,
+                    int startInclusive,
+                    int endExclusive,
+                    IntSequence.Builder out) {
+                base.encodeInto(text, startInclusive, endExclusive, out);
+            }
+
+            @Override
+            protected String transformDecoded(String decoded, boolean atStartOfText) {
+                return normalizeMetaspaceDecoded(decoded, false);
+            }
+
+            @Override
+            public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
+                return base.countTokens(text, startInclusive, endExclusive);
+            }
+        };
     }
 
     private static String applyMetaspace(
@@ -1202,64 +1199,114 @@ public final class HuggingFaceTokenizerLoader {
         return normalized;
     }
 
-    private static Tokenizer wrapDecoded(Tokenizer base, Function<String, String> decodeTransform) {
-        return new Tokenizer() {
-            @Override
-            public Vocabulary vocabulary() {
-                return base.vocabulary();
+    private static String escapeToken(String token) {
+        StringBuilder out = new StringBuilder(token.length() * 2 + 2);
+        out.append('"');
+        for (int i = 0; i < token.length(); i++) {
+            char ch = token.charAt(i);
+            if (ch >= 0x20 && ch <= 0x7E && ch != '\\' && ch != '"') {
+                out.append(ch);
+            } else if (ch == '\\') {
+                out.append("\\\\");
+            } else if (ch == '"') {
+                out.append("\\\"");
+            } else if (ch == '\n') {
+                out.append("\\n");
+            } else if (ch == '\r') {
+                out.append("\\r");
+            } else if (ch == '\t') {
+                out.append("\\t");
+            } else {
+                out.append(String.format("\\u%04X", (int) ch));
+            }
+        }
+        out.append('"');
+        return out.toString();
+    }
+
+    /**
+     * Wrapper contract:
+     *
+     * <ul>
+     *   <li>decode/decodeBytes/countBytes/decodeBytesInto all use transformed decode semantics.
+     *   <li>Metaspace leading-space trim is applied only at sequence start ({@code atStartOfText}).
+     * </ul>
+     */
+    private abstract static class TransformedTokenizer implements Tokenizer {
+        protected final Tokenizer base;
+
+        TransformedTokenizer(Tokenizer base) {
+            this.base = base;
+        }
+
+        protected abstract String transformDecoded(String decoded, boolean atStartOfText);
+
+        @Override
+        public Vocabulary vocabulary() {
+            return base.vocabulary();
+        }
+
+        @Override
+        public String decode(IntSequence tokens) {
+            return transformDecoded(base.decode(tokens), true);
+        }
+
+        @Override
+        public byte[] decodeBytes(IntSequence tokens) {
+            return decode(tokens).getBytes(StandardCharsets.UTF_8);
+        }
+
+        @Override
+        public int decodeBytesInto(IntSequence tokens, int tokenStartIndex, ByteBuffer out) {
+            int length = tokens.length();
+            if (tokenStartIndex < 0 || tokenStartIndex > length) {
+                throw new IndexOutOfBoundsException("tokenStartIndex: " + tokenStartIndex);
+            }
+            if (tokenStartIndex == length) {
+                return 0;
             }
 
-            @Override
-            public void encodeInto(
-                    CharSequence text,
-                    int startInclusive,
-                    int endExclusive,
-                    IntSequence.Builder out) {
-                base.encodeInto(text, startInclusive, endExclusive, out);
+            int remaining = out.remaining();
+            boolean atStartOfText = tokenStartIndex == 0;
+
+            byte[] firstTokenBytes =
+                    transformedBytes(tokens, tokenStartIndex, tokenStartIndex + 1, atStartOfText);
+            if (firstTokenBytes.length > remaining) {
+                throw new IllegalArgumentException("Not enough output space");
             }
 
-            @Override
-            public String decode(IntSequence tokens) {
-                return decodeTransform.apply(base.decode(tokens));
-            }
-
-            @Override
-            public byte[] decodeBytes(IntSequence tokens) {
-                return decode(tokens).getBytes(StandardCharsets.UTF_8);
-            }
-
-            @Override
-            public int decodeBytesInto(IntSequence tokens, int tokenStartIndex, ByteBuffer out) {
-                int length = tokens.length();
-                if (tokenStartIndex < 0 || tokenStartIndex > length) {
-                    throw new IndexOutOfBoundsException("tokenStartIndex: " + tokenStartIndex);
+            int lo = tokenStartIndex + 1;
+            int hi = length;
+            while (lo < hi) {
+                int mid = lo + ((hi - lo + 1) >>> 1);
+                int size = transformedBytes(tokens, tokenStartIndex, mid, atStartOfText).length;
+                if (size <= remaining) {
+                    lo = mid;
+                } else {
+                    hi = mid - 1;
                 }
-                if (tokenStartIndex == length) {
-                    return 0;
-                }
-                byte[] bytes = decodeBytes(tokens.subSequence(tokenStartIndex, length));
-                if (bytes.length > out.remaining()) {
-                    throw new IllegalArgumentException("Not enough output space");
-                }
-                out.put(bytes);
-                return length - tokenStartIndex;
             }
 
-            @Override
-            public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
-                return base.countTokens(text, startInclusive, endExclusive);
-            }
+            byte[] bytes = transformedBytes(tokens, tokenStartIndex, lo, atStartOfText);
+            out.put(bytes);
+            return lo - tokenStartIndex;
+        }
 
-            @Override
-            public int countBytes(IntSequence tokens) {
-                return base.countBytes(tokens);
-            }
+        private byte[] transformedBytes(
+                IntSequence tokens, int startInclusive, int endExclusive, boolean atStartOfText) {
+            String decoded = base.decode(tokens.subSequence(startInclusive, endExclusive));
+            return transformDecoded(decoded, atStartOfText).getBytes(StandardCharsets.UTF_8);
+        }
 
-            @Override
-            public float expectedTokensPerChar() {
-                return base.expectedTokensPerChar();
-            }
-        };
+        @Override
+        public int countBytes(IntSequence tokens) {
+            return decodeBytes(tokens).length;
+        }
+
+        @Override
+        public float expectedTokensPerChar() {
+            return base.expectedTokensPerChar();
+        }
     }
 
     private static final class Span {

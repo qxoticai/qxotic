@@ -106,6 +106,8 @@ final class TiktokenModel extends AbstractTokenizationModel {
             Vocabulary vocabulary, LongLongMap merges, boolean ignoreMerges) {
         Objects.requireNonNull(vocabulary, "vocabulary");
         Objects.requireNonNull(merges, "merges");
+        // Strict invariant: all vocabulary tokens must be ByteLevel-encoded.
+        // Callers/loaders are responsible for pre-encoding any special/control tokens.
         validateByteLevelVocabulary(vocabulary);
 
         int[] singleByteTokenId = buildSingleByteTokenMap(vocabulary);
@@ -881,16 +883,18 @@ final class TiktokenModel extends AbstractTokenizationModel {
     }
 
     private static void validateByteLevelVocabulary(Vocabulary vocabulary) {
-        for (Map.Entry<String, Integer> entry : vocabulary) {
-            String token = entry.getKey();
+        for (Map.Entry<String, Integer> e : vocabulary) {
+            String token = e.getKey();
+            int id = e.getValue();
             if (ByteLevel.isValidEncoding(token)) {
                 continue;
             }
             throw new IllegalArgumentException(
-                    "Tiktoken vocabulary contains non-bytelevel token at id "
-                            + entry.getValue()
-                            + ": "
-                            + escapeToken(token));
+                    "Token at id "
+                            + id
+                            + " is not valid ByteLevel encoding: "
+                            + escapeToken(token)
+                            + ". All vocabulary tokens must be byte-level encoded.");
         }
     }
 
