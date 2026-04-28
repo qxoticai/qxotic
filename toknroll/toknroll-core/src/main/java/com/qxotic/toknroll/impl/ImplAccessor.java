@@ -60,13 +60,7 @@ public final class ImplAccessor {
         return new VocabularyImpl(tokenToId);
     }
 
-    /**
-     * Test-only bridge for GGUF fixtures that include token-type metadata.
-     *
-     * @deprecated Prefer public vocabulary constructors/factories in {@code Tokenizers} for
-     *     production usage.
-     */
-    @Deprecated(forRemoval = false, since = "0.1.0")
+    /** Test-only bridge for GGUF fixtures that include token-type metadata. */
     public static Vocabulary createVocabulary(String[] tokens, int[] tokenTypes) {
         return new VocabularyImpl(tokens, tokenTypes);
     }
@@ -104,38 +98,6 @@ public final class ImplAccessor {
 
     public static Specials compileSpecials(Vocabulary vocabulary, Set<String> specials) {
         return SpecialsImpl.compile(vocabulary, specials);
-    }
-
-    /**
-     * Test fixture bridge for loading local/remote tiktoken mergeable ranks.
-     *
-     * @deprecated Prefer dedicated public loader APIs once exposed.
-     */
-    @Deprecated(forRemoval = false, since = "0.1.0")
-    public static Map<String, Integer> loadMergeableRanks(String blobPath, String expectedHash)
-            throws IOException, InterruptedException {
-        return loadTiktokenMergeableRanks(blobPath, expectedHash);
-    }
-
-    /**
-     * Test fixture bridge for loading tiktoken mergeable ranks from a reader.
-     *
-     * @deprecated Prefer dedicated public loader APIs once exposed.
-     */
-    @Deprecated(forRemoval = false, since = "0.1.0")
-    public static Map<String, Integer> loadMergeableRanks(BufferedReader reader) {
-        return loadTiktokenMergeableRanks(reader);
-    }
-
-    /**
-     * Test fixture bridge for reconstructing vocabulary from tiktoken ranks.
-     *
-     * @deprecated Prefer dedicated public loader APIs once exposed.
-     */
-    @Deprecated(forRemoval = false, since = "0.1.0")
-    public static Vocabulary tiktokenVocabulary(
-            Map<String, Integer> mergeableRanks, Map<String, Integer> specialTokens) {
-        return reconstructTiktokenVocabulary(mergeableRanks, specialTokens);
     }
 
     /**

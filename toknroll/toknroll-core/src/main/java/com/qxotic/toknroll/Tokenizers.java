@@ -42,7 +42,6 @@ public final class Tokenizers {
             return specialTokens;
         }
 
-        Map<String, Integer> validatedSpecials = new LinkedHashMap<>(specialTokens.size());
         Set<Integer> seenIds = new HashSet<>();
         for (Map.Entry<String, Integer> entry : specialTokens.entrySet()) {
             String token =
@@ -70,10 +69,9 @@ public final class Tokenizers {
             if (!seenIds.add(tokenId)) {
                 throw new IllegalArgumentException("Duplicate special token id: " + tokenId);
             }
-            validatedSpecials.put(token, tokenId);
         }
 
-        return validatedSpecials;
+        return specialTokens;
     }
 
     /**
@@ -87,14 +85,7 @@ public final class Tokenizers {
      * @throws IllegalArgumentException if {@code vocabulary} contains non-byte-level token strings
      */
     public static TokenizationModel tiktokenModel(Vocabulary vocabulary, List<MergeRule> merges) {
-        return tiktokenModel(vocabulary, merges, false);
-    }
-
-    // Internal escape hatch for no-merge construction behavior.
-    // Keep for now; this may be removed in a future cleanup if no valid use case remains.
-    private static TokenizationModel tiktokenModel(
-            Vocabulary vocabulary, List<MergeRule> merges, boolean ignoreMerges) {
-        return ImplAccessor.createTiktokenModel(vocabulary, merges, ignoreMerges);
+        return ImplAccessor.createTiktokenModel(vocabulary, merges, false);
     }
 
     public static TokenizationModel sentencePieceBpeModel(

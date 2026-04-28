@@ -9,12 +9,13 @@ import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.TokenizationModel;
 import com.qxotic.toknroll.TokenizationPipeline;
 import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.TokenizerLoadException;
 import com.qxotic.toknroll.Tokenizers;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.impl.ImplAccessor;
+import com.qxotic.toknroll.impl.TransformedTokenizer;
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -1149,7 +1150,12 @@ public final class HuggingFaceTokenizerLoader {
 
             @Override
             protected String transformDecoded(String decoded, boolean atStartOfText) {
-                return normalizeMetaspaceDecoded(decoded, atStartOfText);
+                return TransformedTokenizer.normalizeMetaspaceDecoded(decoded, atStartOfText);
+            }
+
+            @Override
+            protected boolean trimLeadingSpaceAtStart() {
+                return true;
             }
 
             @Override
@@ -1174,7 +1180,12 @@ public final class HuggingFaceTokenizerLoader {
 
             @Override
             protected String transformDecoded(String decoded, boolean atStartOfText) {
-                return normalizeMetaspaceDecoded(decoded, false);
+                return TransformedTokenizer.normalizeMetaspaceDecoded(decoded, false);
+            }
+
+            @Override
+            protected boolean trimLeadingSpaceAtStart() {
+                return false;
             }
 
             @Override
@@ -1189,124 +1200,6 @@ public final class HuggingFaceTokenizerLoader {
         String segment = text.subSequence(startInclusive, endExclusive).toString();
         String replaced = segment.replace(' ', METASPACE);
         return prependMarker ? METASPACE + replaced : replaced;
-    }
-
-    private static String normalizeMetaspaceDecoded(String decoded, boolean trimLeadingSpace) {
-        String normalized = decoded.replace(METASPACE, ' ');
-        if (trimLeadingSpace && normalized.length() > 0 && normalized.charAt(0) == ' ') {
-            return normalized.substring(1);
-        }
-        return normalized;
-    }
-
-    private static String escapeToken(String token) {
-        StringBuilder out = new StringBuilder(token.length() * 2 + 2);
-        out.append('"');
-        for (int i = 0; i < token.length(); i++) {
-            char ch = token.charAt(i);
-            if (ch >= 0x20 && ch <= 0x7E && ch != '\\' && ch != '"') {
-                out.append(ch);
-            } else if (ch == '\\') {
-                out.append("\\\\");
-            } else if (ch == '"') {
-                out.append("\\\"");
-            } else if (ch == '\n') {
-                out.append("\\n");
-            } else if (ch == '\r') {
-                out.append("\\r");
-            } else if (ch == '\t') {
-                out.append("\\t");
-            } else {
-                out.append(String.format("\\u%04X", (int) ch));
-            }
-        }
-        out.append('"');
-        return out.toString();
-    }
-
-    /**
-     * Wrapper contract:
-     *
-     * <ul>
-     *   <li>decode/decodeBytes/countBytes/decodeBytesInto all use transformed decode semantics.
-     *   <li>Metaspace leading-space trim is applied only at sequence start ({@code atStartOfText}).
-     * </ul>
-     */
-    private abstract static class TransformedTokenizer implements Tokenizer {
-        protected final Tokenizer base;
-
-        TransformedTokenizer(Tokenizer base) {
-            this.base = base;
-        }
-
-        protected abstract String transformDecoded(String decoded, boolean atStartOfText);
-
-        @Override
-        public Vocabulary vocabulary() {
-            return base.vocabulary();
-        }
-
-        @Override
-        public String decode(IntSequence tokens) {
-            return transformDecoded(base.decode(tokens), true);
-        }
-
-        @Override
-        public byte[] decodeBytes(IntSequence tokens) {
-            return decode(tokens).getBytes(StandardCharsets.UTF_8);
-        }
-
-        @Override
-        public int decodeBytesInto(IntSequence tokens, int tokenStartIndex, ByteBuffer out) {
-            int length = tokens.length();
-            if (tokenStartIndex < 0 || tokenStartIndex > length) {
-                throw new IndexOutOfBoundsException("tokenStartIndex: " + tokenStartIndex);
-            }
-            if (tokenStartIndex == length) {
-                return 0;
-            }
-
-            int remaining = out.remaining();
-            boolean atStartOfText = tokenStartIndex == 0;
-
-            byte[] firstTokenBytes =
-                    transformedBytes(tokens, tokenStartIndex, tokenStartIndex + 1, atStartOfText);
-            if (firstTokenBytes.length > remaining) {
-                throw new IllegalArgumentException("Not enough output space");
-            }
-
-            int lo = tokenStartIndex + 1;
-            int hi = length;
-            while (lo < hi) {
-                int mid = lo + ((hi - lo + 1) >>> 1);
-                int size = transformedBytes(tokens, tokenStartIndex, mid, atStartOfText).length;
-                if (size <= remaining) {
-                    lo = mid;
-                } else {
-                    hi = mid - 1;
-                }
-            }
-
-            byte[] bytes = transformedBytes(tokens, tokenStartIndex, lo, atStartOfText);
-            out.put(bytes);
-            return lo - tokenStartIndex;
-        }
-
-        private byte[] transformedBytes(
-                IntSequence tokens, int startInclusive, int endExclusive, boolean atStartOfText) {
-            String decoded = base.decode(tokens.subSequence(startInclusive, endExclusive));
-            return transformDecoded(decoded, atStartOfText).getBytes(StandardCharsets.UTF_8);
-        }
-
-        @Override
-        public int countBytes(IntSequence tokens) {
-            return decodeBytes(tokens).length;
-        }
-
-        @Override
-        public float expectedTokensPerChar() {
-            return base.expectedTokensPerChar();
-        }
     }
 
     private static final class Span {

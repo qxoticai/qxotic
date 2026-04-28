@@ -78,10 +78,8 @@ abstract class AbstractTokenizationModel implements TokenizationModel {
     }
 
     /**
-     * Implements the core encoding logic for a chunk of text. This method is called with a
-     * pre-split chunk and should implement the actual token generation algorithm.
+     * Core encoding logic for a pre-split text chunk.
      *
-     * @param text the chunk of text to encode
      * @return sequence of token IDs representing the text
      */
     protected abstract IntSequence encodeImpl(CharSequence text);
@@ -89,20 +87,44 @@ abstract class AbstractTokenizationModel implements TokenizationModel {
     /**
      * Appends encoded token IDs for the given chunk into {@code out}.
      *
-     * <p>Default implementation delegates to {@link #encodeImpl(CharSequence)} and appends the
-     * resulting sequence. Implementations can override to avoid intermediate allocations.
+     * <p>Default delegates to {@link #encodeImpl(CharSequence)}. Override to avoid intermediate
+     * allocations.
      */
     protected void encodeImplInto(CharSequence text, IntSequence.Builder out) {
         out.addAll(encodeImpl(text));
     }
 
+    /**
+     * Estimates the initial token capacity for a chunk of text.
+     *
+     * <p>Uses a conservative heuristic (char count × tokens-per-char ratio × 1.15 safety margin +
+     * 8) with overflow protection.
+     */
+    protected int estimateInitialTokenCapacity(int charCount) {
+        float ratio = Math.max(1.0e-6f, expectedTokensPerChar());
+        double estimated = Math.ceil(charCount * (double) ratio * 1.15d) + 8d;
+        if (estimated > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException(
+                    "Estimated token capacity exceeds int range: " + estimated);
+        }
+        int predicted = (int) estimated;
+        return Math.max(8, predicted);
+    }
+
+    protected static boolean heapLess(int rankA, long nodeA, int rankB, long nodeB) {
+        if (rankA != rankB) {
+            return rankA < rankB;
+        }
+        int leftA = (int) (nodeA >>> 32);
+        int leftB = (int) (nodeB >>> 32);
+        return leftA < leftB;
+    }
+
     @Override
     public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
         Objects.requireNonNull(text, "text");
-        int charCount = endExclusive - startInclusive;
-        float ratio = Math.max(1.0e-6f, expectedTokensPerChar());
         IntSequence.Builder out =
-                IntSequence.newBuilder(Math.max(8, (int) Math.ceil(charCount * ratio * 1.15f) + 8));
+                IntSequence.newBuilder(estimateInitialTokenCapacity(endExclusive - startInclusive));
         encodeInto(text, startInclusive, endExclusive, out);
         return out.size();
     }
