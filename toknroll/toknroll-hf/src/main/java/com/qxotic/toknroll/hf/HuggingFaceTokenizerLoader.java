@@ -230,10 +230,10 @@ public final class HuggingFaceTokenizerLoader {
         // Collapsing <0x..> aliases can drop merge connectivity for some UTF-8 byte paths.
 
         Object normalizerObj = root.get("normalizer");
-        boolean sentencePieceStyle = isSentencePieceSpaceNormalizer(normalizerObj);
         Normalizer normalizer = parseNormalizer(normalizerObj);
         Object preTokenizerObj = root.get("pre_tokenizer");
         boolean hasMetaspace = hasMetaspacePreTokenizer(preTokenizerObj);
+        boolean sentencePieceStyle = isSentencePieceSpaceNormalizer(normalizerObj) || hasMetaspace;
         Splitter splitter = parsePreTokenizer(preTokenizerObj);
 
         if (!sentencePieceStyle) {
