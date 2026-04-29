@@ -804,13 +804,14 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
 
     @Override
     public int countBytes(IntSequence tokens) {
+        Objects.requireNonNull(tokens, "tokens");
         int total = 0;
         for (int i = 0; i < tokens.length(); i++) {
             int id = tokens.intAt(i);
-            byte[] bytes = tokenBytesById[id];
-            if (bytes != null) {
-                total += bytes.length;
+            if (id < 0 || id >= tokenBytesById.length || tokenBytesById[id] == null) {
+                throw unknownToken(id);
             }
+            total += tokenBytesById[id].length;
         }
         return total;
     }
@@ -821,7 +822,6 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
 
     // ---- Utilities ----
 
-    /** Doubles an int array's capacity until it meets {@code needed}. */
     private static int[] ensureCapacity(int[] array, int needed) {
         if (needed <= array.length) {
             return array;

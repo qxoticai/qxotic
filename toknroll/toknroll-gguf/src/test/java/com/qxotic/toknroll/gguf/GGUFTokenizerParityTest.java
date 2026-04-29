@@ -167,6 +167,33 @@ class GGUFTokenizerParityTest {
                 tokens -> tokenizer.countBytes(IntSequence.wrap(tokens)),
                 (tokens, tokenStartIndex, out) ->
                         tokenizer.decodeBytesInto(IntSequence.wrap(tokens), tokenStartIndex, out));
+
+        TokenizerInvariantHarness.runSlicingInvariants(
+                label,
+                INVARIANT_SMOKE_TEXTS,
+                text -> tokenizer.encode(text).toArray(),
+                (text, start, end) -> {
+                    IntSequence.Builder out = IntSequence.newBuilder(16);
+                    tokenizer.encodeInto(text, start, end, out);
+                    return out.build().toArray();
+                },
+                tokenizer::countTokens,
+                tokenizer::countTokens);
+
+        TokenizerInvariantHarness.runConvenienceOverloadInvariants(
+                label,
+                INVARIANT_SMOKE_TEXTS,
+                text -> tokenizer.encode(text).toArray(),
+                tokenizer::encodeToArray,
+                tokens -> tokenizer.decode(IntSequence.wrap(tokens)),
+                tokenizer::decode,
+                tokens -> tokenizer.decodeBytes(IntSequence.wrap(tokens)),
+                tokenizer::decodeBytes,
+                tokens -> tokenizer.countBytes(IntSequence.wrap(tokens)),
+                tokenizer::countBytes);
+
+        TokenizerInvariantHarness.assertExpectedTokensPerCharRange(
+                label, tokenizer.expectedTokensPerChar());
     }
 
     private static final class ModelSpec {

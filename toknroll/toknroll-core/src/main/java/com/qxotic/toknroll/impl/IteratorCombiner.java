@@ -3,6 +3,7 @@ package com.qxotic.toknroll.impl;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+import java.util.NoSuchElementException;
 
 final class IteratorCombiner<T> implements Iterator<T> {
     private final List<Iterator<T>> iterators;
@@ -30,6 +31,9 @@ final class IteratorCombiner<T> implements Iterator<T> {
 
     @Override
     public T next() {
+        if (!hasNext()) {
+            throw new NoSuchElementException();
+        }
         return iterators.get(currentIndex).next();
     }
 }

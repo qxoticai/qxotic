@@ -92,25 +92,25 @@ final class TiktokenReconstruction {
 
     private static LongLongMap packMerges(
             Vocabulary vocabulary, List<Tokenizers.MergeRule> merges, boolean sentencePiece) {
-        Vocabulary checkedVocabulary = Objects.requireNonNull(vocabulary, "vocabulary");
-        List<Tokenizers.MergeRule> checkedMerges = Objects.requireNonNull(merges, "merges");
-        if (checkedMerges.isEmpty()) {
+        Objects.requireNonNull(vocabulary, "vocabulary");
+        Objects.requireNonNull(merges, "merges");
+        if (merges.isEmpty()) {
             throw new IllegalArgumentException("merges must not be empty");
         }
 
-        long[] keys = new long[checkedMerges.size()];
-        long[] values = new long[checkedMerges.size()];
+        long[] keys = new long[merges.size()];
+        long[] values = new long[merges.size()];
         int size = 0;
 
         Map<ByteArrayKey, Integer> tokenIdByByteSurface =
-                sentencePiece ? Map.of() : buildByteSurfaceIndex(checkedVocabulary);
+                sentencePiece ? Map.of() : buildByteSurfaceIndex(vocabulary);
 
-        Set<Long> pairKeys = new HashSet<>(checkedMerges.size() * 2);
-        Set<Integer> ranks = new HashSet<>(checkedMerges.size() * 2);
+        Set<Long> pairKeys = new HashSet<>(merges.size() * 2);
+        Set<Integer> ranks = new HashSet<>(merges.size() * 2);
         int maxRank = -1;
 
-        for (int i = 0; i < checkedMerges.size(); i++) {
-            Tokenizers.MergeRule rule = checkedMerges.get(i);
+        for (int i = 0; i < merges.size(); i++) {
+            Tokenizers.MergeRule rule = merges.get(i);
             if (rule == null) {
                 throw new NullPointerException("merges[" + i + "]");
             }
@@ -121,10 +121,10 @@ final class TiktokenReconstruction {
             if (rank < 0) {
                 throw new IllegalArgumentException("Merge rank must be >= 0: " + rank);
             }
-            if (!checkedVocabulary.contains(leftId)) {
+            if (!vocabulary.contains(leftId)) {
                 throw new IllegalArgumentException("Unknown left token id: " + leftId);
             }
-            if (!checkedVocabulary.contains(rightId)) {
+            if (!vocabulary.contains(rightId)) {
                 throw new IllegalArgumentException("Unknown right token id: " + rightId);
             }
 
@@ -137,12 +137,12 @@ final class TiktokenReconstruction {
                 throw new IllegalArgumentException("Duplicate merge rank: " + rank);
             }
 
-            String leftToken = checkedVocabulary.token(leftId);
-            String rightToken = checkedVocabulary.token(rightId);
+            String leftToken = vocabulary.token(leftId);
+            String rightToken = vocabulary.token(rightId);
             String mergedToken = leftToken + rightToken;
             int mergedId;
-            if (checkedVocabulary.contains(mergedToken)) {
-                mergedId = checkedVocabulary.id(mergedToken);
+            if (vocabulary.contains(mergedToken)) {
+                mergedId = vocabulary.id(mergedToken);
             } else if (!sentencePiece) {
                 mergedId = mergedIdByByteSurface(tokenIdByByteSurface, leftToken, rightToken);
                 if (mergedId < 0) {

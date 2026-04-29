@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.StandardTokenType;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -163,6 +165,219 @@ class SentencePieceBpeModelComprehensiveTest {
     }
 
     // ------------------------------------------------------------------
+    // decodeBytesInto tests
+    // ------------------------------------------------------------------
+
+    @Test
+    void decodeBytesIntoRoundTrip() {
+        SentencePieceBpeModel model = minimalModel();
+        IntSequence ids = model.encode(" hello");
+        byte[] expected = " hello".getBytes(StandardCharsets.UTF_8);
+
+        ByteBuffer buf = ByteBuffer.allocate(expected.length);
+        int consumed = model.decodeBytesInto(ids, 0, buf);
+
+        assertEquals(ids.length(), consumed);
+        buf.flip();
+        byte[] actual = new byte[buf.remaining()];
+        buf.get(actual);
+        assertArrayEquals(expected, actual);
+    }
+
+    @Test
+    void decodeBytesIntoByteFallbackToken() {
+        SentencePieceBpeModel model = fullByteFallbackModel();
+        IntSequence ids = model.encode("\u00e9");
+
+        byte[] expected = "\u00e9".getBytes(StandardCharsets.UTF_8);
+        ByteBuffer buf = ByteBuffer.allocate(expected.length);
+        int consumed = model.decodeBytesInto(ids, 0, buf);
+
+        assertEquals(ids.length(), consumed);
+        buf.flip();
+        byte[] actual = new byte[buf.remaining()];
+        buf.get(actual);
+        assertArrayEquals(expected, actual);
+    }
+
+    @Test
+    void decodeBytesIntoEmptyTokens() {
+        SentencePieceBpeModel model = minimalModel();
+        IntSequence ids = IntSequence.wrap(new int[0]);
+        ByteBuffer buf = ByteBuffer.allocate(16);
+        int consumed = model.decodeBytesInto(ids, 0, buf);
+        assertEquals(0, consumed);
+    }
+
+    @Test
+    void decodeBytesIntoTokenStartIndexEqualsLength() {
+        SentencePieceBpeModel model = minimalModel();
+        IntSequence ids = model.encode(" hello");
+        ByteBuffer buf = ByteBuffer.allocate(16);
+        int consumed = model.decodeBytesInto(ids, ids.length(), buf);
+        assertEquals(0, consumed);
+    }
+
+    @Test
+    void decodeBytesIntoNegativeTokenStartIndexThrows() {
+        SentencePieceBpeModel model = minimalModel();
+        IntSequence ids = model.encode(" hello");
+        ByteBuffer buf = ByteBuffer.allocate(16);
+        assertThrows(IndexOutOfBoundsException.class, () -> model.decodeBytesInto(ids, -1, buf));
+    }
+
+    @Test
+    void decodeBytesIntoTokenStartIndexBeyondLengthThrows() {
+        SentencePieceBpeModel model = minimalModel();
+        IntSequence ids = model.encode(" hello");
+        ByteBuffer buf = ByteBuffer.allocate(16);
+        assertThrows(
+                IndexOutOfBoundsException.class,
+                () -> model.decodeBytesInto(ids, ids.length() + 1, buf));
+    }
+
+    @Test
+    void decodeBytesIntoNullTokensThrows() {
+        SentencePieceBpeModel model = minimalModel();
+        ByteBuffer buf = ByteBuffer.allocate(16);
+        assertThrows(NullPointerException.class, () -> model.decodeBytesInto(null, 0, buf));
+    }
+
+    @Test
+    void decodeBytesIntoNullBufferThrows() {
+        SentencePieceBpeModel model = minimalModel();
+        IntSequence ids = model.encode(" hello");
+        assertThrows(NullPointerException.class, () -> model.decodeBytesInto(ids, 0, null));
+    }
+
+    @Test
+    void decodeBytesIntoUnknownTokenThrows() {
+        SentencePieceBpeModel model = minimalModel();
+        int bogusId = model.vocabulary().size() + 100;
+        IntSequence ids = IntSequence.wrap(new int[] {bogusId});
+        ByteBuffer buf = ByteBuffer.allocate(16);
+        assertThrows(IllegalArgumentException.class, () -> model.decodeBytesInto(ids, 0, buf));
+    }
+
+    @Test
+    void decodeBytesIntoPartialOutputWhenBufferTooSmall() {
+        SentencePieceBpeModel model = minimalModel();
+        IntSequence ids = model.encode(" hello world");
+        // Allocate only enough for part of first token
+        ByteBuffer buf = ByteBuffer.allocate(1); // too small for " " + "hello"
+        assertThrows(IllegalArgumentException.class, () -> model.decodeBytesInto(ids, 0, buf));
+    }
+
+    @Test
+    void decodeBytesIntoByteRunCoalescing() {
+        // Two consecutive byte tokens should be coalesced into one byte run
+        SentencePieceBpeModel model = fullByteFallbackModel();
+        String text = "\u00e9\u00f1"; // two multi-byte utf-8 chars
+        IntSequence ids = model.encode(text);
+
+        byte[] expected = text.getBytes(StandardCharsets.UTF_8);
+        ByteBuffer buf = ByteBuffer.allocate(expected.length);
+        int consumed = model.decodeBytesInto(ids, 0, buf);
+
+        assertEquals(ids.length(), consumed);
+        buf.flip();
+        byte[] actual = new byte[buf.remaining()];
+        buf.get(actual);
+        assertArrayEquals(expected, actual);
+    }
+
+    // ------------------------------------------------------------------
+    // countBytes tests
+    // ------------------------------------------------------------------
+
+    @Test
+    void countBytesMatchesDecodedUtf8Length() {
+        SentencePieceBpeModel model = minimalModel();
+        IntSequence ids = model.encode(" hello");
+        String decoded = model.decode(ids);
+        assertEquals(decoded.getBytes(StandardCharsets.UTF_8).length, model.countBytes(ids));
+    }
+
+    @Test
+    void countBytesEmptyTokens() {
+        SentencePieceBpeModel model = minimalModel();
+        assertEquals(0, model.countBytes(IntSequence.wrap(new int[0])));
+    }
+
+    @Test
+    void countBytesNullTokensThrows() {
+        SentencePieceBpeModel model = minimalModel();
+        assertThrows(NullPointerException.class, () -> model.countBytes((IntSequence) null));
+    }
+
+    @Test
+    void countBytesByteFallbackTokens() {
+        SentencePieceBpeModel model = fullByteFallbackModel();
+        String text = "\u00e9"; // 2 bytes in UTF-8
+        IntSequence ids = model.encode(text);
+        assertEquals(2, model.countBytes(ids));
+    }
+
+    // ------------------------------------------------------------------
+    // encodeInto range validation
+    // ------------------------------------------------------------------
+
+    @Test
+    void encodeIntoRangeValidation() {
+        SentencePieceBpeModel model = minimalModel();
+        String text = " hello world";
+        IntSequence allIds = model.encode(text);
+
+        IntSequence.Builder out = IntSequence.newBuilder(16);
+        model.encodeInto(text, 0, 6, out); // " hello"
+        IntSequence sliceIds = out.build();
+
+        assertEquals(model.encode(" hello"), sliceIds);
+    }
+
+    @Test
+    void encodeIntoEmptyRange() {
+        SentencePieceBpeModel model = minimalModel();
+        IntSequence.Builder out = IntSequence.newBuilder(16);
+        model.encodeInto(" hello", 1, 1, out);
+        assertEquals(0, out.size());
+    }
+
+    @Test
+    void encodeIntoNegativeStartThrows() {
+        SentencePieceBpeModel model = minimalModel();
+        IntSequence.Builder out = IntSequence.newBuilder(16);
+        assertThrows(IndexOutOfBoundsException.class, () -> model.encodeInto("test", -1, 4, out));
+    }
+
+    @Test
+    void encodeIntoEndBeforeStartThrows() {
+        SentencePieceBpeModel model = minimalModel();
+        IntSequence.Builder out = IntSequence.newBuilder(16);
+        assertThrows(IndexOutOfBoundsException.class, () -> model.encodeInto("test", 2, 1, out));
+    }
+
+    @Test
+    void encodeIntoEndExceedsLengthThrows() {
+        SentencePieceBpeModel model = minimalModel();
+        IntSequence.Builder out = IntSequence.newBuilder(16);
+        assertThrows(IndexOutOfBoundsException.class, () -> model.encodeInto("test", 0, 10, out));
+    }
+
+    @Test
+    void encodeIntoNullTextThrows() {
+        SentencePieceBpeModel model = minimalModel();
+        IntSequence.Builder out = IntSequence.newBuilder(16);
+        assertThrows(NullPointerException.class, () -> model.encodeInto(null, 0, 1, out));
+    }
+
+    @Test
+    void encodeIntoNullOutThrows() {
+        SentencePieceBpeModel model = minimalModel();
+        assertThrows(NullPointerException.class, () -> model.encodeInto("test", 0, 1, null));
+    }
+
+    // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
 
@@ -199,6 +414,24 @@ class SentencePieceBpeModelComprehensiveTest {
             types[i] = StandardTokenType.NORMAL.getId();
         }
         return types;
+    }
+
+    private static SentencePieceBpeModel fullByteFallbackModel() {
+        String[] tokens = new String[257];
+        float[] scores = new float[257];
+        int[] types = new int[257];
+        tokens[0] = "<0x00>";
+        scores[0] = 0f;
+        types[0] = StandardTokenType.BYTE.getId();
+        for (int i = 1; i < 256; i++) {
+            tokens[i] = String.format("<0x%02X>", i);
+            scores[i] = 0f;
+            types[i] = StandardTokenType.BYTE.getId();
+        }
+        tokens[256] = " ";
+        scores[256] = 0f;
+        types[256] = StandardTokenType.NORMAL.getId();
+        return SentencePieceBpeModel.fromVocabulary(new VocabularyImpl(tokens, types), scores);
     }
 
     private static int[] byteTypes(int length) {
