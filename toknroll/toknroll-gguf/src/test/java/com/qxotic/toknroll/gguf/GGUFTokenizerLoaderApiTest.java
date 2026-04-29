@@ -11,15 +11,15 @@ class GGUFTokenizerLoaderApiTest {
 
     @Test
     void builderMethodsCreateLoaders() {
-        assertDoesNotThrow(() -> GGUFTokenizerLoader.builderDefault().build());
-        assertDoesNotThrow(() -> GGUFTokenizerLoader.builderEmpty().build());
+        assertDoesNotThrow(() -> GGUFTokenizerLoader.createBuilderWithBuiltins().build());
+        assertDoesNotThrow(() -> GGUFTokenizerLoader.createEmptyBuilder().build());
     }
 
     @Test
     void fromLocalRejectsNonGgufFile() throws Exception {
         Path temp = Files.createTempFile("toknroll-gguf", ".txt");
         try {
-            GGUFTokenizerLoader loader = GGUFTokenizerLoader.builderDefault().build();
+            GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
             assertThrows(IllegalArgumentException.class, () -> loader.fromLocal(temp));
         } finally {
             Files.deleteIfExists(temp);
@@ -28,7 +28,7 @@ class GGUFTokenizerLoaderApiTest {
 
     @Test
     void fromHuggingFaceRequiresExactGgufPath() {
-        GGUFTokenizerLoader loader = GGUFTokenizerLoader.builderDefault().build();
+        GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
         assertThrows(
                 IllegalArgumentException.class,
                 () ->

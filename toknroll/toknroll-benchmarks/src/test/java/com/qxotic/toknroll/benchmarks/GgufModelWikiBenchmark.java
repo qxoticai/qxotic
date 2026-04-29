@@ -31,7 +31,8 @@ import org.openjdk.jmh.infra.Blackhole;
 @State(Scope.Benchmark)
 public class GgufModelWikiBenchmark {
 
-    private static final GGUFTokenizerLoader LOADER = GGUFTokenizerLoader.builderDefault().build();
+    private static final GGUFTokenizerLoader LOADER =
+            GGUFTokenizerLoader.createBuilderWithBuiltins().build();
     private static final Map<String, ModelSpec> MODEL_SPECS =
             Map.ofEntries(
                     Map.entry(
@@ -90,6 +91,12 @@ public class GgufModelWikiBenchmark {
                                     "MiMo-V2-Flash-GGUF",
                                     "Q8_0/MiMo-V2-Flash-Q8_0-00001-of-00007.gguf")),
                     Map.entry(
+                            "deepseek_v3_2",
+                            new ModelSpec(
+                                    "unsloth",
+                                    "DeepSeek-V3.2-GGUF",
+                                    "Q8_0/DeepSeek-V3.2-Q8_0-00001-of-00015.gguf")),
+                    Map.entry(
                             "mistral_mistral7b_v0_3",
                             new ModelSpec(
                                     "bartowski",
@@ -109,6 +116,7 @@ public class GgufModelWikiBenchmark {
                     "zai_glm5_1",
                     "minimax_m2_7",
                     "xiaomi_mimo_v2_flash",
+                    "deepseek_v3_2",
                     "mistral_mistral7b_v0_3");
 
     // JMH @Param values are annotation literals, so keep this explicit set and fail fast if it
@@ -142,6 +150,7 @@ public class GgufModelWikiBenchmark {
         "zai_glm5_1",
         "minimax_m2_7",
         "xiaomi_mimo_v2_flash",
+        "deepseek_v3_2",
         "mistral_mistral7b_v0_3"
     })
     public String modelFamily;

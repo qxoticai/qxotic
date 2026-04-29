@@ -75,6 +75,17 @@ final class GGUFTokenizerDefaults {
                 + "\\n"
                 + "]+|\\s+(?!\\S)|\\s+";
 
+    private static final String DEEPSEEK_V3_MAIN =
+            "[!\"#$%&'()*+,\\-./:;<=>?@\\[\\\\\\]^_`{|}~][A-Za-z]+|[^\\r"
+                    + "\\n"
+                    + "\\p{L}\\p{P}\\p{S}]?[\\p{L}\\p{M}]+| ?[\\p{P}\\p{S}]+[\\r"
+                    + "\\n"
+                    + "]*|\\s*[\\r"
+                    + "\\n"
+                    + "]+|\\s+(?!\\S)|\\s+";
+
+    private static final String CJK_RANGE = "[一-龥぀-ゟ゠-ヿ]+";
+
     private static final Normalizer IDENTITY_NORMALIZER = Normalizer.identity();
     private static final Function<GGUF, Normalizer> IDENTITY_NORMALIZER_FACTORY =
             gguf -> IDENTITY_NORMALIZER;
@@ -111,6 +122,21 @@ final class GGUFTokenizerDefaults {
         registerPreTokenizers(builder, KIMI_K2_PATTERN, "kimi-k2");
         registerPreTokenizers(builder, GEMMA4_PATTERN, "gemma4");
 
+        builder.registerPreTokenizer(
+                "deepseek-v3",
+                gguf ->
+                        Splitter.sequence(
+                                Splitter.regex(
+                                        Pattern.compile(
+                                                "\\p{N}{1,3}", Pattern.UNICODE_CHARACTER_CLASS)),
+                                Splitter.regex(
+                                        Pattern.compile(
+                                                CJK_RANGE, Pattern.UNICODE_CHARACTER_CLASS)),
+                                Splitter.regex(
+                                        Pattern.compile(
+                                                DEEPSEEK_V3_MAIN,
+                                                Pattern.UNICODE_CHARACTER_CLASS))));
+
         // SPM models with "default" pre-tokenizer need identity splitter + metaspace normalizer.
         builder.registerPreTokenizer("default", gguf -> Splitter.identity());
         builder.registerNormalizer("default", METASPACE_NORMALIZER_FACTORY);
@@ -135,6 +161,7 @@ final class GGUFTokenizerDefaults {
                 "kanana2",
                 "minimax-m2",
                 "kimi-k2",
+                "deepseek-v3",
                 "gemma4");
 
         builder.registerPreFallback("gemma4", "gemma4");

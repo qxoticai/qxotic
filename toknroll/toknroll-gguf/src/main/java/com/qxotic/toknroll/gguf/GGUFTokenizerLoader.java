@@ -114,12 +114,12 @@ public final class GGUFTokenizerLoader {
         this.registries = registries;
     }
 
-    public static Builder builderEmpty() {
+    public static Builder createEmptyBuilder() {
         return new Builder();
     }
 
-    public static Builder builderDefault() {
-        Builder builder = builderEmpty();
+    public static Builder createBuilderWithBuiltins() {
+        Builder builder = createEmptyBuilder();
         GGUFTokenizerDefaults.applyTo(builder);
         return builder;
     }
