@@ -43,7 +43,7 @@ class GGUFTokenizerTamilRegressionTest {
 
     @Test
     void gptOss20bTamilTextTokenization() {
-        GGUFTokenizerLoader loader = GGUFTokenizerLoader.builderDefault().build();
+        GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
         Tokenizer tokenizer =
                 loader.fromHuggingFace("unsloth", "gpt-oss-20b-GGUF", "gpt-oss-20b-Q8_0.gguf");
 
@@ -71,7 +71,7 @@ class GGUFTokenizerTamilRegressionTest {
 
     @Test
     void gptOss20bTamilWordAutism() {
-        GGUFTokenizerLoader loader = GGUFTokenizerLoader.builderDefault().build();
+        GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
         Tokenizer tokenizer =
                 loader.fromHuggingFace("unsloth", "gpt-oss-20b-GGUF", "gpt-oss-20b-Q8_0.gguf");
 
@@ -90,7 +90,7 @@ class GGUFTokenizerTamilRegressionTest {
 
     @Test
     void gptOss20bTamilWordAristotle() {
-        GGUFTokenizerLoader loader = GGUFTokenizerLoader.builderDefault().build();
+        GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
         Tokenizer tokenizer =
                 loader.fromHuggingFace("unsloth", "gpt-oss-20b-GGUF", "gpt-oss-20b-Q8_0.gguf");
 

@@ -236,7 +236,7 @@ class GGUFTokenizerLoaderParityTest {
             return;
         }
 
-        GGUFTokenizerLoader loader = GGUFTokenizerLoader.builderDefault().build();
+        GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
         try {
             Tokenizer localTokenizer = loader.fromLocal(localGguf);
             Tokenizer hfTokenizer = loader.fromHuggingFace(c.user, c.repo, c.file);

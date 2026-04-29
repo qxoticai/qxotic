@@ -98,6 +98,11 @@ class GGUFTokenizerParityTest {
                             "Q8_0/MiMo-V2-Flash-Q8_0-00001-of-00007.gguf",
                             "hf_xiaomi_mimo_v2_flash_ground_truth.json"),
                     new ModelSpec(
+                            "deepseek_v3_2",
+                            "unsloth/DeepSeek-V3.2-GGUF",
+                            "Q8_0/DeepSeek-V3.2-Q8_0-00001-of-00015.gguf",
+                            "hf_deepseek_v3_2_ground_truth.json"),
+                    new ModelSpec(
                             "mistral_mistral7b_v0_3",
                             "bartowski/Mistral-7B-Instruct-v0.3-GGUF",
                             "Mistral-7B-Instruct-v0.3-Q8_0.gguf",
@@ -110,7 +115,7 @@ class GGUFTokenizerParityTest {
                 "Missing golden dir: " + CORE_GOLDEN_ENWIK8_DIR);
         byte[] corpusBytes = loadCorpusBytes();
 
-        GGUFTokenizerLoader loader = GGUFTokenizerLoader.builderDefault().build();
+        GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
         for (ModelSpec modelSpec : MODELS) {
             if ("llamacpp".equals(GROUND_TRUTH_SOURCE)
                     && "google_gemma4".equals(modelSpec.familyId)) {
