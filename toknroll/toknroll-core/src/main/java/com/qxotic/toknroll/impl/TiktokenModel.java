@@ -275,9 +275,9 @@ final class TiktokenModel extends AbstractTokenizationModel {
             return encodeTiny(s.utf8Bytes, byteLength, out);
         }
         if (byteLength < largeChunkThreshold) {
-            return encodeSmall(s.utf8Bytes, byteLength, out, s);
+            return mergeSmall(s.utf8Bytes, byteLength, out, s);
         }
-        return encodeLarge(s.utf8Bytes, byteLength, out, s);
+        return mergeLarge(s.utf8Bytes, byteLength, out, s);
     }
 
     private int countChunkRange(
@@ -360,7 +360,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
     }
 
     private void releaseScratch(Scratch s) {
-        if (s == null || !scratchReuseEnabled || isCurrentThreadVirtual()) {
+        if (!scratchReuseEnabled || isCurrentThreadVirtual()) {
             return;
         }
         if (s.maxRetainedElements() > scratchMaxRetainedElements) {
@@ -377,19 +377,14 @@ final class TiktokenModel extends AbstractTokenizationModel {
     }
 
     private static boolean isCurrentThreadVirtual() {
-        Method isVirtualMethod = THREAD_IS_VIRTUAL_METHOD;
-        if (isVirtualMethod == null) {
+        if (THREAD_IS_VIRTUAL_METHOD == null) {
             return false;
         }
         try {
-            return Boolean.TRUE.equals(isVirtualMethod.invoke(Thread.currentThread()));
+            return Boolean.TRUE.equals(THREAD_IS_VIRTUAL_METHOD.invoke(Thread.currentThread()));
         } catch (ReflectiveOperationException | RuntimeException e) {
             return false;
         }
-    }
-
-    private int encodeSmall(byte[] bytes, int byteLength, IntSequence.Builder out, Scratch s) {
-        return mergeSmall(bytes, byteLength, out, s);
     }
 
     private int mergeSmall(byte[] bytes, int byteLength, IntSequence.Builder out, Scratch s) {
@@ -485,10 +480,6 @@ final class TiktokenModel extends AbstractTokenizationModel {
             out.add(tokens[outIdx]);
         }
         return size;
-    }
-
-    private int encodeLarge(byte[] bytes, int byteLength, IntSequence.Builder out, Scratch s) {
-        return mergeLarge(bytes, byteLength, out, s);
     }
 
     // ---- Large path ----
@@ -825,7 +816,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
                 maxId = e.getValue();
             }
         }
-        byte[][] table = new byte[Math.max(0, maxId + 1)][];
+        byte[][] table = new byte[maxId + 1][];
         for (Map.Entry<String, Integer> e : vocabulary) {
             table[e.getValue()] = ByteLevel.decode(e.getKey());
         }
@@ -984,8 +975,6 @@ final class TiktokenModel extends AbstractTokenizationModel {
     }
 
     private static final class ExactTokenLookup {
-        private static final ExactTokenLookup EMPTY =
-                new ExactTokenLookup(new byte[0][], new int[0], new int[0], 0, 0);
 
         private final byte[][] keys;
         private final int[] ids;

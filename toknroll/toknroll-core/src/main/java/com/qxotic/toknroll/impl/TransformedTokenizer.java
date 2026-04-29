@@ -51,6 +51,17 @@ public abstract class TransformedTokenizer implements Tokenizer {
     }
 
     @Override
+    public void encodeInto(
+            CharSequence text, int startInclusive, int endExclusive, IntSequence.Builder out) {
+        base.encodeInto(text, startInclusive, endExclusive, out);
+    }
+
+    @Override
+    public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
+        return base.countTokens(text, startInclusive, endExclusive);
+    }
+
+    @Override
     public String decode(IntSequence tokens) {
         return transformDecoded(base.decode(tokens), true);
     }
@@ -65,7 +76,7 @@ public abstract class TransformedTokenizer implements Tokenizer {
         int pos = 0;
         for (int i = 0; i < tokens.length(); i++) {
             byte[] bytes = tokenBytes(tokens.intAt(i));
-            int start = (i == 0 && trimLeadingSpaceAtStart() && startsWithSpace(bytes)) ? 1 : 0;
+            int start = skipLeadingSpaceByte(i, bytes) ? 1 : 0;
             int len = bytes.length - start;
             if (len > 0) {
                 System.arraycopy(bytes, start, out, pos, len);
@@ -91,13 +102,7 @@ public abstract class TransformedTokenizer implements Tokenizer {
         int consumed = 0;
         for (int i = tokenStartIndex; i < length; i++) {
             byte[] bytes = tokenBytes(tokens.intAt(i));
-            int start =
-                    (i == tokenStartIndex
-                                    && tokenStartIndex == 0
-                                    && trimLeadingSpaceAtStart()
-                                    && startsWithSpace(bytes))
-                            ? 1
-                            : 0;
+            int start = skipLeadingSpaceByte(i, bytes) ? 1 : 0;
             int len = bytes.length - start;
             if (consumed == 0 && len > out.remaining()) {
                 throw new IllegalArgumentException("Not enough output space");
@@ -122,7 +127,7 @@ public abstract class TransformedTokenizer implements Tokenizer {
         for (int i = 0; i < tokens.length(); i++) {
             byte[] bytes = tokenBytes(tokens.intAt(i));
             total += bytes.length;
-            if (i == 0 && trimLeadingSpaceAtStart() && startsWithSpace(bytes)) {
+            if (skipLeadingSpaceByte(i, bytes)) {
                 total--;
             }
         }
@@ -192,5 +197,9 @@ public abstract class TransformedTokenizer implements Tokenizer {
 
     private static boolean startsWithSpace(byte[] bytes) {
         return bytes.length > 0 && bytes[0] == SPACE_BYTE;
+    }
+
+    private boolean skipLeadingSpaceByte(int tokenIndex, byte[] tokenBytes) {
+        return tokenIndex == 0 && trimLeadingSpaceAtStart() && startsWithSpace(tokenBytes);
     }
 }

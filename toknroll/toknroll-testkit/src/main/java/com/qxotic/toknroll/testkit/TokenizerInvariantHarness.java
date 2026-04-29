@@ -22,7 +22,18 @@ public final class TokenizerInvariantHarness {
         int decodeBytesInto(int[] tokens, int tokenStartIndex, ByteBuffer out);
     }
 
-    private TokenizerInvariantHarness() {}
+    @FunctionalInterface
+    public interface EncodeSliceFn {
+        int[] encodeSlice(CharSequence text, int start, int end);
+    }
+
+    @FunctionalInterface
+    public interface CountTokensSliceFn {
+        int countTokensSlice(CharSequence text, int start, int end);
+    }
+
+    /** A deliberately small buffer to force partial writes in {@link #decodeBytesInto}. */
+    private static final int DECODE_CHUNK_SIZE = 17;
 
     public static void runSmokeChecks(
             String tokenizerLabel,
@@ -129,7 +140,7 @@ public final class TokenizerInvariantHarness {
         }
 
         ByteArrayOutputStream rebuilt = new ByteArrayOutputStream(expectedBytes.length);
-        ByteBuffer chunk = ByteBuffer.allocate(17);
+        ByteBuffer chunk = ByteBuffer.allocate(DECODE_CHUNK_SIZE);
         int tokenIndex = 0;
         while (tokenIndex < tokenCount) {
             chunk.clear();
@@ -168,6 +179,154 @@ public final class TokenizerInvariantHarness {
                             + Arrays.toString(expected)
                             + " actual="
                             + Arrays.toString(actual));
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Slicing invariants — encodeInto(4-arg) and countTokens(3-arg)
+    // ------------------------------------------------------------------
+
+    /**
+     * Verifies that {@code encodeSlice} (the 4-arg {@code encodeInto(text, start, end, out)}) and
+     * {@code countTokensSlice} (the 3-arg {@code countTokens(text, start, end)}) produce the same
+     * results as their full-text counterparts for the full range [0, textLen).
+     *
+     * <p>Sub-range parity with independent encoding of the substring is not tested here because
+     * some tokenizers (e.g., metaspace) are position-dependent.
+     */
+    public static void runSlicingInvariants(
+            String tokenizerLabel,
+            List<String> inputs,
+            Function<String, int[]> encode,
+            EncodeSliceFn encodeSlice,
+            ToIntFunction<String> countTokens,
+            CountTokensSliceFn countTokensSlice) {
+        Objects.requireNonNull(tokenizerLabel, "tokenizerLabel");
+        Objects.requireNonNull(inputs, "inputs");
+        Objects.requireNonNull(encode, "encode");
+        Objects.requireNonNull(encodeSlice, "encodeSlice");
+        Objects.requireNonNull(countTokens, "countTokens");
+        Objects.requireNonNull(countTokensSlice, "countTokensSlice");
+
+        for (String text : inputs) {
+            if (text.isEmpty()) {
+                continue;
+            }
+            int textLen = text.length();
+
+            // I10: encodeSlice(full range) == encode(text)
+            int[] fullSlice = encodeSlice.encodeSlice(text, 0, textLen);
+            int[] fullEncode = encode.apply(text);
+            assertIntArrayEquals(
+                    tokenizerLabel, text, "encodeSlice(full) parity", fullEncode, fullSlice);
+
+            // I11: countTokensSlice(full range) == countTokens(text)
+            int countFull = countTokens.applyAsInt(text);
+            int countSliceFull = countTokensSlice.countTokensSlice(text, 0, textLen);
+            if (countFull != countSliceFull) {
+                throw new AssertionError(
+                        tokenizerLabel
+                                + " invariant failed [countTokensSlice(full) parity] for text="
+                                + quoted(text)
+                                + " expected="
+                                + countFull
+                                + " actual="
+                                + countSliceFull);
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Convenience overload invariants — encodeToArray, decode(int[]), etc.
+    // ------------------------------------------------------------------
+
+    /**
+     * Verifies that the {@code int[]}-based convenience overloads produce the same results as their
+     * {@link com.qxotic.toknroll.IntSequence}-based counterparts.
+     */
+    public static void runConvenienceOverloadInvariants(
+            String tokenizerLabel,
+            List<String> inputs,
+            Function<String, int[]> encode,
+            Function<String, int[]> encodeToArray,
+            Function<int[], String> decode,
+            Function<int[], String> decodeFromArray,
+            Function<int[], byte[]> decodeBytes,
+            Function<int[], byte[]> decodeBytesFromArray,
+            ToIntFunction<int[]> countBytes,
+            ToIntFunction<int[]> countBytesFromArray) {
+        Objects.requireNonNull(tokenizerLabel, "tokenizerLabel");
+        Objects.requireNonNull(inputs, "inputs");
+        Objects.requireNonNull(encode, "encode");
+        Objects.requireNonNull(encodeToArray, "encodeToArray");
+        Objects.requireNonNull(decode, "decode");
+        Objects.requireNonNull(decodeFromArray, "decodeFromArray");
+        Objects.requireNonNull(decodeBytes, "decodeBytes");
+        Objects.requireNonNull(decodeBytesFromArray, "decodeBytesFromArray");
+        Objects.requireNonNull(countBytes, "countBytes");
+        Objects.requireNonNull(countBytesFromArray, "countBytesFromArray");
+
+        for (String text : inputs) {
+            if (text.isEmpty()) {
+                continue;
+            }
+
+            int[] encoded = encode.apply(text);
+
+            // I12: encodeToArray == encode().toArray()
+            int[] encodedViaArray = encodeToArray.apply(text);
+            assertIntArrayEquals(
+                    tokenizerLabel, text, "encodeToArray parity", encoded, encodedViaArray);
+
+            // I13: decode(int[]) == decode(IntSequence.wrap(int[]))
+            String decoded = decode.apply(encoded);
+            String decodedFromArray = decodeFromArray.apply(encoded);
+            if (!decoded.equals(decodedFromArray)) {
+                throw new AssertionError(
+                        tokenizerLabel
+                                + " invariant failed [decode(int[]) parity] for text="
+                                + quoted(text));
+            }
+
+            // I14: decodeBytes(int[]) == decodeBytes(IntSequence.wrap(int[]))
+            byte[] bytes = decodeBytes.apply(encoded);
+            byte[] bytesFromArray = decodeBytesFromArray.apply(encoded);
+            if (!Arrays.equals(bytes, bytesFromArray)) {
+                throw new AssertionError(
+                        tokenizerLabel
+                                + " invariant failed [decodeBytes(int[]) parity] for text="
+                                + quoted(text));
+            }
+
+            // I15: countBytes(int[]) == countBytes(IntSequence.wrap(int[]))
+            int countB = countBytes.applyAsInt(encoded);
+            int countBFromArray = countBytesFromArray.applyAsInt(encoded);
+            if (countB != countBFromArray) {
+                throw new AssertionError(
+                        tokenizerLabel
+                                + " invariant failed [countBytes(int[]) parity] for text="
+                                + quoted(text)
+                                + " expected="
+                                + countB
+                                + " actual="
+                                + countBFromArray);
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // expectedTokensPerChar sanity
+    // ------------------------------------------------------------------
+
+    /** Verifies that {@code expectedTokensPerChar} is in (0, 1] for the tokenizer. */
+    public static void assertExpectedTokensPerCharRange(
+            String tokenizerLabel, float expectedTokensPerChar) {
+        Objects.requireNonNull(tokenizerLabel, "tokenizerLabel");
+        if (expectedTokensPerChar <= 0f || expectedTokensPerChar > 1f) {
+            throw new AssertionError(
+                    tokenizerLabel
+                            + " invariant failed [0 < expectedTokensPerChar <= 1] value="
+                            + expectedTokensPerChar);
         }
     }
 

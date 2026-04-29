@@ -922,9 +922,25 @@ public final class HuggingFaceTokenizerLoader {
                 splitters.add(child);
             }
         }
-        return splitters.isEmpty()
-                ? Splitter.identity()
-                : Splitter.sequence(splitters.toArray(new Splitter[0]));
+        // Filter out identity splitters to avoid sequence wrapping overhead.
+        // If only one non-identity splitter remains, return it directly.
+        List<Splitter> effective = new ArrayList<>(splitters.size());
+        for (Splitter s : splitters) {
+            if (!isIdentitySplitter(s)) {
+                effective.add(s);
+            }
+        }
+        if (effective.isEmpty()) {
+            return Splitter.identity();
+        }
+        if (effective.size() == 1) {
+            return effective.get(0);
+        }
+        return Splitter.sequence(effective.toArray(new Splitter[0]));
+    }
+
+    private static boolean isIdentitySplitter(Splitter splitter) {
+        return splitter == Splitter.identity();
     }
 
     @SuppressWarnings("unchecked")
@@ -943,7 +959,7 @@ public final class HuggingFaceTokenizerLoader {
             String regexPattern = (String) regex;
             Pattern pattern = Pattern.compile(regexPattern, UNICODE_REGEX_FLAGS);
             return (text, startInclusive, endExclusive, consumer) -> {
-                String source = text.subSequence(startInclusive, endExclusive).toString();
+                CharSequence source = text.subSequence(startInclusive, endExclusive);
                 for (Span span : splitByPatternWithBehavior(source, pattern, behavior, invert)) {
                     consumer.accept(
                             text, startInclusive + span.start(), startInclusive + span.end());
@@ -958,7 +974,8 @@ public final class HuggingFaceTokenizerLoader {
                 return Splitter.identity();
             }
             return (text, startInclusive, endExclusive, consumer) -> {
-                String source = text.subSequence(startInclusive, endExclusive).toString();
+                CharSequence sub = text.subSequence(startInclusive, endExclusive);
+                String source = sub instanceof String ? (String) sub : sub.toString();
                 for (Span span : splitByLiteral(source, s, behavior, invert)) {
                     consumer.accept(
                             text, startInclusive + span.start(), startInclusive + span.end());
@@ -984,7 +1001,7 @@ public final class HuggingFaceTokenizerLoader {
     }
 
     private static List<Span> splitByPatternWithBehavior(
-            String text, Pattern pattern, String behavior, boolean invert) {
+            CharSequence text, Pattern pattern, String behavior, boolean invert) {
         List<Span> spans = new ArrayList<>();
         Matcher matcher = pattern.matcher(text);
         while (matcher.find()) {
@@ -994,7 +1011,7 @@ public final class HuggingFaceTokenizerLoader {
     }
 
     private static List<Span> segmentsFromSpans(
-            String text, List<Span> matchSpans, String behavior, boolean invert) {
+            CharSequence text, List<Span> matchSpans, String behavior, boolean invert) {
         List<Span> out = new ArrayList<>();
         List<Span> all = new ArrayList<>();
         int cursor = 0;
