@@ -4,7 +4,7 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.TokenizationModel;
-import com.qxotic.toknroll.Tokenizers;
+import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.impl.ImplAccessor;
 import java.nio.charset.StandardCharsets;
@@ -20,22 +20,22 @@ final class GGUFTokenizerModelFactory {
     static TokenizationModel buildTiktokenModel(GGUF gguf) {
         boolean replaceWhitespaceMarker = shouldReplaceWhitespaceMarker(gguf);
         Vocabulary vocabulary = buildVocabulary(gguf, replaceWhitespaceMarker, true);
-        List<Tokenizers.MergeRule> merges =
+        List<Toknroll.MergeRule> merges =
                 buildMerges(gguf, vocabulary, true, replaceWhitespaceMarker, true);
-        return Tokenizers.tiktokenModel(vocabulary, merges);
+        return Toknroll.tiktokenModel(vocabulary, merges);
     }
 
     static TokenizationModel buildSentencePieceModel(GGUF gguf) {
         boolean replaceWhitespaceMarker = shouldReplaceWhitespaceMarker(gguf);
         Vocabulary vocabulary = buildVocabulary(gguf, replaceWhitespaceMarker, false);
-        List<Tokenizers.MergeRule> merges =
+        List<Toknroll.MergeRule> merges =
                 buildMerges(gguf, vocabulary, false, replaceWhitespaceMarker, false);
         if (!merges.isEmpty()) {
-            return Tokenizers.sentencePieceBpeModel(vocabulary, merges);
+            return Toknroll.sentencePieceBpeModel(vocabulary, merges);
         }
         float[] scores = gguf.getValueOrDefault(float[].class, GGUFMetadataKeys.SCORES, null);
         if (scores != null && scores.length > 0) {
-            return Tokenizers.sentencePieceBpeModel(vocabulary, scores);
+            return Toknroll.sentencePieceBpeModel(vocabulary, scores);
         }
         throw new IllegalArgumentException(
                 "GGUF metadata missing both tokenizer.ggml.merges and tokenizer.ggml.scores");
@@ -69,7 +69,7 @@ final class GGUFTokenizerModelFactory {
         return ImplAccessor.createVocabulary(normalizedTokens, tokenTypes);
     }
 
-    private static List<Tokenizers.MergeRule> buildMerges(
+    private static List<Toknroll.MergeRule> buildMerges(
             GGUF gguf,
             Vocabulary vocabulary,
             boolean required,
@@ -92,7 +92,7 @@ final class GGUFTokenizerModelFactory {
             }
         }
 
-        List<Tokenizers.MergeRule> merges = new ArrayList<>();
+        List<Toknroll.MergeRule> merges = new ArrayList<>();
         int denseRank = 0;
         for (String spec : mergesRaw) {
             if (spec == null) {
@@ -111,7 +111,7 @@ final class GGUFTokenizerModelFactory {
             Integer mergedId = tokenToId.get(left + right);
             boolean hasMergedSurface = mergedId != null;
             if (leftId != null && rightId != null && (canonicalizeByteLevel || hasMergedSurface)) {
-                merges.add(new Tokenizers.MergeRule(leftId, rightId, denseRank++));
+                merges.add(new Toknroll.MergeRule(leftId, rightId, denseRank++));
             }
         }
         return merges;

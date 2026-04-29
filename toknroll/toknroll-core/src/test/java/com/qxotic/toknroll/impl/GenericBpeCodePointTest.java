@@ -5,9 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
-import com.qxotic.toknroll.TokenizationPipeline;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.Tokenizers;
+import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import java.util.List;
 import java.util.Map;
@@ -25,12 +24,11 @@ class GenericBpeCodePointTest {
                                 "ab", 2,
                                 "🙂", 3));
 
-        List<Tokenizers.MergeRule> merges = List.of(new Tokenizers.MergeRule(0, 1, 0));
+        List<Toknroll.MergeRule> merges = List.of(new Toknroll.MergeRule(0, 1, 0));
 
         Tokenizer tokenizer =
-                TokenizationPipeline.builder(Tokenizers.sentencePieceBpeModel(vocabulary, merges))
-                        .splitter(Splitter.identity())
-                        .build();
+                Toknroll.pipeline(
+                        Splitter.identity(), Toknroll.sentencePieceBpeModel(vocabulary, merges));
 
         IntSequence tokens = tokenizer.encode("ab🙂ab");
         assertArrayEquals(new int[] {2, 3, 2}, tokens.toArray());

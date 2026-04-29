@@ -383,6 +383,7 @@ final class TiktokenModel extends AbstractTokenizationModel {
         try {
             return Boolean.TRUE.equals(THREAD_IS_VIRTUAL_METHOD.invoke(Thread.currentThread()));
         } catch (ReflectiveOperationException | RuntimeException e) {
+            // Thread.isVirtual() may not exist on Java < 19. Assume virtual threads aren't in use.
             return false;
         }
     }

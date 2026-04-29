@@ -1,6 +1,6 @@
 package com.qxotic.toknroll.loaders;
 
-import com.qxotic.toknroll.Tokenizers;
+import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.impl.ImplAccessor;
 import java.io.BufferedReader;
@@ -35,7 +35,7 @@ public final class TiktokenLoaders {
     }
 
     /** Reconstructs merge rules from Tiktoken mergeable ranks. */
-    public static List<Tokenizers.MergeRule> mergeRules(Map<String, Integer> mergeableRanks) {
+    public static List<Toknroll.MergeRule> mergeRules(Map<String, Integer> mergeableRanks) {
         return ImplAccessor.reconstructTiktokenMergeRules(
                 Objects.requireNonNull(mergeableRanks, "mergeableRanks"));
     }

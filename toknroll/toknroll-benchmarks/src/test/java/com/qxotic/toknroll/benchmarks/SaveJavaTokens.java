@@ -3,7 +3,7 @@ package com.qxotic.toknroll.benchmarks;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.Tokenizers;
+import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.loaders.TiktokenLoaders;
 import java.io.BufferedWriter;
 import java.io.FileWriter;
@@ -77,13 +77,10 @@ public class SaveJavaTokens {
                 TiktokenLoaders.loadMergeableRanks(tiktokenPath.toString(), R50K_BASE_HASH);
 
         Map<String, Integer> specials = Map.of("<|endoftext|>", 50256);
-        return Tokenizers.pipeline(
-                        Tokenizers.tiktokenModel(
-                                TiktokenLoaders.vocabulary(mergeableRanks, specials),
-                                TiktokenLoaders.mergeRules(mergeableRanks)))
-                .splitter(
-                        Splitter.regex(
-                                Pattern.compile(R50K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS)))
-                .build();
+        return Toknroll.pipeline(
+                Splitter.regex(Pattern.compile(R50K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS)),
+                Toknroll.tiktokenModel(
+                        TiktokenLoaders.vocabulary(mergeableRanks, specials),
+                        TiktokenLoaders.mergeRules(mergeableRanks)));
     }
 }

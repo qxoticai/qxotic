@@ -10,7 +10,7 @@ import com.qxotic.toknroll.TokenizationModel;
 import com.qxotic.toknroll.TokenizationPipeline;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.TokenizerLoadException;
-import com.qxotic.toknroll.Tokenizers;
+import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.impl.ImplAccessor;
 import com.qxotic.toknroll.impl.TransformedTokenizer;
@@ -246,13 +246,13 @@ public final class HuggingFaceTokenizerLoader {
             }
         }
 
-        List<Tokenizers.MergeRule> merges =
+        List<Toknroll.MergeRule> merges =
                 buildMerges(entries.tokens, extractMerges(model.get("merges")));
         boolean ignoreMerges = Boolean.TRUE.equals(model.get("ignore_merges"));
         Vocabulary vocabulary = ImplAccessor.createVocabulary(entries.tokens, entries.tokenTypes);
         TokenizationModel tokenizationModel;
         if (sentencePieceStyle) {
-            tokenizationModel = Tokenizers.sentencePieceBpeModel(vocabulary, merges);
+            tokenizationModel = Toknroll.sentencePieceBpeModel(vocabulary, merges);
             Normalizer base = normalizer == null ? Normalizer.identity() : normalizer;
             normalizer = Normalizer.sequence(base, text -> text.toString().replace(' ', '\u2581'));
             splitter = Splitter.identity();
@@ -260,13 +260,7 @@ public final class HuggingFaceTokenizerLoader {
             tokenizationModel = ImplAccessor.createTiktokenModel(vocabulary, merges, ignoreMerges);
         }
 
-        TokenizationPipeline.Builder builder = TokenizationPipeline.builder(tokenizationModel);
-        if (normalizer != null) {
-            builder.normalizer(normalizer);
-        }
-        builder.splitter(splitter == null ? Splitter.identity() : splitter);
-
-        Tokenizer tokenizer = builder.build();
+        Tokenizer tokenizer = new TokenizationPipeline(normalizer, splitter, tokenizationModel);
 
         if (hasMetaspace) {
             tokenizer = wrapMetaspace(tokenizer);
@@ -345,11 +339,10 @@ public final class HuggingFaceTokenizerLoader {
         Vocabulary vocabulary =
                 ImplAccessor.reconstructTiktokenVocabulary(
                         mergeableRanks, extractSpecialTokens(tokenizerConfig));
-        List<Tokenizers.MergeRule> merges =
+        List<Toknroll.MergeRule> merges =
                 ImplAccessor.reconstructTiktokenMergeRules(mergeableRanks);
 
-        TokenizationPipeline.Builder pipeline =
-                TokenizationPipeline.builder(Tokenizers.tiktokenModel(vocabulary, merges));
+        TokenizationModel model = Toknroll.tiktokenModel(vocabulary, merges);
         String patStr =
                 resolvePatStr(
                         source,
@@ -360,8 +353,8 @@ public final class HuggingFaceTokenizerLoader {
                         tokenizerConfig,
                         useCacheOnly,
                         forceRefresh);
-        pipeline.splitter(Splitter.regex(Pattern.compile(patStr, UNICODE_REGEX_FLAGS)));
-        return pipeline.build();
+        return Toknroll.pipeline(
+                Splitter.regex(Pattern.compile(patStr, UNICODE_REGEX_FLAGS)), model);
     }
 
     private static void fetchOptionalTokenizerArtifacts(
@@ -1129,14 +1122,14 @@ public final class HuggingFaceTokenizerLoader {
         return merges.toArray(new String[0]);
     }
 
-    private static List<Tokenizers.MergeRule> buildMerges(String[] tokens, String[] mergeSpecs) {
+    private static List<Toknroll.MergeRule> buildMerges(String[] tokens, String[] mergeSpecs) {
         Map<String, Integer> tokenToId = new LinkedHashMap<>();
         for (int i = 0; i < tokens.length; i++) {
             if (tokens[i] != null) {
                 tokenToId.put(tokens[i], i);
             }
         }
-        List<Tokenizers.MergeRule> merges = new ArrayList<>();
+        List<Toknroll.MergeRule> merges = new ArrayList<>();
         for (int rank = 0; rank < mergeSpecs.length; rank++) {
             String[] parts = mergeSpecs[rank].split(" ");
             if (parts.length != 2) {
@@ -1146,7 +1139,7 @@ public final class HuggingFaceTokenizerLoader {
             Integer rightId = tokenToId.get(parts[1]);
             Integer mergedId = tokenToId.get(parts[0] + parts[1]);
             if (leftId != null && rightId != null && mergedId != null) {
-                merges.add(new Tokenizers.MergeRule(leftId, rightId, rank));
+                merges.add(new Toknroll.MergeRule(leftId, rightId, rank));
             }
         }
         return merges;
@@ -1187,15 +1180,6 @@ public final class HuggingFaceTokenizerLoader {
     private static Tokenizer wrapSentencePieceDecode(Tokenizer base) {
         return new TransformedTokenizer(base) {
             @Override
-            public void encodeInto(
-                    CharSequence text,
-                    int startInclusive,
-                    int endExclusive,
-                    IntSequence.Builder out) {
-                base.encodeInto(text, startInclusive, endExclusive, out);
-            }
-
-            @Override
             protected String transformDecoded(String decoded, boolean atStartOfText) {
                 return TransformedTokenizer.normalizeMetaspaceDecoded(decoded, false);
             }
@@ -1203,11 +1187,6 @@ public final class HuggingFaceTokenizerLoader {
             @Override
             protected boolean trimLeadingSpaceAtStart() {
                 return false;
-            }
-
-            @Override
-            public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
-                return base.countTokens(text, startInclusive, endExclusive);
             }
         };
     }

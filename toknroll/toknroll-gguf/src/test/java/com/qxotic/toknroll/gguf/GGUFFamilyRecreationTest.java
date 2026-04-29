@@ -9,9 +9,8 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.TokenizationModel;
-import com.qxotic.toknroll.TokenizationPipeline;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.Tokenizers;
+import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.gguf.TestDataManager.TestModel;
 import com.qxotic.toknroll.gguf.TestDataManager.TokenizerMetadata;
@@ -74,32 +73,32 @@ class GGUFFamilyRecreationTest {
 
         Vocabulary vocabulary =
                 ImplAccessor.createVocabulary(metadata.tokens(), metadata.tokenTypes());
-        List<Tokenizers.MergeRule> merges = buildMergeRules(metadata, tokenToId);
+        List<Toknroll.MergeRule> merges = buildMergeRules(metadata, tokenToId);
 
         TokenizationModel tokenizationModel =
                 createModel(vocabulary, merges, metadata.isSentencePiece());
 
         Splitter splitter = ModelTextSplitters.createSplitter(model);
-        return TokenizationPipeline.builder(tokenizationModel).splitter(splitter).build();
+        return Toknroll.pipeline(splitter, tokenizationModel);
     }
 
     private static TokenizationModel createModel(
             Vocabulary vocabulary,
-            List<Tokenizers.MergeRule> merges,
+            List<Toknroll.MergeRule> merges,
             boolean sentencePiecePreferred) {
         if (sentencePiecePreferred) {
-            return Tokenizers.sentencePieceBpeModel(vocabulary, merges);
+            return Toknroll.sentencePieceBpeModel(vocabulary, merges);
         }
         try {
-            return Tokenizers.tiktokenModel(vocabulary, merges);
+            return Toknroll.tiktokenModel(vocabulary, merges);
         } catch (IllegalArgumentException e) {
-            return Tokenizers.sentencePieceBpeModel(vocabulary, merges);
+            return Toknroll.sentencePieceBpeModel(vocabulary, merges);
         }
     }
 
-    private static List<Tokenizers.MergeRule> buildMergeRules(
+    private static List<Toknroll.MergeRule> buildMergeRules(
             TokenizerMetadata metadata, Map<String, Integer> tokenToId) {
-        List<Tokenizers.MergeRule> merges = new ArrayList<>();
+        List<Toknroll.MergeRule> merges = new ArrayList<>();
         String[] mergeSpecs = metadata.merges();
         if (mergeSpecs == null) {
             return merges;
@@ -113,7 +112,7 @@ class GGUFFamilyRecreationTest {
             Integer rightId = tokenToId.get(parts[1]);
             Integer mergedId = tokenToId.get(parts[0] + parts[1]);
             if (leftId != null && rightId != null && mergedId != null) {
-                merges.add(new Tokenizers.MergeRule(leftId, rightId, rank));
+                merges.add(new Toknroll.MergeRule(leftId, rightId, rank));
             }
         }
         return merges;

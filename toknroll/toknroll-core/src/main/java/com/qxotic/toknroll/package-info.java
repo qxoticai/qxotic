@@ -7,7 +7,7 @@
  *   <li>IntSequence-first tokenizer API via {@link com.qxotic.toknroll.Tokenizer}
  *   <li>Tiktoken BPE tokenizer support
  *   <li>High-level tokenizer factories and lossy pipeline wrappers via {@link
- *       com.qxotic.toknroll.Tokenizers}
+ *       com.qxotic.toknroll.Toknroll}
  *   <li>Byte-level symbol utility via {@link com.qxotic.toknroll.ByteLevel}
  *   <li>Vocabulary management
  *   <li>Compatibility with OpenAI, Llama, Mistral, and other models

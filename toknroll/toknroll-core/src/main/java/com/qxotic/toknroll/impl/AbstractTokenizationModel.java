@@ -2,6 +2,7 @@ package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.TokenizationModel;
+import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
 import java.util.Objects;
 
@@ -71,14 +72,7 @@ abstract class AbstractTokenizationModel implements TokenizationModel {
      * 8) with overflow protection.
      */
     protected int estimateInitialTokenCapacity(int charCount) {
-        float ratio = Math.max(1.0e-6f, expectedTokensPerChar());
-        double estimated = Math.ceil(charCount * (double) ratio * 1.15d) + 8d;
-        if (estimated > Integer.MAX_VALUE) {
-            throw new IllegalArgumentException(
-                    "Estimated token capacity exceeds int range: " + estimated);
-        }
-        int predicted = (int) estimated;
-        return Math.max(8, predicted);
+        return Tokenizer.estimateTokenCapacity(charCount, expectedTokensPerChar());
     }
 
     protected static boolean heapLess(int rankA, long nodeA, int rankB, long nodeB) {

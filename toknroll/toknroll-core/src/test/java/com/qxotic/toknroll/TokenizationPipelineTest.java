@@ -54,22 +54,14 @@ class TokenizationPipelineTest {
     }
 
     @Test
-    void pipelineBuilderRejectsNullModel() {
-        assertThrows(NullPointerException.class, () -> TokenizationPipeline.builder(null));
-    }
-
-    @Test
-    void pipelineBuilderRejectsNullSplitter() {
-        TokenizationModel model = createWholeChunkModel(Map.of("hello", 1));
-        assertThrows(
-                NullPointerException.class,
-                () -> TokenizationPipeline.builder(model).splitter(null));
+    void pipelineRejectsNullModel() {
+        assertThrows(NullPointerException.class, () -> new TokenizationPipeline(null, null, null));
     }
 
     @Test
     void pipelineMinimalConfigWorks() {
         TokenizationModel model = createWholeChunkModel(Map.of("hello", 1, "world", 2));
-        Tokenizer pipeline = TokenizationPipeline.builder(model).build();
+        Tokenizer pipeline = new TokenizationPipeline(null, null, model);
 
         IntSequence tokens = pipeline.encode("hello");
         assertEquals(1, tokens.length());
@@ -80,10 +72,7 @@ class TokenizationPipelineTest {
     @Test
     void pipelineCountTokensMatchesEncodeOnSlice() {
         TokenizationModel model = createWholeChunkModel(Map.of("hello", 1, "world", 2));
-        Tokenizer pipeline =
-                TokenizationPipeline.builder(model)
-                        .splitter(Splitter.sequence(spaceOnlySplitter()))
-                        .build();
+        Tokenizer pipeline = Toknroll.pipeline(Splitter.sequence(spaceOnlySplitter()), model);
 
         String text = "hello world";
         assertEquals(pipeline.encode(text).length(), pipeline.countTokens(text));
@@ -95,10 +84,8 @@ class TokenizationPipelineTest {
     void pipelineAppliesNormalizerBeforeSplitter() {
         TokenizationModel model = createWholeChunkModel(Map.of("hello", 10, "world", 11));
         Tokenizer pipeline =
-                TokenizationPipeline.builder(model)
-                        .normalizer(Normalizer.lowercase())
-                        .splitter(Splitter.sequence(spaceOnlySplitter()))
-                        .build();
+                Toknroll.pipeline(
+                        Normalizer.lowercase(), Splitter.sequence(spaceOnlySplitter()), model);
 
         assertArrayEquals(new int[] {10, 11}, pipeline.encodeToArray("HELLO WORLD"));
     }
@@ -106,10 +93,7 @@ class TokenizationPipelineTest {
     @Test
     void pipelineCountAndArrayConvenienceMethodsMatchCoreMethods() {
         TokenizationModel model = createWholeChunkModel(Map.of("hello", 200, "world", 201));
-        Tokenizer pipeline =
-                TokenizationPipeline.builder(model)
-                        .splitter(Splitter.sequence(spaceOnlySplitter()))
-                        .build();
+        Tokenizer pipeline = Toknroll.pipeline(Splitter.sequence(spaceOnlySplitter()), model);
 
         String text = "hello world";
         IntSequence tokens = pipeline.encode(text);
@@ -122,25 +106,33 @@ class TokenizationPipelineTest {
     }
 
     @Test
-    void builderGettersExposeCurrentConfiguration() {
+    void pipelineGettersExposeConfiguration() {
         TokenizationModel model = createWholeChunkModel(Map.of("x", 1));
-        TokenizationPipeline.Builder builder = TokenizationPipeline.builder(model);
-
-        assertSame(model, builder.model());
-        assertTrue(builder.splitter().isEmpty());
-
         Splitter splitter = Splitter.identity();
-        builder.splitter(splitter);
-        assertEquals(Optional.of(splitter), builder.splitter());
+
+        TokenizationPipeline pipeline = Toknroll.pipeline(splitter, model);
+
+        assertSame(model, pipeline.model());
+        assertEquals(Optional.of(splitter), pipeline.splitter());
     }
 
     @Test
     void pipelineWithNoStagesUsesModelOutput() {
         TokenizationModel model = createWholeChunkModel(Map.of("hello world", 7));
-        Tokenizer pipeline = TokenizationPipeline.builder(model).build();
+        Tokenizer pipeline = new TokenizationPipeline(null, null, model);
 
         assertArrayEquals(
                 model.encodeToArray("hello world"), pipeline.encodeToArray("hello world"));
+        assertFalse(((TokenizationPipeline) pipeline).splitter().isPresent());
+    }
+
+    @Test
+    void pipelineNormalizerOnlyAppliesNormalizationWithoutSplitting() {
+        TokenizationModel model = createWholeChunkModel(Map.of("hello world", 77));
+        Tokenizer pipeline = Toknroll.pipeline(Normalizer.lowercase(), model);
+
+        assertArrayEquals(new int[] {77}, pipeline.encodeToArray("HELLO WORLD"));
+        assertTrue(((TokenizationPipeline) pipeline).normalizer().isPresent());
         assertFalse(((TokenizationPipeline) pipeline).splitter().isPresent());
     }
 

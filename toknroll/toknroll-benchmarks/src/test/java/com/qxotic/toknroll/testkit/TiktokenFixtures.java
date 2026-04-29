@@ -9,7 +9,7 @@ import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.Tokenizers;
+import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.loaders.TiktokenLoaders;
 import java.net.URISyntaxException;
@@ -157,12 +157,11 @@ public final class TiktokenFixtures {
 
     public static Tokenizer createTiktokenTokenizer(
             Map<String, Integer> ranks, Map<String, Integer> specials, Splitter splitter) {
-        return Tokenizers.pipeline(
-                        Tokenizers.tiktokenModel(
-                                TiktokenLoaders.vocabulary(ranks, specials),
-                                TiktokenLoaders.mergeRules(ranks)))
-                .splitter(splitter)
-                .build();
+        return Toknroll.pipeline(
+                splitter,
+                Toknroll.tiktokenModel(
+                        TiktokenLoaders.vocabulary(ranks, specials),
+                        TiktokenLoaders.mergeRules(ranks)));
     }
 
     public static Map<String, Integer> mergeableRanks(String encodingName) {

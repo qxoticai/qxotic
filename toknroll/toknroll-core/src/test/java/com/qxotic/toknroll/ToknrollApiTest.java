@@ -17,7 +17,7 @@ import java.util.Map;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
-class TokenizersApiTest {
+class ToknrollApiTest {
 
     private static final String R50K_NAME = "r50k_base";
     private static final String R50K_FILE = "r50k_base.tiktoken";
@@ -118,20 +118,20 @@ class TokenizersApiTest {
 
     @Test
     void tokenizersFactoryMethodsValidateNulls() {
-        Vocabulary vocabulary = Tokenizers.vocabulary("a");
+        Vocabulary vocabulary = Toknroll.vocabulary("a");
         Tokenizer tokenizer =
                 createTokenizer(R50K_NAME, R50K_FILE, R50K_HASH, R50K_PATTERN, R50K_SPECIALS);
-        assertThrows(NullPointerException.class, () -> Tokenizers.tiktokenModel(null, List.of()));
+        assertThrows(NullPointerException.class, () -> Toknroll.tiktokenModel(null, List.of()));
         assertThrows(
                 NullPointerException.class,
-                () -> Tokenizers.tiktokenModel(vocabulary, (List<Tokenizers.MergeRule>) null));
-        assertThrows(NullPointerException.class, () -> Tokenizers.pipeline(null));
+                () -> Toknroll.tiktokenModel(vocabulary, (List<Toknroll.MergeRule>) null));
+        assertThrows(NullPointerException.class, () -> new TokenizationPipeline(null, null, null));
         assertThrows(NullPointerException.class, () -> tokenizer.decode((IntSequence) null));
     }
 
     @Test
     void vocabularyVarargsAssignsIdsByPosition() {
-        Vocabulary vocabulary = Tokenizers.vocabulary("a", "b", "c");
+        Vocabulary vocabulary = Toknroll.vocabulary("a", "b", "c");
 
         assertEquals(3, vocabulary.size());
         assertEquals(0, vocabulary.id("a"));
@@ -142,7 +142,7 @@ class TokenizersApiTest {
 
     @Test
     void vocabularyVarargsWithSpecialTokensIncludesControls() {
-        Vocabulary vocabulary = Tokenizers.vocabulary(Map.of("<|eot|>", 10), "a", "b", "c");
+        Vocabulary vocabulary = Toknroll.vocabulary(Map.of("<|eot|>", 10), "a", "b", "c");
 
         assertEquals(4, vocabulary.size());
         assertEquals(10, vocabulary.id("<|eot|>"));
@@ -152,13 +152,13 @@ class TokenizersApiTest {
 
     @Test
     void vocabularyVarargsRejectsDuplicatesAndSpecialOverlaps() {
-        assertThrows(IllegalArgumentException.class, () -> Tokenizers.vocabulary("a", "a"));
+        assertThrows(IllegalArgumentException.class, () -> Toknroll.vocabulary("a", "a"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> Tokenizers.vocabulary(Map.of("a", 99), "a", "b"));
+                () -> Toknroll.vocabulary(Map.of("a", 99), "a", "b"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> Tokenizers.vocabulary(Map.of("<|eot|>", 1), "a", "b"));
+                () -> Toknroll.vocabulary(Map.of("<|eot|>", 1), "a", "b"));
     }
 
     @Test
@@ -235,23 +235,19 @@ class TokenizersApiTest {
                 TiktokenLoaders.loadMergeableRanks(resourcePath(R50K_FILE).toString(), R50K_HASH);
         Vocabulary vocabulary = TiktokenLoaders.vocabulary(mergeableRanks, R50K_SPECIALS);
         TokenizationModel model =
-                Tokenizers.tiktokenModel(vocabulary, TiktokenLoaders.mergeRules(mergeableRanks));
+                Toknroll.tiktokenModel(vocabulary, TiktokenLoaders.mergeRules(mergeableRanks));
 
         Tokenizer base =
-                TokenizationPipeline.builder(model)
-                        .splitter(
-                                Splitter.regex(
-                                        Pattern.compile(
-                                                R50K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS)))
-                        .build();
+                Toknroll.pipeline(
+                        Splitter.regex(
+                                Pattern.compile(R50K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS)),
+                        model);
         Tokenizer nfcTransformed =
-                TokenizationPipeline.builder(model)
-                        .normalizer(Normalizer.unicode(Form.NFC))
-                        .splitter(
-                                Splitter.regex(
-                                        Pattern.compile(
-                                                R50K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS)))
-                        .build();
+                Toknroll.pipeline(
+                        Normalizer.unicode(Form.NFC),
+                        Splitter.regex(
+                                Pattern.compile(R50K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS)),
+                        model);
 
         String decomposed = "e\u0301";
         String composed = "é";
@@ -291,14 +287,14 @@ class TokenizersApiTest {
             Map<String, Integer> mergeableRanks, Map<String, Integer> specials, Splitter splitter) {
         Vocabulary vocabulary = TiktokenLoaders.vocabulary(mergeableRanks, specials);
         TokenizationModel model =
-                Tokenizers.tiktokenModel(vocabulary, TiktokenLoaders.mergeRules(mergeableRanks));
-        return Tokenizers.pipeline(model).splitter(splitter).build();
+                Toknroll.tiktokenModel(vocabulary, TiktokenLoaders.mergeRules(mergeableRanks));
+        return Toknroll.pipeline(splitter, model);
     }
 
     private static Path resourcePath(String fileName) {
         try {
             return Path.of(
-                    TokenizersApiTest.class
+                    ToknrollApiTest.class
                             .getClassLoader()
                             .getResource("tiktoken/" + fileName)
                             .toURI());

@@ -12,7 +12,7 @@
   <artifactId>toknroll-aggregator</artifactId>
   <packaging>pom</packaging>
   <name>Tok'n'Roll Aggregator</name>
-  <description>Tiktoken-compatible, customizable BPE tokenization for LLMs</description>
+  <description>Tiktoken-compatible, SentencePiece BPE, customizable tokenization for LLMs</description>
 
   <modules>
     <module>toknroll-core</module>

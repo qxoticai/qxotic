@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.qxotic.toknroll.Tokenizers;
+import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -117,11 +117,11 @@ class TiktokenReconstructionTest {
         mergeableRanks.put("b", 1);
         mergeableRanks.put("ab", 2);
 
-        List<Tokenizers.MergeRule> rules = TiktokenReconstruction.mergeRules(mergeableRanks);
+        List<Toknroll.MergeRule> rules = TiktokenReconstruction.mergeRules(mergeableRanks);
 
         assertFalse(rules.isEmpty());
         // "ab" merges from "a"(0) + "b"(1) with the rank equal to "ab"'s entry (2)
-        Tokenizers.MergeRule abRule = rules.get(0);
+        Toknroll.MergeRule abRule = rules.get(0);
         assertEquals(0, abRule.leftId());
         assertEquals(1, abRule.rightId());
     }
@@ -131,7 +131,7 @@ class TiktokenReconstructionTest {
         Map<String, Integer> mergeableRanks = new LinkedHashMap<>();
         mergeableRanks.put("a", 0);
 
-        List<Tokenizers.MergeRule> rules = TiktokenReconstruction.mergeRules(mergeableRanks);
+        List<Toknroll.MergeRule> rules = TiktokenReconstruction.mergeRules(mergeableRanks);
 
         // Single-char tokens don't produce merge rules
         assertTrue(rules.isEmpty());
@@ -161,7 +161,7 @@ class TiktokenReconstructionTest {
                 NullPointerException.class,
                 () ->
                         TiktokenReconstruction.packTiktokenMerges(
-                                null, List.of(new Tokenizers.MergeRule(0, 1, 0))));
+                                null, List.of(new Toknroll.MergeRule(0, 1, 0))));
     }
 
     @Test
@@ -190,10 +190,10 @@ class TiktokenReconstructionTest {
     void packSentencePieceMergesDuplicatePairThrows() {
         VocabularyImpl vocab =
                 new VocabularyImpl(new String[] {"a", "b", "ab", "ba"}, normalTypes(4));
-        List<Tokenizers.MergeRule> merges =
+        List<Toknroll.MergeRule> merges =
                 List.of(
-                        new Tokenizers.MergeRule(0, 1, 0),
-                        new Tokenizers.MergeRule(0, 1, 1) // duplicate pair
+                        new Toknroll.MergeRule(0, 1, 0),
+                        new Toknroll.MergeRule(0, 1, 1) // duplicate pair
                         );
         assertThrows(
                 IllegalArgumentException.class,
@@ -204,10 +204,10 @@ class TiktokenReconstructionTest {
     void packSentencePieceMergesDuplicateRankThrows() {
         VocabularyImpl vocab =
                 new VocabularyImpl(new String[] {"a", "b", "ab", "ba"}, normalTypes(4));
-        List<Tokenizers.MergeRule> merges =
+        List<Toknroll.MergeRule> merges =
                 List.of(
-                        new Tokenizers.MergeRule(0, 1, 0),
-                        new Tokenizers.MergeRule(1, 0, 0) // duplicate rank
+                        new Toknroll.MergeRule(0, 1, 0),
+                        new Toknroll.MergeRule(1, 0, 0) // duplicate rank
                         );
         assertThrows(
                 IllegalArgumentException.class,
@@ -217,9 +217,9 @@ class TiktokenReconstructionTest {
     @Test
     void packSentencePieceMergesMissingRankThrows() {
         VocabularyImpl vocab = new VocabularyImpl(new String[] {"a", "b", "ab"}, normalTypes(3));
-        List<Tokenizers.MergeRule> merges =
+        List<Toknroll.MergeRule> merges =
                 List.of(
-                        new Tokenizers.MergeRule(0, 1, 3) // rank 3 but 2 is missing
+                        new Toknroll.MergeRule(0, 1, 3) // rank 3 but 2 is missing
                         );
         assertThrows(
                 IllegalArgumentException.class,
@@ -229,7 +229,7 @@ class TiktokenReconstructionTest {
     @Test
     void packSentencePieceMergesNegativeRankThrows() {
         VocabularyImpl vocab = new VocabularyImpl(new String[] {"a", "b", "ab"}, normalTypes(3));
-        List<Tokenizers.MergeRule> merges = List.of(new Tokenizers.MergeRule(0, 1, -1));
+        List<Toknroll.MergeRule> merges = List.of(new Toknroll.MergeRule(0, 1, -1));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> TiktokenReconstruction.packSentencePieceMerges(vocab, merges));
@@ -238,7 +238,7 @@ class TiktokenReconstructionTest {
     @Test
     void packSentencePieceMergesUnknownLeftIdThrows() {
         VocabularyImpl vocab = new VocabularyImpl(new String[] {"a", "b", "ab"}, normalTypes(3));
-        List<Tokenizers.MergeRule> merges = List.of(new Tokenizers.MergeRule(99, 1, 0));
+        List<Toknroll.MergeRule> merges = List.of(new Toknroll.MergeRule(99, 1, 0));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> TiktokenReconstruction.packSentencePieceMerges(vocab, merges));
@@ -247,7 +247,7 @@ class TiktokenReconstructionTest {
     @Test
     void packSentencePieceMergesUnknownRightIdThrows() {
         VocabularyImpl vocab = new VocabularyImpl(new String[] {"a", "b", "ab"}, normalTypes(3));
-        List<Tokenizers.MergeRule> merges = List.of(new Tokenizers.MergeRule(0, 99, 0));
+        List<Toknroll.MergeRule> merges = List.of(new Toknroll.MergeRule(0, 99, 0));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> TiktokenReconstruction.packSentencePieceMerges(vocab, merges));
@@ -257,7 +257,7 @@ class TiktokenReconstructionTest {
     void packSentencePieceMergesMissingMergedTokenThrows() {
         VocabularyImpl vocab = new VocabularyImpl(new String[] {"a", "b"}, normalTypes(2));
         // "ab" not in vocabulary, so merge (a,b) has no merged token
-        List<Tokenizers.MergeRule> merges = List.of(new Tokenizers.MergeRule(0, 1, 0));
+        List<Toknroll.MergeRule> merges = List.of(new Toknroll.MergeRule(0, 1, 0));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> TiktokenReconstruction.packSentencePieceMerges(vocab, merges));
@@ -266,7 +266,7 @@ class TiktokenReconstructionTest {
     @Test
     void packSentencePieceMergesNullMergeRuleThrows() {
         VocabularyImpl vocab = new VocabularyImpl(new String[] {"a", "b", "ab"}, normalTypes(3));
-        List<Tokenizers.MergeRule> merges = new java.util.ArrayList<>();
+        List<Toknroll.MergeRule> merges = new java.util.ArrayList<>();
         merges.add(null);
         assertThrows(
                 NullPointerException.class,

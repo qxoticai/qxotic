@@ -114,13 +114,18 @@ public interface Tokenizer {
     default IntSequence encode(CharSequence text) {
         Objects.requireNonNull(text, "text");
         IntSequence.Builder out =
-                IntSequence.newBuilder(estimateInitialTokenCapacity(text.length()));
+                IntSequence.newBuilder(
+                        estimateTokenCapacity(text.length(), expectedTokensPerChar()));
         encodeInto(text, out);
         return out.build();
     }
 
-    private int estimateInitialTokenCapacity(int charCount) {
-        float ratio = Math.max(1.0e-6f, expectedTokensPerChar());
+    /**
+     * Pre-allocates a reasonable initial capacity for {@link IntSequence.Builder} given character
+     * count and the model's expected tokens-to-char ratio.
+     */
+    static int estimateTokenCapacity(int charCount, float expectedTokensPerChar) {
+        float ratio = Math.max(1.0e-6f, expectedTokensPerChar);
         double estimated = Math.ceil(charCount * (double) ratio * 1.15d) + 8d;
         if (estimated > Integer.MAX_VALUE) {
             throw new IllegalArgumentException(
