@@ -1,6 +1,6 @@
 package com.qxotic.toknroll.impl;
 
-import com.qxotic.toknroll.Tokenizers;
+import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -47,7 +47,7 @@ public class FastTiktokenMergeBenchmark {
         Map<String, Integer> specials = TiktokenFixtures.specialTokens(encoding);
         tokenizer =
                 (TiktokenModel)
-                        Tokenizers.tiktokenModel(
+                        Toknroll.tiktokenModel(
                                 TiktokenReconstruction.vocabulary(ranks, specials),
                                 TiktokenReconstruction.mergeRules(ranks));
         bytes = resize(seedBytes(corpus), bytesLength);

@@ -10,7 +10,7 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.TokenizationModel;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.Tokenizers;
+import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.loaders.TiktokenLoaders;
 import java.net.URISyntaxException;
@@ -279,10 +279,10 @@ public final class TiktokenFixtures {
     public static Tokenizer createTiktokenTokenizer(
             Map<String, Integer> ranks, Map<String, Integer> specials, Splitter splitter) {
         TokenizationModel model =
-                Tokenizers.tiktokenModel(
+                Toknroll.tiktokenModel(
                         TiktokenLoaders.vocabulary(ranks, specials),
                         TiktokenLoaders.mergeRules(ranks));
-        return Tokenizers.pipeline(model).splitter(splitter).build();
+        return Toknroll.pipeline(splitter, model);
     }
 
     private static List<NamedTokenizer> ALL_JTOKKIT_TOKENIZERS = null;

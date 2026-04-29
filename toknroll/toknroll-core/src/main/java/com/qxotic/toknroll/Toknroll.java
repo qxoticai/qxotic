@@ -8,13 +8,21 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-public final class Tokenizers {
-    private Tokenizers() {}
+public final class Toknroll {
+    private Toknroll() {}
 
+    /**
+     * Creates a vocabulary where token IDs are assigned by array position ({@code tokens[0]} = 0,
+     * {@code tokens[1]} = 1, etc.).
+     */
     public static Vocabulary vocabulary(String... tokens) {
         return ImplAccessor.createVocabulary(indexVocabulary(tokens));
     }
 
+    /**
+     * Creates a vocabulary with special tokens merged in. Special token IDs must not overlap with
+     * the positional token IDs.
+     */
     public static Vocabulary vocabulary(Map<String, Integer> specialTokens, String... tokens) {
         Map<String, Integer> tokenToId = indexVocabulary(tokens);
         return ImplAccessor.createVocabularyWithSpecials(
@@ -80,7 +88,7 @@ public final class Tokenizers {
      * <p><strong>Important:</strong> every token surface in {@code vocabulary} must already be
      * byte-level encoded (see {@link ByteLevel#encode(byte[])}). The model validates this invariant
      * at construction and throws if any token is not a valid byte-level symbol string (see {@link
-     * ByteLevel#isValidEncoding(String)}).
+     * ByteLevel#isValidEncoding(CharSequence)}).
      *
      * @throws IllegalArgumentException if {@code vocabulary} contains non-byte-level token strings
      */
@@ -88,19 +96,40 @@ public final class Tokenizers {
         return ImplAccessor.createTiktokenModel(vocabulary, merges, false);
     }
 
+    /**
+     * Creates a SentencePiece BPE model from ranked merges. Unlike tiktoken models, tokens are raw
+     * UTF-8 strings (not byte-level encoded).
+     */
     public static TokenizationModel sentencePieceBpeModel(
             Vocabulary vocabulary, List<MergeRule> merges) {
         return ImplAccessor.createSentencePieceBpeModel(vocabulary, merges);
     }
 
+    /**
+     * Creates a SentencePiece BPE model from token scores. Scores are converted to ranks by sorting
+     * descending (higher score = lower rank = higher merge priority).
+     */
     public static TokenizationModel sentencePieceBpeModel(Vocabulary vocabulary, float[] scores) {
         return ImplAccessor.createSentencePieceBpeModel(vocabulary, scores);
     }
 
-    public static TokenizationPipeline.Builder pipeline(TokenizationModel model) {
-        return TokenizationPipeline.builder(model);
+    /** Splits input before feeding chunks to the model. No normalization applied. */
+    public static TokenizationPipeline pipeline(Splitter splitter, TokenizationModel model) {
+        return new TokenizationPipeline(null, splitter, model);
     }
 
+    /** Normalizes input before feeding it directly to the model. No splitting applied. */
+    public static TokenizationPipeline pipeline(Normalizer normalizer, TokenizationModel model) {
+        return new TokenizationPipeline(normalizer, null, model);
+    }
+
+    /** Normalizes input, then splits, then feeds chunks to the model. */
+    public static TokenizationPipeline pipeline(
+            Normalizer normalizer, Splitter splitter, TokenizationModel model) {
+        return new TokenizationPipeline(normalizer, splitter, model);
+    }
+
+    /** A BPE merge rule: merge token {@code leftId} with {@code rightId} at the given rank. */
     public static final class MergeRule {
         private final int leftId;
         private final int rightId;

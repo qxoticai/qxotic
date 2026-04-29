@@ -1,7 +1,6 @@
 package com.qxotic.toknroll.gguf;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Normalizer;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.TokenizationModel;
@@ -18,7 +17,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 
-/** Builds Tok'n'Roll tokenizers from GGUF metadata. */
+/**
+ * Builds Tok'n'Roll tokenizers from GGUF metadata.
+ *
+ * <p>When loading from Hugging Face or ModelScope, only the GGUF header and metadata key-value
+ * pairs are downloaded and cached — tensors and model weights are never fetched.
+ */
 public final class GGUFTokenizerLoader {
     private static final String SOURCE_HUGGING_FACE = "huggingface";
     private static final String SOURCE_MODELSCOPE = "modelscope";
@@ -61,6 +65,10 @@ public final class GGUFTokenizerLoader {
             this.normalizerFallbackByModel = new LinkedHashMap<>();
         }
 
+        /**
+         * Registers a model factory for the given GGUF {@code tokenizer.ggml.model} key. The
+         * factory receives the parsed GGUF metadata and must produce a {@link TokenizationModel}.
+         */
         public Builder registerModelFactory(String key, Function<GGUF, TokenizationModel> factory) {
             modelFactories.put(
                     GGUFMetadataKeys.normalizeKey(key, "key"),
@@ -68,6 +76,10 @@ public final class GGUFTokenizerLoader {
             return this;
         }
 
+        /**
+         * Registers a normalizer factory for the given GGUF pre-tokenizer key. The factory receives
+         * the parsed GGUF metadata.
+         */
         public Builder registerNormalizer(String key, Function<GGUF, Normalizer> factory) {
             normalizers.put(
                     GGUFMetadataKeys.normalizeKey(key, "key"),
@@ -75,6 +87,10 @@ public final class GGUFTokenizerLoader {
             return this;
         }
 
+        /**
+         * Registers a splitter factory for the given GGUF pre-tokenizer key. The factory receives
+         * the parsed GGUF metadata.
+         */
         public Builder registerPreTokenizer(String key, Function<GGUF, Splitter> factory) {
             splitters.put(
                     GGUFMetadataKeys.normalizeKey(key, "key"),
@@ -96,6 +112,7 @@ public final class GGUFTokenizerLoader {
             return this;
         }
 
+        /** Finishes configuration and returns a ready-to-use loader. */
         public GGUFTokenizerLoader build() {
             Registries registries =
                     new Registries(
@@ -114,16 +131,22 @@ public final class GGUFTokenizerLoader {
         this.registries = registries;
     }
 
+    /** Creates a builder with no pre-registered factories. */
     public static Builder createEmptyBuilder() {
         return new Builder();
     }
 
+    /**
+     * Creates a builder pre-loaded with built-in model factories, normalizers, and splitters for
+     * common GGUF models.
+     */
     public static Builder createBuilderWithBuiltins() {
         Builder builder = createEmptyBuilder();
         GGUFTokenizerDefaults.applyTo(builder);
         return builder;
     }
 
+    /** Builds a tokenizer from a local GGUF file. */
     public Tokenizer fromLocal(Path ggufFile) {
         Objects.requireNonNull(ggufFile, "ggufFile");
         Path file = ggufFile.toAbsolutePath().normalize();
@@ -146,10 +169,22 @@ public final class GGUFTokenizerLoader {
         }
     }
 
+    /**
+     * Fetches a GGUF file from Hugging Face and builds a tokenizer. Uses the default branch,
+     * downloads if not cached, and does not force-refresh.
+     */
     public Tokenizer fromHuggingFace(String user, String repository, String ggufPath) {
         return fromHuggingFace(user, repository, null, ggufPath, false, false);
     }
 
+    /**
+     * Fetches a GGUF file from Hugging Face with full parameter control.
+     *
+     * @param revision branch/tag/commit, or {@code null} for default
+     * @param ggufPath path to the GGUF file within the repository
+     * @param useCacheOnly if {@code true}, does not fetch over the network
+     * @param forceRefresh if {@code true}, ignores cached data and re-fetches
+     */
     public Tokenizer fromHuggingFace(
             String user,
             String repository,
@@ -167,10 +202,18 @@ public final class GGUFTokenizerLoader {
                 forceRefresh);
     }
 
+    /**
+     * Fetches a GGUF file from ModelScope and builds a tokenizer. Uses the default branch,
+     * downloads if not cached, and does not force-refresh.
+     */
     public Tokenizer fromModelScope(String user, String repository, String ggufPath) {
         return fromModelScope(user, repository, null, ggufPath, false, false);
     }
 
+    /**
+     * Fetches a GGUF file from ModelScope with full parameter control. See {@link
+     * #fromHuggingFace(String, String, String, String, boolean, boolean)} for parameter details.
+     */
     public Tokenizer fromModelScope(
             String user,
             String repository,
@@ -283,11 +326,7 @@ public final class GGUFTokenizerLoader {
         }
         Normalizer normalizer = normalizerFactory.apply(gguf);
 
-        Tokenizer tokenizer =
-                TokenizationPipeline.builder(model)
-                        .normalizer(normalizer)
-                        .splitter(splitter)
-                        .build();
+        Tokenizer tokenizer = new TokenizationPipeline(normalizer, splitter, model);
 
         // SPM models with metaspace normalization need decode wrapping.
         if (PRE_DEFAULT.equals(preKey) && MODEL_LLAMA.equals(modelKey)) {
@@ -300,15 +339,6 @@ public final class GGUFTokenizerLoader {
     private static Tokenizer wrapSentencePieceDecode(Tokenizer base) {
         return new TransformedTokenizer(base) {
             @Override
-            public void encodeInto(
-                    CharSequence text,
-                    int startInclusive,
-                    int endExclusive,
-                    IntSequence.Builder out) {
-                base.encodeInto(text, startInclusive, endExclusive, out);
-            }
-
-            @Override
             protected String transformDecoded(String decoded, boolean atStartOfText) {
                 return TransformedTokenizer.normalizeMetaspaceDecoded(decoded, atStartOfText);
             }
@@ -316,11 +346,6 @@ public final class GGUFTokenizerLoader {
             @Override
             protected boolean trimLeadingSpaceAtStart() {
                 return true;
-            }
-
-            @Override
-            public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
-                return base.countTokens(text, startInclusive, endExclusive);
             }
         };
     }

@@ -3,7 +3,7 @@ package com.qxotic.toknroll.benchmarks;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.Tokenizers;
+import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.loaders.TiktokenLoaders;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -155,14 +155,11 @@ public class LargeFileBenchmark {
                         "<|fim_middle|>", 100259,
                         "<|fim_suffix|>", 100260,
                         "<|endofprompt|>", 100276);
-        return Tokenizers.pipeline(
-                        Tokenizers.tiktokenModel(
-                                TiktokenLoaders.vocabulary(mergeableRanks, specials),
-                                TiktokenLoaders.mergeRules(mergeableRanks)))
-                .splitter(
-                        Splitter.regex(
-                                Pattern.compile(CL100K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS)))
-                .build();
+        return Toknroll.pipeline(
+                Splitter.regex(Pattern.compile(CL100K_PATTERN, Pattern.UNICODE_CHARACTER_CLASS)),
+                Toknroll.tiktokenModel(
+                        TiktokenLoaders.vocabulary(mergeableRanks, specials),
+                        TiktokenLoaders.mergeRules(mergeableRanks)));
     }
 
     private static double average(double[] values) {

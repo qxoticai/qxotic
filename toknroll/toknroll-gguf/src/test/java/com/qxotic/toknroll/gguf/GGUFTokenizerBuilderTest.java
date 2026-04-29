@@ -7,9 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
-import com.qxotic.toknroll.TokenizationPipeline;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.Tokenizers;
+import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.gguf.TestDataManager.TestModel;
 import com.qxotic.toknroll.gguf.TestDataManager.TokenizerMetadata;
@@ -76,7 +75,7 @@ public class GGUFTokenizerBuilderTest {
 
         Vocabulary vocabulary = ImplAccessor.createVocabulary(tokenToId);
 
-        List<Tokenizers.MergeRule> merges = buildMergeRules(tokenizerMeta, tokenToId);
+        List<Toknroll.MergeRule> merges = buildMergeRules(tokenizerMeta, tokenToId);
 
         Splitter splitter = ModelTextSplitters.createSplitter(model);
         Tokenizer tokenizer =
@@ -157,9 +156,9 @@ public class GGUFTokenizerBuilderTest {
         }
     }
 
-    private static List<Tokenizers.MergeRule> buildMergeRules(
+    private static List<Toknroll.MergeRule> buildMergeRules(
             TokenizerMetadata tokenizerMeta, Map<String, Integer> tokenToId) {
-        List<Tokenizers.MergeRule> merges = new ArrayList<>();
+        List<Toknroll.MergeRule> merges = new ArrayList<>();
         if (tokenizerMeta.merges() == null) {
             return merges;
         }
@@ -172,7 +171,7 @@ public class GGUFTokenizerBuilderTest {
             Integer rightId = tokenToId.get(parts[1]);
             Integer mergedId = tokenToId.get(parts[0] + parts[1]);
             if (leftId != null && rightId != null && mergedId != null) {
-                merges.add(new Tokenizers.MergeRule(leftId, rightId, rank));
+                merges.add(new Toknroll.MergeRule(leftId, rightId, rank));
             }
         }
         return merges;
@@ -180,24 +179,17 @@ public class GGUFTokenizerBuilderTest {
 
     private static Tokenizer buildTokenizer(
             Vocabulary vocabulary,
-            List<Tokenizers.MergeRule> merges,
+            List<Toknroll.MergeRule> merges,
             Splitter splitter,
             boolean sentencePiecePreferred) {
         try {
             if (sentencePiecePreferred) {
-                return TokenizationPipeline.builder(
-                                Tokenizers.sentencePieceBpeModel(vocabulary, merges))
-                        .splitter(splitter)
-                        .build();
+                return Toknroll.pipeline(
+                        splitter, Toknroll.sentencePieceBpeModel(vocabulary, merges));
             }
-            return TokenizationPipeline.builder(Tokenizers.tiktokenModel(vocabulary, merges))
-                    .splitter(splitter)
-                    .build();
+            return Toknroll.pipeline(splitter, Toknroll.tiktokenModel(vocabulary, merges));
         } catch (IllegalArgumentException e) {
-            return TokenizationPipeline.builder(
-                            Tokenizers.sentencePieceBpeModel(vocabulary, merges))
-                    .splitter(splitter)
-                    .build();
+            return Toknroll.pipeline(splitter, Toknroll.sentencePieceBpeModel(vocabulary, merges));
         }
     }
 }

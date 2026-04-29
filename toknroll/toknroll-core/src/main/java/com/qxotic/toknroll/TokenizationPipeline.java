@@ -16,8 +16,11 @@ public final class TokenizationPipeline implements Tokenizer {
     private final boolean hasNormalizer;
     private final boolean hasSplitter;
 
-    private TokenizationPipeline(
-            TokenizationModel model, Normalizer normalizer, Splitter splitter) {
+    /**
+     * Creates a pipeline. Pass {@code null} for {@code normalizer} or {@code splitter} to skip that
+     * stage. The model is required.
+     */
+    public TokenizationPipeline(Normalizer normalizer, Splitter splitter, TokenizationModel model) {
         this.model = Objects.requireNonNull(model, "model is required");
         this.normalizer = normalizer;
         this.splitter = splitter;
@@ -25,14 +28,7 @@ public final class TokenizationPipeline implements Tokenizer {
         this.hasSplitter = splitter != null;
     }
 
-    static TokenizationPipeline create(
-            TokenizationModel model, Normalizer normalizer, Splitter splitter) {
-        return new TokenizationPipeline(model, normalizer, splitter);
-    }
-
-    public static Builder builder(TokenizationModel model) {
-        return new Builder(Objects.requireNonNull(model, "model"));
-    }
+    // ---- introspection ----
 
     public TokenizationModel model() {
         return model;
@@ -46,6 +42,8 @@ public final class TokenizationPipeline implements Tokenizer {
         return Optional.ofNullable(splitter);
     }
 
+    // ---- encode / countTokens ----
+
     @Override
     public void encodeInto(
             CharSequence text, int startInclusive, int endExclusive, IntSequence.Builder out) {
@@ -57,7 +55,6 @@ public final class TokenizationPipeline implements Tokenizer {
             model.encodeInto(text, startInclusive, endExclusive, out);
             return;
         }
-
         encodeNormalizedInto(normalizeSlice(text, startInclusive, endExclusive), out);
     }
 
@@ -101,6 +98,8 @@ public final class TokenizationPipeline implements Tokenizer {
         return model.expectedTokensPerChar();
     }
 
+    // ---- decode (delegated to model) ----
+
     @Override
     public String decode(IntSequence tokens) {
         return model.decode(tokens);
@@ -126,12 +125,17 @@ public final class TokenizationPipeline implements Tokenizer {
         return model.vocabulary();
     }
 
-    @Override
-    public String toString() {
-        return "Pipeline[norm=" + hasNormalizer + ", split=" + hasSplitter + ", " + model + "]";
+    // ---- helpers ----
+
+    private CharSequence normalizeSlice(CharSequence text, int startInclusive, int endExclusive) {
+        CharSequence current =
+                (startInclusive == 0 && endExclusive == text.length())
+                        ? text
+                        : text.subSequence(startInclusive, endExclusive);
+        return hasNormalizer ? normalizer.apply(current) : current;
     }
 
-    private void validateRange(CharSequence text, int startInclusive, int endExclusive) {
+    private static void validateRange(CharSequence text, int startInclusive, int endExclusive) {
         if (startInclusive < 0 || endExclusive < startInclusive || endExclusive > text.length()) {
             throw new IndexOutOfBoundsException(
                     "Invalid range ["
@@ -143,50 +147,8 @@ public final class TokenizationPipeline implements Tokenizer {
         }
     }
 
-    private CharSequence normalizeSlice(CharSequence text, int startInclusive, int endExclusive) {
-        CharSequence current =
-                (startInclusive == 0 && endExclusive == text.length())
-                        ? text
-                        : text.subSequence(startInclusive, endExclusive);
-        return hasNormalizer ? normalizer.apply(current) : current;
-    }
-
-    /** Builder for {@link TokenizationPipeline}. */
-    public static final class Builder {
-        private final TokenizationModel model;
-        private Normalizer normalizer;
-        private Splitter splitter;
-
-        private Builder(TokenizationModel model) {
-            this.model = model;
-        }
-
-        public TokenizationModel model() {
-            return model;
-        }
-
-        public Optional<Normalizer> normalizer() {
-            return Optional.ofNullable(normalizer);
-        }
-
-        /** Sets or replaces the normalizer used by this builder. */
-        public Builder normalizer(Normalizer normalizer) {
-            this.normalizer = Objects.requireNonNull(normalizer, "normalizer");
-            return this;
-        }
-
-        public Optional<Splitter> splitter() {
-            return Optional.ofNullable(splitter);
-        }
-
-        /** Sets or replaces the splitter used by this builder. */
-        public Builder splitter(Splitter splitter) {
-            this.splitter = Objects.requireNonNull(splitter, "splitter");
-            return this;
-        }
-
-        public TokenizationPipeline build() {
-            return TokenizationPipeline.create(model, normalizer, splitter);
-        }
+    @Override
+    public String toString() {
+        return "Pipeline[norm=" + hasNormalizer + ", split=" + hasSplitter + ", " + model + "]";
     }
 }

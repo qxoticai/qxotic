@@ -8,7 +8,7 @@ import com.knuddels.jtokkit.api.IntArrayList;
 import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.Tokenizers;
+import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import java.nio.ByteBuffer;
 import java.util.Collections;
@@ -123,8 +123,8 @@ public final class JTokkitTokenizers {
         }
 
         return specialTokens.isEmpty()
-                ? Tokenizers.vocabulary(tokens)
-                : Tokenizers.vocabulary(specialTokens, tokens);
+                ? Toknroll.vocabulary(tokens)
+                : Toknroll.vocabulary(specialTokens, tokens);
     }
 
     private static final class Adapter implements Tokenizer {

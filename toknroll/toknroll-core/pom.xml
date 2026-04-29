@@ -11,7 +11,7 @@
 
   <artifactId>toknroll</artifactId>
   <name>Tok'n'Roll Core</name>
-  <description>Tiktoken-compatible, customizable BPE tokenization for LLMs</description>
+  <description>Tiktoken-compatible, SentencePiece BPE, customizable tokenization for LLMs</description>
 
   <dependencies>
     <dependency>

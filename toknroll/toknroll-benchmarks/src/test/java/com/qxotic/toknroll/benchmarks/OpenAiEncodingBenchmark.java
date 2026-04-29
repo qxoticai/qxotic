@@ -3,7 +3,7 @@ package com.qxotic.toknroll.benchmarks;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.Tokenizers;
+import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.benchmarks.support.BenchmarkSplitters;
 import com.qxotic.toknroll.loaders.TiktokenLoaders;
 import com.qxotic.toknroll.testkit.TestTokenizers;
@@ -109,12 +109,11 @@ public class OpenAiEncodingBenchmark {
                 fast
                         ? fastSplitterForEncoding(encoding)
                         : Splitter.regex(TiktokenFixtures.splitPattern(encoding));
-        return Tokenizers.pipeline(
-                        Tokenizers.tiktokenModel(
-                                TiktokenLoaders.vocabulary(ranks, specials),
-                                TiktokenLoaders.mergeRules(ranks)))
-                .splitter(splitter)
-                .build();
+        return Toknroll.pipeline(
+                splitter,
+                Toknroll.tiktokenModel(
+                        TiktokenLoaders.vocabulary(ranks, specials),
+                        TiktokenLoaders.mergeRules(ranks)));
     }
 
     private static Splitter fastSplitterForEncoding(String encoding) {

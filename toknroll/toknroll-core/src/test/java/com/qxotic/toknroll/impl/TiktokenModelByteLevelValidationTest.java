@@ -7,9 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
-import com.qxotic.toknroll.TokenizationPipeline;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.Tokenizers;
+import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -20,11 +19,10 @@ class TiktokenModelByteLevelValidationTest {
 
     @Test
     void acceptsValidByteLevelVocabulary() {
-        Vocabulary vocabulary = Tokenizers.vocabulary(validByteLevelTokens());
+        Vocabulary vocabulary = Toknroll.vocabulary(validByteLevelTokens());
         Tokenizer tokenizer =
-                TokenizationPipeline.builder(Tokenizers.tiktokenModel(vocabulary, List.of()))
-                        .splitter(Splitter.identity())
-                        .build();
+                Toknroll.pipeline(
+                        Splitter.identity(), Toknroll.tiktokenModel(vocabulary, List.of()));
 
         String text = "Hello \u001F\u007F and \t tabs";
         IntSequence ids = tokenizer.encode(text);
@@ -34,11 +32,11 @@ class TiktokenModelByteLevelValidationTest {
     @Test
     void rejectsLiteralReplacementCharacterToken() {
         String[] tokens = withExtraToken(validByteLevelTokens(), "\uFFFD");
-        Vocabulary vocabulary = Tokenizers.vocabulary(tokens);
+        Vocabulary vocabulary = Toknroll.vocabulary(tokens);
         IllegalArgumentException error =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> Tokenizers.tiktokenModel(vocabulary, List.of()));
+                        () -> Toknroll.tiktokenModel(vocabulary, List.of()));
 
         assertTrue(error.getMessage().contains("not valid ByteLevel encoding"));
         assertTrue(error.getMessage().contains("id 256"));
@@ -51,8 +49,8 @@ class TiktokenModelByteLevelValidationTest {
         assertTrue(ByteLevel.isValidEncoding(byteLevelReplacement));
 
         String[] tokens = withExtraToken(validByteLevelTokens(), byteLevelReplacement);
-        Vocabulary vocabulary = Tokenizers.vocabulary(tokens);
-        Tokenizers.tiktokenModel(vocabulary, List.of());
+        Vocabulary vocabulary = Toknroll.vocabulary(tokens);
+        Toknroll.tiktokenModel(vocabulary, List.of());
     }
 
     private static String[] validByteLevelTokens() {

@@ -45,11 +45,11 @@ class ByteLevelTest {
         }
         tokens[256] = "�";
 
-        Vocabulary vocabulary = Tokenizers.vocabulary(tokens);
+        Vocabulary vocabulary = Toknroll.vocabulary(tokens);
         IllegalArgumentException error =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> Tokenizers.tiktokenModel(vocabulary, List.of()));
+                        () -> Toknroll.tiktokenModel(vocabulary, List.of()));
         assertTrue(error.getMessage().contains("All vocabulary tokens must be byte-level"));
         assertTrue(error.getMessage().contains("id 256"));
     }

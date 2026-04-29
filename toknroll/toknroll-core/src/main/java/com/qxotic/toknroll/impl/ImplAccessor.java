@@ -4,7 +4,7 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Specials;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.TokenizationModel;
-import com.qxotic.toknroll.Tokenizers;
+import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -26,8 +26,7 @@ import java.util.regex.Pattern;
  */
 public final class ImplAccessor {
 
-    private static final int[] EMPTY_ARRAY = new int[0];
-    private static final IntSequence EMPTY_SEQUENCE = wrap(EMPTY_ARRAY);
+    private static final IntSequence EMPTY_SEQUENCE = wrap(new int[0]);
 
     private ImplAccessor() {}
 
@@ -66,7 +65,7 @@ public final class ImplAccessor {
     }
 
     public static TokenizationModel createTiktokenModel(
-            Vocabulary vocabulary, List<Tokenizers.MergeRule> merges, boolean ignoreMerges) {
+            Vocabulary vocabulary, List<Toknroll.MergeRule> merges, boolean ignoreMerges) {
         LongLongMap packed =
                 merges.isEmpty()
                         ? new LongLongMap(new long[0], new long[0])
@@ -75,7 +74,7 @@ public final class ImplAccessor {
     }
 
     public static TokenizationModel createSentencePieceBpeModel(
-            Vocabulary vocabulary, List<Tokenizers.MergeRule> merges) {
+            Vocabulary vocabulary, List<Toknroll.MergeRule> merges) {
         LongLongMap packed =
                 merges.isEmpty()
                         ? new LongLongMap(new long[0], new long[0])
@@ -100,17 +99,6 @@ public final class ImplAccessor {
         return SpecialsImpl.compile(vocabulary, specials);
     }
 
-    /**
-     * Test fixture bridge for reconstructing merge rules from tiktoken ranks.
-     *
-     * @deprecated Prefer dedicated public loader APIs once exposed.
-     */
-    @Deprecated(forRemoval = false, since = "0.1.0")
-    public static List<Tokenizers.MergeRule> tiktokenMergeRules(
-            Map<String, Integer> mergeableRanks) {
-        return reconstructTiktokenMergeRules(mergeableRanks);
-    }
-
     public static Map<String, Integer> loadTiktokenMergeableRanks(
             String blobPath, String expectedHash) throws IOException, InterruptedException {
         return TiktokenFiles.loadMergeableRanks(blobPath, expectedHash);
@@ -125,7 +113,7 @@ public final class ImplAccessor {
         return TiktokenReconstruction.vocabulary(mergeableRanks, specialTokens);
     }
 
-    public static List<Tokenizers.MergeRule> reconstructTiktokenMergeRules(
+    public static List<Toknroll.MergeRule> reconstructTiktokenMergeRules(
             Map<String, Integer> mergeableRanks) {
         return TiktokenReconstruction.mergeRules(mergeableRanks);
     }
