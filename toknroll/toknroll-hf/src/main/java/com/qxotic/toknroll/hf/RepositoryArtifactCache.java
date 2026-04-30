@@ -149,6 +149,12 @@ final class RepositoryArtifactCache {
         if (!forceRefresh && Files.exists(normalizedTarget)) {
             return normalizedTarget;
         }
+        Path notFoundMarker =
+                normalizedTarget.resolveSibling(
+                        normalizedTarget.getFileName().toString() + ".notfound");
+        if (!forceRefresh && Files.exists(notFoundMarker)) {
+            throw new IOException("[" + source + "] HTTP 404 (cached): " + url);
+        }
         if (useCacheOnly) {
             throw new IOException(
                     "[" + source + "] useCacheOnly=true and artifact not cached: " + url);
@@ -180,6 +186,10 @@ final class RepositoryArtifactCache {
         }
 
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            if (response.statusCode() == 404) {
+                Files.createDirectories(notFoundMarker.getParent());
+                Files.createFile(notFoundMarker);
+            }
             throw new IOException(
                     "["
                             + source
@@ -194,6 +204,7 @@ final class RepositoryArtifactCache {
                 normalizedTarget.resolveSibling(
                         normalizedTarget.getFileName().toString() + ".partial");
         Files.write(partial, response.body());
+        Files.deleteIfExists(notFoundMarker);
         Files.move(
                 partial,
                 normalizedTarget,

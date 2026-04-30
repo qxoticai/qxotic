@@ -83,6 +83,23 @@ public final class ImplAccessor {
     }
 
     public static TokenizationModel createSentencePieceBpeModel(
+            Vocabulary vocabulary, long[] mergeKeys, long[] mergeValues) {
+        return SentencePieceBpeModel.fromVocabularyAndMerges(
+                vocabulary, new LongLongMap(mergeKeys, mergeValues));
+    }
+
+    public static int getIdOrNegative(Vocabulary vocabulary, String token) {
+        if (vocabulary instanceof VocabularyImpl) {
+            return ((VocabularyImpl) vocabulary).getIdOrNegative(token);
+        }
+        return vocabulary.findId(token).orElse(-1);
+    }
+
+    public static long packMerge(int rank, int mergedId) {
+        return SentencePieceBpeModel.packMerge(rank, mergedId);
+    }
+
+    public static TokenizationModel createSentencePieceBpeModel(
             Vocabulary vocabulary, float[] scores) {
         return SentencePieceBpeModel.fromVocabulary(vocabulary, scores);
     }

@@ -68,6 +68,7 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
           <excludedGroups>${surefire.excludedGroups}</excludedGroups>
+          <useModulePath>false</useModulePath>
         </configuration>
       </plugin>
     </plugins>
