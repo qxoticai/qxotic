@@ -4,17 +4,16 @@ import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.TokenType;
 import com.qxotic.toknroll.Vocabulary;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 /** Internal implementation of {@link Vocabulary} backed by flat arrays. */
 class VocabularyImpl implements Vocabulary {
-    protected final String[] tokens;
-    protected final Map<String, Integer> tokenToId;
-    protected final int[] tokenTypes;
+    final String[] tokens;
+    final Map<String, Integer> tokenToId;
+    final int[] tokenTypes;
 
     private VocabularyImpl(String[] tokens, Map<String, Integer> tokenToId, int[] tokenTypes) {
         this.tokens = tokens;
@@ -73,14 +72,24 @@ class VocabularyImpl implements Vocabulary {
 
     public VocabularyImpl(String[] vocabulary, int[] tokenTypes) {
         this(vocabulary, computeTokenMap(vocabulary), tokenTypes);
-        assert tokenTypes == null || tokenTypes.length == vocabulary.length;
+        if (tokenTypes != null && tokenTypes.length != vocabulary.length) {
+            throw new IllegalArgumentException(
+                    "tokenTypes length "
+                            + tokenTypes.length
+                            + " != vocabulary length "
+                            + vocabulary.length);
+        }
     }
 
     private static Map<String, Integer> computeTokenMap(String[] vocabulary) {
-        return IntStream.range(0, vocabulary.length)
-                .filter(i -> vocabulary[i] != null)
-                .boxed()
-                .collect(Collectors.toUnmodifiableMap(i -> vocabulary[i], i -> i));
+        Map<String, Integer> tokenToId = new HashMap<>(vocabulary.length * 2);
+        for (int i = 0; i < vocabulary.length; i++) {
+            String token = vocabulary[i];
+            if (token != null) {
+                tokenToId.put(token, i);
+            }
+        }
+        return tokenToId;
     }
 
     @Override
@@ -102,6 +111,11 @@ class VocabularyImpl implements Vocabulary {
             throw new NoSuchElementException(token);
         }
         return tokenId;
+    }
+
+    int getIdOrNegative(String token) {
+        Integer tokenId = this.tokenToId.get(token);
+        return tokenId == null ? -1 : tokenId;
     }
 
     @Override

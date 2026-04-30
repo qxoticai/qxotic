@@ -13,6 +13,7 @@ import com.qxotic.toknroll.TokenizerLoadException;
 import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.impl.ImplAccessor;
+import com.qxotic.toknroll.impl.IntPair;
 import com.qxotic.toknroll.impl.TransformedTokenizer;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -246,17 +247,19 @@ public final class HuggingFaceTokenizerLoader {
             }
         }
 
-        List<Toknroll.MergeRule> merges =
-                buildMerges(entries.tokens, extractMerges(model.get("merges")));
         boolean ignoreMerges = Boolean.TRUE.equals(model.get("ignore_merges"));
         Vocabulary vocabulary = ImplAccessor.createVocabulary(entries.tokens, entries.tokenTypes);
         TokenizationModel tokenizationModel;
         if (sentencePieceStyle) {
-            tokenizationModel = Toknroll.sentencePieceBpeModel(vocabulary, merges);
+            long[][] packed = buildPackedMergesFromJson(vocabulary, model.get("merges"));
+            tokenizationModel =
+                    ImplAccessor.createSentencePieceBpeModel(vocabulary, packed[0], packed[1]);
             Normalizer base = normalizer == null ? Normalizer.identity() : normalizer;
-            normalizer = Normalizer.sequence(base, text -> text.toString().replace(' ', '\u2581'));
+            normalizer = Normalizer.sequence(base, text -> text.toString().replace(' ', METASPACE));
             splitter = Splitter.identity();
         } else {
+            String[] mergeSpecs = extractMerges(model.get("merges"));
+            List<Toknroll.MergeRule> merges = buildMerges(vocabulary, mergeSpecs);
             tokenizationModel = ImplAccessor.createTiktokenModel(vocabulary, merges, ignoreMerges);
         }
 
@@ -1122,27 +1125,79 @@ public final class HuggingFaceTokenizerLoader {
         return merges.toArray(new String[0]);
     }
 
-    private static List<Toknroll.MergeRule> buildMerges(String[] tokens, String[] mergeSpecs) {
-        Map<String, Integer> tokenToId = new LinkedHashMap<>();
-        for (int i = 0; i < tokens.length; i++) {
-            if (tokens[i] != null) {
-                tokenToId.put(tokens[i], i);
-            }
-        }
+    private static List<Toknroll.MergeRule> buildMerges(
+            Vocabulary vocabulary, String[] mergeSpecs) {
         List<Toknroll.MergeRule> merges = new ArrayList<>();
         for (int rank = 0; rank < mergeSpecs.length; rank++) {
-            String[] parts = mergeSpecs[rank].split(" ");
-            if (parts.length != 2) {
+            int space = mergeSpecs[rank].indexOf(' ');
+            if (space < 0) {
                 continue;
             }
-            Integer leftId = tokenToId.get(parts[0]);
-            Integer rightId = tokenToId.get(parts[1]);
-            Integer mergedId = tokenToId.get(parts[0] + parts[1]);
-            if (leftId != null && rightId != null && mergedId != null) {
+            String left = mergeSpecs[rank].substring(0, space);
+            String right = mergeSpecs[rank].substring(space + 1);
+            int leftId = ImplAccessor.getIdOrNegative(vocabulary, left);
+            int rightId = ImplAccessor.getIdOrNegative(vocabulary, right);
+            int mergedId = ImplAccessor.getIdOrNegative(vocabulary, left + right);
+            if (leftId >= 0 && rightId >= 0 && mergedId >= 0) {
                 merges.add(new Toknroll.MergeRule(leftId, rightId, rank));
             }
         }
         return merges;
+    }
+
+    private static long[][] buildPackedMergesFromJson(Vocabulary vocabulary, Object mergesObj) {
+        if (!(mergesObj instanceof List<?>)) {
+            return new long[][] {new long[0], new long[0]};
+        }
+        List<?> merges = (List<?>) mergesObj;
+        long[] keys = new long[merges.size()];
+        long[] values = new long[merges.size()];
+        int size = 0;
+        int rank = 0;
+        for (Object item : merges) {
+            String left, right;
+            if (item instanceof String) {
+                String spec = (String) item;
+                int space = spec.indexOf(' ');
+                if (space < 0) {
+                    continue;
+                }
+                left = spec.substring(0, space);
+                right = spec.substring(space + 1);
+            } else if (item instanceof List<?>) {
+                List<?> pair = (List<?>) item;
+                if (pair.size() != 2
+                        || !(pair.get(0) instanceof String)
+                        || !(pair.get(1) instanceof String)) {
+                    continue;
+                }
+                left = (String) pair.get(0);
+                right = (String) pair.get(1);
+            } else {
+                continue;
+            }
+            int leftId = ImplAccessor.getIdOrNegative(vocabulary, left);
+            int rightId = ImplAccessor.getIdOrNegative(vocabulary, right);
+            if (leftId < 0 || rightId < 0) {
+                continue;
+            }
+            int mergedId = ImplAccessor.getIdOrNegative(vocabulary, left + right);
+            if (mergedId < 0) {
+                continue;
+            }
+            keys[size] = IntPair.of(leftId, rightId);
+            values[size] = ImplAccessor.packMerge(rank, mergedId);
+            size++;
+            rank++;
+        }
+        if (size == 0) {
+            return new long[][] {new long[0], new long[0]};
+        }
+        if (size < merges.size()) {
+            keys = Arrays.copyOf(keys, size);
+            values = Arrays.copyOf(values, size);
+        }
+        return new long[][] {keys, values};
     }
 
     private static Tokenizer wrapMetaspace(Tokenizer base) {

@@ -63,6 +63,7 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
           <skipTests>${toknroll.skipDependentTests}</skipTests>
+          <useModulePath>false</useModulePath>
         </configuration>
       </plugin>
       <plugin>
@@ -73,6 +74,7 @@
             <id>default-testCompile</id>
             <configuration>
               <release>${maven.compiler.testRelease}</release>
+              <useModulePath>false</useModulePath>
               <annotationProcessorPaths>
                 <path>
                   <groupId>org.openjdk.jmh</groupId>

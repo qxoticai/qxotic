@@ -75,6 +75,7 @@
             <id>default-testCompile</id>
             <configuration>
               <release>${maven.compiler.testRelease}</release>
+              <useModulePath>false</useModulePath>
               <annotationProcessorPaths>
                 <path>
                   <groupId>org.openjdk.jmh</groupId>

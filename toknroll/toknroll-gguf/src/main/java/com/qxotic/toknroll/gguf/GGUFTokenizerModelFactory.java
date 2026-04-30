@@ -7,31 +7,33 @@ import com.qxotic.toknroll.TokenizationModel;
 import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.impl.ImplAccessor;
+import com.qxotic.toknroll.impl.IntPair;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 final class GGUFTokenizerModelFactory {
+    private static final char METASPACE = '\u2581';
+
     private GGUFTokenizerModelFactory() {}
 
     static TokenizationModel buildTiktokenModel(GGUF gguf) {
-        boolean replaceWhitespaceMarker = shouldReplaceWhitespaceMarker(gguf);
+        boolean replaceWhitespaceMarker =
+                "gemma4".equals(GGUFMetadataKeys.key(gguf, GGUFMetadataKeys.MODEL));
         Vocabulary vocabulary = buildVocabulary(gguf, replaceWhitespaceMarker, true);
         List<Toknroll.MergeRule> merges =
-                buildMerges(gguf, vocabulary, true, replaceWhitespaceMarker, true);
+                buildMerges(gguf, vocabulary, replaceWhitespaceMarker, true);
         return Toknroll.tiktokenModel(vocabulary, merges);
     }
 
     static TokenizationModel buildSentencePieceModel(GGUF gguf) {
-        boolean replaceWhitespaceMarker = shouldReplaceWhitespaceMarker(gguf);
+        boolean replaceWhitespaceMarker =
+                "gemma4".equals(GGUFMetadataKeys.key(gguf, GGUFMetadataKeys.MODEL));
         Vocabulary vocabulary = buildVocabulary(gguf, replaceWhitespaceMarker, false);
-        List<Toknroll.MergeRule> merges =
-                buildMerges(gguf, vocabulary, false, replaceWhitespaceMarker, false);
-        if (!merges.isEmpty()) {
-            return Toknroll.sentencePieceBpeModel(vocabulary, merges);
+        long[][] packed = buildPackedMerges(gguf, vocabulary, replaceWhitespaceMarker);
+        if (packed != null) {
+            return ImplAccessor.createSentencePieceBpeModel(vocabulary, packed[0], packed[1]);
         }
         float[] scores = gguf.getValueOrDefault(float[].class, GGUFMetadataKeys.SCORES, null);
         if (scores != null && scores.length > 0) {
@@ -72,71 +74,92 @@ final class GGUFTokenizerModelFactory {
     private static List<Toknroll.MergeRule> buildMerges(
             GGUF gguf,
             Vocabulary vocabulary,
-            boolean required,
             boolean replaceWhitespaceMarker,
             boolean canonicalizeByteLevel) {
         String[] mergesRaw = gguf.getValueOrDefault(String[].class, GGUFMetadataKeys.MERGES, null);
         if (mergesRaw == null) {
-            if (required) {
-                throw new IllegalArgumentException(
-                        "GGUF metadata key missing: " + GGUFMetadataKeys.MERGES);
-            }
-            return List.of();
+            throw new IllegalArgumentException(
+                    "GGUF metadata key missing: " + GGUFMetadataKeys.MERGES);
         }
 
-        Map<String, Integer> tokenToId = new LinkedHashMap<>();
-        for (int i = 0; i < vocabulary.size(); i++) {
-            String token = vocabulary.token(i);
-            if (token != null) {
-                tokenToId.put(token, i);
-            }
-        }
-
-        List<Toknroll.MergeRule> merges = new ArrayList<>();
+        List<Toknroll.MergeRule> merges = new ArrayList<>(mergesRaw.length);
         int denseRank = 0;
         for (String spec : mergesRaw) {
             if (spec == null) {
                 continue;
             }
-            String[] parts = spec.split(" ");
-            if (parts.length != 2) {
+            int space = spec.indexOf(' ');
+            if (space < 0) {
                 continue;
             }
             String left =
-                    normalizeTokenSurface(parts[0], replaceWhitespaceMarker, canonicalizeByteLevel);
+                    normalizeTokenSurface(spec.substring(0, space), replaceWhitespaceMarker, true);
             String right =
-                    normalizeTokenSurface(parts[1], replaceWhitespaceMarker, canonicalizeByteLevel);
-            Integer leftId = tokenToId.get(left);
-            Integer rightId = tokenToId.get(right);
-            Integer mergedId = tokenToId.get(left + right);
-            boolean hasMergedSurface = mergedId != null;
-            if (leftId != null && rightId != null && (canonicalizeByteLevel || hasMergedSurface)) {
+                    normalizeTokenSurface(spec.substring(space + 1), replaceWhitespaceMarker, true);
+            int leftId = ImplAccessor.getIdOrNegative(vocabulary, left);
+            int rightId = ImplAccessor.getIdOrNegative(vocabulary, right);
+            int mergedId = ImplAccessor.getIdOrNegative(vocabulary, left + right);
+            if (leftId >= 0 && rightId >= 0) {
                 merges.add(new Toknroll.MergeRule(leftId, rightId, denseRank++));
             }
         }
         return merges;
     }
 
-    private static String normalizeTokenSurface(
-            String token, boolean replaceWhitespaceMarker, boolean canonicalizeByteLevel) {
-        if (token == null) {
+    private static long[][] buildPackedMerges(
+            GGUF gguf, Vocabulary vocabulary, boolean replaceWhitespaceMarker) {
+        String[] mergesRaw = gguf.getValueOrDefault(String[].class, GGUFMetadataKeys.MERGES, null);
+        if (mergesRaw == null || mergesRaw.length == 0) {
             return null;
         }
-        String out = token;
-        if (replaceWhitespaceMarker) {
-            out = out.replace('\u2581', ' ');
+
+        long[] keys = new long[mergesRaw.length];
+        long[] values = new long[mergesRaw.length];
+        int size = 0;
+        int rank = 0;
+        for (String spec : mergesRaw) {
+            if (spec == null) {
+                continue;
+            }
+            int space = spec.indexOf(' ');
+            if (space < 0) {
+                continue;
+            }
+            String left =
+                    normalizeTokenSurface(spec.substring(0, space), replaceWhitespaceMarker, false);
+            String right =
+                    normalizeTokenSurface(
+                            spec.substring(space + 1), replaceWhitespaceMarker, false);
+            int leftId = ImplAccessor.getIdOrNegative(vocabulary, left);
+            int rightId = ImplAccessor.getIdOrNegative(vocabulary, right);
+            if (leftId < 0 || rightId < 0) {
+                continue;
+            }
+            int mergedId = ImplAccessor.getIdOrNegative(vocabulary, left + right);
+            if (mergedId < 0) {
+                continue;
+            }
+            keys[size] = IntPair.of(leftId, rightId);
+            values[size] = ImplAccessor.packMerge(rank, mergedId);
+            size++;
+            rank++;
         }
-        if (canonicalizeByteLevel) {
-            byte[] bytes =
-                    ByteLevel.isValidEncoding(out)
-                            ? ByteLevel.decode(out)
-                            : out.getBytes(StandardCharsets.UTF_8);
-            out = ByteLevel.encode(bytes);
+        if (size == 0) {
+            return null;
         }
-        return out;
+        if (size < mergesRaw.length) {
+            keys = Arrays.copyOf(keys, size);
+            values = Arrays.copyOf(values, size);
+        }
+        return new long[][] {keys, values};
     }
 
-    private static boolean shouldReplaceWhitespaceMarker(GGUF gguf) {
-        return "gemma4".equals(GGUFMetadataKeys.key(gguf, GGUFMetadataKeys.MODEL));
+    private static String normalizeTokenSurface(
+            String token, boolean replaceWhitespaceMarker, boolean canonicalizeByteLevel) {
+        if (token == null) return null;
+        String out = replaceWhitespaceMarker ? token.replace(METASPACE, ' ') : token;
+        if (!canonicalizeByteLevel) return out;
+        if (ByteLevel.isValidEncoding(out)) return out;
+        return ByteLevel.encode(out.getBytes(StandardCharsets.UTF_8));
     }
 }

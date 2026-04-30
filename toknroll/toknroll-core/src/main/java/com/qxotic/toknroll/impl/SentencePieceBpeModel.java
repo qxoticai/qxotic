@@ -78,7 +78,7 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
 
     static SentencePieceBpeModel fromVocabularyAndMerges(
             Vocabulary vocabulary, LongLongMap directMerges) {
-        return create(vocabulary, Objects.requireNonNull(directMerges, "directMerges"));
+        return create(vocabulary, Objects.requireNonNull(directMerges, "directMerges"), null);
     }
 
     /**
@@ -99,7 +99,7 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
             }
         }
         if (maxId < 0) {
-            return create(vocabulary, new LongLongMap(new long[0], new long[0]));
+            return create(vocabulary, new LongLongMap(new long[0], new long[0]), null);
         }
         if (scores.length <= maxId) {
             throw new IllegalArgumentException(
@@ -112,24 +112,27 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
         return create(vocabulary, new LongLongMap(new long[0], new long[0]), scores);
     }
 
-    private static SentencePieceBpeModel create(Vocabulary vocabulary, LongLongMap directMerges) {
-        return create(vocabulary, directMerges, null);
-    }
-
     private static SentencePieceBpeModel create(
             Vocabulary vocabulary, LongLongMap directMerges, float[] tokenScores) {
         Objects.requireNonNull(vocabulary, "vocabulary");
 
         int size = vocabulary.size();
-        String[] tokensById = new String[size];
-        Map<String, Integer> tokenToId = new HashMap<>(Math.max(16, size * 2));
-        for (Map.Entry<String, Integer> entry : vocabulary) {
-            String token = entry.getKey();
-            Integer id = entry.getValue();
-            if (token != null && id != null) {
-                tokenToId.put(token, id);
-                if (id >= 0 && id < size) {
-                    tokensById[id] = token;
+        String[] tokensById;
+        Map<String, Integer> tokenToId;
+        if (vocabulary instanceof VocabularyImpl) {
+            tokensById = ((VocabularyImpl) vocabulary).tokens;
+            tokenToId = ((VocabularyImpl) vocabulary).tokenToId;
+        } else {
+            tokensById = new String[size];
+            tokenToId = new HashMap<>(Math.max(16, size * 2));
+            for (Map.Entry<String, Integer> entry : vocabulary) {
+                String token = entry.getKey();
+                Integer id = entry.getValue();
+                if (token != null && id != null) {
+                    tokenToId.put(token, id);
+                    if (id >= 0 && id < size) {
+                        tokensById[id] = token;
+                    }
                 }
             }
         }
