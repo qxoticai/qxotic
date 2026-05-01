@@ -82,13 +82,12 @@ final class SentencePieceBpeModel extends AbstractTokenizationModel {
     }
 
     /**
-     * Compatibility factory used by tests that define SentencePiece merges via token scores.
+     * Constructs a SentencePiece BPE model from vocabulary and per-token scores, deriving merge
+     * ranks by sorting scores in descending order.
      *
-     * <p>When explicit merges are unavailable, this reconstructs a ranked merge table from
-     * vocabulary + scores and then applies the normal greedy merge engine. This preserves
-     * score-priority behavior while avoiding per-step dynamic pair rescans.
+     * <p>Used when explicit merge rules are unavailable (e.g. older GGUF files).
      */
-    public static SentencePieceBpeModel fromVocabulary(Vocabulary vocabulary, float[] scores) {
+    static SentencePieceBpeModel fromVocabulary(Vocabulary vocabulary, float[] scores) {
         Objects.requireNonNull(vocabulary, "vocabulary");
         Objects.requireNonNull(scores, "scores");
 

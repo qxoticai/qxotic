@@ -118,38 +118,7 @@ final class LongLongMap {
     /** Convenience overload for packed int pair keys. */
     final long getPair(int left, int right) {
         long key = ((long) left << 32) | (right & 0xFFFFFFFFL);
-        long biasedKey = key + 1;
-        long[] t = table;
-        int c = capacity;
-        int m = mask;
-        int slot = hash(key) & m;
-        int remaining = maxProbe;
-        while (true) {
-            long stored = t[slot];
-            if (stored == EMPTY) {
-                return IntPair.NONE;
-            }
-            if (stored == biasedKey) {
-                return t[c + slot];
-            }
-            if (remaining-- == 0) {
-                return IntPair.NONE;
-            }
-
-            slot = (slot + 1) & m;
-            stored = t[slot];
-            if (stored == EMPTY) {
-                return IntPair.NONE;
-            }
-            if (stored == biasedKey) {
-                return t[c + slot];
-            }
-            if (remaining-- == 0) {
-                return IntPair.NONE;
-            }
-
-            slot = (slot + 1) & m;
-        }
+        return get(key);
     }
 
     final void forEachValue(LongConsumer consumer) {

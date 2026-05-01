@@ -15,7 +15,7 @@ import java.nio.charset.StandardCharsets;
  * conversion and {@link #trimLeadingSpaceAtStart()} to indicate whether a leading space artifact
  * should be stripped from byte-level decode.
  */
-public abstract class TransformedTokenizer implements Tokenizer {
+abstract class TransformedTokenizer implements Tokenizer {
 
     private static final char METASPACE = '\u2581';
     private static final byte SPACE_BYTE = (byte) ' ';
