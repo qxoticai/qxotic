@@ -443,4 +443,143 @@ public class IntSequenceTest {
         assertCompare(+1, IntSequence.of(3), IntSequence.of(1, 2));
         assertCompare(+1, IntSequence.of(3, 4, 5, 6), IntSequence.of(1, 2));
     }
+
+    // ── indexOf / lastIndexOf ──────────────────────────────────────────
+
+    @Test
+    void indexOfReturnsFirstMatch() {
+        IntSequence seq = IntSequence.of(1, 2, 3, 2, 3);
+        assertEquals(0, seq.indexOf(1));
+        assertEquals(1, seq.indexOf(2));
+        assertEquals(2, seq.indexOf(3));
+        assertEquals(-1, seq.indexOf(9));
+    }
+
+    @Test
+    void indexOfFromIndexHonoursOffset() {
+        IntSequence seq = IntSequence.of(1, 2, 3, 1, 2, 3);
+        assertEquals(0, seq.indexOf(1, 0));
+        assertEquals(3, seq.indexOf(1, 1));
+        assertEquals(3, seq.indexOf(1, 3));
+        assertEquals(-1, seq.indexOf(1, 4));
+        assertEquals(4, seq.indexOf(2, 3));
+        assertEquals(-1, seq.indexOf(2, 5));
+    }
+
+    @Test
+    void indexOfNegativeFromIndex() {
+        IntSequence seq = IntSequence.of(1, 2, 3);
+        assertEquals(0, seq.indexOf(1, -5));
+    }
+
+    @Test
+    void indexOfEmptySequence() {
+        IntSequence seq = IntSequence.empty();
+        assertEquals(-1, seq.indexOf(0));
+        assertEquals(-1, seq.indexOf(1, 0));
+        assertEquals(-1, seq.indexOf(1, 5));
+    }
+
+    @Test
+    void indexOfSingleElementSequence() {
+        IntSequence seq = IntSequence.of(42);
+        assertEquals(0, seq.indexOf(42));
+        assertEquals(-1, seq.indexOf(1));
+        assertEquals(0, seq.indexOf(42, 0));
+        assertEquals(-1, seq.indexOf(42, 1));
+    }
+
+    @Test
+    void lastIndexOfReturnsLastMatch() {
+        IntSequence seq = IntSequence.of(1, 2, 3, 2, 3);
+        assertEquals(3, seq.lastIndexOf(2));
+        assertEquals(4, seq.lastIndexOf(3));
+        assertEquals(0, seq.lastIndexOf(1));
+        assertEquals(-1, seq.lastIndexOf(9));
+    }
+
+    @Test
+    void lastIndexOfFromIndexHonoursBound() {
+        IntSequence seq = IntSequence.of(1, 2, 3, 1, 2, 3);
+        assertEquals(0, seq.lastIndexOf(1, 0));
+        assertEquals(3, seq.lastIndexOf(1, 3));
+        assertEquals(3, seq.lastIndexOf(1, 5));
+        assertEquals(0, seq.lastIndexOf(1, 2));
+        assertEquals(4, seq.lastIndexOf(2, 5));
+        assertEquals(1, seq.lastIndexOf(2, 1));
+        assertEquals(-1, seq.lastIndexOf(3, 0));
+    }
+
+    @Test
+    void lastIndexOfEmptySequence() {
+        IntSequence seq = IntSequence.empty();
+        assertEquals(-1, seq.lastIndexOf(0));
+        assertEquals(-1, seq.lastIndexOf(1, 0));
+    }
+
+    @Test
+    void lastIndexOfSingleElementSequence() {
+        IntSequence seq = IntSequence.of(42);
+        assertEquals(0, seq.lastIndexOf(42));
+        assertEquals(-1, seq.lastIndexOf(1));
+        assertEquals(0, seq.lastIndexOf(42, 0));
+        assertEquals(0, seq.lastIndexOf(42, 5));
+        assertEquals(-1, seq.lastIndexOf(42, -1));
+    }
+
+    @Test
+    void indexOfAndLastIndexOfExhaustiveSmall() {
+        for (int[] raw :
+                new int[][] {
+                    {},
+                    {0},
+                    {1},
+                    {1, 2},
+                    {2, 1},
+                    {1, 2, 1},
+                    {1, 2, 3, 1, 2, 3},
+                    {0, 0, 0, 0},
+                    {Integer.MIN_VALUE, 0, Integer.MAX_VALUE},
+                }) {
+            IntSequence seq = IntSequence.of(raw);
+            int[] copy = seq.toArray();
+
+            for (int needle : new int[] {-1, 0, 1, 2, 3, Integer.MIN_VALUE, Integer.MAX_VALUE}) {
+                assertEquals(
+                        goldIndexOf(copy, needle, 0),
+                        seq.indexOf(needle),
+                        () -> "indexOf(" + needle + ") failed: seq=" + seq);
+                assertEquals(
+                        goldLastIndexOf(copy, needle, copy.length - 1),
+                        seq.lastIndexOf(needle),
+                        () -> "lastIndexOf(" + needle + ") failed: seq=" + seq);
+
+                for (int from = -1; from <= copy.length + 1; from++) {
+                    int fi = from;
+                    assertEquals(
+                            goldIndexOf(copy, needle, from),
+                            seq.indexOf(needle, from),
+                            () -> "indexOf(" + needle + ", " + fi + ") failed: seq=" + seq);
+                    assertEquals(
+                            goldLastIndexOf(copy, needle, from),
+                            seq.lastIndexOf(needle, from),
+                            () -> "lastIndexOf(" + needle + ", " + fi + ") failed: seq=" + seq);
+                }
+            }
+        }
+    }
+
+    private static int goldIndexOf(int[] data, int value, int fromIndex) {
+        for (int i = Math.max(0, fromIndex); i < data.length; i++) {
+            if (data[i] == value) return i;
+        }
+        return -1;
+    }
+
+    private static int goldLastIndexOf(int[] data, int value, int fromIndex) {
+        for (int i = Math.min(fromIndex, data.length - 1); i >= 0; i--) {
+            if (data[i] == value) return i;
+        }
+        return -1;
+    }
 }

@@ -396,6 +396,62 @@ public interface IntSequence extends Iterable<Integer>, Comparable<IntSequence> 
     }
 
     /**
+     * Returns the index of the first occurrence of {@code value} in this sequence, or -1 if not
+     * found.
+     */
+    default int indexOf(int value) {
+        int len = length();
+        for (int i = 0; i < len; i++) {
+            if (intAt(i) == value) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Returns the index of the first occurrence of {@code value} starting at or after {@code
+     * fromIndex}, or -1 if not found.
+     */
+    default int indexOf(int value, int fromIndex) {
+        int len = length();
+        for (int i = Math.max(0, fromIndex); i < len; i++) {
+            if (intAt(i) == value) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Returns the index of the last occurrence of {@code value} in this sequence, or -1 if not
+     * found.
+     */
+    default int lastIndexOf(int value) {
+        int len = length();
+        for (int i = len - 1; i >= 0; i--) {
+            if (intAt(i) == value) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Returns the index of the last occurrence of {@code value} in this sequence, searching
+     * backward from {@code fromIndex}, or -1 if not found.
+     */
+    default int lastIndexOf(int value, int fromIndex) {
+        int len = length();
+        for (int i = Math.min(fromIndex, len - 1); i >= 0; i--) {
+            if (intAt(i) == value) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
      * A builder interface for creating IntSequence instances.
      *
      * <p>Use {@link #snapshot()} for a fixed-length view, {@link #asSequenceView()} for a live view
