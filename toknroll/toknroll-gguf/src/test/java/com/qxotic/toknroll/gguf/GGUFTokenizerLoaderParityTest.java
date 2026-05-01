@@ -106,12 +106,12 @@ class GGUFTokenizerLoaderParityTest {
                     "Phi-4-mini-instruct.Q8_0.gguf",
                     null);
 
-    private static final FamilyCase GRANITE4_H_1B_UNSLOTH =
+    private static final FamilyCase GRANITE4_1_3B_UNSLOTH =
             new FamilyCase(
-                    "granite4-h-1b-unsloth",
+                    "granite4-1-3b-unsloth",
                     "unsloth",
-                    "granite-4.0-h-1b-GGUF",
-                    "granite-4.0-h-1b-Q8_0.gguf",
+                    "granite-4.1-3b-GGUF",
+                    "granite-4.1-3b-Q8_0.gguf",
                     null);
 
     private static final FamilyCase SMOLLM3_3B_UNSLOTH =
@@ -199,8 +199,8 @@ class GGUFTokenizerLoaderParityTest {
     }
 
     @Test
-    void granite4H1bFromUnsloth_localAndHfParity() {
-        assertLocalAndHfParity(GRANITE4_H_1B_UNSLOTH);
+    void granite41_3bFromUnsloth_localAndHfParity() {
+        assertLocalAndHfParity(GRANITE4_1_3B_UNSLOTH);
     }
 
     @Test

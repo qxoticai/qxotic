@@ -49,7 +49,7 @@ class HuggingFaceTokenizerParityTest {
                     new ModelSpec(
                             "HuggingFaceTB/SmolLM3-3B", "hf_huggingface_smollm3_ground_truth.json"),
                     new ModelSpec(
-                            "ibm-granite/granite-4.1-8b", "hf_ibm_granite4_1_8b_ground_truth.json"),
+                            "ibm-granite/granite-4.1-3b", "hf_ibm_granite4_1_3b_ground_truth.json"),
                     new ModelSpec(
                             "mistralai/ministral-8b-instruct-2410",
                             "hf_mistral_tekken_ground_truth.json"),

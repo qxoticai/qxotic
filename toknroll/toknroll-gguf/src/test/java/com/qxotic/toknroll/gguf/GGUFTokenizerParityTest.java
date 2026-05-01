@@ -68,10 +68,10 @@ class GGUFTokenizerParityTest {
                             "phi-4-Q8_0.gguf",
                             "hf_microsoft_phi4_ground_truth.json"),
                     new ModelSpec(
-                            "ibm_granite4_0",
-                            "unsloth/granite-4.0-h-1b-GGUF",
-                            "granite-4.0-h-1b-Q8_0.gguf",
-                            "hf_ibm_granite4_0_ground_truth.json"),
+                            "ibm_granite4_1_3b",
+                            "unsloth/granite-4.1-3b-GGUF",
+                            "granite-4.1-3b-Q8_0.gguf",
+                            "hf_ibm_granite4_1_3b_ground_truth.json"),
                     new ModelSpec(
                             "huggingface_smollm3",
                             "unsloth/SmolLM3-3B-GGUF",
