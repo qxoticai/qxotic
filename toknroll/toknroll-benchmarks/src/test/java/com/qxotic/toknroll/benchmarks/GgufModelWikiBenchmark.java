@@ -58,11 +58,11 @@ public class GgufModelWikiBenchmark {
                             "microsoft_phi4",
                             new ModelSpec("unsloth", "phi-4-GGUF", "phi-4-Q8_0.gguf")),
                     Map.entry(
-                            "ibm_granite4_0",
+                            "ibm_granite4_1_3b",
                             new ModelSpec(
                                     "unsloth",
-                                    "granite-4.0-h-1b-GGUF",
-                                    "granite-4.0-h-1b-Q8_0.gguf")),
+                                    "granite-4.1-3b-GGUF",
+                                    "granite-4.1-3b-Q8_0.gguf")),
                     Map.entry(
                             "huggingface_smollm3",
                             new ModelSpec("unsloth", "SmolLM3-3B-GGUF", "SmolLM3-3B-Q8_0.gguf")),
@@ -110,7 +110,7 @@ public class GgufModelWikiBenchmark {
                     "openai_gpt_oss",
                     "alibaba_qwen3_5",
                     "microsoft_phi4",
-                    "ibm_granite4_0",
+                    "ibm_granite4_1_3b",
                     "huggingface_smollm3",
                     "moonshot_kimi2_6",
                     "zai_glm5_1",
@@ -144,7 +144,7 @@ public class GgufModelWikiBenchmark {
         "openai_gpt_oss",
         "alibaba_qwen3_5",
         "microsoft_phi4",
-        "ibm_granite4_0",
+        "ibm_granite4_1_3b",
         "huggingface_smollm3",
         "moonshot_kimi2_6",
         "zai_glm5_1",
