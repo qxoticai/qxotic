@@ -74,7 +74,7 @@ final class TiktokenReconstruction {
             if (left == null || right == null) {
                 continue;
             }
-            merges.add(new Toknroll.MergeRule(left, right, normalizedRank));
+            merges.add(Toknroll.MergeRule.of(left, right, normalizedRank));
             normalizedRank++;
         }
         return merges;

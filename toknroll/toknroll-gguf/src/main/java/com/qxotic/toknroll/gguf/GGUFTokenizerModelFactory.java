@@ -100,7 +100,7 @@ final class GGUFTokenizerModelFactory {
             int rightId = ImplAccessor.getIdOrNegative(vocabulary, right);
             int mergedId = ImplAccessor.getIdOrNegative(vocabulary, left + right);
             if (leftId >= 0 && rightId >= 0) {
-                merges.add(new Toknroll.MergeRule(leftId, rightId, denseRank++));
+                merges.add(Toknroll.MergeRule.of(leftId, rightId, denseRank++));
             }
         }
         return merges;

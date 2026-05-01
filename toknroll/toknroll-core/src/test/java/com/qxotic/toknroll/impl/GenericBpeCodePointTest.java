@@ -24,7 +24,7 @@ class GenericBpeCodePointTest {
                                 "ab", 2,
                                 "🙂", 3));
 
-        List<Toknroll.MergeRule> merges = List.of(new Toknroll.MergeRule(0, 1, 0));
+        List<Toknroll.MergeRule> merges = List.of(Toknroll.MergeRule.of(0, 1, 0));
 
         Tokenizer tokenizer =
                 Toknroll.pipeline(

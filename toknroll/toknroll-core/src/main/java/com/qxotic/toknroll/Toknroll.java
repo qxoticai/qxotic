@@ -135,6 +135,7 @@ public final class Toknroll {
         private final int rightId;
         private final int rank;
 
+        /** Creates a merge rule. Prefer the self-documenting {@link #of(int, int, int)} factory. */
         public MergeRule(int leftId, int rightId, int rank) {
             if (leftId < 0) {
                 throw new IllegalArgumentException("leftId must be non-negative: " + leftId);
@@ -145,6 +146,10 @@ public final class Toknroll {
             this.leftId = leftId;
             this.rightId = rightId;
             this.rank = rank;
+        }
+
+        public static MergeRule of(int leftId, int rightId, int rank) {
+            return new MergeRule(leftId, rightId, rank);
         }
 
         public int leftId() {

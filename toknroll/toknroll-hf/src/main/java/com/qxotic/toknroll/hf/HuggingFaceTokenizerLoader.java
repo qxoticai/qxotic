@@ -1139,7 +1139,7 @@ public final class HuggingFaceTokenizerLoader {
             int rightId = ImplAccessor.getIdOrNegative(vocabulary, right);
             int mergedId = ImplAccessor.getIdOrNegative(vocabulary, left + right);
             if (leftId >= 0 && rightId >= 0 && mergedId >= 0) {
-                merges.add(new Toknroll.MergeRule(leftId, rightId, rank));
+                merges.add(Toknroll.MergeRule.of(leftId, rightId, rank));
             }
         }
         return merges;
