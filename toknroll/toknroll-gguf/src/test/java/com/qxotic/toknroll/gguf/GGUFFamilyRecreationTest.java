@@ -112,7 +112,7 @@ class GGUFFamilyRecreationTest {
             Integer rightId = tokenToId.get(parts[1]);
             Integer mergedId = tokenToId.get(parts[0] + parts[1]);
             if (leftId != null && rightId != null && mergedId != null) {
-                merges.add(new Toknroll.MergeRule(leftId, rightId, rank));
+                merges.add(Toknroll.MergeRule.of(leftId, rightId, rank));
             }
         }
         return merges;

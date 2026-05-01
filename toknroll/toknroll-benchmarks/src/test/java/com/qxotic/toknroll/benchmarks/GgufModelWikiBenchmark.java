@@ -60,9 +60,7 @@ public class GgufModelWikiBenchmark {
                     Map.entry(
                             "ibm_granite4_1_3b",
                             new ModelSpec(
-                                    "unsloth",
-                                    "granite-4.1-3b-GGUF",
-                                    "granite-4.1-3b-Q8_0.gguf")),
+                                    "unsloth", "granite-4.1-3b-GGUF", "granite-4.1-3b-Q8_0.gguf")),
                     Map.entry(
                             "huggingface_smollm3",
                             new ModelSpec("unsloth", "SmolLM3-3B-GGUF", "SmolLM3-3B-Q8_0.gguf")),
