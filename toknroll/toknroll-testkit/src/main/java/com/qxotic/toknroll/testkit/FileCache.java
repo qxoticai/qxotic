@@ -1,4 +1,4 @@
-package com.qxotic.toknroll.impl;
+package com.qxotic.toknroll.testkit;
 
 import java.io.IOException;
 import java.net.URI;

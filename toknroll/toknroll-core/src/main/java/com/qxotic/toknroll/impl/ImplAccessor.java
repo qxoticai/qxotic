@@ -1,28 +1,24 @@
 package com.qxotic.toknroll.impl;
 
+import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Specials;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.TokenizationModel;
+import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import java.io.BufferedReader;
-import java.io.IOException;
+import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Public bridge to package-private implementation details.
- *
- * <p>API policy:
- *
- * <ul>
- *   <li>Methods used by public types in {@code com.qxotic.toknroll} are the stable bridge.
- *   <li>Methods marked {@code @Deprecated} are test/benchmark bridges and may change without
- *       compatibility guarantees.
- * </ul>
+ * Public bridge to package-private implementation details used by the {@code toknroll-gguf} and
+ * {@code toknroll-hf} loader modules.
  */
 public final class ImplAccessor {
 
@@ -59,7 +55,7 @@ public final class ImplAccessor {
         return new VocabularyImpl(tokenToId);
     }
 
-    /** Test-only bridge for GGUF fixtures that include token-type metadata. */
+    /** Creates a vocabulary from token strings and token-type metadata (GGUF path). */
     public static Vocabulary createVocabulary(String[] tokens, int[] tokenTypes) {
         return new VocabularyImpl(tokens, tokenTypes);
     }
@@ -88,6 +84,10 @@ public final class ImplAccessor {
                 vocabulary, new LongLongMap(mergeKeys, mergeValues));
     }
 
+    /**
+     * Looks up a token ID, returning -1 instead of throwing on miss. Prefer {@link
+     * Vocabulary#findId} for new code; this exists for hot loops that need a single HashMap lookup.
+     */
     public static int getIdOrNegative(Vocabulary vocabulary, String token) {
         if (vocabulary instanceof VocabularyImpl) {
             return ((VocabularyImpl) vocabulary).getIdOrNegative(token);
@@ -95,8 +95,13 @@ public final class ImplAccessor {
         return vocabulary.findId(token).orElse(-1);
     }
 
+    /** Packs a merge rank (high 32 bits) and merged token ID (low 32 bits) into a single long. */
     public static long packMerge(int rank, int mergedId) {
         return SentencePieceBpeModel.packMerge(rank, mergedId);
+    }
+
+    public static long pairKey(int leftId, int rightId) {
+        return IntPair.of(leftId, rightId);
     }
 
     public static TokenizationModel createSentencePieceBpeModel(
@@ -116,13 +121,18 @@ public final class ImplAccessor {
         return SpecialsImpl.compile(vocabulary, specials);
     }
 
-    public static Map<String, Integer> loadTiktokenMergeableRanks(
-            String blobPath, String expectedHash) throws IOException, InterruptedException {
-        return TiktokenFiles.loadMergeableRanks(blobPath, expectedHash);
-    }
-
     public static Map<String, Integer> loadTiktokenMergeableRanks(BufferedReader reader) {
-        return TiktokenFiles.loadMergeableRanks(reader);
+        Map<String, Integer> mergeableRanks = new HashMap<>();
+        reader.lines()
+                .forEachOrdered(
+                        line -> {
+                            String[] parts = line.split(" ");
+                            byte[] bytes = Base64.getDecoder().decode(parts[0]);
+                            String key = ByteLevel.encode(bytes);
+                            int value = Integer.parseInt(parts[1]);
+                            mergeableRanks.put(key, value);
+                        });
+        return mergeableRanks;
     }
 
     public static Vocabulary reconstructTiktokenVocabulary(
@@ -133,5 +143,59 @@ public final class ImplAccessor {
     public static List<Toknroll.MergeRule> reconstructTiktokenMergeRules(
             Map<String, Integer> mergeableRanks) {
         return TiktokenReconstruction.mergeRules(mergeableRanks);
+    }
+
+    public static Tokenizer sentencePieceDecodeWrapper(Tokenizer base, boolean trimLeadingSpace) {
+        return sentencePieceDecodeWrapper(base, trimLeadingSpace, true);
+    }
+
+    public static Tokenizer sentencePieceDecodeWrapper(
+            Tokenizer base, boolean trimLeadingSpace, boolean forwardAtStartOfText) {
+        return new TransformedTokenizer(base) {
+            @Override
+            protected String transformDecoded(String decoded, boolean atStartOfText) {
+                return TransformedTokenizer.normalizeMetaspaceDecoded(
+                        decoded, forwardAtStartOfText && atStartOfText);
+            }
+
+            @Override
+            protected boolean trimLeadingSpaceAtStart() {
+                return trimLeadingSpace;
+            }
+        };
+    }
+
+    public static Tokenizer metaspaceWrapper(Tokenizer base) {
+        return new TransformedTokenizer(base) {
+            @Override
+            public void encodeInto(
+                    CharSequence text,
+                    int startInclusive,
+                    int endExclusive,
+                    IntSequence.Builder out) {
+                String segment = text.subSequence(startInclusive, endExclusive).toString();
+                String replaced = segment.replace(' ', '\u2581');
+                String prefixed = startInclusive == 0 ? '\u2581' + replaced : replaced;
+                base.encodeInto(prefixed, 0, prefixed.length(), out);
+            }
+
+            @Override
+            protected String transformDecoded(String decoded, boolean atStartOfText) {
+                return TransformedTokenizer.normalizeMetaspaceDecoded(decoded, atStartOfText);
+            }
+
+            @Override
+            protected boolean trimLeadingSpaceAtStart() {
+                return true;
+            }
+
+            @Override
+            public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
+                String segment = text.subSequence(startInclusive, endExclusive).toString();
+                String replaced = segment.replace(' ', '\u2581');
+                String prefixed = startInclusive == 0 ? '\u2581' + replaced : replaced;
+                return base.countTokens(prefixed, 0, prefixed.length());
+            }
+        };
     }
 }

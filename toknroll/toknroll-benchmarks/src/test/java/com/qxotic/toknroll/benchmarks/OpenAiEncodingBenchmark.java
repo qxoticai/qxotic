@@ -4,7 +4,7 @@ import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Toknroll;
-import com.qxotic.toknroll.benchmarks.support.BenchmarkSplitters;
+import com.qxotic.toknroll.impl.FastSplitters;
 import com.qxotic.toknroll.loaders.TiktokenLoaders;
 import com.qxotic.toknroll.testkit.TestTokenizers;
 import com.qxotic.toknroll.testkit.TiktokenFixtures;
@@ -119,11 +119,11 @@ public class OpenAiEncodingBenchmark {
     private static Splitter fastSplitterForEncoding(String encoding) {
         switch (encoding) {
             case "r50k_base":
-                return BenchmarkSplitters.r50k();
+                return FastSplitters.r50k();
             case "cl100k_base":
-                return BenchmarkSplitters.cl100k();
+                return FastSplitters.cl100k();
             case "o200k_base":
-                return BenchmarkSplitters.o200k();
+                return FastSplitters.o200k();
             default:
                 return Splitter.regex(TiktokenFixtures.splitPattern(encoding));
         }

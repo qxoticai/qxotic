@@ -7,7 +7,6 @@ import com.qxotic.toknroll.TokenizationModel;
 import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.impl.ImplAccessor;
-import com.qxotic.toknroll.impl.IntPair;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -139,7 +138,7 @@ final class GGUFTokenizerModelFactory {
             if (mergedId < 0) {
                 continue;
             }
-            keys[size] = IntPair.of(leftId, rightId);
+            keys[size] = ImplAccessor.pairKey(leftId, rightId);
             values[size] = ImplAccessor.packMerge(rank, mergedId);
             size++;
             rank++;

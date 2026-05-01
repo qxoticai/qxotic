@@ -2,7 +2,6 @@ package com.qxotic.toknroll.hf;
 
 import com.qxotic.format.json.Json;
 import com.qxotic.toknroll.ByteLevel;
-import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Normalizer;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.StandardTokenType;
@@ -13,8 +12,6 @@ import com.qxotic.toknroll.TokenizerLoadException;
 import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.impl.ImplAccessor;
-import com.qxotic.toknroll.impl.IntPair;
-import com.qxotic.toknroll.impl.TransformedTokenizer;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -278,7 +275,6 @@ public final class HuggingFaceTokenizerLoader {
      * Internal fallback loader for repositories that ship {@code tiktoken.model} instead of {@code
      * tokenizer.json}.
      */
-    @SuppressWarnings("unchecked")
     static Tokenizer loadFromHfTiktokenModel(
             RepositoryArtifactCache cache,
             String user,
@@ -295,7 +291,6 @@ public final class HuggingFaceTokenizerLoader {
      * Internal fallback loader for ModelScope repositories that ship {@code tiktoken.model} instead
      * of {@code tokenizer.json}.
      */
-    @SuppressWarnings("unchecked")
     static Tokenizer loadFromModelScopeTiktokenModel(
             RepositoryArtifactCache cache,
             String user,
@@ -308,7 +303,6 @@ public final class HuggingFaceTokenizerLoader {
                 SOURCE_MODELSCOPE, cache, user, repository, revision, useCacheOnly, forceRefresh);
     }
 
-    @SuppressWarnings("unchecked")
     private static Tokenizer loadFromTiktokenModel(
             String source,
             RepositoryArtifactCache cache,
@@ -1127,7 +1121,7 @@ public final class HuggingFaceTokenizerLoader {
 
     private static List<Toknroll.MergeRule> buildMerges(
             Vocabulary vocabulary, String[] mergeSpecs) {
-        List<Toknroll.MergeRule> merges = new ArrayList<>();
+        List<Toknroll.MergeRule> merges = new ArrayList<>(mergeSpecs.length);
         for (int rank = 0; rank < mergeSpecs.length; rank++) {
             int space = mergeSpecs[rank].indexOf(' ');
             if (space < 0) {
@@ -1185,7 +1179,7 @@ public final class HuggingFaceTokenizerLoader {
             if (mergedId < 0) {
                 continue;
             }
-            keys[size] = IntPair.of(leftId, rightId);
+            keys[size] = ImplAccessor.pairKey(leftId, rightId);
             values[size] = ImplAccessor.packMerge(rank, mergedId);
             size++;
             rank++;
@@ -1201,56 +1195,11 @@ public final class HuggingFaceTokenizerLoader {
     }
 
     private static Tokenizer wrapMetaspace(Tokenizer base) {
-        return new TransformedTokenizer(base) {
-            @Override
-            public void encodeInto(
-                    CharSequence text,
-                    int startInclusive,
-                    int endExclusive,
-                    IntSequence.Builder out) {
-                String replaced =
-                        applyMetaspace(text, startInclusive, endExclusive, startInclusive == 0);
-                base.encodeInto(replaced, 0, replaced.length(), out);
-            }
-
-            @Override
-            protected String transformDecoded(String decoded, boolean atStartOfText) {
-                return TransformedTokenizer.normalizeMetaspaceDecoded(decoded, atStartOfText);
-            }
-
-            @Override
-            protected boolean trimLeadingSpaceAtStart() {
-                return true;
-            }
-
-            @Override
-            public int countTokens(CharSequence text, int startInclusive, int endExclusive) {
-                String replaced =
-                        applyMetaspace(text, startInclusive, endExclusive, startInclusive == 0);
-                return base.countTokens(replaced, 0, replaced.length());
-            }
-        };
+        return ImplAccessor.metaspaceWrapper(base);
     }
 
     private static Tokenizer wrapSentencePieceDecode(Tokenizer base) {
-        return new TransformedTokenizer(base) {
-            @Override
-            protected String transformDecoded(String decoded, boolean atStartOfText) {
-                return TransformedTokenizer.normalizeMetaspaceDecoded(decoded, false);
-            }
-
-            @Override
-            protected boolean trimLeadingSpaceAtStart() {
-                return false;
-            }
-        };
-    }
-
-    private static String applyMetaspace(
-            CharSequence text, int startInclusive, int endExclusive, boolean prependMarker) {
-        String segment = text.subSequence(startInclusive, endExclusive).toString();
-        String replaced = segment.replace(' ', METASPACE);
-        return prependMarker ? METASPACE + replaced : replaced;
+        return ImplAccessor.sentencePieceDecodeWrapper(base, false, false);
     }
 
     private static final class Span {

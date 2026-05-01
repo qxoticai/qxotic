@@ -3,6 +3,7 @@ package com.qxotic.toknroll.loaders;
 import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.impl.ImplAccessor;
+import com.qxotic.toknroll.testkit.TiktokenFiles;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.util.List;
@@ -17,7 +18,7 @@ public final class TiktokenLoaders {
     /** Loads mergeable ranks from a local path or HTTP(S) URL. */
     public static Map<String, Integer> loadMergeableRanks(String blobPath, String expectedHash)
             throws IOException, InterruptedException {
-        return ImplAccessor.loadTiktokenMergeableRanks(
+        return TiktokenFiles.loadMergeableRanks(
                 Objects.requireNonNull(blobPath, "blobPath"), expectedHash);
     }
 

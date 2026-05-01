@@ -7,7 +7,7 @@ import com.qxotic.toknroll.TokenizationModel;
 import com.qxotic.toknroll.TokenizationPipeline;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.TokenizerLoadException;
-import com.qxotic.toknroll.impl.TransformedTokenizer;
+import com.qxotic.toknroll.impl.ImplAccessor;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -337,17 +337,7 @@ public final class GGUFTokenizerLoader {
     }
 
     private static Tokenizer wrapSentencePieceDecode(Tokenizer base) {
-        return new TransformedTokenizer(base) {
-            @Override
-            protected String transformDecoded(String decoded, boolean atStartOfText) {
-                return TransformedTokenizer.normalizeMetaspaceDecoded(decoded, atStartOfText);
-            }
-
-            @Override
-            protected boolean trimLeadingSpaceAtStart() {
-                return true;
-            }
-        };
+        return ImplAccessor.sentencePieceDecodeWrapper(base, true);
     }
 
     private String resolvePreTokenizerKey(GGUF gguf, String modelKey) {
