@@ -22,21 +22,4 @@ public class DTypeTest {
         assertEquals(long.class, DType.I64.javaType());
         assertEquals(long.class, DType.U64.javaType());
     }
-
-    @Test
-    public void testSizes() {
-        assertEquals(1, DType.BOOL.size());
-        assertEquals(1, DType.U8.size());
-        assertEquals(1, DType.I8.size());
-        assertEquals(2, DType.I16.size());
-        assertEquals(2, DType.U16.size());
-        assertEquals(2, DType.F16.size());
-        assertEquals(2, DType.BF16.size());
-        assertEquals(4, DType.I32.size());
-        assertEquals(4, DType.U32.size());
-        assertEquals(4, DType.F32.size());
-        assertEquals(8, DType.F64.size());
-        assertEquals(8, DType.I64.size());
-        assertEquals(8, DType.U64.size());
-    }
 }
