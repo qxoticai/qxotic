@@ -1,14 +1,12 @@
 package com.qxotic.toknroll.hf;
 
-import static com.qxotic.toknroll.hf.HuggingFaceTokenizerTestFixtures.escapeJson;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static com.qxotic.toknroll.testkit.TestSystemProperties.CACHE_ROOT;
 
-import com.qxotic.toknroll.ByteLevel;
 import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.TokenizerLoadException;
+import com.qxotic.toknroll.testkit.TestSystemProperties;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -18,41 +16,24 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class HuggingFaceTokenizerModelScopeSupportTest {
+    private static final String CACHE_ROOT_PROPERTY = TestSystemProperties.ARTIFACT_CACHE_ROOT;
 
     @TempDir Path tempDir;
 
     @Test
-    void fromModelScope_defaultsToMasterRevision() throws IOException {
-        // Build a proper byte-level vocabulary with all 256 byte tokens
-        StringBuilder vocabBuilder = new StringBuilder();
-        vocabBuilder.append("{");
-        for (int b = 0; b < 256; b++) {
-            if (b > 0) {
-                vocabBuilder.append(",");
-            }
-            vocabBuilder.append("\"");
-            vocabBuilder.append(escapeJson(String.valueOf(ByteLevel.encodeSingle((byte) b))));
-            vocabBuilder.append("\":");
-            vocabBuilder.append(b);
-        }
-        vocabBuilder.append(",\"a\":256}");
-
-        writeModelScopeCacheFile(
-                "org",
-                "repo",
-                "master",
-                "tokenizer.json",
-                "{\"model\":{\"type\":\"BPE\",\"vocab\":"
-                        + vocabBuilder
-                        + ",\"merges\":[],\"ignore_merges\":true}}");
-
-        String previous = System.getProperty(CACHE_ROOT);
-        System.setProperty(CACHE_ROOT, tempDir.toString());
+    void fromModelScope_defaultsToMasterRevision() {
+        String previous = System.getProperty(CACHE_ROOT_PROPERTY);
+        System.setProperty(CACHE_ROOT_PROPERTY, tempDir.toString());
         try {
-            Tokenizer tokenizer = HuggingFaceTokenizerLoader.fromModelScope("org", "repo");
-            assertEquals(257, tokenizer.vocabulary().size());
+            TokenizerLoadException error =
+                    assertThrows(
+                            TokenizerLoadException.class,
+                            () -> HuggingFaceTokenizerLoader.fromModelScope("org", "repo"));
+            assertTrue(error.getCause() instanceof IOException);
+            assertTrue(error.getCause().getMessage().contains("/resolve/master/"));
+            assertTrue(error.getCause().getMessage().contains("tiktoken.model"));
         } finally {
-            restoreProperty(CACHE_ROOT, previous);
+            restoreProperty(CACHE_ROOT_PROPERTY, previous);
         }
     }
 
@@ -92,6 +73,25 @@ class HuggingFaceTokenizerModelScopeSupportTest {
 
     @Test
     void fromModelScope_cacheOnlyCanFallbackToCachedTiktokenModel() throws Exception {
+        String previous = System.getProperty(CACHE_ROOT_PROPERTY);
+        System.setProperty(CACHE_ROOT_PROPERTY, tempDir.toString());
+        try {
+            TokenizerLoadException error =
+                    assertThrows(
+                            TokenizerLoadException.class,
+                            () ->
+                                    HuggingFaceTokenizerLoader.fromModelScope(
+                                            "cacheonly", "demo", null, true, false));
+            assertTrue(error.getCause() instanceof IOException);
+            assertTrue(error.getCause().getMessage().contains("useCacheOnly=true"));
+            assertTrue(error.getCause().getMessage().contains("artifact not cached"));
+        } finally {
+            restoreProperty(CACHE_ROOT_PROPERTY, previous);
+        }
+    }
+
+    @Test
+    void fromModelScope_cacheOnlyLoadsWhenCachedTiktokenModelExists() throws Exception {
         writeModelScopeCacheFile(
                 "cacheonly",
                 "demo",
@@ -101,15 +101,15 @@ class HuggingFaceTokenizerModelScopeSupportTest {
         writeModelScopeCacheFile(
                 "cacheonly", "demo", "master", "tokenizer_config.json", "{\"pat_str\":\"[a-z]+\"}");
 
-        String previous = System.getProperty(CACHE_ROOT);
-        System.setProperty(CACHE_ROOT, tempDir.toString());
+        String previous = System.getProperty(CACHE_ROOT_PROPERTY);
+        System.setProperty(CACHE_ROOT_PROPERTY, tempDir.toString());
         try {
             Tokenizer tokenizer =
                     HuggingFaceTokenizerLoader.fromModelScope(
                             "cacheonly", "demo", null, true, false);
             assertArrayEquals(new int[] {256}, tokenizer.encode("xy").toArray());
         } finally {
-            restoreProperty(CACHE_ROOT, previous);
+            restoreProperty(CACHE_ROOT_PROPERTY, previous);
         }
     }
 

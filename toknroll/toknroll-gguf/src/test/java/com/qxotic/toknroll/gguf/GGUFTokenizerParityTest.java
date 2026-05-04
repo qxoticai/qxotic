@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.testkit.TestCachePaths;
+import com.qxotic.toknroll.testkit.GoldenFixturePaths;
 import com.qxotic.toknroll.testkit.TestSystemProperties;
 import com.qxotic.toknroll.testkit.TokenizerInvariantHarness;
 import com.qxotic.toknroll.testkit.TokenizerParityHarness;
@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
 @Tag("local-external")
 class GGUFTokenizerParityTest {
 
-    private static final Path CORE_GOLDEN_ENWIK8_DIR = resolveGoldenEnwik8Dir();
+    private static final Path GOLDEN_ENWIK8_DIR = GoldenFixturePaths.resolveGoldenEnwik8Dir();
     private static final int MAX_CHUNKS =
             Integer.getInteger(
                     TestSystemProperties.MAX_CHUNKS,
@@ -109,50 +109,11 @@ class GGUFTokenizerParityTest {
                             "Mistral-7B-Instruct-v0.3-Q8_0.gguf",
                             "hf_mistral_mistral7b_v0_3_ground_truth.json"));
 
-    private static Path resolveGoldenEnwik8Dir() {
-        String override = System.getProperty(TestSystemProperties.GOLDEN_DIR);
-        if (override != null && !override.isBlank()) {
-            return Path.of(override).toAbsolutePath().normalize();
-        }
-
-        Path cacheCandidate =
-                TestCachePaths.resolveUnderTestArtifacts("golden", "enwik8")
-                        .toAbsolutePath()
-                        .normalize();
-        if (Files.isDirectory(cacheCandidate)) {
-            return cacheCandidate;
-        }
-
-        Path gitRoot = findGitRoot(Path.of("").toAbsolutePath().normalize());
-        if (gitRoot != null) {
-            Path repoCandidate =
-                    gitRoot.resolve("test-fixtures").resolve("golden").resolve("enwik8");
-            if (Files.isDirectory(repoCandidate)) {
-                return repoCandidate.toAbsolutePath().normalize();
-            }
-        }
-
-        return Path.of("..", "toknroll-core", "src", "test", "resources", "golden", "enwik8")
-                .toAbsolutePath()
-                .normalize();
-    }
-
-    private static Path findGitRoot(Path start) {
-        Path current = start;
-        while (current != null) {
-            if (Files.exists(current.resolve(".git"))) {
-                return current;
-            }
-            current = current.getParent();
-        }
-        return null;
-    }
-
     @Test
     void parityOnGgufModels() throws Exception {
         assertTrue(
-                Files.isDirectory(CORE_GOLDEN_ENWIK8_DIR),
-                "Missing golden dir: " + CORE_GOLDEN_ENWIK8_DIR);
+                Files.isDirectory(GOLDEN_ENWIK8_DIR),
+                "Missing golden dir: " + GOLDEN_ENWIK8_DIR);
         byte[] corpusBytes = loadCorpusBytes();
 
         GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
@@ -167,7 +128,7 @@ class GGUFTokenizerParityTest {
             assertSmokeInvariants(modelSpec.modelRef, tokenizer);
 
             Path goldenPath =
-                    CORE_GOLDEN_ENWIK8_DIR
+                    GOLDEN_ENWIK8_DIR
                             .resolve(modelSpec.groundTruthFileName(GROUND_TRUTH_SOURCE))
                             .toAbsolutePath()
                             .normalize();
