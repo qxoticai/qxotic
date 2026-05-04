@@ -112,8 +112,7 @@ class GGUFTokenizerParityTest {
     @Test
     void parityOnGgufModels() throws Exception {
         assertTrue(
-                Files.isDirectory(GOLDEN_ENWIK8_DIR),
-                "Missing golden dir: " + GOLDEN_ENWIK8_DIR);
+                Files.isDirectory(GOLDEN_ENWIK8_DIR), "Missing golden dir: " + GOLDEN_ENWIK8_DIR);
         byte[] corpusBytes = loadCorpusBytes();
 
         GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();

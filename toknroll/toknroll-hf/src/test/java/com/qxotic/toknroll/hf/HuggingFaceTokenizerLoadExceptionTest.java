@@ -58,7 +58,8 @@ class HuggingFaceTokenizerLoadExceptionTest {
     }
 
     @Test
-    void fromHuggingFace_invalidCachedTokenizerJsonWrapsAsTokenizerLoadException() throws Exception {
+    void fromHuggingFace_invalidCachedTokenizerJsonWrapsAsTokenizerLoadException()
+            throws Exception {
         writeCachedHuggingFaceFile("alice", "broken", "main", "tokenizer.json", "not-json");
         writeCachedHuggingFaceFile("alice", "broken", "main", "tokenizer_config.json", "{}");
         writeCachedHuggingFaceFile("alice", "broken", "main", "special_tokens_map.json", "{}");
