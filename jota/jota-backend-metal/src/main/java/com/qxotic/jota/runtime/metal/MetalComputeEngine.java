@@ -140,8 +140,7 @@ public final class MetalComputeEngine implements ComputeEngine {
             MetalMemoryDomain domain, ScratchLayout scratchLayout) {
         long bytes = scratchLayout.requiresScratch() ? scratchLayout.alignedTotalByteSize() : 1L;
         Memory<MetalDevicePtr> memory = domain.memoryAllocator().allocateMemory(bytes, 1);
-        return MemoryView.of(
-                memory, 0, DataType.I8, Layout.rowMajor(Shape.of(bytes)));
+        return MemoryView.of(memory, 0, DataType.I8, Layout.rowMajor(Shape.of(bytes)));
     }
 
     private static List<Layout> graphInputLayouts(TIRGraph graph) {

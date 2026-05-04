@@ -4,15 +4,14 @@ import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.span.DirectAccessOps;
 import com.qxotic.span.FloatMatrixView;
 import com.qxotic.span.FloatSpan;
+import java.nio.ByteOrder;
+import java.util.function.Function;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorShape;
 import jdk.incubator.vector.VectorSpecies;
-
-import java.nio.ByteOrder;
-import java.util.function.Function;
 
 // import net.dedekind.blas.Blas;
 // import net.dedekind.blas.Blas;

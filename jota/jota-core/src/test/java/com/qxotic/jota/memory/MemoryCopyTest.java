@@ -1,16 +1,15 @@
 package com.qxotic.jota.memory;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Indexing;
 import com.qxotic.jota.Shape;
 import com.qxotic.jota.memory.impl.DomainFactory;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
-
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 class MemoryCopyTest extends AbstractMemoryTest {
 

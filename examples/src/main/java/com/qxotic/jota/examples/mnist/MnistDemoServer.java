@@ -204,9 +204,7 @@ public final class MnistDemoServer {
         builder.append("\"batch\":").append(batch).append(',');
         builder.append("\"min\":").append(formatFloat(min)).append(',');
         builder.append("\"max\":").append(formatFloat(max)).append(',');
-        builder.append("\"mean\":")
-                .append(String.format(Locale.ROOT, "%.6f", mean))
-                .append(',');
+        builder.append("\"mean\":").append(String.format(Locale.ROOT, "%.6f", mean)).append(',');
         builder.append("\"nonzero\":").append(nonzero).append(',');
         builder.append("\"first\":[");
         int limit = Math.min(32, input.length);

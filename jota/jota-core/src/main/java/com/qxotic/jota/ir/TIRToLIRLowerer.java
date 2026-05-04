@@ -34,7 +34,6 @@ import com.qxotic.jota.ir.tir.TernaryOp;
 import com.qxotic.jota.ir.tir.UnaryOp;
 import com.qxotic.jota.ir.tir.ViewKind;
 import com.qxotic.jota.ir.tir.ViewTransform;
-
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;

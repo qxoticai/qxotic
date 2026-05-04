@@ -5,7 +5,6 @@ import com.qxotic.jota.runtime.KernelCacheKey;
 import com.qxotic.jota.runtime.KernelExecutable;
 import com.qxotic.jota.runtime.KernelProgram;
 import com.qxotic.jota.runtime.hip.HipRuntime;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

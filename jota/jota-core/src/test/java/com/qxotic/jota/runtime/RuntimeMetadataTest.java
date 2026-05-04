@@ -2,13 +2,12 @@ package com.qxotic.jota.runtime;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.qxotic.jota.Device;
+import com.qxotic.jota.memory.MemoryDomain;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-
-import com.qxotic.jota.Device;
-import com.qxotic.jota.memory.MemoryDomain;
 import org.junit.jupiter.api.Test;
 
 class RuntimeMetadataTest {

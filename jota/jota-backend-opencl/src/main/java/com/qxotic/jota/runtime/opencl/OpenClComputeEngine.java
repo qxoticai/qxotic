@@ -140,8 +140,7 @@ public final class OpenClComputeEngine implements ComputeEngine {
             OpenClMemoryDomain domain, ScratchLayout scratchLayout) {
         long bytes = scratchLayout.requiresScratch() ? scratchLayout.alignedTotalByteSize() : 1L;
         Memory<OpenClDevicePtr> memory = domain.memoryAllocator().allocateMemory(bytes, 1);
-        return MemoryView.of(
-                memory, 0, DataType.I8, Layout.rowMajor(Shape.of(bytes)));
+        return MemoryView.of(memory, 0, DataType.I8, Layout.rowMajor(Shape.of(bytes)));
     }
 
     private static List<Layout> graphInputLayouts(TIRGraph graph) {

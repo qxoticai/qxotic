@@ -10,7 +10,6 @@ import com.qxotic.jota.ir.lir.SLoad;
 import com.qxotic.jota.ir.lir.Store;
 import com.qxotic.jota.ir.lir.StructuredFor;
 import com.qxotic.jota.ir.lir.Yield;
-
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;

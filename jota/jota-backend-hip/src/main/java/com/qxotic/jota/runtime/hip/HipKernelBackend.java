@@ -12,7 +12,6 @@ import com.qxotic.jota.runtime.KernelCachePaths;
 import com.qxotic.jota.runtime.KernelExecutable;
 import com.qxotic.jota.runtime.KernelProgram;
 import com.qxotic.jota.runtime.LaunchConfig;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;

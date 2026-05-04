@@ -5,7 +5,6 @@ import com.qxotic.jota.memory.MemoryAccess;
 import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryOperations;
-
 import java.nio.ByteBuffer;
 import java.util.Objects;
 

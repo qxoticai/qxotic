@@ -34,8 +34,6 @@ import com.qxotic.jota.runtime.JavaKernel;
 import com.qxotic.jota.runtime.KernelCache;
 import com.qxotic.jota.runtime.KernelCacheEntry;
 import com.qxotic.jota.runtime.KernelCacheKey;
-
-import javax.tools.*;
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
@@ -48,6 +46,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.regex.Pattern;
+import javax.tools.*;
 
 final class LIRKernelCompiler {
 
