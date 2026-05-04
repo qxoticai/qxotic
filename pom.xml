@@ -41,10 +41,6 @@
     <module>toknroll</module>
     <module>jota</module>
     <module>examples</module>
-
-    <!-- Deprecated modules -->
-    <module>deprecated/span</module>
-    <module>deprecated/scratch</module>
   </modules>
 
   <scm>
@@ -205,7 +201,7 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
-        <artifactId>toknroll-jtokkit</artifactId>
+        <artifactId>toknroll-incubator</artifactId>
         <version>${qxotic.version}</version>
       </dependency>
       <dependency>
@@ -388,6 +384,14 @@
   </build>
 
   <profiles>
+    <profile>
+      <id>deprecated</id>
+      <modules>
+        <module>deprecated/span</module>
+        <module>deprecated/scratch</module>
+      </modules>
+    </profile>
+
     <!-- Release profile: signing and javadoc -->
     <profile>
       <id>release</id>

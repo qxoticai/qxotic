@@ -18,7 +18,6 @@
     <module>toknroll-core</module>
     <module>toknroll-testkit</module>
     <module>toknroll-benchmarks</module>
-    <module>toknroll-jtokkit</module>
     <module>toknroll-gguf</module>
     <module>toknroll-hf</module>
     <module>toknroll-incubator</module>
