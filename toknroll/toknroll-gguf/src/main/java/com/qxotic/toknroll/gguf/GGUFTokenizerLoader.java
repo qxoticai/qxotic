@@ -292,9 +292,9 @@ public final class GGUFTokenizerLoader {
             throw new IllegalArgumentException(
                     "No pre-tokenizer key resolved for model '"
                             + modelKey
-                            + "' (metadata key "
+                            + "' (explicit pre-tokenizer key '"
                             + GGUFMetadataKeys.PRE
-                            + " is missing and no fallback is registered)");
+                            + "' is absent and no pre-tokenizer fallback is registered)");
         }
         Function<GGUF, Splitter> splitterFactory = registries.splitters.get(preKey);
         if (splitterFactory == null) {
@@ -311,9 +311,9 @@ public final class GGUFTokenizerLoader {
             throw new IllegalArgumentException(
                     "No normalizer key resolved for model '"
                             + modelKey
-                            + "' (metadata key "
+                            + "' (explicit pre-tokenizer key '"
                             + GGUFMetadataKeys.PRE
-                            + " is missing and no fallback is registered)");
+                            + "' is absent and no normalizer fallback is registered)");
         }
         Function<GGUF, Normalizer> normalizerFactory = registries.normalizers.get(normalizerKey);
         if (normalizerFactory == null) {

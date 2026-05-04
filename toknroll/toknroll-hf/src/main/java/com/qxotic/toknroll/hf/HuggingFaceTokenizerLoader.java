@@ -375,7 +375,7 @@ public final class HuggingFaceTokenizerLoader {
                         useCacheOnly,
                         forceRefresh);
             } catch (IOException e) {
-                if (!isNotFoundError(e)) {
+                if (!isHttp404(e)) {
                     throw e;
                 }
             }
@@ -404,7 +404,7 @@ public final class HuggingFaceTokenizerLoader {
                             forceRefresh);
             return parseObject(tokenizerConfigPath);
         } catch (IOException e) {
-            if (isNotFoundError(e)) {
+            if (isHttp404(e)) {
                 return null;
             }
             throw e;
@@ -547,7 +547,7 @@ public final class HuggingFaceTokenizerLoader {
                             useCacheOnly,
                             forceRefresh);
         } catch (IOException e) {
-            if (isNotFoundError(e)) {
+            if (isHttp404(e)) {
                 return null;
             }
             throw e;
@@ -764,12 +764,12 @@ public final class HuggingFaceTokenizerLoader {
                         + ")");
     }
 
-    private static boolean isNotFoundError(IOException e) {
-        return e.getMessage() != null && e.getMessage().contains("HTTP 404");
+    private static boolean isHttp404(IOException e) {
+        return e.getMessage() != null && e.getMessage().endsWith("(HTTP 404)");
     }
 
     private static boolean shouldFallbackToTiktokenModel(IOException e, boolean useCacheOnly) {
-        if (isNotFoundError(e)) {
+        if (isHttp404(e)) {
             return true;
         }
         return useCacheOnly && isArtifactNotCachedError(e);
