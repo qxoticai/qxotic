@@ -3,6 +3,7 @@ package com.qxotic.toknroll.hf;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static com.qxotic.toknroll.testkit.TestSystemProperties.CACHE_ROOT;
 
 import com.qxotic.toknroll.Tokenizer;
 import java.io.IOException;
@@ -14,8 +15,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class HuggingFaceTokenizerTiktokenFallbackTest {
-
-    private static final String CACHE_ROOT_PROPERTY = "toknroll.cache.root";
 
     @TempDir Path tempDir;
 
@@ -131,15 +130,15 @@ class HuggingFaceTokenizerTiktokenFallbackTest {
         writeHfCacheFile(
                 "cacheonly", "demo", "main", "tokenizer_config.json", "{\"pat_str\":\"[a-z]+\"}");
 
-        String previous = System.getProperty(CACHE_ROOT_PROPERTY);
-        System.setProperty(CACHE_ROOT_PROPERTY, tempDir.toString());
+        String previous = System.getProperty(CACHE_ROOT);
+        System.setProperty(CACHE_ROOT, tempDir.toString());
         try {
             Tokenizer tokenizer =
                     HuggingFaceTokenizerLoader.fromHuggingFace(
                             "cacheonly", "demo", "main", true, false);
             assertArrayEquals(new int[] {256}, tokenizer.encode("xy").toArray());
         } finally {
-            restoreProperty(CACHE_ROOT_PROPERTY, previous);
+            restoreProperty(CACHE_ROOT, previous);
         }
     }
 

@@ -21,6 +21,7 @@
     <module>toknroll-jtokkit</module>
     <module>toknroll-gguf</module>
     <module>toknroll-hf</module>
+    <module>toknroll-incubator</module>
   </modules>
 
   <properties>
@@ -56,6 +57,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-testkit</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>toknroll-incubator</artifactId>
         <version>${project.version}</version>
       </dependency>
     </dependencies>

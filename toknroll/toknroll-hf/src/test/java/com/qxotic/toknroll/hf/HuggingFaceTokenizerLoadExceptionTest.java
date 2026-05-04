@@ -2,6 +2,7 @@ package com.qxotic.toknroll.hf;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static com.qxotic.toknroll.testkit.TestSystemProperties.CACHE_ROOT;
 
 import com.qxotic.toknroll.TokenizerLoadException;
 import java.io.IOException;
@@ -13,14 +14,12 @@ import org.junit.jupiter.api.io.TempDir;
 
 class HuggingFaceTokenizerLoadExceptionTest {
 
-    private static final String CACHE_ROOT_PROPERTY = "toknroll.cache.root";
-
     @TempDir Path tempDir;
 
     @Test
     void fromHuggingFace_cacheOnlyMissThrowsTokenizerLoadException() {
-        String previous = System.getProperty(CACHE_ROOT_PROPERTY);
-        System.setProperty(CACHE_ROOT_PROPERTY, tempDir.toString());
+        String previous = System.getProperty(CACHE_ROOT);
+        System.setProperty(CACHE_ROOT, tempDir.toString());
         try {
             TokenizerLoadException error =
                     assertThrows(
@@ -33,14 +32,14 @@ class HuggingFaceTokenizerLoadExceptionTest {
             assertTrue(error.getCause().getMessage().contains("useCacheOnly=true"));
             assertTrue(error.getCause().getMessage().contains("[huggingface]"));
         } finally {
-            restoreProperty(CACHE_ROOT_PROPERTY, previous);
+            restoreProperty(CACHE_ROOT, previous);
         }
     }
 
     @Test
     void fromModelScope_cacheOnlyMissThrowsTokenizerLoadException() {
-        String previous = System.getProperty(CACHE_ROOT_PROPERTY);
-        System.setProperty(CACHE_ROOT_PROPERTY, tempDir.toString());
+        String previous = System.getProperty(CACHE_ROOT);
+        System.setProperty(CACHE_ROOT, tempDir.toString());
         try {
             TokenizerLoadException error =
                     assertThrows(
@@ -53,7 +52,7 @@ class HuggingFaceTokenizerLoadExceptionTest {
             assertTrue(error.getCause().getMessage().contains("useCacheOnly=true"));
             assertTrue(error.getCause().getMessage().contains("[modelscope]"));
         } finally {
-            restoreProperty(CACHE_ROOT_PROPERTY, previous);
+            restoreProperty(CACHE_ROOT, previous);
         }
     }
 
@@ -65,8 +64,8 @@ class HuggingFaceTokenizerLoadExceptionTest {
         writeCachedHuggingFaceFile("alice", "broken", "main", "special_tokens_map.json", "{}");
         writeCachedHuggingFaceFile("alice", "broken", "main", "added_tokens.json", "{}");
 
-        String previous = System.getProperty(CACHE_ROOT_PROPERTY);
-        System.setProperty(CACHE_ROOT_PROPERTY, tempDir.toString());
+        String previous = System.getProperty(CACHE_ROOT);
+        System.setProperty(CACHE_ROOT, tempDir.toString());
         try {
             RuntimeException error =
                     assertThrows(
@@ -76,7 +75,7 @@ class HuggingFaceTokenizerLoadExceptionTest {
                                             "alice", "broken", "main", true, false));
             assertTrue(!(error instanceof TokenizerLoadException));
         } finally {
-            restoreProperty(CACHE_ROOT_PROPERTY, previous);
+            restoreProperty(CACHE_ROOT, previous);
         }
     }
 

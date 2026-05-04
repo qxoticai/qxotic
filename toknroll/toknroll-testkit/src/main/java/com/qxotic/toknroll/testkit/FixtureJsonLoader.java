@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -49,10 +50,32 @@ final class FixtureJsonLoader {
         if (rootOverride != null && !rootOverride.isBlank()) {
             return List.of(Paths.get(rootOverride).resolve(resourceName));
         }
-        return List.of(
-                Paths.get("src", "test", "resources").resolve(resourceName),
-                Paths.get("..", "toknroll-core", "src", "test", "resources").resolve(resourceName),
+
+        List<Path> candidates = new ArrayList<>();
+        Path gitRoot = findGitRoot(Paths.get("").toAbsolutePath().normalize());
+        if (gitRoot != null) {
+            candidates.add(gitRoot.resolve("test-fixtures").resolve(resourceName));
+        }
+
+        candidates.add(Paths.get("..", "test-fixtures").resolve(resourceName));
+        candidates.add(Paths.get("test-fixtures").resolve(resourceName));
+        candidates.add(Paths.get("src", "test", "resources").resolve(resourceName));
+        candidates.add(
+                Paths.get("..", "toknroll-core", "src", "test", "resources").resolve(resourceName));
+        candidates.add(
                 Paths.get("toknroll-core", "src", "test", "resources").resolve(resourceName));
+        return candidates;
+    }
+
+    private static Path findGitRoot(Path start) {
+        Path current = start;
+        while (current != null) {
+            if (Files.exists(current.resolve(".git"))) {
+                return current;
+            }
+            current = current.getParent();
+        }
+        return null;
     }
 
     private static String missingFixtureMessage(String resourceName, List<Path> checkedPaths) {

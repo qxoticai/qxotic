@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.testkit.TestCachePaths;
+import com.qxotic.toknroll.testkit.TestSystemProperties;
 import com.qxotic.toknroll.testkit.TokenizerInvariantHarness;
 import com.qxotic.toknroll.testkit.TokenizerParityHarness;
 import com.qxotic.toknroll.testkit.corpus.Enwik8Corpus;
@@ -17,17 +19,16 @@ import org.junit.jupiter.api.Test;
 @Tag("local-external")
 class GGUFTokenizerParityTest {
 
-    private static final Path CORE_GOLDEN_ENWIK8_DIR =
-            Path.of("..", "toknroll-core", "src", "test", "resources", "golden", "enwik8");
+    private static final Path CORE_GOLDEN_ENWIK8_DIR = resolveGoldenEnwik8Dir();
     private static final int MAX_CHUNKS =
             Integer.getInteger(
-                    "toknroll.test.maxChunks",
-                    Integer.getInteger("toknroll.test.gguf.maxChunks", 20));
+                    TestSystemProperties.MAX_CHUNKS,
+                    Integer.getInteger(TestSystemProperties.GGUF_MAX_CHUNKS, 20));
     private static final int CHUNK_SIZE =
-            Integer.getInteger("toknroll.test.chunk.size", Integer.MAX_VALUE);
-    private static final String CORPUS_PATH_PROPERTY = "toknroll.test.corpus.path";
+            Integer.getInteger(TestSystemProperties.CHUNK_SIZE, Integer.MAX_VALUE);
+    private static final String CORPUS_PATH_PROPERTY = TestSystemProperties.CORPUS_PATH;
     private static final String GROUND_TRUTH_SOURCE_PROPERTY =
-            "toknroll.test.gguf.groundTruthSource";
+            TestSystemProperties.GGUF_GROUND_TRUTH_SOURCE;
     private static final String GROUND_TRUTH_SOURCE =
             System.getProperty(GROUND_TRUTH_SOURCE_PROPERTY, "hf").trim().toLowerCase();
     private static final List<String> INVARIANT_SMOKE_TEXTS =
@@ -107,6 +108,45 @@ class GGUFTokenizerParityTest {
                             "bartowski/Mistral-7B-Instruct-v0.3-GGUF",
                             "Mistral-7B-Instruct-v0.3-Q8_0.gguf",
                             "hf_mistral_mistral7b_v0_3_ground_truth.json"));
+
+    private static Path resolveGoldenEnwik8Dir() {
+        String override = System.getProperty(TestSystemProperties.GOLDEN_DIR);
+        if (override != null && !override.isBlank()) {
+            return Path.of(override).toAbsolutePath().normalize();
+        }
+
+        Path cacheCandidate =
+                TestCachePaths.resolveUnderTestArtifacts("golden", "enwik8")
+                        .toAbsolutePath()
+                        .normalize();
+        if (Files.isDirectory(cacheCandidate)) {
+            return cacheCandidate;
+        }
+
+        Path gitRoot = findGitRoot(Path.of("").toAbsolutePath().normalize());
+        if (gitRoot != null) {
+            Path repoCandidate =
+                    gitRoot.resolve("test-fixtures").resolve("golden").resolve("enwik8");
+            if (Files.isDirectory(repoCandidate)) {
+                return repoCandidate.toAbsolutePath().normalize();
+            }
+        }
+
+        return Path.of("..", "toknroll-core", "src", "test", "resources", "golden", "enwik8")
+                .toAbsolutePath()
+                .normalize();
+    }
+
+    private static Path findGitRoot(Path start) {
+        Path current = start;
+        while (current != null) {
+            if (Files.exists(current.resolve(".git"))) {
+                return current;
+            }
+            current = current.getParent();
+        }
+        return null;
+    }
 
     @Test
     void parityOnGgufModels() throws Exception {

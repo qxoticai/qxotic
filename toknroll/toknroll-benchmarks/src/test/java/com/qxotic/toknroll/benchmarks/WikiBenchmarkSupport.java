@@ -2,8 +2,8 @@ package com.qxotic.toknroll.benchmarks;
 
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.impl.FastSplitters;
 import com.qxotic.toknroll.testkit.TestTokenizers;
+import com.qxotic.toknroll.testkit.TiktokenFixtures;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -37,15 +37,6 @@ final class WikiBenchmarkSupport {
     }
 
     private static Splitter splitterForEncoding(String encoding) {
-        if ("r50k_base".equals(encoding)) {
-            return FastSplitters.r50k();
-        }
-        if ("cl100k_base".equals(encoding)) {
-            return FastSplitters.cl100k();
-        }
-        if ("o200k_base".equals(encoding)) {
-            return FastSplitters.o200k();
-        }
-        throw new IllegalArgumentException("Unsupported encoding: " + encoding);
+        return Splitter.regex(TiktokenFixtures.splitPattern(encoding));
     }
 }

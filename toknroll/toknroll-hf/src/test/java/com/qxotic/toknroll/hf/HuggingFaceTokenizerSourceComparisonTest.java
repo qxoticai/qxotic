@@ -7,6 +7,7 @@ import com.qxotic.toknroll.testkit.FamilyGoldenFixture;
 import com.qxotic.toknroll.testkit.FamilyGoldenFixture.CaseData;
 import com.qxotic.toknroll.testkit.FamilyGoldenFixture.Family;
 import com.qxotic.toknroll.testkit.FamilyTestSpecs;
+import com.qxotic.toknroll.testkit.TestSystemProperties;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Tag;
@@ -18,7 +19,7 @@ class HuggingFaceTokenizerSourceComparisonTest {
 
     private static final FamilyGoldenFixture FIXTURE = FamilyGoldenFixture.load();
     private static final boolean VERBOSE =
-            Boolean.getBoolean("toknroll.hf.sourceComparison.verbose");
+            Boolean.getBoolean(TestSystemProperties.HF_SOURCE_COMPARISON_VERBOSE);
 
     @Test
     void comparePinnedRevisionVsMainAgainstGoldenFixture() {
