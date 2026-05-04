@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHON_BIN="$ROOT_DIR/.venv/bin/python"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+PYTHON_BIN="$SCRIPT_DIR/.venv/bin/python"
 
 BENCH_MODELS="${BENCH_MODELS:-gpt2,mistral-tekken}"
 BENCH_SIZES="${BENCH_SIZES:-1k,32k}"
@@ -16,28 +17,35 @@ PY_BENCH_DURATION_SECS="${PY_BENCH_DURATION_SECS:-1.5}"
 PY_BENCH_WARMUP_SECS="${PY_BENCH_WARMUP_SECS:-0.3}"
 PY_BENCH_REPEATS="${PY_BENCH_REPEATS:-3}"
 
-if [[ ! -d "$ROOT_DIR/.venv" ]]; then
+if [[ ! -d "$SCRIPT_DIR/.venv" ]]; then
   echo "[setup] creating local virtual environment with uv"
-  uv venv "$ROOT_DIR/.venv"
+  uv venv "$SCRIPT_DIR/.venv"
 else
   echo "[setup] using existing .venv"
 fi
 
 echo "[setup] installing Python dependencies"
-uv pip install --python "$PYTHON_BIN" -r "$ROOT_DIR/benchmarks/requirements.txt" matplotlib
+uv pip install --python "$PYTHON_BIN" -r "$SCRIPT_DIR/requirements.txt" matplotlib
 
 echo "[java] compiling benchmark classes"
-mvn -pl toknroll-core -DskipTests test-compile
+mvn -pl toknroll-benchmarks -am -DskipTests test-compile
 
-echo "[java] running ModelTokenizerBenchmark for Tok'n'Roll fast"
-mvn -pl toknroll-core \
+echo "[java] running ModelTokenizerBenchmark"
+mvn -pl toknroll-benchmarks \
   -Dexec.mainClass=com.qxotic.toknroll.benchmarks.TokenizerBenchmarkRunner \
   -Dexec.classpathScope=test \
-  -Dexec.args="ModelTokenizerBenchmark.encode ModelTokenizerBenchmark.decode -p implementation=${BENCH_IMPLEMENTATIONS} -p model=${BENCH_MODELS} -p corpus=${BENCH_CORPORA} -p size=${BENCH_SIZES} -rf json -rff toknroll-core/target/jmh-model-tokenizers.json -wi ${BENCH_WARMUP_ITERS} -i ${BENCH_MEASURE_ITERS} -w ${BENCH_WARMUP_SECS}s -r ${BENCH_MEASURE_SECS}s -f 0" \
+  -Dexec.args="ModelTokenizerBenchmark.encode ModelTokenizerBenchmark.decode \
+    -p implementation=${BENCH_IMPLEMENTATIONS} \
+    -p model=${BENCH_MODELS} \
+    -p corpus=${BENCH_CORPORA} \
+    -p size=${BENCH_SIZES} \
+    -rf json -rff toknroll-benchmarks/target/jmh-model-tokenizers.json \
+    -wi ${BENCH_WARMUP_ITERS} -i ${BENCH_MEASURE_ITERS} \
+    -w ${BENCH_WARMUP_SECS}s -r ${BENCH_MEASURE_SECS}s -f 0" \
   exec:java
 
 echo "[python] running benchmark_model_tokenizers.py"
-"$PYTHON_BIN" "$ROOT_DIR/benchmarks/benchmark_model_tokenizers.py" \
+"$PYTHON_BIN" "$SCRIPT_DIR/benchmark_model_tokenizers.py" \
   --duration "$PY_BENCH_DURATION_SECS" \
   --warmup "$PY_BENCH_WARMUP_SECS" \
   --repeats "$PY_BENCH_REPEATS" \
@@ -48,8 +56,8 @@ echo "[python] running benchmark_model_tokenizers.py"
   --csv "$ROOT_DIR/target/python-tokenizers.csv"
 
 echo "[charts] building cross-runtime plots"
-"$PYTHON_BIN" "$ROOT_DIR/benchmarks/plot_cross_runtime.py" \
-  --java-json "$ROOT_DIR/toknroll-core/target/jmh-model-tokenizers.json" \
+"$PYTHON_BIN" "$SCRIPT_DIR/plot_cross_runtime.py" \
+  --java-json "$ROOT_DIR/toknroll-benchmarks/target/jmh-model-tokenizers.json" \
   --python-csv "$ROOT_DIR/target/python-tokenizers.csv" \
   --output-dir "$ROOT_DIR/target/benchmarks/charts" \
   --merged-csv "$ROOT_DIR/target/benchmarks/merged-cross-runtime.csv"

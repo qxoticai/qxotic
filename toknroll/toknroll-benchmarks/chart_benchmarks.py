@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-"""Generate static horizontal bar charts comparing multi-threaded tokenizer throughput.
-
-Generates two separate charts: one for encode, one for decode.
+"""Generate static horizontal bar charts comparing tokenizer throughput.
 
 Example:
-  python benchmarks/chart_benchmarks_mt.py
-  python benchmarks/chart_benchmarks_mt.py --output-encode mt_encode_chart.png --output-decode mt_decode_chart.png
+  python toknroll-benchmarks/chart_benchmarks.py
+  python toknroll-benchmarks/chart_benchmarks.py --output-encode encode_chart.png --output-decode decode_chart.png
 """
 
 from __future__ import annotations
@@ -20,23 +18,24 @@ import matplotlib.pyplot as plt
 # Colors matching the request
 COLORS = {
     "Java": "#00758F",  # Blue for Tok'n'Roll (from GraalVM badge)
+    "Tiktoken": "#74AA9C",  # OpenAI green
     "Tokie": "#8B4513",  # Brown
+    "HF": "#FFD700",  # HuggingFace yellow
 }
 
 # Raw data: time in seconds for 100 MB (enwik8)
-# Using the multi-threaded benchmark data
 DATA = {
     "r50k_base": {
-        "encode": {"Java": 0.892, "Tokie": 1.625},
-        "decode": {"Java": 0.115, "Tokie": 0.276},
+        "encode": {"Java": 2.355, "Tiktoken": 4.384, "Tokie": 2.749, "HF": 35.404},
+        "decode": {"Java": 0.377, "Tiktoken": 0.591, "Tokie": 0.518, "HF": 3.508},
     },
     "cl100k_base": {
-        "encode": {"Java": 0.952, "Tokie": 1.467},
-        "decode": {"Java": 0.144, "Tokie": 0.236},
+        "encode": {"Java": 2.517, "Tiktoken": 4.560, "Tokie": 2.663, "HF": 37.475},
+        "decode": {"Java": 0.352, "Tiktoken": 0.534, "Tokie": 0.458, "HF": 3.448},
     },
     "o200k_base": {
-        "encode": {"Java": 0.562, "Tokie": 1.462},
-        "decode": {"Java": 0.117, "Tokie": 0.228},
+        "encode": {"Java": 2.065, "Tiktoken": 6.971, "Tokie": 2.715, "HF": 37.642},
+        "decode": {"Java": 0.364, "Tiktoken": 0.539, "Tokie": 0.429, "HF": 3.416},
     },
 }
 
@@ -50,18 +49,17 @@ def compute_throughput(time_s: float) -> float:
 
 
 def create_single_chart(operation: str, output_path: Path | None = None) -> None:
-    """Create a single chart for encode or decode."""
-    fig, ax = plt.subplots(1, 1, figsize=(10, 3.4))
+    fig, ax = plt.subplots(1, 1, figsize=(10, 4.0))
     ax.set_title(
-        f"Multi-threaded {operation.capitalize()} on enwik8",
-        fontsize=12,
+        f"{operation.capitalize()} on enwik8",
+        fontsize=14,
         fontweight="bold",
         loc="left",
         pad=12,
     )
 
     encodings = ["r50k_base", "cl100k_base", "o200k_base"]
-    implementations = ["Java", "Tokie"]
+    implementations = ["Java", "Tokie", "Tiktoken", "HF"]
 
     # Nice display names
     encoding_labels = {
@@ -72,7 +70,9 @@ def create_single_chart(operation: str, output_path: Path | None = None) -> None
 
     impl_labels = {
         "Java": "toknroll (Java)",
+        "Tiktoken": "tiktoken",
         "Tokie": "tokie",
+        "HF": "HuggingFace\ntokenizers",
     }
 
     # For each implementation, we'll have a group of 3 bars (one per encoding)
@@ -211,13 +211,13 @@ def main() -> int:
         "--output-encode",
         type=Path,
         default=None,
-        help="Output file path for encode chart (e.g., mt_encode.png).",
+        help="Output file path for encode chart (e.g., encode.png).",
     )
     parser.add_argument(
         "--output-decode",
         type=Path,
         default=None,
-        help="Output file path for decode chart (e.g., mt_decode.png).",
+        help="Output file path for decode chart (e.g., decode.png).",
     )
     args = parser.parse_args()
 

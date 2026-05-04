@@ -3,7 +3,7 @@
 
 Inputs:
 - Java JMH JSON from OpenAiEncodingBenchmark
-- Python CSV from benchmarks/benchmark_model_tokenizers.py
+- Python CSV from toknroll-benchmarks/benchmark_model_tokenizers.py
 """
 
 from __future__ import annotations

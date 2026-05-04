@@ -72,6 +72,6 @@ final class FixtureJsonLoader {
                 + resourceName
                 + " (also checked "
                 + checkedPaths
-                + "). Generate fixtures with: python3 benchmarks/generate_ground_truth.py";
+                + "). Generate fixtures with: python3 toknroll-benchmarks/generate_ground_truth.py";
     }
 }

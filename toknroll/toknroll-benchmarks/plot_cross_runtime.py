@@ -3,7 +3,7 @@
 
 Inputs:
 - Java JMH JSON from ModelTokenizerBenchmark
-- Python CSV from benchmarks/benchmark_model_tokenizers.py
+- Python CSV from toknroll-benchmarks/benchmark_model_tokenizers.py
 """
 
 from __future__ import annotations
@@ -448,12 +448,12 @@ def main() -> int:
     )
     parser.add_argument(
         "--output-dir",
-        default="target/benchmarks/charts",
+        default="target/toknroll-benchmarks/charts",
         help="Directory where PNG charts are written",
     )
     parser.add_argument(
         "--merged-csv",
-        default="target/benchmarks/merged-cross-runtime.csv",
+        default="target/toknroll-benchmarks/merged-cross-runtime.csv",
         help="Path to merged CSV output",
     )
     args = parser.parse_args()

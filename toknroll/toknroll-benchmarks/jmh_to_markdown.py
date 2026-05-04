@@ -2,7 +2,7 @@
 """Convert JMH JSON output from ModelTokenizerBenchmark into markdown tables.
 
 Example:
-  python benchmarks/jmh_to_markdown.py \
+  python toknroll-benchmarks/jmh_to_markdown.py \
     --input target/jmh-model-tokenizers.json \
     --output target/jmh-model-tokenizers.md
 """

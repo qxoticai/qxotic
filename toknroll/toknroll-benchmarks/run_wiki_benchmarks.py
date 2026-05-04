@@ -2,9 +2,9 @@
 """Download enwik corpora and run Wiki JMH benchmarks.
 
 Examples:
-  python benchmarks/run_wiki_benchmarks.py --download-only --datasets enwik8
-  python benchmarks/run_wiki_benchmarks.py --corpus enwik8 --parallel true --modes encode,decode
-  python benchmarks/run_wiki_benchmarks.py --corpus enwik8 --parallel false --encodings r50k_base,cl100k_base,o200k_base
+  python toknroll-benchmarks/run_wiki_benchmarks.py --download-only --datasets enwik8
+  python toknroll-benchmarks/run_wiki_benchmarks.py --corpus enwik8 --parallel true --modes encode,decode
+  python toknroll-benchmarks/run_wiki_benchmarks.py --corpus enwik8 --parallel false --encodings r50k_base,cl100k_base,o200k_base
 """
 
 from __future__ import annotations
