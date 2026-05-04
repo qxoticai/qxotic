@@ -13,9 +13,11 @@ import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.Vocabulary;
 import com.qxotic.toknroll.loaders.TiktokenLoaders;
-import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -329,14 +331,45 @@ public final class TiktokenFixtures {
     }
 
     private static Path resourcePath(String fileName) {
-        try {
-            return Path.of(
-                    TiktokenFixtures.class
-                            .getClassLoader()
-                            .getResource("tiktoken/" + fileName)
-                            .toURI());
-        } catch (URISyntaxException e) {
-            throw new IllegalStateException("Failed to resolve " + fileName, e);
+        String fixtureOverride = System.getProperty("toknroll.test.fixtureDir");
+        List<Path> candidates = new ArrayList<>();
+        if (fixtureOverride != null && !fixtureOverride.isBlank()) {
+            candidates.add(Paths.get(fixtureOverride).resolve("tiktoken").resolve(fileName));
         }
+        Path gitRoot = findGitRoot(Paths.get("").toAbsolutePath().normalize());
+        if (gitRoot != null) {
+            candidates.add(gitRoot.resolve("test-fixtures").resolve("tiktoken").resolve(fileName));
+        }
+        candidates.add(Paths.get("..", "test-fixtures", "tiktoken", fileName));
+        candidates.add(Paths.get("test-fixtures", "tiktoken", fileName));
+        candidates.add(Paths.get("src", "test", "resources", "tiktoken", fileName));
+
+        for (Path candidate : candidates) {
+            if (Files.exists(candidate)) {
+                return candidate;
+            }
+        }
+
+        var resource = TiktokenFixtures.class.getClassLoader().getResource("tiktoken/" + fileName);
+        if (resource != null) {
+            try {
+                return Path.of(resource.toURI());
+            } catch (Exception ignored) {
+                return Path.of(resource.getPath());
+            }
+        }
+
+        throw new IllegalStateException("Missing tiktoken fixture " + fileName + " (checked " + candidates + ")");
+    }
+
+    private static Path findGitRoot(Path start) {
+        Path current = start;
+        while (current != null) {
+            if (Files.exists(current.resolve(".git"))) {
+                return current;
+            }
+            current = current.getParent();
+        }
+        return null;
     }
 }
