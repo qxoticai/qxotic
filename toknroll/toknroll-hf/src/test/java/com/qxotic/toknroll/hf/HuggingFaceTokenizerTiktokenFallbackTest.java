@@ -3,9 +3,10 @@ package com.qxotic.toknroll.hf;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static com.qxotic.toknroll.testkit.TestSystemProperties.CACHE_ROOT;
 
 import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.TokenizerLoadException;
+import com.qxotic.toknroll.testkit.TestSystemProperties;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class HuggingFaceTokenizerTiktokenFallbackTest {
+    private static final String CACHE_ROOT_PROPERTY = TestSystemProperties.ARTIFACT_CACHE_ROOT;
 
     @TempDir Path tempDir;
 
@@ -121,6 +123,25 @@ class HuggingFaceTokenizerTiktokenFallbackTest {
 
     @Test
     void fromHuggingFace_cacheOnlyCanFallbackToCachedTiktokenModel() throws Exception {
+        String previous = System.getProperty(CACHE_ROOT_PROPERTY);
+        System.setProperty(CACHE_ROOT_PROPERTY, tempDir.toString());
+        try {
+            TokenizerLoadException error =
+                    assertThrows(
+                            TokenizerLoadException.class,
+                            () ->
+                                    HuggingFaceTokenizerLoader.fromHuggingFace(
+                                            "cacheonly", "demo", "main", true, false));
+            assertTrue(error.getCause() instanceof IOException);
+            assertTrue(error.getCause().getMessage().contains("useCacheOnly=true"));
+            assertTrue(error.getCause().getMessage().contains("artifact not cached"));
+        } finally {
+            restoreProperty(CACHE_ROOT_PROPERTY, previous);
+        }
+    }
+
+    @Test
+    void fromHuggingFace_cacheOnlyLoadsWhenCachedTiktokenModelExists() throws Exception {
         writeHfCacheFile(
                 "cacheonly",
                 "demo",
@@ -130,15 +151,15 @@ class HuggingFaceTokenizerTiktokenFallbackTest {
         writeHfCacheFile(
                 "cacheonly", "demo", "main", "tokenizer_config.json", "{\"pat_str\":\"[a-z]+\"}");
 
-        String previous = System.getProperty(CACHE_ROOT);
-        System.setProperty(CACHE_ROOT, tempDir.toString());
+        String previous = System.getProperty(CACHE_ROOT_PROPERTY);
+        System.setProperty(CACHE_ROOT_PROPERTY, tempDir.toString());
         try {
             Tokenizer tokenizer =
                     HuggingFaceTokenizerLoader.fromHuggingFace(
                             "cacheonly", "demo", "main", true, false);
             assertArrayEquals(new int[] {256}, tokenizer.encode("xy").toArray());
         } finally {
-            restoreProperty(CACHE_ROOT, previous);
+            restoreProperty(CACHE_ROOT_PROPERTY, previous);
         }
     }
 

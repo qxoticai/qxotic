@@ -3,7 +3,8 @@ package com.qxotic.toknroll.testkit;
 public final class TestSystemProperties {
     private TestSystemProperties() {}
 
-    public static final String CACHE_ROOT = "toknroll.test.cache.root";
+    // Keep this key in sync with runtime cache property readers in HF/GGUF modules.
+    public static final String ARTIFACT_CACHE_ROOT = "toknroll.cache.root";
     public static final String FIXTURE_DIR = "toknroll.test.fixtureDir";
     public static final String GOLDEN_DIR = "toknroll.test.goldenDir";
     public static final String CORPUS_PATH = "toknroll.test.corpus.path";

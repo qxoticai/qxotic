@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.qxotic.format.json.Json;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
+import com.qxotic.toknroll.testkit.GoldenFixturePaths;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -20,16 +21,15 @@ import org.junit.jupiter.api.Test;
 @Tag("local-external")
 class HuggingFaceLlamaNoSpecialsRegressionTest {
 
-    private static final Path CORE_GOLDEN_ENWIK8_DIR =
-            Path.of("..", "toknroll-core", "src", "test", "resources", "golden", "enwik8");
+    private static final Path GOLDEN_ENWIK8_DIR = GoldenFixturePaths.resolveGoldenEnwik8Dir();
 
     @Test
     @SuppressWarnings("unchecked")
     void llamaParityAgainstEnwik8FixtureFirstChunk() throws IOException {
         Path chunksPath =
-                CORE_GOLDEN_ENWIK8_DIR.resolve("chunks.json").toAbsolutePath().normalize();
+                GOLDEN_ENWIK8_DIR.resolve("chunks.json").toAbsolutePath().normalize();
         Path groundTruthPath =
-                CORE_GOLDEN_ENWIK8_DIR
+                GOLDEN_ENWIK8_DIR
                         .resolve("hf_unsloth_llama3_2_ground_truth.json")
                         .toAbsolutePath()
                         .normalize();

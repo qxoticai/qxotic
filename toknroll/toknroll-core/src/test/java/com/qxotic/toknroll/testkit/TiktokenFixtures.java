@@ -331,12 +331,12 @@ public final class TiktokenFixtures {
     }
 
     private static Path resourcePath(String fileName) {
-        String fixtureOverride = System.getProperty("toknroll.test.fixtureDir");
+        String fixtureOverride = System.getProperty(TestSystemProperties.FIXTURE_DIR);
         List<Path> candidates = new ArrayList<>();
         if (fixtureOverride != null && !fixtureOverride.isBlank()) {
             candidates.add(Paths.get(fixtureOverride).resolve("tiktoken").resolve(fileName));
         }
-        Path gitRoot = findGitRoot(Paths.get("").toAbsolutePath().normalize());
+        Path gitRoot = GitRepoPaths.findGitRoot();
         if (gitRoot != null) {
             candidates.add(gitRoot.resolve("test-fixtures").resolve("tiktoken").resolve(fileName));
         }
@@ -362,14 +362,4 @@ public final class TiktokenFixtures {
         throw new IllegalStateException("Missing tiktoken fixture " + fileName + " (checked " + candidates + ")");
     }
 
-    private static Path findGitRoot(Path start) {
-        Path current = start;
-        while (current != null) {
-            if (Files.exists(current.resolve(".git"))) {
-                return current;
-            }
-            current = current.getParent();
-        }
-        return null;
-    }
 }

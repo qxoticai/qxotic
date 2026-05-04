@@ -52,7 +52,7 @@ final class FixtureJsonLoader {
         }
 
         List<Path> candidates = new ArrayList<>();
-        Path gitRoot = findGitRoot(Paths.get("").toAbsolutePath().normalize());
+        Path gitRoot = GitRepoPaths.findGitRoot();
         if (gitRoot != null) {
             candidates.add(gitRoot.resolve("test-fixtures").resolve(resourceName));
         }
@@ -66,18 +66,6 @@ final class FixtureJsonLoader {
                 Paths.get("toknroll-core", "src", "test", "resources").resolve(resourceName));
         return candidates;
     }
-
-    private static Path findGitRoot(Path start) {
-        Path current = start;
-        while (current != null) {
-            if (Files.exists(current.resolve(".git"))) {
-                return current;
-            }
-            current = current.getParent();
-        }
-        return null;
-    }
-
     private static String missingFixtureMessage(String resourceName, List<Path> checkedPaths) {
         return "Missing fixture "
                 + resourceName
