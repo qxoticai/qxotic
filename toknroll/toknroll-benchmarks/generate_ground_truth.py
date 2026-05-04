@@ -754,7 +754,7 @@ def generate_model_family_ground_truth():
     result = {
         "_meta": {
             "generated_at": datetime.now(timezone.utc).isoformat(),
-            "generator": "benchmarks/generate_ground_truth.py",
+            "generator": "toknroll-benchmarks/generate_ground_truth.py",
             "libraries": {
                 "tiktoken": package_version("tiktoken"),
                 "transformers": package_version("transformers"),

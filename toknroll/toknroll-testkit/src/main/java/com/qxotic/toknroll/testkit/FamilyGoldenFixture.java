@@ -10,7 +10,7 @@ import java.util.Map;
  * Typed reader for {@code ground_truth_model_families.json}.
  *
  * <p>If the fixture is not available on the test classpath, regenerate it with {@code python
- * benchmarks/generate_ground_truth.py}.
+ * toknroll-benchmarks/generate_ground_truth.py}.
  */
 public final class FamilyGoldenFixture {
 

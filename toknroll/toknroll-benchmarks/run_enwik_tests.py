@@ -2,9 +2,9 @@
 """Download cached enwik corpora and run tests against them.
 
 Examples:
-  python benchmarks/run_enwik_tests.py
-  python benchmarks/run_enwik_tests.py --datasets enwik8,enwik9 --test Enwik8CorpusCorrectnessTest
-  python benchmarks/run_enwik_tests.py --runner mvn --test Enwik8CorpusCorrectnessTest#familyEncodeParity
+  python toknroll-benchmarks/run_enwik_tests.py
+  python toknroll-benchmarks/run_enwik_tests.py --datasets enwik8,enwik9 --test Enwik8CorpusCorrectnessTest
+  python toknroll-benchmarks/run_enwik_tests.py --runner mvn --test Enwik8CorpusCorrectnessTest#familyEncodeParity
 """
 
 from __future__ import annotations

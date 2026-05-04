@@ -12,9 +12,9 @@ Reported throughput metrics include:
 - MB/s and MiB/s
 
 Examples:
-  python benchmarks/benchmark_model_tokenizers.py
-  python benchmarks/benchmark_model_tokenizers.py --duration 2.0 --warmup 0.5 --size 16k
-  python benchmarks/benchmark_model_tokenizers.py --models gpt2,qwen35 --implementations hf-tokenizers,mistral-common
+  python toknroll-benchmarks/benchmark_model_tokenizers.py
+  python toknroll-benchmarks/benchmark_model_tokenizers.py --duration 2.0 --warmup 0.5 --size 16k
+  python toknroll-benchmarks/benchmark_model_tokenizers.py --models gpt2,qwen35 --implementations hf-tokenizers,mistral-common
 """
 
 from __future__ import annotations
