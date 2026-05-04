@@ -126,7 +126,7 @@ final class GGUFMetadataCache {
             try {
                 body = fetchRange(url, range, bearerToken, source);
             } catch (IOException e) {
-                if (isHttpNotFound(e)) {
+                if (isHttp404(e)) {
                     throw e;
                 }
                 lastFailure = e;
@@ -189,9 +189,6 @@ final class GGUFMetadataCache {
         }
 
         int status = response.statusCode();
-        if (status == 404) {
-            throw new IOException("[" + source + "] Failed to download " + url + " (HTTP 404)");
-        }
         if ((status < 200 || status >= 300) && status != 206) {
             throw new IOException(
                     "[" + source + "] Failed to download " + url + " (HTTP " + status + ")");
@@ -216,8 +213,8 @@ final class GGUFMetadataCache {
         return client;
     }
 
-    private static boolean isHttpNotFound(IOException e) {
-        return e.getMessage() != null && e.getMessage().contains("HTTP 404");
+    private static boolean isHttp404(IOException e) {
+        return e.getMessage() != null && e.getMessage().endsWith("(HTTP 404)");
     }
 
     private static String resolveToken(String propertyKey, String envKey) {
