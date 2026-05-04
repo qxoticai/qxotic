@@ -29,7 +29,10 @@ public final class GoldenFixturePaths {
             }
 
             Path nestedRepoCandidate =
-                    gitRoot.resolve("toknroll").resolve("test-fixtures").resolve("golden").resolve("enwik8");
+                    gitRoot.resolve("toknroll")
+                            .resolve("test-fixtures")
+                            .resolve("golden")
+                            .resolve("enwik8");
             if (Files.isDirectory(nestedRepoCandidate)) {
                 return nestedRepoCandidate.toAbsolutePath().normalize();
             }

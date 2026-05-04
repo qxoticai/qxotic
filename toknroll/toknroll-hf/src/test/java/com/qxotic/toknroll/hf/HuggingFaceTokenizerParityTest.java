@@ -66,8 +66,7 @@ class HuggingFaceTokenizerParityTest {
     @Test
     void parityOnModels() throws Exception {
         assertTrue(
-                Files.isDirectory(GOLDEN_ENWIK8_DIR),
-                "Missing golden dir: " + GOLDEN_ENWIK8_DIR);
+                Files.isDirectory(GOLDEN_ENWIK8_DIR), "Missing golden dir: " + GOLDEN_ENWIK8_DIR);
         byte[] corpusBytes = loadCorpusBytes();
 
         for (ModelSpec modelSpec : MODELS) {

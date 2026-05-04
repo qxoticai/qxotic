@@ -359,7 +359,7 @@ public final class TiktokenFixtures {
             }
         }
 
-        throw new IllegalStateException("Missing tiktoken fixture " + fileName + " (checked " + candidates + ")");
+        throw new IllegalStateException(
+                "Missing tiktoken fixture " + fileName + " (checked " + candidates + ")");
     }
-
 }

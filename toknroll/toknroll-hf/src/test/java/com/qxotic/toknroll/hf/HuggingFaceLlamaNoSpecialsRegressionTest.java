@@ -26,8 +26,7 @@ class HuggingFaceLlamaNoSpecialsRegressionTest {
     @Test
     @SuppressWarnings("unchecked")
     void llamaParityAgainstEnwik8FixtureFirstChunk() throws IOException {
-        Path chunksPath =
-                GOLDEN_ENWIK8_DIR.resolve("chunks.json").toAbsolutePath().normalize();
+        Path chunksPath = GOLDEN_ENWIK8_DIR.resolve("chunks.json").toAbsolutePath().normalize();
         Path groundTruthPath =
                 GOLDEN_ENWIK8_DIR
                         .resolve("hf_unsloth_llama3_2_ground_truth.json")

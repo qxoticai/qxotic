@@ -73,7 +73,11 @@ public final class OllamaTokenizerLoader {
         Path manifestsRoot = modelsRoot.resolve("manifests");
         Path[] candidates =
                 new Path[] {
-                    manifestsRoot.resolve("registry.ollama.ai").resolve("library").resolve(model).resolve(tag),
+                    manifestsRoot
+                            .resolve("registry.ollama.ai")
+                            .resolve("library")
+                            .resolve(model)
+                            .resolve(tag),
                     manifestsRoot.resolve("registry.ollama.ai").resolve(model).resolve(tag),
                     manifestsRoot.resolve(model).resolve(tag)
                 };
@@ -118,7 +122,11 @@ public final class OllamaTokenizerLoader {
         try (InputStream in = Files.newInputStream(blobPath)) {
             byte[] magic = new byte[4];
             int read = in.read(magic);
-            return read == 4 && magic[0] == 'G' && magic[1] == 'G' && magic[2] == 'U' && magic[3] == 'F';
+            return read == 4
+                    && magic[0] == 'G'
+                    && magic[1] == 'G'
+                    && magic[2] == 'U'
+                    && magic[3] == 'F';
         } catch (IOException e) {
             return false;
         }

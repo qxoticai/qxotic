@@ -36,7 +36,7 @@ final class ReaderImpl {
         // gguf_tensor_info_t tensor_infos[header.tensor_count];
         Map<String, TensorEntry> tensorInfos = new LinkedHashMap<>(tensorCount);
         for (int i = 0; i < tensorCount; ++i) {
-            TensorEntry ti = readTensorInfo(byteChannel);
+            TensorEntry ti = readTensorEntry(byteChannel);
             if (tensorInfos.containsKey(ti.name())) {
                 throw new GGUFFormatException("Duplicate tensor name: " + ti.name());
             }
@@ -69,7 +69,7 @@ final class ReaderImpl {
         return GGMLType.fromId(ggmlTypeId);
     }
 
-    private TensorEntry readTensorInfo(ReadableByteChannel byteChannel) throws IOException {
+    private TensorEntry readTensorEntry(ReadableByteChannel byteChannel) throws IOException {
         // The name of the tensor. It is a standard GGUF string, with the caveat that
         // it must be at most 64 bytes long.
         String name = readString(byteChannel); // gguf_string_t name;

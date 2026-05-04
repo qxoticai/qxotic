@@ -66,6 +66,7 @@ final class FixtureJsonLoader {
                 Paths.get("toknroll-core", "src", "test", "resources").resolve(resourceName));
         return candidates;
     }
+
     private static String missingFixtureMessage(String resourceName, List<Path> checkedPaths) {
         return "Missing fixture "
                 + resourceName
