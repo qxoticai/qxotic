@@ -6,7 +6,6 @@ import com.qxotic.span.FloatMatrixView;
 import com.qxotic.span.FloatSpan;
 import com.qxotic.span.FloatUnaryOperator;
 import com.qxotic.span.KernelOps;
-
 import java.util.function.Function;
 
 public class BaseKernelOps implements KernelOps<FloatSpan, FloatMatrixView> {

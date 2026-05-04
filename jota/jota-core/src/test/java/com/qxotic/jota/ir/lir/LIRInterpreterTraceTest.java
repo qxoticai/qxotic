@@ -1,5 +1,7 @@
 package com.qxotic.jota.ir.lir;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import com.qxotic.jota.DataType;
 import com.qxotic.jota.Environment;
 import com.qxotic.jota.Indexing;
@@ -15,13 +17,10 @@ import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.jota.tensor.TensorTracing;
 import com.qxotic.jota.tensor.Tracer;
 import com.qxotic.jota.testutil.TestKernels;
-import org.junit.jupiter.api.Test;
-
 import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
 import java.util.List;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.junit.jupiter.api.Test;
 
 class LIRInterpreterTraceTest {
 

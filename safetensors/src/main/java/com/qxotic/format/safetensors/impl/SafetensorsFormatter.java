@@ -3,7 +3,6 @@ package com.qxotic.format.safetensors.impl;
 import com.qxotic.format.json.Json;
 import com.qxotic.format.safetensors.Safetensors;
 import com.qxotic.format.safetensors.TensorEntry;
-
 import java.util.Arrays;
 import java.util.Map;
 import java.util.stream.Collectors;

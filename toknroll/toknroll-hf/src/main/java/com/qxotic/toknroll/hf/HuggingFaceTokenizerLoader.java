@@ -765,7 +765,7 @@ public final class HuggingFaceTokenizerLoader {
     }
 
     private static boolean isHttp404(IOException e) {
-        return e.getMessage() != null && e.getMessage().endsWith("(HTTP 404)");
+        return e.getMessage() != null && e.getMessage().contains("HTTP 404");
     }
 
     private static boolean shouldFallbackToTiktokenModel(IOException e, boolean useCacheOnly) {

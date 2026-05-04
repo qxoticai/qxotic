@@ -72,8 +72,9 @@ public class RunInteractive {
                             state,
                             batchSize,
                             startPosition,
-                            conversationTokens.asSequenceView().subSequence(
-                                    startPosition, conversationTokens.size()),
+                            conversationTokens
+                                    .asSequenceView()
+                                    .subSequence(startPosition, conversationTokens.size()),
                             options.maxTokens(),
                             sampler,
                             onPromptToken,

@@ -55,7 +55,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.BiConsumer;
 import java.util.function.IntConsumer;
-
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
@@ -188,9 +187,7 @@ public final class SimpleLlama {
                                         .append(" (count=")
                                         .append(count)
                                         .append(", avg=")
-                                        .append(
-                                                String.format(
-                                                        Locale.ROOT, "%.3f us", avgUs))
+                                        .append(String.format(Locale.ROOT, "%.3f us", avgUs))
                                         .append(")\n");
                             });
 
@@ -203,14 +200,10 @@ public final class SimpleLlama {
             }
             long restNanos = Math.max(0L, totalNanos - gemmNanos);
             details.append("  gemm.total: ")
-                    .append(
-                            String.format(
-                                    Locale.ROOT, "%.3f ms", gemmNanos / 1_000_000.0))
+                    .append(String.format(Locale.ROOT, "%.3f ms", gemmNanos / 1_000_000.0))
                     .append("\n")
                     .append("  rest.total: ")
-                    .append(
-                            String.format(
-                                    Locale.ROOT, "%.3f ms", restNanos / 1_000_000.0))
+                    .append(String.format(Locale.ROOT, "%.3f ms", restNanos / 1_000_000.0))
                     .append("\n");
 
             return details.toString();
@@ -1228,8 +1221,7 @@ public final class SimpleLlama {
             private final int workerCount;
             private final Thread[] workers;
             private final Phaser phaser;
-            private final AtomicReference<Throwable> error =
-                    new AtomicReference<>();
+            private final AtomicReference<Throwable> error = new AtomicReference<>();
             private volatile IntConsumer task;
             private volatile int count;
             private volatile int chunk;
@@ -2799,8 +2791,7 @@ public final class SimpleLlama {
             }
             int workers = Math.min(THREADS, total);
             int chunk = (total + workers - 1) / workers;
-            List<Future<?>> futures =
-                    new ArrayList<>(workers);
+            List<Future<?>> futures = new ArrayList<>(workers);
             for (int w = 0; w < workers; w++) {
                 int start = w * chunk;
                 int end = Math.min(total, start + chunk);
@@ -2848,8 +2839,7 @@ public final class SimpleLlama {
                 return;
             }
             int chunk = (batchSize + workers - 1) / workers;
-            List<Future<?>> futures =
-                    new ArrayList<>(workers);
+            List<Future<?>> futures = new ArrayList<>(workers);
             for (int w = 0; w < workers; w++) {
                 int start = w * chunk;
                 int end = Math.min(batchSize, start + chunk);
@@ -3572,8 +3562,7 @@ public final class SimpleLlama {
             parallelForRows(rows, THREADS, body);
         }
 
-        private static void parallelForRows(
-                int rows, int maxWorkers, IntConsumer body) {
+        private static void parallelForRows(int rows, int maxWorkers, IntConsumer body) {
             if (rows <= 1) {
                 for (int row = 0; row < rows; row++) {
                     body.accept(row);
@@ -3586,8 +3575,7 @@ public final class SimpleLlama {
             }
             int workers = Math.min(Math.max(1, maxWorkers), rows);
             int chunk = (rows + workers - 1) / workers;
-            List<Future<?>> futures =
-                    new ArrayList<>(workers);
+            List<Future<?>> futures = new ArrayList<>(workers);
             for (int w = 0; w < workers; w++) {
                 int start = w * chunk;
                 int end = Math.min(rows, start + chunk);

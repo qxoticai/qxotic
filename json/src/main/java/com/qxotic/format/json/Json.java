@@ -1041,7 +1041,8 @@ public final class Json {
         private final int maxDepth;
         private final boolean failOnDuplicateKeys;
 
-        private ParseOptions(boolean decimalsAsBigDecimal, int maxDepth, boolean failOnDuplicateKeys) {
+        private ParseOptions(
+                boolean decimalsAsBigDecimal, int maxDepth, boolean failOnDuplicateKeys) {
             this.decimalsAsBigDecimal = decimalsAsBigDecimal;
             this.maxDepth = maxDepth;
             this.failOnDuplicateKeys = failOnDuplicateKeys;
@@ -1053,8 +1054,8 @@ public final class Json {
         }
 
         /**
-         * Return new options with {@code decimalsAsBigDecimal} set.
-         * When true, decimals parse as {@code BigDecimal}; when false, as {@code Double}.
+         * Return new options with {@code decimalsAsBigDecimal} set. When true, decimals parse as
+         * {@code BigDecimal}; when false, as {@code Double}.
          */
         public ParseOptions decimalsAsBigDecimal(boolean enabled) {
             return new ParseOptions(enabled, this.maxDepth, this.failOnDuplicateKeys);

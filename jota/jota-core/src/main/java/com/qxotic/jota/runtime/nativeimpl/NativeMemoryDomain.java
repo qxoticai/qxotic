@@ -7,7 +7,6 @@ import com.qxotic.jota.memory.MemoryAllocator;
 import com.qxotic.jota.memory.MemoryArena;
 import com.qxotic.jota.memory.MemoryDomain;
 import com.qxotic.jota.memory.MemoryOperations;
-
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
 

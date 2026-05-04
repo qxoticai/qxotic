@@ -45,8 +45,7 @@ public class SafetensorsReadWriteTest extends SafetensorsTest {
 
         assertThrows(NullPointerException.class, () -> Safetensors.read((Path) null));
         assertThrows(
-                NullPointerException.class,
-                () -> Safetensors.read((ReadableByteChannel) null));
+                NullPointerException.class, () -> Safetensors.read((ReadableByteChannel) null));
         assertThrows(NullPointerException.class, () -> Safetensors.write(null, out));
         assertThrows(NullPointerException.class, () -> Safetensors.write(st, (Path) null));
         assertThrows(
