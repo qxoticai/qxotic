@@ -4,10 +4,17 @@ import java.text.Normalizer.Form;
 import java.util.Locale;
 import java.util.Objects;
 
+/**
+ * Preprocessing transformation applied to input text before tokenization.
+ *
+ * <p>Implementations must be stateless and thread-safe. The default normalizer ({@link
+ * #identity()}) performs no transformation, which preserves round-trip fidelity. Lossy normalizers
+ * such as {@link #lowercase()} must be explicitly opted into.
+ */
 @FunctionalInterface
 public interface Normalizer {
 
-    /** Backward-compatible identity constant. */
+    /** Identity normalizer; returns text unchanged. Equivalent to {@link #identity()}. */
     Normalizer IDENTITY = text -> text;
 
     /** Applies this normalizer to the given text. */

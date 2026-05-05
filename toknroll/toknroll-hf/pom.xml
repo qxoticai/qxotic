@@ -11,20 +11,16 @@
 
   <artifactId>toknroll-hf</artifactId>
   <name>Tok'n'Roll HuggingFace Utilities</name>
-  <description>HuggingFace tokenizer support Tok'n'Roll</description>
+  <description>HuggingFace tokenizer support for Tok'n'Roll</description>
 
   <dependencies>
     <dependency>
       <groupId>com.qxotic</groupId>
-      <artifactId>toknroll</artifactId>
+      <artifactId>toknroll-core</artifactId>
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>json</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.qxotic</groupId>
-      <artifactId>safetensors</artifactId>
     </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>

@@ -196,7 +196,7 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
-        <artifactId>toknroll</artifactId>
+        <artifactId>toknroll-core</artifactId>
         <version>${qxotic.version}</version>
       </dependency>
       <dependency>
