@@ -162,7 +162,7 @@ public final class GGUFTokenizerLoader {
 
         try {
             GGUF gguf = GGUF.read(file);
-            return fromParsedGguf(gguf);
+            return fromGGUF(gguf);
         } catch (IOException e) {
             throw new TokenizerLoadException(
                     "[local] Failed to load GGUF tokenizer from " + file, e);
@@ -254,7 +254,7 @@ public final class GGUFTokenizerLoader {
                 throw new IllegalArgumentException("Unsupported source: " + source);
             }
             GGUF gguf = GGUF.read(metadataPath);
-            return fromParsedGguf(gguf);
+            return fromGGUF(gguf);
         } catch (IOException e) {
             throw new TokenizerLoadException(
                     "["
@@ -271,7 +271,7 @@ public final class GGUFTokenizerLoader {
         }
     }
 
-    private Tokenizer fromParsedGguf(GGUF gguf) {
+    public Tokenizer fromGGUF(GGUF gguf) {
         String modelKey = GGUFMetadataKeys.requireKey(gguf, GGUFMetadataKeys.MODEL);
         String preKey = resolvePreTokenizerKey(gguf, modelKey);
         String normalizerKey = resolveNormalizerKey(gguf, modelKey);
