@@ -72,7 +72,7 @@ jobs:
           cache: maven
 
       - name: Install local Tok'n'Roll dependencies
-        run: mvn -B -ntp -f pom.xml -pl toknroll/toknroll-testkit,toknroll/toknroll-core,toknroll/toknroll-hf -am -DskipTests install
+        run: mvn -B -ntp -f pom.xml -pl toknroll/toknroll-testkit,toknroll/toknroll-core,toknroll/toknroll-hf -am -Dmaven.test.skip=true install
 
       - name: Verify formatting and tests
         run: mvn -B -ntp -f toknroll/toknroll-hf/pom.xml -Dtoknroll.skipDependentTests=true -Dsurefire.excludedGroups=local-external,network,slow spotless:check test
