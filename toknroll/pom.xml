@@ -33,6 +33,7 @@
     <toknroll.skipDependentTests>false</toknroll.skipDependentTests>
     <surefire.baseExcludedGroups>local-external,network</surefire.baseExcludedGroups>
     <surefire.excludedGroups>${surefire.baseExcludedGroups}</surefire.excludedGroups>
+    <maven.deploy.skip>true</maven.deploy.skip>
   </properties>
 
   <dependencyManagement>

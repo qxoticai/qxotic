@@ -84,4 +84,6 @@ jobs:
 
       - name: Deploy toknroll-hf release
         if: startsWith(github.ref, 'refs/tags/toknroll-hf-v')
-        run: mvn -B -ntp -f toknroll/pom.xml -pl toknroll-hf -am -Prelease -DskipTests deploy
+        run: |
+          mvn -B -ntp -f toknroll/pom.xml -pl toknroll-testkit,toknroll-core,toknroll-hf -am -DskipTests install
+          mvn -B -ntp -f toknroll/toknroll-hf/pom.xml -Prelease -DskipTests deploy
