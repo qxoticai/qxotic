@@ -15,12 +15,7 @@ import com.qxotic.jota.memory.impl.MemoryFactory;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.advanced.Normalizer;
-import com.qxotic.toknroll.advanced.Splitter;
-import com.qxotic.toknroll.impl.GPT2Tokenizer;
-import com.qxotic.toknroll.impl.IntPair;
-import com.qxotic.toknroll.impl.RegexSplitter;
-import com.qxotic.toknroll.impl.VocabularyImpl;
+import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -1325,7 +1320,7 @@ public final class VanillaLlama {
                 throw new IllegalArgumentException("Expected llama architecture, got: " + arch);
             }
 
-            Tokenizer tokenizer = loadTokenizer(gguf);
+            Tokenizer tokenizer = loadTokenizer(modelPath);
             Configuration config = loadConfiguration(gguf, tokenizer.vocabulary().size());
             Llama3ChatFormat format = new Llama3ChatFormat(tokenizer);
 
@@ -1347,17 +1342,8 @@ public final class VanillaLlama {
 
     // ---- GGUF loading -------------------------------------------------------------------------
 
-    private static Tokenizer loadTokenizer(GGUF gguf) {
-        String[] tokens = gguf.getValue(String[].class, TOKENIZER_TOKENS);
-        int[] tokenTypes =
-                gguf.containsKey(TOKENIZER_TOKEN_TYPE)
-                        ? gguf.getValue(int[].class, TOKENIZER_TOKEN_TYPE)
-                        : null;
-        String[] merges = gguf.getValue(String[].class, TOKENIZER_MERGES);
-        VocabularyImpl vocabulary = new VocabularyImpl(tokens, null, tokenTypes);
-        List<IntPair> pairs = parseMergePairs(merges, vocabulary);
-        Splitter splitter = RegexSplitter.create(LLAMA3_PATTERN);
-        return new GPT2Tokenizer(vocabulary, Normalizer.IDENTITY, splitter, pairs);
+    private static Tokenizer loadTokenizer(Path modelPath) {
+        return GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromLocal(modelPath);
     }
 
     private static Configuration loadConfiguration(GGUF gguf, int vocab) {
@@ -1415,7 +1401,7 @@ public final class VanillaLlama {
                     "Only F32 is supported in VanillaLlama; " + name + " is " + entry.ggmlType());
         }
 
-        long bytes = entry.ggmlType().byteSizeForShape(entry.shape());
+        long bytes = entry.ggmlType().byteSizeFor(entry.totalNumberOfElements());
         try {
             MemorySegment seg =
                     channel.map(
@@ -1477,13 +1463,6 @@ public final class VanillaLlama {
                         arena),
                 loadTensor(
                         gguf, blockTensorName(layer, "ffn_up.weight"), tensorBase, channel, arena));
-    }
-
-    private static List<IntPair> parseMergePairs(String[] merges, VocabularyImpl vocabulary) {
-        return Arrays.stream(merges)
-                .map(s -> s.split(" "))
-                .map(p -> new IntPair(vocabulary.id(p[0]), vocabulary.id(p[1])))
-                .toList();
     }
 
     private static float[] toFloatArray(Tensor tensor) {

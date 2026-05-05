@@ -94,7 +94,7 @@ public final class MnistWeightsGgufConverter {
         if (entry.ggmlType() != GGMLType.F32) {
             throw new IllegalStateException("Expected F32 tensor for " + name);
         }
-        long expectedBytes = entry.ggmlType().byteSizeForShape(entry.shape());
+        long expectedBytes = entry.ggmlType().byteSizeFor(entry.totalNumberOfElements());
         long bytes = (long) values.length * Float.BYTES;
         if (expectedBytes != bytes) {
             throw new IllegalStateException(
