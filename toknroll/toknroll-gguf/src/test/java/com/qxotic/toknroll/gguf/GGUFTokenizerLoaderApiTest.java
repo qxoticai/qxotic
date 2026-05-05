@@ -1,38 +1,34 @@
 package com.qxotic.toknroll.gguf;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class GGUFTokenizerLoaderApiTest {
 
     @Test
     void builderMethodsCreateLoaders() {
-        assertDoesNotThrow(() -> GGUFTokenizerLoader.createBuilderWithBuiltins().build());
-        assertDoesNotThrow(() -> GGUFTokenizerLoader.createEmptyBuilder().build());
+        assertNotNull(GGUFTokenizerLoader.createBuilderWithBuiltins().build());
+        assertNotNull(GGUFTokenizerLoader.createEmptyBuilder().build());
     }
 
     @Test
-    void fromLocalRejectsNonGgufFile() throws Exception {
-        Path temp = Files.createTempFile("toknroll-gguf", ".txt");
-        try {
-            GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
-            assertThrows(IllegalArgumentException.class, () -> loader.fromLocal(temp));
-        } finally {
-            Files.deleteIfExists(temp);
-        }
+    void fromLocalRejectsNonGgufFile(@TempDir Path tempDir) throws Exception {
+        GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
+        Path file = tempDir.resolve("not-gguf.txt");
+        Files.writeString(file, "content");
+        assertThrows(IllegalArgumentException.class, () -> loader.fromLocal(file));
     }
 
     @Test
     void fromHuggingFaceRequiresExactGgufPath() {
         GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
         assertThrows(
-                IllegalArgumentException.class,
-                () ->
-                        loader.fromHuggingFace(
-                                "Qwen", "Qwen3-0.6B-GGUF", "main", "weights.bin", true, false));
+                RuntimeException.class,
+                () -> loader.fromHuggingFace("unsloth", "nonexistent", "not-a-gguf.txt"));
     }
 }

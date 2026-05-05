@@ -58,7 +58,8 @@ final class WikiCorpusPaths {
                         + property
                         + "=/path/to/"
                         + name
-                        + " or run toknroll-benchmarks/run_enwik_tests.py to download cache. Checked: "
+                        + " or run toknroll-benchmarks/run_enwik_tests.py to download cache."
+                        + " Checked: "
                         + checked);
     }
 }
