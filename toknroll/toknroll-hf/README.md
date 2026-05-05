@@ -57,7 +57,7 @@ Artifacts are cached on disk and reused across runs.
 
 ## Tested Models
 
-Token-perfect tested against 14 model families:
+Token-perfect tested against 10 model families:
 
 - **OpenAI** - tiktoken (GPT-2, GPT-3.5, GPT-4, GPT-4o)
 - **Google** - Gemma 3, Gemma 4

@@ -43,6 +43,9 @@ public interface Specials {
      *   <li>No special may be a prefix of another special.
      * </ul>
      *
+     * @param vocabulary vocabulary to resolve special tokens against
+     * @param specials set of special token strings
+     * @return compiled specials instance
      * @throws NullPointerException if {@code vocabulary} or {@code specials} is null
      * @throws IllegalArgumentException if validation fails
      */
@@ -52,10 +55,18 @@ public interface Specials {
                 Objects.requireNonNull(specials, "specials"));
     }
 
-    /** Returns an immutable view of configured special token strings. */
+    /**
+     * Returns an immutable view of configured special token strings.
+     *
+     * @return immutable set of special token strings
+     */
     Set<String> tokens();
 
-    /** Returns {@code true} if no special tokens are configured. */
+    /**
+     * Returns {@code true} if no special tokens are configured.
+     *
+     * @return {@code true} if the specials set is empty
+     */
     default boolean isEmpty() {
         return tokens().isEmpty();
     }
@@ -66,6 +77,9 @@ public interface Specials {
      * <p>Matching happens on raw input text before tokenizer preprocessing (including normalizer
      * and splitter). Non-special spans are encoded through {@code tokenizer.encodeInto(...)}.
      *
+     * @param tokenizer tokenizer for non-special spans
+     * @param text input text
+     * @param out builder to append token IDs to
      * @throws NullPointerException if {@code tokenizer}, {@code text}, or {@code out} is null
      */
     void encodeInto(Tokenizer tokenizer, CharSequence text, IntSequence.Builder out);
@@ -76,6 +90,9 @@ public interface Specials {
      * <p>This method is implemented in terms of {@link #encodeInto(Tokenizer, CharSequence,
      * IntSequence.Builder)}.
      *
+     * @param tokenizer tokenizer for non-special spans
+     * @param text input text
+     * @return immutable token sequence
      * @throws NullPointerException if {@code tokenizer} or {@code text} is null
      */
     default IntSequence encode(Tokenizer tokenizer, CharSequence text) {

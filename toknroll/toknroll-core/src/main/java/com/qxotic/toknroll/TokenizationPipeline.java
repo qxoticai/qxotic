@@ -30,14 +30,29 @@ public final class TokenizationPipeline implements Tokenizer {
 
     // ---- introspection ----
 
+    /**
+     * Returns the underlying {@link TokenizationModel}.
+     *
+     * @return the tokenization model
+     */
     public TokenizationModel model() {
         return model;
     }
 
+    /**
+     * Returns the normalizer, if one is configured.
+     *
+     * @return configured normalizer, or empty if none
+     */
     public Optional<Normalizer> normalizer() {
         return Optional.ofNullable(normalizer);
     }
 
+    /**
+     * Returns the splitter, if one is configured.
+     *
+     * @return configured splitter, or empty if none
+     */
     public Optional<Splitter> splitter() {
         return Optional.ofNullable(splitter);
     }

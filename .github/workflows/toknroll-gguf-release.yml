@@ -1,0 +1,87 @@
+name: Tok'n'Roll GGUF Release
+
+on:
+  push:
+    tags:
+      - 'toknroll-gguf-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: toknroll-gguf-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Verify and release toknroll-gguf
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+      CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify required release secrets
+        if: startsWith(github.ref, 'refs/tags/toknroll-gguf-v')
+        run: |
+          test -n "$CENTRAL_TOKEN_USERNAME" || { echo "CENTRAL_TOKEN_USERNAME is required"; exit 1; }
+          test -n "$CENTRAL_TOKEN_PASSWORD" || { echo "CENTRAL_TOKEN_PASSWORD is required"; exit 1; }
+          test -n "$GPG_PASSPHRASE" || { echo "GPG_PASSPHRASE is required"; exit 1; }
+          test -n "${{ secrets.GPG_PRIVATE_KEY }}" || { echo "GPG_PRIVATE_KEY is required"; exit 1; }
+
+      - name: Verify tag matches toknroll-gguf version
+        if: startsWith(github.ref, 'refs/tags/toknroll-gguf-v')
+        run: |
+          python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+
+          pom = ET.parse('toknroll/toknroll-gguf/pom.xml').getroot()
+          ns = {'m': 'http://maven.apache.org/POM/4.0.0'}
+          parent = pom.find('m:parent', ns)
+          version = pom.find('m:version', ns)
+          if version is None:
+              version = parent.find('m:version', ns)
+          if version is None or not version.text:
+              raise SystemExit('Could not determine toknroll-gguf project version from pom.xml')
+
+          expected_tag = f"toknroll-gguf-v{version.text.strip()}"
+          actual_tag = os.environ['GITHUB_REF_NAME']
+          if actual_tag != expected_tag:
+              raise SystemExit(
+                  f"Tag mismatch: got {actual_tag}, expected {expected_tag} from toknroll/toknroll-gguf/pom.xml"
+              )
+          print(f"Tag/version check passed: {actual_tag}")
+          PY
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Verify formatting and tests
+        run: mvn -B -ntp -f toknroll/pom.xml -pl toknroll-gguf -am spotless:check test
+
+      - name: Set up Maven Central credentials
+        if: startsWith(github.ref, 'refs/tags/toknroll-gguf-v')
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          server-id: central
+          server-username: CENTRAL_TOKEN_USERNAME
+          server-password: CENTRAL_TOKEN_PASSWORD
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: GPG_PASSPHRASE
+
+      - name: Deploy toknroll-gguf release
+        if: startsWith(github.ref, 'refs/tags/toknroll-gguf-v')
+        run: mvn -B -ntp -f toknroll/toknroll-gguf/pom.xml -Prelease -DskipTests deploy

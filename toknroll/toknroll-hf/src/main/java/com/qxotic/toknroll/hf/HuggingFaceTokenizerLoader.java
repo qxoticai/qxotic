@@ -80,10 +80,14 @@ public final class HuggingFaceTokenizerLoader {
 
     /**
      * Loads a tokenizer from a remote HuggingFace repository at the default revision ({@code
-     * main).
+     * main}).
      *
      * <p>Equivalent to calling {@link #fromHuggingFace(String, String, String, boolean, boolean)}
      * with {@code revision="main"}, {@code useCacheOnly=false}, and {@code forceRefresh=false}.
+     *
+     * @param user repository owner/namespace on HuggingFace
+     * @param repository repository name on HuggingFace
+     * @return loaded tokenizer
      */
     public static Tokenizer fromHuggingFace(String user, String repository) {
         return fromHuggingFace(user, repository, DEFAULT_HUGGING_FACE_REVISION, false, false);
@@ -91,11 +95,15 @@ public final class HuggingFaceTokenizerLoader {
 
     /**
      * Loads a tokenizer from a remote ModelScope repository at the default revision ({@code
-     * master).
+     * master}).
      *
      * <p>Equivalent to calling {@link #fromModelScope(String, String, String, boolean, boolean)}
      * with {@code revision=null} (resolved to {@code master}), {@code useCacheOnly=false}, and
      * {@code forceRefresh=false}.
+     *
+     * @param user repository owner/namespace on ModelScope
+     * @param repository repository name on ModelScope
+     * @return loaded tokenizer
      */
     public static Tokenizer fromModelScope(String user, String repository) {
         return fromModelScope(user, repository, null, false, false);
@@ -116,7 +124,6 @@ public final class HuggingFaceTokenizerLoader {
      * @return loaded tokenizer
      * @throws IllegalArgumentException if tokenizer content is invalid or unsupported
      * @throws TokenizerLoadException if remote fetch or file I/O fails
-     * @implNote This method uses {@link RepositoryArtifactCache} for artifact caching.
      */
     public static Tokenizer fromHuggingFace(
             String user,
@@ -143,7 +150,6 @@ public final class HuggingFaceTokenizerLoader {
      * @return loaded tokenizer
      * @throws IllegalArgumentException if tokenizer content is invalid or unsupported
      * @throws TokenizerLoadException if remote fetch or file I/O fails
-     * @implNote This method uses {@link RepositoryArtifactCache} for artifact caching.
      */
     public static Tokenizer fromModelScope(
             String user,
