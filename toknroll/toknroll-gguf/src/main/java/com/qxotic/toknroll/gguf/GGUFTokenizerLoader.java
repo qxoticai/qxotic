@@ -50,6 +50,14 @@ public final class GGUFTokenizerLoader {
         }
     }
 
+    /**
+     * Builder for customizing GGUF tokenizer loading.
+     *
+     * <p>Register model factories, normalizers, splitters, and pre-tokenizer fallbacks for GGUF
+     * model keys not covered by the built-in defaults. Call {@link
+     * GGUFTokenizerLoader#createBuilderWithBuiltins()} to start with built-in support and add
+     * custom entries, or {@link GGUFTokenizerLoader#createEmptyBuilder()} for full control.
+     */
     public static final class Builder {
         private final LinkedHashMap<String, Function<GGUF, TokenizationModel>> modelFactories;
         private final LinkedHashMap<String, Function<GGUF, Normalizer>> normalizers;
@@ -68,6 +76,10 @@ public final class GGUFTokenizerLoader {
         /**
          * Registers a model factory for the given GGUF {@code tokenizer.ggml.model} key. The
          * factory receives the parsed GGUF metadata and must produce a {@link TokenizationModel}.
+         *
+         * @param key GGUF model key
+         * @param factory factory that creates a model from GGUF metadata
+         * @return this builder
          */
         public Builder registerModelFactory(String key, Function<GGUF, TokenizationModel> factory) {
             modelFactories.put(
@@ -79,6 +91,10 @@ public final class GGUFTokenizerLoader {
         /**
          * Registers a normalizer factory for the given GGUF pre-tokenizer key. The factory receives
          * the parsed GGUF metadata.
+         *
+         * @param key GGUF pre-tokenizer key
+         * @param factory factory that builds a normalizer from GGUF metadata
+         * @return this builder
          */
         public Builder registerNormalizer(String key, Function<GGUF, Normalizer> factory) {
             normalizers.put(
@@ -90,6 +106,10 @@ public final class GGUFTokenizerLoader {
         /**
          * Registers a splitter factory for the given GGUF pre-tokenizer key. The factory receives
          * the parsed GGUF metadata.
+         *
+         * @param key GGUF pre-tokenizer key
+         * @param factory factory that builds a splitter from GGUF metadata
+         * @return this builder
          */
         public Builder registerPreTokenizer(String key, Function<GGUF, Splitter> factory) {
             splitters.put(
@@ -146,7 +166,14 @@ public final class GGUFTokenizerLoader {
         return builder;
     }
 
-    /** Builds a tokenizer from a local GGUF file. */
+    /**
+     * Builds a tokenizer from a local GGUF file.
+     *
+     * @param ggufFile path to a {@code .gguf} file
+     * @return loaded tokenizer
+     * @throws IllegalArgumentException if the path does not exist or is not a GGUF file
+     * @throws TokenizerLoadException if file I/O fails
+     */
     public Tokenizer fromLocal(Path ggufFile) {
         Objects.requireNonNull(ggufFile, "ggufFile");
         Path file = ggufFile.toAbsolutePath().normalize();
@@ -172,6 +199,11 @@ public final class GGUFTokenizerLoader {
     /**
      * Fetches a GGUF file from Hugging Face and builds a tokenizer. Uses the default branch,
      * downloads if not cached, and does not force-refresh.
+     *
+     * @param user repository owner/namespace on HuggingFace
+     * @param repository repository name on HuggingFace
+     * @param ggufPath path to the GGUF file within the repository
+     * @return loaded tokenizer
      */
     public Tokenizer fromHuggingFace(String user, String repository, String ggufPath) {
         return fromHuggingFace(user, repository, null, ggufPath, false, false);
@@ -180,10 +212,14 @@ public final class GGUFTokenizerLoader {
     /**
      * Fetches a GGUF file from Hugging Face with full parameter control.
      *
+     * @param user repository owner/namespace on HuggingFace
+     * @param repository repository name on HuggingFace
      * @param revision branch/tag/commit, or {@code null} for default
      * @param ggufPath path to the GGUF file within the repository
      * @param useCacheOnly if {@code true}, does not fetch over the network
      * @param forceRefresh if {@code true}, ignores cached data and re-fetches
+     * @return loaded tokenizer
+     * @throws TokenizerLoadException if remote fetch or file I/O fails
      */
     public Tokenizer fromHuggingFace(
             String user,
@@ -205,14 +241,27 @@ public final class GGUFTokenizerLoader {
     /**
      * Fetches a GGUF file from ModelScope and builds a tokenizer. Uses the default branch,
      * downloads if not cached, and does not force-refresh.
+     *
+     * @param user repository owner/namespace on ModelScope
+     * @param repository repository name on ModelScope
+     * @param ggufPath path to the GGUF file within the repository
+     * @return loaded tokenizer
      */
     public Tokenizer fromModelScope(String user, String repository, String ggufPath) {
         return fromModelScope(user, repository, null, ggufPath, false, false);
     }
 
     /**
-     * Fetches a GGUF file from ModelScope with full parameter control. See {@link
-     * #fromHuggingFace(String, String, String, String, boolean, boolean)} for parameter details.
+     * Fetches a GGUF file from ModelScope with full parameter control.
+     *
+     * @param user repository owner/namespace on ModelScope
+     * @param repository repository name on ModelScope
+     * @param revision branch/tag/commit, or {@code null} for default
+     * @param ggufPath path to the GGUF file within the repository
+     * @param useCacheOnly if {@code true}, does not fetch over the network
+     * @param forceRefresh if {@code true}, ignores cached data and re-fetches
+     * @return loaded tokenizer
+     * @throws TokenizerLoadException if remote fetch or file I/O fails
      */
     public Tokenizer fromModelScope(
             String user,
@@ -271,7 +320,13 @@ public final class GGUFTokenizerLoader {
         }
     }
 
-    /** Builds a tokenizer from a pre-parsed {@code GGUF} instance. */
+    /**
+     * Builds a tokenizer from a pre-parsed {@code GGUF} instance.
+     *
+     * @param gguf pre-parsed GGUF metadata container
+     * @return loaded tokenizer
+     * @throws IllegalArgumentException if the GGUF model key is unsupported
+     */
     public Tokenizer fromGGUF(GGUF gguf) {
         String modelKey = GGUFMetadataKeys.requireKey(gguf, GGUFMetadataKeys.MODEL);
         String preKey = resolvePreTokenizerKey(gguf, modelKey);

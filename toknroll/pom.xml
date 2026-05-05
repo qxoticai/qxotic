@@ -12,15 +12,15 @@
   <artifactId>toknroll-aggregator</artifactId>
   <packaging>pom</packaging>
   <name>Tok'n'Roll Aggregator</name>
-  <description>Tiktoken-compatible, SentencePiece BPE, customizable tokenization for LLMs</description>
+  <description>Aggregator parent POM for Tok'n'Roll tokenizer modules</description>
 
   <modules>
-    <module>toknroll-core</module>
     <module>toknroll-testkit</module>
-    <module>toknroll-benchmarks</module>
+    <module>toknroll-core</module>
     <module>toknroll-gguf</module>
     <module>toknroll-hf</module>
     <module>toknroll-incubator</module>
+    <module>toknroll-benchmarks</module>
   </modules>
 
   <properties>
@@ -46,6 +46,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>toknroll-core</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>toknroll-gguf</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

@@ -14,6 +14,7 @@
   <description>Local-only benchmark and exploratory tokenizer workloads</description>
 
   <properties>
+    <maven.deploy.skip>true</maven.deploy.skip>
     <surefire.excludedGroups>${surefire.baseExcludedGroups},benchmarks</surefire.excludedGroups>
   </properties>
 

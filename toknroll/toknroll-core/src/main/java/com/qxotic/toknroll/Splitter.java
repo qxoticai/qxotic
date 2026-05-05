@@ -41,14 +41,34 @@ public interface Splitter {
      *
      * <p>Empty emitted ranges are never valid, including when the parent range is empty. For empty
      * parent ranges, emit no ranges.
+     *
+     * @param text source text
+     * @param startInclusive start of range to split (inclusive)
+     * @param endExclusive end of range to split (exclusive)
+     * @param consumer receives each split span
      */
     void splitAll(CharSequence text, int startInclusive, int endExclusive, SplitConsumer consumer);
 
+    /**
+     * Convenience overload that splits the entire text.
+     *
+     * @param text source text
+     * @param consumer receives each split span
+     */
     default void splitAll(CharSequence text, SplitConsumer consumer) {
         Objects.requireNonNull(text, "text");
         splitAll(text, 0, text.length(), consumer);
     }
 
+    /**
+     * Eagerly materializes all split ranges as a list of subsequences.
+     *
+     * <p>Prefer {@link #splitAll(CharSequence, SplitConsumer)} for hot paths to avoid list
+     * allocation.
+     *
+     * @param text source text
+     * @return list of text subsequences, one per split span
+     */
     default List<CharSequence> splitAllToListEagerly(CharSequence text) {
         Objects.requireNonNull(text, "text");
         List<CharSequence> out = new ArrayList<>();
@@ -56,7 +76,11 @@ public interface Splitter {
         return out;
     }
 
-    /** Strict default: single chunk, no rewrite. */
+    /**
+     * Strict default: single chunk, no rewrite.
+     *
+     * @return identity splitter
+     */
     static Splitter identity() {
         return (text, startInclusive, endExclusive, consumer) -> {
             Objects.requireNonNull(text, "text");
@@ -75,12 +99,22 @@ public interface Splitter {
      * <p>For performance-sensitive splitters, prefer non-capturing groups ({@code (?:...)}) when
      * grouping is needed. Capturing groups are allowed and do not change splitter correctness here,
      * but they can add regex engine bookkeeping overhead.
+     *
+     * @param pattern compiled regex pattern
+     * @return regex-based splitter
      */
     static Splitter regex(Pattern pattern) {
         Objects.requireNonNull(pattern, "pattern");
         return ImplAccessor.createRegexSplitter(pattern);
     }
 
+    /**
+     * Composes splitters sequentially. Each splitter partitions its input, and each resulting span
+     * is fed into the next splitter in the sequence.
+     *
+     * @param splitters splitters to compose
+     * @return composed splitter (identity if empty, the single splitter if only one)
+     */
     static Splitter sequence(Splitter... splitters) {
         Objects.requireNonNull(splitters, "splitters");
         for (Splitter splitter : splitters) {

@@ -88,7 +88,7 @@ Use `createEmptyBuilder()` to start with an empty registry and register only wha
 
 ## Tested Models
 
-Token-perfect tested against 12 model families:
+Token-perfect tested against 10 model families:
 
 - **OpenAI** - tiktoken (GPT-2, GPT-3.5, GPT-4, GPT-4o)
 - **Google** - Gemma 3, Gemma 4

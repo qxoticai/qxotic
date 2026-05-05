@@ -18,11 +18,20 @@ import java.util.Objects;
  */
 public interface Tokenizer {
 
+    /**
+     * Returns the underlying vocabulary.
+     *
+     * @return vocabulary of this tokenizer
+     */
     Vocabulary vocabulary();
 
     /**
      * Encodes {@code text[startInclusive, endExclusive)} and appends token IDs to {@code out}.
      *
+     * @param text input text
+     * @param startInclusive start index (inclusive)
+     * @param endExclusive end index (exclusive)
+     * @param out builder to append token IDs to
      * @throws IndexOutOfBoundsException if the slice range is invalid
      */
     void encodeInto(
@@ -40,6 +49,10 @@ public interface Tokenizer {
      * tokenStartIndex} by the return value each iteration until {@code tokenStartIndex ==
      * tokens.length()}.
      *
+     * @param tokens source token IDs
+     * @param tokenStartIndex starting position in {@code tokens}
+     * @param out destination buffer for raw bytes
+     * @return number of tokens consumed (0 if exhausted, ≥1 otherwise)
      * @throws IndexOutOfBoundsException if {@code tokenStartIndex} is outside {@code [0,
      *     tokens.length()]}
      * @throws IllegalArgumentException if the first token at {@code tokenStartIndex} does not fit
@@ -51,6 +64,8 @@ public interface Tokenizer {
      * Expected tokens-per-character hint used only for internal preallocation.
      *
      * <p>This value does not affect correctness.
+     *
+     * @return tokens-per-character ratio hint
      */
     default float expectedTokensPerChar() {
         return 0.5f;
@@ -60,6 +75,9 @@ public interface Tokenizer {
      * Returns token count for encoding {@code text}.
      *
      * <p>Equivalent to {@code countTokens(text, 0, text.length())}.
+     *
+     * @param text input text
+     * @return token count
      */
     default int countTokens(CharSequence text) {
         Objects.requireNonNull(text, "text");
@@ -71,12 +89,19 @@ public interface Tokenizer {
      *
      * <p>Must equal {@code encode(text.subSequence(startInclusive, endExclusive)).length()}.
      *
+     * @param text input text
+     * @param startInclusive start index (inclusive)
+     * @param endExclusive end index (exclusive)
+     * @return token count
      * @throws IndexOutOfBoundsException if the slice range is invalid
      */
     int countTokens(CharSequence text, int startInclusive, int endExclusive);
 
     /**
      * Returns decoded byte count for {@code tokens}. Must match {@code decodeBytes(tokens).length}.
+     *
+     * @param tokens token IDs to measure
+     * @return total decoded byte count
      */
     default int countBytes(IntSequence tokens) {
         Objects.requireNonNull(tokens, "tokens");
@@ -102,7 +127,12 @@ public interface Tokenizer {
         return totalBytes;
     }
 
-    /** Encodes full text and appends token IDs to {@code out}. */
+    /**
+     * Encodes full text and appends token IDs to {@code out}.
+     *
+     * @param text input text
+     * @param out builder to append token IDs to
+     */
     default void encodeInto(CharSequence text, IntSequence.Builder out) {
         Objects.requireNonNull(text, "text");
         encodeInto(text, 0, text.length(), out);
@@ -110,6 +140,9 @@ public interface Tokenizer {
 
     /**
      * Encodes text into an immutable token sequence using the ordinary (non-special-aware) path.
+     *
+     * @param text input text
+     * @return immutable token sequence
      */
     default IntSequence encode(CharSequence text) {
         Objects.requireNonNull(text, "text");
@@ -123,6 +156,11 @@ public interface Tokenizer {
     /**
      * Pre-allocates a reasonable initial capacity for {@link IntSequence.Builder} given character
      * count and the model's expected tokens-to-char ratio.
+     *
+     * @param charCount number of characters to encode
+     * @param expectedTokensPerChar model's expected ratio hint
+     * @return recommended initial builder capacity
+     * @throws IllegalArgumentException if estimated capacity exceeds {@link Integer#MAX_VALUE}
      */
     static int estimateTokenCapacity(int charCount, float expectedTokensPerChar) {
         float ratio = Math.max(1.0e-6f, expectedTokensPerChar);
@@ -140,12 +178,20 @@ public interface Tokenizer {
      *
      * <p>Equivalent to {@code encode(text).toArray()}. For performance-sensitive paths, prefer
      * {@link #encodeInto} to avoid the intermediate allocation.
+     *
+     * @param text input text
+     * @return token ID array
      */
     default int[] encodeToArray(CharSequence text) {
         return encode(text).toArray();
     }
 
-    /** Decodes tokens into a byte array sized via {@link #countBytes(IntSequence)}. */
+    /**
+     * Decodes tokens into a byte array sized via {@link #countBytes(IntSequence)}.
+     *
+     * @param tokens token IDs to decode
+     * @return decoded raw bytes
+     */
     default byte[] decodeBytes(IntSequence tokens) {
         Objects.requireNonNull(tokens, "tokens");
         int tokenCount = tokens.length();
@@ -190,6 +236,9 @@ public interface Tokenizer {
      *
      * <p>This text decode is convenient but may be lossy for arbitrary token sequences. Use {@link
      * #decodeBytes(IntSequence)} when full byte fidelity is required.
+     *
+     * @param tokens token IDs to decode
+     * @return UTF-8 decoded text
      */
     default String decode(IntSequence tokens) {
         return new String(
