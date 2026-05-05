@@ -15,8 +15,18 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 class TokenizerGoldenTest {
 
-    private static final TiktokenGoldenFixture FIXTURE = TiktokenGoldenFixture.load();
     private static final List<String> ENCODINGS = List.of("r50k_base", "cl100k_base", "o200k_base");
+
+    private static TiktokenGoldenFixture fixture() {
+        try {
+            return TiktokenGoldenFixture.load();
+        } catch (IllegalStateException e) {
+            throw new IllegalStateException(
+                    "Golden fixture is missing. Generate it with: python3"
+                            + " toknroll-benchmarks/generate_ground_truth.py --skip-model-families",
+                    e);
+        }
+    }
 
     @ParameterizedTest(name = "golden {0}/{1}")
     @MethodSource("goldenCases")
@@ -46,9 +56,10 @@ class TokenizerGoldenTest {
     }
 
     static Stream<Arguments> goldenCases() {
+        TiktokenGoldenFixture fixture = fixture();
         List<Arguments> args = new ArrayList<>();
         for (String encoding : ENCODINGS) {
-            for (CaseData c : FIXTURE.getCases(encoding)) {
+            for (CaseData c : fixture.getCases(encoding)) {
                 args.add(
                         Arguments.of(
                                 encoding,
