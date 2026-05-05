@@ -4,6 +4,7 @@ Generate ground_truth_tokens.json for tokenizer golden tests.
 This creates a subset of test cases for each tiktoken encoding.
 """
 
+import argparse
 import json
 import base64
 import re
@@ -811,6 +812,14 @@ def generate_model_family_ground_truth():
 
 def main():
     """Generate ground truth file."""
+    parser = argparse.ArgumentParser(description="Generate tokenizer ground truth fixtures")
+    parser.add_argument(
+        "--skip-model-families",
+        action="store_true",
+        help="Only generate ground_truth_tokens.json and skip model family fixture generation",
+    )
+    args = parser.parse_args()
+
     print("Generating ground_truth_tokens.json...")
     print()
 
@@ -850,6 +859,10 @@ def main():
     print(f"  - o200k_base: {len(ground_truth.get('o200k_base', {}))} cases")
     print()
     print(f"File size: {output_path.stat().st_size / 1024:.1f} KB")
+
+    if args.skip_model_families:
+        print("Skipping model family fixture generation (--skip-model-families).")
+        return
 
     # Also generate modern model-family fixtures (best effort, optional deps).
     print()

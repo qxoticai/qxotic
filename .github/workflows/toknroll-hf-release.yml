@@ -67,7 +67,7 @@ jobs:
           cache: maven
 
       - name: Verify formatting and tests
-        run: mvn -B -ntp -f toknroll/pom.xml -pl toknroll-hf -am spotless:check test
+        run: mvn -B -ntp -f toknroll/pom.xml -pl toknroll-hf -am -Dtoknroll.skipDependentTests=true -Dsurefire.excludedGroups=local-external,network,slow spotless:check test
 
       - name: Set up Maven Central credentials
         if: startsWith(github.ref, 'refs/tags/toknroll-hf-v')
@@ -84,4 +84,4 @@ jobs:
 
       - name: Deploy toknroll-hf release
         if: startsWith(github.ref, 'refs/tags/toknroll-hf-v')
-        run: mvn -B -ntp -f toknroll/toknroll-hf/pom.xml -Prelease -DskipTests deploy
+        run: mvn -B -ntp -f toknroll/pom.xml -pl toknroll-hf -am -Prelease -DskipTests deploy

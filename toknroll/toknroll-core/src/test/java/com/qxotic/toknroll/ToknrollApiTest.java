@@ -10,8 +10,11 @@ import com.qxotic.toknroll.loaders.TiktokenLoaders;
 import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.text.Normalizer.Form;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -292,12 +295,26 @@ class ToknrollApiTest {
     }
 
     private static Path resourcePath(String fileName) {
+        List<Path> candidates = new ArrayList<>();
+        candidates.add(Paths.get("test-fixtures", "tiktoken", fileName));
+        candidates.add(Paths.get("..", "test-fixtures", "tiktoken", fileName));
+        candidates.add(Paths.get("..", "..", "test-fixtures", "tiktoken", fileName));
+        candidates.add(Paths.get("src", "test", "resources", "tiktoken", fileName));
+
+        for (Path candidate : candidates) {
+            if (Files.exists(candidate)) {
+                return candidate.toAbsolutePath().normalize();
+            }
+        }
+
         try {
-            return Path.of(
-                    ToknrollApiTest.class
-                            .getClassLoader()
-                            .getResource("tiktoken/" + fileName)
-                            .toURI());
+            var resource =
+                    ToknrollApiTest.class.getClassLoader().getResource("tiktoken/" + fileName);
+            if (resource != null) {
+                return Path.of(resource.toURI());
+            }
+            throw new IllegalStateException(
+                    "Missing tiktoken fixture " + fileName + " (checked " + candidates + ")");
         } catch (URISyntaxException e) {
             throw new IllegalStateException("Failed to resolve " + fileName, e);
         }
