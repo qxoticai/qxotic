@@ -84,4 +84,6 @@ jobs:
 
       - name: Deploy toknroll-gguf release
         if: startsWith(github.ref, 'refs/tags/toknroll-gguf-v')
-        run: mvn -B -ntp -f toknroll/pom.xml -pl toknroll-gguf -am -Prelease -DskipTests deploy
+        run: |
+          mvn -B -ntp -f toknroll/pom.xml -pl toknroll-testkit,toknroll-core,toknroll-gguf -am -DskipTests install
+          mvn -B -ntp -f toknroll/toknroll-gguf/pom.xml -Prelease -DskipTests deploy
