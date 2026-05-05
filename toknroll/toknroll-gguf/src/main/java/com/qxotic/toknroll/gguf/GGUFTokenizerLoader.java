@@ -271,6 +271,7 @@ public final class GGUFTokenizerLoader {
         }
     }
 
+    /** Builds a tokenizer from a pre-parsed {@code GGUF} instance. */
     public Tokenizer fromGGUF(GGUF gguf) {
         String modelKey = GGUFMetadataKeys.requireKey(gguf, GGUFMetadataKeys.MODEL);
         String preKey = resolvePreTokenizerKey(gguf, modelKey);

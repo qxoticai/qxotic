@@ -45,7 +45,7 @@
       </dependency>
       <dependency>
         <groupId>com.qxotic</groupId>
-        <artifactId>toknroll</artifactId>
+        <artifactId>toknroll-core</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

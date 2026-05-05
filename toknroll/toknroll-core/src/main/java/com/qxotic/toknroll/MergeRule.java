@@ -6,6 +6,14 @@ public final class MergeRule {
     private final int rightId;
     private final int rank;
 
+    /**
+     * Creates a merge rule.
+     *
+     * @param leftId non-negative left token ID
+     * @param rightId non-negative right token ID
+     * @param rank merge priority rank (lower ranks are applied first)
+     * @throws IllegalArgumentException if {@code leftId} or {@code rightId} is negative
+     */
     public static MergeRule of(int leftId, int rightId, int rank) {
         return new MergeRule(leftId, rightId, rank);
     }
@@ -22,14 +30,23 @@ public final class MergeRule {
         this.rank = rank;
     }
 
+    /**
+     * @return left-side token ID
+     */
     public int leftId() {
         return leftId;
     }
 
+    /**
+     * @return right-side token ID
+     */
     public int rightId() {
         return rightId;
     }
 
+    /**
+     * @return merge priority rank
+     */
     public int rank() {
         return rank;
     }

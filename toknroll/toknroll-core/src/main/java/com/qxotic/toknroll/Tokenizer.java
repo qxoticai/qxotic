@@ -165,12 +165,22 @@ public interface Tokenizer {
         return out;
     }
 
-    /** Counts decoded bytes for a token-ID array. */
+    /**
+     * Counts decoded bytes for a token-ID array.
+     *
+     * @param tokens token IDs to decode
+     * @return total decoded byte count
+     */
     default int countBytes(int[] tokens) {
         return countBytes(IntSequence.wrap(Objects.requireNonNull(tokens, "tokens")));
     }
 
-    /** Decodes token IDs from an int array into raw bytes. */
+    /**
+     * Decodes token IDs from an int array into raw bytes.
+     *
+     * @param tokens token IDs to decode
+     * @return decoded raw bytes
+     */
     default byte[] decodeBytes(int[] tokens) {
         return decodeBytes(IntSequence.wrap(Objects.requireNonNull(tokens, "tokens")));
     }
@@ -186,7 +196,12 @@ public interface Tokenizer {
                 decodeBytes(Objects.requireNonNull(tokens, "tokens")), StandardCharsets.UTF_8);
     }
 
-    /** Decodes token IDs from an int array into UTF-8 text. */
+    /**
+     * Decodes token IDs from an int array into UTF-8 text.
+     *
+     * @param tokens token IDs to decode
+     * @return decoded UTF-8 text
+     */
     default String decode(int[] tokens) {
         return decode(IntSequence.wrap(Objects.requireNonNull(tokens, "tokens")));
     }

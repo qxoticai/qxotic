@@ -12,40 +12,54 @@ Loads Tok'n'Roll `Tokenizer` instances from GGUF files (llama.cpp format).
 </dependency>
 ```
 
-## Sources
-
-Local `.gguf` files, [HuggingFace](https://huggingface.co), or [ModelScope](https://modelscope.cn).
-Remote loading fetches only GGUF metadata (header + key-value pairs), not model weights.
-GGUF metadata is cached on disk and reused across runs.
-
-### Examples by model family
+## Quick Start
 
 ```java
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 
-GGUFTokenizerLoader loader = GGUFTokenizerLoader
-        .createBuilderWithBuiltins().build();
+GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
+
+// From a local .gguf file
+Tokenizer t = loader.fromLocal(Path.of("/models/model.gguf"));
+
+// From HuggingFace
+Tokenizer t = loader.fromHuggingFace("unsloth", "Llama-3.2-1B-Instruct-GGUF",
+    "Llama-3.2-1B-Instruct-Q8_0.gguf");
+
+// From ModelScope
+Tokenizer t = loader.fromModelScope("Qwen", "Qwen3-8B-GGUF",
+    "qwen3-8b-Q8_0.gguf");
+
+// From a pre-parsed GGUF instance
+GGUF gguf = GGUF.read(Path.of("/models/model.gguf"));
+Tokenizer t = loader.fromGGUF(gguf);
+
+// Encode and decode
+int[] tokens = t.encodeToArray("Hello, world!");
+String decoded = t.decode(tokens);
+```
+
+## Examples by model family
+
+```java
+GGUFTokenizerLoader loader = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
 
 // Meta Llama 3
-Tokenizer llama = loader.fromHuggingFace(
-        "unsloth", "Llama-3.2-1B-Instruct-GGUF", 
-        "Llama-3.2-1B-Instruct-Q8_0.gguf");
+Tokenizer llama = loader.fromHuggingFace("unsloth", "Llama-3.2-1B-Instruct-GGUF",
+    "Llama-3.2-1B-Instruct-Q8_0.gguf");
 
 // Google Gemma 4
-Tokenizer gemma = loader.fromHuggingFace(
-        "unsloth", "gemma-4-E2B-it-GGUF",
-        "gemma-4-E2B-it-Q8_0.gguf");
+Tokenizer gemma = loader.fromHuggingFace("unsloth", "gemma-4-E2B-it-GGUF",
+    "gemma-4-E2B-it-Q8_0.gguf");
 
 // Alibaba Qwen 3
-Tokenizer qwen = loader.fromHuggingFace(
-        "unsloth", "Qwen3.6-35B-A3B-GGUF",
-        "Qwen3.6-35B-A3B-Q8_0.gguf");
+Tokenizer qwen = loader.fromHuggingFace("unsloth", "Qwen3.6-35B-A3B-GGUF",
+    "Qwen3.6-35B-A3B-Q8_0.gguf");
 
 // Kimi 2.6 (ModelScope)
-Tokenizer kimi = loader.fromModelScope(
-        "unsloth", "Kimi-K2.6-GGUF",
-        "BF16/Kimi-K2.6-BF16-00001-of-00046.gguf");
+Tokenizer kimi = loader.fromModelScope("unsloth", "Kimi-K2.6-GGUF",
+    "BF16/Kimi-K2.6-BF16-00001-of-00046.gguf");
 ```
 
 ## Extending
