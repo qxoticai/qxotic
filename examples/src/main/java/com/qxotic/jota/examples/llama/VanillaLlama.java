@@ -24,8 +24,6 @@ import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.Arrays;
-import java.util.List;
 import java.util.Locale;
 import java.util.Scanner;
 import java.util.stream.IntStream;

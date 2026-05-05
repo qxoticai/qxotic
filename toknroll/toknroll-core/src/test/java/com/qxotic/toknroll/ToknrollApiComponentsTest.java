@@ -248,17 +248,17 @@ class ToknrollApiComponentsTest {
 
     @Test
     void mergeRuleValidationNegativeLeftId() {
-        assertThrows(IllegalArgumentException.class, () -> Toknroll.MergeRule.of(-1, 5, 0));
+        assertThrows(IllegalArgumentException.class, () -> MergeRule.of(-1, 5, 0));
     }
 
     @Test
     void mergeRuleValidationNegativeRightId() {
-        assertThrows(IllegalArgumentException.class, () -> Toknroll.MergeRule.of(5, -1, 0));
+        assertThrows(IllegalArgumentException.class, () -> MergeRule.of(5, -1, 0));
     }
 
     @Test
     void mergeRuleFactoryAndAccessors() {
-        Toknroll.MergeRule rule = Toknroll.MergeRule.of(10, 20, 5);
+        MergeRule rule = MergeRule.of(10, 20, 5);
         assertEquals(10, rule.leftId());
         assertEquals(20, rule.rightId());
         assertEquals(5, rule.rank());
@@ -266,7 +266,7 @@ class ToknrollApiComponentsTest {
 
     @Test
     void mergeRuleFactoryCreatesValidRule() {
-        Toknroll.MergeRule rule = Toknroll.MergeRule.of(1, 2, 3);
+        MergeRule rule = MergeRule.of(1, 2, 3);
         assertEquals(1, rule.leftId());
         assertEquals(2, rule.rightId());
         assertEquals(3, rule.rank());

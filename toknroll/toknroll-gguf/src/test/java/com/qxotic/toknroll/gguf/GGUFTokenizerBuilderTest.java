@@ -5,11 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.toknroll.IntSequence;
-import com.qxotic.toknroll.Splitter;
-import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.Toknroll;
-import com.qxotic.toknroll.Vocabulary;
+import com.qxotic.toknroll.*;
 import com.qxotic.toknroll.gguf.TestDataManager.TestModel;
 import com.qxotic.toknroll.gguf.TestDataManager.TokenizerMetadata;
 import com.qxotic.toknroll.impl.ImplAccessor;
@@ -75,7 +71,7 @@ public class GGUFTokenizerBuilderTest {
 
         Vocabulary vocabulary = ImplAccessor.createVocabulary(tokenToId);
 
-        List<Toknroll.MergeRule> merges = buildMergeRules(tokenizerMeta, tokenToId);
+        List<MergeRule> merges = buildMergeRules(tokenizerMeta, tokenToId);
 
         Splitter splitter = ModelTextSplitters.createSplitter(model);
         Tokenizer tokenizer =
@@ -156,9 +152,9 @@ public class GGUFTokenizerBuilderTest {
         }
     }
 
-    private static List<Toknroll.MergeRule> buildMergeRules(
+    private static List<MergeRule> buildMergeRules(
             TokenizerMetadata tokenizerMeta, Map<String, Integer> tokenToId) {
-        List<Toknroll.MergeRule> merges = new ArrayList<>();
+        List<MergeRule> merges = new ArrayList<>();
         if (tokenizerMeta.merges() == null) {
             return merges;
         }
@@ -171,7 +167,7 @@ public class GGUFTokenizerBuilderTest {
             Integer rightId = tokenToId.get(parts[1]);
             Integer mergedId = tokenToId.get(parts[0] + parts[1]);
             if (leftId != null && rightId != null && mergedId != null) {
-                merges.add(Toknroll.MergeRule.of(leftId, rightId, rank));
+                merges.add(MergeRule.of(leftId, rightId, rank));
             }
         }
         return merges;
@@ -179,7 +175,7 @@ public class GGUFTokenizerBuilderTest {
 
     private static Tokenizer buildTokenizer(
             Vocabulary vocabulary,
-            List<Toknroll.MergeRule> merges,
+            List<MergeRule> merges,
             Splitter splitter,
             boolean sentencePiecePreferred) {
         try {

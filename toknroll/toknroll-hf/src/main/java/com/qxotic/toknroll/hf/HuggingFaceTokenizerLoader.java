@@ -1,15 +1,7 @@
 package com.qxotic.toknroll.hf;
 
 import com.qxotic.format.json.Json;
-import com.qxotic.toknroll.ByteLevel;
-import com.qxotic.toknroll.Normalizer;
-import com.qxotic.toknroll.Splitter;
-import com.qxotic.toknroll.StandardTokenType;
-import com.qxotic.toknroll.TokenizationModel;
-import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.TokenizerLoadException;
-import com.qxotic.toknroll.Toknroll;
-import com.qxotic.toknroll.Vocabulary;
+import com.qxotic.toknroll.*;
 import com.qxotic.toknroll.impl.ImplAccessor;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -255,7 +247,7 @@ public final class HuggingFaceTokenizerLoader {
             splitter = Splitter.identity();
         } else {
             String[] mergeSpecs = extractMerges(model.get("merges"));
-            List<Toknroll.MergeRule> merges = buildMerges(vocabulary, mergeSpecs);
+            List<MergeRule> merges = buildMerges(vocabulary, mergeSpecs);
             tokenizationModel = ImplAccessor.createTiktokenModel(vocabulary, merges, ignoreMerges);
         }
 
@@ -335,8 +327,7 @@ public final class HuggingFaceTokenizerLoader {
         Vocabulary vocabulary =
                 ImplAccessor.reconstructTiktokenVocabulary(
                         mergeableRanks, extractSpecialTokens(tokenizerConfig));
-        List<Toknroll.MergeRule> merges =
-                ImplAccessor.reconstructTiktokenMergeRules(mergeableRanks);
+        List<MergeRule> merges = ImplAccessor.reconstructTiktokenMergeRules(mergeableRanks);
 
         TokenizationModel model = Toknroll.tiktokenModel(vocabulary, merges);
         String patStr =
@@ -1118,9 +1109,8 @@ public final class HuggingFaceTokenizerLoader {
         return merges.toArray(new String[0]);
     }
 
-    private static List<Toknroll.MergeRule> buildMerges(
-            Vocabulary vocabulary, String[] mergeSpecs) {
-        List<Toknroll.MergeRule> merges = new ArrayList<>(mergeSpecs.length);
+    private static List<MergeRule> buildMerges(Vocabulary vocabulary, String[] mergeSpecs) {
+        List<MergeRule> merges = new ArrayList<>(mergeSpecs.length);
         for (int rank = 0; rank < mergeSpecs.length; rank++) {
             int space = mergeSpecs[rank].indexOf(' ');
             if (space < 0) {
@@ -1132,7 +1122,7 @@ public final class HuggingFaceTokenizerLoader {
             int rightId = ImplAccessor.getIdOrNegative(vocabulary, right);
             int mergedId = ImplAccessor.getIdOrNegative(vocabulary, left + right);
             if (leftId >= 0 && rightId >= 0 && mergedId >= 0) {
-                merges.add(Toknroll.MergeRule.of(leftId, rightId, rank));
+                merges.add(MergeRule.of(leftId, rightId, rank));
             }
         }
         return merges;

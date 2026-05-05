@@ -1,7 +1,7 @@
 package com.qxotic.toknroll.impl;
 
 import com.qxotic.toknroll.ByteLevel;
-import com.qxotic.toknroll.Toknroll;
+import com.qxotic.toknroll.MergeRule;
 import com.qxotic.toknroll.Vocabulary;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -51,13 +51,13 @@ final class TiktokenReconstruction {
         return new VocabularyImpl(tokenToId);
     }
 
-    public static List<Toknroll.MergeRule> mergeRules(Map<String, Integer> mergeableRanks) {
+    public static List<MergeRule> mergeRules(Map<String, Integer> mergeableRanks) {
         Objects.requireNonNull(mergeableRanks, "mergeableRanks");
 
         List<Map.Entry<String, Integer>> entries = new ArrayList<>(mergeableRanks.entrySet());
         entries.sort(Comparator.comparingInt(Map.Entry::getValue));
 
-        List<Toknroll.MergeRule> merges = new ArrayList<>();
+        List<MergeRule> merges = new ArrayList<>();
         int normalizedRank = 0;
         for (Map.Entry<String, Integer> entry : entries) {
             String token = entry.getKey();
@@ -74,23 +74,22 @@ final class TiktokenReconstruction {
             if (left == null || right == null) {
                 continue;
             }
-            merges.add(Toknroll.MergeRule.of(left, right, normalizedRank));
+            merges.add(MergeRule.of(left, right, normalizedRank));
             normalizedRank++;
         }
         return merges;
     }
 
-    static LongLongMap packTiktokenMerges(Vocabulary vocabulary, List<Toknroll.MergeRule> merges) {
+    static LongLongMap packTiktokenMerges(Vocabulary vocabulary, List<MergeRule> merges) {
         return packMerges(vocabulary, merges, false);
     }
 
-    static LongLongMap packSentencePieceMerges(
-            Vocabulary vocabulary, List<Toknroll.MergeRule> merges) {
+    static LongLongMap packSentencePieceMerges(Vocabulary vocabulary, List<MergeRule> merges) {
         return packMerges(vocabulary, merges, true);
     }
 
     private static LongLongMap packMerges(
-            Vocabulary vocabulary, List<Toknroll.MergeRule> merges, boolean sentencePiece) {
+            Vocabulary vocabulary, List<MergeRule> merges, boolean sentencePiece) {
         Objects.requireNonNull(vocabulary, "vocabulary");
         Objects.requireNonNull(merges, "merges");
         if (merges.isEmpty()) {
@@ -109,7 +108,7 @@ final class TiktokenReconstruction {
         int maxRank = -1;
 
         for (int i = 0; i < merges.size(); i++) {
-            Toknroll.MergeRule rule = merges.get(i);
+            MergeRule rule = merges.get(i);
             if (rule == null) {
                 throw new NullPointerException("merges[" + i + "]");
             }
@@ -215,7 +214,7 @@ final class TiktokenReconstruction {
     private static byte[] tokenBytesLikeModel(String token) {
         try {
             return ByteLevel.decode(token);
-        } catch (RuntimeException ignored) {
+        } catch (IllegalArgumentException ignored) {
             // Non-byte-level token (e.g., raw UTF-8 "hello" in an SP-BPE vocab).
             // Fall back to raw UTF-8 bytes.
             return token.getBytes(StandardCharsets.UTF_8);

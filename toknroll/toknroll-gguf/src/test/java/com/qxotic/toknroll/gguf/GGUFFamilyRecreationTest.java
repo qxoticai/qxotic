@@ -6,12 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.toknroll.IntSequence;
-import com.qxotic.toknroll.Splitter;
-import com.qxotic.toknroll.TokenizationModel;
-import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.Toknroll;
-import com.qxotic.toknroll.Vocabulary;
+import com.qxotic.toknroll.*;
 import com.qxotic.toknroll.gguf.TestDataManager.TestModel;
 import com.qxotic.toknroll.gguf.TestDataManager.TokenizerMetadata;
 import com.qxotic.toknroll.impl.ImplAccessor;
@@ -73,7 +68,7 @@ class GGUFFamilyRecreationTest {
 
         Vocabulary vocabulary =
                 ImplAccessor.createVocabulary(metadata.tokens(), metadata.tokenTypes());
-        List<Toknroll.MergeRule> merges = buildMergeRules(metadata, tokenToId);
+        List<MergeRule> merges = buildMergeRules(metadata, tokenToId);
 
         TokenizationModel tokenizationModel =
                 createModel(vocabulary, merges, metadata.isSentencePiece());
@@ -83,9 +78,7 @@ class GGUFFamilyRecreationTest {
     }
 
     private static TokenizationModel createModel(
-            Vocabulary vocabulary,
-            List<Toknroll.MergeRule> merges,
-            boolean sentencePiecePreferred) {
+            Vocabulary vocabulary, List<MergeRule> merges, boolean sentencePiecePreferred) {
         if (sentencePiecePreferred) {
             return Toknroll.sentencePieceBpeModel(vocabulary, merges);
         }
@@ -96,9 +89,9 @@ class GGUFFamilyRecreationTest {
         }
     }
 
-    private static List<Toknroll.MergeRule> buildMergeRules(
+    private static List<MergeRule> buildMergeRules(
             TokenizerMetadata metadata, Map<String, Integer> tokenToId) {
-        List<Toknroll.MergeRule> merges = new ArrayList<>();
+        List<MergeRule> merges = new ArrayList<>();
         String[] mergeSpecs = metadata.merges();
         if (mergeSpecs == null) {
             return merges;
@@ -112,7 +105,7 @@ class GGUFFamilyRecreationTest {
             Integer rightId = tokenToId.get(parts[1]);
             Integer mergedId = tokenToId.get(parts[0] + parts[1]);
             if (leftId != null && rightId != null && mergedId != null) {
-                merges.add(Toknroll.MergeRule.of(leftId, rightId, rank));
+                merges.add(MergeRule.of(leftId, rightId, rank));
             }
         }
         return merges;
