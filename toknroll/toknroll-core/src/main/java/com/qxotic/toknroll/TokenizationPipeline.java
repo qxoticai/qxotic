@@ -20,7 +20,7 @@ public final class TokenizationPipeline implements Tokenizer {
      * Creates a pipeline. Pass {@code null} for {@code normalizer} or {@code splitter} to skip that
      * stage. The model is required.
      */
-    public TokenizationPipeline(Normalizer normalizer, Splitter splitter, TokenizationModel model) {
+    TokenizationPipeline(Normalizer normalizer, Splitter splitter, TokenizationModel model) {
         this.model = Objects.requireNonNull(model, "model is required");
         this.normalizer = normalizer;
         this.splitter = splitter;

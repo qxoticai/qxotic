@@ -6,7 +6,6 @@ import com.qxotic.toknroll.Normalizer;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.StandardTokenType;
 import com.qxotic.toknroll.TokenizationModel;
-import com.qxotic.toknroll.TokenizationPipeline;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.TokenizerLoadException;
 import com.qxotic.toknroll.Toknroll;
@@ -260,7 +259,7 @@ public final class HuggingFaceTokenizerLoader {
             tokenizationModel = ImplAccessor.createTiktokenModel(vocabulary, merges, ignoreMerges);
         }
 
-        Tokenizer tokenizer = new TokenizationPipeline(normalizer, splitter, tokenizationModel);
+        Tokenizer tokenizer = Toknroll.pipeline(normalizer, splitter, tokenizationModel);
 
         if (hasMetaspace) {
             tokenizer = wrapMetaspace(tokenizer);

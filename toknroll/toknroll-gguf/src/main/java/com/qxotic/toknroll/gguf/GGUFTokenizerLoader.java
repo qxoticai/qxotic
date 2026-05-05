@@ -4,9 +4,9 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.toknroll.Normalizer;
 import com.qxotic.toknroll.Splitter;
 import com.qxotic.toknroll.TokenizationModel;
-import com.qxotic.toknroll.TokenizationPipeline;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.TokenizerLoadException;
+import com.qxotic.toknroll.Toknroll;
 import com.qxotic.toknroll.impl.ImplAccessor;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -326,7 +326,7 @@ public final class GGUFTokenizerLoader {
         }
         Normalizer normalizer = normalizerFactory.apply(gguf);
 
-        Tokenizer tokenizer = new TokenizationPipeline(normalizer, splitter, model);
+        Tokenizer tokenizer = Toknroll.pipeline(normalizer, splitter, model);
 
         // SPM models with metaspace normalization need decode wrapping.
         if (PRE_DEFAULT.equals(preKey) && MODEL_LLAMA.equals(modelKey)) {

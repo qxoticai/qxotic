@@ -265,8 +265,8 @@ class ToknrollApiComponentsTest {
     }
 
     @Test
-    void mergeRuleConstructorDirect() {
-        Toknroll.MergeRule rule = new Toknroll.MergeRule(1, 2, 3);
+    void mergeRuleFactoryCreatesValidRule() {
+        Toknroll.MergeRule rule = Toknroll.MergeRule.of(1, 2, 3);
         assertEquals(1, rule.leftId());
         assertEquals(2, rule.rightId());
         assertEquals(3, rule.rank());
