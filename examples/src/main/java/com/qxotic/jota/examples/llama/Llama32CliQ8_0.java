@@ -18,12 +18,7 @@ import com.qxotic.jota.runtime.LaunchConfig;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.advanced.Normalizer;
-import com.qxotic.toknroll.advanced.Splitter;
-import com.qxotic.toknroll.impl.GPT2Tokenizer;
-import com.qxotic.toknroll.impl.IntPair;
-import com.qxotic.toknroll.impl.RegexSplitter;
-import com.qxotic.toknroll.impl.VocabularyImpl;
+import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -376,7 +371,7 @@ public final class Llama32CliQ8_0 {
             if (!"llama".equals(arch)) {
                 throw new IllegalArgumentException("Expected llama architecture, got: " + arch);
             }
-            Tokenizer tokenizer = loadTokenizer(gguf);
+            Tokenizer tokenizer = loadTokenizer(modelPath);
             LlamaConfig config = loadConfig(gguf, tokenizer.vocabulary().size());
             Llama3ChatFormat format = new Llama3ChatFormat(tokenizer);
 
@@ -395,21 +390,8 @@ public final class Llama32CliQ8_0 {
         }
     }
 
-    private static Tokenizer loadTokenizer(GGUF gguf) {
-        String[] tokens = gguf.getValue(String[].class, "tokenizer.ggml.tokens");
-        int[] tokenTypes =
-                gguf.containsKey("tokenizer.ggml.token_type")
-                        ? gguf.getValue(int[].class, "tokenizer.ggml.token_type")
-                        : null;
-        String[] merges = gguf.getValue(String[].class, "tokenizer.ggml.merges");
-        VocabularyImpl vocabulary = new VocabularyImpl(tokens, null, tokenTypes);
-        List<IntPair> pairs =
-                Arrays.stream(merges)
-                        .map(s -> s.split(" "))
-                        .map(p -> new IntPair(vocabulary.id(p[0]), vocabulary.id(p[1])))
-                        .toList();
-        Splitter splitter = RegexSplitter.create(LLAMA3_PATTERN);
-        return new GPT2Tokenizer(vocabulary, Normalizer.IDENTITY, splitter, pairs);
+    private static Tokenizer loadTokenizer(Path modelPath) {
+        return GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromLocal(modelPath);
     }
 
     private static LlamaConfig loadConfig(GGUF gguf, int vocab) {
@@ -564,7 +546,7 @@ public final class Llama32CliQ8_0 {
                         : Shape.flat(e.shape());
 
         try {
-            long bytes = e.ggmlType().byteSizeForShape(e.shape());
+            long bytes = e.ggmlType().byteSizeFor(e.totalNumberOfElements());
             MemorySegment seg =
                     channel.map(
                             FileChannel.MapMode.READ_ONLY, tensorBase + e.offset(), bytes, arena);
@@ -602,7 +584,7 @@ public final class Llama32CliQ8_0 {
             throw new IllegalArgumentException("Missing tensor: " + name);
         }
 
-        long bytes = e.ggmlType().byteSizeForShape(e.shape());
+        long bytes = e.ggmlType().byteSizeFor(e.totalNumberOfElements());
         Shape shape =
                 e.shape().length == 2
                         ? Shape.of(e.shape()[1], e.shape()[0])

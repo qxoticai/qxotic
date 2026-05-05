@@ -311,7 +311,7 @@ final class MnistMlp {
 
         private static void validateTensorSize(
                 TensorEntry tensor, String name, long expectedBytes) {
-            long bytes = tensor.ggmlType().byteSizeForShape(tensor.shape());
+            long bytes = tensor.ggmlType().byteSizeFor(tensor.totalNumberOfElements());
             if (bytes != expectedBytes) {
                 throw new IllegalStateException(
                         "Unexpected tensor size for "

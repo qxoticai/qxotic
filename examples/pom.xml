@@ -33,7 +33,14 @@
       <groupId>com.qxotic</groupId>
       <artifactId>toknroll</artifactId>
     </dependency>
-
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>toknroll-gguf</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>toknroll-incubator</artifactId>
+    </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
       <artifactId>jota-backend-c</artifactId>

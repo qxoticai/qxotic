@@ -18,12 +18,7 @@ import com.qxotic.jota.memory.impl.MemoryFactory;
 import com.qxotic.jota.tensor.Tensor;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.advanced.Normalizer;
-import com.qxotic.toknroll.advanced.Splitter;
-import com.qxotic.toknroll.impl.GPT2Tokenizer;
-import com.qxotic.toknroll.impl.IntPair;
-import com.qxotic.toknroll.impl.RegexSplitter;
-import com.qxotic.toknroll.impl.VocabularyImpl;
+import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -234,7 +229,7 @@ public final class Qwen3Cli {
                 throw new IllegalArgumentException("Expected qwen3 architecture, got: " + arch);
             }
 
-            Tokenizer tokenizer = loadTokenizer(gguf);
+            Tokenizer tokenizer = loadTokenizer(modelPath);
             Qwen3Config config = loadConfig(gguf, tokenizer.vocabulary().size());
             ChatFormat chatFormat = new ChatMLFormat(tokenizer);
 
@@ -253,21 +248,8 @@ public final class Qwen3Cli {
         }
     }
 
-    private static Tokenizer loadTokenizer(GGUF gguf) {
-        String[] tokens = gguf.getValue(String[].class, "tokenizer.ggml.tokens");
-        int[] tokenTypes =
-                gguf.containsKey("tokenizer.ggml.token_type")
-                        ? gguf.getValue(int[].class, "tokenizer.ggml.token_type")
-                        : null;
-        String[] mergeLines = gguf.getValue(String[].class, "tokenizer.ggml.merges");
-        VocabularyImpl vocabulary = new VocabularyImpl(tokens, null, tokenTypes);
-        List<IntPair> merges =
-                Arrays.stream(mergeLines)
-                        .map(line -> line.split(" "))
-                        .map(parts -> new IntPair(vocabulary.id(parts[0]), vocabulary.id(parts[1])))
-                        .toList();
-        Splitter splitter = RegexSplitter.create(QWEN2_PATTERN);
-        return new GPT2Tokenizer(vocabulary, Normalizer.IDENTITY, splitter, merges);
+    private static Tokenizer loadTokenizer(Path modelPath) {
+        return GGUFTokenizerLoader.createBuilderWithBuiltins().build().fromLocal(modelPath);
     }
 
     private static Qwen3Config loadConfig(GGUF gguf, int vocabSize) {
@@ -399,7 +381,7 @@ public final class Qwen3Cli {
                             + " is "
                             + e.ggmlType());
         }
-        long byteSize = e.ggmlType().byteSizeForShape(e.shape());
+        long byteSize = e.ggmlType().byteSizeFor(e.totalNumberOfElements());
         try {
             MemorySegment segment =
                     channel.map(
