@@ -94,7 +94,7 @@ int count = tokenizer.countTokens("How many tokens is this?");
 Load tokenizers from HuggingFace, ModelScope, or local files.
 
 ```java
-// HuggingFace tokenizer.json format (Gemma 4, Qwen 3, Llama 4, Mistral, Phi 4, ...)
+// HuggingFace tokenizer.json format
 Tokenizer t = HuggingFaceTokenizerLoader
     .fromHuggingFace("google", "gemma-4-e2b-it");
 

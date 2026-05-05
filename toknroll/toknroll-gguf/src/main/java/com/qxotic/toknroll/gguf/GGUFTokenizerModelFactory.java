@@ -1,11 +1,7 @@
 package com.qxotic.toknroll.gguf;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.toknroll.ByteLevel;
-import com.qxotic.toknroll.StandardTokenType;
-import com.qxotic.toknroll.TokenizationModel;
-import com.qxotic.toknroll.Toknroll;
-import com.qxotic.toknroll.Vocabulary;
+import com.qxotic.toknroll.*;
 import com.qxotic.toknroll.impl.ImplAccessor;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -21,8 +17,7 @@ final class GGUFTokenizerModelFactory {
         boolean replaceWhitespaceMarker =
                 "gemma4".equals(GGUFMetadataKeys.key(gguf, GGUFMetadataKeys.MODEL));
         Vocabulary vocabulary = buildVocabulary(gguf, replaceWhitespaceMarker, true);
-        List<Toknroll.MergeRule> merges =
-                buildMerges(gguf, vocabulary, replaceWhitespaceMarker, true);
+        List<MergeRule> merges = buildMerges(gguf, vocabulary, replaceWhitespaceMarker, true);
         return Toknroll.tiktokenModel(vocabulary, merges);
     }
 
@@ -70,7 +65,7 @@ final class GGUFTokenizerModelFactory {
         return ImplAccessor.createVocabulary(normalizedTokens, tokenTypes);
     }
 
-    private static List<Toknroll.MergeRule> buildMerges(
+    private static List<MergeRule> buildMerges(
             GGUF gguf,
             Vocabulary vocabulary,
             boolean replaceWhitespaceMarker,
@@ -81,7 +76,7 @@ final class GGUFTokenizerModelFactory {
                     "GGUF metadata key missing: " + GGUFMetadataKeys.MERGES);
         }
 
-        List<Toknroll.MergeRule> merges = new ArrayList<>(mergesRaw.length);
+        List<MergeRule> merges = new ArrayList<>(mergesRaw.length);
         int denseRank = 0;
         for (String spec : mergesRaw) {
             if (spec == null) {
@@ -99,7 +94,7 @@ final class GGUFTokenizerModelFactory {
             int rightId = ImplAccessor.getIdOrNegative(vocabulary, right);
             int mergedId = ImplAccessor.getIdOrNegative(vocabulary, left + right);
             if (leftId >= 0 && rightId >= 0) {
-                merges.add(Toknroll.MergeRule.of(leftId, rightId, denseRank++));
+                merges.add(MergeRule.of(leftId, rightId, denseRank++));
             }
         }
         return merges;

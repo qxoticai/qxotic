@@ -3,11 +3,7 @@ package com.qxotic.toknroll.impl;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.qxotic.toknroll.IntSequence;
-import com.qxotic.toknroll.Splitter;
-import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.Toknroll;
-import com.qxotic.toknroll.Vocabulary;
+import com.qxotic.toknroll.*;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -24,7 +20,7 @@ class GenericBpeCodePointTest {
                                 "ab", 2,
                                 "🙂", 3));
 
-        List<Toknroll.MergeRule> merges = List.of(Toknroll.MergeRule.of(0, 1, 0));
+        List<MergeRule> merges = List.of(MergeRule.of(0, 1, 0));
 
         Tokenizer tokenizer =
                 Toknroll.pipeline(

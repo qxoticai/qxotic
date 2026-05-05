@@ -24,7 +24,7 @@ class GenericBpeParityTest {
                 TiktokenLoaders.vocabulary(
                         TiktokenFixtures.mergeableRanks(encoding),
                         TiktokenFixtures.specialTokens(encoding));
-        List<Toknroll.MergeRule> merges =
+        List<MergeRule> merges =
                 TiktokenLoaders.mergeRules(TiktokenFixtures.mergeableRanks(encoding));
         Tokenizer generic = Toknroll.pipeline(splitter, Toknroll.tiktokenModel(vocabulary, merges));
 

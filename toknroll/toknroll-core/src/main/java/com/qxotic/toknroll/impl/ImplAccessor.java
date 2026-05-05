@@ -1,13 +1,6 @@
 package com.qxotic.toknroll.impl;
 
-import com.qxotic.toknroll.ByteLevel;
-import com.qxotic.toknroll.IntSequence;
-import com.qxotic.toknroll.Specials;
-import com.qxotic.toknroll.Splitter;
-import com.qxotic.toknroll.TokenizationModel;
-import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.Toknroll;
-import com.qxotic.toknroll.Vocabulary;
+import com.qxotic.toknroll.*;
 import java.io.BufferedReader;
 import java.util.Base64;
 import java.util.HashMap;
@@ -61,7 +54,7 @@ public final class ImplAccessor {
     }
 
     public static TokenizationModel createTiktokenModel(
-            Vocabulary vocabulary, List<Toknroll.MergeRule> merges, boolean ignoreMerges) {
+            Vocabulary vocabulary, List<MergeRule> merges, boolean ignoreMerges) {
         LongLongMap packed =
                 merges.isEmpty()
                         ? new LongLongMap(new long[0], new long[0])
@@ -70,7 +63,7 @@ public final class ImplAccessor {
     }
 
     public static TokenizationModel createSentencePieceBpeModel(
-            Vocabulary vocabulary, List<Toknroll.MergeRule> merges) {
+            Vocabulary vocabulary, List<MergeRule> merges) {
         LongLongMap packed =
                 merges.isEmpty()
                         ? new LongLongMap(new long[0], new long[0])
@@ -140,7 +133,7 @@ public final class ImplAccessor {
         return TiktokenReconstruction.vocabulary(mergeableRanks, specialTokens);
     }
 
-    public static List<Toknroll.MergeRule> reconstructTiktokenMergeRules(
+    public static List<MergeRule> reconstructTiktokenMergeRules(
             Map<String, Integer> mergeableRanks) {
         return TiktokenReconstruction.mergeRules(mergeableRanks);
     }

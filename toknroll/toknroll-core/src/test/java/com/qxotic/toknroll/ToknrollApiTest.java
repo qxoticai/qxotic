@@ -124,7 +124,7 @@ class ToknrollApiTest {
         assertThrows(NullPointerException.class, () -> Toknroll.tiktokenModel(null, List.of()));
         assertThrows(
                 NullPointerException.class,
-                () -> Toknroll.tiktokenModel(vocabulary, (List<Toknroll.MergeRule>) null));
+                () -> Toknroll.tiktokenModel(vocabulary, (List<MergeRule>) null));
         assertThrows(NullPointerException.class, () -> new TokenizationPipeline(null, null, null));
         assertThrows(NullPointerException.class, () -> tokenizer.decode((IntSequence) null));
     }
