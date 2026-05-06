@@ -192,7 +192,9 @@ final class RepositoryArtifactCache {
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             if (response.statusCode() == 404) {
                 Files.createDirectories(notFoundMarker.getParent());
-                Files.createFile(notFoundMarker);
+                if (!Files.exists(notFoundMarker)) {
+                    Files.createFile(notFoundMarker);
+                }
             }
             throw new IOException(
                     "["
