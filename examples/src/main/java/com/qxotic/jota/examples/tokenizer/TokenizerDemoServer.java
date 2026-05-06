@@ -3,31 +3,65 @@ package com.qxotic.jota.examples.tokenizer;
 import com.qxotic.toknroll.IntSequence;
 import com.qxotic.toknroll.Tokenizer;
 import com.qxotic.toknroll.Vocabulary;
-import com.qxotic.toknroll.jtokkit.JTokkitTokenizers;
+import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
+import com.qxotic.toknroll.hf.HuggingFaceTokenizerLoader;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
-import java.util.regex.Pattern;
+import java.util.function.Consumer;
 
 public final class TokenizerDemoServer {
     private static final int PORT = 8080;
 
     private final Map<String, TokenizerEntry> tokenizers = new ConcurrentHashMap<>();
 
-    private record TokenizerEntry(String name, String description, Tokenizer tokenizer) {}
+    private static final class TokenizerEntry {
+        private final String name;
+        private final String description;
+        private final Callable<Tokenizer> factory;
+        private volatile Tokenizer tokenizer;
+        private volatile String loadError;
+
+        TokenizerEntry(String name, String description, Callable<Tokenizer> factory) {
+            this.name = name;
+            this.description = description;
+            this.factory = factory;
+        }
+
+        String name() { return name; }
+        String description() { return description; }
+
+        Tokenizer tokenizer() throws Exception {
+            if (loadError != null) throw new IllegalStateException(loadError);
+            Tokenizer t = tokenizer;
+            if (t == null) {
+                synchronized (this) {
+                    if (loadError != null) throw new IllegalStateException(loadError);
+                    t = tokenizer;
+                    if (t == null) {
+                        try {
+                            tokenizer = t = factory.call();
+                        } catch (Exception e) {
+                            loadError = e.getMessage();
+                            throw e;
+                        }
+                    }
+                }
+            }
+            return t;
+        }
+    }
 
     private TokenizerDemoServer() {
         initializeTokenizers();
@@ -37,146 +71,46 @@ public final class TokenizerDemoServer {
         new TokenizerDemoServer().start();
     }
 
+    // -- preset registration -------------------------------------------------
+
     private void initializeTokenizers() {
-        try {
-            // GPT-2 / GPT-3 tokenizer (gpt2)
-            tokenizers.put(
-                    "gpt2",
-                    new TokenizerEntry(
-                            "GPT-2",
-                            "GPT-2 tokenizer - 50,257 vocab",
-                            loadTiktokenTokenizer(
-                                    "gpt2",
-                                    "tiktoken/r50k_base.tiktoken",
-                                    "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+|"
-                                            + " ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+",
-                                    Map.of("<|endoftext|>", 50256))));
+        register("hf_kimi_2_6", "HF Kimi 2.6", "moonshotai/Kimi-K2.6",
+                () -> HuggingFaceTokenizerLoader.fromHuggingFace("moonshotai", "Kimi-K2.6"));
 
-            // CL100k (GPT-4, GPT-3.5)
-            tokenizers.put(
-                    "cl100k_base",
-                    new TokenizerEntry(
-                            "CL100k",
-                            "GPT-4 / GPT-3.5 tokenizer - 100,256 vocab",
-                            loadTiktokenTokenizer(
-                                    "cl100k_base",
-                                    "tiktoken/cl100k_base.tiktoken",
-                                    "'(?i:[sdmt]|ll|ve|re)|[^\\r"
-                                            + "\\n"
-                                            + "\\p{L}\\p{N}]?+\\p{L}++|\\p{N}{1,3}+|"
-                                            + " ?[^\\s\\p{L}\\p{N}]++[\\r"
-                                            + "\\n"
-                                            + "]*+|\\s++$|\\s*[\\r"
-                                            + "\\n"
-                                            + "]|\\s+(?!\\S)|\\s",
-                                    Map.of(
-                                            "<|endoftext|>", 100257,
-                                            "<|fim_prefix|>", 100258,
-                                            "<|fim_middle|>", 100259,
-                                            "<|fim_suffix|>", 100260,
-                                            "<|endofprompt|>", 100276))));
+        register("hf_deepseek_v4_pro", "HF DeepSeek V4 Pro", "deepseek-ai/DeepSeek-V4-Pro",
+                () -> HuggingFaceTokenizerLoader.fromHuggingFace(
+                        "deepseek-ai", "DeepSeek-V4-Pro"));
 
-            // o200k (GPT-4o)
-            tokenizers.put(
-                    "o200k_base",
-                    new TokenizerEntry(
-                            "O200k",
-                            "GPT-4o tokenizer - 200,019 vocab",
-                            loadTiktokenTokenizer(
-                                    "o200k_base",
-                                    "tiktoken/o200k_base.tiktoken",
-                                    "'(?i:[sdmt]|ll|ve|re)|[^\\r"
-                                            + "\\n"
-                                            + "\\p{L}\\p{N}]?+\\p{L}++|\\p{N}{1,3}+|"
-                                            + " ?[^\\s\\p{L}\\p{N}]++[\\r"
-                                            + "\\n"
-                                            + "]*+|\\s++$|\\s*[\\r"
-                                            + "\\n"
-                                            + "]|\\s+(?!\\S)|\\s",
-                                    Map.of(
-                                            "<|endoftext|>", 199999,
-                                            "<|endofprompt|>", 200018))));
+        register("hf_gemma_4", "HF Gemma 4", "google/gemma-4-e2b-it",
+                () -> HuggingFaceTokenizerLoader.fromHuggingFace("google", "gemma-4-e2b-it"));
 
-            // p50k (text-davinci-003)
-            tokenizers.put(
-                    "p50k_base",
-                    new TokenizerEntry(
-                            "P50k",
-                            "text-davinci-003 tokenizer - 50,281 vocab",
-                            loadTiktokenTokenizer(
-                                    "p50k_base",
-                                    "tiktoken/p50k_base.tiktoken",
-                                    "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+|"
-                                            + " ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+",
-                                    Map.of("<|endoftext|>", 50256))));
+        register("hf_mistral_tekken", "HF Mistral Tekken", "mistralai/ministral-8b-instruct-2410",
+                () -> HuggingFaceTokenizerLoader.fromHuggingFace(
+                        "mistralai", "ministral-8b-instruct-2410"));
 
-        } catch (Exception e) {
-            System.err.println("Warning: Failed to initialize some tokenizers: " + e.getMessage());
-            e.printStackTrace();
-        }
+        GGUFTokenizerLoader gguf = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
+        register("gguf_llama3_2_1b", "GGUF Llama-3.2-1B", "bartowski/Llama-3.2-1B-Instruct-GGUF",
+                () -> gguf.fromHuggingFace(
+                        "bartowski", "Llama-3.2-1B-Instruct-GGUF",
+                        "Llama-3.2-1B-Instruct-Q4_K_M.gguf"));
+
+        register("gguf_qwen3_6", "GGUF Qwen3.6", "unsloth/Qwen3.6-35B-A3B-GGUF",
+                () -> gguf.fromHuggingFace(
+                        "unsloth", "Qwen3.6-35B-A3B-GGUF",
+                        "Qwen3.6-35B-A3B-Q8_0.gguf"));
+
+        register("gguf_granite_4_1", "GGUF Granite 4.1", "unsloth/granite-4.1-3b-GGUF",
+                () -> gguf.fromHuggingFace(
+                        "unsloth", "granite-4.1-3b-GGUF",
+                        "granite-4.1-3b-Q8_0.gguf"));
     }
 
-    private Tokenizer loadTiktokenTokenizer(
-            String name, String resourcePath, String pattern, Map<String, Integer> specialTokens)
-            throws IOException {
-
-        InputStream stream = getClass().getClassLoader().getResourceAsStream(resourcePath);
-        if (stream == null) {
-            throw new RuntimeException("Tokenizer resource not found: " + resourcePath);
-        }
-
-        Map<String, Integer> mergeableRanks;
-        try (BufferedReader reader =
-                new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-            mergeableRanks = loadMergeableRanks(reader);
-        }
-
-        return JTokkitTokenizers.fromTiktoken(
-                name, mergeableRanks, Pattern.compile(pattern), specialTokens);
+    private void register(
+            String id, String name, String description, Callable<Tokenizer> factory) {
+        tokenizers.put(id, new TokenizerEntry(name, description, factory));
     }
 
-    private static final char[] BYTE_SYMBOLS = {
-        '\u0100', '\u0101', '\u0102', '\u0103', '\u0104', '\u0105', '\u0106', '\u0107', '\u0108',
-        '\u0109', '\u010a', '\u010b', '\u010c', '\u010d', '\u010e', '\u010f', '\u0110', '\u0111',
-        '\u0112', '\u0113', '\u0114', '\u0115', '\u0116', '\u0117', '\u0118', '\u0119', '\u011a',
-        '\u011b', '\u011c', '\u011d', '\u011e', '\u011f', '\u0120', '!', '"', '#', '$', '%', '&',
-        '\'', '(', ')', '*', '+', ',', '-', '.', '/', '0', '1', '2', '3', '4', '5', '6', '7', '8',
-        '9', ':', ';', '<', '=', '>', '?', '@', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
-        'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '[', '\\',
-        ']', '^', '_', '`', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
-        'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '{', '|', '}', '~', '\u0121',
-        '\u0122', '\u0123', '\u0124', '\u0125', '\u0126', '\u0127', '\u0128', '\u0129', '\u012a',
-        '\u012b', '\u012c', '\u012d', '\u012e', '\u012f', '\u0130', '\u0131', '\u0132', '\u0133',
-        '\u0134', '\u0135', '\u0136', '\u0137', '\u0138', '\u0139', '\u013a', '\u013b', '\u013c',
-        '\u013d', '\u013e', '\u013f', '\u0140', '\u0141', '\u0142', '\u00a1', '\u00a2', '\u00a3',
-        '\u00a4', '\u00a5', '\u00a6', '\u00a7', '\u00a8', '\u00a9', '\u00aa', '\u00ab', '\u00ac',
-        '\u0143', '\u00ae', '\u00af', '\u00b0', '\u00b1', '\u00b2', '\u00b3', '\u00b4', '\u00b5',
-        '\u00b6', '\u00b7', '\u00b8', '\u00b9', '\u00ba', '\u00bb', '\u00bc', '\u00bd', '\u00be',
-        '\u00bf', '\u00c0', '\u00c1', '\u00c2', '\u00c3', '\u00c4', '\u00c5', '\u00c6', '\u00c7',
-        '\u00c8', '\u00c9', '\u00ca', '\u00cb', '\u00cc', '\u00cd', '\u00ce', '\u00cf', '\u00d0',
-        '\u00d1', '\u00d2', '\u00d3', '\u00d4', '\u00d5', '\u00d6', '\u00d7', '\u00d8', '\u00d9',
-        '\u00da', '\u00db', '\u00dc', '\u00dd', '\u00de', '\u00df', '\u00e0', '\u00e1', '\u00e2',
-        '\u00e3', '\u00e4', '\u00e5', '\u00e6', '\u00e7', '\u00e8', '\u00e9', '\u00ea', '\u00eb',
-        '\u00ec', '\u00ed', '\u00ee', '\u00ef', '\u00f0', '\u00f1', '\u00f2', '\u00f3', '\u00f4',
-        '\u00f5', '\u00f6', '\u00f7', '\u00f8', '\u00f9', '\u00fa', '\u00fb', '\u00fc', '\u00fd',
-        '\u00fe', '\u00ff'
-    };
-
-    private static Map<String, Integer> loadMergeableRanks(BufferedReader reader) {
-        Map<String, Integer> mergeableRanks = new HashMap<>();
-        reader.lines()
-                .forEachOrdered(
-                        line -> {
-                            String[] parts = line.split(" ");
-                            byte[] bytes = Base64.getDecoder().decode(parts[0]);
-                            StringBuilder key = new StringBuilder(bytes.length);
-                            for (byte b : bytes) {
-                                key.append(BYTE_SYMBOLS[b & 0xFF]);
-                            }
-                            mergeableRanks.put(key.toString(), Integer.parseInt(parts[1]));
-                        });
-        return mergeableRanks;
-    }
+    // -- server --------------------------------------------------------------
 
     private void start() throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress(PORT), 0);
@@ -191,148 +125,132 @@ public final class TokenizerDemoServer {
         System.out.println("Tokenizer demo running on http://localhost:" + PORT);
     }
 
+    // -- static file handlers ------------------------------------------------
+
+    private static final Map<String, String> STATIC_TYPES = Map.of(
+            "/", "/tokenizer/tokenizer.html;text/html; charset=utf-8",
+            "/tokenizer.js", "/tokenizer/tokenizer.js;application/javascript; charset=utf-8",
+            "/tokenizer.css", "/tokenizer/tokenizer.css;text/css; charset=utf-8");
+
     private void handleStatic(HttpExchange exchange) throws IOException {
-        String path = exchange.getRequestURI().getPath();
-        if (path.equals("/")) {
-            serveResource(exchange, "/web/tokenizer.html", "text/html; charset=utf-8");
+        String entry = STATIC_TYPES.get(exchange.getRequestURI().getPath());
+        if (entry == null) {
+            sendText(exchange, 404, "Not found");
             return;
         }
-        if (path.equals("/tokenizer.js")) {
-            serveResource(exchange, "/web/tokenizer.js", "application/javascript; charset=utf-8");
-            return;
+        int semi = entry.indexOf(';');
+        String resource = entry.substring(0, semi);
+        String contentType = entry.substring(semi + 1);
+        try (InputStream stream = getClass().getResourceAsStream(resource)) {
+            if (stream == null) {
+                sendText(exchange, 404, "Not found: " + resource);
+                return;
+            }
+            writeBody(exchange, 200, stream.readAllBytes(),
+                    h -> h.set("Content-Type", contentType));
         }
-        if (path.equals("/tokenizer.css")) {
-            serveResource(exchange, "/web/tokenizer.css", "text/css; charset=utf-8");
-            return;
-        }
-        send(exchange, 404, "Not found");
     }
 
+    // -- API handlers --------------------------------------------------------
+
     private void handleListTokenizers(HttpExchange exchange) throws IOException {
-        if (!"GET".equals(exchange.getRequestMethod())) {
-            send(exchange, 405, "Method not allowed");
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            sendText(exchange, 405, "Method not allowed");
             return;
         }
-
-        StringBuilder json = new StringBuilder();
-        json.append('[');
+        StringBuilder json = new StringBuilder("[");
         boolean first = true;
-        for (Map.Entry<String, TokenizerEntry> entry : tokenizers.entrySet()) {
+        for (var e : tokenizers.entrySet()) {
             if (!first) json.append(',');
             first = false;
-            json.append('{');
-            json.append("\"id\":\"").append(escapeJson(entry.getKey())).append("\",");
-            json.append("\"name\":\"").append(escapeJson(entry.getValue().name())).append("\",");
+            json.append("{\"id\":\"").append(escapeJson(e.getKey())).append("\",");
+            json.append("\"name\":\"").append(escapeJson(e.getValue().name())).append("\",");
             json.append("\"description\":\"")
-                    .append(escapeJson(entry.getValue().description()))
-                    .append("\"");
-            json.append('}');
+                    .append(escapeJson(e.getValue().description()))
+                    .append("\"}");
         }
         json.append(']');
         sendJson(exchange, json.toString());
     }
 
     private void handleTokenize(HttpExchange exchange) throws IOException {
-        if (!"POST".equals(exchange.getRequestMethod())) {
-            send(exchange, 405, "Method not allowed");
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            sendText(exchange, 405, "Method not allowed");
             return;
         }
-
         try {
-            Map<String, String> params = parseFormData(exchange);
-            String tokenizerId = params.get("tokenizer");
-            String text = params.get("text");
-
+            Map<String, String> p = parseForm(exchange);
+            String tokenizerId = p.get("tokenizer");
+            String text = p.get("text");
             if (tokenizerId == null || text == null) {
-                sendJson(exchange, "{\"error\":\"Missing tokenizer or text parameter\"}");
+                sendJson(exchange, "{\"error\":\"Missing tokenizer or text\"}");
                 return;
             }
-
             TokenizerEntry entry = tokenizers.get(tokenizerId);
             if (entry == null) {
-                sendJson(
-                        exchange,
+                sendJson(exchange,
                         "{\"error\":\"Unknown tokenizer: " + escapeJson(tokenizerId) + "\"}");
                 return;
             }
-
-            IntSequence tokens = entry.tokenizer().encode(text);
-            Vocabulary vocab = entry.tokenizer().vocabulary();
+            Tokenizer tok = entry.tokenizer();
+            IntSequence tokens = tok.encode(text);
+            Vocabulary vocab = tok.vocabulary();
 
             StringBuilder json = new StringBuilder();
-            json.append('{');
-            json.append("\"text\":\"").append(escapeJson(text)).append("\",");
+            json.append("{\"text\":\"").append(escapeJson(text)).append("\",");
             json.append("\"tokenCount\":").append(tokens.length()).append(',');
             json.append("\"characters\":").append(text.length()).append(',');
             json.append("\"tokens\":[");
-
             for (int i = 0; i < tokens.length(); i++) {
                 if (i > 0) json.append(',');
-                int tokenId = tokens.intAt(i);
-                String tokenStr = vocab.token(tokenId);
-
-                json.append('{');
-                json.append("\"id\":").append(tokenId).append(',');
+                int id = tokens.intAt(i);
+                String surface = vocab.token(id);
+                json.append("{\"id\":").append(id).append(',');
                 json.append("\"text\":\"")
-                        .append(escapeJson(tokenStr != null ? tokenStr : "<?>"))
+                        .append(escapeJson(surface != null ? surface : "<?>"))
                         .append("\",");
-                json.append("\"decoded\":\"")
-                        .append(escapeJson(decodeToken(entry.tokenizer(), tokenId)))
-                        .append("\"");
-                json.append('}');
+                json.append("\"decoded\":\"").append(escapeJson(decodeToken(tok, id))).append("\"}");
             }
             json.append("]}");
-
             sendJson(exchange, json.toString());
         } catch (Exception e) {
-            e.printStackTrace();
+            System.err.println("[tokenize] " + e);
             sendJson(exchange, "{\"error\":\"" + escapeJson(e.getMessage()) + "\"}");
         }
     }
 
     private void handleDecode(HttpExchange exchange) throws IOException {
-        if (!"POST".equals(exchange.getRequestMethod())) {
-            send(exchange, 405, "Method not allowed");
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            sendText(exchange, 405, "Method not allowed");
             return;
         }
-
         try {
-            Map<String, String> params = parseFormData(exchange);
-            String tokenizerId = params.get("tokenizer");
-            String tokensParam = params.get("tokens");
-
+            Map<String, String> p = parseForm(exchange);
+            String tokenizerId = p.get("tokenizer");
+            String tokensParam = p.get("tokens");
             if (tokenizerId == null || tokensParam == null) {
-                sendJson(exchange, "{\"error\":\"Missing tokenizer or tokens parameter\"}");
+                sendJson(exchange, "{\"error\":\"Missing tokenizer or tokens\"}");
                 return;
             }
-
             TokenizerEntry entry = tokenizers.get(tokenizerId);
             if (entry == null) {
                 sendJson(exchange, "{\"error\":\"Unknown tokenizer\"}");
                 return;
             }
-
-            String[] tokenStrings = tokensParam.split(",");
-            int[] tokenIds = new int[tokenStrings.length];
-            for (int i = 0; i < tokenStrings.length; i++) {
-                tokenIds[i] = Integer.parseInt(tokenStrings[i].trim());
-            }
-
-            String decoded = entry.tokenizer().decode(IntSequence.wrap(tokenIds));
-
-            StringBuilder json = new StringBuilder();
-            json.append('{');
-            json.append("\"text\":\"").append(escapeJson(decoded)).append("\"");
-            json.append('}');
-
-            sendJson(exchange, json.toString());
+            String[] parts = tokensParam.split(",");
+            int[] ids = new int[parts.length];
+            for (int i = 0; i < parts.length; i++) ids[i] = Integer.parseInt(parts[i].trim());
+            String decoded = entry.tokenizer().decode(IntSequence.wrap(ids));
+            sendJson(exchange, "{\"text\":\"" + escapeJson(decoded) + "\"}");
         } catch (Exception e) {
-            e.printStackTrace();
+            System.err.println("[decode] " + e);
             sendJson(exchange, "{\"error\":\"" + escapeJson(e.getMessage()) + "\"}");
         }
     }
 
-    private String decodeToken(Tokenizer tokenizer, int tokenId) {
+    // -- helpers -------------------------------------------------------------
+
+    private static String decodeToken(Tokenizer tokenizer, int tokenId) {
         try {
             return tokenizer.decode(IntSequence.wrap(new int[] {tokenId}));
         } catch (Exception e) {
@@ -340,57 +258,47 @@ public final class TokenizerDemoServer {
         }
     }
 
-    private Map<String, String> parseFormData(HttpExchange exchange) throws IOException {
+    private static Map<String, String> parseForm(HttpExchange exchange) throws IOException {
         String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
         Map<String, String> params = new HashMap<>();
         for (String pair : body.split("&")) {
             int eq = pair.indexOf('=');
             if (eq > 0) {
-                String key = URLDecoder.decode(pair.substring(0, eq), StandardCharsets.UTF_8);
-                String value = URLDecoder.decode(pair.substring(eq + 1), StandardCharsets.UTF_8);
-                params.put(key, value);
+                params.put(
+                        URLDecoder.decode(pair.substring(0, eq), StandardCharsets.UTF_8),
+                        URLDecoder.decode(pair.substring(eq + 1), StandardCharsets.UTF_8));
             }
         }
         return params;
     }
 
-    private void serveResource(HttpExchange exchange, String resource, String contentType)
+    // -- response writing ----------------------------------------------------
+
+    private static void sendJson(HttpExchange exchange, String json) throws IOException {
+        writeBody(exchange, 200, json.getBytes(StandardCharsets.UTF_8), h -> {
+            h.set("Content-Type", "application/json; charset=utf-8");
+            h.set("Access-Control-Allow-Origin", "*");
+        });
+    }
+
+    private static void sendText(HttpExchange exchange, int code, String message)
             throws IOException {
-        try (InputStream stream = getClass().getResourceAsStream(resource)) {
-            if (stream == null) {
-                send(exchange, 404, "Not found: " + resource);
-                return;
-            }
-            byte[] bytes = stream.readAllBytes();
-            Headers headers = exchange.getResponseHeaders();
-            headers.set("Content-Type", contentType);
-            exchange.sendResponseHeaders(200, bytes.length);
-            try (OutputStream out = exchange.getResponseBody()) {
-                out.write(bytes);
-            }
-        }
+        writeBody(exchange, code, message.getBytes(StandardCharsets.UTF_8), null);
     }
 
-    private void sendJson(HttpExchange exchange, String json) throws IOException {
-        byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
-        Headers headers = exchange.getResponseHeaders();
-        headers.set("Content-Type", "application/json; charset=utf-8");
-        headers.set("Access-Control-Allow-Origin", "*");
-        exchange.sendResponseHeaders(200, bytes.length);
+    private static void writeBody(
+            HttpExchange exchange, int code, byte[] body, Consumer<Headers> headerConfig)
+            throws IOException {
+        if (headerConfig != null) headerConfig.accept(exchange.getResponseHeaders());
+        exchange.sendResponseHeaders(code, body.length);
         try (OutputStream out = exchange.getResponseBody()) {
-            out.write(bytes);
+            out.write(body);
         }
     }
 
-    private void send(HttpExchange exchange, int code, String message) throws IOException {
-        byte[] bytes = message.getBytes(StandardCharsets.UTF_8);
-        exchange.sendResponseHeaders(code, bytes.length);
-        try (OutputStream out = exchange.getResponseBody()) {
-            out.write(bytes);
-        }
-    }
+    // -- JSON escaping -------------------------------------------------------
 
-    private String escapeJson(String value) {
+    private static String escapeJson(String value) {
         if (value == null) return "";
         return value.replace("\\", "\\\\")
                 .replace("\"", "\\\"")

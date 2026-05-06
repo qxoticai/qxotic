@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tokenizer Demo</title>
+    <link rel="stylesheet" href="/tokenizer.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="app-header">
+        <div class="brand">
+          <div class="logo">Tk</div>
+          <div>
+            <h1>Tokenizer Demo</h1>
+            <p class="tagline">Explore Tok'n'Roll tokenizers interactively</p>
+          </div>
+        </div>
+        <button id="theme" class="theme-toggle" aria-label="Toggle theme">
+          <span class="sun">☀</span><span class="moon">☾</span>
+        </button>
+      </header>
+
+      <section class="control-bar">
+        <div class="select-wrapper">
+          <label for="tokenizer">Tokenizer</label>
+          <select id="tokenizer"></select>
+        </div>
+        <div class="stats-pills" id="statsPills" hidden>
+          <div class="pill"><span class="pill-label">Tokens</span><span class="pill-value" id="tokenCount">0</span></div>
+          <div class="pill"><span class="pill-label">Chars</span><span class="pill-value" id="charCount">0</span></div>
+          <div class="pill"><span class="pill-label">Ratio</span><span class="pill-value" id="ratio">0</span></div>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <div class="input-card">
+          <div class="input-header">
+            <span class="input-label">Input Text</span>
+            <button id="clear" class="icon-btn" title="Clear">✕</button>
+          </div>
+          <textarea id="text" placeholder="Type something to tokenize..."></textarea>
+          <p class="input-hint">Auto-tokenizes while you type.</p>
+        </div>
+
+        <div class="tokens-card" id="tokensCard" hidden>
+          <div class="card-header">
+            <span class="card-title">Token Stream</span>
+            <div class="header-actions">
+              <label class="id-toggle">
+                <input type="checkbox" id="showIds" checked /><span>IDs</span>
+              </label>
+              <button id="copyTokens" class="icon-btn" title="Copy token IDs">⎘</button>
+            </div>
+          </div>
+          <div class="tokens-stage" id="tokensStage"></div>
+        </div>
+
+        <div class="decode-card">
+          <div class="card-header"><span class="card-title">Decode</span></div>
+          <div class="decode-row">
+            <input id="tokenIds" type="text" placeholder="1, 2, 3, ..." />
+            <button id="decodeBtn" class="btn-secondary">Decode</button>
+          </div>
+          <div class="decode-output" id="decoded"></div>
+        </div>
+      </section>
+
+      <footer class="app-footer"><p id="status">Ready</p></footer>
+    </main>
+    <script src="/tokenizer.js"></script>
+  </body>
+</html>
