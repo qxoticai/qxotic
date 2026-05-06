@@ -39,6 +39,10 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
+      <artifactId>toknroll-hf</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
       <artifactId>toknroll-incubator</artifactId>
     </dependency>
     <dependency>
