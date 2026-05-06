@@ -1,8 +1,12 @@
+---
+sidebar_position: 1
+---
+
 # Safetensors
 
 A Java library for reading and writing [Safetensors](https://github.com/huggingface/safetensors) files, the format used by [Hugging Face](https://huggingface.co) for storing model weights and metadata. See the [Safetensors specification](https://huggingface.co/docs/safetensors/index).
 
-**Zero dependencies · Java 11+ · GraalVM Native Image ready**
+**Java 11+ · GraalVM Native Image ready**
 
 ## Quick Start
 
@@ -28,46 +32,52 @@ long byteSize = weights.byteSize();
 
 ## Installation
 
-=== "Maven"
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
-    ```xml
-    <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>safetensors</artifactId>
-        <version>0.1.0</version>
-    </dependency>
-    ```
+<Tabs>
+  <TabItem value="maven" label="Maven">
 
-=== "Gradle"
+```xml
+<dependency>
+    <groupId>com.qxotic</groupId>
+    <artifactId>safetensors</artifactId>
+    <version>0.1.0</version>
+</dependency>
+```
 
-    ```groovy
-    implementation 'com.qxotic:safetensors:0.1.0'
-    ```
+  </TabItem>
+  <TabItem value="gradle" label="Gradle">
 
-=== "Mill"
+```groovy
+implementation 'com.qxotic:safetensors:0.1.0'
+```
 
-    ```scala
-    mvn"com.qxotic:safetensors:0.1.0"
-    ```
+  </TabItem>
+  <TabItem value="mill" label="Mill">
+
+```scala
+mvn"com.qxotic:safetensors:0.1.0"
+```
+
+  </TabItem>
+</Tabs>
 
 ## Reading
 
 ### From a File
 
-```java
---8<-- "src/test/java/com/qxotic/format/safetensors/Snippets.java:read-path"
+```snippet path="safetensors/src/test/java/com/qxotic/format/safetensors/Snippets.java" tag="read-path"
 ```
 
 ### From a ByteChannel
 
-```java
---8<-- "src/test/java/com/qxotic/format/safetensors/Snippets.java:read-channel"
+```snippet path="safetensors/src/test/java/com/qxotic/format/safetensors/Snippets.java" tag="read-channel"
 ```
 
 ### From HuggingFace
 
-```java
---8<-- "src/test/java/com/qxotic/format/safetensors/Snippets.java:read-from-huggingface"
+```snippet path="safetensors/src/test/java/com/qxotic/format/safetensors/Snippets.java" tag="read-from-huggingface"
 ```
 
 ```java
@@ -78,36 +88,30 @@ Safetensors st = readFromHuggingFace("HuggingFaceTB", "SmolLM2-135M", "model.saf
 
 Metadata values are always strings per the Safetensors spec:
 
-```java
---8<-- "src/test/java/com/qxotic/format/safetensors/Snippets.java:metadata"
+```snippet path="safetensors/src/test/java/com/qxotic/format/safetensors/Snippets.java" tag="metadata"
 ```
 
-```java
---8<-- "src/test/java/com/qxotic/format/safetensors/Snippets.java:metadata-keys"
+```snippet path="safetensors/src/test/java/com/qxotic/format/safetensors/Snippets.java" tag="metadata-keys"
 ```
 
 ## Tensors
 
-```java
---8<-- "src/test/java/com/qxotic/format/safetensors/Snippets.java:tensors"
+```snippet path="safetensors/src/test/java/com/qxotic/format/safetensors/Snippets.java" tag="tensors"
 ```
 
-```java
---8<-- "src/test/java/com/qxotic/format/safetensors/Snippets.java:tensor-one"
+```snippet path="safetensors/src/test/java/com/qxotic/format/safetensors/Snippets.java" tag="tensor-one"
 ```
 
 ### Reading Tensor Data
 
 The library provides tensor offsets and sizes. You read/write tensor bytes yourself using `FileChannel`:
 
-```java
---8<-- "src/test/java/com/qxotic/format/safetensors/Snippets.java:read-tensor-bytebuffer"
+```snippet path="safetensors/src/test/java/com/qxotic/format/safetensors/Snippets.java" tag="read-tensor-bytebuffer"
 ```
 
 For large models, memory-map instead of copying:
 
-```java
---8<-- "src/test/java/com/qxotic/format/safetensors/Snippets.java:read-tensor-mmap-buffer"
+```snippet path="safetensors/src/test/java/com/qxotic/format/safetensors/Snippets.java" tag="read-tensor-mmap-buffer"
 ```
 
 ## Data Types
@@ -134,22 +138,19 @@ Java lacks unsigned primitives. Use `Byte.toUnsignedInt()`, `Short.toUnsignedInt
 
 ### Builder
 
-```java
---8<-- "src/test/java/com/qxotic/format/safetensors/Snippets.java:builder-create"
+```snippet path="safetensors/src/test/java/com/qxotic/format/safetensors/Snippets.java" tag="builder-create"
 ```
 
 ### Modifying Existing Files
 
-```java
---8<-- "src/test/java/com/qxotic/format/safetensors/Snippets.java:builder-modify"
+```snippet path="safetensors/src/test/java/com/qxotic/format/safetensors/Snippets.java" tag="builder-modify"
 ```
 
 ### Writing a Complete File
 
 `Safetensors.write()` writes the header only. Write tensor data separately at each tensor's offset:
 
-```java
---8<-- "src/test/java/com/qxotic/format/safetensors/Snippets.java:write-tensor-buffer"
+```snippet path="safetensors/src/test/java/com/qxotic/format/safetensors/Snippets.java" tag="write-tensor-buffer"
 ```
 
 #### Multiple Tensors
@@ -171,8 +172,7 @@ try (FileChannel channel = FileChannel.open(Path.of("output.safetensors"),
 
 Tensor data starts at aligned byte boundaries (default: 64 bytes, must be a power of 2). Padding is added automatically.
 
-```java
---8<-- "src/test/java/com/qxotic/format/safetensors/Snippets.java:builder-alignment"
+```snippet path="safetensors/src/test/java/com/qxotic/format/safetensors/Snippets.java" tag="builder-alignment"
 ```
 
 ### Tensor Offsets
@@ -183,16 +183,14 @@ Tensor data starts at aligned byte boundaries (default: 64 bytes, must be a powe
 
 Use `SafetensorsIndex` to locate tensors across shards:
 
-```java
---8<-- "src/test/java/com/qxotic/format/safetensors/Snippets.java:index-load"
+```snippet path="safetensors/src/test/java/com/qxotic/format/safetensors/Snippets.java" tag="index-load"
 ```
 
 Handles both `model.safetensors` (single-file) and `model.safetensors.index.json` (sharded).
 
 ## Error Handling
 
-```java
---8<-- "src/test/java/com/qxotic/format/safetensors/Snippets.java:error-handling"
+```snippet path="safetensors/src/test/java/com/qxotic/format/safetensors/Snippets.java" tag="error-handling"
 ```
 
 ## Command Line

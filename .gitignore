@@ -128,3 +128,10 @@ desktop.ini
 raytrace*.ppm
 
 test-fixtures
+
+# Docusaurus
+node_modules/
+build/
+.docusaurus/
+.cache-loader/
+
