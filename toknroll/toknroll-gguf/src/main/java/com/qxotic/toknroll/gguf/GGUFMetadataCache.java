@@ -1,11 +1,18 @@
 package com.qxotic.toknroll.gguf;
 
 import com.qxotic.format.gguf.GGUF;
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.ByteBuffer;
+import java.nio.channels.Channels;
+import java.nio.channels.ReadableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -20,7 +27,6 @@ final class GGUFMetadataCache {
     private static final String MODELSCOPE_TOKEN_PROPERTY = "toknroll.modelscope.token";
     private static final String MODELSCOPE_TOKEN_ENV = "MODELSCOPE_TOKEN";
 
-    private static final int INITIAL_RANGE_BYTES = 1 << 20;
     private static final int MAX_RANGE_BYTES =
             Integer.getInteger("toknroll.gguf.maxMetadataBytes", 1024 << 20);
 
@@ -101,7 +107,7 @@ final class GGUFMetadataCache {
         return fetchPartialMetadata("modelscope", url, target, token, useCacheOnly, forceRefresh);
     }
 
-    private Path fetchPartialMetadata(
+    Path fetchPartialMetadata(
             String source,
             String url,
             Path target,
@@ -119,81 +125,66 @@ final class GGUFMetadataCache {
         }
 
         Files.createDirectories(normalizedTarget.getParent());
-        IOException lastFailure = null;
 
-        for (int range = INITIAL_RANGE_BYTES; range <= MAX_RANGE_BYTES; range <<= 1) {
-            byte[] body;
-            try {
-                body = fetchRange(url, range, bearerToken, source);
-            } catch (IOException e) {
-                if (isHttp404(e)) {
-                    throw e;
-                }
-                lastFailure = e;
-                continue;
-            }
-
-            Path partial =
-                    normalizedTarget.resolveSibling(
-                            normalizedTarget.getFileName().toString() + ".partial");
-            Files.write(partial, body);
-            try {
-                GGUF.read(partial);
-                try {
-                    Files.move(
-                            partial,
-                            normalizedTarget,
-                            StandardCopyOption.REPLACE_EXISTING,
-                            StandardCopyOption.ATOMIC_MOVE);
-                } catch (IOException atomicMoveFailure) {
-                    Files.move(partial, normalizedTarget, StandardCopyOption.REPLACE_EXISTING);
-                }
-                return normalizedTarget;
-            } catch (RuntimeException | IOException parseError) {
-                lastFailure =
-                        new IOException(
-                                "["
-                                        + source
-                                        + "] Failed to parse GGUF metadata from partial download "
-                                        + url
-                                        + " (bytes="
-                                        + body.length
-                                        + ")",
-                                parseError);
-                Files.deleteIfExists(partial);
-            }
-        }
-
-        if (lastFailure != null) {
-            throw lastFailure;
-        }
-        throw new IOException("[" + source + "] Failed to fetch GGUF metadata: " + url);
-    }
-
-    private byte[] fetchRange(String url, int rangeBytes, String bearerToken, String source)
-            throws IOException {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url)).GET();
-        builder.header("Range", "bytes=0-" + (rangeBytes - 1));
         if (bearerToken != null && !bearerToken.isBlank()) {
             builder.header("Authorization", "Bearer " + bearerToken);
         }
 
-        HttpResponse<byte[]> response;
+        HttpResponse<InputStream> response;
         try {
             response =
                     getOrCreateHttpClient()
-                            .send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
+                            .send(builder.build(), HttpResponse.BodyHandlers.ofInputStream());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("[" + source + "] Interrupted while downloading " + url, e);
         }
 
-        int status = response.statusCode();
-        if ((status < 200 || status >= 300) && status != 206) {
+        Path partial =
+                normalizedTarget.resolveSibling(
+                        normalizedTarget.getFileName().toString() + ".partial");
+
+        try (InputStream rawBody = response.body()) {
+            int status = response.statusCode();
+            if (status < 200 || status >= 300) {
+                throw new IOException(
+                        "[" + source + "] Failed to download " + url + " (HTTP " + status + ")");
+            }
+
+            InputStream body = new BufferedInputStream(rawBody, 1 << 16);
+            OutputStream tap =
+                    new BufferedOutputStream(Files.newOutputStream(partial), 1 << 16);
+
+            try {
+                ReadableByteChannel sourceChannel = Channels.newChannel(body);
+                TeeReadableByteChannel teeChannel =
+                        new TeeReadableByteChannel(sourceChannel, tap, MAX_RANGE_BYTES);
+
+                GGUF.read(teeChannel);
+                tap.flush();
+            } finally {
+                tap.close();
+            }
+
+            try {
+                Files.move(
+                        partial,
+                        normalizedTarget,
+                        StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException atomicMoveFailure) {
+                Files.move(partial, normalizedTarget, StandardCopyOption.REPLACE_EXISTING);
+            }
+            return normalizedTarget;
+        } catch (IOException e) {
+            Files.deleteIfExists(partial);
+            throw e;
+        } catch (RuntimeException e) {
+            Files.deleteIfExists(partial);
             throw new IOException(
-                    "[" + source + "] Failed to download " + url + " (HTTP " + status + ")");
+                    "[" + source + "] Failed to parse GGUF metadata from " + url, e);
         }
-        return response.body();
     }
 
     private HttpClient getOrCreateHttpClient() {
@@ -213,8 +204,46 @@ final class GGUFMetadataCache {
         return client;
     }
 
-    private static boolean isHttp404(IOException e) {
-        return e.getMessage() != null && e.getMessage().endsWith("(HTTP 404)");
+    static final class TeeReadableByteChannel implements ReadableByteChannel {
+        private final ReadableByteChannel source;
+        private final OutputStream tap;
+        private final long maxBytes;
+        private long totalBytes;
+        private volatile boolean open = true;
+
+        TeeReadableByteChannel(ReadableByteChannel source, OutputStream tap, long maxBytes) {
+            this.source = source;
+            this.tap = tap;
+            this.maxBytes = maxBytes;
+        }
+
+        @Override
+        public int read(ByteBuffer dst) throws IOException {
+            int pos = dst.position();
+            int n = source.read(dst);
+            if (n > 0) {
+                totalBytes += n;
+                if (totalBytes > maxBytes) {
+                    throw new IOException(
+                            "GGUF metadata exceeds maximum size of " + maxBytes + " bytes");
+                }
+                byte[] copy = new byte[n];
+                dst.position(pos);
+                dst.get(copy);
+                tap.write(copy);
+            }
+            return n;
+        }
+
+        @Override
+        public boolean isOpen() {
+            return open;
+        }
+
+        @Override
+        public void close() throws IOException {
+            open = false;
+        }
     }
 
     private static String resolveToken(String propertyKey, String envKey) {
