@@ -70,6 +70,12 @@ public class BuilderTest extends GGUFTest {
     }
 
     @Test
+    public void testGetAlignmentWithNonUint32Type() {
+        Builder builder = Builder.newBuilder().putString("general.alignment", "bad");
+        assertThrows(GGUFFormatException.class, () -> builder.getAlignment());
+    }
+
+    @Test
     public void testAlignmentPowerOfTwo() {
         Builder builder = Builder.newBuilder();
 
