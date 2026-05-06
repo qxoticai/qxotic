@@ -8,7 +8,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Builds Safetensors instances containing metadata and tensor entries.
+ * Builds {@link Safetensors} instances containing metadata and tensor entries.
  *
  * @see <a href="https://github.com/huggingface/safetensors">Safetensors specification</a>
  */

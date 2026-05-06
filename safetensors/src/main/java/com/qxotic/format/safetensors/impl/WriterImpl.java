@@ -8,12 +8,12 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.WritableByteChannel;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 final class WriterImpl {
     private final ByteBuffer headerSizeBuffer =
@@ -63,14 +63,18 @@ final class WriterImpl {
                     entry.name(),
                     Map.of(
                             "dtype", entry.dtype().toString(),
-                            "shape", toList(entry.shape()),
-                            "data_offsets", List.of(start, end)));
+                            "shape", box(entry.shape()),
+                            "data_offsets", Arrays.asList(start, end)));
         }
         return Json.stringify(json, false).getBytes(StandardCharsets.UTF_8);
     }
 
-    private static List<Long> toList(long[] values) {
-        return Arrays.stream(values).boxed().collect(Collectors.toList());
+    private static List<Long> box(long[] shape) {
+        List<Long> list = new ArrayList<>(shape.length);
+        for (long value : shape) {
+            list.add(value);
+        }
+        return list;
     }
 
     private void writeFully(WritableByteChannel byteChannel, ByteBuffer byteBuffer)

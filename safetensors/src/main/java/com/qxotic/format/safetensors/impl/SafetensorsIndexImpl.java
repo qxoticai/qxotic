@@ -13,7 +13,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-public final class SafetensorsIndexImpl implements SafetensorsIndex {
+final class SafetensorsIndexImpl implements SafetensorsIndex {
     private static final String MODEL_SAFETENSORS = "model.safetensors";
     private static final String SAFETENSORS_INDEX = "model.safetensors.index.json";
     private static final String WEIGHT_MAP = "weight_map";

@@ -23,8 +23,6 @@ import java.util.Set;
 class ReaderImpl {
     static final String METADATA_KEY = "__metadata__";
     static final int HEADER_SIZE_BYTES = 8;
-    static final int ALIGNMENT_DEFAULT_VALUE = AlignmentSupport.DEFAULT_VALUE;
-    static final String ALIGNMENT_KEY = AlignmentSupport.KEY;
     private static final long MAX_SIZE_T = 281474976710655L;
     private static final String DTYPE_FIELD = "dtype";
     private static final String SHAPE_FIELD = "shape";
