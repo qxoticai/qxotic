@@ -149,7 +149,6 @@ final class WriterImpl {
                             + name
                             + "'");
         }
-        // return new GGUFTensorEntry(name, dimensions, ggmlType, offset);
     }
 
     @SuppressWarnings("EnumOrdinal")
