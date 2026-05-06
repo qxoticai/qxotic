@@ -67,9 +67,9 @@ class toknroll implements Callable<Integer> {
             })
     String source;
 
-    @Option(names = {"-t", "--text"}, paramLabel = "TEXT",
-            description = "Text to tokenize (reads stdin by default)")
-    String text;
+    @Option(names = {"-i", "--input"}, paramLabel = "INPUT",
+            description = "Input text or token IDs (reads stdin by default)")
+    String input;
 
     @Override
     public Integer call() throws Exception {
@@ -81,7 +81,7 @@ class toknroll implements Callable<Integer> {
         Tokenizer tokenizer = loadTokenizer(source);
         long t1 = System.nanoTime();
 
-        String input = text != null ? text : readStdin();
+        String text = input != null ? input : readStdin();
         long t2;
 
         if (decode) {

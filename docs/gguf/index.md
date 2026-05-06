@@ -1,3 +1,7 @@
+---
+sidebar_position: 1
+---
+
 # GGUF
 
 A Java library for reading and writing [GGUF](https://github.com/ggml-org/ggml/blob/master/docs/gguf.md) files, the binary format used by [llama.cpp](https://github.com/ggml-org/llama.cpp) for storing machine learning model weights and metadata.
@@ -12,12 +16,16 @@ GGUF (GGML Universal Format) is a binary file format for storing large language 
 
 This library lets you read and write GGUF files from Java. It handles the format parsing and provides type-safe access to metadata and tensor information.
 
-!!! info "Library Scope"
-    This library provides **metadata and tensor layout information only**. It does **not**:
-    - Read or write tensor data (you do this yourself)
-    - Perform inference or model execution
-    - Handle quantization/dequantization
-    - Provide tensor operations
+:::info
+
+**Library Scope:** This library provides **metadata and tensor layout information only**. It does **not**:
+
+- Read or write tensor data (you do this yourself)
+- Perform inference or model execution
+- Handle quantization/dequantization
+- Provide tensor operations
+
+:::
 
 ## Quick Start
 
@@ -50,57 +58,63 @@ long byteSize = weights.byteSize();
 
 Simple program to inspect any GGUF file hosted online:
 
-```java
---8<-- "UtilitySnippets.java:inspector-complete"
+```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/UtilitySnippets.java" tag="inspector-complete"
 ```
 
 Usage:
+
 ```bash
 java GGUFInspector.java https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
 ```
 
 ## Installation
 
-=== "Maven"
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
-    ```xml
-    <dependency>
-        <groupId>com.qxotic</groupId>
-        <artifactId>gguf</artifactId>
-        <version>0.1.0</version>
-    </dependency>
-    ```
+<Tabs>
+  <TabItem value="maven" label="Maven">
 
-=== "Gradle"
+```xml
+<dependency>
+    <groupId>com.qxotic</groupId>
+    <artifactId>gguf</artifactId>
+    <version>0.1.0</version>
+</dependency>
+```
 
-    ```groovy
-    implementation 'com.qxotic:gguf:0.1.0'
-    ```
+  </TabItem>
+  <TabItem value="gradle" label="Gradle">
 
-=== "Mill"
+```groovy
+implementation 'com.qxotic:gguf:0.1.0'
+```
 
-    ```scala
-    ivy"com.qxotic::gguf:0.1.0"
-    ```
+  </TabItem>
+  <TabItem value="mill" label="Mill">
+
+```scala
+ivy"com.qxotic::gguf:0.1.0"
+```
+
+  </TabItem>
+</Tabs>
 
 ## Reading GGUF Files
 
 ### From a Local File
 
-```java
---8<-- "ReadingSnippets.java:read-path"
+```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/ReadingSnippets.java" tag="read-path"
 ```
 
 ### From a ByteChannel
 
-```java
---8<-- "ReadingSnippets.java:read-channel"
+```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/ReadingSnippets.java" tag="read-channel"
 ```
 
 ### From HuggingFace
 
-```java
---8<-- "UtilitySnippets.java:read-from-huggingface"
+```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/UtilitySnippets.java" tag="read-from-huggingface"
 ```
 
 Usage:
@@ -113,8 +127,7 @@ GGUF gguf = readFromHuggingFace("TheBloke", "Llama-2-7B-GGUF", "llama-2-7b.Q4_K_
 
 ### Getting Values
 
-```java
---8<-- "MetadataSnippets.java:metadata-access"
+```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/MetadataSnippets.java" tag="metadata-access"
 ```
 
 ### Unsigned Types
@@ -141,73 +154,68 @@ String display = Long.toUnsignedString(paramCount);
 
 Use `getValueOrDefault()` when a key might not exist and you want to provide a fallback:
 
-```java
---8<-- "MetadataSnippets.java:metadata-or-default"
+```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/MetadataSnippets.java" tag="metadata-or-default"
 ```
 
 ### Checking for Keys
 
-```java
---8<-- "MetadataSnippets.java:metadata-check"
+```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/MetadataSnippets.java" tag="metadata-check"
 ```
 
 ### Listing All Keys
 
-```java
---8<-- "MetadataSnippets.java:metadata-keys"
+```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/MetadataSnippets.java" tag="metadata-keys"
 ```
 
 ## Working with Tensors
 
 ### Tensor Information
 
-```java
---8<-- "TensorSnippets.java:tensor-access"
+```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/TensorSnippets.java" tag="tensor-access"
 ```
 
 ### Getting a Specific Tensor
 
-```java
---8<-- "TensorSnippets.java:tensor-info"
+```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/TensorSnippets.java" tag="tensor-info"
 ```
 
 The `offset()` is relative to `gguf.getTensorDataOffset()`. The actual file position is:
 
-```java
---8<-- "TensorSnippets.java:tensor-offset"
+```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/TensorSnippets.java" tag="tensor-offset"
 ```
 
 ### Reading Tensor Data
 
-!!! info "Reading Tensor Bytes"
-    This library provides tensor offsets and sizes, but does **not** read tensor data. You read the bytes yourself using the approaches below.
+:::info
+
+**Reading Tensor Bytes:** This library provides tensor offsets and sizes, but does **not** read tensor data. You read the bytes yourself using the approaches below.
+:::
 
 #### Read tensor data into a ByteBuffer
 
 For smaller tensors, allocate a heap-based ByteBuffer:
 
-```java
---8<-- "TensorDataSnippets.java:read-tensor-bytebuffer"
+```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/TensorDataSnippets.java" tag="read-tensor-bytebuffer"
 ```
 
 #### Using a Memory-Mapped ByteBuffer
 
 For large models, memory mapping is more efficient as the OS loads data on-demand:
 
-```java
---8<-- "TensorDataSnippets.java:read-tensor-mmap"
+```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/TensorDataSnippets.java" tag="read-tensor-mmap"
 ```
 
-!!! tip "Memory Mapping on Windows"
-    On Windows, memory-mapped files keep the file locked until the buffer is garbage collected. 
-    Use `buffer.clear()` and `System.gc()` if you need to modify or delete the file after reading.
+:::tip
+
+**Memory Mapping on Windows:** On Windows, memory-mapped files keep the file locked until the buffer is garbage collected.
+Use `buffer.clear()` and `System.gc()` if you need to modify or delete the file after reading.
+:::
 
 #### Reading Multiple Tensors
 
 When reading all tensors, reuse the channel:
 
-```java
---8<-- "TensorDataSnippets.java:read-all-tensors"
+```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/TensorDataSnippets.java" tag="read-all-tensors"
 ```
 
 ## Quantization Types
@@ -228,20 +236,17 @@ When reading all tensors, reuse the channel:
 
 Write a complete GGUF file (metadata only):
 
-```java
---8<-- "WritingSnippets.java:write-file"
+```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/WritingSnippets.java" tag="write-file"
 ```
 
 ### Creating New Files
 
-```java
---8<-- "BuildingSnippets.java:builder-create"
+```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/BuildingSnippets.java" tag="builder-create"
 ```
 
 ### Modifying Existing Files
 
-```java
---8<-- "BuildingSnippets.java:builder-modify"
+```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/BuildingSnippets.java" tag="builder-modify"
 ```
 
 ### Alignment
@@ -254,8 +259,7 @@ Tensor data must start at aligned byte boundaries for efficient CPU/GPU access. 
                aligned to 32 bytes    aligned to 32 bytes
 ```
 
-```java
---8<-- "BuildingSnippets.java:builder-alignment"
+```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/BuildingSnippets.java" tag="builder-alignment"
 ```
 
 ### Tensor Offsets
@@ -285,15 +289,16 @@ GGUF gguf = builder.build(false);
 
 This library writes GGUF metadata only. Tensor data must be written separately after the metadata.
 
-!!! note "Writing Metadata Only"
-    `GGUF.write()` writes only the metadata section (up to `tensorDataOffset`). It does not truncate the file. If the output file already exists and contains tensor data, that data will remain in the file beyond the metadata. To create a clean file with metadata only, truncate the channel after writing.
+:::note
+
+**Writing Metadata Only:** `GGUF.write()` writes only the metadata section (up to `tensorDataOffset`). It does not truncate the file. If the output file already exists and contains tensor data, that data will remain in the file beyond the metadata. To create a clean file with metadata only, truncate the channel after writing.
+:::
 
 #### Writing from ByteBuffer
 
 Write metadata, then seek to the tensor's position and write the data:
 
-```java
---8<-- "WritingSnippets.java:write-tensor-buffer"
+```snippet path="gguf/src/test/java/com/qxotic/format/gguf/snippets/WritingSnippets.java" tag="write-tensor-buffer"
 ```
 
 #### Writing Multiple Tensors
@@ -318,7 +323,7 @@ try (FileChannel channel = FileChannel.open(Path.of("output.gguf"),
 The library throws `GGUFFormatException` for invalid GGUF files:
 
 - **Corrupted files**: Invalid magic number, version mismatch, truncated data
-- **Format violations**: Tensor names > 64 characters, more than 4 dimensions, unaligned offsets
+- **Format violations**: Tensor names &gt; 64 characters, more than 4 dimensions, unaligned offsets
 - **Type mismatches**: Wrong metadata value types, missing required keys
 - **Duplicate entries**: Duplicate tensor names or metadata keys
 
@@ -332,7 +337,11 @@ try {
 
 ## Thread Safety
 
-!!! info "Concurrency"
-    - `GGUF` instances are **immutable** and safe to share across threads
-    - `Builder` is **mutable** and not thread-safe - create a new Builder per thread
-    - `TensorEntry` objects are immutable value objects
+:::info
+
+**Concurrency:**
+- `GGUF` instances are **immutable** and safe to share across threads
+- `Builder` is **mutable** and not thread-safe - create a new Builder per thread
+- `TensorEntry` objects are immutable value objects
+
+:::
