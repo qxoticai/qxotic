@@ -2,11 +2,18 @@ package com.qxotic.toknroll.gguf;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.toknroll.testkit.TestCachePaths;
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.ByteBuffer;
+import java.nio.channels.Channels;
+import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,7 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class TestDataManager {
 
     private static final Path CACHE_DIR = TestCachePaths.resolveUnderTestArtifacts("gguf-metadata");
-    private static final int INITIAL_RANGE_BYTES = 1 << 20;
+
     private static final int MAX_RANGE_BYTES =
             Integer.getInteger("toknroll.test.gguf.maxMetadataBytes", 1024 << 20);
 
@@ -125,61 +132,94 @@ public class TestDataManager {
 
     private void downloadMetadata(String url, Path outputPath)
             throws IOException, InterruptedException {
-        IOException lastFailure = null;
-        for (int range = INITIAL_RANGE_BYTES; range <= MAX_RANGE_BYTES; range <<= 1) {
-            HttpRequest request =
-                    HttpRequest.newBuilder(URI.create(url))
-                            .header("Range", "bytes=0-" + (range - 1))
-                            .GET()
-                            .build();
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url)).GET().build();
 
-            HttpResponse<byte[]> response =
-                    httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+        HttpResponse<InputStream> response =
+                httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
 
-            if (response.statusCode() != 206 && response.statusCode() != 200) {
-                throw new IOException(
-                        "Failed to download metadata from "
-                                + url
-                                + " (status: "
-                                + response.statusCode()
-                                + ")");
-            }
+        int status = response.statusCode();
+        if (status < 200 || status >= 300) {
+            throw new IOException(
+                    "Failed to download metadata from "
+                            + url
+                            + " (status: "
+                            + status
+                            + ")");
+        }
 
-            Path tempFile = Files.createTempFile("gguf-test-", ".metadata.partial");
+        Path tempFile = Files.createTempFile("gguf-test-", ".metadata.partial");
+        try (InputStream body = new BufferedInputStream(response.body(), 1 << 16);
+                OutputStream tap =
+                        new BufferedOutputStream(Files.newOutputStream(tempFile), 1 << 16)) {
+
+            ReadableByteChannel sourceChannel = Channels.newChannel(body);
+            TeeChannel teeChannel = new TeeChannel(sourceChannel, tap, MAX_RANGE_BYTES);
+
+            GGUF.read(teeChannel);
+            tap.flush();
+
             try {
-                Files.write(tempFile, response.body());
-                GGUF.read(tempFile);
-                try {
-                    Files.move(
-                            tempFile,
-                            outputPath,
-                            java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                            java.nio.file.StandardCopyOption.ATOMIC_MOVE);
-                } catch (IOException atomicMoveFailure) {
-                    Files.move(
-                            tempFile,
-                            outputPath,
-                            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                }
-                return;
-            } catch (RuntimeException | IOException parseFailure) {
-                lastFailure =
-                        new IOException(
-                                "Failed to parse GGUF metadata from "
-                                        + url
-                                        + " (bytes="
-                                        + response.body().length
-                                        + ")",
-                                parseFailure);
-            } finally {
-                Files.deleteIfExists(tempFile);
+                Files.move(
+                        tempFile,
+                        outputPath,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException atomicMoveFailure) {
+                Files.move(
+                        tempFile,
+                        outputPath,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             }
+        } catch (IOException | RuntimeException e) {
+            Files.deleteIfExists(tempFile);
+            if (e instanceof IOException ioe) {
+                throw ioe;
+            }
+            throw new IOException(
+                    "Failed to parse GGUF metadata from " + url, e);
+        }
+    }
+
+    private static final class TeeChannel implements ReadableByteChannel {
+        private final ReadableByteChannel source;
+        private final OutputStream tap;
+        private final long maxBytes;
+        private long totalBytes;
+        private volatile boolean open = true;
+
+        TeeChannel(ReadableByteChannel source, OutputStream tap, long maxBytes) {
+            this.source = source;
+            this.tap = tap;
+            this.maxBytes = maxBytes;
         }
 
-        if (lastFailure != null) {
-            throw lastFailure;
+        @Override
+        public int read(ByteBuffer dst) throws IOException {
+            int pos = dst.position();
+            int n = source.read(dst);
+            if (n > 0) {
+                totalBytes += n;
+                if (totalBytes > maxBytes) {
+                    throw new IOException(
+                            "GGUF metadata exceeds maximum size of " + maxBytes + " bytes");
+                }
+                byte[] copy = new byte[n];
+                dst.position(pos);
+                dst.get(copy);
+                tap.write(copy);
+            }
+            return n;
         }
-        throw new IOException("Failed to download GGUF metadata from " + url);
+
+        @Override
+        public boolean isOpen() {
+            return open;
+        }
+
+        @Override
+        public void close() throws IOException {
+            open = false;
+        }
     }
 
     private GGUF loadFromCache(Path cachedFile) throws IOException {
