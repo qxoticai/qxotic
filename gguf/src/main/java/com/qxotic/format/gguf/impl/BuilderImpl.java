@@ -49,7 +49,9 @@ final class BuilderImpl extends AbstractBuilder {
         Map<String, TypeDescriptor> metadataTypes = new LinkedHashMap<>();
         for (String key : gguf.getMetadataKeys()) {
             MetadataValueType valueType = gguf.getType(key);
-            assert valueType != null;
+            if (valueType == null) {
+                throw new IllegalStateException("missing metadata type for key: " + key);
+            }
             metadataTypes.put(
                     key,
                     valueType == MetadataValueType.ARRAY
@@ -78,8 +80,9 @@ final class BuilderImpl extends AbstractBuilder {
     }
 
     BuilderImpl setMetadata(Map<String, Object> newMetadata) {
-        // Must preserve insertion order.
-        assert newMetadata instanceof LinkedHashMap;
+        if (!(newMetadata instanceof LinkedHashMap)) {
+            throw new IllegalStateException("metadata map must be a LinkedHashMap");
+        }
         this.metadata = newMetadata;
         return this;
     }
@@ -91,7 +94,9 @@ final class BuilderImpl extends AbstractBuilder {
 
     @Override
     public GGUF build(boolean recomputeTensorOffsets) {
-        assert this.metadata.keySet().stream().allMatch(key -> this.metadataTypes.containsKey(key));
+        if (!this.metadata.keySet().stream().allMatch(key -> this.metadataTypes.containsKey(key))) {
+            throw new IllegalStateException("metadata keys and types are out of sync");
+        }
         long freshTensorDataOffset = computeTensorDataOffset();
         Map<String, TensorEntry> freshTensorInfos =
                 recomputeTensorOffsets ? computeTensorOffsets() : this.tensorInfos;
@@ -152,7 +157,9 @@ final class BuilderImpl extends AbstractBuilder {
     }
 
     private long sizeOfArray(String key, Object arrayValue) {
-        assert arrayValue.getClass().isArray();
+        if (!arrayValue.getClass().isArray()) {
+            throw new IllegalStateException("expected array for key '" + key + "'");
+        }
         TypeDescriptor descriptor = this.metadataTypes.get(key);
         if (descriptor == null) {
             throw new IllegalArgumentException("no metadata type for key '" + key + "'");
@@ -173,9 +180,12 @@ final class BuilderImpl extends AbstractBuilder {
             return totalSize;
         }
         // Nested arrays are not supported yet.
-        assert arrayValue.getClass().isArray()
-                && (arrayValue.getClass().getComponentType() == String.class
-                        || arrayValue.getClass().getComponentType().isPrimitive());
+	if (!arrayValue.getClass().isArray()
+                || (arrayValue.getClass().getComponentType() != String.class
+                        && !arrayValue.getClass().getComponentType().isPrimitive())) {
+            throw new IllegalStateException(
+                    "expected primitive or String array for key '" + key + "'");
+        }
         return Integer.BYTES // gguf_metadata_value_type: uint32_t component_type;
                 + Long.BYTES // uint64_t len;
                 + Array.getLength(arrayValue)
@@ -216,9 +226,13 @@ final class BuilderImpl extends AbstractBuilder {
 
     BuilderImpl setTensors(Map<String, TensorEntry> newTensorInfos) {
         // Must preserve insertion order.
-        assert newTensorInfos instanceof LinkedHashMap;
-        assert newTensorInfos.entrySet().stream()
-                .allMatch(e -> e.getKey().equals(e.getValue().name()));
+        if (!(newTensorInfos instanceof LinkedHashMap)) {
+            throw new IllegalStateException("tensorInfos map must be a LinkedHashMap");
+        }
+        if (!newTensorInfos.entrySet().stream()
+                .allMatch(e -> e.getKey().equals(e.getValue().name()))) {
+            throw new IllegalStateException("tensorInfos map keys must match tensor names");
+        }
         this.tensorInfos = newTensorInfos;
         return this;
     }

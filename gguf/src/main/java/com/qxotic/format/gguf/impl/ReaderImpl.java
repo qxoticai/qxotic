@@ -367,12 +367,15 @@ final class ReaderImpl {
                     "general.alignment must be UINT32 but was "
                             + metadataTypes.get(ALIGNMENT_KEY).type());
         }
-        alignment = (int) metadata.getOrDefault(ALIGNMENT_KEY, ALIGNMENT_DEFAULT_VALUE);
-        if (Integer.bitCount(alignment) != 1) {
-            throw new GGUFFormatException("alignment must be a power of two but was " + alignment);
-        }
-        if (alignment <= 0) {
-            throw new GGUFFormatException("alignment must be > 0 but was " + alignment);
+        alignment =
+                Math.toIntExact(
+                        ((Number)
+                                        metadata.getOrDefault(
+                                                ALIGNMENT_KEY, ALIGNMENT_DEFAULT_VALUE))
+                                .longValue());
+        if (alignment <= 0 || (alignment & (alignment - 1)) != 0) {
+            throw new GGUFFormatException(
+                    "alignment must be a positive power of two but was " + alignment);
         }
         return alignment;
     }

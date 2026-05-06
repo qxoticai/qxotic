@@ -27,17 +27,9 @@ public enum GGMLType {
     // Primitive Types (elements per block = 1)
     // ============================================================
 
-    /**
-     * 32-bit IEEE 754 single-precision floating point. Elements per block: 1, Block byte size: 4
-     * bytes.
-     */
     /** 32-bit IEEE 754 single-precision floating point. 32.0 bpw. */
     F32(4, 1),
 
-    /**
-     * 16-bit IEEE 754-2008 half-precision floating point (FP16). Elements per block: 1, Block byte
-     * size: 2 bytes.
-     */
     /** 16-bit IEEE 754 half-precision floating point (FP16). 16.0 bpw. */
     F16(2, 1),
 
@@ -314,6 +306,9 @@ public enum GGMLType {
         this.elementsPerBlock = elementsPerBlock;
     }
 
+    /** Cache of enum values to avoid creating new arrays on each call to {@link #values()}. */
+    private static final GGMLType[] VALUES = values();
+
     // ============================================================
     // Public API
     // ============================================================
@@ -369,11 +364,10 @@ public enum GGMLType {
      * @throws ArrayIndexOutOfBoundsException if the ID is invalid
      */
     public static GGMLType fromId(int id) {
-        GGMLType[] values = values();
-        if (id < 0 || id >= values.length) {
+        if (id < 0 || id >= VALUES.length) {
             throw new ArrayIndexOutOfBoundsException("Unknown GGML type ID: " + id);
         }
-        return values[id];
+        return VALUES[id];
     }
 
     /**

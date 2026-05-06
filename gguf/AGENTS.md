@@ -14,7 +14,7 @@
 - Public API: `src/main/java/com/qxotic/format/gguf/`
 - Internal IO: `src/main/java/com/qxotic/format/gguf/impl/`
 - Tests: `src/test/java/com/qxotic/format/gguf/`
-- Docs: `README.md`, `RELEASING.md`, `docs/`
+- Docs: `README.md`, `docs/`
 
 ## Build & Test
 

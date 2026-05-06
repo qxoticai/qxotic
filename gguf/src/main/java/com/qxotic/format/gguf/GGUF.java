@@ -42,7 +42,11 @@ public interface GGUF {
      */
     default int getAlignment() {
         if (containsKey(ImplAccessor.alignmentKey())) {
-            assert getType(ImplAccessor.alignmentKey()) == MetadataValueType.UINT32;
+            if (getType(ImplAccessor.alignmentKey()) != MetadataValueType.UINT32) {
+                throw new GGUFFormatException(
+                        "general.alignment must be UINT32 but was "
+                                + getType(ImplAccessor.alignmentKey()));
+            }
             return getValue(int.class, ImplAccessor.alignmentKey());
         }
         return ImplAccessor.defaultAlignment();
