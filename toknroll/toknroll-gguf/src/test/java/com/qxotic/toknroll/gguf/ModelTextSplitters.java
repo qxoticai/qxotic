@@ -133,15 +133,21 @@ public final class ModelTextSplitters {
     }
 
     public static Splitter createSplitter(TestDataManager.TestModel model) {
-        if (model == TestDataManager.TestModel.QWEN3_0_6B
-                || model == TestDataManager.TestModel.QWEN2_5_0_5B) {
+        if (model == TestDataManager.TestModel.QWEN3_6_35B_A3B) {
             return Splitter.regex(Pattern.compile(QWEN35_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         }
-        if (model == TestDataManager.TestModel.GEMMA_3_4B_UNSLOTH) {
+        if (model == TestDataManager.TestModel.GEMMA_4_26B_A4B) {
             return Splitter.identity();
         }
-        if (model == TestDataManager.TestModel.MISTRAL_3_3B_BARTOWSKI) {
+        if (model == TestDataManager.TestModel.MISTRAL_SMALL_4_119B) {
             return Splitter.regex(Pattern.compile(TEKKEN_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
+        }
+        if (model == TestDataManager.TestModel.GRANITE_4_1_3B) {
+            return Splitter.regex(Pattern.compile(GPT2_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
+        }
+        if (model == TestDataManager.TestModel.KIMI_K2_6) {
+            return Splitter.regex(
+                    Pattern.compile(KIMI_K2_PATTERN, Pattern.UNICODE_CHARACTER_CLASS));
         }
         return Splitter.identity();
     }

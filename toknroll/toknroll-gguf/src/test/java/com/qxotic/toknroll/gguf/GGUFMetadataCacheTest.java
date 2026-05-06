@@ -2,7 +2,6 @@ package com.qxotic.toknroll.gguf;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -266,9 +265,7 @@ class GGUFMetadataCacheTest {
         IOException error =
                 assertThrows(
                         IOException.class,
-                        () ->
-                                cache.fetchPartialMetadata(
-                                        "test", url, target, null, false, false));
+                        () -> cache.fetchPartialMetadata("test", url, target, null, false, false));
 
         assertTrue(error.getMessage().contains("HTTP 404"));
     }
@@ -284,9 +281,7 @@ class GGUFMetadataCacheTest {
         IOException error =
                 assertThrows(
                         IOException.class,
-                        () ->
-                                cache.fetchPartialMetadata(
-                                        "test", url, target, null, false, false));
+                        () -> cache.fetchPartialMetadata("test", url, target, null, false, false));
 
         assertTrue(error.getMessage().contains("HTTP 500"));
     }
@@ -304,9 +299,7 @@ class GGUFMetadataCacheTest {
         IOException error =
                 assertThrows(
                         IOException.class,
-                        () ->
-                                cache.fetchPartialMetadata(
-                                        "test", url, target, null, false, false));
+                        () -> cache.fetchPartialMetadata("test", url, target, null, false, false));
 
         assertTrue(
                 error.getMessage().contains("Failed to parse GGUF metadata"),
@@ -324,9 +317,7 @@ class GGUFMetadataCacheTest {
 
         assertThrows(
                 IOException.class,
-                () ->
-                        cache.fetchPartialMetadata(
-                                "test", url, target, null, false, false));
+                () -> cache.fetchPartialMetadata("test", url, target, null, false, false));
     }
 
     @Test
@@ -342,9 +333,7 @@ class GGUFMetadataCacheTest {
 
         assertThrows(
                 IOException.class,
-                () ->
-                        cache.fetchPartialMetadata(
-                                "test", url, target, null, false, false));
+                () -> cache.fetchPartialMetadata("test", url, target, null, false, false));
 
         assertFalse(Files.exists(partial), ".partial file should be cleaned up");
         assertFalse(Files.exists(target), ".metadata file should not be created on failure");
@@ -368,9 +357,7 @@ class GGUFMetadataCacheTest {
         String url = serverUrl("/auth.gguf");
         Path target = tempDir.resolve("auth.gguf.metadata");
 
-        Path result =
-                cache.fetchPartialMetadata(
-                        "test", url, target, "test-token", false, false);
+        Path result = cache.fetchPartialMetadata("test", url, target, "test-token", false, false);
 
         assertTrue(Files.exists(result));
     }
@@ -384,9 +371,7 @@ class GGUFMetadataCacheTest {
         IOException error =
                 assertThrows(
                         IOException.class,
-                        () ->
-                                cache.fetchPartialMetadata(
-                                        "test", url, target, null, true, false));
+                        () -> cache.fetchPartialMetadata("test", url, target, null, true, false));
 
         assertTrue(error.getMessage().contains("useCacheOnly=true"));
     }
@@ -428,11 +413,7 @@ class GGUFMetadataCacheTest {
     }
 
     private static byte[] minimalGguf() throws IOException {
-        GGUF gguf =
-                Builder.newBuilder()
-                        .setVersion(3)
-                        .putString("test.key", "test-value")
-                        .build();
+        GGUF gguf = Builder.newBuilder().setVersion(3).putString("test.key", "test-value").build();
         Path temp = Files.createTempFile("test-", ".gguf");
         Files.delete(temp);
         try {

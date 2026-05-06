@@ -123,7 +123,7 @@ public class GGUFTokenizerTest {
 
     @Test
     void testCacheFunctionality() throws IOException, InterruptedException {
-        TestModel model = TestModel.QWEN3_0_6B;
+        TestModel model = TestModel.LLAMA_3_2_1B;
 
         GGUF gguf1 = dataManager.getOrDownloadMetadata(model);
 

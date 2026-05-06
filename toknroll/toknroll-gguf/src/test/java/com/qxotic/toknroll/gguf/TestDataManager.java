@@ -36,13 +36,16 @@ public class TestDataManager {
     private final Map<String, GGUF> loadedMetadata;
 
     public enum TestModel {
-        QWEN3_0_6B("Qwen", "Qwen3-0.6B-GGUF", "Qwen3-0.6B-Q8_0.gguf"),
-        QWEN2_5_0_5B("Qwen", "Qwen2.5-0.5B-Instruct-GGUF", "qwen2.5-0.5b-instruct-q4_k_m.gguf"),
-        GEMMA_3_4B_UNSLOTH("unsloth", "gemma-3-4b-it-GGUF", "gemma-3-4b-it-Q4_K_M.gguf"),
-        MISTRAL_3_3B_BARTOWSKI(
-                "bartowski",
-                "mistralai_Ministral-3-3B-Instruct-2512-GGUF",
-                "mistralai_Ministral-3-3B-Instruct-2512-Q4_K_M.gguf");
+        GRANITE_4_1_3B("unsloth", "granite-4.1-3b-GGUF", "granite-4.1-3b-Q8_0.gguf"),
+        QWEN3_6_35B_A3B("unsloth", "Qwen3.6-35B-A3B-GGUF", "Qwen3.6-35B-A3B-Q8_0.gguf"),
+        GEMMA_4_26B_A4B("unsloth", "gemma-4-26B-A4B-it-GGUF", "gemma-4-26B-A4B-it-Q8_0.gguf"),
+        LLAMA_3_2_1B("unsloth", "Llama-3.2-1B-Instruct-GGUF", "Llama-3.2-1B-Instruct-Q8_0.gguf"),
+        MISTRAL_SMALL_4_119B(
+                "unsloth",
+                "Mistral-Small-4-119B-2603-GGUF",
+                "Q8_0/Mistral-Small-4-119B-2603-Q8_0-00001-of-00004.gguf"),
+        KIMI_K2_6("unsloth", "Kimi-K2.6-GGUF", "BF16/Kimi-K2.6-BF16-00001-of-00046.gguf"),
+        GLM_5_1("unsloth", "GLM-5.1-GGUF", "BF16/GLM-5.1-BF16-00001-of-00033.gguf");
 
         private final String org;
         private final String repo;
@@ -140,11 +143,7 @@ public class TestDataManager {
         int status = response.statusCode();
         if (status < 200 || status >= 300) {
             throw new IOException(
-                    "Failed to download metadata from "
-                            + url
-                            + " (status: "
-                            + status
-                            + ")");
+                    "Failed to download metadata from " + url + " (status: " + status + ")");
         }
 
         Path tempFile = Files.createTempFile("gguf-test-", ".metadata.partial");
@@ -165,18 +164,14 @@ public class TestDataManager {
                         java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                         java.nio.file.StandardCopyOption.ATOMIC_MOVE);
             } catch (IOException atomicMoveFailure) {
-                Files.move(
-                        tempFile,
-                        outputPath,
-                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                Files.move(tempFile, outputPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (IOException | RuntimeException e) {
             Files.deleteIfExists(tempFile);
             if (e instanceof IOException ioe) {
                 throw ioe;
             }
-            throw new IOException(
-                    "Failed to parse GGUF metadata from " + url, e);
+            throw new IOException("Failed to parse GGUF metadata from " + url, e);
         }
     }
 

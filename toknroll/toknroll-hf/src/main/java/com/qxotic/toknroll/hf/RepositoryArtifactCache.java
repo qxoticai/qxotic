@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -27,6 +28,9 @@ final class RepositoryArtifactCache {
     private static final String MODELSCOPE_TOKEN_PROPERTY = "toknroll.modelscope.token";
     private static final String MODELSCOPE_TOKEN_ENV = "MODELSCOPE_TOKEN";
     private static final String DEFAULT_CACHE_DIR = "cache";
+
+    private static final long CONNECT_TIMEOUT_SECONDS =
+            Long.getLong("toknroll.gguf.connectTimeoutSeconds", 120);
 
     private final Path cacheRoot;
     private volatile HttpClient httpClient;
@@ -222,6 +226,7 @@ final class RepositoryArtifactCache {
                     client =
                             HttpClient.newBuilder()
                                     .followRedirects(HttpClient.Redirect.NORMAL)
+                                    .connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS))
                                     .build();
                     httpClient = client;
                 }
