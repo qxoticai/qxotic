@@ -5,7 +5,6 @@ import com.qxotic.format.safetensors.Safetensors;
 import com.qxotic.format.safetensors.TensorEntry;
 import java.util.Arrays;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 /** Provides formatting for Safetensors instances with simple parameter-based control. */
 class SafetensorsFormatter {
@@ -70,12 +69,9 @@ class SafetensorsFormatter {
                     .append(tensor.name())
                     .append(": ")
                     .append(tensor.dtype())
-                    .append('[')
-                    .append(
-                            Arrays.stream(tensor.shape())
-                                    .mapToObj(Long::toString)
-                                    .collect(Collectors.joining(", ")))
-                    .append("] @ offset=0x")
+                    .append(' ')
+                    .append(Arrays.toString(tensor.shape()))
+                    .append(" @ offset=0x")
                     .append(Long.toHexString(tensor.byteOffset()))
                     .append("\n");
         }
