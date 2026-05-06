@@ -39,8 +39,13 @@ public final class TokenizerDemoServer {
             this.factory = factory;
         }
 
-        String name() { return name; }
-        String description() { return description; }
+        String name() {
+            return name;
+        }
+
+        String description() {
+            return description;
+        }
 
         Tokenizer tokenizer() throws Exception {
             if (loadError != null) throw new IllegalStateException(loadError);
@@ -74,39 +79,61 @@ public final class TokenizerDemoServer {
     // -- preset registration -------------------------------------------------
 
     private void initializeTokenizers() {
-        register("hf_kimi_2_6", "HF Kimi 2.6", "moonshotai/Kimi-K2.6",
+        register(
+                "hf_kimi_2_6",
+                "HF Kimi 2.6",
+                "moonshotai/Kimi-K2.6",
                 () -> HuggingFaceTokenizerLoader.fromHuggingFace("moonshotai", "Kimi-K2.6"));
 
-        register("hf_deepseek_v4_pro", "HF DeepSeek V4 Pro", "deepseek-ai/DeepSeek-V4-Pro",
-                () -> HuggingFaceTokenizerLoader.fromHuggingFace(
-                        "deepseek-ai", "DeepSeek-V4-Pro"));
+        register(
+                "hf_deepseek_v4_pro",
+                "HF DeepSeek V4 Pro",
+                "deepseek-ai/DeepSeek-V4-Pro",
+                () -> HuggingFaceTokenizerLoader.fromHuggingFace("deepseek-ai", "DeepSeek-V4-Pro"));
 
-        register("hf_gemma_4", "HF Gemma 4", "google/gemma-4-e2b-it",
+        register(
+                "hf_gemma_4",
+                "HF Gemma 4",
+                "google/gemma-4-e2b-it",
                 () -> HuggingFaceTokenizerLoader.fromHuggingFace("google", "gemma-4-e2b-it"));
 
-        register("hf_mistral_tekken", "HF Mistral Tekken", "mistralai/ministral-8b-instruct-2410",
-                () -> HuggingFaceTokenizerLoader.fromHuggingFace(
-                        "mistralai", "ministral-8b-instruct-2410"));
+        register(
+                "hf_mistral_tekken",
+                "HF Mistral Tekken",
+                "mistralai/ministral-8b-instruct-2410",
+                () ->
+                        HuggingFaceTokenizerLoader.fromHuggingFace(
+                                "mistralai", "ministral-8b-instruct-2410"));
 
         GGUFTokenizerLoader gguf = GGUFTokenizerLoader.createBuilderWithBuiltins().build();
-        register("gguf_llama3_2_1b", "GGUF Llama-3.2-1B", "bartowski/Llama-3.2-1B-Instruct-GGUF",
-                () -> gguf.fromHuggingFace(
-                        "bartowski", "Llama-3.2-1B-Instruct-GGUF",
-                        "Llama-3.2-1B-Instruct-Q4_K_M.gguf"));
+        register(
+                "gguf_llama3_2_1b",
+                "GGUF Llama-3.2-1B",
+                "bartowski/Llama-3.2-1B-Instruct-GGUF",
+                () ->
+                        gguf.fromHuggingFace(
+                                "bartowski",
+                                "Llama-3.2-1B-Instruct-GGUF",
+                                "Llama-3.2-1B-Instruct-Q4_K_M.gguf"));
 
-        register("gguf_qwen3_6", "GGUF Qwen3.6", "unsloth/Qwen3.6-35B-A3B-GGUF",
-                () -> gguf.fromHuggingFace(
-                        "unsloth", "Qwen3.6-35B-A3B-GGUF",
-                        "Qwen3.6-35B-A3B-Q8_0.gguf"));
+        register(
+                "gguf_qwen3_6",
+                "GGUF Qwen3.6",
+                "unsloth/Qwen3.6-35B-A3B-GGUF",
+                () ->
+                        gguf.fromHuggingFace(
+                                "unsloth", "Qwen3.6-35B-A3B-GGUF", "Qwen3.6-35B-A3B-Q8_0.gguf"));
 
-        register("gguf_granite_4_1", "GGUF Granite 4.1", "unsloth/granite-4.1-3b-GGUF",
-                () -> gguf.fromHuggingFace(
-                        "unsloth", "granite-4.1-3b-GGUF",
-                        "granite-4.1-3b-Q8_0.gguf"));
+        register(
+                "gguf_granite_4_1",
+                "GGUF Granite 4.1",
+                "unsloth/granite-4.1-3b-GGUF",
+                () ->
+                        gguf.fromHuggingFace(
+                                "unsloth", "granite-4.1-3b-GGUF", "granite-4.1-3b-Q8_0.gguf"));
     }
 
-    private void register(
-            String id, String name, String description, Callable<Tokenizer> factory) {
+    private void register(String id, String name, String description, Callable<Tokenizer> factory) {
         tokenizers.put(id, new TokenizerEntry(name, description, factory));
     }
 
@@ -127,10 +154,12 @@ public final class TokenizerDemoServer {
 
     // -- static file handlers ------------------------------------------------
 
-    private static final Map<String, String> STATIC_TYPES = Map.of(
-            "/", "/tokenizer/tokenizer.html;text/html; charset=utf-8",
-            "/tokenizer.js", "/tokenizer/tokenizer.js;application/javascript; charset=utf-8",
-            "/tokenizer.css", "/tokenizer/tokenizer.css;text/css; charset=utf-8");
+    private static final Map<String, String> STATIC_TYPES =
+            Map.of(
+                    "/", "/tokenizer/tokenizer.html;text/html; charset=utf-8",
+                    "/tokenizer.js",
+                            "/tokenizer/tokenizer.js;application/javascript; charset=utf-8",
+                    "/tokenizer.css", "/tokenizer/tokenizer.css;text/css; charset=utf-8");
 
     private void handleStatic(HttpExchange exchange) throws IOException {
         String entry = STATIC_TYPES.get(exchange.getRequestURI().getPath());
@@ -146,8 +175,8 @@ public final class TokenizerDemoServer {
                 sendText(exchange, 404, "Not found: " + resource);
                 return;
             }
-            writeBody(exchange, 200, stream.readAllBytes(),
-                    h -> h.set("Content-Type", contentType));
+            writeBody(
+                    exchange, 200, stream.readAllBytes(), h -> h.set("Content-Type", contentType));
         }
     }
 
@@ -188,7 +217,8 @@ public final class TokenizerDemoServer {
             }
             TokenizerEntry entry = tokenizers.get(tokenizerId);
             if (entry == null) {
-                sendJson(exchange,
+                sendJson(
+                        exchange,
                         "{\"error\":\"Unknown tokenizer: " + escapeJson(tokenizerId) + "\"}");
                 return;
             }
@@ -209,7 +239,9 @@ public final class TokenizerDemoServer {
                 json.append("\"text\":\"")
                         .append(escapeJson(surface != null ? surface : "<?>"))
                         .append("\",");
-                json.append("\"decoded\":\"").append(escapeJson(decodeToken(tok, id))).append("\"}");
+                json.append("\"decoded\":\"")
+                        .append(escapeJson(decodeToken(tok, id)))
+                        .append("\"}");
             }
             json.append("]}");
             sendJson(exchange, json.toString());
@@ -275,10 +307,14 @@ public final class TokenizerDemoServer {
     // -- response writing ----------------------------------------------------
 
     private static void sendJson(HttpExchange exchange, String json) throws IOException {
-        writeBody(exchange, 200, json.getBytes(StandardCharsets.UTF_8), h -> {
-            h.set("Content-Type", "application/json; charset=utf-8");
-            h.set("Access-Control-Allow-Origin", "*");
-        });
+        writeBody(
+                exchange,
+                200,
+                json.getBytes(StandardCharsets.UTF_8),
+                h -> {
+                    h.set("Content-Type", "application/json; charset=utf-8");
+                    h.set("Access-Control-Allow-Origin", "*");
+                });
     }
 
     private static void sendText(HttpExchange exchange, int code, String message)
