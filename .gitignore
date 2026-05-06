@@ -126,3 +126,5 @@ desktop.ini
 
 # Raytracer output
 raytrace*.ppm
+
+test-fixtures
