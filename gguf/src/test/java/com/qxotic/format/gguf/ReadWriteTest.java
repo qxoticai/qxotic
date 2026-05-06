@@ -339,6 +339,12 @@ public class ReadWriteTest extends GGUFTest {
     }
 
     @Test
+    public void testAlignmentNegativeFailsWhileReading() {
+        byte[] ggufBytes = rawGguf(0, new byte[][] {metadataInt("general.alignment", -1)});
+        assertThrows(GGUFFormatException.class, () -> readFromBytes(ggufBytes));
+    }
+
+    @Test
     public void testTensorNameLongerThan64Fails() {
         String longName = "a".repeat(65);
         byte[] ggufBytes =
