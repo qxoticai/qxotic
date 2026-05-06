@@ -16,6 +16,7 @@ import java.nio.channels.ReadableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Duration;
 
 final class GGUFMetadataCache {
     private static final String ROOT_PROPERTY = "toknroll.cache.root";
@@ -29,6 +30,9 @@ final class GGUFMetadataCache {
 
     private static final int MAX_RANGE_BYTES =
             Integer.getInteger("toknroll.gguf.maxMetadataBytes", 1024 << 20);
+
+    private static final long CONNECT_TIMEOUT_SECONDS =
+            Long.getLong("toknroll.gguf.connectTimeoutSeconds", 120);
 
     private final Path cacheRoot;
     private volatile HttpClient httpClient;
@@ -153,8 +157,7 @@ final class GGUFMetadataCache {
             }
 
             InputStream body = new BufferedInputStream(rawBody, 1 << 16);
-            OutputStream tap =
-                    new BufferedOutputStream(Files.newOutputStream(partial), 1 << 16);
+            OutputStream tap = new BufferedOutputStream(Files.newOutputStream(partial), 1 << 16);
 
             try {
                 ReadableByteChannel sourceChannel = Channels.newChannel(body);
@@ -182,8 +185,7 @@ final class GGUFMetadataCache {
             throw e;
         } catch (RuntimeException e) {
             Files.deleteIfExists(partial);
-            throw new IOException(
-                    "[" + source + "] Failed to parse GGUF metadata from " + url, e);
+            throw new IOException("[" + source + "] Failed to parse GGUF metadata from " + url, e);
         }
     }
 
@@ -196,6 +198,7 @@ final class GGUFMetadataCache {
                     client =
                             HttpClient.newBuilder()
                                     .followRedirects(HttpClient.Redirect.NORMAL)
+                                    .connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS))
                                     .build();
                     httpClient = client;
                 }
