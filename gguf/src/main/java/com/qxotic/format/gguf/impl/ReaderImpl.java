@@ -369,9 +369,7 @@ final class ReaderImpl {
         }
         alignment =
                 Math.toIntExact(
-                        ((Number)
-                                        metadata.getOrDefault(
-                                                ALIGNMENT_KEY, ALIGNMENT_DEFAULT_VALUE))
+                        ((Number) metadata.getOrDefault(ALIGNMENT_KEY, ALIGNMENT_DEFAULT_VALUE))
                                 .longValue());
         if (alignment <= 0 || (alignment & (alignment - 1)) != 0) {
             throw new GGUFFormatException(

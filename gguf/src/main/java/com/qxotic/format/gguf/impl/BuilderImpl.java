@@ -180,7 +180,7 @@ final class BuilderImpl extends AbstractBuilder {
             return totalSize;
         }
         // Nested arrays are not supported yet.
-	if (!arrayValue.getClass().isArray()
+        if (!arrayValue.getClass().isArray()
                 || (arrayValue.getClass().getComponentType() != String.class
                         && !arrayValue.getClass().getComponentType().isPrimitive())) {
             throw new IllegalStateException(
