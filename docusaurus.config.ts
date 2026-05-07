@@ -26,6 +26,13 @@ const config: Config = {
     locales: ["en"],
   },
 
+  themes: [
+    ["@easyops-cn/docusaurus-search-local", {
+      docsRouteBasePath: "/",
+      indexDocs: true,
+    }],
+  ],
+
   presets: [
     [
       "classic",
@@ -76,6 +83,15 @@ const config: Config = {
           to: "/toknroll",
           position: "left",
           label: "Tok'n'Roll",
+        },
+        {
+          type: "search",
+          position: "right",
+        },
+        {
+          href: "https://javadoc.io/doc/com.qxotic",
+          label: "Javadoc",
+          position: "right",
         },
         {
           href: "https://github.com/qxoticai/qxotic",
