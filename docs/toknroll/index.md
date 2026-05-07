@@ -4,16 +4,17 @@ sidebar_position: 1
 
 # Tok'n'Roll
 
-Token-perfect LLM tokenization. Pure Java.
+Pure Java, fast, composable tokenization for LLMs with token-perfect parity, matching reference Python implementations.
 
-**Composable.** Every tokenizer is built from independent, reusable components: `Normalizer`, `Splitter`, `TokenizationModel`. Swap any piece without touching the rest.
+Tok'n'Roll is designed to be simple and efficient. It runs on Java 11+, requires no native bindings, supports GraalVM Native Image.
 
-**Spartan.** Tokenizers encode text into IDs and decode IDs back into text. That's it. No hidden control-token injection, no silent input modification. Control tokens are explicit and opt-in via the separate `Specials` API.
+Key properties:
 
-**Zero-allocation.** Hot paths use `CharSequence` slices and range-based callbacks (`encodeInto`, `SplitConsumer`) instead of allocating `String` objects. `IntSequence` is an `int`-backed read-only view. No `List<Integer>` boxing overhead.
-
-- **Fast.** Optimized fast paths for common model families. Competitive with native tokenizers.
-- **Pure Java, zero dependencies.** Core library has no external dependencies. No C extensions, no Rust bindings, no JNI.
+- **Token-perfect parity.** Matches reference Python tokenizer implementations.
+- **Compatible with industry standards.** Spawn Tok'n'Roll tokenizers from HuggingFace's `tokenizer.json` and llama.cpp's GGUF model files.
+- **Zero-allocation, zero-copy APIs.** `encodeInto(...)`, `decodeBytesInto(...)`, and `IntSequence` support low-GC hot paths.
+- **Fast and efficient.** Performant BPE implementations, with strong algorithmic guarantees and optimized fast-paths, competitive with native alternatives.
+- **Portable.** Pure Java, 11+, GraalVM's Native Image compatible.
 
 ## Modules
 
@@ -67,9 +68,9 @@ implementation 'com.qxotic:toknroll-gguf:0.1.0'
   <TabItem value="mill" label="Mill">
 
 ```scala
-ivy"com.qxotic::toknroll-core:0.1.0"
-ivy"com.qxotic::toknroll-hf:0.1.0"
-ivy"com.qxotic::toknroll-gguf:0.1.0"
+mvn"com.qxotic::toknroll-core:0.1.0"
+mvn"com.qxotic::toknroll-hf:0.1.0"
+mvn"com.qxotic::toknroll-gguf:0.1.0"
 ```
 
   </TabItem>
@@ -93,6 +94,7 @@ Tokenizer t = HuggingFaceTokenizerLoader
 GGUFTokenizerLoader ggufLoader = GGUFTokenizerLoader
     .createBuilderWithBuiltins()
     .build();
+
 Tokenizer t2 = ggufLoader.fromHuggingFace(
     "unsloth", "Llama-3.2-1B-Instruct-GGUF",
     "Llama-3.2-1B-Instruct-Q8_0.gguf");
@@ -100,7 +102,9 @@ Tokenizer t2 = ggufLoader.fromHuggingFace(
 // Local files
 Tokenizer t3 = HuggingFaceTokenizerLoader
     .fromLocal(Path.of("/models/gemma-4-e2b-it"));
-Tokenizer t4 = ggufLoader.fromLocal(Path.of("/models/model.gguf"));
+
+Tokenizer t4 = ggufLoader
+    .fromLocal(Path.of("/models/model.gguf"));
 
 // ModelScope
 Tokenizer t5 = HuggingFaceTokenizerLoader
@@ -110,6 +114,19 @@ Tokenizer t5 = HuggingFaceTokenizerLoader
 int[] tokens = t.encodeToArray("Hello, world!");
 String decoded = t.decode(tokens);
 int count = t.countTokens("How many tokens is this?");
+```
+
+### Zero-allocation hot path
+
+```java
+import com.qxotic.toknroll.IntSequence;
+import java.nio.ByteBuffer;
+
+IntSequence.Builder out = IntSequence.newBuilder(128);
+t.encodeInto("Hello, world!", out);
+
+ByteBuffer bytes = ByteBuffer.allocate(256);
+int consumed = t.decodeBytesInto(tokens, 0, bytes); // no partial-token writes
 ```
 
 ### Build from scratch
@@ -136,7 +153,7 @@ int[] tokens = tokenizer.encodeToArray("Hello world");
 
 ## toknroll@qxoticai CLI
 
-The [toknroll CLI](https://github.com/qxoticai/qxotic/blob/main/toknroll/scripts/toknroll.java) allows to easily encode/decode/count by loading
+The [toknroll CLI](https://github.com/qxoticai/qxotic/blob/main/toknroll/scripts/toknroll.java) allows to encode/decode/count by loading
 tokenizers from HuggingFace/ModelScope, arbitrary URLs, GGUF files, local or remote.
 
 ```bash
@@ -175,7 +192,7 @@ jbang toknroll@qxoticai \
 # 241
 # 236
 
-# GGUF via URL works too
+# GGUF from huggingface.co
 jbang toknroll@qxoticai --source unsloth/granite-4.1-3b-GGUF/Q8_0 --input "Hello, Granite 4.1"
 # 9906
 # 11
@@ -190,11 +207,11 @@ echo "22177 1044 42301 2784 1033" | jbang toknroll@qxoticai --decode --source mi
 # Hello, Mistral!
 
 # Count tokens
-echo "Hello, World!" | jbang toknroll@qxoticai --count --source google/gemma-4-e2b-it
+echo "Hello, World\!" | jbang toknroll@qxoticai --count --source google/gemma-4-e2b-it
 # 4
 ```
 
-The `--source` flag accepts any source:
+The `--source` flag accepts several formats:
 
 | Source | Loads | Example |
 |--------|-------|---------|
@@ -220,6 +237,12 @@ Token-perfect parity tested against reference Python implementations:
 - **Meta** Llama 3+
 - **Microsoft** Phi 4+
 - **HuggingFace** SmolLM3
+
+See the module pages for exact feature support and known limitations:
+
+- [`/toknroll/core`](/toknroll/core): core API contracts and composition model
+- [`/toknroll/hf`](/toknroll/hf): supported `tokenizer.json` features and strict-failure behavior
+- [`/toknroll/gguf`](/toknroll/gguf): built-in GGUF model families and registry extension points
 
 ## Configuration
 
