@@ -31,7 +31,7 @@ The Java language is too rigid for implementing a usable DSL to generate kernels
 
 ## Quick Example
 
-[Mandelbrot.java](https://github.com/qxoticai/qxotic/blob/main/examples/src/main/java/com/qxotic/jota/examples/demos/Mandelbrot.java#L71-L94)
+[Mandelbrot.java](https://github.com/qxoticai/qxotic/blob/96abe2e3546ec133ffd2daa39a0303fbbe241912/examples/src/main/java/com/qxotic/jota/examples/demos/Mandelbrot.java#L83-L106)
 produces the following C kernel https://gist.github.com/mukel/beb94917ae62dd0791afc84abe6829e2
 
 <p align="center">
