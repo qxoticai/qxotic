@@ -1,5 +1,9 @@
 # LFM25.java
 
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/54f57e18-b26e-4121-8ef8-9522f28ad0b4">
+</p>
+
 <div align="center">
 
 ![Java 21+](https://img.shields.io/badge/Java-21%2B-007396?logo=java&logoColor=white)
@@ -7,7 +11,7 @@
 [![GraalVM](https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F)](https://www.graalvm.org/latest/reference-manual/native-image/)
 ![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
 
-Fast, small, inference engine for [Liquid AI](https://www.liquid.ai/) [LFM2.5 models](https://www.liquid.ai/models) in pure Java.
+Fast, zero-dependency, inference engine for [Liquid AI](https://www.liquid.ai/) [LFM2.5 models](https://www.liquid.ai/models) in pure Java.
 
 </div>
 
@@ -15,14 +19,15 @@ Fast, small, inference engine for [Liquid AI](https://www.liquid.ai/) [LFM2.5 mo
 
 ## Features
 
-- Single file GGUF runner, based on [llama3.java](https://github.com/mukel/llama3.java)
-- Supports Liquid AI LFM2.5 GGUF models
+- Single file, **no dependencies**, based on [llama3.java](https://github.com/mukel/llama3.java)
+- Supports Liquid AI LFM2.5 GGUF models (dense and MoE)
 - Fast [GGUF format](https://github.com/ggerganov/ggml/blob/master/docs/gguf.md) parser
 - Supported dtypes/quantizations: `F16`, `BF16`, `F32`, `Q4_0`, `Q4_1`, `Q4_K`, `Q5_K`, `Q6_K`, `Q8_0`
-- Matrix-vector kernels using Java's [Vector API](https://openjdk.org/jeps/469)
-- LFM2.5 architecture support: attention, short convolution layers, SWA, shared KV, dense FFN, and MoE FFN
-- CLI with `--chat`, `--prompt`, and raw prompt modes
+- Fast kernels using Java's [Vector API](https://openjdk.org/jeps/469)
+- CLI with `--chat` and `--prompt` modes
 - Thinking mode control with `--think off|on|inline`
+- GraalVM Native Image support
+- AOT model preloading for **instant time-to-first-token**
 
 ## Setup
 
@@ -81,11 +86,37 @@ Options:
   --raw-prompt                  bypass chat template and tokenize --prompt directly
 ```
 
-## Performance
+### GraalVM Native Image
 
-[GraalVM 25+](https://www.graalvm.org/downloads) is recommended for the best performance. It provides good support for the [Vector API](https://openjdk.org/jeps/469), including Native Image support.
+Compile with `make native` to produce a `lfm25` executable, then:
 
-By default, the preferred vector size is used. It can be force-set with `-Dllama.VectorBitSize=0|128|256|512`, where `0` disables Vector API kernels.
+```bash
+./lfm25 --model ./LFM2.5-8B-A1B-Q8_0.gguf --chat
+```
+
+### AOT model preloading
+
+`LFM25.java` supports AOT model preloading to reduce parse overhead and time-to-first-token (TTFT).
+
+To AOT pre-load a GGUF model:
+```bash
+PRELOAD_GGUF=/path/to/model.gguf make native
+```
+
+A larger specialized binary is generated with parse overhead removed for that specific model.
+It can still run other models with the usual parsing overhead.
+
+## Benchmarks
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/40c22e2a-2003-424c-aa27-e27737880c33">
+</p>
+
+\*\**Hardware specs: AMD Ryzen 9950X 16C/32T 64GB (6400) Linux 6.18.12.*
+
+[GraalVM 25+](https://www.graalvm.org/downloads) is recommended for the absolute best performance (JIT mode), it provides partial, but good support for the [Vector API](https://openjdk.org/jeps/469), also in Native Image.
+
+By default, the "preferred" vector size is used, it can be force-set with `-Dllama.VectorBitSize=0|128|256|512`, `0` means disabled.
 
 ## Related Repositories
 
