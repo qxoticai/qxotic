@@ -1,8 +1,8 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
 //JAVA 21+
 //PREVIEW
-//COMPILE_OPTIONS --add-modules=jdk.incubator.vector
-//RUNTIME_OPTIONS --add-modules=jdk.incubator.vector -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0
+//COMPILE_OPTIONS --add-modules=jdk.incubator.vector,jdk.httpserver
+//RUNTIME_OPTIONS --add-modules=jdk.incubator.vector,jdk.httpserver -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0
 //MAIN com.llama4j.LFM25
 
 // LFM2.5 inference in pure Java
@@ -12,7 +12,7 @@
 //
 // Supports GGUF models and multiple tensor formats
 // Matrix-vector kernels use Java's Vector API
-// CLI modes: --chat and --instruct
+// CLI modes: --chat, --instruct, and --server
 //
 // Run:
 // jbang LFM25.java --help
@@ -25,18 +25,30 @@ import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorShape;
 import jdk.incubator.vector.VectorSpecies;
 
+import com.sun.net.httpserver.Headers;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+
 import java.lang.reflect.Field;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.PrintStream;
+import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.CharBuffer;
 import java.nio.FloatBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
 import java.nio.channels.FileChannel;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.StandardCharsets;
@@ -51,13 +63,16 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
 import java.util.regex.Matcher;
@@ -711,6 +726,8 @@ final class ModelLoader {
 }
 
 record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weights) {
+    private static final int MAX_PROMPT_SEQUENCE_LENGTH = 256;
+
     public State createNewState() {
         State state = new State(configuration());
         Integer bos = tokenizer.getSpecialTokens().get("<bos>");
@@ -973,6 +990,7 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         public final float[] topProbs;            // reusable MoE top-k weights
         public final FloatTensor[] shortConvState; // recurrent layer -> (d_conv - 1, dim)
         public final FloatTensor shortConvTmp;     // (3*dim,)
+        public final SequenceState promptSequenceState;
 
         public int latestToken;
 
@@ -1030,6 +1048,77 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
                     }
                 }
             }
+            this.promptSequenceState = new SequenceState(config, MAX_PROMPT_SEQUENCE_LENGTH);
+        }
+    }
+
+    public static final class SequenceState {
+        public final int capacity;
+        public int sequenceLength;
+        public final FloatTensor x;
+        public final FloatTensor xb;
+        public final FloatTensor xb_k;
+        public final FloatTensor xb2;
+        public final FloatTensor hb;
+        public final FloatTensor hb2;
+        public final FloatTensor q;
+        public final FloatTensor k;
+        public final FloatTensor v;
+        public final FloatTensor att;
+        public final FloatTensor shortConvTmp;
+        public final FloatTensor shortConvOut;
+        public final FloatTensor perLayerInputs;
+        public final FloatTensor plGate;
+        public final FloatTensor plProj;
+        public final FloatTensor routerLogits;
+        public final FloatTensor moeInput;
+        public final FloatTensor moeGate;
+        public final FloatTensor moeUp;
+        public final FloatTensor moeDown;
+        public final int[] topExperts;
+        public final float[] topProbs;
+
+        SequenceState(Configuration config, int capacity) {
+            this.capacity = capacity;
+            this.sequenceLength = capacity;
+            int dim = config.embeddingLength;
+            int maxQueryDim = config.numberOfHeads * config.headSizeFull;
+            int maxKVDim = IntStream.range(0, config.numberOfLayers).map(config::kvDim).max().orElse(0);
+            int maxHiddenDim = config.maxHiddenDim();
+            this.x = ArrayFloatTensor.allocate(capacity * dim);
+            this.xb = ArrayFloatTensor.allocate(capacity * dim);
+            this.xb_k = ArrayFloatTensor.allocate(capacity * maxQueryDim);
+            this.xb2 = ArrayFloatTensor.allocate(capacity * dim);
+            this.hb = ArrayFloatTensor.allocate(capacity * maxHiddenDim);
+            this.hb2 = ArrayFloatTensor.allocate(capacity * maxHiddenDim);
+            this.q = ArrayFloatTensor.allocate(capacity * maxQueryDim);
+            this.k = ArrayFloatTensor.allocate(capacity * maxKVDim);
+            this.v = ArrayFloatTensor.allocate(capacity * maxKVDim);
+            this.att = ArrayFloatTensor.allocate(capacity * config.numberOfHeads * config.contextLength);
+            this.shortConvTmp = ArrayFloatTensor.allocate(capacity * 3 * dim);
+            this.shortConvOut = ArrayFloatTensor.allocate(capacity * dim);
+            int plDim = config.embeddingLengthPerLayer;
+            this.perLayerInputs = plDim > 0 ? ArrayFloatTensor.allocate(capacity * plDim * config.numberOfLayers) : null;
+            this.plGate = plDim > 0 ? ArrayFloatTensor.allocate(capacity * plDim) : null;
+            this.plProj = plDim > 0 ? ArrayFloatTensor.allocate(capacity * dim) : null;
+            if (config.isMoE()) {
+                int maxRoutes = capacity * config.expertUsedCount;
+                this.routerLogits = ArrayFloatTensor.allocate(capacity * config.expertCount);
+                this.moeInput = ArrayFloatTensor.allocate(maxRoutes * dim);
+                this.moeGate = ArrayFloatTensor.allocate(maxRoutes * config.expertFeedForwardLength);
+                this.moeUp = ArrayFloatTensor.allocate(maxRoutes * config.expertFeedForwardLength);
+                this.moeDown = ArrayFloatTensor.allocate(maxRoutes * dim);
+                this.topExperts = new int[maxRoutes];
+                this.topProbs = new float[maxRoutes];
+            } else {
+                this.routerLogits = null;
+                this.moeInput = null;
+                this.moeGate = null;
+                this.moeUp = null;
+                this.moeDown = null;
+                this.topExperts = null;
+                this.topProbs = null;
+            }
         }
     }
 
@@ -1082,8 +1171,13 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
     /** Apply Rotary Positional Embeddings (RoPE) to a tensor. */
     static void applyRoPE(FloatTensor tensor, int headSize, int nHeads, int halfHead,
                            FloatBuffer freqsReal, FloatBuffer freqsImag, int ropePos) {
+        applyRoPE(tensor, 0, headSize, nHeads, halfHead, freqsReal, freqsImag, ropePos);
+    }
+
+    static void applyRoPE(FloatTensor tensor, int offset, int headSize, int nHeads, int halfHead,
+                           FloatBuffer freqsReal, FloatBuffer freqsImag, int ropePos) {
         for (int h = 0; h < nHeads; ++h) {
-            int poffset = h * headSize;
+            int poffset = offset + h * headSize;
             for (int i0 = 0; i0 < halfHead; i0++) {
                 float fcr = freqsReal.get(ropePos * halfHead + i0);
                 float fci = freqsImag.get(ropePos * halfHead + i0);
@@ -1101,7 +1195,7 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
 
         int dConv = config.shortConvLCache;
         int hist = dConv - 1;
-        weights.shortConvInProj[layer].matmul(state.xb, state.shortConvTmp, 3 * dim, dim);
+        weights.shortConvInProj[layer].gemv(state.xb, state.shortConvTmp, 3 * dim, dim);
         FloatTensor convState = state.shortConvState[layer];
         FloatBuffer kernel = weights.shortConvKernel[layer];
 
@@ -1151,7 +1245,7 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
             }
         }
 
-        weights.shortConvOutProj[layer].matmul(state.xb2, state.xb2, dim, dim);
+        weights.shortConvOutProj[layer].gemv(state.xb2, state.xb2, dim, dim);
         state.x.addInPlace(state.xb2);
     }
 
@@ -1164,7 +1258,7 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         int kvDim = config.kvDim(layer);
 
         rmsnorm(state.xb, state.x, weights.rms_att_weight[layer], dim, config.rmsNormEps);
-        weights.wq[layer].matmul(state.xb, state.q, queryDim, dim);
+        weights.wq[layer].gemv(state.xb, state.q, queryDim, dim);
         for (int h = 0; h < config.numberOfHeads; h++) {
             rmsnorm(state.q, h * headSize, state.q, h * headSize, weights.attn_q_norm[layer], headSize, config.rmsNormEps);
         }
@@ -1177,9 +1271,9 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         int kvLayer = config.kvSourceLayer(layer);
         int nKvHeads = config.numberOfKeyValueHeads(layer);
         int kvMul = config.numberOfHeads / nKvHeads;
-        weights.wk[layer].matmul(state.xb, state.k, kvDim, dim);
+        weights.wk[layer].gemv(state.xb, state.k, kvDim, dim);
         if (weights.wv[layer] != null) {
-            weights.wv[layer].matmul(state.xb, state.v, kvDim, dim);
+            weights.wv[layer].gemv(state.xb, state.v, kvDim, dim);
         } else {
             state.k.copyTo(0, state.v, 0, kvDim);
         }
@@ -1212,14 +1306,150 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
                 state.xb_k.saxpyInPlace(xbOffset, state.valueCache[kvLayer], vOffset, headSize, a);
             }
         });
-        weights.wo[layer].matmul(state.xb_k, state.xb2, dim, queryDim);
+        weights.wo[layer].gemv(state.xb_k, state.xb2, dim, queryDim);
         if (weights.post_attention_norm[layer] != null) {
             rmsnorm(state.xb2, state.xb2, weights.post_attention_norm[layer], dim, config.rmsNormEps);
         }
         state.x.addInPlace(state.xb2);
     }
 
+    static void forwardRecurrentLayerSequence(Llama.Configuration config, Llama.Weights weights,
+                                              Llama.State state, Llama.SequenceState seq, int layer, int dim, boolean needOutput) {
+        for (int s = 0; s < seq.sequenceLength; s++) {
+            rmsnorm(seq.xb, s * dim, seq.x, s * dim, weights.rms_att_weight[layer], dim, config.rmsNormEps);
+        }
+        weights.shortConvInProj[layer].gemm(seq.xb, dim, seq.shortConvTmp, 3 * dim, seq.sequenceLength, 3 * dim, dim);
+        FloatTensor convState = state.shortConvState[layer];
+        FloatBuffer kernel = weights.shortConvKernel[layer];
+        int dConv = config.shortConvLCache;
+        int hist = dConv - 1;
+        for (int s = 0; s < seq.sequenceLength; s++) {
+            int tmpOffset = s * 3 * dim;
+            int outOffset = s * dim;
+            if (hist == 2) {
+                for (int c = 0; c < dim; c++) {
+                    float b = seq.shortConvTmp.getFloat(tmpOffset + c);
+                    float cg = seq.shortConvTmp.getFloat(tmpOffset + dim + c);
+                    float xv = seq.shortConvTmp.getFloat(tmpOffset + 2 * dim + c);
+                    float bx = b * xv;
+                    int kBase = c * dConv;
+                    float prev0 = convState.getFloat(c);
+                    float prev1 = convState.getFloat(dim + c);
+                    float sum = prev0 * kernel.get(kBase) + prev1 * kernel.get(kBase + 1) + bx * kernel.get(kBase + 2);
+                    seq.xb2.setFloat(outOffset + c, cg * sum);
+                    convState.setFloat(c, prev1);
+                    convState.setFloat(dim + c, bx);
+                }
+            } else if (hist == 1) {
+                for (int c = 0; c < dim; c++) {
+                    float b = seq.shortConvTmp.getFloat(tmpOffset + c);
+                    float cg = seq.shortConvTmp.getFloat(tmpOffset + dim + c);
+                    float xv = seq.shortConvTmp.getFloat(tmpOffset + 2 * dim + c);
+                    float bx = b * xv;
+                    int kBase = c * dConv;
+                    float sum = convState.getFloat(c) * kernel.get(kBase) + bx * kernel.get(kBase + 1);
+                    seq.xb2.setFloat(outOffset + c, cg * sum);
+                    convState.setFloat(c, bx);
+                }
+            } else {
+                for (int c = 0; c < dim; c++) {
+                    float b = seq.shortConvTmp.getFloat(tmpOffset + c);
+                    float cg = seq.shortConvTmp.getFloat(tmpOffset + dim + c);
+                    float xv = seq.shortConvTmp.getFloat(tmpOffset + 2 * dim + c);
+                    float bx = b * xv;
+                    int kBase = c * dConv;
+                    float sum = bx * kernel.get(kBase + dConv - 1);
+                    for (int k = 0; k < hist; k++) sum += convState.getFloat(k * dim + c) * kernel.get(kBase + k);
+                    seq.xb2.setFloat(outOffset + c, cg * sum);
+                    for (int k = 0; k < hist - 1; k++) convState.setFloat(k * dim + c, convState.getFloat((k + 1) * dim + c));
+                    if (hist > 0) convState.setFloat((hist - 1) * dim + c, bx);
+                }
+            }
+        }
+        if (!needOutput) return;
+        weights.shortConvOutProj[layer].gemm(seq.xb2, dim, seq.shortConvOut, dim, seq.sequenceLength, dim, dim);
+        for (int s = 0; s < seq.sequenceLength; s++) seq.x.addInPlace(s * dim, seq.shortConvOut, s * dim, dim);
+    }
+
+    static void forwardAttentionLayerSequence(Llama.Configuration config, Llama.Weights weights,
+                                             Llama.State state, Llama.SequenceState seq, int layer, int startPosition, int dim, boolean needOutput) {
+        boolean layerIsSWA = config.isSWA[layer];
+        int headSize = config.headSize(layer);
+        int halfHead = headSize / 2;
+        int queryDim = config.queryDim(layer);
+        int kvDim = config.kvDim(layer);
+        int maxQueryDim = config.numberOfHeads * config.headSizeFull;
+        int maxKVDim = IntStream.range(0, config.numberOfLayers).map(config::kvDim).max().orElse(0);
+        int seqLen = seq.sequenceLength;
+
+        for (int s = 0; s < seqLen; s++) {
+            rmsnorm(seq.xb, s * dim, seq.x, s * dim, weights.rms_att_weight[layer], dim, config.rmsNormEps);
+        }
+        weights.wq[layer].gemm(seq.xb, dim, seq.q, maxQueryDim, seqLen, queryDim, dim);
+        weights.wk[layer].gemm(seq.xb, dim, seq.k, maxKVDim, seqLen, kvDim, dim);
+        if (weights.wv[layer] != null) {
+            weights.wv[layer].gemm(seq.xb, dim, seq.v, maxKVDim, seqLen, kvDim, dim);
+        } else {
+            for (int s = 0; s < seqLen; s++) seq.k.copyTo(s * maxKVDim, seq.v, s * maxKVDim, kvDim);
+        }
+
+        FloatBuffer freqsReal = layerIsSWA ? weights.freq_cis_real_swa : weights.freq_cis_real_full;
+        FloatBuffer freqsImag = layerIsSWA ? weights.freq_cis_imag_swa : weights.freq_cis_imag_full;
+        int nKvHeads = config.numberOfKeyValueHeads(layer);
+        int kvLayer = config.kvSourceLayer(layer);
+        for (int s = 0; s < seqLen; s++) {
+            int position = startPosition + s;
+            for (int h = 0; h < config.numberOfHeads; h++) {
+                rmsnorm(seq.q, s * maxQueryDim + h * headSize, seq.q, s * maxQueryDim + h * headSize, weights.attn_q_norm[layer], headSize, config.rmsNormEps);
+            }
+            for (int h = 0; h < nKvHeads; h++) {
+                rmsnorm(seq.k, s * maxKVDim + h * headSize, seq.k, s * maxKVDim + h * headSize, weights.attn_k_norm[layer], headSize, config.rmsNormEps);
+            }
+            int ropePos = Math.max(0, Math.min(config.contextLength - 1, position));
+            applyRoPE(seq.q, s * maxQueryDim, headSize, config.numberOfHeads, halfHead, freqsReal, freqsImag, ropePos);
+            applyRoPE(seq.k, s * maxKVDim, headSize, nKvHeads, halfHead, freqsReal, freqsImag, ropePos);
+            int kvPos = config.kvCacheIndex(layer, position);
+            seq.k.copyTo(s * maxKVDim, state.keyCache[kvLayer], kvPos * kvDim, kvDim);
+            seq.v.copyTo(s * maxKVDim, state.valueCache[kvLayer], kvPos * kvDim, kvDim);
+        }
+        if (!needOutput) return;
+
+        int kvMul = config.numberOfHeads / nKvHeads;
+        float attnScale = 1.0f / (float) Math.sqrt(headSize);
+        Parallel.parallelFor(0, seqLen * config.numberOfHeads, index -> {
+            int s = index / config.numberOfHeads;
+            int h = index - s * config.numberOfHeads;
+            int position = startPosition + s;
+            int attStart = layerIsSWA ? Math.max(0, position - config.slidingWindow + 1) : 0;
+            int qOffset = s * maxQueryDim + h * headSize;
+            int attOffset = (s * config.numberOfHeads + h) * config.contextLength;
+            int kvHeadOffset = (h / kvMul) * headSize;
+            for (int t = attStart; t <= position; t++) {
+                int keyCacheOffset = config.kvCacheIndex(layer, t) * kvDim + kvHeadOffset;
+                float score = seq.q.dot(qOffset, state.keyCache[kvLayer], keyCacheOffset, headSize) * attnScale;
+                seq.att.setFloat(attOffset + t, score);
+            }
+            seq.att.softmaxInPlace(attOffset + attStart, position - attStart + 1);
+            int xbOffset = s * maxQueryDim + h * headSize;
+            seq.xb_k.fillInPlace(xbOffset, headSize, 0f);
+            for (int t = attStart; t <= position; t++) {
+                int vOffset = config.kvCacheIndex(layer, t) * kvDim + kvHeadOffset;
+                float a = seq.att.getFloat(attOffset + t);
+                seq.xb_k.saxpyInPlace(xbOffset, state.valueCache[kvLayer], vOffset, headSize, a);
+            }
+        });
+        weights.wo[layer].gemm(seq.xb_k, maxQueryDim, seq.xb2, dim, seqLen, dim, queryDim);
+        if (weights.post_attention_norm[layer] != null) {
+            for (int s = 0; s < seqLen; s++) rmsnorm(seq.xb2, s * dim, seq.xb2, s * dim, weights.post_attention_norm[layer], dim, config.rmsNormEps);
+        }
+        for (int s = 0; s < seqLen; s++) seq.x.addInPlace(s * dim, seq.xb2, s * dim, dim);
+    }
+
     static FloatTensor forward(Llama model, Llama.State state, int token, int position) {
+        return forward(model, state, token, position, true);
+    }
+
+    static FloatTensor forward(Llama model, Llama.State state, int token, int position, boolean computeLogits) {
         Llama.Configuration config = model.configuration();
         Llama.Weights weights = model.weights();
         int dim = config.embeddingLength;
@@ -1236,7 +1466,7 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
             float inputScale = (float) (1.0 / Math.sqrt(2.0));
 
             // Project x through perLayerModelProj, scale, and RMS norm per chunk
-            weights.perLayerModelProj.matmul(state.x, state.perLayerInputs, plTotal, dim);
+            weights.perLayerModelProj.gemv(state.x, state.perLayerInputs, plTotal, dim);
             state.perLayerInputs.mapInPlace(0, plTotal, v -> v * projScale);
             for (int l = 0; l < config.numberOfLayers; l++) {
                 rmsnorm(state.perLayerInputs, l * plDim, state.perLayerInputs, l * plDim,
@@ -1270,7 +1500,7 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
             if (isMoELayer) {
                 // === MoE FFN ===
                 // Router: gate_inp @ xb -> sigmoid -> top-k -> normalize weights
-                weights.ffnGateInp[l].matmul(state.xb, state.routerLogits, config.expertCount, dim);
+                weights.ffnGateInp[l].gemv(state.xb, state.routerLogits, config.expertCount, dim);
 
                 // Add expert probability bias
                 if (weights.ffnExpProbsB[l] != null) {
@@ -1321,12 +1551,12 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
 
                     // gate = silu(gate_exps[expert] @ xb)
                     int gateOffset = expertIdx * expertFF * dim;
-                    weights.ffnGateExps[l].matmul(state.xb, state.expertGate, expertFF, dim, gateOffset);
+                    weights.ffnGateExps[l].gemv(state.xb, state.expertGate, expertFF, dim, gateOffset);
                     state.expertGate.mapInPlace(0, expertFF, Llama::silu);
 
                     // up = up_exps[expert] @ xb
                     int upOffset = expertIdx * expertFF * dim;
-                    weights.ffnUpExps[l].matmul(state.xb, state.expertUp, expertFF, dim, upOffset);
+                    weights.ffnUpExps[l].gemv(state.xb, state.expertUp, expertFF, dim, upOffset);
 
                     // gate * up
                     for (int i = 0; i < expertFF; i++) {
@@ -1335,7 +1565,7 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
 
                     // down = down_exps[expert] @ (gate * up)
                     int downOffset = expertIdx * dim * expertFF;
-                    weights.ffnDownExps[l].matmul(state.expertGate, state.expertDown, dim, expertFF, downOffset);
+                    weights.ffnDownExps[l].gemv(state.expertGate, state.expertDown, dim, expertFF, downOffset);
 
                     // Accumulate: xb2 += weight * expertDown
                     state.xb2.saxpyInPlace(0, state.expertDown, 0, dim, weight);
@@ -1351,11 +1581,11 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
                 state.x.addInPlace(state.xb);
             } else {
                 // Standard dense FFN: w2(SiLU(w1(x)) * w3(x))
-                weights.w1[l].matmul(state.xb, state.hb, hiddenDim, dim);
-                weights.w3[l].matmul(state.xb, state.hb2, hiddenDim, dim);
+                weights.w1[l].gemv(state.xb, state.hb, hiddenDim, dim);
+                weights.w3[l].gemv(state.xb, state.hb2, hiddenDim, dim);
                 state.hb.mapInPlace(0, hiddenDim, Llama::silu);
                 state.hb.multiplyInPlace(0, state.hb2, 0, hiddenDim);
-                weights.w2[l].matmul(state.hb, state.xb, dim, hiddenDim);
+                weights.w2[l].gemv(state.hb, state.xb, dim, hiddenDim);
                 if (weights.post_ffw_norm[l] != null) {
                     rmsnorm(state.xb, state.xb, weights.post_ffw_norm[l], dim, config.rmsNormEps);
                 }
@@ -1364,13 +1594,13 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
 
             // Per-layer embedding: GELU-gated projection
             if (plDim > 0 && weights.perLayerInpGate != null) {
-                weights.perLayerInpGate[l].matmul(state.x, state.plGate, plDim, dim);
+                weights.perLayerInpGate[l].gemv(state.x, state.plGate, plDim, dim);
                 state.plGate.mapInPlace(0, plDim, Llama::gelu);
                 int plOffset = l * plDim;
                 for (int i = 0; i < plDim; i++) {
                     state.plGate.setFloat(i, state.plGate.getFloat(i) * state.perLayerInputs.getFloat(plOffset + i));
                 }
-                weights.perLayerProj[l].matmul(state.plGate, state.plProj, dim, plDim);
+                weights.perLayerProj[l].gemv(state.plGate, state.plProj, dim, plDim);
                 rmsnorm(state.plProj, state.plProj, weights.perLayerPostNorm[l], dim, config.rmsNormEps);
                 state.x.addInPlace(state.plProj);
             }
@@ -1382,14 +1612,194 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
             }
         }
 
-        // Final norm + logits
-        rmsnorm(state.x, state.x, weights.rms_final_weight, dim, config.rmsNormEps);
-        weights.wcls.matmul(state.x, state.logits, config.vocabularySize, dim);
-        if (config.logitSoftcapping > 0) {
-            float cap = config.logitSoftcapping;
-            state.logits.mapInPlace(v -> cap * (float) Math.tanh(v / cap));
+        if (computeLogits) {
+            // Final norm + logits are only needed when the sampler will read logits.
+            rmsnorm(state.x, state.x, weights.rms_final_weight, dim, config.rmsNormEps);
+        weights.wcls.gemv(state.x, state.logits, config.vocabularySize, dim);
+            if (config.logitSoftcapping > 0) {
+                float cap = config.logitSoftcapping;
+                state.logits.mapInPlace(v -> cap * (float) Math.tanh(v / cap));
+            }
         }
         return state.logits;
+    }
+
+    static FloatTensor forwardPromptSequence(Llama model, Llama.State state, int[] tokens, int tokenOffset,
+                                             int startPosition, int sequenceLength, boolean computeLogits) {
+        Llama.Configuration config = model.configuration();
+        Llama.Weights weights = model.weights();
+        int dim = config.embeddingLength;
+        Llama.SequenceState seq = state.promptSequenceState;
+        if (sequenceLength > seq.capacity) {
+            seq = new Llama.SequenceState(config, sequenceLength);
+        }
+        seq.sequenceLength = sequenceLength;
+
+        for (int s = 0; s < sequenceLength; s++) {
+            weights.token_embedding_table.copyTo(tokens[tokenOffset + s] * dim, seq.x, s * dim, dim);
+        }
+
+        int plDim = config.embeddingLengthPerLayer;
+        int plTotal = plDim * config.numberOfLayers;
+        if (plDim > 0 && weights.perLayerTokenEmbd != null) {
+            float sqrtPlDim = (float) Math.sqrt(plDim);
+            float projScale = (float) (1.0 / Math.sqrt(dim));
+            float inputScale = (float) (1.0 / Math.sqrt(2.0));
+            weights.perLayerModelProj.gemm(seq.x, dim, seq.perLayerInputs, plTotal, sequenceLength, plTotal, dim);
+            seq.perLayerInputs.mapInPlace(0, sequenceLength * plTotal, v -> v * projScale);
+            for (int s = 0; s < sequenceLength; s++) {
+                for (int l = 0; l < config.numberOfLayers; l++) {
+                    rmsnorm(seq.perLayerInputs, s * plTotal + l * plDim, seq.perLayerInputs, s * plTotal + l * plDim,
+                            weights.perLayerProjNorm, plDim, config.rmsNormEps);
+                }
+                long tokEmbOffset = (long) tokens[tokenOffset + s] * plTotal;
+                int seqOffset = s * plTotal;
+                for (int i = 0; i < plTotal; i++) {
+                    float tokEmb = weights.perLayerTokenEmbd.getFloat(tokEmbOffset + i) * sqrtPlDim;
+                    seq.perLayerInputs.setFloat(seqOffset + i, seq.perLayerInputs.getFloat(seqOffset + i) + tokEmb);
+                }
+            }
+            seq.perLayerInputs.mapInPlace(0, sequenceLength * plTotal, v -> v * inputScale);
+        }
+
+        for (int l = 0; l < config.numberOfLayers; l++) {
+            int hiddenDim = config.feedForwardLength[l];
+            boolean needLayerOutput = computeLogits || l + 1 < config.numberOfLayers;
+            if (config.isRecurrentLayer(l)) {
+                forwardRecurrentLayerSequence(config, weights, state, seq, l, dim, needLayerOutput);
+            } else {
+                forwardAttentionLayerSequence(config, weights, state, seq, l, startPosition, dim, needLayerOutput);
+            }
+            if (!needLayerOutput) break;
+
+            for (int s = 0; s < sequenceLength; s++) {
+                rmsnorm(seq.xb, s * dim, seq.x, s * dim, weights.rms_ffn_weight[l], dim, config.rmsNormEps);
+            }
+            if (config.isMoELayer(l)) {
+                int nExperts = config.expertCount;
+                int topK = config.expertUsedCount;
+                int expertFF = config.expertFeedForwardLength;
+                int maxRoutes = sequenceLength * topK;
+
+                weights.ffnGateInp[l].gemm(seq.xb, dim, seq.routerLogits, nExperts, sequenceLength, nExperts, dim);
+                for (int s = 0; s < sequenceLength; s++) {
+                    int routerOffset = s * nExperts;
+                    if (weights.ffnExpProbsB[l] != null) {
+                        for (int i = 0; i < nExperts; i++) seq.routerLogits.setFloat(routerOffset + i, seq.routerLogits.getFloat(routerOffset + i) + weights.ffnExpProbsB[l].get(i));
+                    }
+                    if (config.expertGatingFunc == 2) {
+                        seq.routerLogits.mapInPlace(routerOffset, nExperts, v -> 1.0f / (1.0f + (float) Math.exp(-v)));
+                    } else {
+                        seq.routerLogits.softmaxInPlace(routerOffset, nExperts);
+                    }
+                    for (int ki = 0; ki < topK; ki++) {
+                        int bestIdx = 0;
+                        float bestVal = Float.NEGATIVE_INFINITY;
+                        for (int ei = 0; ei < nExperts; ei++) {
+                            float val = seq.routerLogits.getFloat(routerOffset + ei);
+                            if (val > bestVal) {
+                                bestVal = val;
+                                bestIdx = ei;
+                            }
+                        }
+                        int route = s * topK + ki;
+                        seq.topExperts[route] = bestIdx;
+                        seq.topProbs[route] = bestVal;
+                        seq.routerLogits.setFloat(routerOffset + bestIdx, Float.NEGATIVE_INFINITY);
+                    }
+                    float weightSum = 0f;
+                    for (int ki = 0; ki < topK; ki++) weightSum += seq.topProbs[s * topK + ki];
+                    for (int ki = 0; ki < topK; ki++) seq.topProbs[s * topK + ki] /= weightSum;
+                }
+
+                seq.xb2.fillInPlace(0, sequenceLength * dim, 0f);
+                int[] routeTokens = new int[maxRoutes];
+                for (int expertIdx = 0; expertIdx < nExperts; expertIdx++) {
+                    int count = 0;
+                    for (int route = 0; route < maxRoutes; route++) {
+                        if (seq.topExperts[route] == expertIdx) {
+                            int tokenIndex = route / topK;
+                            routeTokens[count] = route;
+                            seq.xb.copyTo(tokenIndex * dim, seq.moeInput, count * dim, dim);
+                            count++;
+                        }
+                    }
+                    if (count == 0) continue;
+
+                    int gateOffset = expertIdx * expertFF * dim;
+                    weights.ffnGateExps[l].gemm(seq.moeInput, dim, seq.moeGate, expertFF, count, expertFF, dim, gateOffset);
+                    seq.moeGate.mapInPlace(0, count * expertFF, Llama::silu);
+                    int upOffset = expertIdx * expertFF * dim;
+                    weights.ffnUpExps[l].gemm(seq.moeInput, dim, seq.moeUp, expertFF, count, expertFF, dim, upOffset);
+                    seq.moeGate.multiplyInPlace(0, seq.moeUp, 0, count * expertFF);
+                    int downOffset = expertIdx * dim * expertFF;
+                    weights.ffnDownExps[l].gemm(seq.moeGate, expertFF, seq.moeDown, dim, count, dim, expertFF, downOffset);
+
+                    for (int i = 0; i < count; i++) {
+                        int route = routeTokens[i];
+                        int tokenIndex = route / topK;
+                        seq.xb2.saxpyInPlace(tokenIndex * dim, seq.moeDown, i * dim, dim, seq.topProbs[route]);
+                    }
+                }
+                for (int s = 0; s < sequenceLength; s++) {
+                    int xbOffset = s * dim;
+                    if (weights.post_ffw_norm[l] != null) rmsnorm(seq.xb2, xbOffset, seq.xb2, xbOffset, weights.post_ffw_norm[l], dim, config.rmsNormEps);
+                    seq.x.addInPlace(xbOffset, seq.xb2, xbOffset, dim);
+                }
+            } else {
+                weights.w1[l].gemm(seq.xb, dim, seq.hb, hiddenDim, sequenceLength, hiddenDim, dim);
+                weights.w3[l].gemm(seq.xb, dim, seq.hb2, hiddenDim, sequenceLength, hiddenDim, dim);
+                seq.hb.mapInPlace(0, sequenceLength * hiddenDim, Llama::silu);
+                seq.hb.multiplyInPlace(0, seq.hb2, 0, sequenceLength * hiddenDim);
+                weights.w2[l].gemm(seq.hb, hiddenDim, seq.xb, dim, sequenceLength, dim, hiddenDim);
+                if (weights.post_ffw_norm[l] != null) {
+                    for (int s = 0; s < sequenceLength; s++) rmsnorm(seq.xb, s * dim, seq.xb, s * dim, weights.post_ffw_norm[l], dim, config.rmsNormEps);
+                }
+                for (int s = 0; s < sequenceLength; s++) seq.x.addInPlace(s * dim, seq.xb, s * dim, dim);
+            }
+
+            if (plDim > 0 && weights.perLayerInpGate != null) {
+                weights.perLayerInpGate[l].gemm(seq.x, dim, seq.plGate, plDim, sequenceLength, plDim, dim);
+                seq.plGate.mapInPlace(0, sequenceLength * plDim, Llama::gelu);
+                for (int s = 0; s < sequenceLength; s++) {
+                    int plOffset = s * plDim;
+                    int inputOffset = s * plTotal + l * plDim;
+                    for (int i = 0; i < plDim; i++) seq.plGate.setFloat(plOffset + i, seq.plGate.getFloat(plOffset + i) * seq.perLayerInputs.getFloat(inputOffset + i));
+                }
+                weights.perLayerProj[l].gemm(seq.plGate, plDim, seq.plProj, dim, sequenceLength, dim, plDim);
+                for (int s = 0; s < sequenceLength; s++) {
+                    rmsnorm(seq.plProj, s * dim, seq.plProj, s * dim, weights.perLayerPostNorm[l], dim, config.rmsNormEps);
+                    seq.x.addInPlace(s * dim, seq.plProj, s * dim, dim);
+                }
+            }
+
+            float scale = weights.layerOutputScale[l];
+            if (scale != 1.0f) seq.x.mapInPlace(0, sequenceLength * dim, v -> v * scale);
+        }
+
+        int lastOffset = (sequenceLength - 1) * dim;
+        seq.x.copyTo(lastOffset, state.x, 0, dim);
+        state.latestToken = tokens[tokenOffset + sequenceLength - 1];
+        if (computeLogits) {
+            rmsnorm(state.x, state.x, weights.rms_final_weight, dim, config.rmsNormEps);
+            weights.wcls.gemv(state.x, state.logits, config.vocabularySize, dim);
+            if (config.logitSoftcapping > 0) {
+                float cap = config.logitSoftcapping;
+                state.logits.mapInPlace(v -> cap * (float) Math.tanh(v / cap));
+            }
+        }
+        return state.logits;
+    }
+
+    static FloatTensor forwardSequence(Llama model, Llama.State state, int[] tokens, int tokenOffset,
+                                       int startPosition, int sequenceLength, boolean computeLogits) {
+        if (sequenceLength <= 0) {
+            return state.logits;
+        }
+        if (sequenceLength == 1) {
+            return forward(model, state, tokens[tokenOffset], startPosition, computeLogits);
+        }
+        return forwardPromptSequence(model, state, tokens, tokenOffset, startPosition, sequenceLength, computeLogits);
     }
 
     private static final String ANSI_CYAN = "\033[36m";
@@ -1410,8 +1820,34 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
             // avoid feeding BOS twice when prompt explicitly starts with BOS
             promptIndex = 1;
         }
-        for (int position = startPosition; position < maxTokens; ++position) {
-            forward(model, state, token, position);
+
+        int position = startPosition;
+        while (promptIndex < promptTokens.size() && position < maxTokens) {
+            int promptTokensRemaining = promptTokens.size() - promptIndex;
+            int contextRemaining = maxTokens - position;
+            int prefillLength = Math.min(Math.min(promptTokensRemaining, contextRemaining), MAX_PROMPT_SEQUENCE_LENGTH);
+            int[] prefillTokens = new int[prefillLength];
+            prefillTokens[0] = token;
+            for (int i = 1; i < prefillLength; i++) {
+                prefillTokens[i] = promptTokens.get(promptIndex + i - 1);
+            }
+            for (int i = 0; i < prefillLength; i++) {
+                if (echo) {
+                    System.err.print(LFMTokenizer.replaceControlCharacters(model.tokenizer().decode(promptTokens.get(promptIndex + i))));
+                }
+            }
+            forwardSequence(model, state, prefillTokens, 0, position, prefillLength, false);
+            promptIndex += prefillLength;
+            position += prefillLength;
+            token = promptTokens.get(promptIndex - 1);
+            state.latestToken = token;
+        }
+        if (promptIndex >= promptTokens.size()) startGen = System.nanoTime();
+
+        int[] decodeToken = new int[1];
+        for (; position < maxTokens; ++position) {
+            decodeToken[0] = token;
+            forwardSequence(model, state, decodeToken, 0, position, 1, true);
             if (promptIndex < promptTokens.size()) {
                 nextToken = promptTokens.get(promptIndex++);
                 if (echo) {
@@ -1436,7 +1872,11 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
             state.latestToken = token = nextToken;
         }
 
-        long elapsedNanos = System.nanoTime() - startNanos;
+        long endNanos = System.nanoTime();
+        if (startGen == 0) {
+            startGen = endNanos;
+        }
+        long elapsedNanos = endNanos - startNanos;
         long promptNanos = startGen - startNanos;
         long genNanos = elapsedNanos - startGen + startNanos;
         String timingPrefix = color ? ANSI_CYAN : "";
@@ -1849,20 +2289,87 @@ abstract class FloatTensor {
     }
 
     void matmul(FloatTensor that, FloatTensor out, int dim0, int dim1) {
-        matmul(that, out, dim0, dim1, 0);
+        gemv(that, out, dim0, dim1, 0);
     }
 
-    // matmul with offset into this tensor (for expert weight slicing in 3D tensors)
+    // Compatibility alias for vector matmul with offset into this tensor.
     void matmul(FloatTensor that, FloatTensor out, int dim0, int dim1, int thisOffset) {
+        gemv(that, 0, out, 0, dim0, dim1, thisOffset);
+    }
+
+    void matmul(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1) {
+        gemv(that, thatOffset, out, outOffset, dim0, dim1, 0);
+    }
+
+    void matmul(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+        gemv(that, thatOffset, out, outOffset, dim0, dim1, thisOffset);
+    }
+
+    void gemv(FloatTensor that, FloatTensor out, int dim0, int dim1) {
+        gemv(that, out, dim0, dim1, 0);
+    }
+
+    // GEMV with offset into this tensor (for expert weight slicing in 3D tensors).
+    void gemv(FloatTensor that, FloatTensor out, int dim0, int dim1, int thisOffset) {
+        gemv(that, 0, out, 0, dim0, dim1, thisOffset);
+    }
+
+    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1) {
+        gemv(that, thatOffset, out, outOffset, dim0, dim1, 0);
+    }
+
+    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
         if (that == out) {
-            // In-place matmul: must avoid read-after-write races in parallel execution
+            // In-place GEMV must avoid read-after-write races in parallel execution.
             float[] temp = new float[dim0];
-            Parallel.parallelFor(0, dim0, i -> temp[i] = dot(thisOffset + i * dim1, that, 0, dim1));
+            Parallel.parallelFor(0, dim0, i -> temp[i] = dot(thisOffset + i * dim1, that, thatOffset, dim1));
             for (int i = 0; i < dim0; i++) {
-                out.setFloat(i, temp[i]);
+                out.setFloat(outOffset + i, temp[i]);
             }
         } else {
-            Parallel.parallelFor(0, dim0, i -> out.setFloat(i, dot(thisOffset + i * dim1, that, 0, dim1)));
+            Parallel.parallelFor(0, dim0, i -> out.setFloat(outOffset + i, dot(thisOffset + i * dim1, that, thatOffset, dim1)));
+        }
+    }
+
+    void matmulBatch(FloatTensor that, FloatTensor out, int sequenceLength, int dim0, int dim1) {
+        gemm(that, dim1, out, dim0, sequenceLength, dim0, dim1);
+    }
+
+    void matmulBatch(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1) {
+        gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, 0);
+    }
+
+    void matmulBatch(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+        gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
+    }
+
+    void gemm(FloatTensor that, FloatTensor out, int sequenceLength, int dim0, int dim1) {
+        gemm(that, dim1, out, dim0, sequenceLength, dim0, dim1);
+    }
+
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1) {
+        gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, 0);
+    }
+
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+        if (that == out) {
+            float[] temp = new float[sequenceLength * dim0];
+            Parallel.parallelFor(0, sequenceLength * dim0, index -> {
+                int s = index / dim0;
+                int row = index - s * dim0;
+                temp[index] = dot(thisOffset + row * dim1, that, s * thatStride, dim1);
+            });
+            for (int s = 0; s < sequenceLength; s++) {
+                for (int row = 0; row < dim0; row++) {
+                    out.setFloat(s * outStride + row, temp[s * dim0 + row]);
+                }
+            }
+        } else {
+            Parallel.parallelFor(0, sequenceLength * dim0, index -> {
+                int s = index / dim0;
+                int row = index - s * dim0;
+                out.setFloat(s * outStride + row, dot(thisOffset + row * dim1, that, s * thatStride, dim1));
+            });
         }
     }
 
@@ -2892,6 +3399,15 @@ final class Q8_0FloatTensor extends FloatTensor {
         }
     }
 
+    @Override
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+        if (!FloatTensor.USE_VECTOR_API || !(that instanceof ArrayFloatTensor aft) || that == out) {
+            super.gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
+            return;
+        }
+        vectorGemm(this, aft, out, thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
+    }
+
     private static float vectorDot(Q8_0FloatTensor thiz, int thisOffset, ArrayFloatTensor that, int thatOffset, int size) {
         float result = 0f;
         int j = 0;
@@ -2945,6 +3461,177 @@ final class Q8_0FloatTensor extends FloatTensor {
         }
 
         return result;
+    }
+
+    private static void vectorGemm(Q8_0FloatTensor thiz, ArrayFloatTensor that, FloatTensor out,
+                                   int thatStride, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+        final int blockSize = GGMLType.Q8_0.getBlockSize();
+        final int typeSize = GGMLType.Q8_0.getTypeSize();
+        final int seqTile = 4;
+        final int seqTileCount = (sequenceLength + seqTile - 1) / seqTile;
+        final ArrayFloatTensor outArray = out instanceof ArrayFloatTensor aft ? aft : null;
+        Parallel.parallelFor(0, dim0 * seqTileCount, tileIndex -> {
+            int row = tileIndex / seqTileCount;
+            int s0 = (tileIndex - row * seqTileCount) * seqTile;
+            int rowBase = thisOffset + row * dim1;
+            int tile = Math.min(seqTile, sequenceLength - s0);
+                float result0 = 0f;
+                float result1 = 0f;
+                float result2 = 0f;
+                float result3 = 0f;
+                int j = 0;
+
+                int alignmentBound = Math.min(dim1, -rowBase & (blockSize - 1));
+                if (alignmentBound > 0) {
+                    result0 += FloatTensor.scalarDot(thiz, rowBase, that, s0 * thatStride, alignmentBound);
+                    if (tile > 1) result1 += FloatTensor.scalarDot(thiz, rowBase, that, (s0 + 1) * thatStride, alignmentBound);
+                    if (tile > 2) result2 += FloatTensor.scalarDot(thiz, rowBase, that, (s0 + 2) * thatStride, alignmentBound);
+                    if (tile > 3) result3 += FloatTensor.scalarDot(thiz, rowBase, that, (s0 + 3) * thatStride, alignmentBound);
+                    j += alignmentBound;
+                }
+
+                FloatVector val0 = FloatVector.zero(F_SPECIES);
+                FloatVector val1 = FloatVector.zero(F_SPECIES);
+                FloatVector val2 = FloatVector.zero(F_SPECIES);
+                FloatVector val3 = FloatVector.zero(F_SPECIES);
+                long blockOffset = (long) (rowBase + j) / blockSize * typeSize;
+                int upperBound = j + (dim1 - j) / blockSize * blockSize;
+                for (; j < upperBound; j += blockSize, blockOffset += typeSize) {
+                    float wScaleValue = readFloat16(thiz.memorySegment, blockOffset);
+                    var wScale = FloatVector.broadcast(F_SPECIES, wScaleValue);
+                    switch (F_SPECIES.vectorBitSize()) {
+                        case 512 -> {
+                            var wBytes = ByteVector.fromMemorySegment(ByteVector.SPECIES_256, thiz.memorySegment, blockOffset + Float16.BYTES, ByteOrder.LITTLE_ENDIAN);
+                            var w0 = wBytes.castShape(F_SPECIES, 0);
+                            var w1 = wBytes.castShape(F_SPECIES, 1);
+                            int x0 = s0 * thatStride + j;
+                            val0 = FloatVector.fromArray(F_SPECIES, that.values, x0).mul(w0)
+                                    .add(FloatVector.fromArray(F_SPECIES, that.values, x0 + F_SPECIES.length()).mul(w1))
+                                    .fma(wScale, val0);
+                            if (tile > 1) {
+                                int x1 = (s0 + 1) * thatStride + j;
+                                val1 = FloatVector.fromArray(F_SPECIES, that.values, x1).mul(w0)
+                                        .add(FloatVector.fromArray(F_SPECIES, that.values, x1 + F_SPECIES.length()).mul(w1))
+                                        .fma(wScale, val1);
+                            }
+                            if (tile > 2) {
+                                int x2 = (s0 + 2) * thatStride + j;
+                                val2 = FloatVector.fromArray(F_SPECIES, that.values, x2).mul(w0)
+                                        .add(FloatVector.fromArray(F_SPECIES, that.values, x2 + F_SPECIES.length()).mul(w1))
+                                        .fma(wScale, val2);
+                            }
+                            if (tile > 3) {
+                                int x3 = (s0 + 3) * thatStride + j;
+                                val3 = FloatVector.fromArray(F_SPECIES, that.values, x3).mul(w0)
+                                        .add(FloatVector.fromArray(F_SPECIES, that.values, x3 + F_SPECIES.length()).mul(w1))
+                                        .fma(wScale, val3);
+                            }
+                        }
+                        case 256 -> {
+                            var wBytes = ByteVector.fromMemorySegment(ByteVector.SPECIES_256, thiz.memorySegment, blockOffset + Float16.BYTES, ByteOrder.LITTLE_ENDIAN);
+                            var w0 = wBytes.castShape(F_SPECIES, 0);
+                            var w1 = wBytes.castShape(F_SPECIES, 1);
+                            var w2 = wBytes.castShape(F_SPECIES, 2);
+                            var w3 = wBytes.castShape(F_SPECIES, 3);
+                            int x0 = s0 * thatStride + j;
+                            var s0a = FloatVector.fromArray(F_SPECIES, that.values, x0).mul(w0);
+                            var s0b = FloatVector.fromArray(F_SPECIES, that.values, x0 + 2 * F_SPECIES.length()).mul(w2);
+                            s0a = FloatVector.fromArray(F_SPECIES, that.values, x0 + F_SPECIES.length()).fma(w1, s0a);
+                            s0b = FloatVector.fromArray(F_SPECIES, that.values, x0 + 3 * F_SPECIES.length()).fma(w3, s0b);
+                            val0 = s0a.add(s0b).fma(wScale, val0);
+                            if (tile > 1) {
+                                int x1 = (s0 + 1) * thatStride + j;
+                                var s1a = FloatVector.fromArray(F_SPECIES, that.values, x1).mul(w0);
+                                var s1b = FloatVector.fromArray(F_SPECIES, that.values, x1 + 2 * F_SPECIES.length()).mul(w2);
+                                s1a = FloatVector.fromArray(F_SPECIES, that.values, x1 + F_SPECIES.length()).fma(w1, s1a);
+                                s1b = FloatVector.fromArray(F_SPECIES, that.values, x1 + 3 * F_SPECIES.length()).fma(w3, s1b);
+                                val1 = s1a.add(s1b).fma(wScale, val1);
+                            }
+                            if (tile > 2) {
+                                int x2 = (s0 + 2) * thatStride + j;
+                                var s2a = FloatVector.fromArray(F_SPECIES, that.values, x2).mul(w0);
+                                var s2b = FloatVector.fromArray(F_SPECIES, that.values, x2 + 2 * F_SPECIES.length()).mul(w2);
+                                s2a = FloatVector.fromArray(F_SPECIES, that.values, x2 + F_SPECIES.length()).fma(w1, s2a);
+                                s2b = FloatVector.fromArray(F_SPECIES, that.values, x2 + 3 * F_SPECIES.length()).fma(w3, s2b);
+                                val2 = s2a.add(s2b).fma(wScale, val2);
+                            }
+                            if (tile > 3) {
+                                int x3 = (s0 + 3) * thatStride + j;
+                                var s3a = FloatVector.fromArray(F_SPECIES, that.values, x3).mul(w0);
+                                var s3b = FloatVector.fromArray(F_SPECIES, that.values, x3 + 2 * F_SPECIES.length()).mul(w2);
+                                s3a = FloatVector.fromArray(F_SPECIES, that.values, x3 + F_SPECIES.length()).fma(w1, s3a);
+                                s3b = FloatVector.fromArray(F_SPECIES, that.values, x3 + 3 * F_SPECIES.length()).fma(w3, s3b);
+                                val3 = s3a.add(s3b).fma(wScale, val3);
+                            }
+                        }
+                        case 128 -> {
+                            for (int p = 0; p < 2; ++p) {
+                                int off = p * 16;
+                                var wBytes = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, thiz.memorySegment,
+                                        blockOffset + Float16.BYTES + p * ByteVector.SPECIES_128.vectorByteSize(), ByteOrder.LITTLE_ENDIAN);
+                                var w0 = wBytes.castShape(F_SPECIES, 0);
+                                var w1 = wBytes.castShape(F_SPECIES, 1);
+                                var w2 = wBytes.castShape(F_SPECIES, 2);
+                                var w3 = wBytes.castShape(F_SPECIES, 3);
+                                int x0 = s0 * thatStride + j + off;
+                                var s0a = FloatVector.fromArray(F_SPECIES, that.values, x0).mul(w0);
+                                var s0b = FloatVector.fromArray(F_SPECIES, that.values, x0 + 2 * F_SPECIES.length()).mul(w2);
+                                s0a = FloatVector.fromArray(F_SPECIES, that.values, x0 + F_SPECIES.length()).fma(w1, s0a);
+                                s0b = FloatVector.fromArray(F_SPECIES, that.values, x0 + 3 * F_SPECIES.length()).fma(w3, s0b);
+                                val0 = s0a.add(s0b).fma(wScale, val0);
+                                if (tile > 1) {
+                                    int x1 = (s0 + 1) * thatStride + j + off;
+                                    var s1a = FloatVector.fromArray(F_SPECIES, that.values, x1).mul(w0);
+                                    var s1b = FloatVector.fromArray(F_SPECIES, that.values, x1 + 2 * F_SPECIES.length()).mul(w2);
+                                    s1a = FloatVector.fromArray(F_SPECIES, that.values, x1 + F_SPECIES.length()).fma(w1, s1a);
+                                    s1b = FloatVector.fromArray(F_SPECIES, that.values, x1 + 3 * F_SPECIES.length()).fma(w3, s1b);
+                                    val1 = s1a.add(s1b).fma(wScale, val1);
+                                }
+                                if (tile > 2) {
+                                    int x2 = (s0 + 2) * thatStride + j + off;
+                                    var s2a = FloatVector.fromArray(F_SPECIES, that.values, x2).mul(w0);
+                                    var s2b = FloatVector.fromArray(F_SPECIES, that.values, x2 + 2 * F_SPECIES.length()).mul(w2);
+                                    s2a = FloatVector.fromArray(F_SPECIES, that.values, x2 + F_SPECIES.length()).fma(w1, s2a);
+                                    s2b = FloatVector.fromArray(F_SPECIES, that.values, x2 + 3 * F_SPECIES.length()).fma(w3, s2b);
+                                    val2 = s2a.add(s2b).fma(wScale, val2);
+                                }
+                                if (tile > 3) {
+                                    int x3 = (s0 + 3) * thatStride + j + off;
+                                    var s3a = FloatVector.fromArray(F_SPECIES, that.values, x3).mul(w0);
+                                    var s3b = FloatVector.fromArray(F_SPECIES, that.values, x3 + 2 * F_SPECIES.length()).mul(w2);
+                                    s3a = FloatVector.fromArray(F_SPECIES, that.values, x3 + F_SPECIES.length()).fma(w1, s3a);
+                                    s3b = FloatVector.fromArray(F_SPECIES, that.values, x3 + 3 * F_SPECIES.length()).fma(w3, s3b);
+                                    val3 = s3a.add(s3b).fma(wScale, val3);
+                                }
+                            }
+                        }
+                        default -> throw new UnsupportedOperationException(F_SPECIES.toString());
+                    }
+                }
+
+                result0 += val0.reduceLanes(VectorOperators.ADD);
+                if (tile > 1) result1 += val1.reduceLanes(VectorOperators.ADD);
+                if (tile > 2) result2 += val2.reduceLanes(VectorOperators.ADD);
+                if (tile > 3) result3 += val3.reduceLanes(VectorOperators.ADD);
+                if (j < dim1) {
+                    result0 += FloatTensor.scalarDot(thiz, rowBase + j, that, s0 * thatStride + j, dim1 - j);
+                    if (tile > 1) result1 += FloatTensor.scalarDot(thiz, rowBase + j, that, (s0 + 1) * thatStride + j, dim1 - j);
+                    if (tile > 2) result2 += FloatTensor.scalarDot(thiz, rowBase + j, that, (s0 + 2) * thatStride + j, dim1 - j);
+                    if (tile > 3) result3 += FloatTensor.scalarDot(thiz, rowBase + j, that, (s0 + 3) * thatStride + j, dim1 - j);
+                }
+
+                if (outArray != null) {
+                    outArray.values[s0 * outStride + row] = result0;
+                    if (tile > 1) outArray.values[(s0 + 1) * outStride + row] = result1;
+                    if (tile > 2) outArray.values[(s0 + 2) * outStride + row] = result2;
+                    if (tile > 3) outArray.values[(s0 + 3) * outStride + row] = result3;
+                } else {
+                    out.setFloat(s0 * outStride + row, result0);
+                    if (tile > 1) out.setFloat((s0 + 1) * outStride + row, result1);
+                    if (tile > 2) out.setFloat((s0 + 2) * outStride + row, result2);
+                    if (tile > 3) out.setFloat((s0 + 3) * outStride + row, result3);
+                }
+        });
     }
 }
 
@@ -3938,18 +4625,1114 @@ public class LFM25 {
         return out;
     }
 
+    static void runServer(Llama model, Options options) throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress(options.host(), options.port()), 0);
+        server.createContext("/v1/models", exchange -> {
+            logRequest(exchange);
+            addCommonHeaders(exchange);
+            if (handleOptions(exchange)) return;
+            if (!"GET".equals(exchange.getRequestMethod())) {
+                exchange.getResponseHeaders().set("Allow", "GET, OPTIONS");
+                sendError(exchange, 405, "Method not allowed");
+                return;
+            }
+            String modelId = options.modelPath().getFileName().toString();
+            sendJson(exchange, 200, Map.of(
+                    "object", "list",
+                    "data", List.of(Map.of(
+                            "id", modelId,
+                            "object", "model",
+                            "created", 0,
+                            "owned_by", "lfm25.java"))));
+        });
+        server.createContext("/v1/chat/completions", exchange -> handleChatCompletion(exchange, model, options));
+        server.createContext("/v1/completions", exchange -> handleCompletion(exchange, model, options));
+        server.createContext("/v1/responses", exchange -> handleResponse(exchange, model, options));
+        server.createContext("/", exchange -> {
+            logRequest(exchange);
+            addCommonHeaders(exchange);
+            if (handleOptions(exchange)) return;
+            sendError(exchange, 404, "Not found");
+        });
+        server.setExecutor(Executors.newCachedThreadPool());
+        server.start();
+        System.out.printf("OpenAI-compatible server listening on http://%s:%d%n", options.host(), options.port());
+    }
+
+    private static void handleChatCompletion(HttpExchange exchange, Llama model, Options options) throws IOException {
+        logRequest(exchange);
+        addCommonHeaders(exchange);
+        if (handleOptions(exchange)) return;
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            exchange.getResponseHeaders().set("Allow", "POST, OPTIONS");
+            sendError(exchange, 405, "Method not allowed");
+            return;
+        }
+        try {
+            Map<String, Object> request = asObject(Json.parse(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8)), "request");
+            validateChatRequest(request);
+            List<Object> messages = asArray(request.get("messages"), "messages");
+            boolean stream = booleanValue(request.get("stream"), false);
+            String modelId = stringValue(request.get("model"), options.modelPath().getFileName().toString());
+            String id = "chatcmpl-" + Long.toUnsignedString(System.nanoTime(), 36);
+            if (stream) {
+                streamChatCompletion(exchange, model, options, request, messages, modelId, id);
+            } else {
+                GenerationResult result = generateChat(model, options, request, messages, null);
+                sendJson(exchange, 200, chatCompletionResponse(id, modelId, result));
+            }
+        } catch (RuntimeException e) {
+            sendError(exchange, 400, e.getMessage() == null ? e.toString() : e.getMessage());
+        }
+    }
+
+    private static void handleCompletion(HttpExchange exchange, Llama model, Options options) throws IOException {
+        logRequest(exchange);
+        addCommonHeaders(exchange);
+        if (handleOptions(exchange)) return;
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            exchange.getResponseHeaders().set("Allow", "POST, OPTIONS");
+            sendError(exchange, 405, "Method not allowed");
+            return;
+        }
+        try {
+            Map<String, Object> request = asObject(Json.parse(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8)), "request");
+            Object promptValue = request.get("prompt");
+            String prompt = promptValue instanceof List<?> prompts ? prompts.stream().map(String::valueOf).collect(Collectors.joining("\n")) : stringValue(promptValue, "");
+            boolean stream = booleanValue(request.get("stream"), false);
+            String modelId = stringValue(request.get("model"), options.modelPath().getFileName().toString());
+            String id = "cmpl-" + Long.toUnsignedString(System.nanoTime(), 36);
+            if (stream) {
+                streamCompletion(exchange, model, options, request, prompt, modelId, id);
+            } else {
+                GenerationResult result = generateCompletion(model, options, request, prompt, null);
+                sendJson(exchange, 200, completionResponse(id, modelId, result));
+            }
+        } catch (RuntimeException e) {
+            sendError(exchange, 400, e.getMessage() == null ? e.toString() : e.getMessage());
+        }
+    }
+
+    private static void handleResponse(HttpExchange exchange, Llama model, Options options) throws IOException {
+        logRequest(exchange);
+        addCommonHeaders(exchange);
+        if (handleOptions(exchange)) return;
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            exchange.getResponseHeaders().set("Allow", "POST, OPTIONS");
+            sendError(exchange, 405, "Method not allowed");
+            return;
+        }
+        try {
+            Map<String, Object> request = asObject(Json.parse(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8)), "request");
+            normalizeResponseRequest(request);
+            String modelId = stringValue(request.get("model"), options.modelPath().getFileName().toString());
+            String id = "resp-" + Long.toUnsignedString(System.nanoTime(), 36);
+            List<Object> messages = responseInputMessages(request);
+            if (booleanValue(request.get("stream"), false)) {
+                streamResponse(exchange, model, options, request, messages, modelId, id);
+            } else {
+                GenerationResult result = generateChat(model, options, request, messages, null);
+                sendJson(exchange, 200, responseResponse(id, modelId, result));
+            }
+        } catch (RuntimeException e) {
+            sendError(exchange, 400, e.getMessage() == null ? e.toString() : e.getMessage());
+        }
+    }
+
+    private static void streamChatCompletion(HttpExchange exchange, Llama model, Options options, Map<String, Object> request,
+                                             List<Object> messages, String modelId, String id) throws IOException {
+        Headers headers = exchange.getResponseHeaders();
+        headers.set("Content-Type", "text/event-stream; charset=utf-8");
+        headers.set("Cache-Control", "no-cache");
+        exchange.sendResponseHeaders(200, 0);
+        try (OutputStream out = exchange.getResponseBody()) {
+            writeSse(out, chatCompletionChunk(id, modelId, Map.of("role", "assistant"), null));
+            boolean toolRequest = hasUsableTools(request);
+            GenerationResult result = generateChat(model, options, request, messages, toolRequest ? null : text -> {
+                try {
+                    writeSse(out, chatCompletionChunk(id, modelId, Map.of("content", text), null));
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
+            if (toolRequest) {
+                Map<String, Object> delta = result.toolCalls().isEmpty()
+                        ? Map.of("content", result.text())
+                        : Map.of("tool_calls", toolCallDeltas(result.toolCalls()));
+                writeSse(out, chatCompletionChunk(id, modelId, delta, null));
+            }
+            writeSse(out, chatCompletionChunk(id, modelId, Map.of(), result.finishReason()));
+            out.write("data: [DONE]\n\n".getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    private static void streamCompletion(HttpExchange exchange, Llama model, Options options, Map<String, Object> request,
+                                         String prompt, String modelId, String id) throws IOException {
+        Headers headers = exchange.getResponseHeaders();
+        headers.set("Content-Type", "text/event-stream; charset=utf-8");
+        headers.set("Cache-Control", "no-cache");
+        exchange.sendResponseHeaders(200, 0);
+        try (OutputStream out = exchange.getResponseBody()) {
+            GenerationResult result = generateCompletion(model, options, request, prompt, text -> {
+                try {
+                    writeSse(out, completionChunk(id, modelId, text, null));
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
+            writeSse(out, completionChunk(id, modelId, "", result.finishReason()));
+            out.write("data: [DONE]\n\n".getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    private static void streamResponse(HttpExchange exchange, Llama model, Options options, Map<String, Object> request,
+                                       List<Object> messages, String modelId, String id) throws IOException {
+        Headers headers = exchange.getResponseHeaders();
+        headers.set("Content-Type", "text/event-stream; charset=utf-8");
+        headers.set("Cache-Control", "no-cache");
+        exchange.sendResponseHeaders(200, 0);
+        try (OutputStream out = exchange.getResponseBody()) {
+            writeSseEvent(out, "response.created", Map.of(
+                    "type", "response.created",
+                    "response", responseEnvelope(id, modelId, "in_progress", List.of(), null)));
+            String itemId = "msg_" + id;
+            writeSseEvent(out, "response.output_item.added", Map.of(
+                    "type", "response.output_item.added",
+                    "output_index", 0,
+                    "item", responseMessageItem(itemId, "in_progress", "")));
+            GenerationResult result = generateChat(model, options, request, messages, text -> {
+                try {
+                    writeSseEvent(out, "response.output_text.delta", Map.of(
+                            "type", "response.output_text.delta",
+                            "item_id", itemId,
+                            "output_index", 0,
+                            "content_index", 0,
+                            "delta", text));
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
+            writeSseEvent(out, "response.output_text.done", Map.of(
+                    "type", "response.output_text.done",
+                    "item_id", itemId,
+                    "output_index", 0,
+                    "content_index", 0,
+                    "text", result.text()));
+            writeSseEvent(out, "response.output_item.done", Map.of(
+                    "type", "response.output_item.done",
+                    "output_index", 0,
+                    "item", responseMessageItem(itemId, "completed", result.text())));
+            writeSseEvent(out, "response.completed", Map.of(
+                    "type", "response.completed",
+                    "response", responseResponse(id, modelId, result)));
+            out.write("data: [DONE]\n\n".getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    private static Map<String, Object> chatCompletionChunk(String id, String modelId, Map<String, Object> delta, String finishReason) {
+        Map<String, Object> choice = new LinkedHashMap<>();
+        choice.put("index", 0);
+        choice.put("delta", delta);
+        choice.put("finish_reason", finishReason);
+        Map<String, Object> chunk = new LinkedHashMap<>();
+        chunk.put("id", id);
+        chunk.put("object", "chat.completion.chunk");
+        chunk.put("created", System.currentTimeMillis() / 1000);
+        chunk.put("model", modelId);
+        chunk.put("choices", List.of(choice));
+        return chunk;
+    }
+
+    private static Map<String, Object> chatCompletionResponse(String id, String modelId, GenerationResult result) {
+        Map<String, Object> message = new LinkedHashMap<>();
+        message.put("role", "assistant");
+        message.put("content", result.toolCalls().isEmpty() ? result.text() : null);
+        if (!result.toolCalls().isEmpty()) message.put("tool_calls", result.toolCalls());
+        Map<String, Object> choice = new LinkedHashMap<>();
+        choice.put("index", 0);
+        choice.put("message", message);
+        choice.put("finish_reason", result.finishReason());
+        return Map.of(
+                "id", id,
+                "object", "chat.completion",
+                "created", System.currentTimeMillis() / 1000,
+                "model", modelId,
+                "choices", List.of(choice),
+                "usage", usage(result));
+    }
+
+    private static Map<String, Object> completionResponse(String id, String modelId, GenerationResult result) {
+        return Map.of(
+                "id", id,
+                "object", "text_completion",
+                "created", System.currentTimeMillis() / 1000,
+                "model", modelId,
+                "choices", List.of(Map.of("text", result.text(), "index", 0, "finish_reason", result.finishReason())),
+                "usage", usage(result));
+    }
+
+    private static Map<String, Object> completionChunk(String id, String modelId, String text, String finishReason) {
+        Map<String, Object> choice = new LinkedHashMap<>();
+        choice.put("text", text);
+        choice.put("index", 0);
+        choice.put("finish_reason", finishReason);
+        Map<String, Object> chunk = new LinkedHashMap<>();
+        chunk.put("id", id);
+        chunk.put("object", "text_completion");
+        chunk.put("created", System.currentTimeMillis() / 1000);
+        chunk.put("model", modelId);
+        chunk.put("choices", List.of(choice));
+        return chunk;
+    }
+
+    private static Map<String, Object> usage(GenerationResult result) {
+        return Map.of(
+                "prompt_tokens", result.promptTokens(),
+                "completion_tokens", result.completionTokens(),
+                "total_tokens", result.promptTokens() + result.completionTokens());
+    }
+
+    private static Map<String, Object> responseUsage(GenerationResult result) {
+        return Map.of(
+                "input_tokens", result.promptTokens(),
+                "output_tokens", result.completionTokens(),
+                "total_tokens", result.promptTokens() + result.completionTokens());
+    }
+
+    private static Map<String, Object> responseResponse(String id, String modelId, GenerationResult result) {
+        List<Map<String, Object>> output = result.toolCalls().isEmpty()
+                ? List.of(responseMessageItem("msg_" + id, "completed", result.text()))
+                : responseToolCallItems(result.toolCalls());
+        return responseEnvelope(id, modelId, "completed", output, responseUsage(result));
+    }
+
+    private static Map<String, Object> responseEnvelope(String id, String modelId, String status,
+                                                       List<Map<String, Object>> output, Map<String, Object> usage) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("id", id);
+        response.put("object", "response");
+        response.put("created_at", System.currentTimeMillis() / 1000);
+        response.put("status", status);
+        response.put("model", modelId);
+        response.put("output", output);
+        response.put("parallel_tool_calls", false);
+        response.put("tool_choice", "auto");
+        response.put("usage", usage);
+        return response;
+    }
+
+    private static Map<String, Object> responseMessageItem(String id, String status, String text) {
+        return Map.of(
+                "id", id,
+                "type", "message",
+                "status", status,
+                "role", "assistant",
+                "content", List.of(Map.of(
+                        "type", "output_text",
+                        "text", text,
+                        "annotations", List.of())));
+    }
+
+    private static List<Map<String, Object>> responseToolCallItems(List<Map<String, Object>> toolCalls) {
+        List<Map<String, Object>> output = new ArrayList<>();
+        for (Map<String, Object> toolCall : toolCalls) {
+            Map<String, Object> function = asObject(toolCall.get("function"), "tool_call.function");
+            output.add(Map.of(
+                    "id", stringValue(toolCall.get("id"), ""),
+                    "type", "function_call",
+                    "status", "completed",
+                    "call_id", stringValue(toolCall.get("id"), ""),
+                    "name", stringValue(function.get("name"), ""),
+                    "arguments", stringValue(function.get("arguments"), "{}")));
+        }
+        return output;
+    }
+
+    private static void normalizeResponseRequest(Map<String, Object> request) {
+        if (!request.containsKey("max_tokens") && request.containsKey("max_output_tokens")) {
+            request.put("max_tokens", request.get("max_output_tokens"));
+        }
+        Object tools = request.get("tools");
+        if (tools instanceof List<?> values) {
+            List<Object> normalized = new ArrayList<>();
+            for (Object value : values) normalized.add(normalizeResponseTool(value));
+            request.put("tools", normalized);
+        }
+    }
+
+    private static Object normalizeResponseTool(Object value) {
+        Map<String, Object> tool = asObject(value, "tool");
+        if (tool.get("function") != null) return tool;
+        if ("function".equals(tool.get("type")) && tool.get("name") != null) {
+            Map<String, Object> function = new LinkedHashMap<>();
+            function.put("name", tool.get("name"));
+            if (tool.get("description") != null) function.put("description", tool.get("description"));
+            function.put("parameters", tool.getOrDefault("parameters", Map.of()));
+            return Map.of("type", "function", "function", function);
+        }
+        return tool;
+    }
+
+    private static List<Object> responseInputMessages(Map<String, Object> request) {
+        List<Object> messages = new ArrayList<>();
+        String instructions = stringValue(request.get("instructions"), null);
+        if (instructions != null && !instructions.isBlank()) {
+            messages.add(Map.of("role", "system", "content", instructions));
+        }
+        Object input = request.get("input");
+        if (input instanceof String s) {
+            messages.add(Map.of("role", "user", "content", s));
+        } else if (input instanceof List<?> list) {
+            for (Object item : list) addResponseInputMessage(messages, item);
+        } else if (input != null) {
+            addResponseInputMessage(messages, input);
+        } else {
+            throw new IllegalArgumentException("input is required");
+        }
+        return messages;
+    }
+
+    private static void addResponseInputMessage(List<Object> messages, Object item) {
+        if (item instanceof String s) {
+            messages.add(Map.of("role", "user", "content", s));
+            return;
+        }
+        Map<String, Object> map = asObject(item, "input item");
+        String type = stringValue(map.get("type"), "message");
+        if ("function_call_output".equals(type)) {
+            messages.add(Map.of(
+                    "role", "tool",
+                    "name", stringValue(map.get("call_id"), "tool"),
+                    "content", stringValue(map.get("output"), "")));
+            return;
+        }
+        String role = stringValue(map.get("role"), "user");
+        messages.add(Map.of("role", role, "content", responseInputText(map.get("content"))));
+    }
+
+    private static String responseInputText(Object content) {
+        if (content instanceof List<?> parts) {
+            StringBuilder sb = new StringBuilder();
+            for (Object part : parts) {
+                if (part instanceof String s) {
+                    sb.append(s);
+                } else if (part instanceof Map<?, ?> map) {
+                    Object text = map.get("text");
+                    if (text == null) text = map.get("input_text");
+                    if (text == null) text = map.get("output_text");
+                    if (text != null) sb.append(text);
+                }
+            }
+            return sb.toString();
+        }
+        return stringValue(content, "");
+    }
+
+    private static void validateChatRequest(Map<String, Object> request) {
+        asArray(request.get("messages"), "messages");
+        Object tools = request.get("tools");
+        if (tools != null) {
+            List<Object> toolList = asArray(tools, "tools");
+            for (Object value : toolList) validateTool(value);
+        }
+        Object toolChoice = request.get("tool_choice");
+        if (toolChoice instanceof String s) {
+            Options.require(List.of("auto", "none", "required").contains(s), "tool_choice must be auto, none, required, or a function choice object");
+        } else if (toolChoice instanceof Map<?, ?> map) {
+            Options.require("function".equals(map.get("type")), "Only function tool_choice objects are supported");
+            Object function = map.get("function");
+            Options.require(function instanceof Map<?, ?> fn && fn.get("name") instanceof String, "tool_choice.function.name is required");
+        } else if (toolChoice != null) {
+            throw new IllegalArgumentException("tool_choice must be a string or object");
+        }
+    }
+
+    private static void validateTool(Object value) {
+        Map<String, Object> tool = asObject(value, "tool");
+        Options.require("function".equals(stringValue(tool.get("type"), "function")), "Only function tools are supported");
+        Map<String, Object> function = asObject(tool.get("function"), "tool.function");
+        Options.require(function.get("name") instanceof String name && !name.isBlank(), "tool.function.name is required");
+    }
+
+    private static GenerationResult generateChat(Llama model, Options options, Map<String, Object> request, List<Object> messages, Consumer<String> onText) {
+        LFMChatFormat chatFormat = new LFMChatFormat(model.tokenizer());
+        List<Integer> promptTokens = new ArrayList<>();
+        promptTokens.add(chatFormat.beginOfSentence);
+        String toolsPrompt = toolsPrompt(request);
+        if (!toolsPrompt.isEmpty()) {
+            promptTokens.addAll(chatFormat.encodeMessage(new LFMChatFormat.Message(LFMChatFormat.Role.SYSTEM, toolsPrompt)));
+        }
+        for (Object value : messages) {
+            Map<String, Object> message = asObject(value, "message");
+            String role = stringValue(message.get("role"), "user");
+            String content = chatMessageContent(message);
+            LFMChatFormat.Role lfmRole = switch (role) {
+                case "system" -> LFMChatFormat.Role.SYSTEM;
+                case "assistant" -> LFMChatFormat.Role.ASSISTANT;
+                default -> LFMChatFormat.Role.USER;
+            };
+            promptTokens.addAll(chatFormat.encodeMessage(new LFMChatFormat.Message(lfmRole, content)));
+        }
+        promptTokens.addAll(chatFormat.encodeGenerationPrompt());
+        if (!options.think()) appendThinkSurrogate(model.tokenizer(), promptTokens);
+        GenerationResult result = generateResponse(model, options, request, promptTokens, chatFormat.getStopTokens(), onText);
+        return hasUsableTools(request) ? withParsedToolCalls(result) : result;
+    }
+
+    private static GenerationResult generateCompletion(Llama model, Options options, Map<String, Object> request, String prompt, Consumer<String> onText) {
+        LFMChatFormat chatFormat = new LFMChatFormat(model.tokenizer());
+        List<Integer> promptTokens = options.rawPrompt() ? encodeWithSpecialTokens(model.tokenizer(), prompt) : new ArrayList<>(model.tokenizer().encode(prompt));
+        return generateResponse(model, options, request, promptTokens, chatFormat.getStopTokens(), onText);
+    }
+
+    private static GenerationResult generateResponse(Llama model, Options options, Map<String, Object> request, List<Integer> promptTokens,
+                                           Set<Integer> baseStopTokens, Consumer<String> onText) {
+        float temperature = floatValue(request.get("temperature"), options.temperature());
+        float topp = floatValue(request.get("top_p"), options.topp());
+        long seed = longValue(request.get("seed"), options.seed());
+        int maxTokens = intValue(request.getOrDefault("max_tokens", request.get("max_completion_tokens")), options.maxTokens());
+        StopSpec stopSpec = stopSpec(model.tokenizer(), request.get("stop"), baseStopTokens);
+        Options.require(intValue(request.get("n"), 1) == 1, "Only n=1 is supported");
+        Options.require(0 <= temperature, "Invalid argument: temperature must be non-negative");
+        Options.require(0 <= topp && topp <= 1, "Invalid argument: top_p must be within [0, 1]");
+        Options.require(0 <= maxTokens, "Invalid argument: max_tokens must be non-negative");
+        int consumedPromptTokens = consumedPromptTokens(model, promptTokens);
+        Options.require(consumedPromptTokens < model.configuration().contextLength, "Prompt exceeds context length (%d tokens used, %d available)", consumedPromptTokens, model.configuration().contextLength);
+        int actualMaxTokens = Math.min(maxTokens, model.configuration().contextLength - consumedPromptTokens);
+        int totalTokenLimit = consumedPromptTokens + actualMaxTokens;
+        Sampler sampler = configuredSampler(model, options, temperature, topp, seed);
+        Llama.State state = model.createNewState();
+        StringBuilder streamed = new StringBuilder();
+        IntConsumer printer = null;
+        StopAwareTextConsumer stopAware = null;
+        if (onText != null) {
+            stopAware = new StopAwareTextConsumer(stopSpec.textStops(), text -> {
+                streamed.append(text);
+                onText.accept(text);
+            });
+            printer = serverStreamingPrinter(model.tokenizer(), options.think(), stopAware);
+        }
+        List<Integer> responseTokens;
+        synchronized (model) {
+            responseTokens = Llama.generateTokens(model, state, 0, promptTokens, stopSpec.tokenStops(), totalTokenLimit, sampler, false, false, printer);
+        }
+        if (stopAware != null) stopAware.flush();
+        boolean stopped = !responseTokens.isEmpty() && stopSpec.tokenStops().contains(responseTokens.getLast());
+        if (stopped) responseTokens.removeLast();
+        String text = onText != null ? streamed.toString() : model.tokenizer().decode(visibleTokens(model.tokenizer(), responseTokens, options.think()));
+        StopResult stopResult = applyTextStops(text, stopSpec.textStops());
+        boolean textStopped = stopResult.stopped() || (stopAware != null && stopAware.stopped());
+        String finishReason = stopped || textStopped ? "stop" : (responseTokens.size() >= actualMaxTokens ? "length" : "stop");
+        return new GenerationResult(stopResult.text(), consumedPromptTokens, responseTokens.size(), finishReason);
+    }
+
+    private static int consumedPromptTokens(Llama model, List<Integer> promptTokens) {
+        if (!promptTokens.isEmpty() && promptTokens.getFirst() == model.tokenizer().getSpecialTokens().getOrDefault("<bos>", 1)) {
+            return promptTokens.size() - 1;
+        }
+        return promptTokens.size();
+    }
+
+    record GenerationResult(String text, int promptTokens, int completionTokens, String finishReason, List<Map<String, Object>> toolCalls) {
+        GenerationResult(String text, int promptTokens, int completionTokens, String finishReason) {
+            this(text, promptTokens, completionTokens, finishReason, List.of());
+        }
+    }
+    record StopSpec(Set<Integer> tokenStops, List<String> textStops) {}
+    record StopResult(String text, boolean stopped) {}
+
+    private static boolean hasUsableTools(Map<String, Object> request) {
+        Object choice = request.get("tool_choice");
+        if (choice instanceof String s && "none".equals(s)) return false;
+        Object tools = request.get("tools");
+        return tools instanceof List<?> list && !list.isEmpty();
+    }
+
+    private static String toolsPrompt(Map<String, Object> request) {
+        if (!hasUsableTools(request)) return "";
+        StringBuilder sb = new StringBuilder();
+        sb.append("You may call tools to help answer the user.\n");
+        sb.append("When calling tools, respond only with valid JSON and no extra text.\n");
+        sb.append("Use this exact shape: {\"tool_calls\":[{\"name\":\"tool_name\",\"arguments\":{...}}]}\n");
+        sb.append("If no tool is needed, answer normally.\n");
+        Object choice = request.get("tool_choice");
+        if (choice instanceof String s && "required".equals(s)) {
+            sb.append("A tool call is required.\n");
+        } else if (choice instanceof Map<?, ?> map) {
+            Object function = map.get("function");
+            if (function instanceof Map<?, ?> fn && fn.get("name") != null) {
+                sb.append("Call the tool named \"").append(fn.get("name")).append("\".\n");
+            }
+        }
+        sb.append("Available tools:\n");
+        for (Object tool : asArray(request.get("tools"), "tools")) {
+            Map<String, Object> toolObject = asObject(tool, "tool");
+            Object function = toolObject.get("function");
+            sb.append(Json.stringify(function == null ? toolObject : function)).append('\n');
+        }
+        return sb.toString();
+    }
+
+    private static String chatMessageContent(Map<String, Object> message) {
+        String role = stringValue(message.get("role"), "user");
+        if ("tool".equals(role)) {
+            String name = stringValue(message.get("name"), stringValue(message.get("tool_call_id"), "tool"));
+            return "Tool result from " + name + ":\n" + messageContent(message.get("content"));
+        }
+        String content = messageContent(message.get("content"));
+        Object toolCalls = message.get("tool_calls");
+        if (toolCalls instanceof List<?> calls && !calls.isEmpty()) {
+            String callsText = "Tool calls made:\n" + Json.stringify(calls);
+            return content.isEmpty() ? callsText : content + "\n" + callsText;
+        }
+        Object functionCall = message.get("function_call");
+        if (functionCall instanceof Map<?, ?> call) {
+            String callText = "Function call made:\n" + Json.stringify(call);
+            return content.isEmpty() ? callText : content + "\n" + callText;
+        }
+        return content;
+    }
+
+    private static GenerationResult withParsedToolCalls(GenerationResult result) {
+        List<Map<String, Object>> toolCalls = parseToolCalls(result.text());
+        if (toolCalls.isEmpty()) return result;
+        return new GenerationResult("", result.promptTokens(), result.completionTokens(), "tool_calls", toolCalls);
+    }
+
+    private static List<Map<String, Object>> parseToolCalls(String text) {
+        String json = extractJson(text.strip());
+        if (json.isEmpty()) return List.of();
+        try {
+            Object parsed = Json.parse(json);
+            List<Object> calls;
+            if (parsed instanceof Map<?, ?> map && map.get("tool_calls") instanceof List<?> list) {
+                calls = new ArrayList<>(list);
+            } else if (parsed instanceof Map<?, ?> map && map.get("function_call") instanceof Map<?, ?> call) {
+                calls = List.of(call);
+            } else if (parsed instanceof Map<?, ?> map && map.get("name") != null) {
+                calls = List.of(map);
+            } else if (parsed instanceof List<?> list) {
+                calls = new ArrayList<>(list);
+            } else {
+                return List.of();
+            }
+            List<Map<String, Object>> out = new ArrayList<>();
+            for (Object value : calls) {
+                Map<String, Object> call = asObject(value, "tool call");
+                Map<String, Object> normalized = normalizeToolCall(call, out.size());
+                if (normalized != null) out.add(normalized);
+            }
+            return out;
+        } catch (RuntimeException e) {
+            return List.of();
+        }
+    }
+
+    private static String extractJson(String text) {
+        if (text.startsWith("```")) {
+            int firstNewline = text.indexOf('\n');
+            int lastFence = text.lastIndexOf("```");
+            if (firstNewline >= 0 && lastFence > firstNewline) return text.substring(firstNewline + 1, lastFence).strip();
+        }
+        int objectStart = text.indexOf('{');
+        int arrayStart = text.indexOf('[');
+        int start;
+        if (objectStart < 0) start = arrayStart;
+        else if (arrayStart < 0) start = objectStart;
+        else start = Math.min(objectStart, arrayStart);
+        if (start < 0) return "";
+        int objectEnd = text.lastIndexOf('}');
+        int arrayEnd = text.lastIndexOf(']');
+        int end = Math.max(objectEnd, arrayEnd);
+        return end >= start ? text.substring(start, end + 1).strip() : "";
+    }
+
+    private static Map<String, Object> normalizeToolCall(Map<String, Object> call, int index) {
+        Object functionValue = call.get("function");
+        String name;
+        Object arguments;
+        if (functionValue instanceof Map<?, ?> function) {
+            name = stringValue(function.get("name"), null);
+            arguments = function.get("arguments");
+        } else {
+            name = stringValue(call.get("name"), null);
+            arguments = call.get("arguments");
+        }
+        if (name == null || name.isBlank()) return null;
+        String argumentString = arguments instanceof String s ? s : Json.stringify(arguments == null ? Map.of() : arguments);
+        Map<String, Object> function = new LinkedHashMap<>();
+        function.put("name", name);
+        function.put("arguments", argumentString);
+        Map<String, Object> normalized = new LinkedHashMap<>();
+        normalized.put("id", stringValue(call.get("id"), "call_" + Long.toUnsignedString(System.nanoTime(), 36) + "_" + index));
+        normalized.put("type", "function");
+        normalized.put("function", function);
+        return normalized;
+    }
+
+    private static List<Map<String, Object>> toolCallDeltas(List<Map<String, Object>> toolCalls) {
+        List<Map<String, Object>> deltas = new ArrayList<>();
+        for (int i = 0; i < toolCalls.size(); i++) {
+            Map<String, Object> call = toolCalls.get(i);
+            Map<String, Object> delta = new LinkedHashMap<>(call);
+            delta.put("index", i);
+            deltas.add(delta);
+        }
+        return deltas;
+    }
+
+    private static StopSpec stopSpec(LFMTokenizer tokenizer, Object value, Set<Integer> baseStopTokens) {
+        Set<Integer> tokenStops = new HashSet<>(baseStopTokens);
+        List<String> textStops = new ArrayList<>();
+        if (value instanceof String s) {
+            addStop(tokenizer, tokenStops, textStops, s);
+        } else if (value instanceof List<?> values) {
+            for (Object item : values) addStop(tokenizer, tokenStops, textStops, stringValue(item, ""));
+        } else if (value != null) {
+            throw new IllegalArgumentException("stop must be a string or an array of strings");
+        }
+        return new StopSpec(Collections.unmodifiableSet(tokenStops), List.copyOf(textStops));
+    }
+
+    private static void addStop(LFMTokenizer tokenizer, Set<Integer> tokenStops, List<String> textStops, String stop) {
+        if (stop.isEmpty()) return;
+        textStops.add(stop);
+        List<Integer> tokens = tokenizer.encode(stop);
+        if (tokens.size() == 1) tokenStops.add(tokens.getFirst());
+    }
+
+    private static StopResult applyTextStops(String text, List<String> stops) {
+        int cut = -1;
+        for (String stop : stops) {
+            int index = text.indexOf(stop);
+            if (index >= 0 && (cut < 0 || index < cut)) cut = index;
+        }
+        return cut >= 0 ? new StopResult(text.substring(0, cut), true) : new StopResult(text, false);
+    }
+
+    private static final class StopAwareTextConsumer implements Consumer<String> {
+        private final List<String> stops;
+        private final Consumer<String> downstream;
+        private final StringBuilder pending = new StringBuilder();
+        private boolean stopped;
+
+        StopAwareTextConsumer(List<String> stops, Consumer<String> downstream) {
+            this.stops = stops;
+            this.downstream = downstream;
+        }
+
+        @Override
+        public void accept(String text) {
+            if (stopped || text.isEmpty()) return;
+            pending.append(text);
+            StopResult stopResult = applyTextStops(pending.toString(), stops);
+            if (stopResult.stopped()) {
+                emit(stopResult.text());
+                pending.setLength(0);
+                stopped = true;
+                return;
+            }
+            int keep = longestStopPrefixSuffix(pending, stops);
+            int emitLength = pending.length() - keep;
+            if (emitLength > 0) {
+                emit(pending.substring(0, emitLength));
+                pending.delete(0, emitLength);
+            }
+        }
+
+        private void emit(String text) {
+            if (!text.isEmpty()) downstream.accept(text);
+        }
+
+        void flush() {
+            if (!stopped && !pending.isEmpty()) {
+                emit(pending.toString());
+                pending.setLength(0);
+            }
+        }
+
+        boolean stopped() {
+            return stopped;
+        }
+
+        private static int longestStopPrefixSuffix(StringBuilder text, List<String> stops) {
+            int keep = 0;
+            String current = text.toString();
+            for (String stop : stops) {
+                int max = Math.min(stop.length() - 1, current.length());
+                for (int len = max; len > keep; len--) {
+                    if (current.endsWith(stop.substring(0, len))) {
+                        keep = len;
+                        break;
+                    }
+                }
+            }
+            return keep;
+        }
+    }
+
+    private static Sampler configuredSampler(Llama model, Options options, float temperature, float topp, long seed) {
+        Sampler sampler = selectSampler(model.configuration().vocabularySize, temperature, topp, seed);
+        if (!options.think()) {
+            Integer thinkStart = model.tokenizer().getSpecialTokens().get("<think>");
+            Integer thinkEnd = model.tokenizer().getSpecialTokens().get("</think>");
+            Set<Integer> banned = new HashSet<>();
+            if (thinkStart != null) banned.add(thinkStart);
+            if (thinkEnd != null) banned.add(thinkEnd);
+            if (!banned.isEmpty()) {
+                Sampler inner = sampler;
+                sampler = logits -> {
+                    for (int token : banned) logits.setFloat(token, Float.NEGATIVE_INFINITY);
+                    return inner.sampleToken(logits);
+                };
+            }
+        }
+        return sampler;
+    }
+
+    private static IntConsumer serverStreamingPrinter(LFMTokenizer tokenizer, boolean think, Consumer<String> onText) {
+        Integer thinkOpen = tokenizer.getSpecialTokens().get("<think>");
+        Integer thinkClose = tokenizer.getSpecialTokens().get("</think>");
+        boolean[] inThink = {false};
+        Utf8TokenDecoder decoder = new Utf8TokenDecoder(onText);
+        return token -> {
+            if (tokenizer.isSpecialToken(token)) {
+                if (token == thinkOpen) inThink[0] = true;
+                if (token == thinkClose) inThink[0] = false;
+                return;
+            }
+            if (!think && inThink[0]) return;
+            decoder.accept(tokenizer.decodeTokenBytes(token));
+        };
+    }
+
+    private static final class Utf8TokenDecoder {
+        private final Consumer<String> downstream;
+        private final ByteArrayOutputStream pending = new ByteArrayOutputStream();
+
+        Utf8TokenDecoder(Consumer<String> downstream) {
+            this.downstream = downstream;
+        }
+
+        void accept(byte[] bytes) {
+            pending.writeBytes(bytes);
+            try {
+                CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+                        .onMalformedInput(CodingErrorAction.REPORT)
+                        .onUnmappableCharacter(CodingErrorAction.REPORT);
+                CharBuffer chars = decoder.decode(ByteBuffer.wrap(pending.toByteArray()));
+                if (!chars.isEmpty()) downstream.accept(chars.toString());
+                pending.reset();
+            } catch (CharacterCodingException ignored) {
+                // Wait for a later token to complete a split UTF-8 sequence.
+            }
+        }
+    }
+
+    private static String messageContent(Object content) {
+        if (content instanceof List<?> parts) {
+            StringBuilder sb = new StringBuilder();
+            for (Object part : parts) {
+                if (part instanceof Map<?, ?> map && "text".equals(map.get("type"))) {
+                    Object text = map.get("text");
+                    if (text != null) sb.append(text);
+                }
+            }
+            return sb.toString();
+        }
+        return stringValue(content, "");
+    }
+
+    private static void sendJson(HttpExchange exchange, int status, Object value) throws IOException {
+        byte[] bytes = Json.stringify(value).getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+        exchange.sendResponseHeaders(status, bytes.length);
+        try (OutputStream out = exchange.getResponseBody()) {
+            out.write(bytes);
+        }
+    }
+
+    private static void sendError(HttpExchange exchange, int status, String message) throws IOException {
+        Map<String, Object> error = new LinkedHashMap<>();
+        error.put("message", message);
+        error.put("type", status == 404 ? "not_found_error" : "invalid_request_error");
+        error.put("param", null);
+        error.put("code", null);
+        sendJson(exchange, status, Map.of("error", error));
+    }
+
+    private static void logRequest(HttpExchange exchange) {
+        System.err.printf("%s %s from %s%n",
+                exchange.getRequestMethod(),
+                exchange.getRequestURI(),
+                exchange.getRemoteAddress());
+    }
+
+    private static void addCommonHeaders(HttpExchange exchange) {
+        Headers headers = exchange.getResponseHeaders();
+        headers.set("Access-Control-Allow-Origin", "*");
+        headers.set("Access-Control-Allow-Headers", "authorization, content-type");
+        headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    }
+
+    private static boolean handleOptions(HttpExchange exchange) throws IOException {
+        if (!"OPTIONS".equals(exchange.getRequestMethod())) return false;
+        exchange.sendResponseHeaders(204, -1);
+        exchange.close();
+        return true;
+    }
+
+    private static void writeSse(OutputStream out, Object value) throws IOException {
+        out.write(("data: " + Json.stringify(value) + "\n\n").getBytes(StandardCharsets.UTF_8));
+        out.flush();
+    }
+
+    private static void writeSseEvent(OutputStream out, String event, Object value) throws IOException {
+        out.write(("event: " + event + "\n").getBytes(StandardCharsets.UTF_8));
+        writeSse(out, value);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> asObject(Object value, String name) {
+        if (value instanceof Map<?, ?> map) return (Map<String, Object>) map;
+        throw new IllegalArgumentException(name + " must be an object");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Object> asArray(Object value, String name) {
+        if (value instanceof List<?> list) return (List<Object>) list;
+        throw new IllegalArgumentException(name + " must be an array");
+    }
+
+    private static String stringValue(Object value, String defaultValue) {
+        return value == null ? defaultValue : String.valueOf(value);
+    }
+
+    private static boolean booleanValue(Object value, boolean defaultValue) {
+        return value instanceof Boolean b ? b : defaultValue;
+    }
+
+    private static int intValue(Object value, int defaultValue) {
+        return value instanceof Number n ? n.intValue() : defaultValue;
+    }
+
+    private static long longValue(Object value, long defaultValue) {
+        return value instanceof Number n ? n.longValue() : defaultValue;
+    }
+
+    private static float floatValue(Object value, float defaultValue) {
+        return value instanceof Number n ? n.floatValue() : defaultValue;
+    }
+
+    static final class Json {
+        static Object parse(String text) {
+            return new Parser(text).parse();
+        }
+
+        static String stringify(Object value) {
+            StringBuilder sb = new StringBuilder();
+            writeJson(sb, value);
+            return sb.toString();
+        }
+
+        private static void writeJson(StringBuilder sb, Object value) {
+            if (value == null) {
+                sb.append("null");
+            } else if (value instanceof String s) {
+                sb.append('"');
+                for (int i = 0; i < s.length(); i++) {
+                    char c = s.charAt(i);
+                    switch (c) {
+                        case '"' -> sb.append("\\\"");
+                        case '\\' -> sb.append("\\\\");
+                        case '\b' -> sb.append("\\b");
+                        case '\f' -> sb.append("\\f");
+                        case '\n' -> sb.append("\\n");
+                        case '\r' -> sb.append("\\r");
+                        case '\t' -> sb.append("\\t");
+                        default -> {
+                            if (c < 0x20) sb.append("\\u%04x".formatted((int) c));
+                            else sb.append(c);
+                        }
+                    }
+                }
+                sb.append('"');
+            } else if (value instanceof Number || value instanceof Boolean) {
+                sb.append(value);
+            } else if (value instanceof Map<?, ?> map) {
+                sb.append('{');
+                boolean first = true;
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    if (!first) sb.append(',');
+                    first = false;
+                    writeJson(sb, String.valueOf(entry.getKey()));
+                    sb.append(':');
+                    writeJson(sb, entry.getValue());
+                }
+                sb.append('}');
+            } else if (value instanceof Iterable<?> iterable) {
+                sb.append('[');
+                boolean first = true;
+                for (Object item : iterable) {
+                    if (!first) sb.append(',');
+                    first = false;
+                    writeJson(sb, item);
+                }
+                sb.append(']');
+            } else {
+                writeJson(sb, String.valueOf(value));
+            }
+        }
+
+        private static final class Parser {
+            private final String text;
+            private int index;
+
+            Parser(String text) {
+                this.text = text;
+            }
+
+            Object parse() {
+                Object value = value();
+                skipWhitespace();
+                if (index != text.length()) throw error("Unexpected trailing data");
+                return value;
+            }
+
+            private Object value() {
+                skipWhitespace();
+                if (index >= text.length()) throw error("Unexpected end of input");
+                return switch (text.charAt(index)) {
+                    case '{' -> object();
+                    case '[' -> array();
+                    case '"' -> string();
+                    case 't' -> literal("true", Boolean.TRUE);
+                    case 'f' -> literal("false", Boolean.FALSE);
+                    case 'n' -> literal("null", null);
+                    default -> number();
+                };
+            }
+
+            private Map<String, Object> object() {
+                index++;
+                Map<String, Object> map = new LinkedHashMap<>();
+                skipWhitespace();
+                if (consume('}')) return map;
+                do {
+                    skipWhitespace();
+                    if (index >= text.length() || text.charAt(index) != '"') throw error("Expected object key");
+                    String key = string();
+                    skipWhitespace();
+                    if (!consume(':')) throw error("Expected ':'");
+                    map.put(key, value());
+                    skipWhitespace();
+                } while (consume(','));
+                if (!consume('}')) throw error("Expected '}'");
+                return map;
+            }
+
+            private List<Object> array() {
+                index++;
+                List<Object> list = new ArrayList<>();
+                skipWhitespace();
+                if (consume(']')) return list;
+                do {
+                    list.add(value());
+                    skipWhitespace();
+                } while (consume(','));
+                if (!consume(']')) throw error("Expected ']'");
+                return list;
+            }
+
+            private String string() {
+                index++;
+                StringBuilder sb = new StringBuilder();
+                while (index < text.length()) {
+                    char c = text.charAt(index++);
+                    if (c == '"') return sb.toString();
+                    if (c == '\\') {
+                        if (index >= text.length()) throw error("Unexpected escape");
+                        char e = text.charAt(index++);
+                        switch (e) {
+                            case '"' -> sb.append('"');
+                            case '\\' -> sb.append('\\');
+                            case '/' -> sb.append('/');
+                            case 'b' -> sb.append('\b');
+                            case 'f' -> sb.append('\f');
+                            case 'n' -> sb.append('\n');
+                            case 'r' -> sb.append('\r');
+                            case 't' -> sb.append('\t');
+                            case 'u' -> {
+                                if (index + 4 > text.length()) throw error("Invalid unicode escape");
+                                sb.append((char) Integer.parseInt(text.substring(index, index + 4), 16));
+                                index += 4;
+                            }
+                            default -> throw error("Invalid escape");
+                        }
+                    } else {
+                        sb.append(c);
+                    }
+                }
+                throw error("Unterminated string");
+            }
+
+            private Object number() {
+                int start = index;
+                if (consume('-')) {}
+                while (index < text.length() && Character.isDigit(text.charAt(index))) index++;
+                boolean floating = false;
+                if (consume('.')) {
+                    floating = true;
+                    while (index < text.length() && Character.isDigit(text.charAt(index))) index++;
+                }
+                if (index < text.length() && (text.charAt(index) == 'e' || text.charAt(index) == 'E')) {
+                    floating = true;
+                    index++;
+                    if (index < text.length() && (text.charAt(index) == '+' || text.charAt(index) == '-')) index++;
+                    while (index < text.length() && Character.isDigit(text.charAt(index))) index++;
+                }
+                if (start == index) throw error("Expected value");
+                String number = text.substring(start, index);
+                return floating ? Double.parseDouble(number) : Long.parseLong(number);
+            }
+
+            private Object literal(String literal, Object value) {
+                if (!text.startsWith(literal, index)) throw error("Expected " + literal);
+                index += literal.length();
+                return value;
+            }
+
+            private boolean consume(char c) {
+                if (index < text.length() && text.charAt(index) == c) {
+                    index++;
+                    return true;
+                }
+                return false;
+            }
+
+            private void skipWhitespace() {
+                while (index < text.length() && Character.isWhitespace(text.charAt(index))) index++;
+            }
+
+            private IllegalArgumentException error(String message) {
+                return new IllegalArgumentException(message + " at character " + index);
+            }
+        }
+    }
+
     static final int DEFAULT_MAX_TOKENS = 1024;
 
-    record Options(Path modelPath, String prompt, String suffix, String systemPrompt, boolean interactive,
+    record Options(Path modelPath, String prompt, String suffix, String systemPrompt, boolean interactive, boolean server, String host, int port,
                     float temperature, float topp, long seed, int maxTokens, boolean stream, boolean echo,
                     boolean think, boolean thinkInline, boolean colors,
                     boolean keepPastThinking, boolean rawPrompt) {
 
         Options {
             require(modelPath != null, "Missing argument: --model <path> is required");
-            require(interactive || prompt != null, "Missing argument: --prompt is required in --instruct mode e.g. --prompt \"Why is the sky blue?\"");
+            require(server || interactive || prompt != null, "Missing argument: --prompt is required in --instruct mode e.g. --prompt \"Why is the sky blue?\"");
             require(0 <= temperature, "Invalid argument: --temperature must be non-negative");
             require(0 <= topp && topp <= 1, "Invalid argument: --top-p must be within [0, 1]");
+            require(0 <= port && port <= 65535, "Invalid argument: --port must be within [0, 65535]");
         }
 
         static void require(boolean condition, String messageFormat, Object... args) {
@@ -3976,6 +5759,9 @@ public class LFM25 {
             out.println("  --model, -m <path>            required, path to .gguf file");
             out.println("  --interactive, --chat, -i     run in chat mode");
             out.println("  --instruct                    run in instruct (once) mode, default mode");
+            out.println("  --server                      run an OpenAI-compatible HTTP server");
+            out.println("  --host <host>                 server bind host, default 127.0.0.1");
+            out.println("  --port <int>                  server bind port, default 17325");
             out.println("  --prompt, -p <string>         input prompt");
             out.println("  --suffix <string>             suffix for fill-in-the-middle request");
             out.println("  --system-prompt, -sp <string> system prompt for chat/instruct mode");
@@ -3998,6 +5784,7 @@ public class LFM25 {
             out.println("  jbang LFM25.java --model LFM2.5-1.2B-Instruct-Q8_0.gguf --chat");
             out.println("  jbang LFM25.java --model LFM2.5-1.2B-Instruct-Q8_0.gguf --prompt \"Tell me a joke\"");
             out.println("  jbang LFM25.java --model LFM2.5-1.2B-Instruct-Q8_0.gguf --chat --system-prompt \"You are a helpful assistant\"");
+            out.println("  jbang LFM25.java --model LFM2.5-1.2B-Instruct-Q8_0.gguf --server --port 17325");
         }
 
         static Options parseOptions(String[] args) {
@@ -4010,6 +5797,9 @@ public class LFM25 {
             long seed = System.nanoTime();
             int maxTokens = DEFAULT_MAX_TOKENS;
             boolean interactive = false;
+            boolean server = false;
+            String host = "127.0.0.1";
+            int port = 17325;
             boolean stream = true;
             boolean echo = false;
             boolean think = true;
@@ -4024,6 +5814,7 @@ public class LFM25 {
                 switch (optionName) {
                     case "--interactive", "--chat", "-i" -> interactive = true;
                     case "--instruct" -> interactive = false;
+                    case "--server" -> server = true;
                     case "--raw-prompt" -> rawPrompt = true;
                     case "--help", "-h" -> {
                         printUsage(System.out);
@@ -4047,6 +5838,8 @@ public class LFM25 {
                             case "--temperature", "--temp" -> temperature = Float.parseFloat(nextArg);
                             case "--top-p" -> topp = Float.parseFloat(nextArg);
                             case "--model", "-m" -> modelPath = Path.of(nextArg);
+                            case "--host" -> host = nextArg;
+                            case "--port" -> port = Integer.parseInt(nextArg);
                             case "--seed", "-s" -> seed = Long.parseLong(nextArg);
                             case "--max-tokens", "-n" -> maxTokens = Integer.parseInt(nextArg);
                             case "--stream" -> stream = parseBooleanOption(optionName, nextArg);
@@ -4069,7 +5862,7 @@ public class LFM25 {
             }
             require(List.of("on", "off", "auto").contains(colorMode), "Invalid argument: --color must be one of on|off|auto");
             boolean color = LFM25.supportsAnsiColors(colorMode);
-            return new Options(modelPath, prompt, suffix, systemPrompt, interactive, temperature, topp, seed, maxTokens, stream, echo, think, thinkInline, color, keepPastThinking, rawPrompt);
+            return new Options(modelPath, prompt, suffix, systemPrompt, interactive, server, host, port, temperature, topp, seed, maxTokens, stream, echo, think, thinkInline, color, keepPastThinking, rawPrompt);
         }
     }
 
@@ -4088,23 +5881,11 @@ public class LFM25 {
         if (model == null) {
             model = ModelLoader.loadModel(options.modelPath(), options.maxTokens());
         }
-        Sampler sampler = selectSampler(model.configuration().vocabularySize, options.temperature(), options.topp(), options.seed());
-        if (!options.think()) {
-            Integer thinkStart = model.tokenizer().getSpecialTokens().get("<think>");
-            Integer thinkEnd = model.tokenizer().getSpecialTokens().get("</think>");
-            Set<Integer> banned = new HashSet<>();
-            if (thinkStart != null) banned.add(thinkStart);
-            if (thinkEnd != null) banned.add(thinkEnd);
-            if (!banned.isEmpty()) {
-                Sampler inner = sampler;
-                sampler = logits -> {
-                    for (int token : banned) {
-                        logits.setFloat(token, Float.NEGATIVE_INFINITY);
-                    }
-                    return inner.sampleToken(logits);
-                };
-            }
+        if (options.server()) {
+            runServer(model, options);
+            return;
         }
+        Sampler sampler = configuredSampler(model, options, options.temperature(), options.topp(), options.seed());
         if (options.interactive()) {
             runInteractive(model, sampler, options);
         } else {
