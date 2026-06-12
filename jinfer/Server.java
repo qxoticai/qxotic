@@ -121,8 +121,8 @@ final class Server {
         });
         if (RuntimeFlags.PROMPT_CACHE) {
             promptCache = new PromptCache(model.configuration());
-            System.out.printf("Prompt cache enabled: page=%d tokens, budget=%d MB%n",
-                    promptCache.page, RuntimeFlags.PROMPT_CACHE_BUDGET_BYTES >> 20);
+            System.out.printf("Prompt cache enabled: budget=%d MB%n",
+                    RuntimeFlags.PROMPT_CACHE_BUDGET_BYTES >> 20);
         }
         startGenerationWorker();
         startStreamReaper();
@@ -768,7 +768,7 @@ final class Server {
      * Server generation driver over {@link Engine#generate}. The ingestion plan says where to
      * start: a fresh state at position 0 (with the prompt cache plugged in through
      * {@link Llama.GenerationHooks}), or a resumed chat session mid-context — in which case the
-     * cache is bypassed (its page indexes are full-stream positions). cachedOut[0] tracks the
+     * cache is bypassed (its tree is keyed by full-stream positions). cachedOut[0] tracks the
      * resumed-prefix length for the streaming usage counters.
      */
     private static GenerationResult runServerGeneration(Llama model, Ingestion ingestion, Engine.Params params,
@@ -778,46 +778,100 @@ final class Server {
         if (cache == null || ingestion.startPosition() > 0) {
             return Engine.generate(model, state, ingestion.startPosition(), ingestion.tokens(), params, listener, Llama.GenerationHooks.NONE);
         }
+
+        /** Wires the sparse-checkpoint cache into the generation loop: lookup + restore on
+         *  resume, chunks clamped so the frontier lands exactly on checkpoint positions
+         *  (end of prompt L-1, and the divergence point found by lookup — re-ingesting to the
+         *  divergence once makes the NEXT request sharing that prefix resume exactly), commits
+         *  per ingested chunk past the matched region, and an end-of-generation commit with a
+         *  conv checkpoint so multi-turn resume is exact. */
         class CacheHooks implements Llama.GenerationHooks {
-            PromptCache.Node cursor = cache.root;
             boolean caching = true;
+            int prefillLength;
+            int matchedPos;
+            int committedTo;       // commits cover (matchedPos-or-later, committedTo]
+            final int[] checkpoints = new int[2];
+            int checkpointCount;
+            int[] stream;
+            int frontier;
 
             @Override
             public int resumePosition(int[] stream, int prefillLength) {
+                this.prefillLength = prefillLength;
                 PromptCache.Match match = cache.lookup(stream, prefillLength);
-                int cached = match.positions();
-                cachedOut[0] = cached;
-                if (cached > 0) {
-                    cache.restore(match, state);
-                    cache.pin(match.path());
-                    cursor = match.path().getLast();
+                this.matchedPos = match.matchedPos();
+                this.committedTo = match.matchedPos();
+                int resume = match.resumePos();
+                cachedOut[0] = resume;
+                cache.restore(match, state);
+                cache.pin(match); // even on a cold resume: checkpoints attach into matched nodes
+                for (int p : new int[]{Math.min(matchedPos, prefillLength - 1), prefillLength - 1}) {
+                    if (p > resume && p > 0 && (checkpointCount == 0 || checkpoints[checkpointCount - 1] != p)) {
+                        checkpoints[checkpointCount++] = p;
+                    }
                 }
-                return cached;
+                return resume;
             }
 
             @Override
             public int clampChunk(int position, int chunkLength) {
-                int pageEnd = (position / cache.page + 1) * cache.page;
-                return Math.min(chunkLength, pageEnd - position);
+                int clamp = chunkLength;
+                for (int i = 0; i < checkpointCount; i++) {
+                    if (checkpoints[i] > position) {
+                        clamp = Math.min(clamp, checkpoints[i] - position);
+                        break;
+                    }
+                }
+                if (caching && cache.anySwaKv) {
+                    clamp = Math.min(clamp, Math.max(matchedPos, committedTo) + cache.swaStride - position);
+                }
+                return clamp;
+            }
+
+            private boolean isCheckpoint(int position) {
+                for (int i = 0; i < checkpointCount; i++) {
+                    if (checkpoints[i] == position) return true;
+                }
+                return false;
             }
 
             @Override
             public void afterIngest(int[] stream, int position) {
-                while (caching && (long) (cursor.depth + 2) * cache.page <= position) {
-                    PromptCache.Node node = cache.commitPage(cursor, stream, state);
-                    if (node == null) {
-                        caching = false;
-                        break;
+                this.stream = stream;
+                this.frontier = position;
+                if (!caching) {
+                    return;
+                }
+                if (position <= matchedPos) {
+                    // re-ingesting cached tokens (resume < divergence): KV is already in the
+                    // tree, only the conv checkpoint at the divergence is new
+                    if (isCheckpoint(position)) {
+                        cache.attachCheckpoint(stream, position, state);
                     }
-                    cursor = node;
+                    return;
+                }
+                boolean commit = position <= prefillLength                                       // prefill chunk
+                        || (cache.anySwaKv && position - committedTo >= cache.swaStride);        // SWA ring pressure
+                if (commit) {
+                    if (cache.commitSpan(stream, committedTo, position, state, isCheckpoint(position)) == null) {
+                        caching = false;
+                        return;
+                    }
+                    committedTo = position;
                 }
             }
         }
         CacheHooks hooks = new CacheHooks();
         try {
-            return Engine.generate(model, state, 0, ingestion.tokens(), params, listener, hooks);
+            GenerationResult result = Engine.generate(model, state, 0, ingestion.tokens(), params, listener, hooks);
+            // end-of-generation commit: the frontier sits at the last ingested token (stop
+            // tokens are never ingested), checkpointed so the next turn resumes exactly there
+            if (hooks.caching && hooks.frontier > hooks.committedTo) {
+                cache.commitSpan(hooks.stream, hooks.committedTo, hooks.frontier, state, true);
+            }
+            return result;
         } finally {
-            cache.unpin(hooks.cursor);
+            cache.unpinCurrent();
         }
     }
 

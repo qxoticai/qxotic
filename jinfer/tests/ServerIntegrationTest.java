@@ -50,6 +50,8 @@ public final class ServerIntegrationTest {
             completionsAndStops();
             responsesEndpoint();
             promptCacheColdWarm();
+            promptCacheStrictPrefix();
+            promptCacheBranchPoint();
             fast400WhileBusy();
             sessionResume();
         } catch (Throwable t) {
@@ -170,8 +172,12 @@ public final class ServerIntegrationTest {
         HttpResponse<String> cold = post("/v1/completions", body);
         HttpResponse<String> warm = post("/v1/completions", body);
         long cachedCold = cachedTokens(cold), cachedWarm = cachedTokens(warm);
-        check(cachedCold == 0, "cold run uncached (got " + cachedCold + ")");
-        check(cachedWarm >= 512, "warm run resumed from the cache (cached " + cachedWarm + ")");
+        // earlier requests may have left a checkpoint near the stream start (divergence right
+        // after BOS), so "cold" can legitimately resume a few tokens — but no more
+        check(cachedCold <= 4, "cold run essentially uncached (got " + cachedCold + ")");
+        long promptTokens = ((Number) path(json(warm), "usage").get("prompt_tokens")).longValue();
+        check(cachedWarm == promptTokens, "warm run resumed token-exact at L-1 (cached "
+                + cachedWarm + " of " + promptTokens + ")");
         String coldText = (String) path(json(cold), "choices", 0).get("text");
         String warmText = (String) path(json(warm), "choices", 0).get("text");
         check(coldText.equals(warmText), "cold and warm outputs identical");
@@ -180,6 +186,39 @@ public final class ServerIntegrationTest {
     private static long cachedTokens(HttpResponse<String> response) {
         Object cached = path(json(response), "usage", "prompt_tokens_details").get("cached_tokens");
         return ((Number) cached).longValue();
+    }
+
+    /** A strict PREFIX of already-cached content: the end-of-prompt checkpoint splits inside a
+     *  cached node, and the end-of-generation commit dedups through existing nodes (pin-walk).
+     *  The repeat request must then resume token-exact at its own L-1. */
+    private static void promptCacheStrictPrefix() throws Exception {
+        String body = "{\"prompt\":\"" + "The quick brown fox jumps over the lazy dog. ".repeat(40)
+                + "\",\"max_tokens\":4,\"temperature\":0}";
+        HttpResponse<String> first = post("/v1/completions", body); // prefix of the 80-rep stream above
+        HttpResponse<String> second = post("/v1/completions", body);
+        long promptTokens = ((Number) path(json(second), "usage").get("prompt_tokens")).longValue();
+        check(cachedTokens(second) == promptTokens, "strict-prefix re-request resumed token-exact (cached "
+                + cachedTokens(second) + " of " + promptTokens + ")");
+        String firstText = (String) path(json(first), "choices", 0).get("text");
+        String secondText = (String) path(json(second), "choices", 0).get("text");
+        check(firstText.equals(secondText), "strict-prefix outputs identical");
+    }
+
+    /** The motivating sparse-checkpoint case: requests sharing only a SYSTEM PROMPT prefix.
+     *  A populates the tree; B diverges inside A's prompt — no resume yet, but re-ingesting to
+     *  the divergence leaves a conv checkpoint there; C (a third variant) resumes at it. */
+    private static void promptCacheBranchPoint() throws Exception {
+        String system = "You are the dedicated test oracle for the lfm25 integration battery, a most particular "
+                + "and verbose persona that always answers with at most one short sentence and no preamble.";
+        String template = "{\"messages\":[{\"role\":\"system\",\"content\":\"" + system + "\"},"
+                + "{\"role\":\"user\",\"content\":\"%s\"}],\"temperature\":0,\"max_tokens\":24,"
+                + "\"chat_template_kwargs\":{\"enable_thinking\":false}}";
+        long cachedA = cachedTokens(post("/v1/chat/completions", template.formatted("What color is the sea?")));
+        long cachedB = cachedTokens(post("/v1/chat/completions", template.formatted("What color is grass?")));
+        long cachedC = cachedTokens(post("/v1/chat/completions", template.formatted("What color is the sun?")));
+        check(cachedB <= cachedA + 1, "second variant has no usable resume yet (cached " + cachedB + ")");
+        check(cachedC > cachedB && cachedC >= 20,
+                "third variant resumed at the shared-prefix branch point (cached " + cachedC + ")");
     }
 
     // --- a garbage request must be answered while the worker is mid-generation ---

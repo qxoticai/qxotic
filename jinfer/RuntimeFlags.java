@@ -35,7 +35,6 @@ final class RuntimeFlags {
 
     // prompt cache
     static final boolean PROMPT_CACHE = !"false".equals(System.getProperty("llama.promptCache"));
-    static final int PROMPT_CACHE_PAGE = Integer.getInteger("llama.promptCachePage", 512); // 256 costs ~20% cold prefill (chunked gemms); 512 measured at ~7%
     static final long PROMPT_CACHE_BUDGET_BYTES = Long.getLong("llama.promptCacheMB", 2048L) * (1L << 20);
 
     // server

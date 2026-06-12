@@ -13,6 +13,7 @@
 //SOURCES Kernels.java
 //SOURCES RuntimeFlags.java
 //SOURCES Llama.java
+//SOURCES PromptCache.java
 //SOURCES Server.java
 //SOURCES Engine.java
 //SOURCES Sampler.java
