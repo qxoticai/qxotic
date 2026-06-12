@@ -1,0 +1,2878 @@
+// Tensors and compute kernels: the FloatTensor hierarchy (one class per GGML quantization),
+// vector dot/gemm/gemv kernels, the parallel runner and thread affinity.
+package com.llama4j;
+
+import jdk.incubator.vector.ByteVector;
+import jdk.incubator.vector.FloatVector;
+import jdk.incubator.vector.ShortVector;
+import jdk.incubator.vector.VectorOperators;
+import jdk.incubator.vector.VectorShape;
+import jdk.incubator.vector.VectorSpecies;
+
+import com.sun.net.httpserver.Headers;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+
+import java.lang.reflect.Field;
+
+import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.PrintStream;
+import java.io.UncheckedIOException;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.CharBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
+import java.nio.channels.FileChannel;
+import java.nio.channels.ReadableByteChannel;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.BitSet;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.OptionalInt;
+import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
+import java.util.function.IntConsumer;
+import java.util.function.IntFunction;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.random.RandomGenerator;
+import java.util.random.RandomGeneratorFactory;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
+final class Parallel {
+    public static void parallelFor(int startInclusive, int endExclusive, IntConsumer action) {
+        IntStream.range(startInclusive, endExclusive).parallel().forEach(i -> {
+            ThreadAffinity.bindCurrentThread();
+            action.accept(i);
+        });
+    }
+}
+
+
+final class ThreadAffinity {
+    private static final int[] CPUS = RuntimeFlags.AFFINITY ? configuredCpus() : new int[0];
+    private static final java.util.concurrent.atomic.AtomicInteger NEXT_CPU = new java.util.concurrent.atomic.AtomicInteger();
+    private static final java.util.concurrent.ConcurrentHashMap<Long, Object> LOCKS = new java.util.concurrent.ConcurrentHashMap<>();
+    private static volatile boolean unavailable;
+
+    private ThreadAffinity() {
+    }
+
+    static void bindCurrentThread() {
+        if (RuntimeFlags.AFFINITY && CPUS.length > 0 && !unavailable) {
+            LOCKS.computeIfAbsent(Thread.currentThread().threadId(), ignored -> acquireLock());
+        }
+    }
+
+    private static Object acquireLock() {
+        int cpu = CPUS[Math.floorMod(NEXT_CPU.getAndIncrement(), CPUS.length)];
+        try {
+            Class<?> affinityLock = Class.forName("net.openhft.affinity.AffinityLock");
+            Object lock = affinityLock.getMethod("acquireLock", int.class).invoke(null, cpu);
+            if (RuntimeFlags.AFFINITY_VERBOSE) {
+                System.err.println("Bound " + Thread.currentThread().getName() + " to CPU " + cpu);
+            }
+            return lock;
+        } catch (Throwable t) {
+            unavailable = true;
+            System.err.println("Thread affinity disabled: add OpenHFT affinity to the classpath and JNA/native access support (" + t.getClass().getSimpleName() + ").");
+            return null;
+        }
+    }
+
+    private static int[] configuredCpus() {
+        String value = RuntimeFlags.AFFINITY_CPUS;
+        int[] cpus = value == null || value.isBlank() ? physicalCpus() : parseCpuList(value);
+        if (cpus.length == 0) {
+            cpus = IntStream.range(0, Math.max(1, Runtime.getRuntime().availableProcessors() / 2)).toArray();
+        }
+        if (RuntimeFlags.AFFINITY_VERBOSE) {
+            System.err.println("Thread affinity CPU set: " + Arrays.toString(cpus));
+        }
+        return cpus;
+    }
+
+    private static int[] physicalCpus() {
+        int processors = Runtime.getRuntime().availableProcessors();
+        BitSet physical = new BitSet(processors);
+        for (int cpu = 0; cpu < processors; cpu++) {
+            Path siblingsPath = Path.of("/sys/devices/system/cpu/cpu" + cpu + "/topology/thread_siblings_list");
+            try {
+                int[] siblings = parseCpuList(Files.readString(siblingsPath).trim());
+                if (siblings.length > 0 && cpu == siblings[0]) {
+                    physical.set(cpu);
+                }
+            } catch (IOException ignored) {
+                return new int[0];
+            }
+        }
+        return physical.stream().toArray();
+    }
+
+    private static int[] parseCpuList(String value) {
+        BitSet cpus = new BitSet();
+        for (String part : value.split(",")) {
+            part = part.trim();
+            if (part.isEmpty()) {
+                continue;
+            }
+            int dash = part.indexOf('-');
+            if (dash >= 0) {
+                int start = Integer.parseInt(part.substring(0, dash).trim());
+                int end = Integer.parseInt(part.substring(dash + 1).trim());
+                cpus.set(start, end + 1);
+            } else {
+                cpus.set(Integer.parseInt(part));
+            }
+        }
+        return cpus.stream().toArray();
+    }
+}
+
+final class Float16 {
+    public static final int BYTES = 2;
+}
+
+enum GGMLType {
+    F32(Float.BYTES),          // 0
+    F16(Float16.BYTES),        // 1
+    Q4_0(Float16.BYTES + 16 * Byte.BYTES, 32),  // 2
+    Q4_1(2 * Float16.BYTES + 16 * Byte.BYTES, 32), // 3
+    UNSUPPORTED_Q4_2(Integer.MAX_VALUE), // 4 - removed
+    UNSUPPORTED_Q4_3(Integer.MAX_VALUE), // 5 - removed
+    Q5_0(Integer.MAX_VALUE),   // 6
+    Q5_1(2 * Float16.BYTES + Integer.BYTES + 16 * Byte.BYTES, 32),   // 7
+    Q8_0(Float16.BYTES + 32 * Byte.BYTES, 32),  // 8
+    Q8_1(32 * Byte.BYTES + 2 * Float.BYTES, 32), // 9
+    Q2_K(Integer.MAX_VALUE),   // 10
+    Q3_K(Integer.MAX_VALUE),   // 11
+    Q4_K(2 * Float16.BYTES + ((GGMLType.QK_K / 16) / 8 * 6) + GGMLType.QK_K / 2, GGMLType.QK_K), // 12
+    Q5_K(2 * Float16.BYTES + ((GGMLType.QK_K / 16) / 8 * 6) + GGMLType.QK_K / 8 + GGMLType.QK_K / 2, GGMLType.QK_K), // 13
+    Q6_K(GGMLType.QK_K / 2 + GGMLType.QK_K / 4 + GGMLType.QK_K / 16 + Float16.BYTES, GGMLType.QK_K), // 14
+    Q8_K(Integer.MAX_VALUE),   // 15
+    IQ2_XXS(Integer.MAX_VALUE), // 16
+    IQ2_XS(Integer.MAX_VALUE),  // 17
+    IQ3_XXS(Integer.MAX_VALUE), // 18
+    IQ1_S(Integer.MAX_VALUE),   // 19
+    IQ4_NL(Integer.MAX_VALUE),  // 20
+    IQ3_S(Integer.MAX_VALUE),   // 21
+    IQ2_S(Integer.MAX_VALUE),   // 22
+    IQ4_XS(Integer.MAX_VALUE),  // 23
+    I8(Byte.BYTES),             // 24
+    I16(Short.BYTES),           // 25
+    I32(Integer.BYTES),         // 26
+    I64(Long.BYTES),            // 27
+    F64(Double.BYTES),          // 28
+    IQ1_M(Integer.MAX_VALUE),   // 29
+    BF16(Float16.BYTES),        // 30
+    UNSUPPORTED_Q4_0_4_4(Integer.MAX_VALUE), // 31 - removed from gguf files
+    UNSUPPORTED_Q4_0_4_8(Integer.MAX_VALUE), // 32
+    UNSUPPORTED_Q4_0_8_8(Integer.MAX_VALUE), // 33
+    TQ1_0(Integer.MAX_VALUE),   // 34
+    TQ2_0(Integer.MAX_VALUE),   // 35
+    UNSUPPORTED_IQ4_NL_4_4(Integer.MAX_VALUE), // 36
+    UNSUPPORTED_IQ4_NL_4_8(Integer.MAX_VALUE), // 37
+    UNSUPPORTED_IQ4_NL_8_8(Integer.MAX_VALUE), // 38
+    MXFP4(Byte.BYTES + GGMLType.QK_MXFP4 / 2, GGMLType.QK_MXFP4), // 39
+    NVFP4(Integer.MAX_VALUE);   // 40
+
+    private static final GGMLType[] VALUES = values();
+
+    private final int typeSize;
+
+    private final int blockSize;
+
+    public int getTypeSize() {
+        return typeSize;
+    }
+
+    public int getBlockSize() {
+        return blockSize;
+    }
+
+    public static GGMLType fromId(int id) {
+        if (0 <= id && id < VALUES.length) {
+            return VALUES[id];
+        }
+        throw new UnsupportedOperationException("Unsupported GGML tensor type id: " + id);
+    }
+
+    GGMLType(int typeSize) {
+        this(typeSize, 1);
+    }
+
+    public long byteSizeFor(long numberOfElements) {
+        long t = numberOfElements * (long) getTypeSize();
+        assert t % getBlockSize() == 0;
+        return t / getBlockSize();
+    }
+
+    public static final int QK_K = 256;
+    public static final int QK_MXFP4 = 32;
+
+    GGMLType(int typeSize, int blockSize) {
+        assert blockSize > 0;
+        assert typeSize > 0;
+        assert isPowerOf2(blockSize);
+        this.typeSize = typeSize;
+        this.blockSize = blockSize;
+    }
+
+    private static boolean isPowerOf2(int n) {
+        return n > 0 && (n & (n - 1)) == 0;
+    }
+}
+
+abstract class FloatTensor {
+    static final int VECTOR_BIT_SIZE = Integer.getInteger("llama.VectorBitSize", VectorShape.preferredShape().vectorBitSize());
+    static final boolean USE_VECTOR_API = VECTOR_BIT_SIZE != 0;
+
+    static final VectorSpecies<Float> F_SPECIES;
+    static final VectorSpecies<Integer> I_SPECIES;
+    static final VectorSpecies<Short> S_SPECIES_HALF;
+
+    static {
+        if (USE_VECTOR_API) {
+            F_SPECIES = VectorShape.forBitSize(VECTOR_BIT_SIZE).withLanes(float.class);
+            I_SPECIES = F_SPECIES.withLanes(int.class);
+            S_SPECIES_HALF = VectorShape.forBitSize(F_SPECIES.vectorBitSize() / 2).withLanes(short.class);
+            assert F_SPECIES.length() == S_SPECIES_HALF.length();
+        } else {
+            F_SPECIES = null;
+            I_SPECIES = null;
+            S_SPECIES_HALF = null;
+        }
+    }
+
+    static final sun.misc.Unsafe UNSAFE;
+
+    static {
+        try {
+            Field f = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+            f.setAccessible(true);
+            UNSAFE = (sun.misc.Unsafe) f.get(null);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    // Graal does not intrinsify lanewise transcendentals (EXP falls back ~4x slower than
+    // Math.exp); C2 lowers them to the vector math stubs (~3x faster than Math.exp).
+    static final boolean JIT_VECTOR_MATH = !System.getProperty("java.vm.version", "").contains("jvmci");
+
+    // Shared GEMM tiling knobs (used by all quantized tensor types).
+
+    // All-of-memory segment: vector loads/stores against it use absolute addresses with a
+    // Long.MAX_VALUE bound and a global (never-closed) scope, so the per-access bounds and
+    // liveness checks fold away. Requires --enable-native-access.
+    static final MemorySegment GLOBAL_SEGMENT = makeGlobalSegment();
+
+    private static MemorySegment makeGlobalSegment() {
+        try {
+            return MemorySegment.NULL.reinterpret(Long.MAX_VALUE);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** Vector-access routing: with GLOBAL_SEGMENT, access (vectorSegment, vectorBase + byteOffset)
+     *  uses one exact segment type with absolute addresses so bounds/liveness checks fold away
+     *  (and native-image call sites stay monomorphic); otherwise fall back to the segment itself. */
+    static MemorySegment vectorSegment(MemorySegment segment) {
+        return GLOBAL_SEGMENT != null ? GLOBAL_SEGMENT : segment;
+    }
+
+    static long vectorBase(MemorySegment segment) {
+        return GLOBAL_SEGMENT != null ? segment.address() : 0L;
+    }
+
+    // MemorySegment accessors, routed through GLOBAL_SEGMENT (absolute address) when available so the
+    // bounds/liveness checks fold and the access inlines into the GEMM kernels (native-image's inliner
+    // otherwise leaves readShort as a real out-of-line call: ~25% of prefill). sun.misc.Unsafe is not
+    // an option: it plants a JEP 498 warning check (Unsafe.beforeMemoryAccess) in the caller, an opaque
+    // call that under native-image blocks Vector API expansion and boxes whole kernels. Callers pass
+    // native or mapped segments only (address() must be a real address). Requires GraalVM >= 25.0.3
+    // for fast MemorySegment scalar access in native images.
+    static short readShort(MemorySegment memorySegment, long offset) {
+        return GLOBAL_SEGMENT != null
+                ? GLOBAL_SEGMENT.get(ValueLayout.JAVA_SHORT_UNALIGNED, memorySegment.address() + offset)
+                : memorySegment.get(ValueLayout.JAVA_SHORT_UNALIGNED, offset);
+    }
+
+    static void writeShort(MemorySegment memorySegment, long offset, short value) {
+        if (GLOBAL_SEGMENT != null) {
+            GLOBAL_SEGMENT.set(ValueLayout.JAVA_SHORT_UNALIGNED, memorySegment.address() + offset, value);
+        } else {
+            memorySegment.set(ValueLayout.JAVA_SHORT_UNALIGNED, offset, value);
+        }
+    }
+
+    static float readFloat16(MemorySegment memorySegment, long offset) {
+        return Float.float16ToFloat(readShort(memorySegment, offset));
+    }
+
+    // Bit-exact Float.float16ToFloat without the intrinsic: under heavy vector register pressure
+    // (the 4x4 gemm tile) Graal's native-image backend lowers the intrinsic to VCVTPH2PS with an
+    // illegal high XMM operand (VEX encoding only reaches xmm0-15) and the build fails. Same
+    // workaround as gemma4.java; remove when the Graal backend bug is fixed.
+    static float fp16ToFloatNoIntrinsic(short h) {
+        int bits = Short.toUnsignedInt(h);
+        int sign = (bits & 0x8000) << 16;
+        int exp = (bits >>> 10) & 0x1F;
+        int mantissa = bits & 0x03FF;
+        if (exp == 0) {
+            if (mantissa == 0) {
+                return Float.intBitsToFloat(sign);
+            }
+            int e = 127 - 15 + 1;
+            while ((mantissa & 0x0400) == 0) {
+                mantissa <<= 1;
+                e--;
+            }
+            mantissa &= 0x03FF;
+            return Float.intBitsToFloat(sign | (e << 23) | (mantissa << 13));
+        }
+        if (exp == 0x1F) {
+            return Float.intBitsToFloat(sign | 0x7F80_0000 | (mantissa << 13));
+        }
+        return Float.intBitsToFloat(sign | ((exp + (127 - 15)) << 23) | (mantissa << 13));
+    }
+
+    static byte readByte(MemorySegment memorySegment, long offset) {
+        return GLOBAL_SEGMENT != null
+                ? GLOBAL_SEGMENT.get(ValueLayout.JAVA_BYTE, memorySegment.address() + offset)
+                : memorySegment.get(ValueLayout.JAVA_BYTE, offset);
+    }
+
+    static float readFloat(MemorySegment memorySegment, long offset) {
+        return GLOBAL_SEGMENT != null
+                ? GLOBAL_SEGMENT.get(ValueLayout.JAVA_FLOAT_UNALIGNED, memorySegment.address() + offset)
+                : memorySegment.get(ValueLayout.JAVA_FLOAT_UNALIGNED, offset);
+    }
+
+    static void writeFloat(MemorySegment memorySegment, long offset, float value) {
+        if (GLOBAL_SEGMENT != null) {
+            GLOBAL_SEGMENT.set(ValueLayout.JAVA_FLOAT_UNALIGNED, memorySegment.address() + offset, value);
+        } else {
+            memorySegment.set(ValueLayout.JAVA_FLOAT_UNALIGNED, offset, value);
+        }
+    }
+
+    /** Float store at an absolute address: GLOBAL_SEGMENT folds to a raw store (no Unsafe warning check). */
+    static void putFloat(long address, float value) {
+        if (GLOBAL_SEGMENT != null) {
+            GLOBAL_SEGMENT.set(ValueLayout.JAVA_FLOAT_UNALIGNED, address, value);
+        } else {
+            UNSAFE.putFloat(address, value);
+        }
+    }
+
+    abstract long size();
+
+    abstract float getFloat(long index);
+
+    abstract void setFloat(int index, float value);
+
+    abstract FloatVector getFloatVector(VectorSpecies<Float> species, int offset);
+
+    abstract GGMLType type();
+
+    public static int numberOfElements(int... dimensions) {
+        assert Arrays.stream(dimensions).allMatch(i -> i > 0);
+        return Arrays.stream(dimensions).reduce(Math::multiplyExact).orElseThrow();
+    }
+
+    public static long numberOfElementsLong(int... dimensions) {
+        long result = 1;
+        for (int d : dimensions) {
+            assert d > 0;
+            result = Math.multiplyExact(result, d);
+        }
+        return result;
+    }
+
+    static float scalarDot(FloatTensor thiz, int thisOffset, FloatTensor that, int thatOffset, int size) {
+        float result = 0f;
+        for (int j = 0; j < size; j++) {
+            result += thiz.getFloat(thisOffset + j) * that.getFloat(thatOffset + j);
+        }
+        return result;
+    }
+
+    float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+        return scalarDot(this, thisOffset, that, thatOffset, size);
+    }
+
+    void matmul(FloatTensor that, FloatTensor out, int dim0, int dim1) {
+        gemv(that, out, dim0, dim1, 0);
+    }
+
+    // Compatibility alias for vector matmul with offset into this tensor.
+    void matmul(FloatTensor that, FloatTensor out, int dim0, int dim1, int thisOffset) {
+        gemv(that, 0, out, 0, dim0, dim1, thisOffset);
+    }
+
+    void matmul(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1) {
+        gemv(that, thatOffset, out, outOffset, dim0, dim1, 0);
+    }
+
+    void matmul(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+        gemv(that, thatOffset, out, outOffset, dim0, dim1, thisOffset);
+    }
+
+    void gemv(FloatTensor that, FloatTensor out, int dim0, int dim1) {
+        gemv(that, out, dim0, dim1, 0);
+    }
+
+    // GEMV with offset into this tensor (for expert weight slicing in 3D tensors).
+    void gemv(FloatTensor that, FloatTensor out, int dim0, int dim1, int thisOffset) {
+        gemv(that, 0, out, 0, dim0, dim1, thisOffset);
+    }
+
+    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1) {
+        gemv(that, thatOffset, out, outOffset, dim0, dim1, 0);
+    }
+
+    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+        if ((long) dim0 * dim1 <= (1 << 18) && that != out) {
+            // tiny matmuls (e.g. the 32-row MoE router): the ForkJoin round trip costs more than the work
+            for (int i = 0; i < dim0; i++) {
+                out.setFloat(outOffset + i, dot(thisOffset + i * dim1, that, thatOffset, dim1));
+            }
+            return;
+        }
+        if (that == out) {
+            // In-place GEMV must avoid read-after-write races in parallel execution.
+            float[] temp = new float[dim0];
+            Parallel.parallelFor(0, dim0, i -> temp[i] = dot(thisOffset + i * dim1, that, thatOffset, dim1));
+            for (int i = 0; i < dim0; i++) {
+                out.setFloat(outOffset + i, temp[i]);
+            }
+        } else {
+            Parallel.parallelFor(0, dim0, i -> out.setFloat(outOffset + i, dot(thisOffset + i * dim1, that, thatOffset, dim1)));
+        }
+    }
+
+    void matmulBatch(FloatTensor that, FloatTensor out, int sequenceLength, int dim0, int dim1) {
+        gemm(that, dim1, out, dim0, sequenceLength, dim0, dim1);
+    }
+
+    void matmulBatch(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1) {
+        gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, 0);
+    }
+
+    void matmulBatch(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+        gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
+    }
+
+    void gemm(FloatTensor that, FloatTensor out, int sequenceLength, int dim0, int dim1) {
+        gemm(that, dim1, out, dim0, sequenceLength, dim0, dim1);
+    }
+
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1) {
+        gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, 0);
+    }
+
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+        if (sequenceLength == 1) {
+            gemv(that, 0, out, 0, dim0, dim1, thisOffset);
+            return;
+        }
+        if (that == out) {
+            float[] temp = new float[sequenceLength * dim0];
+            Parallel.parallelFor(0, sequenceLength * dim0, index -> {
+                int s = index / dim0;
+                int row = index - s * dim0;
+                temp[index] = dot(thisOffset + row * dim1, that, s * thatStride, dim1);
+            });
+            for (int s = 0; s < sequenceLength; s++) {
+                for (int row = 0; row < dim0; row++) {
+                    out.setFloat(s * outStride + row, temp[s * dim0 + row]);
+                }
+            }
+        } else {
+            Parallel.parallelFor(0, sequenceLength * dim0, index -> {
+                int s = index / dim0;
+                int row = index - s * dim0;
+                out.setFloat(s * outStride + row, dot(thisOffset + row * dim1, that, s * thatStride, dim1));
+            });
+        }
+    }
+
+    @FunctionalInterface
+    interface AggregateFunction {
+        float apply(float acc, float value);
+    }
+
+    float reduce(int thisOffset, int size, float seed, AggregateFunction reduce) {
+        float result = seed;
+        for (int i = 0; i < size; ++i) {
+            result = reduce.apply(result, getFloat(thisOffset + i));
+        }
+        return result;
+    }
+
+    float sum(int thisOffset, int size) {
+        return reduce(thisOffset, size, 0f, Float::sum);
+    }
+
+    float max(int thisOffset, int size) {
+        return reduce(thisOffset, size, Float.NEGATIVE_INFINITY, Float::max);
+    }
+
+    void copyTo(int thisOffset, FloatTensor that, int thatOffset, int size) {
+        that.mapWithIndexInPlace(thatOffset, size, (value, index) -> this.getFloat(index - thatOffset + thisOffset));
+    }
+
+    int argmax(int thisOffset, int size) {
+        assert size > 0;
+        int maxIndex = thisOffset;
+        float maxValue = this.getFloat(maxIndex);
+        int endIndex = thisOffset + size;
+        for (int i = thisOffset; i < endIndex; ++i) {
+            float f = this.getFloat(i);
+            if (f > maxValue) {
+                maxValue = f;
+                maxIndex = i;
+            }
+        }
+        return maxIndex;
+    }
+
+    int argmax() {
+        return argmax(0, Math.toIntExact(size()));
+    }
+
+    @FunctionalInterface
+    interface MapFunction {
+        float apply(float value);
+    }
+
+    @FunctionalInterface
+    interface MapWithIndexFunction {
+        float apply(float value, int index);
+    }
+
+    FloatTensor mapInPlace(int thisOffset, int size, MapFunction mapFunction) {
+        int endIndex = thisOffset + size;
+        for (int i = thisOffset; i < endIndex; ++i) {
+            setFloat(i, mapFunction.apply(getFloat(i)));
+        }
+        return this;
+    }
+
+    FloatTensor mapInPlace(MapFunction mapFunction) {
+        return mapInPlace(0, Math.toIntExact(size()), mapFunction);
+    }
+
+    FloatTensor mapWithIndexInPlace(int thisOffset, int size, FloatTensor.MapWithIndexFunction mapWithIndexFunction) {
+        int endOffset = thisOffset + size;
+        for (int i = thisOffset; i < endOffset; ++i) {
+            setFloat(i, mapWithIndexFunction.apply(getFloat(i), i));
+        }
+        return this;
+    }
+
+    FloatTensor addInPlace(int thisOffset, FloatTensor that, int thatOffset, int size) {
+        return mapWithIndexInPlace(thisOffset, size, (value, index) -> value + that.getFloat(index - thisOffset + thatOffset));
+    }
+
+    FloatTensor addInPlace(FloatTensor that) {
+        return addInPlace(0, that, 0, Math.toIntExact(size()));
+    }
+
+    FloatTensor multiplyInPlace(int thisOffset, FloatTensor that, int thatOffset, int size) {
+        return mapWithIndexInPlace(thisOffset, size, (value, index) -> value * that.getFloat(index - thisOffset + thatOffset));
+    }
+
+    FloatTensor siluMultiplyInPlace(int thisOffset, FloatTensor that, int thatOffset, int size) {
+        for (int i = 0; i < size; i++) {
+            float g = getFloat(thisOffset + i);
+            float u = that.getFloat(thatOffset + i);
+            setFloat(thisOffset + i, (float) (g / (1.0 + Math.exp(-g)) * u));
+        }
+        return this;
+    }
+
+    FloatTensor divideInPlace(int thisOffset, int size, float value) {
+        return mapInPlace(thisOffset, size, f -> f / value);
+    }
+
+    FloatTensor fillInPlace(int thisOffset, int size, float value) {
+        return mapInPlace(thisOffset, size, unused -> value);
+    }
+
+    FloatTensor softmaxInPlace(int thisOffset, int size) {
+        float maxVal = max(thisOffset, size);
+        mapInPlace(thisOffset, size, f -> (float) Math.exp(f - maxVal));
+        float sum = sum(thisOffset, size);
+        return divideInPlace(thisOffset, size, sum);
+    }
+
+    FloatTensor saxpyInPlace(int thisOffset, FloatTensor that, int thatOffset, int size, float a) {
+        for (int i = 0; i < size; ++i) {
+            setFloat(thisOffset + i, a * that.getFloat(thatOffset + i) + this.getFloat(thisOffset + i));
+        }
+        return this;
+    }
+}
+
+/** Base for tensors backed by a MemorySegment (mapped GGUF weights or native arena allocations).
+ *  Vector and scalar access go through (vseg, vbase + byteOffset): with GLOBAL_SEGMENT available
+ *  the bounds/liveness checks constant-fold (vbase = absolute address) and every access site sees
+ *  a single segment implementation type — required for native-image SIMD (see FloatTensor). */
+abstract class SegmentFloatTensor extends FloatTensor {
+
+    final long size;
+    /** The backing segment. Declared in EVERY leaf class, not here: a shared field would merge
+     *  the segment implementation types of all tensors (mapped GGUF weights, native arena
+     *  buffers) into one points-to set, and native-image SIMD needs each vector call site to
+     *  see a single segment implementation type (see FloatTensor.GLOBAL_SEGMENT). vseg/vbase
+     *  are safe to share: with GLOBAL_SEGMENT bound they are the same constant for everyone. */
+    final MemorySegment vseg;
+    final long vbase;
+
+    SegmentFloatTensor(long size, MemorySegment memorySegment) {
+        this.size = size;
+        this.vseg = vectorSegment(memorySegment);
+        this.vbase = vectorBase(memorySegment);
+    }
+
+    @Override
+    public final long size() {
+        return size;
+    }
+}
+
+final class Q4_0FloatTensor extends SegmentFloatTensor {
+
+    final MemorySegment memorySegment;
+
+    public Q4_0FloatTensor(long size, MemorySegment memorySegment) {
+        super(size, memorySegment);
+        this.memorySegment = memorySegment;
+    }
+
+    @Override
+    public void setFloat(int index, float value) {
+        throw new UnsupportedOperationException("setFloat");
+    }
+
+    @Override
+    FloatVector getFloatVector(VectorSpecies<Float> species, int index) {
+        throw new UnsupportedOperationException("getFloatVector");
+    }
+
+    @Override
+    public GGMLType type() {
+        return GGMLType.Q4_0;
+    }
+
+    @Override
+    public float getFloat(long index) {
+        assert 0 <= index && index < size;
+        long blockIndex = index / GGMLType.Q4_0.getBlockSize();
+        long blockOffset = blockIndex * GGMLType.Q4_0.getTypeSize();
+        float scale = readFloat16(memorySegment, blockOffset);
+        byte quant;
+        int modIndex = (int) (index % GGMLType.Q4_0.getBlockSize());
+        if (modIndex < GGMLType.Q4_0.getBlockSize() / 2) {
+            quant = (byte) (readByte(memorySegment, blockOffset + Float16.BYTES + modIndex) & 0x0F);
+        } else {
+            quant = (byte) ((readByte(memorySegment, blockOffset + Float16.BYTES + modIndex - GGMLType.Q4_0.getBlockSize() / 2) >>> 4) & 0x0F);
+        }
+        quant -= 8;
+        return quant * scale;
+    }
+
+    @Override
+    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor) {
+            return vectorDot(this, thisOffset, that, thatOffset, size);
+        } else {
+            return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
+        }
+    }
+
+    @Override
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+        if (sequenceLength == 1) {
+            gemv(that, 0, out, 0, dim0, dim1, thisOffset);
+            return;
+        }
+        if (FloatTensor.USE_VECTOR_API && F_SPECIES.vectorBitSize() == 512
+                && that instanceof F32FloatTensor xf && out instanceof F32FloatTensor of && that != out
+                && (dim1 & (GGMLType.Q4_0.getBlockSize() - 1)) == 0 && (thisOffset & (GGMLType.Q4_0.getBlockSize() - 1)) == 0) {
+            vectorGemm512(this, xf, of, thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
+            return;
+        }
+        super.gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
+    }
+
+    private static void vectorGemm512(Q4_0FloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
+                                      int thatStride, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+        final int seqTile = Math.max(4, RuntimeFlags.GEMM_SEQ_TILE);
+        final int rowTile = Math.max(2, RuntimeFlags.GEMM_ROW_TILE);
+        final int threads = RuntimeFlags.GEMM_THREADS;
+        final int seqTileCount = (sequenceLength + seqTile - 1) / seqTile;
+        final int rowTileCount = (dim0 + rowTile - 1) / rowTile;
+        int tileCount = rowTileCount * seqTileCount;
+        if (tileCount == 0) {
+            return;
+        }
+        int workers = Math.min(tileCount, Math.max(1, threads));
+        Parallel.parallelFor(0, workers, worker -> {
+            int tileStart = (int) ((long) tileCount * worker / workers);
+            int tileEnd = (int) ((long) tileCount * (worker + 1) / workers);
+            for (int tileIndex = tileStart; tileIndex < tileEnd; tileIndex++) {
+                int rowStart = (tileIndex / seqTileCount) * rowTile;
+                int s0 = (tileIndex % seqTileCount) * seqTile;
+                int rowEnd = Math.min(dim0, rowStart + rowTile);
+                int seqEnd = Math.min(sequenceLength, s0 + seqTile);
+                int row = rowStart;
+                for (; row + 1 < rowEnd; row += 2) {
+                    int s = s0;
+                    for (; s + 3 < seqEnd; s += 4) {
+                        gemm512Tile2x4(thiz, that, out, thatStride, outStride, dim1, thisOffset, row, s);
+                    }
+                    for (; s < seqEnd; s++) {
+                        out.setFloat(s * outStride + row, vectorDot(thiz, thisOffset + row * dim1, that, s * thatStride, dim1));
+                        out.setFloat(s * outStride + row + 1, vectorDot(thiz, thisOffset + (row + 1) * dim1, that, s * thatStride, dim1));
+                    }
+                }
+                for (; row < rowEnd; row++) {
+                    for (int s = s0; s < seqEnd; s++) {
+                        out.setFloat(s * outStride + row, vectorDot(thiz, thisOffset + row * dim1, that, s * thatStride, dim1));
+                    }
+                }
+            }
+        });
+    }
+
+    // 2 weight rows x 4 activation columns; nibbles are decoded once per block and shared by
+    // all 4 columns. Q4_0 block layout: byte i holds elements i (low nibble) and i+16 (high).
+    private static void gemm512Tile2x4(Q4_0FloatTensor thiz, F32FloatTensor x, F32FloatTensor out,
+                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+        final int blockSize = GGMLType.Q4_0.getBlockSize();
+        final int typeSize = GGMLType.Q4_0.getTypeSize();
+        final MemorySegment w = thiz.memorySegment;
+        final long rowStride = (long) (dim1 / blockSize) * typeSize;
+        long b0 = (long) ((thisOffset + row * dim1) / blockSize) * typeSize;
+        long b1 = b0 + rowStride;
+        final MemorySegment xs = x.vseg;
+        long x0 = x.vbase + 4L * ((long) s * thatStride);
+        long x1 = x0 + 4L * thatStride;
+        long x2 = x1 + 4L * thatStride;
+        long x3 = x2 + 4L * thatStride;
+        FloatVector c00 = FloatVector.zero(F_SPECIES), c01 = FloatVector.zero(F_SPECIES), c02 = FloatVector.zero(F_SPECIES), c03 = FloatVector.zero(F_SPECIES);
+        FloatVector c10 = FloatVector.zero(F_SPECIES), c11 = FloatVector.zero(F_SPECIES), c12 = FloatVector.zero(F_SPECIES), c13 = FloatVector.zero(F_SPECIES);
+        for (int j = 0; j < dim1; j += blockSize, b0 += typeSize, b1 += typeSize) {
+            var vd0 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b0));
+            var vd1 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b1));
+            var w0b = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + Float16.BYTES, ByteOrder.LITTLE_ENDIAN);
+            var w1b = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + Float16.BYTES, ByteOrder.LITTLE_ENDIAN);
+            var w0lo = ((FloatVector) w0b.and((byte) 0xF).sub((byte) 8).castShape(F_SPECIES, 0)).mul(vd0);
+            var w0hi = ((FloatVector) w0b.lanewise(VectorOperators.LSHR, 4).sub((byte) 8).castShape(F_SPECIES, 0)).mul(vd0);
+            var w1lo = ((FloatVector) w1b.and((byte) 0xF).sub((byte) 8).castShape(F_SPECIES, 0)).mul(vd1);
+            var w1hi = ((FloatVector) w1b.lanewise(VectorOperators.LSHR, 4).sub((byte) 8).castShape(F_SPECIES, 0)).mul(vd1);
+            long xOff = 4L * j;
+            FloatVector aLo, aHi;
+            aLo = FloatVector.fromMemorySegment(F_SPECIES, xs, x0 + xOff, ByteOrder.LITTLE_ENDIAN);
+            aHi = FloatVector.fromMemorySegment(F_SPECIES, xs, x0 + xOff + 64, ByteOrder.LITTLE_ENDIAN);
+            c00 = c00.add(w0hi.fma(aHi, w0lo.mul(aLo)));
+            c10 = c10.add(w1hi.fma(aHi, w1lo.mul(aLo)));
+            aLo = FloatVector.fromMemorySegment(F_SPECIES, xs, x1 + xOff, ByteOrder.LITTLE_ENDIAN);
+            aHi = FloatVector.fromMemorySegment(F_SPECIES, xs, x1 + xOff + 64, ByteOrder.LITTLE_ENDIAN);
+            c01 = c01.add(w0hi.fma(aHi, w0lo.mul(aLo)));
+            c11 = c11.add(w1hi.fma(aHi, w1lo.mul(aLo)));
+            aLo = FloatVector.fromMemorySegment(F_SPECIES, xs, x2 + xOff, ByteOrder.LITTLE_ENDIAN);
+            aHi = FloatVector.fromMemorySegment(F_SPECIES, xs, x2 + xOff + 64, ByteOrder.LITTLE_ENDIAN);
+            c02 = c02.add(w0hi.fma(aHi, w0lo.mul(aLo)));
+            c12 = c12.add(w1hi.fma(aHi, w1lo.mul(aLo)));
+            aLo = FloatVector.fromMemorySegment(F_SPECIES, xs, x3 + xOff, ByteOrder.LITTLE_ENDIAN);
+            aHi = FloatVector.fromMemorySegment(F_SPECIES, xs, x3 + xOff + 64, ByteOrder.LITTLE_ENDIAN);
+            c03 = c03.add(w0hi.fma(aHi, w0lo.mul(aLo)));
+            c13 = c13.add(w1hi.fma(aHi, w1lo.mul(aLo)));
+        }
+        int o = s * outStride + row;
+        out.setFloat(o, c00.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o + 1, c10.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o + outStride, c01.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o + outStride + 1, c11.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o + 2 * outStride, c02.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o + 2 * outStride + 1, c12.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o + 3 * outStride, c03.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o + 3 * outStride + 1, c13.reduceLanes(VectorOperators.ADD));
+    }
+
+    private static float vectorDot(Q4_0FloatTensor thiz, int thisOffset, FloatTensor that, int thatOffset, int size) {
+        float result = 0f;
+        int j = 0;
+
+        assert Integer.bitCount(GGMLType.Q4_0.getBlockSize()) == 1 : "power of 2";
+        int alignmentBound = Math.min(size, -thisOffset & (GGMLType.Q4_0.getBlockSize() - 1));
+        if (alignmentBound > 0) {
+            result += FloatTensor.scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
+            j += alignmentBound;
+        }
+        assert (thisOffset + j) % GGMLType.Q4_0.getBlockSize() == 0;
+
+        FloatVector val = FloatVector.zero(F_SPECIES);
+        long blockOffset = (long) (thisOffset + j) / GGMLType.Q4_0.getBlockSize() * GGMLType.Q4_0.getTypeSize();
+        int upperBound = j + (size - j) / GGMLType.Q4_0.getBlockSize() * GGMLType.Q4_0.getBlockSize();
+        for (; j < upperBound; j += GGMLType.Q4_0.getBlockSize(), blockOffset += GGMLType.Q4_0.getTypeSize()) {
+            float wScaleValue = readFloat16(thiz.memorySegment, blockOffset);
+            var wScale = FloatVector.broadcast(F_SPECIES, wScaleValue);
+            var wBytes = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, thiz.memorySegment, blockOffset + Float16.BYTES, ByteOrder.LITTLE_ENDIAN);
+            var loBytes = wBytes.and((byte) 0xF).sub((byte) 8);
+            var hiBytes = wBytes.lanewise(VectorOperators.LSHR, 4).sub((byte) 8);
+
+            switch (F_SPECIES.vectorBitSize()) {
+                case 512 -> {
+                    var s0 = that.getFloatVector(F_SPECIES, thatOffset + j).mul(loBytes.castShape(F_SPECIES, 0));
+                    var s1 = that.getFloatVector(F_SPECIES, thatOffset + j + F_SPECIES.length()).mul(hiBytes.castShape(F_SPECIES, 0));
+                    val = s0.add(s1).fma(wScale, val);
+                }
+                case 256 -> {
+                    var s0 = that.getFloatVector(F_SPECIES, thatOffset + j).mul(loBytes.castShape(F_SPECIES, 0));
+                    var s1 = that.getFloatVector(F_SPECIES, thatOffset + j + 2 * F_SPECIES.length()).mul(hiBytes.castShape(F_SPECIES, 0));
+                    s0 = that.getFloatVector(F_SPECIES, thatOffset + j + F_SPECIES.length()).fma(loBytes.castShape(F_SPECIES, 1), s0);
+                    s1 = that.getFloatVector(F_SPECIES, thatOffset + j + 3 * F_SPECIES.length()).fma(hiBytes.castShape(F_SPECIES, 1), s1);
+                    val = s0.add(s1).fma(wScale, val);
+                }
+                case 128 -> {
+                    for (int i = 0; i < 2; ++i) {
+                        var tmp = i == 0 ? loBytes : hiBytes;
+                        var s0 = that.getFloatVector(F_SPECIES, thatOffset + j + (i * 4) * F_SPECIES.length()).mul(tmp.castShape(F_SPECIES, 0));
+                        var s1 = that.getFloatVector(F_SPECIES, thatOffset + j + (i * 4 + 2) * F_SPECIES.length()).mul(tmp.castShape(F_SPECIES, 2));
+                        s0 = that.getFloatVector(F_SPECIES, thatOffset + j + (i * 4 + 1) * F_SPECIES.length()).fma(tmp.castShape(F_SPECIES, 1), s0);
+                        s1 = that.getFloatVector(F_SPECIES, thatOffset + j + (i * 4 + 3) * F_SPECIES.length()).fma(tmp.castShape(F_SPECIES, 3), s1);
+                        val = s0.add(s1).fma(wScale, val);
+                    }
+                }
+                default -> throw new UnsupportedOperationException(F_SPECIES.toString());
+            }
+        }
+        result += val.reduceLanes(VectorOperators.ADD);
+
+        if (j < size) {
+            result += FloatTensor.scalarDot(thiz, thisOffset + j, that, thatOffset + j, size - j);
+        }
+
+        return result;
+    }
+}
+
+final class Q4_1FloatTensor extends SegmentFloatTensor {
+
+    final MemorySegment memorySegment;
+
+    public Q4_1FloatTensor(long size, MemorySegment memorySegment) {
+        super(size, memorySegment);
+        this.memorySegment = memorySegment;
+    }
+    @Override public void setFloat(int index, float value) { throw new UnsupportedOperationException("setFloat"); }
+    @Override FloatVector getFloatVector(VectorSpecies<Float> species, int index) { throw new UnsupportedOperationException("getFloatVector"); }
+    @Override public GGMLType type() { return GGMLType.Q4_1; }
+
+    @Override
+    public float getFloat(long index) {
+        assert 0 <= index && index < size;
+        long blockIndex = index / GGMLType.Q4_1.getBlockSize();
+        long blockOffset = blockIndex * GGMLType.Q4_1.getTypeSize();
+        float delta = readFloat16(memorySegment, blockOffset);
+        float min = readFloat16(memorySegment, blockOffset + Float16.BYTES);
+        int modIndex = (int) (index % GGMLType.Q4_1.getBlockSize());
+        int quant;
+        if (modIndex < 16) {
+            quant = Byte.toUnsignedInt(readByte(memorySegment, blockOffset + 2 * Float16.BYTES + modIndex)) & 0x0F;
+        } else {
+            quant = (Byte.toUnsignedInt(readByte(memorySegment, blockOffset + 2 * Float16.BYTES + modIndex - 16)) >>> 4) & 0x0F;
+        }
+        return delta * quant + min;
+    }
+
+    @Override
+    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor) {
+            return vectorDot(this, thisOffset, that, thatOffset, size);
+        }
+        return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
+    }
+
+    private static float vectorDot(Q4_1FloatTensor thiz, int thisOffset, FloatTensor that, int thatOffset, int size) {
+        float result = 0f;
+        int j = 0;
+
+        assert Integer.bitCount(GGMLType.Q4_1.getBlockSize()) == 1 : "power of 2";
+        int alignmentBound = Math.min(size, -thisOffset & (GGMLType.Q4_1.getBlockSize() - 1));
+        if (alignmentBound > 0) {
+            result += FloatTensor.scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
+            j += alignmentBound;
+        }
+        assert (thisOffset + j) % GGMLType.Q4_1.getBlockSize() == 0;
+
+        FloatVector val = FloatVector.zero(F_SPECIES);
+        long blockOffset = (long) (thisOffset + j) / GGMLType.Q4_1.getBlockSize() * GGMLType.Q4_1.getTypeSize();
+        int upperBound = j + (size - j) / GGMLType.Q4_1.getBlockSize() * GGMLType.Q4_1.getBlockSize();
+        for (; j < upperBound; j += GGMLType.Q4_1.getBlockSize(), blockOffset += GGMLType.Q4_1.getTypeSize()) {
+            float deltaValue = readFloat16(thiz.memorySegment, blockOffset);
+            float minValue = readFloat16(thiz.memorySegment, blockOffset + Float16.BYTES);
+            var wDelta = FloatVector.broadcast(F_SPECIES, deltaValue);
+            var wMin = FloatVector.broadcast(F_SPECIES, minValue);
+            var wBytes = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, thiz.memorySegment, blockOffset + 2 * Float16.BYTES, ByteOrder.LITTLE_ENDIAN);
+            var loBytes = wBytes.and((byte) 0xF);
+            var hiBytes = wBytes.lanewise(VectorOperators.LSHR, 4);
+            switch (F_SPECIES.vectorBitSize()) {
+                case 512 -> {
+                    var that0 = that.getFloatVector(F_SPECIES, thatOffset + j);
+                    var that1 = that.getFloatVector(F_SPECIES, thatOffset + j + F_SPECIES.length());
+                    var s0 = that0.mul(loBytes.castShape(F_SPECIES, 0));
+                    var s1 = that1.mul(hiBytes.castShape(F_SPECIES, 0));
+                    val = s0.add(s1).fma(wDelta, val);
+                    val = that0.add(that1).fma(wMin, val);
+                }
+                case 256 -> {
+                    var that0 = that.getFloatVector(F_SPECIES, thatOffset + j);
+                    var that1 = that.getFloatVector(F_SPECIES, thatOffset + j + F_SPECIES.length());
+                    var that2 = that.getFloatVector(F_SPECIES, thatOffset + j + 2 * F_SPECIES.length());
+                    var that3 = that.getFloatVector(F_SPECIES, thatOffset + j + 3 * F_SPECIES.length());
+                    var s0 = that0.mul(loBytes.castShape(F_SPECIES, 0));
+                    var s1 = that2.mul(hiBytes.castShape(F_SPECIES, 0));
+                    s0 = that1.fma(loBytes.castShape(F_SPECIES, 1), s0);
+                    s1 = that3.fma(hiBytes.castShape(F_SPECIES, 1), s1);
+                    val = s0.add(s1).fma(wDelta, val);
+                    val = that0.add(that1).add(that2).add(that3).fma(wMin, val);
+                }
+                case 128 -> {
+                    for (int i = 0; i < 2; ++i) {
+                        var tmp = i == 0 ? loBytes : hiBytes;
+                        var s0 = that.getFloatVector(F_SPECIES, thatOffset + j + (i * 4) * F_SPECIES.length()).mul(tmp.castShape(F_SPECIES, 0));
+                        var s1 = that.getFloatVector(F_SPECIES, thatOffset + j + (i * 4 + 2) * F_SPECIES.length()).mul(tmp.castShape(F_SPECIES, 2));
+                        s0 = that.getFloatVector(F_SPECIES, thatOffset + j + (i * 4 + 1) * F_SPECIES.length()).fma(tmp.castShape(F_SPECIES, 1), s0);
+                        s1 = that.getFloatVector(F_SPECIES, thatOffset + j + (i * 4 + 3) * F_SPECIES.length()).fma(tmp.castShape(F_SPECIES, 3), s1);
+                        val = s0.add(s1).fma(wDelta, val);
+                    }
+                    // vectorized min contribution
+                    var thatSum = FloatVector.zero(F_SPECIES);
+                    for (int k = 0; k < GGMLType.Q4_1.getBlockSize(); k += F_SPECIES.length()) {
+                        thatSum = thatSum.add(that.getFloatVector(F_SPECIES, thatOffset + j + k));
+                    }
+                    val = thatSum.fma(wMin, val);
+                }
+                default -> throw new UnsupportedOperationException(F_SPECIES.toString());
+            }
+        }
+        result += val.reduceLanes(VectorOperators.ADD);
+
+        if (j < size) {
+            result += FloatTensor.scalarDot(thiz, thisOffset + j, that, thatOffset + j, size - j);
+        }
+
+        return result;
+    }
+}
+
+final class Q5_1FloatTensor extends SegmentFloatTensor {
+
+    final MemorySegment memorySegment;
+
+    Q5_1FloatTensor(long size, MemorySegment memorySegment) {
+        super(size, memorySegment);
+        this.memorySegment = memorySegment;
+    }
+
+    @Override public void setFloat(int index, float value) { throw new UnsupportedOperationException("setFloat"); }
+    @Override FloatVector getFloatVector(VectorSpecies<Float> species, int index) { throw new UnsupportedOperationException("getFloatVector"); }
+    @Override public GGMLType type() { return GGMLType.Q5_1; }
+
+    @Override
+    public float getFloat(long index) {
+        assert 0 <= index && index < size;
+        long blockIndex = index / GGMLType.Q5_1.getBlockSize();
+        int inBlockIndex = (int) (index % GGMLType.Q5_1.getBlockSize());
+        long blockOffset = blockIndex * GGMLType.Q5_1.getTypeSize();
+
+        float d = readFloat16(memorySegment, blockOffset);
+        float m = readFloat16(memorySegment, blockOffset + Float16.BYTES);
+        int qh = readInt32LE(memorySegment, blockOffset + 2L * Float16.BYTES);
+
+        int j;
+        int nibble;
+        int xh;
+        if (inBlockIndex < GGMLType.Q5_1.getBlockSize() / 2) {
+            j = inBlockIndex;
+            nibble = Byte.toUnsignedInt(readByte(memorySegment, blockOffset + 2L * Float16.BYTES + Integer.BYTES + j)) & 0x0F;
+            xh = ((qh >> j) << 4) & 0x10;
+        } else {
+            j = inBlockIndex - GGMLType.Q5_1.getBlockSize() / 2;
+            nibble = (Byte.toUnsignedInt(readByte(memorySegment, blockOffset + 2L * Float16.BYTES + Integer.BYTES + j)) >>> 4) & 0x0F;
+            xh = (qh >> (j + 12)) & 0x10;
+        }
+
+        int q = nibble | xh;
+        return q * d + m;
+    }
+
+    @Override
+    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor) {
+            return vectorDot(this, thisOffset, that, thatOffset, size);
+        }
+        return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
+    }
+
+    private static float vectorDot(Q5_1FloatTensor thiz, int thisOffset, FloatTensor that, int thatOffset, int size) {
+        assert Integer.bitCount(GGMLType.Q5_1.getBlockSize()) == 1 : "power of 2";
+        int j = 0;
+        float result = 0f;
+
+        int alignmentBound = Math.min(size, -thisOffset & (GGMLType.Q5_1.getBlockSize() - 1));
+        if (alignmentBound > 0) {
+            result += scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
+            j = alignmentBound;
+        }
+
+        float[] decoded = new float[GGMLType.Q5_1.getBlockSize()];
+        int upperBound = j + (size - j) / GGMLType.Q5_1.getBlockSize() * GGMLType.Q5_1.getBlockSize();
+        int vecUpper = F_SPECIES.loopBound(GGMLType.Q5_1.getBlockSize());
+        for (; j < upperBound; j += GGMLType.Q5_1.getBlockSize()) {
+            assert (thisOffset + j) % GGMLType.Q5_1.getBlockSize() == 0;
+            long blockOffset = (long) (thisOffset + j) / GGMLType.Q5_1.getBlockSize() * GGMLType.Q5_1.getTypeSize();
+            float d = readFloat16(thiz.memorySegment, blockOffset);
+            float m = readFloat16(thiz.memorySegment, blockOffset + Float16.BYTES);
+            int qh = readInt32LE(thiz.memorySegment, blockOffset + 2L * Float16.BYTES);
+            long qsBase = blockOffset + 2L * Float16.BYTES + Integer.BYTES;
+
+            for (int p = 0; p < GGMLType.Q5_1.getBlockSize() / 2; p++) {
+                int packed = Byte.toUnsignedInt(readByte(thiz.memorySegment, qsBase + p));
+                int x0 = (packed & 0x0F) | ((((qh >> p) << 4) & 0x10));
+                int x1 = ((packed >>> 4) & 0x0F) | ((qh >> (p + 12)) & 0x10);
+                decoded[p] = x0 * d + m;
+                decoded[p + GGMLType.Q5_1.getBlockSize() / 2] = x1 * d + m;
+            }
+
+            FloatVector acc = FloatVector.zero(F_SPECIES);
+            for (int i = 0; i < vecUpper; i += F_SPECIES.length()) {
+                FloatVector w = FloatVector.fromArray(F_SPECIES, decoded, i);
+                FloatVector x = that.getFloatVector(F_SPECIES, thatOffset + j + i);
+                acc = w.fma(x, acc);
+            }
+            result += acc.reduceLanes(VectorOperators.ADD);
+
+            for (int i = vecUpper; i < GGMLType.Q5_1.getBlockSize(); i++) {
+                result += decoded[i] * that.getFloat(thatOffset + j + i);
+            }
+        }
+
+        if (j < size) {
+            result += scalarDot(thiz, thisOffset + j, that, thatOffset + j, size - j);
+        }
+        return result;
+    }
+
+    private static int readInt32LE(MemorySegment memorySegment, long offset) {
+        int b0 = Byte.toUnsignedInt(readByte(memorySegment, offset));
+        int b1 = Byte.toUnsignedInt(readByte(memorySegment, offset + 1));
+        int b2 = Byte.toUnsignedInt(readByte(memorySegment, offset + 2));
+        int b3 = Byte.toUnsignedInt(readByte(memorySegment, offset + 3));
+        return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+    }
+}
+
+final class Q4_KFloatTensor extends SegmentFloatTensor {
+
+    static final int BLOCK_SIZE = GGMLType.QK_K;
+    static final int TYPE_SIZE = GGMLType.Q4_K.getTypeSize();
+
+    final MemorySegment memorySegment;
+
+    public Q4_KFloatTensor(long size, MemorySegment memorySegment) {
+        super(size, memorySegment);
+        this.memorySegment = memorySegment;
+    }
+    @Override public void setFloat(int index, float value) { throw new UnsupportedOperationException("setFloat"); }
+    @Override FloatVector getFloatVector(VectorSpecies<Float> species, int index) { throw new UnsupportedOperationException("getFloatVector"); }
+    @Override public GGMLType type() { return GGMLType.Q4_K; }
+
+    // Decode scale or min for sub-block j (0..7) from the 12-byte scales array
+    static int getScaleMinK4(int j, MemorySegment mem, long scalesOffset, boolean isMin) {
+        if (j < 4) {
+            int idx = isMin ? j + 4 : j;
+            return Byte.toUnsignedInt(readByte(mem, scalesOffset + idx)) & 63;
+        } else {
+            int lowIdx = j + 4;
+            int highIdx = isMin ? j : j - 4;
+            int low = isMin
+                    ? (Byte.toUnsignedInt(readByte(mem, scalesOffset + lowIdx)) >> 4)
+                    : (Byte.toUnsignedInt(readByte(mem, scalesOffset + lowIdx)) & 0xF);
+            int high = (Byte.toUnsignedInt(readByte(mem, scalesOffset + highIdx)) >> 6) & 0x3;
+            return low | (high << 4);
+        }
+    }
+
+    @Override
+    public float getFloat(long index) {
+        long blockIndex = index / BLOCK_SIZE;
+        int withinBlock = (int) (index % BLOCK_SIZE);
+        long blockOffset = blockIndex * TYPE_SIZE;
+        float d = readFloat16(memorySegment, blockOffset);
+        float dmin = readFloat16(memorySegment, blockOffset + 2);
+        long scalesOffset = blockOffset + 4;
+        long qsOffset = blockOffset + 16; // 4 + 12
+
+        // Each group of 64 values uses 2 sub-blocks: low nibble (32) + high nibble (32)
+        int group = withinBlock / 64;   // 0..3
+        int inGroup = withinBlock % 64;
+        int subBlock;
+        int nibbleIndex;
+        boolean isHigh;
+        if (inGroup < 32) {
+            subBlock = group * 2;
+            nibbleIndex = inGroup;
+            isHigh = false;
+        } else {
+            subBlock = group * 2 + 1;
+            nibbleIndex = inGroup - 32;
+            isHigh = true;
+        }
+
+        int sc = getScaleMinK4(subBlock, memorySegment, scalesOffset, false);
+        int m = getScaleMinK4(subBlock, memorySegment, scalesOffset, true);
+
+        byte qsByte = readByte(memorySegment, qsOffset + group * 32 + nibbleIndex);
+        int quant = isHigh ? ((Byte.toUnsignedInt(qsByte) >> 4) & 0xF) : (Byte.toUnsignedInt(qsByte) & 0xF);
+
+        return d * sc * quant - dmin * m;
+    }
+
+    @Override
+    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor) {
+            return vectorDot(this, thisOffset, that, thatOffset, size);
+        }
+        return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
+    }
+
+    @Override
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+        if (sequenceLength == 1) {
+            gemv(that, 0, out, 0, dim0, dim1, thisOffset);
+            return;
+        }
+        if (FloatTensor.USE_VECTOR_API && F_SPECIES.vectorBitSize() == 512
+                && that instanceof F32FloatTensor xf && out instanceof F32FloatTensor of && that != out
+                && dim1 % BLOCK_SIZE == 0 && thisOffset % BLOCK_SIZE == 0) {
+            vectorGemm512(this, xf, of, thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
+            return;
+        }
+        super.gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
+    }
+
+    private static void vectorGemm512(Q4_KFloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
+                                      int thatStride, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+        final int seqTile = Math.max(4, RuntimeFlags.GEMM_SEQ_TILE);
+        final int rowTile = Math.max(2, RuntimeFlags.GEMM_ROW_TILE);
+        final int seqTileCount = (sequenceLength + seqTile - 1) / seqTile;
+        final int rowTileCount = (dim0 + rowTile - 1) / rowTile;
+        int tileCount = rowTileCount * seqTileCount;
+        if (tileCount == 0) {
+            return;
+        }
+        int workers = Math.min(tileCount, Math.max(1, RuntimeFlags.GEMM_THREADS));
+        Parallel.parallelFor(0, workers, worker -> {
+            int tileStart = (int) ((long) tileCount * worker / workers);
+            int tileEnd = (int) ((long) tileCount * (worker + 1) / workers);
+            for (int tileIndex = tileStart; tileIndex < tileEnd; tileIndex++) {
+                int rowStart = (tileIndex / seqTileCount) * rowTile;
+                int s0 = (tileIndex % seqTileCount) * seqTile;
+                int rowEnd = Math.min(dim0, rowStart + rowTile);
+                int seqEnd = Math.min(sequenceLength, s0 + seqTile);
+                int row = rowStart;
+                for (; row + 1 < rowEnd; row += 2) {
+                    int s = s0;
+                    for (; s + 3 < seqEnd; s += 4) {
+                        gemm512Tile2x4(thiz, that, out, thatStride, outStride, dim1, thisOffset, row, s);
+                    }
+                    for (; s < seqEnd; s++) {
+                        out.setFloat(s * outStride + row, vectorDot(thiz, thisOffset + row * dim1, that, s * thatStride, dim1));
+                        out.setFloat(s * outStride + row + 1, vectorDot(thiz, thisOffset + (row + 1) * dim1, that, s * thatStride, dim1));
+                    }
+                }
+                for (; row < rowEnd; row++) {
+                    for (int s = s0; s < seqEnd; s++) {
+                        out.setFloat(s * outStride + row, vectorDot(thiz, thisOffset + row * dim1, that, s * thatStride, dim1));
+                    }
+                }
+            }
+        });
+    }
+
+    // 2 weight rows x 4 activation columns: the (scalar, branchy) sub-scale decode and the
+    // nibble dequantization are done once per row block and reused by all 4 columns.
+    private static void gemm512Tile2x4(Q4_KFloatTensor thiz, F32FloatTensor x, F32FloatTensor out,
+                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+        final MemorySegment w = thiz.memorySegment;
+        final long rowStride = (long) (dim1 / BLOCK_SIZE) * TYPE_SIZE;
+        long b0 = (long) ((thisOffset + row * dim1) / BLOCK_SIZE) * TYPE_SIZE;
+        long b1 = b0 + rowStride;
+        final MemorySegment xs = x.vseg;
+        final long xb = x.vbase;
+        long x0 = xb + 4L * ((long) s * thatStride);
+        long x1 = x0 + 4L * thatStride;
+        long x2 = x1 + 4L * thatStride;
+        long x3 = x2 + 4L * thatStride;
+        FloatVector c00 = FloatVector.zero(F_SPECIES), c01 = FloatVector.zero(F_SPECIES), c02 = FloatVector.zero(F_SPECIES), c03 = FloatVector.zero(F_SPECIES);
+        FloatVector c10 = FloatVector.zero(F_SPECIES), c11 = FloatVector.zero(F_SPECIES), c12 = FloatVector.zero(F_SPECIES), c13 = FloatVector.zero(F_SPECIES);
+        for (int j = 0; j < dim1; j += BLOCK_SIZE, b0 += TYPE_SIZE, b1 += TYPE_SIZE) {
+            float d0 = readFloat16(w, b0);
+            float dmin0 = readFloat16(w, b0 + 2);
+            float d1 = readFloat16(w, b1);
+            float dmin1 = readFloat16(w, b1 + 2);
+            for (int g = 0; g < 4; g++) {
+                float r0dLo = d0 * getScaleMinK4(g * 2, w, b0 + 4, false);
+                float r0mLo = -(dmin0 * getScaleMinK4(g * 2, w, b0 + 4, true));
+                float r0dHi = d0 * getScaleMinK4(g * 2 + 1, w, b0 + 4, false);
+                float r0mHi = -(dmin0 * getScaleMinK4(g * 2 + 1, w, b0 + 4, true));
+                float r1dLo = d1 * getScaleMinK4(g * 2, w, b1 + 4, false);
+                float r1mLo = -(dmin1 * getScaleMinK4(g * 2, w, b1 + 4, true));
+                float r1dHi = d1 * getScaleMinK4(g * 2 + 1, w, b1 + 4, false);
+                float r1mHi = -(dmin1 * getScaleMinK4(g * 2 + 1, w, b1 + 4, true));
+                var vd0Lo = FloatVector.broadcast(F_SPECIES, r0dLo);
+                var vm0Lo = FloatVector.broadcast(F_SPECIES, r0mLo);
+                var vd0Hi = FloatVector.broadcast(F_SPECIES, r0dHi);
+                var vm0Hi = FloatVector.broadcast(F_SPECIES, r0mHi);
+                var vd1Lo = FloatVector.broadcast(F_SPECIES, r1dLo);
+                var vm1Lo = FloatVector.broadcast(F_SPECIES, r1mLo);
+                var vd1Hi = FloatVector.broadcast(F_SPECIES, r1dHi);
+                var vm1Hi = FloatVector.broadcast(F_SPECIES, r1mHi);
+                long xLo = 4L * (j + g * 64);
+                long xHi = xLo + 4L * 32;
+                for (int c = 0; c < 2; c++) {
+                    long qOff = (long) g * 32 + c * 16;
+                    var w0b = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + 16 + qOff, ByteOrder.LITTLE_ENDIAN);
+                    var w1b = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + 16 + qOff, ByteOrder.LITTLE_ENDIAN);
+                    var w0lo = ((FloatVector) w0b.and((byte) 0xF).castShape(F_SPECIES, 0)).fma(vd0Lo, vm0Lo);
+                    var w0hi = ((FloatVector) w0b.lanewise(VectorOperators.LSHR, 4).castShape(F_SPECIES, 0)).fma(vd0Hi, vm0Hi);
+                    var w1lo = ((FloatVector) w1b.and((byte) 0xF).castShape(F_SPECIES, 0)).fma(vd1Lo, vm1Lo);
+                    var w1hi = ((FloatVector) w1b.lanewise(VectorOperators.LSHR, 4).castShape(F_SPECIES, 0)).fma(vd1Hi, vm1Hi);
+                    long off = c * 16L * 4L;
+                    FloatVector aLo, aHi;
+                    aLo = FloatVector.fromMemorySegment(F_SPECIES, xs, x0 + xLo + off, ByteOrder.LITTLE_ENDIAN);
+                    aHi = FloatVector.fromMemorySegment(F_SPECIES, xs, x0 + xHi + off, ByteOrder.LITTLE_ENDIAN);
+                    c00 = c00.add(w0hi.fma(aHi, w0lo.mul(aLo)));
+                    c10 = c10.add(w1hi.fma(aHi, w1lo.mul(aLo)));
+                    aLo = FloatVector.fromMemorySegment(F_SPECIES, xs, x1 + xLo + off, ByteOrder.LITTLE_ENDIAN);
+                    aHi = FloatVector.fromMemorySegment(F_SPECIES, xs, x1 + xHi + off, ByteOrder.LITTLE_ENDIAN);
+                    c01 = c01.add(w0hi.fma(aHi, w0lo.mul(aLo)));
+                    c11 = c11.add(w1hi.fma(aHi, w1lo.mul(aLo)));
+                    aLo = FloatVector.fromMemorySegment(F_SPECIES, xs, x2 + xLo + off, ByteOrder.LITTLE_ENDIAN);
+                    aHi = FloatVector.fromMemorySegment(F_SPECIES, xs, x2 + xHi + off, ByteOrder.LITTLE_ENDIAN);
+                    c02 = c02.add(w0hi.fma(aHi, w0lo.mul(aLo)));
+                    c12 = c12.add(w1hi.fma(aHi, w1lo.mul(aLo)));
+                    aLo = FloatVector.fromMemorySegment(F_SPECIES, xs, x3 + xLo + off, ByteOrder.LITTLE_ENDIAN);
+                    aHi = FloatVector.fromMemorySegment(F_SPECIES, xs, x3 + xHi + off, ByteOrder.LITTLE_ENDIAN);
+                    c03 = c03.add(w0hi.fma(aHi, w0lo.mul(aLo)));
+                    c13 = c13.add(w1hi.fma(aHi, w1lo.mul(aLo)));
+                }
+            }
+        }
+        int o0 = s * outStride + row;
+        out.setFloat(o0, c00.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o0 + 1, c10.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o0 + outStride, c01.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o0 + outStride + 1, c11.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o0 + 2 * outStride, c02.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o0 + 2 * outStride + 1, c12.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o0 + 3 * outStride, c03.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o0 + 3 * outStride + 1, c13.reduceLanes(VectorOperators.ADD));
+    }
+
+    private static float vectorDot(Q4_KFloatTensor thiz, int thisOffset, FloatTensor that, int thatOffset, int size) {
+        float result = 0f;
+        int j = 0;
+
+        // Handle unaligned head
+        assert Integer.bitCount(BLOCK_SIZE) == 1 : "power of 2";
+        int alignmentBound = Math.min(size, -thisOffset & (BLOCK_SIZE - 1));
+        if (alignmentBound > 0) {
+            result += FloatTensor.scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
+            j += alignmentBound;
+        }
+
+        FloatVector val = FloatVector.zero(F_SPECIES);
+        FloatVector val2 = FloatVector.zero(F_SPECIES);
+        long blockOffset = (long) (thisOffset + j) / BLOCK_SIZE * TYPE_SIZE;
+        int upperBound = j + (size - j) / BLOCK_SIZE * BLOCK_SIZE;
+
+        for (; j < upperBound; j += BLOCK_SIZE, blockOffset += TYPE_SIZE) {
+            float d = readFloat16(thiz.memorySegment, blockOffset);
+            float dmin = readFloat16(thiz.memorySegment, blockOffset + 2);
+            long scalesOff = blockOffset + 4;
+            long qsOff = blockOffset + 16;
+
+            // 4 groups of 64 values each (2 sub-blocks per group: low nibble + high nibble)
+            for (int g = 0; g < 4; g++) {
+                float d1 = d * getScaleMinK4(g * 2, thiz.memorySegment, scalesOff, false);
+                float negM1 = -(dmin * getScaleMinK4(g * 2, thiz.memorySegment, scalesOff, true));
+                float d2 = d * getScaleMinK4(g * 2 + 1, thiz.memorySegment, scalesOff, false);
+                float negM2 = -(dmin * getScaleMinK4(g * 2 + 1, thiz.memorySegment, scalesOff, true));
+
+                var d1Vec = FloatVector.broadcast(F_SPECIES, d1);
+                var negM1Vec = FloatVector.broadcast(F_SPECIES, negM1);
+                var d2Vec = FloatVector.broadcast(F_SPECIES, d2);
+                var negM2Vec = FloatVector.broadcast(F_SPECIES, negM2);
+
+                int loBase = thatOffset + j + g * 64;
+                int hiBase = thatOffset + j + g * 64 + 32;
+
+                // Process 32 bytes of qs in 2 chunks of 16 bytes
+                for (int c = 0; c < 2; c++) {
+                    var wBytes = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, thiz.memorySegment,
+                            qsOff + (long) g * 32 + c * 16, ByteOrder.LITTLE_ENDIAN);
+                    var loBytes = wBytes.and((byte) 0xF);
+                    var hiBytes = wBytes.lanewise(VectorOperators.LSHR, 4);
+
+                    int loIdx = loBase + c * 16;
+                    int hiIdx = hiBase + c * 16;
+
+                    switch (F_SPECIES.vectorBitSize()) {
+                        case 512 -> {
+                            var loQ = loBytes.castShape(F_SPECIES, 0).reinterpretAsFloats();
+                            val = loQ.fma(d1Vec, negM1Vec).fma(that.getFloatVector(F_SPECIES, loIdx), val);
+                            var hiQ = hiBytes.castShape(F_SPECIES, 0).reinterpretAsFloats();
+                            val2 = hiQ.fma(d2Vec, negM2Vec).fma(that.getFloatVector(F_SPECIES, hiIdx), val2);
+                        }
+                        case 256 -> {
+                            var loQ0 = loBytes.castShape(F_SPECIES, 0).reinterpretAsFloats();
+                            var loQ1 = loBytes.castShape(F_SPECIES, 1).reinterpretAsFloats();
+                            val = loQ0.fma(d1Vec, negM1Vec).fma(that.getFloatVector(F_SPECIES, loIdx), val);
+                            val2 = loQ1.fma(d1Vec, negM1Vec).fma(that.getFloatVector(F_SPECIES, loIdx + F_SPECIES.length()), val2);
+                            var hiQ0 = hiBytes.castShape(F_SPECIES, 0).reinterpretAsFloats();
+                            var hiQ1 = hiBytes.castShape(F_SPECIES, 1).reinterpretAsFloats();
+                            val = hiQ0.fma(d2Vec, negM2Vec).fma(that.getFloatVector(F_SPECIES, hiIdx), val);
+                            val2 = hiQ1.fma(d2Vec, negM2Vec).fma(that.getFloatVector(F_SPECIES, hiIdx + F_SPECIES.length()), val2);
+                        }
+                        case 128 -> {
+                            for (int p = 0; p < 4; p++) {
+                                var loQ = loBytes.castShape(F_SPECIES, p).reinterpretAsFloats();
+                                val = loQ.fma(d1Vec, negM1Vec).fma(that.getFloatVector(F_SPECIES, loIdx + p * F_SPECIES.length()), val);
+                                var hiQ = hiBytes.castShape(F_SPECIES, p).reinterpretAsFloats();
+                                val2 = hiQ.fma(d2Vec, negM2Vec).fma(that.getFloatVector(F_SPECIES, hiIdx + p * F_SPECIES.length()), val2);
+                            }
+                        }
+                        default -> throw new UnsupportedOperationException(F_SPECIES.toString());
+                    }
+                }
+            }
+        }
+        result += val.add(val2).reduceLanes(VectorOperators.ADD);
+
+        // Handle tail
+        if (j < size) {
+            result += FloatTensor.scalarDot(thiz, thisOffset + j, that, thatOffset + j, size - j);
+        }
+
+        return result;
+    }
+}
+
+final class Q5_KFloatTensor extends SegmentFloatTensor {
+
+    static final int BLOCK_SIZE = GGMLType.QK_K;
+    static final int TYPE_SIZE = GGMLType.Q5_K.getTypeSize();
+
+    final MemorySegment memorySegment;
+
+    public Q5_KFloatTensor(long size, MemorySegment memorySegment) {
+        super(size, memorySegment);
+        this.memorySegment = memorySegment;
+    }
+    @Override public void setFloat(int index, float value) { throw new UnsupportedOperationException("setFloat"); }
+    @Override FloatVector getFloatVector(VectorSpecies<Float> species, int index) { throw new UnsupportedOperationException("getFloatVector"); }
+    @Override public GGMLType type() { return GGMLType.Q5_K; }
+
+    @Override
+    public float getFloat(long index) {
+        long blockIndex = index / BLOCK_SIZE;
+        int withinBlock = (int) (index % BLOCK_SIZE);
+        long blockOffset = blockIndex * TYPE_SIZE;
+        float d = readFloat16(memorySegment, blockOffset);
+        float dmin = readFloat16(memorySegment, blockOffset + 2);
+        long scalesOffset = blockOffset + 4;
+        long qhOffset = blockOffset + 16;  // 4 + 12
+        long qsOffset = blockOffset + 48;  // 4 + 12 + 32
+
+        int group = withinBlock / 64;
+        int inGroup = withinBlock % 64;
+        boolean isHigh = inGroup >= 32;
+        int l = isHigh ? inGroup - 32 : inGroup;
+        int subBlock = isHigh ? group * 2 + 1 : group * 2;
+
+        int sc = Q4_KFloatTensor.getScaleMinK4(subBlock, memorySegment, scalesOffset, false);
+        int m = Q4_KFloatTensor.getScaleMinK4(subBlock, memorySegment, scalesOffset, true);
+
+        byte qsByte = readByte(memorySegment, qsOffset + group * 32 + l);
+        int nibble = isHigh ? ((Byte.toUnsignedInt(qsByte) >> 4) & 0xF) : (Byte.toUnsignedInt(qsByte) & 0xF);
+
+        int qhBitPos = isHigh ? 2 * group + 1 : 2 * group;
+        int qhBit = (Byte.toUnsignedInt(readByte(memorySegment, qhOffset + l)) >> qhBitPos) & 1;
+
+        int quant = nibble | (qhBit << 4);
+        return d * sc * quant - dmin * m;
+    }
+
+    @Override
+    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor f32) {
+            return vectorDot(this, thisOffset, f32, thatOffset, size);
+        }
+        return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
+    }
+
+    private static float vectorDot(Q5_KFloatTensor thiz, int thisOffset, F32FloatTensor that, int thatOffset, int size) {
+        float result = 0f;
+        int j = 0;
+
+        assert Integer.bitCount(BLOCK_SIZE) == 1 : "power of 2";
+        int alignmentBound = Math.min(size, -thisOffset & (BLOCK_SIZE - 1));
+        if (alignmentBound > 0) {
+            result += FloatTensor.scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
+            j += alignmentBound;
+        }
+
+        FloatVector val = FloatVector.zero(F_SPECIES);
+        FloatVector val2 = FloatVector.zero(F_SPECIES);
+        long blockOffset = (long) (thisOffset + j) / BLOCK_SIZE * TYPE_SIZE;
+        int upperBound = j + (size - j) / BLOCK_SIZE * BLOCK_SIZE;
+
+        for (; j < upperBound; j += BLOCK_SIZE, blockOffset += TYPE_SIZE) {
+            float d = readFloat16(thiz.memorySegment, blockOffset);
+            float dmin = readFloat16(thiz.memorySegment, blockOffset + 2);
+            long scalesOff = blockOffset + 4;
+            long qhOff = blockOffset + 16;
+            long qsOff = blockOffset + 48;
+            var qh0 = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, thiz.memorySegment, qhOff, ByteOrder.LITTLE_ENDIAN);
+            var qh1 = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, thiz.memorySegment, qhOff + 16, ByteOrder.LITTLE_ENDIAN);
+
+            for (int g = 0; g < 4; g++) {
+                int loSubBlock = g * 2;
+                int hiSubBlock = loSubBlock + 1;
+                float d1 = d * Q4_KFloatTensor.getScaleMinK4(loSubBlock, thiz.memorySegment, scalesOff, false);
+                float m1 = dmin * Q4_KFloatTensor.getScaleMinK4(loSubBlock, thiz.memorySegment, scalesOff, true);
+                float d2 = d * Q4_KFloatTensor.getScaleMinK4(hiSubBlock, thiz.memorySegment, scalesOff, false);
+                float m2 = dmin * Q4_KFloatTensor.getScaleMinK4(hiSubBlock, thiz.memorySegment, scalesOff, true);
+                int qhBitPosLo = 2 * g;
+                int qhBitPosHi = qhBitPosLo + 1;
+                long groupQsOff = qsOff + (long) g * 32;
+                var d1Vec = FloatVector.broadcast(F_SPECIES, d1);
+                var d2Vec = FloatVector.broadcast(F_SPECIES, d2);
+                var negM1Vec = FloatVector.broadcast(F_SPECIES, -m1);
+                var negM2Vec = FloatVector.broadcast(F_SPECIES, -m2);
+
+                for (int c = 0; c < 2; c++) {
+                    int loBase = thatOffset + j + g * 64 + c * 16;
+                    int hiBase = thatOffset + j + g * 64 + 32 + c * 16;
+
+                    var wBytes = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, thiz.memorySegment,
+                            groupQsOff + c * 16L, ByteOrder.LITTLE_ENDIAN);
+                    var loQ = wBytes.and((byte) 0xF);
+                    var hiQ = wBytes.lanewise(VectorOperators.LSHR, 4);
+
+                    var qhBytes = c == 0 ? qh0 : qh1;
+                    loQ = loQ.or(qhBytes.lanewise(VectorOperators.LSHR, qhBitPosLo).and((byte) 1).lanewise(VectorOperators.LSHL, 4));
+                    hiQ = hiQ.or(qhBytes.lanewise(VectorOperators.LSHR, qhBitPosHi).and((byte) 1).lanewise(VectorOperators.LSHL, 4));
+
+                    switch (F_SPECIES.vectorBitSize()) {
+                        case 512 -> {
+                            var loQf = loQ.castShape(F_SPECIES, 0).reinterpretAsFloats();
+                            var hiQf = hiQ.castShape(F_SPECIES, 0).reinterpretAsFloats();
+                            val = loQf.fma(d1Vec, negM1Vec).fma(that.getFloatVector(F_SPECIES, loBase), val);
+                            val2 = hiQf.fma(d2Vec, negM2Vec).fma(that.getFloatVector(F_SPECIES, hiBase), val2);
+                        }
+                        case 256 -> {
+                            var loQf0 = loQ.castShape(F_SPECIES, 0).reinterpretAsFloats();
+                            var loQf1 = loQ.castShape(F_SPECIES, 1).reinterpretAsFloats();
+                            var hiQf0 = hiQ.castShape(F_SPECIES, 0).reinterpretAsFloats();
+                            var hiQf1 = hiQ.castShape(F_SPECIES, 1).reinterpretAsFloats();
+                            val = loQf0.fma(d1Vec, negM1Vec).fma(that.getFloatVector(F_SPECIES, loBase), val);
+                            val = loQf1.fma(d1Vec, negM1Vec).fma(that.getFloatVector(F_SPECIES, loBase + F_SPECIES.length()), val);
+                            val2 = hiQf0.fma(d2Vec, negM2Vec).fma(that.getFloatVector(F_SPECIES, hiBase), val2);
+                            val2 = hiQf1.fma(d2Vec, negM2Vec).fma(that.getFloatVector(F_SPECIES, hiBase + F_SPECIES.length()), val2);
+                        }
+                        case 128 -> {
+                            for (int p = 0; p < 4; p++) {
+                                int off = p * F_SPECIES.length();
+                                var loQf = loQ.castShape(F_SPECIES, p).reinterpretAsFloats();
+                                var hiQf = hiQ.castShape(F_SPECIES, p).reinterpretAsFloats();
+                                val = loQf.fma(d1Vec, negM1Vec).fma(that.getFloatVector(F_SPECIES, loBase + off), val);
+                                val2 = hiQf.fma(d2Vec, negM2Vec).fma(that.getFloatVector(F_SPECIES, hiBase + off), val2);
+                            }
+                        }
+                        default -> throw new UnsupportedOperationException(F_SPECIES.toString());
+                    }
+                }
+            }
+        }
+
+        result += val.add(val2).reduceLanes(VectorOperators.ADD);
+
+        if (j < size) {
+            result += FloatTensor.scalarDot(thiz, thisOffset + j, that, thatOffset + j, size - j);
+        }
+
+        return result;
+    }
+}
+
+final class Q6_KFloatTensor extends SegmentFloatTensor {
+
+    static final int BLOCK_SIZE = GGMLType.QK_K;
+    static final int TYPE_SIZE = GGMLType.Q6_K.getTypeSize();
+
+    final MemorySegment memorySegment;
+
+    public Q6_KFloatTensor(long size, MemorySegment memorySegment) {
+        super(size, memorySegment);
+        this.memorySegment = memorySegment;
+    }
+    @Override public void setFloat(int index, float value) { throw new UnsupportedOperationException("setFloat"); }
+    @Override FloatVector getFloatVector(VectorSpecies<Float> species, int index) { throw new UnsupportedOperationException("getFloatVector"); }
+    @Override public GGMLType type() { return GGMLType.Q6_K; }
+
+    // Block layout: ql[128] | qh[64] | scales[16] (int8) | d (fp16)
+    // 256 elements per block, 6-bit quants: 4 from ql nibble + 2 from qh
+
+    @Override
+    public float getFloat(long index) {
+        long blockIndex = index / BLOCK_SIZE;
+        int withinBlock = (int) (index % BLOCK_SIZE);
+        long blockOffset = blockIndex * TYPE_SIZE;
+        long qlOff = blockOffset;
+        long qhOff = blockOffset + 128;
+        long scOff = blockOffset + 192;
+        float d = readFloat16(memorySegment, blockOffset + 208);
+
+        int half = withinBlock / 128;
+        int rem128 = withinBlock % 128;
+        int sub32 = rem128 / 32;
+        int l = rem128 % 32;
+
+        long qlBase = qlOff + half * 64;
+        long qhBase = qhOff + half * 32;
+
+        int qlNibble, qhShift;
+        switch (sub32) {
+            case 0 -> { qlNibble = Byte.toUnsignedInt(readByte(memorySegment, qlBase + l)) & 0xF; qhShift = 0; }
+            case 1 -> { qlNibble = Byte.toUnsignedInt(readByte(memorySegment, qlBase + 32 + l)) & 0xF; qhShift = 2; }
+            case 2 -> { qlNibble = (Byte.toUnsignedInt(readByte(memorySegment, qlBase + l)) >> 4) & 0xF; qhShift = 4; }
+            case 3 -> { qlNibble = (Byte.toUnsignedInt(readByte(memorySegment, qlBase + 32 + l)) >> 4) & 0xF; qhShift = 6; }
+            default -> throw new IllegalStateException();
+        }
+
+        int qhBits = (Byte.toUnsignedInt(readByte(memorySegment, qhBase + l)) >> qhShift) & 3;
+        int q6 = (qlNibble | (qhBits << 4)) - 32;
+        int sc = readByte(memorySegment, scOff + half * 8 + sub32 * 2 + l / 16); // signed int8
+
+        return d * sc * q6;
+    }
+
+    @Override
+    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor) {
+            return vectorDot(this, thisOffset, that, thatOffset, size);
+        } else {
+            return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
+        }
+    }
+
+    @Override
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+        if (sequenceLength == 1) {
+            gemv(that, 0, out, 0, dim0, dim1, thisOffset);
+            return;
+        }
+        if (FloatTensor.USE_VECTOR_API && F_SPECIES.vectorBitSize() == 512
+                && that instanceof F32FloatTensor xf && out instanceof F32FloatTensor of && that != out
+                && dim1 % BLOCK_SIZE == 0 && thisOffset % BLOCK_SIZE == 0) {
+            vectorGemm512(this, xf, of, thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
+            return;
+        }
+        super.gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
+    }
+
+    private static void vectorGemm512(Q6_KFloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
+                                      int thatStride, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+        final int seqTile = Math.max(4, RuntimeFlags.GEMM_SEQ_TILE);
+        final int rowTile = Math.max(1, RuntimeFlags.GEMM_ROW_TILE);
+        final int threads = RuntimeFlags.GEMM_THREADS;
+        final int seqTileCount = (sequenceLength + seqTile - 1) / seqTile;
+        final int rowTileCount = (dim0 + rowTile - 1) / rowTile;
+        int tileCount = rowTileCount * seqTileCount;
+        if (tileCount == 0) {
+            return;
+        }
+        int workers = Math.min(tileCount, Math.max(1, threads));
+        Parallel.parallelFor(0, workers, worker -> {
+            int tileStart = (int) ((long) tileCount * worker / workers);
+            int tileEnd = (int) ((long) tileCount * (worker + 1) / workers);
+            for (int tileIndex = tileStart; tileIndex < tileEnd; tileIndex++) {
+                int rowStart = (tileIndex / seqTileCount) * rowTile;
+                int s0 = (tileIndex % seqTileCount) * seqTile;
+                int rowEnd = Math.min(dim0, rowStart + rowTile);
+                int seqEnd = Math.min(sequenceLength, s0 + seqTile);
+                for (int row = rowStart; row < rowEnd; row++) {
+                    int s = s0;
+                    for (; s + 3 < seqEnd; s += 4) {
+                        gemm512Tile1x4(thiz, that, out, thatStride, outStride, dim1, thisOffset, row, s);
+                    }
+                    for (; s < seqEnd; s++) {
+                        out.setFloat(s * outStride + row, vectorDot(thiz, thisOffset + row * dim1, that, s * thatStride, dim1));
+                    }
+                }
+            }
+        });
+    }
+
+    // 1 weight row x 4 activation columns: the (expensive) 6-bit unpack + scale multiply is
+    // done once per 64-value group and reused by all 4 columns.
+    private static void gemm512Tile1x4(Q6_KFloatTensor thiz, F32FloatTensor x, F32FloatTensor out,
+                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+        final MemorySegment w = thiz.memorySegment;
+        long blockOffset = (long) ((thisOffset + row * dim1) / BLOCK_SIZE) * TYPE_SIZE;
+        final MemorySegment xs = x.vseg;
+        long x0 = x.vbase + 4L * ((long) s * thatStride);
+        long x1 = x0 + 4L * thatStride;
+        long x2 = x1 + 4L * thatStride;
+        long x3 = x2 + 4L * thatStride;
+        FloatVector c0 = FloatVector.zero(F_SPECIES);
+        FloatVector c1 = FloatVector.zero(F_SPECIES);
+        FloatVector c2 = FloatVector.zero(F_SPECIES);
+        FloatVector c3 = FloatVector.zero(F_SPECIES);
+        for (int j = 0; j < dim1; j += BLOCK_SIZE, blockOffset += TYPE_SIZE) {
+            long qlOff = blockOffset;
+            long qhOff = blockOffset + 128;
+            long scOff = blockOffset + 192;
+            float d = fp16ToFloatNoIntrinsic(readShort(w, blockOffset + 208));
+            for (int h = 0; h < 2; h++) {
+                long qlBase = qlOff + h * 64;
+                long qhBase = qhOff + h * 32;
+                long base = 4L * (j + h * 128);
+                for (int c = 0; c < 2; c++) {
+                    var qlA = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, qlBase + c * 16L, ByteOrder.LITTLE_ENDIAN);
+                    var qlB = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, qlBase + 32 + c * 16L, ByteOrder.LITTLE_ENDIAN);
+                    var qhV = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, qhBase + c * 16L, ByteOrder.LITTLE_ENDIAN);
+                    var q0 = qlA.and((byte) 0xF).or(qhV.and((byte) 3).lanewise(VectorOperators.LSHL, 4)).sub((byte) 32);
+                    var q1 = qlB.and((byte) 0xF).or(qhV.lanewise(VectorOperators.LSHR, 2).and((byte) 3).lanewise(VectorOperators.LSHL, 4)).sub((byte) 32);
+                    var q2 = qlA.lanewise(VectorOperators.LSHR, 4).or(qhV.lanewise(VectorOperators.LSHR, 4).and((byte) 3).lanewise(VectorOperators.LSHL, 4)).sub((byte) 32);
+                    var q3 = qlB.lanewise(VectorOperators.LSHR, 4).or(qhV.lanewise(VectorOperators.LSHR, 6).and((byte) 3).lanewise(VectorOperators.LSHL, 4)).sub((byte) 32);
+                    var w0 = ((FloatVector) q0.castShape(F_SPECIES, 0)).mul(FloatVector.broadcast(F_SPECIES, d * readByte(w, scOff + h * 8 + c)));
+                    var w1 = ((FloatVector) q1.castShape(F_SPECIES, 0)).mul(FloatVector.broadcast(F_SPECIES, d * readByte(w, scOff + h * 8 + 2 + c)));
+                    var w2 = ((FloatVector) q2.castShape(F_SPECIES, 0)).mul(FloatVector.broadcast(F_SPECIES, d * readByte(w, scOff + h * 8 + 4 + c)));
+                    var w3 = ((FloatVector) q3.castShape(F_SPECIES, 0)).mul(FloatVector.broadcast(F_SPECIES, d * readByte(w, scOff + h * 8 + 6 + c)));
+                    long o0 = base + c * 16L * 4L;
+                    long o1 = o0 + 32L * 4L;
+                    long o2 = o0 + 64L * 4L;
+                    long o3 = o0 + 96L * 4L;
+                    FloatVector t, t2;
+                    t = w0.mul(FloatVector.fromMemorySegment(F_SPECIES, xs, x0 + o0, ByteOrder.LITTLE_ENDIAN));
+                    t = w1.fma(FloatVector.fromMemorySegment(F_SPECIES, xs, x0 + o1, ByteOrder.LITTLE_ENDIAN), t);
+                    t2 = w2.mul(FloatVector.fromMemorySegment(F_SPECIES, xs, x0 + o2, ByteOrder.LITTLE_ENDIAN));
+                    t2 = w3.fma(FloatVector.fromMemorySegment(F_SPECIES, xs, x0 + o3, ByteOrder.LITTLE_ENDIAN), t2);
+                    c0 = c0.add(t.add(t2));
+                    t = w0.mul(FloatVector.fromMemorySegment(F_SPECIES, xs, x1 + o0, ByteOrder.LITTLE_ENDIAN));
+                    t = w1.fma(FloatVector.fromMemorySegment(F_SPECIES, xs, x1 + o1, ByteOrder.LITTLE_ENDIAN), t);
+                    t2 = w2.mul(FloatVector.fromMemorySegment(F_SPECIES, xs, x1 + o2, ByteOrder.LITTLE_ENDIAN));
+                    t2 = w3.fma(FloatVector.fromMemorySegment(F_SPECIES, xs, x1 + o3, ByteOrder.LITTLE_ENDIAN), t2);
+                    c1 = c1.add(t.add(t2));
+                    t = w0.mul(FloatVector.fromMemorySegment(F_SPECIES, xs, x2 + o0, ByteOrder.LITTLE_ENDIAN));
+                    t = w1.fma(FloatVector.fromMemorySegment(F_SPECIES, xs, x2 + o1, ByteOrder.LITTLE_ENDIAN), t);
+                    t2 = w2.mul(FloatVector.fromMemorySegment(F_SPECIES, xs, x2 + o2, ByteOrder.LITTLE_ENDIAN));
+                    t2 = w3.fma(FloatVector.fromMemorySegment(F_SPECIES, xs, x2 + o3, ByteOrder.LITTLE_ENDIAN), t2);
+                    c2 = c2.add(t.add(t2));
+                    t = w0.mul(FloatVector.fromMemorySegment(F_SPECIES, xs, x3 + o0, ByteOrder.LITTLE_ENDIAN));
+                    t = w1.fma(FloatVector.fromMemorySegment(F_SPECIES, xs, x3 + o1, ByteOrder.LITTLE_ENDIAN), t);
+                    t2 = w2.mul(FloatVector.fromMemorySegment(F_SPECIES, xs, x3 + o2, ByteOrder.LITTLE_ENDIAN));
+                    t2 = w3.fma(FloatVector.fromMemorySegment(F_SPECIES, xs, x3 + o3, ByteOrder.LITTLE_ENDIAN), t2);
+                    c3 = c3.add(t.add(t2));
+                }
+            }
+        }
+        int o = s * outStride + row;
+        out.setFloat(o, c0.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o + outStride, c1.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o + 2 * outStride, c2.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o + 3 * outStride, c3.reduceLanes(VectorOperators.ADD));
+    }
+
+    private static float vectorDot(Q6_KFloatTensor thiz, int thisOffset, FloatTensor that, int thatOffset, int size) {
+        float result = 0f;
+        int j = 0;
+
+        assert Integer.bitCount(BLOCK_SIZE) == 1 : "power of 2";
+        int alignmentBound = Math.min(size, -thisOffset & (BLOCK_SIZE - 1));
+        if (alignmentBound > 0) {
+            result += FloatTensor.scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
+            j += alignmentBound;
+        }
+
+        FloatVector acc = FloatVector.zero(F_SPECIES);
+        long blockOffset = (long) (thisOffset + j) / BLOCK_SIZE * TYPE_SIZE;
+        int upperBound = j + (size - j) / BLOCK_SIZE * BLOCK_SIZE;
+
+        for (; j < upperBound; j += BLOCK_SIZE, blockOffset += TYPE_SIZE) {
+            long qlOff = blockOffset;
+            long qhOff = blockOffset + 128;
+            long scOff = blockOffset + 192;
+            // NOTE: Deliberately avoid Float.float16ToFloat here.
+            // In native-image builds, Graal can lower that intrinsic to VCVTPH2PS with
+            // an illegal high XMM operand under heavy vector register pressure in Q6_K
+            // vectorDot, causing a compile-time crash. Keep this software conversion
+            // until the Graal backend bug is fixed.
+            float d = fp16ToFloatNoIntrinsic(readShort(thiz.memorySegment, blockOffset + 208));
+
+            for (int h = 0; h < 2; h++) {
+                long qlBase = qlOff + h * 64;
+                long qhBase = qhOff + h * 32;
+
+                int base = thatOffset + j + h * 128;
+                for (int c = 0; c < 2; c++) {
+                    var qlA = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, thiz.memorySegment,
+                            qlBase + c * 16L, ByteOrder.LITTLE_ENDIAN);
+                    var qlB = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, thiz.memorySegment,
+                            qlBase + 32 + c * 16L, ByteOrder.LITTLE_ENDIAN);
+                    var qhV = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, thiz.memorySegment,
+                            qhBase + c * 16L, ByteOrder.LITTLE_ENDIAN);
+
+                    var q0 = qlA.and((byte) 0xF).or(qhV.and((byte) 3).lanewise(VectorOperators.LSHL, 4)).sub((byte) 32);
+                    var q1 = qlB.and((byte) 0xF).or(qhV.lanewise(VectorOperators.LSHR, 2).and((byte) 3).lanewise(VectorOperators.LSHL, 4)).sub((byte) 32);
+                    var q2 = qlA.lanewise(VectorOperators.LSHR, 4).or(qhV.lanewise(VectorOperators.LSHR, 4).and((byte) 3).lanewise(VectorOperators.LSHL, 4)).sub((byte) 32);
+                    var q3 = qlB.lanewise(VectorOperators.LSHR, 4).or(qhV.lanewise(VectorOperators.LSHR, 6).and((byte) 3).lanewise(VectorOperators.LSHL, 4)).sub((byte) 32);
+
+                    float ds0 = d * readByte(thiz.memorySegment, scOff + h * 8 + c);
+                    float ds1 = d * readByte(thiz.memorySegment, scOff + h * 8 + 2 + c);
+                    float ds2 = d * readByte(thiz.memorySegment, scOff + h * 8 + 4 + c);
+                    float ds3 = d * readByte(thiz.memorySegment, scOff + h * 8 + 6 + c);
+
+                    var ds0Vec = FloatVector.broadcast(F_SPECIES, ds0);
+                    var ds1Vec = FloatVector.broadcast(F_SPECIES, ds1);
+                    var ds2Vec = FloatVector.broadcast(F_SPECIES, ds2);
+                    var ds3Vec = FloatVector.broadcast(F_SPECIES, ds3);
+
+                    int sg0Idx = base + c * 16;
+                    int sg1Idx = base + 32 + c * 16;
+                    int sg2Idx = base + 64 + c * 16;
+                    int sg3Idx = base + 96 + c * 16;
+
+                    switch (F_SPECIES.vectorBitSize()) {
+                        case 512 -> {
+                            var q0f = q0.castShape(F_SPECIES, 0).reinterpretAsFloats();
+                            var q1f = q1.castShape(F_SPECIES, 0).reinterpretAsFloats();
+                            var q2f = q2.castShape(F_SPECIES, 0).reinterpretAsFloats();
+                            var q3f = q3.castShape(F_SPECIES, 0).reinterpretAsFloats();
+                            acc = q0f.mul(ds0Vec).fma(that.getFloatVector(F_SPECIES, sg0Idx), acc);
+                            acc = q1f.mul(ds1Vec).fma(that.getFloatVector(F_SPECIES, sg1Idx), acc);
+                            acc = q2f.mul(ds2Vec).fma(that.getFloatVector(F_SPECIES, sg2Idx), acc);
+                            acc = q3f.mul(ds3Vec).fma(that.getFloatVector(F_SPECIES, sg3Idx), acc);
+                        }
+                        case 256 -> {
+                            for (int p = 0; p < 2; p++) {
+                                int off = p * F_SPECIES.length();
+                                var q0f = q0.castShape(F_SPECIES, p).reinterpretAsFloats();
+                                var q1f = q1.castShape(F_SPECIES, p).reinterpretAsFloats();
+                                var q2f = q2.castShape(F_SPECIES, p).reinterpretAsFloats();
+                                var q3f = q3.castShape(F_SPECIES, p).reinterpretAsFloats();
+                                acc = q0f.mul(ds0Vec).fma(that.getFloatVector(F_SPECIES, sg0Idx + off), acc);
+                                acc = q1f.mul(ds1Vec).fma(that.getFloatVector(F_SPECIES, sg1Idx + off), acc);
+                                acc = q2f.mul(ds2Vec).fma(that.getFloatVector(F_SPECIES, sg2Idx + off), acc);
+                                acc = q3f.mul(ds3Vec).fma(that.getFloatVector(F_SPECIES, sg3Idx + off), acc);
+                            }
+                        }
+                        case 128 -> {
+                            for (int p = 0; p < 4; p++) {
+                                int off = p * F_SPECIES.length();
+                                var q0f = q0.castShape(F_SPECIES, p).reinterpretAsFloats();
+                                var q1f = q1.castShape(F_SPECIES, p).reinterpretAsFloats();
+                                var q2f = q2.castShape(F_SPECIES, p).reinterpretAsFloats();
+                                var q3f = q3.castShape(F_SPECIES, p).reinterpretAsFloats();
+                                acc = q0f.mul(ds0Vec).fma(that.getFloatVector(F_SPECIES, sg0Idx + off), acc);
+                                acc = q1f.mul(ds1Vec).fma(that.getFloatVector(F_SPECIES, sg1Idx + off), acc);
+                                acc = q2f.mul(ds2Vec).fma(that.getFloatVector(F_SPECIES, sg2Idx + off), acc);
+                                acc = q3f.mul(ds3Vec).fma(that.getFloatVector(F_SPECIES, sg3Idx + off), acc);
+                            }
+                        }
+                        default -> throw new UnsupportedOperationException(F_SPECIES.toString());
+                    }
+                }
+            }
+        }
+
+        result += acc.reduceLanes(VectorOperators.ADD);
+
+        if (j < size) {
+            result += FloatTensor.scalarDot(thiz, thisOffset + j, that, thatOffset + j, size - j);
+        }
+
+        return result;
+    }
+
+}
+
+final class Q8_0FloatTensor extends SegmentFloatTensor {
+
+    final MemorySegment memorySegment;
+
+    public Q8_0FloatTensor(long size, MemorySegment memorySegment) {
+        super(size, memorySegment);
+        this.memorySegment = memorySegment;
+    }
+
+    @Override
+    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+        if (that instanceof F32FloatTensor x && out instanceof F32FloatTensor o && that != out
+                && Kernels.INSTANCE.gemvQ8F32(this, thisOffset, x, thatOffset, o, outOffset, dim0, dim1)) {
+            return;
+        }
+        super.gemv(that, thatOffset, out, outOffset, dim0, dim1, thisOffset);
+    }
+
+    @Override
+    public void setFloat(int index, float value) {
+        throw new UnsupportedOperationException("setFloat");
+    }
+
+    @Override
+    FloatVector getFloatVector(VectorSpecies<Float> species, int index) {
+        throw new UnsupportedOperationException("getFloatVector");
+    }
+
+    @Override
+    public GGMLType type() {
+        return GGMLType.Q8_0;
+    }
+
+    @Override
+    public float getFloat(long index) {
+        long blockIndex = index / GGMLType.Q8_0.getBlockSize();
+        long withinBlockIndex = index % GGMLType.Q8_0.getBlockSize();
+        long blockOffset = blockIndex * GGMLType.Q8_0.getTypeSize();
+        byte quant = readByte(memorySegment, blockOffset + Float16.BYTES + withinBlockIndex);
+        float scale = readFloat16(memorySegment, blockOffset);
+        return quant * scale;
+    }
+
+    @Override
+    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor f32) {
+            if (F_SPECIES.vectorBitSize() == 512) {
+                return vectorDot512F32(this, thisOffset, f32, thatOffset, size);
+            }
+            return vectorDot(this, thisOffset, f32, thatOffset, size);
+        }
+        return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
+    }
+
+    @Override
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+        if (sequenceLength == 1) {
+            gemv(that, 0, out, 0, dim0, dim1, thisOffset);
+            return;
+        }
+        if (that instanceof F32FloatTensor x && out instanceof F32FloatTensor o && that != out
+                && Kernels.INSTANCE.gemmQ8F32(this, thisOffset, x, thatStride, o, outStride, sequenceLength, dim0, dim1)) {
+            return;
+        }
+        super.gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
+    }
+
+    // gemv with 4 weight-row streams sharing each activation load (decode is dominated by
+    // streaming the weights; 4 parallel row streams use the memory pipeline better).
+    static void vectorGemv512(Q8_0FloatTensor thiz, F32FloatTensor x, int thatOffset,
+                                      F32FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+        final int chunk = 64;
+        int chunks = (dim0 + chunk - 1) / chunk;
+        Parallel.parallelFor(0, chunks, ci -> {
+            int rowStart = ci * chunk;
+            int rowEnd = Math.min(dim0, rowStart + chunk);
+            int r = rowStart;
+            for (; r + 3 < rowEnd; r += 4) {
+                gemv512Rows4(thiz, x, thatOffset, out, outOffset, dim1, thisOffset, r);
+            }
+            for (; r < rowEnd; r++) {
+                out.setFloat(outOffset + r, vectorDot512F32(thiz, thisOffset + r * dim1, x, thatOffset, dim1));
+            }
+        });
+    }
+
+    private static void gemv512Rows4(Q8_0FloatTensor thiz, F32FloatTensor x, int thatOffset,
+                                     F32FloatTensor out, int outOffset, int dim1, int thisOffset, int row) {
+        final int blockSize = GGMLType.Q8_0.getBlockSize();
+        final int typeSize = GGMLType.Q8_0.getTypeSize();
+        final MemorySegment w = thiz.memorySegment;
+        final long rowStride = (long) (dim1 / blockSize) * typeSize;
+        long b0 = (long) ((thisOffset + row * dim1) / blockSize) * typeSize;
+        long b1 = b0 + rowStride;
+        long b2 = b1 + rowStride;
+        long b3 = b2 + rowStride;
+        final MemorySegment xs = x.vseg;
+        long xb = x.vbase + 4L * thatOffset;
+        FloatVector c0 = FloatVector.zero(F_SPECIES);
+        FloatVector c1 = FloatVector.zero(F_SPECIES);
+        FloatVector c2 = FloatVector.zero(F_SPECIES);
+        FloatVector c3 = FloatVector.zero(F_SPECIES);
+        for (int j = 0; j < dim1; j += blockSize, b0 += typeSize, b1 += typeSize, b2 += typeSize, b3 += typeSize) {
+            var a0 = FloatVector.fromMemorySegment(F_SPECIES, xs, xb + 4L * j, ByteOrder.LITTLE_ENDIAN);
+            var a1 = FloatVector.fromMemorySegment(F_SPECIES, xs, xb + 4L * j + 64, ByteOrder.LITTLE_ENDIAN);
+            var vd0 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b0));
+            var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + Float16.BYTES, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + Float16.BYTES + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            c0 = c0.add(w01.fma(a1, w00.mul(a0)));
+            var vd1 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b1));
+            var w10 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + Float16.BYTES, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
+            var w11 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + Float16.BYTES + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
+            c1 = c1.add(w11.fma(a1, w10.mul(a0)));
+            var vd2 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b2));
+            var w20 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b2 + Float16.BYTES, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd2);
+            var w21 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b2 + Float16.BYTES + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd2);
+            c2 = c2.add(w21.fma(a1, w20.mul(a0)));
+            var vd3 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b3));
+            var w30 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b3 + Float16.BYTES, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd3);
+            var w31 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b3 + Float16.BYTES + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd3);
+            c3 = c3.add(w31.fma(a1, w30.mul(a0)));
+        }
+        out.setFloat(outOffset + row, c0.reduceLanes(VectorOperators.ADD));
+        out.setFloat(outOffset + row + 1, c1.reduceLanes(VectorOperators.ADD));
+        out.setFloat(outOffset + row + 2, c2.reduceLanes(VectorOperators.ADD));
+        out.setFloat(outOffset + row + 3, c3.reduceLanes(VectorOperators.ADD));
+    }
+
+    /**
+     * AVX-512 GEMM tuned for the Graal JIT, which only allocates zmm0-zmm15: the register tile is
+     * 3 weight rows x 2 activation columns (6 accumulators + 6 pre-scaled weight vectors + temps).
+     * Weights are decoded once per block (sign-extend + scale) and shared by both columns; the two
+     * half-block products are combined in a mul/fma tree so each accumulator only carries one
+     * 3-cycle ADD per block instead of a chain of two 4-cycle FMAs.
+     */
+
+
+    // 4 rows x 4 cols, plain FMA accumulation (no tree): 16 accumulators + 8 weight vectors only
+    // pays off when the JIT can allocate zmm16-zmm31 (C2); see JavaKernels.GEMM_TILE_4X4.
+
+
+
+
+
+    private static void gemm512Tile3x2F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
+                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+        final int blockSize = GGMLType.Q8_0.getBlockSize();
+        final int typeSize = GGMLType.Q8_0.getTypeSize();
+        final MemorySegment w = thiz.memorySegment;
+        final long rowStride = (long) dim1 / blockSize * typeSize;
+        long b0 = (long) (thisOffset + row * dim1) / blockSize * typeSize;
+        long b1 = b0 + rowStride;
+        long b2 = b1 + rowStride;
+        int x0 = s * thatStride;
+        int x1 = x0 + thatStride;
+        FloatVector c00 = FloatVector.zero(F_SPECIES), c01 = FloatVector.zero(F_SPECIES);
+        FloatVector c10 = FloatVector.zero(F_SPECIES), c11 = FloatVector.zero(F_SPECIES);
+        FloatVector c20 = FloatVector.zero(F_SPECIES), c21 = FloatVector.zero(F_SPECIES);
+        for (int j = 0; j < dim1; j += blockSize, b0 += typeSize, b1 += typeSize, b2 += typeSize) {
+            var vd0 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b0));
+            var vd1 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b1));
+            var vd2 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b2));
+            var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + Float16.BYTES, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + Float16.BYTES + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var w10 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + Float16.BYTES, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
+            var w11 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + Float16.BYTES + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
+            var w20 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b2 + Float16.BYTES, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd2);
+            var w21 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b2 + Float16.BYTES + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd2);
+            FloatVector a0, a1;
+            a0 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j), ByteOrder.LITTLE_ENDIAN);
+            a1 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j + 16), ByteOrder.LITTLE_ENDIAN);
+            c00 = c00.add(w01.fma(a1, w00.mul(a0)));
+            c10 = c10.add(w11.fma(a1, w10.mul(a0)));
+            c20 = c20.add(w21.fma(a1, w20.mul(a0)));
+            a0 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x1 + j), ByteOrder.LITTLE_ENDIAN);
+            a1 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x1 + j + 16), ByteOrder.LITTLE_ENDIAN);
+            c01 = c01.add(w01.fma(a1, w00.mul(a0)));
+            c11 = c11.add(w11.fma(a1, w10.mul(a0)));
+            c21 = c21.add(w21.fma(a1, w20.mul(a0)));
+        }
+        int o0 = s * outStride + row;
+        int o1 = o0 + outStride;
+        FloatTensor.putFloat(outAddr + 4L * (o0), c00.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o0 + 1), c10.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o0 + 2), c20.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o1), c01.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o1 + 1), c11.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o1 + 2), c21.reduceLanes(VectorOperators.ADD));
+    }
+
+    private static void gemm512Tile3x1F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
+                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+        final int blockSize = GGMLType.Q8_0.getBlockSize();
+        final int typeSize = GGMLType.Q8_0.getTypeSize();
+        final MemorySegment w = thiz.memorySegment;
+        final long rowStride = (long) dim1 / blockSize * typeSize;
+        long b0 = (long) (thisOffset + row * dim1) / blockSize * typeSize;
+        long b1 = b0 + rowStride;
+        long b2 = b1 + rowStride;
+        int x0 = s * thatStride;
+        FloatVector c0 = FloatVector.zero(F_SPECIES);
+        FloatVector c1 = FloatVector.zero(F_SPECIES);
+        FloatVector c2 = FloatVector.zero(F_SPECIES);
+        for (int j = 0; j < dim1; j += blockSize, b0 += typeSize, b1 += typeSize, b2 += typeSize) {
+            var vd0 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b0));
+            var vd1 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b1));
+            var vd2 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b2));
+            var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + Float16.BYTES, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + Float16.BYTES + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var w10 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + Float16.BYTES, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
+            var w11 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + Float16.BYTES + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
+            var w20 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b2 + Float16.BYTES, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd2);
+            var w21 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b2 + Float16.BYTES + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd2);
+            var a0 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j), ByteOrder.LITTLE_ENDIAN);
+            var a1 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j + 16), ByteOrder.LITTLE_ENDIAN);
+            c0 = c0.add(w01.fma(a1, w00.mul(a0)));
+            c1 = c1.add(w11.fma(a1, w10.mul(a0)));
+            c2 = c2.add(w21.fma(a1, w20.mul(a0)));
+        }
+        int o0 = s * outStride + row;
+        FloatTensor.putFloat(outAddr + 4L * (o0), c0.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o0 + 1), c1.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o0 + 2), c2.reduceLanes(VectorOperators.ADD));
+    }
+
+    private static void gemm512Tile2x2F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
+                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+        final int blockSize = GGMLType.Q8_0.getBlockSize();
+        final int typeSize = GGMLType.Q8_0.getTypeSize();
+        final MemorySegment w = thiz.memorySegment;
+        final long rowStride = (long) dim1 / blockSize * typeSize;
+        long b0 = (long) (thisOffset + row * dim1) / blockSize * typeSize;
+        long b1 = b0 + rowStride;
+        int x0 = s * thatStride;
+        int x1 = x0 + thatStride;
+        FloatVector c00 = FloatVector.zero(F_SPECIES), c01 = FloatVector.zero(F_SPECIES);
+        FloatVector c10 = FloatVector.zero(F_SPECIES), c11 = FloatVector.zero(F_SPECIES);
+        for (int j = 0; j < dim1; j += blockSize, b0 += typeSize, b1 += typeSize) {
+            var vd0 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b0));
+            var vd1 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b1));
+            var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + Float16.BYTES, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + Float16.BYTES + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var w10 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + Float16.BYTES, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
+            var w11 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + Float16.BYTES + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
+            FloatVector a0, a1;
+            a0 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j), ByteOrder.LITTLE_ENDIAN);
+            a1 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j + 16), ByteOrder.LITTLE_ENDIAN);
+            c00 = c00.add(w01.fma(a1, w00.mul(a0)));
+            c10 = c10.add(w11.fma(a1, w10.mul(a0)));
+            a0 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x1 + j), ByteOrder.LITTLE_ENDIAN);
+            a1 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x1 + j + 16), ByteOrder.LITTLE_ENDIAN);
+            c01 = c01.add(w01.fma(a1, w00.mul(a0)));
+            c11 = c11.add(w11.fma(a1, w10.mul(a0)));
+        }
+        int o0 = s * outStride + row;
+        int o1 = o0 + outStride;
+        FloatTensor.putFloat(outAddr + 4L * (o0), c00.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o0 + 1), c10.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o1), c01.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o1 + 1), c11.reduceLanes(VectorOperators.ADD));
+    }
+
+    private static void gemm512Tile1x1F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
+                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+        final int blockSize = GGMLType.Q8_0.getBlockSize();
+        final int typeSize = GGMLType.Q8_0.getTypeSize();
+        final MemorySegment w = thiz.memorySegment;
+        long b0 = (long) (thisOffset + row * dim1) / blockSize * typeSize;
+        int x0 = s * thatStride;
+        FloatVector c0 = FloatVector.zero(F_SPECIES);
+        for (int j = 0; j < dim1; j += blockSize, b0 += typeSize) {
+            var vd0 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b0));
+            var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + Float16.BYTES, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + Float16.BYTES + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var a0 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j), ByteOrder.LITTLE_ENDIAN);
+            var a1 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j + 16), ByteOrder.LITTLE_ENDIAN);
+            c0 = c0.add(w01.fma(a1, w00.mul(a0)));
+        }
+        FloatTensor.putFloat(outAddr + 4L * (s * outStride + row), c0.reduceLanes(VectorOperators.ADD));
+    }
+
+        private static void gemm512Tile4x4F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
+                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+        final int blockSize = GGMLType.Q8_0.getBlockSize();
+        final int typeSize = GGMLType.Q8_0.getTypeSize();
+        final MemorySegment w = thiz.memorySegment;
+        final long rowStride = (long) dim1 / blockSize * typeSize;
+        long b0 = (long) (thisOffset + row * dim1) / blockSize * typeSize;
+        long b1 = b0 + rowStride;
+        long b2 = b1 + rowStride;
+        long b3 = b2 + rowStride;
+        int x0 = s * thatStride;
+        FloatVector c00 = FloatVector.zero(F_SPECIES), c01 = FloatVector.zero(F_SPECIES), c02 = FloatVector.zero(F_SPECIES), c03 = FloatVector.zero(F_SPECIES);
+        FloatVector c10 = FloatVector.zero(F_SPECIES), c11 = FloatVector.zero(F_SPECIES), c12 = FloatVector.zero(F_SPECIES), c13 = FloatVector.zero(F_SPECIES);
+        FloatVector c20 = FloatVector.zero(F_SPECIES), c21 = FloatVector.zero(F_SPECIES), c22 = FloatVector.zero(F_SPECIES), c23 = FloatVector.zero(F_SPECIES);
+        FloatVector c30 = FloatVector.zero(F_SPECIES), c31 = FloatVector.zero(F_SPECIES), c32 = FloatVector.zero(F_SPECIES), c33 = FloatVector.zero(F_SPECIES);
+        for (int j = 0; j < dim1; j += blockSize, b0 += typeSize, b1 += typeSize, b2 += typeSize, b3 += typeSize) {
+            // FloatTensor.fp16ToFloatNoIntrinsic: Float.float16ToFloat lowers to VCVTPH2PS which cannot encode
+            // xmm16+ (VEX); under this kernel's register pressure Graal picks one and the native
+            // image build fails (same workaround as gemma4.java)
+            var vd0 = FloatVector.broadcast(F_SPECIES, fp16ToFloatNoIntrinsic(readShort(w, b0)));
+            var vd1 = FloatVector.broadcast(F_SPECIES, fp16ToFloatNoIntrinsic(readShort(w, b1)));
+            var vd2 = FloatVector.broadcast(F_SPECIES, fp16ToFloatNoIntrinsic(readShort(w, b2)));
+            var vd3 = FloatVector.broadcast(F_SPECIES, fp16ToFloatNoIntrinsic(readShort(w, b3)));
+            var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + Float16.BYTES, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + Float16.BYTES + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var w10 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + Float16.BYTES, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
+            var w11 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + Float16.BYTES + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
+            var w20 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b2 + Float16.BYTES, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd2);
+            var w21 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b2 + Float16.BYTES + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd2);
+            var w30 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b3 + Float16.BYTES, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd3);
+            var w31 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b3 + Float16.BYTES + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd3);
+            FloatVector a0, a1;
+            a0 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j), ByteOrder.LITTLE_ENDIAN);
+            a1 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j + 16), ByteOrder.LITTLE_ENDIAN);
+            c00 = w00.fma(a0, c00); c00 = w01.fma(a1, c00);
+            c10 = w10.fma(a0, c10); c10 = w11.fma(a1, c10);
+            c20 = w20.fma(a0, c20); c20 = w21.fma(a1, c20);
+            c30 = w30.fma(a0, c30); c30 = w31.fma(a1, c30);
+            a0 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + thatStride + j), ByteOrder.LITTLE_ENDIAN);
+            a1 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + thatStride + j + 16), ByteOrder.LITTLE_ENDIAN);
+            c01 = w00.fma(a0, c01); c01 = w01.fma(a1, c01);
+            c11 = w10.fma(a0, c11); c11 = w11.fma(a1, c11);
+            c21 = w20.fma(a0, c21); c21 = w21.fma(a1, c21);
+            c31 = w30.fma(a0, c31); c31 = w31.fma(a1, c31);
+            a0 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + 2 * thatStride + j), ByteOrder.LITTLE_ENDIAN);
+            a1 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + 2 * thatStride + j + 16), ByteOrder.LITTLE_ENDIAN);
+            c02 = w00.fma(a0, c02); c02 = w01.fma(a1, c02);
+            c12 = w10.fma(a0, c12); c12 = w11.fma(a1, c12);
+            c22 = w20.fma(a0, c22); c22 = w21.fma(a1, c22);
+            c32 = w30.fma(a0, c32); c32 = w31.fma(a1, c32);
+            a0 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + 3 * thatStride + j), ByteOrder.LITTLE_ENDIAN);
+            a1 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + 3 * thatStride + j + 16), ByteOrder.LITTLE_ENDIAN);
+            c03 = w00.fma(a0, c03); c03 = w01.fma(a1, c03);
+            c13 = w10.fma(a0, c13); c13 = w11.fma(a1, c13);
+            c23 = w20.fma(a0, c23); c23 = w21.fma(a1, c23);
+            c33 = w30.fma(a0, c33); c33 = w31.fma(a1, c33);
+        }
+        int o0 = s * outStride + row;
+        int o1 = o0 + outStride;
+        int o2 = o1 + outStride;
+        int o3 = o2 + outStride;
+        FloatTensor.putFloat(outAddr + 4L * (o0), c00.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o0 + 1), c10.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o0 + 2), c20.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o0 + 3), c30.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o1), c01.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o1 + 1), c11.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o1 + 2), c21.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o1 + 3), c31.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o2), c02.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o2 + 1), c12.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o2 + 2), c22.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o2 + 3), c32.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o3), c03.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o3 + 1), c13.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o3 + 2), c23.reduceLanes(VectorOperators.ADD));
+        FloatTensor.putFloat(outAddr + 4L * (o3 + 3), c33.reduceLanes(VectorOperators.ADD));
+    }
+
+    static void vectorGemm512F32(Q8_0FloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
+                                      int thatStride, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+        final int seqTile = Math.max(1, RuntimeFlags.GEMM_SEQ_TILE);
+        final int rowTile = Math.max(1, RuntimeFlags.GEMM_ROW_TILE);
+        final int seqTileCount = (sequenceLength + seqTile - 1) / seqTile;
+        final int rowTileCount = (dim0 + rowTile - 1) / rowTile;
+        int tileCount = rowTileCount * seqTileCount;
+        if (tileCount == 0) {
+            return;
+        }
+        final long outAddr = out.memorySegment.address();
+        int workers = Math.min(tileCount, Math.max(1, RuntimeFlags.GEMM_THREADS));
+        IntConsumer action = worker -> {
+            int tileStart = (int) ((long) tileCount * worker / workers);
+            int tileEnd = (int) ((long) tileCount * (worker + 1) / workers);
+            for (int tileIndex = tileStart; tileIndex < tileEnd; tileIndex++) {
+                int rowStart = (tileIndex / seqTileCount) * rowTile;
+                int s0 = (tileIndex % seqTileCount) * seqTile;
+                int rowEnd = Math.min(dim0, rowStart + rowTile);
+                int seqEnd = Math.min(sequenceLength, s0 + seqTile);
+                int row = rowStart;
+                if (JavaKernels.GEMM_TILE_4X4) {
+                    for (; row + 3 < rowEnd; row += 4) {
+                        int s = s0;
+                        for (; s + 3 < seqEnd; s += 4) {
+                            gemm512Tile4x4F32(thiz, that.vseg, that.vbase, outAddr, thatStride, outStride, dim1, thisOffset, row, s);
+                        }
+                        for (; s < seqEnd; s++) {
+                            gemm512Tile1x1F32(thiz, that.vseg, that.vbase, outAddr, thatStride, outStride, dim1, thisOffset, row, s);
+                            gemm512Tile1x1F32(thiz, that.vseg, that.vbase, outAddr, thatStride, outStride, dim1, thisOffset, row + 1, s);
+                            gemm512Tile1x1F32(thiz, that.vseg, that.vbase, outAddr, thatStride, outStride, dim1, thisOffset, row + 2, s);
+                            gemm512Tile1x1F32(thiz, that.vseg, that.vbase, outAddr, thatStride, outStride, dim1, thisOffset, row + 3, s);
+                        }
+                    }
+                }
+                for (; row + 2 < rowEnd; row += 3) {
+                    int s = s0;
+                    for (; s + 1 < seqEnd; s += 2) {
+                        gemm512Tile3x2F32(thiz, that.vseg, that.vbase, outAddr, thatStride, outStride, dim1, thisOffset, row, s);
+                    }
+                    for (; s < seqEnd; s++) {
+                        gemm512Tile3x1F32(thiz, that.vseg, that.vbase, outAddr, thatStride, outStride, dim1, thisOffset, row, s);
+                    }
+                }
+                if (row + 1 < rowEnd) {
+                    int s = s0;
+                    for (; s + 1 < seqEnd; s += 2) {
+                        gemm512Tile2x2F32(thiz, that.vseg, that.vbase, outAddr, thatStride, outStride, dim1, thisOffset, row, s);
+                    }
+                    for (; s < seqEnd; s++) {
+                        gemm512Tile1x1F32(thiz, that.vseg, that.vbase, outAddr, thatStride, outStride, dim1, thisOffset, row, s);
+                        gemm512Tile1x1F32(thiz, that.vseg, that.vbase, outAddr, thatStride, outStride, dim1, thisOffset, row + 1, s);
+                    }
+                    row += 2;
+                }
+                for (; row < rowEnd; row++) {
+                    for (int s = s0; s < seqEnd; s++) {
+                        gemm512Tile1x1F32(thiz, that.vseg, that.vbase, outAddr, thatStride, outStride, dim1, thisOffset, row, s);
+                    }
+                }
+            }
+        };
+        Parallel.parallelFor(0, workers, action);
+    }
+
+
+    static void vectorGemm(Q8_0FloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
+                                   int thatStride, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+        final int seqTile = Math.max(1, RuntimeFlags.GEMM_SEQ_TILE);
+        final int rowTile = Math.max(1, RuntimeFlags.GEMM_ROW_TILE);
+        final int seqTileCount = (sequenceLength + seqTile - 1) / seqTile;
+        final int rowTileCount = (dim0 + rowTile - 1) / rowTile;
+        int tileCount = rowTileCount * seqTileCount;
+        if (tileCount == 0) {
+            return;
+        }
+        int workers = Math.min(tileCount, Math.max(1, RuntimeFlags.GEMM_THREADS));
+        IntConsumer action = worker -> {
+            int tileStart = (int) ((long) tileCount * worker / workers);
+            int tileEnd = (int) ((long) tileCount * (worker + 1) / workers);
+            for (int tileIndex = tileStart; tileIndex < tileEnd; tileIndex++) {
+                int rowStart = (tileIndex / seqTileCount) * rowTile;
+                int s0 = (tileIndex % seqTileCount) * seqTile;
+                int rowEnd = Math.min(dim0, rowStart + rowTile);
+                int seqEnd = Math.min(sequenceLength, s0 + seqTile);
+                for (int row = rowStart; row < rowEnd; row++) {
+                    vectorGemmRowTile(thiz, that, out, thatStride, outStride, dim1, thisOffset, row, s0, seqEnd);
+                }
+            }
+        };
+        Parallel.parallelFor(0, workers, action);
+    }
+
+    private static void vectorGemmRowTile(Q8_0FloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
+                                          int thatStride, int outStride, int dim1,
+                                          int thisOffset, int row, int seqStart, int seqEnd) {
+        final int blockSize = GGMLType.Q8_0.getBlockSize();
+        final int typeSize = GGMLType.Q8_0.getTypeSize();
+        int rowBase = thisOffset + row * dim1;
+        int seqCount = seqEnd - seqStart;
+        if (seqCount > 4) {
+            for (int s = seqStart; s < seqEnd; s += 4) {
+                vectorGemmRowTile(thiz, that, out, thatStride, outStride, dim1, thisOffset, row, s, Math.min(seqEnd, s + 4));
+            }
+            return;
+        }
+
+        float result0 = 0f;
+        float result1 = 0f;
+        float result2 = 0f;
+        float result3 = 0f;
+        int j = 0;
+        int alignmentBound = Math.min(dim1, -rowBase & (blockSize - 1));
+        if (alignmentBound > 0) {
+            result0 += scalarDot(thiz, rowBase, that, seqStart * thatStride, alignmentBound);
+            if (seqCount > 1) result1 += scalarDot(thiz, rowBase, that, (seqStart + 1) * thatStride, alignmentBound);
+            if (seqCount > 2) result2 += scalarDot(thiz, rowBase, that, (seqStart + 2) * thatStride, alignmentBound);
+            if (seqCount > 3) result3 += scalarDot(thiz, rowBase, that, (seqStart + 3) * thatStride, alignmentBound);
+            j = alignmentBound;
+        }
+
+        FloatVector val0 = FloatVector.zero(F_SPECIES);
+        FloatVector val1 = FloatVector.zero(F_SPECIES);
+        FloatVector val2 = FloatVector.zero(F_SPECIES);
+        FloatVector val3 = FloatVector.zero(F_SPECIES);
+        long blockOffset = (long) (rowBase + j) / blockSize * typeSize;
+        int upperBound = j + (dim1 - j) / blockSize * blockSize;
+        for (; j < upperBound; j += blockSize, blockOffset += typeSize) {
+            val0 = q8BlockFma(thiz, blockOffset, that, seqStart * thatStride + j, val0);
+            if (seqCount > 1) val1 = q8BlockFma(thiz, blockOffset, that, (seqStart + 1) * thatStride + j, val1);
+            if (seqCount > 2) val2 = q8BlockFma(thiz, blockOffset, that, (seqStart + 2) * thatStride + j, val2);
+            if (seqCount > 3) val3 = q8BlockFma(thiz, blockOffset, that, (seqStart + 3) * thatStride + j, val3);
+        }
+
+        result0 += val0.reduceLanes(VectorOperators.ADD);
+        if (seqCount > 1) result1 += val1.reduceLanes(VectorOperators.ADD);
+        if (seqCount > 2) result2 += val2.reduceLanes(VectorOperators.ADD);
+        if (seqCount > 3) result3 += val3.reduceLanes(VectorOperators.ADD);
+        if (j < dim1) {
+            result0 += scalarDot(thiz, rowBase + j, that, seqStart * thatStride + j, dim1 - j);
+            if (seqCount > 1) result1 += scalarDot(thiz, rowBase + j, that, (seqStart + 1) * thatStride + j, dim1 - j);
+            if (seqCount > 2) result2 += scalarDot(thiz, rowBase + j, that, (seqStart + 2) * thatStride + j, dim1 - j);
+            if (seqCount > 3) result3 += scalarDot(thiz, rowBase + j, that, (seqStart + 3) * thatStride + j, dim1 - j);
+        }
+
+        out.setFloat(seqStart * outStride + row, result0);
+        if (seqCount > 1) out.setFloat((seqStart + 1) * outStride + row, result1);
+        if (seqCount > 2) out.setFloat((seqStart + 2) * outStride + row, result2);
+        if (seqCount > 3) out.setFloat((seqStart + 3) * outStride + row, result3);
+    }
+
+    static float vectorDot512F32(Q8_0FloatTensor thiz, int thisOffset, F32FloatTensor that, int thatOffset, int size) {
+        final int blockSize = GGMLType.Q8_0.getBlockSize();
+        final int typeSize = GGMLType.Q8_0.getTypeSize();
+        final MemorySegment w = thiz.memorySegment;
+        final MemorySegment x = that.vseg;
+        final long xBase = that.vbase;
+        float result = 0f;
+        int j = 0;
+
+        int alignmentBound = Math.min(size, -thisOffset & (blockSize - 1));
+        if (alignmentBound > 0) {
+            result += FloatTensor.scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
+            j += alignmentBound;
+        }
+        assert (thisOffset + j) % blockSize == 0;
+
+        long b0 = (long) (thisOffset + j) / blockSize * typeSize;
+        int upperBound = j + (size - j) / blockSize * blockSize;
+        FloatVector c0 = FloatVector.zero(F_SPECIES);
+        FloatVector c1 = FloatVector.zero(F_SPECIES);
+        for (; j + blockSize < upperBound; j += 2 * blockSize, b0 += 2 * typeSize) {
+            var vd0 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b0));
+            var vd1 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b0 + typeSize));
+            var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + Float16.BYTES, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + Float16.BYTES + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var w10 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + typeSize + Float16.BYTES, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
+            var w11 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + typeSize + Float16.BYTES + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
+            c0 = c0.add(w01.fma(FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (thatOffset + j + 16), ByteOrder.LITTLE_ENDIAN), w00.mul(FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (thatOffset + j), ByteOrder.LITTLE_ENDIAN))));
+            c1 = c1.add(w11.fma(FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (thatOffset + j + blockSize + 16), ByteOrder.LITTLE_ENDIAN), w10.mul(FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (thatOffset + j + blockSize), ByteOrder.LITTLE_ENDIAN))));
+        }
+        result += c0.reduceLanes(VectorOperators.ADD) + c1.reduceLanes(VectorOperators.ADD);
+        // remainder block uses a fresh accumulator (see vectorDot512)
+        for (; j < upperBound; j += blockSize, b0 += typeSize) {
+            var vd0 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b0));
+            var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + Float16.BYTES, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + Float16.BYTES + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            result += w01.fma(FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (thatOffset + j + 16), ByteOrder.LITTLE_ENDIAN), w00.mul(FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (thatOffset + j), ByteOrder.LITTLE_ENDIAN))).reduceLanes(VectorOperators.ADD);
+        }
+
+        if (j < size) {
+            result += FloatTensor.scalarDot(thiz, thisOffset + j, that, thatOffset + j, size - j);
+        }
+
+        return result;
+    }
+
+    private static float vectorDot(Q8_0FloatTensor thiz, int thisOffset, F32FloatTensor that, int thatOffset, int size) {
+        float result = 0f;
+        int j = 0;
+
+        assert Integer.bitCount(GGMLType.Q8_0.getBlockSize()) == 1 : "power of 2";
+        int alignmentBound = Math.min(size, -thisOffset & (GGMLType.Q8_0.getBlockSize() - 1));
+        if (alignmentBound > 0) {
+            result += FloatTensor.scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
+            j += alignmentBound;
+        }
+        assert (thisOffset + j) % GGMLType.Q8_0.getBlockSize() == 0;
+
+        FloatVector val = FloatVector.zero(F_SPECIES);
+        long blockOffset = (long) (thisOffset + j) / GGMLType.Q8_0.getBlockSize() * GGMLType.Q8_0.getTypeSize();
+        int upperBound = j + (size - j) / GGMLType.Q8_0.getBlockSize() * GGMLType.Q8_0.getBlockSize();
+        for (; j < upperBound; j += GGMLType.Q8_0.getBlockSize(), blockOffset += GGMLType.Q8_0.getTypeSize()) {
+            val = q8BlockFma(thiz, blockOffset, that, thatOffset + j, val);
+        }
+        result += val.reduceLanes(VectorOperators.ADD);
+
+        if (j < size) {
+            result += FloatTensor.scalarDot(thiz, thisOffset + j, that, thatOffset + j, size - j);
+        }
+
+        return result;
+    }
+    static FloatVector q8BlockFma(Q8_0FloatTensor thiz, long blockOffset, F32FloatTensor x, int xOffset, FloatVector acc) {
+        float wScaleValue = readFloat16(thiz.memorySegment, blockOffset);
+        var wScale = FloatVector.broadcast(F_SPECIES, wScaleValue);
+        return switch (F_SPECIES.vectorBitSize()) {
+            case 512 -> {
+                // two 128-bit loads with part-0 casts: C2 does not intrinsify castShape with part != 0
+                var w0 = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, thiz.memorySegment, blockOffset + Float16.BYTES, ByteOrder.LITTLE_ENDIAN);
+                var w1 = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, thiz.memorySegment, blockOffset + Float16.BYTES + 16, ByteOrder.LITTLE_ENDIAN);
+                var s0 = x.getFloatVector(F_SPECIES, xOffset).mul(w0.castShape(F_SPECIES, 0));
+                var s1 = x.getFloatVector(F_SPECIES, xOffset + F_SPECIES.length()).mul(w1.castShape(F_SPECIES, 0));
+                yield s0.add(s1).fma(wScale, acc);
+            }
+            case 256 -> {
+                var wBytes = ByteVector.fromMemorySegment(ByteVector.SPECIES_256, thiz.memorySegment, blockOffset + Float16.BYTES, ByteOrder.LITTLE_ENDIAN);
+                var s0 = x.getFloatVector(F_SPECIES, xOffset).mul(wBytes.castShape(F_SPECIES, 0));
+                var s1 = x.getFloatVector(F_SPECIES, xOffset + 2 * F_SPECIES.length()).mul(wBytes.castShape(F_SPECIES, 2));
+                s0 = x.getFloatVector(F_SPECIES, xOffset + F_SPECIES.length()).fma(wBytes.castShape(F_SPECIES, 1), s0);
+                s1 = x.getFloatVector(F_SPECIES, xOffset + 3 * F_SPECIES.length()).fma(wBytes.castShape(F_SPECIES, 3), s1);
+                yield s0.add(s1).fma(wScale, acc);
+            }
+            case 128 -> {
+                FloatVector val = acc;
+                for (int i = 0; i < 2; ++i) {
+                    int off = i * 16;
+                    var wBytes = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, thiz.memorySegment,
+                            blockOffset + Float16.BYTES + i * ByteVector.SPECIES_128.vectorByteSize(), ByteOrder.LITTLE_ENDIAN);
+                    var s0 = x.getFloatVector(F_SPECIES, xOffset + off).mul(wBytes.castShape(F_SPECIES, 0));
+                    var s1 = x.getFloatVector(F_SPECIES, xOffset + off + 2 * F_SPECIES.length()).mul(wBytes.castShape(F_SPECIES, 2));
+                    s0 = x.getFloatVector(F_SPECIES, xOffset + off + F_SPECIES.length()).fma(wBytes.castShape(F_SPECIES, 1), s0);
+                    s1 = x.getFloatVector(F_SPECIES, xOffset + off + 3 * F_SPECIES.length()).fma(wBytes.castShape(F_SPECIES, 3), s1);
+                    val = s0.add(s1).fma(wScale, val);
+                }
+                yield val;
+            }
+            default -> throw new UnsupportedOperationException(F_SPECIES.toString());
+        };
+    }
+
+
+}
+
+final class MXFP4FloatTensor extends SegmentFloatTensor {
+
+    private static final int[] MXFP4_VALUES = {0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12};
+
+    final MemorySegment memorySegment;
+
+    MXFP4FloatTensor(long size, MemorySegment memorySegment) {
+        super(size, memorySegment);
+        this.memorySegment = memorySegment;
+    }
+    @Override public void setFloat(int index, float value) { throw new UnsupportedOperationException("setFloat"); }
+    @Override FloatVector getFloatVector(VectorSpecies<Float> species, int index) { throw new UnsupportedOperationException("getFloatVector"); }
+    @Override public GGMLType type() { return GGMLType.MXFP4; }
+
+    @Override
+    public float getFloat(long index) {
+        assert 0 <= index && index < size;
+        long blockIndex = index / GGMLType.QK_MXFP4;
+        int inBlockIndex = (int) (index % GGMLType.QK_MXFP4);
+        long blockOffset = blockIndex * GGMLType.MXFP4.getTypeSize();
+
+        int e8m0 = Byte.toUnsignedInt(readByte(memorySegment, blockOffset));
+        float d = e8m0ToFp32Half(e8m0);
+
+        long qsOffset = blockOffset + Byte.BYTES + (inBlockIndex & 0x0F);
+        int packed = Byte.toUnsignedInt(readByte(memorySegment, qsOffset));
+        int nibble = inBlockIndex < (GGMLType.QK_MXFP4 / 2) ? (packed & 0x0F) : ((packed >>> 4) & 0x0F);
+
+        return MXFP4_VALUES[nibble] * d;
+    }
+
+    @Override
+    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor) {
+            return vectorDot(this, thisOffset, that, thatOffset, size);
+        }
+        return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
+    }
+
+    private static float vectorDot(MXFP4FloatTensor thiz, int thisOffset, FloatTensor that, int thatOffset, int size) {
+        assert Integer.bitCount(GGMLType.QK_MXFP4) == 1 : "power of 2";
+        int j = 0;
+        float result = 0f;
+
+        int alignmentBound = Math.min(size, -thisOffset & (GGMLType.QK_MXFP4 - 1));
+        if (alignmentBound > 0) {
+            result += scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
+            j = alignmentBound;
+        }
+
+        int upperBound = j + (size - j) / GGMLType.QK_MXFP4 * GGMLType.QK_MXFP4;
+        for (; j < upperBound; j += GGMLType.QK_MXFP4) {
+            assert (thisOffset + j) % GGMLType.QK_MXFP4 == 0;
+            long blockOffset = (long) (thisOffset + j) / GGMLType.QK_MXFP4 * GGMLType.MXFP4.getTypeSize();
+            float d = e8m0ToFp32Half(Byte.toUnsignedInt(readByte(thiz.memorySegment, blockOffset)));
+
+            ByteVector packed = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, thiz.memorySegment, blockOffset + Byte.BYTES, ByteOrder.LITTLE_ENDIAN);
+            ByteVector lo = packed.and((byte) 0x0F);
+            ByteVector hi = packed.lanewise(VectorOperators.LSHR, 4);
+
+            float blockSum = 0f;
+            switch (F_SPECIES.vectorBitSize()) {
+                case 512 -> {
+                    FloatVector loCoeffs = mxfp4CodesToCoeffs((FloatVector) lo.castShape(F_SPECIES, 0));
+                    FloatVector hiCoeffs = mxfp4CodesToCoeffs((FloatVector) hi.castShape(F_SPECIES, 0));
+                    FloatVector xLo = that.getFloatVector(F_SPECIES, thatOffset + j);
+                    FloatVector xHi = that.getFloatVector(F_SPECIES, thatOffset + j + GGMLType.QK_MXFP4 / 2);
+                    blockSum += loCoeffs.fma(xLo, hiCoeffs.mul(xHi)).reduceLanes(VectorOperators.ADD);
+                }
+                case 256 -> {
+                    FloatVector lo0 = mxfp4CodesToCoeffs((FloatVector) lo.castShape(F_SPECIES, 0));
+                    FloatVector lo1 = mxfp4CodesToCoeffs((FloatVector) lo.castShape(F_SPECIES, 1));
+                    FloatVector hi0 = mxfp4CodesToCoeffs((FloatVector) hi.castShape(F_SPECIES, 0));
+                    FloatVector hi1 = mxfp4CodesToCoeffs((FloatVector) hi.castShape(F_SPECIES, 1));
+                    FloatVector x0 = that.getFloatVector(F_SPECIES, thatOffset + j);
+                    FloatVector x1 = that.getFloatVector(F_SPECIES, thatOffset + j + F_SPECIES.length());
+                    FloatVector x2 = that.getFloatVector(F_SPECIES, thatOffset + j + GGMLType.QK_MXFP4 / 2);
+                    FloatVector x3 = that.getFloatVector(F_SPECIES, thatOffset + j + GGMLType.QK_MXFP4 / 2 + F_SPECIES.length());
+                    blockSum += lo0.fma(x0, lo1.mul(x1)).reduceLanes(VectorOperators.ADD);
+                    blockSum += hi0.fma(x2, hi1.mul(x3)).reduceLanes(VectorOperators.ADD);
+                }
+                case 128 -> {
+                    FloatVector sum = FloatVector.zero(F_SPECIES);
+                    for (int p = 0; p < 4; p++) {
+                        FloatVector loPart = mxfp4CodesToCoeffs((FloatVector) lo.castShape(F_SPECIES, p));
+                        FloatVector hiPart = mxfp4CodesToCoeffs((FloatVector) hi.castShape(F_SPECIES, p));
+                        FloatVector xLo = that.getFloatVector(F_SPECIES, thatOffset + j + p * F_SPECIES.length());
+                        FloatVector xHi = that.getFloatVector(F_SPECIES, thatOffset + j + GGMLType.QK_MXFP4 / 2 + p * F_SPECIES.length());
+                        sum = loPart.fma(xLo, sum);
+                        sum = hiPart.fma(xHi, sum);
+                    }
+                    blockSum += sum.reduceLanes(VectorOperators.ADD);
+                }
+                default -> throw new UnsupportedOperationException(F_SPECIES.toString());
+            }
+
+            result += blockSum * d;
+        }
+
+        if (j < size) {
+            result += scalarDot(thiz, thisOffset + j, that, thatOffset + j, size - j);
+        }
+        return result;
+    }
+
+    private static FloatVector mxfp4CodesToCoeffs(FloatVector codes) {
+        FloatVector zero = FloatVector.zero(F_SPECIES);
+        FloatVector eight = FloatVector.broadcast(F_SPECIES, 8f);
+        var negMask = codes.compare(VectorOperators.GE, 8f);
+
+        FloatVector t = codes.sub(zero.blend(eight, negMask));
+        FloatVector mag = t
+                .add(t.sub(4f).lanewise(VectorOperators.MAX, 0f))
+                .add(t.sub(6f).lanewise(VectorOperators.MAX, 0f).mul(2f));
+        return mag.blend(mag.neg(), negMask);
+    }
+
+    private static float e8m0ToFp32Half(int x) {
+        int bits;
+        if (x < 2) {
+            bits = 0x00200000 << x;
+        } else {
+            bits = (x - 1) << 23;
+        }
+        return Float.intBitsToFloat(bits);
+    }
+}
+
+final class BF16FloatTensor extends SegmentFloatTensor {
+
+    final MemorySegment memorySegment;
+
+    public BF16FloatTensor(long size, MemorySegment memorySegment) {
+        super(size, memorySegment);
+        this.memorySegment = memorySegment;
+    }
+
+    @Override public void setFloat(int index, float value) { throw new UnsupportedOperationException("setFloat"); }
+    @Override FloatVector getFloatVector(VectorSpecies<Float> species, int index) { throw new UnsupportedOperationException("getFloatVector"); }
+    @Override public GGMLType type() { return GGMLType.BF16; }
+
+    @Override
+    public float getFloat(long index) {
+        assert 0 <= index && index < size;
+        short bits = readShort(memorySegment, (long) index * 2);
+        return Float.intBitsToFloat(bits << 16);
+    }
+
+    @Override
+    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor f32) {
+            return vectorDot(this, thisOffset, f32, thatOffset, size);
+        }
+        return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
+    }
+
+    private static float vectorDot(BF16FloatTensor thiz, int thisOffset, F32FloatTensor that, int thatOffset, int size) {
+        assert S_SPECIES_HALF.length() == F_SPECIES.length();
+        FloatVector val = FloatVector.zero(F_SPECIES);
+        int upperBound = F_SPECIES.loopBound(size);
+        for (int i = 0; i < upperBound; i += F_SPECIES.length()) {
+            FloatVector thatVector = that.getFloatVector(F_SPECIES, thatOffset + i);
+            ShortVector bfloat16 = ShortVector.fromMemorySegment(S_SPECIES_HALF, thiz.memorySegment, (thisOffset + i) * 2L, ByteOrder.LITTLE_ENDIAN);
+            FloatVector thizVector = bfloat16
+                    .castShape(I_SPECIES, 0)
+                    .lanewise(VectorOperators.LSHL, 16)
+                    .reinterpretAsFloats();
+            val = thizVector.fma(thatVector, val);
+        }
+        float result = val.reduceLanes(VectorOperators.ADD);
+        if (upperBound < size) {
+            result += scalarDot(thiz, thisOffset + upperBound, that, thatOffset + upperBound, size - upperBound);
+        }
+        return result;
+    }
+}
+
+final class F16FloatTensor extends SegmentFloatTensor {
+
+    final MemorySegment memorySegment;
+
+    public F16FloatTensor(long size, MemorySegment memorySegment) {
+        super(size, memorySegment);
+        this.memorySegment = memorySegment;
+    }
+
+    static F16FloatTensor allocate(int... dims) {
+        int n = FloatTensor.numberOfElements(dims);
+        MemorySegment segment = Arena.ofAuto().allocate((long) n * 2);
+        return new F16FloatTensor(n, segment);
+    }
+
+    @Override FloatVector getFloatVector(VectorSpecies<Float> species, int index) { throw new UnsupportedOperationException("getFloatVector"); }
+    @Override public GGMLType type() { return GGMLType.F16; }
+
+    static FloatVector f16ToF32Vector(MemorySegment memSeg, long byteOffset) {
+        ShortVector bits16 = ShortVector.fromMemorySegment(S_SPECIES_HALF, memSeg, byteOffset, ByteOrder.LITTLE_ENDIAN);
+        var bits32 = bits16.castShape(I_SPECIES, 0).reinterpretAsInts();
+        var zeroExponentMask = bits32.and(0x7C00).neg().lanewise(VectorOperators.ASHR, 31);
+        bits32 = bits32.and(0x8000).lanewise(VectorOperators.LSHL, 16)
+                .or(bits32.and(0x7FFF).add(0x1C000).lanewise(VectorOperators.LSHL, 13).and(zeroExponentMask));
+        return bits32.reinterpretAsFloats();
+    }
+
+    @Override
+    public float getFloat(long index) {
+        assert 0 <= index && index < size;
+        return readFloat16(memorySegment, index * 2);
+    }
+
+    @Override
+    public void setFloat(int index, float value) {
+        writeShort(memorySegment, (long) index * 2, Float.floatToFloat16(value));
+    }
+
+    @Override
+    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor f32) {
+            return vectorDotF32(this, thisOffset, f32, thatOffset, size);
+        }
+        return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
+    }
+
+    private static float vectorDotF32(F16FloatTensor thiz, int thisOffset, F32FloatTensor that, int thatOffset, int size) {
+        assert S_SPECIES_HALF.length() == F_SPECIES.length();
+        FloatVector val = FloatVector.zero(F_SPECIES);
+        int upperBound = F_SPECIES.loopBound(size);
+        for (int i = 0; i < upperBound; i += F_SPECIES.length()) {
+            FloatVector thatVector = FloatVector.fromMemorySegment(F_SPECIES, that.vseg, that.vbase + (long) (thatOffset + i) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+            // f16ToF32Vector inlined by hand for C2 (see vectorDot below)
+            var bits32 = ShortVector.fromMemorySegment(S_SPECIES_HALF, thiz.vseg, thiz.vbase + (thisOffset + i) * 2L, ByteOrder.LITTLE_ENDIAN)
+                    .castShape(I_SPECIES, 0).reinterpretAsInts();
+            var zeroExponentMask = bits32.and(0x7C00).neg().lanewise(VectorOperators.ASHR, 31);
+            FloatVector thizVector = bits32.and(0x8000).lanewise(VectorOperators.LSHL, 16)
+                    .or(bits32.and(0x7FFF).add(0x1C000).lanewise(VectorOperators.LSHL, 13).and(zeroExponentMask))
+                    .reinterpretAsFloats();
+            val = thizVector.fma(thatVector, val);
+        }
+        float result = val.reduceLanes(VectorOperators.ADD);
+        if (upperBound < size) {
+            result += scalarDot(thiz, thisOffset + upperBound, that, thatOffset + upperBound, size - upperBound);
+        }
+        return result;
+    }
+
+}
+
+final class F32FloatTensor extends SegmentFloatTensor {
+
+    final MemorySegment memorySegment;
+
+    F32FloatTensor(long numElements, MemorySegment memorySegment) {
+        super(numElements, memorySegment);
+        this.memorySegment = memorySegment;
+    }
+
+    static F32FloatTensor allocate(int... dims) {
+        int numberOfElements = FloatTensor.numberOfElements(dims);
+        return new F32FloatTensor(numberOfElements, Arena.ofAuto().allocate((long) numberOfElements * Float.BYTES, 64));
+    }
+
+    /** Native copy of a heap float[] (e.g. computed rope frequency tables). */
+    static F32FloatTensor of(float[] values) {
+        F32FloatTensor tensor = allocate(values.length);
+        MemorySegment.copy(values, 0, tensor.memorySegment, ValueLayout.JAVA_FLOAT_UNALIGNED, 0, values.length);
+        return tensor;
+    }
+
+    @Override
+    public float getFloat(long index) {
+        // through GLOBAL_SEGMENT (readFloat) so the access inlines on native image (see FloatTensor)
+        return readFloat(memorySegment, index * Float.BYTES);
+    }
+
+    @Override
+    public void setFloat(int index, float value) {
+        writeFloat(memorySegment, (long) index * Float.BYTES, value);
+    }
+
+    @Override public GGMLType type() { return GGMLType.F32; }
+
+    @Override
+    public FloatVector getFloatVector(VectorSpecies<Float> species, int index) {
+        if (!USE_VECTOR_API) {
+            throw new UnsupportedOperationException();
+        }
+        return FloatVector.fromMemorySegment(species, vseg, vbase + (long) index * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+    }
+
+    @Override
+    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+        if (that instanceof F32FloatTensor f32 && USE_VECTOR_API) {
+            return vectorDot(this, thisOffset, f32, thatOffset, size);
+        }
+        if (that instanceof F16FloatTensor) {
+            return that.dot(thatOffset, this, thisOffset, size);
+        }
+        return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
+    }
+
+    @Override
+    public FloatTensor fillInPlace(int thisOffset, int size, float value) {
+        if (USE_VECTOR_API) {
+            FloatVector fill = FloatVector.broadcast(F_SPECIES, value);
+            int upperBound = F_SPECIES.loopBound(size);
+            int i = 0;
+            for (; i < upperBound; i += F_SPECIES.length()) {
+                fill.intoMemorySegment(vseg, vbase + (long) (thisOffset + i) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+            }
+            for (; i < size; i++) {
+                setFloat(thisOffset + i, value);
+            }
+            return this;
+        }
+        return super.fillInPlace(thisOffset, size, value);
+    }
+
+    @Override
+    FloatTensor addInPlace(int thisOffset, FloatTensor that, int thatOffset, int size) {
+        if (that instanceof F32FloatTensor f32 && USE_VECTOR_API) {
+            int upperBound = F_SPECIES.loopBound(size);
+            int i = 0;
+            for (; i < upperBound; i += F_SPECIES.length()) {
+                var a = FloatVector.fromMemorySegment(F_SPECIES, vseg, vbase + (long) (thisOffset + i) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+                var b = FloatVector.fromMemorySegment(F_SPECIES, f32.vseg, f32.vbase + (long) (thatOffset + i) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+                a.add(b).intoMemorySegment(vseg, vbase + (long) (thisOffset + i) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+            }
+            for (; i < size; i++) {
+                setFloat(thisOffset + i, getFloat(thisOffset + i) + f32.getFloat(thatOffset + i));
+            }
+            return this;
+        }
+        return super.addInPlace(thisOffset, that, thatOffset, size);
+    }
+
+    @Override
+    FloatTensor saxpyInPlace(int thisOffset, FloatTensor that, int thatOffset, int size, float a) {
+        if (that instanceof F16FloatTensor f16 && USE_VECTOR_API) {
+            FloatVector va = FloatVector.broadcast(F_SPECIES, a);
+            int upperBound = F_SPECIES.loopBound(size);
+            int i = 0;
+            for (; i < upperBound; i += F_SPECIES.length()) {
+                // f16ToF32Vector inlined by hand for C2 (see F16FloatTensor.vectorDot)
+                var bits32 = ShortVector.fromMemorySegment(S_SPECIES_HALF, f16.vseg, f16.vbase + (thatOffset + i) * 2L, ByteOrder.LITTLE_ENDIAN)
+                        .castShape(I_SPECIES, 0).reinterpretAsInts();
+                var zeroExponentMask = bits32.and(0x7C00).neg().lanewise(VectorOperators.ASHR, 31);
+                FloatVector thatVector = bits32.and(0x8000).lanewise(VectorOperators.LSHL, 16)
+                        .or(bits32.and(0x7FFF).add(0x1C000).lanewise(VectorOperators.LSHL, 13).and(zeroExponentMask))
+                        .reinterpretAsFloats();
+                FloatVector thisVector = FloatVector.fromMemorySegment(F_SPECIES, vseg, vbase + (long) (thisOffset + i) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+                va.fma(thatVector, thisVector).intoMemorySegment(vseg, vbase + (long) (thisOffset + i) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+            }
+            for (; i < size; i++) {
+                setFloat(thisOffset + i, a * f16.getFloat(thatOffset + i) + getFloat(thisOffset + i));
+            }
+            return this;
+        }
+        return super.saxpyInPlace(thisOffset, that, thatOffset, size, a);
+    }
+
+    @Override
+    void copyTo(int thisOffset, FloatTensor that, int thatOffset, int size) {
+        if (that instanceof F32FloatTensor f32) {
+            MemorySegment.copy(memorySegment, (long) thisOffset * Float.BYTES,
+                    f32.memorySegment, (long) thatOffset * Float.BYTES, (long) size * Float.BYTES);
+            return;
+        }
+        super.copyTo(thisOffset, that, thatOffset, size);
+    }
+
+    @Override
+    FloatTensor siluMultiplyInPlace(int thisOffset, FloatTensor that, int thatOffset, int size) {
+        if (that instanceof F32FloatTensor f32 && USE_VECTOR_API && JIT_VECTOR_MATH) {
+            // silu(g)*u with lanewise EXP (vector math stubs); scalar Math.exp costs ~10-20% of a token
+            FloatVector one = FloatVector.broadcast(F_SPECIES, 1f);
+            int upperBound = F_SPECIES.loopBound(size);
+            int i = 0;
+            for (; i < upperBound; i += F_SPECIES.length()) {
+                long thisByte = vbase + (long) (thisOffset + i) * Float.BYTES;
+                var g = FloatVector.fromMemorySegment(F_SPECIES, vseg, thisByte, ByteOrder.LITTLE_ENDIAN);
+                var u = FloatVector.fromMemorySegment(F_SPECIES, f32.vseg, f32.vbase + (long) (thatOffset + i) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+                var e = g.neg().lanewise(VectorOperators.EXP);
+                g.div(e.add(one)).mul(u).intoMemorySegment(vseg, thisByte, ByteOrder.LITTLE_ENDIAN);
+            }
+            for (; i < size; i++) {
+                float g = getFloat(thisOffset + i);
+                setFloat(thisOffset + i, (float) (g / (1.0 + Math.exp(-g)) * f32.getFloat(thatOffset + i)));
+            }
+            return this;
+        }
+        return super.siluMultiplyInPlace(thisOffset, that, thatOffset, size);
+    }
+
+    private static float vectorDot(F32FloatTensor thiz, int thisOffset, F32FloatTensor that, int thatOffset, int size) {
+        FloatVector val = FloatVector.zero(F_SPECIES);
+        int upperBound = F_SPECIES.loopBound(size);
+        for (int i = 0; i < upperBound; i += F_SPECIES.length()) {
+            var a = FloatVector.fromMemorySegment(F_SPECIES, thiz.vseg, thiz.vbase + (long) (thisOffset + i) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+            var b = FloatVector.fromMemorySegment(F_SPECIES, that.vseg, that.vbase + (long) (thatOffset + i) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+            val = a.fma(b, val);
+        }
+        float result = val.reduceLanes(VectorOperators.ADD);
+        for (int i = upperBound; i < size; i++) {
+            result += thiz.getFloat(thisOffset + i) * that.getFloat(thatOffset + i);
+        }
+        return result;
+    }
+}

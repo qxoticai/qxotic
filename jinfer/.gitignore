@@ -1,0 +1,20 @@
+# Build output
+target/
+*.class
+*.jar
+
+# Native images and PGO artifacts
+lfm25
+lfm25.pgo
+*.debug
+default.iprof
+*.iprof
+
+# Native GEMM library build artifacts (built from lfm25jni.c via make libnative / liblfm25jni.a)
+*.o
+*.so
+*.a
+
+# Profiling / scratch
+perf.data*
+hs_err_pid*.log
