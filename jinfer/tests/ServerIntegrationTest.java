@@ -41,19 +41,25 @@ public final class ServerIntegrationTest {
         base = "http://127.0.0.1:" + server.getAddress().getPort();
         client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 
-        plumbing();
-        validation();
-        tokenizeRoundTrip();
-        chatNonStreaming();
-        chatStreaming();
-        completionsAndStops();
-        responsesEndpoint();
-        promptCacheColdWarm();
-        fast400WhileBusy();
-        sessionResume();
-
+        try {
+            plumbing();
+            validation();
+            tokenizeRoundTrip();
+            chatNonStreaming();
+            chatStreaming();
+            completionsAndStops();
+            responsesEndpoint();
+            promptCacheColdWarm();
+            fast400WhileBusy();
+            sessionResume();
+        } catch (Throwable t) {
+            // always exit: the server executor pool is non-daemon, an escaped exception
+            // would otherwise leave the JVM (and the make invocation) hanging forever
+            t.printStackTrace();
+            failures++;
+        }
         System.out.println("ServerIntegrationTest: failures=" + failures);
-        System.exit(failures > 0 ? 1 : 0); // explicit: the server executor pool is non-daemon
+        System.exit(failures > 0 ? 1 : 0);
     }
 
     // --- request plumbing: health, models, method/path errors ---

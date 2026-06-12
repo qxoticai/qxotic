@@ -1629,7 +1629,12 @@ final class Server {
                 }
                 if (start == index) throw error("Expected value");
                 String number = text.substring(start, index);
-                return floating ? Double.parseDouble(number) : Long.parseLong(number);
+                // no ternary: double/long branches would promote BOTH to double, silently
+                // turning every integer into a Double (and corrupting longs above 2^53)
+                if (floating) {
+                    return Double.parseDouble(number);
+                }
+                return Long.parseLong(number);
             }
 
             private Object literal(String literal, Object value) {
