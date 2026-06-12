@@ -3,68 +3,7 @@ package com.llama4j;
 
 import com.qxotic.format.gguf.GGMLType;
 
-import jdk.incubator.vector.ByteVector;
-import jdk.incubator.vector.FloatVector;
-import jdk.incubator.vector.ShortVector;
-import jdk.incubator.vector.VectorOperators;
-import jdk.incubator.vector.VectorShape;
-import jdk.incubator.vector.VectorSpecies;
-
-import com.sun.net.httpserver.Headers;
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
-
-import java.lang.reflect.Field;
-
-import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.PrintStream;
-import java.io.UncheckedIOException;
-import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
-import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.CharBuffer;
-import java.nio.charset.CharacterCodingException;
-import java.nio.charset.CharsetDecoder;
-import java.nio.charset.CodingErrorAction;
-import java.nio.channels.FileChannel;
-import java.nio.channels.ReadableByteChannel;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.BitSet;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.HexFormat;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Objects;
-import java.util.OptionalInt;
-import java.util.Set;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
-import java.util.function.IntConsumer;
-import java.util.function.IntFunction;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.random.RandomGenerator;
-import java.util.random.RandomGeneratorFactory;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 /**
  * Backend seam for the Q8_0 matmul hot path. The implementation is chosen ONCE, when this
@@ -138,6 +77,10 @@ final class JavaKernels implements Kernels {
  * LFM25StaticGemmFeature (-Dllama.staticGemm=true at image build time), or loaded into the JVM
  * from -Dllama.nativeGemmLib=/path/to/liblfm25jni.so. The exported symbols are JNI-mangled
  * against THIS class — renaming it or the native methods requires renaming the C exports.
+ *
+ * <p>The JNI boundary is pure pointers and bytes: addresses are pre-offset here (the weight
+ * address already points at the first Q8_0 block of the row range, so quant-layout math stays
+ * on the Java side) and strides are in bytes — the C code holds kernels and threading only.
  */
 final class NativeKernels implements Kernels {
 
@@ -171,9 +114,11 @@ final class NativeKernels implements Kernels {
                              F32FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1) {
         if ((dim1 & (GGMLType.Q8_0.getElementsPerBlock() - 1)) == 0
                 && (thisOffset & (GGMLType.Q8_0.getElementsPerBlock() - 1)) == 0) {
-            nativeGemmQ8F32Ptr(w.memorySegment.address(), x.memorySegment.address(), out.memorySegment.address(),
-                    thatStride, outStride, sequenceLength, dim0, dim1, thisOffset,
-                    RuntimeFlags.GEMM_ROW_TILE, RuntimeFlags.GEMM_SEQ_TILE, RuntimeFlags.GEMM_THREADS);
+            nativeGemm(weightAddress(w, thisOffset),
+                    x.memorySegment.address(), Float.BYTES * (long) thatStride,
+                    out.memorySegment.address(), Float.BYTES * (long) outStride,
+                    sequenceLength, dim0, dim1,
+                    RuntimeFlags.GEMM_ROW_TILE, RuntimeFlags.GEMM_SEQ_TILE);
             return true;
         }
         return java.gemmQ8F32(w, thisOffset, x, thatStride, out, outStride, sequenceLength, dim0, dim1);
@@ -185,20 +130,27 @@ final class NativeKernels implements Kernels {
         if (NATIVE_GEMV
                 && (dim1 & (GGMLType.Q8_0.getElementsPerBlock() - 1)) == 0
                 && (thisOffset & (GGMLType.Q8_0.getElementsPerBlock() - 1)) == 0) {
-            nativeGemvQ8F32Ptr(w.memorySegment.address(),
-                    x.memorySegment.address() + 4L * thatOffset,
-                    out.memorySegment.address() + 4L * outOffset,
-                    dim0, dim1, thisOffset);
+            nativeGemv(weightAddress(w, thisOffset),
+                    x.memorySegment.address() + Float.BYTES * (long) thatOffset,
+                    out.memorySegment.address() + Float.BYTES * (long) outOffset,
+                    dim0, dim1);
             return true;
         }
         return java.gemvQ8F32(w, thisOffset, x, thatOffset, out, outOffset, dim0, dim1);
     }
 
-    private static native void nativeGemmQ8F32Ptr(long weightAddress, long rhsAddress, long outAddress,
-                                                  int thatStride, int outStride, int sequenceLength,
-                                                  int dim0, int dim1, int thisOffset,
-                                                  int rowTile, int seqTile, int workers);
+    /** Address of the Q8_0 block containing the given element offset (a block multiple). */
+    private static long weightAddress(Q8_0FloatTensor w, int elementOffset) {
+        return w.memorySegment.address()
+                + ((long) elementOffset / GGMLType.Q8_0.getElementsPerBlock()) * GGMLType.Q8_0.getBlockByteSize();
+    }
 
-    private static native void nativeGemvQ8F32Ptr(long weightAddress, long rhsAddress, long outAddress,
-                                                  int dim0, int dim1, int thisOffset);
+    /** weights: first Q8_0 block of the row range; x/out: first activation/output row;
+     *  strides in bytes; dim0 = weight rows, dim1 = K elements (multiple of 32). */
+    private static native void nativeGemm(long weights, long x, long xStrideBytes,
+                                          long out, long outStrideBytes,
+                                          int sequenceLength, int dim0, int dim1,
+                                          int rowTile, int seqTile);
+
+    private static native void nativeGemv(long weights, long x, long out, int dim0, int dim1);
 }

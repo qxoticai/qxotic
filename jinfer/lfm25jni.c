@@ -1,5 +1,6 @@
-// Native AVX-512 GEMM for Q8_0 weights @ F32 activations -> F32, used by LFM25.java's
-// Q8_0FloatTensor when -Dllama.nativeGemmLib=<path> is set.
+// Native AVX-512 GEMM for Q8_0 weights @ F32 activations -> F32, bound by
+// com.llama4j.NativeKernels (-Dllama.nativeGemmLib=<path> on the JVM, or statically
+// linked into a native image with -Dllama.staticGemm=true).
 //
 // Kernel: 4 weight rows x 4 activation columns per register tile (16 zmm accumulators +
 // 8 pre-scaled weight vectors), accumulating over the full K dimension so each output is
@@ -39,7 +40,6 @@ typedef struct {
     int sequence_length;
     int dim0;
     int dim1;
-    int this_offset;
     int row_tile;
     int seq_tile;
     int tile_count;
@@ -195,7 +195,7 @@ static void gemv_rows4(const uint8_t *w, int64_t w_stride, const float *x, int k
 static void compute_gemv_chunk(const gemm_task_t *task, int tile) {
     const int kblocks = task->dim1 / QK;
     const int64_t w_stride = (int64_t) kblocks * BLOCK_BYTES;
-    const uint8_t *wbase = task->weights + ((int64_t) task->this_offset / QK) * BLOCK_BYTES;
+    const uint8_t *wbase = task->weights;
     int row = tile * GEMV_ROW_CHUNK;
     int row_end = row + GEMV_ROW_CHUNK;
     if (row_end > task->dim0) row_end = task->dim0;
@@ -343,7 +343,7 @@ static void compute_vnni_band(const gemm_task_t *task, int tile, int worker) {
         rp->cap_blocks = kblocks;
     }
 
-    const uint8_t *wbase = task->weights + ((int64_t) task->this_offset / QK) * BLOCK_BYTES;
+    const uint8_t *wbase = task->weights;
     int group = 0;
     for (int r = row; r + 15 < row_end; r += 16, group++) {
         uint8_t *qs = rp->qs + (int64_t) group * kblocks * 512;
@@ -399,7 +399,7 @@ static void compute_tile(const gemm_task_t *task, int tile, int worker) {
     if (row_end > task->dim0) row_end = task->dim0;
     if (seq_end > task->sequence_length) seq_end = task->sequence_length;
 
-    const uint8_t *wbase = task->weights + ((int64_t) task->this_offset / QK) * BLOCK_BYTES;
+    const uint8_t *wbase = task->weights;
     int row = row_start;
     for (; row + 3 < row_end; row += 4) {
         const uint8_t *w = wbase + (int64_t) row * kblocks * BLOCK_BYTES;
@@ -589,14 +589,22 @@ static int ensure_xq_capacity(int sequence_length, int kblocks) {
 }
 
 
-// Pointer-based entries: activations/outputs live in native MemorySegments, so no
-// GetPrimitiveArrayCritical (no GC interaction at all on this path).
-static void native_gemm_q8_f32_ptr(JNIEnv *env, jclass cls, jlong weight_address, jlong rhs_address, jlong out_address,
-                                   jint that_stride, jint out_stride, jint sequence_length, jint dim0, jint dim1,
-                                   jint this_offset, jint row_tile, jint seq_tile, jint workers) {
+// Direct JNI-mangled exports: the JVM binds native methods to these by symbol name when the
+// .so is loaded, and a native image statically links them (LFM25StaticGemmFeature) — no
+// JNI_OnLoad / RegisterNatives needed in either mode. The Java native methods live in
+// com.llama4j.NativeKernels; renaming that class requires renaming these symbols.
+//
+// The boundary is pure pointers and bytes: `weights` already points at the first Q8_0 block
+// of the operated row range, `x`/`out` at the first activation/output row, and the row
+// strides are in BYTES (quant-layout and element-size math live on the Java side).
+// Activations/outputs live in native MemorySegments, so no GetPrimitiveArrayCritical
+// (no GC interaction at all on this path).
+
+JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemm(JNIEnv *env, jclass cls,
+        jlong weights, jlong x, jlong x_stride_bytes, jlong out, jlong out_stride_bytes,
+        jint sequence_length, jint dim0, jint dim1, jint row_tile, jint seq_tile) {
     (void) env;
     (void) cls;
-    (void) workers;
     if (row_tile < 4) row_tile = 4;
     if (seq_tile < 4) seq_tile = 4;
     int seq_tile_count = (sequence_length + seq_tile - 1) / seq_tile;
@@ -606,15 +614,14 @@ static void native_gemm_q8_f32_ptr(JNIEnv *env, jclass cls, jlong weight_address
         return;
     }
     int kblocks = dim1 / QK;
-    current_task.weights = (const uint8_t *) (uintptr_t) weight_address;
-    current_task.rhs = (const float *) (uintptr_t) rhs_address;
-    current_task.out = (float *) (uintptr_t) out_address;
-    current_task.that_stride = that_stride;
-    current_task.out_stride = out_stride;
+    current_task.weights = (const uint8_t *) (uintptr_t) weights;
+    current_task.rhs = (const float *) (uintptr_t) x;
+    current_task.out = (float *) (uintptr_t) out;
+    current_task.that_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    current_task.out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
     current_task.sequence_length = sequence_length;
     current_task.dim0 = dim0;
     current_task.dim1 = dim1;
-    current_task.this_offset = this_offset;
     current_task.row_tile = row_tile;
     current_task.seq_tile = seq_tile;
     current_task.seq_tile_count = seq_tile_count;
@@ -632,8 +639,8 @@ static void native_gemm_q8_f32_ptr(JNIEnv *env, jclass cls, jlong weight_address
     }
 }
 
-static void native_gemv_q8_f32_ptr(JNIEnv *env, jclass cls, jlong weight_address, jlong rhs_address, jlong out_address,
-                                   jint dim0, jint dim1, jint this_offset) {
+JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemv(JNIEnv *env, jclass cls,
+        jlong weights, jlong x, jlong out, jint dim0, jint dim1) {
     (void) env;
     (void) cls;
     int tile_count = (dim0 + GEMV_ROW_CHUNK - 1) / GEMV_ROW_CHUNK;
@@ -641,30 +648,13 @@ static void native_gemv_q8_f32_ptr(JNIEnv *env, jclass cls, jlong weight_address
         return;
     }
     current_task.kind = 1;
-    current_task.weights = (const uint8_t *) (uintptr_t) weight_address;
-    current_task.rhs = (const float *) (uintptr_t) rhs_address;
-    current_task.out = (float *) (uintptr_t) out_address;
+    current_task.weights = (const uint8_t *) (uintptr_t) weights;
+    current_task.rhs = (const float *) (uintptr_t) x;
+    current_task.out = (float *) (uintptr_t) out;
     current_task.dim0 = dim0;
     current_task.dim1 = dim1;
-    current_task.this_offset = this_offset;
     current_task.tile_count = tile_count;
     dispatch_task();
-}
-
-// Direct JNI-mangled exports: the JVM binds native methods to these by symbol name when the
-// .so is loaded, and a native image statically links them (LFM25StaticGemmFeature) — no
-// JNI_OnLoad / RegisterNatives needed in either mode. The Java native methods live in
-// com.llama4j.NativeKernels; renaming that class requires renaming these symbols.
-JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmQ8F32Ptr(JNIEnv *env, jclass cls,
-        jlong weight_address, jlong rhs_address, jlong out_address, jint that_stride, jint out_stride,
-        jint sequence_length, jint dim0, jint dim1, jint this_offset, jint row_tile, jint seq_tile, jint workers) {
-    native_gemm_q8_f32_ptr(env, cls, weight_address, rhs_address, out_address, that_stride, out_stride,
-            sequence_length, dim0, dim1, this_offset, row_tile, seq_tile, workers);
-}
-
-JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemvQ8F32Ptr(JNIEnv *env, jclass cls,
-        jlong weight_address, jlong rhs_address, jlong out_address, jint dim0, jint dim1, jint this_offset) {
-    native_gemv_q8_f32_ptr(env, cls, weight_address, rhs_address, out_address, dim0, dim1, this_offset);
 }
 
 JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *vm, void *reserved) {
