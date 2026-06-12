@@ -14,8 +14,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
-import java.util.random.RandomGenerator;
-import java.util.random.RandomGeneratorFactory;
 
 /**
  * The inference-side seam between the generation loop ({@link Llama#generate}) and any frontend
@@ -180,46 +178,18 @@ final class Engine {
         return promptTokens.size();
     }
 
-    static Sampler selectSampler(int vocabularySize, float temperature, float topp, long rngSeed) {
-        Sampler sampler;
-        if (temperature == 0.0f) {
-            sampler = Sampler.ARGMAX;
-        } else {
-            RandomGenerator rng = RandomGeneratorFactory.getDefault().create(rngSeed);
-            Sampler innerSampler;
-            if (topp <= 0 || topp >= 1) {
-                innerSampler = new CategoricalSampler(rng);
-            } else {
-                innerSampler = new ToppSampler(vocabularySize, topp, rng);
-            }
-            sampler = logits -> {
-                int logitsSize = Math.toIntExact(logits.size());
-                logits.divideInPlace(0, logitsSize, temperature);
-                logits.softmaxInPlace(0, logitsSize);
-                return innerSampler.sampleToken(logits);
-            };
-        }
-        return sampler;
-    }
-
-    /** {@link #selectSampler} plus the think-token ban when thinking is disabled. */
+    /** {@link Sampler#select} plus the think-token ban when thinking is disabled. */
     static Sampler configuredSampler(Llama model, boolean think, float temperature, float topp, long seed) {
         require(Float.isFinite(temperature) && 0 <= temperature, "Invalid argument: temperature must be a finite non-negative number");
         require(Float.isFinite(topp) && 0 <= topp && topp <= 1, "Invalid argument: top_p must be within [0, 1]");
-        Sampler sampler = selectSampler(model.configuration().vocabularySize, temperature, topp, seed);
+        Sampler sampler = Sampler.select(model.configuration().vocabularySize, temperature, topp, seed);
         if (!think) {
             Integer thinkStart = model.tokenizer().getSpecialTokens().get("<think>");
             Integer thinkEnd = model.tokenizer().getSpecialTokens().get("</think>");
             Set<Integer> banned = new HashSet<>();
             if (thinkStart != null) banned.add(thinkStart);
             if (thinkEnd != null) banned.add(thinkEnd);
-            if (!banned.isEmpty()) {
-                Sampler inner = sampler;
-                sampler = logits -> {
-                    for (int token : banned) logits.setFloat(token, Float.NEGATIVE_INFINITY);
-                    return inner.sampleToken(logits);
-                };
-            }
+            sampler = Sampler.banning(sampler, banned);
         }
         return sampler;
     }

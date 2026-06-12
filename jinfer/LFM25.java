@@ -15,6 +15,7 @@
 //SOURCES Llama.java
 //SOURCES Server.java
 //SOURCES Engine.java
+//SOURCES Sampler.java
 
 // LFM2.5 inference in pure Java
 // Author: Alfonso² Peterssen
