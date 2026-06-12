@@ -37,7 +37,9 @@ final class Server {
     private Server() {
     }
 
-    static void run(Llama model, Options options) throws IOException {
+    /** Boots the server and returns it (port 0 binds an ephemeral port — the integration
+     *  test reads the actual one from the returned server). */
+    static HttpServer run(Llama model, Options options) throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress(options.host(), options.port()), 0);
         server.createContext("/v1/models", exchange -> {
             logRequest(exchange);
@@ -129,7 +131,9 @@ final class Server {
         server.setExecutor(Executors.newFixedThreadPool(RuntimeFlags.SERVER_THREADS));
         server.start();
         Runtime.getRuntime().addShutdownHook(new Thread(() -> server.stop(1)));
-        System.out.printf("OpenAI-compatible server listening on http://%s:%d%n", options.host(), options.port());
+        System.out.printf("OpenAI-compatible server listening on http://%s:%d%n",
+                options.host(), server.getAddress().getPort());
+        return server;
     }
 
     private interface RequestJob {

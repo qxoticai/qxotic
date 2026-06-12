@@ -79,6 +79,11 @@ test: target/test-classes/com/llama4j/KernelParityTest.class
 		-cp target/classes:target/test-classes:$(DEPS_CLASSPATH) com.llama4j.KernelParityTest
 	$(JAVA) $(JAVA_RUNTIME_OPTIONS) -cp target/classes:target/test-classes:$(DEPS_CLASSPATH) com.llama4j.TokenizerParityTest $(MODEL)
 
+# End-to-end server test (in-process, ephemeral port); model-gated like the others.
+test-server: target/test-classes/com/llama4j/KernelParityTest.class
+	$(JAVA) $(JAVA_RUNTIME_OPTIONS) -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0 \
+		-cp target/classes:target/test-classes:$(DEPS_CLASSPATH) com.llama4j.ServerIntegrationTest $(MODEL)
+
 # Greedy-determinism check: same runtime, same input => byte-identical output. Skips without a
 # model. (Cross-runtime bit-identity is NOT an invariant: reduceLanes order differs, see FIXES.md.)
 MODEL ?= ../models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf
@@ -164,5 +169,5 @@ native-static-gemm: check-native-image jar liblfm25jni.a target/buildtools/LFM25
 		$(JAVA_MAIN_CLASS) \
 		-o $(NATIVE_FILE)
 
-.PHONY: check-native-image compile clean jar test test-golden native native-pgo native-pgo-instrument native-static-gemm libnative run-command run-jar-command
+.PHONY: check-native-image compile clean jar test test-server test-golden native native-pgo native-pgo-instrument native-static-gemm libnative run-command run-jar-command
 .SUFFIXES: .java .class .jar
