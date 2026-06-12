@@ -18,3 +18,4 @@ default.iprof
 # Profiling / scratch
 perf.data*
 hs_err_pid*.log
+libs/

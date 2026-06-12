@@ -30,9 +30,18 @@ JAR_FILE = lfm25.jar
 JAVA_SOURCES = $(wildcard *.java)
 JAVA_CLASSES = target/classes/.compiled
 
-# Bundle all classes in a jar
+# External dependencies (fetched from Maven Central into libs/; also declared as jbang //DEPS)
+DEPS = libs/gguf-0.1.0.jar libs/toknroll-core-0.1.0.jar libs/toknroll-gguf-0.1.0.jar
+DEPS_CLASSPATH = libs/gguf-0.1.0.jar:libs/toknroll-core-0.1.0.jar:libs/toknroll-gguf-0.1.0.jar
+
+libs/%.jar:
+	mkdir -p libs
+	curl -fsSL -o $@ https://repo1.maven.org/maven2/com/qxotic/$(shell echo $* | sed 's/-[0-9.]*$$//')/$(shell echo $* | grep -oE '[0-9.]+$$')/$*.jar
+
+# Bundle all classes in a jar (Class-Path points at the deps next to the jar)
 $(JAR_FILE): $(JAVA_CLASSES) LICENSE
-	$(JAR) -cvfe $(JAR_FILE) $(JAVA_MAIN_CLASS) LICENSE -C target/classes .
+	printf 'Main-Class: $(JAVA_MAIN_CLASS)\nClass-Path: $(DEPS)\n' > target/MANIFEST.MF
+	$(JAR) -cvfm $(JAR_FILE) target/MANIFEST.MF LICENSE -C target/classes .
 
 jar: $(JAR_FILE)
 
@@ -41,7 +50,7 @@ compile: $(JAVA_CLASSES)
 
 # Prints the command to run the Java main class
 run-command:
-	@echo $(JAVA) $(JAVA_RUNTIME_OPTIONS) -cp target/classes $(JAVA_MAIN_CLASS)
+	@echo $(JAVA) $(JAVA_RUNTIME_OPTIONS) -cp target/classes:$(DEPS_CLASSPATH) $(JAVA_MAIN_CLASS)
 
 # Prints the command to run the $(JAR_FILE)
 run-jar-command:
@@ -53,21 +62,22 @@ clean:
 	rm $(JAR_FILE) $(NATIVE_FILE)
 
 # Compile the Java source files (single pass: the classes reference each other)
-target/classes/.compiled: $(JAVA_SOURCES) | target/classes
-	$(JAVAC) $(JAVA_COMPILE_OPTIONS) -d target/classes $(JAVA_SOURCES)
+target/classes/.compiled: $(JAVA_SOURCES) $(DEPS) | target/classes
+	$(JAVAC) $(JAVA_COMPILE_OPTIONS) -cp $(DEPS_CLASSPATH) -d target/classes $(JAVA_SOURCES)
 	@touch $@
 
 # Create the target directory
 target/classes:
 	mkdir -p target/classes
 
-# Kernel parity tests (synthetic tensors, no model file needed)
-target/test-classes/com/llama4j/KernelParityTest.class: tests/KernelParityTest.java $(JAVA_CLASSES)
-	$(JAVAC) $(JAVA_COMPILE_OPTIONS) -cp target/classes -d target/test-classes tests/KernelParityTest.java
+# Kernel parity tests (synthetic tensors, no model file needed) + tokenizer parity (model-gated)
+target/test-classes/com/llama4j/KernelParityTest.class: tests/*.java $(JAVA_CLASSES)
+	$(JAVAC) $(JAVA_COMPILE_OPTIONS) -cp target/classes:$(DEPS_CLASSPATH) -d target/test-classes tests/*.java
 
 test: target/test-classes/com/llama4j/KernelParityTest.class
 	$(JAVA) $(JAVA_RUNTIME_OPTIONS) -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0 \
-		-cp target/classes:target/test-classes com.llama4j.KernelParityTest
+		-cp target/classes:target/test-classes:$(DEPS_CLASSPATH) com.llama4j.KernelParityTest
+	$(JAVA) $(JAVA_RUNTIME_OPTIONS) -cp target/classes:target/test-classes:$(DEPS_CLASSPATH) com.llama4j.TokenizerParityTest $(MODEL)
 
 # Greedy-determinism check: same runtime, same input => byte-identical output. Skips without a
 # model. (Cross-runtime bit-identity is NOT an invariant: reduceLanes order differs, see FIXES.md.)
@@ -95,13 +105,13 @@ check-native-image:
 NATIVE_IMAGE_FLAGS = -H:+UnlockExperimentalVMOptions -H:+VectorAPISupport -H:+ForeignAPISupport \
 	-march=native --enable-preview --add-modules jdk.incubator.vector,jdk.httpserver \
 	--enable-native-access=ALL-UNNAMED -J--enable-native-access=ALL-UNNAMED \
-	--initialize-at-build-time='com.llama4j.AOT,com.llama4j.FloatTensor,com.llama4j.' \
+	--initialize-at-build-time='com.llama4j.AOT,com.llama4j.FloatTensor,com.llama4j.,com.qxotic.' \
 	--initialize-at-run-time=com.llama4j.RuntimeFlags,com.llama4j.ThreadAffinity \
 	-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0 \
 	-Dllama.PreloadGGUF=$(PRELOAD_GGUF)
 
 $(NATIVE_FILE): check-native-image jar
-	$(NATIVE_IMAGE) -O3 $(NATIVE_IMAGE_FLAGS) -jar $(JAR_FILE) -o $(NATIVE_FILE)
+	$(NATIVE_IMAGE) -O3 $(NATIVE_IMAGE_FLAGS) -cp $(JAR_FILE):$(DEPS_CLASSPATH) $(JAVA_MAIN_CLASS) -o $(NATIVE_FILE)
 
 compile: target/classes
 default: jar
@@ -115,10 +125,10 @@ native: $(NATIVE_FILE)
 # 3x2 everywhere on Graal: 4x4 only wins (+4%, 272) when PGO data rescues its register allocation
 # and collapses without it (202) — not worth the coupling. -Dllama.Q8_0GemmTile=4x4 to experiment.
 native-pgo-instrument: check-native-image jar
-	$(NATIVE_IMAGE) --pgo-instrument $(NATIVE_IMAGE_FLAGS) -jar $(JAR_FILE) -o lfm25.pgo
+	$(NATIVE_IMAGE) --pgo-instrument $(NATIVE_IMAGE_FLAGS) -cp $(JAR_FILE):$(DEPS_CLASSPATH) $(JAVA_MAIN_CLASS) -o lfm25.pgo
 
 native-pgo: check-native-image jar default.iprof
-	$(NATIVE_IMAGE) --pgo=default.iprof $(NATIVE_IMAGE_FLAGS) -jar $(JAR_FILE) -o $(NATIVE_FILE)
+	$(NATIVE_IMAGE) --pgo=default.iprof $(NATIVE_IMAGE_FLAGS) -cp $(JAR_FILE):$(DEPS_CLASSPATH) $(JAVA_MAIN_CLASS) -o $(NATIVE_FILE)
 
 # Native AVX-512 GEMM library (opt-in via -Dllama.nativeGemmLib=$(PWD)/liblfm25jni.so)
 JAVA_HOME_DETECTED := $(shell dirname $$(dirname $$(readlink -f $$(which $(JAVA)))))
@@ -150,7 +160,7 @@ native-static-gemm: check-native-image jar liblfm25jni.a target/buildtools/LFM25
 		-J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.hosted.c=ALL-UNNAMED \
 		-J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.core.jdk=ALL-UNNAMED \
 		-Dllama.staticGemm=true \
-		-cp $(JAR_FILE):target/buildtools \
+		-cp $(JAR_FILE):$(DEPS_CLASSPATH):target/buildtools \
 		$(JAVA_MAIN_CLASS) \
 		-o $(NATIVE_FILE)
 

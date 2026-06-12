@@ -2,6 +2,8 @@
 // vector dot/gemm/gemv kernels, the parallel runner and thread affinity.
 package com.llama4j;
 
+import com.qxotic.format.gguf.GGMLType;
+
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.ShortVector;
@@ -159,97 +161,12 @@ final class Float16 {
     public static final int BYTES = 2;
 }
 
-enum GGMLType {
-    F32(Float.BYTES),          // 0
-    F16(Float16.BYTES),        // 1
-    Q4_0(Float16.BYTES + 16 * Byte.BYTES, 32),  // 2
-    Q4_1(2 * Float16.BYTES + 16 * Byte.BYTES, 32), // 3
-    UNSUPPORTED_Q4_2(Integer.MAX_VALUE), // 4 - removed
-    UNSUPPORTED_Q4_3(Integer.MAX_VALUE), // 5 - removed
-    Q5_0(Integer.MAX_VALUE),   // 6
-    Q5_1(2 * Float16.BYTES + Integer.BYTES + 16 * Byte.BYTES, 32),   // 7
-    Q8_0(Float16.BYTES + 32 * Byte.BYTES, 32),  // 8
-    Q8_1(32 * Byte.BYTES + 2 * Float.BYTES, 32), // 9
-    Q2_K(Integer.MAX_VALUE),   // 10
-    Q3_K(Integer.MAX_VALUE),   // 11
-    Q4_K(2 * Float16.BYTES + ((GGMLType.QK_K / 16) / 8 * 6) + GGMLType.QK_K / 2, GGMLType.QK_K), // 12
-    Q5_K(2 * Float16.BYTES + ((GGMLType.QK_K / 16) / 8 * 6) + GGMLType.QK_K / 8 + GGMLType.QK_K / 2, GGMLType.QK_K), // 13
-    Q6_K(GGMLType.QK_K / 2 + GGMLType.QK_K / 4 + GGMLType.QK_K / 16 + Float16.BYTES, GGMLType.QK_K), // 14
-    Q8_K(Integer.MAX_VALUE),   // 15
-    IQ2_XXS(Integer.MAX_VALUE), // 16
-    IQ2_XS(Integer.MAX_VALUE),  // 17
-    IQ3_XXS(Integer.MAX_VALUE), // 18
-    IQ1_S(Integer.MAX_VALUE),   // 19
-    IQ4_NL(Integer.MAX_VALUE),  // 20
-    IQ3_S(Integer.MAX_VALUE),   // 21
-    IQ2_S(Integer.MAX_VALUE),   // 22
-    IQ4_XS(Integer.MAX_VALUE),  // 23
-    I8(Byte.BYTES),             // 24
-    I16(Short.BYTES),           // 25
-    I32(Integer.BYTES),         // 26
-    I64(Long.BYTES),            // 27
-    F64(Double.BYTES),          // 28
-    IQ1_M(Integer.MAX_VALUE),   // 29
-    BF16(Float16.BYTES),        // 30
-    UNSUPPORTED_Q4_0_4_4(Integer.MAX_VALUE), // 31 - removed from gguf files
-    UNSUPPORTED_Q4_0_4_8(Integer.MAX_VALUE), // 32
-    UNSUPPORTED_Q4_0_8_8(Integer.MAX_VALUE), // 33
-    TQ1_0(Integer.MAX_VALUE),   // 34
-    TQ2_0(Integer.MAX_VALUE),   // 35
-    UNSUPPORTED_IQ4_NL_4_4(Integer.MAX_VALUE), // 36
-    UNSUPPORTED_IQ4_NL_4_8(Integer.MAX_VALUE), // 37
-    UNSUPPORTED_IQ4_NL_8_8(Integer.MAX_VALUE), // 38
-    MXFP4(Byte.BYTES + GGMLType.QK_MXFP4 / 2, GGMLType.QK_MXFP4), // 39
-    NVFP4(Integer.MAX_VALUE);   // 40
-
-    private static final GGMLType[] VALUES = values();
-
-    private final int typeSize;
-
-    private final int blockSize;
-
-    public int getTypeSize() {
-        return typeSize;
-    }
-
-    public int getBlockSize() {
-        return blockSize;
-    }
-
-    public static GGMLType fromId(int id) {
-        if (0 <= id && id < VALUES.length) {
-            return VALUES[id];
-        }
-        throw new UnsupportedOperationException("Unsupported GGML tensor type id: " + id);
-    }
-
-    GGMLType(int typeSize) {
-        this(typeSize, 1);
-    }
-
-    public long byteSizeFor(long numberOfElements) {
-        long t = numberOfElements * (long) getTypeSize();
-        assert t % getBlockSize() == 0;
-        return t / getBlockSize();
-    }
-
-    public static final int QK_K = 256;
-    public static final int QK_MXFP4 = 32;
-
-    GGMLType(int typeSize, int blockSize) {
-        assert blockSize > 0;
-        assert typeSize > 0;
-        assert isPowerOf2(blockSize);
-        this.typeSize = typeSize;
-        this.blockSize = blockSize;
-    }
-
-    private static boolean isPowerOf2(int n) {
-        return n > 0 && (n & (n - 1)) == 0;
-    }
-}
-
 abstract class FloatTensor {
+
+    // GGML super-block sizes (== GGMLType.{Q*_K,MXFP4}.getElementsPerBlock(); javac-foldable constants)
+    static final int QK_K = 256;
+    static final int QK_MXFP4 = 32;
+
     static final int VECTOR_BIT_SIZE = Integer.getInteger("llama.VectorBitSize", VectorShape.preferredShape().vectorBitSize());
     static final boolean USE_VECTOR_API = VECTOR_BIT_SIZE != 0;
 
@@ -697,15 +614,15 @@ final class Q4_0FloatTensor extends SegmentFloatTensor {
     @Override
     public float getFloat(long index) {
         assert 0 <= index && index < size;
-        long blockIndex = index / GGMLType.Q4_0.getBlockSize();
-        long blockOffset = blockIndex * GGMLType.Q4_0.getTypeSize();
+        long blockIndex = index / GGMLType.Q4_0.getElementsPerBlock();
+        long blockOffset = blockIndex * GGMLType.Q4_0.getBlockByteSize();
         float scale = readFloat16(memorySegment, blockOffset);
         byte quant;
-        int modIndex = (int) (index % GGMLType.Q4_0.getBlockSize());
-        if (modIndex < GGMLType.Q4_0.getBlockSize() / 2) {
+        int modIndex = (int) (index % GGMLType.Q4_0.getElementsPerBlock());
+        if (modIndex < GGMLType.Q4_0.getElementsPerBlock() / 2) {
             quant = (byte) (readByte(memorySegment, blockOffset + Float16.BYTES + modIndex) & 0x0F);
         } else {
-            quant = (byte) ((readByte(memorySegment, blockOffset + Float16.BYTES + modIndex - GGMLType.Q4_0.getBlockSize() / 2) >>> 4) & 0x0F);
+            quant = (byte) ((readByte(memorySegment, blockOffset + Float16.BYTES + modIndex - GGMLType.Q4_0.getElementsPerBlock() / 2) >>> 4) & 0x0F);
         }
         quant -= 8;
         return quant * scale;
@@ -728,7 +645,7 @@ final class Q4_0FloatTensor extends SegmentFloatTensor {
         }
         if (FloatTensor.USE_VECTOR_API && F_SPECIES.vectorBitSize() == 512
                 && that instanceof F32FloatTensor xf && out instanceof F32FloatTensor of && that != out
-                && (dim1 & (GGMLType.Q4_0.getBlockSize() - 1)) == 0 && (thisOffset & (GGMLType.Q4_0.getBlockSize() - 1)) == 0) {
+                && (dim1 & (GGMLType.Q4_0.getElementsPerBlock() - 1)) == 0 && (thisOffset & (GGMLType.Q4_0.getElementsPerBlock() - 1)) == 0) {
             vectorGemm512(this, xf, of, thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
             return;
         }
@@ -779,8 +696,8 @@ final class Q4_0FloatTensor extends SegmentFloatTensor {
     // all 4 columns. Q4_0 block layout: byte i holds elements i (low nibble) and i+16 (high).
     private static void gemm512Tile2x4(Q4_0FloatTensor thiz, F32FloatTensor x, F32FloatTensor out,
                                        int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
-        final int blockSize = GGMLType.Q4_0.getBlockSize();
-        final int typeSize = GGMLType.Q4_0.getTypeSize();
+        final int blockSize = GGMLType.Q4_0.getElementsPerBlock();
+        final int typeSize = GGMLType.Q4_0.getBlockByteSize();
         final MemorySegment w = thiz.memorySegment;
         final long rowStride = (long) (dim1 / blockSize) * typeSize;
         long b0 = (long) ((thisOffset + row * dim1) / blockSize) * typeSize;
@@ -835,18 +752,18 @@ final class Q4_0FloatTensor extends SegmentFloatTensor {
         float result = 0f;
         int j = 0;
 
-        assert Integer.bitCount(GGMLType.Q4_0.getBlockSize()) == 1 : "power of 2";
-        int alignmentBound = Math.min(size, -thisOffset & (GGMLType.Q4_0.getBlockSize() - 1));
+        assert Integer.bitCount(GGMLType.Q4_0.getElementsPerBlock()) == 1 : "power of 2";
+        int alignmentBound = Math.min(size, -thisOffset & (GGMLType.Q4_0.getElementsPerBlock() - 1));
         if (alignmentBound > 0) {
             result += FloatTensor.scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
             j += alignmentBound;
         }
-        assert (thisOffset + j) % GGMLType.Q4_0.getBlockSize() == 0;
+        assert (thisOffset + j) % GGMLType.Q4_0.getElementsPerBlock() == 0;
 
         FloatVector val = FloatVector.zero(F_SPECIES);
-        long blockOffset = (long) (thisOffset + j) / GGMLType.Q4_0.getBlockSize() * GGMLType.Q4_0.getTypeSize();
-        int upperBound = j + (size - j) / GGMLType.Q4_0.getBlockSize() * GGMLType.Q4_0.getBlockSize();
-        for (; j < upperBound; j += GGMLType.Q4_0.getBlockSize(), blockOffset += GGMLType.Q4_0.getTypeSize()) {
+        long blockOffset = (long) (thisOffset + j) / GGMLType.Q4_0.getElementsPerBlock() * GGMLType.Q4_0.getBlockByteSize();
+        int upperBound = j + (size - j) / GGMLType.Q4_0.getElementsPerBlock() * GGMLType.Q4_0.getElementsPerBlock();
+        for (; j < upperBound; j += GGMLType.Q4_0.getElementsPerBlock(), blockOffset += GGMLType.Q4_0.getBlockByteSize()) {
             float wScaleValue = readFloat16(thiz.memorySegment, blockOffset);
             var wScale = FloatVector.broadcast(F_SPECIES, wScaleValue);
             var wBytes = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, thiz.memorySegment, blockOffset + Float16.BYTES, ByteOrder.LITTLE_ENDIAN);
@@ -904,11 +821,11 @@ final class Q4_1FloatTensor extends SegmentFloatTensor {
     @Override
     public float getFloat(long index) {
         assert 0 <= index && index < size;
-        long blockIndex = index / GGMLType.Q4_1.getBlockSize();
-        long blockOffset = blockIndex * GGMLType.Q4_1.getTypeSize();
+        long blockIndex = index / GGMLType.Q4_1.getElementsPerBlock();
+        long blockOffset = blockIndex * GGMLType.Q4_1.getBlockByteSize();
         float delta = readFloat16(memorySegment, blockOffset);
         float min = readFloat16(memorySegment, blockOffset + Float16.BYTES);
-        int modIndex = (int) (index % GGMLType.Q4_1.getBlockSize());
+        int modIndex = (int) (index % GGMLType.Q4_1.getElementsPerBlock());
         int quant;
         if (modIndex < 16) {
             quant = Byte.toUnsignedInt(readByte(memorySegment, blockOffset + 2 * Float16.BYTES + modIndex)) & 0x0F;
@@ -930,18 +847,18 @@ final class Q4_1FloatTensor extends SegmentFloatTensor {
         float result = 0f;
         int j = 0;
 
-        assert Integer.bitCount(GGMLType.Q4_1.getBlockSize()) == 1 : "power of 2";
-        int alignmentBound = Math.min(size, -thisOffset & (GGMLType.Q4_1.getBlockSize() - 1));
+        assert Integer.bitCount(GGMLType.Q4_1.getElementsPerBlock()) == 1 : "power of 2";
+        int alignmentBound = Math.min(size, -thisOffset & (GGMLType.Q4_1.getElementsPerBlock() - 1));
         if (alignmentBound > 0) {
             result += FloatTensor.scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
             j += alignmentBound;
         }
-        assert (thisOffset + j) % GGMLType.Q4_1.getBlockSize() == 0;
+        assert (thisOffset + j) % GGMLType.Q4_1.getElementsPerBlock() == 0;
 
         FloatVector val = FloatVector.zero(F_SPECIES);
-        long blockOffset = (long) (thisOffset + j) / GGMLType.Q4_1.getBlockSize() * GGMLType.Q4_1.getTypeSize();
-        int upperBound = j + (size - j) / GGMLType.Q4_1.getBlockSize() * GGMLType.Q4_1.getBlockSize();
-        for (; j < upperBound; j += GGMLType.Q4_1.getBlockSize(), blockOffset += GGMLType.Q4_1.getTypeSize()) {
+        long blockOffset = (long) (thisOffset + j) / GGMLType.Q4_1.getElementsPerBlock() * GGMLType.Q4_1.getBlockByteSize();
+        int upperBound = j + (size - j) / GGMLType.Q4_1.getElementsPerBlock() * GGMLType.Q4_1.getElementsPerBlock();
+        for (; j < upperBound; j += GGMLType.Q4_1.getElementsPerBlock(), blockOffset += GGMLType.Q4_1.getBlockByteSize()) {
             float deltaValue = readFloat16(thiz.memorySegment, blockOffset);
             float minValue = readFloat16(thiz.memorySegment, blockOffset + Float16.BYTES);
             var wDelta = FloatVector.broadcast(F_SPECIES, deltaValue);
@@ -981,7 +898,7 @@ final class Q4_1FloatTensor extends SegmentFloatTensor {
                     }
                     // vectorized min contribution
                     var thatSum = FloatVector.zero(F_SPECIES);
-                    for (int k = 0; k < GGMLType.Q4_1.getBlockSize(); k += F_SPECIES.length()) {
+                    for (int k = 0; k < GGMLType.Q4_1.getElementsPerBlock(); k += F_SPECIES.length()) {
                         thatSum = thatSum.add(that.getFloatVector(F_SPECIES, thatOffset + j + k));
                     }
                     val = thatSum.fma(wMin, val);
@@ -1015,9 +932,9 @@ final class Q5_1FloatTensor extends SegmentFloatTensor {
     @Override
     public float getFloat(long index) {
         assert 0 <= index && index < size;
-        long blockIndex = index / GGMLType.Q5_1.getBlockSize();
-        int inBlockIndex = (int) (index % GGMLType.Q5_1.getBlockSize());
-        long blockOffset = blockIndex * GGMLType.Q5_1.getTypeSize();
+        long blockIndex = index / GGMLType.Q5_1.getElementsPerBlock();
+        int inBlockIndex = (int) (index % GGMLType.Q5_1.getElementsPerBlock());
+        long blockOffset = blockIndex * GGMLType.Q5_1.getBlockByteSize();
 
         float d = readFloat16(memorySegment, blockOffset);
         float m = readFloat16(memorySegment, blockOffset + Float16.BYTES);
@@ -1026,12 +943,12 @@ final class Q5_1FloatTensor extends SegmentFloatTensor {
         int j;
         int nibble;
         int xh;
-        if (inBlockIndex < GGMLType.Q5_1.getBlockSize() / 2) {
+        if (inBlockIndex < GGMLType.Q5_1.getElementsPerBlock() / 2) {
             j = inBlockIndex;
             nibble = Byte.toUnsignedInt(readByte(memorySegment, blockOffset + 2L * Float16.BYTES + Integer.BYTES + j)) & 0x0F;
             xh = ((qh >> j) << 4) & 0x10;
         } else {
-            j = inBlockIndex - GGMLType.Q5_1.getBlockSize() / 2;
+            j = inBlockIndex - GGMLType.Q5_1.getElementsPerBlock() / 2;
             nibble = (Byte.toUnsignedInt(readByte(memorySegment, blockOffset + 2L * Float16.BYTES + Integer.BYTES + j)) >>> 4) & 0x0F;
             xh = (qh >> (j + 12)) & 0x10;
         }
@@ -1049,33 +966,33 @@ final class Q5_1FloatTensor extends SegmentFloatTensor {
     }
 
     private static float vectorDot(Q5_1FloatTensor thiz, int thisOffset, FloatTensor that, int thatOffset, int size) {
-        assert Integer.bitCount(GGMLType.Q5_1.getBlockSize()) == 1 : "power of 2";
+        assert Integer.bitCount(GGMLType.Q5_1.getElementsPerBlock()) == 1 : "power of 2";
         int j = 0;
         float result = 0f;
 
-        int alignmentBound = Math.min(size, -thisOffset & (GGMLType.Q5_1.getBlockSize() - 1));
+        int alignmentBound = Math.min(size, -thisOffset & (GGMLType.Q5_1.getElementsPerBlock() - 1));
         if (alignmentBound > 0) {
             result += scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
             j = alignmentBound;
         }
 
-        float[] decoded = new float[GGMLType.Q5_1.getBlockSize()];
-        int upperBound = j + (size - j) / GGMLType.Q5_1.getBlockSize() * GGMLType.Q5_1.getBlockSize();
-        int vecUpper = F_SPECIES.loopBound(GGMLType.Q5_1.getBlockSize());
-        for (; j < upperBound; j += GGMLType.Q5_1.getBlockSize()) {
-            assert (thisOffset + j) % GGMLType.Q5_1.getBlockSize() == 0;
-            long blockOffset = (long) (thisOffset + j) / GGMLType.Q5_1.getBlockSize() * GGMLType.Q5_1.getTypeSize();
+        float[] decoded = new float[GGMLType.Q5_1.getElementsPerBlock()];
+        int upperBound = j + (size - j) / GGMLType.Q5_1.getElementsPerBlock() * GGMLType.Q5_1.getElementsPerBlock();
+        int vecUpper = F_SPECIES.loopBound(GGMLType.Q5_1.getElementsPerBlock());
+        for (; j < upperBound; j += GGMLType.Q5_1.getElementsPerBlock()) {
+            assert (thisOffset + j) % GGMLType.Q5_1.getElementsPerBlock() == 0;
+            long blockOffset = (long) (thisOffset + j) / GGMLType.Q5_1.getElementsPerBlock() * GGMLType.Q5_1.getBlockByteSize();
             float d = readFloat16(thiz.memorySegment, blockOffset);
             float m = readFloat16(thiz.memorySegment, blockOffset + Float16.BYTES);
             int qh = readInt32LE(thiz.memorySegment, blockOffset + 2L * Float16.BYTES);
             long qsBase = blockOffset + 2L * Float16.BYTES + Integer.BYTES;
 
-            for (int p = 0; p < GGMLType.Q5_1.getBlockSize() / 2; p++) {
+            for (int p = 0; p < GGMLType.Q5_1.getElementsPerBlock() / 2; p++) {
                 int packed = Byte.toUnsignedInt(readByte(thiz.memorySegment, qsBase + p));
                 int x0 = (packed & 0x0F) | ((((qh >> p) << 4) & 0x10));
                 int x1 = ((packed >>> 4) & 0x0F) | ((qh >> (p + 12)) & 0x10);
                 decoded[p] = x0 * d + m;
-                decoded[p + GGMLType.Q5_1.getBlockSize() / 2] = x1 * d + m;
+                decoded[p + GGMLType.Q5_1.getElementsPerBlock() / 2] = x1 * d + m;
             }
 
             FloatVector acc = FloatVector.zero(F_SPECIES);
@@ -1086,7 +1003,7 @@ final class Q5_1FloatTensor extends SegmentFloatTensor {
             }
             result += acc.reduceLanes(VectorOperators.ADD);
 
-            for (int i = vecUpper; i < GGMLType.Q5_1.getBlockSize(); i++) {
+            for (int i = vecUpper; i < GGMLType.Q5_1.getElementsPerBlock(); i++) {
                 result += decoded[i] * that.getFloat(thatOffset + j + i);
             }
         }
@@ -1108,8 +1025,8 @@ final class Q5_1FloatTensor extends SegmentFloatTensor {
 
 final class Q4_KFloatTensor extends SegmentFloatTensor {
 
-    static final int BLOCK_SIZE = GGMLType.QK_K;
-    static final int TYPE_SIZE = GGMLType.Q4_K.getTypeSize();
+    static final int BLOCK_SIZE = QK_K;
+    static final int TYPE_SIZE = GGMLType.Q4_K.getBlockByteSize();
 
     final MemorySegment memorySegment;
 
@@ -1405,8 +1322,8 @@ final class Q4_KFloatTensor extends SegmentFloatTensor {
 
 final class Q5_KFloatTensor extends SegmentFloatTensor {
 
-    static final int BLOCK_SIZE = GGMLType.QK_K;
-    static final int TYPE_SIZE = GGMLType.Q5_K.getTypeSize();
+    static final int BLOCK_SIZE = QK_K;
+    static final int TYPE_SIZE = GGMLType.Q5_K.getBlockByteSize();
 
     final MemorySegment memorySegment;
 
@@ -1553,8 +1470,8 @@ final class Q5_KFloatTensor extends SegmentFloatTensor {
 
 final class Q6_KFloatTensor extends SegmentFloatTensor {
 
-    static final int BLOCK_SIZE = GGMLType.QK_K;
-    static final int TYPE_SIZE = GGMLType.Q6_K.getTypeSize();
+    static final int BLOCK_SIZE = QK_K;
+    static final int TYPE_SIZE = GGMLType.Q6_K.getBlockByteSize();
 
     final MemorySegment memorySegment;
 
@@ -1879,9 +1796,9 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
 
     @Override
     public float getFloat(long index) {
-        long blockIndex = index / GGMLType.Q8_0.getBlockSize();
-        long withinBlockIndex = index % GGMLType.Q8_0.getBlockSize();
-        long blockOffset = blockIndex * GGMLType.Q8_0.getTypeSize();
+        long blockIndex = index / GGMLType.Q8_0.getElementsPerBlock();
+        long withinBlockIndex = index % GGMLType.Q8_0.getElementsPerBlock();
+        long blockOffset = blockIndex * GGMLType.Q8_0.getBlockByteSize();
         byte quant = readByte(memorySegment, blockOffset + Float16.BYTES + withinBlockIndex);
         float scale = readFloat16(memorySegment, blockOffset);
         return quant * scale;
@@ -1932,8 +1849,8 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
 
     private static void gemv512Rows4(Q8_0FloatTensor thiz, F32FloatTensor x, int thatOffset,
                                      F32FloatTensor out, int outOffset, int dim1, int thisOffset, int row) {
-        final int blockSize = GGMLType.Q8_0.getBlockSize();
-        final int typeSize = GGMLType.Q8_0.getTypeSize();
+        final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
+        final int typeSize = GGMLType.Q8_0.getBlockByteSize();
         final MemorySegment w = thiz.memorySegment;
         final long rowStride = (long) (dim1 / blockSize) * typeSize;
         long b0 = (long) ((thisOffset + row * dim1) / blockSize) * typeSize;
@@ -1990,8 +1907,8 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
 
     private static void gemm512Tile3x2F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
-        final int blockSize = GGMLType.Q8_0.getBlockSize();
-        final int typeSize = GGMLType.Q8_0.getTypeSize();
+        final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
+        final int typeSize = GGMLType.Q8_0.getBlockByteSize();
         final MemorySegment w = thiz.memorySegment;
         final long rowStride = (long) dim1 / blockSize * typeSize;
         long b0 = (long) (thisOffset + row * dim1) / blockSize * typeSize;
@@ -2036,8 +1953,8 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
 
     private static void gemm512Tile3x1F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
-        final int blockSize = GGMLType.Q8_0.getBlockSize();
-        final int typeSize = GGMLType.Q8_0.getTypeSize();
+        final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
+        final int typeSize = GGMLType.Q8_0.getBlockByteSize();
         final MemorySegment w = thiz.memorySegment;
         final long rowStride = (long) dim1 / blockSize * typeSize;
         long b0 = (long) (thisOffset + row * dim1) / blockSize * typeSize;
@@ -2071,8 +1988,8 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
 
     private static void gemm512Tile2x2F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
-        final int blockSize = GGMLType.Q8_0.getBlockSize();
-        final int typeSize = GGMLType.Q8_0.getTypeSize();
+        final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
+        final int typeSize = GGMLType.Q8_0.getBlockByteSize();
         final MemorySegment w = thiz.memorySegment;
         final long rowStride = (long) dim1 / blockSize * typeSize;
         long b0 = (long) (thisOffset + row * dim1) / blockSize * typeSize;
@@ -2108,8 +2025,8 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
 
     private static void gemm512Tile1x1F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
-        final int blockSize = GGMLType.Q8_0.getBlockSize();
-        final int typeSize = GGMLType.Q8_0.getTypeSize();
+        final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
+        final int typeSize = GGMLType.Q8_0.getBlockByteSize();
         final MemorySegment w = thiz.memorySegment;
         long b0 = (long) (thisOffset + row * dim1) / blockSize * typeSize;
         int x0 = s * thatStride;
@@ -2127,8 +2044,8 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
 
         private static void gemm512Tile4x4F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
-        final int blockSize = GGMLType.Q8_0.getBlockSize();
-        final int typeSize = GGMLType.Q8_0.getTypeSize();
+        final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
+        final int typeSize = GGMLType.Q8_0.getBlockByteSize();
         final MemorySegment w = thiz.memorySegment;
         final long rowStride = (long) dim1 / blockSize * typeSize;
         long b0 = (long) (thisOffset + row * dim1) / blockSize * typeSize;
@@ -2300,8 +2217,8 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
     private static void vectorGemmRowTile(Q8_0FloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
                                           int thatStride, int outStride, int dim1,
                                           int thisOffset, int row, int seqStart, int seqEnd) {
-        final int blockSize = GGMLType.Q8_0.getBlockSize();
-        final int typeSize = GGMLType.Q8_0.getTypeSize();
+        final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
+        final int typeSize = GGMLType.Q8_0.getBlockByteSize();
         int rowBase = thisOffset + row * dim1;
         int seqCount = seqEnd - seqStart;
         if (seqCount > 4) {
@@ -2356,8 +2273,8 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
     }
 
     static float vectorDot512F32(Q8_0FloatTensor thiz, int thisOffset, F32FloatTensor that, int thatOffset, int size) {
-        final int blockSize = GGMLType.Q8_0.getBlockSize();
-        final int typeSize = GGMLType.Q8_0.getTypeSize();
+        final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
+        final int typeSize = GGMLType.Q8_0.getBlockByteSize();
         final MemorySegment w = thiz.memorySegment;
         final MemorySegment x = that.vseg;
         final long xBase = that.vbase;
@@ -2405,18 +2322,18 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
         float result = 0f;
         int j = 0;
 
-        assert Integer.bitCount(GGMLType.Q8_0.getBlockSize()) == 1 : "power of 2";
-        int alignmentBound = Math.min(size, -thisOffset & (GGMLType.Q8_0.getBlockSize() - 1));
+        assert Integer.bitCount(GGMLType.Q8_0.getElementsPerBlock()) == 1 : "power of 2";
+        int alignmentBound = Math.min(size, -thisOffset & (GGMLType.Q8_0.getElementsPerBlock() - 1));
         if (alignmentBound > 0) {
             result += FloatTensor.scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
             j += alignmentBound;
         }
-        assert (thisOffset + j) % GGMLType.Q8_0.getBlockSize() == 0;
+        assert (thisOffset + j) % GGMLType.Q8_0.getElementsPerBlock() == 0;
 
         FloatVector val = FloatVector.zero(F_SPECIES);
-        long blockOffset = (long) (thisOffset + j) / GGMLType.Q8_0.getBlockSize() * GGMLType.Q8_0.getTypeSize();
-        int upperBound = j + (size - j) / GGMLType.Q8_0.getBlockSize() * GGMLType.Q8_0.getBlockSize();
-        for (; j < upperBound; j += GGMLType.Q8_0.getBlockSize(), blockOffset += GGMLType.Q8_0.getTypeSize()) {
+        long blockOffset = (long) (thisOffset + j) / GGMLType.Q8_0.getElementsPerBlock() * GGMLType.Q8_0.getBlockByteSize();
+        int upperBound = j + (size - j) / GGMLType.Q8_0.getElementsPerBlock() * GGMLType.Q8_0.getElementsPerBlock();
+        for (; j < upperBound; j += GGMLType.Q8_0.getElementsPerBlock(), blockOffset += GGMLType.Q8_0.getBlockByteSize()) {
             val = q8BlockFma(thiz, blockOffset, that, thatOffset + j, val);
         }
         result += val.reduceLanes(VectorOperators.ADD);
@@ -2485,16 +2402,16 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
     @Override
     public float getFloat(long index) {
         assert 0 <= index && index < size;
-        long blockIndex = index / GGMLType.QK_MXFP4;
-        int inBlockIndex = (int) (index % GGMLType.QK_MXFP4);
-        long blockOffset = blockIndex * GGMLType.MXFP4.getTypeSize();
+        long blockIndex = index / QK_MXFP4;
+        int inBlockIndex = (int) (index % QK_MXFP4);
+        long blockOffset = blockIndex * GGMLType.MXFP4.getBlockByteSize();
 
         int e8m0 = Byte.toUnsignedInt(readByte(memorySegment, blockOffset));
         float d = e8m0ToFp32Half(e8m0);
 
         long qsOffset = blockOffset + Byte.BYTES + (inBlockIndex & 0x0F);
         int packed = Byte.toUnsignedInt(readByte(memorySegment, qsOffset));
-        int nibble = inBlockIndex < (GGMLType.QK_MXFP4 / 2) ? (packed & 0x0F) : ((packed >>> 4) & 0x0F);
+        int nibble = inBlockIndex < (QK_MXFP4 / 2) ? (packed & 0x0F) : ((packed >>> 4) & 0x0F);
 
         return MXFP4_VALUES[nibble] * d;
     }
@@ -2508,20 +2425,20 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
     }
 
     private static float vectorDot(MXFP4FloatTensor thiz, int thisOffset, FloatTensor that, int thatOffset, int size) {
-        assert Integer.bitCount(GGMLType.QK_MXFP4) == 1 : "power of 2";
+        assert Integer.bitCount(QK_MXFP4) == 1 : "power of 2";
         int j = 0;
         float result = 0f;
 
-        int alignmentBound = Math.min(size, -thisOffset & (GGMLType.QK_MXFP4 - 1));
+        int alignmentBound = Math.min(size, -thisOffset & (QK_MXFP4 - 1));
         if (alignmentBound > 0) {
             result += scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
             j = alignmentBound;
         }
 
-        int upperBound = j + (size - j) / GGMLType.QK_MXFP4 * GGMLType.QK_MXFP4;
-        for (; j < upperBound; j += GGMLType.QK_MXFP4) {
-            assert (thisOffset + j) % GGMLType.QK_MXFP4 == 0;
-            long blockOffset = (long) (thisOffset + j) / GGMLType.QK_MXFP4 * GGMLType.MXFP4.getTypeSize();
+        int upperBound = j + (size - j) / QK_MXFP4 * QK_MXFP4;
+        for (; j < upperBound; j += QK_MXFP4) {
+            assert (thisOffset + j) % QK_MXFP4 == 0;
+            long blockOffset = (long) (thisOffset + j) / QK_MXFP4 * GGMLType.MXFP4.getBlockByteSize();
             float d = e8m0ToFp32Half(Byte.toUnsignedInt(readByte(thiz.memorySegment, blockOffset)));
 
             ByteVector packed = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, thiz.memorySegment, blockOffset + Byte.BYTES, ByteOrder.LITTLE_ENDIAN);
@@ -2534,7 +2451,7 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
                     FloatVector loCoeffs = mxfp4CodesToCoeffs((FloatVector) lo.castShape(F_SPECIES, 0));
                     FloatVector hiCoeffs = mxfp4CodesToCoeffs((FloatVector) hi.castShape(F_SPECIES, 0));
                     FloatVector xLo = that.getFloatVector(F_SPECIES, thatOffset + j);
-                    FloatVector xHi = that.getFloatVector(F_SPECIES, thatOffset + j + GGMLType.QK_MXFP4 / 2);
+                    FloatVector xHi = that.getFloatVector(F_SPECIES, thatOffset + j + QK_MXFP4 / 2);
                     blockSum += loCoeffs.fma(xLo, hiCoeffs.mul(xHi)).reduceLanes(VectorOperators.ADD);
                 }
                 case 256 -> {
@@ -2544,8 +2461,8 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
                     FloatVector hi1 = mxfp4CodesToCoeffs((FloatVector) hi.castShape(F_SPECIES, 1));
                     FloatVector x0 = that.getFloatVector(F_SPECIES, thatOffset + j);
                     FloatVector x1 = that.getFloatVector(F_SPECIES, thatOffset + j + F_SPECIES.length());
-                    FloatVector x2 = that.getFloatVector(F_SPECIES, thatOffset + j + GGMLType.QK_MXFP4 / 2);
-                    FloatVector x3 = that.getFloatVector(F_SPECIES, thatOffset + j + GGMLType.QK_MXFP4 / 2 + F_SPECIES.length());
+                    FloatVector x2 = that.getFloatVector(F_SPECIES, thatOffset + j + QK_MXFP4 / 2);
+                    FloatVector x3 = that.getFloatVector(F_SPECIES, thatOffset + j + QK_MXFP4 / 2 + F_SPECIES.length());
                     blockSum += lo0.fma(x0, lo1.mul(x1)).reduceLanes(VectorOperators.ADD);
                     blockSum += hi0.fma(x2, hi1.mul(x3)).reduceLanes(VectorOperators.ADD);
                 }
@@ -2555,7 +2472,7 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
                         FloatVector loPart = mxfp4CodesToCoeffs((FloatVector) lo.castShape(F_SPECIES, p));
                         FloatVector hiPart = mxfp4CodesToCoeffs((FloatVector) hi.castShape(F_SPECIES, p));
                         FloatVector xLo = that.getFloatVector(F_SPECIES, thatOffset + j + p * F_SPECIES.length());
-                        FloatVector xHi = that.getFloatVector(F_SPECIES, thatOffset + j + GGMLType.QK_MXFP4 / 2 + p * F_SPECIES.length());
+                        FloatVector xHi = that.getFloatVector(F_SPECIES, thatOffset + j + QK_MXFP4 / 2 + p * F_SPECIES.length());
                         sum = loPart.fma(xLo, sum);
                         sum = hiPart.fma(xHi, sum);
                     }

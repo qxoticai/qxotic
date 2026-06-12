@@ -1,6 +1,8 @@
 // Matmul backend seam: implementation chosen once at startup (Java Vector API or native C).
 package com.llama4j;
 
+import com.qxotic.format.gguf.GGMLType;
+
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.ShortVector;
@@ -106,8 +108,8 @@ final class JavaKernels implements Kernels {
             return false;
         }
         if (FloatTensor.F_SPECIES.vectorBitSize() == 512
-                && (dim1 & (GGMLType.Q8_0.getBlockSize() - 1)) == 0
-                && (thisOffset & (GGMLType.Q8_0.getBlockSize() - 1)) == 0) {
+                && (dim1 & (GGMLType.Q8_0.getElementsPerBlock() - 1)) == 0
+                && (thisOffset & (GGMLType.Q8_0.getElementsPerBlock() - 1)) == 0) {
             Q8_0FloatTensor.vectorGemm512F32(w, x, out, thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
             return true;
         }
@@ -121,8 +123,8 @@ final class JavaKernels implements Kernels {
         // Small gemvs (and narrow vectors) decline: parallel per-row dots win there.
         if (FloatTensor.USE_VECTOR_API && FloatTensor.F_SPECIES.vectorBitSize() == 512
                 && (long) dim0 * dim1 > (1 << 18)
-                && (dim1 & (GGMLType.Q8_0.getBlockSize() - 1)) == 0
-                && (thisOffset & (GGMLType.Q8_0.getBlockSize() - 1)) == 0) {
+                && (dim1 & (GGMLType.Q8_0.getElementsPerBlock() - 1)) == 0
+                && (thisOffset & (GGMLType.Q8_0.getElementsPerBlock() - 1)) == 0) {
             Q8_0FloatTensor.vectorGemv512(w, x, thatOffset, out, outOffset, dim0, dim1, thisOffset);
             return true;
         }
@@ -167,8 +169,8 @@ final class NativeKernels implements Kernels {
     @Override
     public boolean gemmQ8F32(Q8_0FloatTensor w, int thisOffset, F32FloatTensor x, int thatStride,
                              F32FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1) {
-        if ((dim1 & (GGMLType.Q8_0.getBlockSize() - 1)) == 0
-                && (thisOffset & (GGMLType.Q8_0.getBlockSize() - 1)) == 0) {
+        if ((dim1 & (GGMLType.Q8_0.getElementsPerBlock() - 1)) == 0
+                && (thisOffset & (GGMLType.Q8_0.getElementsPerBlock() - 1)) == 0) {
             nativeGemmQ8F32Ptr(w.memorySegment.address(), x.memorySegment.address(), out.memorySegment.address(),
                     thatStride, outStride, sequenceLength, dim0, dim1, thisOffset,
                     RuntimeFlags.GEMM_ROW_TILE, RuntimeFlags.GEMM_SEQ_TILE, RuntimeFlags.GEMM_THREADS);
@@ -181,8 +183,8 @@ final class NativeKernels implements Kernels {
     public boolean gemvQ8F32(Q8_0FloatTensor w, int thisOffset, F32FloatTensor x, int thatOffset,
                              F32FloatTensor out, int outOffset, int dim0, int dim1) {
         if (NATIVE_GEMV
-                && (dim1 & (GGMLType.Q8_0.getBlockSize() - 1)) == 0
-                && (thisOffset & (GGMLType.Q8_0.getBlockSize() - 1)) == 0) {
+                && (dim1 & (GGMLType.Q8_0.getElementsPerBlock() - 1)) == 0
+                && (thisOffset & (GGMLType.Q8_0.getElementsPerBlock() - 1)) == 0) {
             nativeGemvQ8F32Ptr(w.memorySegment.address(),
                     x.memorySegment.address() + 4L * thatOffset,
                     out.memorySegment.address() + 4L * outOffset,

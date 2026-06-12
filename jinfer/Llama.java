@@ -1472,9 +1472,6 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         return state.logits;
     }
 
-    private static final String ANSI_CYAN = "\033[36m";
-    private static final String ANSI_RESET = "\033[0m";
-
     /**
      * The effective token stream that prefill ingests: the not-yet-ingested {@code latestToken}
      * (BOS for a fresh state) followed by the prompt, deduplicating a leading BOS. Position i of
@@ -1564,46 +1561,6 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
             position += chunk;
             hooks.afterIngest(stream, position);
         }
-        return generatedTokens;
-    }
-
-    /** CLI generation: {@link #generate} plus prompt echo and the timing summary line. */
-    public static List<Integer> generateTokens(Llama model, Llama.State state, int startPosition, List<Integer> promptTokens, Set<Integer> stopTokens, int maxTokens, Sampler sampler, boolean echo,
-                                               boolean color, IntConsumer onTokenGenerated) {
-        long startNanos = System.nanoTime();
-        if (echo) {
-            for (int promptToken : promptTokens) {
-                System.err.print(LFMTokenizer.replaceControlCharacters(model.tokenizer().decode(promptToken)));
-            }
-        }
-        long[] prefillDoneNanos = {0};
-        GenerationHooks hooks = new GenerationHooks() {
-            @Override
-            public void afterPrefill() {
-                prefillDoneNanos[0] = System.nanoTime();
-            }
-        };
-        IntConsumer sink = token -> {
-            if (echo) {
-                System.err.print(LFMTokenizer.replaceControlCharacters(model.tokenizer().decode(token)));
-            }
-            if (onTokenGenerated != null) {
-                onTokenGenerated.accept(token);
-            }
-        };
-        List<Integer> generatedTokens = generate(model, state, startPosition, promptTokens, stopTokens, maxTokens, sampler, sink, hooks);
-        long endNanos = System.nanoTime();
-        long startGen = prefillDoneNanos[0] != 0 ? prefillDoneNanos[0] : (promptTokens.isEmpty() ? startNanos : endNanos);
-        long genNanos = endNanos - startGen;
-        long promptNanos = startGen - startNanos;
-        String timingPrefix = color ? ANSI_CYAN : "";
-        String timingSuffix = color ? ANSI_RESET : "";
-        System.err.printf("%n%scontext: %d/%d prompt: %.2f tokens/s (%d) generation: %.2f tokens/s (%d)%s%n",
-                timingPrefix,
-                startPosition + promptTokens.size() + generatedTokens.size(), model.configuration().contextLength,
-                promptTokens.size() / (promptNanos / 1_000_000_000.0), promptTokens.size(),
-                generatedTokens.size() / (genNanos / 1_000_000_000.0), generatedTokens.size(),
-                timingSuffix);
         return generatedTokens;
     }
 }

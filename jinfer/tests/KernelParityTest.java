@@ -1,5 +1,7 @@
 package com.llama4j;
 
+import com.qxotic.format.gguf.GGMLType;
+
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -71,8 +73,8 @@ public final class KernelParityTest {
             return new BF16FloatTensor(numElements, seg);
         }
 
-        int blockSize = type.getBlockSize();
-        int typeSize = type.getTypeSize();
+        int blockSize = type.getElementsPerBlock();
+        int typeSize = type.getBlockByteSize();
         int blocks = numElements / blockSize;
         byte[] payload = new byte[blocks * typeSize];
         rng.nextBytes(payload);
@@ -135,7 +137,7 @@ public final class KernelParityTest {
 
     static void testDot(GGMLType type) {
         Random rng = new Random(SEED ^ type.ordinal());
-        int blockSize = Math.max(type.getBlockSize(), 1);
+        int blockSize = Math.max(type.getElementsPerBlock(), 1);
         int n = 16 * Math.max(blockSize, 64);
         FloatTensor w = makeQuant(type, n, rng);
         F32FloatTensor x = makeF32(n, rng);
