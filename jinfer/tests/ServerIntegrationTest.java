@@ -27,16 +27,29 @@ public final class ServerIntegrationTest {
     private static int failures = 0;
     private static HttpClient client;
     private static String base;
+    private static Path warmFile;
 
     public static void main(String[] args) throws Exception {
+        toolCallParser(); // pure parser tests: no model required
         Path model = Path.of(args.length > 0 ? args[0] : "../models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
         if (!Files.exists(model)) {
             System.out.println("ServerIntegrationTest: model not found (" + model + "), skipping");
+            System.exit(failures > 0 ? 1 : 0);
             return;
         }
         Llama llama = ModelLoader.loadModel(model, 2048);
+        StringBuilder manual = new StringBuilder("Agent operating manual.");
+        for (int i = 1; i <= 50; i++) {
+            manual.append(" Directive ").append(i).append(": when handling case ").append(i)
+                    .append(", consult registry entry ").append(i).append(" and apply policy ")
+                    .append(i).append(" before responding;");
+        }
+        warmFile = Files.createTempFile("lfm25-warm", ".txt");
+        warmFile.toFile().deleteOnExit();
+        Files.writeString(warmFile, manual.toString());
         LFM25.Options options = new LFM25.Options(model, null, null, null, false, true, "127.0.0.1", 0,
-                1f, 0.95f, 42L, 2048, true, false, true, false, false, false, false);
+                1f, 0.95f, 42L, 2048, true, false, true, false, false, false, false,
+                List.of(warmFile.toString()));
         HttpServer server = Server.run(llama, options);
         base = "http://127.0.0.1:" + server.getAddress().getPort();
         client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
@@ -52,6 +65,11 @@ public final class ServerIntegrationTest {
             promptCacheColdWarm();
             promptCacheStrictPrefix();
             promptCacheBranchPoint();
+            warmPromptInstant();
+            strideAndTailResume();
+            toolChoiceForced();
+            reasoningBudget();
+            stopStringsIgnoreReasoning();
             fast400WhileBusy();
             sessionResume();
         } catch (Throwable t) {
@@ -71,9 +89,14 @@ public final class ServerIntegrationTest {
         Map<String, Object> models = json(get("/v1/models"));
         check("list".equals(models.get("object")) && models.get("data") instanceof List<?> l && !l.isEmpty(),
                 "models list non-empty");
+        String servedId = (String) path(models, "data", 0).get("id");
+        Map<String, Object> card = json(get("/v1/models/" + servedId));
+        check("model".equals(card.get("object")) && servedId.equals(card.get("id")), "GET /v1/models/{id} -> card");
+        check(get("/v1/models/garbage").statusCode() == 404, "GET /v1/models/{unknown} -> 404");
         check(post("/v1/models", "{}").statusCode() == 405, "POST /v1/models -> 405");
         check(get("/v1/chat/completions").statusCode() == 405, "GET chat -> 405");
         check(get("/no/such/path").statusCode() == 404, "unknown path -> 404");
+        check(get("/health/garbage").statusCode() == 404, "prefix-matched subpath -> 404");
     }
 
     // --- malformed requests must 400 instantly, never enter the queue ---
@@ -81,6 +104,11 @@ public final class ServerIntegrationTest {
     private static void validation() throws Exception {
         expect400("/v1/chat/completions", "{bad json", "invalid JSON");
         expect400("/v1/chat/completions", "{\"messages\":[]}", "empty messages");
+        expect400("/v1/chat/completions", "{\"messages\":[{\"role\":\"user\",\"content\":\"\"}]}", "all-empty message content");
+        expect400("/v1/chat/completions",
+                "{\"model\":\"garbage\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}", "unknown model name");
+        expect400("/v1/chat/completions",
+                "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"reasoning_max_tokens\":-2}", "reasoning_max_tokens=-2");
         expect400("/v1/chat/completions", "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"n\":2}", "n=2");
         expect400("/v1/chat/completions",
                 "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"n\":2,\"stream\":true}", "stream + n=2 pre-SSE");
@@ -101,6 +129,13 @@ public final class ServerIntegrationTest {
         check(List.of(35808L, 20L, 1530L, 9L).equals(tokens.get("tokens")), "tokenize ground truth");
         Map<String, Object> text = json(post("/detokenize", "{\"tokens\":[35808,20,1530,9]}"));
         check("Hello, world!".equals(text.get("content")), "detokenize round trip");
+        Map<String, Object> alias = json(post("/v1/tokenize", "{\"content\":\"Hello, world!\"}"));
+        check(tokens.get("tokens").equals(alias.get("tokens")), "/v1/tokenize alias");
+        check("Hello, world!".equals(json(post("/v1/detokenize", "{\"tokens\":[35808,20,1530,9]}")).get("content")),
+                "/v1/detokenize alias");
+        HttpResponse<String> metrics = get("/metrics");
+        check(metrics.statusCode() == 200 && metrics.body().contains("lfm25_requests_total")
+                && metrics.body().contains("lfm25_uptime_seconds"), "/metrics exposition");
     }
 
     // --- generation endpoints ---
@@ -204,9 +239,9 @@ public final class ServerIntegrationTest {
         check(firstText.equals(secondText), "strict-prefix outputs identical");
     }
 
-    /** The motivating sparse-checkpoint case: requests sharing only a SYSTEM PROMPT prefix.
-     *  A populates the tree; B diverges inside A's prompt — no resume yet, but re-ingesting to
-     *  the divergence leaves a conv checkpoint there; C (a third variant) resumes at it. */
+    /** Requests sharing only a SYSTEM PROMPT prefix. A populates the tree; the short stream
+     *  lies entirely inside the dense tail, so B and C resume token-exact at the divergence
+     *  on their FIRST visit (bx rows — no checkpoint round-trip needed anymore). */
     private static void promptCacheBranchPoint() throws Exception {
         String system = "You are the dedicated test oracle for the lfm25 integration battery, a most particular "
                 + "and verbose persona that always answers with at most one short sentence and no preamble.";
@@ -216,9 +251,183 @@ public final class ServerIntegrationTest {
         long cachedA = cachedTokens(post("/v1/chat/completions", template.formatted("What color is the sea?")));
         long cachedB = cachedTokens(post("/v1/chat/completions", template.formatted("What color is grass?")));
         long cachedC = cachedTokens(post("/v1/chat/completions", template.formatted("What color is the sun?")));
-        check(cachedB <= cachedA + 1, "second variant has no usable resume yet (cached " + cachedB + ")");
-        check(cachedC > cachedB && cachedC >= 20,
-                "third variant resumed at the shared-prefix branch point (cached " + cachedC + ")");
+        check(cachedB >= 20, "second variant resumed at the shared prefix via dense rows (cached " + cachedB + ")");
+        check(cachedC >= cachedB, "third variant resumed at least as deep (cached " + cachedC + ")");
+    }
+
+    /** --warm-prompt: the file was pre-ingested FULLY DENSE at startup, so chat requests
+     *  using it as the system prompt resume token-exact at ANY divergence inside it: full
+     *  match, truncation, and a mid-prompt word edit. */
+    private static void warmPromptInstant() throws Exception {
+        String warm = Files.readString(warmFile);
+        HttpResponse<String> full = post("/v1/chat/completions",
+                chatBody(warm, "Summarize directive 7 in five words."));
+        long ptFull = promptTokens(full), cachedFull = cachedTokens(full);
+        check(cachedFull >= ptFull - 40, "full warmed prompt resumed (cached " + cachedFull + " of " + ptFull + ")");
+        String cut = warm.substring(0, (int) (warm.length() * 0.6));
+        cut = cut.substring(0, cut.lastIndexOf(' '));
+        HttpResponse<String> truncated = post("/v1/chat/completions",
+                chatBody(cut, "Summarize directive 7 in five words."));
+        long ptCut = promptTokens(truncated), cachedCut = cachedTokens(truncated);
+        check(cachedCut >= ptCut - 40 && cachedCut < ptCut,
+                "truncated warmed prompt resumed token-exact mid-warm (cached " + cachedCut + " of " + ptCut + ")");
+        HttpResponse<String> edited = post("/v1/chat/completions",
+                chatBody(warm.replace("Directive 25:", "Directive xxv:"), "Summarize directive 7 in five words."));
+        long ptMid = promptTokens(edited), cachedMid = cachedTokens(edited);
+        check(cachedMid > ptMid / 4 && cachedMid < ptMid - 100,
+                "mid-edited warmed prompt resumed at the edit (cached " + cachedMid + " of " + ptMid + ")");
+        Map<String, Object> stats = path(json(get("/props")), "prompt_cache");
+        check(((Number) stats.get("warm_tokens")).longValue() > 0, "warm_tokens reported");
+        check(((Number) stats.get("dense_hits")).longValue() >= 2, "dense hits recorded");
+    }
+
+    /** Regular traffic keeps stride bx pairs (K=64) over the body plus a dense tail: an edit
+     *  OUTSIDE the tail resumes at the stride point just below the divergence, and the F32
+     *  checkpoint attached during that pass upgrades the next divergent request beyond it. */
+    private static void strideAndTailResume() throws Exception {
+        StringBuilder sb = new StringBuilder("You are a rules engine.");
+        for (int i = 1; i <= 80; i++) {
+            sb.append(" Rule ").append(i).append(" says topic ").append(i).append(" must cite section ").append(i).append(";");
+        }
+        String system = sb.toString();
+        post("/v1/chat/completions", chatBody(system, "What does rule 3 say? One sentence."));
+        HttpResponse<String> tailEdit = post("/v1/chat/completions",
+                chatBody(system, "What does rule 9 say? One sentence."));
+        long ptTail = promptTokens(tailEdit), cachedTail = cachedTokens(tailEdit);
+        check(cachedTail >= ptTail - 40,
+                "edited user message resumed token-exact via the dense tail (cached " + cachedTail + " of " + ptTail + ")");
+        String edited = system.replace("Rule 20 says", "Rule twenty says");
+        HttpResponse<String> midEdit = post("/v1/chat/completions",
+                chatBody(edited, "What does rule 3 say? One sentence."));
+        long cachedMid = cachedTokens(midEdit);
+        check(cachedMid >= 64 && cachedMid % 64 == 0,
+                "mid-body edit resumed at a stride point (cached " + cachedMid + ")");
+        HttpResponse<String> again = post("/v1/chat/completions",
+                chatBody(edited, "What does rule 30 say? One sentence."));
+        check(cachedTokens(again) > cachedMid,
+                "second divergent request resumed beyond the stride point (cached " + cachedTokens(again) + ")");
+    }
+
+    private static String chatBody(String system, String user) {
+        return "{\"messages\":[{\"role\":\"system\",\"content\":\"" + system + "\"},"
+                + "{\"role\":\"user\",\"content\":\"" + user + "\"}],\"temperature\":0,\"max_tokens\":12,"
+                + "\"chat_template_kwargs\":{\"enable_thinking\":false}}";
+    }
+
+    private static long promptTokens(HttpResponse<String> response) {
+        return ((Number) path(json(response), "usage").get("prompt_tokens")).longValue();
+    }
+
+    // --- tool-call parsing (SGLang Lfm2Detector reference semantics; no model needed) ---
+
+    @SuppressWarnings("unchecked")
+    private static void toolCallParser() {
+        java.util.Set<String> tools = java.util.Set.of("get_weather", "get_time", "book_hotel", "noop");
+        // multi-call Pythonic list in one block
+        List<Map<String, Object>> calls = Server.parseToolCalls(
+                "<|tool_call_start|>[get_weather(city=\"Paris\", unit=\"c\"), get_time(timezone='UTC')]<|tool_call_end|>", tools);
+        check(calls.size() == 2, "pythonic list parses both calls (got " + calls.size() + ")");
+        check("get_weather".equals(fn(calls, 0).get("name")) && "get_time".equals(fn(calls, 1).get("name")),
+                "multi-call names preserved");
+        check("{\"city\":\"Paris\",\"unit\":\"c\"}".equals(fn(calls, 0).get("arguments")), "string args -> JSON object");
+        // typed literals: numbers, negatives, booleans, None, nested list/dict
+        calls = Server.parseToolCalls("<|tool_call_start|>[book_hotel(city='NYC', guests=2, rating=-4.5, "
+                + "amenities=['gym', 'pool'], smoking=False, note=None, meta={'floor': 3, 'view': True})]<|tool_call_end|>", tools);
+        check(calls.size() == 1, "typed-literal call parses");
+        Map<String, Object> args = (Map<String, Object>) Server.Json.parse((String) fn(calls, 0).get("arguments"));
+        check(Long.valueOf(2).equals(args.get("guests")) && Double.valueOf(-4.5).equals(args.get("rating")),
+                "numbers stay numeric (guests=" + args.get("guests") + ", rating=" + args.get("rating") + ")");
+        check(List.of("gym", "pool").equals(args.get("amenities")), "list literal -> JSON array");
+        check(Boolean.FALSE.equals(args.get("smoking")) && args.containsKey("note") && args.get("note") == null,
+                "False/None map to JSON false/null");
+        check(args.get("meta") instanceof Map<?, ?> meta && Long.valueOf(3).equals(meta.get("floor"))
+                && Boolean.TRUE.equals(meta.get("view")), "dict literal -> JSON object");
+        // single bare call, empty args
+        calls = Server.parseToolCalls("<|tool_call_start|>noop()<|tool_call_end|>", tools);
+        check(calls.size() == 1 && "{}".equals(fn(calls, 0).get("arguments")), "bare call with no args");
+        // JSON block format
+        calls = Server.parseToolCalls(
+                "<|tool_call_start|>[{\"name\":\"get_time\",\"arguments\":{\"timezone\":\"UTC\"}}]<|tool_call_end|>", tools);
+        check(calls.size() == 1 && "get_time".equals(fn(calls, 0).get("name")), "JSON block format");
+        // unknown tool dropped; malformed yields nothing
+        calls = Server.parseToolCalls("<|tool_call_start|>[hack_the_planet(x=1)]<|tool_call_end|>", tools);
+        check(calls.isEmpty(), "unknown tool dropped");
+        calls = Server.parseToolCalls("<|tool_call_start|>[get_time(timezone=]<|tool_call_end|>", tools);
+        check(calls.isEmpty(), "malformed block yields no calls");
+        // two separate blocks accumulate
+        calls = Server.parseToolCalls("<|tool_call_start|>[get_time(timezone=\"UTC\")]<|tool_call_end|> and "
+                + "<|tool_call_start|>[noop()]<|tool_call_end|>", tools);
+        check(calls.size() == 2, "separate blocks accumulate");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> fn(List<Map<String, Object>> calls, int index) {
+        return (Map<String, Object>) calls.get(index).get("function");
+    }
+
+    // --- tool_choice required/named forces a call by seeding <|tool_call_start|> ---
+
+    private static void toolChoiceForced() throws Exception {
+        String tools = "\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"get_weather\","
+                + "\"description\":\"Current weather for a city\",\"parameters\":{\"type\":\"object\","
+                + "\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}}},"
+                + "{\"type\":\"function\",\"function\":{\"name\":\"get_time\",\"description\":\"Current time\","
+                + "\"parameters\":{\"type\":\"object\",\"properties\":{}}}}]";
+        Map<String, Object> required = json(post("/v1/chat/completions",
+                "{\"messages\":[{\"role\":\"user\",\"content\":\"What is the weather in Paris?\"}]," + tools
+                        + ",\"tool_choice\":\"required\",\"temperature\":0,\"max_tokens\":128}"));
+        Map<String, Object> message = path(required, "choices", 0, "message");
+        check("tool_calls".equals(path(required, "choices", 0).get("finish_reason")),
+                "tool_choice required -> finish_reason tool_calls");
+        check(message.get("tool_calls") instanceof List<?> calls && !calls.isEmpty(),
+                "tool_choice required produced a call");
+        Map<String, Object> named = json(post("/v1/chat/completions",
+                "{\"messages\":[{\"role\":\"user\",\"content\":\"What time is it?\"}]," + tools
+                        + ",\"tool_choice\":{\"type\":\"function\",\"function\":{\"name\":\"get_time\"}},"
+                        + "\"temperature\":0,\"max_tokens\":128}"));
+        Object name = path(named, "choices", 0, "message", "tool_calls", 0, "function").get("name");
+        check("get_time".equals(name), "named tool_choice pinned the function (got " + name + ")");
+        // system prompt + tools at DEFAULT settings (thinking on): two regressions hid here —
+        // a separate tools-only system turn, and COMPACT tool-list JSON (training data is
+        // json.dumps-spaced) — each made the model disown its tools ("I don't have access...")
+        Map<String, Object> merged = json(post("/v1/chat/completions",
+                "{\"messages\":[{\"role\":\"system\",\"content\":\"You are a helpful assistant.\"},"
+                        + "{\"role\":\"user\",\"content\":\"What's the weather in Paris?\"}]," + tools
+                        + ",\"temperature\":0,\"max_tokens\":400}"));
+        check("tool_calls".equals(path(merged, "choices", 0).get("finish_reason")),
+                "system prompt + tools at defaults: model uses the tool instead of refusing");
+    }
+
+    // --- thinking budget: content survives tight max_tokens ---
+
+    private static void reasoningBudget() throws Exception {
+        // default budget (half of max_tokens): the old behavior burned all 64 on reasoning
+        Map<String, Object> response = json(post("/v1/chat/completions",
+                "{\"messages\":[{\"role\":\"user\",\"content\":\"How many letters r are in the word strawberry?\"}],"
+                        + "\"temperature\":0,\"max_tokens\":64}"));
+        String content = (String) path(response, "choices", 0, "message").get("content");
+        check(content != null && !content.isBlank(), "default reasoning budget leaves room for content");
+        // explicit cap
+        response = json(post("/v1/chat/completions",
+                "{\"messages\":[{\"role\":\"user\",\"content\":\"What is 12 + 13?\"}],"
+                        + "\"temperature\":0,\"max_tokens\":80,\"reasoning_max_tokens\":8}"));
+        content = (String) path(response, "choices", 0, "message").get("content");
+        check(content != null && !content.isBlank(), "explicit reasoning_max_tokens leaves room for content");
+        long completion = ((Number) path(response, "usage").get("completion_tokens")).longValue();
+        check(completion <= 80, "completion stayed within max_tokens (" + completion + ")");
+    }
+
+    // --- stop strings must match CONTENT only, never the think span ---
+
+    private static void stopStringsIgnoreReasoning() throws Exception {
+        // "the" is a single token: the old token-stop promotion killed generation at the first
+        // "the" INSIDE reasoning, leaving content empty
+        Map<String, Object> response = json(post("/v1/chat/completions",
+                "{\"messages\":[{\"role\":\"user\",\"content\":\"Explain why the sky is blue in two sentences.\"}],"
+                        + "\"temperature\":0,\"max_tokens\":300,\"reasoning_max_tokens\":60,\"stop\":[\"the\"]}"));
+        String content = (String) path(response, "choices", 0, "message").get("content");
+        check(content != null && !content.isBlank(), "content produced despite stop word appearing in reasoning");
+        check(!content.contains("the"), "stop string still truncates content");
     }
 
     // --- a garbage request must be answered while the worker is mid-generation ---

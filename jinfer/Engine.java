@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
+import java.util.function.IntPredicate;
 
 /**
  * The inference-side seam between the generation loop ({@link Llama#generate}) and any frontend
@@ -62,9 +63,10 @@ final class Engine {
                             int promptTokens, int completionTokens, int cachedTokens, String finishReason,
                             double promptMillis, double predictedMillis) {
 
-        /** The chat-layer rewrite of a reply that parsed as tool calls. */
-        GenerationResult asToolCalls(List<Map<String, Object>> calls) {
-            return new GenerationResult(tokens, stopToken, "", null, calls, promptTokens, completionTokens,
+        /** The chat-layer rewrite of a reply that parsed as tool calls; {@code content} is any
+         *  text the model produced before the first call marker. */
+        GenerationResult asToolCalls(List<Map<String, Object>> calls, String content) {
+            return new GenerationResult(tokens, stopToken, content, null, calls, promptTokens, completionTokens,
                     cachedTokens, "tool_calls", promptMillis, predictedMillis);
         }
     }
@@ -98,12 +100,19 @@ final class Engine {
                 onContent.accept(text);
             });
             demux = streamingDemux(tokenizer, stopAware, listener.onReasoning(), params.inlineThink());
+        } else if (!params.stops().textStops().isEmpty()) {
+            // non-streaming: track text stops on a silent content-only decode so generation
+            // aborts when one matches instead of burning the rest of the completion budget
+            stopAware = new StopAwareTextConsumer(params.stops().textStops(), text -> {});
+            demux = streamingDemux(tokenizer, stopAware, null, params.inlineThink());
         }
         IntConsumer onToken = listener.onToken();
         IntConsumer textSink = demux;
-        IntConsumer sink = onToken == null && textSink == null ? null : token -> {
+        StopAwareTextConsumer stopTracker = stopAware;
+        IntPredicate sink = onToken == null && textSink == null ? null : token -> {
             if (onToken != null) onToken.accept(token);
             if (textSink != null) textSink.accept(token);
+            return stopTracker == null || !stopTracker.stopped();
         };
 
         long[] prefillDoneNanos = {0};
@@ -192,6 +201,38 @@ final class Engine {
             sampler = Sampler.banning(sampler, banned);
         }
         return sampler;
+    }
+
+    /**
+     * Caps the think span: once {@code budget} tokens have been sampled inside {@code <think>},
+     * the close marker is forced so the remaining completion budget always goes to content
+     * (thinking models otherwise starve the answer under tight max_tokens). The budget is
+     * cumulative across spans; the forced token consumes no RNG draw. Negative = uncapped.
+     */
+    static Sampler withThinkBudget(Sampler inner, LFMTokenizer tokenizer, int budget) {
+        Integer open = tokenizer.getSpecialTokens().get("<think>");
+        Integer close = tokenizer.getSpecialTokens().get("</think>");
+        if (budget < 0 || open == null || close == null) {
+            return inner;
+        }
+        int openToken = open, closeToken = close;
+        return new Sampler() {
+            boolean inThink;
+            int thought;
+
+            @Override
+            public int sampleToken(FloatTensor logits) {
+                if (inThink && thought >= budget) {
+                    inThink = false;
+                    return closeToken;
+                }
+                int token = inner.sampleToken(logits);
+                if (token == openToken) inThink = true;
+                else if (token == closeToken) inThink = false;
+                else if (inThink) thought++;
+                return token;
+            }
+        };
     }
 
     /** Routes each generated token to the content or reasoning channel: think markers flip the

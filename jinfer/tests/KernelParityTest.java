@@ -178,10 +178,12 @@ public final class KernelParityTest {
 
     static void testGemm(GGMLType type) {
         Random rng = new Random(SEED ^ 0x7f4a7c15L);
-        int dim0 = 96, dim1 = 1024;
-        // seq 7 exercises tile remainders; seq 16 reaches the native VNNI path (>= VNNI_MIN_SEQ),
-        // whose int8 activation quantization needs the looser tolerance (~0.4% relative).
-        for (int seqLen : new int[]{7, 16}) {
+        // dim0 = 104 = 6x16 + 8: the trailing 8 rows hit the native bands' scalar-leftover path;
+        // seq 7 exercises tile remainders below the VNNI threshold, 13 the 16x1 column
+        // remainder, 16 the full 16x4 tiles. The VNNI paths' int8 activation quantization
+        // needs the looser tolerance (~0.4% relative).
+        int dim0 = 104, dim1 = 1024;
+        for (int seqLen : new int[]{7, 13, 16}) {
             FloatTensor w = makeQuant(type, dim0 * dim1, rng);
             F32FloatTensor x = makeF32(seqLen * dim1, rng);
             F32FloatTensor out = F32FloatTensor.allocate(seqLen * dim0);

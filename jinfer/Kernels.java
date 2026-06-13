@@ -3,6 +3,7 @@ package com.llama4j;
 
 import com.qxotic.format.gguf.GGMLType;
 
+import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
 
 /**
@@ -26,6 +27,12 @@ interface Kernels {
 
     boolean gemvQ8F32(Q8_0FloatTensor w, int thisOffset, F32FloatTensor x, int thatOffset,
                       F32FloatTensor out, int outOffset, int dim0, int dim1);
+
+    boolean gemmQ4KF32(Q4_KFloatTensor w, int thisOffset, F32FloatTensor x, int thatStride,
+                       F32FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1);
+
+    boolean gemmQ6KF32(Q6_KFloatTensor w, int thisOffset, F32FloatTensor x, int thatStride,
+                       F32FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1);
 }
 
 /** The Java Vector API kernels: 512-bit register-tiled GEMM/GEMV with a generic vector fallback. */
@@ -70,6 +77,29 @@ final class JavaKernels implements Kernels {
         return false;
     }
 
+    @Override
+    public boolean gemmQ4KF32(Q4_KFloatTensor w, int thisOffset, F32FloatTensor x, int thatStride,
+                              F32FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1) {
+        if (FloatTensor.USE_VECTOR_API && FloatTensor.F_SPECIES.vectorBitSize() == 512
+                && dim1 % GGMLType.Q4_K.getElementsPerBlock() == 0
+                && thisOffset % GGMLType.Q4_K.getElementsPerBlock() == 0) {
+            Q4_KFloatTensor.vectorGemm512(w, x, out, thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
+            return true;
+        }
+        return false;
+    }
+
+    @Override
+    public boolean gemmQ6KF32(Q6_KFloatTensor w, int thisOffset, F32FloatTensor x, int thatStride,
+                              F32FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1) {
+        if (FloatTensor.USE_VECTOR_API && FloatTensor.F_SPECIES.vectorBitSize() == 512
+                && dim1 % GGMLType.Q6_K.getElementsPerBlock() == 0
+                && thisOffset % GGMLType.Q6_K.getElementsPerBlock() == 0) {
+            Q6_KFloatTensor.vectorGemm512(w, x, out, thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
+            return true;
+        }
+        return false;
+    }
 }
 
 /**
@@ -139,10 +169,46 @@ final class NativeKernels implements Kernels {
         return java.gemvQ8F32(w, thisOffset, x, thatOffset, out, outOffset, dim0, dim1);
     }
 
+    @Override
+    public boolean gemmQ4KF32(Q4_KFloatTensor w, int thisOffset, F32FloatTensor x, int thatStride,
+                              F32FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1) {
+        // the native path is VNNI-only; below its sequence threshold the Java tiles win
+        if (sequenceLength >= 8
+                && dim1 % GGMLType.Q4_K.getElementsPerBlock() == 0
+                && thisOffset % GGMLType.Q4_K.getElementsPerBlock() == 0) {
+            nativeGemmQ4K(weightAddress(w.memorySegment, thisOffset, GGMLType.Q4_K),
+                    x.memorySegment.address(), Float.BYTES * (long) thatStride,
+                    out.memorySegment.address(), Float.BYTES * (long) outStride,
+                    sequenceLength, dim0, dim1);
+            return true;
+        }
+        return java.gemmQ4KF32(w, thisOffset, x, thatStride, out, outStride, sequenceLength, dim0, dim1);
+    }
+
+    @Override
+    public boolean gemmQ6KF32(Q6_KFloatTensor w, int thisOffset, F32FloatTensor x, int thatStride,
+                              F32FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1) {
+        if (sequenceLength >= 8
+                && dim1 % GGMLType.Q6_K.getElementsPerBlock() == 0
+                && thisOffset % GGMLType.Q6_K.getElementsPerBlock() == 0) {
+            nativeGemmQ6K(weightAddress(w.memorySegment, thisOffset, GGMLType.Q6_K),
+                    x.memorySegment.address(), Float.BYTES * (long) thatStride,
+                    out.memorySegment.address(), Float.BYTES * (long) outStride,
+                    sequenceLength, dim0, dim1);
+            return true;
+        }
+        return java.gemmQ6KF32(w, thisOffset, x, thatStride, out, outStride, sequenceLength, dim0, dim1);
+    }
+
     /** Address of the Q8_0 block containing the given element offset (a block multiple). */
     private static long weightAddress(Q8_0FloatTensor w, int elementOffset) {
-        return w.memorySegment.address()
-                + ((long) elementOffset / GGMLType.Q8_0.getElementsPerBlock()) * GGMLType.Q8_0.getBlockByteSize();
+        return weightAddress(w.memorySegment, elementOffset, GGMLType.Q8_0);
+    }
+
+    /** Address of the quant block containing the given element offset (a block multiple). */
+    private static long weightAddress(MemorySegment segment, int elementOffset, GGMLType type) {
+        return segment.address()
+                + ((long) elementOffset / type.getElementsPerBlock()) * type.getBlockByteSize();
     }
 
     /** weights: first Q8_0 block of the row range; x/out: first activation/output row;
@@ -153,4 +219,14 @@ final class NativeKernels implements Kernels {
                                           int rowTile, int seqTile);
 
     private static native void nativeGemv(long weights, long x, long out, int dim0, int dim1);
+
+    /** K-quant VNNI gemms (lfm25jni.c): weights = first super-block of the row range,
+     *  strides in bytes, dim1 a multiple of 256. */
+    private static native void nativeGemmQ4K(long weights, long x, long xStrideBytes,
+                                             long out, long outStrideBytes,
+                                             int sequenceLength, int dim0, int dim1);
+
+    private static native void nativeGemmQ6K(long weights, long x, long xStrideBytes,
+                                             long out, long outStrideBytes,
+                                             int sequenceLength, int dim0, int dim1);
 }

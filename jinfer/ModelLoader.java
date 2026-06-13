@@ -200,7 +200,7 @@ final class ModelLoader {
         FloatTensor tokenEmbeddingTable = loadQuantized(tensorEntries.get("token_embd.weight"));
         Llama.LayerWeights[] layers = new Llama.LayerWeights[config.numberOfLayers];
         for (int i = 0; i < config.numberOfLayers; i++) {
-            layers[i] = loadLayer(tensorEntries, "blk." + i + ".");
+            layers[i] = loadLayer(tensorEntries, "blk." + i + ".", config.embeddingLength);
         }
         return new Llama.Weights(
                 tokenEmbeddingTable,
@@ -213,7 +213,7 @@ final class ModelLoader {
                         : tokenEmbeddingTable);
     }
 
-    private static Llama.LayerWeights loadLayer(Map<String, GGMLTensorEntry> entries, String prefix) {
+    private static Llama.LayerWeights loadLayer(Map<String, GGMLTensorEntry> entries, String prefix, int dim) {
         Llama.AttentionWeights attention = !entries.containsKey(prefix + "attn_q.weight") ? null
                 : new Llama.AttentionWeights(
                         loadQuantized(entries.get(prefix + "attn_q.weight")),
@@ -223,10 +223,11 @@ final class ModelLoader {
                         f32OrNull(entries, prefix + "attn_q_norm.weight"),
                         f32OrNull(entries, prefix + "attn_k_norm.weight"));
         Llama.ShortConvWeights shortConv = !entries.containsKey(prefix + "shortconv.conv.weight") ? null
-                : new Llama.ShortConvWeights(
+                : Llama.ShortConvWeights.of(
                         toF32Tensor(entries.get(prefix + "shortconv.conv.weight")),
                         loadQuantized(entries.get(prefix + "shortconv.in_proj.weight")),
-                        loadQuantized(entries.get(prefix + "shortconv.out_proj.weight")));
+                        loadQuantized(entries.get(prefix + "shortconv.out_proj.weight")),
+                        dim);
         Llama.DenseFfnWeights dense = !entries.containsKey(prefix + "ffn_gate.weight") ? null
                 : new Llama.DenseFfnWeights(
                         loadQuantized(entries.get(prefix + "ffn_gate.weight")),

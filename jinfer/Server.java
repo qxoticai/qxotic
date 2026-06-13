@@ -8,6 +8,8 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -18,6 +20,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.IntConsumer;
 import java.util.stream.Collectors;
 
@@ -41,7 +44,10 @@ final class Server {
      *  test reads the actual one from the returned server). */
     static HttpServer run(Llama model, Options options) throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress(options.host(), options.port()), 0);
-        server.createContext("/v1/models", exchange -> {
+        String servedId = options.modelPath().getFileName().toString();
+        Map<String, Object> modelCard = Map.of(
+                "id", servedId, "object", "model", "created", 0, "owned_by", "lfm25.java");
+        server.createContext("/v1/models", exchange -> { // also serves /v1/models/{id} -> card or 404
             logRequest(exchange);
             addCommonHeaders(exchange);
             if (handleOptions(exchange)) return;
@@ -50,69 +56,45 @@ final class Server {
                 sendError(exchange, 405, "Method not allowed");
                 return;
             }
-            String modelId = options.modelPath().getFileName().toString();
-            sendJson(exchange, 200, Map.of(
-                    "object", "list",
-                    "data", List.of(Map.of(
-                            "id", modelId,
-                            "object", "model",
-                            "created", 0,
-                            "owned_by", "lfm25.java"))));
+            String path = exchange.getRequestURI().getPath();
+            if (path.equals("/v1/models")) {
+                sendJson(exchange, 200, Map.of("object", "list", "data", List.of(modelCard)));
+            } else if (path.equals("/v1/models/" + servedId)) {
+                sendJson(exchange, 200, modelCard);
+            } else {
+                sendError(exchange, 404, "Unknown model: " + path.substring("/v1/models/".length())
+                        + " (this server serves " + servedId + ")");
+            }
         });
         server.createContext("/v1/chat/completions", exchange -> handleChatCompletion(exchange, model, options));
         server.createContext("/v1/completions", exchange -> handleCompletion(exchange, model, options));
         server.createContext("/v1/responses", exchange -> handleResponse(exchange, model, options));
-        server.createContext("/health", exchange -> {
-            logRequest(exchange);
-            addCommonHeaders(exchange);
-            if (handleOptions(exchange)) return;
-            sendJson(exchange, 200, Map.of("status", "ok", "busy", workerBusy, "queued", GENERATION_QUEUE.size()));
-        });
-        server.createContext("/props", exchange -> {
-            logRequest(exchange);
-            addCommonHeaders(exchange);
-            if (handleOptions(exchange)) return;
+        jsonRoute(server, "/health", null, request ->
+                Map.of("status", "ok", "busy", workerBusy, "queued", GENERATION_QUEUE.size()));
+        jsonRoute(server, "/props", null, request -> {
             Llama.Configuration config = model.configuration();
-            sendJson(exchange, 200, Map.of(
+            return Map.of(
                     "model", options.modelPath().getFileName().toString(),
                     "n_ctx", config.contextLength,
                     "n_batch", RuntimeFlags.MAX_PROMPT_SEQUENCE_LENGTH,
                     "n_embd", config.embeddingLength,
                     "n_vocab", config.vocabularySize,
                     "n_layer", config.numberOfLayers,
-                    "prompt_cache", promptCache == null ? Map.of("enabled", false) : promptCache.stats()));
+                    "prompt_cache", promptCache == null ? Map.of("enabled", false) : promptCache.stats());
         });
-        server.createContext("/tokenize", exchange -> {
-            logRequest(exchange);
-            addCommonHeaders(exchange);
-            if (handleOptions(exchange)) return;
-            try {
-                byte[] body = readBody(exchange);
-                if (body == null) return;
-                Map<String, Object> request = asObject(Json.parse(new String(body, StandardCharsets.UTF_8)), "request");
-                String content = String.valueOf(request.getOrDefault("content", ""));
-                sendJson(exchange, 200, Map.of("tokens", model.tokenizer().encode(content)));
-            } catch (Exception e) {
-                sendError(exchange, 400, errorMessage(e));
-            }
-        });
-        server.createContext("/detokenize", exchange -> {
-            logRequest(exchange);
-            addCommonHeaders(exchange);
-            if (handleOptions(exchange)) return;
-            try {
-                byte[] body = readBody(exchange);
-                if (body == null) return;
-                Map<String, Object> request = asObject(Json.parse(new String(body, StandardCharsets.UTF_8)), "request");
-                Object raw = request.get("tokens");
-                List<Integer> tokens = raw instanceof List<?> list
-                        ? list.stream().map(v -> ((Number) v).intValue()).toList()
-                        : List.of();
-                sendJson(exchange, 200, Map.of("content", model.tokenizer().decode(tokens)));
-            } catch (Exception e) {
-                sendError(exchange, 400, errorMessage(e));
-            }
-        });
+        Function<Map<String, Object>, Object> tokenize = request ->
+                Map.of("tokens", model.tokenizer().encode(String.valueOf(request.getOrDefault("content", ""))));
+        Function<Map<String, Object>, Object> detokenize = request -> {
+            List<Integer> tokens = request.get("tokens") instanceof List<?> list
+                    ? list.stream().map(v -> ((Number) v).intValue()).toList()
+                    : List.<Integer>of();
+            return Map.of("content", model.tokenizer().decode(tokens));
+        };
+        jsonRoute(server, "/tokenize", "POST", tokenize);       // llama.cpp paths and the
+        jsonRoute(server, "/v1/tokenize", "POST", tokenize);    // /v1-prefixed aliases
+        jsonRoute(server, "/detokenize", "POST", detokenize);
+        jsonRoute(server, "/v1/detokenize", "POST", detokenize);
+        server.createContext("/metrics", exchange -> handleMetrics(exchange));
         server.createContext("/", exchange -> {
             logRequest(exchange);
             addCommonHeaders(exchange);
@@ -120,11 +102,12 @@ final class Server {
             sendError(exchange, 404, "Not found");
         });
         if (RuntimeFlags.PROMPT_CACHE) {
-            promptCache = new PromptCache(model.configuration());
+            promptCache = new PromptCache(model.configuration(), CacheStore.inMemory());
             System.out.printf("Prompt cache enabled: budget=%d MB%n",
                     RuntimeFlags.PROMPT_CACHE_BUDGET_BYTES >> 20);
         }
         startGenerationWorker();
+        warmPromptCache(model, options); // blocks until warmed: instant resume from request one
         startStreamReaper();
         // bounded pool: handlers only parse/validate and block on the generation queue latch,
         // so a fixed pool also caps the threads slow-loris connections can pin
@@ -134,6 +117,44 @@ final class Server {
         System.out.printf("OpenAI-compatible server listening on http://%s:%d%n",
                 options.host(), server.getAddress().getPort());
         return server;
+    }
+
+    /** Registers a JSON endpoint with the shared preamble (request log, CORS headers, OPTIONS
+     *  preflight), an optional method restriction, the parsed JSON body for POST routes, and
+     *  the uniform 400 error envelope. */
+    private static void jsonRoute(HttpServer server, String path, String method,
+                                  Function<Map<String, Object>, Object> body) {
+        server.createContext(path, exchange -> {
+            logRequest(exchange);
+            addCommonHeaders(exchange);
+            if (handleOptions(exchange)) return;
+            // contexts match by longest PREFIX: /v1/models/garbage would land here — 404 it
+            if (!exchange.getRequestURI().getPath().equals(path)) {
+                sendError(exchange, 404, "Not found");
+                return;
+            }
+            if (method != null && !method.equals(exchange.getRequestMethod())) {
+                exchange.getResponseHeaders().set("Allow", method + ", OPTIONS");
+                sendError(exchange, 405, "Method not allowed");
+                return;
+            }
+            Map<String, Object> request = Map.of();
+            if ("POST".equals(method)) {
+                byte[] raw = readBody(exchange);
+                if (raw == null) return;
+                try {
+                    request = asObject(Json.parse(new String(raw, StandardCharsets.UTF_8)), "request");
+                } catch (RuntimeException e) {
+                    sendError(exchange, 400, errorMessage(e));
+                    return;
+                }
+            }
+            try {
+                sendJson(exchange, 200, body.apply(request));
+            } catch (RuntimeException e) {
+                sendError(exchange, 400, errorMessage(e));
+            }
+        });
     }
 
     private interface RequestJob {
@@ -614,9 +635,13 @@ final class Server {
     private static void validateChatRequest(Map<String, Object> request) {
         List<Object> messages = asArray(request.get("messages"), "messages");
         Options.require(!messages.isEmpty(), "messages must not be empty");
+        boolean substance = false;
         for (Object message : messages) {
-            asObject(message, "message");
+            Map<String, Object> m = asObject(message, "message");
+            substance |= !messageContent(m.get("content")).isBlank()
+                    || (m.get("tool_calls") instanceof List<?> calls && !calls.isEmpty());
         }
+        Options.require(substance, "messages must contain at least one non-empty message");
         Object tools = request.get("tools");
         if (tools != null) {
             List<Object> toolList = asArray(tools, "tools");
@@ -647,28 +672,35 @@ final class Server {
         LFMChatFormat chatFormat = new LFMChatFormat(model.tokenizer());
         List<Integer> promptTokens = new ArrayList<>();
         promptTokens.add(chatFormat.beginOfSentence);
-        if (hasUsableTools(request)) {
-            promptTokens.addAll(encodeToolsSystemMessage(model.tokenizer(), chatFormat, request));
+        // the trained template merges the tool list INTO the leading system turn — a separate
+        // tools-only system turn makes the model disown its tools ("I don't have access...")
+        List<Object> turns = messages;
+        String systemText = null;
+        if (!messages.isEmpty()) {
+            Map<String, Object> first = asObject(messages.getFirst(), "message");
+            if ("system".equals(stringValue(first.get("role"), ""))) {
+                systemText = chatMessageContent(first);
+                turns = messages.subList(1, messages.size());
+            }
         }
-        for (Object value : messages) {
+        if (hasUsableTools(request)) {
+            promptTokens.addAll(encodeToolsSystemMessage(model.tokenizer(), chatFormat, request, systemText));
+        } else if (systemText != null) {
+            promptTokens.addAll(chatFormat.encodeMessage(new LFMChatFormat.Message(LFMChatFormat.Role.SYSTEM, systemText)));
+        }
+        for (Object value : turns) {
             Map<String, Object> message = asObject(value, "message");
-            String role = stringValue(message.get("role"), "user");
-            String content = chatMessageContent(message);
-            LFMChatFormat.Role lfmRole = switch (role) {
-                case "system" -> LFMChatFormat.Role.SYSTEM;
-                case "assistant" -> LFMChatFormat.Role.ASSISTANT;
-                case "tool" -> LFMChatFormat.Role.TOOL; // native tool turn, not flattened into user
-                default -> LFMChatFormat.Role.USER;
-            };
-            promptTokens.addAll(chatFormat.encodeMessage(new LFMChatFormat.Message(lfmRole, content)));
+            LFMChatFormat.Role role = LFMChatFormat.Role.of(stringValue(message.get("role"), "user"));
+            promptTokens.addAll(chatFormat.encodeMessage(new LFMChatFormat.Message(role, chatMessageContent(message))));
         }
         promptTokens.addAll(chatFormat.encodeGenerationPrompt());
         if (!requestThink(request, options)) chatFormat.appendThinkSurrogate(promptTokens);
+        seedForcedToolCall(model.tokenizer(), request, promptTokens);
         Ingestion resumed = matchChatSession(request, messages, chatFormat, model.tokenizer(), options);
         Ingestion ingestion = resumed != null ? resumed : Ingestion.of(model.createNewState(), 0, promptTokens);
         GenerationResult result = generateResponse(model, options, request, promptTokens, ingestion, chatFormat.getStopTokens(), onText, onReasoning, usageCounts);
         saveChatSession(model, request, messages, ingestion, result);
-        return hasUsableTools(request) ? withParsedToolCalls(result) : result;
+        return hasUsableTools(request) ? withParsedToolCalls(result, request) : result;
     }
 
     /** Remember the live state for instant resume of the next turn; only clean stop-terminated
@@ -701,12 +733,9 @@ final class Server {
      *  Fresh requests: new state, position 0, the full prompt. Resumed chat sessions: the live
      *  state mid-context with only the delta (turn close + new messages + generation prompt). */
     private record Ingestion(Llama.State state, int startPosition, List<Integer> tokens, int prefillPositions) {
-        /** prefillPositions = positions occupied once the prompt is ingested, computed with
-         *  buildPrefillTokens' exact rule against the PRE-generation latestToken (no BOS-name
-         *  guessing — the model may call it <bos> or <|startoftext|>). */
+        /** prefillPositions: see {@link Engine#prefillPositions}. */
         static Ingestion of(Llama.State state, int startPosition, List<Integer> tokens) {
-            int skip = startPosition == 0 && !tokens.isEmpty() && tokens.getFirst() == state.latestToken ? 1 : 0;
-            return new Ingestion(state, startPosition, tokens, startPosition + 1 + tokens.size() - skip);
+            return new Ingestion(state, startPosition, tokens, Engine.prefillPositions(state, startPosition, tokens));
         }
     }
 
@@ -750,17 +779,12 @@ final class Server {
         List<Integer> delta = new ArrayList<>(tokenizer.encode("\n"));
         for (int i = n + 1; i < messages.size(); i++) {
             Map<String, Object> message = asObject(messages.get(i), "message");
-            String role = stringValue(message.get("role"), "user");
-            LFMChatFormat.Role lfmRole = switch (role) {
-                case "system" -> LFMChatFormat.Role.SYSTEM;
-                case "assistant" -> LFMChatFormat.Role.ASSISTANT;
-                case "tool" -> LFMChatFormat.Role.TOOL;
-                default -> LFMChatFormat.Role.USER;
-            };
-            delta.addAll(chatFormat.encodeMessage(new LFMChatFormat.Message(lfmRole, chatMessageContent(message))));
+            LFMChatFormat.Role role = LFMChatFormat.Role.of(stringValue(message.get("role"), "user"));
+            delta.addAll(chatFormat.encodeMessage(new LFMChatFormat.Message(role, chatMessageContent(message))));
         }
         delta.addAll(chatFormat.encodeGenerationPrompt());
         if (!requestThink(request, options)) chatFormat.appendThinkSurrogate(delta);
+        seedForcedToolCall(tokenizer, request, delta);
         return Ingestion.of(s.state(), s.position(), delta);
     }
 
@@ -772,19 +796,20 @@ final class Server {
      * resumed-prefix length for the streaming usage counters.
      */
     private static GenerationResult runServerGeneration(Llama model, Ingestion ingestion, Engine.Params params,
-                                                        Engine.Listener listener, int[] cachedOut) {
+                                                        Engine.Listener listener, int[] cachedOut, boolean warm) {
         PromptCache cache = promptCache;
         Llama.State state = ingestion.state();
         if (cache == null || ingestion.startPosition() > 0) {
             return Engine.generate(model, state, ingestion.startPosition(), ingestion.tokens(), params, listener, Llama.GenerationHooks.NONE);
         }
 
-        /** Wires the sparse-checkpoint cache into the generation loop: lookup + restore on
-         *  resume, chunks clamped so the frontier lands exactly on checkpoint positions
-         *  (end of prompt L-1, and the divergence point found by lookup — re-ingesting to the
-         *  divergence once makes the NEXT request sharing that prefix resume exactly), commits
-         *  per ingested chunk past the matched region, and an end-of-generation commit with a
-         *  conv checkpoint so multi-turn resume is exact. */
+        /** Wires the prompt cache into the generation loop: lookup + restore on resume (a
+         *  sparse F32 checkpoint or a dense bx landing anywhere rows are retained), the bx
+         *  harvest installed around prompt-ingest chunks (cleared before decode), chunks
+         *  clamped so the frontier lands exactly on checkpoint positions (end of prompt L-1,
+         *  and the divergence point found by lookup — checkpointing it once makes repeats
+         *  bit-exact), commits per ingested chunk past the matched region, and an
+         *  end-of-generation commit with a conv checkpoint so multi-turn resume is exact. */
         class CacheHooks implements Llama.GenerationHooks {
             boolean caching = true;
             int prefillLength;
@@ -805,6 +830,7 @@ final class Server {
                 cachedOut[0] = resume;
                 cache.restore(match, state);
                 cache.pin(match); // even on a cold resume: checkpoints attach into matched nodes
+                state.convHarvest = cache.beginHarvest(prefillLength, warm);
                 for (int p : new int[]{Math.min(matchedPos, prefillLength - 1), prefillLength - 1}) {
                     if (p > resume && p > 0 && (checkpointCount == 0 || checkpoints[checkpointCount - 1] != p)) {
                         checkpoints[checkpointCount++] = p;
@@ -860,6 +886,12 @@ final class Server {
                     committedTo = position;
                 }
             }
+
+            @Override
+            public void afterPrefill() {
+                state.convHarvest = null; // decode chunks are never harvested
+                cache.endHarvest();
+            }
         }
         CacheHooks hooks = new CacheHooks();
         try {
@@ -871,19 +903,82 @@ final class Server {
             }
             return result;
         } finally {
+            state.convHarvest = null; // error paths may skip afterPrefill
+            cache.endHarvest();
             cache.unpinCurrent();
+        }
+    }
+
+    /**
+     * Pre-ingests --warm-prompt / -Dllama.promptCacheWarm files into the prompt cache with
+     * FULLY DENSE bx retention and sticky (eviction-exempt) nodes: requests diverging at ANY
+     * position inside a warmed prompt resume token-exact, with zero re-ingest. Each file is
+     * warmed in two stream forms — chat-template system message and raw completion prompt.
+     * Runs on the generation worker (cache blobs are confined to it) and blocks until done.
+     */
+    private static void warmPromptCache(Llama model, Options options) {
+        List<String> files = new ArrayList<>(options.warmPrompts());
+        if (RuntimeFlags.PROMPT_CACHE_WARM != null) {
+            for (String f : RuntimeFlags.PROMPT_CACHE_WARM.split(",")) {
+                if (!f.isBlank()) files.add(f.strip());
+            }
+        }
+        if (files.isEmpty()) return;
+        if (promptCache == null) {
+            System.err.println("warm-prompt ignored: prompt cache is disabled");
+            return;
+        }
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+        boolean queued = GENERATION_QUEUE.offer(() -> {
+            try {
+                for (String file : files) {
+                    warmFile(model, file);
+                }
+            } catch (Exception e) {
+                System.err.println("warm-prompt failed: " + e);
+            } finally {
+                done.countDown();
+            }
+        });
+        if (!queued) throw new IllegalStateException("generation queue full at startup");
+        try {
+            done.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static void warmFile(Llama model, String file) throws IOException {
+        String text = Files.readString(Path.of(file));
+        LFMChatFormat chatFormat = new LFMChatFormat(model.tokenizer());
+        List<Integer> chatForm = new ArrayList<>();
+        chatForm.add(chatFormat.beginOfSentence);
+        chatForm.addAll(chatFormat.encodeMessage(new LFMChatFormat.Message(LFMChatFormat.Role.SYSTEM, text)));
+        List<Integer> rawForm = model.tokenizer().encode(text);
+        Engine.Params params = new Engine.Params(Sampler.ARGMAX, 0, new StopSpec(Set.of(), List.of()), false);
+        for (List<Integer> tokens : List.of(chatForm, rawForm)) {
+            long startNanos = System.nanoTime();
+            Ingestion ingestion = Ingestion.of(model.createNewState(), 0, tokens);
+            runServerGeneration(model, ingestion, params, new Engine.Listener(null, null, null), new int[1], true);
+            System.out.printf("warm-prompt %s: %d tokens in %.1f s%n",
+                    file, ingestion.prefillPositions(), (System.nanoTime() - startNanos) / 1e9);
         }
     }
 
     /** Sampling-parameter validation shared by all endpoints; called on the HTTP handler thread
      *  (before queueing, and before any SSE headers) so invalid requests fail fast with a 400. */
     private static void validateGenerationParams(Map<String, Object> request, Options options) {
+        if (request.get("model") instanceof String name && !name.isBlank()) {
+            String served = options.modelPath().getFileName().toString();
+            Options.require(name.equals(served), "Unknown model: %s (this server serves %s)", name, served);
+        }
         Options.require(intValue(request.get("n"), 1) == 1, "Only n=1 is supported");
         float temperature = floatValue(request.get("temperature"), options.temperature());
         Options.require(Float.isFinite(temperature) && 0 <= temperature, "Invalid argument: temperature must be a finite non-negative number");
         float topp = floatValue(request.get("top_p"), options.topp());
         Options.require(Float.isFinite(topp) && 0 <= topp && topp <= 1, "Invalid argument: top_p must be within [0, 1]");
         Options.require(0 <= intValue(request.getOrDefault("max_tokens", request.get("max_completion_tokens")), options.maxTokens()), "Invalid argument: max_tokens must be non-negative");
+        Options.require(-1 <= intValue(request.get("reasoning_max_tokens"), -1), "Invalid argument: reasoning_max_tokens must be -1 (uncapped) or non-negative");
         longValue(request.get("seed"), 0); // type check only
     }
 
@@ -902,8 +997,17 @@ final class Server {
         // the handler thread; these guards keep the method safe for any future non-HTTP caller
         Options.require(intValue(request.get("n"), 1) == 1, "Only n=1 is supported");
         Options.require(0 <= maxTokens, "Invalid argument: max_tokens must be non-negative");
-        StopSpec stops = stopSpec(model.tokenizer(), request.get("stop"), baseStopTokens);
-        Sampler sampler = Engine.configuredSampler(model, requestThink(request, options), temperature, topp, seed);
+        StopSpec stops = stopSpec(request.get("stop"), baseStopTokens);
+        boolean think = requestThink(request, options);
+        Sampler sampler = Engine.configuredSampler(model, think, temperature, topp, seed);
+        if (think) {
+            // thinking models starve the answer under tight budgets: cap the think span,
+            // by default at half the completion budget (request reasoning_max_tokens overrides;
+            // -1 = uncapped)
+            int reasoningBudget = intValue(request.get("reasoning_max_tokens"),
+                    maxTokens >= 0 ? Math.max(1, maxTokens / 2) : -1);
+            sampler = Engine.withThinkBudget(sampler, model.tokenizer(), reasoningBudget);
+        }
         int consumedPromptTokens = Engine.consumedPromptTokens(model.tokenizer(), promptTokens); // client-facing usage counts
         int[] cachedOut = {Math.min(ingestion.startPosition(), consumedPromptTokens)};
         IntConsumer onToken = usageCounts == null ? null : token -> {
@@ -913,7 +1017,59 @@ final class Server {
         if (usageCounts != null) usageCounts.promptTokens = consumedPromptTokens;
         Engine.Params params = new Engine.Params(sampler, maxTokens, stops, inlineReasoning(request));
         Engine.Listener listener = new Engine.Listener(onToken, onText, onReasoning);
-        return runServerGeneration(model, ingestion, params, listener, cachedOut);
+        GenerationResult result = runServerGeneration(model, ingestion, params, listener, cachedOut, false);
+        // /metrics counters: single-writer (generation worker), volatile for handler reads
+        generationRequests++;
+        promptTokensTotal += result.promptTokens();
+        completionTokensTotal += result.completionTokens();
+        return result;
+    }
+
+    private static final long START_NANOS = System.nanoTime();
+    private static volatile long generationRequests, promptTokensTotal, completionTokensTotal;
+
+    /** Prometheus text exposition (llama.cpp-style /metrics): request/token totals, queue and
+     *  worker gauges, prompt-cache stats. */
+    private static void handleMetrics(HttpExchange exchange) throws IOException {
+        logRequest(exchange);
+        addCommonHeaders(exchange);
+        if (handleOptions(exchange)) return;
+        if (!exchange.getRequestURI().getPath().equals("/metrics")) {
+            sendError(exchange, 404, "Not found");
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            exchange.getResponseHeaders().set("Allow", "GET, OPTIONS");
+            sendError(exchange, 405, "Method not allowed");
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        metric(sb, "lfm25_uptime_seconds", "gauge", (System.nanoTime() - START_NANOS) / 1e9);
+        metric(sb, "lfm25_requests_total", "counter", generationRequests);
+        metric(sb, "lfm25_prompt_tokens_total", "counter", promptTokensTotal);
+        metric(sb, "lfm25_completion_tokens_total", "counter", completionTokensTotal);
+        metric(sb, "lfm25_queue_depth", "gauge", GENERATION_QUEUE.size());
+        metric(sb, "lfm25_worker_busy", "gauge", workerBusy ? 1 : 0);
+        PromptCache cache = promptCache;
+        if (cache != null) {
+            for (Map.Entry<String, Object> entry : cache.stats().entrySet()) {
+                if (entry.getValue() instanceof Number n) {
+                    String kind = entry.getKey().endsWith("bytes") || entry.getKey().equals("nodes") ? "gauge" : "counter";
+                    metric(sb, "lfm25_prompt_cache_" + entry.getKey(), kind, n);
+                }
+            }
+        }
+        byte[] body = sb.toString().getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
+        exchange.sendResponseHeaders(200, body.length);
+        try (OutputStream out = exchange.getResponseBody()) {
+            out.write(body);
+        }
+    }
+
+    private static void metric(StringBuilder sb, String name, String type, Number value) {
+        sb.append("# TYPE ").append(name).append(' ').append(type).append('\n')
+          .append(name).append(' ').append(value).append('\n');
     }
 
     private static boolean hasUsableTools(Map<String, Object> request) {
@@ -923,16 +1079,20 @@ final class Server {
         return tools instanceof List<?> list && !list.isEmpty();
     }
 
-    /** Tools system turn. Prefers the model's native protocol — the tool list as a JSON array
-     *  between <|tool_list_start|> and <|tool_list_end|> (LFM2.5 was trained on this shape);
-     *  plain encode() does not map special-token strings, so the markers are inserted as token
-     *  ids directly. Falls back to a plain-text instruction when the vocabulary lacks them. */
-    private static List<Integer> encodeToolsSystemMessage(LFMTokenizer tokenizer, LFMChatFormat chatFormat, Map<String, Object> request) {
+    /** The merged system turn for a tools request: the user's system prompt (when present)
+     *  followed by the tool list, in ONE turn like the trained chat template. The list uses
+     *  the model's native protocol — a JSON array between <|tool_list_start|> and
+     *  <|tool_list_end|>; plain encode() does not map special-token strings, so the markers
+     *  are inserted as token ids directly. Falls back to a plain-text instruction when the
+     *  vocabulary lacks them. */
+    private static List<Integer> encodeToolsSystemMessage(LFMTokenizer tokenizer, LFMChatFormat chatFormat,
+                                                          Map<String, Object> request, String systemText) {
+        String lead = systemText == null || systemText.isBlank() ? "" : systemText + "\n";
         Map<String, Integer> specialTokens = tokenizer.getSpecialTokens();
         Integer listStart = specialTokens.get("<|tool_list_start|>");
         Integer listEnd = specialTokens.get("<|tool_list_end|>");
         if (listStart == null || listEnd == null) {
-            return chatFormat.encodeMessage(new LFMChatFormat.Message(LFMChatFormat.Role.SYSTEM, toolsPrompt(request)));
+            return chatFormat.encodeMessage(new LFMChatFormat.Message(LFMChatFormat.Role.SYSTEM, lead + toolsPrompt(request)));
         }
         List<Object> functions = new ArrayList<>();
         for (Object tool : asArray(request.get("tools"), "tools")) {
@@ -940,9 +1100,9 @@ final class Server {
             functions.add(toolObject.getOrDefault("function", toolObject));
         }
         List<Integer> tokens = chatFormat.encodeHeader(new LFMChatFormat.Message(LFMChatFormat.Role.SYSTEM, ""));
-        tokens.addAll(tokenizer.encode("List of tools: "));
+        tokens.addAll(tokenizer.encode(lead + "List of tools: "));
         tokens.add(listStart);
-        tokens.addAll(tokenizer.encode(Json.stringify(functions)));
+        tokens.addAll(tokenizer.encode(modelFacingJson(functions)));
         tokens.add(listEnd);
         String hints = toolChoiceHints(request);
         if (!hints.isEmpty()) {
@@ -953,6 +1113,86 @@ final class Server {
         }
         tokens.addAll(tokenizer.encode("\n"));
         return tokens;
+    }
+
+    /**
+     * json.dumps-style JSON (", " and ": " separators) for text the MODEL reads. LFM2.5's
+     * training data renders tool lists through Python/Jinja tojson, which spaces separators —
+     * feeding the same content COMPACT puts it out of distribution and the model disowns its
+     * tools ("I don't have access to real-time data"). API responses stay compact (Json).
+     */
+    private static String modelFacingJson(Object value) {
+        StringBuilder sb = new StringBuilder();
+        writeModelFacingJson(sb, value);
+        return sb.toString();
+    }
+
+    private static void writeModelFacingJson(StringBuilder sb, Object value) {
+        switch (value) {
+            case null -> sb.append("null");
+            case String s -> sb.append(Json.stringify(s)); // a bare string stringifies quoted+escaped
+            case Number n -> sb.append(n);
+            case Boolean b -> sb.append(b);
+            case Map<?, ?> map -> {
+                sb.append('{');
+                boolean first = true;
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    if (!first) sb.append(", ");
+                    first = false;
+                    writeModelFacingJson(sb, String.valueOf(entry.getKey()));
+                    sb.append(": ");
+                    writeModelFacingJson(sb, entry.getValue());
+                }
+                sb.append('}');
+            }
+            case Iterable<?> iterable -> {
+                sb.append('[');
+                boolean first = true;
+                for (Object item : iterable) {
+                    if (!first) sb.append(", ");
+                    first = false;
+                    writeModelFacingJson(sb, item);
+                }
+                sb.append(']');
+            }
+            default -> writeModelFacingJson(sb, String.valueOf(value));
+        }
+    }
+
+    /** The function name a tool_choice forces ("" = any function via "required"), or null when
+     *  the request does not force a call. */
+    private static String forcedToolChoice(Map<String, Object> request) {
+        if (!hasUsableTools(request)) return null;
+        Object choice = request.get("tool_choice");
+        if (choice instanceof String s && "required".equals(s)) return "";
+        if (choice instanceof Map<?, ?> map && map.get("function") instanceof Map<?, ?> fn
+                && fn.get("name") instanceof String name) {
+            return name;
+        }
+        return null;
+    }
+
+    /** The assistant-turn text seeded by {@link #seedForcedToolCall}; re-attached to the reply
+     *  before parsing so the seeded call parses whole. */
+    private static String forcedToolCallPrefix(Map<String, Object> request) {
+        String choice = forcedToolChoice(request);
+        if (choice == null) return "";
+        return choice.isEmpty() ? TC_START : TC_START + "[" + choice;
+    }
+
+    /** tool_choice "required"/named function: seed the assistant turn with <|tool_call_start|>
+     *  (plus "[name" for a named choice) so the model can only complete a tool call instead of
+     *  merely being asked to make one. The open paren is deliberately NOT seeded: a bare
+     *  trailing "(" lands on a tokenization boundary the model never saw (it merges with the
+     *  first argument in training data) and greedy decoding stops dead. No-op when the
+     *  vocabulary lacks the marker (the prompted fallback keeps its text hint). */
+    private static void seedForcedToolCall(LFMTokenizer tokenizer, Map<String, Object> request, List<Integer> promptTokens) {
+        String choice = forcedToolChoice(request);
+        if (choice == null) return;
+        Integer marker = tokenizer.getSpecialTokens().get("<|tool_call_start|>");
+        if (marker == null) return;
+        promptTokens.add(marker);
+        if (!choice.isEmpty()) promptTokens.addAll(tokenizer.encode("[" + choice));
     }
 
     private static String toolChoiceHints(Map<String, Object> request) {
@@ -980,7 +1220,7 @@ final class Server {
         for (Object tool : asArray(request.get("tools"), "tools")) {
             Map<String, Object> toolObject = asObject(tool, "tool");
             Object function = toolObject.get("function");
-            sb.append(Json.stringify(function == null ? toolObject : function)).append('\n');
+            sb.append(modelFacingJson(function == null ? toolObject : function)).append('\n');
         }
         return sb.toString();
     }
@@ -994,132 +1234,285 @@ final class Server {
         String content = messageContent(message.get("content"));
         Object toolCalls = message.get("tool_calls");
         if (toolCalls instanceof List<?> calls && !calls.isEmpty()) {
-            String callsText = "Tool calls made:\n" + Json.stringify(calls);
+            String callsText = "Tool calls made:\n" + modelFacingJson(calls);
             return content.isEmpty() ? callsText : content + "\n" + callsText;
         }
         Object functionCall = message.get("function_call");
         if (functionCall instanceof Map<?, ?> call) {
-            String callText = "Function call made:\n" + Json.stringify(call);
+            String callText = "Function call made:\n" + modelFacingJson(call);
             return content.isEmpty() ? callText : content + "\n" + callText;
         }
         return content;
     }
 
-    private static GenerationResult withParsedToolCalls(GenerationResult result) {
-        List<Map<String, Object>> toolCalls = parseToolCalls(result.text());
+    private static GenerationResult withParsedToolCalls(GenerationResult result, Map<String, Object> request) {
+        String text = forcedToolCallPrefix(request) + result.text();
+        List<Map<String, Object>> toolCalls = parseToolCalls(text, toolNames(request));
         if (toolCalls.isEmpty()) return result;
-        return result.asToolCalls(toolCalls);
+        int marker = text.indexOf(TC_START);
+        return result.asToolCalls(toolCalls, marker > 0 ? text.substring(0, marker).strip() : "");
+    }
+
+    /** The function names a request offers; calls naming anything else are dropped. */
+    private static Set<String> toolNames(Map<String, Object> request) {
+        if (!(request.get("tools") instanceof List<?> tools)) return Set.of();
+        Set<String> names = new HashSet<>();
+        for (Object tool : tools) {
+            if (tool instanceof Map<?, ?> t && t.get("function") instanceof Map<?, ?> fn
+                    && fn.get("name") instanceof String name) {
+                names.add(name);
+            }
+        }
+        return names;
     }
 
     private static final String TC_START = "<|tool_call_start|>";
     private static final String TC_END = "<|tool_call_end|>";
-    private static final String TC_ARGS = "<|tool_call_args|>";
-    private static final String TC_ARGS_END = "<|tool_call_args_end|>";
 
-    private static List<Map<String, Object>> parseNativeToolCalls(String text) {
+    /** All {@code <|tool_call_start|>...<|tool_call_end|>} blocks parsed per the format LFM2.5
+     *  was trained on (reference: SGLang Lfm2Detector): each block holds either a Pythonic
+     *  call list {@code [f(a=1), g(b='x')]} (or a single bare call) or a JSON array/object of
+     *  {@code {name, arguments}}. Calls naming a function absent from {@code knownTools} are
+     *  dropped (a non-empty set validates; empty = accept all). */
+    private static List<Map<String, Object>> parseNativeToolCalls(String text, Set<String> knownTools) {
         List<Map<String, Object>> calls = new ArrayList<>();
         int pos = 0;
         while (true) {
             int start = text.indexOf(TC_START, pos);
             if (start < 0) break;
-            int nameEnd = text.indexOf(TC_END, start + TC_START.length());
-            if (nameEnd < 0) break;
-            String rawName = text.substring(start + TC_START.length(), nameEnd).strip();
-            if (rawName.isEmpty()) {
-                pos = nameEnd + TC_END.length();
-                continue;
-            }
-            int parenOpen = rawName.indexOf('(');
-            if (parenOpen >= 0) {
-                int parenClose = rawName.lastIndexOf(')');
-                if (parenClose > parenOpen) {
-                    String funcName = rawName.substring(0, parenOpen).strip();
-                    if (funcName.startsWith("[")) funcName = funcName.substring(1).strip();
-                    String args = rawName.substring(parenOpen + 1, parenClose).strip();
-                    Map<String, Object> parsed = parseCallExpressionArgs(args);
-                    addNativeCall(calls, funcName, Json.stringify(parsed));
-                    pos = nameEnd + TC_END.length();
+            int end = text.indexOf(TC_END, start + TC_START.length());
+            if (end < 0) break; // truncated mid-call: nothing reliable to parse
+            String content = text.substring(start + TC_START.length(), end).strip();
+            pos = end + TC_END.length();
+            for (Map<String, Object> call : parseToolCallBlock(content)) {
+                if (!knownTools.isEmpty() && !knownTools.contains(stringValue(call.get("name"), ""))) {
+                    System.err.println("dropping tool call to undefined function: " + call.get("name"));
                     continue;
                 }
+                Map<String, Object> normalized = normalizeToolCall(call, calls.size());
+                if (normalized != null) calls.add(normalized);
             }
-            int argsStart = text.indexOf(TC_ARGS, nameEnd);
-            if (argsStart >= 0) {
-                int jsonStart = argsStart + TC_ARGS.length();
-                int jsonEnd = text.indexOf(TC_ARGS_END, jsonStart);
-                if (jsonEnd >= 0) {
-                    addNativeCall(calls, rawName, text.substring(jsonStart, jsonEnd).strip());
-                    pos = jsonEnd + TC_ARGS_END.length();
-                    continue;
-                }
-                pos = jsonStart;
-            } else {
-                pos = nameEnd + TC_END.length();
-            }
-            int nextCall = text.indexOf(TC_START, pos);
-            String raw = nextCall >= 0 ? text.substring(pos, nextCall).strip() : text.substring(pos).strip();
-            String json = extractJson(raw);
-            addNativeCall(calls, rawName, !json.isEmpty() ? json : raw);
-            pos = nextCall >= 0 ? nextCall : text.length();
         }
         return calls;
     }
 
-    private static Map<String, Object> parseCallExpressionArgs(String args) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        args = args.strip();
-        if (args.isEmpty()) return result;
-        List<String> pairs = splitArgPairs(args);
-        for (String pair : pairs) {
-            int eq = pair.indexOf('=');
-            if (eq < 0) continue;
-            String key = pair.substring(0, eq).strip();
-            String value = pair.substring(eq + 1).strip();
-            if ((value.startsWith("\"") && value.endsWith("\""))
-                    || (value.startsWith("'") && value.endsWith("'"))) {
-                value = value.substring(1, value.length() - 1);
+    /** One block's content as raw {@code {name, arguments}} maps: JSON-looking content parses
+     *  as JSON, anything else as the Pythonic form; malformed content yields no calls. */
+    private static List<Map<String, Object>> parseToolCallBlock(String content) {
+        if (content.startsWith("{") || content.startsWith("[{")) {
+            try {
+                Object parsed = Json.parse(content);
+                List<?> list = parsed instanceof List<?> l ? l : List.of(parsed);
+                List<Map<String, Object>> calls = new ArrayList<>();
+                for (Object value : list) calls.add(asObject(value, "tool call"));
+                return calls;
+            } catch (RuntimeException e) {
+                // fall through: '{' can also open a Pythonic dict literal
             }
-            result.put(key, value);
         }
-        return result;
+        try {
+            return new PythonicCalls(content).parse();
+        } catch (RuntimeException e) {
+            System.err.println("unparseable tool call block: " + e.getMessage());
+            return List.of();
+        }
     }
 
-    private static List<String> splitArgPairs(String s) {
-        List<String> parts = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        boolean inQuote = false;
-        char quoteChar = 0;
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (!inQuote && (c == '"' || c == '\'')) {
-                inQuote = true;
-                quoteChar = c;
-                current.append(c);
-            } else if (inQuote && c == quoteChar) {
-                inQuote = false;
-                quoteChar = 0;
-                current.append(c);
-            } else if (!inQuote && c == ',') {
-                if (!current.isEmpty()) parts.add(current.toString().strip());
-                current.setLength(0);
+    /**
+     * Recursive-descent parser for the Pythonic tool-call syntax: {@code [name(k=v, ...), ...]}
+     * or a single bare call; values are Python literals — strings (either quote, backslash
+     * escapes), numbers, True/False/None, and nested lists/tuples/dicts — converted to their
+     * JSON-ready Java shapes. Positional arguments are skipped (matching SGLang); anything
+     * else malformed throws.
+     */
+    private static final class PythonicCalls {
+        private final String s;
+        private int i;
+
+        PythonicCalls(String s) {
+            this.s = s;
+        }
+
+        List<Map<String, Object>> parse() {
+            List<Map<String, Object>> calls = new ArrayList<>();
+            skipWs();
+            if (peek() == '[') {
+                i++;
+                skipWs();
+                if (peek() == ']') return calls;
+                while (true) {
+                    calls.add(call());
+                    skipWs();
+                    char c = next();
+                    if (c == ']') break;
+                    if (c != ',') throw err("',' or ']'");
+                }
             } else {
-                current.append(c);
+                calls.add(call());
+            }
+            skipWs();
+            if (i < s.length()) throw err("end of input");
+            return calls;
+        }
+
+        private Map<String, Object> call() {
+            skipWs();
+            String name = identifier();
+            skipWs();
+            if (next() != '(') throw err("'('");
+            Map<String, Object> arguments = new LinkedHashMap<>();
+            skipWs();
+            if (peek() == ')') {
+                i++;
+            } else {
+                while (true) {
+                    skipWs();
+                    int mark = i;
+                    String key = identifier();
+                    skipWs();
+                    if (peek() == '=') {
+                        i++;
+                        arguments.put(key, literal());
+                    } else {
+                        i = mark;
+                        literal(); // positional argument: parse and skip (SGLang behavior)
+                    }
+                    skipWs();
+                    char c = next();
+                    if (c == ')') break;
+                    if (c != ',') throw err("',' or ')'");
+                }
+            }
+            Map<String, Object> call = new LinkedHashMap<>();
+            call.put("name", name);
+            call.put("arguments", arguments);
+            return call;
+        }
+
+        private Object literal() {
+            skipWs();
+            char c = peek();
+            if (c == '"' || c == '\'') return string();
+            if (c == '[') return sequence('[', ']');
+            if (c == '(') return sequence('(', ')'); // tuple -> JSON array
+            if (c == '{') return dict();
+            if (c == '-' || c == '+' || Character.isDigit(c) || c == '.') return number();
+            String word = identifier();
+            return switch (word) {
+                case "True" -> Boolean.TRUE;
+                case "False" -> Boolean.FALSE;
+                case "None" -> null;
+                default -> throw err("literal");
+            };
+        }
+
+        private String string() {
+            char quote = next();
+            StringBuilder out = new StringBuilder();
+            while (true) {
+                if (i >= s.length()) throw err("closing quote");
+                char c = s.charAt(i++);
+                if (c == quote) return out.toString();
+                if (c == '\\' && i < s.length()) {
+                    char esc = s.charAt(i++);
+                    out.append(switch (esc) {
+                        case 'n' -> '\n';
+                        case 't' -> '\t';
+                        case 'r' -> '\r';
+                        case '0' -> '\0';
+                        default -> esc; // \' \" \\ and anything exotic pass through
+                    });
+                } else {
+                    out.append(c);
+                }
             }
         }
-        if (!current.isEmpty()) parts.add(current.toString().strip());
-        return parts;
+
+        private Object number() {
+            int from = i;
+            if (peek() == '-' || peek() == '+') i++;
+            boolean floating = false;
+            while (i < s.length()) {
+                char c = s.charAt(i);
+                if (Character.isDigit(c)) i++;
+                else if (c == '.' || c == 'e' || c == 'E') { floating = true; i++; }
+                else if ((c == '-' || c == '+') && (s.charAt(i - 1) == 'e' || s.charAt(i - 1) == 'E')) i++;
+                else break;
+            }
+            String token = s.substring(from, i);
+            if (floating) return Double.parseDouble(token);
+            return Long.parseLong(token);
+        }
+
+        private List<Object> sequence(char open, char close) {
+            if (next() != open) throw err("'" + open + "'");
+            List<Object> out = new ArrayList<>();
+            skipWs();
+            if (peek() == close) {
+                i++;
+                return out;
+            }
+            while (true) {
+                out.add(literal());
+                skipWs();
+                char c = next();
+                if (c == close) return out;
+                if (c != ',') throw err("',' or '" + close + "'");
+                skipWs();
+                if (peek() == close) { i++; return out; } // trailing comma (and 1-tuples)
+            }
+        }
+
+        private Map<String, Object> dict() {
+            if (next() != '{') throw err("'{'");
+            Map<String, Object> out = new LinkedHashMap<>();
+            skipWs();
+            if (peek() == '}') {
+                i++;
+                return out;
+            }
+            while (true) {
+                Object key = literal();
+                skipWs();
+                if (next() != ':') throw err("':'");
+                out.put(String.valueOf(key), literal());
+                skipWs();
+                char c = next();
+                if (c == '}') return out;
+                if (c != ',') throw err("',' or '}'");
+                skipWs();
+                if (peek() == '}') { i++; return out; }
+            }
+        }
+
+        private String identifier() {
+            skipWs();
+            int from = i;
+            while (i < s.length() && (Character.isLetterOrDigit(s.charAt(i)) || s.charAt(i) == '_' || s.charAt(i) == '.')) i++;
+            if (i == from) throw err("identifier");
+            return s.substring(from, i);
+        }
+
+        private void skipWs() {
+            while (i < s.length() && Character.isWhitespace(s.charAt(i))) i++;
+        }
+
+        private char peek() {
+            return i < s.length() ? s.charAt(i) : '\0';
+        }
+
+        private char next() {
+            if (i >= s.length()) throw err("more input");
+            return s.charAt(i++);
+        }
+
+        private IllegalArgumentException err(String expected) {
+            return new IllegalArgumentException("expected " + expected + " at offset " + i + " in: " + s);
+        }
     }
 
-    private static void addNativeCall(List<Map<String, Object>> calls, String name, String arguments) {
-        Map<String, Object> call = new LinkedHashMap<>();
-        call.put("name", name);
-        call.put("arguments", arguments);
-        // normalize into the OpenAI envelope: {id, type:"function", function:{name, arguments:"<json string>"}}
-        Map<String, Object> normalized = normalizeToolCall(call, calls.size());
-        if (normalized != null) calls.add(normalized);
-    }
-
-    private static List<Map<String, Object>> parseToolCalls(String text) {
-        List<Map<String, Object>> nativeCalls = parseNativeToolCalls(text);
+    static List<Map<String, Object>> parseToolCalls(String text, Set<String> knownTools) {
+        List<Map<String, Object>> nativeCalls = parseNativeToolCalls(text, knownTools);
         if (!nativeCalls.isEmpty()) return nativeCalls;
         String json = extractJson(text.strip());
         if (json.isEmpty()) return List.of();
@@ -1200,29 +1593,31 @@ final class Server {
         return deltas;
     }
 
-    private static StopSpec stopSpec(LFMTokenizer tokenizer, Object value, Set<Integer> baseStopTokens) {
-        Set<Integer> tokenStops = new HashSet<>(baseStopTokens);
+    /** User stop strings stay TEXT stops only: token stops end generation anywhere, including
+     *  inside the think span, while text stops are matched against content alone. (A former
+     *  single-token shortcut here made stop strings fire on reasoning.) */
+    private static StopSpec stopSpec(Object value, Set<Integer> baseStopTokens) {
         List<String> textStops = new ArrayList<>();
         if (value instanceof String s) {
-            addStop(tokenizer, tokenStops, textStops, s);
+            if (!s.isEmpty()) textStops.add(s);
         } else if (value instanceof List<?> values) {
-            for (Object item : values) addStop(tokenizer, tokenStops, textStops, stringValue(item, ""));
+            for (Object item : values) {
+                String stop = stringValue(item, "");
+                if (!stop.isEmpty()) textStops.add(stop);
+            }
         } else if (value != null) {
             throw new IllegalArgumentException("stop must be a string or an array of strings");
         }
-        return new StopSpec(Collections.unmodifiableSet(tokenStops), List.copyOf(textStops));
-    }
-
-    private static void addStop(LFMTokenizer tokenizer, Set<Integer> tokenStops, List<String> textStops, String stop) {
-        if (stop.isEmpty()) return;
-        textStops.add(stop);
-        List<Integer> tokens = tokenizer.encode(stop);
-        if (tokens.size() == 1) tokenStops.add(tokens.getFirst());
+        return new StopSpec(Collections.unmodifiableSet(baseStopTokens), List.copyOf(textStops));
     }
 
     /** Effective thinking switch for a server request: chat_template_kwargs.enable_thinking
-     *  (llama.cpp convention) overrides the CLI --think flag. */
+     *  (llama.cpp convention) overrides the CLI --think flag. Forced tool calls never think —
+     *  the call marker is seeded as the first assistant token. */
     private static boolean requestThink(Map<String, Object> request, Options options) {
+        if (forcedToolChoice(request) != null) {
+            return false;
+        }
         if (request.get("chat_template_kwargs") instanceof Map<?, ?> kwargs
                 && kwargs.get("enable_thinking") instanceof Boolean enabled) {
             return enabled;
@@ -1514,204 +1909,67 @@ final class Server {
         return defaultValue;
     }
 
+    /**
+     * JSON facade over com.qxotic:json keeping this server's conventions: explicit JSON null
+     * parses to Java null (treated like an absent field), Java null prints as JSON null (tool
+     * arguments carry Python None), decimals parse as Double (integers stay Long, huge ones
+     * promote to BigInteger), any Iterable prints as an array and unknown types print as their
+     * string form. Parse failures stay RuntimeExceptions (handler threads turn them into 400s).
+     */
     static final class Json {
+        private static final com.qxotic.format.json.Json.ParseOptions OPTIONS =
+                com.qxotic.format.json.Json.ParseOptions.defaults().decimalsAsBigDecimal(false);
+
         static Object parse(String text) {
-            return new Parser(text).parse();
+            return fromLibrary(com.qxotic.format.json.Json.parse(text, OPTIONS));
         }
 
         static String stringify(Object value) {
-            StringBuilder sb = new StringBuilder();
-            writeJson(sb, value);
-            return sb.toString();
+            return com.qxotic.format.json.Json.stringify(toLibrary(value));
         }
 
-        private static void writeJson(StringBuilder sb, Object value) {
+        /** Json.NULL -> Java null, in place (the parser's containers are mutable). */
+        private static Object fromLibrary(Object value) {
+            if (value == com.qxotic.format.json.Json.NULL) {
+                return null;
+            }
+            if (value instanceof Map<?, ?> map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> object = (Map<String, Object>) map;
+                for (Map.Entry<String, Object> entry : object.entrySet()) {
+                    entry.setValue(fromLibrary(entry.getValue()));
+                }
+            } else if (value instanceof List<?> list) {
+                @SuppressWarnings("unchecked")
+                List<Object> array = (List<Object>) list;
+                array.replaceAll(Json::fromLibrary);
+            }
+            return value;
+        }
+
+        /** Java null -> Json.NULL, plus the lenient coercions the previous printer had. */
+        private static Object toLibrary(Object value) {
             if (value == null) {
-                sb.append("null");
-            } else if (value instanceof String s) {
-                sb.append('"');
-                for (int i = 0; i < s.length(); i++) {
-                    char c = s.charAt(i);
-                    switch (c) {
-                        case '"' -> sb.append("\\\"");
-                        case '\\' -> sb.append("\\\\");
-                        case '\b' -> sb.append("\\b");
-                        case '\f' -> sb.append("\\f");
-                        case '\n' -> sb.append("\\n");
-                        case '\r' -> sb.append("\\r");
-                        case '\t' -> sb.append("\\t");
-                        default -> {
-                            if (c < 0x20) sb.append("\\u%04x".formatted((int) c));
-                            else sb.append(c);
-                        }
-                    }
-                }
-                sb.append('"');
-            } else if (value instanceof Number || value instanceof Boolean) {
-                sb.append(value);
-            } else if (value instanceof Map<?, ?> map) {
-                sb.append('{');
-                boolean first = true;
+                return com.qxotic.format.json.Json.NULL;
+            }
+            if (value instanceof String || value instanceof Number || value instanceof Boolean) {
+                return value;
+            }
+            if (value instanceof Map<?, ?> map) {
+                Map<String, Object> object = LinkedHashMap.newLinkedHashMap(map.size());
                 for (Map.Entry<?, ?> entry : map.entrySet()) {
-                    if (!first) sb.append(',');
-                    first = false;
-                    writeJson(sb, String.valueOf(entry.getKey()));
-                    sb.append(':');
-                    writeJson(sb, entry.getValue());
+                    object.put(String.valueOf(entry.getKey()), toLibrary(entry.getValue()));
                 }
-                sb.append('}');
-            } else if (value instanceof Iterable<?> iterable) {
-                sb.append('[');
-                boolean first = true;
+                return object;
+            }
+            if (value instanceof Iterable<?> iterable) {
+                List<Object> array = new ArrayList<>();
                 for (Object item : iterable) {
-                    if (!first) sb.append(',');
-                    first = false;
-                    writeJson(sb, item);
+                    array.add(toLibrary(item));
                 }
-                sb.append(']');
-            } else {
-                writeJson(sb, String.valueOf(value));
+                return array;
             }
-        }
-
-        private static final class Parser {
-            private final String text;
-            private int index;
-
-            Parser(String text) {
-                this.text = text;
-            }
-
-            Object parse() {
-                Object value = value();
-                skipWhitespace();
-                if (index != text.length()) throw error("Unexpected trailing data");
-                return value;
-            }
-
-            private Object value() {
-                skipWhitespace();
-                if (index >= text.length()) throw error("Unexpected end of input");
-                return switch (text.charAt(index)) {
-                    case '{' -> object();
-                    case '[' -> array();
-                    case '"' -> string();
-                    case 't' -> literal("true", Boolean.TRUE);
-                    case 'f' -> literal("false", Boolean.FALSE);
-                    case 'n' -> literal("null", null);
-                    default -> number();
-                };
-            }
-
-            private Map<String, Object> object() {
-                index++;
-                Map<String, Object> map = new LinkedHashMap<>();
-                skipWhitespace();
-                if (consume('}')) return map;
-                do {
-                    skipWhitespace();
-                    if (index >= text.length() || text.charAt(index) != '"') throw error("Expected object key");
-                    String key = string();
-                    skipWhitespace();
-                    if (!consume(':')) throw error("Expected ':'");
-                    map.put(key, value());
-                    skipWhitespace();
-                } while (consume(','));
-                if (!consume('}')) throw error("Expected '}'");
-                return map;
-            }
-
-            private List<Object> array() {
-                index++;
-                List<Object> list = new ArrayList<>();
-                skipWhitespace();
-                if (consume(']')) return list;
-                do {
-                    list.add(value());
-                    skipWhitespace();
-                } while (consume(','));
-                if (!consume(']')) throw error("Expected ']'");
-                return list;
-            }
-
-            private String string() {
-                index++;
-                StringBuilder sb = new StringBuilder();
-                while (index < text.length()) {
-                    char c = text.charAt(index++);
-                    if (c == '"') return sb.toString();
-                    if (c == '\\') {
-                        if (index >= text.length()) throw error("Unexpected escape");
-                        char e = text.charAt(index++);
-                        switch (e) {
-                            case '"' -> sb.append('"');
-                            case '\\' -> sb.append('\\');
-                            case '/' -> sb.append('/');
-                            case 'b' -> sb.append('\b');
-                            case 'f' -> sb.append('\f');
-                            case 'n' -> sb.append('\n');
-                            case 'r' -> sb.append('\r');
-                            case 't' -> sb.append('\t');
-                            case 'u' -> {
-                                if (index + 4 > text.length()) throw error("Invalid unicode escape");
-                                sb.append((char) Integer.parseInt(text.substring(index, index + 4), 16));
-                                index += 4;
-                            }
-                            default -> throw error("Invalid escape");
-                        }
-                    } else {
-                        sb.append(c);
-                    }
-                }
-                throw error("Unterminated string");
-            }
-
-            private Object number() {
-                int start = index;
-                if (consume('-')) {}
-                while (index < text.length() && Character.isDigit(text.charAt(index))) index++;
-                boolean floating = false;
-                if (consume('.')) {
-                    floating = true;
-                    while (index < text.length() && Character.isDigit(text.charAt(index))) index++;
-                }
-                if (index < text.length() && (text.charAt(index) == 'e' || text.charAt(index) == 'E')) {
-                    floating = true;
-                    index++;
-                    if (index < text.length() && (text.charAt(index) == '+' || text.charAt(index) == '-')) index++;
-                    while (index < text.length() && Character.isDigit(text.charAt(index))) index++;
-                }
-                if (start == index) throw error("Expected value");
-                String number = text.substring(start, index);
-                // no ternary: double/long branches would promote BOTH to double, silently
-                // turning every integer into a Double (and corrupting longs above 2^53)
-                if (floating) {
-                    return Double.parseDouble(number);
-                }
-                return Long.parseLong(number);
-            }
-
-            private Object literal(String literal, Object value) {
-                if (!text.startsWith(literal, index)) throw error("Expected " + literal);
-                index += literal.length();
-                return value;
-            }
-
-            private boolean consume(char c) {
-                if (index < text.length() && text.charAt(index) == c) {
-                    index++;
-                    return true;
-                }
-                return false;
-            }
-
-            private void skipWhitespace() {
-                while (index < text.length() && Character.isWhitespace(text.charAt(index))) index++;
-            }
-
-            private IllegalArgumentException error(String message) {
-                return new IllegalArgumentException(message + " at character " + index);
-            }
+            return String.valueOf(value);
         }
     }
 }

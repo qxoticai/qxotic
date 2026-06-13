@@ -246,6 +246,18 @@ abstract class FloatTensor {
                 : memorySegment.get(ValueLayout.JAVA_BYTE, offset);
     }
 
+    static int readInt(MemorySegment memorySegment, long offset) {
+        return GLOBAL_SEGMENT != null
+                ? GLOBAL_SEGMENT.get(ValueLayout.JAVA_INT_UNALIGNED, memorySegment.address() + offset)
+                : memorySegment.get(ValueLayout.JAVA_INT_UNALIGNED, offset);
+    }
+
+    static long readLong(MemorySegment memorySegment, long offset) {
+        return GLOBAL_SEGMENT != null
+                ? GLOBAL_SEGMENT.get(ValueLayout.JAVA_LONG_UNALIGNED, memorySegment.address() + offset)
+                : memorySegment.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
+    }
+
     static float readFloat(MemorySegment memorySegment, long offset) {
         return GLOBAL_SEGMENT != null
                 ? GLOBAL_SEGMENT.get(ValueLayout.JAVA_FLOAT_UNALIGNED, memorySegment.address() + offset)
@@ -1013,6 +1025,34 @@ final class Q4_KFloatTensor extends SegmentFloatTensor {
         }
     }
 
+    /** The 8 sub-block scales of a Q4_K block, unpacked branch-free from the 12 packed bytes
+     *  into one byte-per-value long (LSB = sub-block 0); a per-row dot otherwise pays 32
+     *  branchy {@link #getScaleMinK4} calls per super-block. */
+    static long packedScales(MemorySegment w, long scalesOff) {
+        long lo = readLong(w, scalesOff);
+        int hi = readInt(w, scalesOff + 8);
+        long packed = 0;
+        for (int j = 0; j < 4; j++) {
+            packed |= ((lo >>> (8 * j)) & 63) << (8 * j);
+            long v = ((hi >>> (8 * j)) & 0xF) | (((lo >>> (8 * j + 6)) & 3) << 4);
+            packed |= v << (8 * (j + 4));
+        }
+        return packed;
+    }
+
+    /** The 8 sub-block mins, same packing as {@link #packedScales}. */
+    static long packedMins(MemorySegment w, long scalesOff) {
+        long lo = readLong(w, scalesOff);
+        int hi = readInt(w, scalesOff + 8);
+        long packed = 0;
+        for (int j = 0; j < 4; j++) {
+            packed |= ((lo >>> (8 * (j + 4))) & 63) << (8 * j);
+            long v = ((hi >>> (8 * j + 4)) & 0xF) | (((lo >>> (8 * (j + 4) + 6)) & 3) << 4);
+            packed |= v << (8 * (j + 4));
+        }
+        return packed;
+    }
+
     @Override
     public float getFloat(long index) {
         long blockIndex = index / BLOCK_SIZE;
@@ -1062,18 +1102,16 @@ final class Q4_KFloatTensor extends SegmentFloatTensor {
             gemv(that, 0, out, 0, dim0, dim1, thisOffset);
             return;
         }
-        if (FloatTensor.USE_VECTOR_API && F_SPECIES.vectorBitSize() == 512
-                && that instanceof F32FloatTensor xf && out instanceof F32FloatTensor of && that != out
-                && dim1 % BLOCK_SIZE == 0 && thisOffset % BLOCK_SIZE == 0) {
-            vectorGemm512(this, xf, of, thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
+        if (that instanceof F32FloatTensor xf && out instanceof F32FloatTensor of && that != out
+                && Kernels.INSTANCE.gemmQ4KF32(this, thisOffset, xf, thatStride, of, outStride, sequenceLength, dim0, dim1)) {
             return;
         }
         super.gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 
-    private static void vectorGemm512(Q4_KFloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
+    static void vectorGemm512(Q4_KFloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
                                       int thatStride, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
-        final int seqTile = Math.max(4, RuntimeFlags.GEMM_SEQ_TILE);
+        final int seqTile = Math.max(4, RuntimeFlags.GEMM_SEQ_TILE_QK);
         final int rowTile = Math.max(2, RuntimeFlags.GEMM_ROW_TILE);
         final int seqTileCount = (sequenceLength + seqTile - 1) / seqTile;
         final int rowTileCount = (dim0 + rowTile - 1) / rowTile;
@@ -1213,12 +1251,15 @@ final class Q4_KFloatTensor extends SegmentFloatTensor {
             long scalesOff = blockOffset + 4;
             long qsOff = blockOffset + 16;
 
+            long packedSc = packedScales(thiz.memorySegment, scalesOff);
+            long packedMn = packedMins(thiz.memorySegment, scalesOff);
+
             // 4 groups of 64 values each (2 sub-blocks per group: low nibble + high nibble)
             for (int g = 0; g < 4; g++) {
-                float d1 = d * getScaleMinK4(g * 2, thiz.memorySegment, scalesOff, false);
-                float negM1 = -(dmin * getScaleMinK4(g * 2, thiz.memorySegment, scalesOff, true));
-                float d2 = d * getScaleMinK4(g * 2 + 1, thiz.memorySegment, scalesOff, false);
-                float negM2 = -(dmin * getScaleMinK4(g * 2 + 1, thiz.memorySegment, scalesOff, true));
+                float d1 = d * (int) ((packedSc >>> (16 * g)) & 0xFF);
+                float negM1 = -(dmin * (int) ((packedMn >>> (16 * g)) & 0xFF));
+                float d2 = d * (int) ((packedSc >>> (16 * g + 8)) & 0xFF);
+                float negM2 = -(dmin * (int) ((packedMn >>> (16 * g + 8)) & 0xFF));
 
                 var d1Vec = FloatVector.broadcast(F_SPECIES, d1);
                 var negM1Vec = FloatVector.broadcast(F_SPECIES, negM1);
@@ -1494,18 +1535,16 @@ final class Q6_KFloatTensor extends SegmentFloatTensor {
             gemv(that, 0, out, 0, dim0, dim1, thisOffset);
             return;
         }
-        if (FloatTensor.USE_VECTOR_API && F_SPECIES.vectorBitSize() == 512
-                && that instanceof F32FloatTensor xf && out instanceof F32FloatTensor of && that != out
-                && dim1 % BLOCK_SIZE == 0 && thisOffset % BLOCK_SIZE == 0) {
-            vectorGemm512(this, xf, of, thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
+        if (that instanceof F32FloatTensor xf && out instanceof F32FloatTensor of && that != out
+                && Kernels.INSTANCE.gemmQ6KF32(this, thisOffset, xf, thatStride, of, outStride, sequenceLength, dim0, dim1)) {
             return;
         }
         super.gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 
-    private static void vectorGemm512(Q6_KFloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
+    static void vectorGemm512(Q6_KFloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
                                       int thatStride, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
-        final int seqTile = Math.max(4, RuntimeFlags.GEMM_SEQ_TILE);
+        final int seqTile = Math.max(4, RuntimeFlags.GEMM_SEQ_TILE_QK);
         final int rowTile = Math.max(1, RuntimeFlags.GEMM_ROW_TILE);
         final int threads = RuntimeFlags.GEMM_THREADS;
         final int seqTileCount = (sequenceLength + seqTile - 1) / seqTile;
@@ -1618,7 +1657,12 @@ final class Q6_KFloatTensor extends SegmentFloatTensor {
             j += alignmentBound;
         }
 
-        FloatVector acc = FloatVector.zero(F_SPECIES);
+        // four independent accumulators, one per q-stream: a single accumulator chains four
+        // dependent FMAs per iteration and stalls on FMA latency
+        FloatVector acc0 = FloatVector.zero(F_SPECIES);
+        FloatVector acc1 = FloatVector.zero(F_SPECIES);
+        FloatVector acc2 = FloatVector.zero(F_SPECIES);
+        FloatVector acc3 = FloatVector.zero(F_SPECIES);
         long blockOffset = (long) (thisOffset + j) / BLOCK_SIZE * TYPE_SIZE;
         int upperBound = j + (size - j) / BLOCK_SIZE * BLOCK_SIZE;
 
@@ -1672,10 +1716,10 @@ final class Q6_KFloatTensor extends SegmentFloatTensor {
                             var q1f = q1.castShape(F_SPECIES, 0).reinterpretAsFloats();
                             var q2f = q2.castShape(F_SPECIES, 0).reinterpretAsFloats();
                             var q3f = q3.castShape(F_SPECIES, 0).reinterpretAsFloats();
-                            acc = q0f.mul(ds0Vec).fma(that.getFloatVector(F_SPECIES, sg0Idx), acc);
-                            acc = q1f.mul(ds1Vec).fma(that.getFloatVector(F_SPECIES, sg1Idx), acc);
-                            acc = q2f.mul(ds2Vec).fma(that.getFloatVector(F_SPECIES, sg2Idx), acc);
-                            acc = q3f.mul(ds3Vec).fma(that.getFloatVector(F_SPECIES, sg3Idx), acc);
+                            acc0 = q0f.mul(ds0Vec).fma(that.getFloatVector(F_SPECIES, sg0Idx), acc0);
+                            acc1 = q1f.mul(ds1Vec).fma(that.getFloatVector(F_SPECIES, sg1Idx), acc1);
+                            acc2 = q2f.mul(ds2Vec).fma(that.getFloatVector(F_SPECIES, sg2Idx), acc2);
+                            acc3 = q3f.mul(ds3Vec).fma(that.getFloatVector(F_SPECIES, sg3Idx), acc3);
                         }
                         case 256 -> {
                             for (int p = 0; p < 2; p++) {
@@ -1684,10 +1728,10 @@ final class Q6_KFloatTensor extends SegmentFloatTensor {
                                 var q1f = q1.castShape(F_SPECIES, p).reinterpretAsFloats();
                                 var q2f = q2.castShape(F_SPECIES, p).reinterpretAsFloats();
                                 var q3f = q3.castShape(F_SPECIES, p).reinterpretAsFloats();
-                                acc = q0f.mul(ds0Vec).fma(that.getFloatVector(F_SPECIES, sg0Idx + off), acc);
-                                acc = q1f.mul(ds1Vec).fma(that.getFloatVector(F_SPECIES, sg1Idx + off), acc);
-                                acc = q2f.mul(ds2Vec).fma(that.getFloatVector(F_SPECIES, sg2Idx + off), acc);
-                                acc = q3f.mul(ds3Vec).fma(that.getFloatVector(F_SPECIES, sg3Idx + off), acc);
+                                acc0 = q0f.mul(ds0Vec).fma(that.getFloatVector(F_SPECIES, sg0Idx + off), acc0);
+                                acc1 = q1f.mul(ds1Vec).fma(that.getFloatVector(F_SPECIES, sg1Idx + off), acc1);
+                                acc2 = q2f.mul(ds2Vec).fma(that.getFloatVector(F_SPECIES, sg2Idx + off), acc2);
+                                acc3 = q3f.mul(ds3Vec).fma(that.getFloatVector(F_SPECIES, sg3Idx + off), acc3);
                             }
                         }
                         case 128 -> {
@@ -1697,10 +1741,10 @@ final class Q6_KFloatTensor extends SegmentFloatTensor {
                                 var q1f = q1.castShape(F_SPECIES, p).reinterpretAsFloats();
                                 var q2f = q2.castShape(F_SPECIES, p).reinterpretAsFloats();
                                 var q3f = q3.castShape(F_SPECIES, p).reinterpretAsFloats();
-                                acc = q0f.mul(ds0Vec).fma(that.getFloatVector(F_SPECIES, sg0Idx + off), acc);
-                                acc = q1f.mul(ds1Vec).fma(that.getFloatVector(F_SPECIES, sg1Idx + off), acc);
-                                acc = q2f.mul(ds2Vec).fma(that.getFloatVector(F_SPECIES, sg2Idx + off), acc);
-                                acc = q3f.mul(ds3Vec).fma(that.getFloatVector(F_SPECIES, sg3Idx + off), acc);
+                                acc0 = q0f.mul(ds0Vec).fma(that.getFloatVector(F_SPECIES, sg0Idx + off), acc0);
+                                acc1 = q1f.mul(ds1Vec).fma(that.getFloatVector(F_SPECIES, sg1Idx + off), acc1);
+                                acc2 = q2f.mul(ds2Vec).fma(that.getFloatVector(F_SPECIES, sg2Idx + off), acc2);
+                                acc3 = q3f.mul(ds3Vec).fma(that.getFloatVector(F_SPECIES, sg3Idx + off), acc3);
                             }
                         }
                         default -> throw new UnsupportedOperationException(F_SPECIES.toString());
@@ -1709,7 +1753,7 @@ final class Q6_KFloatTensor extends SegmentFloatTensor {
             }
         }
 
-        result += acc.reduceLanes(VectorOperators.ADD);
+        result += acc0.add(acc1).add(acc2.add(acc3)).reduceLanes(VectorOperators.ADD);
 
         if (j < size) {
             result += FloatTensor.scalarDot(thiz, thisOffset + j, that, thatOffset + j, size - j);

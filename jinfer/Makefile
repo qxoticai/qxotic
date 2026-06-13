@@ -31,8 +31,8 @@ JAVA_SOURCES = $(wildcard *.java)
 JAVA_CLASSES = target/classes/.compiled
 
 # External dependencies (fetched from Maven Central into libs/; also declared as jbang //DEPS)
-DEPS = libs/gguf-0.1.0.jar libs/toknroll-core-0.1.0.jar libs/toknroll-gguf-0.1.0.jar
-DEPS_CLASSPATH = libs/gguf-0.1.0.jar:libs/toknroll-core-0.1.0.jar:libs/toknroll-gguf-0.1.0.jar
+DEPS = libs/gguf-0.1.0.jar libs/toknroll-core-0.1.0.jar libs/toknroll-gguf-0.1.0.jar libs/json-0.1.0.jar
+DEPS_CLASSPATH = libs/gguf-0.1.0.jar:libs/toknroll-core-0.1.0.jar:libs/toknroll-gguf-0.1.0.jar:libs/json-0.1.0.jar
 
 libs/%.jar:
 	mkdir -p libs

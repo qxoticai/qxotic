@@ -7,6 +7,7 @@
 //DEPS com.qxotic:gguf:0.1.0
 //DEPS com.qxotic:toknroll-core:0.1.0
 //DEPS com.qxotic:toknroll-gguf:0.1.0
+//DEPS com.qxotic:json:0.1.0
 //MAIN com.llama4j.LFM25
 //SOURCES ModelLoader.java
 //SOURCES Tensors.java
@@ -14,6 +15,7 @@
 //SOURCES RuntimeFlags.java
 //SOURCES Llama.java
 //SOURCES PromptCache.java
+//SOURCES CacheStore.java
 //SOURCES Server.java
 //SOURCES Engine.java
 //SOURCES Sampler.java
@@ -148,10 +150,20 @@ class LFMChatFormat {
     }
 
     public record Role(String name) {
-        public static LFMChatFormat.Role SYSTEM = new LFMChatFormat.Role("system");
-        public static LFMChatFormat.Role USER = new LFMChatFormat.Role("user");
-        public static LFMChatFormat.Role ASSISTANT = new LFMChatFormat.Role("assistant");
-        public static LFMChatFormat.Role TOOL = new LFMChatFormat.Role("tool");
+        public static final LFMChatFormat.Role SYSTEM = new LFMChatFormat.Role("system");
+        public static final LFMChatFormat.Role USER = new LFMChatFormat.Role("user");
+        public static final LFMChatFormat.Role ASSISTANT = new LFMChatFormat.Role("assistant");
+        public static final LFMChatFormat.Role TOOL = new LFMChatFormat.Role("tool");
+
+        /** OpenAI role string to template role; unknown roles render as user turns. */
+        public static Role of(String role) {
+            return switch (role) {
+                case "system" -> SYSTEM;
+                case "assistant" -> ASSISTANT;
+                case "tool" -> TOOL; // native tool turn, not flattened into user
+                default -> USER;
+            };
+        }
 
         @Override
         public String toString() {
@@ -166,15 +178,6 @@ public class LFM25 {
     private static final String ANSI_GREY  = "\033[90m";
     private static final String ANSI_CYAN  = "\033[36m";
     private static final String ANSI_RESET = "\033[0m";
-
-    private static IntConsumer plainStreamingPrinter(LFMTokenizer tokenizer) {
-        return token -> {
-            if (!tokenizer.isSpecialToken(token)) {
-                byte[] bytes = tokenizer.decodeTokenBytes(token);
-                System.out.write(bytes, 0, bytes.length);
-            }
-        };
-    }
 
     private static void onThinkingStart(PrintStream thoughtOut, boolean ansi) {
         if (ansi) {
@@ -221,7 +224,12 @@ public class LFM25 {
         Integer thinkOpen = tokenizer.getSpecialTokens().get("<think>");
         Integer thinkClose = tokenizer.getSpecialTokens().get("</think>");
         if (thinkOpen == null || thinkClose == null) {
-            return plainStreamingPrinter(tokenizer);
+            return token -> { // no think markers in the vocabulary: plain content streaming
+                if (!tokenizer.isSpecialToken(token)) {
+                    byte[] bytes = tokenizer.decodeTokenBytes(token);
+                    System.out.write(bytes, 0, bytes.length);
+                }
+            };
         }
 
         boolean thinkEnabled = options.think();
@@ -404,7 +412,7 @@ public class LFM25 {
     record Options(Path modelPath, String prompt, String suffix, String systemPrompt, boolean interactive, boolean server, String host, int port,
                     float temperature, float topp, long seed, int maxTokens, boolean stream, boolean echo,
                     boolean think, boolean thinkInline, boolean colors,
-                    boolean keepPastThinking, boolean rawPrompt) {
+                    boolean keepPastThinking, boolean rawPrompt, List<String> warmPrompts) {
 
         Options {
             require(modelPath != null, "Missing argument: --model <path> is required");
@@ -454,6 +462,9 @@ public class LFM25 {
             out.println("  --think <off|on|inline>       on: show thinking (default), off: hide thinking from output (model still generates it), inline: thoughts to stdout");
             out.println("  --keep-past-thinking <bool>   keep prior assistant thinking in history (default false)");
             out.println("  --raw-prompt                  bypass chat template and tokenize --prompt directly");
+            out.println("  --warm-prompt <file>          server: pre-ingest the file into the prompt cache (fully");
+            out.println("                                dense - requests diverging anywhere inside it resume");
+            out.println("                                token-exact); repeatable");
             out.println();
             out.println("Interactive commands:");
             out.println("  /quit, /exit                  exit the chat");
@@ -486,6 +497,7 @@ public class LFM25 {
             String colorMode = "auto";
             boolean keepPastThinking = false;
             boolean rawPrompt = false;
+            List<String> warmPrompts = new ArrayList<>();
 
             for (int i = 0; i < args.length; i++) {
                 String optionName = args[i];
@@ -525,6 +537,7 @@ public class LFM25 {
                             case "--echo" -> echo = parseBooleanOption(optionName, nextArg);
                             case "--color" -> colorMode = nextArg.toLowerCase(Locale.ROOT);
                             case "--keep-past-thinking" -> keepPastThinking = parseBooleanOption(optionName, nextArg);
+                            case "--warm-prompt" -> warmPrompts.add(nextArg);
                             case "--think" -> {
                                 String thinkMode = nextArg.toLowerCase(Locale.ROOT);
                                 thinkInline = List.of("inline", "stdout").contains(thinkMode);
@@ -543,7 +556,7 @@ public class LFM25 {
             boolean color = LFM25.supportsAnsiColors(colorMode);
             // server mode: thinking stays on by default (reasoning_content needs it); requests
             // can opt out per-call via chat_template_kwargs.enable_thinking=false
-            return new Options(modelPath, prompt, suffix, systemPrompt, interactive, server, host, port, temperature, topp, seed, maxTokens, stream, echo, think, thinkInline, color, keepPastThinking, rawPrompt);
+            return new Options(modelPath, prompt, suffix, systemPrompt, interactive, server, host, port, temperature, topp, seed, maxTokens, stream, echo, think, thinkInline, color, keepPastThinking, rawPrompt, List.copyOf(warmPrompts));
         }
     }
 

@@ -53,6 +53,11 @@
             <artifactId>toknroll-gguf</artifactId>
             <version>0.1.0</version>
         </dependency>
+        <dependency>
+            <groupId>com.qxotic</groupId>
+            <artifactId>json</artifactId>
+            <version>0.1.0</version>
+        </dependency>
         <!-- optional: thread pinning (-Dllama.Affinity=true); loaded reflectively, never
              required, and `provided` keeps it (and its JNA tree) OUT of the fat jar — put it
              on the classpath explicitly when pinning is wanted -->

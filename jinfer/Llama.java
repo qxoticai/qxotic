@@ -5,6 +5,7 @@ package com.llama4j;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
+import jdk.incubator.vector.VectorSpecies;
 
 
 
@@ -14,7 +15,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
-import java.util.function.IntConsumer;
+import java.util.function.IntPredicate;
 
 record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weights) {
 
@@ -280,7 +281,20 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
                                    F32FloatTensor qNorm, F32FloatTensor kNorm) {}
 
     /** Short-convolution block weights (null on attention layers). */
-    public record ShortConvWeights(F32FloatTensor kernel, FloatTensor inProj, FloatTensor outProj) {}
+    /** {@code kernel} is the GGUF layout (per channel: dConv taps); {@code kernelTaps} is the
+     *  same data tap-major (per tap: dim channels) so the scan's vector loop loads unit-stride. */
+    public record ShortConvWeights(F32FloatTensor kernel, F32FloatTensor kernelTaps, FloatTensor inProj, FloatTensor outProj) {
+        public static ShortConvWeights of(F32FloatTensor kernel, FloatTensor inProj, FloatTensor outProj, int dim) {
+            int dConv = Math.toIntExact(kernel.size() / dim);
+            F32FloatTensor taps = F32FloatTensor.allocate(dConv * dim);
+            for (int k = 0; k < dConv; k++) {
+                for (int c = 0; c < dim; c++) {
+                    taps.setFloat(k * dim + c, kernel.getFloat((long) c * dConv + k));
+                }
+            }
+            return new ShortConvWeights(kernel, taps, inProj, outProj);
+        }
+    }
 
     /** Dense MLP weights (null on MoE layers). */
     public record DenseFfnWeights(FloatTensor gate, FloatTensor down, FloatTensor up) {}
@@ -315,6 +329,10 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         public final BatchState batch;
 
         public int latestToken;
+        /** Optional per-layer conv-input observer for {@link #ingestTokens} chunks (prompt
+         *  cache bx harvesting); invoked after each recurrent layer's scan while
+         *  {@link BatchState#shortConvTmp} still holds that layer's (b, c_gate, x) rows. */
+        public ConvHarvest convHarvest;
 
         F32FloatTensor decodeBlockO; // (partitions * nHeads * headSize)
         float[] decodeBlockM;  // (partitions * nHeads)
@@ -342,6 +360,11 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
             }
             this.batch = new BatchState(config, RuntimeFlags.MAX_PROMPT_SEQUENCE_LENGTH);
         }
+    }
+
+    /** Observer for {@link State#convHarvest}. */
+    public interface ConvHarvest {
+        void layer(int layer, BatchState seq);
     }
 
     /** Per-chunk activation scratch, overwritten by every {@code ingestTokens} call; carries no
@@ -513,55 +536,98 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         shortConvOutput(weights, seq, layer, dim);
     }
 
-    /** The causal short-convolution over the chunk: per position, mix the dConv-deep history of
-     *  B*x inputs with the per-channel kernel and roll state.shortConvState forward in place. */
+    /**
+     * The causal short-convolution over the chunk as a dConv-tap FIR over bx rows:
+     * {@code out[s] = cg ∘ Σ_k taps[k] ∘ bx[s - hist + k]}, rows before the chunk coming from
+     * shortConvState. bx = B∘x is materialized IN PLACE over the B rows of shortConvTmp —
+     * positions then carry no loop dependency, and the rows double as the prompt-cache bx
+     * harvest source (post-scan contract). The last hist bx rows roll into shortConvState.
+     * The vector path accumulates taps in the scalar path's order (mul+add, ascending taps),
+     * so both produce bit-identical outputs.
+     */
     static void shortConvScan(Llama.Configuration config, Llama.Weights weights,
                               Llama.State state, Llama.BatchState seq, int layer, int dim) {
         FloatTensor convState = state.shortConvState[layer];
-        F32FloatTensor kernel = weights.layers()[layer].shortConv().kernel();
         int dConv = config.shortConvLCache;
         int hist = dConv - 1;
+        if (FloatTensor.USE_VECTOR_API && FloatTensor.GLOBAL_SEGMENT != null && hist > 0
+                && seq.shortConvTmp instanceof F32FloatTensor tmp
+                && convState instanceof F32FloatTensor convF32
+                && seq.xb2 instanceof F32FloatTensor out
+                && dim % FloatTensor.F_SPECIES.length() == 0) {
+            shortConvScanVector(tmp, convF32, out, weights.layers()[layer].shortConv().kernelTaps(),
+                    seq.sequenceLength, dim, dConv);
+            return;
+        }
+        F32FloatTensor kernel = weights.layers()[layer].shortConv().kernel();
         for (int s = 0; s < seq.sequenceLength; s++) {
             int tmpOffset = s * 3 * dim;
             int outOffset = s * dim;
-            if (hist == 2) {
-                for (int c = 0; c < dim; c++) {
-                    float b = seq.shortConvTmp.getFloat(tmpOffset + c);
-                    float cg = seq.shortConvTmp.getFloat(tmpOffset + dim + c);
-                    float xv = seq.shortConvTmp.getFloat(tmpOffset + 2 * dim + c);
-                    float bx = b * xv;
-                    int kBase = c * dConv;
-                    float prev0 = convState.getFloat(c);
-                    float prev1 = convState.getFloat(dim + c);
-                    float sum = prev0 * kernel.getFloat(kBase) + prev1 * kernel.getFloat(kBase + 1) + bx * kernel.getFloat(kBase + 2);
-                    seq.xb2.setFloat(outOffset + c, cg * sum);
-                    convState.setFloat(c, prev1);
-                    convState.setFloat(dim + c, bx);
+            for (int c = 0; c < dim; c++) {
+                float b = seq.shortConvTmp.getFloat(tmpOffset + c);
+                float cg = seq.shortConvTmp.getFloat(tmpOffset + dim + c);
+                float xv = seq.shortConvTmp.getFloat(tmpOffset + 2 * dim + c);
+                float bx = b * xv;
+                seq.shortConvTmp.setFloat(tmpOffset + c, bx); // post-scan contract: B row = bx
+                int kBase = c * dConv;
+                float sum = 0f;
+                for (int k = 0; k < hist; k++) sum += convState.getFloat(k * dim + c) * kernel.getFloat(kBase + k);
+                sum += bx * kernel.getFloat(kBase + dConv - 1);
+                seq.xb2.setFloat(outOffset + c, cg * sum);
+                for (int k = 0; k < hist - 1; k++) convState.setFloat(k * dim + c, convState.getFloat((k + 1) * dim + c));
+                if (hist > 0) convState.setFloat((hist - 1) * dim + c, bx);
+            }
+        }
+    }
+
+    /** Vector FIR over materialized bx rows; row pointers resolve tap positions either into
+     *  earlier (already materialized) bx rows of the chunk or into the pre-chunk conv state. */
+    private static void shortConvScanVector(F32FloatTensor tmp, F32FloatTensor convState, F32FloatTensor out,
+                                            F32FloatTensor taps, int seqLen, int dim, int dConv) {
+        VectorSpecies<Float> species = FloatTensor.F_SPECIES;
+        int lanes = species.length();
+        int hist = dConv - 1;
+        long rowBytes = (long) dim * Float.BYTES;
+        for (int s = 0; s < seqLen; s++) {
+            long bBase = tmp.vbase + s * 3 * rowBytes;
+            long cgBase = bBase + rowBytes;
+            long xBase = bBase + 2 * rowBytes;
+            long outBase = out.vbase + s * rowBytes;
+            for (int c = 0; c < dim; c += lanes) {
+                long cb = (long) c * Float.BYTES;
+                FloatVector bx = FloatVector.fromMemorySegment(species, tmp.vseg, bBase + cb, ByteOrder.LITTLE_ENDIAN)
+                        .mul(FloatVector.fromMemorySegment(species, tmp.vseg, xBase + cb, ByteOrder.LITTLE_ENDIAN));
+                bx.intoMemorySegment(tmp.vseg, bBase + cb, ByteOrder.LITTLE_ENDIAN);
+                FloatVector sum = FloatVector.zero(species);
+                for (int k = 0; k < hist; k++) {
+                    FloatVector tap = FloatVector.fromMemorySegment(species, taps.vseg,
+                            taps.vbase + k * rowBytes + cb, ByteOrder.LITTLE_ENDIAN);
+                    // ONE statically-typed load site: the vector path requires GLOBAL_SEGMENT,
+                    // where every tensor shares vseg and selection is pure address arithmetic
+                    // (a segment phi/array would compile to SVM's generic path and segfault)
+                    int pos = s - hist + k;
+                    long rowBase = pos < 0
+                            ? convState.vbase + (pos + hist) * rowBytes
+                            : tmp.vbase + pos * 3 * rowBytes;
+                    FloatVector row = FloatVector.fromMemorySegment(species, tmp.vseg, rowBase + cb, ByteOrder.LITTLE_ENDIAN);
+                    sum = sum.add(row.mul(tap));
                 }
-            } else if (hist == 1) {
-                for (int c = 0; c < dim; c++) {
-                    float b = seq.shortConvTmp.getFloat(tmpOffset + c);
-                    float cg = seq.shortConvTmp.getFloat(tmpOffset + dim + c);
-                    float xv = seq.shortConvTmp.getFloat(tmpOffset + 2 * dim + c);
-                    float bx = b * xv;
-                    int kBase = c * dConv;
-                    float sum = convState.getFloat(c) * kernel.getFloat(kBase) + bx * kernel.getFloat(kBase + 1);
-                    seq.xb2.setFloat(outOffset + c, cg * sum);
-                    convState.setFloat(c, bx);
-                }
+                FloatVector lastTap = FloatVector.fromMemorySegment(species, taps.vseg,
+                        taps.vbase + hist * rowBytes + cb, ByteOrder.LITTLE_ENDIAN);
+                sum = sum.add(bx.mul(lastTap));
+                FloatVector cg = FloatVector.fromMemorySegment(species, tmp.vseg, cgBase + cb, ByteOrder.LITTLE_ENDIAN);
+                cg.mul(sum).intoMemorySegment(out.vseg, outBase + cb, ByteOrder.LITTLE_ENDIAN);
+            }
+        }
+        // roll the conv state: row k = bx[seqLen - hist + k]; rows from before the chunk shift up
+        for (int k = 0; k < hist; k++) {
+            int pos = seqLen - hist + k;
+            if (pos < 0) {
+                MemorySegment.copy(convState.memorySegment, (long) (pos + hist) * rowBytes,
+                        convState.memorySegment, (long) k * rowBytes, rowBytes);
             } else {
-                for (int c = 0; c < dim; c++) {
-                    float b = seq.shortConvTmp.getFloat(tmpOffset + c);
-                    float cg = seq.shortConvTmp.getFloat(tmpOffset + dim + c);
-                    float xv = seq.shortConvTmp.getFloat(tmpOffset + 2 * dim + c);
-                    float bx = b * xv;
-                    int kBase = c * dConv;
-                    float sum = bx * kernel.getFloat(kBase + dConv - 1);
-                    for (int k = 0; k < hist; k++) sum += convState.getFloat(k * dim + c) * kernel.getFloat(kBase + k);
-                    seq.xb2.setFloat(outOffset + c, cg * sum);
-                    for (int k = 0; k < hist - 1; k++) convState.setFloat(k * dim + c, convState.getFloat((k + 1) * dim + c));
-                    if (hist > 0) convState.setFloat((hist - 1) * dim + c, bx);
-                }
+                MemorySegment.copy(tmp.memorySegment, (long) pos * 3 * rowBytes,
+                        convState.memorySegment, (long) k * rowBytes, rowBytes);
             }
         }
     }
@@ -1210,6 +1276,9 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         for (int l = 0; l < config.numberOfLayers; l++) {
             boolean needOutput = l + 1 < config.numberOfLayers;
             forwardLayer(config, weights, state, seq, l, startPosition, sequenceLength, dim, needOutput);
+            if (state.convHarvest != null && config.isRecurrentLayer(l)) {
+                state.convHarvest.layer(l, seq); // shortConvTmp is intact until the next recurrent layer
+            }
             if (!needOutput) break;
         }
 
@@ -1468,7 +1537,7 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
      */
     static List<Integer> generate(Llama model, Llama.State state, int startPosition, List<Integer> promptTokens,
                                   Set<Integer> stopTokens, int maxTokens, Sampler sampler,
-                                  IntConsumer onTokenGenerated, GenerationHooks hooks) {
+                                  IntPredicate onTokenGenerated, GenerationHooks hooks) {
         Llama.Configuration config = model.configuration();
         if (maxTokens < 0 || config.contextLength < maxTokens) {
             maxTokens = config.contextLength;
@@ -1491,11 +1560,11 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
                 }
                 int nextToken = sampler.sampleToken(logits);
                 generatedTokens.add(nextToken);
-                if (onTokenGenerated != null) {
-                    onTokenGenerated.accept(nextToken);
-                }
+                // a false return aborts generation (e.g. a text stop matched downstream); like
+                // a stop token, the aborting token is recorded but never ingested
+                boolean keepGoing = onTokenGenerated == null || onTokenGenerated.test(nextToken);
                 state.latestToken = nextToken;
-                if (stopTokens.contains(nextToken)) {
+                if (stopTokens.contains(nextToken) || !keepGoing) {
                     break;
                 }
                 stream[length++] = nextToken;

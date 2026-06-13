@@ -29,6 +29,10 @@ final class RuntimeFlags {
 
     // gemm tiling: the values feed loop bounds, not compiled code shapes — safe to tune at run time
     static final int GEMM_SEQ_TILE = Integer.getInteger("llama.Q8_0GemmSeqTile", 32);
+    // K-quant gemms (Q4_K/Q6_K) want much smaller seq tiles than Q8_0: the in-register nibble
+    // decode is the expensive stream, and narrow tiles keep its activation slices L1-resident
+    // (E2E sweep on the 8B Q4_K_M: 8 -> 170.9 prefill tok/s vs 152.4 at the Q8 default of 32)
+    static final int GEMM_SEQ_TILE_QK = Integer.getInteger("llama.QKGemmSeqTile", 8);
     static final int GEMM_ROW_TILE = Integer.getInteger("llama.Q8_0GemmRowTile", 128);
     static final int GEMM_THREADS = Integer.getInteger("llama.Q8_0GemmThreads",
             Integer.getInteger("llama.Q8_0GemmWorkers", Runtime.getRuntime().availableProcessors() * 4));
@@ -36,6 +40,10 @@ final class RuntimeFlags {
     // prompt cache
     static final boolean PROMPT_CACHE = !"false".equals(System.getProperty("llama.promptCache"));
     static final long PROMPT_CACHE_BUDGET_BYTES = Long.getLong("llama.promptCacheMB", 2048L) * (1L << 20);
+    // bx retention: conv-input rows kept so lookups can resume INSIDE cached spans (0 = off)
+    static final int PROMPT_CACHE_STRIDE = Integer.getInteger("llama.promptCacheStride", 64);
+    static final int PROMPT_CACHE_DENSE_TAIL = Integer.getInteger("llama.promptCacheDenseTail", 256);
+    static final String PROMPT_CACHE_WARM = System.getProperty("llama.promptCacheWarm");
 
     // server
     static final int SERVER_THREADS = Integer.getInteger("llama.serverThreads", 16);
