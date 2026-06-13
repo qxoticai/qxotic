@@ -970,7 +970,7 @@ final class Server {
     private static void validateGenerationParams(Map<String, Object> request, Options options) {
         if (request.get("model") instanceof String name && !name.isBlank()) {
             String served = options.modelPath().getFileName().toString();
-            Options.require(name.equals(served), "Unknown model: %s (this server serves %s)", name, served);
+            Options.require(name.equalsIgnoreCase(served), "Unknown model: %s (this server serves %s)", name, served);
         }
         Options.require(intValue(request.get("n"), 1) == 1, "Only n=1 is supported");
         float temperature = floatValue(request.get("temperature"), options.temperature());
