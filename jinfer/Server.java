@@ -733,9 +733,9 @@ final class Server {
      *  Fresh requests: new state, position 0, the full prompt. Resumed chat sessions: the live
      *  state mid-context with only the delta (turn close + new messages + generation prompt). */
     private record Ingestion(Llama.State state, int startPosition, List<Integer> tokens, int prefillPositions) {
-        /** prefillPositions: see {@link Engine#prefillPositions}. */
+        /** prefillPositions: see {@link Llama#prefillPositions}. */
         static Ingestion of(Llama.State state, int startPosition, List<Integer> tokens) {
-            return new Ingestion(state, startPosition, tokens, Engine.prefillPositions(state, startPosition, tokens));
+            return new Ingestion(state, startPosition, tokens, Llama.prefillPositions(state, startPosition, tokens));
         }
     }
 
@@ -983,9 +983,9 @@ final class Server {
     }
 
     /** Request fields to {@link Engine.Params}/{@link Engine.Listener}, then one engine pass
-     *  through {@link #runServerGeneration}. Usage counters for streaming chunks are fed by the
-     *  token listener (cached prefix + non-special completion tokens, matching the final usage
-     *  the non-streaming path reports). */
+     *  through {@link #runServerGeneration}. Streaming counters mirror Engine's final usage:
+     *  generated tokens are counted unless they are the trailing token stop removed from the
+     *  result. */
     private static GenerationResult generateResponse(Llama model, Options options, Map<String, Object> request, List<Integer> promptTokens,
                                            Ingestion ingestion, Set<Integer> baseStopTokens, Consumer<String> onText,
                                            Consumer<String> onReasoning, Usage usageCounts) {
@@ -1012,7 +1012,7 @@ final class Server {
         int[] cachedOut = {Math.min(ingestion.startPosition(), consumedPromptTokens)};
         IntConsumer onToken = usageCounts == null ? null : token -> {
             usageCounts.cachedTokens = Math.min(cachedOut[0], consumedPromptTokens);
-            if (!model.tokenizer().isSpecialToken(token)) usageCounts.completionTokens++;
+            if (!stops.tokenStops().contains(token)) usageCounts.completionTokens++;
         };
         if (usageCounts != null) usageCounts.promptTokens = consumedPromptTokens;
         Engine.Params params = new Engine.Params(sampler, maxTokens, stops, inlineReasoning(request));

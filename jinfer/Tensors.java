@@ -609,22 +609,29 @@ final class Q4_0FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
+    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+        if (that instanceof F32FloatTensor x && out instanceof F32FloatTensor o && that != out
+                && Kernels.INSTANCE.gemvQ4_0F32(this, thisOffset, x, thatOffset, o, outOffset, dim0, dim1)) {
+            return;
+        }
+        super.gemv(that, thatOffset, out, outOffset, dim0, dim1, thisOffset);
+    }
+
+    @Override
     void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
         if (sequenceLength == 1) {
             gemv(that, 0, out, 0, dim0, dim1, thisOffset);
             return;
         }
-        if (FloatTensor.USE_VECTOR_API && F_SPECIES.vectorBitSize() == 512
-                && that instanceof F32FloatTensor xf && out instanceof F32FloatTensor of && that != out
-                && (dim1 & (GGMLType.Q4_0.getElementsPerBlock() - 1)) == 0 && (thisOffset & (GGMLType.Q4_0.getElementsPerBlock() - 1)) == 0) {
-            vectorGemm512(this, xf, of, thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
+        if (that instanceof F32FloatTensor xf && out instanceof F32FloatTensor of && that != out
+                && Kernels.INSTANCE.gemmQ4_0F32(this, thisOffset, xf, thatStride, of, outStride, sequenceLength, dim0, dim1)) {
             return;
         }
         super.gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 
-    private static void vectorGemm512(Q4_0FloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
-                                      int thatStride, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+    static void vectorGemm512(Q4_0FloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
+                                       int thatStride, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
         final int seqTile = Math.max(4, RuntimeFlags.GEMM_SEQ_TILE);
         final int rowTile = Math.max(2, RuntimeFlags.GEMM_ROW_TILE);
         final int threads = RuntimeFlags.GEMM_THREADS;
@@ -1097,6 +1104,15 @@ final class Q4_KFloatTensor extends SegmentFloatTensor {
     }
 
     @Override
+    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+        if (that instanceof F32FloatTensor x && out instanceof F32FloatTensor o && that != out
+                && Kernels.INSTANCE.gemvQ4KF32(this, thisOffset, x, thatOffset, o, outOffset, dim0, dim1)) {
+            return;
+        }
+        super.gemv(that, thatOffset, out, outOffset, dim0, dim1, thisOffset);
+    }
+
+    @Override
     void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
         if (sequenceLength == 1) {
             gemv(that, 0, out, 0, dim0, dim1, thisOffset);
@@ -1373,6 +1389,28 @@ final class Q5_KFloatTensor extends SegmentFloatTensor {
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
 
+    @Override
+    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+        if (that instanceof F32FloatTensor x && out instanceof F32FloatTensor o && that != out
+                && Kernels.INSTANCE.gemvQ5KF32(this, thisOffset, x, thatOffset, o, outOffset, dim0, dim1)) {
+            return;
+        }
+        super.gemv(that, thatOffset, out, outOffset, dim0, dim1, thisOffset);
+    }
+
+    @Override
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+        if (sequenceLength == 1) {
+            gemv(that, 0, out, 0, dim0, dim1, thisOffset);
+            return;
+        }
+        if (that instanceof F32FloatTensor xf && out instanceof F32FloatTensor of && that != out
+                && Kernels.INSTANCE.gemmQ5KF32(this, thisOffset, xf, thatStride, of, outStride, sequenceLength, dim0, dim1)) {
+            return;
+        }
+        super.gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
+    }
+
     private static float vectorDot(Q5_KFloatTensor thiz, int thisOffset, F32FloatTensor that, int thatOffset, int size) {
         float result = 0f;
         int j = 0;
@@ -1527,6 +1565,15 @@ final class Q6_KFloatTensor extends SegmentFloatTensor {
         } else {
             return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
         }
+    }
+
+    @Override
+    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+        if (that instanceof F32FloatTensor x && out instanceof F32FloatTensor o && that != out
+                && Kernels.INSTANCE.gemvQ6KF32(this, thisOffset, x, thatOffset, o, outOffset, dim0, dim1)) {
+            return;
+        }
+        super.gemv(that, thatOffset, out, outOffset, dim0, dim1, thisOffset);
     }
 
     @Override
@@ -2544,6 +2591,28 @@ final class BF16FloatTensor extends SegmentFloatTensor {
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
 
+    @Override
+    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+        if (that instanceof F32FloatTensor x && out instanceof F32FloatTensor o && that != out
+                && Kernels.INSTANCE.gemvBF16F32(this, thisOffset, x, thatOffset, o, outOffset, dim0, dim1)) {
+            return;
+        }
+        super.gemv(that, thatOffset, out, outOffset, dim0, dim1, thisOffset);
+    }
+
+    @Override
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+        if (sequenceLength == 1) {
+            gemv(that, 0, out, 0, dim0, dim1, thisOffset);
+            return;
+        }
+        if (that instanceof F32FloatTensor xf && out instanceof F32FloatTensor of && that != out
+                && Kernels.INSTANCE.gemmBF16F32(this, thisOffset, xf, thatStride, of, outStride, sequenceLength, dim0, dim1)) {
+            return;
+        }
+        super.gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
+    }
+
     private static float vectorDot(BF16FloatTensor thiz, int thisOffset, F32FloatTensor that, int thatOffset, int size) {
         assert S_SPECIES_HALF.length() == F_SPECIES.length();
         FloatVector val = FloatVector.zero(F_SPECIES);
@@ -2609,6 +2678,28 @@ final class F16FloatTensor extends SegmentFloatTensor {
             return vectorDotF32(this, thisOffset, f32, thatOffset, size);
         }
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
+    }
+
+    @Override
+    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+        if (that instanceof F32FloatTensor x && out instanceof F32FloatTensor o && that != out
+                && Kernels.INSTANCE.gemvF16F32(this, thisOffset, x, thatOffset, o, outOffset, dim0, dim1)) {
+            return;
+        }
+        super.gemv(that, thatOffset, out, outOffset, dim0, dim1, thisOffset);
+    }
+
+    @Override
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+        if (sequenceLength == 1) {
+            gemv(that, 0, out, 0, dim0, dim1, thisOffset);
+            return;
+        }
+        if (that instanceof F32FloatTensor xf && out instanceof F32FloatTensor of && that != out
+                && Kernels.INSTANCE.gemmF16F32(this, thisOffset, xf, thatStride, of, outStride, sequenceLength, dim0, dim1)) {
+            return;
+        }
+        super.gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 
     private static float vectorDotF32(F16FloatTensor thiz, int thisOffset, F32FloatTensor that, int thatOffset, int size) {
@@ -2686,6 +2777,28 @@ final class F32FloatTensor extends SegmentFloatTensor {
             return that.dot(thatOffset, this, thisOffset, size);
         }
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
+    }
+
+    @Override
+    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+        if (that instanceof F32FloatTensor x && out instanceof F32FloatTensor o && that != out
+                && Kernels.INSTANCE.gemvF32F32(this, thisOffset, x, thatOffset, o, outOffset, dim0, dim1)) {
+            return;
+        }
+        super.gemv(that, thatOffset, out, outOffset, dim0, dim1, thisOffset);
+    }
+
+    @Override
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+        if (sequenceLength == 1) {
+            gemv(that, 0, out, 0, dim0, dim1, thisOffset);
+            return;
+        }
+        if (that instanceof F32FloatTensor xf && out instanceof F32FloatTensor of && that != out
+                && Kernels.INSTANCE.gemmF32F32(this, thisOffset, xf, thatStride, of, outStride, sequenceLength, dim0, dim1)) {
+            return;
+        }
+        super.gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 
     @Override

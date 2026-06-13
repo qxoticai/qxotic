@@ -1,38 +1,416 @@
-// Native AVX-512 GEMM for Q8_0 weights @ F32 activations -> F32, bound by
+// Portable native GEMM entry points, bound by
 // com.llama4j.NativeKernels (-Dllama.nativeGemmLib=<path> on the JVM, or statically
 // linked into a native image with -Dllama.staticGemm=true).
 //
-// Kernel: 4 weight rows x 4 activation columns per register tile (16 zmm accumulators +
-// 8 pre-scaled weight vectors), accumulating over the full K dimension so each output is
-// reduced horizontally exactly once. Weights are decoded (sign-extend + fp16 scale) once
-// per block and reused by all 4 columns.
+// The file must compile on every platform. Fast kernels are enabled by capability bits; platforms
+// without a native implementation still export the JNI symbols and Java falls back to Vector API.
 //
-// Threading: a persistent pthread pool (LFM25_NATIVE_THREADS, default: online CPUs) with
-// an atomic tile counter for work stealing; tiles are rowTile x seqTile output blocks.
+// Current fast backends:
+//   - x86_64 AVX-512/VNNI: Q8_0, Q4_K, Q6_K (thread-pool, repack)
+//   - x86_64 AVX2/FMA/F16C:  Q8_0, Q4_0, Q4_K, Q5_K, Q6_K, BF16, F16, F32
+//   - ARM64 NEON:            Q8_0, Q4_0, Q4_K, Q5_K, Q6_K, BF16, F16, F32 + GEMV
+//   - Pure C:                all quant types (baseline fallback)
 //
-// Build: make libnative   (gcc -O3 -march=native -shared -fPIC -pthread)
+// Separately: gemm.metal provides Metal compute kernels for Apple Silicon (GPU).
+//
+// Build:
+//   make libnative   (gcc -O3 -march=native -shared -fPIC -pthread)
+//   make arm64-so    (aarch64-linux-gnu-gcc for ARM cross-compile)
+//   make metal-lib   (macOS only: xcrun metal -> gemm.metallib)
 
 #define _GNU_SOURCE
 
 #include <jni.h>
+#if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>
+#if defined(__GNUC__) || defined(__clang__)
+#include <cpuid.h>
+#endif
+#define LFM25_X86_64 1
+#else
+#define LFM25_X86_64 0
+#endif
+#if !defined(_WIN32)
 #include <pthread.h>
+#include <unistd.h>
+#define LFM25_POSIX_THREADS 1
+#else
+#define LFM25_POSIX_THREADS 0
+#endif
+#if defined(__linux__)
 #include <sched.h>
+#endif
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <unistd.h>
+
+#if LFM25_POSIX_THREADS && LFM25_X86_64 && defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512VNNI__) && defined(__F16C__)
+#define LFM25_AVX512_VNNI 1
+#else
+#define LFM25_AVX512_VNNI 0
+#endif
+
+#if LFM25_X86_64 && defined(__AVX2__) && defined(__FMA__) && defined(__F16C__)
+#define LFM25_AVX2_FMA 1
+#else
+#define LFM25_AVX2_FMA 0
+#endif
+
+#if defined(__aarch64__) || defined(__arm64__) || defined(_M_ARM64)
+#include <arm_neon.h>
+#define LFM25_ARM64 1
+#if defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC)
+#define LFM25_ARM_FP16 1
+#else
+#define LFM25_ARM_FP16 0
+#endif
+#else
+#define LFM25_ARM64 0
+#define LFM25_ARM_FP16 0
+#endif
+// NEON is mandatory on ARMv8+: always enabled on AArch64.
+#if LFM25_ARM64
+#define LFM25_ARM_NEON 1
+#else
+#define LFM25_ARM_NEON 0
+#endif
+
+#define LFM25_CAP_Q8_0_GEMM 1
+#define LFM25_CAP_Q8_0_GEMV 2
+#define LFM25_CAP_Q4_K_GEMM 4
+#define LFM25_CAP_Q6_K_GEMM 8
+#define LFM25_CAP_Q4_0_GEMM 16
+#define LFM25_CAP_Q5_K_GEMM 32
+#define LFM25_CAP_BF16_GEMM 64
+#define LFM25_CAP_F16_GEMM 128
+#define LFM25_CAP_F32_GEMM 256
+
+#if LFM25_X86_64 && (defined(__GNUC__) || defined(__clang__))
+static int x86_supports_avx512_vnni(void) {
+    unsigned int eax, ebx, ecx, edx;
+    if (!__get_cpuid(1, &eax, &ebx, &ecx, &edx)) {
+        return 0;
+    }
+    if ((ecx & bit_OSXSAVE) == 0) {
+        return 0;
+    }
+    unsigned int xcr0_lo, xcr0_hi;
+    __asm__ volatile("xgetbv" : "=a"(xcr0_lo), "=d"(xcr0_hi) : "c"(0));
+    unsigned long long xcr0 = ((unsigned long long) xcr0_hi << 32) | xcr0_lo;
+    const unsigned long long zmm_state = (1ULL << 1) | (1ULL << 2) | (1ULL << 5) | (1ULL << 6) | (1ULL << 7);
+    if ((xcr0 & zmm_state) != zmm_state) {
+        return 0;
+    }
+    if (!__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx)) {
+        return 0;
+    }
+    return (ebx & bit_AVX512F) && (ebx & bit_AVX512BW) && (ecx & bit_AVX512VNNI);
+}
+
+static int x86_supports_avx2_fma_f16c(void) {
+    unsigned int eax, ebx, ecx, edx;
+    if (!__get_cpuid(1, &eax, &ebx, &ecx, &edx)) {
+        return 0;
+    }
+    if ((ecx & bit_OSXSAVE) == 0 || (ecx & bit_AVX) == 0 || (ecx & bit_FMA) == 0 || (ecx & bit_F16C) == 0) {
+        return 0;
+    }
+    unsigned int xcr0_lo, xcr0_hi;
+    __asm__ volatile("xgetbv" : "=a"(xcr0_lo), "=d"(xcr0_hi) : "c"(0));
+    unsigned long long xcr0 = ((unsigned long long) xcr0_hi << 32) | xcr0_lo;
+    const unsigned long long ymm_state = (1ULL << 1) | (1ULL << 2);
+    if ((xcr0 & ymm_state) != ymm_state) {
+        return 0;
+    }
+    if (!__get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx)) {
+        return 0;
+    }
+    return (ebx & bit_AVX2) != 0;
+}
+#else
+static int x86_supports_avx512_vnni(void) {
+    return 0;
+}
+
+static int x86_supports_avx2_fma_f16c(void) {
+    return 0;
+}
+#endif
 
 #define QK 32           // elements per Q8_0 block
 #define BLOCK_BYTES 34  // 2-byte fp16 scale + 32 int8 quants
 
 #define QKK 256             // elements per K-quant super-block
 #define Q4K_BLOCK_BYTES 144 // d(f16) dmin(f16) scales[12] qs[128]
+#define Q5K_BLOCK_BYTES 176 // d(f16) dmin(f16) scales[12] qh[32] qs[128]
 #define Q6K_BLOCK_BYTES 210 // ql[128] qh[64] scales[16] d(f16)
 
 #define GEMV_ROW_CHUNK 64
 #define VNNI_BAND 32        // weight rows per parallel work unit (4 groups of 16)
 #define VNNI_MIN_SEQ 8      // below this, activation quantization + repack don't amortize
+
+static float c_fp16_to_f32(uint16_t h) {
+    int sign = (h & 0x8000) << 16;
+    int exp = (h >> 10) & 0x1F;
+    int mant = h & 0x03FF;
+    if (exp == 0) {
+        if (mant == 0) {
+            union { uint32_t i; float f; } u = {(uint32_t) sign};
+            return u.f;
+        }
+        int e = 127 - 15 + 1;
+        while ((mant & 0x0400) == 0) {
+            mant <<= 1;
+            e--;
+        }
+        mant &= 0x03FF;
+        union { uint32_t i; float f; } u = {(uint32_t) (sign | (e << 23) | (mant << 13))};
+        return u.f;
+    }
+    if (exp == 0x1F) {
+        union { uint32_t i; float f; } u = {(uint32_t) (sign | 0x7F800000 | (mant << 13))};
+        return u.f;
+    }
+    union { uint32_t i; float f; } u = {(uint32_t) (sign | ((exp + (127 - 15)) << 23) | (mant << 13))};
+    return u.f;
+}
+
+static float c_q4_0_dot(const uint8_t *w, const float *x, int kblocks) {
+    float sum = 0.0f;
+    for (int b = 0; b < kblocks; b++, w += 18, x += QK) {
+        float d = c_fp16_to_f32(*(const uint16_t *) w);
+        const uint8_t *qs = w + 2;
+        for (int i = 0; i < 16; i++) {
+            int packed = qs[i];
+            sum += (float) ((packed & 0x0F) - 8) * d * x[i];
+            sum += (float) (((packed >> 4) & 0x0F) - 8) * d * x[i + 16];
+        }
+    }
+    return sum;
+}
+
+static void c_gemm_q4_0(jlong weights, jlong x, jlong x_stride_bytes,
+                        jlong out, jlong out_stride_bytes,
+                        jint sequence_length, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int x_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    int out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+    int kblocks = dim1 / QK;
+    int64_t w_stride = (int64_t) kblocks * 18;
+    for (int s = 0; s < sequence_length; s++) {
+        const float *row_x = rhs + (int64_t) s * x_stride;
+        float *row_out = dst + (int64_t) s * out_stride;
+        for (int row = 0; row < dim0; row++) {
+            row_out[row] = c_q4_0_dot(wbase + (int64_t) row * w_stride, row_x, kblocks);
+        }
+    }
+}
+
+static float c_q8_0_dot(const uint8_t *w, const float *x, int kblocks) {
+    float sum = 0.0f;
+    for (int b = 0; b < kblocks; b++, w += BLOCK_BYTES, x += QK) {
+        float d = c_fp16_to_f32(*(const uint16_t *) w);
+        const int8_t *qs = (const int8_t *) (w + 2);
+        for (int i = 0; i < QK; i++) {
+            sum += (float) qs[i] * d * x[i];
+        }
+    }
+    return sum;
+}
+
+static void c_gemm_q8_0(jlong weights, jlong x, jlong x_stride_bytes,
+                        jlong out, jlong out_stride_bytes,
+                        jint sequence_length, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int x_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    int out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+    int kblocks = dim1 / QK;
+    int64_t w_stride = (int64_t) kblocks * BLOCK_BYTES;
+    for (int s = 0; s < sequence_length; s++) {
+        const float *row_x = rhs + (int64_t) s * x_stride;
+        float *row_out = dst + (int64_t) s * out_stride;
+        for (int row = 0; row < dim0; row++) {
+            row_out[row] = c_q8_0_dot(wbase + (int64_t) row * w_stride, row_x, kblocks);
+        }
+    }
+}
+
+static int c_q4k_scale_min(const uint8_t *scales, int j, int is_min) {
+    if (j < 4) {
+        return scales[is_min ? j + 4 : j] & 63;
+    }
+    int low = is_min ? (scales[j + 4] >> 4) : (scales[j + 4] & 0xF);
+    int high = (scales[is_min ? j : j - 4] >> 6) & 0x3;
+    return low | (high << 4);
+}
+
+static float c_q4k_dot(const uint8_t *w, const float *x, int blocks) {
+    float sum = 0.0f;
+    for (int b = 0; b < blocks; b++, w += Q4K_BLOCK_BYTES, x += QKK) {
+        float d = c_fp16_to_f32(*(const uint16_t *) w);
+        float dmin = c_fp16_to_f32(*(const uint16_t *) (w + 2));
+        const uint8_t *scales = w + 4;
+        const uint8_t *qs = w + 16;
+        for (int g = 0; g < 4; g++) {
+            int sc_lo = c_q4k_scale_min(scales, g * 2, 0);
+            int mn_lo = c_q4k_scale_min(scales, g * 2, 1);
+            int sc_hi = c_q4k_scale_min(scales, g * 2 + 1, 0);
+            int mn_hi = c_q4k_scale_min(scales, g * 2 + 1, 1);
+            const uint8_t *q = qs + g * 32;
+            const float *xlo = x + g * 64;
+            const float *xhi = xlo + 32;
+            for (int i = 0; i < 32; i++) {
+                int packed = q[i];
+                sum += (d * sc_lo * (float) (packed & 0x0F) - dmin * mn_lo) * xlo[i];
+                sum += (d * sc_hi * (float) ((packed >> 4) & 0x0F) - dmin * mn_hi) * xhi[i];
+            }
+        }
+    }
+    return sum;
+}
+
+static float c_q5k_dot(const uint8_t *w, const float *x, int blocks) {
+    float sum = 0.0f;
+    for (int b = 0; b < blocks; b++, w += Q5K_BLOCK_BYTES, x += QKK) {
+        float d = c_fp16_to_f32(*(const uint16_t *) w);
+        float dmin = c_fp16_to_f32(*(const uint16_t *) (w + 2));
+        const uint8_t *scales = w + 4;
+        const uint8_t *qh = w + 16;
+        const uint8_t *qs = w + 48;
+        for (int g = 0; g < 4; g++) {
+            int sc_lo = c_q4k_scale_min(scales, g * 2, 0);
+            int mn_lo = c_q4k_scale_min(scales, g * 2, 1);
+            int sc_hi = c_q4k_scale_min(scales, g * 2 + 1, 0);
+            int mn_hi = c_q4k_scale_min(scales, g * 2 + 1, 1);
+            const uint8_t *q = qs + g * 32;
+            const float *xlo = x + g * 64;
+            const float *xhi = xlo + 32;
+            for (int i = 0; i < 32; i++) {
+                int packed = q[i];
+                int hi_bits = qh[i];
+                int qlo = (packed & 0x0F) | (((hi_bits >> (2 * g)) & 1) << 4);
+                int qhi = ((packed >> 4) & 0x0F) | (((hi_bits >> (2 * g + 1)) & 1) << 4);
+                sum += (d * sc_lo * (float) qlo - dmin * mn_lo) * xlo[i];
+                sum += (d * sc_hi * (float) qhi - dmin * mn_hi) * xhi[i];
+            }
+        }
+    }
+    return sum;
+}
+
+static float c_q6k_dot(const uint8_t *w, const float *x, int blocks) {
+    float sum = 0.0f;
+    for (int b = 0; b < blocks; b++, w += Q6K_BLOCK_BYTES, x += QKK) {
+        float d = c_fp16_to_f32(*(const uint16_t *) (w + 208));
+        const uint8_t *ql = w;
+        const uint8_t *qh = w + 128;
+        const int8_t *scales = (const int8_t *) (w + 192);
+        for (int half = 0; half < 2; half++) {
+            const uint8_t *ql_base = ql + half * 64;
+            const uint8_t *qh_base = qh + half * 32;
+            for (int sub = 0; sub < 4; sub++) {
+                int scale = scales[half * 8 + sub * 2];
+                int scale2 = scales[half * 8 + sub * 2 + 1];
+                for (int i = 0; i < 16; i++) {
+                    int idx = sub * 32 + i;
+                    int qh_byte = qh_base[i];
+                    int qh_byte2 = qh_base[i + 16];
+                    int q0, q1;
+                    switch (sub) {
+                        case 0:
+                            q0 = (ql_base[i] & 0x0F) | ((qh_byte & 0x03) << 4);
+                            q1 = (ql_base[i + 16] & 0x0F) | ((qh_byte2 & 0x03) << 4);
+                            break;
+                        case 1:
+                            q0 = (ql_base[32 + i] & 0x0F) | (((qh_byte >> 2) & 0x03) << 4);
+                            q1 = (ql_base[48 + i] & 0x0F) | (((qh_byte2 >> 2) & 0x03) << 4);
+                            break;
+                        case 2:
+                            q0 = ((ql_base[i] >> 4) & 0x0F) | (((qh_byte >> 4) & 0x03) << 4);
+                            q1 = ((ql_base[i + 16] >> 4) & 0x0F) | (((qh_byte2 >> 4) & 0x03) << 4);
+                            break;
+                        default:
+                            q0 = ((ql_base[32 + i] >> 4) & 0x0F) | (((qh_byte >> 6) & 0x03) << 4);
+                            q1 = ((ql_base[48 + i] >> 4) & 0x0F) | (((qh_byte2 >> 6) & 0x03) << 4);
+                            break;
+                    }
+                    sum += d * (float) scale * (float) (q0 - 32) * x[half * 128 + idx];
+                    sum += d * (float) scale2 * (float) (q1 - 32) * x[half * 128 + idx + 16];
+                }
+            }
+        }
+    }
+    return sum;
+}
+
+static void c_gemm_kquant(float (*dot)(const uint8_t *, const float *, int), int block_bytes,
+                          jlong weights, jlong x, jlong x_stride_bytes, jlong out, jlong out_stride_bytes,
+                          jint sequence_length, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int x_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    int out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+    int blocks = dim1 / QKK;
+    int64_t w_stride = (int64_t) blocks * block_bytes;
+    for (int s = 0; s < sequence_length; s++) {
+        const float *row_x = rhs + (int64_t) s * x_stride;
+        float *row_out = dst + (int64_t) s * out_stride;
+        for (int row = 0; row < dim0; row++) {
+            row_out[row] = dot(wbase + (int64_t) row * w_stride, row_x, blocks);
+        }
+    }
+}
+
+static float c_bf16_to_f32(uint16_t h) {
+    union { uint32_t i; float f; } u = {(uint32_t) h << 16};
+    return u.f;
+}
+
+static float c_f32_dot(const uint8_t *w, const float *x, int dim1) {
+    const float *wf = (const float *) w;
+    float sum = 0.0f;
+    for (int i = 0; i < dim1; i++) sum += wf[i] * x[i];
+    return sum;
+}
+
+static float c_f16_dot(const uint8_t *w, const float *x, int dim1) {
+    const uint16_t *wh = (const uint16_t *) w;
+    float sum = 0.0f;
+    for (int i = 0; i < dim1; i++) sum += c_fp16_to_f32(wh[i]) * x[i];
+    return sum;
+}
+
+static float c_bf16_dot(const uint8_t *w, const float *x, int dim1) {
+    const uint16_t *wh = (const uint16_t *) w;
+    float sum = 0.0f;
+    for (int i = 0; i < dim1; i++) sum += c_bf16_to_f32(wh[i]) * x[i];
+    return sum;
+}
+
+static void c_gemm_dense(float (*dot)(const uint8_t *, const float *, int), int elem_bytes,
+                         jlong weights, jlong x, jlong x_stride_bytes, jlong out, jlong out_stride_bytes,
+                         jint sequence_length, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int x_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    int out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+    int64_t w_stride = (int64_t) dim1 * elem_bytes;
+    for (int s = 0; s < sequence_length; s++) {
+        const float *row_x = rhs + (int64_t) s * x_stride;
+        float *row_out = dst + (int64_t) s * out_stride;
+        for (int row = 0; row < dim0; row++) {
+            row_out[row] = dot(wbase + (int64_t) row * w_stride, row_x, dim1);
+        }
+    }
+}
+
+#if LFM25_AVX512_VNNI
 
 typedef struct {
     int kind; // 0 = f32 gemm, 1 = gemv, 2 = quantize activations (u8), 3 = vnni gemm,
@@ -851,6 +1229,7 @@ static void run_task(const gemm_task_t *task, int worker) {
 }
 
 static void pin_worker_if_requested(int worker) {
+#if defined(__linux__)
     const char *pin = getenv("LFM25_NATIVE_PIN_THREADS");
     if (pin == NULL || pin[0] == '0') {
         return;
@@ -866,6 +1245,9 @@ static void pin_worker_if_requested(int worker) {
     CPU_ZERO(&cpuset);
     CPU_SET(base + worker * stride, &cpuset);
     pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
+#else
+    (void) worker;
+#endif
 }
 
 static void *pool_worker(void *arg) {
@@ -1038,6 +1420,955 @@ static void run_kquant_gemm(int band_kind, jlong weights, jlong x, jlong x_strid
     dispatch_task();
 }
 
+#endif // LFM25_AVX512_VNNI
+
+#if LFM25_AVX2_FMA
+
+static inline float avx2_fp16_to_f32(uint16_t h) {
+    return _mm_cvtss_f32(_mm_cvtph_ps(_mm_cvtsi32_si128(h)));
+}
+
+static inline __m256 avx2_q8_8(const uint8_t *q, __m256 scale) {
+    __m128i bytes = _mm_loadl_epi64((const __m128i *) q);
+    __m256i i32 = _mm256_cvtepi8_epi32(bytes);
+    return _mm256_mul_ps(_mm256_cvtepi32_ps(i32), scale);
+}
+
+static inline float avx2_hsum(__m256 v) {
+    __m128 lo = _mm256_castps256_ps128(v);
+    __m128 hi = _mm256_extractf128_ps(v, 1);
+    __m128 sum = _mm_add_ps(lo, hi);
+    sum = _mm_hadd_ps(sum, sum);
+    sum = _mm_hadd_ps(sum, sum);
+    return _mm_cvtss_f32(sum);
+}
+
+static float avx2_q8_dot(const uint8_t *w, const float *x, int kblocks) {
+    __m256 acc0 = _mm256_setzero_ps();
+    __m256 acc1 = _mm256_setzero_ps();
+    __m256 acc2 = _mm256_setzero_ps();
+    __m256 acc3 = _mm256_setzero_ps();
+    for (int b = 0; b < kblocks; b++, w += BLOCK_BYTES, x += QK) {
+        __m256 scale = _mm256_set1_ps(avx2_fp16_to_f32(*(const uint16_t *) w));
+        acc0 = _mm256_fmadd_ps(avx2_q8_8(w + 2, scale), _mm256_loadu_ps(x), acc0);
+        acc1 = _mm256_fmadd_ps(avx2_q8_8(w + 10, scale), _mm256_loadu_ps(x + 8), acc1);
+        acc2 = _mm256_fmadd_ps(avx2_q8_8(w + 18, scale), _mm256_loadu_ps(x + 16), acc2);
+        acc3 = _mm256_fmadd_ps(avx2_q8_8(w + 26, scale), _mm256_loadu_ps(x + 24), acc3);
+    }
+    return avx2_hsum(_mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3)));
+}
+
+static void avx2_native_gemm(jlong weights, jlong x, jlong x_stride_bytes,
+                             jlong out, jlong out_stride_bytes,
+                             jint sequence_length, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int x_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    int out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+    int kblocks = dim1 / QK;
+    int64_t w_stride = (int64_t) kblocks * BLOCK_BYTES;
+    for (int s = 0; s < sequence_length; s++) {
+        const float *row_x = rhs + (int64_t) s * x_stride;
+        float *row_out = dst + (int64_t) s * out_stride;
+        for (int row = 0; row < dim0; row++) {
+            row_out[row] = avx2_q8_dot(wbase + (int64_t) row * w_stride, row_x, kblocks);
+        }
+    }
+}
+
+static void avx2_native_gemv(jlong weights, jlong x, jlong out, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int kblocks = dim1 / QK;
+    int64_t w_stride = (int64_t) kblocks * BLOCK_BYTES;
+    for (int row = 0; row < dim0; row++) {
+        dst[row] = avx2_q8_dot(wbase + (int64_t) row * w_stride, rhs, kblocks);
+    }
+}
+
+// Q4_0 AVX2: 1 fp16 scale + 16 nibble-pair bytes -> 32 i4 values (bias -8) over 32 f32 activations
+static float avx2_q4_0_dot(const uint8_t *w, const float *x, int kblocks) {
+    __m256 acc0 = _mm256_setzero_ps(), acc1 = _mm256_setzero_ps(), acc2 = _mm256_setzero_ps(), acc3 = _mm256_setzero_ps();
+    const __m256i eight = _mm256_set1_epi32(8);
+    const __m128i lo_mask = _mm_set1_epi8(0x0F);
+    for (int b = 0; b < kblocks; b++, w += 18, x += QK) {
+        __m256 d = _mm256_set1_ps(avx2_fp16_to_f32(*(const uint16_t *) w));
+        __m128i packed = _mm_loadu_si128((const __m128i *) (w + 2));
+        __m128i lo = _mm_and_si128(packed, lo_mask);
+        __m128i hi = _mm_and_si128(_mm_srli_epi16(packed, 4), lo_mask);
+        __m256i q0 = _mm256_sub_epi32(_mm256_cvtepu8_epi32(lo), eight);
+        __m256i q1 = _mm256_sub_epi32(_mm256_cvtepu8_epi32(_mm_bsrli_si128(lo, 8)), eight);
+        __m256i q2 = _mm256_sub_epi32(_mm256_cvtepu8_epi32(hi), eight);
+        __m256i q3 = _mm256_sub_epi32(_mm256_cvtepu8_epi32(_mm_bsrli_si128(hi, 8)), eight);
+        acc0 = _mm256_fmadd_ps(_mm256_mul_ps(_mm256_cvtepi32_ps(q0), d), _mm256_loadu_ps(x), acc0);
+        acc1 = _mm256_fmadd_ps(_mm256_mul_ps(_mm256_cvtepi32_ps(q1), d), _mm256_loadu_ps(x + 8), acc1);
+        acc2 = _mm256_fmadd_ps(_mm256_mul_ps(_mm256_cvtepi32_ps(q2), d), _mm256_loadu_ps(x + 16), acc2);
+        acc3 = _mm256_fmadd_ps(_mm256_mul_ps(_mm256_cvtepi32_ps(q3), d), _mm256_loadu_ps(x + 24), acc3);
+    }
+    return avx2_hsum(_mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3)));
+}
+
+static void avx2_gemm_q4_0(jlong weights, jlong x, jlong x_stride_bytes,
+                           jlong out, jlong out_stride_bytes,
+                           jint sequence_length, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int x_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    int out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+    int kblocks = dim1 / QK;
+    int64_t w_stride = (int64_t) kblocks * 18;
+    for (int s = 0; s < sequence_length; s++) {
+        const float *row_x = rhs + (int64_t) s * x_stride;
+        float *row_out = dst + (int64_t) s * out_stride;
+        for (int row = 0; row < dim0; row++) {
+            row_out[row] = avx2_q4_0_dot(wbase + (int64_t) row * w_stride, row_x, kblocks);
+        }
+    }
+}
+
+// F16 AVX2: packed f16 weights, convert to f32 inline, 4x8 accumulator lanes + scalar tail
+static float avx2_f16_dot(const uint8_t *w, const float *x, int dim1) {
+    const uint16_t *wh = (const uint16_t *) w;
+    __m256 acc0 = _mm256_setzero_ps(), acc1 = _mm256_setzero_ps(), acc2 = _mm256_setzero_ps(), acc3 = _mm256_setzero_ps();
+    int i = 0;
+    for (; i + 31 < dim1; i += 32, wh += 32, x += 32) {
+        acc0 = _mm256_fmadd_ps(_mm256_cvtph_ps(_mm_loadu_si128((const __m128i *) wh)), _mm256_loadu_ps(x), acc0);
+        acc1 = _mm256_fmadd_ps(_mm256_cvtph_ps(_mm_loadu_si128((const __m128i *) (wh + 8))), _mm256_loadu_ps(x + 8), acc1);
+        acc2 = _mm256_fmadd_ps(_mm256_cvtph_ps(_mm_loadu_si128((const __m128i *) (wh + 16))), _mm256_loadu_ps(x + 16), acc2);
+        acc3 = _mm256_fmadd_ps(_mm256_cvtph_ps(_mm_loadu_si128((const __m128i *) (wh + 24))), _mm256_loadu_ps(x + 24), acc3);
+    }
+    float sum = avx2_hsum(_mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3)));
+    for (; i < dim1; i++) sum += c_fp16_to_f32(wh[i]) * x[i];
+    return sum;
+}
+
+// BF16 AVX2: packed bf16 weights, shift-left-16 to f32, 4x8 accumulator lanes + scalar tail
+static float avx2_bf16_dot(const uint8_t *w, const float *x, int dim1) {
+    const uint16_t *wh = (const uint16_t *) w;
+    __m256 acc0 = _mm256_setzero_ps(), acc1 = _mm256_setzero_ps(), acc2 = _mm256_setzero_ps(), acc3 = _mm256_setzero_ps();
+    int i = 0;
+    for (; i + 31 < dim1; i += 32, wh += 32, x += 32) {
+        __m256i b0 = _mm256_cvtepu16_epi32(_mm_loadu_si128((const __m128i *) wh));
+        __m256i b1 = _mm256_cvtepu16_epi32(_mm_loadu_si128((const __m128i *) (wh + 8)));
+        __m256i b2 = _mm256_cvtepu16_epi32(_mm_loadu_si128((const __m128i *) (wh + 16)));
+        __m256i b3 = _mm256_cvtepu16_epi32(_mm_loadu_si128((const __m128i *) (wh + 24)));
+        acc0 = _mm256_fmadd_ps(_mm256_castsi256_ps(_mm256_slli_epi32(b0, 16)), _mm256_loadu_ps(x), acc0);
+        acc1 = _mm256_fmadd_ps(_mm256_castsi256_ps(_mm256_slli_epi32(b1, 16)), _mm256_loadu_ps(x + 8), acc1);
+        acc2 = _mm256_fmadd_ps(_mm256_castsi256_ps(_mm256_slli_epi32(b2, 16)), _mm256_loadu_ps(x + 16), acc2);
+        acc3 = _mm256_fmadd_ps(_mm256_castsi256_ps(_mm256_slli_epi32(b3, 16)), _mm256_loadu_ps(x + 24), acc3);
+    }
+    float sum = avx2_hsum(_mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3)));
+    for (; i < dim1; i++) {
+        union { uint32_t bits; float f; } u = {(uint32_t) wh[i] << 16};
+        sum += u.f * x[i];
+    }
+    return sum;
+}
+
+// F32 AVX2: direct fma over f32 weights, 4x8 accumulator lanes + scalar tail
+static float avx2_f32_dot(const uint8_t *w, const float *x, int dim1) {
+    const float *wf = (const float *) w;
+    __m256 acc0 = _mm256_setzero_ps(), acc1 = _mm256_setzero_ps(), acc2 = _mm256_setzero_ps(), acc3 = _mm256_setzero_ps();
+    int i = 0;
+    for (; i + 31 < dim1; i += 32, wf += 32, x += 32) {
+        acc0 = _mm256_fmadd_ps(_mm256_loadu_ps(wf), _mm256_loadu_ps(x), acc0);
+        acc1 = _mm256_fmadd_ps(_mm256_loadu_ps(wf + 8), _mm256_loadu_ps(x + 8), acc1);
+        acc2 = _mm256_fmadd_ps(_mm256_loadu_ps(wf + 16), _mm256_loadu_ps(x + 16), acc2);
+        acc3 = _mm256_fmadd_ps(_mm256_loadu_ps(wf + 24), _mm256_loadu_ps(x + 24), acc3);
+    }
+    float sum = avx2_hsum(_mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3)));
+    for (; i < dim1; i++) sum += wf[i] * x[i];
+    return sum;
+}
+
+// Q4_K AVX2: per-super-block decoded scale/min cache, 4 groups x 64 elements,
+// 4x8 accumulator lanes accumulating lo+hi sub-blocks into the same lanes.
+static inline void avx2_q4k_decode_scales(const uint8_t *b, float *sc, float *mn, float d, float dmin) {
+    for (int j = 0; j < 4; j++) {
+        sc[j] = d * (b[j] & 63);
+        mn[j] = dmin * (b[j + 4] & 63);
+        sc[j + 4] = d * (float) ((b[j + 8] & 0xF) | ((b[j] >> 6) << 4));
+        mn[j + 4] = dmin * (float) ((b[j + 8] >> 4) | ((b[j + 4] >> 6) << 4));
+    }
+}
+
+static float avx2_q4k_dot(const uint8_t *w, const float *x, int blocks) {
+    __m256 acc0 = _mm256_setzero_ps(), acc1 = _mm256_setzero_ps(), acc2 = _mm256_setzero_ps(), acc3 = _mm256_setzero_ps();
+    const __m128i lo_mask = _mm_set1_epi8(0x0F);
+    for (int b = 0; b < blocks; b++, w += Q4K_BLOCK_BYTES, x += QKK) {
+        float d = avx2_fp16_to_f32(*(const uint16_t *) w);
+        float dmin = avx2_fp16_to_f32(*(const uint16_t *) (w + 2));
+        float sc[8], mn[8];
+        avx2_q4k_decode_scales(w + 4, sc, mn, d, dmin);
+        const uint8_t *qs = w + 16;
+        for (int g = 0; g < 4; g++) {
+            __m256 sLo = _mm256_set1_ps(sc[g * 2]);
+            __m256 sHi = _mm256_set1_ps(sc[g * 2 + 1]);
+            __m256 mLo = _mm256_set1_ps(mn[g * 2]);
+            __m256 mHi = _mm256_set1_ps(mn[g * 2 + 1]);
+            __m128i p0 = _mm_loadu_si128((const __m128i *) (qs + g * 32));
+            __m128i p1 = _mm_loadu_si128((const __m128i *) (qs + g * 32 + 16));
+            __m128i lo0 = _mm_and_si128(p0, lo_mask);
+            __m128i lo1 = _mm_and_si128(p1, lo_mask);
+            __m128i hi0 = _mm_and_si128(_mm_srli_epi16(p0, 4), lo_mask);
+            __m128i hi1 = _mm_and_si128(_mm_srli_epi16(p1, 4), lo_mask);
+            __m256i ql0 = _mm256_cvtepu8_epi32(lo0);
+            __m256i ql1 = _mm256_cvtepu8_epi32(_mm_bsrli_si128(lo0, 8));
+            __m256i ql2 = _mm256_cvtepu8_epi32(lo1);
+            __m256i ql3 = _mm256_cvtepu8_epi32(_mm_bsrli_si128(lo1, 8));
+            __m256i qh0 = _mm256_cvtepu8_epi32(hi0);
+            __m256i qh1 = _mm256_cvtepu8_epi32(_mm_bsrli_si128(hi0, 8));
+            __m256i qh2 = _mm256_cvtepu8_epi32(hi1);
+            __m256i qh3 = _mm256_cvtepu8_epi32(_mm_bsrli_si128(hi1, 8));
+            const float *xp = x + g * 64;
+            // lo sub-block (32 elements): ql* -> x[0..31]
+            acc0 = _mm256_fmadd_ps(_mm256_fmsub_ps(_mm256_cvtepi32_ps(ql0), sLo, mLo), _mm256_loadu_ps(xp), acc0);
+            acc1 = _mm256_fmadd_ps(_mm256_fmsub_ps(_mm256_cvtepi32_ps(ql1), sLo, mLo), _mm256_loadu_ps(xp + 8), acc1);
+            acc2 = _mm256_fmadd_ps(_mm256_fmsub_ps(_mm256_cvtepi32_ps(ql2), sLo, mLo), _mm256_loadu_ps(xp + 16), acc2);
+            acc3 = _mm256_fmadd_ps(_mm256_fmsub_ps(_mm256_cvtepi32_ps(ql3), sLo, mLo), _mm256_loadu_ps(xp + 24), acc3);
+            // hi sub-block (32 elements): qh* -> x[32..63]
+            acc0 = _mm256_fmadd_ps(_mm256_fmsub_ps(_mm256_cvtepi32_ps(qh0), sHi, mHi), _mm256_loadu_ps(xp + 32), acc0);
+            acc1 = _mm256_fmadd_ps(_mm256_fmsub_ps(_mm256_cvtepi32_ps(qh1), sHi, mHi), _mm256_loadu_ps(xp + 40), acc1);
+            acc2 = _mm256_fmadd_ps(_mm256_fmsub_ps(_mm256_cvtepi32_ps(qh2), sHi, mHi), _mm256_loadu_ps(xp + 48), acc2);
+            acc3 = _mm256_fmadd_ps(_mm256_fmsub_ps(_mm256_cvtepi32_ps(qh3), sHi, mHi), _mm256_loadu_ps(xp + 56), acc3);
+        }
+    }
+    return avx2_hsum(_mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3)));
+}
+
+// Q5_K AVX2: 5-bit quant, identical structure to Q4_K but extra bit from qh[32] per group.
+// Each qh byte holds 8 bits (2 per group), extracted by position 2*g (lo) and 2*g+1 (hi).
+// qh is a SINGLE 32-byte array shared across all 4 groups, NOT per-group.
+static float avx2_q5k_dot(const uint8_t *w, const float *x, int blocks) {
+    __m256 acc0 = _mm256_setzero_ps(), acc1 = _mm256_setzero_ps(), acc2 = _mm256_setzero_ps(), acc3 = _mm256_setzero_ps();
+    const __m128i lo_mask = _mm_set1_epi8(0x0F);
+    for (int b = 0; b < blocks; b++, w += Q5K_BLOCK_BYTES, x += QKK) {
+        float d = avx2_fp16_to_f32(*(const uint16_t *) w);
+        float dmin = avx2_fp16_to_f32(*(const uint16_t *) (w + 2));
+        float sc_f[8], mn_f[8];
+        avx2_q4k_decode_scales(w + 4, sc_f, mn_f, d, dmin);
+        const uint8_t *qh = w + 16;
+        const uint8_t *qs = w + 48;
+        for (int g = 0; g < 4; g++) {
+            __m256 sLo = _mm256_set1_ps(sc_f[g * 2]);
+            __m256 sHi = _mm256_set1_ps(sc_f[g * 2 + 1]);
+            __m256 mLo = _mm256_set1_ps(mn_f[g * 2]);
+            __m256 mHi = _mm256_set1_ps(mn_f[g * 2 + 1]);
+            __m128i p0 = _mm_loadu_si128((const __m128i *) (qs + g * 32));
+            __m128i p1 = _mm_loadu_si128((const __m128i *) (qs + g * 32 + 16));
+            __m128i qh0 = _mm_loadu_si128((const __m128i *) qh);
+            __m128i qh1 = _mm_loadu_si128((const __m128i *) (qh + 16));
+            __m128i lo0 = _mm_and_si128(p0, lo_mask);
+            __m128i lo1 = _mm_and_si128(p1, lo_mask);
+            __m128i hi0 = _mm_and_si128(_mm_srli_epi16(p0, 4), lo_mask);
+            __m128i hi1 = _mm_and_si128(_mm_srli_epi16(p1, 4), lo_mask);
+            // 5th bit extraction: shift qh bytes right by (2*g) for lo, (2*g+1) for hi
+            __m128i bit_lo0 = _mm_and_si128(_mm_srli_epi16(qh0, 2 * g), _mm_set1_epi8(1));
+            __m128i bit_lo1 = _mm_and_si128(_mm_srli_epi16(qh1, 2 * g), _mm_set1_epi8(1));
+            __m128i bit_hi0 = _mm_and_si128(_mm_srli_epi16(qh0, 2 * g + 1), _mm_set1_epi8(1));
+            __m128i bit_hi1 = _mm_and_si128(_mm_srli_epi16(qh1, 2 * g + 1), _mm_set1_epi8(1));
+            __m128i lo5_0 = _mm_or_si128(lo0, _mm_slli_epi32(bit_lo0, 4));
+            __m128i lo5_1 = _mm_or_si128(lo1, _mm_slli_epi32(bit_lo1, 4));
+            __m128i hi5_0 = _mm_or_si128(hi0, _mm_slli_epi32(bit_hi0, 4));
+            __m128i hi5_1 = _mm_or_si128(hi1, _mm_slli_epi32(bit_hi1, 4));
+            __m256i ql0 = _mm256_cvtepu8_epi32(lo5_0);
+            __m256i ql1 = _mm256_cvtepu8_epi32(_mm_bsrli_si128(lo5_0, 8));
+            __m256i ql2 = _mm256_cvtepu8_epi32(lo5_1);
+            __m256i ql3 = _mm256_cvtepu8_epi32(_mm_bsrli_si128(lo5_1, 8));
+            __m256i qh0i = _mm256_cvtepu8_epi32(hi5_0);
+            __m256i qh1i = _mm256_cvtepu8_epi32(_mm_bsrli_si128(hi5_0, 8));
+            __m256i qh2i = _mm256_cvtepu8_epi32(hi5_1);
+            __m256i qh3i = _mm256_cvtepu8_epi32(_mm_bsrli_si128(hi5_1, 8));
+            const float *xp = x + g * 64;
+            acc0 = _mm256_fmadd_ps(_mm256_fmsub_ps(_mm256_cvtepi32_ps(ql0), sLo, mLo), _mm256_loadu_ps(xp), acc0);
+            acc1 = _mm256_fmadd_ps(_mm256_fmsub_ps(_mm256_cvtepi32_ps(ql1), sLo, mLo), _mm256_loadu_ps(xp + 8), acc1);
+            acc2 = _mm256_fmadd_ps(_mm256_fmsub_ps(_mm256_cvtepi32_ps(ql2), sLo, mLo), _mm256_loadu_ps(xp + 16), acc2);
+            acc3 = _mm256_fmadd_ps(_mm256_fmsub_ps(_mm256_cvtepi32_ps(ql3), sLo, mLo), _mm256_loadu_ps(xp + 24), acc3);
+            acc0 = _mm256_fmadd_ps(_mm256_fmsub_ps(_mm256_cvtepi32_ps(qh0i), sHi, mHi), _mm256_loadu_ps(xp + 32), acc0);
+            acc1 = _mm256_fmadd_ps(_mm256_fmsub_ps(_mm256_cvtepi32_ps(qh1i), sHi, mHi), _mm256_loadu_ps(xp + 40), acc1);
+            acc2 = _mm256_fmadd_ps(_mm256_fmsub_ps(_mm256_cvtepi32_ps(qh2i), sHi, mHi), _mm256_loadu_ps(xp + 48), acc2);
+            acc3 = _mm256_fmadd_ps(_mm256_fmsub_ps(_mm256_cvtepi32_ps(qh3i), sHi, mHi), _mm256_loadu_ps(xp + 56), acc3);
+        }
+    }
+    return avx2_hsum(_mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3)));
+}
+
+// Q6_K AVX2: 6-bit values, 16-element sub-blocks with per-sub scale,
+// 4 subs per half x 2 halves = 256 elements per super-block.
+// ql[128] holds 4-bit nibbles, qh[64] holds high 2 bits (4 entries per byte).
+// Each Q6 value is biased by -32 (integer domain subtraction).
+static float avx2_q6k_dot(const uint8_t *w, const float *x, int blocks) {
+    __m256 acc0 = _mm256_setzero_ps(), acc1 = _mm256_setzero_ps(), acc2 = _mm256_setzero_ps(), acc3 = _mm256_setzero_ps();
+    const __m128i lo_mask = _mm_set1_epi8(0x0F);
+    const __m256i bias32 = _mm256_set1_epi32(32);
+    for (int b = 0; b < blocks; b++, w += Q6K_BLOCK_BYTES, x += QKK) {
+        float d = avx2_fp16_to_f32(*(const uint16_t *) (w + 208));
+        const uint8_t *ql = w;
+        const uint8_t *qh_data = w + 128;
+        const int8_t *sc = (const int8_t *) (w + 192);
+        for (int half = 0; half < 2; half++) {
+            const uint8_t *qlb = ql + half * 64;
+            const uint8_t *qhb = qh_data + half * 32;
+            for (int sub = 0; sub < 4; sub++) {
+                float ws0 = d * sc[half * 8 + sub * 2];
+                float ws1 = d * sc[half * 8 + sub * 2 + 1];
+                __m256 s0 = _mm256_set1_ps(ws0);
+                __m256 s1 = _mm256_set1_ps(ws1);
+                int ql_off = (sub < 2 ? sub * 32 : (sub - 2) * 32);
+                int use_hi = (sub >= 2);
+                __m128i ql_lo = _mm_loadu_si128((const __m128i *) (qlb + ql_off));
+                __m128i ql_hi = _mm_loadu_si128((const __m128i *) (qlb + ql_off + 16));
+                __m128i qh_lo = _mm_loadu_si128((const __m128i *) qhb);
+                __m128i qh_hi = _mm_loadu_si128((const __m128i *) (qhb + 16));
+                __m128i nibs0, nibs1;
+                if (use_hi) {
+                    nibs0 = _mm_and_si128(_mm_srli_epi16(ql_lo, 4), lo_mask);
+                    nibs1 = _mm_and_si128(_mm_srli_epi16(ql_hi, 4), lo_mask);
+                } else {
+                    nibs0 = _mm_and_si128(ql_lo, lo_mask);
+                    nibs1 = _mm_and_si128(ql_hi, lo_mask);
+                }
+                __m128i qh_bits0 = _mm_and_si128(_mm_srli_epi16(qh_lo, sub * 2), _mm_set1_epi8(3));
+                __m128i qh_bits1 = _mm_and_si128(_mm_srli_epi16(qh_hi, sub * 2), _mm_set1_epi8(3));
+                __m128i q6_0 = _mm_or_si128(nibs0, _mm_slli_epi32(qh_bits0, 4));
+                __m128i q6_1 = _mm_or_si128(nibs1, _mm_slli_epi32(qh_bits1, 4));
+                __m256i q_l0 = _mm256_sub_epi32(_mm256_cvtepu8_epi32(q6_0), bias32);
+                __m256i q_l1 = _mm256_sub_epi32(_mm256_cvtepu8_epi32(_mm_bsrli_si128(q6_0, 8)), bias32);
+                __m256i q_l2 = _mm256_sub_epi32(_mm256_cvtepu8_epi32(q6_1), bias32);
+                __m256i q_l3 = _mm256_sub_epi32(_mm256_cvtepu8_epi32(_mm_bsrli_si128(q6_1, 8)), bias32);
+                const float *xp = x + half * 128 + sub * 32;
+                acc0 = _mm256_fmadd_ps(_mm256_mul_ps(_mm256_cvtepi32_ps(q_l0), s0), _mm256_loadu_ps(xp), acc0);
+                acc1 = _mm256_fmadd_ps(_mm256_mul_ps(_mm256_cvtepi32_ps(q_l1), s0), _mm256_loadu_ps(xp + 8), acc1);
+                acc2 = _mm256_fmadd_ps(_mm256_mul_ps(_mm256_cvtepi32_ps(q_l2), s1), _mm256_loadu_ps(xp + 16), acc2);
+                acc3 = _mm256_fmadd_ps(_mm256_mul_ps(_mm256_cvtepi32_ps(q_l3), s1), _mm256_loadu_ps(xp + 24), acc3);
+            }
+        }
+    }
+    return avx2_hsum(_mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3)));
+}
+
+// AVX2 GEMM driver wrappers: row-major iteration calling the per-row AVX2 dot kernels.
+static void avx2_gemm_f16(jlong weights, jlong x, jlong x_stride_bytes,
+                          jlong out, jlong out_stride_bytes,
+                          jint sequence_length, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int x_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    int out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+    int64_t w_stride = (int64_t) dim1 * 2;
+    for (int s = 0; s < sequence_length; s++) {
+        const float *row_x = rhs + (int64_t) s * x_stride;
+        float *row_out = dst + (int64_t) s * out_stride;
+        for (int row = 0; row < dim0; row++) {
+            row_out[row] = avx2_f16_dot(wbase + (int64_t) row * w_stride, row_x, dim1);
+        }
+    }
+}
+
+static void avx2_gemm_bf16(jlong weights, jlong x, jlong x_stride_bytes,
+                           jlong out, jlong out_stride_bytes,
+                           jint sequence_length, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int x_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    int out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+    int64_t w_stride = (int64_t) dim1 * 2;
+    for (int s = 0; s < sequence_length; s++) {
+        const float *row_x = rhs + (int64_t) s * x_stride;
+        float *row_out = dst + (int64_t) s * out_stride;
+        for (int row = 0; row < dim0; row++) {
+            row_out[row] = avx2_bf16_dot(wbase + (int64_t) row * w_stride, row_x, dim1);
+        }
+    }
+}
+
+static void avx2_gemm_f32(jlong weights, jlong x, jlong x_stride_bytes,
+                          jlong out, jlong out_stride_bytes,
+                          jint sequence_length, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int x_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    int out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+    int64_t w_stride = (int64_t) dim1 * 4;
+    for (int s = 0; s < sequence_length; s++) {
+        const float *row_x = rhs + (int64_t) s * x_stride;
+        float *row_out = dst + (int64_t) s * out_stride;
+        for (int row = 0; row < dim0; row++) {
+            row_out[row] = avx2_f32_dot(wbase + (int64_t) row * w_stride, row_x, dim1);
+        }
+    }
+}
+
+static void avx2_gemm_q4k(jlong weights, jlong x, jlong x_stride_bytes,
+                          jlong out, jlong out_stride_bytes,
+                          jint sequence_length, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int x_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    int out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+    int blocks = dim1 / QKK;
+    int64_t w_stride = (int64_t) blocks * Q4K_BLOCK_BYTES;
+    for (int s = 0; s < sequence_length; s++) {
+        const float *row_x = rhs + (int64_t) s * x_stride;
+        float *row_out = dst + (int64_t) s * out_stride;
+        for (int row = 0; row < dim0; row++) {
+            row_out[row] = avx2_q4k_dot(wbase + (int64_t) row * w_stride, row_x, blocks);
+        }
+    }
+}
+
+static void avx2_gemm_q5k(jlong weights, jlong x, jlong x_stride_bytes,
+                          jlong out, jlong out_stride_bytes,
+                          jint sequence_length, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int x_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    int out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+    int blocks = dim1 / QKK;
+    int64_t w_stride = (int64_t) blocks * Q5K_BLOCK_BYTES;
+    for (int s = 0; s < sequence_length; s++) {
+        const float *row_x = rhs + (int64_t) s * x_stride;
+        float *row_out = dst + (int64_t) s * out_stride;
+        for (int row = 0; row < dim0; row++) {
+            row_out[row] = avx2_q5k_dot(wbase + (int64_t) row * w_stride, row_x, blocks);
+        }
+    }
+}
+
+static void avx2_gemm_q6k(jlong weights, jlong x, jlong x_stride_bytes,
+                          jlong out, jlong out_stride_bytes,
+                          jint sequence_length, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int x_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    int out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+    int blocks = dim1 / QKK;
+    int64_t w_stride = (int64_t) blocks * Q6K_BLOCK_BYTES;
+    for (int s = 0; s < sequence_length; s++) {
+        const float *row_x = rhs + (int64_t) s * x_stride;
+        float *row_out = dst + (int64_t) s * out_stride;
+        for (int row = 0; row < dim0; row++) {
+            row_out[row] = avx2_q6k_dot(wbase + (int64_t) row * w_stride, row_x, blocks);
+        }
+    }
+}
+
+#endif // LFM25_AVX2_FMA
+
+#if LFM25_ARM_NEON
+
+// NEON fp16-to-f32: use hardware vcvt if available, otherwise scalar fallback.
+#if LFM25_ARM_FP16
+static inline float neon_fp16_to_f32(float16_t h) {
+    return (float) h;
+}
+#else
+static inline float neon_fp16_to_f32(uint16_t h) {
+    return c_fp16_to_f32(h);
+}
+#endif
+
+static inline float neon_hsum(float32x4_t v) {
+    return vaddvq_f32(v);
+}
+
+// Q8_0 NEON: fp16 scale + 32 int8 quants per block, 4 accumulator lanes x 4 registers
+static float neon_q8_0_dot(const uint8_t *w, const float *x, int kblocks) {
+    float32x4_t a0 = vdupq_n_f32(0), a1 = vdupq_n_f32(0), a2 = vdupq_n_f32(0), a3 = vdupq_n_f32(0);
+    float32x4_t a4 = vdupq_n_f32(0), a5 = vdupq_n_f32(0), a6 = vdupq_n_f32(0), a7 = vdupq_n_f32(0);
+    for (int b = 0; b < kblocks; b++, w += BLOCK_BYTES, x += QK) {
+        float d = neon_fp16_to_f32(*(const uint16_t *) w);
+        float32x4_t s = vdupq_n_f32(d);
+        const int8_t *q = (const int8_t *) (w + 2);
+        int8x16_t qv0 = vld1q_s8(q);
+        int8x16_t qv1 = vld1q_s8(q + 16);
+        int16x8_t qs0 = vmovl_s8(vget_low_s8(qv0));
+        int16x8_t qs1 = vmovl_s8(vget_high_s8(qv0));
+        int16x8_t qs2 = vmovl_s8(vget_low_s8(qv1));
+        int16x8_t qs3 = vmovl_s8(vget_high_s8(qv1));
+        float32x4_t wf0 = vmulq_f32(s, vcvtq_f32_s32(vmovl_s16(vget_low_s16(qs0))));
+        float32x4_t wf1 = vmulq_f32(s, vcvtq_f32_s32(vmovl_s16(vget_high_s16(qs0))));
+        float32x4_t wf2 = vmulq_f32(s, vcvtq_f32_s32(vmovl_s16(vget_low_s16(qs1))));
+        float32x4_t wf3 = vmulq_f32(s, vcvtq_f32_s32(vmovl_s16(vget_high_s16(qs1))));
+        float32x4_t wf4 = vmulq_f32(s, vcvtq_f32_s32(vmovl_s16(vget_low_s16(qs2))));
+        float32x4_t wf5 = vmulq_f32(s, vcvtq_f32_s32(vmovl_s16(vget_high_s16(qs2))));
+        float32x4_t wf6 = vmulq_f32(s, vcvtq_f32_s32(vmovl_s16(vget_low_s16(qs3))));
+        float32x4_t wf7 = vmulq_f32(s, vcvtq_f32_s32(vmovl_s16(vget_high_s16(qs3))));
+        a0 = vfmaq_f32(a0, wf0, vld1q_f32(x));
+        a1 = vfmaq_f32(a1, wf1, vld1q_f32(x + 4));
+        a2 = vfmaq_f32(a2, wf2, vld1q_f32(x + 8));
+        a3 = vfmaq_f32(a3, wf3, vld1q_f32(x + 12));
+        a4 = vfmaq_f32(a4, wf4, vld1q_f32(x + 16));
+        a5 = vfmaq_f32(a5, wf5, vld1q_f32(x + 20));
+        a6 = vfmaq_f32(a6, wf6, vld1q_f32(x + 24));
+        a7 = vfmaq_f32(a7, wf7, vld1q_f32(x + 28));
+    }
+    float sum = neon_hsum(a0) + neon_hsum(a1) + neon_hsum(a2) + neon_hsum(a3)
+              + neon_hsum(a4) + neon_hsum(a5) + neon_hsum(a6) + neon_hsum(a7);
+    return sum;
+}
+
+// Q4_0 NEON: 1 fp16 scale + 16 nibble-pair bytes -> 32 i4 values (bias -8)
+static float neon_q4_0_dot(const uint8_t *w, const float *x, int kblocks) {
+    float32x4_t a0 = vdupq_n_f32(0), a1 = vdupq_n_f32(0), a2 = vdupq_n_f32(0), a3 = vdupq_n_f32(0);
+    float32x4_t a4 = vdupq_n_f32(0), a5 = vdupq_n_f32(0), a6 = vdupq_n_f32(0), a7 = vdupq_n_f32(0);
+    const int8x16_t eight = vdupq_n_s8(8);
+    for (int b = 0; b < kblocks; b++, w += 18, x += QK) {
+        float d = neon_fp16_to_f32(*(const uint16_t *) w);
+        float32x4_t s = vdupq_n_f32(d);
+        uint8x16_t packed = vld1q_u8(w + 2);
+        uint8x16_t lo = vandq_u8(packed, vdupq_n_u8(0x0F));
+        uint8x16_t hi = vshrq_n_u8(packed, 4);
+        // bias -8 in i8, then widen: 16 i8 -> 8 i16 -> 8 i32 (4 accumulators)
+        int8x16_t ql = vsubq_s8(vreinterpretq_s8_u8(lo), eight);
+        int8x16_t qh = vsubq_s8(vreinterpretq_s8_u8(hi), eight);
+        int16x8_t ql_l = vmovl_s8(vget_low_s8(ql));
+        int16x8_t ql_h = vmovl_s8(vget_high_s8(ql));
+        int16x8_t qh_l = vmovl_s8(vget_low_s8(qh));
+        int16x8_t qh_h = vmovl_s8(vget_high_s8(qh));
+        float32x4_t w0 = vmulq_f32(s, vcvtq_f32_s32(vmovl_s16(vget_low_s16(ql_l))));
+        float32x4_t w1 = vmulq_f32(s, vcvtq_f32_s32(vmovl_s16(vget_high_s16(ql_l))));
+        float32x4_t w2 = vmulq_f32(s, vcvtq_f32_s32(vmovl_s16(vget_low_s16(ql_h))));
+        float32x4_t w3 = vmulq_f32(s, vcvtq_f32_s32(vmovl_s16(vget_high_s16(ql_h))));
+        float32x4_t w4 = vmulq_f32(s, vcvtq_f32_s32(vmovl_s16(vget_low_s16(qh_l))));
+        float32x4_t w5 = vmulq_f32(s, vcvtq_f32_s32(vmovl_s16(vget_high_s16(qh_l))));
+        float32x4_t w6 = vmulq_f32(s, vcvtq_f32_s32(vmovl_s16(vget_low_s16(qh_h))));
+        float32x4_t w7 = vmulq_f32(s, vcvtq_f32_s32(vmovl_s16(vget_high_s16(qh_h))));
+        a0 = vfmaq_f32(a0, w0, vld1q_f32(x));
+        a1 = vfmaq_f32(a1, w1, vld1q_f32(x + 4));
+        a2 = vfmaq_f32(a2, w2, vld1q_f32(x + 8));
+        a3 = vfmaq_f32(a3, w3, vld1q_f32(x + 12));
+        a4 = vfmaq_f32(a4, w4, vld1q_f32(x + 16));
+        a5 = vfmaq_f32(a5, w5, vld1q_f32(x + 20));
+        a6 = vfmaq_f32(a6, w6, vld1q_f32(x + 24));
+        a7 = vfmaq_f32(a7, w7, vld1q_f32(x + 28));
+    }
+    float sum = neon_hsum(a0) + neon_hsum(a1) + neon_hsum(a2) + neon_hsum(a3)
+              + neon_hsum(a4) + neon_hsum(a5) + neon_hsum(a6) + neon_hsum(a7);
+    return sum;
+}
+
+// F16 NEON: packed f16 weights
+static float neon_f16_dot(const uint8_t *w, const float *x, int dim1) {
+    const uint16_t *wh = (const uint16_t *) w;
+    float32x4_t a0 = vdupq_n_f32(0), a1 = vdupq_n_f32(0), a2 = vdupq_n_f32(0), a3 = vdupq_n_f32(0);
+    int i = 0;
+#if LFM25_ARM_FP16
+    for (; i + 15 < dim1; i += 16, wh += 16, x += 16) {
+        float16x8_t f16_0 = vld1q_f16((const __fp16 *) wh);
+        float16x8_t f16_1 = vld1q_f16((const __fp16 *) (wh + 8));
+        a0 = vfmaq_f32(a0, vcvt_f32_f16(vget_low_f16(f16_0)), vld1q_f32(x));
+        a1 = vfmaq_f32(a1, vcvt_f32_f16(vget_high_f16(f16_0)), vld1q_f32(x + 4));
+        a2 = vfmaq_f32(a2, vcvt_f32_f16(vget_low_f16(f16_1)), vld1q_f32(x + 8));
+        a3 = vfmaq_f32(a3, vcvt_f32_f16(vget_high_f16(f16_1)), vld1q_f32(x + 12));
+    }
+    float sum = neon_hsum(a0) + neon_hsum(a1) + neon_hsum(a2) + neon_hsum(a3);
+#else
+    for (; i + 15 < dim1; i += 16, wh += 16, x += 16) {
+        // scalar fp16 conversion inline
+        float w_f32[16];
+        for (int j = 0; j < 16; j++) w_f32[j] = c_fp16_to_f32(wh[j]);
+        a0 = vfmaq_f32(a0, vld1q_f32(w_f32), vld1q_f32(x));
+        a1 = vfmaq_f32(a1, vld1q_f32(w_f32 + 4), vld1q_f32(x + 4));
+        a2 = vfmaq_f32(a2, vld1q_f32(w_f32 + 8), vld1q_f32(x + 8));
+        a3 = vfmaq_f32(a3, vld1q_f32(w_f32 + 12), vld1q_f32(x + 12));
+    }
+    float sum = neon_hsum(a0) + neon_hsum(a1) + neon_hsum(a2) + neon_hsum(a3);
+#endif
+    for (; i < dim1; i++) sum += c_fp16_to_f32(wh[i]) * x[i];
+    return sum;
+}
+
+// BF16 NEON: shift-left-16 to f32
+static float neon_bf16_dot(const uint8_t *w, const float *x, int dim1) {
+    const uint16_t *wh = (const uint16_t *) w;
+    float32x4_t a0 = vdupq_n_f32(0), a1 = vdupq_n_f32(0), a2 = vdupq_n_f32(0), a3 = vdupq_n_f32(0);
+    int i = 0;
+    for (; i + 15 < dim1; i += 16, wh += 16, x += 16) {
+        uint16x8_t bf0 = vld1q_u16(wh);
+        uint16x8_t bf1 = vld1q_u16(wh + 8);
+        uint32x4_t w32_0 = vshll_n_u16(vget_low_u16(bf0), 16);
+        uint32x4_t w32_1 = vshll_n_u16(vget_high_u16(bf0), 16);
+        uint32x4_t w32_2 = vshll_n_u16(vget_low_u16(bf1), 16);
+        uint32x4_t w32_3 = vshll_n_u16(vget_high_u16(bf1), 16);
+        a0 = vfmaq_f32(a0, vreinterpretq_f32_u32(w32_0), vld1q_f32(x));
+        a1 = vfmaq_f32(a1, vreinterpretq_f32_u32(w32_1), vld1q_f32(x + 4));
+        a2 = vfmaq_f32(a2, vreinterpretq_f32_u32(w32_2), vld1q_f32(x + 8));
+        a3 = vfmaq_f32(a3, vreinterpretq_f32_u32(w32_3), vld1q_f32(x + 12));
+    }
+    float sum = neon_hsum(a0) + neon_hsum(a1) + neon_hsum(a2) + neon_hsum(a3);
+    for (; i < dim1; i++) {
+        union { uint32_t bits; float f; } u = {(uint32_t) wh[i] << 16};
+        sum += u.f * x[i];
+    }
+    return sum;
+}
+
+// F32 NEON: direct fma
+static float neon_f32_dot(const uint8_t *w, const float *x, int dim1) {
+    const float *wf = (const float *) w;
+    float32x4_t a0 = vdupq_n_f32(0), a1 = vdupq_n_f32(0), a2 = vdupq_n_f32(0), a3 = vdupq_n_f32(0);
+    int i = 0;
+    for (; i + 15 < dim1; i += 16, wf += 16, x += 16) {
+        a0 = vfmaq_f32(a0, vld1q_f32(wf), vld1q_f32(x));
+        a1 = vfmaq_f32(a1, vld1q_f32(wf + 4), vld1q_f32(x + 4));
+        a2 = vfmaq_f32(a2, vld1q_f32(wf + 8), vld1q_f32(x + 8));
+        a3 = vfmaq_f32(a3, vld1q_f32(wf + 12), vld1q_f32(x + 12));
+    }
+    float sum = neon_hsum(a0) + neon_hsum(a1) + neon_hsum(a2) + neon_hsum(a3);
+    for (; i < dim1; i++) sum += wf[i] * x[i];
+    return sum;
+}
+
+// Q4_K NEON: decode 8 scale/min pairs, 4 groups x 64 elements,
+// 8 accumulator lanes x 4 f32 each, shared across lo and hi sub-blocks.
+static inline void neon_q4k_decode_scales(const uint8_t *b, float *sc, float *mn, float d, float dmin) {
+    for (int j = 0; j < 4; j++) {
+        sc[j] = d * (b[j] & 63);
+        mn[j] = dmin * (b[j + 4] & 63);
+        sc[j + 4] = d * ((b[j + 8] & 0xF) | ((b[j] >> 6) << 4));
+        mn[j + 4] = dmin * ((b[j + 8] >> 4) | ((b[j + 4] >> 6) << 4));
+    }
+}
+
+static float neon_q4k_dot(const uint8_t *w, const float *x, int blocks) {
+    float32x4_t a0 = vdupq_n_f32(0), a1 = vdupq_n_f32(0), a2 = vdupq_n_f32(0), a3 = vdupq_n_f32(0);
+    float32x4_t a4 = vdupq_n_f32(0), a5 = vdupq_n_f32(0), a6 = vdupq_n_f32(0), a7 = vdupq_n_f32(0);
+    for (int b = 0; b < blocks; b++, w += Q4K_BLOCK_BYTES, x += QKK) {
+        float d = neon_fp16_to_f32(*(const uint16_t *) w);
+        float dmin = neon_fp16_to_f32(*(const uint16_t *) (w + 2));
+        float sc[8], mn[8];
+        neon_q4k_decode_scales(w + 4, sc, mn, d, dmin);
+        const uint8_t *qs = w + 16;
+        for (int g = 0; g < 4; g++) {
+            float32x4_t sLo = vdupq_n_f32(sc[g * 2]);
+            float32x4_t sHi = vdupq_n_f32(sc[g * 2 + 1]);
+            float32x4_t mLo = vdupq_n_f32(mn[g * 2]);
+            float32x4_t mHi = vdupq_n_f32(mn[g * 2 + 1]);
+            uint8x16_t p0 = vld1q_u8(qs + g * 32);
+            uint8x16_t p1 = vld1q_u8(qs + g * 32 + 16);
+            uint8x16_t lo0 = vandq_u8(p0, vdupq_n_u8(0x0F));
+            uint8x16_t lo1 = vandq_u8(p1, vdupq_n_u8(0x0F));
+            uint8x16_t hi0 = vshrq_n_u8(p0, 4);
+            uint8x16_t hi1 = vshrq_n_u8(p1, 4);
+            const float *xp = x + g * 64;
+            // lo sub-block: nibble values from 2x16 bytes -> 32 f32 weight contributions
+            #define NQK_LOOP(nibs, scv, mnv, xoff) do { \
+                uint16x8_t w16_0 = vmovl_u8(vget_low_u8(nibs)); \
+                uint16x8_t w16_1 = vmovl_u8(vget_high_u8(nibs)); \
+                float32x4_t w0 = vsubq_f32(vmulq_f32(scv, vcvtq_f32_u32(vmovl_u16(vget_low_u16(w16_0)))), mnv); \
+                float32x4_t w1 = vsubq_f32(vmulq_f32(scv, vcvtq_f32_u32(vmovl_u16(vget_high_u16(w16_0)))), mnv); \
+                float32x4_t w2 = vsubq_f32(vmulq_f32(scv, vcvtq_f32_u32(vmovl_u16(vget_low_u16(w16_1)))), mnv); \
+                float32x4_t w3 = vsubq_f32(vmulq_f32(scv, vcvtq_f32_u32(vmovl_u16(vget_high_u16(w16_1)))), mnv); \
+                a0 = vfmaq_f32(a0, w0, vld1q_f32(xp + xoff)); \
+                a1 = vfmaq_f32(a1, w1, vld1q_f32(xp + xoff + 4)); \
+                a2 = vfmaq_f32(a2, w2, vld1q_f32(xp + xoff + 8)); \
+                a3 = vfmaq_f32(a3, w3, vld1q_f32(xp + xoff + 12)); \
+            } while(0)
+            NQK_LOOP(lo0, sLo, mLo, 0);
+            NQK_LOOP(lo1, sLo, mLo, 16);
+            NQK_LOOP(hi0, sHi, mHi, 32);
+            NQK_LOOP(hi1, sHi, mHi, 48);
+            #undef NQK_LOOP
+        }
+    }
+    return neon_hsum(a0) + neon_hsum(a1) + neon_hsum(a2) + neon_hsum(a3)
+         + neon_hsum(a4) + neon_hsum(a5) + neon_hsum(a6) + neon_hsum(a7);
+}
+
+// Q5_K NEON: identical Q4_K structure but with 5th bit from shared qh[32]
+static float neon_q5k_dot(const uint8_t *w, const float *x, int blocks) {
+    float32x4_t a0 = vdupq_n_f32(0), a1 = vdupq_n_f32(0), a2 = vdupq_n_f32(0), a3 = vdupq_n_f32(0);
+    float32x4_t a4 = vdupq_n_f32(0), a5 = vdupq_n_f32(0), a6 = vdupq_n_f32(0), a7 = vdupq_n_f32(0);
+    for (int b = 0; b < blocks; b++, w += Q5K_BLOCK_BYTES, x += QKK) {
+        float d = neon_fp16_to_f32(*(const uint16_t *) w);
+        float dmin = neon_fp16_to_f32(*(const uint16_t *) (w + 2));
+        float sc[8], mn[8];
+        neon_q4k_decode_scales(w + 4, sc, mn, d, dmin);
+        const uint8_t *qh = w + 16;
+        const uint8_t *qs = w + 48;
+        for (int g = 0; g < 4; g++) {
+            float32x4_t sLo = vdupq_n_f32(sc[g * 2]);
+            float32x4_t sHi = vdupq_n_f32(sc[g * 2 + 1]);
+            float32x4_t mLo = vdupq_n_f32(mn[g * 2]);
+            float32x4_t mHi = vdupq_n_f32(mn[g * 2 + 1]);
+            uint8x16_t p0 = vld1q_u8(qs + g * 32);
+            uint8x16_t p1 = vld1q_u8(qs + g * 32 + 16);
+            uint8x16_t qh0 = vld1q_u8(qh);
+            uint8x16_t qh1 = vld1q_u8(qh + 16);
+            uint8x16_t lo0 = vandq_u8(p0, vdupq_n_u8(0x0F));
+            uint8x16_t lo1 = vandq_u8(p1, vdupq_n_u8(0x0F));
+            uint8x16_t hi0 = vshrq_n_u8(p0, 4);
+            uint8x16_t hi1 = vshrq_n_u8(p1, 4);
+            // q5 bit extraction: bit at position (2*g) for lo, (2*g+1) for hi
+            uint8x16_t bitlo0 = vandq_u8(vshrq_n_u8(qh0, 2 * g), vdupq_n_u8(1));
+            uint8x16_t bitlo1 = vandq_u8(vshrq_n_u8(qh1, 2 * g), vdupq_n_u8(1));
+            uint8x16_t bithi0 = vandq_u8(vshrq_n_u8(qh0, 2 * g + 1), vdupq_n_u8(1));
+            uint8x16_t bithi1 = vandq_n_u8(vshrq_n_u8(qh1, 2 * g + 1), 1);
+            // Combine: q5 = nibble | (bit << 4)
+            uint8x16_t lo5_0 = vorrq_u8(lo0, vshlq_n_u8(bitlo0, 4));
+            uint8x16_t lo5_1 = vorrq_u8(lo1, vshlq_n_u8(bitlo1, 4));
+            uint8x16_t hi5_0 = vorrq_u8(hi0, vshlq_n_u8(bithi0, 4));
+            uint8x16_t hi5_1 = vorrq_u8(hi1, vshlq_n_u8(bithi1, 4));
+            const float *xp = x + g * 64;
+            #define NQ5K_LOOP(nibs, scv, mnv, xoff) do { \
+                uint16x8_t w16_0 = vmovl_u8(vget_low_u8(nibs)); \
+                uint16x8_t w16_1 = vmovl_u8(vget_high_u8(nibs)); \
+                float32x4_t w0 = vsubq_f32(vmulq_f32(scv, vcvtq_f32_u32(vmovl_u16(vget_low_u16(w16_0)))), mnv); \
+                float32x4_t w1 = vsubq_f32(vmulq_f32(scv, vcvtq_f32_u32(vmovl_u16(vget_high_u16(w16_0)))), mnv); \
+                float32x4_t w2 = vsubq_f32(vmulq_f32(scv, vcvtq_f32_u32(vmovl_u16(vget_low_u16(w16_1)))), mnv); \
+                float32x4_t w3 = vsubq_f32(vmulq_f32(scv, vcvtq_f32_u32(vmovl_u16(vget_high_u16(w16_1)))), mnv); \
+                a0 = vfmaq_f32(a0, w0, vld1q_f32(xp + xoff)); \
+                a1 = vfmaq_f32(a1, w1, vld1q_f32(xp + xoff + 4)); \
+                a2 = vfmaq_f32(a2, w2, vld1q_f32(xp + xoff + 8)); \
+                a3 = vfmaq_f32(a3, w3, vld1q_f32(xp + xoff + 12)); \
+            } while(0)
+            NQ5K_LOOP(lo5_0, sLo, mLo, 0);
+            NQ5K_LOOP(lo5_1, sLo, mLo, 16);
+            NQ5K_LOOP(hi5_0, sHi, mHi, 32);
+            NQ5K_LOOP(hi5_1, sHi, mHi, 48);
+            #undef NQ5K_LOOP
+        }
+    }
+    return neon_hsum(a0) + neon_hsum(a1) + neon_hsum(a2) + neon_hsum(a3)
+         + neon_hsum(a4) + neon_hsum(a5) + neon_hsum(a6) + neon_hsum(a7);
+}
+
+// Q6_K NEON: 6-bit values with per-16-element scale, -32 bias
+static float neon_q6k_dot(const uint8_t *w, const float *x, int blocks) {
+    float32x4_t a0 = vdupq_n_f32(0), a1 = vdupq_n_f32(0), a2 = vdupq_n_f32(0), a3 = vdupq_n_f32(0);
+    float32x4_t a4 = vdupq_n_f32(0), a5 = vdupq_n_f32(0), a6 = vdupq_n_f32(0), a7 = vdupq_n_f32(0);
+    const int8x16_t bias32 = vdupq_n_s8(32);
+    for (int b = 0; b < blocks; b++, w += Q6K_BLOCK_BYTES, x += QKK) {
+        float d = neon_fp16_to_f32(*(const uint16_t *) (w + 208));
+        const uint8_t *ql = w;
+        const uint8_t *qh_data = w + 128;
+        const int8_t *sc = (const int8_t *) (w + 192);
+        for (int half = 0; half < 2; half++) {
+            const uint8_t *qb = ql + half * 64;
+            const uint8_t *qhb = qh_data + half * 32;
+            for (int sub = 0; sub < 4; sub++) {
+                float ws0 = d * sc[half * 8 + sub * 2];
+                float ws1 = d * sc[half * 8 + sub * 2 + 1];
+                float32x4_t s0 = vdupq_n_f32(ws0);
+                float32x4_t s1 = vdupq_n_f32(ws1);
+                int ql_off = (sub < 2 ? sub * 32 : (sub - 2) * 32);
+                int use_hi = (sub >= 2);
+                uint8x16_t ql0 = vld1q_u8(qb + ql_off);
+                uint8x16_t ql1 = vld1q_u8(qb + ql_off + 16);
+                uint8x16_t qh0 = vld1q_u8(qhb);
+                uint8x16_t qh1 = vld1q_u8(qhb + 16);
+                uint8x16_t nibs0, nibs1;
+                if (use_hi) {
+                    nibs0 = vshrq_n_u8(ql0, 4);
+                    nibs1 = vshrq_n_u8(ql1, 4);
+                } else {
+                    nibs0 = vandq_u8(ql0, vdupq_n_u8(0x0F));
+                    nibs1 = vandq_u8(ql1, vdupq_n_u8(0x0F));
+                }
+                uint8x16_t qhbits0 = vandq_u8(vshrq_n_u8(qh0, sub * 2), vdupq_n_u8(3));
+                uint8x16_t qhbits1 = vandq_u8(vshrq_n_u8(qh1, sub * 2), vdupq_n_u8(3));
+                uint8x16_t q6_0 = vorrq_u8(nibs0, vshlq_n_u8(qhbits0, 4));
+                uint8x16_t q6_1 = vorrq_u8(nibs1, vshlq_n_u8(qhbits1, 4));
+                // bias -32: q6 value is 0..63, biased to -32..31
+                int8x16_t q6s_0 = vsubq_s8(vreinterpretq_s8_u8(q6_0), bias32);
+                int8x16_t q6s_1 = vsubq_s8(vreinterpretq_s8_u8(q6_1), bias32);
+                const float *xp = x + half * 128 + sub * 32;
+                #define NQ6K_LOOP(nibs, scv, xoff) do { \
+                    int16x8_t w16_0 = vmovl_s8(vget_low_s8(nibs)); \
+                    int16x8_t w16_1 = vmovl_s8(vget_high_s8(nibs)); \
+                    float32x4_t w0 = vmulq_f32(scv, vcvtq_f32_s32(vmovl_s16(vget_low_s16(w16_0)))); \
+                    float32x4_t w1 = vmulq_f32(scv, vcvtq_f32_s32(vmovl_s16(vget_high_s16(w16_0)))); \
+                    float32x4_t w2 = vmulq_f32(scv, vcvtq_f32_s32(vmovl_s16(vget_low_s16(w16_1)))); \
+                    float32x4_t w3 = vmulq_f32(scv, vcvtq_f32_s32(vmovl_s16(vget_high_s16(w16_1)))); \
+                    a0 = vfmaq_f32(a0, w0, vld1q_f32(xp + xoff)); \
+                    a1 = vfmaq_f32(a1, w1, vld1q_f32(xp + xoff + 4)); \
+                    a2 = vfmaq_f32(a2, w2, vld1q_f32(xp + xoff + 8)); \
+                    a3 = vfmaq_f32(a3, w3, vld1q_f32(xp + xoff + 12)); \
+                } while(0)
+                NQ6K_LOOP(q6s_0, s0, 0);
+                NQ6K_LOOP(q6s_1, s1, 16);
+                #undef NQ6K_LOOP
+            }
+        }
+    }
+    return neon_hsum(a0) + neon_hsum(a1) + neon_hsum(a2) + neon_hsum(a3)
+         + neon_hsum(a4) + neon_hsum(a5) + neon_hsum(a6) + neon_hsum(a7);
+}
+
+// Generic NEON GEMM driver wrappers: iterate rows and call the per-row dot kernel.
+
+static void neon_gemm_q8_0(jlong weights, jlong x, jlong x_stride_bytes,
+                           jlong out, jlong out_stride_bytes,
+                           jint sequence_length, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int x_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    int out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+    int kblocks = dim1 / QK;
+    int64_t w_stride = (int64_t) kblocks * BLOCK_BYTES;
+    for (int s = 0; s < sequence_length; s++) {
+        const float *row_x = rhs + (int64_t) s * x_stride;
+        float *row_out = dst + (int64_t) s * out_stride;
+        for (int row = 0; row < dim0; row++) {
+            row_out[row] = neon_q8_0_dot(wbase + (int64_t) row * w_stride, row_x, kblocks);
+        }
+    }
+}
+
+static void neon_gemm_q4_0(jlong weights, jlong x, jlong x_stride_bytes,
+                           jlong out, jlong out_stride_bytes,
+                           jint sequence_length, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int x_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    int out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+    int kblocks = dim1 / QK;
+    int64_t w_stride = (int64_t) kblocks * 18;
+    for (int s = 0; s < sequence_length; s++) {
+        const float *row_x = rhs + (int64_t) s * x_stride;
+        float *row_out = dst + (int64_t) s * out_stride;
+        for (int row = 0; row < dim0; row++) {
+            row_out[row] = neon_q4_0_dot(wbase + (int64_t) row * w_stride, row_x, kblocks);
+        }
+    }
+}
+
+static void neon_gemm_f16(jlong weights, jlong x, jlong x_stride_bytes,
+                          jlong out, jlong out_stride_bytes,
+                          jint sequence_length, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int x_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    int out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+    int64_t w_stride = (int64_t) dim1 * 2;
+    for (int s = 0; s < sequence_length; s++) {
+        const float *row_x = rhs + (int64_t) s * x_stride;
+        float *row_out = dst + (int64_t) s * out_stride;
+        for (int row = 0; row < dim0; row++) {
+            row_out[row] = neon_f16_dot(wbase + (int64_t) row * w_stride, row_x, dim1);
+        }
+    }
+}
+
+static void neon_gemm_bf16(jlong weights, jlong x, jlong x_stride_bytes,
+                           jlong out, jlong out_stride_bytes,
+                           jint sequence_length, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int x_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    int out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+    int64_t w_stride = (int64_t) dim1 * 2;
+    for (int s = 0; s < sequence_length; s++) {
+        const float *row_x = rhs + (int64_t) s * x_stride;
+        float *row_out = dst + (int64_t) s * out_stride;
+        for (int row = 0; row < dim0; row++) {
+            row_out[row] = neon_bf16_dot(wbase + (int64_t) row * w_stride, row_x, dim1);
+        }
+    }
+}
+
+static void neon_gemm_f32(jlong weights, jlong x, jlong x_stride_bytes,
+                          jlong out, jlong out_stride_bytes,
+                          jint sequence_length, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int x_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    int out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+    int64_t w_stride = (int64_t) dim1 * 4;
+    for (int s = 0; s < sequence_length; s++) {
+        const float *row_x = rhs + (int64_t) s * x_stride;
+        float *row_out = dst + (int64_t) s * out_stride;
+        for (int row = 0; row < dim0; row++) {
+            row_out[row] = neon_f32_dot(wbase + (int64_t) row * w_stride, row_x, dim1);
+        }
+    }
+}
+
+static void neon_gemm_q4k(jlong weights, jlong x, jlong x_stride_bytes,
+                          jlong out, jlong out_stride_bytes,
+                          jint sequence_length, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int x_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    int out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+    int blocks = dim1 / QKK;
+    int64_t w_stride = (int64_t) blocks * Q4K_BLOCK_BYTES;
+    for (int s = 0; s < sequence_length; s++) {
+        const float *row_x = rhs + (int64_t) s * x_stride;
+        float *row_out = dst + (int64_t) s * out_stride;
+        for (int row = 0; row < dim0; row++) {
+            row_out[row] = neon_q4k_dot(wbase + (int64_t) row * w_stride, row_x, blocks);
+        }
+    }
+}
+
+static void neon_gemm_q5k(jlong weights, jlong x, jlong x_stride_bytes,
+                          jlong out, jlong out_stride_bytes,
+                          jint sequence_length, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int x_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    int out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+    int blocks = dim1 / QKK;
+    int64_t w_stride = (int64_t) blocks * Q5K_BLOCK_BYTES;
+    for (int s = 0; s < sequence_length; s++) {
+        const float *row_x = rhs + (int64_t) s * x_stride;
+        float *row_out = dst + (int64_t) s * out_stride;
+        for (int row = 0; row < dim0; row++) {
+            row_out[row] = neon_q5k_dot(wbase + (int64_t) row * w_stride, row_x, blocks);
+        }
+    }
+}
+
+static void neon_gemm_q6k(jlong weights, jlong x, jlong x_stride_bytes,
+                          jlong out, jlong out_stride_bytes,
+                          jint sequence_length, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int x_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    int out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+    int blocks = dim1 / QKK;
+    int64_t w_stride = (int64_t) blocks * Q6K_BLOCK_BYTES;
+    for (int s = 0; s < sequence_length; s++) {
+        const float *row_x = rhs + (int64_t) s * x_stride;
+        float *row_out = dst + (int64_t) s * out_stride;
+        for (int row = 0; row < dim0; row++) {
+            row_out[row] = neon_q6k_dot(wbase + (int64_t) row * w_stride, row_x, blocks);
+        }
+    }
+}
+
+static void neon_native_gemv(jlong weights, jlong x, jlong out, jint dim0, jint dim1) {
+    const uint8_t *wbase = (const uint8_t *) (uintptr_t) weights;
+    const float *rhs = (const float *) (uintptr_t) x;
+    float *dst = (float *) (uintptr_t) out;
+    int kblocks = dim1 / QK;
+    int64_t w_stride = (int64_t) kblocks * BLOCK_BYTES;
+    for (int row = 0; row < dim0; row++) {
+        dst[row] = neon_q8_0_dot(wbase + (int64_t) row * w_stride, rhs, kblocks);
+    }
+}
+
+#endif // LFM25_ARM_NEON
+
 
 // Direct JNI-mangled exports: the JVM binds native methods to these by symbol name when the
 // .so is loaded, and a native image statically links them (LFM25StaticGemmFeature) — no
@@ -1050,61 +2381,136 @@ static void run_kquant_gemm(int band_kind, jlong weights, jlong x, jlong x_strid
 // Activations/outputs live in native MemorySegments, so no GetPrimitiveArrayCritical
 // (no GC interaction at all on this path).
 
+JNIEXPORT jint JNICALL Java_com_llama4j_NativeKernels_nativeCapabilities(JNIEnv *env, jclass cls) {
+    (void) env;
+    (void) cls;
+    int caps = LFM25_CAP_Q8_0_GEMM | LFM25_CAP_Q4_0_GEMM | LFM25_CAP_Q4_K_GEMM | LFM25_CAP_Q5_K_GEMM | LFM25_CAP_Q6_K_GEMM
+            | LFM25_CAP_BF16_GEMM | LFM25_CAP_F16_GEMM | LFM25_CAP_F32_GEMM;
+#if LFM25_ARM_NEON
+    caps |= LFM25_CAP_Q8_0_GEMV;
+    return caps;
+#endif
+#if LFM25_AVX512_VNNI
+    if (x86_supports_avx512_vnni()) {
+        caps |= LFM25_CAP_Q8_0_GEMV;
+        return caps;
+    }
+#endif
+#if LFM25_AVX2_FMA
+    if (x86_supports_avx2_fma_f16c()) {
+        caps |= LFM25_CAP_Q8_0_GEMV;
+        return caps;
+    }
+#endif
+    return caps;
+}
+
 JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemm(JNIEnv *env, jclass cls,
         jlong weights, jlong x, jlong x_stride_bytes, jlong out, jlong out_stride_bytes,
         jint sequence_length, jint dim0, jint dim1, jint row_tile, jint seq_tile) {
     (void) env;
     (void) cls;
-    if (row_tile < 4) row_tile = 4;
-    if (seq_tile < 4) seq_tile = 4;
-    int seq_tile_count = (sequence_length + seq_tile - 1) / seq_tile;
-    int row_tile_count = (dim0 + row_tile - 1) / row_tile;
-    int tile_count = seq_tile_count * row_tile_count;
-    if (tile_count <= 0) {
+#if LFM25_AVX512_VNNI
+    if (x86_supports_avx512_vnni()) {
+        if (row_tile < 4) row_tile = 4;
+        if (seq_tile < 4) seq_tile = 4;
+        int seq_tile_count = (sequence_length + seq_tile - 1) / seq_tile;
+        int row_tile_count = (dim0 + row_tile - 1) / row_tile;
+        int tile_count = seq_tile_count * row_tile_count;
+        if (tile_count <= 0) {
+            return;
+        }
+        int kblocks = dim1 / QK;
+        current_task.weights = (const uint8_t *) (uintptr_t) weights;
+        current_task.rhs = (const float *) (uintptr_t) x;
+        current_task.out = (float *) (uintptr_t) out;
+        current_task.that_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+        current_task.out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+        current_task.sequence_length = sequence_length;
+        current_task.dim0 = dim0;
+        current_task.dim1 = dim1;
+        current_task.row_tile = row_tile;
+        current_task.seq_tile = seq_tile;
+        current_task.seq_tile_count = seq_tile_count;
+        if (sequence_length >= VNNI_MIN_SEQ && ensure_xq_capacity(sequence_length, kblocks)) {
+            current_task.kind = 2;
+            current_task.tile_count = (sequence_length + 7) / 8;
+            dispatch_task();
+            current_task.kind = 3;
+            current_task.tile_count = (dim0 + VNNI_BAND - 1) / VNNI_BAND;
+            dispatch_task();
+        } else {
+            current_task.kind = 0;
+            current_task.tile_count = tile_count;
+            dispatch_task();
+        }
         return;
     }
-    int kblocks = dim1 / QK;
-    current_task.weights = (const uint8_t *) (uintptr_t) weights;
-    current_task.rhs = (const float *) (uintptr_t) x;
-    current_task.out = (float *) (uintptr_t) out;
-    current_task.that_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
-    current_task.out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
-    current_task.sequence_length = sequence_length;
-    current_task.dim0 = dim0;
-    current_task.dim1 = dim1;
-    current_task.row_tile = row_tile;
-    current_task.seq_tile = seq_tile;
-    current_task.seq_tile_count = seq_tile_count;
-    if (sequence_length >= VNNI_MIN_SEQ && ensure_xq_capacity(sequence_length, kblocks)) {
-        current_task.kind = 2;
-        current_task.tile_count = (sequence_length + 7) / 8;
-        dispatch_task();
-        current_task.kind = 3;
-        current_task.tile_count = (dim0 + VNNI_BAND - 1) / VNNI_BAND;
-        dispatch_task();
-    } else {
-        current_task.kind = 0;
-        current_task.tile_count = tile_count;
-        dispatch_task();
+#endif
+#if LFM25_AVX2_FMA
+    if (x86_supports_avx2_fma_f16c()) {
+        avx2_native_gemm(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+        return;
     }
+#endif
+    (void) row_tile; (void) seq_tile;
+#if LFM25_ARM_NEON
+    neon_gemm_q8_0(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+    return;
+#endif
+    c_gemm_q8_0(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
 }
 
 JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemv(JNIEnv *env, jclass cls,
         jlong weights, jlong x, jlong out, jint dim0, jint dim1) {
     (void) env;
     (void) cls;
-    int tile_count = (dim0 + GEMV_ROW_CHUNK - 1) / GEMV_ROW_CHUNK;
-    if (tile_count <= 0) {
+#if LFM25_ARM_NEON
+    neon_native_gemv(weights, x, out, dim0, dim1);
+    return;
+#endif
+#if LFM25_AVX512_VNNI
+    if (x86_supports_avx512_vnni()) {
+        int tile_count = (dim0 + GEMV_ROW_CHUNK - 1) / GEMV_ROW_CHUNK;
+        if (tile_count <= 0) {
+            return;
+        }
+        current_task.kind = 1;
+        current_task.weights = (const uint8_t *) (uintptr_t) weights;
+        current_task.rhs = (const float *) (uintptr_t) x;
+        current_task.out = (float *) (uintptr_t) out;
+        current_task.dim0 = dim0;
+        current_task.dim1 = dim1;
+        current_task.tile_count = tile_count;
+        dispatch_task();
         return;
     }
-    current_task.kind = 1;
-    current_task.weights = (const uint8_t *) (uintptr_t) weights;
-    current_task.rhs = (const float *) (uintptr_t) x;
-    current_task.out = (float *) (uintptr_t) out;
-    current_task.dim0 = dim0;
-    current_task.dim1 = dim1;
-    current_task.tile_count = tile_count;
-    dispatch_task();
+#endif
+#if LFM25_AVX2_FMA
+    if (x86_supports_avx2_fma_f16c()) {
+        avx2_native_gemv(weights, x, out, dim0, dim1);
+        return;
+    }
+#endif
+    (void) weights; (void) x; (void) out; (void) dim0; (void) dim1;
+}
+
+JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmQ40(JNIEnv *env, jclass cls,
+        jlong weights, jlong x, jlong x_stride_bytes, jlong out, jlong out_stride_bytes,
+        jint sequence_length, jint dim0, jint dim1) {
+    (void) env;
+    (void) cls;
+#if LFM25_ARM_NEON
+    neon_gemm_q4_0(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+    return;
+#endif
+#if LFM25_AVX2_FMA
+    if (x86_supports_avx2_fma_f16c()) {
+        avx2_gemm_q4_0(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+        return;
+    }
+#endif
+    c_gemm_q4_0(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
 }
 
 JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmQ4K(JNIEnv *env, jclass cls,
@@ -1112,7 +2518,41 @@ JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmQ4K(JNIEnv *env,
         jint sequence_length, jint dim0, jint dim1) {
     (void) env;
     (void) cls;
-    run_kquant_gemm(5, weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+#if LFM25_ARM_NEON
+    neon_gemm_q4k(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+    return;
+#endif
+#if LFM25_AVX512_VNNI
+    if (x86_supports_avx512_vnni()) {
+        run_kquant_gemm(5, weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+        return;
+    }
+#endif
+#if LFM25_AVX2_FMA
+    if (x86_supports_avx2_fma_f16c()) {
+        avx2_gemm_q4k(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+        return;
+    }
+#endif
+    c_gemm_kquant(c_q4k_dot, Q4K_BLOCK_BYTES, weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+}
+
+JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmQ5K(JNIEnv *env, jclass cls,
+        jlong weights, jlong x, jlong x_stride_bytes, jlong out, jlong out_stride_bytes,
+        jint sequence_length, jint dim0, jint dim1) {
+    (void) env;
+    (void) cls;
+#if LFM25_ARM_NEON
+    neon_gemm_q5k(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+    return;
+#endif
+#if LFM25_AVX2_FMA
+    if (x86_supports_avx2_fma_f16c()) {
+        avx2_gemm_q5k(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+        return;
+    }
+#endif
+    c_gemm_kquant(c_q5k_dot, Q5K_BLOCK_BYTES, weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
 }
 
 JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmQ6K(JNIEnv *env, jclass cls,
@@ -1120,13 +2560,85 @@ JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmQ6K(JNIEnv *env,
         jint sequence_length, jint dim0, jint dim1) {
     (void) env;
     (void) cls;
-    run_kquant_gemm(6, weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+#if LFM25_ARM_NEON
+    neon_gemm_q6k(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+    return;
+#endif
+#if LFM25_AVX512_VNNI
+    if (x86_supports_avx512_vnni()) {
+        run_kquant_gemm(6, weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+        return;
+    }
+#endif
+#if LFM25_AVX2_FMA
+    if (x86_supports_avx2_fma_f16c()) {
+        avx2_gemm_q6k(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+        return;
+    }
+#endif
+    c_gemm_kquant(c_q6k_dot, Q6K_BLOCK_BYTES, weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+}
+
+JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmBF16(JNIEnv *env, jclass cls,
+        jlong weights, jlong x, jlong x_stride_bytes, jlong out, jlong out_stride_bytes,
+        jint sequence_length, jint dim0, jint dim1) {
+    (void) env;
+    (void) cls;
+#if LFM25_ARM_NEON
+    neon_gemm_bf16(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+    return;
+#endif
+#if LFM25_AVX2_FMA
+    if (x86_supports_avx2_fma_f16c()) {
+        avx2_gemm_bf16(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+        return;
+    }
+#endif
+    c_gemm_dense(c_bf16_dot, 2, weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+}
+
+JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmF16(JNIEnv *env, jclass cls,
+        jlong weights, jlong x, jlong x_stride_bytes, jlong out, jlong out_stride_bytes,
+        jint sequence_length, jint dim0, jint dim1) {
+    (void) env;
+    (void) cls;
+#if LFM25_ARM_NEON
+    neon_gemm_f16(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+    return;
+#endif
+#if LFM25_AVX2_FMA
+    if (x86_supports_avx2_fma_f16c()) {
+        avx2_gemm_f16(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+        return;
+    }
+#endif
+    c_gemm_dense(c_f16_dot, 2, weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+}
+
+JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmF32(JNIEnv *env, jclass cls,
+        jlong weights, jlong x, jlong x_stride_bytes, jlong out, jlong out_stride_bytes,
+        jint sequence_length, jint dim0, jint dim1) {
+    (void) env;
+    (void) cls;
+#if LFM25_ARM_NEON
+    neon_gemm_f32(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+    return;
+#endif
+#if LFM25_AVX2_FMA
+    if (x86_supports_avx2_fma_f16c()) {
+        avx2_gemm_f32(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+        return;
+    }
+#endif
+    c_gemm_dense(c_f32_dot, 4, weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
 }
 
 JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *vm, void *reserved) {
     (void) vm;
     (void) reserved;
+#if LFM25_AVX512_VNNI
     pthread_mutex_lock(&pool_mutex);
     destroy_pool_locked();
     pthread_mutex_unlock(&pool_mutex);
+#endif
 }

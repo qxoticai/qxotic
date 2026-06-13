@@ -84,7 +84,7 @@ final class Engine {
         int consumedPromptTokens = consumedPromptTokens(tokenizer, promptTokens); // client-facing usage counts
         // generation limits use REAL stream positions: a resumed session sits deeper in the
         // context than the re-encoded prompt suggests (thinking/surrogate tokens in the stream)
-        int promptPositions = prefillPositions(state, startPosition, promptTokens);
+        int promptPositions = Llama.prefillPositions(state, startPosition, promptTokens);
         require(promptPositions <= contextLength, "Prompt exceeds context length (%d tokens used, %d available)", promptPositions, contextLength);
         int actualMaxTokens = params.maxTokens() < 0 ? contextLength - promptPositions
                 : Math.min(params.maxTokens(), contextLength - promptPositions);
@@ -167,14 +167,6 @@ final class Engine {
         int cachedTokens = Math.min(startPosition > 0 ? startPosition : resumed[0], consumedPromptTokens);
         return new GenerationResult(responseTokens, stopToken, stopResult.text(), reasoning, List.of(),
                 consumedPromptTokens, responseTokens.size(), cachedTokens, finishReason, promptMillis, predictedMillis);
-    }
-
-    /** Positions occupied once the prompt is ingested, computed with buildPrefillTokens' exact
-     *  rule against the PRE-generation latestToken (no BOS-name guessing — the model may call
-     *  it &lt;bos&gt; or &lt;|startoftext|&gt;). */
-    static int prefillPositions(Llama.State state, int startPosition, List<Integer> promptTokens) {
-        int skip = startPosition == 0 && !promptTokens.isEmpty() && promptTokens.getFirst() == state.latestToken ? 1 : 0;
-        return startPosition + 1 + promptTokens.size() - skip;
     }
 
     /** Prompt size as billed to the client: a leading BOS is template overhead, not user input. */

@@ -377,7 +377,7 @@ public class LFM25 {
             printer.accept(token);
         };
         int budget = options.maxTokens() < 0 ? -1
-                : options.maxTokens() - Engine.prefillPositions(state, startPosition, promptTokens);
+                : options.maxTokens() - Llama.prefillPositions(state, startPosition, promptTokens);
         Engine.Params params = new Engine.Params(sampler, budget,
                 new Engine.StopSpec(stopTokens, List.of()), options.think());
         Engine.GenerationResult result = Engine.generate(model, state, startPosition, promptTokens, params,

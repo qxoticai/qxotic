@@ -135,14 +135,26 @@ native-pgo-instrument: check-native-image jar
 native-pgo: check-native-image jar default.iprof
 	$(NATIVE_IMAGE) --pgo=default.iprof $(NATIVE_IMAGE_FLAGS) -cp $(JAR_FILE):$(DEPS_CLASSPATH) $(JAVA_MAIN_CLASS) -o $(NATIVE_FILE)
 
-# Native AVX-512 GEMM library (opt-in via -Dllama.nativeGemmLib=$(PWD)/liblfm25jni.so)
-JAVA_HOME_DETECTED := $(shell dirname $$(dirname $$(readlink -f $$(which $(JAVA)))))
-liblfm25jni.so: lfm25jni.c
-	gcc -O3 -march=native -shared -fPIC -pthread \
-		-I$(JAVA_HOME_DETECTED)/include -I$(JAVA_HOME_DETECTED)/include/linux \
-		lfm25jni.c -o liblfm25jni.so
+# Native GEMM library (opt-in via -Dllama.nativeGemmLib=$(PWD)/$(NATIVE_LIB))
+UNAME_S := $(shell uname -s 2>/dev/null)
+ifeq ($(UNAME_S),Darwin)
+    JAVA_HOME_DETECTED := $(shell /usr/libexec/java_home 2>/dev/null || dirname $$(dirname $$(readlink $$(which $(JAVA)))))
+    JNI_PLATFORM_INCLUDE := darwin
+    NATIVE_LIB := liblfm25jni.dylib
+    NATIVE_SHARED_FLAGS := -dynamiclib
+else
+    JAVA_HOME_DETECTED := $(shell dirname $$(dirname $$(readlink -f $$(which $(JAVA)))))
+    JNI_PLATFORM_INCLUDE := linux
+    NATIVE_LIB := liblfm25jni.so
+    NATIVE_SHARED_FLAGS := -shared
+endif
 
-libnative: liblfm25jni.so
+$(NATIVE_LIB): lfm25jni.c
+	gcc -O3 -march=native $(NATIVE_SHARED_FLAGS) -fPIC -pthread \
+		-I$(JAVA_HOME_DETECTED)/include -I$(JAVA_HOME_DETECTED)/include/$(JNI_PLATFORM_INCLUDE) \
+		lfm25jni.c -o $(NATIVE_LIB)
+
+libnative: $(NATIVE_LIB)
 
 # Native image with the AVX-512 GEMM statically linked (single self-contained binary).
 # Uses unexported SVM internals via buildtools/LFM25StaticGemmFeature (oracle/graal#3359).
@@ -169,5 +181,24 @@ native-static-gemm: check-native-image jar liblfm25jni.a target/buildtools/LFM25
 		$(JAVA_MAIN_CLASS) \
 		-o $(NATIVE_FILE)
 
-.PHONY: check-native-image compile clean jar test test-server test-golden native native-pgo native-pgo-instrument native-static-gemm libnative run-command run-jar-command
+# ARM64 cross-compile target (binary cannot run on x86, but validates ARM NEON code compiles).
+# Requires: apt install gcc-aarch64-linux-gnu
+ARM64_CROSS_CC  ?= aarch64-linux-gnu-gcc
+arm64-so: lfm25jni.c
+	$(ARM64_CROSS_CC) -O3 -shared -fPIC -pthread \
+		-I$(JAVA_HOME_DETECTED)/include -I$(JAVA_HOME_DETECTED)/include/linux \
+		lfm25jni.c -o liblfm25jni-arm64.so
+	@echo "ARM64 shared library built (cannot be loaded on x86)."
+
+# Metal compute library (macOS / Apple Silicon only).
+# Requires: Xcode Command Line Tools (xcrun).
+gemm.metallib: gemm.metal
+	xcrun -sdk macosx metal -c gemm.metal -o gemm.air
+	xcrun -sdk macosx metallib gemm.air -o gemm.metallib
+	rm -f gemm.air
+
+metal-lib: gemm.metallib
+	@echo "Metal library built."
+
+.PHONY: check-native-image compile clean jar test test-server test-golden native native-pgo native-pgo-instrument native-static-gemm libnative metal-lib arm64-so run-command run-jar-command
 .SUFFIXES: .java .class .jar

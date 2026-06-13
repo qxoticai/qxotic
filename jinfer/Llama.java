@@ -186,11 +186,16 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
             if (slidingWindow <= 0 || Integer.bitCount(slidingWindow) != 1) {
                 throw new IllegalArgumentException("slidingWindow must be a power of 2, got " + slidingWindow);
             }
+            if (feedForwardLength.length != numberOfLayers
+                    || numberOfKeyValueHeadsPerLayer.length != numberOfLayers
+                    || isSWA.length != numberOfLayers) {
+                throw new IllegalArgumentException("per-layer configuration arrays must have numberOfLayers entries");
+            }
             this.embeddingLength = embeddingLength;
-            this.feedForwardLength = feedForwardLength;
+            this.feedForwardLength = Arrays.copyOf(feedForwardLength, feedForwardLength.length);
             this.numberOfLayers = numberOfLayers;
             this.numberOfHeads = numberOfHeads;
-            this.numberOfKeyValueHeadsPerLayer = numberOfKeyValueHeadsPerLayer;
+            this.numberOfKeyValueHeadsPerLayer = Arrays.copyOf(numberOfKeyValueHeadsPerLayer, numberOfKeyValueHeadsPerLayer.length);
             this.vocabularySize = vocabularySize;
             this.contextLength = contextLength;
             this.rmsNormEps = rmsNormEps;
@@ -200,7 +205,7 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
             this.headSizeSWA = headSizeSWA;
             this.slidingWindow = slidingWindow;
             this.logitSoftcapping = logitSoftcapping;
-            this.isSWA = isSWA;
+            this.isSWA = Arrays.copyOf(isSWA, isSWA.length);
             this.nLayerKvFromStart = nLayerKvFromStart;
             this.expertCount = expertCount;
             this.expertUsedCount = expertUsedCount;
@@ -1506,6 +1511,14 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
             prefillTokens[i] = promptTokens.get(skip + i - 1);
         }
         return prefillTokens;
+    }
+
+    /** Number of context positions occupied after prefill ingests the effective stream. */
+    static int prefillPositions(State state, int startPosition, List<Integer> promptTokens) {
+        if (promptTokens.isEmpty()) {
+            return startPosition;
+        }
+        return startPosition + buildPrefillTokens(state.latestToken, startPosition, promptTokens).length;
     }
 
     /** Extension points for {@link #generate}; the server's prompt cache uses them to resume
