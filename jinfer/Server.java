@@ -1125,7 +1125,11 @@ final class Server {
             sampler = Engine.withThinkBudget(sampler, model.tokenizer(), reasoningBudget);
         }
         Grammar.Cursor grammarCursor = buildGrammarCursor(model.tokenizer(), request);
-        if (grammarCursor != null) sampler = Sampler.withGrammar(sampler, grammarCursor);
+        if (grammarCursor != null) {
+            Map<String, Integer> specials = model.tokenizer().getSpecialTokens();
+            int eosToken = specials.getOrDefault("<eos>", specials.getOrDefault("<|endoftext|>", 2));
+            sampler = Sampler.withGrammar(sampler, grammarCursor, eosToken);
+        }
         int consumedPromptTokens = Engine.consumedPromptTokens(model.tokenizer(), promptTokens); // client-facing usage counts
         int[] cachedOut = {Math.min(ingestion.startPosition(), consumedPromptTokens)};
         IntConsumer onToken = usageCounts == null ? null : token -> {

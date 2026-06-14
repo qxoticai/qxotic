@@ -1251,7 +1251,7 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         seq.pendingPosition = startPosition;
         seq.pendingCount = sequenceLength;
 
-        embedTokens(weights, seq, tokens, tokenOffset, sequenceLength, dim);
+        embedTokens(weights, seq, tokens, tokenOffset, sequenceLength, dim, config.vocabularySize);
 
         for (int l = 0; l < config.numberOfLayers; l++) {
             boolean needOutput = l + 1 < config.numberOfLayers;
@@ -1266,9 +1266,14 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         seq.logitsValid = false;
     }
 
-    static void embedTokens(Llama.Weights weights, Llama.BatchState batch, int[] tokens, int tokenOffset, int sequenceLength, int dim) {
+    static void embedTokens(Llama.Weights weights, Llama.BatchState batch, int[] tokens, int tokenOffset, int sequenceLength, int dim, int vocabSize) {
         for (int s = 0; s < sequenceLength; s++) {
-            weights.tokenEmbeddingTable().copyTo(tokens[tokenOffset + s] * dim, batch.x, s * dim, dim);
+            int token = tokens[tokenOffset + s];
+            if (token < 0 || token >= vocabSize) {
+                throw new IllegalArgumentException(
+                    "token id " + token + " out of range [0, " + vocabSize + ")");
+            }
+            weights.tokenEmbeddingTable().copyTo(token * dim, batch.x, s * dim, dim);
         }
     }
 
@@ -1547,6 +1552,10 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
                     hooks.afterPrefill();
                 }
                 int nextToken = sampler.sampleToken(logits);
+                if (nextToken < 0 || nextToken >= config.vocabularySize) {
+                    throw new IllegalArgumentException(
+                        "sampler returned token id " + nextToken + " out of range [0, " + config.vocabularySize + ")");
+                }
                 generatedTokens.add(nextToken);
                 // a false return aborts generation (e.g. a text stop matched downstream); like
                 // a stop token, the aborting token is recorded but never ingested
