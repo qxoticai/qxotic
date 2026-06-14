@@ -50,6 +50,8 @@ final class RuntimeFlags {
     static final int SERVER_QUEUE = Integer.getInteger("llama.serverQueue", 4);
     static final long SERVER_MAX_BODY_BYTES = Math.min(Long.getLong("llama.serverMaxBodyMB", 32), 1024) << 20;
     static final long SERVER_WRITE_STALL_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(Long.getLong("llama.serverWriteTimeout", 30));
+    static final int SERVER_MAX_TOKENS = Integer.getInteger("llama.serverMaxTokens", 4096); // 0 = no completion-token ceiling
+    static final long SERVER_REQUEST_TIMEOUT_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(Long.getLong("llama.serverRequestTimeout", 300)); // 0 = no generation deadline
 
     // thread affinity (needs OpenHFT affinity on the classpath)
     static final boolean AFFINITY = Boolean.getBoolean("llama.Affinity");

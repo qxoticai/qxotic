@@ -71,18 +71,24 @@ target/classes:
 	mkdir -p target/classes
 
 # Kernel parity tests (synthetic tensors, no model file needed) + tokenizer parity (model-gated)
-target/test-classes/com/llama4j/KernelParityTest.class: tests/*.java $(JAVA_CLASSES)
+target/test-classes/com/llama4j/KernelParityTest.class: tests/*.java $(wildcard tests/resources/**/*) $(JAVA_CLASSES)
 	$(JAVAC) $(JAVA_COMPILE_OPTIONS) -cp target/classes:$(DEPS_CLASSPATH) -d target/test-classes tests/*.java
+	cp -R tests/resources/. target/test-classes/   # bundle test resources (chat templates) onto the classpath
 
 test: target/test-classes/com/llama4j/KernelParityTest.class
 	$(JAVA) $(JAVA_RUNTIME_OPTIONS) -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0 \
 		-cp target/classes:target/test-classes:$(DEPS_CLASSPATH) com.llama4j.KernelParityTest
+	$(JAVA) $(JAVA_RUNTIME_OPTIONS) -cp target/classes:target/test-classes:$(DEPS_CLASSPATH) com.llama4j.GrammarTest
+	$(JAVA) $(JAVA_RUNTIME_OPTIONS) -cp target/classes:target/test-classes:$(DEPS_CLASSPATH) com.llama4j.JinjaRendererTest
 	$(JAVA) $(JAVA_RUNTIME_OPTIONS) -cp target/classes:target/test-classes:$(DEPS_CLASSPATH) com.llama4j.TokenizerParityTest $(MODEL)
 
 # End-to-end server test (in-process, ephemeral port); model-gated like the others.
 test-server: target/test-classes/com/llama4j/KernelParityTest.class
 	$(JAVA) $(JAVA_RUNTIME_OPTIONS) -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0 \
 		-cp target/classes:target/test-classes:$(DEPS_CLASSPATH) com.llama4j.ServerIntegrationTest $(MODEL)
+	$(JAVA) $(JAVA_RUNTIME_OPTIONS) -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0 \
+		-Dllama.serverMaxTokens=24 -Dllama.serverRequestTimeout=0 \
+		-cp target/classes:target/test-classes:$(DEPS_CLASSPATH) com.llama4j.ServerIntegrationTest $(MODEL) ceiling
 
 # Greedy-determinism check: same runtime, same input => byte-identical output. Skips without a
 # model. (Cross-runtime bit-identity is NOT an invariant: reduceLanes order differs, see FIXES.md.)

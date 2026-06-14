@@ -1052,34 +1052,14 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         for (int t = tStart; t < tEnd; t++) {
             long off = (long) (config.kvCacheIndex(layer, t) * kvDim + kvHeadOffset) * Float16.BYTES;
             long base = kcBase + off;
-            var bits32_k0 = ShortVector.fromMemorySegment(FloatTensor.S_SPECIES_HALF, kc, base, ByteOrder.LITTLE_ENDIAN)
-                    .castShape(FloatTensor.I_SPECIES, 0).reinterpretAsInts();
-            var zem_k0 = bits32_k0.and(0x7C00).neg().lanewise(VectorOperators.ASHR, 31);
-            FloatVector k0 = bits32_k0.and(0x8000).lanewise(VectorOperators.LSHL, 16)
-                    .or(bits32_k0.and(0x7FFF).add(0x1C000).lanewise(VectorOperators.LSHL, 13).and(zem_k0))
-                    .reinterpretAsFloats();
-            var sv = q0.mul(k0);
-            var bits32_k1 = ShortVector.fromMemorySegment(FloatTensor.S_SPECIES_HALF, kc, base + 32, ByteOrder.LITTLE_ENDIAN)
-                    .castShape(FloatTensor.I_SPECIES, 0).reinterpretAsInts();
-            var zem_k1 = bits32_k1.and(0x7C00).neg().lanewise(VectorOperators.ASHR, 31);
-            FloatVector k1 = bits32_k1.and(0x8000).lanewise(VectorOperators.LSHL, 16)
-                    .or(bits32_k1.and(0x7FFF).add(0x1C000).lanewise(VectorOperators.LSHL, 13).and(zem_k1))
-                    .reinterpretAsFloats();
-            sv = q1.fma(k1, sv);
-            var bits32_k2 = ShortVector.fromMemorySegment(FloatTensor.S_SPECIES_HALF, kc, base + 64, ByteOrder.LITTLE_ENDIAN)
-                    .castShape(FloatTensor.I_SPECIES, 0).reinterpretAsInts();
-            var zem_k2 = bits32_k2.and(0x7C00).neg().lanewise(VectorOperators.ASHR, 31);
-            FloatVector k2 = bits32_k2.and(0x8000).lanewise(VectorOperators.LSHL, 16)
-                    .or(bits32_k2.and(0x7FFF).add(0x1C000).lanewise(VectorOperators.LSHL, 13).and(zem_k2))
-                    .reinterpretAsFloats();
-            sv = q2.fma(k2, sv);
-            var bits32_k3 = ShortVector.fromMemorySegment(FloatTensor.S_SPECIES_HALF, kc, base + 96, ByteOrder.LITTLE_ENDIAN)
-                    .castShape(FloatTensor.I_SPECIES, 0).reinterpretAsInts();
-            var zem_k3 = bits32_k3.and(0x7C00).neg().lanewise(VectorOperators.ASHR, 31);
-            FloatVector k3 = bits32_k3.and(0x8000).lanewise(VectorOperators.LSHL, 16)
-                    .or(bits32_k3.and(0x7FFF).add(0x1C000).lanewise(VectorOperators.LSHL, 13).and(zem_k3))
-                    .reinterpretAsFloats();
-            sv = q3.fma(k3, sv);
+
+            // 4x4 key tile: load all four keys, compute dot product with all four queries
+            FloatVector k0 = f16DecodeVector(kc, base);
+            FloatVector k1 = f16DecodeVector(kc, base + 32);
+            FloatVector k2 = f16DecodeVector(kc, base + 64);
+            FloatVector k3 = f16DecodeVector(kc, base + 96);
+            var sv = q3.fma(k3, q2.fma(k2, q1.fma(k1, q0.mul(k0))));
+
             float score = sv.reduceLanes(VectorOperators.ADD) * attnScale;
             float p;
             if (score <= m) {
@@ -1096,34 +1076,16 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
             }
             l += p;
             var pv = FloatVector.broadcast(F, p);
+
+            // 4x4 value tile: load all four values, accumulate into all four accumulators
             base = vcBase + off;
-            var bits32_v0 = ShortVector.fromMemorySegment(FloatTensor.S_SPECIES_HALF, vc, base, ByteOrder.LITTLE_ENDIAN)
-                    .castShape(FloatTensor.I_SPECIES, 0).reinterpretAsInts();
-            var zem_v0 = bits32_v0.and(0x7C00).neg().lanewise(VectorOperators.ASHR, 31);
-            FloatVector v0 = bits32_v0.and(0x8000).lanewise(VectorOperators.LSHL, 16)
-                    .or(bits32_v0.and(0x7FFF).add(0x1C000).lanewise(VectorOperators.LSHL, 13).and(zem_v0))
-                    .reinterpretAsFloats();
+            FloatVector v0 = f16DecodeVector(vc, base);
+            FloatVector v1 = f16DecodeVector(vc, base + 32);
+            FloatVector v2 = f16DecodeVector(vc, base + 64);
+            FloatVector v3 = f16DecodeVector(vc, base + 96);
             a0 = v0.fma(pv, a0);
-            var bits32_v1 = ShortVector.fromMemorySegment(FloatTensor.S_SPECIES_HALF, vc, base + 32, ByteOrder.LITTLE_ENDIAN)
-                    .castShape(FloatTensor.I_SPECIES, 0).reinterpretAsInts();
-            var zem_v1 = bits32_v1.and(0x7C00).neg().lanewise(VectorOperators.ASHR, 31);
-            FloatVector v1 = bits32_v1.and(0x8000).lanewise(VectorOperators.LSHL, 16)
-                    .or(bits32_v1.and(0x7FFF).add(0x1C000).lanewise(VectorOperators.LSHL, 13).and(zem_v1))
-                    .reinterpretAsFloats();
             a1 = v1.fma(pv, a1);
-            var bits32_v2 = ShortVector.fromMemorySegment(FloatTensor.S_SPECIES_HALF, vc, base + 64, ByteOrder.LITTLE_ENDIAN)
-                    .castShape(FloatTensor.I_SPECIES, 0).reinterpretAsInts();
-            var zem_v2 = bits32_v2.and(0x7C00).neg().lanewise(VectorOperators.ASHR, 31);
-            FloatVector v2 = bits32_v2.and(0x8000).lanewise(VectorOperators.LSHL, 16)
-                    .or(bits32_v2.and(0x7FFF).add(0x1C000).lanewise(VectorOperators.LSHL, 13).and(zem_v2))
-                    .reinterpretAsFloats();
             a2 = v2.fma(pv, a2);
-            var bits32_v3 = ShortVector.fromMemorySegment(FloatTensor.S_SPECIES_HALF, vc, base + 96, ByteOrder.LITTLE_ENDIAN)
-                    .castShape(FloatTensor.I_SPECIES, 0).reinterpretAsInts();
-            var zem_v3 = bits32_v3.and(0x7C00).neg().lanewise(VectorOperators.ASHR, 31);
-            FloatVector v3 = bits32_v3.and(0x8000).lanewise(VectorOperators.LSHL, 16)
-                    .or(bits32_v3.and(0x7FFF).add(0x1C000).lanewise(VectorOperators.LSHL, 13).and(zem_v3))
-                    .reinterpretAsFloats();
             a3 = v3.fma(pv, a3);
         }
         if (finalize && l > 0f) {
@@ -1137,6 +1099,19 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         return packML(m, l);
     }
 
+
+    /**
+     * Loads 16 f16 values from a memory segment, casts to ints, and decodes to a float vector.
+     * Extracted so each call stays under Graal CE's Vector API expansion budget.
+     */
+    private static FloatVector f16DecodeVector(MemorySegment seg, long offset) {
+        var bits32 = ShortVector.fromMemorySegment(FloatTensor.S_SPECIES_HALF, seg, offset, ByteOrder.LITTLE_ENDIAN)
+                .castShape(FloatTensor.I_SPECIES, 0).reinterpretAsInts();
+        var zem = bits32.and(0x7C00).neg().lanewise(VectorOperators.ASHR, 31);
+        return bits32.and(0x8000).lanewise(VectorOperators.LSHL, 16)
+                .or(bits32.and(0x7FFF).add(0x1C000).lanewise(VectorOperators.LSHL, 13).and(zem))
+                .reinterpretAsFloats();
+    }
 
     /** The layer's deferred half: attention scores+mix, then output projection + residual. */
     static void finishAttentionLayer(Llama.Configuration config, Llama.Weights weights,

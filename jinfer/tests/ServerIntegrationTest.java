@@ -49,29 +49,39 @@ public final class ServerIntegrationTest {
         Files.writeString(warmFile, manual.toString());
         LFM25.Options options = new LFM25.Options(model, null, null, null, false, true, "127.0.0.1", 0,
                 1f, 0.95f, 42L, 2048, true, false, true, false, false, false, false,
-                List.of(warmFile.toString()));
+                List.of(warmFile.toString()), false);
         HttpServer server = Server.run(llama, options);
         base = "http://127.0.0.1:" + server.getAddress().getPort();
         client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 
+        // "ceiling" mode runs ONLY the token-ceiling check, under a small -Dllama.serverMaxTokens
+        // (the two generation limits race — whichever is tighter fires first — so the ceiling needs
+        // its own server config; the deadline is tested Engine-level in the normal battery).
+        boolean ceilingMode = args.length > 1 && "ceiling".equals(args[1]);
         try {
-            plumbing();
-            validation();
-            tokenizeRoundTrip();
-            chatNonStreaming();
-            chatStreaming();
-            completionsAndStops();
-            responsesEndpoint();
-            promptCacheColdWarm();
-            promptCacheStrictPrefix();
-            promptCacheBranchPoint();
-            warmPromptInstant();
-            strideAndTailResume();
-            toolChoiceForced();
-            reasoningBudget();
-            stopStringsIgnoreReasoning();
-            fast400WhileBusy();
-            sessionResume();
+            if (ceilingMode) {
+                tokenCeiling();
+            } else {
+                plumbing();
+                validation();
+                complianceValidation();
+                tokenizeRoundTrip();
+                chatNonStreaming();
+                chatStreaming();
+                completionsAndStops();
+                responsesEndpoint();
+                promptCacheColdWarm();
+                promptCacheStrictPrefix();
+                promptCacheBranchPoint();
+                warmPromptInstant();
+                strideAndTailResume();
+                toolChoiceForced();
+                reasoningBudget();
+                stopStringsIgnoreReasoning();
+                fast400WhileBusy();
+                sessionResume();
+                generationDeadline(llama);
+            }
         } catch (Throwable t) {
             // always exit: the server executor pool is non-daemon, an escaped exception
             // would otherwise leave the JVM (and the make invocation) hanging forever
@@ -116,6 +126,55 @@ public final class ServerIntegrationTest {
                 "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"temperature\":-1}", "negative temperature");
         expect400("/v1/completions", "{\"prompt\":\"\"}", "empty prompt");
         expect400("/v1/responses", "{}", "responses without input");
+    }
+
+    // --- OpenAI-spec compliance: parameters that MUST 400 ---
+
+    private static void complianceValidation() throws Exception {
+        // model: required per spec
+        expect400("/v1/chat/completions",
+                "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}", "missing model");
+        expect400("/v1/chat/completions",
+                "{\"model\":\"\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}", "blank model");
+
+        // temperature: spec says 0–2 (negative already tested in validation())
+        expect400("/v1/chat/completions",
+                "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"temperature\":3}",
+                "temperature > 2");
+
+        // unsupported parameters: must 400, not silently ignore
+        expect400("/v1/chat/completions",
+                "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"logprobs\":true}", "logprobs rejected");
+        expect400("/v1/chat/completions",
+                "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"top_logprobs\":5}", "top_logprobs rejected");
+        expect400("/v1/chat/completions",
+                "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"logit_bias\":{\"1234\":5}}",
+                "logit_bias rejected");
+        expect400("/v1/chat/completions",
+                "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"frequency_penalty\":0.5}",
+                "frequency_penalty rejected");
+        expect400("/v1/chat/completions",
+                "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"presence_penalty\":0.5}",
+                "presence_penalty rejected");
+
+        // response_format: only json_object and text supported
+        expect400("/v1/chat/completions",
+                "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"response_format\":{\"type\":\"json_schema\"}}",
+                "json_schema rejected");
+        expect400("/v1/chat/completions",
+                "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"response_format\":{\"type\":\"garbage\"}}",
+                "garbage response_format type rejected");
+
+        // response_format json_object: requires "json" keyword in system/user message
+        expect400("/v1/chat/completions",
+                "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"response_format\":{\"type\":\"json_object\"}}",
+                "json_object without json hint rejected");
+
+        // messages role: must be system/user/assistant/tool
+        expect400("/v1/chat/completions",
+                "{\"messages\":[{\"role\":\"hacker\",\"content\":\"hi\"}]}", "invalid role rejected");
+        expect400("/v1/chat/completions",
+                "{\"messages\":[{\"role\":\"\",\"content\":\"hi\"}]}", "blank role rejected");
     }
 
     private static void expect400(String path, String body, String what) throws Exception {
@@ -358,6 +417,72 @@ public final class ServerIntegrationTest {
         calls = Server.parseToolCalls("<|tool_call_start|>[get_time(timezone=\"UTC\")]<|tool_call_end|> and "
                 + "<|tool_call_start|>[noop()]<|tool_call_end|>", tools);
         check(calls.size() == 2, "separate blocks accumulate");
+        // bare pythonic (no markers) — the model sometimes emits these
+        calls = Server.parseToolCalls("[noop()]", tools);
+        check(calls.size() == 1 && "noop".equals(fn(calls, 0).get("name")), "bare pythonic noop (got " + calls.size() + ")");
+        // bare pythonic embedded in prose
+        calls = Server.parseToolCalls("<think>I should call noop.</think>\n[noop()]", tools);
+        check(calls.size() == 1 && "noop".equals(fn(calls, 0).get("name")),
+                "bare pythonic after thinking (got " + calls.size() + ")");
+        // bare pythonic with prose BEFORE and AFTER
+        calls = Server.parseToolCalls("Some text before\n[get_weather(city=\"Paris\")]\nSome text after", tools);
+        check(calls.size() == 1 && "get_weather".equals(fn(calls, 0).get("name")),
+                "bare pythonic in prose (got " + calls.size() + ")");
+        // bare call without brackets
+        calls = Server.parseToolCalls("noop()", tools);
+        check(calls.size() == 1 && "noop".equals(fn(calls, 0).get("name")),
+                "bare call without brackets (got " + calls.size() + ")");
+        // markdown link NOT parsed as tool call
+        calls = Server.parseToolCalls("[Google](https://google.com)", tools);
+        check(calls.isEmpty(), "markdown link not parsed as tool call");
+        // code example NOT parsed (func not in known tools)
+        calls = Server.parseToolCalls("[calc(x=1, y=2)]", tools);
+        check(calls.isEmpty(), "unknown function not parsed");
+
+        // --- bullet-proofing: string-aware scanning of the bare (marker-less) form ---
+        // brackets/parens/commas inside a quoted argument must NOT terminate detection early
+        calls = Server.parseToolCalls("[get_weather(city=\"a ] b ) c , d\")]", tools);
+        check(calls.size() == 1 && "{\"city\":\"a ] b ) c , d\"}".equals(fn(calls, 0).get("arguments")),
+                "bracket/paren/comma inside string arg preserved (got " + calls.size() + ")");
+        // same hostile content but with native markers
+        calls = Server.parseToolCalls("<|tool_call_start|>[get_weather(note=\"close ) bracket ]\")]<|tool_call_end|>", tools);
+        check(calls.size() == 1 && "{\"note\":\"close ) bracket ]\"}".equals(fn(calls, 0).get("arguments")),
+                "string with brackets in native block (got " + calls.size() + ")");
+        // multiple bare calls in a list, no markers
+        calls = Server.parseToolCalls("[get_weather(city=\"Paris\"), get_time(timezone=\"UTC\")]", tools);
+        check(calls.size() == 2 && "get_weather".equals(fn(calls, 0).get("name"))
+                && "get_time".equals(fn(calls, 1).get("name")), "multi bare-list calls (got " + calls.size() + ")");
+        // dotted function name (qualified, e.g. Calendar.create_event)
+        java.util.Set<String> dotted = java.util.Set.of("Calendar.create_event");
+        calls = Server.parseToolCalls("[Calendar.create_event(title=\"Sync\")]", dotted);
+        check(calls.size() == 1 && "Calendar.create_event".equals(fn(calls, 0).get("name")),
+                "dotted function name (got " + calls.size() + ")");
+        // JSON-cased literals inside pythonic args (true/false/null lowercase)
+        calls = Server.parseToolCalls("[book_hotel(city=\"NYC\", smoking=false, note=null)]", tools);
+        check(calls.size() == 1, "json-cased literals parse (got " + calls.size() + ")");
+        Map<String, Object> jsonArgs = (Map<String, Object>) Server.Json.parse((String) fn(calls, 0).get("arguments"));
+        check(Boolean.FALSE.equals(jsonArgs.get("smoking")) && jsonArgs.containsKey("note") && jsonArgs.get("note") == null,
+                "lowercase false/null map correctly");
+        // single-quoted strings in the marker-less form
+        calls = Server.parseToolCalls("[get_weather(city='Berlin')]", tools);
+        check(calls.size() == 1 && "{\"city\":\"Berlin\"}".equals(fn(calls, 0).get("arguments")),
+                "single-quoted string in bare call");
+        // identifier suffix must not false-match a known tool (xget_weather != get_weather)
+        calls = Server.parseToolCalls("[xget_weather(city=\"Paris\")]", tools);
+        check(calls.isEmpty(), "longer identifier containing a tool name is not a match");
+        // bare call embedded mid-prose, no brackets
+        calls = Server.parseToolCalls("Sure, let me check: get_time(timezone=\"UTC\") now.", tools);
+        check(calls.size() == 1 && "get_time".equals(fn(calls, 0).get("name")),
+                "bare call without brackets mid-prose (got " + calls.size() + ")");
+        // empty bracketed list is not a call
+        calls = Server.parseToolCalls("[]", tools);
+        check(calls.isEmpty(), "empty list is not a tool call");
+        // function reference in prose without a call is not parsed
+        calls = Server.parseToolCalls("You can use get_weather to look that up.", tools);
+        check(calls.isEmpty(), "bare tool name without parens is not a call");
+        // no tools defined -> never treat text as a call
+        calls = Server.parseToolCalls("[get_weather(city=\"Paris\")]", java.util.Set.of());
+        check(calls.isEmpty(), "no tools defined -> no bare detection");
     }
 
     @SuppressWarnings("unchecked")
@@ -463,6 +588,40 @@ public final class ServerIntegrationTest {
         HttpResponse<String> second = post("/v1/chat/completions", turn2);
         check(second.statusCode() == 200, "turn 2 200");
         check(cachedTokens(second) > 0, "turn 2 resumed the session (cached " + cachedTokens(second) + ")");
+    }
+
+    // --- generation limits ---
+
+    /** Wall-clock deadline: Params.timeoutNanos aborts a long generation through the per-token
+     *  abort path, reporting finish_reason "length". Engine-level so it needs no global flag. */
+    private static void generationDeadline(Llama model) {
+        List<Integer> prompt = model.tokenizer().encode("Write a very long, detailed story.");
+        Engine.Params params = new Engine.Params(Sampler.ARGMAX, 100_000,
+                java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(300),
+                new Engine.StopSpec(java.util.Set.of(), List.of()), false);
+        long start = System.nanoTime();
+        Engine.GenerationResult result = Engine.generate(model, model.createNewState(), 0, prompt, params,
+                new Engine.Listener(null, null, null), Llama.GenerationHooks.NONE);
+        long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+        check("length".equals(result.finishReason()), "deadline -> finish_reason length (" + result.finishReason() + ")");
+        check(result.completionTokens() > 0 && result.completionTokens() < 100_000,
+                "deadline aborted mid-generation (" + result.completionTokens() + " tokens)");
+        check(elapsedMs < 30_000, "deadline honored promptly (" + elapsedMs + "ms)");
+    }
+
+    /** Server-side completion ceiling: an oversized request is clamped to llama.serverMaxTokens
+     *  (set small for this isolated run), reporting finish_reason "length". */
+    private static void tokenCeiling() throws Exception {
+        int ceiling = RuntimeFlags.SERVER_MAX_TOKENS;
+        check(ceiling > 0, "ceiling mode needs -Dllama.serverMaxTokens > 0 (" + ceiling + ")");
+        HttpResponse<String> response = post("/v1/chat/completions",
+                "{\"messages\":[{\"role\":\"user\",\"content\":\"Write a very long, detailed story.\"}],"
+                        + "\"temperature\":0,\"max_tokens\":100000}");
+        check(response.statusCode() == 200, "ceiling request 200");
+        Map<String, Object> chat = json(response);
+        long completion = ((Number) path(chat, "usage").get("completion_tokens")).longValue();
+        check(completion <= ceiling, "completion clamped to serverMaxTokens (" + completion + " <= " + ceiling + ")");
+        check("length".equals(path(chat, "choices", 0).get("finish_reason")), "ceiling -> finish_reason length");
     }
 
     // --- helpers ---

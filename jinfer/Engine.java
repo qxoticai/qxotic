@@ -33,9 +33,11 @@ final class Engine {
     /** Sampling and limit parameters for one generation pass. The sampler is supplied by the
      *  caller (see {@link #configuredSampler}) so interactive frontends can keep one RNG across
      *  turns. {@code maxTokens} is the completion budget in generated tokens; negative means
-     *  "as much as the context allows". {@code inlineThink} keeps think spans inline in the
-     *  text instead of routing them to the reasoning channel. */
-    record Params(Sampler sampler, int maxTokens, StopSpec stops, boolean inlineThink) {}
+     *  "as much as the context allows". {@code timeoutNanos} is a wall-clock decode deadline as a
+     *  DURATION (converted to an absolute deadline at {@link #generate} entry, so it measures
+     *  execution rather than queue-wait); 0 means no deadline. {@code inlineThink} keeps think
+     *  spans inline in the text instead of routing them to the reasoning channel. */
+    record Params(Sampler sampler, int maxTokens, long timeoutNanos, StopSpec stops, boolean inlineThink) {}
 
     /** Token stops end generation (the stop token is reported but excluded from the result
      *  tokens); text stops truncate the produced text and, when streaming, are held back so a
@@ -109,9 +111,14 @@ final class Engine {
         IntConsumer onToken = listener.onToken();
         IntConsumer textSink = demux;
         StopAwareTextConsumer stopTracker = stopAware;
-        IntPredicate sink = onToken == null && textSink == null ? null : token -> {
+        // wall-clock decode deadline: duration -> absolute now (we already run on the worker)
+        boolean hasDeadline = params.timeoutNanos() != 0;
+        long deadlineNanos = hasDeadline ? System.nanoTime() + params.timeoutNanos() : Long.MAX_VALUE;
+        boolean[] deadlineHit = {false};
+        IntPredicate sink = onToken == null && textSink == null && !hasDeadline ? null : token -> {
             if (onToken != null) onToken.accept(token);
             if (textSink != null) textSink.accept(token);
+            if (System.nanoTime() >= deadlineNanos) { deadlineHit[0] = true; return false; }
             return stopTracker == null || !stopTracker.stopped();
         };
 
@@ -162,7 +169,8 @@ final class Engine {
                 : tokenizer.decode(visibleTokens(tokenizer, responseTokens, params.inlineThink()));
         StopResult stopResult = applyTextStops(text, params.stops().textStops());
         boolean textStopped = stopResult.stopped() || (stopAware != null && stopAware.stopped());
-        String finishReason = stopToken >= 0 || textStopped ? "stop" : (responseTokens.size() >= actualMaxTokens ? "length" : "stop");
+        String finishReason = stopToken >= 0 || textStopped ? "stop"
+                : (deadlineHit[0] || responseTokens.size() >= actualMaxTokens ? "length" : "stop"); // deadline abort = truncated
         String reasoning = listener.onContent() == null && !params.inlineThink() ? reasoningText(tokenizer, responseTokens) : null; // streaming already delivered reasoning deltas
         int cachedTokens = Math.min(startPosition > 0 ? startPosition : resumed[0], consumedPromptTokens);
         return new GenerationResult(responseTokens, stopToken, stopResult.text(), reasoning, List.of(),

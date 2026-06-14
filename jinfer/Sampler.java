@@ -55,6 +55,19 @@ interface Sampler {
             return inner.sampleToken(logits);
         };
     }
+
+    /** Grammar-constrained sampling: masks logits with the current grammar state before
+     *  delegating, then advances the grammar with the chosen token. Returns -1 (EOS)
+     *  when no valid token remains. */
+    static Sampler withGrammar(Sampler inner, Grammar.Cursor cursor) {
+        if (cursor == null || !Grammar.ENABLED) return inner;
+        return logits -> {
+            if (!cursor.maskLogits(logits)) return -1;
+            int token = inner.sampleToken(logits);
+            cursor.advanceWith(token);
+            return token;
+        };
+    }
 }
 
 record CategoricalSampler(RandomGenerator rng) implements Sampler {

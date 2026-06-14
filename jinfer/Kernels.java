@@ -75,22 +75,48 @@ interface Kernels {
 /** The Java Vector API kernels: 512-bit register-tiled GEMM/GEMV with a generic vector fallback. */
 final class JavaKernels implements Kernels {
 
-    // The Graal JIT only allocates zmm0-zmm15, so a 4x4 register tile (16 accumulators + 8 weight
-    // vectors) spills there; C2 uses zmm16-zmm31 and runs 4x4 ~30% faster than 3x2. Native-image
-    // AOT has all 32 zmm but its linear-scan allocator still spills the 16 vector loop-phis
-    // (~19 spills/iteration in every tile shape tried), so Graal AOT also defaults to 3x2.
-    static final boolean GRAAL_COMPILER = System.getProperty("org.graalvm.nativeimage.imagecode") != null
-            || System.getProperty("java.vm.version", "").contains("jvmci");
-    static final boolean GEMM_TILE_4X4 =
-            "4x4".equals(System.getProperty("llama.Q8_0GemmTile", GRAAL_COMPILER ? "3x2" : "4x4"));
+    // Tile shape (rows x sequence-columns) for the 512-bit Q8_0 GEMM micro-kernel.
+    // Graal CE with xmm16-zmm31 allocation + VCVTPH2PS EVEX fix runs the wide tiles at (near) zero spills.
+    // Supported: "3x2" (legacy, no wide tile), "3x4", "4x4" (default), "2x8", "8x2", "1x1" (educational),
+    //            "avx256" (pure 256-bit/AVX2, no 512-bit ops),
+    //            "neon"/"neon-2x4" (pure 128-bit, for ARM NEON / Apple Silicon; also runs on SSE).
+    // 4x4 is fastest on prefill (~314 vs ~291 tok/s for the zero-spill 3x4): the extra accumulator
+    // width outweighs the single accumulator-phi spill that Graal CE's linear-scan cannot avoid at
+    // 16 vector loop-phis. Generation (single-token) uses the 1x1 path, so the tile only affects prefill.
+    static final String GEMM_TILE = System.getProperty("llama.Q8_0GemmTile", "4x4");
+    // Constant-foldable code so the hot dispatch avoids String.equals: 0=3x2, 1=3x4, 2=4x4, 3=2x8, 4=8x2.
+    static final int GEMM_TILE_CODE = switch (GEMM_TILE) {
+        case "3x2" -> 0;
+        case "4x4" -> 2;
+        case "2x8" -> 3;
+        case "8x2" -> 4;
+        case "1x1" -> 5;
+        case "avx256", "avx256-2x4" -> 6;
+        case "avx256-2x3" -> 7;
+        case "avx256-3x4" -> 8;
+        case "avx256-4x3" -> 9;
+        case "neon", "neon-4x4" -> 10;
+        case "neon-2x4" -> 11;
+        case "scalar", "java" -> 12;
+        default -> 1; // 3x4
+    };
 
     @Override
     public boolean gemmQ8F32(Q8_0FloatTensor w, int thisOffset, F32FloatTensor x, int thatStride,
                              F32FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1) {
+        // Pure-Java scalar GEMM needs no Vector API at all -- reachable even when USE_VECTOR_API is false.
+        if (GEMM_TILE_CODE == 12
+                && (dim1 & (GGMLType.Q8_0.getElementsPerBlock() - 1)) == 0
+                && (thisOffset & (GGMLType.Q8_0.getElementsPerBlock() - 1)) == 0) {
+            Q8_0FloatTensor.vectorGemm512F32(w, x, out, thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
+            return true;
+        }
         if (!FloatTensor.USE_VECTOR_API) {
             return false;
         }
-        if (FloatTensor.F_SPECIES.vectorBitSize() == 512
+        // The 512-bit tile codes (0-5) require 512-bit F_SPECIES; the avx256 codes (>=6) use explicit
+        // 256-bit kernels and run on any width (incl. AVX2-only machines with no 512-bit support).
+        if ((FloatTensor.F_SPECIES.vectorBitSize() == 512 || GEMM_TILE_CODE >= 6)
                 && (dim1 & (GGMLType.Q8_0.getElementsPerBlock() - 1)) == 0
                 && (thisOffset & (GGMLType.Q8_0.getElementsPerBlock() - 1)) == 0) {
             Q8_0FloatTensor.vectorGemm512F32(w, x, out, thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);

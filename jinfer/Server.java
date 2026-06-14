@@ -285,15 +285,26 @@ final class Server {
         try (OutputStream out = beginStream(exchange)) {
             streamGuarded(out, () -> {
                 writeSse(out, chatCompletionChunk(id, modelId, Map.of("role", "assistant"), null));
-                boolean toolRequest = hasUsableTools(request);
-                Usage usageCounts = toolRequest ? null : new Usage();
-                Consumer<String> contentSink = toolRequest ? null : sseDeltaSink(out, id, modelId, "content", usageCounts);
-                Consumer<String> reasoningSink = toolRequest ? null : sseDeltaSink(out, id, modelId, "reasoning_content", usageCounts);
+                boolean forcedTool = forcedToolChoice(request) != null;
+                // Any tool-enabled turn can emit a call inline as ordinary content tokens (the
+                // <|tool_call_start|>/<|tool_call_end|> markers are dropped from the stream, but
+                // the `[name(args)]` body is plain text), and whether it WAS a call is only known
+                // once generation ends. So we defer content for every tool-enabled turn: hold it
+                // back, then emit structured tool_calls if any were detected, else flush the
+                // buffered content as a single delta. Reasoning still streams live.
+                boolean deferContent = forcedTool || hasUsableTools(request);
+                Usage usageCounts = forcedTool ? null : new Usage();
+                Consumer<String> reasoningSink = forcedTool ? null : sseDeltaSink(out, id, modelId, "reasoning_content", usageCounts);
+                StringBuilder buffered = deferContent && !forcedTool ? new StringBuilder() : null;
+                Consumer<String> contentSink;
+                if (!deferContent) contentSink = sseDeltaSink(out, id, modelId, "content", usageCounts);
+                else if (buffered != null) contentSink = buffered::append; // auto turn: hold content, resolve at end
+                else contentSink = null;                                   // forced turn: suppress content entirely
                 GenerationResult result = generateChat(model, options, request, messages, contentSink, reasoningSink, usageCounts);
-                if (toolRequest) {
-                    Map<String, Object> delta = result.toolCalls().isEmpty()
-                            ? Map.of("content", result.text())
-                            : Map.of("tool_calls", toolCallDeltas(result.toolCalls()));
+                if (deferContent) {
+                    Map<String, Object> delta = !result.toolCalls().isEmpty()
+                            ? Map.of("tool_calls", toolCallDeltas(result.toolCalls()))
+                            : Map.of("content", buffered != null ? buffered.toString() : result.text());
                     writeSse(out, chatCompletionChunk(id, modelId, delta, null));
                 }
                 endStream(out, request, result,
@@ -638,10 +649,31 @@ final class Server {
         boolean substance = false;
         for (Object message : messages) {
             Map<String, Object> m = asObject(message, "message");
+            String role = stringValue(m.get("role"), "");
+            Options.require(List.of("system", "user", "assistant", "tool").contains(role),
+                    "Invalid role: %s (must be system, user, assistant, or tool)", role);
             substance |= !messageContent(m.get("content")).isBlank()
                     || (m.get("tool_calls") instanceof List<?> calls && !calls.isEmpty());
         }
         Options.require(substance, "messages must contain at least one non-empty message");
+        Object fmt = request.get("response_format");
+        if (fmt instanceof Map<?,?> m) {
+            String type = stringValue(m.get("type"), "");
+            Options.require("json_object".equals(type) || "text".equals(type),
+                    "Unsupported response_format type: %s (only json_object and text are supported)", type);
+            if ("json_object".equals(type)) {
+                boolean hasJsonHint = false;
+                for (Object message : messages) {
+                    Map<String, Object> msg = asObject(message, "message");
+                    String role = stringValue(msg.get("role"), "");
+                    String content = messageContent(msg.get("content"));
+                    if (("system".equals(role) || "user".equals(role)) && content.toLowerCase().contains("json"))
+                        hasJsonHint = true;
+                }
+                Options.require(hasJsonHint,
+                        "response_format json_object requires the word 'json' in a system or user message");
+            }
+        }
         Object tools = request.get("tools");
         if (tools != null) {
             List<Object> toolList = asArray(tools, "tools");
@@ -665,42 +697,75 @@ final class Server {
         Map<String, Object> function = asObject(tool.get("function"), "tool.function");
         Options.require(function.get("name") instanceof String name && !name.isBlank(), "tool.function.name is required");
     }
-
-    private static GenerationResult generateChat(Llama model, Options options, Map<String, Object> request, List<Object> messages,
+    private static GenerationResult generateChat(Llama model, Options options, Map<String, Object> request,
+                                                  List<Object> messages,
                                                   Consumer<String> onText, Consumer<String> onReasoning,
                                                   Usage usageCounts) {
-        LFMChatFormat chatFormat = new LFMChatFormat(model.tokenizer());
-        List<Integer> promptTokens = new ArrayList<>();
-        promptTokens.add(chatFormat.beginOfSentence);
-        // the trained template merges the tool list INTO the leading system turn — a separate
-        // tools-only system turn makes the model disown its tools ("I don't have access...")
-        List<Object> turns = messages;
-        String systemText = null;
-        if (!messages.isEmpty()) {
-            Map<String, Object> first = asObject(messages.getFirst(), "message");
-            if ("system".equals(stringValue(first.get("role"), ""))) {
-                systemText = chatMessageContent(first);
-                turns = messages.subList(1, messages.size());
+        LFMTokenizer tokenizer = model.tokenizer();
+        LFMChatFormat chatFormat = new LFMChatFormat(tokenizer);
+        List<Integer> promptTokens;
+        String template = tokenizer.chatTemplate();
+        if (!template.isEmpty()) {
+            // Use the model's Jinja chat template
+            var ctx = new LinkedHashMap<String,Object>();
+            ctx.put("messages", messages);
+            ctx.put("add_generation_prompt", true);
+            String bos = specialTokenString(tokenizer, "<bos>");
+            String eos = specialTokenString(tokenizer, "<eos>");
+            ctx.put("bos_token", bos != null ? bos : specialTokenString(tokenizer, "<|startoftext|>"));
+            ctx.put("eos_token", eos != null ? eos : specialTokenString(tokenizer, "<|endoftext|>"));
+            // Always bind `tools` (null when absent), matching HuggingFace apply_chat_template:
+            // many templates guard with `if tools is not none` WITHOUT an `is defined` check, and
+            // an undefined variable is "not none", so leaving it unset makes them emit a spurious
+            // empty tool block (e.g. Mistral's [AVAILABLE_TOOLS]).
+            ctx.put("tools", hasUsableTools(request) ? asArray(request.get("tools"), "tools") : null);
+            boolean thinking = requestThink(request, options);
+            ctx.put("enable_thinking", thinking);
+            ctx.put("preserve_thinking", false);
+            if (request.get("chat_template_kwargs") instanceof Map<?,?> kwargs) {
+                ctx.putAll((Map<String,Object>) kwargs);
+            }
+            String rendered = JinjaRenderer.render(template, ctx);
+            promptTokens = tokenizer.encodeWithSpecialTokens(rendered);
+            seedForcedToolCall(tokenizer, request, promptTokens);
+            if (System.getProperty("llama.debugPrompt") != null) {
+                System.err.println("[prompt] " + tokenizer.decode(promptTokens));
+            }
+        } else {
+            // Fallback: hardcoded ChatML format for models without a Jinja template
+            promptTokens = new ArrayList<>();
+            promptTokens.add(chatFormat.beginOfSentence);
+            List<Object> turns = messages;
+            String systemText = null;
+            if (!messages.isEmpty()) {
+                Map<String, Object> first = asObject(messages.getFirst(), "message");
+                if ("system".equals(stringValue(first.get("role"), ""))) {
+                    systemText = chatMessageContent(first);
+                    turns = messages.subList(1, messages.size());
+                }
+            }
+            if (hasUsableTools(request)) {
+                promptTokens.addAll(encodeToolsSystemMessage(tokenizer, chatFormat, request, systemText));
+            } else if (systemText != null) {
+                promptTokens.addAll(chatFormat.encodeMessage(new LFMChatFormat.Message(LFMChatFormat.Role.SYSTEM, systemText)));
+            }
+            for (Object value : turns) {
+                Map<String, Object> message = asObject(value, "message");
+                LFMChatFormat.Role role = LFMChatFormat.Role.of(stringValue(message.get("role"), "user"));
+                promptTokens.addAll(chatFormat.encodeMessage(new LFMChatFormat.Message(role, chatMessageContent(message))));
+            }
+            promptTokens.addAll(chatFormat.encodeGenerationPrompt());
+            if (!requestThink(request, options)) chatFormat.appendThinkSurrogate(promptTokens);
+            seedForcedToolCall(tokenizer, request, promptTokens);
+            if (System.getProperty("llama.debugPrompt") != null) {
+                System.err.println("[prompt] " + tokenizer.decode(promptTokens));
             }
         }
-        if (hasUsableTools(request)) {
-            promptTokens.addAll(encodeToolsSystemMessage(model.tokenizer(), chatFormat, request, systemText));
-        } else if (systemText != null) {
-            promptTokens.addAll(chatFormat.encodeMessage(new LFMChatFormat.Message(LFMChatFormat.Role.SYSTEM, systemText)));
-        }
-        for (Object value : turns) {
-            Map<String, Object> message = asObject(value, "message");
-            LFMChatFormat.Role role = LFMChatFormat.Role.of(stringValue(message.get("role"), "user"));
-            promptTokens.addAll(chatFormat.encodeMessage(new LFMChatFormat.Message(role, chatMessageContent(message))));
-        }
-        promptTokens.addAll(chatFormat.encodeGenerationPrompt());
-        if (!requestThink(request, options)) chatFormat.appendThinkSurrogate(promptTokens);
-        seedForcedToolCall(model.tokenizer(), request, promptTokens);
         Ingestion resumed = matchChatSession(request, messages, chatFormat, model.tokenizer(), options);
         Ingestion ingestion = resumed != null ? resumed : Ingestion.of(model.createNewState(), 0, promptTokens);
         GenerationResult result = generateResponse(model, options, request, promptTokens, ingestion, chatFormat.getStopTokens(), onText, onReasoning, usageCounts);
         saveChatSession(model, request, messages, ingestion, result);
-        return hasUsableTools(request) ? withParsedToolCalls(result, request) : result;
+        return hasUsableTools(request) ? withParsedToolCalls(model, result, request) : result;
     }
 
     /** Remember the live state for instant resume of the next turn; only clean stop-terminated
@@ -950,12 +1015,32 @@ final class Server {
 
     private static void warmFile(Llama model, String file) throws IOException {
         String text = Files.readString(Path.of(file));
-        LFMChatFormat chatFormat = new LFMChatFormat(model.tokenizer());
-        List<Integer> chatForm = new ArrayList<>();
-        chatForm.add(chatFormat.beginOfSentence);
-        chatForm.addAll(chatFormat.encodeMessage(new LFMChatFormat.Message(LFMChatFormat.Role.SYSTEM, text)));
-        List<Integer> rawForm = model.tokenizer().encode(text);
-        Engine.Params params = new Engine.Params(Sampler.ARGMAX, 0, new StopSpec(Set.of(), List.of()), false);
+        LFMTokenizer tokenizer = model.tokenizer();
+        List<Integer> chatForm;
+        String template = tokenizer.chatTemplate();
+        if (!template.isEmpty()) {
+            var ctx = new LinkedHashMap<String,Object>();
+            ctx.put("messages", List.of(Map.of("role", "system", "content", text)));
+            ctx.put("add_generation_prompt", true);
+            String bos = specialTokenString(tokenizer, "<bos>");
+            String eos = specialTokenString(tokenizer, "<eos>");
+            ctx.put("bos_token", bos != null ? bos : specialTokenString(tokenizer, "<|startoftext|>"));
+            ctx.put("eos_token", eos != null ? eos : specialTokenString(tokenizer, "<|endoftext|>"));
+            // bind tools=null (no tools on this path) so `if tools is not none` guards see a
+            // defined value rather than an undefined that reads as "not none" — see the chat path.
+            ctx.put("tools", null);
+            ctx.put("enable_thinking", false);
+            ctx.put("preserve_thinking", false);
+            String rendered = JinjaRenderer.render(template, ctx);
+            chatForm = tokenizer.encodeWithSpecialTokens(rendered);
+        } else {
+            LFMChatFormat chatFormat = new LFMChatFormat(tokenizer);
+            chatForm = new ArrayList<>();
+            chatForm.add(chatFormat.beginOfSentence);
+            chatForm.addAll(chatFormat.encodeMessage(new LFMChatFormat.Message(LFMChatFormat.Role.SYSTEM, text)));
+        }
+        List<Integer> rawForm = tokenizer.encode(text);
+        Engine.Params params = new Engine.Params(Sampler.ARGMAX, 0, 0, new StopSpec(Set.of(), List.of()), false); // warm: no deadline
         for (List<Integer> tokens : List.of(chatForm, rawForm)) {
             long startNanos = System.nanoTime();
             Ingestion ingestion = Ingestion.of(model.createNewState(), 0, tokens);
@@ -965,21 +1050,48 @@ final class Server {
         }
     }
 
+    /** Builds a grammar cursor from request params: {@code grammar} (GBNF string) or
+     *  {@code response_format: {type: "json_object"}}. Returns null when no constraint. */
+    private static Grammar.Cursor buildGrammarCursor(LFMTokenizer tokenizer, Map<String, Object> request) {
+        if (!Grammar.ENABLED) return null;
+        Object gbnf = request.get("grammar");
+        if (gbnf instanceof String s && !s.isBlank()) {
+            Grammar.Spec spec = Grammar.of(s, tokenizer);
+            return spec.cursor();
+        }
+        Object fmt = request.get("response_format");
+        if (fmt instanceof Map<?,?> f && "json_object".equals(f.get("type"))) {
+            Grammar.Spec spec = Grammar.json(tokenizer);
+            return spec.cursor();
+        }
+        return null;
+    }
+
     /** Sampling-parameter validation shared by all endpoints; called on the HTTP handler thread
      *  (before queueing, and before any SSE headers) so invalid requests fail fast with a 400. */
     private static void validateGenerationParams(Map<String, Object> request, Options options) {
-        if (request.get("model") instanceof String name && !name.isBlank()) {
+        Options.require(request.get("model") instanceof String name && !name.isBlank(), "model is required");
+        if (request.get("model") instanceof String name) {
             String served = options.modelPath().getFileName().toString();
             Options.require(name.equalsIgnoreCase(served), "Unknown model: %s (this server serves %s)", name, served);
         }
+        if ((request.containsKey("grammar") || request.containsKey("response_format"))
+                && options.noGrammar()) {
+            Options.require(false, "Grammar constraints disabled (--no-grammar)");
+        }
         Options.require(intValue(request.get("n"), 1) == 1, "Only n=1 is supported");
         float temperature = floatValue(request.get("temperature"), options.temperature());
-        Options.require(Float.isFinite(temperature) && 0 <= temperature, "Invalid argument: temperature must be a finite non-negative number");
+        Options.require(Float.isFinite(temperature) && 0 <= temperature && temperature <= 2, "Invalid argument: temperature must be within [0, 2]");
         float topp = floatValue(request.get("top_p"), options.topp());
         Options.require(Float.isFinite(topp) && 0 <= topp && topp <= 1, "Invalid argument: top_p must be within [0, 1]");
         Options.require(0 <= intValue(request.getOrDefault("max_tokens", request.get("max_completion_tokens")), options.maxTokens()), "Invalid argument: max_tokens must be non-negative");
         Options.require(-1 <= intValue(request.get("reasoning_max_tokens"), -1), "Invalid argument: reasoning_max_tokens must be -1 (uncapped) or non-negative");
         longValue(request.get("seed"), 0); // type check only
+        Options.require(!request.containsKey("logprobs") && !request.containsKey("top_logprobs"),
+                "logprobs is not supported");
+        Options.require(!request.containsKey("logit_bias"), "logit_bias is not supported");
+        Options.require(!request.containsKey("frequency_penalty") && !request.containsKey("presence_penalty"),
+                "frequency_penalty and presence_penalty are not supported");
     }
 
     /** Request fields to {@link Engine.Params}/{@link Engine.Listener}, then one engine pass
@@ -993,6 +1105,10 @@ final class Server {
         float topp = floatValue(request.get("top_p"), options.topp());
         long seed = longValue(request.get("seed"), options.seed());
         int maxTokens = intValue(request.getOrDefault("max_tokens", request.get("max_completion_tokens")), options.maxTokens());
+        // server-side completion-token ceiling: an unbounded (or oversized) request can never run
+        // the worker past llama.serverMaxTokens; hitting it reports finish_reason "length"
+        if (RuntimeFlags.SERVER_MAX_TOKENS > 0)
+            maxTokens = maxTokens < 0 ? RuntimeFlags.SERVER_MAX_TOKENS : Math.min(maxTokens, RuntimeFlags.SERVER_MAX_TOKENS);
         // defense in depth: server requests were already checked by validateGenerationParams on
         // the handler thread; these guards keep the method safe for any future non-HTTP caller
         Options.require(intValue(request.get("n"), 1) == 1, "Only n=1 is supported");
@@ -1008,6 +1124,8 @@ final class Server {
                     maxTokens >= 0 ? Math.max(1, maxTokens / 2) : -1);
             sampler = Engine.withThinkBudget(sampler, model.tokenizer(), reasoningBudget);
         }
+        Grammar.Cursor grammarCursor = buildGrammarCursor(model.tokenizer(), request);
+        if (grammarCursor != null) sampler = Sampler.withGrammar(sampler, grammarCursor);
         int consumedPromptTokens = Engine.consumedPromptTokens(model.tokenizer(), promptTokens); // client-facing usage counts
         int[] cachedOut = {Math.min(ingestion.startPosition(), consumedPromptTokens)};
         IntConsumer onToken = usageCounts == null ? null : token -> {
@@ -1015,7 +1133,7 @@ final class Server {
             if (!stops.tokenStops().contains(token)) usageCounts.completionTokens++;
         };
         if (usageCounts != null) usageCounts.promptTokens = consumedPromptTokens;
-        Engine.Params params = new Engine.Params(sampler, maxTokens, stops, inlineReasoning(request));
+        Engine.Params params = new Engine.Params(sampler, maxTokens, RuntimeFlags.SERVER_REQUEST_TIMEOUT_NANOS, stops, inlineReasoning(request));
         Engine.Listener listener = new Engine.Listener(onToken, onText, onReasoning);
         GenerationResult result = runServerGeneration(model, ingestion, params, listener, cachedOut, false);
         // /metrics counters: single-writer (generation worker), volatile for handler reads
@@ -1079,40 +1197,22 @@ final class Server {
         return tools instanceof List<?> list && !list.isEmpty();
     }
 
-    /** The merged system turn for a tools request: the user's system prompt (when present)
-     *  followed by the tool list, in ONE turn like the trained chat template. The list uses
-     *  the model's native protocol — a JSON array between <|tool_list_start|> and
-     *  <|tool_list_end|>; plain encode() does not map special-token strings, so the markers
-     *  are inserted as token ids directly. Falls back to a plain-text instruction when the
-     *  vocabulary lacks them. */
+    /** Per the model's Jinja chat template: tools are rendered as a JSON array in the system
+     *  message — {@code List of tools: [{...}, {...}]} — without any special-token markers. */
     private static List<Integer> encodeToolsSystemMessage(LFMTokenizer tokenizer, LFMChatFormat chatFormat,
-                                                          Map<String, Object> request, String systemText) {
-        String lead = systemText == null || systemText.isBlank() ? "" : systemText + "\n";
-        Map<String, Integer> specialTokens = tokenizer.getSpecialTokens();
-        Integer listStart = specialTokens.get("<|tool_list_start|>");
-        Integer listEnd = specialTokens.get("<|tool_list_end|>");
-        if (listStart == null || listEnd == null) {
-            return chatFormat.encodeMessage(new LFMChatFormat.Message(LFMChatFormat.Role.SYSTEM, lead + toolsPrompt(request)));
+                                                           Map<String, Object> request, String systemText) {
+        String lead = (systemText == null || systemText.isBlank()) ? "" : systemText + "\n\n";
+        StringBuilder sb = new StringBuilder();
+        sb.append(lead).append("List of tools: [");
+        List<Object> tools = asArray(request.get("tools"), "tools");
+        for (int i = 0; i < tools.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(modelFacingJson(tools.get(i)));
         }
-        List<Object> functions = new ArrayList<>();
-        for (Object tool : asArray(request.get("tools"), "tools")) {
-            Map<String, Object> toolObject = asObject(tool, "tool");
-            functions.add(toolObject.getOrDefault("function", toolObject));
-        }
-        List<Integer> tokens = chatFormat.encodeHeader(new LFMChatFormat.Message(LFMChatFormat.Role.SYSTEM, ""));
-        tokens.addAll(tokenizer.encode(lead + "List of tools: "));
-        tokens.add(listStart);
-        tokens.addAll(tokenizer.encode(modelFacingJson(functions)));
-        tokens.add(listEnd);
+        sb.append("]");
         String hints = toolChoiceHints(request);
-        if (!hints.isEmpty()) {
-            tokens.addAll(tokenizer.encode("\n" + hints));
-        }
-        if (chatFormat.endOfTurn >= 0) {
-            tokens.add(chatFormat.endOfTurn);
-        }
-        tokens.addAll(tokenizer.encode("\n"));
-        return tokens;
+        if (!hints.isEmpty()) sb.append("\n").append(hints);
+        return chatFormat.encodeMessage(new LFMChatFormat.Message(LFMChatFormat.Role.SYSTEM, sb.toString()));
     }
 
     /**
@@ -1206,25 +1306,6 @@ final class Server {
         return "";
     }
 
-    private static String toolsPrompt(Map<String, Object> request) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("You may call tools to help answer the user.\n");
-        sb.append("When calling tools, respond only with valid JSON and no extra text.\n");
-        sb.append("Use this exact shape: {\"tool_calls\":[{\"name\":\"tool_name\",\"arguments\":{...}}]}\n");
-        sb.append("If no tool is needed, answer normally.\n");
-        String hints = toolChoiceHints(request);
-        if (!hints.isEmpty()) {
-            sb.append(hints).append('\n');
-        }
-        sb.append("Available tools:\n");
-        for (Object tool : asArray(request.get("tools"), "tools")) {
-            Map<String, Object> toolObject = asObject(tool, "tool");
-            Object function = toolObject.get("function");
-            sb.append(modelFacingJson(function == null ? toolObject : function)).append('\n');
-        }
-        return sb.toString();
-    }
-
     private static String chatMessageContent(Map<String, Object> message) {
         String role = stringValue(message.get("role"), "user");
         if ("tool".equals(role)) {
@@ -1245,10 +1326,27 @@ final class Server {
         return content;
     }
 
-    private static GenerationResult withParsedToolCalls(GenerationResult result, Map<String, Object> request) {
-        String text = forcedToolCallPrefix(request) + result.text();
+    private static GenerationResult withParsedToolCalls(Llama model, GenerationResult result, Map<String, Object> request) {
+        // Parse from the FULL generated text (think span included). result.text() is the
+        // think-STRIPPED content, so a call the model emits before it closes </think> (or in an
+        // unterminated think span) would be deleted before we ever see it. Decoding the raw
+        // response tokens renders special tokens (<|tool_call_start|>, <think>) as literal text.
+        String text = forcedToolCallPrefix(request);
+        String decoded = model.tokenizer().decode(result.tokens());
+        text += !decoded.strip().isEmpty() ? decoded
+                : (result.reasoning() != null ? result.reasoning() + "\n" : "") + result.text();
+        boolean debug = System.getProperty("llama.debugToolCalls") != null;
         List<Map<String, Object>> toolCalls = parseToolCalls(text, toolNames(request));
-        if (toolCalls.isEmpty()) return result;
+        if (toolCalls.isEmpty()) {
+            // A reply that smells like an attempted call (markers or a "name" key) but parsed to
+            // nothing is the diagnostic we care about; surface it even without the debug flag.
+            String t = text.strip();
+            if (t.contains(TC_START) || t.contains("\"name\"")) {
+                System.err.println("[tool-parse] tools offered but parsed 0 calls from reply: " + t.replace("\n", "\\n"));
+            }
+            return result;
+        }
+        if (debug) System.err.println("[tool-parse] found " + toolCalls.size() + " call(s) in: " + text.strip().replace("\n", "\\n"));
         int marker = text.indexOf(TC_START);
         return result.asToolCalls(toolCalls, marker > 0 ? text.substring(0, marker).strip() : "");
     }
@@ -1333,13 +1431,17 @@ final class Server {
             this.s = s;
         }
 
-        List<Map<String, Object>> parse() {
+        /** Parse a call sequence — either a bracketed list {@code [f(..), g(..)]} or a single
+         *  bare call {@code f(..)} — starting at the current offset, leaving {@code i} just past
+         *  the closing bracket (or the call). String contents are honored, so brackets, parens,
+         *  or commas inside quoted argument values never terminate the scan early. */
+        List<Map<String, Object>> parseCallSequence() {
             List<Map<String, Object>> calls = new ArrayList<>();
             skipWs();
             if (peek() == '[') {
                 i++;
                 skipWs();
-                if (peek() == ']') return calls;
+                if (peek() == ']') { i++; return calls; }
                 while (true) {
                     calls.add(call());
                     skipWs();
@@ -1350,6 +1452,12 @@ final class Server {
             } else {
                 calls.add(call());
             }
+            return calls;
+        }
+
+        /** Parse the entire input as exactly one call sequence; trailing junk is an error. */
+        List<Map<String, Object>> parse() {
+            List<Map<String, Object>> calls = parseCallSequence();
             skipWs();
             if (i < s.length()) throw err("end of input");
             return calls;
@@ -1399,9 +1507,9 @@ final class Server {
             if (c == '-' || c == '+' || Character.isDigit(c) || c == '.') return number();
             String word = identifier();
             return switch (word) {
-                case "True" -> Boolean.TRUE;
-                case "False" -> Boolean.FALSE;
-                case "None" -> null;
+                case "True", "true" -> Boolean.TRUE;
+                case "False", "false" -> Boolean.FALSE;
+                case "None", "null" -> null;
                 default -> throw err("literal");
             };
         }
@@ -1488,7 +1596,7 @@ final class Server {
         private String identifier() {
             skipWs();
             int from = i;
-            while (i < s.length() && (Character.isLetterOrDigit(s.charAt(i)) || s.charAt(i) == '_' || s.charAt(i) == '.')) i++;
+            while (i < s.length() && isIdentifierPart(s.charAt(i))) i++;
             if (i == from) throw err("identifier");
             return s.substring(from, i);
         }
@@ -1511,38 +1619,103 @@ final class Server {
         }
     }
 
+    /** Parse tool calls from a model reply, trying the three shapes LFM2.5 is known to emit, in
+     *  descending order of confidence: native {@code <|tool_call_start|>...<|tool_call_end|>}
+     *  blocks, a JSON tool-call envelope, then bare Pythonic {@code [name(args)]} text. */
     static List<Map<String, Object>> parseToolCalls(String text, Set<String> knownTools) {
         List<Map<String, Object>> nativeCalls = parseNativeToolCalls(text, knownTools);
         if (!nativeCalls.isEmpty()) return nativeCalls;
-        String json = extractJson(text.strip());
+        String stripped = text.strip(); // both fallbacks work on the trimmed reply; strip once
+        List<Map<String, Object>> jsonCalls = parseJsonToolCalls(stripped);
+        if (!jsonCalls.isEmpty()) return jsonCalls;
+        return parseBarePythonic(stripped, knownTools);
+    }
+
+    /** Lenient JSON fallback: an OpenAI-style {@code {"tool_calls":[...]}} envelope, a single
+     *  {@code {"function_call":{...}}} or {@code {"name":.., "arguments":..}} object, or a bare
+     *  JSON array of call objects — extracted from anywhere in the (already-stripped) text,
+     *  fenced code included. Yields no calls when the text holds no parseable JSON of a
+     *  recognized shape. */
+    private static List<Map<String, Object>> parseJsonToolCalls(String stripped) {
+        String json = extractJson(stripped);
         if (json.isEmpty()) return List.of();
         try {
-            Object parsed = Json.parse(json);
-            List<Object> calls;
-            if (parsed instanceof Map<?, ?> map && map.get("tool_calls") instanceof List<?> list) {
-                calls = new ArrayList<>(list);
-            } else if (parsed instanceof Map<?, ?> map && map.get("function_call") instanceof Map<?, ?> call) {
-                calls = List.of(call);
-            } else if (parsed instanceof Map<?, ?> map && map.get("name") instanceof String
-                    && (map.containsKey("arguments") || map.containsKey("parameters"))) {
-                // bare {"name": ...} alone is too loose: ordinary JSON answers with a "name"
-                // field would be misread as tool calls and their text discarded
-                calls = List.of(map);
-            } else if (parsed instanceof List<?> list) {
-                calls = new ArrayList<>(list);
-            } else {
-                return List.of();
-            }
+            List<?> calls = jsonCallList(Json.parse(json));
+            if (calls == null) return List.of();
             List<Map<String, Object>> out = new ArrayList<>();
             for (Object value : calls) {
-                Map<String, Object> call = asObject(value, "tool call");
-                Map<String, Object> normalized = normalizeToolCall(call, out.size());
+                Map<String, Object> normalized = normalizeToolCall(asObject(value, "tool call"), out.size());
                 if (normalized != null) out.add(normalized);
             }
             return out;
         } catch (RuntimeException e) {
-            return List.of();
+            return List.of(); // malformed JSON or an unexpected element shape
         }
+    }
+
+    /** The raw call objects carried by a recognized JSON tool-call shape, or null if none. */
+    private static List<?> jsonCallList(Object parsed) {
+        if (parsed instanceof List<?> list) return list;
+        if (parsed instanceof Map<?, ?> map) {
+            if (map.get("tool_calls") instanceof List<?> list) return list;
+            if (map.get("function_call") instanceof Map<?, ?> call) return List.of(call);
+            if (map.get("name") instanceof String && (map.containsKey("arguments") || map.containsKey("parameters"))) {
+                return List.of(map);
+            }
+        }
+        return null;
+    }
+
+    /** Fallback: scan the whole text for a bare pythonic tool call — a bracketed list
+     *  {@code [name(args), ...]} or a single {@code name(args)} — emitted without the
+     *  {@code <|tool_call_start|>} markers (a documented LFM2.5 behavior, see llama.cpp #24178).
+     *  The scan tries to parse a call sequence at every plausible start offset; matching is
+     *  fully string-aware (it uses {@link PythonicCalls}, not bracket counting), so quoted
+     *  argument values may contain brackets, parens, or commas without breaking detection.
+     *  Requires a non-empty {@code knownTools}, and accepts a run only when every call names a
+     *  known tool — this keeps ordinary prose ({@code [text](url)}, {@code print()}) from being
+     *  mistaken for a tool call. */
+    private static List<Map<String, Object>> parseBarePythonic(String text, Set<String> knownTools) {
+        if (text.isEmpty() || knownTools.isEmpty()) return List.of();
+        for (int p = 0; p < text.length(); p++) {
+            char c = text.charAt(p);
+            // A call sequence starts either with '[' (list form) or with the first character of
+            // an identifier at a word boundary (bare-call form, e.g. `get_weather(...)`).
+            boolean listStart = c == '[';
+            boolean callStart = (Character.isLetter(c) || c == '_')
+                    && (p == 0 || !isIdentifierPart(text.charAt(p - 1)));
+            if (!listStart && !callStart) continue;
+            List<Map<String, Object>> calls = tryParseCallsAt(text, p, knownTools);
+            if (calls != null) return calls;
+        }
+        return List.of();
+    }
+
+    /** Attempt to parse a call sequence starting exactly at {@code from}. Returns the normalized
+     *  calls when parsing succeeds, the run is non-empty, and every name is a known tool;
+     *  otherwise {@code null} (so the caller keeps scanning). */
+    private static List<Map<String, Object>> tryParseCallsAt(String text, int from, Set<String> knownTools) {
+        PythonicCalls parser = new PythonicCalls(text);
+        parser.i = from;
+        List<Map<String, Object>> calls;
+        try {
+            calls = parser.parseCallSequence();
+        } catch (RuntimeException e) {
+            return null; // not a well-formed call sequence at this offset
+        }
+        if (calls.isEmpty()) return null;
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> call : calls) {
+            if (!knownTools.contains(stringValue(call.get("name"), ""))) return null;
+            Map<String, Object> normalized = normalizeToolCall(call, out.size());
+            if (normalized != null) out.add(normalized);
+        }
+        return out.isEmpty() ? null : out;
+    }
+
+    /** Whether {@code c} can appear inside a (dotted) function identifier. */
+    private static boolean isIdentifierPart(char c) {
+        return Character.isLetterOrDigit(c) || c == '_' || c == '.';
     }
 
     private static String extractJson(String text) {
@@ -1871,6 +2044,12 @@ final class Server {
 
     private static String stringValue(Object value, String defaultValue) {
         return value == null ? defaultValue : String.valueOf(value);
+    }
+
+    /** The text representation of a special token, or null if absent. */
+    private static String specialTokenString(LFMTokenizer t, String name) {
+        Integer id = t.getSpecialTokens().get(name);
+        return id != null ? t.decode(id) : null;
     }
 
     private static boolean booleanValue(Object value, boolean defaultValue) {

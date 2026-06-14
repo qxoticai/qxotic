@@ -378,7 +378,7 @@ public class LFM25 {
         };
         int budget = options.maxTokens() < 0 ? -1
                 : options.maxTokens() - Llama.prefillPositions(state, startPosition, promptTokens);
-        Engine.Params params = new Engine.Params(sampler, budget,
+        Engine.Params params = new Engine.Params(sampler, budget, 0, // CLI: no generation deadline
                 new Engine.StopSpec(stopTokens, List.of()), options.think());
         Engine.GenerationResult result = Engine.generate(model, state, startPosition, promptTokens, params,
                 new Engine.Listener(onToken, null, null), Llama.GenerationHooks.NONE);
@@ -412,7 +412,8 @@ public class LFM25 {
     record Options(Path modelPath, String prompt, String suffix, String systemPrompt, boolean interactive, boolean server, String host, int port,
                     float temperature, float topp, long seed, int maxTokens, boolean stream, boolean echo,
                     boolean think, boolean thinkInline, boolean colors,
-                    boolean keepPastThinking, boolean rawPrompt, List<String> warmPrompts) {
+                    boolean keepPastThinking, boolean rawPrompt, List<String> warmPrompts,
+                    boolean noGrammar) {
 
         Options {
             require(modelPath != null, "Missing argument: --model <path> is required");
@@ -497,6 +498,7 @@ public class LFM25 {
             String colorMode = "auto";
             boolean keepPastThinking = false;
             boolean rawPrompt = false;
+            boolean noGrammar = false;
             List<String> warmPrompts = new ArrayList<>();
 
             for (int i = 0; i < args.length; i++) {
@@ -507,6 +509,7 @@ public class LFM25 {
                     case "--instruct" -> interactive = false;
                     case "--server" -> server = true;
                     case "--raw-prompt" -> rawPrompt = true;
+                    case "--no-grammar" -> noGrammar = true;
                     case "--help", "-h" -> {
                         printUsage(System.out);
                         System.exit(0);
@@ -556,7 +559,7 @@ public class LFM25 {
             boolean color = LFM25.supportsAnsiColors(colorMode);
             // server mode: thinking stays on by default (reasoning_content needs it); requests
             // can opt out per-call via chat_template_kwargs.enable_thinking=false
-            return new Options(modelPath, prompt, suffix, systemPrompt, interactive, server, host, port, temperature, topp, seed, maxTokens, stream, echo, think, thinkInline, color, keepPastThinking, rawPrompt, List.copyOf(warmPrompts));
+            return new Options(modelPath, prompt, suffix, systemPrompt, interactive, server, host, port, temperature, topp, seed, maxTokens, stream, echo, think, thinkInline, color, keepPastThinking, rawPrompt, List.copyOf(warmPrompts), noGrammar);
         }
     }
 

@@ -311,6 +311,7 @@ class LFMTokenizer {
     private final Tokenizer tokenizer;
     private final Map<String, Integer> specialTokens;
     private Specials specialsEncoder; // lazy: only the --raw-prompt path needs it
+    private final String chatTemplate; // Jinja template from tokenizer.chat_template
 
     LFMTokenizer(GGUF gguf) {
         this.tokenizer = GGUFTokenizerLoader.createBuilderWithBuiltins()
@@ -318,6 +319,14 @@ class LFMTokenizer {
                 .registerNormalizer("lfm2", g -> Normalizer.identity())
                 .build()
                 .fromGGUF(gguf);
+        this.chatTemplate = gguf.getStringOrDefault("tokenizer.chat_template", "");
+        if (!this.chatTemplate.isEmpty()) {
+            // Verify the template compiles
+            try { JinjaRenderer.compile(this.chatTemplate); }
+            catch (RuntimeException e) {
+                System.err.println("[warn] chat template compilation failed: " + e.getMessage());
+            }
+        }
         this.specialTokens = new HashMap<>();
         for (int id = 0; id < vocabularySize(); id++) {
             if (isSpecialToken(id)) {
@@ -333,6 +342,8 @@ class LFMTokenizer {
     public Map<String, Integer> getSpecialTokens() {
         return specialTokens;
     }
+
+    public String chatTemplate() { return chatTemplate; }
 
     public boolean isSpecialToken(int token) {
         return token >= 0 && token < vocabularySize()
@@ -362,11 +373,11 @@ class LFMTokenizer {
     }
 
     public String decode(List<Integer> tokens) {
-        int[] ids = new int[tokens.size()];
-        for (int i = 0; i < ids.length; i++) {
-            ids[i] = tokens.get(i);
+        var buf = new java.io.ByteArrayOutputStream();
+        for (int token : tokens) {
+            buf.writeBytes(tokenizer.decodeBytes(new int[]{token}));
         }
-        return new String(tokenizer.decodeBytes(ids), StandardCharsets.UTF_8);
+        return buf.toString(StandardCharsets.UTF_8);
     }
 }
 record Pair<First, Second>(First first, Second second) {
