@@ -1427,17 +1427,15 @@ public final class JinjaRenderer {
          *  they can take arguments, e.g. {@code s.startswith(x)}, {@code s.split(',')}). */
         Val dispatchStrMethod(Val.Str s, String m) {
             return switch (m) {
-                case "strip"      -> new Val.Func("strip", a -> new Val.Str(a.isEmpty() ? s.v.strip() : strip(s.v, expectStr(a.get(0)))));
-                case "lstrip"     -> new Val.Func("lstrip", a -> new Val.Str(s.v.stripLeading()));
-                case "rstrip"     -> new Val.Func("rstrip", a -> new Val.Str(s.v.stripTrailing()));
-                case "split"      -> new Val.Func("split", a -> a.isEmpty() ? new Val.Arr(splitToValList(s.v)) : split(s, expectStr(a.get(0))));
-                case "lower"      -> new Val.Func("lower", a -> new Val.Str(s.v.toLowerCase()));
-                case "upper"      -> new Val.Func("upper", a -> new Val.Str(s.v.toUpperCase()));
-                case "capitalize" -> new Val.Func("capitalize", a -> new Val.Str(capitalize(s.v)));
-                case "title"      -> new Val.Func("title", a -> new Val.Str(capitalize(s.v)));
-                case "startswith" -> new Val.Func("startswith", a -> new Val.Bool(s.v.startsWith(expectStr(requireArg(a, 0)))));
-                case "endswith"   -> new Val.Func("endswith", a -> new Val.Bool(s.v.endsWith(expectStr(requireArg(a, 0)))));
-                case "replace"    -> new Val.Func("replace", a -> new Val.Str(s.v.replace(expectStr(requireArg(a, 0)), expectStr(requireArg(a, 1)))));
+                // strip/split have method-specific no-arg behavior, so they stay bespoke ...
+                case "strip"  -> new Val.Func("strip", a -> new Val.Str(a.isEmpty() ? s.v.strip() : strip(s.v, expectStr(a.get(0)))));
+                case "lstrip" -> new Val.Func("lstrip", a -> new Val.Str(s.v.stripLeading()));
+                case "rstrip" -> new Val.Func("rstrip", a -> new Val.Str(s.v.stripTrailing()));
+                case "split"  -> new Val.Func("split", a -> a.isEmpty() ? new Val.Arr(splitToValList(s.v)) : split(s, expectStr(a.get(0))));
+                // ... the rest share their implementation with the identically-named filter
+                case "lower", "upper", "capitalize", "startswith", "endswith", "replace" ->
+                        new Val.Func(m, a -> applyFilter(m, s, a));
+                case "title" -> new Val.Func("title", a -> applyFilter("capitalize", s, a));
                 // unknown member: undefined (lenient, like Jinja) so `x.attr is defined` guards work
                 default -> new Val.Undef(m);
             };
@@ -1470,26 +1468,23 @@ public final class JinjaRenderer {
          *  omitted (None) and step may be negative (e.g. {@code [::-1]} reverses). */
         Val slice(Val v, Val s, Val sp, Val st) {
             boolean isArr = v instanceof Val.Arr;
-            int len = isArr ? ((Val.Arr) v).v.size() : v.asStr().length();
+            List<Val> src = isArr ? ((Val.Arr) v).v : null;
+            String str = isArr ? null : v.asStr();
+            int len = isArr ? src.size() : str.length();
             int step = !st.isDefined() || st.isNone() ? 1 : (int) toNum(st);
             if (step == 0) throw unsupported("slice with step 0");
             boolean noStart = !s.isDefined() || s.isNone();
             boolean noStop  = !sp.isDefined() || sp.isNone();
             int start = noStart ? (step > 0 ? 0 : len - 1) : sliceBound((int) toNum(s), len, step);
             int stop  = noStop  ? (step > 0 ? len : -1)     : sliceBound((int) toNum(sp), len, step);
-            var idx = new ArrayList<Integer>();
-            if (step > 0) for (int i = start; i < stop; i += step) idx.add(i);
-            else          for (int i = start; i > stop; i += step) idx.add(i);
-            if (isArr) {
-                var out = new ArrayList<Val>(idx.size());
-                List<Val> src = ((Val.Arr) v).v;
-                for (int i : idx) if (i >= 0 && i < len) out.add(src.get(i));
-                return new Val.Arr(out);
+            // single pass straight into the result (no intermediate list of boxed indices)
+            var out = isArr ? new ArrayList<Val>() : null;
+            var sb = isArr ? null : new StringBuilder();
+            for (int i = start; step > 0 ? i < stop : i > stop; i += step) {
+                if (i < 0 || i >= len) continue;
+                if (isArr) out.add(src.get(i)); else sb.append(str.charAt(i));
             }
-            String str = v.asStr();
-            var sb = new StringBuilder(idx.size());
-            for (int i : idx) if (i >= 0 && i < len) sb.append(str.charAt(i));
-            return new Val.Str(sb.toString());
+            return isArr ? new Val.Arr(out) : new Val.Str(sb.toString());
         }
 
         /** Normalize a slice bound (add len if negative, then clamp per Python: [0,len] for a
