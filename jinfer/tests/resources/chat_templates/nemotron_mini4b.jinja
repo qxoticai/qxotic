@@ -1,0 +1,19 @@
+{#
+  Model:  Nemotron-Mini-4B-Instruct
+  Source: https://huggingface.co/nvidia/Nemotron-Mini-4B-Instruct/blob/main/tokenizer_config.json
+  Verbatim tokenizer.chat_template, bundled for JinjaRenderer compatibility tests.
+#}{{'<extra_id_0>System'}}{% for message in messages %}{% if message['role'] == 'system' %}{{'
+' + message['content'].strip()}}{% if tools or contexts %}{{'
+'}}{% endif %}{% endif %}{% endfor %}{% if tools %}{% for tool in tools %}{{ '
+<tool> ' + tool|tojson + ' </tool>' }}{% endfor %}{% endif %}{% if contexts %}{% if tools %}{{'
+'}}{% endif %}{% for context in contexts %}{{ '
+<context> ' + context.strip() + ' </context>' }}{% endfor %}{% endif %}{{'
+
+'}}{% for message in messages %}{% if message['role'] == 'user' %}{{ '<extra_id_1>User
+' + message['content'].strip() + '
+' }}{% elif message['role'] == 'assistant' %}{{ '<extra_id_1>Assistant
+' + message['content'].strip() + '
+' }}{% elif message['role'] == 'tool' %}{{ '<extra_id_1>Tool
+' + message['content'].strip() + '
+' }}{% endif %}{% endfor %}{%- if add_generation_prompt %}{{'<extra_id_1>Assistant
+'}}{%- endif %}

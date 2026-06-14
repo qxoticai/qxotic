@@ -43,11 +43,12 @@ public final class JinjaRenderer {
         }
         record Arr(List<Val> v) implements Val {
             @Override public boolean truthy() { return !v.isEmpty(); }
+            // Python/Jinja str(list): elements use repr (strings quoted)
             @Override public String asStr() {
                 var sb = new StringBuilder("[");
                 for (int i = 0; i < v.size(); i++) {
                     if (i > 0) sb.append(", ");
-                    sb.append(v.get(i).asStr());
+                    sb.append(pyRepr(v.get(i)));
                 }
                 return sb.append("]").toString();
             }
@@ -55,7 +56,17 @@ public final class JinjaRenderer {
         record Obj(LinkedHashMap<String,Val> v, boolean hasBuiltins) implements Val {
             Obj(LinkedHashMap<String,Val> v) { this(v, true); }
             @Override public boolean truthy() { return !v.isEmpty(); }
-            @Override public String asStr() { return "[object]"; }
+            // Python/Jinja str(dict): {'key': <repr>, ...} — what models trained on `tools | string`
+            @Override public String asStr() {
+                var sb = new StringBuilder("{");
+                boolean first = true;
+                for (var e : v.entrySet()) {
+                    if (!first) sb.append(", ");
+                    first = false;
+                    sb.append('\'').append(e.getKey()).append("': ").append(pyRepr(e.getValue()));
+                }
+                return sb.append("}").toString();
+            }
             Val get(String key) {
                 Val found = v.get(key);
                 if (found != null) return found;
@@ -140,6 +151,18 @@ public final class JinjaRenderer {
         String s = Double.toString(v);
         if (s.endsWith(".0")) s = s.substring(0, s.length() - 2);
         return s;
+    }
+
+    /** Python {@code repr()} of a value as used inside a list/dict's {@code str()} — strings are
+     *  single-quoted, True/False/None capitalized, containers recurse. (Plain top-level
+     *  {@code str()} does NOT quote strings; that's {@link Val#asStr()}.) */
+    static String pyRepr(Val v) {
+        return switch (v) {
+            case Val.Str s -> "'" + s.v.replace("\\", "\\\\").replace("'", "\\'") + "'";
+            case Val.Bool b -> b.v ? "True" : "False";
+            case Val.None n -> "None";
+            default -> v.asStr(); // numbers, and Arr/Obj which already render as reprs
+        };
     }
 
     /** Thrown when a template uses a construct this minimal engine does not implement. Failing
@@ -631,9 +654,10 @@ public final class JinjaRenderer {
     record TextNode(String s) implements Node {}
     record OutputNode(Node expr) implements Node {}
     record IfNode(Node test, List<Node> body, List<Node> alt) implements Node {}
+    record CondNode(Node test, Node then, Node orElse) implements Node {} // a if test else b (value-valued)
     record ForNode(String var, String var2, Node iterable, List<Node> body) implements Node {}
     record SetNode(Node target, Node value) implements Node {}
-    record MacroNode(String name, List<String> params, List<Node> body) implements Node {}
+    record MacroNode(String name, List<String> params, List<Node> defaults, List<Node> body) implements Node {}
     record FilterNode(Node operand, String name, List<Node> args) implements Node {}
     record BinNode(String op, Node left, Node right) implements Node {}
     record UnaNode(String op, Node arg) implements Node {}
@@ -807,15 +831,22 @@ public final class JinjaRenderer {
             String name = expect(T.IDENT).val;
             expect(T.LP);
             var params = new ArrayList<String>();
+            var defaults = new ArrayList<Node>(); // parallel to params; null = no default
             while (!is(T.RP)) {
                 params.add(expect(T.IDENT).val);
+                defaults.add(is(T.EQ) ? consumeDefault() : null);
                 if (is(T.COMMA)) next();
             }
             expect(T.RP);
             expect(T.CLOSE_STMT);
             var body = parseBody("endmacro");
             expect(T.OPEN_STMT); expectId("endmacro"); expect(T.CLOSE_STMT);
-            return new MacroNode(name, params, body);
+            return new MacroNode(name, params, defaults, body);
+        }
+
+        private Node consumeDefault() {
+            next(); // '='
+            return parseExpr();
         }
 
         // ── body parsing ──
@@ -838,18 +869,15 @@ public final class JinjaRenderer {
         void skipText() { while (!eof() && is(T.TEXT)) idx++; }
 
         Node parseTernary() {
-            Node cond = parseOr();
+            Node thenVal = parseOr();
             if (isId("if")) {
                 next(); // if
                 Node test = parseOr();
-                if (isId("else")) {
-                    next(); // else
-                    return new IfNode(test, List.of(new OutputNode(cond)),
-                            List.of(new OutputNode(parseTernary())));
-                }
-                return new IfNode(test, List.of(new OutputNode(cond)), List.of());
+                Node orElse = null; // omitted else -> undefined when the test is false
+                if (isId("else")) { next(); orElse = parseTernary(); }
+                return new CondNode(test, thenVal, orElse);
             }
-            return cond;
+            return thenVal;
         }
 
         Node parseOr() {
@@ -870,7 +898,7 @@ public final class JinjaRenderer {
         }
 
         Node parseComp() {
-            Node left = parseAdd();
+            Node left = parseConcat();
             // is / is not
             if (isId("is")) {
                 next(); boolean neg = false;
@@ -879,14 +907,20 @@ public final class JinjaRenderer {
                 return new TestNode(test, left, neg);
             }
             // in / not in
-            if (isId("in")) { next(); return new BinNode("in", left, parseAdd()); }
+            if (isId("in")) { next(); return new BinNode("in", left, parseConcat()); }
             if (isId("not") && peek(1).type == T.IDENT && peek(1).val.equals("in")) {
-                next(); next(); return new BinNode("notin", left, parseAdd());
+                next(); next(); return new BinNode("notin", left, parseConcat());
             }
             // comparison operators
-            if (is(T.CMP)) { String op = next().val; return new BinNode(op, left, parseAdd()); }
-            // concat
-            if (is(T.TILDE)) { next(); return new BinNode("~", left, parseAdd()); }
+            if (is(T.CMP)) { String op = next().val; return new BinNode(op, left, parseConcat()); }
+            return left;
+        }
+
+        /** String concatenation with {@code ~}, left-associative and chainable (a ~ b ~ c),
+         *  binding tighter than comparisons but looser than +/-. */
+        Node parseConcat() {
+            Node left = parseAdd();
+            while (is(T.TILDE)) { next(); left = new BinNode("~", left, parseAdd()); }
             return left;
         }
 
@@ -1001,7 +1035,12 @@ public final class JinjaRenderer {
                     }
                     yield id;
                 }
-                case T.STRING -> new LitNode(t.val);
+                case T.STRING -> {
+                    // adjacent string literals concatenate, like Python/Jinja2 ('a' 'b' -> 'ab')
+                    StringBuilder sb = new StringBuilder(t.val);
+                    while (is(T.STRING)) sb.append(next().val);
+                    yield new LitNode(sb.toString());
+                }
                 case T.INT -> {
                     try { yield new LitNode(Long.parseLong(t.val)); }
                     catch (NumberFormatException e) { yield new LitNode(0L); }
@@ -1012,14 +1051,21 @@ public final class JinjaRenderer {
                 }
                 case T.LP -> {
                     Node e = parseExpr();
+                    if (is(T.COMMA)) { // tuple literal -> treated as a list
+                        var items = new ArrayList<Node>();
+                        items.add(e);
+                        while (is(T.COMMA)) { next(); if (is(T.RP)) break; items.add(parseExpr()); }
+                        expect(T.RP);
+                        yield new LitNode(items);
+                    }
                     expect(T.RP);
                     yield e;
                 }
                 case T.LB -> {
-                    if (is(T.RB)) { next(); yield new LitNode(List.of()); }
+                    if (is(T.RB)) { next(); yield new LitNode(new ArrayList<Node>()); }
                     var items = new ArrayList<Node>();
                     items.add(parseExpr());
-                    while (is(T.COMMA)) { next(); items.add(parseExpr()); }
+                    while (is(T.COMMA)) { next(); if (is(T.RB)) break; items.add(parseExpr()); }
                     expect(T.RB);
                     yield new LitNode(items);
                 }
@@ -1028,22 +1074,20 @@ public final class JinjaRenderer {
             };
         }
 
-        Node parseListExpr() {
-            // Called after [ already consumed, or via parseAtom LB
-            // Actually LB case handled in parseAtom, but we handle list inside parseAtom
-            // This is a stub — list literals are handled by parseAtom's LB case
-            return new LitNode(List.of());
-        }
-
         Node parseDictExpr() {
             // { already consumed
-            if (is(T.RC)) { next(); return new LitNode(new LinkedHashMap<>()); }
+            if (is(T.RC)) { next(); return new LitNode(new LinkedHashMap<String,Node>()); }
             var map = new LinkedHashMap<String,Node>();
             while (true) {
                 Node key = parseExpr();
                 expect(T.COLON);
                 Node val = parseExpr();
-                map.put(key instanceof IdentNode i ? i.name() : key.toString(), val);
+                // string-literal and identifier keys are the common forms; fall back to the
+                // literal's value for number keys
+                String k = key instanceof IdentNode i ? i.name()
+                         : key instanceof LitNode lit ? String.valueOf(lit.val())
+                         : key.toString();
+                map.put(k, val);
                 if (is(T.COMMA)) { next(); if (is(T.RC)) break; }
                 else break;
             }
@@ -1085,13 +1129,17 @@ public final class JinjaRenderer {
 
     static final class Frame {
         final LinkedHashMap<String,Val> vars = new LinkedHashMap<>();
+        // macro definitions live on the (shared) root frame so calls can bind params by name,
+        // honoring defaults and keyword arguments — see Executor.CallNode handling
+        final Map<String,MacroNode> macros = new java.util.HashMap<>();
         Val get(String name) {
             Val v = vars.get(name);
             if (v != null) return v;
             if (name.equals("loop")) return vars.get("__loop__");
-            if (name.equals("True")) return new Val.Bool(true);
-            if (name.equals("False")) return new Val.Bool(false);
-            if (name.equals("None")) return Val.NONE;
+            // Jinja2 accepts both capitalized and lowercase literals
+            if (name.equals("True") || name.equals("true")) return new Val.Bool(true);
+            if (name.equals("False") || name.equals("false")) return new Val.Bool(false);
+            if (name.equals("None") || name.equals("none") || name.equals("null")) return Val.NONE;
             return new Val.Undef(name);
         }
         void set(String name, Val val) { vars.put(name, val); }
@@ -1171,14 +1219,11 @@ public final class JinjaRenderer {
                     }
                 }
                 case MacroNode m -> {
-                    scope().set(m.name(), new Val.Func(m.name(), args -> {
-                        var mf = new Frame();
-                        for (int i = 0; i < m.params().size(); i++)
-                            mf.set(m.params().get(i), i < args.size() ? args.get(i) : Val.NONE);
-                        var ms = new ArrayList<Frame>();
-                        ms.add(mf);
-                        return new Executor(frame, ms).evalExprBlock(m.body());
-                    }));
+                    // register for name-based calls (with kwargs/defaults) ...
+                    frame.macros.put(m.name(), m);
+                    // ... and expose a positional Func value so `macro is defined` / passing it
+                    // around still works
+                    scope().set(m.name(), new Val.Func(m.name(), args -> invokeMacro(m, args, Map.of())));
                 }
                 default -> {}
             }
@@ -1186,6 +1231,24 @@ public final class JinjaRenderer {
 
         private static final class BreakSignal extends RuntimeException {}
         private static final class ContinueSignal extends RuntimeException {}
+
+        /** Invoke a macro, binding each parameter from (in priority order) a positional argument,
+         *  a keyword argument, its default expression, or undefined. */
+        Val invokeMacro(MacroNode m, List<Val> args, Map<String,Val> kwargs) {
+            var mf = new Frame();
+            for (int i = 0; i < m.params().size(); i++) {
+                String p = m.params().get(i);
+                Val v;
+                if (i < args.size()) v = args.get(i);
+                else if (kwargs.containsKey(p)) v = kwargs.get(p);
+                else if (m.defaults().get(i) != null) v = eval(m.defaults().get(i));
+                else v = Val.NONE;
+                mf.set(p, v);
+            }
+            var ms = new ArrayList<Frame>();
+            ms.add(mf);
+            return new Executor(frame, ms).evalExprBlock(m.body());
+        }
 
         void execAll(List<Node> nodes, StringBuilder out) {
             for (Node n : nodes) exec(n, out);
@@ -1202,10 +1265,18 @@ public final class JinjaRenderer {
         Val eval(Node expr) {
             return switch (expr) {
                 case LitNode l   -> {
-                    // Non-empty list/dict literals carry unevaluated element Nodes (the parser
-                    // never evaluates them) — reject rather than render `LitNode[...]` garbage.
-                    if (l.val() instanceof List<?> li && !li.isEmpty()) throw unsupported("list literals with elements, e.g. [1, 2, 3]");
-                    if (l.val() instanceof Map<?,?> mp && !mp.isEmpty()) throw unsupported("dict literals with entries, e.g. {'a': 1}");
+                    // list/dict/tuple literals carry element Nodes — evaluate them here
+                    if (l.val() instanceof List<?> li) {
+                        var out = new ArrayList<Val>(li.size());
+                        for (Object e : li) out.add(e instanceof Node n ? eval(n) : Val.of(e));
+                        yield new Val.Arr(out);
+                    }
+                    if (l.val() instanceof Map<?,?> mp) {
+                        var out = new LinkedHashMap<String,Val>();
+                        for (var e : mp.entrySet())
+                            out.put(String.valueOf(e.getKey()), e.getValue() instanceof Node n ? eval(n) : Val.of(e.getValue()));
+                        yield new Val.Obj(out, false);
+                    }
                     yield Val.of(l.val());
                 }
                 case IdentNode id -> lookup(id.name());
@@ -1231,6 +1302,9 @@ public final class JinjaRenderer {
                         }
                     }
                     String calleeName = c.callee() instanceof IdentNode id ? id.name() : null;
+                    // user macros bind by name so defaults and keyword arguments work
+                    if (calleeName != null && frame.macros.containsKey(calleeName))
+                        yield invokeMacro(frame.macros.get(calleeName), args, kwargs);
                     // namespace(...) keeps its kwargs as a typed object, so numeric/boolean fields
                     // survive (e.g. `{% set ns = namespace(count=0) %}` stays an int, letting
                     // `ns.count + 1` add rather than concatenate "0" + "1").
@@ -1255,6 +1329,10 @@ public final class JinjaRenderer {
                     yield new Val.Bool(t.negate() ? !r : r);
                 }
                 case OutputNode o -> eval(o.expr());
+                // ternary: yields the chosen branch's VALUE (not its rendered text); a missing
+                // else yields undefined, per Jinja
+                case CondNode c -> eval(c.test()).truthy() ? eval(c.then())
+                    : (c.orElse() == null ? new Val.Undef("") : eval(c.orElse()));
                 case IfNode i -> eval(i.test()).truthy()
                     ? evalBlockExpr(i.body()) : evalBlockExpr(i.alt());
                 default -> Val.NONE;
@@ -1291,8 +1369,10 @@ public final class JinjaRenderer {
                 case ">"  -> new Val.Bool(toNum(l) > toNum(r));
                 case "<=" -> new Val.Bool(toNum(l) <= toNum(r));
                 case ">=" -> new Val.Bool(toNum(l) >= toNum(r));
-                case "and" -> new Val.Bool(l.truthy() && r.truthy());
-                case "or"  -> new Val.Bool(l.truthy() || r.truthy());
+                // and/or return an OPERAND (Python/Jinja semantics), not a coerced bool — this is
+                // what makes the common `x or 'default'` / `a.get('k') or fallback` idiom work.
+                case "and" -> l.truthy() ? r : l;
+                case "or"  -> l.truthy() ? l : r;
                 case "in" -> new Val.Bool(contains(r, l));
                 case "notin" -> new Val.Bool(!contains(r, l));
                 default -> Val.NONE;

@@ -1,0 +1,10 @@
+{#
+  Model:  SmolLM2-1.7B-Instruct
+  Source: https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct/blob/main/tokenizer_config.json
+  Verbatim tokenizer.chat_template, bundled for JinjaRenderer compatibility tests.
+#}{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system
+You are a helpful AI assistant named SmolLM, trained by Hugging Face<|im_end|>
+' }}{% endif %}{{'<|im_start|>' + message['role'] + '
+' + message['content'] + '<|im_end|>' + '
+'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant
+' }}{% endif %}

@@ -1,6 +1,10 @@
 package com.llama4j;
 
+import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,14 +40,181 @@ public final class JinjaRendererTest {
         sequencesAndSlicing();
         objectAccess();
         templateFunctions();
+        collectionLiteralsAndConcat();
         tojson();
         realisticChatTemplate();
         compileReuse();
         unsupportedFeaturesThrow();
         lenientQuirks();
+        realModelChatTemplates();
 
         if (failures > 0) { System.err.println("\nJinjaRendererTest: " + failures + " failures"); System.exit(1); }
         System.out.println("\nJinjaRendererTest: 0 failures");
+    }
+
+    // ── real model chat templates (resources/chat_templates/*.jinja) ──
+    // Bundled, verbatim tokenizer.chat_template strings from popular models (provenance is in each
+    // file's header comment). Beyond "it renders", each template is checked for structural
+    // correctness against a known conversation: every turn survives and stays ordered, the system
+    // message and bos_token come through, a passed tool is actually declared, the generation prompt
+    // takes effect, and no value mis-renders ([object]/[function]/LitNode) leak into the output.
+    // These guard the silent-corruption bugs (dropped loops, stringified ternaries, tools ignored)
+    // that "does it throw?" tests miss.
+
+    // distinctive per-turn markers (unlikely to be transformed by any template)
+    static final String SYS = "SYS_q9", U1 = "USR1_q9", A1 = "AST1_q9", U2 = "USR2_q9";
+    static final String BOS = "<|bos_q9|>", EOS = "<|eos_q9|>", TOOL = "get_current_weather", TOOL2 = "set_alarm";
+
+    static void realModelChatTemplates() {
+        System.out.println("-- real model chat templates --");
+        List<Path> templates;
+        try {
+            URL dir = JinjaRendererTest.class.getResource("/chat_templates");
+            if (dir == null) { check("chat_templates resources on classpath", false); return; }
+            templates = new ArrayList<>();
+            try (var s = Files.newDirectoryStream(Path.of(dir.toURI()), "*.jinja")) {
+                for (Path p : s) templates.add(p);
+            }
+            templates.sort(Comparator.comparing(p -> p.getFileName().toString()));
+        } catch (Exception e) {
+            check("enumerate chat_templates resources (" + e + ")", false);
+            return;
+        }
+        check("found bundled chat templates (" + templates.size() + ")", templates.size() >= 25);
+        for (Path p : templates) {
+            String name = p.getFileName().toString();
+            String tpl;
+            try { tpl = Files.readString(p); }
+            catch (Exception e) { check(name + " readable", false); continue; }
+            JinjaRenderer.Prog prog;
+            try { prog = JinjaRenderer.compile(tpl); }
+            catch (RuntimeException e) { check(name + " COMPILES (" + oneLine(e) + ")", false); continue; }
+            validateTemplate(name, tpl, prog);
+        }
+    }
+
+    static void validateTemplate(String name, String tpl, JinjaRenderer.Prog prog) {
+        // Find a context shape this template accepts: some reject a system turn (Gemma), some take
+        // content only as a multimodal parts list (MiniMax-M1). Pick the first shape that renders
+        // all three conversation turns.
+        String out = null;
+        boolean withSystem = false, listContent = false;
+        outer:
+        for (boolean sys : new boolean[]{true, false}) {
+            for (boolean lst : new boolean[]{false, true}) {
+                String o = tryRender(prog, conv(sys, oneTool(), true, lst, false));
+                if (o != null && o.contains(U1) && o.contains(A1) && o.contains(U2)) {
+                    out = o; withSystem = sys; listContent = lst; break outer;
+                }
+            }
+        }
+        if (out == null) { check(name + " renders all conversation turns", false); return; }
+        check(name + " renders all conversation turns", true);
+
+        // turns stay in order
+        check(name + " preserves turn order",
+                out.indexOf(U1) < out.indexOf(A1) && out.indexOf(A1) < out.indexOf(U2));
+        // every turn rendered EXACTLY once — guards duplicated or skipped messages (off-by-one in
+        // the message loop, last-message special-casing that double-emits, etc.)
+        check(name + " renders each turn exactly once",
+                count(out, U1) == 1 && count(out, A1) == 1 && count(out, U2) == 1);
+        // system content survives (when the template accepts a system turn)
+        if (withSystem) check(name + " includes system content", out.contains(SYS));
+        // no value mis-renders leaked into the text
+        check(name + " no mis-rendered values",
+                !out.contains("[object]") && !out.contains("[function") && !out.contains("LitNode"));
+        // no UNRENDERED statement/comment tags leak. (Tool-doc strings legitimately contain `{{`
+        // braces, so we only flag `{%`/`{#`, which never appear as literal output text.)
+        check(name + " no unrendered tags", !out.contains("{%") && !out.contains("{#"));
+        // rendering is deterministic — identical input must give identical output, guarding state
+        // that leaks across renders (mutated namespaces, aliased list slices, .pop() side-effects)
+        String again = tryRender(prog, conv(withSystem, oneTool(), true, listContent, false));
+        check(name + " is deterministic across renders", out.equals(again));
+        // bos_token is emitted as its token string (not dropped / printed as the name)
+        if (tpl.contains("bos_token")) check(name + " emits bos_token value", out.contains(BOS));
+        // the generation prompt actually changes the output (assistant turn opener appended)
+        if (tpl.contains("add_generation_prompt")) {
+            String noGen = tryRender(prog, conv(withSystem, oneTool(), false, listContent, false));
+            if (noGen != null) check(name + " add_generation_prompt has effect", !noGen.equals(out));
+        }
+        // (Note: we deliberately don't assert a generic "thinking flag toggles output" — models
+        // gate reasoning inconsistently: enable_thinking bool, a `thinking` bool, a reasoning_effort
+        // enum, or `/think` markers in the content — so there's no uniform signal to flip.)
+        // tools: a provided tool must be declared (assert only when tools change the output, i.e.
+        // the template supports tools at all) ...
+        String noTools = tryRender(prog, conv(withSystem, null, true, listContent, false));
+        if (noTools != null && !noTools.equals(out)) {
+            check(name + " declares the tool when tools are provided", out.contains(TOOL));
+            // ... and ALL tools are declared, each once — guards a broken tool loop (only first/last)
+            String two = tryRender(prog, conv(withSystem, twoTools(), true, listContent, false));
+            if (two != null) check(name + " declares every tool exactly once",
+                    count(two, TOOL) == 1 && count(two, TOOL2) == 1);
+        }
+
+        validateEdgeCases(name, prog, listContent);
+    }
+
+    /** Minimal / awkward inputs that commonly break loops and last-message handling. */
+    static void validateEdgeCases(String name, JinjaRenderer.Prog prog, boolean listContent) {
+        // a single user message (no prior turns) is the most basic valid input — every chat
+        // template must handle it without dropping the message
+        var single = map("messages", list(map("role", "user", "content", body("Solo " + U1, listContent))),
+                "add_generation_prompt", true, "bos_token", BOS, "eos_token", EOS, "tools", null, "enable_thinking", false);
+        String solo = tryRender(prog, single);
+        check(name + " single-message conversation renders the message", solo != null && solo.contains(U1));
+
+        // content with quotes, braces, backslash, newline and unicode must not crash the renderer
+        // or silently swallow the message (guards over-eager stripping / escaping bugs)
+        String tricky = "q\"'{}<>\\b\n\tüñ€ " + U2;
+        var special = map("messages", list(
+                map("role", "user", "content", body("hi", listContent)),
+                map("role", "assistant", "content", body("ok", listContent)),
+                map("role", "user", "content", body(tricky, listContent))),
+            "add_generation_prompt", true, "bos_token", BOS, "eos_token", EOS, "tools", null, "enable_thinking", false);
+        String sp = tryRender(prog, special);
+        check(name + " handles special characters in content", sp != null && sp.contains(U2));
+    }
+
+    /** A system?/user/assistant/user conversation. {@code tools} null = none; {@code listContent}
+     *  wraps each content as a multimodal parts list. */
+    static Map<String,Object> conv(boolean withSystem, List<Object> tools, boolean genPrompt, boolean listContent, boolean thinking) {
+        var msgs = new ArrayList<Object>();
+        if (withSystem) msgs.add(map("role", "system", "content", body("You are helpful. " + SYS, listContent)));
+        msgs.add(map("role", "user", "content", body("Question one " + U1, listContent)));
+        msgs.add(map("role", "assistant", "content", body("Answer one " + A1, listContent)));
+        msgs.add(map("role", "user", "content", body("Question two " + U2, listContent)));
+        var ctx = map("messages", msgs, "add_generation_prompt", genPrompt,
+                "bos_token", BOS, "eos_token", EOS, "enable_thinking", thinking);
+        ctx.put("tools", tools);
+        return ctx;
+    }
+
+    static Object body(String text, boolean listContent) {
+        return listContent ? list(map("type", "text", "text", text)) : text;
+    }
+
+    static List<Object> oneTool() { return list(tool(TOOL, "Get the current weather", "location")); }
+    static List<Object> twoTools() { return list(tool(TOOL, "Get the current weather", "location"),
+                                                 tool(TOOL2, "Set an alarm", "time")); }
+
+    static Object tool(String fn, String desc, String param) {
+        return map("type", "function", "function", map(
+                "name", fn, "description", desc,
+                "parameters", map("type", "object",
+                        "properties", map(param, map("type", "string", "description", param + " value")),
+                        "required", list(param))));
+    }
+
+    /** Count non-overlapping occurrences of {@code sub} in {@code s}. */
+    static int count(String s, String sub) {
+        int n = 0, i = 0;
+        while ((i = s.indexOf(sub, i)) >= 0) { n++; i += sub.length(); }
+        return n;
+    }
+
+    static String tryRender(JinjaRenderer.Prog prog, Map<String,Object> ctx) {
+        try { return JinjaRenderer.render(prog, ctx); }
+        catch (RuntimeException e) { return null; }
     }
 
     // ── harness ──────────────────────────────────────────────────
@@ -90,6 +261,8 @@ public final class JinjaRendererTest {
     static String render(String tpl) { return JinjaRenderer.render(tpl, Map.of()); }
 
     static String show(String s) { return s.replace("\n", "\\n").replace("\t", "\\t"); }
+
+    static String oneLine(Throwable t) { String m = t.getMessage(); return show(m == null ? t.toString() : m); }
 
     /** Ordered map literal: {@code map("a", 1, "b", 2)}. */
     static Map<String,Object> map(Object... kv) {
@@ -150,6 +323,18 @@ public final class JinjaRendererTest {
         eq("{{ True and False }} {{ True or False }} {{ not False }}", "False True True");
         eq("{{ n > 5 and n < 10 }}", map("n", 7), "True");
         eq("{{ n > 5 and n < 10 }}", map("n", 42), "False");
+        // and/or return the OPERAND value (Python/Jinja), not a coerced bool
+        eq("{{ '' or 'fallback' }}", "fallback");
+        eq("{{ 'keep' or 'other' }}", "keep");
+        eq("{{ missing or 'dflt' }}", "dflt");
+        eq("{{ name or 'dflt' }}", map("name", "Ada"), "Ada");
+        eq("{{ 'a' and 'b' }}", "b");
+        eq("{{ '' and 'b' }}", "");
+        // the canonical default idiom: obj.get(k) or fallback
+        eq("{{ user.get('nick') or user['name'] }}", map("user", map("name", "Bob")), "Bob");
+        // both capitalized and lowercase literals are accepted
+        eq("{{ true }} {{ false }} {{ none }}", "True False None");
+        eq("{{ true == True }} {{ none is none }}", "True True");
     }
 
     // ── string concat & slicing ──────────────────────────────────
@@ -254,6 +439,13 @@ public final class JinjaRendererTest {
         eq("{{ 'on' if flag else 'off' }}", map("flag", true), "on");
         eq("{{ 'on' if flag else 'off' }}", map("flag", false), "off");
         eq("{{ 'truthy' if name else 'empty' }}", map("name", ""), "empty");
+        // ternary yields the operand VALUE, not its rendered text — must work for lists/objects
+        eq("{% set xs = a if flag else b %}{{ xs | join('-') }}", map("flag", true, "a", list(1, 2), "b", list(9)), "1-2");
+        eq("{% set xs = a if flag else b %}{{ xs | join('-') }}", map("flag", false, "a", list(1, 2), "b", list(9)), "9");
+        eq("{% set m = messages[1:] if drop else messages %}{{ m | length }}",
+                map("drop", true, "messages", list("s", "u", "a")), "2");
+        // a ternary with no else yields undefined when the test is false
+        eq("{{ ('x' if flag) | default('none') }}", map("flag", false), "none");
     }
 
     // ── for loops ────────────────────────────────────────────────
@@ -447,22 +639,42 @@ public final class JinjaRendererTest {
     // Constructs this minimal engine does not implement raise an exception (rather than silently
     // mis-rendering the prompt). These tests pin that fail-loud contract.
 
+    static void collectionLiteralsAndConcat() {
+        System.out.println("-- collection literals & concatenation --");
+        // list literals (evaluated, incl. variable elements)
+        eq("{{ [1, 2, 3] | join('-') }}", "1-2-3");
+        eq("{{ [a, b, 'z'] | join(',') }}", map("a", "x", "b", "y"), "x,y,z");
+        eq("{% for x in [10, 20, 30] %}{{ x }};{% endfor %}", "10;20;30;");
+        eq("{{ [] | length }}", "0");
+        // tuple literals behave like lists
+        eq("{{ (1, 2, 3) | join('-') }}", "1-2-3");
+        // dict literals (string and identifier keys)
+        eq("{{ {'a': 1, 'b': 2} | tojson }}", "{\"a\": 1, \"b\": 2}");
+        eq("{% set d = {'x': 5, 'y': 6} %}{{ d['x'] }}+{{ d['y'] }}", "5+6");
+        // chained ~ concatenation
+        eq("{{ 'a' ~ 'b' ~ 'c' }}", "abc");
+        eq("{{ a ~ '-' ~ b ~ '-' ~ 42 }}", map("a", "x", "b", "y"), "x-y-42");
+        // adjacent string-literal concatenation (Python/Jinja2 style)
+        eq("{{ 'foo' 'bar' 'baz' }}", "foobar" + "baz");
+        // str() of a list/dict is the Python repr (strings quoted, True/False/None capitalized) —
+        // models trained on `tools | string` depend on this exact shape
+        eq("{{ [1, 'x', true] }}", "[1, 'x', True]");
+        eq("{{ {'a': 1, 'b': 'x'} }}", "{'a': 1, 'b': 'x'}");
+        eq("{{ {'k': 'v'} | string }}", "{'k': 'v'}");
+        eq("{{ {'a': [1, 2], 'n': none} }}", "{'a': [1, 2], 'n': None}"); // nested
+        eq("{{ obj | string }}", map("obj", map("name", "get_weather")), "{'name': 'get_weather'}");
+    }
+
     static void unsupportedFeaturesThrow() {
         System.out.println("-- unsupported features throw --");
         var xs = map("xs", list("a", "b", "c"));
-        // list/dict literals with elements
-        throwsErr("list literal throws", "{{ [1, 2, 3] | join('-') }}");
-        throwsErr("dict literal throws", "{{ {'a': 1} | tojson }}");
-        // calling a value that isn't a function
-        throwsErr("calling a non-function throws", "{{ n() }}", map("n", 5));
         // unknown filter / function names
         throwsErr("unknown filter throws", "{{ 'x' | no_such_filter }}");
         throwsErr("unknown function throws", "{{ no_such_function() }}");
         // loop control statements
         throwsErr("{% break %} throws", "{% for x in xs %}{{ x }}{% break %}{% endfor %}", xs);
         throwsErr("{% continue %} throws", "{% for x in xs %}{{ x }}{% continue %}{% endfor %}", xs);
-        // unparseable operators
-        throwsErr("chained `~` throws", "{{ 'a' ~ 'b' ~ 'c' }}");
+        // integer division // is not supported
         throwsErr("integer division `//` throws", "{{ 7 // 2 }}");
     }
 
@@ -472,12 +684,6 @@ public final class JinjaRendererTest {
 
     static void lenientQuirks() {
         System.out.println("-- lenient quirks (no throw) --");
-        // and/or yield a boolean, not the operand value (CPython returns the operand)
-        eq("{{ '' or 'x' }}", "True");
-        eq("{{ 'a' and 'b' }}", "True");
-        // lowercase python keywords aren't literals; only True/False/None are (these read as
-        // undefined and render empty)
-        eq("{{ true }}", "");
         // expression-level trim markers ({{- ... -}}) do NOT strip surrounding whitespace
         // (only statement-level {%- ... -%} markers do)
         eq("a {{- 'b' }}", "a b");
