@@ -27,10 +27,11 @@ NATIVE_FILE := lfm25$(EXE)
 JAVA_MAIN_CLASS = com.llama4j.LFM25
 JAR_FILE = lfm25.jar
 
-JAVA_SOURCES = $(wildcard *.java)
+JAVA_SOURCES = $(shell find src/main/java -name '*.java')
+TEST_SOURCES = $(shell find src/test/java -name '*.java')
 JAVA_CLASSES = target/classes/.compiled
 
-# External dependencies (fetched from Maven Central into libs/; also declared as jbang //DEPS)
+# External dependencies (fetched from Maven Central into libs/ for the Makefile classpath)
 DEPS = libs/gguf-0.1.0.jar libs/toknroll-core-0.1.0.jar libs/toknroll-gguf-0.1.0.jar libs/json-0.1.0.jar
 DEPS_CLASSPATH = libs/gguf-0.1.0.jar:libs/toknroll-core-0.1.0.jar:libs/toknroll-gguf-0.1.0.jar:libs/json-0.1.0.jar
 
@@ -71,9 +72,9 @@ target/classes:
 	mkdir -p target/classes
 
 # Kernel parity tests (synthetic tensors, no model file needed) + tokenizer parity (model-gated)
-target/test-classes/com/llama4j/KernelParityTest.class: tests/*.java $(wildcard tests/resources/**/*) $(JAVA_CLASSES)
-	$(JAVAC) $(JAVA_COMPILE_OPTIONS) -cp target/classes:$(DEPS_CLASSPATH) -d target/test-classes tests/*.java
-	cp -R tests/resources/. target/test-classes/   # bundle test resources (chat templates) onto the classpath
+target/test-classes/com/llama4j/KernelParityTest.class: $(TEST_SOURCES) $(shell find src/test/resources -type f) $(JAVA_CLASSES)
+	$(JAVAC) $(JAVA_COMPILE_OPTIONS) -cp target/classes:$(DEPS_CLASSPATH) -d target/test-classes $(TEST_SOURCES)
+	cp -R src/test/resources/. target/test-classes/   # bundle test resources (chat templates) onto the classpath
 
 test: target/test-classes/com/llama4j/KernelParityTest.class
 	$(JAVA) $(JAVA_RUNTIME_OPTIONS) -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0 \

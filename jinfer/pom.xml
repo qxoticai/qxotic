@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Maven build for lfm25.java. The source layout stays FLAT (jbang //SOURCES and the Makefile
-  share it): main sources are the *.java files in the project root, tests live in tests/.
+  Maven build for lfm25.java. Standard Maven layout: main sources in src/main/java, the
+  parity/integration tests in src/test/java, chat-template fixtures in src/test/resources.
   buildtools/LFM25StaticGemmFeature.java is NOT built here - it needs GraalVM's unexported
-  svm.jar internals and belongs to `make native-static-gemm`.
+  svm.jar internals and belongs to `make native-static-gemm`. The Makefile shares this layout
+  (it compiles the same src trees) and owns the native (lfm25jni.c / gemm.metal) builds.
 
     mvn package                 fat jar -> target/lfm25.jar (run with the same flags as below)
     mvn -Pnative package        native image -> target/lfm25 (needs GraalVM >= 25.0.3, see
@@ -61,9 +62,7 @@
     </dependencies>
 
     <build>
-        <!-- flat layout: root *.java are the main sources (non-recursive include below) -->
-        <sourceDirectory>${project.basedir}</sourceDirectory>
-        <testSourceDirectory>${project.basedir}/tests</testSourceDirectory>
+        <!-- standard Maven layout: src/main/java, src/test/java, src/test/resources -->
         <finalName>lfm25</finalName>
 
         <plugins>
@@ -73,12 +72,6 @@
                 <version>3.14.0</version>
                 <configuration>
                     <enablePreview>true</enablePreview>
-                    <includes>
-                        <include>*.java</include> <!-- root files only: not tests/, not buildtools/ -->
-                    </includes>
-                    <testIncludes>
-                        <testInclude>*.java</testInclude>
-                    </testIncludes>
                     <compilerArgs>
                         <arg>--add-modules</arg>
                         <arg>jdk.incubator.vector,jdk.httpserver</arg>
@@ -140,8 +133,8 @@
                 <configuration>
                     <java>
                         <includes>
-                            <include>*.java</include>
-                            <include>tests/*.java</include>
+                            <include>src/main/java/**/*.java</include>
+                            <include>src/test/java/**/*.java</include>
                             <include>buildtools/*.java</include>
                         </includes>
                         <removeUnusedImports/>

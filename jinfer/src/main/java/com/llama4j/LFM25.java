@@ -1,24 +1,3 @@
-///usr/bin/env jbang "$0" "$@" ; exit $?
-//JAVA 21+
-//PREVIEW
-//COMPILE_OPTIONS --add-modules=jdk.incubator.vector,jdk.httpserver
-//RUNTIME_OPTIONS --add-modules=jdk.incubator.vector,jdk.httpserver --enable-native-access=ALL-UNNAMED -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0
-//DEPS com.qxotic:gguf:0.1.0
-//DEPS com.qxotic:toknroll-core:0.1.0
-//DEPS com.qxotic:toknroll-gguf:0.1.0
-//DEPS com.qxotic:json:0.1.0
-//MAIN com.llama4j.LFM25
-//SOURCES ModelLoader.java
-//SOURCES Tensors.java
-//SOURCES Kernels.java
-//SOURCES RuntimeFlags.java
-//SOURCES Llama.java
-//SOURCES PromptCache.java
-//SOURCES CacheStore.java
-//SOURCES Server.java
-//SOURCES Engine.java
-//SOURCES Sampler.java
-
 // LFM2.5 inference in pure Java
 // Author: Alfonso² Peterssen
 // Based on Andrej Karpathy's llama2.c and minbpe projects
@@ -28,8 +7,8 @@
 // Matrix-vector kernels use Java's Vector API
 // CLI modes: --chat, --instruct, and --server
 //
-// Run:
-// jbang LFM25.java --help
+// Build/run: `mvn package` then `java -jar target/lfm25.jar --help` (see the Makefile for the
+// exact runtime flags and native-image targets).
 package com.llama4j;
 
 import com.qxotic.format.gguf.GGUF;
@@ -321,7 +300,7 @@ public class LFM25 {
         }
 
         static void printUsage(PrintStream out) {
-            out.println("Usage:  jbang LFM25.java [options]");
+            out.println("Usage:  java -jar lfm25.jar [options]");
             out.println();
             out.println("Options:");
             out.println("  --model, -m <path>            required, path to .gguf file");
@@ -352,10 +331,10 @@ public class LFM25 {
             out.println("  /context                      show context token usage");
             out.println();
             out.println("Examples:");
-            out.println("  jbang LFM25.java --model LFM2.5-1.2B-Instruct-Q8_0.gguf --chat");
-            out.println("  jbang LFM25.java --model LFM2.5-1.2B-Instruct-Q8_0.gguf --prompt \"Tell me a joke\"");
-            out.println("  jbang LFM25.java --model LFM2.5-1.2B-Instruct-Q8_0.gguf --chat --system-prompt \"You are a helpful assistant\"");
-            out.println("  jbang LFM25.java --model LFM2.5-1.2B-Instruct-Q8_0.gguf --server --port 17325");
+            out.println("  java -jar lfm25.jar --model LFM2.5-1.2B-Instruct-Q8_0.gguf --chat");
+            out.println("  java -jar lfm25.jar --model LFM2.5-1.2B-Instruct-Q8_0.gguf --prompt \"Tell me a joke\"");
+            out.println("  java -jar lfm25.jar --model LFM2.5-1.2B-Instruct-Q8_0.gguf --chat --system-prompt \"You are a helpful assistant\"");
+            out.println("  java -jar lfm25.jar --model LFM2.5-1.2B-Instruct-Q8_0.gguf --server --port 17325");
         }
 
         static Options parseOptions(String[] args) {

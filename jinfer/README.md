@@ -45,28 +45,34 @@ Pick any supported target quantization, for example `Q4_0`, `Q4_1`, `Q4_K`, `Q5_
 
 ## Build and run
 
-Java 21+ is required, in particular for the [`MemorySegment` mmap feature](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/nio/channels/FileChannel.html#map(java.nio.channels.FileChannel.MapMode,long,long,java.lang.foreign.Arena)).
+Java 25 is required (the build targets release 25 with `--enable-preview`), in particular for the
+[`MemorySegment` mmap feature](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/nio/channels/FileChannel.html#map(java.nio.channels.FileChannel.MapMode,long,long,java.lang.foreign.Arena)).
 
-[`jbang`](https://www.jbang.dev/) is a good fit for this use case.
-
-```bash
-jbang LFM25.java --help
-jbang LFM25.java --model ./LFM2.5-1.2B-Instruct-Q8_0.gguf --chat
-jbang LFM25.java --model ./LFM2.5-1.2B-Instruct-Q8_0.gguf --prompt "Tell me a joke"
-jbang LFM25.java --model ./LFM2.5-1.2B-Instruct-Q8_0.gguf --server --port 17325
-```
-
-Or run it directly, still via [`jbang`](https://www.jbang.dev/):
+Build the fat jar with Maven (or `make jar`):
 
 ```bash
-chmod +x LFM25.java
-./LFM25.java --help
+mvn package            # -> target/lfm25.jar
 ```
+
+Run it (the incubator/native-access flags are required at run time):
+
+```bash
+JAVA_FLAGS="--enable-preview --add-modules jdk.incubator.vector,jdk.httpserver \
+  --enable-native-access=ALL-UNNAMED -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0"
+
+java $JAVA_FLAGS -jar target/lfm25.jar --help
+java $JAVA_FLAGS -jar target/lfm25.jar --model ./LFM2.5-1.2B-Instruct-Q8_0.gguf --chat
+java $JAVA_FLAGS -jar target/lfm25.jar --model ./LFM2.5-1.2B-Instruct-Q8_0.gguf --prompt "Tell me a joke"
+java $JAVA_FLAGS -jar target/lfm25.jar --model ./LFM2.5-1.2B-Instruct-Q8_0.gguf --server --port 17325
+```
+
+`mvn -Pnative package` (GraalVM ≥ 25.0.3) or `make native` produces a self-contained `lfm25` binary
+with no runtime flags required.
 
 ## CLI
 
 ```text
-Usage:  jbang LFM25.java [options]
+Usage:  java -jar lfm25.jar [options]
 
 Options:
   --model, -m <path>            required, path to .gguf file
@@ -95,7 +101,7 @@ Options:
 Start the server:
 
 ```bash
-jbang LFM25.java --model ./LFM2.5-1.2B-Instruct-Q8_0.gguf --server --host 127.0.0.1 --port 17325
+java $JAVA_FLAGS -jar target/lfm25.jar --model ./LFM2.5-1.2B-Instruct-Q8_0.gguf --server --host 127.0.0.1 --port 17325
 ```
 
 Then call `/v1/chat/completions` with any OpenAI-compatible client:

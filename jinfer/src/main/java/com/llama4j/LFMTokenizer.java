@@ -21,7 +21,7 @@ import java.util.regex.Pattern;
  * LFM2 tokenizer = com.qxotic:toknroll loaded from the GGUF metadata, plus the "lfm2"
  * pre-tokenizer registration (llama.cpp's regex; [\p{L}\p{M}]+ because Java's \p{L} misses
  * combining marks; no UNICODE_CHARACTER_CLASS so \s stays ASCII — token-identical to
- * llama-tokenize, see tests/TokenizerParityTest). encode never maps special-token strings;
+ * llama-tokenize, see TokenizerParityTest). encode never maps special-token strings;
  * the chat format inserts special ids explicitly via {@link #getSpecialTokens()}.
  */
 class LFMTokenizer {
