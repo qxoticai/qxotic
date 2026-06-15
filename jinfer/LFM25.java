@@ -3,7 +3,6 @@
 //PREVIEW
 //COMPILE_OPTIONS --add-modules=jdk.incubator.vector,jdk.httpserver
 //RUNTIME_OPTIONS --add-modules=jdk.incubator.vector,jdk.httpserver --enable-native-access=ALL-UNNAMED -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0
-//DEPS net.openhft:affinity:2026.2
 //DEPS com.qxotic:gguf:0.1.0
 //DEPS com.qxotic:toknroll-core:0.1.0
 //DEPS com.qxotic:toknroll-gguf:0.1.0
@@ -34,9 +33,7 @@
 package com.llama4j;
 
 import com.qxotic.format.gguf.GGUF;
-
-
-
+import com.qxotic.format.gguf.TensorEntry;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -48,8 +45,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -57,121 +52,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.HexFormat;
 import java.util.function.IntConsumer;
-
-class LFMChatFormat {
-
-    protected final LFMTokenizer tokenizer;
-    protected final int beginOfSentence;
-    protected final int startOfTurn;
-    protected final int endOfTurn;
-    protected final int endOfSentence;
-    protected final int fimSuffix;
-    protected final int fimPrefix;
-    protected final int fimMiddle;
-    protected final int fileSeparator;
-    private final Set<Integer> stopTokens;
-
-    public LFMChatFormat(LFMTokenizer tokenizer) {
-        this.tokenizer = tokenizer;
-        Map<String, Integer> specialTokens = this.tokenizer.getSpecialTokens();
-        this.beginOfSentence = specialTokens.getOrDefault("<bos>", specialTokens.getOrDefault("<|startoftext|>", 1));
-        this.startOfTurn = specialTokens.getOrDefault("<|im_start|>", specialTokens.getOrDefault("<|turn>", beginOfSentence));
-        this.endOfTurn = specialTokens.getOrDefault("<|im_end|>", specialTokens.getOrDefault("<turn|>", -1));
-        this.endOfSentence = specialTokens.getOrDefault("<eos>", specialTokens.getOrDefault("<|endoftext|>", 2));
-
-        this.fimSuffix = specialTokens.getOrDefault("<|fim_suffix|>", -1);
-        this.fimPrefix = specialTokens.getOrDefault("<|fim_prefix|>", -1);
-        this.fimMiddle = specialTokens.getOrDefault("<|fim_middle|>", -1);
-        this.fileSeparator = specialTokens.getOrDefault("<|file_separator|>", -1);
-
-        Set<Integer> tokens = new HashSet<>();
-        tokens.add(endOfSentence);
-        if (endOfTurn >= 0) tokens.add(endOfTurn);
-        if (fimSuffix != -1) tokens.add(fimSuffix);
-        if (fimPrefix != -1) tokens.add(fimPrefix);
-        if (fimMiddle != -1) tokens.add(fimMiddle);
-        if (fileSeparator != -1) tokens.add(fileSeparator);
-        this.stopTokens = Collections.unmodifiableSet(tokens);
-    }
-
-    public Set<Integer> getStopTokens() {
-        return stopTokens;
-    }
-
-    public List<Integer> encodeHeader(LFMChatFormat.Message message) {
-        List<Integer> tokens = new ArrayList<>();
-        tokens.add(startOfTurn);
-        tokens.addAll(tokenizer.encode(message.role().toString()));
-        tokens.addAll(this.tokenizer.encode("\n"));
-        return tokens;
-    }
-
-    public List<Integer> encodeMessage(LFMChatFormat.Message message) {
-        List<Integer> tokens = this.encodeHeader(message);
-        tokens.addAll(this.tokenizer.encode(message.content().strip()));
-        if (endOfTurn >= 0) tokens.add(endOfTurn);
-        tokens.addAll(this.tokenizer.encode("\n"));
-        return tokens;
-    }
-
-    public List<Integer> encodeSystemThinkingTurn(String systemPrompt) {
-        return encodeMessage(new Message(Role.SYSTEM, systemPrompt == null ? "" : systemPrompt));
-    }
-
-    /** Appends an empty think span ("&lt;think&gt;\n&lt;/think&gt;\n\n") so a non-thinking turn
-     *  still matches the template the model was trained on. No-op without think markers. */
-    public void appendThinkSurrogate(List<Integer> tokens) {
-        Integer start = tokenizer.getSpecialTokens().get("<think>");
-        Integer end = tokenizer.getSpecialTokens().get("</think>");
-        if (start == null || end == null) return;
-        List<Integer> nl = tokenizer.encode("\n");
-        tokens.add(start);
-        tokens.addAll(nl);
-        tokens.add(end);
-        tokens.addAll(nl);
-        tokens.addAll(nl);
-    }
-
-    public List<Integer> encodeGenerationPrompt() {
-        return encodeHeader(new Message(Role.ASSISTANT, ""));
-    }
-
-    public record Message(LFMChatFormat.Role role, String content) {
-    }
-
-    public List<Integer> encodeFillInTheMiddle(String prefix, String suffix) {
-        List<Integer> tokens = new ArrayList<>();
-        tokens.add(this.fimPrefix);
-        tokens.addAll(tokenizer.encode(prefix));
-        tokens.add(this.fimSuffix);
-        tokens.addAll(tokenizer.encode(suffix));
-        tokens.add(this.fimMiddle);
-        return tokens;
-    }
-
-    public record Role(String name) {
-        public static final LFMChatFormat.Role SYSTEM = new LFMChatFormat.Role("system");
-        public static final LFMChatFormat.Role USER = new LFMChatFormat.Role("user");
-        public static final LFMChatFormat.Role ASSISTANT = new LFMChatFormat.Role("assistant");
-        public static final LFMChatFormat.Role TOOL = new LFMChatFormat.Role("tool");
-
-        /** OpenAI role string to template role; unknown roles render as user turns. */
-        public static Role of(String role) {
-            return switch (role) {
-                case "system" -> SYSTEM;
-                case "assistant" -> ASSISTANT;
-                case "tool" -> TOOL; // native tool turn, not flattened into user
-                default -> USER;
-            };
-        }
-
-        @Override
-        public String toString() {
-            return name;
-        }
-    }
-}
-
 
 public class LFM25 {
 
@@ -381,7 +261,7 @@ public class LFM25 {
         Engine.Params params = new Engine.Params(sampler, budget, 0, // CLI: no generation deadline
                 new Engine.StopSpec(stopTokens, List.of()), options.think());
         Engine.GenerationResult result = Engine.generate(model, state, startPosition, promptTokens, params,
-                new Engine.Listener(onToken, null, null), Llama.GenerationHooks.NONE);
+                new Engine.Listener(onToken, null, null, null), Llama.GenerationHooks.NONE);
         int generated = result.tokens().size() + (result.stopToken() >= 0 ? 1 : 0);
         String timingPrefix = options.colors() ? ANSI_CYAN : "";
         String timingSuffix = options.colors() ? ANSI_RESET : "";
@@ -596,7 +476,7 @@ final class AOT {
     // raw vocab/merges metadata strings (~25MiB of image heap) that the tokenizer has already
     // materialized into its own structures.
     record PartialModel(String modelFileName, Llama model, long tensorDataOffset,
-                        List<com.qxotic.format.gguf.TensorEntry> tensors,
+                        List<TensorEntry> tensors,
                         Pair<float[], float[]> ropeFreqsSWA, Pair<float[], float[]> ropeFreqsFull) {}
 
     private static final PartialModel PRELOADED_GGUF = preLoadGGUF(System.getProperty("llama.PreloadGGUF"));

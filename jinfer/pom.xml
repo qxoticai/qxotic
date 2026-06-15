@@ -58,16 +58,6 @@
             <artifactId>json</artifactId>
             <version>0.1.0</version>
         </dependency>
-        <!-- optional: thread pinning (-Dllama.Affinity=true); loaded reflectively, never
-             required, and `provided` keeps it (and its JNA tree) OUT of the fat jar — put it
-             on the classpath explicitly when pinning is wanted -->
-        <dependency>
-            <groupId>net.openhft</groupId>
-            <artifactId>affinity</artifactId>
-            <version>2026.2</version>
-            <scope>provided</scope>
-            <optional>true</optional>
-        </dependency>
     </dependencies>
 
     <build>
@@ -201,7 +191,7 @@
                                 <buildArg>--enable-native-access=ALL-UNNAMED</buildArg>
                                 <buildArg>-J--enable-native-access=ALL-UNNAMED</buildArg>
                                 <buildArg>--initialize-at-build-time=com.llama4j.AOT,com.llama4j.FloatTensor,com.llama4j.,com.qxotic.</buildArg>
-                                <buildArg>--initialize-at-run-time=com.llama4j.RuntimeFlags,com.llama4j.ThreadAffinity</buildArg>
+                                <buildArg>--initialize-at-run-time=com.llama4j.RuntimeFlags</buildArg>
                                 <buildArg>-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0</buildArg>
                                 <buildArg>-Dllama.PreloadGGUF=${llama.PreloadGGUF}</buildArg>
                             </buildArgs>

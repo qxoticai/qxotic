@@ -49,8 +49,8 @@ final class PromptCache {
     final int hist;                     // conv state rows (dConv - 1): bx rows needed before a resume point
     final int[] bxOff;                  // per layer byte offset within a position-major bx row (-1 = not recurrent)
     final long bxBytesPerToken;         // bytes of one retained bx row (all recurrent layers, F16)
-    final boolean anySwaKv;
-    final int swaStride;                // max uncommitted span when SWA exists (ring liveness)
+    private final boolean anySwaKv;
+    private final int swaStride;                // max uncommitted span when SWA exists (ring liveness)
     final Node root;
     Node pinnedDeepest;                 // deepest node pinned by the in-flight request (root = none)
     Harvest harvest;                    // bx staging for the in-flight request; null = sparse commits
@@ -72,6 +72,7 @@ final class PromptCache {
         boolean sticky;                 // warm-prompt node: exempt from LRU eviction
         long lastAccess;
         int refCount;
+        Llama.State pinnedState;        // non-null: live state whose KV IS this node's data (no blob copy)
     }
 
     /** chain = matched nodes root-down (last may be partially matched); matchedPos = total
@@ -166,7 +167,7 @@ final class PromptCache {
      *  matched node end (bit-exact), upgraded to ANY deeper matched position whose hist
      *  trailing bx rows are covered (near-exact F16), both at most streamLength-1 so a
      *  pending token remains for logits. */
-    Match lookup(int[] stream, int streamLength) {
+    private Match lookup(int[] stream, int streamLength) {
         lookups++;
         List<Node> chain = new ArrayList<>();
         Node node = root;
@@ -247,18 +248,17 @@ final class PromptCache {
      *  conv state — F32 checkpoint, or F16 bx-row decode for a dense resume — into a fresh
      *  state. SWA layers restore only the last window before the resume point, into their
      *  ring positions. */
-    void restore(Match match, Llama.State state) {
+    private void restore(Match match, Llama.State state) {
         int start = 0;
         for (int i = 0; i <= match.resumeIndex(); i++) {
             Node node = match.chain().get(i);
+            store.validate(node.kv);
             int len = node.tokens.length;
             for (int l = 0; l < config.nLayerKvFromStart; l++) {
                 if (kvPrefixBytesPerToken[l] < 0) continue;
                 long rowBytes = (long) config.kvDim(l) * Float16.BYTES;
                 MemorySegment keyDst = ((F16FloatTensor) state.keyCache[l]).memorySegment;
                 MemorySegment valueDst = ((F16FloatTensor) state.valueCache[l]).memorySegment;
-                // clamp to resumePos: a dense resume can land mid-node, and rows beyond it
-                // would clobber SWA ring slots of aliased earlier positions
                 int lo = start, hi = Math.min(start + len, match.resumePos());
                 if (config.isSWA[l]) lo = Math.max(lo, match.resumePos() - config.slidingWindow);
                 int w = config.slidingWindow;
@@ -320,13 +320,13 @@ final class PromptCache {
     }
 
     /** Pins the matched chain for the in-flight request (evictions skip pinned nodes). */
-    void pin(Match match) {
+    private void pin(Match match) {
         for (Node node : match.chain()) node.refCount++;
         pinnedDeepest = match.chain().isEmpty() ? root : match.chain().getLast();
     }
 
     /** Releases the request's pins (root up from the deepest committed/matched node). */
-    void unpinCurrent() {
+    private void unpinCurrent() {
         for (Node node = pinnedDeepest; node != null && node != root; node = node.parent) node.refCount--;
         pinnedDeepest = root;
     }
@@ -337,7 +337,7 @@ final class PromptCache {
      * at p — state.shortConvState IS the state after stream[0, p) — and that the path exists.
      * No-op when a checkpoint is already present (repeat divergence).
      */
-    void attachCheckpoint(int[] stream, int p, Llama.State state) {
+    private void attachCheckpoint(int[] stream, int p, Llama.State state) {
         if (convFloats == 0 || p <= 0) return;
         Node node = nodeEndingAt(stream, p);
         if (node == root || node.conv != null) return;
@@ -451,7 +451,7 @@ final class PromptCache {
      * dropped). Returns the deepest node, or null when the budget is exhausted by pinned
      * entries (caller stops caching for this request).
      */
-    Node commitSpan(int[] stream, int from, int to, Llama.State state, boolean withConv) {
+    private Node commitSpan(int[] stream, int from, int to, Llama.State state, boolean withConv) {
         // Walk to `from`, pinning any nodes traversed BELOW the current pinned deepest: they
         // join the request's path (e.g. after a checkpoint split moved the pin up, or when the
         // span continues into content another turn already committed). The pinned path is
@@ -508,6 +508,7 @@ final class PromptCache {
             fresh.tokens = Arrays.copyOfRange(stream, pos, to);
             fresh.kv = store.allocate(len * kvBytesPerToken);
             copyStateRows(state, pos, to, fresh, len);
+            store.validate(fresh.kv);
             if (conv) snapshotConv(fresh, state);
             if (bxCount > 0) {
                 fresh.bxPos = new int[bxCount];
@@ -569,7 +570,8 @@ final class PromptCache {
                 return false; // everything pinned: stop caching for this request
             }
             victim.parent.children.remove(victim);
-            store.free(victim.kv);
+            if (victim.kv != null) store.free(victim.kv);
+            victim.pinnedState = null; // release state reference for GC
             nodeCount--;
             if (victim.conv != null) {
                 store.free(victim.conv);
@@ -617,12 +619,12 @@ final class PromptCache {
      * plus the last {@code llama.promptCacheDenseTail} positions of the stream. Null when
      * the model has no conv state.
      */
-    Llama.ConvHarvest beginHarvest(int streamLength, boolean warm) {
+    private Llama.ConvHarvest beginHarvest(int streamLength, boolean warm) {
         harvest = (hist > 0 && bxBytesPerToken > 0) ? new Harvest(streamLength, warm) : null;
         return harvest;
     }
 
-    void endHarvest() {
+    private void endHarvest() {
         if (harvest != null && harvest.warm) {
             warmTokens += harvest.streamLength; // idempotent: the second (finally) call no-ops
         }
@@ -684,6 +686,124 @@ final class PromptCache {
                 }
             }
         }
+    }
+
+    /** One cached generation, plugged into {@link Engine#generate} as a {@link Llama.GenerationHooks}.
+     *  Owns the whole cache policy: lookup + restore + pin on resume, checkpoint planning, SWA-clamped
+     *  per-chunk commits, and the bx-harvest lifecycle — plus {@link #commitFinal} (the
+     *  end-of-generation checkpoint, so multi-turn resume is exact) and {@link #cleanup} (per-request
+     *  release). Created via {@link #beginGeneration}; the caller drives Engine.generate with it. */
+    final class CacheRun implements Llama.GenerationHooks {
+        private final Llama.State state;
+        private final int[] cachedOut; // out: resumed-prefix length, for the streaming usage counters
+        private final boolean warm;
+        private boolean caching = true;
+        private int prefillLength;
+        private int matchedPos;
+        private int committedTo;       // commits cover (matchedPos-or-later, committedTo]
+        private final int[] checkpoints = new int[2];
+        private int checkpointCount;
+        private int[] stream;
+        private int frontier;
+
+        private CacheRun(Llama.State state, int[] cachedOut, boolean warm) {
+            this.state = state;
+            this.cachedOut = cachedOut;
+            this.warm = warm;
+        }
+
+        @Override
+        public int resumePosition(int[] stream, int prefillLength) {
+            this.prefillLength = prefillLength;
+            Match match = lookup(stream, prefillLength);
+            this.matchedPos = match.matchedPos();
+            this.committedTo = match.matchedPos();
+            int resume = match.resumePos();
+            cachedOut[0] = resume;
+            restore(match, state);
+            pin(match); // even on a cold resume: checkpoints attach into matched nodes
+            state.convHarvest = beginHarvest(prefillLength, warm);
+            for (int p : new int[]{Math.min(matchedPos, prefillLength - 1), prefillLength - 1}) {
+                if (p > resume && p > 0 && (checkpointCount == 0 || checkpoints[checkpointCount - 1] != p)) {
+                    checkpoints[checkpointCount++] = p;
+                }
+            }
+            return resume;
+        }
+
+        @Override
+        public int clampChunk(int position, int chunkLength) {
+            int clamp = chunkLength;
+            for (int i = 0; i < checkpointCount; i++) {
+                if (checkpoints[i] > position) {
+                    clamp = Math.min(clamp, checkpoints[i] - position);
+                    break;
+                }
+            }
+            if (caching && anySwaKv) {
+                clamp = Math.min(clamp, Math.max(matchedPos, committedTo) + swaStride - position);
+            }
+            return clamp;
+        }
+
+        private boolean isCheckpoint(int position) {
+            for (int i = 0; i < checkpointCount; i++) {
+                if (checkpoints[i] == position) return true;
+            }
+            return false;
+        }
+
+        @Override
+        public void afterIngest(int[] stream, int position) {
+            this.stream = stream;
+            this.frontier = position;
+            if (!caching) {
+                return;
+            }
+            if (position <= matchedPos) {
+                // re-ingesting cached tokens (resume < divergence): KV is already in the
+                // tree, only the conv checkpoint at the divergence is new
+                if (isCheckpoint(position)) {
+                    attachCheckpoint(stream, position, state);
+                }
+                return;
+            }
+            boolean commit = position <= prefillLength                                   // prefill chunk
+                    || (anySwaKv && position - committedTo >= swaStride);                // SWA ring pressure
+            if (commit) {
+                if (commitSpan(stream, committedTo, position, state, isCheckpoint(position)) == null) {
+                    caching = false;
+                    return;
+                }
+                committedTo = position;
+            }
+        }
+
+        @Override
+        public void afterPrefill() {
+            state.convHarvest = null; // decode chunks are never harvested
+            endHarvest();
+        }
+
+        /** End-of-generation commit (success path): the frontier sits at the last ingested token
+         *  (stop tokens are never ingested), checkpointed so the next turn resumes exactly there. */
+        void commitFinal() {
+            if (caching && frontier > committedTo) {
+                commitSpan(stream, committedTo, frontier, state, true);
+            }
+        }
+
+        /** Releases per-request cache state; safe on any exit path (error paths may skip afterPrefill). */
+        void cleanup() {
+            state.convHarvest = null;
+            endHarvest();
+            unpinCurrent();
+        }
+    }
+
+    /** Begins a cached generation for {@code state}; the returned hooks drive Engine.generate. */
+    CacheRun beginGeneration(Llama.State state, int[] cachedOut, boolean warm) {
+        return new CacheRun(state, cachedOut, warm);
     }
 
     Map<String, Object> stats() {

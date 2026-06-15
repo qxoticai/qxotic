@@ -1,6 +1,8 @@
 // All llama.* properties read at run time (works with -D on the JVM and on a native binary).
 package com.llama4j;
 
+import java.util.concurrent.TimeUnit;
+
 /**
  * Every tunable llama.* system property read AT RUN TIME, in one place. This class is
  * initialized at run time even in a native image (--initialize-at-run-time in the Makefile),
@@ -37,9 +39,14 @@ final class RuntimeFlags {
     static final int GEMM_THREADS = Integer.getInteger("llama.Q8_0GemmThreads",
             Integer.getInteger("llama.Q8_0GemmWorkers", Runtime.getRuntime().availableProcessors() * 4));
 
+    // grammar-constrained decoding (GBNF / response_format json_object)
+    static final boolean GRAMMAR = !"false".equals(System.getProperty("llama.grammar"));
+
     // prompt cache
     static final boolean PROMPT_CACHE = !"false".equals(System.getProperty("llama.promptCache"));
     static final long PROMPT_CACHE_BUDGET_BYTES = Long.getLong("llama.promptCacheMB", 2048L) * (1L << 20);
+    static final String PROMPT_CACHE_FILE = System.getProperty("llama.promptCacheFile"); // mmap backing
+    static final int PROMPT_CACHE_BLOCK_TOKENS = Integer.getInteger("llama.promptCacheBlockTokens", 512);
     // bx retention: conv-input rows kept so lookups can resume INSIDE cached spans (0 = off)
     static final int PROMPT_CACHE_STRIDE = Integer.getInteger("llama.promptCacheStride", 64);
     static final int PROMPT_CACHE_DENSE_TAIL = Integer.getInteger("llama.promptCacheDenseTail", 256);
@@ -49,14 +56,9 @@ final class RuntimeFlags {
     static final int SERVER_THREADS = Integer.getInteger("llama.serverThreads", 16);
     static final int SERVER_QUEUE = Integer.getInteger("llama.serverQueue", 4);
     static final long SERVER_MAX_BODY_BYTES = Math.min(Long.getLong("llama.serverMaxBodyMB", 32), 1024) << 20;
-    static final long SERVER_WRITE_STALL_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(Long.getLong("llama.serverWriteTimeout", 30));
+    static final long SERVER_WRITE_STALL_NANOS = TimeUnit.SECONDS.toNanos(Long.getLong("llama.serverWriteTimeout", 30));
     static final int SERVER_MAX_TOKENS = Integer.getInteger("llama.serverMaxTokens", 4096); // 0 = no completion-token ceiling
-    static final long SERVER_REQUEST_TIMEOUT_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(Long.getLong("llama.serverRequestTimeout", 300)); // 0 = no generation deadline
-
-    // thread affinity (needs OpenHFT affinity on the classpath)
-    static final boolean AFFINITY = Boolean.getBoolean("llama.Affinity");
-    static final boolean AFFINITY_VERBOSE = Boolean.getBoolean("llama.AffinityVerbose");
-    static final String AFFINITY_CPUS = System.getProperty("llama.AffinityCpus");
+    static final long SERVER_REQUEST_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(Long.getLong("llama.serverRequestTimeout", 300)); // 0 = no generation deadline
 
     private RuntimeFlags() {
     }

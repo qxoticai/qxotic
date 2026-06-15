@@ -383,17 +383,17 @@ public final class ServerIntegrationTest {
     private static void toolCallParser() {
         java.util.Set<String> tools = java.util.Set.of("get_weather", "get_time", "book_hotel", "noop");
         // multi-call Pythonic list in one block
-        List<Map<String, Object>> calls = Server.parseToolCalls(
+        List<Map<String, Object>> calls = ToolCalls.parseToolCalls(
                 "<|tool_call_start|>[get_weather(city=\"Paris\", unit=\"c\"), get_time(timezone='UTC')]<|tool_call_end|>", tools);
         check(calls.size() == 2, "pythonic list parses both calls (got " + calls.size() + ")");
         check("get_weather".equals(fn(calls, 0).get("name")) && "get_time".equals(fn(calls, 1).get("name")),
                 "multi-call names preserved");
         check("{\"city\":\"Paris\",\"unit\":\"c\"}".equals(fn(calls, 0).get("arguments")), "string args -> JSON object");
         // typed literals: numbers, negatives, booleans, None, nested list/dict
-        calls = Server.parseToolCalls("<|tool_call_start|>[book_hotel(city='NYC', guests=2, rating=-4.5, "
+        calls = ToolCalls.parseToolCalls("<|tool_call_start|>[book_hotel(city='NYC', guests=2, rating=-4.5, "
                 + "amenities=['gym', 'pool'], smoking=False, note=None, meta={'floor': 3, 'view': True})]<|tool_call_end|>", tools);
         check(calls.size() == 1, "typed-literal call parses");
-        Map<String, Object> args = (Map<String, Object>) Server.Json.parse((String) fn(calls, 0).get("arguments"));
+        Map<String, Object> args = (Map<String, Object>) JsonCodec.parse((String) fn(calls, 0).get("arguments"));
         check(Long.valueOf(2).equals(args.get("guests")) && Double.valueOf(-4.5).equals(args.get("rating")),
                 "numbers stay numeric (guests=" + args.get("guests") + ", rating=" + args.get("rating") + ")");
         check(List.of("gym", "pool").equals(args.get("amenities")), "list literal -> JSON array");
@@ -402,86 +402,86 @@ public final class ServerIntegrationTest {
         check(args.get("meta") instanceof Map<?, ?> meta && Long.valueOf(3).equals(meta.get("floor"))
                 && Boolean.TRUE.equals(meta.get("view")), "dict literal -> JSON object");
         // single bare call, empty args
-        calls = Server.parseToolCalls("<|tool_call_start|>noop()<|tool_call_end|>", tools);
+        calls = ToolCalls.parseToolCalls("<|tool_call_start|>noop()<|tool_call_end|>", tools);
         check(calls.size() == 1 && "{}".equals(fn(calls, 0).get("arguments")), "bare call with no args");
         // JSON block format
-        calls = Server.parseToolCalls(
+        calls = ToolCalls.parseToolCalls(
                 "<|tool_call_start|>[{\"name\":\"get_time\",\"arguments\":{\"timezone\":\"UTC\"}}]<|tool_call_end|>", tools);
         check(calls.size() == 1 && "get_time".equals(fn(calls, 0).get("name")), "JSON block format");
         // unknown tool dropped; malformed yields nothing
-        calls = Server.parseToolCalls("<|tool_call_start|>[hack_the_planet(x=1)]<|tool_call_end|>", tools);
+        calls = ToolCalls.parseToolCalls("<|tool_call_start|>[hack_the_planet(x=1)]<|tool_call_end|>", tools);
         check(calls.isEmpty(), "unknown tool dropped");
-        calls = Server.parseToolCalls("<|tool_call_start|>[get_time(timezone=]<|tool_call_end|>", tools);
+        calls = ToolCalls.parseToolCalls("<|tool_call_start|>[get_time(timezone=]<|tool_call_end|>", tools);
         check(calls.isEmpty(), "malformed block yields no calls");
         // two separate blocks accumulate
-        calls = Server.parseToolCalls("<|tool_call_start|>[get_time(timezone=\"UTC\")]<|tool_call_end|> and "
+        calls = ToolCalls.parseToolCalls("<|tool_call_start|>[get_time(timezone=\"UTC\")]<|tool_call_end|> and "
                 + "<|tool_call_start|>[noop()]<|tool_call_end|>", tools);
         check(calls.size() == 2, "separate blocks accumulate");
         // bare pythonic (no markers) — the model sometimes emits these
-        calls = Server.parseToolCalls("[noop()]", tools);
+        calls = ToolCalls.parseToolCalls("[noop()]", tools);
         check(calls.size() == 1 && "noop".equals(fn(calls, 0).get("name")), "bare pythonic noop (got " + calls.size() + ")");
         // bare pythonic embedded in prose
-        calls = Server.parseToolCalls("<think>I should call noop.</think>\n[noop()]", tools);
+        calls = ToolCalls.parseToolCalls("<think>I should call noop.</think>\n[noop()]", tools);
         check(calls.size() == 1 && "noop".equals(fn(calls, 0).get("name")),
                 "bare pythonic after thinking (got " + calls.size() + ")");
         // bare pythonic with prose BEFORE and AFTER
-        calls = Server.parseToolCalls("Some text before\n[get_weather(city=\"Paris\")]\nSome text after", tools);
+        calls = ToolCalls.parseToolCalls("Some text before\n[get_weather(city=\"Paris\")]\nSome text after", tools);
         check(calls.size() == 1 && "get_weather".equals(fn(calls, 0).get("name")),
                 "bare pythonic in prose (got " + calls.size() + ")");
         // bare call without brackets
-        calls = Server.parseToolCalls("noop()", tools);
+        calls = ToolCalls.parseToolCalls("noop()", tools);
         check(calls.size() == 1 && "noop".equals(fn(calls, 0).get("name")),
                 "bare call without brackets (got " + calls.size() + ")");
         // markdown link NOT parsed as tool call
-        calls = Server.parseToolCalls("[Google](https://google.com)", tools);
+        calls = ToolCalls.parseToolCalls("[Google](https://google.com)", tools);
         check(calls.isEmpty(), "markdown link not parsed as tool call");
         // code example NOT parsed (func not in known tools)
-        calls = Server.parseToolCalls("[calc(x=1, y=2)]", tools);
+        calls = ToolCalls.parseToolCalls("[calc(x=1, y=2)]", tools);
         check(calls.isEmpty(), "unknown function not parsed");
 
         // --- bullet-proofing: string-aware scanning of the bare (marker-less) form ---
         // brackets/parens/commas inside a quoted argument must NOT terminate detection early
-        calls = Server.parseToolCalls("[get_weather(city=\"a ] b ) c , d\")]", tools);
+        calls = ToolCalls.parseToolCalls("[get_weather(city=\"a ] b ) c , d\")]", tools);
         check(calls.size() == 1 && "{\"city\":\"a ] b ) c , d\"}".equals(fn(calls, 0).get("arguments")),
                 "bracket/paren/comma inside string arg preserved (got " + calls.size() + ")");
         // same hostile content but with native markers
-        calls = Server.parseToolCalls("<|tool_call_start|>[get_weather(note=\"close ) bracket ]\")]<|tool_call_end|>", tools);
+        calls = ToolCalls.parseToolCalls("<|tool_call_start|>[get_weather(note=\"close ) bracket ]\")]<|tool_call_end|>", tools);
         check(calls.size() == 1 && "{\"note\":\"close ) bracket ]\"}".equals(fn(calls, 0).get("arguments")),
                 "string with brackets in native block (got " + calls.size() + ")");
         // multiple bare calls in a list, no markers
-        calls = Server.parseToolCalls("[get_weather(city=\"Paris\"), get_time(timezone=\"UTC\")]", tools);
+        calls = ToolCalls.parseToolCalls("[get_weather(city=\"Paris\"), get_time(timezone=\"UTC\")]", tools);
         check(calls.size() == 2 && "get_weather".equals(fn(calls, 0).get("name"))
                 && "get_time".equals(fn(calls, 1).get("name")), "multi bare-list calls (got " + calls.size() + ")");
         // dotted function name (qualified, e.g. Calendar.create_event)
         java.util.Set<String> dotted = java.util.Set.of("Calendar.create_event");
-        calls = Server.parseToolCalls("[Calendar.create_event(title=\"Sync\")]", dotted);
+        calls = ToolCalls.parseToolCalls("[Calendar.create_event(title=\"Sync\")]", dotted);
         check(calls.size() == 1 && "Calendar.create_event".equals(fn(calls, 0).get("name")),
                 "dotted function name (got " + calls.size() + ")");
         // JSON-cased literals inside pythonic args (true/false/null lowercase)
-        calls = Server.parseToolCalls("[book_hotel(city=\"NYC\", smoking=false, note=null)]", tools);
+        calls = ToolCalls.parseToolCalls("[book_hotel(city=\"NYC\", smoking=false, note=null)]", tools);
         check(calls.size() == 1, "json-cased literals parse (got " + calls.size() + ")");
-        Map<String, Object> jsonArgs = (Map<String, Object>) Server.Json.parse((String) fn(calls, 0).get("arguments"));
+        Map<String, Object> jsonArgs = (Map<String, Object>) JsonCodec.parse((String) fn(calls, 0).get("arguments"));
         check(Boolean.FALSE.equals(jsonArgs.get("smoking")) && jsonArgs.containsKey("note") && jsonArgs.get("note") == null,
                 "lowercase false/null map correctly");
         // single-quoted strings in the marker-less form
-        calls = Server.parseToolCalls("[get_weather(city='Berlin')]", tools);
+        calls = ToolCalls.parseToolCalls("[get_weather(city='Berlin')]", tools);
         check(calls.size() == 1 && "{\"city\":\"Berlin\"}".equals(fn(calls, 0).get("arguments")),
                 "single-quoted string in bare call");
         // identifier suffix must not false-match a known tool (xget_weather != get_weather)
-        calls = Server.parseToolCalls("[xget_weather(city=\"Paris\")]", tools);
+        calls = ToolCalls.parseToolCalls("[xget_weather(city=\"Paris\")]", tools);
         check(calls.isEmpty(), "longer identifier containing a tool name is not a match");
         // bare call embedded mid-prose, no brackets
-        calls = Server.parseToolCalls("Sure, let me check: get_time(timezone=\"UTC\") now.", tools);
+        calls = ToolCalls.parseToolCalls("Sure, let me check: get_time(timezone=\"UTC\") now.", tools);
         check(calls.size() == 1 && "get_time".equals(fn(calls, 0).get("name")),
                 "bare call without brackets mid-prose (got " + calls.size() + ")");
         // empty bracketed list is not a call
-        calls = Server.parseToolCalls("[]", tools);
+        calls = ToolCalls.parseToolCalls("[]", tools);
         check(calls.isEmpty(), "empty list is not a tool call");
         // function reference in prose without a call is not parsed
-        calls = Server.parseToolCalls("You can use get_weather to look that up.", tools);
+        calls = ToolCalls.parseToolCalls("You can use get_weather to look that up.", tools);
         check(calls.isEmpty(), "bare tool name without parens is not a call");
         // no tools defined -> never treat text as a call
-        calls = Server.parseToolCalls("[get_weather(city=\"Paris\")]", java.util.Set.of());
+        calls = ToolCalls.parseToolCalls("[get_weather(city=\"Paris\")]", java.util.Set.of());
         check(calls.isEmpty(), "no tools defined -> no bare detection");
     }
 
@@ -582,7 +582,7 @@ public final class ServerIntegrationTest {
         check("stop".equals(path(first, "choices", 0).get("finish_reason")), "turn 1 stopped cleanly");
         String reply = (String) path(first, "choices", 0, "message").get("content");
         String turn2 = "{\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word: hello\"},"
-                + "{\"role\":\"assistant\",\"content\":" + Server.Json.stringify(reply) + "},"
+                + "{\"role\":\"assistant\",\"content\":" + JsonCodec.stringify(reply) + "},"
                 + "{\"role\":\"user\",\"content\":\"now say goodbye\"}],"
                 + "\"temperature\":0,\"max_tokens\":400,\"chat_template_kwargs\":{\"enable_thinking\":false}}";
         HttpResponse<String> second = post("/v1/chat/completions", turn2);
@@ -601,7 +601,7 @@ public final class ServerIntegrationTest {
                 new Engine.StopSpec(java.util.Set.of(), List.of()), false);
         long start = System.nanoTime();
         Engine.GenerationResult result = Engine.generate(model, model.createNewState(), 0, prompt, params,
-                new Engine.Listener(null, null, null), Llama.GenerationHooks.NONE);
+                new Engine.Listener(null, null, null, null), Llama.GenerationHooks.NONE);
         long elapsedMs = (System.nanoTime() - start) / 1_000_000;
         check("length".equals(result.finishReason()), "deadline -> finish_reason length (" + result.finishReason() + ")");
         check(result.completionTokens() > 0 && result.completionTokens() < 100_000,
@@ -639,7 +639,7 @@ public final class ServerIntegrationTest {
 
     @SuppressWarnings("unchecked")
     private static Map<String, Object> json(HttpResponse<String> response) {
-        return (Map<String, Object>) Server.Json.parse(response.body());
+        return (Map<String, Object>) JsonCodec.parse(response.body());
     }
 
     /** Walks maps by key and lists by index: path(m, "choices", 0, "message"). */

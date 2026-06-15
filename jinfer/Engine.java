@@ -49,8 +49,9 @@ final class Engine {
      *  text stop. {@code onReasoning} (only honored together with {@code onContent}) receives
      *  think-span text. {@code onToken} sees every sampled token — specials and the stop token
      *  included — before any text for it is emitted. */
-    record Listener(IntConsumer onToken, Consumer<String> onContent, Consumer<String> onReasoning) {
-        static final Listener NONE = new Listener(null, null, null);
+    record Listener(IntConsumer onToken, Consumer<String> onContent, Consumer<String> onReasoning,
+                    Consumer<String> onToolCall) {
+        static final Listener NONE = new Listener(null, null, null, null);
     }
 
     /**
@@ -101,12 +102,12 @@ final class Engine {
                 streamed.append(text);
                 onContent.accept(text);
             });
-            demux = streamingDemux(tokenizer, stopAware, listener.onReasoning(), params.inlineThink());
+            demux = streamingDemux(tokenizer, stopAware, listener.onReasoning(), listener.onToolCall(), params.inlineThink());
         } else if (!params.stops().textStops().isEmpty()) {
             // non-streaming: track text stops on a silent content-only decode so generation
             // aborts when one matches instead of burning the rest of the completion budget
             stopAware = new StopAwareTextConsumer(params.stops().textStops(), text -> {});
-            demux = streamingDemux(tokenizer, stopAware, null, params.inlineThink());
+            demux = streamingDemux(tokenizer, stopAware, null, null, params.inlineThink());
         }
         IntConsumer onToken = listener.onToken();
         IntConsumer textSink = demux;
@@ -235,16 +236,23 @@ final class Engine {
         };
     }
 
-    /** Routes each generated token to the content or reasoning channel: think markers flip the
-     *  channel (and are emitted literally when {@code inlineThink}); other specials are dropped;
-     *  everything else is UTF-8 decoded incrementally. */
+    /** Routes each generated token to the content, reasoning, or tool-call channel.
+     *  Think markers flip the think flag (inline mode emits them literally). Tool-call
+     *  spans are buffered separately so an in-progress call never leaks into the text
+     *  stream. Other specials are dropped. Everything else is UTF-8 decoded incrementally. */
     private static IntConsumer streamingDemux(LFMTokenizer tokenizer, Consumer<String> onText,
-                                              Consumer<String> onReasoning, boolean inlineThink) {
+                                               Consumer<String> onReasoning, Consumer<String> onToolCall,
+                                               boolean inlineThink) {
         Integer thinkOpen = tokenizer.getSpecialTokens().get("<think>");
         Integer thinkClose = tokenizer.getSpecialTokens().get("</think>");
+        Integer tcOpen = tokenizer.getSpecialTokens().get("<|tool_call_start|>");
+        Integer tcClose = tokenizer.getSpecialTokens().get("<|tool_call_end|>");
         boolean[] inThink = {false};
+        boolean[] inToolCall = {false};
         Utf8TokenDecoder textDecoder = new Utf8TokenDecoder(onText);
         Utf8TokenDecoder reasoningDecoder = onReasoning != null && !inlineThink ? new Utf8TokenDecoder(onReasoning) : null;
+        Utf8TokenDecoder toolCallDecoder = onToolCall != null && tcOpen != null && tcClose != null
+                ? new Utf8TokenDecoder(onToolCall) : null;
         return token -> {
             if (tokenizer.isSpecialToken(token)) {
                 if (token == thinkOpen) {
@@ -254,12 +262,24 @@ final class Engine {
                 if (token == thinkClose) {
                     inThink[0] = false;
                     if (inlineThink) textDecoder.accept(tokenizer.decodeTokenBytes(token));
+                    textDecoder.flushPending();
+                    if (reasoningDecoder != null) reasoningDecoder.flushPending();
+                }
+                if (tcOpen != null && token == tcOpen) {
+                    inToolCall[0] = true;
+                    textDecoder.flushPending();
+                }
+                if (tcClose != null && token == tcClose) {
+                    inToolCall[0] = false;
+                    if (toolCallDecoder != null) toolCallDecoder.flushPending();
                 }
                 return;
             }
+            if (inToolCall[0] && toolCallDecoder != null) {
+                toolCallDecoder.accept(tokenizer.decodeTokenBytes(token));
+                return;
+            }
             if (inThink[0] && !inlineThink) {
-                // the sink decides whether reasoning is surfaced; the think flag only governs
-                // whether the model thinks at all (template surrogate + sampler token ban)
                 if (reasoningDecoder != null) {
                     reasoningDecoder.accept(tokenizer.decodeTokenBytes(token));
                 }
@@ -407,6 +427,20 @@ final class Engine {
 
         void accept(byte[] bytes) {
             pending.writeBytes(bytes);
+            decodePending();
+        }
+
+        /** Emits any accumulated incomplete bytes as-is, resetting the pending buffer.
+         *  Called at channel transitions (e.g. think→content) to prevent stale bytes
+         *  from polluting the next channel's decoding. */
+        void flushPending() {
+            if (pending.size() > 0) {
+                downstream.accept(pending.toString(StandardCharsets.UTF_8));
+                pending.reset();
+            }
+        }
+
+        private void decodePending() {
             try {
                 decoder.reset();
                 CharBuffer chars = decoder.decode(ByteBuffer.wrap(pending.toByteArray()));

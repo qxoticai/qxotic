@@ -1,5 +1,5 @@
-// Tensors and compute kernels: the FloatTensor hierarchy (one class per GGML quantization),
-// vector dot/gemm/gemv kernels, the parallel runner and thread affinity.
+// Tensors and compute kernels: the FloatTensor hierarchy (one class per GGML quantization)
+// and the vector dot/gemm/gemv kernels. The parallel runner / CPU pinning live in Parallel.
 package com.llama4j;
 
 import com.qxotic.format.gguf.GGMLType;
@@ -14,107 +14,13 @@ import jdk.incubator.vector.VectorSpecies;
 
 import java.lang.reflect.Field;
 
-import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.BitSet;
 import java.util.function.IntConsumer;
-import java.util.stream.IntStream;
 
-final class Parallel {
-    public static void parallelFor(int startInclusive, int endExclusive, IntConsumer action) {
-        IntStream.range(startInclusive, endExclusive).parallel().forEach(i -> {
-            ThreadAffinity.bindCurrentThread();
-            action.accept(i);
-        });
-    }
-}
-
-
-final class ThreadAffinity {
-    private static final int[] CPUS = RuntimeFlags.AFFINITY ? configuredCpus() : new int[0];
-    private static final java.util.concurrent.atomic.AtomicInteger NEXT_CPU = new java.util.concurrent.atomic.AtomicInteger();
-    private static final java.util.concurrent.ConcurrentHashMap<Long, Object> LOCKS = new java.util.concurrent.ConcurrentHashMap<>();
-    private static volatile boolean unavailable;
-
-    private ThreadAffinity() {
-    }
-
-    static void bindCurrentThread() {
-        if (RuntimeFlags.AFFINITY && CPUS.length > 0 && !unavailable) {
-            LOCKS.computeIfAbsent(Thread.currentThread().threadId(), ignored -> acquireLock());
-        }
-    }
-
-    private static Object acquireLock() {
-        int cpu = CPUS[Math.floorMod(NEXT_CPU.getAndIncrement(), CPUS.length)];
-        try {
-            Class<?> affinityLock = Class.forName("net.openhft.affinity.AffinityLock");
-            Object lock = affinityLock.getMethod("acquireLock", int.class).invoke(null, cpu);
-            if (RuntimeFlags.AFFINITY_VERBOSE) {
-                System.err.println("Bound " + Thread.currentThread().getName() + " to CPU " + cpu);
-            }
-            return lock;
-        } catch (Throwable t) {
-            unavailable = true;
-            System.err.println("Thread affinity disabled: add OpenHFT affinity to the classpath and JNA/native access support (" + t.getClass().getSimpleName() + ").");
-            return null;
-        }
-    }
-
-    private static int[] configuredCpus() {
-        String value = RuntimeFlags.AFFINITY_CPUS;
-        int[] cpus = value == null || value.isBlank() ? physicalCpus() : parseCpuList(value);
-        if (cpus.length == 0) {
-            cpus = IntStream.range(0, Math.max(1, Runtime.getRuntime().availableProcessors() / 2)).toArray();
-        }
-        if (RuntimeFlags.AFFINITY_VERBOSE) {
-            System.err.println("Thread affinity CPU set: " + Arrays.toString(cpus));
-        }
-        return cpus;
-    }
-
-    private static int[] physicalCpus() {
-        int processors = Runtime.getRuntime().availableProcessors();
-        BitSet physical = new BitSet(processors);
-        for (int cpu = 0; cpu < processors; cpu++) {
-            Path siblingsPath = Path.of("/sys/devices/system/cpu/cpu" + cpu + "/topology/thread_siblings_list");
-            try {
-                int[] siblings = parseCpuList(Files.readString(siblingsPath).trim());
-                if (siblings.length > 0 && cpu == siblings[0]) {
-                    physical.set(cpu);
-                }
-            } catch (IOException ignored) {
-                return new int[0];
-            }
-        }
-        return physical.stream().toArray();
-    }
-
-    private static int[] parseCpuList(String value) {
-        BitSet cpus = new BitSet();
-        for (String part : value.split(",")) {
-            part = part.trim();
-            if (part.isEmpty()) {
-                continue;
-            }
-            int dash = part.indexOf('-');
-            if (dash >= 0) {
-                int start = Integer.parseInt(part.substring(0, dash).trim());
-                int end = Integer.parseInt(part.substring(dash + 1).trim());
-                cpus.set(start, end + 1);
-            } else {
-                cpus.set(Integer.parseInt(part));
-            }
-        }
-        return cpus.stream().toArray();
-    }
-}
 
 final class Float16 {
     public static final int BYTES = 2;

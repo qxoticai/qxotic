@@ -61,7 +61,7 @@ interface Sampler {
      *  remains, forces {@code eosToken} so generation terminates cleanly instead of
      *  feeding a garbage token into the forward pass. */
     static Sampler withGrammar(Sampler inner, Grammar.Cursor cursor, int eosToken) {
-        if (cursor == null || !Grammar.ENABLED) return inner;
+        if (cursor == null || !RuntimeFlags.GRAMMAR) return inner;
         return logits -> {
             if (!cursor.maskLogits(logits)) {
                 cursor.advanceWith(eosToken);

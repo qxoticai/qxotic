@@ -1,10 +1,15 @@
 package com.llama4j;
 
 import com.qxotic.format.json.Json;
+import java.time.LocalDateTime;
+import java.time.format.TextStyle;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * Minimal Jinja template renderer for LLM chat templates.
@@ -260,7 +265,7 @@ public final class JinjaRenderer {
         String s = v.asStr();
         if (s.isEmpty()) return new Val.Arr(List.of());
         var parts = new ArrayList<Val>();
-        for (String part : s.split(java.util.regex.Pattern.quote(delimiter), -1))
+        for (String part : s.split(Pattern.quote(delimiter), -1))
             parts.add(new Val.Str(part));
         return new Val.Arr(parts);
     }
@@ -318,7 +323,7 @@ public final class JinjaRenderer {
             case Val.Bool b -> sb.append(b.v);
             case Val.Int i -> sb.append(i.v);
             case Val.Flt f -> sb.append(fmtDouble(f.v));
-            case Val.Str s -> sb.append(Json.stringify(s.v));
+            case Val.Str s -> sb.append(JsonCodec.stringify(s.v));
             case Val.Arr a -> {
                 sb.append('[');
                 for (int i = 0; i < a.v.size(); i++) {
@@ -333,7 +338,7 @@ public final class JinjaRenderer {
                 for (var e : o.v.entrySet()) {
                     if (!first) sb.append(", ");
                     first = false;
-                    sb.append(Json.stringify(e.getKey()));
+                    sb.append(JsonCodec.stringify(e.getKey()));
                     sb.append(": ");
                     writeJson(sb, e.getValue());
                 }
@@ -353,7 +358,7 @@ public final class JinjaRenderer {
             // value types (this string-args path would coerce everything to strings).
             case "format_time", "strftime_now" -> {
                 String fmt = args.isEmpty() ? "%Y-%m-%d" : expectStr(requireArg(args, 0));
-                yield new Val.Str(strftime(java.time.LocalDateTime.now(), fmt));
+                yield new Val.Str(strftime(LocalDateTime.now(), fmt));
             }
             // chat templates call raise_exception(...) to reject malformed conversations; surface
             // it as a distinct error (not an "unsupported feature") so the message is the real one.
@@ -364,7 +369,7 @@ public final class JinjaRenderer {
     }
 
     /** Minimal C/Python strftime: handles the directives chat templates actually use. */
-    static String strftime(java.time.LocalDateTime t, String fmt) {
+    static String strftime(LocalDateTime t, String fmt) {
         var sb = new StringBuilder();
         for (int i = 0; i < fmt.length(); i++) {
             char c = fmt.charAt(i);
@@ -381,10 +386,10 @@ public final class JinjaRenderer {
                 case 'S' -> String.format("%02d", t.getSecond());
                 case 'p' -> t.getHour() < 12 ? "AM" : "PM";
                 case 'j' -> String.format("%03d", t.getDayOfYear());
-                case 'B' -> t.getMonth().getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH);
-                case 'b' -> t.getMonth().getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH);
-                case 'A' -> t.getDayOfWeek().getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH);
-                case 'a' -> t.getDayOfWeek().getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH);
+                case 'B' -> t.getMonth().getDisplayName(TextStyle.FULL, Locale.ENGLISH);
+                case 'b' -> t.getMonth().getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
+                case 'A' -> t.getDayOfWeek().getDisplayName(TextStyle.FULL, Locale.ENGLISH);
+                case 'a' -> t.getDayOfWeek().getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
                 case '%' -> "%";
                 default -> "%" + d;
             });
@@ -1131,7 +1136,7 @@ public final class JinjaRenderer {
         final LinkedHashMap<String,Val> vars = new LinkedHashMap<>();
         // macro definitions live on the (shared) root frame so calls can bind params by name,
         // honoring defaults and keyword arguments — see Executor.CallNode handling
-        final Map<String,MacroNode> macros = new java.util.HashMap<>();
+        final Map<String,MacroNode> macros = new HashMap<>();
         Val get(String name) {
             Val v = vars.get(name);
             if (v != null) return v;
@@ -1449,7 +1454,7 @@ public final class JinjaRenderer {
             return s.substring(a, b);
         }
 
-        static java.util.List<Val> splitToValList(String s) {
+        static List<Val> splitToValList(String s) {
             var parts = new ArrayList<Val>();
             for (String p : s.split("\\s+"))
                 if (!p.isEmpty()) parts.add(new Val.Str(p));

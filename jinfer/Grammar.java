@@ -1,10 +1,12 @@
 package com.llama4j;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,7 +15,6 @@ import java.util.WeakHashMap;
 
 public final class Grammar {
 
-    static final boolean ENABLED = !"false".equals(System.getProperty("llama.grammar"));
     static final int MAX_DFA_STATES = 2048;
 
     private static final Map<LFMTokenizer, Vocab> WRAPPERS = Collections.synchronizedMap(new WeakHashMap<>());
@@ -42,13 +43,13 @@ public final class Grammar {
 
     public static Spec json(LFMTokenizer t) { return json(vocab(t)); }
     public static Spec json(Vocab v) {
-        if (!ENABLED) return Spec.DISABLED;
+        if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
         return cache(v).computeIfAbsent("__json__", k -> JsonDFA.build(v));
     }
 
     public static Spec of(String g, LFMTokenizer t) { return of(g, vocab(t)); }
     public static Spec of(String g, Vocab v) {
-        if (!ENABLED) return Spec.DISABLED;
+        if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
         return cache(v).computeIfAbsent(g, k -> Spec.compile(k, v));
     }
 
@@ -62,7 +63,7 @@ public final class Grammar {
             int[] trans = new int[states * 256];
             Arrays.fill(trans, -1);
 
-            byte[] digits = "0123456789".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            byte[] digits = "0123456789".getBytes(StandardCharsets.UTF_8);
 
             for (int w : WS_BYTES) trans[9 * 256 + w] = 9;
             trans[9 * 256 + '{'] = 1; trans[9 * 256 + '['] = 4; trans[9 * 256 + '"'] = 5;
@@ -86,7 +87,7 @@ public final class Grammar {
             for (int b = 0; b < 256; b++) trans[6 * 256 + b] = 5;
             trans[6 * 256 + 'u'] = 7;
 
-            byte[] hex = "0123456789abcdefABCDEF".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            byte[] hex = "0123456789abcdefABCDEF".getBytes(StandardCharsets.UTF_8);
             for (byte hb : hex) trans[7 * 256 + (hb & 0xFF)] = 7;
             for (int b = 0; b < 256; b++) if (trans[7 * 256 + b] == -1) trans[7 * 256 + b] = 5;
 
@@ -208,7 +209,7 @@ public final class Grammar {
         int[] altData = new int[256];
         final List<BitSet> charSets = new ArrayList<>();
         final Map<Integer, Integer> ruleEntry = new LinkedHashMap<>();
-        final Map<Integer, Integer> tailCache = new java.util.HashMap<>();
+        final Map<Integer, Integer> tailCache = new HashMap<>();
         int rule0Entry, count;
 
         { Arrays.fill(next, -1); Arrays.fill(data, -1); Arrays.fill(altData, -1); }
@@ -473,7 +474,7 @@ public final class Grammar {
                 int end = body.indexOf('"', i + 1);
                 if (end < 0) { i++; continue; }
                 String s = unescape(body.substring(i + 1, end));
-                for (byte b : s.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                for (byte b : s.getBytes(StandardCharsets.UTF_8))
                     res.add(new Rule.Element.Value(b));
                 i = end + 1;
                 char mod = i < body.length() ? body.charAt(i) : 0;

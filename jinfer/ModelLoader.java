@@ -1,34 +1,25 @@
-// Model loading: GGUF metadata/tensors via com.qxotic:gguf, the toknroll tokenizer adapter,
-// and the conversion into the engine's Configuration / per-layer Weights.
+// Model loading: GGUF metadata/tensors via com.qxotic:gguf, converted into the engine's
+// Configuration / per-layer Weights. The tokenizer is a separate component (LFMTokenizer).
 package com.llama4j;
 
 import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.TensorEntry;
-import com.qxotic.toknroll.Normalizer;
-import com.qxotic.toknroll.Specials;
-import com.qxotic.toknroll.StandardTokenType;
-import com.qxotic.toknroll.Splitter;
-import com.qxotic.toknroll.Tokenizer;
-import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 
-
-
-
+import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Pattern;
 
 interface Timer extends AutoCloseable {
     @Override
@@ -59,8 +50,8 @@ final class ModelLoader {
     static GGUF readGguf(FileChannel fileChannel, String modelLabel) throws IOException {
         try (var ignored = Timer.log("Parse " + modelLabel)) {
             fileChannel.position(0L);
-            return GGUF.read(java.nio.channels.Channels.newChannel(
-                    new java.io.BufferedInputStream(java.nio.channels.Channels.newInputStream(fileChannel), 1 << 20)));
+            return GGUF.read(Channels.newChannel(
+                    new BufferedInputStream(Channels.newInputStream(fileChannel), 1 << 20)));
         }
     }
 
@@ -70,7 +61,7 @@ final class ModelLoader {
     }
 
     static Map<String, GGMLTensorEntry> loadTensors(FileChannel fileChannel, long tensorDataOffset,
-                                                    java.util.Collection<TensorEntry> tensors) throws IOException {
+                                                    Collection<TensorEntry> tensors) throws IOException {
         MemorySegment tensorData = fileChannel.map(FileChannel.MapMode.READ_ONLY, tensorDataOffset,
                 fileChannel.size() - tensorDataOffset, Arena.global());
         Map<String, GGMLTensorEntry> tensorEntries = HashMap.newHashMap(tensors.size());
@@ -290,96 +281,6 @@ final class ModelLoader {
     }
 }
 
-/**
- * LFM2 tokenizer = com.qxotic:toknroll loaded from the GGUF metadata, plus the "lfm2"
- * pre-tokenizer registration (llama.cpp's regex; [\p{L}\p{M}]+ because Java's \p{L} misses
- * combining marks; no UNICODE_CHARACTER_CLASS so \s stays ASCII — token-identical to
- * llama-tokenize, see tests/TokenizerParityTest). encode never maps special-token strings;
- * the chat format inserts special ids explicitly via {@link #getSpecialTokens()}.
- */
-class LFMTokenizer {
-
-    private static final String LFM2_PRE_PATTERN =
-            "(?i:'s|'t|'re|'ve|'m|'ll|'d)" +
-                    "|[^\\r\\n\\p{L}\\p{N}]?[\\p{L}\\p{M}]+" +
-                    "|\\p{N}{1,3}" +
-                    "| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*" +
-                    "|\\s*[\\r\\n]+" +
-                    "|\\s+(?!\\S)" +
-                    "|\\s+";
-
-    private final Tokenizer tokenizer;
-    private final Map<String, Integer> specialTokens;
-    private Specials specialsEncoder; // lazy: only the --raw-prompt path needs it
-    private final String chatTemplate; // Jinja template from tokenizer.chat_template
-
-    LFMTokenizer(GGUF gguf) {
-        this.tokenizer = GGUFTokenizerLoader.createBuilderWithBuiltins()
-                .registerPreTokenizer("lfm2", g -> Splitter.regex(Pattern.compile(LFM2_PRE_PATTERN)))
-                .registerNormalizer("lfm2", g -> Normalizer.identity())
-                .build()
-                .fromGGUF(gguf);
-        this.chatTemplate = gguf.getStringOrDefault("tokenizer.chat_template", "");
-        if (!this.chatTemplate.isEmpty()) {
-            // Verify the template compiles
-            try { JinjaRenderer.compile(this.chatTemplate); }
-            catch (RuntimeException e) {
-                System.err.println("[warn] chat template compilation failed: " + e.getMessage());
-            }
-        }
-        this.specialTokens = new HashMap<>();
-        for (int id = 0; id < vocabularySize(); id++) {
-            if (isSpecialToken(id)) {
-                specialTokens.put(tokenizer.vocabulary().token(id), id);
-            }
-        }
-    }
-
-    public int vocabularySize() {
-        return tokenizer.vocabulary().size();
-    }
-
-    public Map<String, Integer> getSpecialTokens() {
-        return specialTokens;
-    }
-
-    public String chatTemplate() { return chatTemplate; }
-
-    public boolean isSpecialToken(int token) {
-        return token >= 0 && token < vocabularySize()
-                && !tokenizer.vocabulary().isTokenOfType(token, StandardTokenType.NORMAL);
-    }
-
-    List<Integer> encode(String text) {
-        return tokenizer.encode(text).toList();
-    }
-
-    /** Encode mapping special-token strings in the text to their ids (plain {@link #encode}
-     *  never maps them); the --raw-prompt path uses this to author templated streams as text. */
-    List<Integer> encodeWithSpecialTokens(String text) {
-        if (specialsEncoder == null) {
-            specialsEncoder = Specials.compile(tokenizer.vocabulary(), specialTokens.keySet());
-        }
-        return specialsEncoder.encode(tokenizer, text).toList();
-    }
-
-    /** Raw UTF-8 bytes of one token (the streaming decoder assembles code points across tokens). */
-    byte[] decodeTokenBytes(int token) {
-        return tokenizer.decodeBytes(new int[]{token});
-    }
-
-    public String decode(int token) {
-        return new String(decodeTokenBytes(token), StandardCharsets.UTF_8);
-    }
-
-    public String decode(List<Integer> tokens) {
-        var buf = new java.io.ByteArrayOutputStream();
-        for (int token : tokens) {
-            buf.writeBytes(tokenizer.decodeBytes(new int[]{token}));
-        }
-        return buf.toString(StandardCharsets.UTF_8);
-    }
-}
 record Pair<First, Second>(First first, Second second) {
 }
 

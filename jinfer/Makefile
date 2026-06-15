@@ -80,6 +80,8 @@ test: target/test-classes/com/llama4j/KernelParityTest.class
 		-cp target/classes:target/test-classes:$(DEPS_CLASSPATH) com.llama4j.KernelParityTest
 	$(JAVA) $(JAVA_RUNTIME_OPTIONS) -cp target/classes:target/test-classes:$(DEPS_CLASSPATH) com.llama4j.GrammarTest
 	$(JAVA) $(JAVA_RUNTIME_OPTIONS) -cp target/classes:target/test-classes:$(DEPS_CLASSPATH) com.llama4j.JinjaRendererTest
+	$(JAVA) $(JAVA_RUNTIME_OPTIONS) --enable-native-access=ALL-UNNAMED \
+		-cp target/classes:target/test-classes:$(DEPS_CLASSPATH) com.llama4j.CacheStoreTest
 	$(JAVA) $(JAVA_RUNTIME_OPTIONS) -cp target/classes:target/test-classes:$(DEPS_CLASSPATH) com.llama4j.TokenizerParityTest $(MODEL)
 
 # End-to-end server test (in-process, ephemeral port); model-gated like the others.
@@ -117,7 +119,7 @@ NATIVE_IMAGE_FLAGS = -H:+UnlockExperimentalVMOptions -H:+VectorAPISupport -H:+Fo
 	-march=native --enable-preview --add-modules jdk.incubator.vector,jdk.httpserver \
 	--enable-native-access=ALL-UNNAMED -J--enable-native-access=ALL-UNNAMED \
 	--initialize-at-build-time='com.llama4j.AOT,com.llama4j.FloatTensor,com.llama4j.,com.qxotic.' \
-	--initialize-at-run-time=com.llama4j.RuntimeFlags,com.llama4j.ThreadAffinity \
+	--initialize-at-run-time=com.llama4j.RuntimeFlags \
 	-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0 \
 	-Dllama.PreloadGGUF=$(PRELOAD_GGUF)
 

@@ -784,7 +784,7 @@ public final class GrammarTest {
         MockV v = new MockV();
 
         // With ENABLED=true, grammar should constrain
-        check("grammar enabled", Grammar.ENABLED);
+        check("grammar enabled", RuntimeFlags.GRAMMAR);
 
         Grammar.Spec s = Grammar.of("root ::= \"a\"", v);
         check("enabled compiles", s.isValid());
