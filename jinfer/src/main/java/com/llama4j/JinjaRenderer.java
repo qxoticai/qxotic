@@ -363,6 +363,22 @@ public final class JinjaRenderer {
             // it as a distinct error (not an "unsupported feature") so the message is the real one.
             case "raise_exception" -> throw new RuntimeException("[jinja:raise] "
                     + (args.isEmpty() ? "template raised an exception" : expectStr(requireArg(args, 0))));
+            // range([start,] stop[, step]) -> list of ints (Python/Jinja semantics: stop exclusive)
+            case "range" -> {
+                long start = 0, stop, step = 1;
+                if (args.size() == 1) {
+                    stop = expectLong(requireArg(args, 0));
+                } else {
+                    start = expectLong(requireArg(args, 0));
+                    stop = expectLong(requireArg(args, 1));
+                    if (args.size() >= 3) step = expectLong(args.get(2));
+                }
+                if (step == 0) throw new RuntimeException("[jinja] range() step must not be zero");
+                var out = new ArrayList<Val>();
+                if (step > 0) for (long i = start; i < stop; i += step) out.add(new Val.Int(i));
+                else for (long i = start; i > stop; i += step) out.add(new Val.Int(i));
+                yield new Val.Arr(out);
+            }
             default -> throw unsupported("function '" + name + "()'");
         };
     }
@@ -428,6 +444,16 @@ public final class JinjaRenderer {
     private static String expectStr(Val v) {
         if (v instanceof Val.Str s) return s.v;
         return v.asStr();
+    }
+
+    private static long expectLong(Val v) {
+        return switch (v) {
+            case Val.Int i -> i.v();
+            case Val.Flt f -> (long) f.v();
+            case Val.Bool b -> b.v() ? 1 : 0;
+            case Val.Str s -> Long.parseLong(s.v().trim());
+            default -> throw new RuntimeException("[jinja] expected a number, got " + v.asStr());
+        };
     }
 
     // ════════════════════════════════════════════════════════════════

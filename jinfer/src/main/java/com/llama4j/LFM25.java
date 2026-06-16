@@ -221,7 +221,7 @@ public class LFM25 {
     /** One engine pass plus CLI presentation: prompt echo, token streaming through the printer,
      *  and the stderr timing summary line. --max-tokens is a TOTAL context cap in the CLI, so it
      *  is converted to the engine's completion budget here. */
-    private static Engine.GenerationResult generateCli(Llama model, Llama.State state, int startPosition,
+    private static Engine.GenerationResult generateCli(Model model, InferenceState state, int startPosition,
                                                        List<Integer> promptTokens, Set<Integer> stopTokens,
                                                        Sampler sampler, Options options) {
         LFMTokenizer tokenizer = model.tokenizer();
@@ -236,17 +236,17 @@ public class LFM25 {
             printer.accept(token);
         };
         int budget = options.maxTokens() < 0 ? -1
-                : options.maxTokens() - Llama.prefillPositions(state, startPosition, promptTokens);
+                : options.maxTokens() - Engine.prefillPositions(state, startPosition, promptTokens);
         Engine.Params params = new Engine.Params(sampler, budget, 0, // CLI: no generation deadline
                 new Engine.StopSpec(stopTokens, List.of()), options.think());
         Engine.GenerationResult result = Engine.generate(model, state, startPosition, promptTokens, params,
-                new Engine.Listener(onToken, null, null, null), Llama.GenerationHooks.NONE);
+                new Engine.Listener(onToken, null, null, null), GenerationHooks.NONE);
         int generated = result.tokens().size() + (result.stopToken() >= 0 ? 1 : 0);
         String timingPrefix = options.colors() ? ANSI_CYAN : "";
         String timingSuffix = options.colors() ? ANSI_RESET : "";
         System.err.printf("%n%scontext: %d/%d prompt: %.2f tokens/s (%d) generation: %.2f tokens/s (%d)%s%n",
                 timingPrefix,
-                startPosition + promptTokens.size() + generated, model.configuration().contextLength,
+                startPosition + promptTokens.size() + generated, model.contextLength(),
                 promptTokens.size() / (result.promptMillis() / 1000.0), promptTokens.size(),
                 generated / (result.predictedMillis() / 1000.0), generated,
                 timingSuffix);
@@ -433,7 +433,7 @@ public class LFM25 {
             System.exit(-1);
             return;
         }
-        Llama model = AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
+        Model model = AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
         if (model == null) {
             model = ModelLoader.loadModel(options.modelPath(), options.maxTokens());
         }
@@ -442,10 +442,60 @@ public class LFM25 {
             return;
         }
         Sampler sampler = Engine.configuredSampler(model, options.think(), options.temperature(), options.topp(), options.seed());
-        if (options.interactive()) {
-            runInteractive(model, sampler, options);
+        // LFM2.5 keeps its specialized CLI (FIM, raw-prompt, incremental ChatML, think surrogate);
+        // every other architecture runs through the generic chat-format path.
+        if (model instanceof Llama llama) {
+            if (options.interactive()) {
+                runInteractive(llama, sampler, options);
+            } else {
+                runInstructOnce(llama, sampler, options);
+            }
         } else {
-            runInstructOnce(model, sampler, options);
+            runGeneric(model, sampler, options);
+        }
+    }
+
+    /** CLI driver for any {@link Model} via its {@link ChatFormat}: a one-shot {@code --prompt} or
+     *  an interactive {@code --chat} loop, rebuilding the full prompt each turn (no incremental
+     *  resume). Used for non-LFM architectures (e.g. Gemma4). */
+    static void runGeneric(Model model, Sampler sampler, Options options) throws IOException {
+        ChatFormat chatFormat = model.chatFormat();
+        Set<Integer> stops = model.stopTokens();
+        if (!options.interactive()) {
+            List<Object> messages = new ArrayList<>();
+            if (options.systemPrompt() != null) {
+                messages.add(Map.of("role", "system", "content", options.systemPrompt()));
+            }
+            messages.add(Map.of("role", "user", "content", options.prompt()));
+            List<Integer> promptTokens = options.rawPrompt()
+                    ? new ArrayList<>(model.tokenizer().encodeWithSpecialTokens(options.prompt()))
+                    : chatFormat.encode(new ChatContext(messages, null, null, true, options.think(), Map.of()));
+            Engine.GenerationResult result = generateCli(model, model.createNewState(), 0, promptTokens, stops, sampler, options);
+            if (!options.stream()) {
+                System.out.println(result.text());
+            }
+            return;
+        }
+
+        List<Object> history = new ArrayList<>();
+        if (options.systemPrompt() != null) {
+            history.add(Map.of("role", "system", "content", options.systemPrompt()));
+        }
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in))) {
+            while (true) {
+                System.out.print("> ");
+                System.out.flush();
+                String userText = reader.readLine();
+                if (userText == null || "/quit".equals(userText) || "/exit".equals(userText)) break;
+                history.add(Map.of("role", "user", "content", userText));
+                List<Integer> promptTokens = chatFormat.encode(new ChatContext(history, null, null, true, options.think(), Map.of()));
+                // fresh state each turn: the generic path re-encodes the whole conversation
+                Engine.GenerationResult result = generateCli(model, model.createNewState(), 0, promptTokens, stops, sampler, options);
+                if (!options.stream()) {
+                    System.out.println(result.text());
+                }
+                history.add(Map.of("role", "assistant", "content", result.text()));
+            }
         }
     }
 }

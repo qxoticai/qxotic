@@ -39,7 +39,7 @@ import com.llama4j.LFM25.Options;
  * /v1/completions, /v1/responses, /v1/models, /health, /props, /tokenize, /detokenize),
  * SSE streaming, request validation, tool-call parsing, the single-thread generation
  * worker with its bounded queue, chat-session resume, and the prompt cache wiring.
- * Pure transport and orchestration: all inference goes through {@link Llama#generate}.
+ * Pure transport and orchestration: all inference goes through {@link Engine#generate}.
  */
 final class Server {
 
@@ -48,7 +48,7 @@ final class Server {
 
     /** Boots the server and returns it (port 0 binds an ephemeral port — the integration
      *  test reads the actual one from the returned server). */
-    static HttpServer run(Llama model, Options options) throws IOException {
+    static HttpServer run(Model model, Options options) throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress(options.host(), options.port()), 0);
         String servedId = options.modelPath().getFileName().toString();
         Map<String, Object> modelCard = Map.of(
@@ -77,17 +77,12 @@ final class Server {
         server.createContext("/v1/responses", exchange -> handleResponse(exchange, model, options));
         jsonRoute(server, "/health", null, request ->
                 Map.of("status", "ok", "busy", workerBusy, "queued", GENERATION_QUEUE.size()));
-        jsonRoute(server, "/props", null, request -> {
-            Llama.Configuration config = model.configuration();
-            return Map.of(
-                    "model", options.modelPath().getFileName().toString(),
-                    "n_ctx", config.contextLength,
-                    "n_batch", RuntimeFlags.MAX_PROMPT_SEQUENCE_LENGTH,
-                    "n_embd", config.embeddingLength,
-                    "n_vocab", config.vocabularySize,
-                    "n_layer", config.numberOfLayers,
-                    "prompt_cache", promptCache == null ? Map.of("enabled", false) : promptCache.stats());
-        });
+        jsonRoute(server, "/props", null, request -> Map.of(
+                "model", options.modelPath().getFileName().toString(),
+                "n_ctx", model.contextLength(),
+                "n_batch", RuntimeFlags.MAX_PROMPT_SEQUENCE_LENGTH,
+                "n_vocab", model.vocabularySize(),
+                "prompt_cache", promptCache == null ? Map.of("enabled", false) : promptCache.stats()));
         Function<Map<String, Object>, Object> tokenize = request ->
                 Map.of("tokens", model.tokenizer().encode(String.valueOf(request.getOrDefault("content", ""))));
         Function<Map<String, Object>, Object> detokenize = request -> {
@@ -107,13 +102,16 @@ final class Server {
             if (handleOptions(exchange)) return;
             sendError(exchange, 404, "Not found");
         });
-        if (RuntimeFlags.PROMPT_CACHE) {
+        // The prompt cache is an LFM2.5-specific optimization (its tree and bx tiers know that
+        // architecture's KV/conv layout); other models run the plain, un-cached generation path.
+        if (RuntimeFlags.PROMPT_CACHE && model instanceof Llama llamaModel) {
+            Llama.Configuration config = llamaModel.configuration();
             CacheStore store;
             String cacheFile = RuntimeFlags.PROMPT_CACHE_FILE;
             if (cacheFile != null) {
                 long kvBytesPerToken = 0;
-                for (int l = 0; l < model.configuration().nLayerKvFromStart; l++) {
-                    int kvDim = model.configuration().kvDim(l);
+                for (int l = 0; l < config.nLayerKvFromStart; l++) {
+                    int kvDim = config.kvDim(l);
                     if (kvDim > 0) kvBytesPerToken += 2L * kvDim * Float16.BYTES;
                 }
                 store = CacheStore.mmap(Path.of(cacheFile),
@@ -122,7 +120,7 @@ final class Server {
             } else {
                 store = CacheStore.inMemory();
             }
-            promptCache = new PromptCache(model.configuration(), store);
+            promptCache = new PromptCache(config, store);
             System.out.printf("Prompt cache enabled: budget=%d MB %s%n",
                     RuntimeFlags.PROMPT_CACHE_BUDGET_BYTES >> 20,
                     cacheFile != null ? "file=" + cacheFile : "(in memory)");
@@ -220,7 +218,7 @@ final class Server {
         });
     }
 
-    private static void handleChatCompletion(HttpExchange exchange, Llama model, Options options) throws IOException {
+    private static void handleChatCompletion(HttpExchange exchange, Model model, Options options) throws IOException {
         handleGenerationPost(exchange, "chatcmpl-", request -> {
             Validation.validateChatRequest(request);
             Validation.validateGenerationParams(request, options);
@@ -237,7 +235,7 @@ final class Server {
         });
     }
 
-    private static void handleCompletion(HttpExchange exchange, Llama model, Options options) throws IOException {
+    private static void handleCompletion(HttpExchange exchange, Model model, Options options) throws IOException {
         handleGenerationPost(exchange, "cmpl-", request -> {
             Validation.validateGenerationParams(request, options);
             Options.require(!completionPrompt(request).isBlank(), "prompt must not be empty");
@@ -265,7 +263,7 @@ final class Server {
                 : Values.stringValue(promptValue, "");
     }
 
-    private static void handleResponse(HttpExchange exchange, Llama model, Options options) throws IOException {
+    private static void handleResponse(HttpExchange exchange, Model model, Options options) throws IOException {
         handleGenerationPost(exchange, "resp-", request -> {
             normalizeResponseRequest(request);
             Validation.validateGenerationParams(request, options);
@@ -298,7 +296,7 @@ final class Server {
         }
     }
 
-    private static void streamChatCompletion(HttpExchange exchange, Llama model, Options options, Map<String, Object> request,
+    private static void streamChatCompletion(HttpExchange exchange, Model model, Options options, Map<String, Object> request,
                                              List<Object> messages, String modelId, String id) throws IOException {
         try (SseStream sse = beginStream(exchange)) {
             guarded(sse, () -> {
@@ -347,7 +345,7 @@ final class Server {
         return request.get("stream_options") instanceof Map<?, ?> so && Boolean.TRUE.equals(((Map<String, Object>) so).get("include_usage"));
     }
 
-    private static void streamCompletion(HttpExchange exchange, Llama model, Options options, Map<String, Object> request,
+    private static void streamCompletion(HttpExchange exchange, Model model, Options options, Map<String, Object> request,
                                          String prompt, String modelId, String id) throws IOException {
         try (SseStream sse = beginStream(exchange)) {
             guarded(sse, () -> {
@@ -361,7 +359,7 @@ final class Server {
         }
     }
 
-    private static void streamResponse(HttpExchange exchange, Llama model, Options options, Map<String, Object> request,
+    private static void streamResponse(HttpExchange exchange, Model model, Options options, Map<String, Object> request,
                                        List<Object> messages, String modelId, String id) throws IOException {
         try (SseStream sse = beginStream(exchange)) {
             guarded(sse, () -> {
@@ -499,13 +497,12 @@ final class Server {
         return Values.stringValue(content, "");
     }
 
-    private static GenerationResult generateChat(Llama model, Options options, Map<String, Object> request,
+    private static GenerationResult generateChat(Model model, Options options, Map<String, Object> request,
                                                    List<Object> messages,
                                                    Consumer<String> onText, Consumer<String> onReasoning,
                                                    Consumer<String> onToolCall,
                                                    OpenAiSchema.Usage usageCounts) {
         LFMTokenizer tokenizer = model.tokenizer();
-        LFMChatFormat chatFormat = new LFMChatFormat(tokenizer); // stop tokens + incremental resume
         ChatContext chatContext = new ChatContext(
                 messages,
                 hasUsableTools(request) ? Values.asArray(request.get("tools"), "tools") : null,
@@ -513,21 +510,24 @@ final class Server {
                 true,
                 requestThink(request, options),
                 request.get("chat_template_kwargs") instanceof Map<?, ?> kwargs ? (Map<String, Object>) kwargs : null);
-        List<Integer> promptTokens = new ArrayList<>(ChatFormats.forModel(tokenizer).encode(chatContext));
+        List<Integer> promptTokens = new ArrayList<>(model.chatFormat().encode(chatContext));
         seedForcedToolCall(tokenizer, request, promptTokens);
         if (System.getProperty("llama.debugPrompt") != null) {
             System.err.println("[prompt] " + tokenizer.decode(promptTokens));
         }
-        Ingestion resumed = matchChatSession(request, messages, chatFormat, model.tokenizer(), options);
+        // Incremental in-place session resume is LFM2.5-only (ChatML delta encoding); other models
+        // re-encode the full prompt each turn.
+        Ingestion resumed = model instanceof Llama
+                ? matchChatSession(request, messages, new LFMChatFormat(tokenizer), tokenizer, options) : null;
         Ingestion ingestion = resumed != null ? resumed : Ingestion.of(model.createNewState(), 0, promptTokens);
-        GenerationResult result = generateResponse(model, options, request, promptTokens, ingestion, chatFormat.getStopTokens(), onText, onReasoning, onToolCall, usageCounts);
-        saveChatSession(model, request, messages, ingestion, result);
+        GenerationResult result = generateResponse(model, options, request, promptTokens, ingestion, model.stopTokens(), onText, onReasoning, onToolCall, usageCounts);
+        if (model instanceof Llama) saveChatSession(model, request, messages, ingestion, result);
         return hasUsableTools(request) ? withParsedToolCalls(model, result, request) : result;
     }
 
     /** Remember the live state for instant resume of the next turn; only clean stop-terminated
      *  text replies are resumable (tool calls and aborted/length-capped replies are not). */
-    private static void saveChatSession(Llama model, Map<String, Object> request, List<Object> messages,
+    private static void saveChatSession(Model model, Map<String, Object> request, List<Object> messages,
                                         Ingestion ingestion, GenerationResult result) {
         if (!"stop".equals(result.finishReason()) || !result.toolCalls().isEmpty() || result.text().isBlank()) {
             return;
@@ -538,14 +538,13 @@ final class Server {
         chatSession = new ChatSession(ingestion.state(), position, keys, result.text(), toolsKey(request));
     }
 
-    private static GenerationResult generateCompletion(Llama model, Options options, Map<String, Object> request, String prompt,
+    private static GenerationResult generateCompletion(Model model, Options options, Map<String, Object> request, String prompt,
                                                         Consumer<String> onText, Consumer<String> onReasoning,
                                                         Consumer<String> onToolCall,
                                                         OpenAiSchema.Usage usageCounts) {
-        LFMChatFormat chatFormat = new LFMChatFormat(model.tokenizer());
         List<Integer> promptTokens = options.rawPrompt() ? model.tokenizer().encodeWithSpecialTokens(prompt) : new ArrayList<>(model.tokenizer().encode(prompt));
         Ingestion ingestion = Ingestion.of(model.createNewState(), 0, promptTokens);
-        return generateResponse(model, options, request, promptTokens, ingestion, chatFormat.getStopTokens(), onText, onReasoning, onToolCall, usageCounts);
+        return generateResponse(model, options, request, promptTokens, ingestion, model.stopTokens(), onText, onReasoning, onToolCall, usageCounts);
     }
 
 
@@ -555,10 +554,10 @@ final class Server {
     /** What to feed the generation loop: which state, from which position, with which tokens.
      *  Fresh requests: new state, position 0, the full prompt. Resumed chat sessions: the live
      *  state mid-context with only the delta (turn close + new messages + generation prompt). */
-    private record Ingestion(Llama.State state, int startPosition, List<Integer> tokens, int prefillPositions) {
-        /** prefillPositions: see {@link Llama#prefillPositions}. */
-        static Ingestion of(Llama.State state, int startPosition, List<Integer> tokens) {
-            return new Ingestion(state, startPosition, tokens, Llama.prefillPositions(state, startPosition, tokens));
+    private record Ingestion(InferenceState state, int startPosition, List<Integer> tokens, int prefillPositions) {
+        /** prefillPositions: see {@link Engine#prefillPositions}. */
+        static Ingestion of(InferenceState state, int startPosition, List<Integer> tokens) {
+            return new Ingestion(state, startPosition, tokens, Engine.prefillPositions(state, startPosition, tokens));
         }
     }
 
@@ -570,7 +569,7 @@ final class Server {
      * history is never re-encoded. Single generation worker thread, so a plain field suffices;
      * an unrelated request simply replaces the session.
      */
-    private record ChatSession(Llama.State state, int position, List<String> messageKeys, String reply, String toolsKey) {}
+    private record ChatSession(InferenceState state, int position, List<String> messageKeys, String reply, String toolsKey) {}
     private static ChatSession chatSession;
 
     private static String messageKey(Object message) {
@@ -612,20 +611,21 @@ final class Server {
     /**
      * Server generation driver over {@link Engine#generate}. The ingestion plan says where to
      * start: a fresh state at position 0 (with the prompt cache plugged in through
-     * {@link Llama.GenerationHooks}), or a resumed chat session mid-context — in which case the
+     * {@link GenerationHooks}), or a resumed chat session mid-context — in which case the
      * cache is bypassed (its tree is keyed by full-stream positions). cachedOut[0] tracks the
      * resumed-prefix length for the streaming usage counters.
      */
-    private static GenerationResult runServerGeneration(Llama model, Ingestion ingestion, Engine.Params params,
+    private static GenerationResult runServerGeneration(Model model, Ingestion ingestion, Engine.Params params,
                                                         Engine.Listener listener, int[] cachedOut, boolean warm) {
         PromptCache cache = promptCache;
-        Llama.State state = ingestion.state();
+        InferenceState state = ingestion.state();
         if (cache == null || ingestion.startPosition() > 0) {
-            return Engine.generate(model, state, ingestion.startPosition(), ingestion.tokens(), params, listener, Llama.GenerationHooks.NONE);
+            return Engine.generate(model, state, ingestion.startPosition(), ingestion.tokens(), params, listener, GenerationHooks.NONE);
         }
         // The prompt cache owns its own resume/commit policy; we just drive Engine.generate with
         // it as the hooks, commit the final frontier on success, and release per-request state.
-        PromptCache.CacheRun run = cache.beginGeneration(state, cachedOut, warm);
+        // The cache is only ever created for LFM2.5 (see run()), so the state is a Llama.State.
+        PromptCache.CacheRun run = cache.beginGeneration((Llama.State) state, cachedOut, warm);
         try {
             GenerationResult result = Engine.generate(model, state, 0, ingestion.tokens(), params, listener, run);
             run.commitFinal();
@@ -642,7 +642,7 @@ final class Server {
      * warmed in two stream forms — chat-template system message and raw completion prompt.
      * Runs on the generation worker (cache blobs are confined to it) and blocks until done.
      */
-    private static void warmPromptCache(Llama model, Options options) {
+    private static void warmPromptCache(Model model, Options options) {
         List<String> files = new ArrayList<>(options.warmPrompts());
         if (RuntimeFlags.PROMPT_CACHE_WARM != null) {
             for (String f : RuntimeFlags.PROMPT_CACHE_WARM.split(",")) {
@@ -674,7 +674,7 @@ final class Server {
         }
     }
 
-    private static void warmFile(Llama model, String file) throws IOException {
+    private static void warmFile(Model model, String file) throws IOException {
         String text = Files.readString(Path.of(file));
         LFMTokenizer tokenizer = model.tokenizer();
         ChatContext warm = new ChatContext(
@@ -712,7 +712,7 @@ final class Server {
      *  through {@link #runServerGeneration}. Streaming counters mirror Engine's final usage:
      *  generated tokens are counted unless they are the trailing token stop removed from the
      *  result. */
-    private static GenerationResult generateResponse(Llama model, Options options, Map<String, Object> request, List<Integer> promptTokens,
+    private static GenerationResult generateResponse(Model model, Options options, Map<String, Object> request, List<Integer> promptTokens,
                                            Ingestion ingestion, Set<Integer> baseStopTokens, Consumer<String> onText,
                                            Consumer<String> onReasoning, Consumer<String> onToolCall,
                                            OpenAiSchema.Usage usageCounts) {
@@ -852,7 +852,7 @@ final class Server {
         if (!choice.isEmpty()) promptTokens.addAll(tokenizer.encode("[" + choice));
     }
 
-    private static GenerationResult withParsedToolCalls(Llama model, GenerationResult result, Map<String, Object> request) {
+    private static GenerationResult withParsedToolCalls(Model model, GenerationResult result, Map<String, Object> request) {
         // Parse from the FULL generated text (think span included). result.text() is the
         // think-STRIPPED content, so a call the model emits before it closes </think> (or in an
         // unterminated think span) would be deleted before we ever see it. Decoding the raw

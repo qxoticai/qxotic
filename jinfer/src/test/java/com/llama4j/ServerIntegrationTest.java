@@ -37,7 +37,7 @@ public final class ServerIntegrationTest {
             System.exit(failures > 0 ? 1 : 0);
             return;
         }
-        Llama llama = ModelLoader.loadModel(model, 2048);
+        Llama llama = (Llama) ModelLoader.loadModel(model, 2048);
         StringBuilder manual = new StringBuilder("Agent operating manual.");
         for (int i = 1; i <= 50; i++) {
             manual.append(" Directive ").append(i).append(": when handling case ").append(i)
@@ -601,7 +601,7 @@ public final class ServerIntegrationTest {
                 new Engine.StopSpec(java.util.Set.of(), List.of()), false);
         long start = System.nanoTime();
         Engine.GenerationResult result = Engine.generate(model, model.createNewState(), 0, prompt, params,
-                new Engine.Listener(null, null, null, null), Llama.GenerationHooks.NONE);
+                new Engine.Listener(null, null, null, null), GenerationHooks.NONE);
         long elapsedMs = (System.nanoTime() - start) / 1_000_000;
         check("length".equals(result.finishReason()), "deadline -> finish_reason length (" + result.finishReason() + ")");
         check(result.completionTokens() > 0 && result.completionTokens() < 100_000,

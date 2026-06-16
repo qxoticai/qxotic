@@ -427,6 +427,7 @@ typedef struct {
     int seq_tile;
     int tile_count;
     int seq_tile_count;
+    int dtype; // for kind 7 (dense gemm): 0 = f32, 1 = f16, 2 = bf16 weights
 } gemm_task_t;
 
 // Activations quantized to Q8 (u8, biased +128 so they can be the unsigned vpdpbusd
@@ -1155,7 +1156,83 @@ static void compute_q6k_band(const gemm_task_t *task, int tile, int worker) {
     }
 }
 
+// ---- Dense GEMM: (F32 | F16 | BF16) weight @ F32 activations -> F32, register-tiled 4x4,
+// AVX-512, run on the worker pool. Requires dim1 % 16 == 0 (callers fall back to AVX2 otherwise).
+// 16 fp32 accumulators reuse each weight row across 4 seq columns and each activation column across
+// 4 weight rows; the contraction (dim1) is vectorized 16-wide.
+static inline __m512 loadw_f32(const uint8_t *p)  { return _mm512_loadu_ps((const float *) p); }
+static inline __m512 loadw_f16(const uint8_t *p)  { return _mm512_cvtph_ps(_mm256_loadu_si256((const __m256i *) p)); }
+static inline __m512 loadw_bf16(const uint8_t *p) { return _mm512_castsi512_ps(_mm512_slli_epi32(_mm512_cvtepu16_epi32(_mm256_loadu_si256((const __m256i *) p)), 16)); }
+
+#define DENSE_BLOCK(NAME, LOADW, EB)                                                                        \
+static void NAME(const uint8_t *wbase, int64_t w_stride, const float *rhs, int that_stride,                 \
+                 float *out, int out_stride, int rs, int re, int ss, int se, int dim1) {                    \
+    int r = rs;                                                                                             \
+    for (; r + 4 <= re; r += 4) {                                                                           \
+        const uint8_t *w0 = wbase + (int64_t) r * w_stride, *w1 = w0 + w_stride,                            \
+                      *w2 = w1 + w_stride, *w3 = w2 + w_stride;                                             \
+        int s = ss;                                                                                         \
+        for (; s + 4 <= se; s += 4) {                                                                       \
+            const float *x0 = rhs + (int64_t) s * that_stride, *x1 = x0 + that_stride,                      \
+                        *x2 = x1 + that_stride, *x3 = x2 + that_stride;                                     \
+            __m512 a00=_mm512_setzero_ps(),a01=a00,a02=a00,a03=a00, a10=a00,a11=a00,a12=a00,a13=a00,        \
+                   a20=a00,a21=a00,a22=a00,a23=a00, a30=a00,a31=a00,a32=a00,a33=a00;                        \
+            for (int k = 0; k < dim1; k += 16) {                                                            \
+                __m512 wv0=LOADW(w0+(int64_t)k*EB), wv1=LOADW(w1+(int64_t)k*EB),                            \
+                       wv2=LOADW(w2+(int64_t)k*EB), wv3=LOADW(w3+(int64_t)k*EB);                            \
+                __m512 xv0=_mm512_loadu_ps(x0+k), xv1=_mm512_loadu_ps(x1+k),                                \
+                       xv2=_mm512_loadu_ps(x2+k), xv3=_mm512_loadu_ps(x3+k);                                \
+                a00=_mm512_fmadd_ps(wv0,xv0,a00); a01=_mm512_fmadd_ps(wv1,xv0,a01); a02=_mm512_fmadd_ps(wv2,xv0,a02); a03=_mm512_fmadd_ps(wv3,xv0,a03); \
+                a10=_mm512_fmadd_ps(wv0,xv1,a10); a11=_mm512_fmadd_ps(wv1,xv1,a11); a12=_mm512_fmadd_ps(wv2,xv1,a12); a13=_mm512_fmadd_ps(wv3,xv1,a13); \
+                a20=_mm512_fmadd_ps(wv0,xv2,a20); a21=_mm512_fmadd_ps(wv1,xv2,a21); a22=_mm512_fmadd_ps(wv2,xv2,a22); a23=_mm512_fmadd_ps(wv3,xv2,a23); \
+                a30=_mm512_fmadd_ps(wv0,xv3,a30); a31=_mm512_fmadd_ps(wv1,xv3,a31); a32=_mm512_fmadd_ps(wv2,xv3,a32); a33=_mm512_fmadd_ps(wv3,xv3,a33); \
+            }                                                                                               \
+            float *o0=out+(int64_t)s*out_stride+r, *o1=o0+out_stride, *o2=o1+out_stride, *o3=o2+out_stride; \
+            o0[0]=_mm512_reduce_add_ps(a00); o0[1]=_mm512_reduce_add_ps(a01); o0[2]=_mm512_reduce_add_ps(a02); o0[3]=_mm512_reduce_add_ps(a03); \
+            o1[0]=_mm512_reduce_add_ps(a10); o1[1]=_mm512_reduce_add_ps(a11); o1[2]=_mm512_reduce_add_ps(a12); o1[3]=_mm512_reduce_add_ps(a13); \
+            o2[0]=_mm512_reduce_add_ps(a20); o2[1]=_mm512_reduce_add_ps(a21); o2[2]=_mm512_reduce_add_ps(a22); o2[3]=_mm512_reduce_add_ps(a23); \
+            o3[0]=_mm512_reduce_add_ps(a30); o3[1]=_mm512_reduce_add_ps(a31); o3[2]=_mm512_reduce_add_ps(a32); o3[3]=_mm512_reduce_add_ps(a33); \
+        }                                                                                                   \
+        for (; s < se; s++) {                                                                               \
+            const float *xs = rhs + (int64_t) s * that_stride;                                              \
+            __m512 b0=_mm512_setzero_ps(),b1=b0,b2=b0,b3=b0;                                                \
+            for (int k=0;k<dim1;k+=16){ __m512 xv=_mm512_loadu_ps(xs+k);                                    \
+                b0=_mm512_fmadd_ps(LOADW(w0+(int64_t)k*EB),xv,b0); b1=_mm512_fmadd_ps(LOADW(w1+(int64_t)k*EB),xv,b1); \
+                b2=_mm512_fmadd_ps(LOADW(w2+(int64_t)k*EB),xv,b2); b3=_mm512_fmadd_ps(LOADW(w3+(int64_t)k*EB),xv,b3); } \
+            float *o=out+(int64_t)s*out_stride+r;                                                           \
+            o[0]=_mm512_reduce_add_ps(b0); o[1]=_mm512_reduce_add_ps(b1); o[2]=_mm512_reduce_add_ps(b2); o[3]=_mm512_reduce_add_ps(b3); \
+        }                                                                                                   \
+    }                                                                                                       \
+    for (; r < re; r++) {                                                                                   \
+        const uint8_t *w = wbase + (int64_t) r * w_stride;                                                  \
+        for (int s = ss; s < se; s++) {                                                                     \
+            const float *xs = rhs + (int64_t) s * that_stride;                                              \
+            __m512 acc=_mm512_setzero_ps();                                                                 \
+            for (int k=0;k<dim1;k+=16) acc=_mm512_fmadd_ps(LOADW(w+(int64_t)k*EB), _mm512_loadu_ps(xs+k), acc); \
+            out[(int64_t)s*out_stride+r]=_mm512_reduce_add_ps(acc);                                         \
+        }                                                                                                   \
+    }                                                                                                       \
+}
+DENSE_BLOCK(dense_block_f32, loadw_f32, 4)
+DENSE_BLOCK(dense_block_f16, loadw_f16, 2)
+DENSE_BLOCK(dense_block_bf16, loadw_bf16, 2)
+
+static void compute_dense_chunk(const gemm_task_t *task, int tile) {
+    int row_start = (tile / task->seq_tile_count) * task->row_tile;
+    int seq_start = (tile % task->seq_tile_count) * task->seq_tile;
+    int row_end = row_start + task->row_tile;  if (row_end > task->dim0) row_end = task->dim0;
+    int seq_end = seq_start + task->seq_tile;  if (seq_end > task->sequence_length) seq_end = task->sequence_length;
+    int64_t w_stride = (int64_t) task->dim1 * (task->dtype == 0 ? 4 : 2);
+    if (task->dtype == 0)      dense_block_f32 (task->weights, w_stride, task->rhs, task->that_stride, task->out, task->out_stride, row_start, row_end, seq_start, seq_end, task->dim1);
+    else if (task->dtype == 1) dense_block_f16 (task->weights, w_stride, task->rhs, task->that_stride, task->out, task->out_stride, row_start, row_end, seq_start, seq_end, task->dim1);
+    else                       dense_block_bf16(task->weights, w_stride, task->rhs, task->that_stride, task->out, task->out_stride, row_start, row_end, seq_start, seq_end, task->dim1);
+}
+
 static void compute_tile(const gemm_task_t *task, int tile, int worker) {
+    if (task->kind == 7) {
+        compute_dense_chunk(task, tile);
+        return;
+    }
     if (task->kind == 1) {
         compute_gemv_chunk(task, tile);
         return;
@@ -1417,6 +1494,31 @@ static void run_kquant_gemm(int band_kind, jlong weights, jlong x, jlong x_strid
     dispatch_task();
     current_task.kind = band_kind;
     current_task.tile_count = (dim0 + VNNI_BAND - 1) / VNNI_BAND;
+    dispatch_task();
+}
+
+// Dense (f32/f16/bf16 weight @ f32) gemm on the worker pool; tiled over rows x seq.
+static void run_dense_gemm(int dtype, jlong weights, jlong x, jlong x_stride_bytes,
+                           jlong out, jlong out_stride_bytes, jint sequence_length, jint dim0, jint dim1) {
+    const int row_tile = 16, seq_tile = 64;
+    int seq_tile_count = (sequence_length + seq_tile - 1) / seq_tile;
+    int row_tile_count = (dim0 + row_tile - 1) / row_tile;
+    int tile_count = seq_tile_count * row_tile_count;
+    if (tile_count <= 0) return;
+    current_task.weights = (const uint8_t *) (uintptr_t) weights;
+    current_task.rhs = (const float *) (uintptr_t) x;
+    current_task.out = (float *) (uintptr_t) out;
+    current_task.that_stride = (int) (x_stride_bytes / (jlong) sizeof(float));
+    current_task.out_stride = (int) (out_stride_bytes / (jlong) sizeof(float));
+    current_task.sequence_length = sequence_length;
+    current_task.dim0 = dim0;
+    current_task.dim1 = dim1;
+    current_task.dtype = dtype;
+    current_task.row_tile = row_tile;
+    current_task.seq_tile = seq_tile;
+    current_task.seq_tile_count = seq_tile_count;
+    current_task.kind = 7;
+    current_task.tile_count = tile_count;
     dispatch_task();
 }
 
@@ -2588,6 +2690,12 @@ JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmBF16(JNIEnv *env
     neon_gemm_bf16(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
     return;
 #endif
+#if LFM25_AVX512_VNNI
+    if ((dim1 % 16) == 0 && x86_supports_avx512_vnni()) {
+        run_dense_gemm(2, weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+        return;
+    }
+#endif
 #if LFM25_AVX2_FMA
     if (x86_supports_avx2_fma_f16c()) {
         avx2_gemm_bf16(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
@@ -2606,6 +2714,12 @@ JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmF16(JNIEnv *env,
     neon_gemm_f16(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
     return;
 #endif
+#if LFM25_AVX512_VNNI
+    if ((dim1 % 16) == 0 && x86_supports_avx512_vnni()) {
+        run_dense_gemm(1, weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+        return;
+    }
+#endif
 #if LFM25_AVX2_FMA
     if (x86_supports_avx2_fma_f16c()) {
         avx2_gemm_f16(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
@@ -2623,6 +2737,12 @@ JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmF32(JNIEnv *env,
 #if LFM25_ARM_NEON
     neon_gemm_f32(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
     return;
+#endif
+#if LFM25_AVX512_VNNI
+    if ((dim1 % 16) == 0 && x86_supports_avx512_vnni()) {
+        run_dense_gemm(0, weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
+        return;
+    }
 #endif
 #if LFM25_AVX2_FMA
     if (x86_supports_avx2_fma_f16c()) {

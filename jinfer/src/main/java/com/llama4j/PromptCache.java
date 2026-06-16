@@ -9,7 +9,7 @@ import java.util.Map;
 
 /**
  * Prefix cache of KV rows and shortconv state, keyed by the effective ingested token
- * stream (see {@link Llama#buildPrefillTokens}). A radix tree of VARIABLE-LENGTH nodes that
+ * stream (see {@link Engine#buildPrefillTokens}). A radix tree of VARIABLE-LENGTH nodes that
  * split at any divergence point (SGLang MambaRadixCache shape): KV is matchable at token
  * granularity, while shortconv state — fixed-size and updated in place — is resumable
  * through two tiers:
@@ -688,12 +688,12 @@ final class PromptCache {
         }
     }
 
-    /** One cached generation, plugged into {@link Engine#generate} as a {@link Llama.GenerationHooks}.
+    /** One cached generation, plugged into {@link Engine#generate} as a {@link GenerationHooks}.
      *  Owns the whole cache policy: lookup + restore + pin on resume, checkpoint planning, SWA-clamped
      *  per-chunk commits, and the bx-harvest lifecycle — plus {@link #commitFinal} (the
      *  end-of-generation checkpoint, so multi-turn resume is exact) and {@link #cleanup} (per-request
      *  release). Created via {@link #beginGeneration}; the caller drives Engine.generate with it. */
-    final class CacheRun implements Llama.GenerationHooks {
+    final class CacheRun implements GenerationHooks {
         private final Llama.State state;
         private final int[] cachedOut; // out: resumed-prefix length, for the streaming usage counters
         private final boolean warm;

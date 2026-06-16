@@ -576,6 +576,12 @@ public final class JinjaRendererTest {
         String year = JinjaRenderer.render("{{ strftime_now('%Y') }}", Map.of());
         check("strftime_now('%Y') yields a 4-digit year (got " + year + ")", year.matches("\\d{4}"));
         eq("{{ strftime_now('literal %% sign') }}", "literal % sign");
+        // range([start,] stop[, step]) -> list of ints, stop exclusive (Python/Jinja semantics)
+        eq("{% for i in range(3) %}{{ i }},{% endfor %}", "0,1,2,");
+        eq("{% for i in range(2, 5) %}{{ i }},{% endfor %}", "2,3,4,");
+        eq("{% for i in range(0, 10, 2) %}{{ i }},{% endfor %}", "0,2,4,6,8,");
+        eq("{% for i in range(messages|length) %}{{ messages[i] }};{% endfor %}",
+                map("messages", List.of("a", "b")), "a;b;");
     }
 
     // ── tojson ───────────────────────────────────────────────────

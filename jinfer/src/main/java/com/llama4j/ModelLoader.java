@@ -74,10 +74,25 @@ final class ModelLoader {
         return tensorEntries;
     }
 
-    public static Llama loadModel(Path ggufPath, int contextLength) throws IOException {
-        try (var ignored = Timer.log("Load LFM25 model")) {
-            try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
-                GGUF gguf = readGguf(fileChannel, ggufPath.toString());
+    /** Loads a model, dispatching on {@code general.architecture}: {@code gemma4} -> {@link Gemma4},
+     *  everything else (LFM2.5) -> {@link Llama}. */
+    public static Model loadModel(Path ggufPath, int contextLength) throws IOException {
+        try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
+            GGUF gguf = readGguf(fileChannel, ggufPath.toString());
+            String arch = gguf.getString("general.architecture");
+            if (arch.equals("gemma4")) {
+                try (var ignored = Timer.log("Load Gemma4 model")) {
+                    return Gemma4.loadModel(fileChannel, gguf, contextLength, true);
+                }
+            }
+            // The LFM loader reads lfm2.* metadata; routing any other architecture through it would
+            // silently mis-load the weights and emit gibberish. Refuse unknown architectures so the
+            // failure is a clear message instead.
+            if (!arch.startsWith("lfm")) {
+                throw new UnsupportedOperationException(
+                        "Unsupported model architecture '" + arch + "' (supported: lfm2.5, gemma4)");
+            }
+            try (var ignored = Timer.log("Load LFM25 model")) {
                 return loadModel(fileChannel, gguf, contextLength, true);
             }
         }

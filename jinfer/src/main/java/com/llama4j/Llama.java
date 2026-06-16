@@ -11,24 +11,12 @@ import jdk.incubator.vector.VectorSpecies;
 
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Set;
-import java.util.function.IntPredicate;
 
-record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weights) {
-
+record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weights) implements Model {
 
 
-    private static final ThreadLocal<FlashAttentionBuffers> FLASH_ATTENTION_BUFFERS =
-            ThreadLocal.withInitial(FlashAttentionBuffers::new);
-
-    private static final class FlashAttentionBuffers {
-        final float[] s = new float[BatchState.FLASH_Br * BatchState.FLASH_Bc];
-        final float[] m = new float[BatchState.FLASH_Br];
-        final double[] l = new double[BatchState.FLASH_Br];
-    }
 
     private static void rollingAttentionAccumulate(FloatTensor out, int outOffset, FloatTensor valueCache, int valueOffset,
                                                    int headSize, float oldScale, float scoreScale) {
@@ -73,60 +61,6 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         }
     }
 
-    private static void rollingAttentionNormalize(FloatTensor out, int outOffset, int headSize, float scale) {
-        if (out instanceof F32FloatTensor outF32 && FloatTensor.USE_VECTOR_API) {
-            FloatVector scaleVector = FloatVector.broadcast(FloatTensor.F_SPECIES, scale);
-            int upperBound = FloatTensor.F_SPECIES.loopBound(headSize);
-            for (int i = 0; i < upperBound; i += FloatTensor.F_SPECIES.length()) {
-                long byteOffset = (long) (outOffset + i) * Float.BYTES;
-                FloatVector.fromMemorySegment(FloatTensor.F_SPECIES, outF32.vseg, outF32.vbase + byteOffset, ByteOrder.LITTLE_ENDIAN)
-                        .mul(scaleVector).intoMemorySegment(outF32.vseg, outF32.vbase + byteOffset, ByteOrder.LITTLE_ENDIAN);
-            }
-            for (int i = upperBound; i < headSize; i++) {
-                outF32.setFloat(outOffset + i, outF32.getFloat(outOffset + i) * scale);
-            }
-            return;
-        }
-        out.mapInPlace(outOffset, headSize, v -> v * scale);
-    }
-
-    private static void flashAttentionAccumulate(FloatTensor out, int outOffset, FloatTensor value, int valueOffset,
-                                                 int headSize, float scale) {
-        if (out instanceof F32FloatTensor outF32 && FloatTensor.USE_VECTOR_API
-                && (value instanceof F32FloatTensor || value instanceof F16FloatTensor)) {
-            FloatVector scaleVector = FloatVector.broadcast(FloatTensor.F_SPECIES, scale);
-            int upperBound = FloatTensor.F_SPECIES.loopBound(headSize);
-            if (value instanceof F32FloatTensor valueF32) {
-                for (int d = 0; d < upperBound; d += FloatTensor.F_SPECIES.length()) {
-                    long byteOffset = (long) (outOffset + d) * Float.BYTES;
-                    FloatVector acc = FloatVector.fromMemorySegment(FloatTensor.F_SPECIES, outF32.vseg, outF32.vbase + byteOffset, ByteOrder.LITTLE_ENDIAN);
-                    FloatVector v = FloatVector.fromMemorySegment(FloatTensor.F_SPECIES, valueF32.vseg, valueF32.vbase + (long) (valueOffset + d) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
-                    v.fma(scaleVector, acc).intoMemorySegment(outF32.vseg, outF32.vbase + byteOffset, ByteOrder.LITTLE_ENDIAN);
-                }
-            } else {
-                F16FloatTensor f16Value = (F16FloatTensor) value;
-                for (int d = 0; d < upperBound; d += FloatTensor.F_SPECIES.length()) {
-                    long byteOffset = (long) (outOffset + d) * Float.BYTES;
-                    FloatVector acc = FloatVector.fromMemorySegment(FloatTensor.F_SPECIES, outF32.vseg, outF32.vbase + byteOffset, ByteOrder.LITTLE_ENDIAN);
-                    var bits32 = ShortVector.fromMemorySegment(FloatTensor.S_SPECIES_HALF, f16Value.vseg, f16Value.vbase + (long) (valueOffset + d) * Float16.BYTES, ByteOrder.LITTLE_ENDIAN)
-                            .castShape(FloatTensor.I_SPECIES, 0).reinterpretAsInts();
-                    var zeroExponentMask = bits32.and(0x7C00).neg().lanewise(VectorOperators.ASHR, 31);
-                    FloatVector v = bits32.and(0x8000).lanewise(VectorOperators.LSHL, 16)
-                            .or(bits32.and(0x7FFF).add(0x1C000).lanewise(VectorOperators.LSHL, 13).and(zeroExponentMask))
-                            .reinterpretAsFloats();
-                    v.fma(scaleVector, acc).intoMemorySegment(outF32.vseg, outF32.vbase + byteOffset, ByteOrder.LITTLE_ENDIAN);
-                }
-            }
-            for (int d = upperBound; d < headSize; d++) {
-                outF32.setFloat(outOffset + d, outF32.getFloat(outOffset + d) + value.getFloat(valueOffset + d) * scale);
-            }
-            return;
-        }
-        for (int d = 0; d < headSize; d++) {
-            out.setFloat(outOffset + d, out.getFloat(outOffset + d) + value.getFloat(valueOffset + d) * scale);
-        }
-    }
-
     private static int attentionStart(Configuration config, boolean isSWA, int position) {
         if (isSWA) {
             return Math.max(0, position - config.slidingWindow + 1);
@@ -147,6 +81,43 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         if (bos == null) bos = 1;
         state.latestToken = bos;
         return state;
+    }
+
+    // --- Model seam (delegates to this architecture's static forward pass) ---
+
+    @Override
+    public int contextLength() {
+        return configuration.contextLength;
+    }
+
+    @Override
+    public int vocabularySize() {
+        return configuration.vocabularySize;
+    }
+
+    @Override
+    public int batchCapacity() {
+        return RuntimeFlags.MAX_PROMPT_SEQUENCE_LENGTH;
+    }
+
+    @Override
+    public void ingest(InferenceState state, int[] tokens, int tokenOffset, int startPosition, int sequenceLength) {
+        ingestTokens(this, (State) state, tokens, tokenOffset, startPosition, sequenceLength);
+    }
+
+    @Override
+    public FloatTensor computeLogits(InferenceState state) {
+        return computeLogits(this, (State) state);
+    }
+
+    @Override
+    public Set<Integer> stopTokens() {
+        return new LFMChatFormat(tokenizer).getStopTokens();
+    }
+
+    @Override
+    public ChatFormat chatFormat() {
+        return ChatFormats.forModel(tokenizer);
     }
 
     public static final class Configuration {
@@ -325,7 +296,7 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
     /** Persistent generation state: everything that survives across chunks — the kv caches,
      *  the rolling short-conv states, the last sampled token and the logits — plus the
      *  per-chunk activation scratch ({@link BatchState}). One State = one sequence. */
-    public static final class State {
+    public static final class State implements InferenceState {
         public final FloatTensor logits; // output logits (valid after computeLogits)
         // kv cache - variable sizes per layer
         public final FloatTensor[] keyCache;   // (n_layer, seq_len, kvDim_per_layer)
@@ -365,6 +336,10 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
             }
             this.batch = new BatchState(config, RuntimeFlags.MAX_PROMPT_SEQUENCE_LENGTH);
         }
+
+        @Override public int latestToken() { return latestToken; }
+
+        @Override public void latestToken(int token) { this.latestToken = token; }
     }
 
     /** Observer for {@link State#convHarvest}. */
@@ -375,9 +350,6 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
     /** Per-chunk activation scratch, overwritten by every {@code ingestTokens} call; carries no
      *  state between chunks beyond the pending-chunk bookkeeping (pendingPosition/pendingCount). */
     public static final class BatchState {
-        static final int FLASH_Br = 64;
-        static final int FLASH_Bc = 64;
-
         public final int capacity;
         public final int dim;
         public int sequenceLength;
@@ -721,16 +693,22 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         int kvLayer = config.kvSourceLayer(layer);
         int kvMul = nHeads / config.numberOfKeyValueHeads(layer);
         float attnScale = 1.0f / (float) Math.sqrt(headSize);
-        int Br = BatchState.FLASH_Br;
-        int Bc = BatchState.FLASH_Bc;
+        int Br = FlashAttention.Br, Bc = FlashAttention.Bc, QT = FlashAttention.QT;
+        boolean vec = FloatTensor.USE_VECTOR_API && seq.q instanceof F32FloatTensor && seq.xb_k instanceof F32FloatTensor;
+        F32FloatTensor qF32 = vec ? (F32FloatTensor) seq.q : null;
+        F32FloatTensor outF32 = vec ? (F32FloatTensor) seq.xb_k : null;
+        FloatTensor q = seq.q, out = seq.xb_k, bK = seq.k, bV = seq.v;
+        FloatTensor cK = state.keyCache[kvLayer], cV = state.valueCache[kvLayer];
 
         int attStart = attentionStart(config, isSWA, startPosition);
 
         Parallel.parallelFor(0, nHeads, h -> {
-            FlashAttentionBuffers buffers = FLASH_ATTENTION_BUFFERS.get();
+            FlashAttention.Buffers buffers = FlashAttention.buffers();
             float[] S = buffers.s;
             float[] M = buffers.m;
             double[] L = buffers.l;
+            int[] kvOff = buffers.kvOff;
+            int hHead = h * headSize;
             int kvHeadOffset = (h / kvMul) * headSize;
 
             for (int qStart = 0; qStart < seqLen; qStart += Br) {
@@ -739,7 +717,7 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
                 for (int i = 0; i < BrRows; i++) {
                     M[i] = Float.NEGATIVE_INFINITY;
                     L[i] = 0.0;
-                    seq.xb_k.fillInPlace((qStart + i) * maxQueryDim + h * headSize, headSize, 0f);
+                    out.fillInPlace((qStart + i) * maxQueryDim + hHead, headSize, 0f);
                 }
 
                 int blockMaxQ = startPosition + qEnd - 1;
@@ -748,66 +726,98 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
                     int BcRows = kvEnd - kvStart;
                     if (BcRows <= 0) continue;
 
-                    for (int i = 0; i < BrRows; i++) {
-                        int qIdx = qStart + i;
-                        int qOffset = qIdx * maxQueryDim + h * headSize;
-                        for (int j = 0; j < BcRows; j++) {
-                            int kvPos = kvStart + j;
-                            int globalQ = qIdx + startPosition;
-                            int globalK = kvPos;
-                            float s;
-                            int qAttStart = attentionStart(config, isSWA, globalQ);
-                            if (globalK > globalQ || globalK < qAttStart) {
-                                s = Float.NEGATIVE_INFINITY;
-                            } else if (globalK < startPosition) {
-                                int ko = config.kvCacheIndex(layer, kvPos) * kvDim + kvHeadOffset;
-                                s = seq.q.dot(qOffset, state.keyCache[kvLayer], ko, headSize) * attnScale;
-                            } else {
-                                int bi = kvPos - startPosition;
-                                s = seq.q.dot(qOffset, seq.k, bi * maxKVDim + kvHeadOffset, headSize) * attnScale;
+                    // cache keys (F16, stride kvDim) come first, then this chunk's batch keys (F32, stride maxKVDim)
+                    int cacheCount = Math.max(0, Math.min(BcRows, startPosition - kvStart));
+                    for (int j = 0; j < BcRows; j++) {
+                        int kvPos = kvStart + j;
+                        kvOff[j] = kvPos < startPosition
+                                ? config.kvCacheIndex(layer, kvPos) * kvDim + kvHeadOffset
+                                : (kvPos - startPosition) * maxKVDim + kvHeadOffset;
+                    }
+
+                    // 1) scores S[i][j] = scale * dot(Q_i, K_j); register-tiled QT query rows at a time
+                    for (int i0 = 0; i0 < BrRows; i0 += QT) {
+                        int qr = Math.min(QT, BrRows - i0);
+                        int qBase = (qStart + i0) * maxQueryDim + hHead;
+                        if (vec && qr == QT) {
+                            if (cacheCount > 0) FlashAttention.qkTile(qF32, qBase, maxQueryDim, cK, kvOff, 0, cacheCount, headSize, attnScale, S, i0 * BcRows, BcRows);
+                            if (cacheCount < BcRows) FlashAttention.qkTile(qF32, qBase, maxQueryDim, bK, kvOff, cacheCount, BcRows - cacheCount, headSize, attnScale, S, i0 * BcRows, BcRows);
+                        } else {
+                            for (int t = 0; t < qr; t++) {
+                                int qOffset = (qStart + i0 + t) * maxQueryDim + hHead;
+                                for (int j = 0; j < BcRows; j++) {
+                                    S[(i0 + t) * BcRows + j] = q.dot(qOffset, j < cacheCount ? cK : bK, kvOff[j], headSize) * attnScale;
+                                }
                             }
-                            S[i * BcRows + j] = s;
                         }
                     }
 
+                    // 2) causal + (sliding-)window mask
                     for (int i = 0; i < BrRows; i++) {
+                        int globalQ = qStart + i + startPosition;
+                        int qAttStart = attentionStart(config, isSWA, globalQ);
+                        int rowBase = i * BcRows;
+                        for (int j = 0; j < BcRows; j++) {
+                            int kvPos = kvStart + j;
+                            if (kvPos > globalQ || kvPos < qAttStart) S[rowBase + j] = Float.NEGATIVE_INFINITY;
+                        }
+                    }
+
+                    // 3) online softmax per row: rescale running output on a new max, overwrite S with
+                    //    probabilities, update M/L
+                    for (int i = 0; i < BrRows; i++) {
+                        int rowBase = i * BcRows;
+                        float blockMax = Float.NEGATIVE_INFINITY;
+                        for (int j = 0; j < BcRows; j++) {
+                            float s = S[rowBase + j];
+                            if (s > blockMax) blockMax = s;
+                        }
+                        if (blockMax == Float.NEGATIVE_INFINITY) {
+                            for (int j = 0; j < BcRows; j++) S[rowBase + j] = 0f;
+                            continue;
+                        }
                         float rowM = M[i];
                         double rowL = L[i];
-                        int qIdx = qStart + i;
-                        int oOffset = qIdx * maxQueryDim + h * headSize;
-
+                        float newMax = Math.max(rowM, blockMax);
+                        if (newMax > rowM) {
+                            float rst = (float) Math.exp(rowM - newMax);
+                            FlashAttention.normalize(out, (qStart + i) * maxQueryDim + hHead, headSize, rst);
+                            rowL *= rst;
+                            rowM = newMax;
+                        }
+                        double sum = 0;
                         for (int j = 0; j < BcRows; j++) {
-                            float s = S[i * BcRows + j];
-                            if (s == Float.NEGATIVE_INFINITY) continue;
-                            int kvPos = kvStart + j;
-
-                            float newMax = Math.max(rowM, s);
-                            if (newMax > rowM) {
-                                float rst = (float) Math.exp(rowM - newMax);
-                                rollingAttentionNormalize(seq.xb_k, oOffset, headSize, rst);
-                                rowL *= rst;
-                                rowM = newMax;
-                            }
-                            float p = (float) Math.exp(s - rowM);
-                            rowL += p;
-                            if (kvPos < startPosition) {
-                                int vo = config.kvCacheIndex(layer, kvPos) * kvDim + kvHeadOffset;
-                                flashAttentionAccumulate(seq.xb_k, oOffset, state.valueCache[kvLayer], vo, headSize, p);
-                            } else {
-                                int vi = kvPos - startPosition;
-                                int vBase = vi * maxKVDim + kvHeadOffset;
-                                flashAttentionAccumulate(seq.xb_k, oOffset, seq.v, vBase, headSize, p);
-                            }
+                            float s = S[rowBase + j];
+                            float p = s == Float.NEGATIVE_INFINITY ? 0f : (float) Math.exp(s - rowM);
+                            S[rowBase + j] = p;
+                            sum += p;
                         }
                         M[i] = rowM;
-                        L[i] = rowL;
+                        L[i] = rowL + sum;
+                    }
+
+                    // 4) PV: out_i += sum_j p_ij V_j, register-tiled QT query rows at a time (V reused)
+                    for (int i0 = 0; i0 < BrRows; i0 += QT) {
+                        int qr = Math.min(QT, BrRows - i0);
+                        int oBase = (qStart + i0) * maxQueryDim + hHead;
+                        if (vec && qr == QT) {
+                            if (cacheCount > 0) FlashAttention.pvTile(outF32, oBase, maxQueryDim, cV, kvOff, 0, cacheCount, headSize, S, i0 * BcRows, BcRows);
+                            if (cacheCount < BcRows) FlashAttention.pvTile(outF32, oBase, maxQueryDim, bV, kvOff, cacheCount, BcRows - cacheCount, headSize, S, i0 * BcRows, BcRows);
+                        } else {
+                            for (int t = 0; t < qr; t++) {
+                                int oOffset = (qStart + i0 + t) * maxQueryDim + hHead;
+                                int rowBase = (i0 + t) * BcRows;
+                                for (int j = 0; j < BcRows; j++) {
+                                    float p = S[rowBase + j];
+                                    if (p != 0f) FlashAttention.accumulate(out, oOffset, j < cacheCount ? cV : bV, kvOff[j], headSize, p);
+                                }
+                            }
+                        }
                     }
                 }
 
                 for (int i = 0; i < BrRows; i++) {
-                    float invL = (float) (1.0 / L[i]);
-                    int oOffset = (qStart + i) * maxQueryDim + h * headSize;
-                    rollingAttentionNormalize(seq.xb_k, oOffset, headSize, invL);
+                    FlashAttention.normalize(out, (qStart + i) * maxQueryDim + hHead, headSize, (float) (1.0 / L[i]));
                 }
             }
         });
@@ -970,7 +980,7 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
             }
 
             if (lGlobal > 0.0) {
-                rollingAttentionNormalize(out, xbOffset, headSize, (float) (1.0 / lGlobal));
+                FlashAttention.normalize(out, xbOffset, headSize, (float) (1.0 / lGlobal));
             }
         });
     }
@@ -1207,7 +1217,7 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
                     t++;
                 }
                 float invSumExp = (float) (1.0 / sumExp);
-                rollingAttentionNormalize(seq.xb_k, xbOffset, headSize, invSumExp);
+                FlashAttention.normalize(seq.xb_k, xbOffset, headSize, invSumExp);
             });
         }
     }
@@ -1477,109 +1487,6 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         return state.logits;
     }
 
-    /**
-     * The effective token stream that prefill ingests: the not-yet-ingested {@code latestToken}
-     * (BOS for a fresh state) followed by the prompt, deduplicating a leading BOS. Position i of
-     * the result is the token ingested at position {@code startPosition + i} — this is the
-     * canonical key for prefix caching.
-     */
-    static int[] buildPrefillTokens(int latestToken, int startPosition, List<Integer> promptTokens) {
-        int skip = startPosition == 0 && !promptTokens.isEmpty() && promptTokens.getFirst() == latestToken ? 1 : 0;
-        int[] prefillTokens = new int[1 + promptTokens.size() - skip];
-        prefillTokens[0] = latestToken;
-        for (int i = 1; i < prefillTokens.length; i++) {
-            prefillTokens[i] = promptTokens.get(skip + i - 1);
-        }
-        return prefillTokens;
-    }
-
-    /** Number of context positions occupied after prefill ingests the effective stream. */
-    static int prefillPositions(State state, int startPosition, List<Integer> promptTokens) {
-        if (promptTokens.isEmpty()) {
-            return startPosition;
-        }
-        return startPosition + buildPrefillTokens(state.latestToken, startPosition, promptTokens).length;
-    }
-
-    /** Extension points for {@link #generate}; the server's prompt cache uses them to resume
-     *  from cached positions, align chunks to page boundaries, and commit pages as the frontier
-     *  passes them. Hook positions are stream indexes (positions relative to startPosition). */
-    interface GenerationHooks {
-        GenerationHooks NONE = new GenerationHooks() {};
-
-        /** Called once before ingestion with the effective stream (length = prefill tokens);
-         *  returns how many leading positions are already in the state (cache restore). */
-        default int resumePosition(int[] stream, int prefillLength) { return 0; }
-
-        /** May shrink (never grow) the next chunk so it ends on a boundary the hook cares about. */
-        default int clampChunk(int position, int chunkLength) { return chunkLength; }
-
-        /** The frontier advanced: stream[0, position) is now ingested. */
-        default void afterIngest(int[] stream, int position) {}
-
-        /** The prompt is fully ingested and its logits are computed (time-to-first-token boundary). */
-        default void afterPrefill() {}
-    }
-
-    /**
-     * The generation loop — prefill and decode are one operation here: ingest the pending span
-     * of the token stream. The prompt is pending up front (chunked by batch capacity); decode
-     * appends one sampled token at a time and ingests it through the identical path. maxTokens
-     * is a total-position limit; stop tokens are recorded but never ingested; an empty prompt
-     * samples directly from the current logits (multi-turn continuation).
-     */
-    static List<Integer> generate(Llama model, Llama.State state, int startPosition, List<Integer> promptTokens,
-                                  Set<Integer> stopTokens, int maxTokens, Sampler sampler,
-                                  IntPredicate onTokenGenerated, GenerationHooks hooks) {
-        Llama.Configuration config = model.configuration();
-        if (maxTokens < 0 || config.contextLength < maxTokens) {
-            maxTokens = config.contextLength;
-        }
-        int[] prefill = promptTokens.isEmpty() ? new int[0] : buildPrefillTokens(state.latestToken, startPosition, promptTokens);
-        int[] stream = Arrays.copyOf(prefill, Math.max(Math.max(maxTokens - startPosition, prefill.length), 1));
-        int length = prefill.length;
-        int position = length > 0 ? hooks.resumePosition(stream, length) : 0;
-        boolean prefilling = position < length;
-        List<Integer> generatedTokens = new ArrayList<>();
-        while (true) {
-            if (position == length) {                        // nothing pending: extend the stream
-                if (startPosition + position >= maxTokens) {
-                    break;
-                }
-                FloatTensor logits = computeLogits(model, state);
-                if (prefilling) {
-                    prefilling = false;
-                    hooks.afterPrefill();
-                }
-                int nextToken = sampler.sampleToken(logits);
-                if (nextToken < 0 || nextToken >= config.vocabularySize) {
-                    throw new IllegalArgumentException(
-                        "sampler returned token id " + nextToken + " out of range [0, " + config.vocabularySize + ")");
-                }
-                generatedTokens.add(nextToken);
-                // a false return aborts generation (e.g. a text stop matched downstream); like
-                // a stop token, the aborting token is recorded but never ingested
-                boolean keepGoing = onTokenGenerated == null || onTokenGenerated.test(nextToken);
-                state.latestToken = nextToken;
-                if (stopTokens.contains(nextToken) || !keepGoing) {
-                    break;
-                }
-                stream[length++] = nextToken;
-            }
-            int chunk = Math.min(length - position, state.batch.capacity);
-            // never ingest past the kv-cache capacity: cache writes are unchecked (UNSAFE) and a
-            // context overflow segfaults instead of failing gracefully
-            chunk = Math.min(chunk, config.contextLength - (startPosition + position));
-            if (chunk <= 0) {
-                break;
-            }
-            chunk = hooks.clampChunk(position, chunk);
-            ingestTokens(model, state, stream, position, startPosition + position, chunk);
-            position += chunk;
-            hooks.afterIngest(stream, position);
-        }
-        return generatedTokens;
-    }
 }
 
 final class RoPE {

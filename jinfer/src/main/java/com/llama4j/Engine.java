@@ -8,6 +8,7 @@ import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -17,7 +18,7 @@ import java.util.function.IntConsumer;
 import java.util.function.IntPredicate;
 
 /**
- * The inference-side seam between the generation loop ({@link Llama#generate}) and any frontend
+ * The inference-side seam between the generation loop ({@link #decodeLoop}) and any frontend
  * (CLI, HTTP server, future embedders). One entry point — {@link #generate} — runs a complete
  * generation pass: sampler-driven decode with stop handling (token stops, and text stops with
  * emission holdback), think-span routing to a separate reasoning channel, UTF-8-safe incremental
@@ -75,19 +76,19 @@ final class Engine {
     }
 
     /**
-     * One full generation pass over {@link Llama#generate}: ingest the prompt (resuming any
+     * One full generation pass over {@link #decodeLoop}: ingest the prompt (resuming any
      * cached prefix via {@code hooks}), then decode until a stop token, a text stop, or the
      * completion budget. Timing uses the prefill/decode boundary reported by the loop
      * ({@code afterPrefill}); cached-prefix counts are captured from the hooks' resume position.
      */
-    static GenerationResult generate(Llama model, Llama.State state, int startPosition, List<Integer> promptTokens,
-                                     Params params, Listener listener, Llama.GenerationHooks hooks) {
+    static GenerationResult generate(Model model, InferenceState state, int startPosition, List<Integer> promptTokens,
+                                     Params params, Listener listener, GenerationHooks hooks) {
         LFMTokenizer tokenizer = model.tokenizer();
-        int contextLength = model.configuration().contextLength;
+        int contextLength = model.contextLength();
         int consumedPromptTokens = consumedPromptTokens(tokenizer, promptTokens); // client-facing usage counts
         // generation limits use REAL stream positions: a resumed session sits deeper in the
         // context than the re-encoded prompt suggests (thinking/surrogate tokens in the stream)
-        int promptPositions = Llama.prefillPositions(state, startPosition, promptTokens);
+        int promptPositions = prefillPositions(state, startPosition, promptTokens);
         require(promptPositions <= contextLength, "Prompt exceeds context length (%d tokens used, %d available)", promptPositions, contextLength);
         int actualMaxTokens = params.maxTokens() < 0 ? contextLength - promptPositions
                 : Math.min(params.maxTokens(), contextLength - promptPositions);
@@ -125,7 +126,7 @@ final class Engine {
 
         long[] prefillDoneNanos = {0};
         int[] resumed = {0};
-        Llama.GenerationHooks wrapped = new Llama.GenerationHooks() {
+        GenerationHooks wrapped = new GenerationHooks() {
             @Override
             public int resumePosition(int[] stream, int prefillLength) {
                 int cached = hooks.resumePosition(stream, prefillLength);
@@ -153,7 +154,7 @@ final class Engine {
         long startNanos = System.nanoTime();
         List<Integer> responseTokens;
         synchronized (model) { // generations on a shared model are strictly serialized
-            responseTokens = Llama.generate(model, state, startPosition, promptTokens,
+            responseTokens = decodeLoop(model, state, startPosition, promptTokens,
                     params.stops().tokenStops(), totalTokenLimit, params.sampler(), sink, wrapped);
         }
         long endNanos = System.nanoTime();
@@ -178,6 +179,92 @@ final class Engine {
                 consumedPromptTokens, responseTokens.size(), cachedTokens, finishReason, promptMillis, predictedMillis);
     }
 
+    /**
+     * The effective token stream prefill ingests: the not-yet-ingested {@code latestToken}
+     * (BOS for a fresh state) followed by the prompt, deduplicating a leading BOS. Position i of
+     * the result is the token ingested at position {@code startPosition + i} — the canonical key
+     * for prefix caching.
+     */
+    static int[] buildPrefillTokens(int latestToken, int startPosition, List<Integer> promptTokens) {
+        int skip = startPosition == 0 && !promptTokens.isEmpty() && promptTokens.getFirst() == latestToken ? 1 : 0;
+        int[] prefillTokens = new int[1 + promptTokens.size() - skip];
+        prefillTokens[0] = latestToken;
+        for (int i = 1; i < prefillTokens.length; i++) {
+            prefillTokens[i] = promptTokens.get(skip + i - 1);
+        }
+        return prefillTokens;
+    }
+
+    /** Number of context positions occupied after prefill ingests the effective stream. */
+    static int prefillPositions(InferenceState state, int startPosition, List<Integer> promptTokens) {
+        if (promptTokens.isEmpty()) {
+            return startPosition;
+        }
+        return startPosition + buildPrefillTokens(state.latestToken(), startPosition, promptTokens).length;
+    }
+
+    /**
+     * The generation loop — prefill and decode are one operation: ingest the pending span of the
+     * token stream. The prompt is pending up front (chunked by {@link Model#batchCapacity()});
+     * decode appends one sampled token at a time and ingests it through the identical path.
+     * {@code maxTokens} is a total-position limit; stop tokens are recorded but never ingested; an
+     * empty prompt samples directly from the current logits (multi-turn continuation).
+     */
+    static List<Integer> decodeLoop(Model model, InferenceState state, int startPosition, List<Integer> promptTokens,
+                                    Set<Integer> stopTokens, int maxTokens, Sampler sampler,
+                                    IntPredicate onTokenGenerated, GenerationHooks hooks) {
+        int contextLength = model.contextLength();
+        int vocabularySize = model.vocabularySize();
+        int capacity = model.batchCapacity();
+        if (maxTokens < 0 || contextLength < maxTokens) {
+            maxTokens = contextLength;
+        }
+        int[] prefill = promptTokens.isEmpty() ? new int[0] : buildPrefillTokens(state.latestToken(), startPosition, promptTokens);
+        int[] stream = Arrays.copyOf(prefill, Math.max(Math.max(maxTokens - startPosition, prefill.length), 1));
+        int length = prefill.length;
+        int position = length > 0 ? hooks.resumePosition(stream, length) : 0;
+        boolean prefilling = position < length;
+        List<Integer> generatedTokens = new ArrayList<>();
+        while (true) {
+            if (position == length) {                        // nothing pending: extend the stream
+                if (startPosition + position >= maxTokens) {
+                    break;
+                }
+                FloatTensor logits = model.computeLogits(state);
+                if (prefilling) {
+                    prefilling = false;
+                    hooks.afterPrefill();
+                }
+                int nextToken = sampler.sampleToken(logits);
+                if (nextToken < 0 || nextToken >= vocabularySize) {
+                    throw new IllegalArgumentException(
+                        "sampler returned token id " + nextToken + " out of range [0, " + vocabularySize + ")");
+                }
+                generatedTokens.add(nextToken);
+                // a false return aborts generation (e.g. a text stop matched downstream); like
+                // a stop token, the aborting token is recorded but never ingested
+                boolean keepGoing = onTokenGenerated == null || onTokenGenerated.test(nextToken);
+                state.latestToken(nextToken);
+                if (stopTokens.contains(nextToken) || !keepGoing) {
+                    break;
+                }
+                stream[length++] = nextToken;
+            }
+            int chunk = Math.min(length - position, capacity);
+            // never ingest past the kv-cache capacity: cache writes are unchecked (UNSAFE) and a
+            // context overflow segfaults instead of failing gracefully
+            chunk = Math.min(chunk, contextLength - (startPosition + position));
+            if (chunk <= 0) {
+                break;
+            }
+            chunk = hooks.clampChunk(position, chunk);
+            model.ingest(state, stream, position, startPosition + position, chunk);
+            position += chunk;
+            hooks.afterIngest(stream, position);
+        }
+        return generatedTokens;
+    }
+
     /** Prompt size as billed to the client: a leading BOS is template overhead, not user input. */
     static int consumedPromptTokens(LFMTokenizer tokenizer, List<Integer> promptTokens) {
         Map<String, Integer> specialTokens = tokenizer.getSpecialTokens();
@@ -189,10 +276,10 @@ final class Engine {
     }
 
     /** {@link Sampler#select} plus the think-token ban when thinking is disabled. */
-    static Sampler configuredSampler(Llama model, boolean think, float temperature, float topp, long seed) {
+    static Sampler configuredSampler(Model model, boolean think, float temperature, float topp, long seed) {
         require(Float.isFinite(temperature) && 0 <= temperature, "Invalid argument: temperature must be a finite non-negative number");
         require(Float.isFinite(topp) && 0 <= topp && topp <= 1, "Invalid argument: top_p must be within [0, 1]");
-        Sampler sampler = Sampler.select(model.configuration().vocabularySize, temperature, topp, seed);
+        Sampler sampler = Sampler.select(model.vocabularySize(), temperature, topp, seed);
         if (!think) {
             Integer thinkStart = model.tokenizer().getSpecialTokens().get("<think>");
             Integer thinkEnd = model.tokenizer().getSpecialTokens().get("</think>");
@@ -255,11 +342,11 @@ final class Engine {
                 ? new Utf8TokenDecoder(onToolCall) : null;
         return token -> {
             if (tokenizer.isSpecialToken(token)) {
-                if (token == thinkOpen) {
+                if (thinkOpen != null && token == thinkOpen) {
                     inThink[0] = true;
                     if (inlineThink) textDecoder.accept(tokenizer.decodeTokenBytes(token));
                 }
-                if (token == thinkClose) {
+                if (thinkClose != null && token == thinkClose) {
                     inThink[0] = false;
                     if (inlineThink) textDecoder.accept(tokenizer.decodeTokenBytes(token));
                     textDecoder.flushPending();
