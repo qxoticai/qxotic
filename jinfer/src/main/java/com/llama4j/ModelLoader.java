@@ -20,6 +20,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.function.IntFunction;
 
 interface Timer extends AutoCloseable {
     @Override
@@ -75,7 +76,7 @@ final class ModelLoader {
     }
 
     /** Loads a model, dispatching on {@code general.architecture}: {@code gemma4} -> {@link Gemma4},
-     *  everything else (LFM2.5) -> {@link Llama}. */
+     *  {@code qwen35}/{@code qwen35moe} -> {@link Qwen35}, {@code lfm*} (LFM2.5) -> {@link Llama}. */
     public static Model loadModel(Path ggufPath, int contextLength) throws IOException {
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
             GGUF gguf = readGguf(fileChannel, ggufPath.toString());
@@ -85,12 +86,22 @@ final class ModelLoader {
                     return Gemma4.loadModel(fileChannel, gguf, contextLength, true);
                 }
             }
+            if (arch.equals("qwen35") || arch.equals("qwen35moe")) {
+                try (var ignored = Timer.log("Load Qwen3.5 model")) {
+                    return Qwen35.loadModel(fileChannel, gguf, contextLength, true);
+                }
+            }
+            if (arch.equals("gpt-oss")) {
+                try (var ignored = Timer.log("Load gpt-oss model")) {
+                    return GptOss.loadModel(fileChannel, gguf, contextLength, true);
+                }
+            }
             // The LFM loader reads lfm2.* metadata; routing any other architecture through it would
             // silently mis-load the weights and emit gibberish. Refuse unknown architectures so the
             // failure is a clear message instead.
             if (!arch.startsWith("lfm")) {
                 throw new UnsupportedOperationException(
-                        "Unsupported model architecture '" + arch + "' (supported: lfm2.5, gemma4)");
+                        "Unsupported model architecture '" + arch + "' (supported: lfm2.5, gemma4, qwen35, gpt-oss)");
             }
             try (var ignored = Timer.log("Load LFM25 model")) {
                 return loadModel(fileChannel, gguf, contextLength, true);
@@ -256,14 +267,47 @@ final class ModelLoader {
                 attention, shortConv, dense, moe);
     }
 
-    private static FloatTensor quantOrNull(Map<String, GGMLTensorEntry> entries, String name) {
+    // Shared GGUF tensor-loading plumbing used by every Model loader (Llama/Gemma4/Qwen35).
+
+    /** Quantized tensor by name, or null if absent. */
+    static FloatTensor quantOrNull(Map<String, GGMLTensorEntry> entries, String name) {
         GGMLTensorEntry entry = entries.get(name);
         return entry != null ? loadQuantized(entry) : null;
     }
 
-    private static F32FloatTensor f32OrNull(Map<String, GGMLTensorEntry> entries, String name) {
+    /** F32 tensor by name, or null if absent. */
+    static F32FloatTensor f32OrNull(Map<String, GGMLTensorEntry> entries, String name) {
         GGMLTensorEntry entry = entries.get(name);
         return entry != null ? toF32Tensor(entry) : null;
+    }
+
+    /** First present entry among alternate tensor names (GGUF converter naming drift), or null. */
+    static GGMLTensorEntry firstPresent(Map<String, GGMLTensorEntry> entries, String... names) {
+        for (String name : names) {
+            GGMLTensorEntry entry = entries.get(name);
+            if (entry != null) return entry;
+        }
+        return null;
+    }
+
+    /** Per-layer array of quantized tensors; a slot is null when its tensor is absent. */
+    static FloatTensor[] quantArray(int n, IntFunction<GGMLTensorEntry> get) {
+        FloatTensor[] a = new FloatTensor[n];
+        for (int i = 0; i < n; i++) {
+            GGMLTensorEntry e = get.apply(i);
+            a[i] = e != null ? loadQuantized(e) : null;
+        }
+        return a;
+    }
+
+    /** Per-layer array of F32 tensors; a slot is null when its tensor is absent. */
+    static F32FloatTensor[] f32Array(int n, IntFunction<GGMLTensorEntry> get) {
+        F32FloatTensor[] a = new F32FloatTensor[n];
+        for (int i = 0; i < n; i++) {
+            GGMLTensorEntry e = get.apply(i);
+            a[i] = e != null ? toF32Tensor(e) : null;
+        }
+        return a;
     }
 
 

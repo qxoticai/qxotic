@@ -4,6 +4,7 @@
 // chat formatting are shared infrastructure underneath.
 package com.llama4j;
 
+import java.util.Optional;
 import java.util.Set;
 
 /** A loadable language model behind a uniform inference seam. {@link Engine} prefills and decodes
@@ -40,4 +41,11 @@ interface Model {
     /** Builds prompt tokens for a chat request in this model's format (Jinja template, ChatML or a
      *  hand-written format). Internal — never exposed by the OpenAI layer. */
     ChatFormat chatFormat();
+
+    /** This model's incremental prompt-cache support, or empty if it has none. When present, the
+     *  server drives the returned cache opaquely; only models whose KV/conv layout the cache
+     *  understands provide one, so the engine never needs to know the concrete model type. */
+    default Optional<PromptCacheSupport> promptCacheSupport() {
+        return Optional.empty();
+    }
 }

@@ -27,7 +27,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.IntFunction;
 
 final class Gemma4 implements Model {
 
@@ -1193,7 +1192,7 @@ final class Gemma4 implements Model {
 
         FloatTensor[] wv = new FloatTensor[n];
         for (int i = 0; i < n; i++) {
-            wv[i] = quantOrNull(tensors, "blk." + i + ".attn_v.weight");
+            wv[i] = ModelLoader.quantOrNull(tensors, "blk." + i + ".attn_v.weight");
         }
 
         // Per-layer embeddings (PLE)
@@ -1205,40 +1204,40 @@ final class Gemma4 implements Model {
             perLayerTokenEmbd = ModelLoader.loadQuantized(tensors.get("per_layer_token_embd.weight"));
             perLayerModelProj = ModelLoader.loadQuantized(tensors.get("per_layer_model_proj.weight"));
             perLayerProjNorm = ModelLoader.toF32Tensor(tensors.get("per_layer_proj_norm.weight"));
-            perLayerInpGate = quantArray(n, i -> tensors.get("blk." + i + ".inp_gate.weight"));
-            perLayerProj = quantArray(n, i -> tensors.get("blk." + i + ".proj.weight"));
-            perLayerPostNorm = f32Array(n, i -> tensors.get("blk." + i + ".post_norm.weight"));
+            perLayerInpGate = ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".inp_gate.weight"));
+            perLayerProj = ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".proj.weight"));
+            perLayerPostNorm = ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".post_norm.weight"));
         }
 
         // MoE (A4B)
         FloatTensor[] ffnGateInp = null, ffnGateUpExps = null, ffnDownExps = null;
         F32FloatTensor[] ffnGateInpScale = null, ffnDownExpsScale = null, ffnPostNorm1 = null, preFfwNorm2 = null, ffnPostNorm2 = null;
         if (config.isMoE()) {
-            ffnGateInp = quantArray(n, i -> tensors.get("blk." + i + ".ffn_gate_inp.weight"));
-            ffnGateInpScale = f32Array(n, i -> tensors.get("blk." + i + ".ffn_gate_inp.scale"));
-            ffnGateUpExps = quantArray(n, i -> tensors.get("blk." + i + ".ffn_gate_up_exps.weight"));
-            ffnDownExps = quantArray(n, i -> tensors.get("blk." + i + ".ffn_down_exps.weight"));
-            ffnDownExpsScale = f32Array(n, i -> tensors.get("blk." + i + ".ffn_down_exps.scale"));
-            ffnPostNorm1 = f32Array(n, i -> tensors.get("blk." + i + ".post_ffw_norm_1.weight"));
-            preFfwNorm2 = f32Array(n, i -> tensors.get("blk." + i + ".pre_ffw_norm_2.weight"));
-            ffnPostNorm2 = f32Array(n, i -> tensors.get("blk." + i + ".post_ffw_norm_2.weight"));
+            ffnGateInp = ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_gate_inp.weight"));
+            ffnGateInpScale = ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".ffn_gate_inp.scale"));
+            ffnGateUpExps = ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_gate_up_exps.weight"));
+            ffnDownExps = ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_down_exps.weight"));
+            ffnDownExpsScale = ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".ffn_down_exps.scale"));
+            ffnPostNorm1 = ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".post_ffw_norm_1.weight"));
+            preFfwNorm2 = ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".pre_ffw_norm_2.weight"));
+            ffnPostNorm2 = ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".post_ffw_norm_2.weight"));
         }
 
         return new Weights(
                 tokenEmbeddingTable,
-                f32Array(n, i -> tensors.get("blk." + i + ".attn_norm.weight")),
-                quantArray(n, i -> tensors.get("blk." + i + ".attn_q.weight")),
-                quantArray(n, i -> tensors.get("blk." + i + ".attn_k.weight")),
+                ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".attn_norm.weight")),
+                ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".attn_q.weight")),
+                ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".attn_k.weight")),
                 wv,
-                quantArray(n, i -> tensors.get("blk." + i + ".attn_output.weight")),
-                f32Array(n, i -> tensors.get("blk." + i + ".attn_q_norm.weight")),
-                f32Array(n, i -> tensors.get("blk." + i + ".attn_k_norm.weight")),
-                f32Array(n, i -> tensors.get("blk." + i + ".post_attention_norm.weight")),
-                f32Array(n, i -> tensors.get("blk." + i + ".ffn_norm.weight")),
-                quantArray(n, i -> tensors.get("blk." + i + ".ffn_gate.weight")),
-                quantArray(n, i -> tensors.get("blk." + i + ".ffn_down.weight")),
-                quantArray(n, i -> tensors.get("blk." + i + ".ffn_up.weight")),
-                f32Array(n, i -> tensors.get("blk." + i + ".post_ffw_norm.weight")),
+                ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".attn_output.weight")),
+                ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".attn_q_norm.weight")),
+                ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".attn_k_norm.weight")),
+                ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".post_attention_norm.weight")),
+                ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".ffn_norm.weight")),
+                ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_gate.weight")),
+                ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_down.weight")),
+                ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_up.weight")),
+                ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".post_ffw_norm.weight")),
                 ModelLoader.toF32Tensor(tensors.get("output_norm.weight")),
                 layerOutputScale,
                 F32FloatTensor.of(ropeFull.first()), F32FloatTensor.of(ropeFull.second()),
@@ -1248,25 +1247,6 @@ final class Gemma4 implements Model {
                 ffnGateInp, ffnGateInpScale, ffnGateUpExps, ffnDownExps, ffnDownExpsScale, ffnPostNorm1, preFfwNorm2, ffnPostNorm2);
     }
 
-    private static FloatTensor quantOrNull(Map<String, GGMLTensorEntry> tensors, String name) {
-        GGMLTensorEntry e = tensors.get(name);
-        return e != null ? ModelLoader.loadQuantized(e) : null;
-    }
-
-    private static FloatTensor[] quantArray(int n, IntFunction<GGMLTensorEntry> get) {
-        FloatTensor[] a = new FloatTensor[n];
-        for (int i = 0; i < n; i++) a[i] = ModelLoader.loadQuantized(get.apply(i));
-        return a;
-    }
-
-    private static F32FloatTensor[] f32Array(int n, IntFunction<GGMLTensorEntry> get) {
-        F32FloatTensor[] a = new F32FloatTensor[n];
-        for (int i = 0; i < n; i++) {
-            GGMLTensorEntry e = get.apply(i);
-            a[i] = e != null ? ModelLoader.toF32Tensor(e) : null;
-        }
-        return a;
-    }
 }
 
 /**

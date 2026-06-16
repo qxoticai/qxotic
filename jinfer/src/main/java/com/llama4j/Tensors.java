@@ -3246,53 +3246,51 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
         }
 
         int upperBound = j + (size - j) / QK_MXFP4 * QK_MXFP4;
+        // The per-block scale d is folded into the decoded coeff vectors (all 32 weights in a block share
+        // it), so the cross-block products accumulate in a single vector and reduce ONCE at the end —
+        // dropping the ~one horizontal reduceLanes per block the old per-block-sum path paid.
+        FloatVector acc = FloatVector.zero(F_SPECIES);
         for (; j < upperBound; j += QK_MXFP4) {
             assert (thisOffset + j) % QK_MXFP4 == 0;
             long blockOffset = (long) (thisOffset + j) / QK_MXFP4 * GGMLType.MXFP4.getBlockByteSize();
             float d = e8m0ToFp32Half(Byte.toUnsignedInt(readByte(thiz.memorySegment, blockOffset)));
 
             ByteVector packed = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, thiz.memorySegment, blockOffset + Byte.BYTES, ByteOrder.LITTLE_ENDIAN);
-            ByteVector lo = packed.and((byte) 0x0F);
-            ByteVector hi = packed.lanewise(VectorOperators.LSHR, 4);
+            ByteVector lo = mxfp4Decode(packed.and((byte) 0x0F));
+            ByteVector hi = mxfp4Decode(packed.lanewise(VectorOperators.LSHR, 4));
 
-            float blockSum = 0f;
             switch (F_SPECIES.vectorBitSize()) {
                 case 512 -> {
-                    FloatVector loCoeffs = mxfp4CodesToCoeffs((FloatVector) lo.castShape(F_SPECIES, 0));
-                    FloatVector hiCoeffs = mxfp4CodesToCoeffs((FloatVector) hi.castShape(F_SPECIES, 0));
+                    FloatVector loC = ((FloatVector) lo.castShape(F_SPECIES, 0)).mul(d);
+                    FloatVector hiC = ((FloatVector) hi.castShape(F_SPECIES, 0)).mul(d);
                     FloatVector xLo = that.getFloatVector(F_SPECIES, thatOffset + j);
                     FloatVector xHi = that.getFloatVector(F_SPECIES, thatOffset + j + QK_MXFP4 / 2);
-                    blockSum += loCoeffs.fma(xLo, hiCoeffs.mul(xHi)).reduceLanes(VectorOperators.ADD);
+                    acc = loC.fma(xLo, hiC.fma(xHi, acc));
                 }
                 case 256 -> {
-                    FloatVector lo0 = mxfp4CodesToCoeffs((FloatVector) lo.castShape(F_SPECIES, 0));
-                    FloatVector lo1 = mxfp4CodesToCoeffs((FloatVector) lo.castShape(F_SPECIES, 1));
-                    FloatVector hi0 = mxfp4CodesToCoeffs((FloatVector) hi.castShape(F_SPECIES, 0));
-                    FloatVector hi1 = mxfp4CodesToCoeffs((FloatVector) hi.castShape(F_SPECIES, 1));
+                    FloatVector lo0 = ((FloatVector) lo.castShape(F_SPECIES, 0)).mul(d);
+                    FloatVector lo1 = ((FloatVector) lo.castShape(F_SPECIES, 1)).mul(d);
+                    FloatVector hi0 = ((FloatVector) hi.castShape(F_SPECIES, 0)).mul(d);
+                    FloatVector hi1 = ((FloatVector) hi.castShape(F_SPECIES, 1)).mul(d);
                     FloatVector x0 = that.getFloatVector(F_SPECIES, thatOffset + j);
                     FloatVector x1 = that.getFloatVector(F_SPECIES, thatOffset + j + F_SPECIES.length());
                     FloatVector x2 = that.getFloatVector(F_SPECIES, thatOffset + j + QK_MXFP4 / 2);
                     FloatVector x3 = that.getFloatVector(F_SPECIES, thatOffset + j + QK_MXFP4 / 2 + F_SPECIES.length());
-                    blockSum += lo0.fma(x0, lo1.mul(x1)).reduceLanes(VectorOperators.ADD);
-                    blockSum += hi0.fma(x2, hi1.mul(x3)).reduceLanes(VectorOperators.ADD);
+                    acc = lo0.fma(x0, lo1.fma(x1, hi0.fma(x2, hi1.fma(x3, acc))));
                 }
                 case 128 -> {
-                    FloatVector sum = FloatVector.zero(F_SPECIES);
                     for (int p = 0; p < 4; p++) {
-                        FloatVector loPart = mxfp4CodesToCoeffs((FloatVector) lo.castShape(F_SPECIES, p));
-                        FloatVector hiPart = mxfp4CodesToCoeffs((FloatVector) hi.castShape(F_SPECIES, p));
+                        FloatVector loPart = ((FloatVector) lo.castShape(F_SPECIES, p)).mul(d);
+                        FloatVector hiPart = ((FloatVector) hi.castShape(F_SPECIES, p)).mul(d);
                         FloatVector xLo = that.getFloatVector(F_SPECIES, thatOffset + j + p * F_SPECIES.length());
                         FloatVector xHi = that.getFloatVector(F_SPECIES, thatOffset + j + QK_MXFP4 / 2 + p * F_SPECIES.length());
-                        sum = loPart.fma(xLo, sum);
-                        sum = hiPart.fma(xHi, sum);
+                        acc = loPart.fma(xLo, hiPart.fma(xHi, acc));
                     }
-                    blockSum += sum.reduceLanes(VectorOperators.ADD);
                 }
                 default -> throw new UnsupportedOperationException(F_SPECIES.toString());
             }
-
-            result += blockSum * d;
         }
+        result += acc.reduceLanes(VectorOperators.ADD);
 
         if (j < size) {
             result += scalarDot(thiz, thisOffset + j, that, thatOffset + j, size - j);
@@ -3300,16 +3298,146 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
         return result;
     }
 
-    private static FloatVector mxfp4CodesToCoeffs(FloatVector codes) {
-        FloatVector zero = FloatVector.zero(F_SPECIES);
-        FloatVector eight = FloatVector.broadcast(F_SPECIES, 8f);
-        var negMask = codes.compare(VectorOperators.GE, 8f);
+    /**
+     * Register-tiled MXFP4 GEMM (F32 activations, 512-bit Vector API). A group of {@code MR} output rows
+     * is decoded ONCE into a thread-local F32 scratch (nibble unpack via {@code vpshufb} + scale), then a
+     * decode-free F32 MRxNR band sweeps the sequence columns FMA-ing straight from the scratch. Decoding
+     * to a scratch fully amortizes the unpack over the whole row (vs the {@code dot} path's re-decode per
+     * column) and frees the FMA ports of the per-block code->float conversion + scale; the MR-row band then
+     * loads each activation column ONCE and feeds all 3 rows, cutting activation-load traffic ~3x vs a
+     * 1-row tile. The 3x3 shape is bounded twice: MR*NR + MR + NR = 15 vectors fit the 16 zmm, AND the 3
+     * dequantized rows must stay L1-resident — 3 rows of dim1=2880 is 34.5 KB (vs a 32 KB L1); a 4-row
+     * band (46 KB) thrashes and collapses, a 2x4 band (23 KB) under-reuses. Parallel over row groups;
+     * trailing rows (dim0 % 3) and remainder columns fall back to per-column dots; non-tileable shapes
+     * use the generic dot loop.
+     */
+    private static final int MXFP4_MR = 3, MXFP4_NR = 3;
 
-        FloatVector t = codes.sub(zero.blend(eight, negMask));
-        FloatVector mag = t
-                .add(t.sub(4f).lanewise(VectorOperators.MAX, 0f))
-                .add(t.sub(6f).lanewise(VectorOperators.MAX, 0f).mul(2f));
-        return mag.blend(mag.neg(), negMask);
+    /** Per-worker F32 scratch holding the row group's dequantized weights; grown on demand, reused. */
+    private static final ThreadLocal<float[]> DEQUANT_BAND = new ThreadLocal<>();
+
+    private static float[] bandScratch(int need) {
+        float[] w = DEQUANT_BAND.get();
+        if (w == null || w.length < need) {
+            w = new float[need];
+            DEQUANT_BAND.set(w);
+        }
+        return w;
+    }
+
+    @Override
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+        if (sequenceLength == 1) {
+            // Decode: one column means no cross-column decode reuse to exploit, so the vectorized dot
+            // (decodes each block once for the single column) is already optimal — no tiled gemv needed.
+            gemv(that, 0, out, 0, dim0, dim1, thisOffset);
+            return;
+        }
+        boolean canTile = FloatTensor.USE_VECTOR_API && F_SPECIES.vectorBitSize() == 512
+                && that instanceof F32FloatTensor && out instanceof F32FloatTensor && that != out
+                && dim1 % QK_MXFP4 == 0 && thisOffset % QK_MXFP4 == 0;
+        if (!canTile) {
+            super.gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
+            return;
+        }
+        F32FloatTensor x = (F32FloatTensor) that, of = (F32FloatTensor) out;
+        MXFP4FloatTensor thiz = this;
+        // Parallel over row GROUPS of MXFP4_MR (dim0 >> threads, so this load-balances). Each worker
+        // decodes its rows into a scratch, then runs the band + per-column-dot remainder.
+        int groups = dim0 / MXFP4_MR;
+        Parallel.parallelFor(0, groups, g -> {
+            int row0 = g * MXFP4_MR;
+            float[] w = bandScratch(MXFP4_MR * dim1);
+            for (int i = 0; i < MXFP4_MR; i++) {
+                dequantizeRow(thiz, thisOffset + (row0 + i) * dim1, dim1, w, i * dim1);
+            }
+            int s = 0;
+            for (; s + MXFP4_NR <= sequenceLength; s += MXFP4_NR) {
+                gemm512Mxfp4Band3x3(w, dim1, x, of, thatStride, outStride, row0, s);
+            }
+            for (; s < sequenceLength; s++) {
+                for (int i = 0; i < MXFP4_MR; i++) {
+                    of.setFloat(s * outStride + row0 + i, dotDeq(w, i * dim1, dim1, x, s * thatStride));
+                }
+            }
+        });
+        for (int row = groups * MXFP4_MR; row < dim0; row++) {  // trailing rows: cheap per-column dots
+            float[] w = bandScratch(dim1);
+            dequantizeRow(thiz, thisOffset + row * dim1, dim1, w, 0);
+            float[] wf = w;
+            int rr = row;
+            Parallel.parallelFor(0, sequenceLength, s -> of.setFloat(s * outStride + rr, dotDeq(wf, 0, dim1, x, s * thatStride)));
+        }
+    }
+
+    /** Dequantize one weight row (dim1 elements, dim1 % 32 == 0) into {@code dst} at {@code dstOffset}. */
+    private static void dequantizeRow(MXFP4FloatTensor thiz, int rowElemOffset, int dim1, float[] dst, int dstOffset) {
+        int kblocks = dim1 / QK_MXFP4;
+        long firstBlock = (long) rowElemOffset / QK_MXFP4;
+        long blockByteSize = GGMLType.MXFP4.getBlockByteSize();
+        for (int blk = 0; blk < kblocks; blk++) {
+            long blockOffset = (firstBlock + blk) * blockByteSize;
+            float d = e8m0ToFp32Half(Byte.toUnsignedInt(readByte(thiz.memorySegment, blockOffset)));
+            ByteVector packed = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, thiz.memorySegment, blockOffset + Byte.BYTES, ByteOrder.LITTLE_ENDIAN);
+            FloatVector loC = ((FloatVector) mxfp4Decode(packed.and((byte) 0x0F)).castShape(F_SPECIES, 0)).mul(d);
+            FloatVector hiC = ((FloatVector) mxfp4Decode(packed.lanewise(VectorOperators.LSHR, 4)).castShape(F_SPECIES, 0)).mul(d);
+            int base = dstOffset + blk * QK_MXFP4;
+            loC.intoArray(dst, base);                  // block elems 0..15 (low nibbles)
+            hiC.intoArray(dst, base + QK_MXFP4 / 2);   // block elems 16..31 (high nibbles)
+        }
+    }
+
+    /** MR=3 rows × NR=3 cols: 9 accumulators + 3 weight + 3 activation vectors (15 zmm). Balanced reuse —
+     *  each activation feeds 3 rows and each weight feeds 3 columns. */
+    private static void gemm512Mxfp4Band3x3(float[] w, int dim1, F32FloatTensor x, F32FloatTensor out,
+                                            int thatStride, int outStride, int row0, int s0) {
+        int row1 = row0 + 1, row2 = row0 + 2;
+        int b0 = s0 * thatStride, b1 = b0 + thatStride, b2 = b1 + thatStride;
+        FloatVector c00 = FloatVector.zero(F_SPECIES), c01 = FloatVector.zero(F_SPECIES), c02 = FloatVector.zero(F_SPECIES);
+        FloatVector c10 = FloatVector.zero(F_SPECIES), c11 = FloatVector.zero(F_SPECIES), c12 = FloatVector.zero(F_SPECIES);
+        FloatVector c20 = FloatVector.zero(F_SPECIES), c21 = FloatVector.zero(F_SPECIES), c22 = FloatVector.zero(F_SPECIES);
+        int len = F_SPECIES.length();
+        for (int k = 0; k < dim1; k += len) {
+            FloatVector w0 = FloatVector.fromArray(F_SPECIES, w, k);
+            FloatVector w1 = FloatVector.fromArray(F_SPECIES, w, dim1 + k);
+            FloatVector w2 = FloatVector.fromArray(F_SPECIES, w, 2 * dim1 + k);
+            FloatVector x0 = x.getFloatVector(F_SPECIES, b0 + k);
+            FloatVector x1 = x.getFloatVector(F_SPECIES, b1 + k);
+            FloatVector x2 = x.getFloatVector(F_SPECIES, b2 + k);
+            c00 = w0.fma(x0, c00); c01 = w0.fma(x1, c01); c02 = w0.fma(x2, c02);
+            c10 = w1.fma(x0, c10); c11 = w1.fma(x1, c11); c12 = w1.fma(x2, c12);
+            c20 = w2.fma(x0, c20); c21 = w2.fma(x1, c21); c22 = w2.fma(x2, c22);
+        }
+        out.setFloat(s0 * outStride + row0, c00.reduceLanes(VectorOperators.ADD));
+        out.setFloat((s0 + 1) * outStride + row0, c01.reduceLanes(VectorOperators.ADD));
+        out.setFloat((s0 + 2) * outStride + row0, c02.reduceLanes(VectorOperators.ADD));
+        out.setFloat(s0 * outStride + row1, c10.reduceLanes(VectorOperators.ADD));
+        out.setFloat((s0 + 1) * outStride + row1, c11.reduceLanes(VectorOperators.ADD));
+        out.setFloat((s0 + 2) * outStride + row1, c12.reduceLanes(VectorOperators.ADD));
+        out.setFloat(s0 * outStride + row2, c20.reduceLanes(VectorOperators.ADD));
+        out.setFloat((s0 + 1) * outStride + row2, c21.reduceLanes(VectorOperators.ADD));
+        out.setFloat((s0 + 2) * outStride + row2, c22.reduceLanes(VectorOperators.ADD));
+    }
+
+    /** Flat F32 dot of a dequantized weight row (at {@code w[wOffset..]}) against one activation column. */
+    private static float dotDeq(float[] w, int wOffset, int dim1, F32FloatTensor x, int xbase) {
+        FloatVector acc = FloatVector.zero(F_SPECIES);
+        int len = F_SPECIES.length();
+        for (int k = 0; k < dim1; k += len) {
+            acc = FloatVector.fromArray(F_SPECIES, w, wOffset + k).fma(x.getFloatVector(F_SPECIES, xbase + k), acc);
+        }
+        return acc.reduceLanes(VectorOperators.ADD);
+    }
+
+    /** MXFP4 e2m1 magnitudes (signed) indexed by 4-bit code; 16 entries fit a single in-register
+     *  byte table for {@link #mxfp4Decode}. Loaded per block (a vector cannot live in a field). */
+    private static final byte[] MXFP4_LUT = {0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12};
+
+    /** Decode 16 nibble codes (0..15 per byte lane) to their signed MXFP4 values via one in-register
+     *  table permute (compiles to {@code vpshufb}), replacing the per-lane arithmetic reconstruction.
+     *  Callers {@code castShape} the desired part to float and apply the block scale {@code d}. */
+    private static ByteVector mxfp4Decode(ByteVector nibbles) {
+        return ByteVector.fromArray(ByteVector.SPECIES_128, MXFP4_LUT, 0).rearrange(nibbles.toShuffle());
     }
 
     private static float e8m0ToFp32Half(int x) {

@@ -18,6 +18,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -102,25 +103,21 @@ final class Server {
             if (handleOptions(exchange)) return;
             sendError(exchange, 404, "Not found");
         });
-        // The prompt cache is an LFM2.5-specific optimization (its tree and bx tiers know that
-        // architecture's KV/conv layout); other models run the plain, un-cached generation path.
-        if (RuntimeFlags.PROMPT_CACHE && model instanceof Llama llamaModel) {
-            Llama.Configuration config = llamaModel.configuration();
+        // The prompt cache is an opt-in model capability (only models whose KV/conv layout the cache
+        // understands provide it — today LFM2.5); other models run the plain, un-cached path.
+        Optional<PromptCacheSupport> cacheSupport = RuntimeFlags.PROMPT_CACHE ? model.promptCacheSupport() : Optional.empty();
+        if (cacheSupport.isPresent()) {
+            PromptCacheSupport support = cacheSupport.get();
             CacheStore store;
             String cacheFile = RuntimeFlags.PROMPT_CACHE_FILE;
             if (cacheFile != null) {
-                long kvBytesPerToken = 0;
-                for (int l = 0; l < config.nLayerKvFromStart; l++) {
-                    int kvDim = config.kvDim(l);
-                    if (kvDim > 0) kvBytesPerToken += 2L * kvDim * Float16.BYTES;
-                }
                 store = CacheStore.mmap(Path.of(cacheFile),
                         RuntimeFlags.PROMPT_CACHE_BUDGET_BYTES,
-                        RuntimeFlags.PROMPT_CACHE_BLOCK_TOKENS, kvBytesPerToken);
+                        RuntimeFlags.PROMPT_CACHE_BLOCK_TOKENS, support.kvBytesPerToken());
             } else {
                 store = CacheStore.inMemory();
             }
-            promptCache = new PromptCache(config, store);
+            promptCache = support.create(store);
             System.out.printf("Prompt cache enabled: budget=%d MB %s%n",
                     RuntimeFlags.PROMPT_CACHE_BUDGET_BYTES >> 20,
                     cacheFile != null ? "file=" + cacheFile : "(in memory)");
@@ -515,13 +512,15 @@ final class Server {
         if (System.getProperty("llama.debugPrompt") != null) {
             System.err.println("[prompt] " + tokenizer.decode(promptTokens));
         }
-        // Incremental in-place session resume is LFM2.5-only (ChatML delta encoding); other models
-        // re-encode the full prompt each turn.
-        Ingestion resumed = model instanceof Llama
+        // Incremental in-place session resume (ChatML delta encoding) is a capability of the same
+        // models that support the prompt cache, but it works independently of whether the radix cache
+        // is actually enabled; other models re-encode the full prompt each turn.
+        boolean sessionResume = model.promptCacheSupport().isPresent();
+        Ingestion resumed = sessionResume
                 ? matchChatSession(request, messages, new LFMChatFormat(tokenizer), tokenizer, options) : null;
         Ingestion ingestion = resumed != null ? resumed : Ingestion.of(model.createNewState(), 0, promptTokens);
         GenerationResult result = generateResponse(model, options, request, promptTokens, ingestion, model.stopTokens(), onText, onReasoning, onToolCall, usageCounts);
-        if (model instanceof Llama) saveChatSession(model, request, messages, ingestion, result);
+        if (sessionResume) saveChatSession(model, request, messages, ingestion, result);
         return hasUsableTools(request) ? withParsedToolCalls(model, result, request) : result;
     }
 
@@ -624,8 +623,7 @@ final class Server {
         }
         // The prompt cache owns its own resume/commit policy; we just drive Engine.generate with
         // it as the hooks, commit the final frontier on success, and release per-request state.
-        // The cache is only ever created for LFM2.5 (see run()), so the state is a Llama.State.
-        PromptCache.CacheRun run = cache.beginGeneration((Llama.State) state, cachedOut, warm);
+        PromptCache.CacheRun run = cache.beginGeneration(state, cachedOut, warm);
         try {
             GenerationResult result = Engine.generate(model, state, 0, ingestion.tokens(), params, listener, run);
             run.commitFinal();

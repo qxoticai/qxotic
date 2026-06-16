@@ -12,6 +12,7 @@ import jdk.incubator.vector.VectorSpecies;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import java.util.Arrays;
+import java.util.Optional;
 import java.util.Set;
 
 record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weights) implements Model {
@@ -118,6 +119,27 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
     @Override
     public ChatFormat chatFormat() {
         return ChatFormats.forModel(tokenizer);
+    }
+
+    /** LFM2.5 supports the incremental prompt cache (its tree/bx tiers know this KV+conv layout). */
+    @Override
+    public Optional<PromptCacheSupport> promptCacheSupport() {
+        return Optional.of(new PromptCacheSupport() {
+            @Override
+            public long kvBytesPerToken() {
+                long bytes = 0;
+                for (int l = 0; l < configuration.nLayerKvFromStart; l++) {
+                    int kvDim = configuration.kvDim(l);
+                    if (kvDim > 0) bytes += 2L * kvDim * Float16.BYTES;
+                }
+                return bytes;
+            }
+
+            @Override
+            public PromptCache create(CacheStore store) {
+                return new PromptCache(configuration, store);
+            }
+        });
     }
 
     public static final class Configuration {
@@ -870,18 +892,14 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         float[] blockM = state.decodeBlockM;
         double[] blockL = state.decodeBlockL;
 
-        int[] pStarts = new int[nPartitions];
-        int[] pEnds = new int[nPartitions];
-        for (int p = 0; p < nPartitions; p++) {
-            pStarts[p] = attStart + p * blockSize;
-            pEnds[p] = (p + 1 == nPartitions) ? position + 1 : attStart + (p + 1) * blockSize;
-        }
-
+        // Partition bounds are pure functions of p, computed inline in each task (no per-call arrays).
         if (headSize == 64 && FloatTensor.USE_VECTOR_API && FloatTensor.F_SPECIES.vectorBitSize() == 512) {
             Parallel.parallelFor(0, nPartitions * nHeads, task -> {
                 int p = task / nHeads;
                 int h = task - p * nHeads;
-                decodeAttentionPartition64(config, layer, pStarts[p], pEnds[p], attnScale,
+                int pStart = attStart + p * blockSize;
+                int pEnd = (p + 1 == nPartitions) ? position + 1 : attStart + (p + 1) * blockSize;
+                decodeAttentionPartition64(config, layer, pStart, pEnd, attnScale,
                         qF32, h * headSize, keyCache, valueCache, kvDim, (h / kvMul) * headSize,
                         blockO, task * headSize, blockM, blockL, task);
             });
@@ -889,8 +907,8 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
             return true;
         }
         Parallel.parallelFor(0, nPartitions, p -> {
-            int pStart = pStarts[p];
-            int pEnd = pEnds[p];
+            int pStart = attStart + p * blockSize;
+            int pEnd = (p + 1 == nPartitions) ? position + 1 : attStart + (p + 1) * blockSize;
             for (int h = 0; h < nHeads; h++) {
                 int kvHeadOffset = (h / kvMul) * headSize;
                 int qOffset = h * headSize;

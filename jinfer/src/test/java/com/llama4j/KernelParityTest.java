@@ -32,7 +32,7 @@ public final class KernelParityTest {
         }
         testGemv(GGMLType.Q8_0);
         for (GGMLType type : new GGMLType[]{GGMLType.Q4_0, GGMLType.Q4_K, GGMLType.Q5_K, GGMLType.Q6_K, GGMLType.Q8_0, GGMLType.Q4_1,
-                                            GGMLType.BF16, GGMLType.F16, GGMLType.F32}) {
+                                            GGMLType.MXFP4, GGMLType.BF16, GGMLType.F16, GGMLType.F32}) {
             testGemm(type);
         }
         testRmsnorm();

@@ -8,6 +8,20 @@ import java.util.List;
 import java.util.Map;
 
 /**
+ * A model's support for the incremental prompt cache, surfaced through {@link Model#promptCacheSupport()}.
+ * The server obtains one (only models whose KV/conv layout the cache understands provide it), uses
+ * {@link #kvBytesPerToken()} to size the backing {@link CacheStore}, then {@link #create} to build the
+ * cache it drives generation through opaquely — so the server never names a concrete model type.
+ */
+interface PromptCacheSupport {
+    /** Bytes of KV (K+V, all cached layers) stored per token — for sizing the mmap store. */
+    long kvBytesPerToken();
+
+    /** Build the cache backed by {@code store}. */
+    PromptCache create(CacheStore store);
+}
+
+/**
  * Prefix cache of KV rows and shortconv state, keyed by the effective ingested token
  * stream (see {@link Engine#buildPrefillTokens}). A radix tree of VARIABLE-LENGTH nodes that
  * split at any divergence point (SGLang MambaRadixCache shape): KV is matchable at token
@@ -802,8 +816,10 @@ final class PromptCache {
     }
 
     /** Begins a cached generation for {@code state}; the returned hooks drive Engine.generate. */
-    CacheRun beginGeneration(Llama.State state, int[] cachedOut, boolean warm) {
-        return new CacheRun(state, cachedOut, warm);
+    CacheRun beginGeneration(InferenceState state, int[] cachedOut, boolean warm) {
+        // The cache is only ever created for LFM2.5 (see Llama.promptCacheSupport), so the engine's
+        // opaque state is a Llama.State here.
+        return new CacheRun((Llama.State) state, cachedOut, warm);
     }
 
     Map<String, Object> stats() {

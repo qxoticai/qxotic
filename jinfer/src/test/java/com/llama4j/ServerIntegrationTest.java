@@ -28,10 +28,12 @@ public final class ServerIntegrationTest {
     private static HttpClient client;
     private static String base;
     private static Path warmFile;
+    private static String modelId;
 
     public static void main(String[] args) throws Exception {
         toolCallParser(); // pure parser tests: no model required
         Path model = Path.of(args.length > 0 ? args[0] : "../models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
+        modelId = model.getFileName().toString();
         if (!Files.exists(model)) {
             System.out.println("ServerIntegrationTest: model not found (" + model + "), skipping");
             System.exit(failures > 0 ? 1 : 0);
@@ -178,7 +180,7 @@ public final class ServerIntegrationTest {
     }
 
     private static void expect400(String path, String body, String what) throws Exception {
-        HttpResponse<String> response = post(path, body);
+        HttpResponse<String> response = send(path, body);
         check(response.statusCode() == 400, what + " -> 400 (got " + response.statusCode() + ")");
         check(response.body().contains("error"), what + " carries an error payload");
     }
@@ -221,7 +223,7 @@ public final class ServerIntegrationTest {
     private static void chatStreaming() throws Exception {
         HttpRequest request = HttpRequest.newBuilder(URI.create(base + "/v1/chat/completions"))
                 .POST(HttpRequest.BodyPublishers.ofString(
-                        "{\"messages\":[{\"role\":\"user\",\"content\":\"What is 2+2?\"}],\"temperature\":0,\"max_tokens\":48,"
+                        "{\"model\":\"" + modelId + "\",\"messages\":[{\"role\":\"user\",\"content\":\"What is 2+2?\"}],\"temperature\":0,\"max_tokens\":48,"
                         + "\"stream\":true,\"stream_options\":{\"include_usage\":true}}"))
                 .timeout(Duration.ofSeconds(60)).build();
         HttpResponse<Stream<String>> response = client.send(request, HttpResponse.BodyHandlers.ofLines());
@@ -560,7 +562,7 @@ public final class ServerIntegrationTest {
     private static void fast400WhileBusy() throws Exception {
         HttpRequest slow = HttpRequest.newBuilder(URI.create(base + "/v1/chat/completions"))
                 .POST(HttpRequest.BodyPublishers.ofString(
-                        "{\"messages\":[{\"role\":\"user\",\"content\":\"Write a long story.\"}],\"temperature\":0,\"max_tokens\":200}"))
+                        "{\"model\":\"" + modelId + "\",\"messages\":[{\"role\":\"user\",\"content\":\"Write a long story.\"}],\"temperature\":0,\"max_tokens\":200}"))
                 .timeout(Duration.ofSeconds(60)).build();
         CompletableFuture<HttpResponse<String>> running =
                 client.sendAsync(slow, HttpResponse.BodyHandlers.ofString());
@@ -631,7 +633,18 @@ public final class ServerIntegrationTest {
                 HttpResponse.BodyHandlers.ofString());
     }
 
+    /** POST a positive request: generation endpoints require a "model" field (OpenAI-compatible
+     *  validation), so inject the served model when the body omits it. Negative tests use {@link #send}
+     *  directly to keep their bodies verbatim (including the deliberate "missing model" case). */
     private static HttpResponse<String> post(String path, String body) throws Exception {
+        if ((path.contains("completions") || path.contains("responses"))
+                && body.startsWith("{") && body.length() > 1 && body.charAt(1) != '}' && !body.contains("\"model\"")) {
+            body = "{\"model\":\"" + modelId + "\"," + body.substring(1);
+        }
+        return send(path, body);
+    }
+
+    private static HttpResponse<String> send(String path, String body) throws Exception {
         return client.send(HttpRequest.newBuilder(URI.create(base + path))
                         .POST(HttpRequest.BodyPublishers.ofString(body)).timeout(Duration.ofSeconds(60)).build(),
                 HttpResponse.BodyHandlers.ofString());
