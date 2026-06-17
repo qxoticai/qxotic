@@ -192,7 +192,7 @@ public final class Grammar {
     // ---- Flat NFA ----------------------------------------------------------
 
     static final class FlatNFA {
-        static final int K_LIT = 0, K_CHARS = 1, K_EPS = 2, K_DOT = 4;
+        static final int K_LIT = 0, K_CHARS = 1, K_EPS = 2;
         static final int ACCEPT_MARKER = -2; // data value marking an accept EPS node
         final byte[] kind, lit;
         final int[] next, data, altData;
@@ -391,8 +391,7 @@ public final class Grammar {
             BitSet res = new BitSet();
             for (int i = bs.nextSetBit(0); i >= 0; i = bs.nextSetBit(i + 1)) {
                 if (i >= nfa.kind.length) continue;
-                if (nfa.kind[i] == FlatNFA.K_DOT) { if (nfa.next[i] >= 0) res.set(nfa.next[i]); }
-                else if (nfa.kind[i] == FlatNFA.K_LIT && nfa.lit[i] == b) { if (nfa.next[i] >= 0) res.set(nfa.next[i]); }
+                if (nfa.kind[i] == FlatNFA.K_LIT && nfa.lit[i] == b) { if (nfa.next[i] >= 0) res.set(nfa.next[i]); }
                 else if (nfa.kind[i] == FlatNFA.K_CHARS && nfa.charSets[nfa.data[i]].get(b & 0xFF)) { if (nfa.next[i] >= 0) res.set(nfa.next[i]); }
             }
             return epsClos(nfa, res);

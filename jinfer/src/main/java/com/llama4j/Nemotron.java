@@ -2,8 +2,8 @@
 // MoE transformer. Each block is exactly ONE of {SSM, attention, MoE-FFN}, chosen per-layer from the
 // GGUF head_count_kv / feed_forward_length arrays, behind a single pre-norm. Kept entirely behind the
 // Model seam; ported from ../nemotron3.java/Nemotron3.java and cross-checked against llama.cpp's
-// nemotron-h graph. Single-token forward (batchCapacity 1): the Mamba2 recurrence is sequential, so
-// prefill ingests one token at a time.
+// nemotron-h graph. Single-token forward + batched prefill: the Mamba2 recurrence stays sequential
+// within a chunk, but the per-token projections batch into GEMMs.
 //
 // Notable architecture specifics (differ from a Qwen-style MoE): NO RoPE and NO q/k norm in
 // attention; MoE router is SIGMOID with an additive selection bias (ffn exp_probs_b), combine weights

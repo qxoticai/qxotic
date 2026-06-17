@@ -374,9 +374,6 @@ abstract class FloatTensor {
         return addInPlace(0, that, 0, Math.toIntExact(size()));
     }
 
-    FloatTensor multiplyInPlace(int thisOffset, FloatTensor that, int thatOffset, int size) {
-        return mapWithIndexInPlace(thisOffset, size, (value, index) -> value * that.getFloat(index - thisOffset + thatOffset));
-    }
 
     FloatTensor siluMultiplyInPlace(int thisOffset, FloatTensor that, int thatOffset, int size) {
         for (int i = 0; i < size; i++) {

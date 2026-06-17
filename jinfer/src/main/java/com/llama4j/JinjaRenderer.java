@@ -175,43 +175,6 @@ public final class JinjaRenderer {
         return new RuntimeException("[jinja] unsupported template feature: " + feature);
     }
 
-    // ── Built-in methods on objects ──────────────────────────────
-
-    private static final class Builtins {
-        Val items() { return new Val.Func("items", args -> {
-            var src = requireObj(args, 0);
-            var arr = new ArrayList<Val>();
-            for (var e : src.v.entrySet())
-                arr.add(new Val.Arr(List.of(new Val.Str(e.getKey()), e.getValue())));
-            return new Val.Arr(arr);
-        });}
-        Val keys() { return new Val.Func("keys", args -> {
-            var src = requireObj(args, 0);
-            var keys = new ArrayList<Val>();
-            for (String k : src.v.keySet()) keys.add(new Val.Str(k));
-            return new Val.Arr(keys);
-        });}
-        Val values() { return new Val.Func("values", args -> {
-            var src = requireObj(args, 0);
-            return new Val.Arr(new ArrayList<>(src.v.values()));
-        });}
-        Val get() { return new Val.Func("get", args -> {
-            var src = requireObj(args, 0);
-            String key = expectStr(requireArg(args, 1));
-            Val def = args.size() > 2 ? requireArg(args, 2) : Val.NONE;
-            Val found = src.v.get(key);
-            return found != null ? found : def;
-        });}
-    }
-
-    private static final Builtins BUILTIN_METHODS = new Builtins();
-
-    private static Val.Obj requireObj(List<Val> args, int idx) {
-        Val v = args.get(idx);
-        if (v instanceof Val.Obj o) return o;
-        throw new RuntimeException("expected object, got " + v);
-    }
-
     // ── Filters ──────────────────────────────────────────────────
 
     static Val applyFilter(String name, Val val, List<Val> args) {
@@ -468,8 +431,6 @@ public final class JinjaRenderer {
              PLUS, MINUS, STAR, SLASH, PCT,
              // Comparisons (single token: symbol + value string)
              CMP,
-             // Unary
-             NOT,
     }
 
     record Tok(T type, String val, int pos, boolean trimLeft, boolean trimRight) {
@@ -507,9 +468,9 @@ public final class JinjaRenderer {
                     if (c == '{' && (ch(1) == '%' || ch(1) == '{' || ch(1) == '#')) {
                         // Tag opener
                         if (matchTrim(T.OPEN_STMT, "{%-")) { depth++; }
-                        else if (match(T.OPEN_STMT, "{%")) { depth++; toks.add(tok(T.OPEN_STMT, p)); }
+                        else if (matchStr("{%")) { depth++; toks.add(tok(T.OPEN_STMT, p)); }
                         else if (matchTrim(T.OPEN_EXPR, "{{-")) { depth++; }
-                        else if (match(T.OPEN_EXPR, "{{")) { depth++; toks.add(tok(T.OPEN_EXPR, p)); }
+                        else if (matchStr("{{")) { depth++; toks.add(tok(T.OPEN_EXPR, p)); }
                         else if (matchStr("{#")) {
                             while (!eof() && !(ch() == '#' && ch(1) == '}')) adv();
                             if (!eof()) adv(2);
@@ -525,9 +486,9 @@ public final class JinjaRenderer {
 
                 // Close tags (must check before other token types)
                 if (matchTrim(T.CLOSE_STMT, "-%}")) { depth--; continue; }
-                if (match(T.CLOSE_STMT, "%}")) { depth--; toks.add(tok(T.CLOSE_STMT, p)); continue; }
+                if (matchStr("%}")) { depth--; toks.add(tok(T.CLOSE_STMT, p)); continue; }
                 if (matchTrim(T.CLOSE_EXPR, "-}}")) { depth--; continue; }
-                if (match(T.CLOSE_EXPR, "}}")) { depth--; toks.add(tok(T.CLOSE_EXPR, p)); continue; }
+                if (matchStr("}}")) { depth--; toks.add(tok(T.CLOSE_EXPR, p)); continue; }
 
                 // Two-char comparisons
                 if (matchStr("<=") || matchStr(">=") || matchStr("==") || matchStr("!=")) { toks.add(new Tok(T.CMP, cs.subSequence(p, i).toString(), p)); continue; }
@@ -574,13 +535,6 @@ public final class JinjaRenderer {
             }
             toks.add(new Tok(T.EOF, "", i));
             return toks;
-        }
-
-        boolean match(T type, String s) {
-            for (int j = 0; j < s.length(); j++)
-                if (ch(j) != s.charAt(j)) return false;
-            adv(s.length());
-            return true;
         }
 
         boolean matchTrim(T type, String s) {
@@ -976,7 +930,6 @@ public final class JinjaRenderer {
         }
 
         Node parseUnary() {
-            if (is(T.NOT)) { next(); return new UnaNode("not", parseUnary()); }
             if (is(T.PLUS)) { next(); return parseUnary(); } // unary plus is no-op
             if (is(T.MINUS)) { next(); return new BinNode("*", new LitNode(-1L), parseUnary()); }
             return parseTestExpr();
@@ -1144,7 +1097,7 @@ public final class JinjaRenderer {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // TEMPLATE EXECUTOR (unchanged from previous version)
+    // TEMPLATE EXECUTOR
     // ════════════════════════════════════════════════════════════════
 
     public static String render(Prog program, Map<String,Object> context) {

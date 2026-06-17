@@ -215,10 +215,6 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
             return nLayerKvFromStart - (isSWA[layer] ? 2 : 1);
         }
 
-        public boolean hasKv(int layer) {
-            return layer < nLayerKvFromStart;
-        }
-
         public int headSize(int layer) {
             return isSWA[layer] ? headSizeSWA : headSizeFull;
         }
@@ -275,9 +271,9 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
     public record AttentionWeights(FloatTensor wq, FloatTensor wk, FloatTensor wv, FloatTensor wo,
                                    F32FloatTensor qNorm, F32FloatTensor kNorm) {}
 
-    /** Short-convolution block weights (null on attention layers). */
-    /** {@code kernel} is the GGUF layout (per channel: dConv taps); {@code kernelTaps} is the
-     *  same data tap-major (per tap: dim channels) so the scan's vector loop loads unit-stride. */
+    /** Short-convolution block weights (null on attention layers). {@code kernel} is the GGUF layout
+     *  (per channel: dConv taps); {@code kernelTaps} is the same data tap-major (per tap: dim
+     *  channels) so the scan's vector loop loads unit-stride. */
     public record ShortConvWeights(F32FloatTensor kernel, F32FloatTensor kernelTaps, FloatTensor inProj, FloatTensor outProj) {
         public static ShortConvWeights of(F32FloatTensor kernel, FloatTensor inProj, FloatTensor outProj, int dim) {
             int dConv = Math.toIntExact(kernel.size() / dim);
@@ -438,10 +434,6 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
                 this.moeRouteTokens = null;
             }
         }
-    }
-
-    static void rmsnorm(FloatTensor out, FloatTensor x, F32FloatTensor weight, int size, float rmsNormEps) {
-        rmsnorm(out, 0, x, 0, weight, size, rmsNormEps);
     }
 
     static void rmsnorm(FloatTensor out, int outOffset, FloatTensor x, int xOffset, F32FloatTensor weight, int size, float rmsNormEps) {

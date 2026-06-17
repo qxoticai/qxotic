@@ -1,8 +1,8 @@
 // Qwen3.5 ("qwen35" / "qwen35moe") support: a hybrid gated-delta-net (linear-attention) + periodic
 // full-attention transformer, dense or MoE. Kept entirely behind the Model seam; ported from the
 // reference ../qwen35.java/Qwen35.java. Layers are SSM (gated delta-net) by default; every
-// full_attention_interval-th layer is full softmax attention. Single-token forward (batchCapacity 1):
-// the delta-net recurrence is inherently sequential, so prefill ingests one token at a time.
+// full_attention_interval-th layer is full softmax attention. Single-token forward + batched prefill:
+// the delta-net recurrence stays sequential within a chunk, but the per-token projections batch into GEMMs.
 package com.llama4j;
 
 import com.qxotic.format.gguf.GGUF;
@@ -126,8 +126,9 @@ final class Qwen35 implements Model {
         }
     }
 
-    /** Interleaved-pair (GPT-J) rotary over the first {@code 2*ropeHalf} dims of one head. For
-     *  text-only decoding MRoPE reduces to standard RoPE (the 3D position deltas collapse to pos). */
+    // For text-only decoding Qwen3.5's MRoPE reduces to standard interleaved RoPE (the 3D position
+    // deltas collapse to pos), so attention uses RoPE.applyInterleaved.
+
     // === Forward ===
 
     private void forward(State state, int token, int position) {

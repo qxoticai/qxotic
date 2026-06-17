@@ -179,9 +179,7 @@ final class ModelLoader {
                 numberOfKeyValueHeadsPerLayer[i] = kWeight != null ? Math.toIntExact(kWeight.shape()[1]) / headSizeFull : 0;
             }
         }
-        int nLayerKvFromStart = numberOfLayers;
         int shortConvLCache = gguf.getValueOrDefault(int.class, archPrefix + ".shortconv.l_cache", 0);
-
 
         Llama.Configuration config = new Llama.Configuration(
                 embeddingLength,
@@ -199,7 +197,7 @@ final class ModelLoader {
                 slidingWindow,
                 logitSoftcapping,
                 isSWA,
-                nLayerKvFromStart,
+                numberOfLayers,
                 expertCount,
                 expertUsedCount,
                 expertFeedForwardLength,
