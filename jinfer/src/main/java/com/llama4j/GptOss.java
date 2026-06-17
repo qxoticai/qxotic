@@ -6,6 +6,8 @@ package com.llama4j;
 
 import com.qxotic.format.gguf.GGUF;
 
+import static com.llama4j.Norms.rmsnorm;
+
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
@@ -59,24 +61,12 @@ final class GptOss implements Model {
         profCp = n;
     }
 
-    // Flash-attention sub-phases accumulate from many worker threads -> LongAdder (low contention).
-    static final String[] FLASH_NAMES = {"  flash.qk_scores", "  flash.mask", "  flash.softmax", "  flash.pv", "  flash.sink_norm"};
-    static final java.util.concurrent.atomic.LongAdder[] FLASH = new java.util.concurrent.atomic.LongAdder[FLASH_NAMES.length];
-    static {
-        for (int i = 0; i < FLASH.length; i++) FLASH[i] = new java.util.concurrent.atomic.LongAdder();
-    }
-
     static void profReport(int tokens) {
         long tot = 0;
         for (long v : PROF) tot += v;
         System.err.printf("[gptoss.profile] %d tokens, total %.1f ms%n", tokens, tot / 1e6);
         for (int i = 0; i < PROF.length; i++) {
             System.err.printf("   %-18s %8.1f ms  (%4.1f%%)%n", PROF_NAMES[i], PROF[i] / 1e6, 100.0 * PROF[i] / tot);
-            if (i == 2) {  // expand flash_attn into sub-phases (wall-clock summed across worker threads)
-                for (int f = 0; f < FLASH.length; f++) {
-                    System.err.printf("   %-18s %8.1f ms%n", FLASH_NAMES[f], FLASH[f].sumThenReset() / 1e6);
-                }
-            }
         }
         java.util.Arrays.fill(PROF, 0L);
     }
@@ -143,18 +133,6 @@ final class GptOss implements Model {
 
     // === Math helpers ===
 
-    static void rmsnorm(FloatTensor out, int outOffset, FloatTensor x, int xOffset, F32FloatTensor weight, int size, float eps) {
-        float ss = 0f;
-        for (int i = 0; i < size; i++) {
-            float xi = x.getFloat(xOffset + i);
-            ss += xi * xi;
-        }
-        ss = (float) (1.0 / Math.sqrt(ss / size + eps));
-        for (int i = 0; i < size; i++) {
-            out.setFloat(outOffset + i, weight.getFloat(i) * ss * x.getFloat(xOffset + i));
-        }
-    }
-
     /** out[outOffset, +size] += bias[biasOffset, +size]. */
     static void addBias(FloatTensor out, int outOffset, F32FloatTensor bias, int biasOffset, int size) {
         for (int i = 0; i < size; i++) {
@@ -163,17 +141,6 @@ final class GptOss implements Model {
     }
 
     /** Rotate-half RoPE over one head: pairs (ic, ic+halfHead). cos/sin carry the YARN mscale. */
-    static void applyRope(FloatTensor q, int headOffset, int position, float[] cos, float[] sin, int halfHead) {
-        int base = position * halfHead;
-        for (int ic = 0; ic < halfHead; ic++) {
-            float c = cos[base + ic], s = sin[base + ic];
-            float v0 = q.getFloat(headOffset + ic);
-            float v1 = q.getFloat(headOffset + ic + halfHead);
-            q.setFloat(headOffset + ic, v0 * c - v1 * s);
-            q.setFloat(headOffset + ic + halfHead, v0 * s + v1 * c);
-        }
-    }
-
     /** gpt-oss clamped gated activation: gate clamped above at 7 with swish(alpha=1.702); up clamped
      *  to [-7,7] then (up+1) as the multiplicand. */
     static float clampedSwiglu(float gate, float up) {
@@ -217,12 +184,12 @@ final class GptOss implements Model {
             w.wq[l].matmul(state.xb, state.q, queryDim, dim);
             addBias(state.q, 0, w.attnQBias[l], 0, queryDim);
             for (int h = 0; h < heads; h++) {
-                applyRope(state.q, h * headSize, position, w.ropeCos, w.ropeSin, halfHead);
+                RoPE.applyNeox(state.q, h * headSize, position, w.ropeCos, w.ropeSin, halfHead);
             }
             w.wk[l].matmul(state.xb, state.k, kvDim, dim);
             addBias(state.k, 0, w.attnKBias[l], 0, kvDim);
             for (int h = 0; h < kvHeads; h++) {
-                applyRope(state.k, h * headSize, position, w.ropeCos, w.ropeSin, halfHead);
+                RoPE.applyNeox(state.k, h * headSize, position, w.ropeCos, w.ropeSin, halfHead);
             }
             w.wv[l].matmul(state.xb, state.v, kvDim, dim);
             addBias(state.v, 0, w.attnVBias[l], 0, kvDim);
@@ -395,7 +362,7 @@ final class GptOss implements Model {
         Parallel.forRows(seqLen, s -> {
             addBias(state.q, s * fQDim, w.attnQBias[l], 0, fQDim);
             for (int h = 0; h < heads; h++) {
-                applyRope(state.q, s * fQDim + h * fHeadSz, fStart + s, w.ropeCos, w.ropeSin, fHalf);
+                RoPE.applyNeox(state.q, s * fQDim + h * fHeadSz, fStart + s, w.ropeCos, w.ropeSin, fHalf);
             }
         });
 
@@ -407,7 +374,7 @@ final class GptOss implements Model {
             addBias(bK, s * fKvDim, w.attnKBias[l], 0, fKvDim);
             addBias(bV, s * fKvDim, w.attnVBias[l], 0, fKvDim);
             for (int h = 0; h < kvHeads; h++) {
-                applyRope(bK, s * fKvDim + h * fHeadSz, fStart + s, w.ropeCos, w.ropeSin, fHalf);
+                RoPE.applyNeox(bK, s * fKvDim + h * fHeadSz, fStart + s, w.ropeCos, w.ropeSin, fHalf);
             }
         });
 
@@ -433,160 +400,19 @@ final class GptOss implements Model {
     }
 
     /**
-     * Flash attention for the chunk (block-tiled online softmax), scale = 1/sqrt(headSize). Q/output
-     * are packed at stride {@code queryDim}, the linear batch K/V at stride {@code kvDim}. In-chunk
-     * keys (pos >= startPos) come from the batch buffer, prior keys from the ring/full cache. After
-     * the kv-block loop each row's normalizer folds in the per-head attention sink:
-     * newM=max(M,sink); L' = L*exp(M-newM) + exp(sink-newM); out_i *= exp(M-newM)/L'. Writes the
-     * attention output into {@code state.xbK}.
+     * gpt-oss adapter: ring-SWA (or full) flash attention via the shared
+     * {@link FlashAttention#slidingWindowPrefill} block, passing this layer's per-head attention sinks.
+     * SWA layers ring their KV cache (slot = {@code pos & (slidingWindow-1)}, power-of-two enforced in
+     * {@link Configuration}); full layers store linearly. The batch K/V buffer is stride {@code kvDim}.
      */
     private void flashAttention(State state, int layer, int startPos, int seqLen,
                                int headSize, int kvDim, int queryDim, int kvMul, boolean isSWA) {
-        Configuration config = configuration;
-        int nHeads = config.numberOfHeads;
-        int window = config.slidingWindow;
-        float scale = 1.0f / (float) Math.sqrt(headSize);
-        FloatTensor q = state.q, out = state.xbK;
-        F32FloatTensor qF32 = (F32FloatTensor) state.q, outF32 = (F32FloatTensor) state.xbK;
-        FloatTensor bK = state.batchK[layer], bV = state.batchV[layer];
-        FloatTensor cK = state.keyCache[layer], cV = state.valueCache[layer];
-        F32FloatTensor sinks = weights.attnSinks[layer];
-        int Br = FlashAttention.Br, Bc = FlashAttention.Bc, QT = FlashAttention.QT;
-        boolean vec = FloatTensor.USE_VECTOR_API;
-        int blockAttStart = isSWA ? Math.max(0, startPos - window + 1) : 0;
-        int nQBlocks = (seqLen + Br - 1) / Br;
-
-        Parallel.parallelFor(0, nHeads * nQBlocks, idx -> {
-            int h = idx / nQBlocks;
-            int qStart = (idx % nQBlocks) * Br;
-            FlashAttention.Buffers buf = FlashAttention.buffers();
-            float[] S = buf.s;
-            float[] M = buf.m;
-            double[] L = buf.l;
-            int[] kvOff = buf.kvOff;
-            int hHead = h * headSize;
-            int kvHeadOffset = (h / kvMul) * headSize;
-
-            int qEnd = Math.min(seqLen, qStart + Br);
-            int BrRows = qEnd - qStart;
-            for (int i = 0; i < BrRows; i++) {
-                M[i] = Float.NEGATIVE_INFINITY;
-                L[i] = 0.0;
-                out.fillInPlace((qStart + i) * queryDim + hHead, headSize, 0f);
-            }
-
-            int blockMaxQ = startPos + qEnd - 1;
-            for (int kvStart = blockAttStart; kvStart <= blockMaxQ; kvStart += Bc) {
-                int kvEnd = Math.min(seqLen + startPos, kvStart + Bc);
-                int BcRows = kvEnd - kvStart;
-                if (BcRows <= 0) continue;
-
-                // Keys [0,cacheCount) live in the cache, the rest in this chunk's batch buffer; both
-                // share the same per-key offset formula (cache via kvCacheIndex, batch via pos-startPos).
-                int cacheCount = Math.max(0, Math.min(BcRows, startPos - kvStart));
-                for (int j = 0; j < BcRows; j++) {
-                    int kvPos = kvStart + j;
-                    kvOff[j] = (kvPos < startPos ? config.kvCacheIndex(layer, kvPos) : kvPos - startPos) * kvDim + kvHeadOffset;
-                }
-
-                long pt = PROFILE ? System.nanoTime() : 0L;
-                // 1) Scores S[i][j] = scale * dot(Q_i, K_j); register-tiled QT query rows at a time.
-                for (int i0 = 0; i0 < BrRows; i0 += QT) {
-                    int qr = Math.min(QT, BrRows - i0);
-                    int qBase = (qStart + i0) * queryDim + hHead;
-                    if (vec && qr == QT) {
-                        if (cacheCount > 0) FlashAttention.qkTile(qF32, qBase, queryDim, cK, kvOff, 0, cacheCount, headSize, scale, S, i0 * BcRows, BcRows);
-                        if (cacheCount < BcRows) FlashAttention.qkTile(qF32, qBase, queryDim, bK, kvOff, cacheCount, BcRows - cacheCount, headSize, scale, S, i0 * BcRows, BcRows);
-                    } else {
-                        for (int t = 0; t < qr; t++) {
-                            int qOffset = (qStart + i0 + t) * queryDim + hHead;
-                            for (int j = 0; j < BcRows; j++) {
-                                S[(i0 + t) * BcRows + j] = q.dot(qOffset, j < cacheCount ? cK : bK, kvOff[j], headSize) * scale;
-                            }
-                        }
-                    }
-                }
-
-                if (PROFILE) { long n = System.nanoTime(); FLASH[0].add(n - pt); pt = n; }
-                // 2) Causal + sliding-window mask.
-                for (int i = 0; i < BrRows; i++) {
-                    int globalQ = qStart + i + startPos;
-                    int qAttStart = isSWA ? Math.max(0, globalQ - window + 1) : 0;
-                    int rowBase = i * BcRows;
-                    for (int j = 0; j < BcRows; j++) {
-                        int kvPos = kvStart + j;
-                        if (kvPos > globalQ || kvPos < qAttStart) S[rowBase + j] = Float.NEGATIVE_INFINITY;
-                    }
-                }
-
-                if (PROFILE) { long n = System.nanoTime(); FLASH[1].add(n - pt); pt = n; }
-                // 3) Online softmax per row.
-                for (int i = 0; i < BrRows; i++) {
-                    int rowBase = i * BcRows;
-                    float blockMax = Float.NEGATIVE_INFINITY;
-                    for (int j = 0; j < BcRows; j++) {
-                        float s = S[rowBase + j];
-                        if (s > blockMax) blockMax = s;
-                    }
-                    if (blockMax == Float.NEGATIVE_INFINITY) {
-                        for (int j = 0; j < BcRows; j++) S[rowBase + j] = 0f;
-                        continue;
-                    }
-                    float rowM = M[i];
-                    double rowL = L[i];
-                    float newMax = Math.max(rowM, blockMax);
-                    if (newMax > rowM) {
-                        float rst = (float) Math.exp(rowM - newMax);
-                        FlashAttention.normalize(out, (qStart + i) * queryDim + hHead, headSize, rst);
-                        rowL *= rst;
-                        rowM = newMax;
-                    }
-                    double sum = 0;
-                    for (int j = 0; j < BcRows; j++) {
-                        float s = S[rowBase + j];
-                        float p = s == Float.NEGATIVE_INFINITY ? 0f : (float) Math.exp(s - rowM);
-                        S[rowBase + j] = p;
-                        sum += p;
-                    }
-                    M[i] = rowM;
-                    L[i] = rowL + sum;
-                }
-
-                if (PROFILE) { long n = System.nanoTime(); FLASH[2].add(n - pt); pt = n; }
-                // 4) PV: out_i += sum_j p_ij V_j, register-tiled QT query rows at a time.
-                for (int i0 = 0; i0 < BrRows; i0 += QT) {
-                    int qr = Math.min(QT, BrRows - i0);
-                    int oBase = (qStart + i0) * queryDim + hHead;
-                    if (vec && qr == QT) {
-                        if (cacheCount > 0) FlashAttention.pvTile(outF32, oBase, queryDim, cV, kvOff, 0, cacheCount, headSize, S, i0 * BcRows, BcRows);
-                        if (cacheCount < BcRows) FlashAttention.pvTile(outF32, oBase, queryDim, bV, kvOff, cacheCount, BcRows - cacheCount, headSize, S, i0 * BcRows, BcRows);
-                    } else {
-                        for (int t = 0; t < qr; t++) {
-                            int oOffset = (qStart + i0 + t) * queryDim + hHead;
-                            int rowBase = (i0 + t) * BcRows;
-                            for (int j = 0; j < BcRows; j++) {
-                                float p = S[rowBase + j];
-                                if (p != 0f) FlashAttention.accumulate(out, oOffset, j < cacheCount ? cV : bV, kvOff[j], headSize, p);
-                            }
-                        }
-                    }
-                }
-                if (PROFILE) FLASH[3].add(System.nanoTime() - pt);
-            }
-
-            long st = PROFILE ? System.nanoTime() : 0L;
-            // Final per-row normalize folding in the per-head sink (matches softmaxWithSink: the sink
-            // contributes exp(sink-max) to the denominator only).
-            float sink = sinks.getFloat(h);
-            for (int i = 0; i < BrRows; i++) {
-                float newM = Math.max(M[i], sink);
-                float factor = M[i] == Float.NEGATIVE_INFINITY ? 0f : (float) Math.exp(M[i] - newM);
-                double Lf = L[i] * factor + Math.exp(sink - newM);
-                float inv = Lf == 0.0 ? 0f : (float) (factor / Lf);
-                FlashAttention.normalize(out, (qStart + i) * queryDim + hHead, headSize, inv);
-            }
-            if (PROFILE) FLASH[4].add(System.nanoTime() - st);
-        });
+        int window = isSWA ? configuration.slidingWindow : 0;
+        int ringMask = isSWA ? configuration.slidingWindow - 1 : 0;
+        FlashAttention.slidingWindowPrefill(state.q, state.xbK,
+                state.keyCache[layer], state.valueCache[layer], state.batchK[layer], state.batchV[layer],
+                configuration.numberOfHeads, startPos, seqLen, headSize, kvDim, queryDim, kvDim, kvMul,
+                1.0f / (float) Math.sqrt(headSize), window, ringMask, weights.attnSinks[layer]);
     }
 
     /**

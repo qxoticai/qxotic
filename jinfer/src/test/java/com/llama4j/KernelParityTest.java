@@ -206,7 +206,7 @@ public final class KernelParityTest {
         F32FloatTensor x = makeF32(size, rng);
         F32FloatTensor weight = makeF32(size, rng);
         F32FloatTensor out = F32FloatTensor.allocate(size);
-        Llama.rmsnorm(out, 0, x, 0, weight, size, eps);
+        Norms.rmsnorm(out, 0, x, 0, weight, size, eps);
 
         double ss = 0;
         for (int i = 0; i < size; i++) {

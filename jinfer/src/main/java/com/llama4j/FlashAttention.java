@@ -367,6 +367,165 @@ final class FlashAttention {
         });
     }
 
+    /**
+     * Sliding-window (or full) block-tiled flash attention over a SPLIT KV source: an already-cached
+     * prefix (positions {@code < startPos}, stride {@code kvDim}, addressed through the ring) followed
+     * by this chunk's freshly-projected K/V (positions {@code >= startPos}, stride {@code batchKvStride}).
+     *
+     * <p>{@code window <= 0} is unbounded (full causal); {@code window > 0} attends only
+     * {@code [q-window+1, q]}. {@code ringMask} (= {@code ringLen-1}, a power-of-two mask, or {@code 0}
+     * for a linear cache) maps a cache position to its physical slot — this is the SWA ring: a slot is
+     * reused by {@code pos + ringLen}, which is provably out of every future window, so eviction is a
+     * plain overwrite with no bookkeeping. {@code sinks} (nullable) is a per-head attention sink: a
+     * virtual key with value 0, so it only adds {@code exp(sink-max)} to each row's softmax denominator
+     * (folded once at the final normalize) — the "attend to nothing" escape valve that keeps SWA stable
+     * as old keys are evicted. Online softmax + register-tiled QK/PV, parallel over (head, query block);
+     * {@code scale} is the QK score scale. Used by LFM2.5 (full or ring-SWA, no sinks) and gpt-oss
+     * (ring-SWA/full + sinks); the plain-causal single-source models keep {@link #causalPrefill}.
+     */
+    static void slidingWindowPrefill(FloatTensor q, FloatTensor out, FloatTensor cK, FloatTensor cV,
+                                     FloatTensor bK, FloatTensor bV, int nHeads, int startPos, int seqLen,
+                                     int headSize, int kvDim, int queryStride, int batchKvStride, int kvMul,
+                                     float scale, int window, int ringMask, FloatTensor sinks) {
+        // ringMask must be all-ones (ringLen a power of two) for `pos & ringMask` to equal `pos % ringLen`;
+        // the authoritative fail-fast is the per-model config check (e.g. Llama.Configuration), at model
+        // creation time. This guards future ring adopters against a silently-wrong addressing mask.
+        assert ringMask == 0 || (ringMask & (ringMask + 1)) == 0 : "SWA ring length must be a power of two, got mask " + ringMask;
+        boolean vec = FloatTensor.USE_VECTOR_API && q instanceof F32FloatTensor && out instanceof F32FloatTensor;
+        F32FloatTensor qF32 = vec ? (F32FloatTensor) q : null;
+        F32FloatTensor outF32 = vec ? (F32FloatTensor) out : null;
+        int attStart = window > 0 ? Math.max(0, startPos - window + 1) : 0;
+        int nQBlocks = (seqLen + Br - 1) / Br;
+
+        Parallel.parallelFor(0, nHeads * nQBlocks, idx -> {
+            int h = idx / nQBlocks;
+            int qStart = (idx % nQBlocks) * Br;
+            Buffers buffers = buffers();
+            float[] S = buffers.s;
+            float[] M = buffers.m;
+            double[] L = buffers.l;
+            int[] kvOff = buffers.kvOff;
+            int hHead = h * headSize;
+            int kvHeadOffset = (h / kvMul) * headSize;
+
+            int qEnd = Math.min(seqLen, qStart + Br);
+            int BrRows = qEnd - qStart;
+            for (int i = 0; i < BrRows; i++) {
+                M[i] = Float.NEGATIVE_INFINITY;
+                L[i] = 0.0;
+                out.fillInPlace((qStart + i) * queryStride + hHead, headSize, 0f);
+            }
+
+            int blockMaxQ = startPos + qEnd - 1;
+            for (int kvStart = attStart; kvStart <= blockMaxQ; kvStart += Bc) {
+                int kvEnd = Math.min(seqLen + startPos, kvStart + Bc);
+                int BcRows = kvEnd - kvStart;
+                if (BcRows <= 0) continue;
+
+                // cache keys (stride kvDim, ring-addressed) come first, then this chunk's batch keys (stride batchKvStride)
+                int cacheCount = Math.max(0, Math.min(BcRows, startPos - kvStart));
+                for (int j = 0; j < BcRows; j++) {
+                    int kvPos = kvStart + j;
+                    kvOff[j] = kvPos < startPos
+                            ? (ringMask != 0 ? (kvPos & ringMask) : kvPos) * kvDim + kvHeadOffset
+                            : (kvPos - startPos) * batchKvStride + kvHeadOffset;
+                }
+
+                for (int i0 = 0; i0 < BrRows; i0 += QT) {
+                    int qr = Math.min(QT, BrRows - i0);
+                    int qBase = (qStart + i0) * queryStride + hHead;
+                    if (vec && qr == QT) {
+                        if (cacheCount > 0) qkTile(qF32, qBase, queryStride, cK, kvOff, 0, cacheCount, headSize, scale, S, i0 * BcRows, BcRows);
+                        if (cacheCount < BcRows) qkTile(qF32, qBase, queryStride, bK, kvOff, cacheCount, BcRows - cacheCount, headSize, scale, S, i0 * BcRows, BcRows);
+                    } else {
+                        for (int t = 0; t < qr; t++) {
+                            int qOffset = (qStart + i0 + t) * queryStride + hHead;
+                            for (int j = 0; j < BcRows; j++) {
+                                S[(i0 + t) * BcRows + j] = q.dot(qOffset, j < cacheCount ? cK : bK, kvOff[j], headSize) * scale;
+                            }
+                        }
+                    }
+                }
+
+                for (int i = 0; i < BrRows; i++) {
+                    int globalQ = qStart + i + startPos;
+                    int qAttStart = window > 0 ? Math.max(0, globalQ - window + 1) : 0;
+                    int rowBase = i * BcRows;
+                    for (int j = 0; j < BcRows; j++) {
+                        int kvPos = kvStart + j;
+                        if (kvPos > globalQ || kvPos < qAttStart) S[rowBase + j] = Float.NEGATIVE_INFINITY;
+                    }
+                }
+
+                for (int i = 0; i < BrRows; i++) {
+                    int rowBase = i * BcRows;
+                    float blockMax = Float.NEGATIVE_INFINITY;
+                    for (int j = 0; j < BcRows; j++) {
+                        float s = S[rowBase + j];
+                        if (s > blockMax) blockMax = s;
+                    }
+                    if (blockMax == Float.NEGATIVE_INFINITY) {
+                        for (int j = 0; j < BcRows; j++) S[rowBase + j] = 0f;
+                        continue;
+                    }
+                    float rowM = M[i];
+                    double rowL = L[i];
+                    float newMax = Math.max(rowM, blockMax);
+                    if (newMax > rowM) {
+                        float rst = (float) Math.exp(rowM - newMax);
+                        normalize(out, (qStart + i) * queryStride + hHead, headSize, rst);
+                        rowL *= rst;
+                        rowM = newMax;
+                    }
+                    double sum = 0;
+                    for (int j = 0; j < BcRows; j++) {
+                        float s = S[rowBase + j];
+                        float p = s == Float.NEGATIVE_INFINITY ? 0f : (float) Math.exp(s - rowM);
+                        S[rowBase + j] = p;
+                        sum += p;
+                    }
+                    M[i] = rowM;
+                    L[i] = rowL + sum;
+                }
+
+                for (int i0 = 0; i0 < BrRows; i0 += QT) {
+                    int qr = Math.min(QT, BrRows - i0);
+                    int oBase = (qStart + i0) * queryStride + hHead;
+                    if (vec && qr == QT) {
+                        if (cacheCount > 0) pvTile(outF32, oBase, queryStride, cV, kvOff, 0, cacheCount, headSize, S, i0 * BcRows, BcRows);
+                        if (cacheCount < BcRows) pvTile(outF32, oBase, queryStride, bV, kvOff, cacheCount, BcRows - cacheCount, headSize, S, i0 * BcRows, BcRows);
+                    } else {
+                        for (int t = 0; t < qr; t++) {
+                            int oOffset = (qStart + i0 + t) * queryStride + hHead;
+                            int rowBase = (i0 + t) * BcRows;
+                            for (int j = 0; j < BcRows; j++) {
+                                float p = S[rowBase + j];
+                                if (p != 0f) accumulate(out, oOffset, j < cacheCount ? cV : bV, kvOff[j], headSize, p);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (sinks == null) {
+                for (int i = 0; i < BrRows; i++) {
+                    normalize(out, (qStart + i) * queryStride + hHead, headSize, (float) (1.0 / L[i]));
+                }
+            } else {
+                // Fold the per-head sink: a virtual key (score=sink, value=0) adds exp(sink-newM) to the
+                // denominator only; out_i, currently scaled to running max M[i], rescales by exp(M[i]-newM).
+                float sink = sinks.getFloat(h);
+                for (int i = 0; i < BrRows; i++) {
+                    float newM = Math.max(M[i], sink);
+                    float factor = M[i] == Float.NEGATIVE_INFINITY ? 0f : (float) Math.exp(M[i] - newM);
+                    double Lf = L[i] * factor + Math.exp(sink - newM);
+                    float inv = Lf == 0.0 ? 0f : (float) (factor / Lf);
+                    normalize(out, (qStart + i) * queryStride + hHead, headSize, inv);
+                }
+            }
+        });
+    }
+
     private FlashAttention() {
     }
 }

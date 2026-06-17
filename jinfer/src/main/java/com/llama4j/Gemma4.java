@@ -12,6 +12,9 @@ package com.llama4j;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.TensorEntry;
 
+import static com.llama4j.Norms.rmsnorm;
+import static com.llama4j.Norms.rmsnormNoWeight;
+
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorOperators;
 
@@ -461,51 +464,6 @@ final class Gemma4 implements Model {
         }
     }
 
-    static void rmsnorm(FloatTensor out, FloatTensor x, F32FloatTensor weight, int size, float eps) {
-        rmsnorm(out, 0, x, 0, weight, size, eps);
-    }
-
-    static void rmsnorm(FloatTensor out, int outOffset, FloatTensor x, int xOffset, F32FloatTensor weight, int size, float eps) {
-        float ss = 0f;
-        for (int i = 0; i < size; i++) {
-            float xi = x.getFloat(xOffset + i);
-            ss += xi * xi;
-        }
-        ss = (float) (1.0 / Math.sqrt(ss / size + eps));
-        for (int i = 0; i < size; i++) {
-            out.setFloat(outOffset + i, weight.getFloat(i) * ss * x.getFloat(xOffset + i));
-        }
-    }
-
-    /** Bare RMS norm (normalize to unit RMS, no learned weights) — Gemma's V norm. */
-    static void rmsnormNoWeight(FloatTensor out, int outOffset, FloatTensor x, int xOffset, int size, float eps) {
-        float ss = 0f;
-        for (int i = 0; i < size; i++) {
-            float xi = x.getFloat(xOffset + i);
-            ss += xi * xi;
-        }
-        ss = (float) (1.0 / Math.sqrt(ss / size + eps));
-        for (int i = 0; i < size; i++) {
-            out.setFloat(outOffset + i, ss * x.getFloat(xOffset + i));
-        }
-    }
-
-    private static void applyRope(FloatTensor t, int baseOffset, int nHeads, int headSize, int halfHead, int position,
-                                  F32FloatTensor freqsReal, F32FloatTensor freqsImag) {
-        for (int h = 0; h < nHeads; h++) {
-            int poffset = baseOffset + h * headSize;
-            for (int i0 = 0; i0 < headSize; i0 += 2) {
-                int ic = i0 / 2;
-                float fcr = freqsReal.getFloat(position * halfHead + ic);
-                float fci = freqsImag.getFloat(position * halfHead + ic);
-                float v0 = t.getFloat(poffset + ic);
-                float v1 = t.getFloat(poffset + ic + halfHead);
-                t.setFloat(poffset + ic, v0 * fcr - v1 * fci);
-                t.setFloat(poffset + ic + halfHead, v0 * fci + v1 * fcr);
-            }
-        }
-    }
-
     // === Forward (single token at the given position) — reference path for parity testing ===
 
     void forward(State state, int token, int position) {
@@ -554,7 +512,7 @@ final class Gemma4 implements Model {
             }
             F32FloatTensor freqsReal = layerIsSWA ? weights.freqCisRealSwa : weights.freqCisRealFull;
             F32FloatTensor freqsImag = layerIsSWA ? weights.freqCisImagSwa : weights.freqCisImagFull;
-            applyRope(state.q, 0, config.numberOfHeads, headSize, halfHead, position, freqsReal, freqsImag);
+            RoPE.applyNeox(state.q, 0, config.numberOfHeads, headSize, halfHead, position, freqsReal, freqsImag);
 
             int kvLayer = config.kvSourceLayer(l);
             int nKvHeads = config.numberOfKeyValueHeadsPerLayer[l];
@@ -570,7 +528,7 @@ final class Gemma4 implements Model {
                     rmsnorm(state.k, h * headSize, state.k, h * headSize, weights.attnKNorm[l], headSize, config.rmsNormEps);
                     rmsnormNoWeight(state.v, h * headSize, state.v, h * headSize, headSize, config.rmsNormEps);
                 }
-                applyRope(state.k, 0, nKvHeads, headSize, halfHead, position, freqsReal, freqsImag);
+                RoPE.applyNeox(state.k, 0, nKvHeads, headSize, halfHead, position, freqsReal, freqsImag);
                 int kvPos = config.kvCacheIndex(l, position);
                 state.k.copyTo(0, state.keyCache[kvLayer], kvPos * kvDim, kvDim);
                 state.v.copyTo(0, state.valueCache[kvLayer], kvPos * kvDim, kvDim);
@@ -712,7 +670,7 @@ final class Gemma4 implements Model {
                 for (int h = 0; h < config.numberOfHeads; h++) {
                     rmsnorm(state.q, s * fQDim + h * fHeadSz, state.q, s * fQDim + h * fHeadSz, qNormW, fHeadSz, config.rmsNormEps);
                 }
-                applyRope(state.q, s * fQDim, config.numberOfHeads, fHeadSz, fHalf, fStart + s, freqsReal, freqsImag);
+                RoPE.applyNeox(state.q, s * fQDim, config.numberOfHeads, fHeadSz, fHalf, fStart + s, freqsReal, freqsImag);
             });
             cp = prof(1, cp);
 
@@ -732,7 +690,7 @@ final class Gemma4 implements Model {
                         rmsnorm(bKl, s * kd + h * fHeadSz, bKl, s * kd + h * fHeadSz, kNormW, fHeadSz, config.rmsNormEps);
                         rmsnormNoWeight(bVl, s * kd + h * fHeadSz, bVl, s * kd + h * fHeadSz, fHeadSz, config.rmsNormEps);
                     }
-                    applyRope(bKl, s * kd, fNKv, fHeadSz, fHalf, fStart + s, freqsReal, freqsImag);
+                    RoPE.applyNeox(bKl, s * kd, fNKv, fHeadSz, fHalf, fStart + s, freqsReal, freqsImag);
                 });
             }
             cp = prof(2, cp);

@@ -7,6 +7,8 @@ package com.llama4j;
 
 import com.qxotic.format.gguf.GGUF;
 
+import static com.llama4j.Norms.rmsnorm;
+
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
@@ -109,22 +111,6 @@ final class Qwen35 implements Model {
     }
 
     // === Math helpers ===
-
-    static void rmsnorm(FloatTensor out, FloatTensor x, F32FloatTensor weight, int size, float eps) {
-        rmsnorm(out, 0, x, 0, weight, size, eps);
-    }
-
-    static void rmsnorm(FloatTensor out, int outOffset, FloatTensor x, int xOffset, F32FloatTensor weight, int size, float eps) {
-        float ss = 0f;
-        for (int i = 0; i < size; i++) {
-            float xi = x.getFloat(xOffset + i);
-            ss += xi * xi;
-        }
-        ss = (float) (1.0 / Math.sqrt(ss / size + eps));
-        for (int i = 0; i < size; i++) {
-            out.setFloat(outOffset + i, weight.getFloat(i) * ss * x.getFloat(xOffset + i));
-        }
-    }
 
     // For text-only decoding Qwen3.5's MRoPE reduces to standard interleaved RoPE (the 3D position
     // deltas collapse to pos), so attention uses RoPE.applyInterleaved.

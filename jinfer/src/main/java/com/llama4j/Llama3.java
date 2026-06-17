@@ -15,6 +15,8 @@ package com.llama4j;
 
 import com.qxotic.format.gguf.GGUF;
 
+import static com.llama4j.Norms.rmsnorm;
+
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
@@ -141,10 +143,6 @@ final class Llama3 implements Model {
     }
 
     // === Math helpers ===
-
-    static void rmsnorm(FloatTensor out, int outOffset, FloatTensor x, int xOffset, F32FloatTensor weight, int size, float eps) {
-        Llama.rmsnorm(out, outOffset, x, xOffset, weight, size, eps);   // vectorized F32 sum-of-squares
-    }
 
     // === Forward (single token) ===
 
@@ -461,7 +459,7 @@ final class Llama3 implements Model {
 
     /** Selects the RoPE flavor from GGUF metadata: YaRN scaling (mistral3), "llama3" per-frequency
      *  scaling (rope_freqs.weight), or plain RoPE (Llama/MiniCPM). Returns the interleaved cos/sin
-     *  tables {@link #applyRope} consumes. */
+     *  tables {@link RoPE#applyInterleaved} consumes. */
     static Pair<float[], float[]> buildRope(GGUF gguf, String arch, Configuration config, Map<String, GGMLTensorEntry> tensors) {
         int ropeDim = Math.min(config.ropeDimensionCount, config.headSize);
         String scalingType = gguf.getValueOrDefault(String.class, arch + ".rope.scaling.type", "");
