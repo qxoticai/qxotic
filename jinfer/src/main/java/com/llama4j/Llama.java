@@ -1237,10 +1237,8 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
                                 int layer, int sequenceLength, int dim) {
         int hiddenDim = config.feedForwardLength[layer];
         Llama.DenseFfnWeights dense = weights.layers()[layer].dense();
-        dense.gate().gemm(batch.xb, dim, batch.hb, hiddenDim, sequenceLength, hiddenDim, dim);
-        dense.up().gemm(batch.xb, dim, batch.hb2, hiddenDim, sequenceLength, hiddenDim, dim);
-        batch.hb.siluMultiplyInPlace(0, batch.hb2, 0, sequenceLength * hiddenDim);
-        dense.down().gemm(batch.hb, hiddenDim, batch.xb, dim, sequenceLength, dim, hiddenDim);
+        Ffn.dense(dense.gate(), dense.up(), dense.down(), batch.xb, batch.hb, batch.hb2, batch.xb,
+                sequenceLength, dim, hiddenDim, Ffn.Act.SILU_GLU);
         F32FloatTensor postFfnNorm = weights.layers()[layer].postFfnNorm();
         if (postFfnNorm != null) {
             for (int s = 0; s < sequenceLength; s++) rmsnorm(batch.xb, s * dim, batch.xb, s * dim, postFfnNorm, dim, config.rmsNormEps);

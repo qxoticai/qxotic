@@ -362,10 +362,8 @@ final class Qwen35 implements Model {
         Weights w = weights;
         int dim = config.embeddingLength;
         int hiddenDim = config.hiddenDim;
-        w.ffnGate[layer].matmul(state.xb, state.xb2, hiddenDim, dim);
-        w.ffnUp[layer].matmul(state.xb, state.ffnUp, hiddenDim, dim);
-        state.xb2.siluMultiplyInPlace(0, state.ffnUp, 0, hiddenDim);
-        w.ffnDown[layer].matmul(state.xb2, state.xb, dim, hiddenDim);
+        Ffn.dense(w.ffnGate[layer], w.ffnUp[layer], w.ffnDown[layer], state.xb, state.xb2, state.ffnUp, state.xb,
+                1, dim, hiddenDim, Ffn.Act.SILU_GLU);
     }
 
     /** Top-k expert MoE (softmax over all experts, top-k, renormalize) + optional shared expert. */
@@ -738,11 +736,8 @@ final class Qwen35 implements Model {
         Weights w = weights;
         int dim = config.embeddingLength;
         int hiddenDim = config.hiddenDim;
-        w.ffnGate[layer].gemm(state.xb, dim, state.ffnGate, hiddenDim, seqLen, hiddenDim, dim);
-        w.ffnUp[layer].gemm(state.xb, dim, state.ffnUp, hiddenDim, seqLen, hiddenDim, dim);
-        int fHidden = hiddenDim;
-        Parallel.forRows(seqLen, s -> state.ffnGate.siluMultiplyInPlace(s * fHidden, state.ffnUp, s * fHidden, fHidden));
-        w.ffnDown[layer].gemm(state.ffnGate, hiddenDim, state.xb, dim, seqLen, dim, hiddenDim);
+        Ffn.dense(w.ffnGate[layer], w.ffnUp[layer], w.ffnDown[layer], state.xb, state.ffnGate, state.ffnUp, state.xb,
+                seqLen, dim, hiddenDim, Ffn.Act.SILU_GLU);
     }
 
     /** Batched top-k MoE + shared expert: router GEMM, per-row softmax+top-k+renorm, CSR
@@ -794,37 +789,20 @@ final class Qwen35 implements Model {
                 if (e >= 0) counts[e]++;
             }
         }
-        int[] off = state.moeExpertOffsets;
-        off[0] = 0;
-        for (int e = 0; e < numExperts; e++) off[e + 1] = off[e] + counts[e];
-        int[] cursor = state.moeCursor;
-        System.arraycopy(off, 0, cursor, 0, numExperts);
-        for (int s = 0; s < seqLen; s++) {
-            for (int ki = 0; ki < topK; ki++) {
-                int e = state.moeRowTopE[s * topK + ki];
-                if (e < 0) continue;
-                int pos = cursor[e]++;
-                state.moeRowByExpert[pos] = s;
-                state.moeProbByExpert[pos] = state.moeRowTopP[s * topK + ki];
-            }
-        }
-
-        // experts (grouped): one gate/up/down GEMM per expert over its rows; scatter-add weighted
-        state.moeOutB.fillInPlace(0, seqLen * dim, 0f);
-        int fDim = dim, fEFF = expertFFN;
-        for (int e = 0; e < numExperts; e++) {
-            int start = off[e], n = off[e + 1] - start;
-            if (n == 0) continue;
-            Parallel.forRows(n, j -> state.moeInputB.copyTo(state.moeRowByExpert[start + j] * fDim, state.moeGather, j * fDim, fDim));
-            int gateUpOffset = e * gateUpStride;
-            int downOffset = e * downStride;
-            w.moeExpertGate[layer].gemm(state.moeGather, dim, state.moeGateUpB, expertFFN, n, expertFFN, dim, gateUpOffset);
-            w.moeExpertUp[layer].gemm(state.moeGather, dim, state.moeUpB, expertFFN, n, expertFFN, dim, gateUpOffset);
-            Parallel.forRows(n, j -> state.moeGateUpB.siluMultiplyInPlace(j * fEFF, state.moeUpB, j * fEFF, fEFF));
-            w.moeExpertDown[layer].gemm(state.moeGateUpB, expertFFN, state.moeDownB, dim, n, dim, expertFFN, downOffset);
-            Parallel.forRows(n, j -> state.moeOutB.saxpyInPlace(state.moeRowByExpert[start + j] * fDim, state.moeDownB, j * fDim, fDim,
-                    state.moeProbByExpert[start + j]));
-        }
+        // CSR grouping + gather + scatter is shared; the per-expert math (gated SiLU) is here.
+        Moe.Routing r = new Moe.Routing();
+        r.seqLen = seqLen; r.topK = topK; r.numExperts = numExperts;
+        r.rowTopE = state.moeRowTopE; r.rowTopP = state.moeRowTopP; r.counts = counts;
+        r.offsets = state.moeExpertOffsets; r.cursor = state.moeCursor;
+        r.rowByExpert = state.moeRowByExpert; r.probByExpert = state.moeProbByExpert;
+        Moe.dispatch(r, dim, state.moeInputB, state.moeGather, state.moeDownB, state.moeOutB, null,
+                (e, n, gather, out) -> {
+                    int gateUpOffset = e * gateUpStride;
+                    w.moeExpertGate[layer].gemm(gather, dim, state.moeGateUpB, expertFFN, n, expertFFN, dim, gateUpOffset);
+                    w.moeExpertUp[layer].gemm(gather, dim, state.moeUpB, expertFFN, n, expertFFN, dim, gateUpOffset);
+                    Parallel.forRows(n, j -> state.moeGateUpB.siluMultiplyInPlace(j * expertFFN, state.moeUpB, j * expertFFN, expertFFN));
+                    w.moeExpertDown[layer].gemm(state.moeGateUpB, expertFFN, out, dim, n, dim, expertFFN, e * downStride);
+                });
 
         // shared expert (batched) + sigmoid input gate, added per row
         if (config.expertSharedFeedForwardLength > 0 && w.moeSharedGate[layer] != null) {
@@ -838,7 +816,7 @@ final class Qwen35 implements Model {
                 w.moeSharedInputGate[layer].gemm(state.moeInputB, dim, state.moeSharedInputGateB, 1, seqLen, 1, dim);
                 Parallel.forRows(seqLen, s -> {
                     float sharedScale = Activations.sigmoid(state.moeSharedInputGateB.getFloat(s));
-                    state.moeOutB.saxpyInPlace(s * fDim, state.moeSharedOutB, s * fDim, fDim, sharedScale);
+                    state.moeOutB.saxpyInPlace(s * dim, state.moeSharedOutB, s * dim, dim, sharedScale);
                 });
             } else {
                 state.moeOutB.addInPlace(0, state.moeSharedOutB, 0, seqLen * dim);

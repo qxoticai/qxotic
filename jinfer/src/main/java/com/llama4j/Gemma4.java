@@ -766,144 +766,20 @@ final class Gemma4 implements Model {
     }
 
     /**
-     * Flash attention for the chunk (block-tiled online softmax), scale = 1.0. Q/output are packed
-     * at stride {@code queryDim}, the linear batch K/V at stride {@code kvDim}. In-chunk keys
-     * (pos >= startPos) come from the source layer's batch buffer, prior keys from its ring cache.
-     * Parallel over (head x query-block) so few-head models (Gemma E2B has 8) still use every core.
-     * Writes attention output into {@code state.xbK}.
+     * Gemma4 adapter: ring-SWA (or full) flash attention via the shared
+     * {@link FlashAttention#slidingWindowPrefill} block. {@code scale = 1.0} (Gemma folds the QK scale
+     * into the per-head Q-norm), no attention sinks. SWA layers ring their KV cache (slot =
+     * {@code pos & (slidingWindow-1)}, power-of-two enforced in {@link Configuration}); full layers
+     * store linearly. The batch K/V buffer is stride {@code kvDim}.
      */
     private void flashAttention(State state, int layer, int startPos, int seqLen,
                                int headSize, int kvDim, int queryDim, int kvLayer, int kvMul, boolean isSWA) {
-        Configuration config = configuration;
-        int nHeads = config.numberOfHeads;
-        int window = config.slidingWindow;
-        FloatTensor q = state.q, out = state.xbK;
-        F32FloatTensor qF32 = (F32FloatTensor) state.q, outF32 = (F32FloatTensor) state.xbK;
-        FloatTensor bK = state.batchK[kvLayer], bV = state.batchV[kvLayer];
-        FloatTensor cK = state.keyCache[kvLayer], cV = state.valueCache[kvLayer];
-        int Br = FlashAttention.Br, Bc = FlashAttention.Bc, QT = FlashAttention.QT;
-        boolean vec = FloatTensor.USE_VECTOR_API;
-        int blockAttStart = isSWA ? Math.max(0, startPos - window + 1) : 0;
-        int nQBlocks = (seqLen + Br - 1) / Br;
-
-        Parallel.parallelFor(0, nHeads * nQBlocks, idx -> {
-            int h = idx / nQBlocks;
-            int qStart = (idx % nQBlocks) * Br;
-            FlashAttention.Buffers buf = FlashAttention.buffers();
-            float[] S = buf.s;
-            float[] M = buf.m;
-            double[] L = buf.l;
-            int[] kvOff = buf.kvOff;
-            int hHead = h * headSize;
-            int kvHeadOffset = (h / kvMul) * headSize;
-
-            int qEnd = Math.min(seqLen, qStart + Br);
-            int BrRows = qEnd - qStart;
-            for (int i = 0; i < BrRows; i++) {
-                M[i] = Float.NEGATIVE_INFINITY;
-                L[i] = 0.0;
-                out.fillInPlace((qStart + i) * queryDim + hHead, headSize, 0f);
-            }
-
-            int blockMaxQ = startPos + qEnd - 1;
-            for (int kvStart = blockAttStart; kvStart <= blockMaxQ; kvStart += Bc) {
-                int kvEnd = Math.min(seqLen + startPos, kvStart + Bc);
-                int BcRows = kvEnd - kvStart;
-                if (BcRows <= 0) continue;
-
-                // Keys [0,cacheCount) live in the ring cache (F16), the rest in this chunk's batch
-                // buffer (F32); both share the same per-key offset formula.
-                int cacheCount = Math.max(0, Math.min(BcRows, startPos - kvStart));
-                for (int j = 0; j < BcRows; j++) {
-                    int kvPos = kvStart + j;
-                    kvOff[j] = (kvPos < startPos ? config.kvCacheIndex(layer, kvPos) : kvPos - startPos) * kvDim + kvHeadOffset;
-                }
-
-                // 1) Scores S[i][j] = dot(Q_i, K_j), scale = 1.0; register-tiled QT query rows at a time.
-                for (int i0 = 0; i0 < BrRows; i0 += QT) {
-                    int qr = Math.min(QT, BrRows - i0);
-                    int qBase = (qStart + i0) * queryDim + hHead;
-                    if (vec && qr == QT) {
-                        if (cacheCount > 0) FlashAttention.qkTile(qF32, qBase, queryDim, cK, kvOff, 0, cacheCount, headSize, 1.0f, S, i0 * BcRows, BcRows);
-                        if (cacheCount < BcRows) FlashAttention.qkTile(qF32, qBase, queryDim, bK, kvOff, cacheCount, BcRows - cacheCount, headSize, 1.0f, S, i0 * BcRows, BcRows);
-                    } else {
-                        for (int t = 0; t < qr; t++) {
-                            int qOffset = (qStart + i0 + t) * queryDim + hHead;
-                            for (int j = 0; j < BcRows; j++) {
-                                S[(i0 + t) * BcRows + j] = q.dot(qOffset, j < cacheCount ? cK : bK, kvOff[j], headSize);
-                            }
-                        }
-                    }
-                }
-
-                // 2) Causal + sliding-window mask.
-                for (int i = 0; i < BrRows; i++) {
-                    int globalQ = qStart + i + startPos;
-                    int qAttStart = isSWA ? Math.max(0, globalQ - window + 1) : 0;
-                    int rowBase = i * BcRows;
-                    for (int j = 0; j < BcRows; j++) {
-                        int kvPos = kvStart + j;
-                        if (kvPos > globalQ || kvPos < qAttStart) S[rowBase + j] = Float.NEGATIVE_INFINITY;
-                    }
-                }
-
-                // 3) Online softmax per row: rescale the running output on a new max, overwrite S with
-                //    the block probabilities, update M/L.
-                for (int i = 0; i < BrRows; i++) {
-                    int rowBase = i * BcRows;
-                    float blockMax = Float.NEGATIVE_INFINITY;
-                    for (int j = 0; j < BcRows; j++) {
-                        float s = S[rowBase + j];
-                        if (s > blockMax) blockMax = s;
-                    }
-                    if (blockMax == Float.NEGATIVE_INFINITY) {
-                        for (int j = 0; j < BcRows; j++) S[rowBase + j] = 0f;
-                        continue;
-                    }
-                    float rowM = M[i];
-                    double rowL = L[i];
-                    float newMax = Math.max(rowM, blockMax);
-                    if (newMax > rowM) {
-                        float rst = (float) Math.exp(rowM - newMax);
-                        FlashAttention.normalize(out, (qStart + i) * queryDim + hHead, headSize, rst);
-                        rowL *= rst;
-                        rowM = newMax;
-                    }
-                    double sum = 0;
-                    for (int j = 0; j < BcRows; j++) {
-                        float s = S[rowBase + j];
-                        float p = s == Float.NEGATIVE_INFINITY ? 0f : (float) Math.exp(s - rowM);
-                        S[rowBase + j] = p;
-                        sum += p;
-                    }
-                    M[i] = rowM;
-                    L[i] = rowL + sum;
-                }
-
-                // 4) PV: out_i += sum_j p_ij V_j, register-tiled QT query rows at a time (V reused).
-                for (int i0 = 0; i0 < BrRows; i0 += QT) {
-                    int qr = Math.min(QT, BrRows - i0);
-                    int oBase = (qStart + i0) * queryDim + hHead;
-                    if (vec && qr == QT) {
-                        if (cacheCount > 0) FlashAttention.pvTile(outF32, oBase, queryDim, cV, kvOff, 0, cacheCount, headSize, S, i0 * BcRows, BcRows);
-                        if (cacheCount < BcRows) FlashAttention.pvTile(outF32, oBase, queryDim, bV, kvOff, cacheCount, BcRows - cacheCount, headSize, S, i0 * BcRows, BcRows);
-                    } else {
-                        for (int t = 0; t < qr; t++) {
-                            int oOffset = (qStart + i0 + t) * queryDim + hHead;
-                            int rowBase = (i0 + t) * BcRows;
-                            for (int j = 0; j < BcRows; j++) {
-                                float p = S[rowBase + j];
-                                if (p != 0f) FlashAttention.accumulate(out, oOffset, j < cacheCount ? cV : bV, kvOff[j], headSize, p);
-                            }
-                        }
-                    }
-                }
-            }
-
-            for (int i = 0; i < BrRows; i++) {
-                FlashAttention.normalize(out, (qStart + i) * queryDim + hHead, headSize, (float) (1.0 / L[i]));
-            }
-        });
+        int window = isSWA ? configuration.slidingWindow : 0;
+        int ringMask = isSWA ? configuration.slidingWindow - 1 : 0;
+        FlashAttention.slidingWindowPrefill(state.q, state.xbK,
+                state.keyCache[kvLayer], state.valueCache[kvLayer], state.batchK[kvLayer], state.batchV[kvLayer],
+                configuration.numberOfHeads, startPos, seqLen, headSize, kvDim, queryDim, kvDim, kvMul,
+                1.0f, window, ringMask, null);
     }
 
     /** Simple 2-pass causal attention for one query (decode), scale = 1.0: parallel over heads,
@@ -987,37 +863,21 @@ final class Gemma4 implements Model {
                 counts[bestIdx]++;
             }
         }
-        int[] off = state.moeExpertOffsets;
-        off[0] = 0;
-        for (int e = 0; e < nExperts; e++) off[e + 1] = off[e] + counts[e];
-        int[] cursor = state.moeCursor;
-        System.arraycopy(off, 0, cursor, 0, nExperts);
-        for (int s = 0; s < seqLen; s++) {
-            for (int ki = 0; ki < topK; ki++) {
-                int e = state.moeRowTopE[s * topK + ki];
-                int pos = cursor[e]++;
-                state.moeRowByExpert[pos] = s;
-                state.moeProbByExpert[pos] = state.moeRowTopP[s * topK + ki];
-            }
-        }
-
-        // --- Experts (grouped): one GEMM per expert over its assigned rows; scatter-add weighted ---
-        state.moeOutB.fillInPlace(0, seqLen * dim, 0f);
-        for (int e = 0; e < nExperts; e++) {
-            int start = off[e], n = off[e + 1] - start;
-            if (n == 0) continue;
-            // gather this expert's rows (parallel; each writes a distinct moeGather row)
-            Parallel.forRows(n, j -> state.moeInputB.copyTo(state.moeRowByExpert[start + j] * dim, state.moeGather, j * dim, dim));
-            float downScale = weights.ffnDownExpsScale[l].getFloat(e);
-            // gate/up into state.hb (free after the shared MLP; maxHiddenDim >= gateUpDim), then GELU.
-            weights.ffnGateUpExps[l].gemm(state.moeGather, dim, state.hb, gateUpDim, n, gateUpDim, dim, e * gateUpDim * dim);
-            Parallel.forRows(n, j -> geluMultiply(state.hb, j * gateUpDim, state.hb, j * gateUpDim + expertFF, expertFF));
-            // down reads the first expertFF of each gateUpDim-strided row.
-            weights.ffnDownExps[l].gemm(state.hb, gateUpDim, state.moeDownB, dim, n, dim, expertFF, e * dim * expertFF);
-            // scatter-add weighted (parallel; rows within an expert are distinct, so race-free)
-            Parallel.forRows(n, j -> state.moeOutB.saxpyInPlace(state.moeRowByExpert[start + j] * dim, state.moeDownB, j * dim, dim,
-                    state.moeProbByExpert[start + j] * downScale));
-        }
+        // CSR grouping + gather + scatter is shared; the per-expert math (gated GELU, combined gate+up)
+        // is here. The per-expert down scale folds into the combine weight via expertScale.
+        Moe.Routing r = new Moe.Routing();
+        r.seqLen = seqLen; r.topK = topK; r.numExperts = nExperts;
+        r.rowTopE = state.moeRowTopE; r.rowTopP = state.moeRowTopP; r.counts = counts;
+        r.offsets = state.moeExpertOffsets; r.cursor = state.moeCursor;
+        r.rowByExpert = state.moeRowByExpert; r.probByExpert = state.moeProbByExpert;
+        Moe.dispatch(r, dim, state.moeInputB, state.moeGather, state.moeDownB, state.moeOutB, weights.ffnDownExpsScale[l],
+                (e, n, gather, out) -> {
+                    // gate/up into state.hb (free after the shared MLP; maxHiddenDim >= gateUpDim), then GELU.
+                    weights.ffnGateUpExps[l].gemm(gather, dim, state.hb, gateUpDim, n, gateUpDim, dim, e * gateUpDim * dim);
+                    Parallel.forRows(n, j -> geluMultiply(state.hb, j * gateUpDim, state.hb, j * gateUpDim + expertFF, expertFF));
+                    // down reads the first expertFF of each gateUpDim-strided row.
+                    weights.ffnDownExps[l].gemm(state.hb, gateUpDim, out, dim, n, dim, expertFF, e * dim * expertFF);
+                });
 
         // post_norm_2(experts) + shared, then post_ffw_norm, added to the residual (per row).
         F32FloatTensor postNorm2 = weights.ffnPostNorm2[l], postFfw = weights.postFfwNorm[l];

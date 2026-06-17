@@ -537,35 +537,18 @@ final class Nemotron implements Model {
                 counts[topE[k]]++;
             }
         }
-        int[] off = state.moeExpertOffsets;
-        off[0] = 0;
-        for (int e = 0; e < numExperts; e++) off[e + 1] = off[e] + counts[e];
-        int[] cursor = state.moeCursor;
-        System.arraycopy(off, 0, cursor, 0, numExperts);
-        for (int s = 0; s < seqLen; s++) {
-            for (int k = 0; k < topK; k++) {
-                int e = state.moeRowTopE[s * topK + k];
-                int pos = cursor[e]++;
-                state.moeRowByExpert[pos] = s;
-                state.moeProbByExpert[pos] = state.moeRowTopP[s * topK + k];
-            }
-        }
-
-        // Experts (grouped): one up/down GEMM per expert over its rows; squared-ReLU; scatter-add.
-        state.moeOutB.fillInPlace(0, seqLen * dim, 0f);
-        int fDim = dim, fEFF = expertFF;
-        for (int e = 0; e < numExperts; e++) {
-            int start = off[e], n = off[e + 1] - start;
-            if (n == 0) continue;
-            Parallel.forRows(n, j -> state.moeInputB.copyTo(state.moeRowByExpert[start + j] * fDim, state.moeGather, j * fDim, fDim));
-            int upOffset = e * expertFF * dim;
-            int downOffset = e * dim * expertFF;
-            w.ffnUpExps[layer].gemm(state.moeGather, dim, state.moeUpB, expertFF, n, expertFF, dim, upOffset);
-            Parallel.forRows(n, j -> state.moeUpB.reluSqrInPlace(j * fEFF, fEFF));
-            w.ffnDownExps[layer].gemm(state.moeUpB, expertFF, state.moeDownB, dim, n, dim, expertFF, downOffset);
-            Parallel.forRows(n, j -> state.moeOutB.saxpyInPlace(state.moeRowByExpert[start + j] * fDim, state.moeDownB, j * fDim, fDim,
-                    state.moeProbByExpert[start + j]));
-        }
+        // CSR grouping + gather + scatter is shared; the per-expert math (ungated, squared-ReLU) is here.
+        Moe.Routing r = new Moe.Routing();
+        r.seqLen = seqLen; r.topK = topK; r.numExperts = numExperts;
+        r.rowTopE = state.moeRowTopE; r.rowTopP = state.moeRowTopP; r.counts = counts;
+        r.offsets = state.moeExpertOffsets; r.cursor = state.moeCursor;
+        r.rowByExpert = state.moeRowByExpert; r.probByExpert = state.moeProbByExpert;
+        Moe.dispatch(r, dim, state.moeInputB, state.moeGather, state.moeDownB, state.moeOutB, null,
+                (e, n, gather, out) -> {
+                    w.ffnUpExps[layer].gemm(gather, dim, state.moeUpB, expertFF, n, expertFF, dim, e * expertFF * dim);
+                    Parallel.forRows(n, j -> state.moeUpB.reluSqrInPlace(j * expertFF, expertFF));
+                    w.ffnDownExps[layer].gemm(state.moeUpB, expertFF, out, dim, n, dim, expertFF, e * dim * expertFF);
+                });
 
         // Shared expert (batched), squared-ReLU, added with coefficient 1.
         if (w.ffnUpShexp[layer] != null) {

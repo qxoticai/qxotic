@@ -219,10 +219,8 @@ final class Llama3 implements Model {
         Weights w = weights;
         int dim = config.embeddingLength;
         int hidden = config.hiddenDim;
-        w.w1[layer].matmul(state.xb, state.hb, hidden, dim);
-        w.w3[layer].matmul(state.xb, state.hb2, hidden, dim);
-        state.hb.siluMultiplyInPlace(0, state.hb2, 0, hidden);
-        w.w2[layer].matmul(state.hb, state.xb, dim, hidden);
+        Ffn.dense(w.w1[layer], w.w3[layer], w.w2[layer], state.xb, state.hb, state.hb2, state.xb,
+                1, dim, hidden, Ffn.Act.SILU_GLU);
     }
 
     // === Batched forward (prompt processing) ===
@@ -307,11 +305,8 @@ final class Llama3 implements Model {
         Weights w = weights;
         int dim = config.embeddingLength;
         int hidden = config.hiddenDim;
-        w.w1[layer].gemm(state.xb, dim, state.hb, hidden, seqLen, hidden, dim);
-        w.w3[layer].gemm(state.xb, dim, state.hb2, hidden, seqLen, hidden, dim);
-        int fHidden = hidden;
-        Parallel.forRows(seqLen, s -> state.hb.siluMultiplyInPlace(s * fHidden, state.hb2, s * fHidden, fHidden));
-        w.w2[layer].gemm(state.hb, hidden, state.xb, dim, seqLen, dim, hidden);
+        Ffn.dense(w.w1[layer], w.w3[layer], w.w2[layer], state.xb, state.hb, state.hb2, state.xb,
+                seqLen, dim, hidden, Ffn.Act.SILU_GLU);
         profMark(5);
     }
 
