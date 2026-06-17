@@ -240,6 +240,133 @@ final class FlashAttention {
         }
     }
 
+    /**
+     * Block-tiled causal flash attention over a contiguous full-context F32 KV cache (scale =
+     * 1/sqrt(headSize)). Q/output are packed at stride {@code queryDim}, the cache at stride
+     * {@code kvDim}; GQA via {@code kvMul}. Online softmax, register-tiled QK/PV, parallel over
+     * (head, query block). Writes the attention output into {@code out}. Shared by the plain-causal
+     * models (Llama3/Nemotron/Qwen3.5); GptOss keeps its own variant for attention sinks + SWA.
+     */
+    static void causalPrefill(F32FloatTensor q, F32FloatTensor out, FloatTensor cK, FloatTensor cV,
+                              int nHeads, int startPos, int seqLen, int headSize, int kvDim, int queryDim, int kvMul) {
+        causalPrefill(q, out, cK, cV, nHeads, startPos, seqLen, headSize, kvDim, queryDim, kvMul,
+                1.0f / (float) Math.sqrt(headSize));
+    }
+
+    /** As above, with an explicit QK score {@code scale} (Granite uses a custom attention scale
+     *  rather than 1/sqrt(headSize)). */
+    static void causalPrefill(F32FloatTensor q, F32FloatTensor out, FloatTensor cK, FloatTensor cV,
+                              int nHeads, int startPos, int seqLen, int headSize, int kvDim, int queryDim, int kvMul,
+                              float scale) {
+        boolean vec = FloatTensor.USE_VECTOR_API;   // qkTile/pvTile handle both F32 and F16 caches
+        int nQBlocks = (seqLen + Br - 1) / Br;
+
+        Parallel.parallelFor(0, nHeads * nQBlocks, idx -> {
+            int h = idx / nQBlocks;
+            int qStart = (idx % nQBlocks) * Br;
+            Buffers buf = buffers();
+            float[] S = buf.s;
+            float[] M = buf.m;
+            double[] L = buf.l;
+            int[] kvOff = buf.kvOff;
+            int hHead = h * headSize;
+            int kvHeadOffset = (h / kvMul) * headSize;
+
+            int qEnd = Math.min(seqLen, qStart + Br);
+            int BrRows = qEnd - qStart;
+            for (int i = 0; i < BrRows; i++) {
+                M[i] = Float.NEGATIVE_INFINITY;
+                L[i] = 0.0;
+                out.fillInPlace((qStart + i) * queryDim + hHead, headSize, 0f);
+            }
+
+            int blockMaxQ = startPos + qEnd - 1;
+            for (int kvStart = 0; kvStart <= blockMaxQ; kvStart += Bc) {
+                int kvEnd = Math.min(seqLen + startPos, kvStart + Bc);
+                int BcRows = kvEnd - kvStart;
+                if (BcRows <= 0) continue;
+                for (int j = 0; j < BcRows; j++) {
+                    kvOff[j] = (kvStart + j) * kvDim + kvHeadOffset;
+                }
+
+                for (int i0 = 0; i0 < BrRows; i0 += QT) {
+                    int qr = Math.min(QT, BrRows - i0);
+                    int qBase = (qStart + i0) * queryDim + hHead;
+                    if (vec && qr == QT) {
+                        qkTile(q, qBase, queryDim, cK, kvOff, 0, BcRows, headSize, scale, S, i0 * BcRows, BcRows);
+                    } else {
+                        for (int t = 0; t < qr; t++) {
+                            int qOffset = (qStart + i0 + t) * queryDim + hHead;
+                            for (int j = 0; j < BcRows; j++) {
+                                S[(i0 + t) * BcRows + j] = q.dot(qOffset, cK, kvOff[j], headSize) * scale;
+                            }
+                        }
+                    }
+                }
+
+                for (int i = 0; i < BrRows; i++) {
+                    int globalQ = qStart + i + startPos;
+                    int rowBase = i * BcRows;
+                    for (int j = 0; j < BcRows; j++) {
+                        if (kvStart + j > globalQ) S[rowBase + j] = Float.NEGATIVE_INFINITY;
+                    }
+                }
+
+                for (int i = 0; i < BrRows; i++) {
+                    int rowBase = i * BcRows;
+                    float blockMax = Float.NEGATIVE_INFINITY;
+                    for (int j = 0; j < BcRows; j++) {
+                        float sv = S[rowBase + j];
+                        if (sv > blockMax) blockMax = sv;
+                    }
+                    if (blockMax == Float.NEGATIVE_INFINITY) {
+                        for (int j = 0; j < BcRows; j++) S[rowBase + j] = 0f;
+                        continue;
+                    }
+                    float rowM = M[i];
+                    double rowL = L[i];
+                    float newMax = Math.max(rowM, blockMax);
+                    if (newMax > rowM) {
+                        float rst = (float) Math.exp(rowM - newMax);
+                        normalize(out, (qStart + i) * queryDim + hHead, headSize, rst);
+                        rowL *= rst;
+                        rowM = newMax;
+                    }
+                    double sum = 0;
+                    for (int j = 0; j < BcRows; j++) {
+                        float sv = S[rowBase + j];
+                        float p = sv == Float.NEGATIVE_INFINITY ? 0f : (float) Math.exp(sv - rowM);
+                        S[rowBase + j] = p;
+                        sum += p;
+                    }
+                    M[i] = rowM;
+                    L[i] = rowL + sum;
+                }
+
+                for (int i0 = 0; i0 < BrRows; i0 += QT) {
+                    int qr = Math.min(QT, BrRows - i0);
+                    int oBase = (qStart + i0) * queryDim + hHead;
+                    if (vec && qr == QT) {
+                        pvTile(out, oBase, queryDim, cV, kvOff, 0, BcRows, headSize, S, i0 * BcRows, BcRows);
+                    } else {
+                        for (int t = 0; t < qr; t++) {
+                            int oOffset = (qStart + i0 + t) * queryDim + hHead;
+                            int rowBase = (i0 + t) * BcRows;
+                            for (int j = 0; j < BcRows; j++) {
+                                float p = S[rowBase + j];
+                                if (p != 0f) accumulate(out, oOffset, cV, kvOff[j], headSize, p);
+                            }
+                        }
+                    }
+                }
+            }
+
+            for (int i = 0; i < BrRows; i++) {
+                normalize(out, (qStart + i) * queryDim + hHead, headSize, (float) (1.0 / L[i]));
+            }
+        });
+    }
+
     private FlashAttention() {
     }
 }

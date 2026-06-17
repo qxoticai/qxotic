@@ -16,7 +16,6 @@ import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorOperators;
 
 import java.io.IOException;
-import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
@@ -68,16 +67,6 @@ final class Gemma4 implements Model {
     static final boolean PROFILE = System.getProperty("gemma.profile") != null;
     static final long[] PROF = new long[8];
     static final String[] PROF_NAMES = {"embed+ple_in", "qproj+qnorm+rope", "kvproj+norm+rope", "attn", "oproj+norm", "ffn", "ple_proj", "commit"};
-    /** Per-row work: inline for a single row (decode) to avoid parallel-stream dispatch overhead,
-     *  parallel across rows for a chunk (prefill). */
-    private static void forRows(int seqLen, java.util.function.IntConsumer action) {
-        if (seqLen == 1) {
-            action.accept(0);
-        } else {
-            Parallel.parallelFor(0, seqLen, action);
-        }
-    }
-
     // -Dgemma.trace: dump per-layer residual-stream checkpoints (sum over all positions) matching
     // llama.cpp's eval-callback node names (inp_scaled, l_out-{l}), for cross-engine validation.
     static final boolean TRACE = System.getProperty("gemma.trace") != null;
@@ -679,7 +668,7 @@ final class Gemma4 implements Model {
             float inputScale = (float) (1.0 / Math.sqrt(2.0));
             weights.perLayerModelProj.gemm(state.x, dim, state.perLayerInputs, plTotal, seqLen, plTotal, dim);
             int fPlDim = plDim, fPlTotal = plTotal, fNL = config.numberOfLayers;
-            forRows(seqLen, s -> {   // per-layer RMS-norm + token-embedding add, parallel over rows
+            Parallel.forRows(seqLen, s -> {   // per-layer RMS-norm + token-embedding add, parallel over rows
                 int base = s * fPlTotal;
                 for (int i = 0; i < fPlTotal; i++) state.perLayerInputs.setFloat(base + i, state.perLayerInputs.getFloat(base + i) * projScale);
                 for (int l = 0; l < fNL; l++) {
@@ -714,12 +703,12 @@ final class Gemma4 implements Model {
             F32FloatTensor postAttW = weights.postAttentionNorm[l], ffnNormW = weights.rmsFfnWeight[l], postFfwW = weights.postFfwNorm[l];
 
             // attention norm (rows are independent -> parallel)
-            forRows(seqLen, s ->
+            Parallel.forRows(seqLen, s ->
                     rmsnorm(state.xb, s * fDim, state.x, s * fDim, attNormW, fDim, config.rmsNormEps));
 
             // Q = wq @ xb (GEMM), per-head Q-norm + RoPE (rows parallel)
             weights.wq[l].gemm(state.xb, dim, state.q, queryDim, seqLen, queryDim, dim);
-            forRows(seqLen, s -> {
+            Parallel.forRows(seqLen, s -> {
                 for (int h = 0; h < config.numberOfHeads; h++) {
                     rmsnorm(state.q, s * fQDim + h * fHeadSz, state.q, s * fQDim + h * fHeadSz, qNormW, fHeadSz, config.rmsNormEps);
                 }
@@ -738,7 +727,7 @@ final class Gemma4 implements Model {
                     bKl.copyTo(0, bVl, 0, seqLen * kvDim);
                 }
                 int kd = kvDim;
-                forRows(seqLen, s -> {
+                Parallel.forRows(seqLen, s -> {
                     for (int h = 0; h < fNKv; h++) {
                         rmsnorm(bKl, s * kd + h * fHeadSz, bKl, s * kd + h * fHeadSz, kNormW, fHeadSz, config.rmsNormEps);
                         rmsnormNoWeight(bVl, s * kd + h * fHeadSz, bVl, s * kd + h * fHeadSz, fHeadSz, config.rmsNormEps);
@@ -759,7 +748,7 @@ final class Gemma4 implements Model {
 
             // O = wo @ xbK (GEMM), post-attention norm + residual (rows parallel)
             weights.wo[l].gemm(state.xbK, queryDim, state.xb2, dim, seqLen, dim, queryDim);
-            forRows(seqLen, s ->
+            Parallel.forRows(seqLen, s ->
                     rmsnorm(state.xb2, s * fDim, state.xb2, s * fDim, postAttW, fDim, config.rmsNormEps));
             state.x.addInPlace(0, state.xb2, 0, seqLen * dim);
             cp = prof(4, cp);
@@ -768,14 +757,14 @@ final class Gemma4 implements Model {
             if (config.isMoE() && weights.ffnGateInp[l] != null) {
                 moeFfnBatch(state, l, dim, hiddenDim, seqLen);
             } else {
-                forRows(seqLen, s ->
+                Parallel.forRows(seqLen, s ->
                         rmsnorm(state.xb, s * fDim, state.x, s * fDim, ffnNormW, fDim, config.rmsNormEps));
                 weights.w1[l].gemm(state.xb, dim, state.hb, hiddenDim, seqLen, hiddenDim, dim);
                 weights.w3[l].gemm(state.xb, dim, state.hb2, hiddenDim, seqLen, hiddenDim, dim);
                 int fHidden = hiddenDim;
-                forRows(seqLen, s -> geluMultiply(state.hb, s * fHidden, state.hb2, s * fHidden, fHidden));
+                Parallel.forRows(seqLen, s -> geluMultiply(state.hb, s * fHidden, state.hb2, s * fHidden, fHidden));
                 weights.w2[l].gemm(state.hb, hiddenDim, state.xb, dim, seqLen, dim, hiddenDim);
-                forRows(seqLen, s ->
+                Parallel.forRows(seqLen, s ->
                         rmsnorm(state.xb, s * fDim, state.xb, s * fDim, postFfwW, fDim, config.rmsNormEps));
                 state.x.addInPlace(0, state.xb, 0, seqLen * dim);
             }
@@ -786,9 +775,9 @@ final class Gemma4 implements Model {
                 int li = l, fPlDim = plDim, fPlTotal = plTotal;
                 F32FloatTensor plPostW = weights.perLayerPostNorm[l];
                 weights.perLayerInpGate[l].gemm(state.x, dim, state.plGate, plDim, seqLen, plDim, dim);
-                forRows(seqLen, s -> geluMultiply(state.plGate, s * fPlDim, state.perLayerInputs, s * fPlTotal + li * fPlDim, fPlDim));
+                Parallel.forRows(seqLen, s -> geluMultiply(state.plGate, s * fPlDim, state.perLayerInputs, s * fPlTotal + li * fPlDim, fPlDim));
                 weights.perLayerProj[l].gemm(state.plGate, plDim, state.plProj, dim, seqLen, dim, plDim);
-                forRows(seqLen, s ->
+                Parallel.forRows(seqLen, s ->
                         rmsnorm(state.plProj, s * fDim, state.plProj, s * fDim, plPostW, fDim, config.rmsNormEps));
                 state.x.addInPlace(0, state.plProj, 0, seqLen * dim);
             }
@@ -1003,16 +992,16 @@ final class Gemma4 implements Model {
 
         // --- Shared MLP (batched): ffn_norm -> gate/up/down -> post_norm_1 -> moeShared ---
         F32FloatTensor ffnNormW = weights.rmsFfnWeight[l], postNorm1 = weights.ffnPostNorm1[l];
-        forRows(seqLen, s -> rmsnorm(state.xb, s * dim, state.x, s * dim, ffnNormW, dim, eps));
+        Parallel.forRows(seqLen, s -> rmsnorm(state.xb, s * dim, state.x, s * dim, ffnNormW, dim, eps));
         weights.w1[l].gemm(state.xb, dim, state.hb, hiddenDim, seqLen, hiddenDim, dim);
         weights.w3[l].gemm(state.xb, dim, state.hb2, hiddenDim, seqLen, hiddenDim, dim);
-        forRows(seqLen, s -> geluMultiply(state.hb, s * hiddenDim, state.hb2, s * hiddenDim, hiddenDim));
+        Parallel.forRows(seqLen, s -> geluMultiply(state.hb, s * hiddenDim, state.hb2, s * hiddenDim, hiddenDim));
         weights.w2[l].gemm(state.hb, hiddenDim, state.moeShared, dim, seqLen, dim, hiddenDim);
-        forRows(seqLen, s -> rmsnorm(state.moeShared, s * dim, state.moeShared, s * dim, postNorm1, dim, eps));
+        Parallel.forRows(seqLen, s -> rmsnorm(state.moeShared, s * dim, state.moeShared, s * dim, postNorm1, dim, eps));
 
         // --- Expert routing (batched): pre_ffw_norm2 -> expert input; rms-scaled x -> router input ---
         F32FloatTensor preNorm2 = weights.preFfwNorm2[l];
-        forRows(seqLen, s -> {
+        Parallel.forRows(seqLen, s -> {
             rmsnorm(state.moeInputB, s * dim, state.x, s * dim, preNorm2, dim, eps);
             float ss = state.x.reduce(s * dim, dim, 0f, (acc, xi) -> acc + xi * xi);
             float rmsScale = (float) (1.0 / Math.sqrt(ss / dim + eps)) * invSqrtDim;
@@ -1060,21 +1049,21 @@ final class Gemma4 implements Model {
             int start = off[e], n = off[e + 1] - start;
             if (n == 0) continue;
             // gather this expert's rows (parallel; each writes a distinct moeGather row)
-            forRows(n, j -> state.moeInputB.copyTo(state.moeRowByExpert[start + j] * dim, state.moeGather, j * dim, dim));
+            Parallel.forRows(n, j -> state.moeInputB.copyTo(state.moeRowByExpert[start + j] * dim, state.moeGather, j * dim, dim));
             float downScale = weights.ffnDownExpsScale[l].getFloat(e);
             // gate/up into state.hb (free after the shared MLP; maxHiddenDim >= gateUpDim), then GELU.
             weights.ffnGateUpExps[l].gemm(state.moeGather, dim, state.hb, gateUpDim, n, gateUpDim, dim, e * gateUpDim * dim);
-            forRows(n, j -> geluMultiply(state.hb, j * gateUpDim, state.hb, j * gateUpDim + expertFF, expertFF));
+            Parallel.forRows(n, j -> geluMultiply(state.hb, j * gateUpDim, state.hb, j * gateUpDim + expertFF, expertFF));
             // down reads the first expertFF of each gateUpDim-strided row.
             weights.ffnDownExps[l].gemm(state.hb, gateUpDim, state.moeDownB, dim, n, dim, expertFF, e * dim * expertFF);
             // scatter-add weighted (parallel; rows within an expert are distinct, so race-free)
-            forRows(n, j -> state.moeOutB.saxpyInPlace(state.moeRowByExpert[start + j] * dim, state.moeDownB, j * dim, dim,
+            Parallel.forRows(n, j -> state.moeOutB.saxpyInPlace(state.moeRowByExpert[start + j] * dim, state.moeDownB, j * dim, dim,
                     state.moeProbByExpert[start + j] * downScale));
         }
 
         // post_norm_2(experts) + shared, then post_ffw_norm, added to the residual (per row).
         F32FloatTensor postNorm2 = weights.ffnPostNorm2[l], postFfw = weights.postFfwNorm[l];
-        forRows(seqLen, s -> {
+        Parallel.forRows(seqLen, s -> {
             rmsnorm(state.moeOutB, s * dim, state.moeOutB, s * dim, postNorm2, dim, eps);
             state.moeShared.addInPlace(s * dim, state.moeOutB, s * dim, dim);
             rmsnorm(state.moeShared, s * dim, state.moeShared, s * dim, postFfw, dim, eps);
@@ -1173,14 +1162,10 @@ final class Gemma4 implements Model {
     static Weights loadWeights(Map<String, GGMLTensorEntry> tensors, Configuration config) {
         int n = config.numberOfLayers;
         Pair<float[], float[]> ropeSwa = RoPE.precomputeFreqsCis(config.contextLength, config.headSizeSWA, config.ropeThetaSWA);
-        GGMLTensorEntry ropeFreqEntry = tensors.get("rope_freqs.weight");
-        Pair<float[], float[]> ropeFull;
-        if (ropeFreqEntry != null) {
-            float[] freqs = ropeFreqEntry.memorySegment().toArray(ValueLayout.JAVA_FLOAT);
-            ropeFull = RoPE.precomputeFreqsCisFromFreqs(config.contextLength, config.headSizeFull, config.ropeTheta, freqs);
-        } else {
-            ropeFull = RoPE.precomputeFreqsCis(config.contextLength, config.headSizeFull, config.ropeTheta);
-        }
+        float[] freqs = ModelLoader.ropeFreqFactors(tensors);
+        Pair<float[], float[]> ropeFull = freqs != null
+                ? RoPE.precomputeFreqsCisFromFreqs(config.contextLength, config.headSizeFull, config.ropeTheta, freqs)
+                : RoPE.precomputeFreqsCis(config.contextLength, config.headSizeFull, config.ropeTheta);
 
         FloatTensor tokenEmbeddingTable = ModelLoader.loadQuantized(tensors.get("token_embd.weight"));
 

@@ -92,9 +92,25 @@ class LFMTokenizer {
      *  never maps them); the --raw-prompt path uses this to author templated streams as text. */
     List<Integer> encodeWithSpecialTokens(String text) {
         if (specialsEncoder == null) {
-            specialsEncoder = Specials.compile(tokenizer.vocabulary(), specialTokens.keySet());
+            specialsEncoder = Specials.compile(tokenizer.vocabulary(), specialMatchSet());
         }
         return specialsEncoder.encode(tokenizer, text).toList();
+    }
+
+    /** toknroll's special-token matcher rejects a set where one token is a strict prefix of another
+     *  (e.g. MiniCPM's {@code <param} vs {@code <parameters>}). Drop the shorter token, which under
+     *  longest-match is only reachable as a substring of the longer one — rendered control-token
+     *  streams never emit it standalone, so this is loss-free in practice. No-op for models with no
+     *  prefix-conflicting specials (all others). */
+    private java.util.Set<String> specialMatchSet() {
+        java.util.Set<String> keys = specialTokens.keySet();
+        java.util.Set<String> kept = new java.util.HashSet<>(keys);
+        for (String s : keys) {
+            for (String o : keys) {
+                if (!s.equals(o) && o.startsWith(s)) { kept.remove(s); break; }
+            }
+        }
+        return kept;
     }
 
     /** Raw UTF-8 bytes of one token (the streaming decoder assembles code points across tokens). */

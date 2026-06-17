@@ -52,23 +52,12 @@ final class Qwen35 implements Model {
         return SINGLE_TOKEN_PREFILL ? 1 : Math.max(1, RuntimeFlags.MAX_PROMPT_SEQUENCE_LENGTH);
     }
 
-    /** Per-row work: inline for a single row (decode) to avoid parallel-stream dispatch overhead,
-     *  parallel across rows for a chunk (prefill). */
-    private static void forRows(int seqLen, java.util.function.IntConsumer action) {
-        if (seqLen == 1) {
-            action.accept(0);
-        } else {
-            Parallel.parallelFor(0, seqLen, action);
-        }
-    }
-
     @Override
     public State createNewState() {
         State state = new State(configuration);
-        // Qwen3.5 has no BOS; chat prompts begin with <|im_start|>, which the engine's prefill dedups
-        // against this token so the rendered prompt is fed verbatim.
-        Integer imStart = tokenizer.getSpecialTokens().get("<|im_start|>");
-        state.latestToken = imStart != null ? imStart : 0;
+        // Qwen3.5 has no BOS (add_bos=false): -1 = "no prior token", so the engine's prefill feeds the
+        // rendered prompt verbatim without prepending anything.
+        state.latestToken = -1;
         return state;
     }
 
@@ -137,35 +126,8 @@ final class Qwen35 implements Model {
         }
     }
 
-    static float softplus(float x) {
-        if (x > 20f) return x;
-        if (x < -20f) return (float) Math.exp(x);
-        return (float) Math.log1p(Math.exp(x));
-    }
-
-    static float sigmoid(float x) {
-        return 1.0f / (1.0f + (float) Math.exp(-x));
-    }
-
-    static float silu(float x) {
-        return x * sigmoid(x);
-    }
-
     /** Interleaved-pair (GPT-J) rotary over the first {@code 2*ropeHalf} dims of one head. For
      *  text-only decoding MRoPE reduces to standard RoPE (the 3D position deltas collapse to pos). */
-    static void applyRope(FloatTensor q, int headOffset, int position, float[] cr, float[] ci, int ropeHalf) {
-        int ropeOffset = position * ropeHalf;
-        for (int i = 0; i < ropeHalf; i++) {
-            float fcr = cr[ropeOffset + i];
-            float fci = ci[ropeOffset + i];
-            int idx = headOffset + 2 * i;
-            float v0 = q.getFloat(idx);
-            float v1 = q.getFloat(idx + 1);
-            q.setFloat(idx, v0 * fcr - v1 * fci);
-            q.setFloat(idx + 1, v0 * fci + v1 * fcr);
-        }
-    }
-
     // === Forward ===
 
     private void forward(State state, int token, int position) {
@@ -232,10 +194,10 @@ final class Qwen35 implements Model {
         }
         if (w.ropeHalf > 0) {
             for (int h = 0; h < heads; h++) {
-                applyRope(state.q, h * headSize, position, w.ropeCr, w.ropeCi, w.ropeHalf);
+                RoPE.applyInterleaved(state.q, h * headSize, position, w.ropeCr, w.ropeCi, w.ropeHalf);
             }
             for (int h = 0; h < kvHeads; h++) {
-                applyRope(state.k, h * headSize, position, w.ropeCr, w.ropeCi, w.ropeHalf);
+                RoPE.applyInterleaved(state.k, h * headSize, position, w.ropeCr, w.ropeCi, w.ropeHalf);
             }
         }
         state.k.copyTo(0, state.keyCache[layer], position * kvDim, kvDim);
@@ -259,7 +221,7 @@ final class Qwen35 implements Model {
         });
 
         for (int i = 0; i < queryDim; i++) {
-            state.xb2.setFloat(i, state.xb2.getFloat(i) * sigmoid(gateArr[i]));
+            state.xb2.setFloat(i, state.xb2.getFloat(i) * Activations.sigmoid(gateArr[i]));
         }
         w.attnOutput[layer].matmul(state.xb2, state.xb, dim, queryDim);
     }
@@ -300,7 +262,7 @@ final class Qwen35 implements Model {
                 sum += convWeight.getFloat(wOff + k) * convState.getFloat(k * convChannels + c);
             }
             sum += convWeight.getFloat(wOff + (convKernel - 1)) * qkv.getFloat(c);
-            convOut[c] = silu(sum);
+            convOut[c] = Activations.silu(sum);
         });
         // update conv ring (per channel: shift left, append current qkv as newest)
         Parallel.parallelFor(0, convChannels, c -> {
@@ -343,12 +305,12 @@ final class Qwen35 implements Model {
         w.ssmAlpha[layer].matmul(state.xb, state.ssmTmp, dtRank, dim);
         float[] gate = state.ssmGate;
         for (int h = 0; h < dtRank; h++) {
-            gate[h] = softplus(state.ssmTmp.getFloat(h) + w.ssmDtBias[layer].getFloat(h)) * w.ssmA[layer].getFloat(h);
+            gate[h] = Activations.softplus(state.ssmTmp.getFloat(h) + w.ssmDtBias[layer].getFloat(h)) * w.ssmA[layer].getFloat(h);
         }
         w.ssmBeta[layer].matmul(state.xb, state.ssmTmp, dtRank, dim);
         float[] beta = state.ssmBeta;
         for (int h = 0; h < dtRank; h++) {
-            beta[h] = sigmoid(state.ssmTmp.getFloat(h));
+            beta[h] = Activations.sigmoid(state.ssmTmp.getFloat(h));
         }
 
         // 7. delta-net recurrence per head; state element (i,j,h) at h*HV^2 + j*HV + i
@@ -401,7 +363,7 @@ final class Qwen35 implements Model {
             float invRms = (float) (1.0 / Math.sqrt(ss / headVDim + eps));
             for (int dd = 0; dd < headVDim; dd++) {
                 float normed = output[headOff + dd] * invRms * w.ssmNorm[layer].getFloat(dd);
-                state.ssmTmp.setFloat(headOff + dd, normed * silu(z[headOff + dd]));
+                state.ssmTmp.setFloat(headOff + dd, normed * Activations.silu(z[headOff + dd]));
             }
         });
         w.ssmOut[layer].matmul(state.ssmTmp, state.xb, dim, dInner);
@@ -487,7 +449,7 @@ final class Qwen35 implements Model {
             float sharedScale = 1.0f;
             if (w.moeSharedInputGate[layer] != null) {
                 w.moeSharedInputGate[layer].matmul(state.xb, state.moeSharedInputGate, 1, dim);
-                sharedScale = sigmoid(state.moeSharedInputGate.getFloat(0));
+                sharedScale = Activations.sigmoid(state.moeSharedInputGate.getFloat(0));
             }
             moeOutput.saxpyInPlace(0, state.moeSharedOut, 0, dim, sharedScale);
         }
@@ -520,7 +482,7 @@ final class Qwen35 implements Model {
             F32FloatTensor attNormW = w.attnNorm[l], postW = w.postAttentionNorm[l];
             int fDim = dim;
             // attention/SSM norm (rows independent -> parallel)
-            forRows(seqLen, s -> rmsnorm(state.xb, s * fDim, state.x, s * fDim, attNormW, fDim, eps));
+            Parallel.forRows(seqLen, s -> rmsnorm(state.xb, s * fDim, state.x, s * fDim, attNormW, fDim, eps));
 
             if (config.isFullAttention[l]) {
                 attentionForwardBatch(state, l, startPos, seqLen);
@@ -530,7 +492,7 @@ final class Qwen35 implements Model {
             // sublayer residual, then post-attention norm acts as the pre-FFN norm (mirror forward)
             state.xb.addInPlace(0, state.x, 0, seqLen * dim);
             state.xb.copyTo(0, state.x, 0, seqLen * dim);
-            forRows(seqLen, s -> rmsnorm(state.xb, s * fDim, state.xb, s * fDim, postW, fDim, eps));
+            Parallel.forRows(seqLen, s -> rmsnorm(state.xb, s * fDim, state.xb, s * fDim, postW, fDim, eps));
 
             if (config.isMoE()) {
                 moeForwardBatch(state, l, seqLen);
@@ -569,7 +531,7 @@ final class Qwen35 implements Model {
         F32FloatTensor qNormW = w.attnQNorm[layer], kNormW = w.attnKNorm[layer];
         float[] gateArr = state.attnGateArr;
         // deinterleave [q|gate] -> queries into state.attnQ, gates into gateArr (per row/head)
-        forRows(seqLen, s -> {
+        Parallel.forRows(seqLen, s -> {
             int qBase = s * 2 * fQDim;
             int qDst = s * fQDim;
             for (int h = 0; h < fHeads; h++) {
@@ -590,10 +552,10 @@ final class Qwen35 implements Model {
             }
             if (w.ropeHalf > 0) {
                 for (int h = 0; h < fHeads; h++) {
-                    applyRope(state.attnQ, qDst + h * fHeadSz, fStart + s, w.ropeCr, w.ropeCi, w.ropeHalf);
+                    RoPE.applyInterleaved(state.attnQ, qDst + h * fHeadSz, fStart + s, w.ropeCr, w.ropeCi, w.ropeHalf);
                 }
                 for (int h = 0; h < fKvHeads; h++) {
-                    applyRope(state.k, kBase + h * fHeadSz, fStart + s, w.ropeCr, w.ropeCi, w.ropeHalf);
+                    RoPE.applyInterleaved(state.k, kBase + h * fHeadSz, fStart + s, w.ropeCr, w.ropeCi, w.ropeHalf);
                 }
             }
         });
@@ -606,139 +568,15 @@ final class Qwen35 implements Model {
         }
 
         // causal flash attention over the contiguous cache [0, startPos+seqLen) -> state.attnOut
-        flashAttention(state, layer, startPos, seqLen, headSize, kvDim, queryDim, kvMul);
+        FlashAttention.causalPrefill((F32FloatTensor) state.attnQ, (F32FloatTensor) state.attnOut,
+                keyCache, valueCache, configuration.numberOfHeads, startPos, seqLen, headSize, kvDim, queryDim, kvMul);
 
         // sigmoid(gate) * attn output, then output projection into xb
         int total = seqLen * queryDim;
         for (int i = 0; i < total; i++) {
-            state.attnOut.setFloat(i, state.attnOut.getFloat(i) * sigmoid(gateArr[i]));
+            state.attnOut.setFloat(i, state.attnOut.getFloat(i) * Activations.sigmoid(gateArr[i]));
         }
         w.attnOutput[layer].gemm(state.attnOut, queryDim, state.xb, dim, seqLen, dim, queryDim);
-    }
-
-    /** Block-tiled causal flash attention over the contiguous full-context KV cache (scale =
-     *  1/sqrt(headSize)). Q/output are packed at stride queryDim; the cache is a single F32 source.
-     *  Writes attention output into {@code state.attnOut}. */
-    private void flashAttention(State state, int layer, int startPos, int seqLen,
-                               int headSize, int kvDim, int queryDim, int kvMul) {
-        Configuration config = configuration;
-        int nHeads = config.numberOfHeads;
-        F32FloatTensor qF32 = (F32FloatTensor) state.attnQ, outF32 = (F32FloatTensor) state.attnOut;
-        FloatTensor q = state.attnQ, out = state.attnOut;
-        FloatTensor cK = state.keyCache[layer], cV = state.valueCache[layer];
-        float scale = 1.0f / (float) Math.sqrt(headSize);
-        int Br = FlashAttention.Br, Bc = FlashAttention.Bc, QT = FlashAttention.QT;
-        boolean vec = FloatTensor.USE_VECTOR_API && cK instanceof F32FloatTensor;
-        int nQBlocks = (seqLen + Br - 1) / Br;
-
-        Parallel.parallelFor(0, nHeads * nQBlocks, idx -> {
-            int h = idx / nQBlocks;
-            int qStart = (idx % nQBlocks) * Br;
-            FlashAttention.Buffers buf = FlashAttention.buffers();
-            float[] S = buf.s;
-            float[] M = buf.m;
-            double[] L = buf.l;
-            int[] kvOff = buf.kvOff;
-            int hHead = h * headSize;
-            int kvHeadOffset = (h / kvMul) * headSize;
-
-            int qEnd = Math.min(seqLen, qStart + Br);
-            int BrRows = qEnd - qStart;
-            for (int i = 0; i < BrRows; i++) {
-                M[i] = Float.NEGATIVE_INFINITY;
-                L[i] = 0.0;
-                out.fillInPlace((qStart + i) * queryDim + hHead, headSize, 0f);
-            }
-
-            int blockMaxQ = startPos + qEnd - 1;     // highest global query position in this block
-            for (int kvStart = 0; kvStart <= blockMaxQ; kvStart += Bc) {
-                int kvEnd = Math.min(seqLen + startPos, kvStart + Bc);
-                int BcRows = kvEnd - kvStart;
-                if (BcRows <= 0) continue;
-                for (int j = 0; j < BcRows; j++) {
-                    kvOff[j] = (kvStart + j) * kvDim + kvHeadOffset;
-                }
-
-                // 1) scores S[i][j] = scale * dot(Q_i, K_j)
-                for (int i0 = 0; i0 < BrRows; i0 += QT) {
-                    int qr = Math.min(QT, BrRows - i0);
-                    int qBase = (qStart + i0) * queryDim + hHead;
-                    if (vec && qr == QT) {
-                        FlashAttention.qkTile(qF32, qBase, queryDim, cK, kvOff, 0, BcRows, headSize, scale, S, i0 * BcRows, BcRows);
-                    } else {
-                        for (int t = 0; t < qr; t++) {
-                            int qOffset = (qStart + i0 + t) * queryDim + hHead;
-                            for (int j = 0; j < BcRows; j++) {
-                                S[(i0 + t) * BcRows + j] = q.dot(qOffset, cK, kvOff[j], headSize) * scale;
-                            }
-                        }
-                    }
-                }
-
-                // 2) causal mask
-                for (int i = 0; i < BrRows; i++) {
-                    int globalQ = qStart + i + startPos;
-                    int rowBase = i * BcRows;
-                    for (int j = 0; j < BcRows; j++) {
-                        if (kvStart + j > globalQ) S[rowBase + j] = Float.NEGATIVE_INFINITY;
-                    }
-                }
-
-                // 3) online softmax per row
-                for (int i = 0; i < BrRows; i++) {
-                    int rowBase = i * BcRows;
-                    float blockMax = Float.NEGATIVE_INFINITY;
-                    for (int j = 0; j < BcRows; j++) {
-                        float sv = S[rowBase + j];
-                        if (sv > blockMax) blockMax = sv;
-                    }
-                    if (blockMax == Float.NEGATIVE_INFINITY) {
-                        for (int j = 0; j < BcRows; j++) S[rowBase + j] = 0f;
-                        continue;
-                    }
-                    float rowM = M[i];
-                    double rowL = L[i];
-                    float newMax = Math.max(rowM, blockMax);
-                    if (newMax > rowM) {
-                        float rst = (float) Math.exp(rowM - newMax);
-                        FlashAttention.normalize(out, (qStart + i) * queryDim + hHead, headSize, rst);
-                        rowL *= rst;
-                        rowM = newMax;
-                    }
-                    double sum = 0;
-                    for (int j = 0; j < BcRows; j++) {
-                        float sv = S[rowBase + j];
-                        float p = sv == Float.NEGATIVE_INFINITY ? 0f : (float) Math.exp(sv - rowM);
-                        S[rowBase + j] = p;
-                        sum += p;
-                    }
-                    M[i] = rowM;
-                    L[i] = rowL + sum;
-                }
-
-                // 4) PV: out_i += sum_j p_ij V_j
-                for (int i0 = 0; i0 < BrRows; i0 += QT) {
-                    int qr = Math.min(QT, BrRows - i0);
-                    int oBase = (qStart + i0) * queryDim + hHead;
-                    if (vec && qr == QT) {
-                        FlashAttention.pvTile(outF32, oBase, queryDim, cV, kvOff, 0, BcRows, headSize, S, i0 * BcRows, BcRows);
-                    } else {
-                        for (int t = 0; t < qr; t++) {
-                            int oOffset = (qStart + i0 + t) * queryDim + hHead;
-                            int rowBase = (i0 + t) * BcRows;
-                            for (int j = 0; j < BcRows; j++) {
-                                float p = S[rowBase + j];
-                                if (p != 0f) FlashAttention.accumulate(out, oOffset, cV, kvOff[j], headSize, p);
-                            }
-                        }
-                    }
-                }
-            }
-
-            for (int i = 0; i < BrRows; i++) {
-                FlashAttention.normalize(out, (qStart + i) * queryDim + hHead, headSize, (float) (1.0 / L[i]));
-            }
-        });
     }
 
     /** Batched gated delta-net: GEMM projections + batched causal conv, then a SEQUENTIAL recurrence
@@ -781,7 +619,7 @@ final class Qwen35 implements Model {
                                        : qkv.getFloat(pos * fCC + c);
                     sum += convWeight.getFloat(wOff + k) * in;
                 }
-                convOut[s * fCC + c] = silu(sum);
+                convOut[s * fCC + c] = Activations.silu(sum);
             }
         });
         // roll conv ring: keep the last (K-1) qkv rows of the chunk (positions read the ring above)
@@ -798,7 +636,7 @@ final class Qwen35 implements Model {
         float[] qGroup = state.ssmQGroup, kGroup = state.ssmKGroup;
         float[] qArr = state.ssmQ, kArr = state.ssmK, vArr = state.ssmV;
         int fNGroup = nGroup, fDtRank = dtRank, fHV = headVDim, fKOff = kOff, fVOff = vOff, fDInner = dInner;
-        forRows(seqLen, s -> {
+        Parallel.forRows(seqLen, s -> {
             int cBase = s * fCC, gBase = s * fNGroup * fHV, dBase = s * fDtRank * fHV;
             for (int h = 0; h < fNGroup; h++) {
                 float qNormSq = 0, kNormSq = 0;
@@ -831,13 +669,13 @@ final class Qwen35 implements Model {
         w.ssmAlpha[layer].gemm(state.xb, dim, state.ssmTmp, dtRank, seqLen, dtRank, dim);
         for (int s = 0; s < seqLen; s++) {
             for (int h = 0; h < dtRank; h++) {
-                gate[s * dtRank + h] = softplus(state.ssmTmp.getFloat(s * dtRank + h) + w.ssmDtBias[layer].getFloat(h)) * w.ssmA[layer].getFloat(h);
+                gate[s * dtRank + h] = Activations.softplus(state.ssmTmp.getFloat(s * dtRank + h) + w.ssmDtBias[layer].getFloat(h)) * w.ssmA[layer].getFloat(h);
             }
         }
         w.ssmBeta[layer].gemm(state.xb, dim, state.ssmTmp, dtRank, seqLen, dtRank, dim);
         for (int s = 0; s < seqLen; s++) {
             for (int h = 0; h < dtRank; h++) {
-                beta[s * dtRank + h] = sigmoid(state.ssmTmp.getFloat(s * dtRank + h));
+                beta[s * dtRank + h] = Activations.sigmoid(state.ssmTmp.getFloat(s * dtRank + h));
             }
         }
 
@@ -888,7 +726,7 @@ final class Qwen35 implements Model {
 
         // 8. SiLU(z)-gated RMSNorm per head; 9. output projection (per row)
         float[] z = state.ssmZ;
-        forRows(seqLen, s -> {
+        Parallel.forRows(seqLen, s -> {
             int dBase = s * fDtRank * fHV;
             for (int h = 0; h < fDtRank; h++) {
                 int headOff = dBase + h * fHV;
@@ -900,7 +738,7 @@ final class Qwen35 implements Model {
                 float invRms = (float) (1.0 / Math.sqrt(ss / fHV + eps));
                 for (int d = 0; d < fHV; d++) {
                     float normed = output[headOff + d] * invRms * w.ssmNorm[layer].getFloat(d);
-                    state.ssmTmp.setFloat(headOff + d, normed * silu(z[headOff + d]));
+                    state.ssmTmp.setFloat(headOff + d, normed * Activations.silu(z[headOff + d]));
                 }
             }
         });
@@ -916,7 +754,7 @@ final class Qwen35 implements Model {
         w.ffnGate[layer].gemm(state.xb, dim, state.ffnGate, hiddenDim, seqLen, hiddenDim, dim);
         w.ffnUp[layer].gemm(state.xb, dim, state.ffnUp, hiddenDim, seqLen, hiddenDim, dim);
         int fHidden = hiddenDim;
-        forRows(seqLen, s -> state.ffnGate.siluMultiplyInPlace(s * fHidden, state.ffnUp, s * fHidden, fHidden));
+        Parallel.forRows(seqLen, s -> state.ffnGate.siluMultiplyInPlace(s * fHidden, state.ffnUp, s * fHidden, fHidden));
         w.ffnDown[layer].gemm(state.ffnGate, hiddenDim, state.xb, dim, seqLen, dim, hiddenDim);
     }
 
@@ -990,14 +828,14 @@ final class Qwen35 implements Model {
         for (int e = 0; e < numExperts; e++) {
             int start = off[e], n = off[e + 1] - start;
             if (n == 0) continue;
-            forRows(n, j -> state.moeInputB.copyTo(state.moeRowByExpert[start + j] * fDim, state.moeGather, j * fDim, fDim));
+            Parallel.forRows(n, j -> state.moeInputB.copyTo(state.moeRowByExpert[start + j] * fDim, state.moeGather, j * fDim, fDim));
             int gateUpOffset = e * gateUpStride;
             int downOffset = e * downStride;
             w.moeExpertGate[layer].gemm(state.moeGather, dim, state.moeGateUpB, expertFFN, n, expertFFN, dim, gateUpOffset);
             w.moeExpertUp[layer].gemm(state.moeGather, dim, state.moeUpB, expertFFN, n, expertFFN, dim, gateUpOffset);
-            forRows(n, j -> state.moeGateUpB.siluMultiplyInPlace(j * fEFF, state.moeUpB, j * fEFF, fEFF));
+            Parallel.forRows(n, j -> state.moeGateUpB.siluMultiplyInPlace(j * fEFF, state.moeUpB, j * fEFF, fEFF));
             w.moeExpertDown[layer].gemm(state.moeGateUpB, expertFFN, state.moeDownB, dim, n, dim, expertFFN, downOffset);
-            forRows(n, j -> state.moeOutB.saxpyInPlace(state.moeRowByExpert[start + j] * fDim, state.moeDownB, j * fDim, fDim,
+            Parallel.forRows(n, j -> state.moeOutB.saxpyInPlace(state.moeRowByExpert[start + j] * fDim, state.moeDownB, j * fDim, fDim,
                     state.moeProbByExpert[start + j]));
         }
 
@@ -1007,12 +845,12 @@ final class Qwen35 implements Model {
             int fSFF = sharedFFN;
             w.moeSharedGate[layer].gemm(state.moeInputB, dim, state.moeSharedGateB, sharedFFN, seqLen, sharedFFN, dim);
             w.moeSharedUp[layer].gemm(state.moeInputB, dim, state.moeSharedUpB, sharedFFN, seqLen, sharedFFN, dim);
-            forRows(seqLen, s -> state.moeSharedGateB.siluMultiplyInPlace(s * fSFF, state.moeSharedUpB, s * fSFF, fSFF));
+            Parallel.forRows(seqLen, s -> state.moeSharedGateB.siluMultiplyInPlace(s * fSFF, state.moeSharedUpB, s * fSFF, fSFF));
             w.moeSharedDown[layer].gemm(state.moeSharedGateB, sharedFFN, state.moeSharedOutB, dim, seqLen, dim, sharedFFN);
             if (w.moeSharedInputGate[layer] != null) {
                 w.moeSharedInputGate[layer].gemm(state.moeInputB, dim, state.moeSharedInputGateB, 1, seqLen, 1, dim);
-                forRows(seqLen, s -> {
-                    float sharedScale = sigmoid(state.moeSharedInputGateB.getFloat(s));
+                Parallel.forRows(seqLen, s -> {
+                    float sharedScale = Activations.sigmoid(state.moeSharedInputGateB.getFloat(s));
                     state.moeOutB.saxpyInPlace(s * fDim, state.moeSharedOutB, s * fDim, fDim, sharedScale);
                 });
             } else {

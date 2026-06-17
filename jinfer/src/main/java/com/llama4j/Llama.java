@@ -1,13 +1,15 @@
-// The inference engine: model configuration and weights, the forward pass, generation,
-// samplers and the prompt cache.
+// LFM2.5 (Liquid Foundation Model 2.5): a Llama-architecture variant with short-convolution mixer
+// layers interleaved with attention, dense or MoE FFN. The {@code Llama} record is this model's
+// {@link Model} implementation (the name reflects the llama-family base; the plain standard-Llama
+// transformer — Llama 3.x / MiniCPM / Mistral-3 / Granite — lives in {@link Llama3}). Also hosts the
+// llama-family Configuration/Weights records {@link ModelLoader} fills and {@link PromptCache}
+// understands. Single-token forward + batched prefill.
 package com.llama4j;
 
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
-
-
 
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
@@ -16,8 +18,6 @@ import java.util.Optional;
 import java.util.Set;
 
 record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weights) implements Model {
-
-
 
     private static void rollingAttentionAccumulate(FloatTensor out, int outOffset, FloatTensor valueCache, int valueOffset,
                                                    int headSize, float oldScale, float scoreScale) {
@@ -71,9 +71,6 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         }
         return 0;
     }
-
-
-
 
     public State createNewState() {
         State state = new State(configuration());
@@ -443,10 +440,6 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         }
     }
 
-    static float silu(float x) {
-        return (float) (x / (1.0 + Math.exp(-x)));
-    }
-
     static void rmsnorm(FloatTensor out, FloatTensor x, F32FloatTensor weight, int size, float rmsNormEps) {
         rmsnorm(out, 0, x, 0, weight, size, rmsNormEps);
     }
@@ -495,7 +488,6 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
             out.setFloat(outOffset + i, weight.getFloat(i) * ss * x.getFloat(xOffset + i));
         }
     }
-
 
     /** Apply Rotary Positional Embeddings (RoPE) to a tensor. */
     static void applyRoPE(FloatTensor tensor, int headSize, int nHeads, int halfHead,
@@ -1003,7 +995,6 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         });
     }
 
-
     /**
      * Rolling (online-softmax) attention for one (token, head) with headSize 64 on 512-bit
      * vectors: query and output accumulator live in 8 zmm registers inside each phase, with
@@ -1126,7 +1117,6 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         a3.intoMemorySegment(out.vseg, ob + 192, ByteOrder.LITTLE_ENDIAN);
         return packML(m, l);
     }
-
 
     /**
      * Loads 16 f16 values from a memory segment, casts to ints, and decodes to a float vector.
@@ -1451,7 +1441,6 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         for (int s = 0; s < sequenceLength; s++) batch.x.addInPlace(s * dim, batch.xb, s * dim, dim);
     }
 
-
     static int finishFinalLayerForLogits(Llama.Configuration config, Llama.Weights weights,
                                           Llama.State state, Llama.BatchState batch, int dim) {
         int layer = config.numberOfLayers - 1;
@@ -1505,46 +1494,4 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
         return state.logits;
     }
 
-}
-
-final class RoPE {
-    public static Pair<float[], float[]> precomputeFreqsCis(int contextLength, int headSize, double theta) {
-        assert headSize % 2 == 0;
-        int halfHead = headSize / 2;
-        float[] cr = new float[contextLength * halfHead];
-        float[] ci = new float[contextLength * halfHead];
-        int n = 0;
-        for (int pos = 0; pos < contextLength; ++pos) {
-            for (int i = 0; i < headSize; i += 2) {
-                float freq = (float) (1.0 / Math.pow(theta, i / (double) headSize));
-                float val = pos * freq;
-                cr[n] = (float) Math.cos(val);
-                ci[n] = (float) Math.sin(val);
-                n++;
-            }
-        }
-        assert contextLength * halfHead == n;
-        return new Pair<>(cr, ci);
-    }
-
-    public static Pair<float[], float[]> precomputeFreqsCisFromFreqs(int contextLength, int headSize, double ropeTheta, float[] ropeFreqFactors) {
-        // freq_factors are divisors on top of the standard RoPE base frequencies:
-        // theta_i = pos * (1 / (ropeTheta^(2i/headSize))) / freqFactors[i]
-        int halfHead = ropeFreqFactors.length;
-        assert halfHead == headSize / 2;
-        float[] cr = new float[contextLength * halfHead];
-        float[] ci = new float[contextLength * halfHead];
-        int n = 0;
-        for (int pos = 0; pos < contextLength; ++pos) {
-            for (int i = 0; i < halfHead; i++) {
-                float baseFreq = (float) (1.0 / Math.pow(ropeTheta, (2.0 * i) / headSize));
-                float val = pos * baseFreq / ropeFreqFactors[i];
-                cr[n] = (float) Math.cos(val);
-                ci[n] = (float) Math.sin(val);
-                n++;
-            }
-        }
-        assert contextLength * halfHead == n;
-        return new Pair<>(cr, ci);
-    }
 }

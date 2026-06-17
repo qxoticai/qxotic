@@ -14,7 +14,6 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.IntConsumer;
 
 final class GptOss implements Model {
 
@@ -80,16 +79,6 @@ final class GptOss implements Model {
             }
         }
         java.util.Arrays.fill(PROF, 0L);
-    }
-
-    /** Per-row work: inline for a single row (decode) to avoid parallel-stream dispatch overhead,
-     *  parallel across rows for a chunk (prefill). */
-    private static void forRows(int seqLen, IntConsumer action) {
-        if (seqLen == 1) {
-            action.accept(0);
-        } else {
-            Parallel.parallelFor(0, seqLen, action);
-        }
     }
 
     @Override
@@ -193,41 +182,14 @@ final class GptOss implements Model {
         return (float) (x / (1.0 + Math.exp(1.702f * -x)) * (y + 1.0));
     }
 
-    static double yarnCorrDim(int nDims, int nCtxOrig, float nRot, float base) {
-        return nDims * Math.log(nCtxOrig / (nRot * 2.0 * Math.PI)) / (2.0 * Math.log(base));
-    }
-
-    static float yarnRamp(float low, float high, int i0) {
-        float y = (i0 / 2f - low) / Math.max(0.001f, high - low);
-        return 1f - Math.min(1f, Math.max(0f, y));
-    }
-
-    /** YARN-scaled RoPE tables (cos/sin), with the attention mscale baked in. Mirrors the reference's
-     *  precomputeFreqsCisYarn (betaFast=32, betaSlow=1, extFactor=1). */
+    /** YARN-scaled RoPE tables (cos/sin), with the attention mscale baked in. gpt-oss uses the
+     *  canonical YaRN parameters (betaFast=32, betaSlow=1, extFactor=1); see
+     *  {@link RoPE#precomputeFreqsCisYarn}. */
     static float[][] precomputeYarnRope(int contextLength, int headSize, double ropeTheta,
                                         float ropeScalingFactor, int originalContextLength) {
-        float betaFast = 32f, betaSlow = 1f, extFactor = 1f;
-        int halfHead = headSize / 2;
-        float[] cr = new float[contextLength * halfHead];
-        float[] ci = new float[contextLength * halfHead];
-        float freqScale = ropeScalingFactor == 0f ? 1f : 1f / ropeScalingFactor;
-        float corrStart = Math.max(0f, (float) Math.floor(yarnCorrDim(headSize, originalContextLength, betaFast, (float) ropeTheta)));
-        float corrEnd = Math.min(headSize - 1f, (float) Math.ceil(yarnCorrDim(headSize, originalContextLength, betaSlow, (float) ropeTheta)));
-        float mscale = extFactor != 0f ? (float) (1.0 + 0.1 * Math.log(1.0 / Math.max(1e-12, freqScale))) : 1f;
-        int n = 0;
-        for (int pos = 0; pos < contextLength; pos++) {
-            for (int i = 0; i < headSize; i += 2) {
-                double baseFreq = 1.0 / Math.pow(ropeTheta, i / (double) headSize);
-                float thetaExtrap = (float) (pos * baseFreq);
-                float thetaInterp = freqScale * thetaExtrap;
-                float ramp = yarnRamp(corrStart, corrEnd, i) * extFactor;
-                float theta = thetaInterp * (1f - ramp) + thetaExtrap * ramp;
-                cr[n] = (float) (Math.cos(theta) * mscale);
-                ci[n] = (float) (Math.sin(theta) * mscale);
-                n++;
-            }
-        }
-        return new float[][]{cr, ci};
+        Pair<float[], float[]> rope = RoPE.precomputeFreqsCisYarn(
+                contextLength, headSize, ropeTheta, ropeScalingFactor, originalContextLength, 32f, 1f, 1f, 1f);
+        return new float[][]{rope.first(), rope.second()};
     }
 
     // === Forward (single token) ===
@@ -393,7 +355,7 @@ final class GptOss implements Model {
             int fDim = dim;
             F32FloatTensor attNormW = w.attnNorm[l];
             // attention norm (rows are independent -> parallel)
-            forRows(seqLen, s -> rmsnorm(state.xb, s * fDim, state.x, s * fDim, attNormW, fDim, eps));
+            Parallel.forRows(seqLen, s -> rmsnorm(state.xb, s * fDim, state.x, s * fDim, attNormW, fDim, eps));
             // attention output (post output-proj + bias) added to the residual.
             attentionForwardBatch(state, l, startPos, seqLen);
             // MoE output added to the residual.
@@ -430,7 +392,7 @@ final class GptOss implements Model {
         // Q = wq @ xb (GEMM) + bias, RoPE per row/head.
         w.wq[l].gemm(state.xb, dim, state.q, queryDim, seqLen, queryDim, dim);
         int fQDim = queryDim, fHeadSz = headSize, fHalf = halfHead, fStart = startPos;
-        forRows(seqLen, s -> {
+        Parallel.forRows(seqLen, s -> {
             addBias(state.q, s * fQDim, w.attnQBias[l], 0, fQDim);
             for (int h = 0; h < heads; h++) {
                 applyRope(state.q, s * fQDim + h * fHeadSz, fStart + s, w.ropeCos, w.ropeSin, fHalf);
@@ -441,7 +403,7 @@ final class GptOss implements Model {
         w.wk[l].gemm(state.xb, dim, bK, kvDim, seqLen, kvDim, dim);
         w.wv[l].gemm(state.xb, dim, bV, kvDim, seqLen, kvDim, dim);
         int fKvDim = kvDim;
-        forRows(seqLen, s -> {
+        Parallel.forRows(seqLen, s -> {
             addBias(bK, s * fKvDim, w.attnKBias[l], 0, fKvDim);
             addBias(bV, s * fKvDim, w.attnVBias[l], 0, fKvDim);
             for (int h = 0; h < kvHeads; h++) {
@@ -457,7 +419,7 @@ final class GptOss implements Model {
         // Output projection (GEMM) + bias, residual add to x.
         w.wo[l].gemm(state.xbK, queryDim, state.xb2, dim, seqLen, dim, queryDim);
         int fDim = dim;
-        forRows(seqLen, s -> addBias(state.xb2, s * fDim, w.attnOutputBias[l], 0, fDim));
+        Parallel.forRows(seqLen, s -> addBias(state.xb2, s * fDim, w.attnOutputBias[l], 0, fDim));
         state.x.addInPlace(0, state.xb2, 0, seqLen * dim);
 
         // Commit the chunk's K/V to the cache for future chunks/decode (position order; for SWA the
@@ -644,11 +606,11 @@ final class GptOss implements Model {
 
         // post-attention norm -> expert input (rows parallel).
         F32FloatTensor postW = w.postAttnNorm[l];
-        forRows(seqLen, s -> rmsnorm(state.moeInputB, s * dim, state.x, s * dim, postW, dim, eps));
+        Parallel.forRows(seqLen, s -> rmsnorm(state.moeInputB, s * dim, state.x, s * dim, postW, dim, eps));
 
         // Router = ffn_gate_inp @ moeInputB (GEMM) + bias per row.
         w.ffnGateInp[l].gemm(state.moeInputB, dim, state.moeRouterB, numExperts, seqLen, numExperts, dim);
-        forRows(seqLen, s -> addBias(state.moeRouterB, s * numExperts, w.ffnGateInpBias[l], 0, numExperts));
+        Parallel.forRows(seqLen, s -> addBias(state.moeRouterB, s * numExperts, w.ffnGateInpBias[l], 0, numExperts));
 
         // Per-row top-k by RAW logit (argmax + mask), softmax over the selected (renorm, subtract
         // maxW); store (expert, prob) with prob *= expertWeightsScale. Bucket into CSR by expert.
@@ -704,13 +666,13 @@ final class GptOss implements Model {
             if (n == 0) continue;
             int fE = e;
             // gather this expert's rows (parallel; each writes a distinct moeGather row).
-            forRows(n, j -> state.moeInputB.copyTo(state.moeRowByExpert[start + j] * dim, state.moeGather, j * dim, dim));
+            Parallel.forRows(n, j -> state.moeInputB.copyTo(state.moeRowByExpert[start + j] * dim, state.moeGather, j * dim, dim));
             int gateUpOffset = e * expertFF * dim;
             int downOffset = e * dim * expertFF;
             // gate + bias, up + bias, clampedSwiglu(gate, up) -> moeGateB (per row).
             w.ffnGateExps[l].gemm(state.moeGather, dim, state.moeGateB, expertFF, n, expertFF, dim, gateUpOffset);
             w.ffnUpExps[l].gemm(state.moeGather, dim, state.moeUpB, expertFF, n, expertFF, dim, gateUpOffset);
-            forRows(n, j -> {
+            Parallel.forRows(n, j -> {
                 addBias(state.moeGateB, j * expertFF, w.ffnGateExpsBias[l], fE * expertFF, expertFF);
                 addBias(state.moeUpB, j * expertFF, w.ffnUpExpsBias[l], fE * expertFF, expertFF);
                 for (int i = 0; i < expertFF; i++) {
@@ -720,14 +682,14 @@ final class GptOss implements Model {
             });
             // down + bias (per row).
             w.ffnDownExps[l].gemm(state.moeGateB, expertFF, state.moeDownB, dim, n, dim, expertFF, downOffset);
-            forRows(n, j -> addBias(state.moeDownB, j * dim, w.ffnDownExpsBias[l], fE * dim, dim));
+            Parallel.forRows(n, j -> addBias(state.moeDownB, j * dim, w.ffnDownExpsBias[l], fE * dim, dim));
             // scatter-add prob-weighted (parallel; rows within an expert are distinct, so race-free).
-            forRows(n, j -> state.moeOutB.saxpyInPlace(state.moeRowByExpert[start + j] * dim, state.moeDownB, j * dim, dim,
+            Parallel.forRows(n, j -> state.moeOutB.saxpyInPlace(state.moeRowByExpert[start + j] * dim, state.moeDownB, j * dim, dim,
                     state.moeProbByExpert[start + j]));
         }
 
         // Add the MoE output to the residual (per row).
-        forRows(seqLen, s -> state.x.addInPlace(s * dim, state.moeOutB, s * dim, dim));
+        Parallel.forRows(seqLen, s -> state.x.addInPlace(s * dim, state.moeOutB, s * dim, dim));
         profMark(5);
     }
 

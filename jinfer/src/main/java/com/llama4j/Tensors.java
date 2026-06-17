@@ -387,6 +387,16 @@ abstract class FloatTensor {
         return this;
     }
 
+    /** Squared-ReLU in place: x = max(0, x)^2 (Nemotron's FFN/expert activation). */
+    FloatTensor reluSqrInPlace(int thisOffset, int size) {
+        for (int i = 0; i < size; i++) {
+            float r = getFloat(thisOffset + i);
+            r = r > 0f ? r : 0f;
+            setFloat(thisOffset + i, r * r);
+        }
+        return this;
+    }
+
     FloatTensor divideInPlace(int thisOffset, int size, float value) {
         return mapInPlace(thisOffset, size, f -> f / value);
     }

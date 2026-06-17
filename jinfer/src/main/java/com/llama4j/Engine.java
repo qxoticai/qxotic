@@ -183,9 +183,13 @@ final class Engine {
      * The effective token stream prefill ingests: the not-yet-ingested {@code latestToken}
      * (BOS for a fresh state) followed by the prompt, deduplicating a leading BOS. Position i of
      * the result is the token ingested at position {@code startPosition + i} — the canonical key
-     * for prefix caching.
+     * for prefix caching. A negative {@code latestToken} means "no prior token" (e.g. a fresh state
+     * of a model with add_bos=false): the prompt is ingested verbatim with nothing prepended.
      */
     static int[] buildPrefillTokens(int latestToken, int startPosition, List<Integer> promptTokens) {
+        if (latestToken < 0) {
+            return promptTokens.stream().mapToInt(Integer::intValue).toArray();
+        }
         int skip = startPosition == 0 && !promptTokens.isEmpty() && promptTokens.getFirst() == latestToken ? 1 : 0;
         int[] prefillTokens = new int[1 + promptTokens.size() - skip];
         prefillTokens[0] = latestToken;

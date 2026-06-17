@@ -18,7 +18,6 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
-import java.lang.foreign.ValueLayout;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -528,9 +527,8 @@ final class AOT {
                         config.contextLength, config.headSizeSWA, config.ropeThetaSWA);
                 Pair<float[], float[]> ropeFreqsFull;
                 Map<String, GGMLTensorEntry> tmpEntries = ModelLoader.loadTensors(fileChannel, gguf);
-                GGMLTensorEntry ropeFreqEntry = tmpEntries.get("rope_freqs.weight");
-                if (ropeFreqEntry != null) {
-                    float[] modelRopeFreqs = ropeFreqEntry.memorySegment().toArray(ValueLayout.JAVA_FLOAT);
+                float[] modelRopeFreqs = ModelLoader.ropeFreqFactors(tmpEntries);
+                if (modelRopeFreqs != null) {
                     ropeFreqsFull = RoPE.precomputeFreqsCisFromFreqs(
                             config.contextLength, config.headSizeFull, config.ropeTheta, modelRopeFreqs);
                 } else {

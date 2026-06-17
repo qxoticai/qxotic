@@ -76,7 +76,10 @@ final class ModelLoader {
     }
 
     /** Loads a model, dispatching on {@code general.architecture}: {@code gemma4} -> {@link Gemma4},
-     *  {@code qwen35}/{@code qwen35moe} -> {@link Qwen35}, {@code lfm*} (LFM2.5) -> {@link Llama}. */
+     *  {@code qwen35}/{@code qwen35moe} -> {@link Qwen35}, {@code gpt-oss} -> {@link GptOss},
+     *  {@code nemotron_h}/{@code nemotron_h_moe} -> {@link Nemotron},
+     *  {@code llama}/{@code minicpm}/{@code mistral3}/{@code granite} -> {@link Llama3},
+     *  {@code lfm*} (LFM2.5) -> {@link Llama}. */
     public static Model loadModel(Path ggufPath, int contextLength) throws IOException {
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
             GGUF gguf = readGguf(fileChannel, ggufPath.toString());
@@ -96,12 +99,27 @@ final class ModelLoader {
                     return GptOss.loadModel(fileChannel, gguf, contextLength, true);
                 }
             }
+            if (arch.equals("nemotron_h_moe") || arch.equals("nemotron_h")) {
+                try (var ignored = Timer.log("Load Nemotron model")) {
+                    return Nemotron.loadModel(fileChannel, gguf, contextLength, true);
+                }
+            }
+            // The standard Llama transformer (Llama 3.x). The Llama3 impl also covers same-graph
+            // variants: MiniCPM (+ 3 scalars, default 1.0), Mistral-3/Ministral (YaRN RoPE +
+            // attention temperature scaling), and Granite (dense; 4 scalars incl. a custom attention
+            // scale). All distinguished by GGUF metadata, not extra classes. (Granite-hybrid/-moe use
+            // their own architectures and are not handled here.)
+            if (arch.equals("llama") || arch.equals("minicpm") || arch.equals("mistral3") || arch.equals("granite")) {
+                try (var ignored = Timer.log("Load Llama model")) {
+                    return Llama3.loadModel(fileChannel, gguf, contextLength, true);
+                }
+            }
             // The LFM loader reads lfm2.* metadata; routing any other architecture through it would
             // silently mis-load the weights and emit gibberish. Refuse unknown architectures so the
             // failure is a clear message instead.
             if (!arch.startsWith("lfm")) {
                 throw new UnsupportedOperationException(
-                        "Unsupported model architecture '" + arch + "' (supported: lfm2.5, gemma4, qwen35, gpt-oss)");
+                        "Unsupported model architecture '" + arch + "' (supported: lfm2.5, gemma4, qwen35, gpt-oss, nemotron_h, nemotron_h_moe, llama, minicpm, mistral3, granite)");
             }
             try (var ignored = Timer.log("Load LFM25 model")) {
                 return loadModel(fileChannel, gguf, contextLength, true);
@@ -199,16 +217,20 @@ final class ModelLoader {
         return new Llama(config, tokenizer, qw);
     }
 
+    /** The optional "llama3" RoPE frequency-scaling factors ({@code rope_freqs.weight}), or null if
+     *  the model uses plain RoPE. These are per-frequency divisors (1.0 for high frequencies, up to
+     *  the long-context factor for low frequencies); see {@link RoPE#precomputeFreqsCisFromFreqs}. */
+    static float[] ropeFreqFactors(Map<String, GGMLTensorEntry> tensorEntries) {
+        GGMLTensorEntry e = tensorEntries.get("rope_freqs.weight");
+        return e == null ? null : e.memorySegment().toArray(ValueLayout.JAVA_FLOAT);
+    }
+
     public static Llama.Weights loadWeights(Map<String, GGMLTensorEntry> tensorEntries, Llama.Configuration config) {
         Pair<float[], float[]> ropeFreqsSWA = RoPE.precomputeFreqsCis(config.contextLength, config.headSizeSWA, config.ropeThetaSWA);
-        GGMLTensorEntry ropeFreqEntry = tensorEntries.get("rope_freqs.weight");
-        Pair<float[], float[]> ropeFreqsFull;
-        if (ropeFreqEntry != null) {
-            float[] modelRopeFreqs = ropeFreqEntry.memorySegment().toArray(ValueLayout.JAVA_FLOAT);
-            ropeFreqsFull = RoPE.precomputeFreqsCisFromFreqs(config.contextLength, config.headSizeFull, config.ropeTheta, modelRopeFreqs);
-        } else {
-            ropeFreqsFull = RoPE.precomputeFreqsCis(config.contextLength, config.headSizeFull, config.ropeTheta);
-        }
+        float[] modelRopeFreqs = ropeFreqFactors(tensorEntries);
+        Pair<float[], float[]> ropeFreqsFull = modelRopeFreqs != null
+                ? RoPE.precomputeFreqsCisFromFreqs(config.contextLength, config.headSizeFull, config.ropeTheta, modelRopeFreqs)
+                : RoPE.precomputeFreqsCis(config.contextLength, config.headSizeFull, config.ropeTheta);
         return loadWeightsWithRoPE(tensorEntries, config, ropeFreqsSWA, ropeFreqsFull);
     }
 
