@@ -150,6 +150,26 @@ final class GptOss implements Model {
         for (int i = 0; i < size; i++) tensor.setFloat(offset + i, tensor.getFloat(offset + i) * inv);
     }
 
+    /** Top-k experts by RAW router logit (argmax + destructive mask) read at {@code router[rb ..]}, writing
+     *  (expert, logit) into {@code topE}/{@code topP} at {@code outBase}. {@code counts} (nullable) tallies
+     *  selections per expert for the CSR batch bucketing. Shared by decode and batch so they stay
+     *  token-exact. */
+    private static void selectTopK(FloatTensor router, int rb, int numExperts, int topK,
+                                   int[] topE, float[] topP, int outBase, int[] counts) {
+        for (int k = 0; k < topK; k++) {
+            int best = -1;
+            float bestVal = Float.NEGATIVE_INFINITY;
+            for (int e = 0; e < numExperts; e++) {
+                float v = router.getFloat(rb + e);
+                if (v > bestVal) { bestVal = v; best = e; }
+            }
+            topE[outBase + k] = best;
+            topP[outBase + k] = bestVal;
+            router.setFloat(rb + best, Float.NEGATIVE_INFINITY);
+            if (counts != null) counts[best]++;
+        }
+    }
+
     private void moeForward(State state, int layer) {
         Configuration config = configuration;
         Weights w = weights;
@@ -165,17 +185,7 @@ final class GptOss implements Model {
         // Top-k by raw logit (argmax + mask), then softmax over the selected logits (renormalized).
         int[] topExperts = state.topExperts;
         float[] topWeights = state.topWeights;
-        for (int k = 0; k < topK; k++) {
-            int best = -1;
-            float bestVal = Float.NEGATIVE_INFINITY;
-            for (int e = 0; e < numExperts; e++) {
-                float v = state.routerLogits.getFloat(e);
-                if (v > bestVal) { bestVal = v; best = e; }
-            }
-            topExperts[k] = best;
-            topWeights[k] = bestVal;
-            state.routerLogits.setFloat(best, Float.NEGATIVE_INFINITY);
-        }
+        selectTopK(state.routerLogits, 0, numExperts, topK, topExperts, topWeights, 0, null);
         float maxW = Float.NEGATIVE_INFINITY;
         for (int k = 0; k < topK; k++) maxW = Math.max(maxW, topWeights[k]);
         float sum = 0f;
@@ -373,18 +383,7 @@ final class GptOss implements Model {
         Arrays.fill(counts, 0);
         for (int s = 0; s < seqLen; s++) {
             int rb = s * numExperts;
-            for (int ki = 0; ki < topK; ki++) {
-                int best = -1;
-                float bestVal = Float.NEGATIVE_INFINITY;
-                for (int e = 0; e < numExperts; e++) {
-                    float v = state.moeRouterB.getFloat(rb + e);
-                    if (v > bestVal) { bestVal = v; best = e; }
-                }
-                state.moeRowTopE[s * topK + ki] = best;
-                state.moeRowTopP[s * topK + ki] = bestVal;
-                state.moeRouterB.setFloat(rb + best, Float.NEGATIVE_INFINITY);
-                counts[best]++;
-            }
+            selectTopK(state.moeRouterB, rb, numExperts, topK, state.moeRowTopE, state.moeRowTopP, s * topK, counts);
             float maxW = Float.NEGATIVE_INFINITY;
             for (int ki = 0; ki < topK; ki++) maxW = Math.max(maxW, state.moeRowTopP[s * topK + ki]);
             float sum = 0f;

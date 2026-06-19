@@ -202,6 +202,25 @@ final class Nemotron implements Model {
     /** MoE-FFN: sigmoid router with additive selection bias, top-k by biased score but combined with
      *  the unbiased sigmoid weight (optionally normalized then scaled); squared-ReLU experts plus an
      *  always-on shared expert. Reads {@code state.xb} (normed input), writes the result back to it. */
+    /** Top-k experts by (sigmoid router + {@code probsB} bias) read at {@code router[base ..]}, keeping the
+     *  UNBIASED router value as the combine weight in {@code topP}. "Not already taken" scan rather than a
+     *  destructive mask, so the router tensor is left intact. Shared by decode and batch (token-exact). */
+    private static void selectTopK(FloatTensor router, int base, F32FloatTensor probsB, int numExperts,
+                                   int topK, int[] topE, float[] topP) {
+        for (int k = 0; k < topK; k++) {
+            int best = -1;
+            float bestScore = Float.NEGATIVE_INFINITY;
+            for (int e = 0; e < numExperts; e++) {
+                float score = router.getFloat(base + e) + (probsB == null ? 0f : probsB.getFloat(e));
+                boolean taken = false;
+                for (int j = 0; j < k; j++) if (topE[j] == e) { taken = true; break; }
+                if (!taken && score > bestScore) { bestScore = score; best = e; }
+            }
+            topE[k] = best;
+            topP[k] = router.getFloat(base + best);   // unbiased combine weight
+        }
+    }
+
     private void moeForward(State state, int layer) {
         Configuration config = configuration;
         Weights w = weights;
@@ -218,18 +237,7 @@ final class Nemotron implements Model {
         int[] topExperts = state.moeTopExperts;
         float[] topWeights = state.moeTopWeights;
         F32FloatTensor probsB = w.expProbsB[layer];
-        for (int k = 0; k < topK; k++) {
-            int best = -1;
-            float bestScore = Float.NEGATIVE_INFINITY;
-            for (int e = 0; e < numExperts; e++) {
-                float score = state.moeRouter.getFloat(e) + (probsB == null ? 0f : probsB.getFloat(e));
-                boolean taken = false;
-                for (int j = 0; j < k; j++) if (topExperts[j] == e) { taken = true; break; }
-                if (!taken && score > bestScore) { bestScore = score; best = e; }
-            }
-            topExperts[k] = best;
-            topWeights[k] = state.moeRouter.getFloat(best);   // unbiased combine weight
-        }
+        selectTopK(state.moeRouter, 0, probsB, numExperts, topK, topExperts, topWeights);
 
         float weightSum = 0f;
         if (config.expertWeightsNorm) {
@@ -476,18 +484,7 @@ final class Nemotron implements Model {
             int rb = s * numExperts;
             for (int e = 0; e < numExperts; e++) state.moeRouterB.setFloat(rb + e, Activations.sigmoid(state.moeRouterB.getFloat(rb + e)));
             // top-k by (sigmoid + bias); kept combine weight is the UNBIASED sigmoid.
-            for (int k = 0; k < topK; k++) {
-                int best = -1;
-                float bestScore = Float.NEGATIVE_INFINITY;
-                for (int e = 0; e < numExperts; e++) {
-                    float score = state.moeRouterB.getFloat(rb + e) + (probsB == null ? 0f : probsB.getFloat(e));
-                    boolean taken = false;
-                    for (int j = 0; j < k; j++) if (topE[j] == e) { taken = true; break; }
-                    if (!taken && score > bestScore) { bestScore = score; best = e; }
-                }
-                topE[k] = best;
-                topP[k] = state.moeRouterB.getFloat(rb + best);
-            }
+            selectTopK(state.moeRouterB, rb, probsB, numExperts, topK, topE, topP);
             float weightSum = 0f;
             if (config.expertWeightsNorm) {
                 for (int k = 0; k < topK; k++) weightSum += topP[k];

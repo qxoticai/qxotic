@@ -334,6 +334,25 @@ final class Qwen35 implements Model {
                 1, dim, hiddenDim, Ffn.Act.SILU_GLU);
     }
 
+    /** Insertion-sort top-k of the softmaxed router probs (read at {@code probs[probBase ..]}) into
+     *  {@code topE}/{@code topP}, descending and stable so ties keep the lower expert index. Shared by the
+     *  decode and batch paths so they stay token-exact. Unfilled slots are left as {@code -1}/-INF. */
+    private static void selectTopK(FloatTensor probs, int probBase, int numExperts, int topK,
+                                   int[] topE, float[] topP) {
+        for (int i = 0; i < topK; i++) { topE[i] = -1; topP[i] = Float.NEGATIVE_INFINITY; }
+        for (int e = 0; e < numExperts; e++) {
+            float prob = probs.getFloat(probBase + e);
+            int insertPos = -1;
+            for (int k = 0; k < topK; k++) {
+                if (prob > topP[k]) { insertPos = k; break; }
+            }
+            if (insertPos >= 0) {
+                for (int k = topK - 1; k > insertPos; k--) { topP[k] = topP[k - 1]; topE[k] = topE[k - 1]; }
+                topP[insertPos] = prob; topE[insertPos] = e;
+            }
+        }
+    }
+
     /** Top-k expert MoE (softmax over all experts, top-k, renormalize) + optional shared expert. */
     private void moeForward(State state, int layer) {
         Configuration config = configuration;
@@ -349,28 +368,7 @@ final class Qwen35 implements Model {
 
         int[] topExperts = state.moeTopExperts;
         float[] topWeights = state.moeTopWeights;
-        for (int i = 0; i < topK; i++) {
-            topExperts[i] = -1;
-            topWeights[i] = Float.NEGATIVE_INFINITY;
-        }
-        for (int e = 0; e < numExperts; e++) {
-            float prob = routerLogits.getFloat(e);
-            int insertPos = -1;
-            for (int k = 0; k < topK; k++) {
-                if (prob > topWeights[k]) {
-                    insertPos = k;
-                    break;
-                }
-            }
-            if (insertPos >= 0) {
-                for (int k = topK - 1; k > insertPos; k--) {
-                    topWeights[k] = topWeights[k - 1];
-                    topExperts[k] = topExperts[k - 1];
-                }
-                topWeights[insertPos] = prob;
-                topExperts[insertPos] = e;
-            }
-        }
+        selectTopK(routerLogits, 0, numExperts, topK, topExperts, topWeights);
         float topKSum = 0f;
         for (int i = 0; i < topK; i++) topKSum += topWeights[i];
         float invTopK = topKSum == 0f ? 0f : 1f / topKSum;
@@ -736,18 +734,7 @@ final class Qwen35 implements Model {
             // select top-k by descending prob (stable insertion, matching single-token order)
             int[] topE = state.moeTopExperts;
             float[] topP = state.moeTopWeights;
-            for (int i = 0; i < topK; i++) { topE[i] = -1; topP[i] = Float.NEGATIVE_INFINITY; }
-            for (int e = 0; e < numExperts; e++) {
-                float prob = state.moeRouterB.getFloat(s * numExperts + e);
-                int insertPos = -1;
-                for (int k = 0; k < topK; k++) {
-                    if (prob > topP[k]) { insertPos = k; break; }
-                }
-                if (insertPos >= 0) {
-                    for (int k = topK - 1; k > insertPos; k--) { topP[k] = topP[k - 1]; topE[k] = topE[k - 1]; }
-                    topP[insertPos] = prob; topE[insertPos] = e;
-                }
-            }
+            selectTopK(state.moeRouterB, s * numExperts, numExperts, topK, topE, topP);
             float topKSum = 0f;
             for (int i = 0; i < topK; i++) topKSum += topP[i];
             float invTopK = topKSum == 0f ? 0f : 1f / topKSum;

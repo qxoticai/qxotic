@@ -19,8 +19,17 @@ Fast, zero-dependency, inference engine for [Liquid AI](https://www.liquid.ai/) 
 
 ## Features
 
-- Single file, **no dependencies**, based on [llama3.java](https://github.com/mukel/llama3.java)
-- Supports Liquid AI LFM2.5 GGUF models (dense and MoE)
+- Based on [llama3.java](https://github.com/mukel/llama3.java)
+- Multi-architecture behind a small `Model` interface (each model is one implementation):
+  - Liquid AI **LFM2.5** GGUF models (dense and MoE, with short-convolution layers)
+  - Google **Gemma 4** GGUF models — the per-layer-embedding E-series (E2B/E4B) and the
+    mixture-of-experts A4B, with sliding-window attention and logit soft-capping
+  - Meta **Llama 3.x** GGUF models (the standard Llama transformer, with "llama3" RoPE
+    frequency scaling) — also covers **MiniCPM** (same architecture plus three scalars),
+    **Mistral-3 / Ministral** (plus YaRN RoPE + attention-temperature scaling), and
+    **IBM Granite 4.1** (dense; plus four scalars incl. a custom QK attention scale)
+  - **Qwen 3.5** (dense and MoE), OpenAI **gpt-oss** (MXFP4 experts), and NVIDIA **Nemotron**
+    (hybrid Mamba2 + attention + MoE)
 - Fast [GGUF format](https://github.com/ggerganov/ggml/blob/master/docs/gguf.md) parser
 - Supported dtypes/quantizations: `F16`, `BF16`, `F32`, `Q4_0`, `Q4_1`, `Q4_K`, `Q5_K`, `Q6_K`, `Q8_0`
 - Fast kernels using Java's [Vector API](https://openjdk.org/jeps/469)

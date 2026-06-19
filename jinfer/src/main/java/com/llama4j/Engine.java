@@ -234,7 +234,7 @@ final class Engine {
                 if (startPosition + position >= maxTokens) {
                     break;
                 }
-                FloatTensor logits = model.computeLogits(state);
+                FloatTensor logits = Parallel.onDecodePool(() -> model.computeLogits(state));
                 if (prefilling) {
                     prefilling = false;
                     hooks.afterPrefill();
@@ -262,7 +262,12 @@ final class Engine {
                 break;
             }
             chunk = hooks.clampChunk(position, chunk);
-            model.ingest(state, stream, position, startPosition + position, chunk);
+            final int p = position, c = chunk;
+            if (c == 1) {   // decode step: physical-core-width pool (bandwidth bound); prefill keeps the common pool
+                Parallel.onDecodePool(() -> { model.ingest(state, stream, p, startPosition + p, c); return null; });
+            } else {
+                model.ingest(state, stream, position, startPosition + position, chunk);
+            }
             position += chunk;
             hooks.afterIngest(stream, position);
         }

@@ -29,6 +29,12 @@ final class RuntimeFlags {
     static final int DECODE_BLOCK_PARALLEL_MIN_RANGE = Integer.getInteger("llama.decodeBlockParallelMinRange", 1024);
     static final boolean LAST_ROW_LOGITS = !"false".equals(System.getProperty("llama.lastRowLogits"));
 
+    // decode runs at physical-core width on a spin-barrier pool (Parallel.onDecodePool / SpinPool): decode is
+    // memory-bandwidth bound, so one thread per PHYSICAL core saturates DRAM while a 2nd SMT sibling only
+    // contends for the core's load/store ports. -Dllama.decodeSpin=false forces the plain ForkJoin path.
+    static final int DECODE_THREADS = Integer.getInteger("llama.decodeThreads", physicalCoreCount());
+    static final boolean DECODE_SPIN = !"false".equals(System.getProperty("llama.decodeSpin"));
+
     // gemm tiling: the values feed loop bounds, not compiled code shapes — safe to tune at run time
     static final int GEMM_SEQ_TILE = Integer.getInteger("llama.Q8_0GemmSeqTile", 32);
     // K-quant gemms (Q4_K/Q6_K) want much smaller seq tiles than Q8_0: the in-register nibble
@@ -59,6 +65,21 @@ final class RuntimeFlags {
     static final long SERVER_WRITE_STALL_NANOS = TimeUnit.SECONDS.toNanos(Long.getLong("llama.serverWriteTimeout", 30));
     static final int SERVER_MAX_TOKENS = Integer.getInteger("llama.serverMaxTokens", 4096); // 0 = no completion-token ceiling
     static final long SERVER_REQUEST_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(Long.getLong("llama.serverRequestTimeout", 300)); // 0 = no generation deadline
+
+    /** Best-effort physical-core count: with SMT on (Linux reports it via sysfs) physical cores ≈ logical/2;
+     *  without it every logical CPU is a core. Falls back to logical/2 when the hint is unavailable (the
+     *  SMT-on common case on the x86 targets here). Read at run time, so a native binary detects its host. */
+    private static int physicalCoreCount() {
+        int logical = Runtime.getRuntime().availableProcessors();
+        try {
+            String smt = java.nio.file.Files.readString(
+                    java.nio.file.Path.of("/sys/devices/system/cpu/smt/active")).trim();
+            if (smt.equals("0")) return logical;          // no SMT: every logical CPU is a physical core
+        } catch (Exception ignore) {
+            // sysfs absent (non-Linux / container): assume the typical 2-way SMT below
+        }
+        return Math.max(1, logical / 2);
+    }
 
     private RuntimeFlags() {
     }
