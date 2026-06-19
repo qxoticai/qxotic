@@ -14,11 +14,15 @@ package com.llama4j;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.TensorEntry;
 
+import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
+import java.io.FileDescriptor;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -135,7 +139,7 @@ public class LFM25 {
             conversationTokens.addAll(chatFormat.encodeSystemThinkingTurn(options.systemPrompt()));
         }
         int startPosition = 0;
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in))) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
             while (true) {
                 System.out.print("> ");
                 System.out.flush();
@@ -421,7 +425,21 @@ public class LFM25 {
         }
     }
 
+    /** Force UTF-8 on the console so multilingual model output/input isn't garbled by a legacy code page
+     *  (Windows defaults stdout/stdin to one; Linux/macOS are already UTF-8, so this is a no-op re-wrap).
+     *  Raw-byte writes — the streamed token bytes — pass through unchanged; only String prints are affected.
+     *  Buffered + auto-flush, matching the default {@code System.out}. */
+    private static void forceUtf8Console() {
+        System.setOut(utf8Stream(FileDescriptor.out));
+        System.setErr(utf8Stream(FileDescriptor.err));
+    }
+
+    private static PrintStream utf8Stream(FileDescriptor fd) {
+        return new PrintStream(new BufferedOutputStream(new FileOutputStream(fd), 8192), true, StandardCharsets.UTF_8);
+    }
+
     public static void main(String[] args) throws IOException {
+        forceUtf8Console();
         Options options;
         try {
             options = Options.parseOptions(args);
@@ -480,7 +498,7 @@ public class LFM25 {
         if (options.systemPrompt() != null) {
             history.add(Map.of("role", "system", "content", options.systemPrompt()));
         }
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in))) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
             while (true) {
                 System.out.print("> ");
                 System.out.flush();

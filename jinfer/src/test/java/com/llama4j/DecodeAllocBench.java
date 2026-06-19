@@ -49,11 +49,20 @@ public final class DecodeAllocBench {
         int tok = argmax(model.computeLogits(state), vocab);
 
         int[] one = new int[1];
+        // Mirror production: each decode step runs on Parallel.onDecodePool (the physical-core-width pool
+        // Engine.decodeLoop uses), so this measures real decode throughput.
+        final InferenceState fstate = state;
+        final Model fmodel = model;
+        final int[] fone = one;
+        final int fvocab = vocab;
+        final java.util.concurrent.atomic.AtomicInteger stepPos = new java.util.concurrent.atomic.AtomicInteger(pos);
+        java.util.function.IntUnaryOperator run = prevTok -> Parallel.onDecodePool(() -> {
+            int p = stepPos.getAndIncrement();
+            fone[0] = prevTok; fmodel.ingest(fstate, fone, 0, p, 1);
+            return argmax(fmodel.computeLogits(fstate), fvocab);
+        });
         // warmup: let the JIT compile the decode path before measuring.
-        for (int i = 0; i < warmup; i++) {
-            one[0] = tok; model.ingest(state, one, 0, pos, 1); pos++;
-            tok = argmax(model.computeLogits(state), vocab);
-        }
+        for (int i = 0; i < warmup; i++) tok = run.applyAsInt(tok);
 
         jdk.jfr.Recording rec = new jdk.jfr.Recording();
         rec.enable("jdk.ObjectAllocationSample").with("throttle", "100000/s");
@@ -61,10 +70,7 @@ public final class DecodeAllocBench {
         rec.start();
         long a0 = totalAllocated();
         long t0 = System.nanoTime();
-        for (int i = 0; i < measure; i++) {
-            one[0] = tok; model.ingest(state, one, 0, pos, 1); pos++;
-            tok = argmax(model.computeLogits(state), vocab);
-        }
+        for (int i = 0; i < measure; i++) tok = run.applyAsInt(tok);
         long t1 = System.nanoTime();
         long a1 = totalAllocated();
         rec.stop();

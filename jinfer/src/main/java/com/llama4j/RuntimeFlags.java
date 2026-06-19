@@ -66,19 +66,22 @@ final class RuntimeFlags {
     static final int SERVER_MAX_TOKENS = Integer.getInteger("llama.serverMaxTokens", 4096); // 0 = no completion-token ceiling
     static final long SERVER_REQUEST_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(Long.getLong("llama.serverRequestTimeout", 300)); // 0 = no generation deadline
 
-    /** Best-effort physical-core count: with SMT on (Linux reports it via sysfs) physical cores ≈ logical/2;
-     *  without it every logical CPU is a core. Falls back to logical/2 when the hint is unavailable (the
-     *  SMT-on common case on the x86 targets here). Read at run time, so a native binary detects its host. */
+    /** Best-effort physical-core count for sizing the bandwidth-bound decode pool. Linux reports SMT state
+     *  via sysfs (SMT on => 2 hardware threads per core => logical/2; off => logical). macOS/Windows have no
+     *  such file, so we assume 2-way SMT on x86 and none on ARM (Apple Silicon and most ARM cores have no
+     *  SMT, so logical == physical there). Override with -Dllama.decodeThreads; read at run time so a native
+     *  binary detects its host. */
     private static int physicalCoreCount() {
         int logical = Runtime.getRuntime().availableProcessors();
         try {
-            String smt = java.nio.file.Files.readString(
-                    java.nio.file.Path.of("/sys/devices/system/cpu/smt/active")).trim();
-            if (smt.equals("0")) return logical;          // no SMT: every logical CPU is a physical core
-        } catch (Exception ignore) {
-            // sysfs absent (non-Linux / container): assume the typical 2-way SMT below
+            boolean smtOn = !"0".equals(java.nio.file.Files.readString(
+                    java.nio.file.Path.of("/sys/devices/system/cpu/smt/active")).trim());
+            return smtOn ? Math.max(1, logical / 2) : logical;
+        } catch (Exception notLinux) {
+            String arch = System.getProperty("os.arch", "");
+            boolean noSmt = arch.contains("aarch64") || arch.contains("arm");
+            return noSmt ? logical : Math.max(1, logical / 2);
         }
-        return Math.max(1, logical / 2);
     }
 
     private RuntimeFlags() {
