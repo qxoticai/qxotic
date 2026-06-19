@@ -55,29 +55,6 @@ final class Llama3 implements Model {
     /** Force the single-token reference forward even for multi-token chunks (parity debugging). */
     static final boolean SINGLE_TOKEN_PREFILL = System.getProperty("llama3.singleTokenPrefill") != null;
 
-    // --- prefill profiling (-Dllama3.profile): nanos per phase across all layers of a chunk ---
-    static final boolean PROFILE = System.getProperty("llama3.profile") != null;
-    static final long[] PROF = new long[6];
-    static final String[] PROF_NAMES = {"embed", "rmsnorm+resid", "qkv_proj", "rope", "flash_attn", "attn_out+ffn"};
-    private static long profCp;
-
-    private static void profMark(int i) {
-        if (!PROFILE) return;
-        long n = System.nanoTime();
-        PROF[i] += n - profCp;
-        profCp = n;
-    }
-
-    static void profReport(int tokens) {
-        long tot = 0;
-        for (long v : PROF) tot += v;
-        System.err.printf("[llama3.profile] %d tokens, total %.1f ms%n", tokens, tot / 1e6);
-        for (int i = 0; i < PROF.length; i++) {
-            System.err.printf("   %-16s %8.1f ms  (%4.1f%%)%n", PROF_NAMES[i], PROF[i] / 1e6, 100.0 * PROF[i] / tot);
-        }
-        java.util.Arrays.fill(PROF, 0L);
-    }
-
     @Override
     public int batchCapacity() {
         return SINGLE_TOKEN_PREFILL ? 1 : Math.max(1, RuntimeFlags.MAX_PROMPT_SEQUENCE_LENGTH);
@@ -99,12 +76,10 @@ final class Llama3 implements Model {
         if (sequenceLength > s.capacity) {
             throw new IllegalArgumentException("sequenceLength " + sequenceLength + " exceeds batch capacity " + s.capacity);
         }
-        if (SINGLE_TOKEN_PREFILL || sequenceLength == 1) {
-            for (int i = 0; i < sequenceLength; i++) {
-                forward(s, tokens[tokenOffset + i], startPosition + i);
-            }
+        if (SINGLE_TOKEN_PREFILL) {
+            for (int i = 0; i < sequenceLength; i++) forward(s, tokens, tokenOffset + i, startPosition + i, 1);
         } else {
-            forwardBatch(s, tokens, tokenOffset, startPosition, sequenceLength);
+            forward(s, tokens, tokenOffset, startPosition, sequenceLength);
         }
         s.latestToken = tokens[tokenOffset + sequenceLength - 1];
         s.logitsValid = false;
@@ -146,122 +121,38 @@ final class Llama3 implements Model {
 
     // === Forward (single token) ===
 
-    private void forward(State state, int token, int position) {
-        Configuration config = configuration;
-        Weights w = weights;
-        int dim = config.embeddingLength;
-        float eps = config.rmsNormEps;
-
-        w.tokenEmbeddingTable.copyTo(token * dim, state.x, 0, dim);
-        if (config.embeddingScale != 1.0f) {
-            float s = config.embeddingScale;
-            state.x.mapInPlace(0, dim, v -> v * s);
-        }
-
-        for (int l = 0; l < config.numberOfLayers; l++) {
-            rmsnorm(state.xb, 0, state.x, 0, w.attnNorm[l], dim, eps);
-            attentionForward(state, l, position);
-            state.x.saxpyInPlace(0, state.xb, 0, dim, config.residualScale);
-            rmsnorm(state.xb, 0, state.x, 0, w.ffnNorm[l], dim, eps);
-            ffnForward(state, l);
-            state.x.saxpyInPlace(0, state.xb, 0, dim, config.residualScale);
-        }
-        state.lastRowOffset = 0;
-    }
-
-    /** Standard RoPE GQA attention. Reads {@code state.xb} (normed input), writes the output
-     *  projection back to it. */
-    private void attentionForward(State state, int layer, int position) {
-        Configuration config = configuration;
-        Weights w = weights;
-        int dim = config.embeddingLength;
-        int headSize = config.headSize;
-        int heads = config.numberOfHeads;
-        int kvHeads = config.numberOfKeyValueHeads;
-        int kvDim = config.kvDim();
-        int queryDim = config.queryDim();
-        int kvMul = heads / kvHeads;
-        int ropeHalf = config.ropeHalf();
-
-        w.wq[layer].matmul(state.xb, state.q, queryDim, dim);
-        w.wk[layer].matmul(state.xb, state.k, kvDim, dim);
-        w.wv[layer].matmul(state.xb, state.v, kvDim, dim);
-        for (int h = 0; h < heads; h++) RoPE.applyInterleaved(state.q, h * headSize, position, w.ropeCr, w.ropeCi, ropeHalf);
-        for (int h = 0; h < kvHeads; h++) RoPE.applyInterleaved(state.k, h * headSize, position, w.ropeCr, w.ropeCi, ropeHalf);
-        float aScale = config.attnTemp(position);
-        if (aScale != 1.0f) state.q.mapInPlace(0, queryDim, v -> v * aScale);
-        state.k.copyTo(0, state.keyCache[layer], position * kvDim, kvDim);
-        state.v.copyTo(0, state.valueCache[layer], position * kvDim, kvDim);
-
-        FloatTensor keyCache = state.keyCache[layer], valueCache = state.valueCache[layer];
-        float attScale = config.attentionScale();
-        Parallel.parallelFor(0, heads, h -> {
-            int qOffset = h * headSize;
-            int attOffset = h * config.contextLength;
-            int kvHeadOffset = (h / kvMul) * headSize;
-            for (int t = 0; t <= position; t++) {
-                float score = state.q.dot(qOffset, keyCache, t * kvDim + kvHeadOffset, headSize) * attScale;
-                state.att.setFloat(attOffset + t, score);
-            }
-            state.att.softmaxInPlace(attOffset, position + 1);
-            state.xb2.fillInPlace(qOffset, headSize, 0f);
-            for (int t = 0; t <= position; t++) {
-                state.xb2.saxpyInPlace(qOffset, valueCache, t * kvDim + kvHeadOffset, headSize, state.att.getFloat(attOffset + t));
-            }
-        });
-
-        w.wo[layer].matmul(state.xb2, state.xb, dim, queryDim);
-    }
-
-    /** SwiGLU FFN: down(silu(gate(x)) * up(x)). Reads {@code state.xb}, writes the result back. */
-    private void ffnForward(State state, int layer) {
-        Configuration config = configuration;
-        Weights w = weights;
-        int dim = config.embeddingLength;
-        int hidden = config.hiddenDim;
-        Ffn.dense(w.w1[layer], w.w3[layer], w.w2[layer], state.xb, state.hb, state.hb2, state.xb,
-                1, dim, hidden, Ffn.Act.SILU_GLU);
-    }
-
-    // === Batched forward (prompt processing) ===
-
-    /** Processes {@code seqLen} tokens at positions {@code [startPos, startPos+seqLen)} in one pass:
-     *  per-token projections become GEMMs, attention is causal flash attention. Token-exact (greedy)
-     *  vs the single-token {@link #forward}. */
-    void forwardBatch(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
+    /** Single forward pass over {@code seqLen} tokens at positions {@code [startPos, startPos+seqLen)}.
+     *  One token (decode) is the {@code seqLen == 1} case — projections route gemm->gemv, attention
+     *  takes the scalar single-token path. */
+    void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
         Configuration config = configuration;
         Weights w = weights;
         int dim = config.embeddingLength;
         float eps = config.rmsNormEps;
         float embScale = config.embeddingScale, residScale = config.residualScale;
 
-        if (PROFILE) profCp = System.nanoTime();
         for (int s = 0; s < seqLen; s++) {
             w.tokenEmbeddingTable.copyTo(tokens[tokenOffset + s] * dim, state.x, s * dim, dim);
         }
         if (embScale != 1.0f) state.x.mapInPlace(0, seqLen * dim, v -> v * embScale);
-        profMark(0);
 
         for (int l = 0; l < config.numberOfLayers; l++) {
             int fDim = dim;
             F32FloatTensor attNormW = w.attnNorm[l], ffnNormW = w.ffnNorm[l];
             Parallel.forRows(seqLen, s -> rmsnorm(state.xb, s * fDim, state.x, s * fDim, attNormW, fDim, eps));
-            profMark(1);
-            attentionForwardBatch(state, l, startPos, seqLen);
+            attention(state, l, startPos, seqLen);
             state.x.saxpyInPlace(0, state.xb, 0, seqLen * dim, residScale);
             Parallel.forRows(seqLen, s -> rmsnorm(state.xb, s * fDim, state.x, s * fDim, ffnNormW, fDim, eps));
-            profMark(1);
-            ffnForwardBatch(state, l, seqLen);
+            Ffn.dense(w.w1[l], w.w3[l], w.w2[l], state.xb, state.hb, state.hb2, state.xb, seqLen, dim, config.hiddenDim, Ffn.Act.SILU_GLU);
             state.x.saxpyInPlace(0, state.xb, 0, seqLen * dim, residScale);
-            profMark(1);
         }
-        if (PROFILE && seqLen > 1) profReport(seqLen);
         state.lastRowOffset = (seqLen - 1) * dim;
     }
 
-    /** Batched attention: Q/K/V GEMMs, per-row RoPE, K/V to the contiguous cache, causal flash
-     *  attention, output projection (written back to {@code state.xb}). */
-    private void attentionForwardBatch(State state, int layer, int startPos, int seqLen) {
+    /** Standard RoPE GQA attention. Q/K/V projections, per-row RoPE, K/V appended to the contiguous
+     *  cache, then a scalar flat-softmax for a single decode token or causal flash attention for a
+     *  chunk; output projection written back to {@code state.xb}. */
+    private void attention(State state, int layer, int startPos, int seqLen) {
         Configuration config = configuration;
         Weights w = weights;
         int dim = config.embeddingLength;
@@ -276,7 +167,6 @@ final class Llama3 implements Model {
         w.wq[layer].gemm(state.xb, dim, state.attnQ, queryDim, seqLen, queryDim, dim);
         w.wk[layer].gemm(state.xb, dim, state.k, kvDim, seqLen, kvDim, dim);
         w.wv[layer].gemm(state.xb, dim, state.v, kvDim, seqLen, kvDim, dim);
-        profMark(2);
         int fHeadSz = headSize, fHeads = heads, fKvHeads = kvHeads, fQDim = queryDim, fKvDim = kvDim, fStart = startPos, fHalf = ropeHalf;
         Parallel.forRows(seqLen, s -> {
             for (int h = 0; h < fHeads; h++) RoPE.applyInterleaved(state.attnQ, s * fQDim + h * fHeadSz, fStart + s, w.ropeCr, w.ropeCi, fHalf);
@@ -284,7 +174,6 @@ final class Llama3 implements Model {
             float aScale = config.attnTemp(fStart + s);
             if (aScale != 1.0f) state.attnQ.mapInPlace(s * fQDim, fQDim, v -> v * aScale);
         });
-        profMark(3);
 
         FloatTensor keyCache = state.keyCache[layer], valueCache = state.valueCache[layer];
         for (int s = 0; s < seqLen; s++) {
@@ -292,22 +181,27 @@ final class Llama3 implements Model {
             state.v.copyTo(s * kvDim, valueCache, (startPos + s) * kvDim, kvDim);
         }
 
-        FlashAttention.causalPrefill((F32FloatTensor) state.attnQ, (F32FloatTensor) state.attnOut,
-                keyCache, valueCache, heads, startPos, seqLen, headSize, kvDim, queryDim, kvMul, config.attentionScale());
-        profMark(4);
+        if (seqLen == 1) {
+            int position = startPos;
+            float attScale = config.attentionScale();
+            Parallel.parallelFor(0, heads, h -> {
+                int qOffset = h * headSize;
+                int attOffset = h * config.contextLength;
+                int kvHeadOffset = (h / kvMul) * headSize;
+                for (int t = 0; t <= position; t++) {
+                    state.att.setFloat(attOffset + t, state.attnQ.dot(qOffset, keyCache, t * kvDim + kvHeadOffset, headSize) * attScale);
+                }
+                state.att.softmaxInPlace(attOffset, position + 1);
+                state.attnOut.fillInPlace(qOffset, headSize, 0f);
+                for (int t = 0; t <= position; t++) {
+                    state.attnOut.saxpyInPlace(qOffset, valueCache, t * kvDim + kvHeadOffset, headSize, state.att.getFloat(attOffset + t));
+                }
+            });
+        } else {
+            FlashAttention.causalPrefill((F32FloatTensor) state.attnQ, (F32FloatTensor) state.attnOut,
+                    keyCache, valueCache, heads, startPos, seqLen, headSize, kvDim, queryDim, kvMul, config.attentionScale());
+        }
         w.wo[layer].gemm(state.attnOut, queryDim, state.xb, dim, seqLen, dim, queryDim);
-        profMark(5);
-    }
-
-    /** Batched SwiGLU FFN: gate/up/down GEMMs over the chunk, SiLU-multiply per row. */
-    private void ffnForwardBatch(State state, int layer, int seqLen) {
-        Configuration config = configuration;
-        Weights w = weights;
-        int dim = config.embeddingLength;
-        int hidden = config.hiddenDim;
-        Ffn.dense(w.w1[layer], w.w3[layer], w.w2[layer], state.xb, state.hb, state.hb2, state.xb,
-                seqLen, dim, hidden, Ffn.Act.SILU_GLU);
-        profMark(5);
     }
 
     // === Configuration ===
@@ -344,7 +238,7 @@ final class Llama3 implements Model {
 
     static final class State implements InferenceState {
         final int capacity;
-        final FloatTensor x, xb, xb2, q, k, v, att, logits, hb, hb2;
+        final FloatTensor x, xb, k, v, att, logits, hb, hb2;
         final FloatTensor attnQ, attnOut;
         final FloatTensor[] keyCache, valueCache;
         int latestToken;
@@ -361,8 +255,6 @@ final class Llama3 implements Model {
 
             this.x = F32FloatTensor.allocate(c * dim);
             this.xb = F32FloatTensor.allocate(c * dim);
-            this.xb2 = F32FloatTensor.allocate(queryDim);
-            this.q = F32FloatTensor.allocate(queryDim);
             this.k = F32FloatTensor.allocate(c * kvDim);
             this.v = F32FloatTensor.allocate(c * kvDim);
             this.att = F32FloatTensor.allocate(config.numberOfHeads * config.contextLength);

@@ -13,7 +13,12 @@ NATIVE_IMAGE ?= native-image
 JAVA_MAJOR_VERSION := $(shell $(JAVA) -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1)
 
 JAVA_COMPILE_OPTIONS = --enable-preview -source $(JAVA_MAJOR_VERSION) -g --add-modules jdk.incubator.vector,jdk.httpserver
-JAVA_RUNTIME_OPTIONS = --enable-preview --add-modules jdk.incubator.vector,jdk.httpserver --enable-native-access=ALL-UNNAMED
+# Force-inline the F16 KV-cache decode: it returns a FloatVector, and unless inlined into its (single,
+# already-large) attention caller the JIT heap-boxes the result every call -> ~22-36 MB/token of prefill
+# garbage. @ForceInline is ignored on application classes, so this CompileCommand is the lever (JIT only;
+# native-image inlines at build time). Inlined: prefill +~27%, allocation ~0 on Graal. Verified parity-clean.
+GEMM_INLINE_HINT = -XX:CompileCommand=inline,com.llama4j.Llama::f16DecodeVector
+JAVA_RUNTIME_OPTIONS = --enable-preview --add-modules jdk.incubator.vector,jdk.httpserver --enable-native-access=ALL-UNNAMED $(GEMM_INLINE_HINT)
 
 ifeq ($(OS),Windows_NT)
     EXE := .exe

@@ -75,12 +75,10 @@ final class Nemotron implements Model {
         if (sequenceLength > s.capacity) {
             throw new IllegalArgumentException("sequenceLength " + sequenceLength + " exceeds batch capacity " + s.capacity);
         }
-        if (SINGLE_TOKEN_PREFILL || sequenceLength == 1) {
-            for (int i = 0; i < sequenceLength; i++) {
-                forward(s, tokens[tokenOffset + i], startPosition + i);
-            }
+        if (SINGLE_TOKEN_PREFILL) {
+            for (int i = 0; i < sequenceLength; i++) forward(s, tokens, tokenOffset + i, startPosition + i, 1);
         } else {
-            forwardBatch(s, tokens, tokenOffset, startPosition, sequenceLength);
+            forward(s, tokens, tokenOffset, startPosition, sequenceLength);
         }
         s.latestToken = tokens[tokenOffset + sequenceLength - 1];
         s.logitsValid = false;
@@ -118,27 +116,6 @@ final class Nemotron implements Model {
     // === Math helpers ===
 
     // === Forward (single token) ===
-
-    private void forward(State state, int token, int position) {
-        Configuration config = configuration;
-        Weights w = weights;
-        int dim = config.embeddingLength;
-        float eps = config.rmsNormEps;
-
-        w.tokenEmbeddingTable.copyTo(token * dim, state.x, 0, dim);
-
-        for (int l = 0; l < config.numberOfLayers; l++) {
-            // Single pre-norm per block (attn_norm) feeds whichever mixer this block is.
-            rmsnorm(state.xb, 0, state.x, 0, w.attnNorm[l], dim, eps);
-            switch (config.layerTypes[l]) {
-                case SSM -> ssmForward(state, l);
-                case ATTENTION -> attentionForward(state, l, position);
-                case MOE -> moeForward(state, l);
-            }
-            state.x.addInPlace(0, state.xb, 0, dim);   // residual; mixer left its output in xb
-        }
-        state.lastRowOffset = 0;
-    }
 
     /** Mamba2 SSM mixer: in-proj -> split (z|xBC|dt) -> depthwise causal conv1d+SiLU on xBC ->
      *  selective scan with per-head dt/A and per-group B/C -> D skip -> SiLU(z) gate -> per-group
@@ -221,44 +198,6 @@ final class Nemotron implements Model {
         w.ssmOut[l].matmul(state.ssmTmp, state.xb, dim, dInner);
     }
 
-    /** Full causal softmax attention, GQA. No RoPE, no q/k norm, no biases. Reads {@code state.xb}
-     *  (normed input), writes the output projection back to it. */
-    private void attentionForward(State state, int layer, int position) {
-        Configuration config = configuration;
-        Weights w = weights;
-        int dim = config.embeddingLength;
-        int headSize = config.headSize;
-        int heads = config.numberOfHeads;
-        int kvHeads = config.numberOfKeyValueHeads;
-        int kvDim = config.kvDim();
-        int queryDim = config.queryDim();
-        int kvMul = heads / kvHeads;
-
-        w.attnQ[layer].matmul(state.xb, state.q, queryDim, dim);
-        w.attnK[layer].matmul(state.xb, state.k, kvDim, dim);
-        w.attnV[layer].matmul(state.xb, state.v, kvDim, dim);
-        state.k.copyTo(0, state.keyCache[layer], position * kvDim, kvDim);
-        state.v.copyTo(0, state.valueCache[layer], position * kvDim, kvDim);
-
-        FloatTensor keyCache = state.keyCache[layer], valueCache = state.valueCache[layer];
-        float attScale = 1.0f / (float) Math.sqrt(headSize);
-        Parallel.parallelFor(0, heads, h -> {
-            int qOffset = h * headSize;
-            int attOffset = h * config.contextLength;
-            int kvHeadOffset = (h / kvMul) * headSize;
-            for (int t = 0; t <= position; t++) {
-                float score = state.q.dot(qOffset, keyCache, t * kvDim + kvHeadOffset, headSize) * attScale;
-                state.att.setFloat(attOffset + t, score);
-            }
-            state.att.softmaxInPlace(attOffset, position + 1);
-            state.xb2.fillInPlace(qOffset, headSize, 0f);
-            for (int t = 0; t <= position; t++) {
-                state.xb2.saxpyInPlace(qOffset, valueCache, t * kvDim + kvHeadOffset, headSize, state.att.getFloat(attOffset + t));
-            }
-        });
-
-        w.attnOutput[layer].matmul(state.xb2, state.xb, dim, queryDim);
-    }
 
     /** MoE-FFN: sigmoid router with additive selection bias, top-k by biased score but combined with
      *  the unbiased sigmoid weight (optionally normalized then scaled); squared-ReLU experts plus an
@@ -334,7 +273,10 @@ final class Nemotron implements Model {
      *  stays sequential within the chunk (state carries forward). Single pre-norm per block dispatches
      *  to the batched mixer. Leaves the post-final-layer residual in {@code x}; {@link #computeLogits}
      *  finalizes the last row. Token-exact (greedy) vs the single-token {@link #forward}. */
-    void forwardBatch(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
+    /** Single forward pass over {@code seqLen} tokens. Each per-layer mixer (Mamba2 SSM, full
+     *  attention, or MoE) takes its single-token core at {@code seqLen == 1} (decode) or its batched
+     *  core for a chunk; the shared pre-norm + residual are seqLen-agnostic. */
+    void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
         Configuration config = configuration;
         Weights w = weights;
         int dim = config.embeddingLength;
@@ -347,27 +289,32 @@ final class Nemotron implements Model {
         for (int l = 0; l < config.numberOfLayers; l++) {
             int fDim = dim;
             F32FloatTensor attNormW = w.attnNorm[l];
+            // Single pre-norm per block (attn_norm) feeds whichever mixer this block is.
             Parallel.forRows(seqLen, s -> rmsnorm(state.xb, s * fDim, state.x, s * fDim, attNormW, fDim, eps));
             switch (config.layerTypes[l]) {
-                case SSM -> ssmForwardBatch(state, l, seqLen);
-                case ATTENTION -> attentionForwardBatch(state, l, startPos, seqLen);
-                case MOE -> moeForwardBatch(state, l, seqLen);
+                case SSM -> { if (seqLen == 1) ssmForward(state, l); else ssmForwardBatch(state, l, seqLen); }
+                case ATTENTION -> attention(state, l, startPos, seqLen);
+                case MOE -> { if (seqLen == 1) moeForward(state, l); else moeForwardBatch(state, l, seqLen); }
             }
-            state.x.addInPlace(0, state.xb, 0, seqLen * dim);
+            state.x.addInPlace(0, state.xb, 0, seqLen * dim);   // residual; mixer left its output in xb
         }
         state.lastRowOffset = (seqLen - 1) * dim;
     }
 
     /** Batched attention: Q/K/V GEMMs, K/V written to the contiguous cache, causal flash attention,
      *  output projection. No RoPE / q-k norm / biases (mirrors {@link #attentionForward}). */
-    private void attentionForwardBatch(State state, int layer, int startPos, int seqLen) {
+    /** Full causal GQA attention (no RoPE / q-k norm / biases): Q/K/V projections, K/V appended to the
+     *  contiguous cache, then scalar flat-softmax for a single decode token or causal flash attention
+     *  for a chunk; output projection written back to {@code state.xb}. */
+    private void attention(State state, int layer, int startPos, int seqLen) {
         Configuration config = configuration;
         Weights w = weights;
         int dim = config.embeddingLength;
         int headSize = config.headSize;
+        int heads = config.numberOfHeads;
         int kvDim = config.kvDim();
         int queryDim = config.queryDim();
-        int kvMul = config.numberOfHeads / config.numberOfKeyValueHeads;
+        int kvMul = heads / config.numberOfKeyValueHeads;
 
         w.attnQ[layer].gemm(state.xb, dim, state.attnQ, queryDim, seqLen, queryDim, dim);
         w.attnK[layer].gemm(state.xb, dim, state.k, kvDim, seqLen, kvDim, dim);
@@ -379,8 +326,26 @@ final class Nemotron implements Model {
             state.v.copyTo(s * kvDim, valueCache, (startPos + s) * kvDim, kvDim);
         }
 
-        FlashAttention.causalPrefill((F32FloatTensor) state.attnQ, (F32FloatTensor) state.attnOut,
-                keyCache, valueCache, configuration.numberOfHeads, startPos, seqLen, headSize, kvDim, queryDim, kvMul);
+        if (seqLen == 1) {
+            int position = startPos;
+            float attScale = 1.0f / (float) Math.sqrt(headSize);
+            Parallel.parallelFor(0, heads, h -> {
+                int qOffset = h * headSize;
+                int attOffset = h * config.contextLength;
+                int kvHeadOffset = (h / kvMul) * headSize;
+                for (int t = 0; t <= position; t++) {
+                    state.att.setFloat(attOffset + t, state.attnQ.dot(qOffset, keyCache, t * kvDim + kvHeadOffset, headSize) * attScale);
+                }
+                state.att.softmaxInPlace(attOffset, position + 1);
+                state.attnOut.fillInPlace(qOffset, headSize, 0f);
+                for (int t = 0; t <= position; t++) {
+                    state.attnOut.saxpyInPlace(qOffset, valueCache, t * kvDim + kvHeadOffset, headSize, state.att.getFloat(attOffset + t));
+                }
+            });
+        } else {
+            FlashAttention.causalPrefill((F32FloatTensor) state.attnQ, (F32FloatTensor) state.attnOut,
+                    keyCache, valueCache, heads, startPos, seqLen, headSize, kvDim, queryDim, kvMul);
+        }
         w.attnOutput[layer].gemm(state.attnOut, queryDim, state.xb, dim, seqLen, dim, queryDim);
     }
 
@@ -538,11 +503,8 @@ final class Nemotron implements Model {
             }
         }
         // CSR grouping + gather + scatter is shared; the per-expert math (ungated, squared-ReLU) is here.
-        Moe.Routing r = new Moe.Routing();
+        Moe.Routing r = state.moeRouting;
         r.seqLen = seqLen; r.topK = topK; r.numExperts = numExperts;
-        r.rowTopE = state.moeRowTopE; r.rowTopP = state.moeRowTopP; r.counts = counts;
-        r.offsets = state.moeExpertOffsets; r.cursor = state.moeCursor;
-        r.rowByExpert = state.moeRowByExpert; r.probByExpert = state.moeProbByExpert;
         Moe.dispatch(r, dim, state.moeInputB, state.moeGather, state.moeDownB, state.moeOutB, null,
                 (e, n, gather, out) -> {
                     w.ffnUpExps[layer].gemm(gather, dim, state.moeUpB, expertFF, n, expertFF, dim, e * expertFF * dim);
@@ -600,7 +562,7 @@ final class Nemotron implements Model {
         // buffers stay single-row; the batched attention (attnQ/attnOut) and grouped-MoE (moe*B + CSR)
         // buffers are chunk-wide. Per-layer KV / conv-ring / ssm-state caches carry across chunks.
         final int capacity;
-        final FloatTensor x, xb, xb2, q, k, v, att, logits;
+        final FloatTensor x, xb, k, v, att, logits;
         final FloatTensor ssmInProj, ssmTmp;
         final float[] ssmZ, ssmXbc, ssmConvOut, ssmY, ssmDt;
         final FloatTensor attnQ, attnOut;     // batched attention (chunk rows)
@@ -611,6 +573,7 @@ final class Nemotron implements Model {
         final FloatTensor moeInputB, moeRouterB, moeOutB, moeGather, moeUpB, moeDownB, moeSharedUpB, moeSharedOutB;
         final int[] moeExpertCounts, moeExpertOffsets, moeCursor, moeRowByExpert, moeRowTopE;
         final float[] moeProbByExpert, moeRowTopP;
+        final Moe.Routing moeRouting;
         final FloatTensor[] keyCache, valueCache, ssmConvState, ssmState;
         int latestToken;
         boolean logitsValid;
@@ -627,8 +590,6 @@ final class Nemotron implements Model {
 
             this.x = F32FloatTensor.allocate(c * dim);
             this.xb = F32FloatTensor.allocate(c * dim);
-            this.xb2 = F32FloatTensor.allocate(queryDim);
-            this.q = F32FloatTensor.allocate(queryDim);
             this.k = F32FloatTensor.allocate(c * kvDim);
             this.v = F32FloatTensor.allocate(c * kvDim);
             this.att = F32FloatTensor.allocate(config.numberOfHeads * config.contextLength);
@@ -670,6 +631,7 @@ final class Nemotron implements Model {
             this.moeRowTopE = new int[c * tk];
             this.moeProbByExpert = new float[c * tk];
             this.moeRowTopP = new float[c * tk];
+            this.moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts, moeExpertOffsets, moeCursor, moeRowByExpert, moeProbByExpert);
 
             this.keyCache = new FloatTensor[config.numberOfLayers];
             this.valueCache = new FloatTensor[config.numberOfLayers];

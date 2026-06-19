@@ -69,12 +69,10 @@ final class Qwen35 implements Model {
         if (sequenceLength > s.capacity) {
             throw new IllegalArgumentException("sequenceLength " + sequenceLength + " exceeds batch capacity " + s.capacity);
         }
-        if (SINGLE_TOKEN_PREFILL || sequenceLength == 1) {
-            for (int i = 0; i < sequenceLength; i++) {
-                forward(s, tokens[tokenOffset + i], startPosition + i);
-            }
+        if (SINGLE_TOKEN_PREFILL) {
+            for (int i = 0; i < sequenceLength; i++) forward(s, tokens, tokenOffset + i, startPosition + i, 1);
         } else {
-            forwardBatch(s, tokens, tokenOffset, startPosition, sequenceLength);
+            forward(s, tokens, tokenOffset, startPosition, sequenceLength);
         }
         s.latestToken = tokens[tokenOffset + sequenceLength - 1];
         s.logitsValid = false;
@@ -116,36 +114,6 @@ final class Qwen35 implements Model {
     // deltas collapse to pos), so attention uses RoPE.applyInterleaved.
 
     // === Forward ===
-
-    private void forward(State state, int token, int position) {
-        Configuration config = configuration;
-        Weights w = weights;
-        int dim = config.embeddingLength;
-        float eps = config.rmsNormEps;
-
-        w.tokenEmbeddingTable.copyTo(token * dim, state.x, 0, dim);
-
-        for (int l = 0; l < config.numberOfLayers; l++) {
-            rmsnorm(state.xb, state.x, w.attnNorm[l], dim, eps);
-            if (config.isFullAttention[l]) {
-                attentionForward(state, l, position);
-            } else {
-                ssmForward(state, l);
-            }
-            // attention/SSM residual, then post-attention norm acts as the pre-FFN norm
-            state.xb.addInPlace(0, state.x, 0, dim);
-            state.xb.copyTo(0, state.x, 0, dim);
-            rmsnorm(state.xb, state.xb, w.postAttentionNorm[l], dim, eps);
-
-            if (config.isMoE()) {
-                moeForward(state, l);
-            } else {
-                ffnForward(state, l);
-            }
-            state.x.addInPlace(state.xb);
-        }
-        state.lastRowOffset = 0;
-    }
 
     /** Full softmax attention with QK-norm, fused query/output gate (attn_q -> [q | gate]), GQA and
      *  RoPE; output gated by sigmoid(gate). */
@@ -452,13 +420,15 @@ final class Qwen35 implements Model {
      * cache. Token-exact vs the single-token {@link #forward}. Leaves the post-final-layer residual
      * in {@code x[lastRowOffset]}; {@link #computeLogits} finalizes the last row.
      */
-    void forwardBatch(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
+    /** Single forward pass over {@code seqLen} tokens. The mixer (gated-delta-net SSM or full
+     *  attention) and the FFN (dense or MoE) each take their single-token core at {@code seqLen == 1}
+     *  (decode) or their batched core for a chunk; the norms + residuals are seqLen-agnostic. */
+    void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
         Configuration config = configuration;
         Weights w = weights;
         int dim = config.embeddingLength;
         float eps = config.rmsNormEps;
 
-        // Embed all rows
         for (int s = 0; s < seqLen; s++) {
             w.tokenEmbeddingTable.copyTo(tokens[tokenOffset + s] * dim, state.x, s * dim, dim);
         }
@@ -466,23 +436,22 @@ final class Qwen35 implements Model {
         for (int l = 0; l < config.numberOfLayers; l++) {
             F32FloatTensor attNormW = w.attnNorm[l], postW = w.postAttentionNorm[l];
             int fDim = dim;
-            // attention/SSM norm (rows independent -> parallel)
             Parallel.forRows(seqLen, s -> rmsnorm(state.xb, s * fDim, state.x, s * fDim, attNormW, fDim, eps));
 
             if (config.isFullAttention[l]) {
-                attentionForwardBatch(state, l, startPos, seqLen);
+                if (seqLen == 1) attentionForward(state, l, startPos); else attentionForwardBatch(state, l, startPos, seqLen);
             } else {
-                ssmForwardBatch(state, l, seqLen);
+                if (seqLen == 1) ssmForward(state, l); else ssmForwardBatch(state, l, seqLen);
             }
-            // sublayer residual, then post-attention norm acts as the pre-FFN norm (mirror forward)
+            // sublayer residual, then post-attention norm acts as the pre-FFN norm
             state.xb.addInPlace(0, state.x, 0, seqLen * dim);
             state.xb.copyTo(0, state.x, 0, seqLen * dim);
             Parallel.forRows(seqLen, s -> rmsnorm(state.xb, s * fDim, state.xb, s * fDim, postW, fDim, eps));
 
             if (config.isMoE()) {
-                moeForwardBatch(state, l, seqLen);
+                if (seqLen == 1) moeForward(state, l); else moeForwardBatch(state, l, seqLen);
             } else {
-                ffnForwardBatch(state, l, seqLen);
+                if (seqLen == 1) ffnForward(state, l); else ffnForwardBatch(state, l, seqLen);
             }
             state.x.addInPlace(0, state.xb, 0, seqLen * dim);
         }
@@ -790,11 +759,8 @@ final class Qwen35 implements Model {
             }
         }
         // CSR grouping + gather + scatter is shared; the per-expert math (gated SiLU) is here.
-        Moe.Routing r = new Moe.Routing();
+        Moe.Routing r = state.moeRouting;
         r.seqLen = seqLen; r.topK = topK; r.numExperts = numExperts;
-        r.rowTopE = state.moeRowTopE; r.rowTopP = state.moeRowTopP; r.counts = counts;
-        r.offsets = state.moeExpertOffsets; r.cursor = state.moeCursor;
-        r.rowByExpert = state.moeRowByExpert; r.probByExpert = state.moeProbByExpert;
         Moe.dispatch(r, dim, state.moeInputB, state.moeGather, state.moeDownB, state.moeOutB, null,
                 (e, n, gather, out) -> {
                     int gateUpOffset = e * gateUpStride;
@@ -990,6 +956,7 @@ final class Qwen35 implements Model {
                 moeSharedGateB, moeSharedUpB, moeSharedOutB, moeSharedInputGateB;
         final int[] moeExpertCounts, moeExpertOffsets, moeCursor, moeRowByExpert, moeRowTopE;
         final float[] moeProbByExpert, moeRowTopP;
+        final Moe.Routing moeRouting;
         int latestToken;
         boolean logitsValid;
         int lastRowOffset;     // offset into x of the row whose logits computeLogits finalizes
@@ -1071,6 +1038,7 @@ final class Qwen35 implements Model {
                 this.moeRowTopE = new int[c * tk];
                 this.moeProbByExpert = new float[c * tk];
                 this.moeRowTopP = new float[c * tk];
+                this.moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts, moeExpertOffsets, moeCursor, moeRowByExpert, moeProbByExpert);
             } else {
                 this.moeRouterLogits = this.moeOutput = this.moeExpertOut = this.moeGateResult = this.moeUpResult = null;
                 this.moeSharedGate = this.moeSharedUp = this.moeSharedOut = this.moeSharedInputGate = null;
@@ -1081,6 +1049,7 @@ final class Qwen35 implements Model {
                 this.moeSharedOutB = this.moeSharedInputGateB = null;
                 this.moeExpertCounts = this.moeExpertOffsets = this.moeCursor = this.moeRowByExpert = this.moeRowTopE = null;
                 this.moeProbByExpert = this.moeRowTopP = null;
+                this.moeRouting = null;
             }
 
             this.keyCache = new FloatTensor[config.numberOfLayers];

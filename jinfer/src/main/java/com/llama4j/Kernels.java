@@ -76,13 +76,22 @@ interface Kernels {
 final class JavaKernels implements Kernels {
 
     // Tile shape (rows x sequence-columns) for the 512-bit Q8_0 GEMM micro-kernel.
-    // Graal CE with xmm16-zmm31 allocation + VCVTPH2PS EVEX fix runs the wide tiles at (near) zero spills.
-    // Supported: "3x2" (legacy, no wide tile), "3x4", "4x4" (default), "2x8", "8x2", "1x1" (educational),
+    // Supported: "3x2" (legacy, narrow tile), "3x4", "4x4" (default), "2x8", "8x2", "1x1" (educational),
     //            "avx256" (pure 256-bit/AVX2, no 512-bit ops),
     //            "neon"/"neon-2x4" (pure 128-bit, for ARM NEON / Apple Silicon; also runs on SSE).
-    // 4x4 is fastest on prefill (~314 vs ~291 tok/s for the zero-spill 3x4): the extra accumulator
-    // width outweighs the single accumulator-phi spill that Graal CE's linear-scan cannot avoid at
-    // 16 vector loop-phis. Generation (single-token) uses the 1x1 path, so the tile only affects prefill.
+    //
+    // 4x4 is fastest on prefill, and the reason is WEIGHT REUSE, not register pressure. This kernel is
+    // memory-bandwidth bound on streaming the Q8_0 weights, so what matters is arithmetic intensity: a 4x4
+    // tile reuses each loaded weight vector across 4 sequence columns (4 accumulators) before eviction vs
+    // 3x2's 3, so it does more FLOPs per byte of weight fetched. Generation (single-token) uses the 1x1
+    // path, so the tile only affects prefill.
+    //
+    // The full 32 zmm registers (zmm0-zmm31) are available and used. Disassembly (GraalVM 25.1) confirms
+    // Graal allocates the 16 accumulators in the upper bank (zmm16-zmm31) and runs the k-loop SPILL-FREE;
+    // C2 instead spills accumulators to the stack each iteration, yet benchmarks within noise of Graal --
+    // because the kernel is bandwidth bound, the L1-resident spills overlap the weight-load stalls and cost
+    // almost nothing. (An older note here claimed a "16 vector loop-phi" cap forced a spill on Graal; that
+    // is obsolete -- no 16-register limit applies on current JDKs.)
     static final String GEMM_TILE = System.getProperty("llama.Q8_0GemmTile", "4x4");
     // Constant-foldable code so the hot dispatch avoids String.equals: 0=3x2, 1=3x4, 2=4x4, 3=2x8, 4=8x2.
     static final int GEMM_TILE_CODE = switch (GEMM_TILE) {

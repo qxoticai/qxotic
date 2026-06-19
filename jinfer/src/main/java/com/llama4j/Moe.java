@@ -13,11 +13,17 @@ final class Moe {
      *  selected expert and its combine weight for route k of row s; {@code counts[e]} is how many
      *  routes landed on expert e (the rest are filled by {@link #dispatch}). */
     static final class Routing {
-        int seqLen, topK, numExperts;
-        int[] rowTopE;
-        float[] rowTopP;
-        int[] counts, offsets, cursor, rowByExpert;
-        float[] probByExpert;
+        final int[] rowTopE, counts, offsets, cursor, rowByExpert;
+        final float[] rowTopP, probByExpert;
+        int seqLen, topK, numExperts;   // per-call scalars; the scratch arrays are wired once
+
+        /** Wraps a State's per-call CSR scratch so {@link #dispatch} needs no per-call allocation. */
+        Routing(int[] rowTopE, float[] rowTopP, int[] counts, int[] offsets,
+                int[] cursor, int[] rowByExpert, float[] probByExpert) {
+            this.rowTopE = rowTopE; this.rowTopP = rowTopP; this.counts = counts;
+            this.offsets = offsets; this.cursor = cursor; this.rowByExpert = rowByExpert;
+            this.probByExpert = probByExpert;
+        }
     }
 
     /** Expert {@code e}'s FFN over {@code n} gathered rows ({@code gather}, stride dim) → {@code n} rows

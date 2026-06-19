@@ -66,10 +66,6 @@ final class Gemma4 implements Model {
     /** Force the single-token reference forward even for multi-token chunks (parity debugging). */
     private static final boolean SINGLE_TOKEN_PREFILL = System.getProperty("gemma.singleTokenPrefill") != null;
 
-    // --- prefill profiling (-Dgemma.profile): nanos per phase across all layers of a forward ---
-    static final boolean PROFILE = System.getProperty("gemma.profile") != null;
-    static final long[] PROF = new long[8];
-    static final String[] PROF_NAMES = {"embed+ple_in", "qproj+qnorm+rope", "kvproj+norm+rope", "attn", "oproj+norm", "ffn", "ple_proj", "commit"};
     // -Dgemma.trace: dump per-layer residual-stream checkpoints (sum over all positions) matching
     // llama.cpp's eval-callback node names (inp_scaled, l_out-{l}), for cross-engine validation.
     static final boolean TRACE = System.getProperty("gemma.trace") != null;
@@ -79,21 +75,6 @@ final class Gemma4 implements Model {
         for (int i = 0; i < n; i++) s += t.getFloat(i);
         // sum + first 3 values of position 0 (cancellation-free, matches eval-callback's row-0 sample)
         System.err.printf("[trace] %s sum=%.6f v0=%.4f,%.4f,%.4f%n", name, s, t.getFloat(0), t.getFloat(1), t.getFloat(2));
-    }
-
-    private static long prof(int i, long since) {
-        if (!PROFILE) return since;     // zero overhead when profiling is off
-        long n = System.nanoTime();
-        PROF[i] += n - since;
-        return n;
-    }
-    static void profReport(int tokens) {
-        long tot = 0; for (long v : PROF) tot += v;
-        System.err.printf("[gemma.profile] %d tokens, total %.1f ms%n", tokens, tot / 1e6);
-        for (int i = 0; i < PROF.length; i++) {
-            System.err.printf("   %-18s %8.1f ms  (%4.1f%%)%n", PROF_NAMES[i], PROF[i] / 1e6, 100.0 * PROF[i] / tot);
-        }
-        java.util.Arrays.fill(PROF, 0L);
     }
 
     @Override
@@ -116,11 +97,9 @@ final class Gemma4 implements Model {
             throw new IllegalArgumentException("sequenceLength " + sequenceLength + " exceeds batch capacity " + s.capacity);
         }
         if (SINGLE_TOKEN_PREFILL) {
-            for (int i = 0; i < sequenceLength; i++) {
-                forward(s, tokens[tokenOffset + i], startPosition + i);
-            }
+            for (int i = 0; i < sequenceLength; i++) forward(s, tokens, tokenOffset + i, startPosition + i, 1);
         } else {
-            forwardBatch(s, tokens, tokenOffset, startPosition, sequenceLength);
+            forward(s, tokens, tokenOffset, startPosition, sequenceLength);
         }
         s.latestToken = tokens[tokenOffset + sequenceLength - 1];
         s.logitsValid = false;
@@ -351,6 +330,7 @@ final class Gemma4 implements Model {
         final FloatTensor moeShared, moeInputB, moeRouterScaled, moeRouterB, moeOutB, moeGather, moeDownB;
         final int[] moeExpertCounts, moeExpertOffsets, moeCursor, moeRowByExpert, moeRowTopE;
         final float[] moeProbByExpert, moeRowTopP;
+        final Moe.Routing moeRouting;
         int latestToken;
         boolean logitsValid;   // computeLogits memo for the current chunk
         int lastRowOffset;     // offset into x of the row whose logits computeLogits finalizes
@@ -395,11 +375,13 @@ final class Gemma4 implements Model {
                 this.moeRowTopE = new int[c * tk];
                 this.moeProbByExpert = new float[c * tk];
                 this.moeRowTopP = new float[c * tk];
+                this.moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts, moeExpertOffsets, moeCursor, moeRowByExpert, moeProbByExpert);
             } else {
                 this.moeShared = this.moeInputB = this.moeRouterScaled = this.moeRouterB = null;
                 this.moeOutB = this.moeGather = this.moeDownB = null;
                 this.moeExpertCounts = this.moeExpertOffsets = this.moeCursor = this.moeRowByExpert = this.moeRowTopE = null;
                 this.moeProbByExpert = this.moeRowTopP = null;
+                this.moeRouting = null;
             }
             this.keyCache = new FloatTensor[config.nLayerKvFromStart];
             this.valueCache = new FloatTensor[config.nLayerKvFromStart];
@@ -466,149 +448,18 @@ final class Gemma4 implements Model {
 
     // === Forward (single token at the given position) — reference path for parity testing ===
 
-    void forward(State state, int token, int position) {
-        Configuration config = configuration;
-        Weights weights = this.weights;
-        int dim = config.embeddingLength;
-        float sqrtDim = (float) Math.sqrt(dim);
-
-        weights.tokenEmbeddingTable.copyTo(token * dim, state.x, 0, dim);
-        state.x.mapInPlace(0, dim, v -> v * sqrtDim);
-
-        // Per-layer inputs (PLE)
-        int plDim = config.embeddingLengthPerLayer;
-        int plTotal = plDim * config.numberOfLayers;
-        if (plDim > 0 && weights.perLayerTokenEmbd != null) {
-            float sqrtPlDim = (float) Math.sqrt(plDim);
-            float projScale = (float) (1.0 / Math.sqrt(dim));
-            float inputScale = (float) (1.0 / Math.sqrt(2.0));
-            weights.perLayerModelProj.matmul(state.x, state.perLayerInputs, plTotal, dim);
-            state.perLayerInputs.mapInPlace(0, plTotal, v -> v * projScale);
-            for (int l = 0; l < config.numberOfLayers; l++) {
-                rmsnorm(state.perLayerInputs, l * plDim, state.perLayerInputs, l * plDim, weights.perLayerProjNorm, plDim, config.rmsNormEps);
-            }
-            long tokEmbOffset = (long) token * plTotal;
-            for (int i = 0; i < plTotal; i++) {
-                float tokEmb = weights.perLayerTokenEmbd.getFloat(tokEmbOffset + i) * sqrtPlDim;
-                state.perLayerInputs.setFloat(i, state.perLayerInputs.getFloat(i) + tokEmb);
-            }
-            state.perLayerInputs.mapInPlace(0, plTotal, v -> v * inputScale);
-        }
-
-        for (int l = 0; l < config.numberOfLayers; l++) {
-            boolean layerIsSWA = config.isSWA[l];
-            int headSize = config.headSize(l);
-            int halfHead = headSize / 2;
-            int queryDim = config.queryDim(l);
-            int kvDim = config.kvDim(l);
-            int hiddenDim = config.feedForwardLength[l];
-
-            rmsnorm(state.xb, state.x, weights.rmsAttWeight[l], dim, config.rmsNormEps);
-
-            // Q projection + per-head Q norm + RoPE
-            weights.wq[l].matmul(state.xb, state.q, queryDim, dim);
-            for (int h = 0; h < config.numberOfHeads; h++) {
-                rmsnorm(state.q, h * headSize, state.q, h * headSize, weights.attnQNorm[l], headSize, config.rmsNormEps);
-            }
-            F32FloatTensor freqsReal = layerIsSWA ? weights.freqCisRealSwa : weights.freqCisRealFull;
-            F32FloatTensor freqsImag = layerIsSWA ? weights.freqCisImagSwa : weights.freqCisImagFull;
-            RoPE.applyNeox(state.q, 0, config.numberOfHeads, headSize, halfHead, position, freqsReal, freqsImag);
-
-            int kvLayer = config.kvSourceLayer(l);
-            int nKvHeads = config.numberOfKeyValueHeadsPerLayer[l];
-            int kvMul = config.numberOfHeads / nKvHeads;
-            if (config.hasKv(l)) {
-                weights.wk[l].matmul(state.xb, state.k, kvDim, dim);
-                if (weights.wv[l] != null) {
-                    weights.wv[l].matmul(state.xb, state.v, kvDim, dim);
-                } else {
-                    state.k.copyTo(0, state.v, 0, kvDim);
-                }
-                for (int h = 0; h < nKvHeads; h++) {
-                    rmsnorm(state.k, h * headSize, state.k, h * headSize, weights.attnKNorm[l], headSize, config.rmsNormEps);
-                    rmsnormNoWeight(state.v, h * headSize, state.v, h * headSize, headSize, config.rmsNormEps);
-                }
-                RoPE.applyNeox(state.k, 0, nKvHeads, headSize, halfHead, position, freqsReal, freqsImag);
-                int kvPos = config.kvCacheIndex(l, position);
-                state.k.copyTo(0, state.keyCache[kvLayer], kvPos * kvDim, kvDim);
-                state.v.copyTo(0, state.valueCache[kvLayer], kvPos * kvDim, kvDim);
-            }
-
-            // Attention (scale = 1.0)
-            int attStart = layerIsSWA ? Math.max(0, position - config.slidingWindow + 1) : 0;
-            int finalKvLayer = kvLayer, finalKvDim = kvDim, finalAttStart = attStart, finalLayer = l, finalHeadSize = headSize, finalKvMul = kvMul;
-            Parallel.parallelFor(0, config.numberOfHeads, h -> {
-                int qOffset = h * finalHeadSize;
-                int attOffset = h * config.contextLength;
-                int kvHeadOffset = (h / finalKvMul) * finalHeadSize;
-                for (int t = finalAttStart; t <= position; t++) {
-                    int keyCacheOffset = config.kvCacheIndex(finalLayer, t) * finalKvDim + kvHeadOffset;
-                    float score = state.q.dot(qOffset, state.keyCache[finalKvLayer], keyCacheOffset, finalHeadSize);
-                    state.att.setFloat(attOffset + t, score);
-                }
-                state.att.softmaxInPlace(attOffset + finalAttStart, position - finalAttStart + 1);
-                state.xbK.fillInPlace(qOffset, finalHeadSize, 0f);
-                for (int t = finalAttStart; t <= position; t++) {
-                    int vOffset = config.kvCacheIndex(finalLayer, t) * finalKvDim + kvHeadOffset;
-                    float a = state.att.getFloat(attOffset + t);
-                    state.xbK.saxpyInPlace(qOffset, state.valueCache[finalKvLayer], vOffset, finalHeadSize, a);
-                }
-            });
-
-            // Output projection + post-attention norm + residual
-            weights.wo[l].matmul(state.xbK, state.xb2, dim, queryDim);
-            rmsnorm(state.xb2, state.xb2, weights.postAttentionNorm[l], dim, config.rmsNormEps);
-            state.x.addInPlace(0, state.xb2, 0, dim);
-
-            // FFN
-            if (config.isMoE() && weights.ffnGateInp[l] != null) {
-                moeFfnBatch(state, l, dim, hiddenDim, 1);
-            } else {
-                rmsnorm(state.xb, state.x, weights.rmsFfnWeight[l], dim, config.rmsNormEps);
-                weights.w1[l].matmul(state.xb, state.hb, hiddenDim, dim);
-                weights.w3[l].matmul(state.xb, state.hb2, hiddenDim, dim);
-                geluMultiply(state.hb, 0, state.hb2, 0, hiddenDim);
-                weights.w2[l].matmul(state.hb, state.xb, dim, hiddenDim);
-                rmsnorm(state.xb, state.xb, weights.postFfwNorm[l], dim, config.rmsNormEps);
-                state.x.addInPlace(0, state.xb, 0, dim);
-            }
-
-            // Per-layer embedding: GELU-gated projection
-            if (plDim > 0 && weights.perLayerInpGate != null) {
-                weights.perLayerInpGate[l].matmul(state.x, state.plGate, plDim, dim);
-                geluMultiply(state.plGate, 0, state.perLayerInputs, l * plDim, plDim);
-                weights.perLayerProj[l].matmul(state.plGate, state.plProj, dim, plDim);
-                rmsnorm(state.plProj, state.plProj, weights.perLayerPostNorm[l], dim, config.rmsNormEps);
-                state.x.addInPlace(0, state.plProj, 0, dim);
-            }
-
-            float scale = weights.layerOutputScale[l];
-            if (scale != 1.0f) {
-                state.x.mapInPlace(0, dim, v -> v * scale);
-            }
-        }
-
-        // logits are finalized lazily in computeLogits from x[lastRowOffset]
-        state.lastRowOffset = 0;
-        state.logitsValid = false;
-    }
-
-    // === Batched forward (prompt processing): seqLen tokens in one pass ===
-
     /**
-     * Processes {@code seqLen} tokens at positions {@code [startPos, startPos+seqLen)} in a single
-     * pass, turning the per-token projections (Q/K/V/O, shared MLP, PLE) into GEMMs. K/V for the
-     * whole chunk is written to the cache before attention, so causal attention reads the cache
-     * uniformly across the cached prefix and this chunk. Leaves the post-final-layer residual in
-     * {@code x}; {@link #computeLogits} finalizes the last row. Decode (seqLen=1) flows through
-     * here too (GEMM short-circuits to GEMV), so it stays equivalent to the single-token path.
+     * Single forward pass over {@code seqLen} tokens at {@code [startPos, startPos+seqLen)}: per-token
+     * Q/K/V/O, shared MLP and PLE projections become GEMMs (GEMM short-circuits to GEMV at seqLen=1,
+     * so one decode token flows through the same path), K/V written to the cache before attention,
+     * which dispatches scalar single-token vs SWA flash per chunk. Leaves the post-final-layer residual
+     * in {@code x}; {@link #computeLogits} finalizes the last row.
      */
-    void forwardBatch(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
+    void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
         Configuration config = configuration;
         Weights weights = this.weights;
         int dim = config.embeddingLength;
         float sqrtDim = (float) Math.sqrt(dim);
-        long cp = PROFILE ? System.nanoTime() : 0L;
 
         // Embed all rows + scale by sqrt(dim)
         for (int s = 0; s < seqLen; s++) {
@@ -640,7 +491,6 @@ final class Gemma4 implements Model {
                 }
             });
         }
-        cp = prof(0, cp);
         traceSum("inp_scaled", state.x, seqLen * dim);
 
         for (int l = 0; l < config.numberOfLayers; l++) {
@@ -672,7 +522,6 @@ final class Gemma4 implements Model {
                 }
                 RoPE.applyNeox(state.q, s * fQDim, config.numberOfHeads, fHeadSz, fHalf, fStart + s, freqsReal, freqsImag);
             });
-            cp = prof(1, cp);
 
             // K/V projection into the per-layer LINEAR batch buffer (own-KV layers): norm + RoPE.
             // NOT written to the ring cache yet — committed at chunk end so prior reads stay intact.
@@ -693,7 +542,6 @@ final class Gemma4 implements Model {
                     RoPE.applyNeox(bKl, s * kd, fNKv, fHeadSz, fHalf, fStart + s, freqsReal, freqsImag);
                 });
             }
-            cp = prof(2, cp);
 
             // Batched causal attention (scale = 1.0): flash/tiled for prefill, simple 2-pass for
             // decode (a single query doesn't amortize the flash tiling/rescales).
@@ -702,14 +550,12 @@ final class Gemma4 implements Model {
             } else {
                 decodeAttention(state, l, startPos, headSize, kvDim, queryDim, kvLayer, kvMul, layerIsSWA);
             }
-            cp = prof(3, cp);
 
             // O = wo @ xbK (GEMM), post-attention norm + residual (rows parallel)
             weights.wo[l].gemm(state.xbK, queryDim, state.xb2, dim, seqLen, dim, queryDim);
             Parallel.forRows(seqLen, s ->
                     rmsnorm(state.xb2, s * fDim, state.xb2, s * fDim, postAttW, fDim, config.rmsNormEps));
             state.x.addInPlace(0, state.xb2, 0, seqLen * dim);
-            cp = prof(4, cp);
 
             // FFN
             if (config.isMoE() && weights.ffnGateInp[l] != null) {
@@ -726,7 +572,6 @@ final class Gemma4 implements Model {
                         rmsnorm(state.xb, s * fDim, state.xb, s * fDim, postFfwW, fDim, config.rmsNormEps));
                 state.x.addInPlace(0, state.xb, 0, seqLen * dim);
             }
-            cp = prof(5, cp);
 
             // Per-layer embedding: GELU-gated projection (batched GEMMs, rows parallel)
             if (plDim > 0 && weights.perLayerInpGate != null) {
@@ -744,7 +589,6 @@ final class Gemma4 implements Model {
             if (scale != 1.0f) {
                 state.x.mapInPlace(0, seqLen * dim, v -> v * scale);
             }
-            cp = prof(6, cp);
             if (TRACE) traceSum("l_out-" + l, state.x, seqLen * dim);
         }
 
@@ -758,8 +602,6 @@ final class Gemma4 implements Model {
                 state.batchV[l].copyTo(s * kvDim, state.valueCache[l], kvPos * kvDim, kvDim);
             }
         }
-        cp = prof(7, cp);
-        if (PROFILE && seqLen > 1) profReport(seqLen);
 
         state.lastRowOffset = (seqLen - 1) * dim;
         state.logitsValid = false;
@@ -865,11 +707,8 @@ final class Gemma4 implements Model {
         }
         // CSR grouping + gather + scatter is shared; the per-expert math (gated GELU, combined gate+up)
         // is here. The per-expert down scale folds into the combine weight via expertScale.
-        Moe.Routing r = new Moe.Routing();
+        Moe.Routing r = state.moeRouting;
         r.seqLen = seqLen; r.topK = topK; r.numExperts = nExperts;
-        r.rowTopE = state.moeRowTopE; r.rowTopP = state.moeRowTopP; r.counts = counts;
-        r.offsets = state.moeExpertOffsets; r.cursor = state.moeCursor;
-        r.rowByExpert = state.moeRowByExpert; r.probByExpert = state.moeProbByExpert;
         Moe.dispatch(r, dim, state.moeInputB, state.moeGather, state.moeDownB, state.moeOutB, weights.ffnDownExpsScale[l],
                 (e, n, gather, out) -> {
                     // gate/up into state.hb (free after the shared MLP; maxHiddenDim >= gateUpDim), then GELU.

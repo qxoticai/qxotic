@@ -47,30 +47,6 @@ final class GptOss implements Model {
     /** Force the single-token reference forward even for multi-token chunks (parity debugging). */
     static final boolean SINGLE_TOKEN_PREFILL = System.getProperty("gptoss.singleTokenPrefill") != null;
 
-    // --- prefill profiling (-Dgptoss.profile): nanos per phase across all layers of a chunk ---
-    static final boolean PROFILE = System.getProperty("gptoss.profile") != null;
-    static final long[] PROF = new long[6];
-    static final String[] PROF_NAMES = {"embed", "attn_proj+rope", "flash_attn", "attn_out+commit", "moe_router", "moe_experts"};
-    private static long profCp;
-
-    /** Close the current phase into bucket {@code i}; zero overhead when profiling is off. */
-    private static void profMark(int i) {
-        if (!PROFILE) return;
-        long n = System.nanoTime();
-        PROF[i] += n - profCp;
-        profCp = n;
-    }
-
-    static void profReport(int tokens) {
-        long tot = 0;
-        for (long v : PROF) tot += v;
-        System.err.printf("[gptoss.profile] %d tokens, total %.1f ms%n", tokens, tot / 1e6);
-        for (int i = 0; i < PROF.length; i++) {
-            System.err.printf("   %-18s %8.1f ms  (%4.1f%%)%n", PROF_NAMES[i], PROF[i] / 1e6, 100.0 * PROF[i] / tot);
-        }
-        java.util.Arrays.fill(PROF, 0L);
-    }
-
     @Override
     public int batchCapacity() {
         return SINGLE_TOKEN_PREFILL ? 1 : Math.max(1, RuntimeFlags.MAX_PROMPT_SEQUENCE_LENGTH);
@@ -90,12 +66,10 @@ final class GptOss implements Model {
         if (sequenceLength > s.capacity) {
             throw new IllegalArgumentException("sequenceLength " + sequenceLength + " exceeds batch capacity " + s.capacity);
         }
-        if (SINGLE_TOKEN_PREFILL || sequenceLength == 1) {
-            for (int i = 0; i < sequenceLength; i++) {
-                forward(s, tokens[tokenOffset + i], startPosition + i);
-            }
+        if (SINGLE_TOKEN_PREFILL) {
+            for (int i = 0; i < sequenceLength; i++) forward(s, tokens, tokenOffset + i, startPosition + i, 1);
         } else {
-            forwardBatch(s, tokens, tokenOffset, startPosition, sequenceLength);
+            forward(s, tokens, tokenOffset, startPosition, sequenceLength);
         }
         s.latestToken = tokens[tokenOffset + sequenceLength - 1];
         s.logitsValid = false;
@@ -140,7 +114,6 @@ final class GptOss implements Model {
         }
     }
 
-    /** Rotate-half RoPE over one head: pairs (ic, ic+halfHead). cos/sin carry the YARN mscale. */
     /** gpt-oss clamped gated activation: gate clamped above at 7 with swish(alpha=1.702); up clamped
      *  to [-7,7] then (up+1) as the multiplicand. */
     static float clampedSwiglu(float gate, float up) {
@@ -160,71 +133,6 @@ final class GptOss implements Model {
     }
 
     // === Forward (single token) ===
-
-    private void forward(State state, int token, int position) {
-        Configuration config = configuration;
-        Weights w = weights;
-        int dim = config.embeddingLength;
-        int headSize = config.headSize;
-        int halfHead = headSize / 2;
-        int heads = config.numberOfHeads;
-        int kvHeads = config.numberOfKeyValueHeads;
-        int kvDim = config.kvDim();
-        int queryDim = config.queryDim();
-        int kvMul = heads / kvHeads;
-        float eps = config.rmsNormEps;
-        float attScale = 1.0f / (float) Math.sqrt(headSize);
-
-        w.tokenEmbeddingTable.copyTo(token * dim, state.x, 0, dim);
-
-        for (int l = 0; l < config.numberOfLayers; l++) {
-            rmsnorm(state.xb, 0, state.x, 0, w.attnNorm[l], dim, eps);
-
-            // Q/K/V projections (+biases), RoPE on Q and K.
-            w.wq[l].matmul(state.xb, state.q, queryDim, dim);
-            addBias(state.q, 0, w.attnQBias[l], 0, queryDim);
-            for (int h = 0; h < heads; h++) {
-                RoPE.applyNeox(state.q, h * headSize, position, w.ropeCos, w.ropeSin, halfHead);
-            }
-            w.wk[l].matmul(state.xb, state.k, kvDim, dim);
-            addBias(state.k, 0, w.attnKBias[l], 0, kvDim);
-            for (int h = 0; h < kvHeads; h++) {
-                RoPE.applyNeox(state.k, h * headSize, position, w.ropeCos, w.ropeSin, halfHead);
-            }
-            w.wv[l].matmul(state.xb, state.v, kvDim, dim);
-            addBias(state.v, 0, w.attnVBias[l], 0, kvDim);
-
-            int kvPos = config.kvCacheIndex(l, position);
-            state.k.copyTo(0, state.keyCache[l], kvPos * kvDim, kvDim);
-            state.v.copyTo(0, state.valueCache[l], kvPos * kvDim, kvDim);
-
-            int attStart = config.attentionStart(l, position);
-            FloatTensor keyCache = state.keyCache[l], valueCache = state.valueCache[l];
-            int finalL = l;
-            Parallel.parallelFor(0, heads, h -> {
-                int qOffset = h * headSize;
-                int attOffset = h * config.contextLength;
-                int kvHeadOffset = (h / kvMul) * headSize;
-                for (int t = attStart; t <= position; t++) {
-                    int kOff = config.kvCacheIndex(finalL, t) * kvDim + kvHeadOffset;
-                    state.att.setFloat(attOffset + t, state.q.dot(qOffset, keyCache, kOff, headSize) * attScale);
-                }
-                softmaxWithSink(state.att, attOffset + attStart, position - attStart + 1, w.attnSinks[finalL].getFloat(h));
-                state.xbK.fillInPlace(qOffset, headSize, 0f);
-                for (int t = attStart; t <= position; t++) {
-                    int vOff = config.kvCacheIndex(finalL, t) * kvDim + kvHeadOffset;
-                    state.xbK.saxpyInPlace(qOffset, valueCache, vOff, headSize, state.att.getFloat(attOffset + t));
-                }
-            });
-            w.wo[l].matmul(state.xbK, state.xb2, dim, queryDim);
-            addBias(state.xb2, 0, w.attnOutputBias[l], 0, dim);
-            state.x.addInPlace(0, state.xb2, 0, dim);
-
-            // MoE: post-attention norm -> router -> top-k (raw logits) -> renormalized softmax -> experts.
-            moeForward(state, l);
-        }
-        state.lastRowOffset = 0;
-    }
 
     /** Per-head softmax with an attention sink: the sink adds exp(sink-max) to the denominator only. */
     static void softmaxWithSink(FloatTensor tensor, int offset, int size, float sink) {
@@ -304,34 +212,34 @@ final class GptOss implements Model {
      * the post-final-layer residual in {@code x}; {@link #computeLogits} finalizes the last row.
      * Token-exact (greedy) vs the single-token {@link #forward} path.
      */
-    void forwardBatch(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
+    /** Single forward pass over {@code seqLen} tokens. One token (decode) is the {@code seqLen == 1}
+     *  case: projections route gemm->gemv and attention/MoE take their single-token cores. */
+    void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
         Configuration config = configuration;
         Weights w = weights;
         int dim = config.embeddingLength;
         float eps = config.rmsNormEps;
 
-        if (PROFILE) profCp = System.nanoTime();
-        // Embed all rows.
         for (int s = 0; s < seqLen; s++) {
-            int token = tokens[tokenOffset + s];
-            w.tokenEmbeddingTable.copyTo(token * dim, state.x, s * dim, dim);
+            w.tokenEmbeddingTable.copyTo(tokens[tokenOffset + s] * dim, state.x, s * dim, dim);
         }
-        profMark(0);
 
         for (int l = 0; l < config.numberOfLayers; l++) {
             int fDim = dim;
             F32FloatTensor attNormW = w.attnNorm[l];
-            // attention norm (rows are independent -> parallel)
             Parallel.forRows(seqLen, s -> rmsnorm(state.xb, s * fDim, state.x, s * fDim, attNormW, fDim, eps));
-            // attention output (post output-proj + bias) added to the residual.
-            attentionForwardBatch(state, l, startPos, seqLen);
-            // MoE output added to the residual.
-            moeForwardBatch(state, l, seqLen);
+            attention(state, l, startPos, seqLen);
+            moe(state, l, seqLen);
         }
-        if (PROFILE && seqLen > 1) profReport(seqLen);
 
         state.lastRowOffset = (seqLen - 1) * dim;
         state.logitsValid = false;
+    }
+
+    /** MoE FFN: single-token expert loop for decode, CSR-grouped GEMMs for a chunk. */
+    private void moe(State state, int l, int seqLen) {
+        if (seqLen == 1) moeForward(state, l);
+        else moeForwardBatch(state, l, seqLen);
     }
 
     /**
@@ -342,7 +250,7 @@ final class GptOss implements Model {
      * into each row's final softmax normalizer. Output proj + bias, residual add to x. The chunk's
      * K/V is committed to the ring/full cache at the end (position order).
      */
-    private void attentionForwardBatch(State state, int l, int startPos, int seqLen) {
+    private void attention(State state, int l, int startPos, int seqLen) {
         Configuration config = configuration;
         Weights w = weights;
         int dim = config.embeddingLength;
@@ -378,10 +286,32 @@ final class GptOss implements Model {
             }
         });
 
-        profMark(1);
-        // Flash attention over [cache prefix | this chunk], scale = 1/sqrt(headSize), sink-aware.
-        flashAttention(state, l, startPos, seqLen, headSize, kvDim, queryDim, kvMul, isSWA);
-        profMark(2);
+        // Single decode token: scalar flat-softmax with the per-head sink, reading prior keys from the
+        // cache and this token's key from the staged batch buffer. A chunk uses sink-aware flash attention.
+        if (seqLen == 1) {
+            int position = startPos;
+            int attStart = config.attentionStart(l, position);
+            float attScale = 1.0f / (float) Math.sqrt(headSize);
+            FloatTensor keyCache = state.keyCache[l], valueCache = state.valueCache[l];
+            int finalL = l;
+            Parallel.parallelFor(0, heads, h -> {
+                int qOffset = h * headSize;
+                int attOffset = h * config.contextLength;
+                int kvHeadOffset = (h / kvMul) * headSize;
+                for (int t = attStart; t <= position; t++) {
+                    int off = t < position ? config.kvCacheIndex(finalL, t) * kvDim + kvHeadOffset : kvHeadOffset;
+                    state.att.setFloat(attOffset + t, state.q.dot(qOffset, t < position ? keyCache : bK, off, headSize) * attScale);
+                }
+                softmaxWithSink(state.att, attOffset + attStart, position - attStart + 1, w.attnSinks[finalL].getFloat(h));
+                state.xbK.fillInPlace(qOffset, headSize, 0f);
+                for (int t = attStart; t <= position; t++) {
+                    int off = t < position ? config.kvCacheIndex(finalL, t) * kvDim + kvHeadOffset : kvHeadOffset;
+                    state.xbK.saxpyInPlace(qOffset, t < position ? valueCache : bV, off, headSize, state.att.getFloat(attOffset + t));
+                }
+            });
+        } else {
+            flashAttention(state, l, startPos, seqLen, headSize, kvDim, queryDim, kvMul, isSWA);
+        }
 
         // Output projection (GEMM) + bias, residual add to x.
         w.wo[l].gemm(state.xbK, queryDim, state.xb2, dim, seqLen, dim, queryDim);
@@ -396,7 +326,6 @@ final class GptOss implements Model {
             bK.copyTo(s * kvDim, state.keyCache[l], kvPos * kvDim, kvDim);
             bV.copyTo(s * kvDim, state.valueCache[l], kvPos * kvDim, kvDim);
         }
-        profMark(3);
     }
 
     /**
@@ -482,7 +411,6 @@ final class GptOss implements Model {
                 state.moeProbByExpert[pos] = state.moeRowTopP[s * topK + ki];
             }
         }
-        profMark(4);
 
         // Experts (grouped): per expert with n>0 rows, one GEMM each for gate/up/down; clampedSwiglu;
         // scatter-add prob-weighted output. gpt-oss has SEPARATE gate/up -> two buffers.
@@ -516,7 +444,6 @@ final class GptOss implements Model {
 
         // Add the MoE output to the residual (per row).
         Parallel.forRows(seqLen, s -> state.x.addInPlace(s * dim, state.moeOutB, s * dim, dim));
-        profMark(5);
     }
 
     // === Configuration ===
@@ -641,7 +568,7 @@ final class GptOss implements Model {
         // in the current chunk; att stays single-row (only the single-token reference path uses it).
         // The ring/full KV caches are the cross-row source of truth for prior chunks.
         final int capacity;
-        final FloatTensor x, xb, xb2, xbK, q, k, v, att, logits;
+        final FloatTensor x, xb, xb2, xbK, q, att, logits;
         // Linear (non-ring) K/V for the current chunk, per layer: flash attention reads in-chunk keys
         // here and prior keys from the cache, so a chunk longer than the SWA window never overwrites a
         // ring slot another row in the same chunk still needs. Committed to the cache at chunk end.
@@ -674,8 +601,6 @@ final class GptOss implements Model {
             this.xb2 = F32FloatTensor.allocate(c * dim);
             this.xbK = F32FloatTensor.allocate(c * queryDim);
             this.q = F32FloatTensor.allocate(c * queryDim);
-            this.k = F32FloatTensor.allocate(c * kvDim);
-            this.v = F32FloatTensor.allocate(c * kvDim);
             this.att = F32FloatTensor.allocate(config.numberOfHeads * config.contextLength);
             this.logits = F32FloatTensor.allocate(config.vocabularySize);
             this.moeInput = F32FloatTensor.allocate(dim);
