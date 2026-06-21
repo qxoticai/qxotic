@@ -14,6 +14,7 @@
 
     <modules>
         <module>jinfer-core</module>
+        <module>jinfer-jinja</module>
         <module>jinfer-models</module>
         <module>jinfer-server</module>
     </modules>
@@ -29,6 +30,11 @@
                 <dependency>
                     <groupId>com.qxotic</groupId>
                     <artifactId>jinfer-core</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
+                <dependency>
+                    <groupId>com.qxotic</groupId>
+                    <artifactId>jinfer-jinja</artifactId>
                     <version>${project.version}</version>
                 </dependency>
                 <dependency>

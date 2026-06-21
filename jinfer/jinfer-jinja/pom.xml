@@ -10,11 +10,12 @@
         <version>0.1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>jinfer-models</artifactId>
+    <artifactId>jinfer-jinja</artifactId>
     <packaging>jar</packaging>
 
-    <name>jinfer-models</name>
-    <description>LLM model architecture implementations</description>
+    <name>jinfer-jinja</name>
+    <description>Jinja chat-template engine for prompt generation. Public API is prompt generation
+        only (JinjaRenderer.compiler -> ChatTemplate); the lexer/parser/AST stay internal.</description>
 
     <dependencies>
         <dependency>
@@ -23,11 +24,7 @@
         </dependency>
         <dependency>
             <groupId>com.qxotic</groupId>
-            <artifactId>jinfer-jinja</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>gguf</artifactId>
+            <artifactId>json</artifactId>
         </dependency>
     </dependencies>
 </project>
