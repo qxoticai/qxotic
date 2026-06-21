@@ -1,16 +1,18 @@
 # Build output
 target/
 *.class
-*.jar
+
+# Fat jar
+jinfer.jar
 
 # Native images and PGO artifacts
-lfm25
-lfm25.pgo
+jinfer
+jinfer.pgo
 *.debug
 default.iprof
 *.iprof
 
-# Native GEMM library build artifacts (built from lfm25jni.c via make libnative / liblfm25jni.a)
+# Native GEMM library build artifacts (built from jinferjni.c via make libnative / libjinferjni.a)
 *.o
 *.so
 *.a

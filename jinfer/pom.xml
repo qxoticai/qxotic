@@ -1,131 +1,90 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  Maven build for lfm25.java. Standard Maven layout: main sources in src/main/java, the
-  parity/integration tests in src/test/java, chat-template fixtures in src/test/resources.
-  buildtools/LFM25StaticGemmFeature.java is NOT built here - it needs GraalVM's unexported
-  svm.jar internals and belongs to `make native-static-gemm`. The Makefile shares this layout
-  (it compiles the same src trees) and owns the native (lfm25jni.c / gemm.metal) builds.
-
-    mvn package                 fat jar -> target/lfm25.jar (run with the same flags as below)
-    mvn -Pnative package        native image -> target/lfm25 (needs GraalVM >= 25.0.3, see
-                                check-native-image in the Makefile; set JAVA_HOME accordingly)
-    mvn spotless:check|apply    formatting hygiene (unused imports, whitespace)
-    mvn exec:java -Dexec.mainClass=com.llama4j.KernelParityTest   kernel parity tests
-
-  Run the fat jar:
-    java -)-enable-preview -)-add-modules jdk.incubator.vector,jdk.httpserver \
-         -)-enable-native-access=ALL-UNNAMED -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0 \
-         -jar target/lfm25.jar -)-help        (replace "-)" with two dashes; XML comments
-                                               cannot contain a double hyphen)
--->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.llama4j</groupId>
-    <artifactId>lfm25</artifactId>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jinfer-parent</artifactId>
     <version>0.1.0-SNAPSHOT</version>
-    <packaging>jar</packaging>
+    <packaging>pom</packaging>
 
-    <name>lfm25.java</name>
-    <description>LFM2.5 inference in pure Java (Vector API kernels, GGUF, OpenAI-compatible server)</description>
+    <name>jinfer (parent)</name>
+    <description>Java LLM inference engine (multi-module)</description>
+
+    <modules>
+        <module>jinfer-core</module>
+        <module>jinfer-models</module>
+        <module>jinfer-server</module>
+    </modules>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>25</maven.compiler.release>
-        <!-- model baked into the image heap at build time; empty = none (see AOT.preLoadGGUF) -->
-        <llama.PreloadGGUF></llama.PreloadGGUF>
+        <jinfer.PreloadGGUF></jinfer.PreloadGGUF>
     </properties>
 
-    <dependencies>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>gguf</artifactId>
-            <version>0.1.0</version>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>toknroll-core</artifactId>
-            <version>0.1.0</version>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>toknroll-gguf</artifactId>
-            <version>0.1.0</version>
-        </dependency>
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>json</artifactId>
-            <version>0.1.0</version>
-        </dependency>
-    </dependencies>
+    <dependencyManagement>
+        <dependencies>
+                <dependency>
+                    <groupId>com.qxotic</groupId>
+                    <artifactId>jinfer-core</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
+                <dependency>
+                    <groupId>com.qxotic</groupId>
+                    <artifactId>jinfer-models</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
+                <dependency>
+                    <groupId>com.qxotic</groupId>
+                    <artifactId>gguf</artifactId>
+                <version>0.1.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.qxotic</groupId>
+                <artifactId>toknroll-core</artifactId>
+                <version>0.1.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.qxotic</groupId>
+                <artifactId>toknroll-gguf</artifactId>
+                <version>0.1.0</version>
+            </dependency>
+            <dependency>
+                <groupId>com.qxotic</groupId>
+                <artifactId>json</artifactId>
+                <version>0.1.0</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <build>
-        <!-- standard Maven layout: src/main/java, src/test/java, src/test/resources -->
-        <finalName>lfm25</finalName>
-
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.14.0</version>
+                    <configuration>
+                        <enablePreview>true</enablePreview>
+                        <compilerArgs>
+                            <arg>--add-modules</arg>
+                            <arg>jdk.incubator.vector,jdk.httpserver</arg>
+                        </compilerArgs>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.5.2</version>
+                    <configuration>
+                        <skipTests>true</skipTests>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
         <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.14.0</version>
-                <configuration>
-                    <enablePreview>true</enablePreview>
-                    <compilerArgs>
-                        <arg>--add-modules</arg>
-                        <arg>jdk.incubator.vector,jdk.httpserver</arg>
-                    </compilerArgs>
-                </configuration>
-            </plugin>
-
-            <!-- the parity/integration tests are plain main() programs, not JUnit: run them via
-                 `make test` / `make test-server`, or mvn exec:java as shown in the header -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.5.2</version>
-                <configuration>
-                    <skipTests>true</skipTests>
-                </configuration>
-            </plugin>
-
-            <!-- fat jar: target/lfm25.jar, self-contained except the model file -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>3.6.0</version>
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>shade</goal>
-                        </goals>
-                        <configuration>
-                            <createDependencyReducedPom>false</createDependencyReducedPom>
-                            <transformers>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.llama4j.LFM25</mainClass>
-                                </transformer>
-                            </transformers>
-                            <filters>
-                                <filter>
-                                    <artifact>*:*</artifact>
-                                    <excludes>
-                                        <exclude>META-INF/*.SF</exclude>
-                                        <exclude>META-INF/*.DSA</exclude>
-                                        <exclude>META-INF/*.RSA</exclude>
-                                    </excludes>
-                                </filter>
-                            </filters>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-
-            <!-- formatting hygiene only (the very traps this codebase kept hitting: stale
-                 imports, trailing whitespace). A full reformatter (palantirJavaFormat etc.)
-                 would churn every file - enable deliberately if ever wanted. -->
             <plugin>
                 <groupId>com.diffplug.spotless</groupId>
                 <artifactId>spotless-maven-plugin</artifactId>
@@ -135,7 +94,6 @@
                         <includes>
                             <include>src/main/java/**/*.java</include>
                             <include>src/test/java/**/*.java</include>
-                            <include>buildtools/*.java</include>
                         </includes>
                         <removeUnusedImports/>
                         <trimTrailingWhitespace/>
@@ -145,53 +103,4 @@
             </plugin>
         </plugins>
     </build>
-
-    <profiles>
-        <!-- mvn -Pnative package: native image with the same flags as `make native`.
-             GraalVM >= 25.0.3 required (25.0.x earlier miscompiles the Vector API kernels);
-             the statically-linked GEMM flavor stays in `make native-static-gemm` (unexported
-             SVM internals). -->
-        <profile>
-            <id>native</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.graalvm.buildtools</groupId>
-                        <artifactId>native-maven-plugin</artifactId>
-                        <version>0.10.6</version>
-                        <extensions>true</extensions>
-                        <executions>
-                            <execution>
-                                <id>build-native</id>
-                                <phase>package</phase>
-                                <goals>
-                                    <goal>compile-no-fork</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                        <configuration>
-                            <imageName>lfm25</imageName>
-                            <mainClass>com.llama4j.LFM25</mainClass>
-                            <buildArgs>
-                                <buildArg>-O3</buildArg>
-                                <buildArg>-march=native</buildArg>
-                                <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
-                                <buildArg>-H:+VectorAPISupport</buildArg>
-                                <buildArg>-H:+ForeignAPISupport</buildArg>
-                                <buildArg>--enable-preview</buildArg>
-                                <buildArg>--add-modules</buildArg>
-                                <buildArg>jdk.incubator.vector,jdk.httpserver</buildArg>
-                                <buildArg>--enable-native-access=ALL-UNNAMED</buildArg>
-                                <buildArg>-J--enable-native-access=ALL-UNNAMED</buildArg>
-                                <buildArg>--initialize-at-build-time=com.llama4j.AOT,com.llama4j.FloatTensor,com.llama4j.,com.qxotic.</buildArg>
-                                <buildArg>--initialize-at-run-time=com.llama4j.RuntimeFlags</buildArg>
-                                <buildArg>-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0</buildArg>
-                                <buildArg>-Dllama.PreloadGGUF=${llama.PreloadGGUF}</buildArg>
-                            </buildArgs>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-    </profiles>
 </project>

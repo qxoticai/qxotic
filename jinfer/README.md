@@ -1,4 +1,4 @@
-# LFM25.java
+# jinfer
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/54f57e18-b26e-4121-8ef8-9522f28ad0b4">
@@ -11,7 +11,7 @@
 [![GraalVM](https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F)](https://www.graalvm.org/latest/reference-manual/native-image/)
 ![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
 
-Fast, zero-dependency, inference engine for [Liquid AI](https://www.liquid.ai/) [LFM2.5 models](https://www.liquid.ai/models) in pure Java.
+Fast, zero-dependency LLM inference engine for multiple model architectures in pure Java.
 
 </div>
 
@@ -19,7 +19,6 @@ Fast, zero-dependency, inference engine for [Liquid AI](https://www.liquid.ai/) 
 
 ## Features
 
-- Based on [llama3.java](https://github.com/mukel/llama3.java)
 - Multi-architecture behind a small `Model` interface (each model is one implementation):
   - Liquid AI **LFM2.5** GGUF models (dense and MoE, with short-convolution layers)
   - Google **Gemma 4** GGUF models — the per-layer-embedding E-series (E2B/E4B) and the
@@ -40,14 +39,14 @@ Fast, zero-dependency, inference engine for [Liquid AI](https://www.liquid.ai/) 
 
 ## Setup
 
-Download an [LFM2.5 model](https://www.liquid.ai/models) in GGUF format or convert one with [llama.cpp](https://github.com/ggml-org/llama.cpp). The runner expects a `.gguf` file compatible with LFM2.5 metadata.
+Download a GGUF model from Hugging Face or convert one with [llama.cpp](https://github.com/ggml-org/llama.cpp).
 
 #### Optional: pure quantizations
 
 `Q4_0` files are often mixed-quant in practice. A pure quantization is not required, but can be generated from an F32/F16/BF16 GGUF source with `llama-quantize` from [llama.cpp](https://github.com/ggml-org/llama.cpp):
 
 ```bash
-./llama-quantize --pure ./LFM2.5-1.2B-Instruct-BF16.gguf ./LFM2.5-1.2B-Instruct-Q4_0.gguf Q4_0
+./llama-quantize --pure ./model-BF16.gguf ./model-Q4_0.gguf Q4_0
 ```
 
 Pick any supported target quantization, for example `Q4_0`, `Q4_1`, `Q4_K`, `Q5_K`, `Q6_K`, or `Q8_0`.
@@ -60,28 +59,59 @@ Java 25 is required (the build targets release 25 with `--enable-preview`), in p
 Build the fat jar with Maven (or `make jar`):
 
 ```bash
-mvn package            # -> target/lfm25.jar
+mvn package            # -> target/jinfer.jar
 ```
 
 Run it (the incubator/native-access flags are required at run time):
 
 ```bash
 JAVA_FLAGS="--enable-preview --add-modules jdk.incubator.vector,jdk.httpserver \
-  --enable-native-access=ALL-UNNAMED -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0"
+  --enable-native-access=ALL-UNNAMED -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0 \
+  -XX:CompileCommand=inline,com.qxotic.jinfer.Llama::f16DecodeVector \
+  -XX:CompileCommand=inline,com.qxotic.jinfer.F16FloatTensor::f16ToF32Vector \
+  -XX:CompileCommand=inline,com.qxotic.jinfer.FlashAttention::loadF16 \
+  -XX:CompileCommand=inline,com.qxotic.jinfer.FlashAttention::loadF32"
+# The CompileCommand inline hints keep the f16 KV-decode vectors register-resident; without them
+# the flash-prefill kernels box on the heap (~15x slower). The Makefile passes these automatically.
 
-java $JAVA_FLAGS -jar target/lfm25.jar --help
-java $JAVA_FLAGS -jar target/lfm25.jar --model ./LFM2.5-1.2B-Instruct-Q8_0.gguf --chat
-java $JAVA_FLAGS -jar target/lfm25.jar --model ./LFM2.5-1.2B-Instruct-Q8_0.gguf --prompt "Tell me a joke"
-java $JAVA_FLAGS -jar target/lfm25.jar --model ./LFM2.5-1.2B-Instruct-Q8_0.gguf --server --port 17325
+java $JAVA_FLAGS -jar target/jinfer.jar --help
+java $JAVA_FLAGS -jar target/jinfer.jar --model ./model.gguf --chat
+java $JAVA_FLAGS -jar target/jinfer.jar --model ./model.gguf --prompt "Tell me a joke"
+java $JAVA_FLAGS -jar target/jinfer.jar --model ./model.gguf --server --port 17325
 ```
 
-`mvn -Pnative package` (GraalVM ≥ 25.0.3) or `make native` produces a self-contained `lfm25` binary
+`mvn -Pnative package` (GraalVM ≥ 25.0.3) or `make native` produces a self-contained `jinfer` binary
 with no runtime flags required.
+
+## Performance tuning
+
+The hot kernels adapt to the CPU and JIT automatically; the defaults are right for most setups.
+
+**Q8_0 GEMM tile** (`-Djinfer.Q8_0GemmTile`, default `auto`). Prefill streams the quantized weights
+through a register-tiled GEMM. The widest tile, `4x4`, has the best weight reuse but holds 16 vector
+accumulators, so it is the fastest choice **only on AVX-512 under a compiler that keeps all 16 in
+registers**. `auto` picks per environment, with no runtime benchmarking:
+
+| Environment | Tile | Why |
+| --- | --- | --- |
+| ARM (aarch64) | `neon` | dedicated 128-bit NEON kernel |
+| AVX-512 + Graal `jvmci ≥ 25.1` | `4x4` | allocates `zmm16–zmm31`, runs spill-free |
+| AVX-512 + HotSpot C2 (OpenJDK) | `4x4` | C2 spills, but the bandwidth-bound weight stream hides it |
+| AVX-512 + older Graal (`jvmci < 25.1`) | `3x2` | caps at `zmm0–zmm15`; `4x4` spills hard (≈ −45%) |
+| AVX-512 + unrecognized VM | `3x2` | conservative — no evidence it holds 16 accumulators |
+| AVX2 (256-bit) | `avx256` | not AVX-512, so never `4x4` |
+| no wide vectors | `scalar` | — |
+
+Override with e.g. `-Djinfer.Q8_0GemmTile=4x4`. Decode (single-token) is unaffected — it uses a
+4-accumulator kernel that never spills. See `JavaKernels.autoTileCode` for the authoritative logic.
+
+**Flash prefill attention** is on by default (`-Djinfer.flashAttention=false` to disable); it needs the
+f16-decode inline hints shown in `$JAVA_FLAGS` above (the Makefile and the native image pass them).
 
 ## CLI
 
 ```text
-Usage:  java -jar lfm25.jar [options]
+Usage:  java -jar jinfer.jar [options]
 
 Options:
   --model, -m <path>            required, path to .gguf file
@@ -110,7 +140,7 @@ Options:
 Start the server:
 
 ```bash
-java $JAVA_FLAGS -jar target/lfm25.jar --model ./LFM2.5-1.2B-Instruct-Q8_0.gguf --server --host 127.0.0.1 --port 17325
+java $JAVA_FLAGS -jar target/jinfer.jar --model ./model.gguf --server --host 127.0.0.1 --port 17325
 ```
 
 Then call `/v1/chat/completions` with any OpenAI-compatible client:
@@ -118,14 +148,17 @@ Then call `/v1/chat/completions` with any OpenAI-compatible client:
 ```bash
 curl http://127.0.0.1:17325/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -d '{"model":"lfm25","messages":[{"role":"user","content":"Tell me a joke"}],"max_tokens":128}'
+  -d '{"model":"jinfer","messages":[{"role":"user","content":"Tell me a joke"}],"max_tokens":128}'
 ```
 
 The server exposes:
 
 - `GET /v1/models`
+- `GET /health`
+- `GET /metrics`
 - `POST /v1/chat/completions`
 - `POST /v1/completions`
+- `POST /v1/responses`
 
 Both completion endpoints support `stream: true`, `temperature`, `top_p`, `seed`, `max_tokens`, `max_completion_tokens`, and `stop`. Only `n: 1` is supported.
 
@@ -139,15 +172,15 @@ The server converts that JSON to OpenAI's `message.tool_calls` response format w
 
 ### GraalVM Native Image
 
-Compile with `make native` to produce a `lfm25` executable, then:
+Compile with `make native` to produce a `jinfer` executable, then:
 
 ```bash
-./lfm25 --model ./LFM2.5-8B-A1B-Q8_0.gguf --chat
+./jinfer --model ./model.gguf --chat
 ```
 
 ### AOT model preloading
 
-`LFM25.java` supports AOT model preloading to reduce parse overhead and time-to-first-token (TTFT).
+jinfer supports AOT model preloading to reduce parse overhead and time-to-first-token (TTFT).
 
 To AOT pre-load a GGUF model:
 ```bash

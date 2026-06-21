@@ -1,5 +1,5 @@
 // Portable native GEMM entry points, bound by
-// com.llama4j.NativeKernels (-Dllama.nativeGemmLib=<path> on the JVM, or statically
+// com.qxotic.jinfer.NativeKernels (-Dllama.nativeGemmLib=<path> on the JVM, or statically
 // linked into a native image with -Dllama.staticGemm=true).
 //
 // The file must compile on every platform. Fast kernels are enabled by capability bits; platforms
@@ -2475,7 +2475,7 @@ static void neon_native_gemv(jlong weights, jlong x, jlong out, jint dim0, jint 
 // Direct JNI-mangled exports: the JVM binds native methods to these by symbol name when the
 // .so is loaded, and a native image statically links them (LFM25StaticGemmFeature) — no
 // JNI_OnLoad / RegisterNatives needed in either mode. The Java native methods live in
-// com.llama4j.NativeKernels; renaming that class requires renaming these symbols.
+// com.qxotic.jinfer.NativeKernels; renaming that class requires renaming these symbols.
 //
 // The boundary is pure pointers and bytes: `weights` already points at the first Q8_0 block
 // of the operated row range, `x`/`out` at the first activation/output row, and the row
@@ -2483,7 +2483,7 @@ static void neon_native_gemv(jlong weights, jlong x, jlong out, jint dim0, jint 
 // Activations/outputs live in native MemorySegments, so no GetPrimitiveArrayCritical
 // (no GC interaction at all on this path).
 
-JNIEXPORT jint JNICALL Java_com_llama4j_NativeKernels_nativeCapabilities(JNIEnv *env, jclass cls) {
+JNIEXPORT jint JNICALL Java_com_qxotic_jinfer_NativeKernels_nativeCapabilities(JNIEnv *env, jclass cls) {
     (void) env;
     (void) cls;
     int caps = LFM25_CAP_Q8_0_GEMM | LFM25_CAP_Q4_0_GEMM | LFM25_CAP_Q4_K_GEMM | LFM25_CAP_Q5_K_GEMM | LFM25_CAP_Q6_K_GEMM
@@ -2507,7 +2507,7 @@ JNIEXPORT jint JNICALL Java_com_llama4j_NativeKernels_nativeCapabilities(JNIEnv 
     return caps;
 }
 
-JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemm(JNIEnv *env, jclass cls,
+JNIEXPORT void JNICALL Java_com_qxotic_jinfer_NativeKernels_nativeGemm(JNIEnv *env, jclass cls,
         jlong weights, jlong x, jlong x_stride_bytes, jlong out, jlong out_stride_bytes,
         jint sequence_length, jint dim0, jint dim1, jint row_tile, jint seq_tile) {
     (void) env;
@@ -2563,7 +2563,7 @@ JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemm(JNIEnv *env, jc
     c_gemm_q8_0(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
 }
 
-JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemv(JNIEnv *env, jclass cls,
+JNIEXPORT void JNICALL Java_com_qxotic_jinfer_NativeKernels_nativeGemv(JNIEnv *env, jclass cls,
         jlong weights, jlong x, jlong out, jint dim0, jint dim1) {
     (void) env;
     (void) cls;
@@ -2597,7 +2597,7 @@ JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemv(JNIEnv *env, jc
     (void) weights; (void) x; (void) out; (void) dim0; (void) dim1;
 }
 
-JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmQ40(JNIEnv *env, jclass cls,
+JNIEXPORT void JNICALL Java_com_qxotic_jinfer_NativeKernels_nativeGemmQ40(JNIEnv *env, jclass cls,
         jlong weights, jlong x, jlong x_stride_bytes, jlong out, jlong out_stride_bytes,
         jint sequence_length, jint dim0, jint dim1) {
     (void) env;
@@ -2615,7 +2615,7 @@ JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmQ40(JNIEnv *env,
     c_gemm_q4_0(weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
 }
 
-JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmQ4K(JNIEnv *env, jclass cls,
+JNIEXPORT void JNICALL Java_com_qxotic_jinfer_NativeKernels_nativeGemmQ4K(JNIEnv *env, jclass cls,
         jlong weights, jlong x, jlong x_stride_bytes, jlong out, jlong out_stride_bytes,
         jint sequence_length, jint dim0, jint dim1) {
     (void) env;
@@ -2639,7 +2639,7 @@ JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmQ4K(JNIEnv *env,
     c_gemm_kquant(c_q4k_dot, Q4K_BLOCK_BYTES, weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
 }
 
-JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmQ5K(JNIEnv *env, jclass cls,
+JNIEXPORT void JNICALL Java_com_qxotic_jinfer_NativeKernels_nativeGemmQ5K(JNIEnv *env, jclass cls,
         jlong weights, jlong x, jlong x_stride_bytes, jlong out, jlong out_stride_bytes,
         jint sequence_length, jint dim0, jint dim1) {
     (void) env;
@@ -2657,7 +2657,7 @@ JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmQ5K(JNIEnv *env,
     c_gemm_kquant(c_q5k_dot, Q5K_BLOCK_BYTES, weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
 }
 
-JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmQ6K(JNIEnv *env, jclass cls,
+JNIEXPORT void JNICALL Java_com_qxotic_jinfer_NativeKernels_nativeGemmQ6K(JNIEnv *env, jclass cls,
         jlong weights, jlong x, jlong x_stride_bytes, jlong out, jlong out_stride_bytes,
         jint sequence_length, jint dim0, jint dim1) {
     (void) env;
@@ -2681,7 +2681,7 @@ JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmQ6K(JNIEnv *env,
     c_gemm_kquant(c_q6k_dot, Q6K_BLOCK_BYTES, weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
 }
 
-JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmBF16(JNIEnv *env, jclass cls,
+JNIEXPORT void JNICALL Java_com_qxotic_jinfer_NativeKernels_nativeGemmBF16(JNIEnv *env, jclass cls,
         jlong weights, jlong x, jlong x_stride_bytes, jlong out, jlong out_stride_bytes,
         jint sequence_length, jint dim0, jint dim1) {
     (void) env;
@@ -2705,7 +2705,7 @@ JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmBF16(JNIEnv *env
     c_gemm_dense(c_bf16_dot, 2, weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
 }
 
-JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmF16(JNIEnv *env, jclass cls,
+JNIEXPORT void JNICALL Java_com_qxotic_jinfer_NativeKernels_nativeGemmF16(JNIEnv *env, jclass cls,
         jlong weights, jlong x, jlong x_stride_bytes, jlong out, jlong out_stride_bytes,
         jint sequence_length, jint dim0, jint dim1) {
     (void) env;
@@ -2729,7 +2729,7 @@ JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmF16(JNIEnv *env,
     c_gemm_dense(c_f16_dot, 2, weights, x, x_stride_bytes, out, out_stride_bytes, sequence_length, dim0, dim1);
 }
 
-JNIEXPORT void JNICALL Java_com_llama4j_NativeKernels_nativeGemmF32(JNIEnv *env, jclass cls,
+JNIEXPORT void JNICALL Java_com_qxotic_jinfer_NativeKernels_nativeGemmF32(JNIEnv *env, jclass cls,
         jlong weights, jlong x, jlong x_stride_bytes, jlong out, jlong out_stride_bytes,
         jint sequence_length, jint dim0, jint dim1) {
     (void) env;
