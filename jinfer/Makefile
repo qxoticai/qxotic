@@ -40,7 +40,7 @@ DEPS = libs/gguf-0.1.0.jar libs/toknroll-core-0.1.0.jar libs/toknroll-gguf-0.1.0
 DEPS_CLASSPATH = libs/gguf-0.1.0.jar:libs/toknroll-core-0.1.0.jar:libs/toknroll-gguf-0.1.0.jar:libs/json-0.1.0.jar
 
 # Multi-module classpath (Maven-compiled)
-MM_CP = jinfer-core/target/classes:jinfer-models/target/classes:jinfer-server/target/classes
+MM_CP = jinfer-core/target/classes:jinfer-jinja/target/classes:jinfer-models/target/classes:jinfer-server/target/classes
 
 libs/%.jar:
 	mkdir -p libs
@@ -77,7 +77,7 @@ test: test-compile
 	$(JAVA) $(JAVA_RUNTIME_OPTIONS) \
 		-cp $(MM_CP):jinfer-core/target/test-classes:$(DEPS_CLASSPATH) com.qxotic.jinfer.GrammarTest
 	$(JAVA) $(JAVA_RUNTIME_OPTIONS) \
-		-cp $(MM_CP):jinfer-models/target/test-classes:$(DEPS_CLASSPATH) com.qxotic.jinfer.JinjaRendererTest
+		-cp $(MM_CP):jinfer-jinja/target/test-classes:$(DEPS_CLASSPATH) com.qxotic.jinfer.jinja.JinjaRendererTest
 	$(JAVA) $(JAVA_RUNTIME_OPTIONS) --enable-native-access=ALL-UNNAMED \
 		-cp $(MM_CP):jinfer-core/target/test-classes:$(DEPS_CLASSPATH) com.qxotic.jinfer.CacheStoreTest
 	$(JAVA) $(JAVA_RUNTIME_OPTIONS) \
