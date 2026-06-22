@@ -6,7 +6,7 @@ target/
 jinfer.jar
 
 # Native images and PGO artifacts
-jinfer
+./jinfer
 jinfer.pgo
 *.debug
 default.iprof
