@@ -35,6 +35,44 @@ abstract class FloatTensor {
     static final int VECTOR_BIT_SIZE = Integer.getInteger("jinfer.VectorBitSize", VectorShape.preferredShape().vectorBitSize());
     static final boolean USE_VECTOR_API = VECTOR_BIT_SIZE != 0;
 
+    // ---- Java tiled-gemm (super.gemm) tile selection, picked once at class init from CPU width + JIT.
+    //      4x4 (16 accumulators) wins on AVX-512 under a JIT that keeps them in registers; else narrower.
+    //      (Relocated from JavaKernels when the Kernels interface was replaced by MatMul.) ----
+    static final String GEMM_TILE = System.getProperty("jinfer.Q8_0GemmTile", "auto");
+    // Constant-foldable codes: 0=3x2,1=3x4,2=4x4,3=2x8,4=8x2,5=1x1,6..9=avx256,10/11=neon,12=scalar.
+    static final int GEMM_TILE_CODE = switch (GEMM_TILE) {
+        case "auto" -> autoTileCode();
+        case "3x2" -> 0; case "4x4" -> 2; case "2x8" -> 3; case "8x2" -> 4; case "1x1" -> 5;
+        case "avx256", "avx256-2x4" -> 6; case "avx256-2x3" -> 7; case "avx256-3x4" -> 8; case "avx256-4x3" -> 9;
+        case "neon", "neon-4x4" -> 10; case "neon-2x4" -> 11; case "scalar", "java" -> 12;
+        default -> 1; // 3x4
+    };
+
+    private static int autoTileCode() {
+        String arch = System.getProperty("os.arch", "").toLowerCase();
+        if (arch.contains("aarch64") || arch.startsWith("arm")) return 10;   // ARM NEON 4x4
+        int width = USE_VECTOR_API ? VECTOR_BIT_SIZE : 0;
+        if (width >= 512) return jitHandlesWideTile() ? 2 /* 4x4 */ : 0 /* 3x2 */;
+        if (width >= 256) return 6;   // AVX2 2x4
+        return 12;                    // scalar
+    }
+
+    // 4x4 needs 16 accumulators in registers: Graal spill-free only from jvmci-25.1; HotSpot C2 spills but
+    // they're bandwidth-hidden so 4x4 still wins; unknown VM -> safe 3x2.
+    private static boolean jitHandlesWideTile() {
+        String version = System.getProperty("java.vm.version", "");
+        if (version.contains("jvmci")) {
+            var m = java.util.regex.Pattern.compile("jvmci-(\\d+)\\.(\\d+)").matcher(version);
+            if (m.find()) {
+                int major = Integer.parseInt(m.group(1)), minor = Integer.parseInt(m.group(2));
+                return major > 25 || (major == 25 && minor >= 1);
+            }
+            return false;   // "jvmci-bNN" (25.0-era Graal) caps at zmm0-15
+        }
+        String name = System.getProperty("java.vm.name", "");
+        return name.contains("HotSpot") || name.contains("OpenJDK");
+    }
+
     static final VectorSpecies<Float> F_SPECIES;
     static final VectorSpecies<Integer> I_SPECIES;
     static final VectorSpecies<Short> S_SPECIES_HALF;
@@ -164,9 +202,9 @@ abstract class FloatTensor {
 
     abstract float getFloat(long index);
 
-    abstract void setFloat(int index, float value);
+    abstract void setFloat(long index, float value);
 
-    abstract FloatVector getFloatVector(VectorSpecies<Float> species, int offset);
+    abstract FloatVector getFloatVector(VectorSpecies<Float> species, long offset);
 
     abstract GGMLType type();
 
@@ -184,7 +222,7 @@ abstract class FloatTensor {
         return result;
     }
 
-    static float scalarDot(FloatTensor thiz, int thisOffset, FloatTensor that, int thatOffset, int size) {
+    static float scalarDot(FloatTensor thiz, long thisOffset, FloatTensor that, long thatOffset, int size) {
         float result = 0f;
         for (int j = 0; j < size; j++) {
             result += thiz.getFloat(thisOffset + j) * that.getFloat(thatOffset + j);
@@ -192,7 +230,7 @@ abstract class FloatTensor {
         return result;
     }
 
-    float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+    float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
         return scalarDot(this, thisOffset, that, thatOffset, size);
     }
 
@@ -201,15 +239,15 @@ abstract class FloatTensor {
     }
 
     // Compatibility alias for vector matmul with offset into this tensor.
-    void matmul(FloatTensor that, FloatTensor out, int dim0, int dim1, int thisOffset) {
+    void matmul(FloatTensor that, FloatTensor out, int dim0, int dim1, long thisOffset) {
         gemv(that, 0, out, 0, dim0, dim1, thisOffset);
     }
 
-    void matmul(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1) {
+    void matmul(FloatTensor that, long thatOffset, FloatTensor out, long outOffset, int dim0, int dim1) {
         gemv(that, thatOffset, out, outOffset, dim0, dim1, 0);
     }
 
-    void matmul(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+    void matmul(FloatTensor that, long thatOffset, FloatTensor out, long outOffset, int dim0, int dim1, long thisOffset) {
         gemv(that, thatOffset, out, outOffset, dim0, dim1, thisOffset);
     }
 
@@ -218,15 +256,15 @@ abstract class FloatTensor {
     }
 
     // GEMV with offset into this tensor (for expert weight slicing in 3D tensors).
-    void gemv(FloatTensor that, FloatTensor out, int dim0, int dim1, int thisOffset) {
+    void gemv(FloatTensor that, FloatTensor out, int dim0, int dim1, long thisOffset) {
         gemv(that, 0, out, 0, dim0, dim1, thisOffset);
     }
 
-    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1) {
+    void gemv(FloatTensor that, long thatOffset, FloatTensor out, long outOffset, int dim0, int dim1) {
         gemv(that, thatOffset, out, outOffset, dim0, dim1, 0);
     }
 
-    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+    void gemv(FloatTensor that, long thatOffset, FloatTensor out, long outOffset, int dim0, int dim1, long thisOffset) {
         if ((long) dim0 * dim1 <= (1 << 18) && that != out) {
             // tiny matmuls (e.g. the 32-row MoE router): the ForkJoin round trip costs more than the work
             for (int i = 0; i < dim0; i++) {
@@ -254,7 +292,7 @@ abstract class FloatTensor {
         gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, 0);
     }
 
-    void matmulBatch(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+    void matmulBatch(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
         gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 
@@ -266,7 +304,7 @@ abstract class FloatTensor {
         gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, 0);
     }
 
-    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
         if (sequenceLength == 1) {
             gemv(that, 0, out, 0, dim0, dim1, thisOffset);
             return;
@@ -297,7 +335,7 @@ abstract class FloatTensor {
         float apply(float acc, float value);
     }
 
-    float reduce(int thisOffset, int size, float seed, AggregateFunction reduce) {
+    float reduce(long thisOffset, int size, float seed, AggregateFunction reduce) {
         float result = seed;
         for (int i = 0; i < size; ++i) {
             result = reduce.apply(result, getFloat(thisOffset + i));
@@ -305,31 +343,31 @@ abstract class FloatTensor {
         return result;
     }
 
-    float sum(int thisOffset, int size) {
+    float sum(long thisOffset, int size) {
         return reduce(thisOffset, size, 0f, Float::sum);
     }
 
-    float max(int thisOffset, int size) {
+    float max(long thisOffset, int size) {
         return reduce(thisOffset, size, Float.NEGATIVE_INFINITY, Float::max);
     }
 
-    void copyTo(int thisOffset, FloatTensor that, int thatOffset, int size) {
+    void copyTo(long thisOffset, FloatTensor that, long thatOffset, int size) {
         that.mapWithIndexInPlace(thatOffset, size, (value, index) -> this.getFloat(index - thatOffset + thisOffset));
     }
 
-    int argmax(int thisOffset, int size) {
+    int argmax(long thisOffset, int size) {
         assert size > 0;
-        int maxIndex = thisOffset;
+        long maxIndex = thisOffset;
         float maxValue = this.getFloat(maxIndex);
-        int endIndex = thisOffset + size;
-        for (int i = thisOffset; i < endIndex; ++i) {
+        long endIndex = thisOffset + size;
+        for (long i = thisOffset; i < endIndex; ++i) {
             float f = this.getFloat(i);
             if (f > maxValue) {
                 maxValue = f;
                 maxIndex = i;
             }
         }
-        return maxIndex;
+        return Math.toIntExact(maxIndex);   // argmax over logits: index fits int (vocab < 2^31)
     }
 
     int argmax() {
@@ -346,9 +384,9 @@ abstract class FloatTensor {
         float apply(float value, int index);
     }
 
-    FloatTensor mapInPlace(int thisOffset, int size, MapFunction mapFunction) {
-        int endIndex = thisOffset + size;
-        for (int i = thisOffset; i < endIndex; ++i) {
+    FloatTensor mapInPlace(long thisOffset, int size, MapFunction mapFunction) {
+        long endIndex = thisOffset + size;
+        for (long i = thisOffset; i < endIndex; ++i) {
             setFloat(i, mapFunction.apply(getFloat(i)));
         }
         return this;
@@ -358,15 +396,15 @@ abstract class FloatTensor {
         return mapInPlace(0, Math.toIntExact(size()), mapFunction);
     }
 
-    FloatTensor mapWithIndexInPlace(int thisOffset, int size, FloatTensor.MapWithIndexFunction mapWithIndexFunction) {
-        int endOffset = thisOffset + size;
-        for (int i = thisOffset; i < endOffset; ++i) {
-            setFloat(i, mapWithIndexFunction.apply(getFloat(i), i));
+    FloatTensor mapWithIndexInPlace(long thisOffset, int size, FloatTensor.MapWithIndexFunction mapWithIndexFunction) {
+        long endOffset = thisOffset + size;
+        for (long i = thisOffset; i < endOffset; ++i) {
+            setFloat(i, mapWithIndexFunction.apply(getFloat(i), Math.toIntExact(i)));
         }
         return this;
     }
 
-    FloatTensor addInPlace(int thisOffset, FloatTensor that, int thatOffset, int size) {
+    FloatTensor addInPlace(long thisOffset, FloatTensor that, long thatOffset, int size) {
         return mapWithIndexInPlace(thisOffset, size, (value, index) -> value + that.getFloat(index - thisOffset + thatOffset));
     }
 
@@ -375,7 +413,7 @@ abstract class FloatTensor {
     }
 
 
-    FloatTensor siluMultiplyInPlace(int thisOffset, FloatTensor that, int thatOffset, int size) {
+    FloatTensor siluMultiplyInPlace(long thisOffset, FloatTensor that, long thatOffset, int size) {
         for (int i = 0; i < size; i++) {
             float g = getFloat(thisOffset + i);
             float u = that.getFloat(thatOffset + i);
@@ -385,7 +423,7 @@ abstract class FloatTensor {
     }
 
     /** Squared-ReLU in place: x = max(0, x)^2 (Nemotron's FFN/expert activation). */
-    FloatTensor reluSqrInPlace(int thisOffset, int size) {
+    FloatTensor reluSqrInPlace(long thisOffset, int size) {
         for (int i = 0; i < size; i++) {
             float r = getFloat(thisOffset + i);
             r = r > 0f ? r : 0f;
@@ -394,22 +432,22 @@ abstract class FloatTensor {
         return this;
     }
 
-    FloatTensor divideInPlace(int thisOffset, int size, float value) {
+    FloatTensor divideInPlace(long thisOffset, int size, float value) {
         return mapInPlace(thisOffset, size, f -> f / value);
     }
 
-    FloatTensor fillInPlace(int thisOffset, int size, float value) {
+    FloatTensor fillInPlace(long thisOffset, int size, float value) {
         return mapInPlace(thisOffset, size, unused -> value);
     }
 
-    FloatTensor softmaxInPlace(int thisOffset, int size) {
+    FloatTensor softmaxInPlace(long thisOffset, int size) {
         float maxVal = max(thisOffset, size);
         mapInPlace(thisOffset, size, f -> (float) Math.exp(f - maxVal));
         float sum = sum(thisOffset, size);
         return divideInPlace(thisOffset, size, sum);
     }
 
-    FloatTensor saxpyInPlace(int thisOffset, FloatTensor that, int thatOffset, int size, float a) {
+    FloatTensor saxpyInPlace(long thisOffset, FloatTensor that, long thatOffset, int size, float a) {
         for (int i = 0; i < size; ++i) {
             setFloat(thisOffset + i, a * that.getFloat(thatOffset + i) + this.getFloat(thisOffset + i));
         }
@@ -431,9 +469,13 @@ abstract class SegmentFloatTensor extends FloatTensor {
      *  are safe to share: with GLOBAL_SEGMENT bound they are the same constant for everyone. */
     final MemorySegment vseg;
     final long vbase;
+    /** Raw native base address — a long, so (like vbase) safe to share without merging segment types.
+     *  For native backends (jam) that need the real address regardless of the GLOBAL_SEGMENT binding. */
+    final long baseAddress;
 
     SegmentFloatTensor(long size, MemorySegment memorySegment) {
         this.size = size;
+        this.baseAddress = memorySegment.address();
         this.vseg = vectorSegment(memorySegment);
         this.vbase = vectorBase(memorySegment);
     }
@@ -454,12 +496,12 @@ final class Q4_0FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    public void setFloat(int index, float value) {
+    public void setFloat(long index, float value) {
         throw new UnsupportedOperationException("setFloat");
     }
 
     @Override
-    FloatVector getFloatVector(VectorSpecies<Float> species, int index) {
+    FloatVector getFloatVector(VectorSpecies<Float> species, long index) {
         throw new UnsupportedOperationException("getFloatVector");
     }
 
@@ -486,7 +528,7 @@ final class Q4_0FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+    public float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
         if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor) {
             return vectorDot(this, thisOffset, that, thatOffset, size);
         } else {
@@ -495,29 +537,29 @@ final class Q4_0FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+    void gemv(FloatTensor that, long thatOffset, FloatTensor out, long outOffset, int dim0, int dim1, long thisOffset) {
         if (that instanceof F32FloatTensor x && out instanceof F32FloatTensor o && that != out
-                && Kernels.INSTANCE.gemvQ4_0F32(this, thisOffset, x, thatOffset, o, outOffset, dim0, dim1)) {
-            return;
+                && MatMul.INSTANCE.mm(this, thisOffset, dim1, x, thatOffset, dim1, o, outOffset, dim0, dim0, 1, dim1)) {
+            return;   // MatMul (jam when no vectors); declines -> super.gemv (vectorized dot)
         }
         super.gemv(that, thatOffset, out, outOffset, dim0, dim1, thisOffset);
     }
 
     @Override
-    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
         if (sequenceLength == 1) {
             gemv(that, 0, out, 0, dim0, dim1, thisOffset);
             return;
         }
         if (that instanceof F32FloatTensor xf && out instanceof F32FloatTensor of && that != out
-                && Kernels.INSTANCE.gemmQ4_0F32(this, thisOffset, xf, thatStride, of, outStride, sequenceLength, dim0, dim1)) {
-            return;
+                && MatMul.INSTANCE.mm(this, thisOffset, dim1, xf, 0, thatStride, of, 0, outStride, dim0, sequenceLength, dim1)) {
+            return;   // MatMul (jam prefill); declines -> super.gemm
         }
         super.gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 
     static void vectorGemm512(Q4_0FloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
-                                       int thatStride, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+                                       int thatStride, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
         final int seqTile = Math.max(4, RuntimeFlags.GEMM_SEQ_TILE);
         final int rowTile = Math.max(2, RuntimeFlags.GEMM_ROW_TILE);
         final int threads = RuntimeFlags.GEMM_THREADS;
@@ -559,7 +601,7 @@ final class Q4_0FloatTensor extends SegmentFloatTensor {
     // 2 weight rows x 4 activation columns; nibbles are decoded once per block and shared by
     // all 4 columns. Q4_0 block layout: byte i holds elements i (low nibble) and i+16 (high).
     private static void gemm512Tile2x4(Q4_0FloatTensor thiz, F32FloatTensor x, F32FloatTensor out,
-                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                       int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
         final int blockSize = GGMLType.Q4_0.getElementsPerBlock();
         final int typeSize = GGMLType.Q4_0.getBlockByteSize();
         final MemorySegment w = thiz.memorySegment;
@@ -612,12 +654,12 @@ final class Q4_0FloatTensor extends SegmentFloatTensor {
         out.setFloat(o + 3 * outStride + 1, c13.reduceLanes(VectorOperators.ADD));
     }
 
-    private static float vectorDot(Q4_0FloatTensor thiz, int thisOffset, FloatTensor that, int thatOffset, int size) {
+    private static float vectorDot(Q4_0FloatTensor thiz, long thisOffset, FloatTensor that, long thatOffset, int size) {
         float result = 0f;
         int j = 0;
 
         assert Integer.bitCount(GGMLType.Q4_0.getElementsPerBlock()) == 1 : "power of 2";
-        int alignmentBound = Math.min(size, -thisOffset & (GGMLType.Q4_0.getElementsPerBlock() - 1));
+        int alignmentBound = (int) Math.min(size, -thisOffset & (GGMLType.Q4_0.getElementsPerBlock() - 1));
         if (alignmentBound > 0) {
             result += FloatTensor.scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
             j += alignmentBound;
@@ -678,8 +720,8 @@ final class Q4_1FloatTensor extends SegmentFloatTensor {
         super(size, memorySegment);
         this.memorySegment = memorySegment;
     }
-    @Override public void setFloat(int index, float value) { throw new UnsupportedOperationException("setFloat"); }
-    @Override FloatVector getFloatVector(VectorSpecies<Float> species, int index) { throw new UnsupportedOperationException("getFloatVector"); }
+    @Override public void setFloat(long index, float value) { throw new UnsupportedOperationException("setFloat"); }
+    @Override FloatVector getFloatVector(VectorSpecies<Float> species, long index) { throw new UnsupportedOperationException("getFloatVector"); }
     @Override public GGMLType type() { return GGMLType.Q4_1; }
 
     @Override
@@ -700,19 +742,19 @@ final class Q4_1FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+    public float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
         if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor) {
             return vectorDot(this, thisOffset, that, thatOffset, size);
         }
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
 
-    private static float vectorDot(Q4_1FloatTensor thiz, int thisOffset, FloatTensor that, int thatOffset, int size) {
+    private static float vectorDot(Q4_1FloatTensor thiz, long thisOffset, FloatTensor that, long thatOffset, int size) {
         float result = 0f;
         int j = 0;
 
         assert Integer.bitCount(GGMLType.Q4_1.getElementsPerBlock()) == 1 : "power of 2";
-        int alignmentBound = Math.min(size, -thisOffset & (GGMLType.Q4_1.getElementsPerBlock() - 1));
+        int alignmentBound = (int) Math.min(size, -thisOffset & (GGMLType.Q4_1.getElementsPerBlock() - 1));
         if (alignmentBound > 0) {
             result += FloatTensor.scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
             j += alignmentBound;
@@ -789,8 +831,8 @@ final class Q5_1FloatTensor extends SegmentFloatTensor {
         this.memorySegment = memorySegment;
     }
 
-    @Override public void setFloat(int index, float value) { throw new UnsupportedOperationException("setFloat"); }
-    @Override FloatVector getFloatVector(VectorSpecies<Float> species, int index) { throw new UnsupportedOperationException("getFloatVector"); }
+    @Override public void setFloat(long index, float value) { throw new UnsupportedOperationException("setFloat"); }
+    @Override FloatVector getFloatVector(VectorSpecies<Float> species, long index) { throw new UnsupportedOperationException("getFloatVector"); }
     @Override public GGMLType type() { return GGMLType.Q5_1; }
 
     @Override
@@ -822,19 +864,19 @@ final class Q5_1FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+    public float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
         if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor) {
             return vectorDot(this, thisOffset, that, thatOffset, size);
         }
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
 
-    private static float vectorDot(Q5_1FloatTensor thiz, int thisOffset, FloatTensor that, int thatOffset, int size) {
+    private static float vectorDot(Q5_1FloatTensor thiz, long thisOffset, FloatTensor that, long thatOffset, int size) {
         assert Integer.bitCount(GGMLType.Q5_1.getElementsPerBlock()) == 1 : "power of 2";
         int j = 0;
         float result = 0f;
 
-        int alignmentBound = Math.min(size, -thisOffset & (GGMLType.Q5_1.getElementsPerBlock() - 1));
+        int alignmentBound = (int) Math.min(size, -thisOffset & (GGMLType.Q5_1.getElementsPerBlock() - 1));
         if (alignmentBound > 0) {
             result += scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
             j = alignmentBound;
@@ -898,8 +940,8 @@ final class Q4_KFloatTensor extends SegmentFloatTensor {
         super(size, memorySegment);
         this.memorySegment = memorySegment;
     }
-    @Override public void setFloat(int index, float value) { throw new UnsupportedOperationException("setFloat"); }
-    @Override FloatVector getFloatVector(VectorSpecies<Float> species, int index) { throw new UnsupportedOperationException("getFloatVector"); }
+    @Override public void setFloat(long index, float value) { throw new UnsupportedOperationException("setFloat"); }
+    @Override FloatVector getFloatVector(VectorSpecies<Float> species, long index) { throw new UnsupportedOperationException("getFloatVector"); }
     @Override public GGMLType type() { return GGMLType.Q4_K; }
 
     // Decode scale or min for sub-block j (0..7) from the 12-byte scales array
@@ -982,7 +1024,7 @@ final class Q4_KFloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+    public float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
         if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor) {
             return vectorDot(this, thisOffset, that, thatOffset, size);
         }
@@ -990,29 +1032,29 @@ final class Q4_KFloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+    void gemv(FloatTensor that, long thatOffset, FloatTensor out, long outOffset, int dim0, int dim1, long thisOffset) {
         if (that instanceof F32FloatTensor x && out instanceof F32FloatTensor o && that != out
-                && Kernels.INSTANCE.gemvQ4KF32(this, thisOffset, x, thatOffset, o, outOffset, dim0, dim1)) {
+                && MatMul.INSTANCE.mm(this, thisOffset, dim1, x, thatOffset, dim1, o, outOffset, dim0, dim0, 1, dim1)) {
             return;
         }
         super.gemv(that, thatOffset, out, outOffset, dim0, dim1, thisOffset);
     }
 
     @Override
-    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
         if (sequenceLength == 1) {
             gemv(that, 0, out, 0, dim0, dim1, thisOffset);
             return;
         }
         if (that instanceof F32FloatTensor xf && out instanceof F32FloatTensor of && that != out
-                && Kernels.INSTANCE.gemmQ4KF32(this, thisOffset, xf, thatStride, of, outStride, sequenceLength, dim0, dim1)) {
+                && MatMul.INSTANCE.mm(this, thisOffset, dim1, xf, 0, thatStride, of, 0, outStride, dim0, sequenceLength, dim1)) {
             return;
         }
         super.gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 
     static void vectorGemm512(Q4_KFloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
-                                      int thatStride, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+                                      int thatStride, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
         final int seqTile = Math.max(4, RuntimeFlags.GEMM_SEQ_TILE_QK);
         final int rowTile = Math.max(2, RuntimeFlags.GEMM_ROW_TILE);
         final int seqTileCount = (sequenceLength + seqTile - 1) / seqTile;
@@ -1053,7 +1095,7 @@ final class Q4_KFloatTensor extends SegmentFloatTensor {
     // 2 weight rows x 4 activation columns: the (scalar, branchy) sub-scale decode and the
     // nibble dequantization are done once per row block and reused by all 4 columns.
     private static void gemm512Tile2x4(Q4_KFloatTensor thiz, F32FloatTensor x, F32FloatTensor out,
-                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                       int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
         final MemorySegment w = thiz.memorySegment;
         final long rowStride = (long) (dim1 / BLOCK_SIZE) * TYPE_SIZE;
         long b0 = (long) ((thisOffset + row * dim1) / BLOCK_SIZE) * TYPE_SIZE;
@@ -1130,13 +1172,13 @@ final class Q4_KFloatTensor extends SegmentFloatTensor {
         out.setFloat(o0 + 3 * outStride + 1, c13.reduceLanes(VectorOperators.ADD));
     }
 
-    private static float vectorDot(Q4_KFloatTensor thiz, int thisOffset, FloatTensor that, int thatOffset, int size) {
+    private static float vectorDot(Q4_KFloatTensor thiz, long thisOffset, FloatTensor that, long thatOffset, int size) {
         float result = 0f;
         int j = 0;
 
         // Handle unaligned head
         assert Integer.bitCount(BLOCK_SIZE) == 1 : "power of 2";
-        int alignmentBound = Math.min(size, -thisOffset & (BLOCK_SIZE - 1));
+        int alignmentBound = (int) Math.min(size, -thisOffset & (BLOCK_SIZE - 1));
         if (alignmentBound > 0) {
             result += FloatTensor.scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
             j += alignmentBound;
@@ -1168,8 +1210,8 @@ final class Q4_KFloatTensor extends SegmentFloatTensor {
                 var d2Vec = FloatVector.broadcast(F_SPECIES, d2);
                 var negM2Vec = FloatVector.broadcast(F_SPECIES, negM2);
 
-                int loBase = thatOffset + j + g * 64;
-                int hiBase = thatOffset + j + g * 64 + 32;
+                long loBase = thatOffset + j + g * 64;
+                long hiBase = thatOffset + j + g * 64 + 32;
 
                 // Process 32 bytes of qs in 2 chunks of 16 bytes
                 for (int c = 0; c < 2; c++) {
@@ -1178,8 +1220,8 @@ final class Q4_KFloatTensor extends SegmentFloatTensor {
                     var loBytes = wBytes.and((byte) 0xF);
                     var hiBytes = wBytes.lanewise(VectorOperators.LSHR, 4);
 
-                    int loIdx = loBase + c * 16;
-                    int hiIdx = hiBase + c * 16;
+                    long loIdx = loBase + c * 16;
+                    long hiIdx = hiBase + c * 16;
 
                     switch (F_SPECIES.vectorBitSize()) {
                         case 512 -> {
@@ -1233,8 +1275,8 @@ final class Q5_KFloatTensor extends SegmentFloatTensor {
         super(size, memorySegment);
         this.memorySegment = memorySegment;
     }
-    @Override public void setFloat(int index, float value) { throw new UnsupportedOperationException("setFloat"); }
-    @Override FloatVector getFloatVector(VectorSpecies<Float> species, int index) { throw new UnsupportedOperationException("getFloatVector"); }
+    @Override public void setFloat(long index, float value) { throw new UnsupportedOperationException("setFloat"); }
+    @Override FloatVector getFloatVector(VectorSpecies<Float> species, long index) { throw new UnsupportedOperationException("getFloatVector"); }
     @Override public GGMLType type() { return GGMLType.Q5_K; }
 
     @Override
@@ -1268,7 +1310,7 @@ final class Q5_KFloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+    public float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
         if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor f32) {
             return vectorDot(this, thisOffset, f32, thatOffset, size);
         }
@@ -1276,33 +1318,33 @@ final class Q5_KFloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+    void gemv(FloatTensor that, long thatOffset, FloatTensor out, long outOffset, int dim0, int dim1, long thisOffset) {
         if (that instanceof F32FloatTensor x && out instanceof F32FloatTensor o && that != out
-                && Kernels.INSTANCE.gemvQ5KF32(this, thisOffset, x, thatOffset, o, outOffset, dim0, dim1)) {
+                && MatMul.INSTANCE.mm(this, thisOffset, dim1, x, thatOffset, dim1, o, outOffset, dim0, dim0, 1, dim1)) {
             return;
         }
         super.gemv(that, thatOffset, out, outOffset, dim0, dim1, thisOffset);
     }
 
     @Override
-    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
         if (sequenceLength == 1) {
             gemv(that, 0, out, 0, dim0, dim1, thisOffset);
             return;
         }
         if (that instanceof F32FloatTensor xf && out instanceof F32FloatTensor of && that != out
-                && Kernels.INSTANCE.gemmQ5KF32(this, thisOffset, xf, thatStride, of, outStride, sequenceLength, dim0, dim1)) {
+                && MatMul.INSTANCE.mm(this, thisOffset, dim1, xf, 0, thatStride, of, 0, outStride, dim0, sequenceLength, dim1)) {
             return;
         }
         super.gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 
-    private static float vectorDot(Q5_KFloatTensor thiz, int thisOffset, F32FloatTensor that, int thatOffset, int size) {
+    private static float vectorDot(Q5_KFloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
         float result = 0f;
         int j = 0;
 
         assert Integer.bitCount(BLOCK_SIZE) == 1 : "power of 2";
-        int alignmentBound = Math.min(size, -thisOffset & (BLOCK_SIZE - 1));
+        int alignmentBound = (int) Math.min(size, -thisOffset & (BLOCK_SIZE - 1));
         if (alignmentBound > 0) {
             result += FloatTensor.scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
             j += alignmentBound;
@@ -1338,8 +1380,8 @@ final class Q5_KFloatTensor extends SegmentFloatTensor {
                 var negM2Vec = FloatVector.broadcast(F_SPECIES, -m2);
 
                 for (int c = 0; c < 2; c++) {
-                    int loBase = thatOffset + j + g * 64 + c * 16;
-                    int hiBase = thatOffset + j + g * 64 + 32 + c * 16;
+                    long loBase = thatOffset + j + g * 64 + c * 16;
+                    long hiBase = thatOffset + j + g * 64 + 32 + c * 16;
 
                     var wBytes = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, thiz.memorySegment,
                             groupQsOff + c * 16L, ByteOrder.LITTLE_ENDIAN);
@@ -1403,8 +1445,8 @@ final class Q6_KFloatTensor extends SegmentFloatTensor {
         super(size, memorySegment);
         this.memorySegment = memorySegment;
     }
-    @Override public void setFloat(int index, float value) { throw new UnsupportedOperationException("setFloat"); }
-    @Override FloatVector getFloatVector(VectorSpecies<Float> species, int index) { throw new UnsupportedOperationException("getFloatVector"); }
+    @Override public void setFloat(long index, float value) { throw new UnsupportedOperationException("setFloat"); }
+    @Override FloatVector getFloatVector(VectorSpecies<Float> species, long index) { throw new UnsupportedOperationException("getFloatVector"); }
     @Override public GGMLType type() { return GGMLType.Q6_K; }
 
     // Block layout: ql[128] | qh[64] | scales[16] (int8) | d (fp16)
@@ -1445,7 +1487,7 @@ final class Q6_KFloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+    public float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
         if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor) {
             return vectorDot(this, thisOffset, that, thatOffset, size);
         } else {
@@ -1454,29 +1496,29 @@ final class Q6_KFloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+    void gemv(FloatTensor that, long thatOffset, FloatTensor out, long outOffset, int dim0, int dim1, long thisOffset) {
         if (that instanceof F32FloatTensor x && out instanceof F32FloatTensor o && that != out
-                && Kernels.INSTANCE.gemvQ6KF32(this, thisOffset, x, thatOffset, o, outOffset, dim0, dim1)) {
+                && MatMul.INSTANCE.mm(this, thisOffset, dim1, x, thatOffset, dim1, o, outOffset, dim0, dim0, 1, dim1)) {
             return;
         }
         super.gemv(that, thatOffset, out, outOffset, dim0, dim1, thisOffset);
     }
 
     @Override
-    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
         if (sequenceLength == 1) {
             gemv(that, 0, out, 0, dim0, dim1, thisOffset);
             return;
         }
         if (that instanceof F32FloatTensor xf && out instanceof F32FloatTensor of && that != out
-                && Kernels.INSTANCE.gemmQ6KF32(this, thisOffset, xf, thatStride, of, outStride, sequenceLength, dim0, dim1)) {
+                && MatMul.INSTANCE.mm(this, thisOffset, dim1, xf, 0, thatStride, of, 0, outStride, dim0, sequenceLength, dim1)) {
             return;
         }
         super.gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 
     static void vectorGemm512(Q6_KFloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
-                                      int thatStride, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+                                      int thatStride, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
         final int seqTile = Math.max(4, RuntimeFlags.GEMM_SEQ_TILE_QK);
         final int rowTile = Math.max(1, RuntimeFlags.GEMM_ROW_TILE);
         final int threads = RuntimeFlags.GEMM_THREADS;
@@ -1511,7 +1553,7 @@ final class Q6_KFloatTensor extends SegmentFloatTensor {
     // 1 weight row x 4 activation columns: the (expensive) 6-bit unpack + scale multiply is
     // done once per 64-value group and reused by all 4 columns.
     private static void gemm512Tile1x4(Q6_KFloatTensor thiz, F32FloatTensor x, F32FloatTensor out,
-                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                       int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
         final MemorySegment w = thiz.memorySegment;
         long blockOffset = (long) ((thisOffset + row * dim1) / BLOCK_SIZE) * TYPE_SIZE;
         final MemorySegment xs = x.vseg;
@@ -1579,12 +1621,12 @@ final class Q6_KFloatTensor extends SegmentFloatTensor {
         out.setFloat(o + 3 * outStride, c3.reduceLanes(VectorOperators.ADD));
     }
 
-    private static float vectorDot(Q6_KFloatTensor thiz, int thisOffset, FloatTensor that, int thatOffset, int size) {
+    private static float vectorDot(Q6_KFloatTensor thiz, long thisOffset, FloatTensor that, long thatOffset, int size) {
         float result = 0f;
         int j = 0;
 
         assert Integer.bitCount(BLOCK_SIZE) == 1 : "power of 2";
-        int alignmentBound = Math.min(size, -thisOffset & (BLOCK_SIZE - 1));
+        int alignmentBound = (int) Math.min(size, -thisOffset & (BLOCK_SIZE - 1));
         if (alignmentBound > 0) {
             result += FloatTensor.scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
             j += alignmentBound;
@@ -1614,7 +1656,7 @@ final class Q6_KFloatTensor extends SegmentFloatTensor {
                 long qlBase = qlOff + h * 64;
                 long qhBase = qhOff + h * 32;
 
-                int base = thatOffset + j + h * 128;
+                long base = thatOffset + j + h * 128;
                 for (int c = 0; c < 2; c++) {
                     var qlA = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, thiz.memorySegment,
                             qlBase + c * 16L, ByteOrder.LITTLE_ENDIAN);
@@ -1638,10 +1680,10 @@ final class Q6_KFloatTensor extends SegmentFloatTensor {
                     var ds2Vec = FloatVector.broadcast(F_SPECIES, ds2);
                     var ds3Vec = FloatVector.broadcast(F_SPECIES, ds3);
 
-                    int sg0Idx = base + c * 16;
-                    int sg1Idx = base + 32 + c * 16;
-                    int sg2Idx = base + 64 + c * 16;
-                    int sg3Idx = base + 96 + c * 16;
+                    long sg0Idx = base + c * 16;
+                    long sg1Idx = base + 32 + c * 16;
+                    long sg2Idx = base + 64 + c * 16;
+                    long sg3Idx = base + 96 + c * 16;
 
                     switch (F_SPECIES.vectorBitSize()) {
                         case 512 -> {
@@ -1707,21 +1749,21 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+    void gemv(FloatTensor that, long thatOffset, FloatTensor out, long outOffset, int dim0, int dim1, long thisOffset) {
         if (that instanceof F32FloatTensor x && out instanceof F32FloatTensor o && that != out
-                && Kernels.INSTANCE.gemvQ8F32(this, thisOffset, x, thatOffset, o, outOffset, dim0, dim1)) {
-            return;
+                && MatMul.INSTANCE.mm(this, thisOffset, dim1, x, thatOffset, dim1, o, outOffset, dim0, dim0, 1, dim1)) {
+            return;   // MatMul (Vector gemv, or jam when no vectors); declines -> super.gemv below
         }
         super.gemv(that, thatOffset, out, outOffset, dim0, dim1, thisOffset);
     }
 
     @Override
-    public void setFloat(int index, float value) {
+    public void setFloat(long index, float value) {
         throw new UnsupportedOperationException("setFloat");
     }
 
     @Override
-    FloatVector getFloatVector(VectorSpecies<Float> species, int index) {
+    FloatVector getFloatVector(VectorSpecies<Float> species, long index) {
         throw new UnsupportedOperationException("getFloatVector");
     }
 
@@ -1741,7 +1783,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+    public float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
         if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor f32) {
             if (F_SPECIES.vectorBitSize() == 512) {
                 return vectorDot512F32(this, thisOffset, f32, thatOffset, size);
@@ -1752,39 +1794,22 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
         if (sequenceLength == 1) {
             gemv(that, 0, out, 0, dim0, dim1, thisOffset);
             return;
         }
         if (that instanceof F32FloatTensor x && out instanceof F32FloatTensor o && that != out
-                && Kernels.INSTANCE.gemmQ8F32(this, thisOffset, x, thatStride, o, outStride, sequenceLength, dim0, dim1)) {
-            return;
+                && MatMul.INSTANCE.mm(this, thisOffset, dim1, x, 0, thatStride, o, 0, outStride, dim0, sequenceLength, dim1)) {
+            return;   // MatMul (jam prefill); declines -> the Java vector/scalar tile below
         }
         super.gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 
-    // gemv with 4 weight-row streams sharing each activation load (decode is dominated by
-    // streaming the weights; 4 parallel row streams use the memory pipeline better).
-    static void vectorGemv512(Q8_0FloatTensor thiz, F32FloatTensor x, int thatOffset,
-                                      F32FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
-        final int chunk = 64;
-        int chunks = (dim0 + chunk - 1) / chunk;
-        Parallel.parallelFor(0, chunks, ci -> {
-            int rowStart = ci * chunk;
-            int rowEnd = Math.min(dim0, rowStart + chunk);
-            int r = rowStart;
-            for (; r + 3 < rowEnd; r += 4) {
-                gemv512Rows4(thiz, x, thatOffset, out, outOffset, dim1, thisOffset, r);
-            }
-            for (; r < rowEnd; r++) {
-                out.setFloat(outOffset + r, vectorDot512F32(thiz, thisOffset + r * dim1, x, thatOffset, dim1));
-            }
-        });
-    }
-
-    private static void gemv512Rows4(Q8_0FloatTensor thiz, F32FloatTensor x, int thatOffset,
-                                     F32FloatTensor out, int outOffset, int dim1, int thisOffset, int row) {
+    // gemv512Rows4 / vectorDot512F32: the inner 512-bit vector primitives (4 weight-row streams and a
+    // single-row dot). Shared with dot(); the gemv orchestration (was vectorGemv512) lives in VectorMatMul.
+    static void gemv512Rows4(Q8_0FloatTensor thiz, F32FloatTensor x, long thatOffset,
+                             F32FloatTensor out, long outOffset, int dim1, long thisOffset, int row) {
         final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
         final int typeSize = GGMLType.Q8_0.getBlockByteSize();
         final MemorySegment w = thiz.memorySegment;
@@ -1835,14 +1860,14 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
 
 
     // 512-bit Q8_0 GEMM micro-kernels in several tile shapes (rows x seq-columns); selected via
-    // JavaKernels.GEMM_TILE / GEMM_TILE_CODE. Wide tiles pay off when the JIT can allocate zmm16-zmm31.
+    // GEMM_TILE_CODE (on FloatTensor). Wide tiles pay off when the JIT can allocate zmm16-zmm31.
 
 
 
 
 
     private static void gemm512Tile3x2F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
-                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                       int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
         final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
         final int typeSize = GGMLType.Q8_0.getBlockByteSize();
         final MemorySegment w = thiz.memorySegment;
@@ -1888,7 +1913,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
     }
 
     private static void gemm512Tile3x1F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
-                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                       int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
         final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
         final int typeSize = GGMLType.Q8_0.getBlockByteSize();
         final MemorySegment w = thiz.memorySegment;
@@ -1923,7 +1948,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
     }
 
     private static void gemm512Tile2x2F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
-                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                       int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
         final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
         final int typeSize = GGMLType.Q8_0.getBlockByteSize();
         final MemorySegment w = thiz.memorySegment;
@@ -1960,7 +1985,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
     }
 
     private static void gemm512Tile1x1F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
-                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                       int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
         final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
         final int typeSize = GGMLType.Q8_0.getBlockByteSize();
         final MemorySegment w = thiz.memorySegment;
@@ -1986,7 +2011,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
     // arithmetic intensity -- every output re-streams its whole activation column from memory. Benchmark
     // it against 3x4/4x4 to see exactly what register tiling buys.
     private static void gemm512Tile1x1EduF32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
-                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                       int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
         final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
         final int typeSize = GGMLType.Q8_0.getBlockByteSize();
         final MemorySegment w = thiz.memorySegment;
@@ -2010,7 +2035,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
     // AVX2-only CPUs and to test whether avoiding ZMM sidesteps AVX-512 frequency throttling.
     // 2 weight rows x 4 seq = 8 accumulators + 8 weights (2 rows x 4 subvecs) + 4 activations = 20 YMM.
     private static void gemm256Tile2x4F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
-                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                       int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
         final VectorSpecies<Float> F256 = FloatVector.SPECIES_256;
         final VectorSpecies<Byte> B64 = ByteVector.SPECIES_64;
         final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
@@ -2057,7 +2082,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
 
     // 256-bit single-output kernel for the avx256 path's row/seq remainders.
     private static void gemm256Tile1x1F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
-                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                       int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
         final VectorSpecies<Float> F256 = FloatVector.SPECIES_256;
         final VectorSpecies<Byte> B64 = ByteVector.SPECIES_64;
         final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
@@ -2097,7 +2122,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
     // weight/activation subvec is still loaded exactly once). The i-loop stays rolled on purpose so the
     // scheduler keeps only the current subvec's weights live.
     private static void gemm256Tile2x3F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
-                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                       int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
         final VectorSpecies<Float> F256 = FloatVector.SPECIES_256;
         final VectorSpecies<Byte> B64 = ByteVector.SPECIES_64;
         final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
@@ -2141,7 +2166,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
     // on a true AVX2 file (~11/17) -- a 12-accumulator tile is a 32-register shape. Fine where ymm16-31
     // exist; on AVX2 prefer 2x4/2x3. Spill-free only because this machine has 32 YMM.
     private static void gemm256Tile3x4F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
-                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                       int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
         final VectorSpecies<Float> F256 = FloatVector.SPECIES_256;
         final VectorSpecies<Byte> B64 = ByteVector.SPECIES_64;
         final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
@@ -2194,7 +2219,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
     // accumulators, so it still spills on a true AVX2 16-register file (~14/21) despite the lean
     // streaming -- a 32-register shape. On AVX2 prefer 2x4/2x3.
     private static void gemm256Tile4x3F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
-                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                       int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
         final VectorSpecies<Float> F256 = FloatVector.SPECIES_256;
         final VectorSpecies<Byte> B64 = ByteVector.SPECIES_64;
         final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
@@ -2259,7 +2284,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
     // ~17-21 tok/s (the scalar MAC throughput is the bottleneck, not the reads), so the simplest form is
     // kept. SIMD requires the Vector API (the avx512/avx256/neon tiles); this is the portability fallback.
     private static void gemmScalarTile4x1F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
-                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                       int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
         final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
         final int typeSize = GGMLType.Q8_0.getBlockByteSize();
         final MemorySegment w = thiz.memorySegment;
@@ -2294,7 +2319,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
 
     // Pure Java single output (scalar remainder).
     private static void gemmScalar1x1F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
-                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                       int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
         final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
         final int typeSize = GGMLType.Q8_0.getBlockByteSize();
         final MemorySegment w = thiz.memorySegment;
@@ -2324,7 +2349,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
 
     // 128-bit single output (NEON path remainder).
     private static void gemm128Tile1x1F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
-                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                       int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
         final VectorSpecies<Float> F128 = FloatVector.SPECIES_128;
         final VectorSpecies<Byte> B64 = ByteVector.SPECIES_64;
         final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
@@ -2352,7 +2377,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
 
     // 128-bit 2 rows x 4 seq: 8 accumulators + (2 rows x lo/hi =) 4 weights + 2 activations.
     private static void gemm128Tile2x4F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
-                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                       int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
         final VectorSpecies<Float> F128 = FloatVector.SPECIES_128;
         final VectorSpecies<Byte> B64 = ByteVector.SPECIES_64;
         final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
@@ -2405,7 +2430,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
     // 128-bit 4 rows x 4 seq: 16 accumulators + (4 rows x lo/hi =) 8 weights + 2 activations ~= 26 of
     // NEON's 32 registers. Rolled chunk loop keeps the 8 weights to the current chunk only.
     private static void gemm128Tile4x4F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
-                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                       int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
         final VectorSpecies<Float> F128 = FloatVector.SPECIES_128;
         final VectorSpecies<Byte> B64 = ByteVector.SPECIES_64;
         final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
@@ -2479,7 +2504,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
 
         // 3x4 tile: 3 weight rows × 4 seq positions = 12 accums, 6 weights, 2 activs = 20 ZMM (zero spills)
         private static void gemm512Tile3x4F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
-                                        int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                        int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
             final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
             final int typeSize = GGMLType.Q8_0.getBlockByteSize();
             final MemorySegment w = thiz.memorySegment;
@@ -2542,7 +2567,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
         }
 
         private static void gemm512Tile4x4F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
-                                       int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                       int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
         final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
         final int typeSize = GGMLType.Q8_0.getBlockByteSize();
         final MemorySegment w = thiz.memorySegment;
@@ -2629,7 +2654,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
 
         // 2 weight rows kept resident, 8 sequence columns streamed: 16 accumulators + 4 weights + 2 activations = 22 ZMM.
         private static void gemm512Tile2x8F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
-                                        int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                        int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
             final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
             final int typeSize = GGMLType.Q8_0.getBlockByteSize();
             final MemorySegment w = thiz.memorySegment;
@@ -2694,7 +2719,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
 
         // 2 sequence columns kept resident, 8 weight rows streamed: 16 accumulators + 4 activations + 2 weights = 22 ZMM.
         private static void gemm512Tile8x2F32(Q8_0FloatTensor thiz, MemorySegment x, long xBase, long outAddr,
-                                        int thatStride, int outStride, int dim1, int thisOffset, int row, int s) {
+                                        int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
             final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
             final int typeSize = GGMLType.Q8_0.getBlockByteSize();
             final MemorySegment w = thiz.memorySegment;
@@ -2772,7 +2797,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
         }
 
     static void vectorGemm512F32(Q8_0FloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
-                                      int thatStride, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+                                      int thatStride, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
         final int seqTile = Math.max(1, RuntimeFlags.GEMM_SEQ_TILE);
         final int rowTile = Math.max(1, RuntimeFlags.GEMM_ROW_TILE);
         final int seqTileCount = (sequenceLength + seqTile - 1) / seqTile;
@@ -2792,7 +2817,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
                 int rowEnd = Math.min(dim0, rowStart + rowTile);
                 int seqEnd = Math.min(sequenceLength, s0 + seqTile);
                 int row = rowStart;
-                switch (JavaKernels.GEMM_TILE_CODE) {
+                switch (GEMM_TILE_CODE) {
                     case 1 -> { // 3x4
                         for (; row + 2 < rowEnd; row += 3) {
                             int s = s0;
@@ -3005,7 +3030,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
 
 
     static void vectorGemm(Q8_0FloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
-                                   int thatStride, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+                                   int thatStride, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
         final int seqTile = Math.max(1, RuntimeFlags.GEMM_SEQ_TILE);
         final int rowTile = Math.max(1, RuntimeFlags.GEMM_ROW_TILE);
         final int seqTileCount = (sequenceLength + seqTile - 1) / seqTile;
@@ -3033,10 +3058,10 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
 
     private static void vectorGemmRowTile(Q8_0FloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
                                           int thatStride, int outStride, int dim1,
-                                          int thisOffset, int row, int seqStart, int seqEnd) {
+                                          long thisOffset, int row, int seqStart, int seqEnd) {
         final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
         final int typeSize = GGMLType.Q8_0.getBlockByteSize();
-        int rowBase = thisOffset + row * dim1;
+        long rowBase = thisOffset + row * dim1;
         int seqCount = seqEnd - seqStart;
         if (seqCount > 4) {
             for (int s = seqStart; s < seqEnd; s += 4) {
@@ -3050,7 +3075,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
         float result2 = 0f;
         float result3 = 0f;
         int j = 0;
-        int alignmentBound = Math.min(dim1, -rowBase & (blockSize - 1));
+        int alignmentBound = (int) Math.min(dim1, -rowBase & (blockSize - 1));
         if (alignmentBound > 0) {
             result0 += scalarDot(thiz, rowBase, that, seqStart * thatStride, alignmentBound);
             if (seqCount > 1) result1 += scalarDot(thiz, rowBase, that, (seqStart + 1) * thatStride, alignmentBound);
@@ -3089,7 +3114,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
         if (seqCount > 3) out.setFloat((seqStart + 3) * outStride + row, result3);
     }
 
-    static float vectorDot512F32(Q8_0FloatTensor thiz, int thisOffset, F32FloatTensor that, int thatOffset, int size) {
+    static float vectorDot512F32(Q8_0FloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
         final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
         final int typeSize = GGMLType.Q8_0.getBlockByteSize();
         final MemorySegment w = thiz.memorySegment;
@@ -3098,7 +3123,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
         float result = 0f;
         int j = 0;
 
-        int alignmentBound = Math.min(size, -thisOffset & (blockSize - 1));
+        int alignmentBound = (int) Math.min(size, -thisOffset & (blockSize - 1));
         if (alignmentBound > 0) {
             result += FloatTensor.scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
             j += alignmentBound;
@@ -3135,12 +3160,12 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
         return result;
     }
 
-    private static float vectorDot(Q8_0FloatTensor thiz, int thisOffset, F32FloatTensor that, int thatOffset, int size) {
+    private static float vectorDot(Q8_0FloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
         float result = 0f;
         int j = 0;
 
         assert Integer.bitCount(GGMLType.Q8_0.getElementsPerBlock()) == 1 : "power of 2";
-        int alignmentBound = Math.min(size, -thisOffset & (GGMLType.Q8_0.getElementsPerBlock() - 1));
+        int alignmentBound = (int) Math.min(size, -thisOffset & (GGMLType.Q8_0.getElementsPerBlock() - 1));
         if (alignmentBound > 0) {
             result += FloatTensor.scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
             j += alignmentBound;
@@ -3161,7 +3186,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
 
         return result;
     }
-    static FloatVector q8BlockFma(Q8_0FloatTensor thiz, long blockOffset, F32FloatTensor x, int xOffset, FloatVector acc) {
+    static FloatVector q8BlockFma(Q8_0FloatTensor thiz, long blockOffset, F32FloatTensor x, long xOffset, FloatVector acc) {
         float wScaleValue = readFloat16(thiz.memorySegment, blockOffset);
         var wScale = FloatVector.broadcast(F_SPECIES, wScaleValue);
         return switch (F_SPECIES.vectorBitSize()) {
@@ -3212,8 +3237,8 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
         super(size, memorySegment);
         this.memorySegment = memorySegment;
     }
-    @Override public void setFloat(int index, float value) { throw new UnsupportedOperationException("setFloat"); }
-    @Override FloatVector getFloatVector(VectorSpecies<Float> species, int index) { throw new UnsupportedOperationException("getFloatVector"); }
+    @Override public void setFloat(long index, float value) { throw new UnsupportedOperationException("setFloat"); }
+    @Override FloatVector getFloatVector(VectorSpecies<Float> species, long index) { throw new UnsupportedOperationException("getFloatVector"); }
     @Override public GGMLType type() { return GGMLType.MXFP4; }
 
     @Override
@@ -3234,19 +3259,19 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+    public float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
         if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor) {
             return vectorDot(this, thisOffset, that, thatOffset, size);
         }
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
 
-    private static float vectorDot(MXFP4FloatTensor thiz, int thisOffset, FloatTensor that, int thatOffset, int size) {
+    private static float vectorDot(MXFP4FloatTensor thiz, long thisOffset, FloatTensor that, long thatOffset, int size) {
         assert Integer.bitCount(QK_MXFP4) == 1 : "power of 2";
         int j = 0;
         float result = 0f;
 
-        int alignmentBound = Math.min(size, -thisOffset & (QK_MXFP4 - 1));
+        int alignmentBound = (int) Math.min(size, -thisOffset & (QK_MXFP4 - 1));
         if (alignmentBound > 0) {
             result += scalarDot(thiz, thisOffset, that, thatOffset, alignmentBound);
             j = alignmentBound;
@@ -3333,12 +3358,16 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
         if (sequenceLength == 1) {
             // Decode: one column means no cross-column decode reuse to exploit, so the vectorized dot
             // (decodes each block once for the single column) is already optimal — no tiled gemv needed.
             gemv(that, 0, out, 0, dim0, dim1, thisOffset);
             return;
+        }
+        if (that instanceof F32FloatTensor xk && out instanceof F32FloatTensor ok && that != out
+                && MatMul.INSTANCE.mm(this, thisOffset, dim1, xk, 0, thatStride, ok, 0, outStride, dim0, sequenceLength, dim1)) {
+            return;   // jam 16-row VNNI repack (prefill); declines -> the Java tile below
         }
         boolean canTile = FloatTensor.USE_VECTOR_API && F_SPECIES.vectorBitSize() == 512
                 && that instanceof F32FloatTensor && out instanceof F32FloatTensor && that != out
@@ -3378,7 +3407,7 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
     }
 
     /** Dequantize one weight row (dim1 elements, dim1 % 32 == 0) into {@code dst} at {@code dstOffset}. */
-    private static void dequantizeRow(MXFP4FloatTensor thiz, int rowElemOffset, int dim1, float[] dst, int dstOffset) {
+    private static void dequantizeRow(MXFP4FloatTensor thiz, long rowElemOffset, int dim1, float[] dst, int dstOffset) {
         int kblocks = dim1 / QK_MXFP4;
         long firstBlock = (long) rowElemOffset / QK_MXFP4;
         long blockByteSize = GGMLType.MXFP4.getBlockByteSize();
@@ -3467,8 +3496,8 @@ final class BF16FloatTensor extends SegmentFloatTensor {
         this.memorySegment = memorySegment;
     }
 
-    @Override public void setFloat(int index, float value) { throw new UnsupportedOperationException("setFloat"); }
-    @Override FloatVector getFloatVector(VectorSpecies<Float> species, int index) { throw new UnsupportedOperationException("getFloatVector"); }
+    @Override public void setFloat(long index, float value) { throw new UnsupportedOperationException("setFloat"); }
+    @Override FloatVector getFloatVector(VectorSpecies<Float> species, long index) { throw new UnsupportedOperationException("getFloatVector"); }
     @Override public GGMLType type() { return GGMLType.BF16; }
 
     @Override
@@ -3479,7 +3508,7 @@ final class BF16FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+    public float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
         if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor f32) {
             return vectorDot(this, thisOffset, f32, thatOffset, size);
         }
@@ -3487,28 +3516,28 @@ final class BF16FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+    void gemv(FloatTensor that, long thatOffset, FloatTensor out, long outOffset, int dim0, int dim1, long thisOffset) {
         if (that instanceof F32FloatTensor x && out instanceof F32FloatTensor o && that != out
-                && Kernels.INSTANCE.gemvBF16F32(this, thisOffset, x, thatOffset, o, outOffset, dim0, dim1)) {
+                && MatMul.INSTANCE.mm(this, thisOffset, dim1, x, thatOffset, dim1, o, outOffset, dim0, dim0, 1, dim1)) {
             return;
         }
         super.gemv(that, thatOffset, out, outOffset, dim0, dim1, thisOffset);
     }
 
     @Override
-    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
         if (sequenceLength == 1) {
             gemv(that, 0, out, 0, dim0, dim1, thisOffset);
             return;
         }
         if (that instanceof F32FloatTensor xf && out instanceof F32FloatTensor of && that != out
-                && Kernels.INSTANCE.gemmBF16F32(this, thisOffset, xf, thatStride, of, outStride, sequenceLength, dim0, dim1)) {
+                && MatMul.INSTANCE.mm(this, thisOffset, dim1, xf, 0, thatStride, of, 0, outStride, dim0, sequenceLength, dim1)) {
             return;
         }
         super.gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 
-    private static float vectorDot(BF16FloatTensor thiz, int thisOffset, F32FloatTensor that, int thatOffset, int size) {
+    private static float vectorDot(BF16FloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
         assert S_SPECIES_HALF.length() == F_SPECIES.length();
         FloatVector val = FloatVector.zero(F_SPECIES);
         int upperBound = F_SPECIES.loopBound(size);
@@ -3544,7 +3573,7 @@ final class F16FloatTensor extends SegmentFloatTensor {
         return new F16FloatTensor(n, segment);
     }
 
-    @Override FloatVector getFloatVector(VectorSpecies<Float> species, int index) { throw new UnsupportedOperationException("getFloatVector"); }
+    @Override FloatVector getFloatVector(VectorSpecies<Float> species, long index) { throw new UnsupportedOperationException("getFloatVector"); }
     @Override public GGMLType type() { return GGMLType.F16; }
 
     static FloatVector f16ToF32Vector(MemorySegment memSeg, long byteOffset) {
@@ -3563,12 +3592,12 @@ final class F16FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    public void setFloat(int index, float value) {
+    public void setFloat(long index, float value) {
         writeShort(memorySegment, (long) index * 2, Float.floatToFloat16(value));
     }
 
     @Override
-    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+    public float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
         if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor f32) {
             return vectorDotF32(this, thisOffset, f32, thatOffset, size);
         }
@@ -3576,28 +3605,28 @@ final class F16FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+    void gemv(FloatTensor that, long thatOffset, FloatTensor out, long outOffset, int dim0, int dim1, long thisOffset) {
         if (that instanceof F32FloatTensor x && out instanceof F32FloatTensor o && that != out
-                && Kernels.INSTANCE.gemvF16F32(this, thisOffset, x, thatOffset, o, outOffset, dim0, dim1)) {
+                && MatMul.INSTANCE.mm(this, thisOffset, dim1, x, thatOffset, dim1, o, outOffset, dim0, dim0, 1, dim1)) {
             return;
         }
         super.gemv(that, thatOffset, out, outOffset, dim0, dim1, thisOffset);
     }
 
     @Override
-    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
         if (sequenceLength == 1) {
             gemv(that, 0, out, 0, dim0, dim1, thisOffset);
             return;
         }
         if (that instanceof F32FloatTensor xf && out instanceof F32FloatTensor of && that != out
-                && Kernels.INSTANCE.gemmF16F32(this, thisOffset, xf, thatStride, of, outStride, sequenceLength, dim0, dim1)) {
+                && MatMul.INSTANCE.mm(this, thisOffset, dim1, xf, 0, thatStride, of, 0, outStride, dim0, sequenceLength, dim1)) {
             return;
         }
         super.gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 
-    private static float vectorDotF32(F16FloatTensor thiz, int thisOffset, F32FloatTensor that, int thatOffset, int size) {
+    private static float vectorDotF32(F16FloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
         assert S_SPECIES_HALF.length() == F_SPECIES.length();
         FloatVector val = FloatVector.zero(F_SPECIES);
         int upperBound = F_SPECIES.loopBound(size);
@@ -3649,14 +3678,14 @@ final class F32FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    public void setFloat(int index, float value) {
+    public void setFloat(long index, float value) {
         writeFloat(memorySegment, (long) index * Float.BYTES, value);
     }
 
     @Override public GGMLType type() { return GGMLType.F32; }
 
     @Override
-    public FloatVector getFloatVector(VectorSpecies<Float> species, int index) {
+    public FloatVector getFloatVector(VectorSpecies<Float> species, long index) {
         if (!USE_VECTOR_API) {
             throw new UnsupportedOperationException();
         }
@@ -3664,7 +3693,7 @@ final class F32FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    public float dot(int thisOffset, FloatTensor that, int thatOffset, int size) {
+    public float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
         if (that instanceof F32FloatTensor f32 && USE_VECTOR_API) {
             return vectorDot(this, thisOffset, f32, thatOffset, size);
         }
@@ -3675,29 +3704,29 @@ final class F32FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    void gemv(FloatTensor that, int thatOffset, FloatTensor out, int outOffset, int dim0, int dim1, int thisOffset) {
+    void gemv(FloatTensor that, long thatOffset, FloatTensor out, long outOffset, int dim0, int dim1, long thisOffset) {
         if (that instanceof F32FloatTensor x && out instanceof F32FloatTensor o && that != out
-                && Kernels.INSTANCE.gemvF32F32(this, thisOffset, x, thatOffset, o, outOffset, dim0, dim1)) {
+                && MatMul.INSTANCE.mm(this, thisOffset, dim1, x, thatOffset, dim1, o, outOffset, dim0, dim0, 1, dim1)) {
             return;
         }
         super.gemv(that, thatOffset, out, outOffset, dim0, dim1, thisOffset);
     }
 
     @Override
-    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, int thisOffset) {
+    void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
         if (sequenceLength == 1) {
             gemv(that, 0, out, 0, dim0, dim1, thisOffset);
             return;
         }
         if (that instanceof F32FloatTensor xf && out instanceof F32FloatTensor of && that != out
-                && Kernels.INSTANCE.gemmF32F32(this, thisOffset, xf, thatStride, of, outStride, sequenceLength, dim0, dim1)) {
+                && MatMul.INSTANCE.mm(this, thisOffset, dim1, xf, 0, thatStride, of, 0, outStride, dim0, sequenceLength, dim1)) {
             return;
         }
         super.gemm(that, thatStride, out, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 
     @Override
-    public FloatTensor fillInPlace(int thisOffset, int size, float value) {
+    public FloatTensor fillInPlace(long thisOffset, int size, float value) {
         if (USE_VECTOR_API) {
             FloatVector fill = FloatVector.broadcast(F_SPECIES, value);
             int upperBound = F_SPECIES.loopBound(size);
@@ -3714,7 +3743,7 @@ final class F32FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    FloatTensor addInPlace(int thisOffset, FloatTensor that, int thatOffset, int size) {
+    FloatTensor addInPlace(long thisOffset, FloatTensor that, long thatOffset, int size) {
         if (that instanceof F32FloatTensor f32 && USE_VECTOR_API) {
             int upperBound = F_SPECIES.loopBound(size);
             int i = 0;
@@ -3732,7 +3761,7 @@ final class F32FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    FloatTensor saxpyInPlace(int thisOffset, FloatTensor that, int thatOffset, int size, float a) {
+    FloatTensor saxpyInPlace(long thisOffset, FloatTensor that, long thatOffset, int size, float a) {
         if (that instanceof F16FloatTensor f16 && USE_VECTOR_API) {
             FloatVector va = FloatVector.broadcast(F_SPECIES, a);
             int upperBound = F_SPECIES.loopBound(size);
@@ -3757,7 +3786,7 @@ final class F32FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    void copyTo(int thisOffset, FloatTensor that, int thatOffset, int size) {
+    void copyTo(long thisOffset, FloatTensor that, long thatOffset, int size) {
         if (that instanceof F32FloatTensor f32) {
             MemorySegment.copy(memorySegment, (long) thisOffset * Float.BYTES,
                     f32.memorySegment, (long) thatOffset * Float.BYTES, (long) size * Float.BYTES);
@@ -3767,7 +3796,7 @@ final class F32FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    FloatTensor siluMultiplyInPlace(int thisOffset, FloatTensor that, int thatOffset, int size) {
+    FloatTensor siluMultiplyInPlace(long thisOffset, FloatTensor that, long thatOffset, int size) {
         if (that instanceof F32FloatTensor f32 && USE_VECTOR_API && JIT_VECTOR_MATH) {
             // silu(g)*u with lanewise EXP (vector math stubs); scalar Math.exp costs ~10-20% of a token
             FloatVector one = FloatVector.broadcast(F_SPECIES, 1f);
@@ -3789,7 +3818,7 @@ final class F32FloatTensor extends SegmentFloatTensor {
         return super.siluMultiplyInPlace(thisOffset, that, thatOffset, size);
     }
 
-    private static float vectorDot(F32FloatTensor thiz, int thisOffset, F32FloatTensor that, int thatOffset, int size) {
+    private static float vectorDot(F32FloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
         FloatVector val = FloatVector.zero(F_SPECIES);
         int upperBound = F_SPECIES.loopBound(size);
         for (int i = 0; i < upperBound; i += F_SPECIES.length()) {

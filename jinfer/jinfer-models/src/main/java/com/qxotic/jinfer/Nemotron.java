@@ -255,8 +255,8 @@ final class Nemotron implements Model {
         state.moeAccum.fillInPlace(0, dim, 0f);
         for (int k = 0; k < topK; k++) {
             int e = topExperts[k];
-            int upOffset = e * expertFF * dim;
-            int downOffset = e * dim * expertFF;
+            long upOffset = (long) e * expertFF * dim;
+            long downOffset = (long) e * dim * expertFF;
             w.ffnUpExps[layer].matmul(state.xb, state.moeHidden, expertFF, dim, upOffset);
             state.moeHidden.reluSqrInPlace(0, expertFF);
             w.ffnDownExps[layer].matmul(state.moeHidden, state.moeExpertOut, dim, expertFF, downOffset);
@@ -494,9 +494,9 @@ final class Nemotron implements Model {
         r.seqLen = seqLen; r.topK = topK; r.numExperts = numExperts;
         Moe.dispatch(r, dim, state.moeInputB, state.moeGather, state.moeDownB, state.moeOutB, null,
                 (e, n, gather, out) -> {
-                    w.ffnUpExps[layer].gemm(gather, dim, state.moeUpB, expertFF, n, expertFF, dim, e * expertFF * dim);
+                    w.ffnUpExps[layer].gemm(gather, dim, state.moeUpB, expertFF, n, expertFF, dim, (long) e * expertFF * dim);
                     Parallel.forRows(n, j -> state.moeUpB.reluSqrInPlace(j * expertFF, expertFF));
-                    w.ffnDownExps[layer].gemm(state.moeUpB, expertFF, out, dim, n, dim, expertFF, e * dim * expertFF);
+                    w.ffnDownExps[layer].gemm(state.moeUpB, expertFF, out, dim, n, dim, expertFF, (long) e * dim * expertFF);
                 });
 
         // Shared expert (batched), squared-ReLU, added with coefficient 1.

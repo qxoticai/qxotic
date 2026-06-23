@@ -26,9 +26,9 @@ public final class GemvBench {
         F32FloatTensor out = F32FloatTensor.allocate(dim0);
         for (int i = 0; i < dim1; i++) x.setFloat(i, 0.013f * (i % 11));
 
-        for (int it = 0; it < 60; it++) Q8_0FloatTensor.vectorGemv512(w, x, 0, out, 0, dim0, dim1, 0);
+        for (int it = 0; it < 60; it++) MatMul.INSTANCE.mm(w, 0, dim1, x, 0, dim1, out, 0, dim0, dim0, 1, dim1);
         long t0 = System.nanoTime();
-        for (int it = 0; it < iters; it++) Q8_0FloatTensor.vectorGemv512(w, x, 0, out, 0, dim0, dim1, 0);
+        for (int it = 0; it < iters; it++) MatMul.INSTANCE.mm(w, 0, dim1, x, 0, dim1, out, 0, dim0, dim0, 1, dim1);
         long t1 = System.nanoTime();
 
         double secs = (t1 - t0) / 1e9;

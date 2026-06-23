@@ -1218,12 +1218,12 @@ record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weight
                 }
             }
             if (count == 0) continue;
-            int gateOffset = expertIdx * expertFF * dim;
-            int upOffset = expertIdx * expertFF * dim;
+            long gateOffset = (long) expertIdx * expertFF * dim;
+            long upOffset = (long) expertIdx * expertFF * dim;
             moe.gateExps().gemm(batch.moeInput, dim, batch.moeGate, expertFF, count, expertFF, dim, gateOffset);
             moe.upExps().gemm(batch.moeInput, dim, batch.moeUp, expertFF, count, expertFF, dim, upOffset);
             batch.moeGate.siluMultiplyInPlace(0, batch.moeUp, 0, count * expertFF);
-            int downOffset = expertIdx * dim * expertFF;
+            long downOffset = (long) expertIdx * dim * expertFF;
             moe.downExps().gemm(batch.moeGate, expertFF, batch.moeDown, dim, count, dim, expertFF, downOffset);
 
             for (int i = 0; i < count; i++) {

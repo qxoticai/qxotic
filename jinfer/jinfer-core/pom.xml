@@ -33,5 +33,10 @@
             <groupId>com.qxotic</groupId>
             <artifactId>json</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.qxotic</groupId>
+            <artifactId>jam</artifactId>
+            <version>0.1.0</version>
+        </dependency>
     </dependencies>
 </project>

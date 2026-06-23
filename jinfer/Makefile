@@ -36,11 +36,17 @@ JAVA_MAIN_CLASS = com.qxotic.jinfer.LFM25
 JAR_FILE = jinfer.jar
 
 # External dependencies (fetched from Maven Central into libs/)
-DEPS = libs/gguf-0.1.0.jar libs/toknroll-core-0.1.0.jar libs/toknroll-gguf-0.1.0.jar libs/json-0.1.0.jar
-DEPS_CLASSPATH = libs/gguf-0.1.0.jar:libs/toknroll-core-0.1.0.jar:libs/toknroll-gguf-0.1.0.jar:libs/json-0.1.0.jar
+DEPS = libs/gguf-0.1.0.jar libs/toknroll-core-0.1.0.jar libs/toknroll-gguf-0.1.0.jar libs/json-0.1.0.jar libs/jam-0.1.0.jar
+DEPS_CLASSPATH = libs/gguf-0.1.0.jar:libs/toknroll-core-0.1.0.jar:libs/toknroll-gguf-0.1.0.jar:libs/json-0.1.0.jar:libs/jam-0.1.0.jar
 
 # Multi-module classpath (Maven-compiled)
 MM_CP = jinfer-core/target/classes:jinfer-jinja/target/classes:jinfer-models/target/classes:jinfer-server/target/classes
+
+# jam is the native matmul backend (../qxotic/jam) — built+installed locally, not on Maven Central:
+#   cd ../qxotic/jam && cmake --build build && mvn -q install -DskipTests
+libs/jam-0.1.0.jar:
+	mkdir -p libs
+	cp $(HOME)/.m2/repository/com/qxotic/jam/0.1.0/jam-0.1.0.jar $@
 
 libs/%.jar:
 	mkdir -p libs

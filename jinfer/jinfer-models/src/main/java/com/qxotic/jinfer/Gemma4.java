@@ -702,10 +702,10 @@ final class Gemma4 implements Model {
         Moe.dispatch(r, dim, state.moeInputB, state.moeGather, state.moeDownB, state.moeOutB, weights.ffnDownExpsScale[l],
                 (e, n, gather, out) -> {
                     // gate/up into state.hb (free after the shared MLP; maxHiddenDim >= gateUpDim), then GELU.
-                    weights.ffnGateUpExps[l].gemm(gather, dim, state.hb, gateUpDim, n, gateUpDim, dim, e * gateUpDim * dim);
+                    weights.ffnGateUpExps[l].gemm(gather, dim, state.hb, gateUpDim, n, gateUpDim, dim, (long) e * gateUpDim * dim);
                     Parallel.forRows(n, j -> geluMultiply(state.hb, j * gateUpDim, state.hb, j * gateUpDim + expertFF, expertFF));
                     // down reads the first expertFF of each gateUpDim-strided row.
-                    weights.ffnDownExps[l].gemm(state.hb, gateUpDim, out, dim, n, dim, expertFF, e * dim * expertFF);
+                    weights.ffnDownExps[l].gemm(state.hb, gateUpDim, out, dim, n, dim, expertFF, (long) e * dim * expertFF);
                 });
 
         // post_norm_2(experts) + shared, then post_ffw_norm, added to the residual (per row).
