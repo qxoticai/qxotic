@@ -13,8 +13,8 @@ import java.util.concurrent.TimeUnit;
  * <ul>
  *   <li>jinfer.VectorBitSize — vector species selection (FloatTensor)</li>
  *   <li>jdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK — GLOBAL_SEGMENT routing (FloatTensor)</li>
- *   <li>jinfer.Q8_0GemmTile — register-tile shape (JavaKernels)</li>
- *   <li>jinfer.staticGemm / llama.nativeGemmLib / llama.nativeGemv — backend binding (NativeKernels, Kernels.INSTANCE)</li>
+ *   <li>jinfer.Q8_0GemmTile — register-tile shape (Java tiled gemm)</li>
+ *   <li>jinfer.staticGemm / llama.nativeGemmLib / llama.nativeGemv — backend binding (removed — see MatMul)</li>
  *   <li>jinfer.PreloadGGUF — model baked into the image heap (AOT)</li>
  * </ul>
  */

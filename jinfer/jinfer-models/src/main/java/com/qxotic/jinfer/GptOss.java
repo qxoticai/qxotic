@@ -197,8 +197,8 @@ final class GptOss implements Model {
         for (int k = 0; k < topK; k++) {
             int e = topExperts[k];
             float prob = topWeights[k] * inv * config.expertWeightsScale;
-            int gateUpOffset = e * expertFF * dim;
-            int downOffset = e * dim * expertFF;
+            long gateUpOffset = (long) e * expertFF * dim;
+            long downOffset = (long) e * dim * expertFF;
             w.ffnGateExps[layer].matmul(state.moeInput, state.hb, expertFF, dim, gateUpOffset);
             addBias(state.hb, 0, w.ffnGateExpsBias[layer], e * expertFF, expertFF);
             w.ffnUpExps[layer].matmul(state.moeInput, state.hb2, expertFF, dim, gateUpOffset);
@@ -408,8 +408,8 @@ final class GptOss implements Model {
             int fE = e;
             // gather this expert's rows (parallel; each writes a distinct moeGather row).
             Parallel.forRows(n, j -> state.moeInputB.copyTo(state.moeRowByExpert[start + j] * dim, state.moeGather, j * dim, dim));
-            int gateUpOffset = e * expertFF * dim;
-            int downOffset = e * dim * expertFF;
+            long gateUpOffset = (long) e * expertFF * dim;
+            long downOffset = (long) e * dim * expertFF;
             // gate + bias, up + bias, clampedSwiglu(gate, up) -> moeGateB (per row).
             w.ffnGateExps[l].gemm(state.moeGather, dim, state.moeGateB, expertFF, n, expertFF, dim, gateUpOffset);
             w.ffnUpExps[l].gemm(state.moeGather, dim, state.moeUpB, expertFF, n, expertFF, dim, gateUpOffset);
