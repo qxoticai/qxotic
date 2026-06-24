@@ -1330,6 +1330,137 @@ final class Q5_KFloatTensor extends SegmentFloatTensor {
 
         return result;
     }
+
+    static void vectorGemm512(Q5_KFloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
+                              int thatStride, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
+        final int seqTile = Math.max(4, RuntimeFlags.GEMM_SEQ_TILE_QK);
+        final int rowTile = Math.max(2, RuntimeFlags.GEMM_ROW_TILE);
+        final int seqTileCount = (sequenceLength + seqTile - 1) / seqTile;
+        final int rowTileCount = (dim0 + rowTile - 1) / rowTile;
+        int tileCount = rowTileCount * seqTileCount;
+        if (tileCount == 0) {
+            return;
+        }
+        int workers = Math.min(tileCount, Math.max(1, RuntimeFlags.GEMM_THREADS));
+        Parallel.parallelFor(0, workers, worker -> {
+            int tileStart = (int) ((long) tileCount * worker / workers);
+            int tileEnd = (int) ((long) tileCount * (worker + 1) / workers);
+            for (int tileIndex = tileStart; tileIndex < tileEnd; tileIndex++) {
+                int rowStart = (tileIndex / seqTileCount) * rowTile;
+                int s0 = (tileIndex % seqTileCount) * seqTile;
+                int rowEnd = Math.min(dim0, rowStart + rowTile);
+                int seqEnd = Math.min(sequenceLength, s0 + seqTile);
+                int row = rowStart;
+                for (; row + 1 < rowEnd; row += 2) {
+                    int s = s0;
+                    for (; s + 3 < seqEnd; s += 4) {
+                        gemm512Tile2x4(thiz, that, out, thatStride, outStride, dim1, thisOffset, row, s);
+                    }
+                    for (; s < seqEnd; s++) {
+                        out.setFloat(s * outStride + row, vectorDot(thiz, thisOffset + row * dim1, that, s * thatStride, dim1));
+                        out.setFloat(s * outStride + row + 1, vectorDot(thiz, thisOffset + (row + 1) * dim1, that, s * thatStride, dim1));
+                    }
+                }
+                for (; row < rowEnd; row++) {
+                    for (int s = s0; s < seqEnd; s++) {
+                        out.setFloat(s * outStride + row, vectorDot(thiz, thisOffset + row * dim1, that, s * thatStride, dim1));
+                    }
+                }
+            }
+        });
+    }
+
+    // 2 weight rows x 4 activation columns: identical to Q4_K's tile, plus the 5th bit from qh (per
+    // sub-block: lo nibbles take qh bit 2g, hi nibbles bit 2g+1) merged into each weight before the FMA.
+    private static void gemm512Tile2x4(Q5_KFloatTensor thiz, F32FloatTensor x, F32FloatTensor out,
+                                       int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
+        final MemorySegment w = thiz.memorySegment;
+        final long rowStride = (long) (dim1 / BLOCK_SIZE) * TYPE_SIZE;
+        long b0 = (long) ((thisOffset + row * dim1) / BLOCK_SIZE) * TYPE_SIZE;
+        long b1 = b0 + rowStride;
+        final MemorySegment xs = x.vseg;
+        final long xb = x.vbase;
+        long x0 = xb + 4L * ((long) s * thatStride);
+        long x1 = x0 + 4L * thatStride;
+        long x2 = x1 + 4L * thatStride;
+        long x3 = x2 + 4L * thatStride;
+        FloatVector c00 = FloatVector.zero(F_SPECIES), c01 = FloatVector.zero(F_SPECIES), c02 = FloatVector.zero(F_SPECIES), c03 = FloatVector.zero(F_SPECIES);
+        FloatVector c10 = FloatVector.zero(F_SPECIES), c11 = FloatVector.zero(F_SPECIES), c12 = FloatVector.zero(F_SPECIES), c13 = FloatVector.zero(F_SPECIES);
+        for (int j = 0; j < dim1; j += BLOCK_SIZE, b0 += TYPE_SIZE, b1 += TYPE_SIZE) {
+            float d0 = readFloat16(w, b0);
+            float dmin0 = readFloat16(w, b0 + 2);
+            float d1 = readFloat16(w, b1);
+            float dmin1 = readFloat16(w, b1 + 2);
+            // qh: 32 bytes at block offset 16 (1 bit per weight, indexed by element); two 16-byte chunks per row.
+            var qh0r0 = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + 16, ByteOrder.LITTLE_ENDIAN);
+            var qh1r0 = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + 32, ByteOrder.LITTLE_ENDIAN);
+            var qh0r1 = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + 16, ByteOrder.LITTLE_ENDIAN);
+            var qh1r1 = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + 32, ByteOrder.LITTLE_ENDIAN);
+            for (int g = 0; g < 4; g++) {
+                float r0dLo = d0 * Q4_KFloatTensor.getScaleMinK4(g * 2, w, b0 + 4, false);
+                float r0mLo = -(dmin0 * Q4_KFloatTensor.getScaleMinK4(g * 2, w, b0 + 4, true));
+                float r0dHi = d0 * Q4_KFloatTensor.getScaleMinK4(g * 2 + 1, w, b0 + 4, false);
+                float r0mHi = -(dmin0 * Q4_KFloatTensor.getScaleMinK4(g * 2 + 1, w, b0 + 4, true));
+                float r1dLo = d1 * Q4_KFloatTensor.getScaleMinK4(g * 2, w, b1 + 4, false);
+                float r1mLo = -(dmin1 * Q4_KFloatTensor.getScaleMinK4(g * 2, w, b1 + 4, true));
+                float r1dHi = d1 * Q4_KFloatTensor.getScaleMinK4(g * 2 + 1, w, b1 + 4, false);
+                float r1mHi = -(dmin1 * Q4_KFloatTensor.getScaleMinK4(g * 2 + 1, w, b1 + 4, true));
+                var vd0Lo = FloatVector.broadcast(F_SPECIES, r0dLo);
+                var vm0Lo = FloatVector.broadcast(F_SPECIES, r0mLo);
+                var vd0Hi = FloatVector.broadcast(F_SPECIES, r0dHi);
+                var vm0Hi = FloatVector.broadcast(F_SPECIES, r0mHi);
+                var vd1Lo = FloatVector.broadcast(F_SPECIES, r1dLo);
+                var vm1Lo = FloatVector.broadcast(F_SPECIES, r1mLo);
+                var vd1Hi = FloatVector.broadcast(F_SPECIES, r1dHi);
+                var vm1Hi = FloatVector.broadcast(F_SPECIES, r1mHi);
+                int bitLo = 2 * g, bitHi = 2 * g + 1;
+                long xLo = 4L * (j + g * 64);
+                long xHi = xLo + 4L * 32;
+                for (int c = 0; c < 2; c++) {
+                    long qOff = (long) g * 32 + c * 16;
+                    var w0b = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + 48 + qOff, ByteOrder.LITTLE_ENDIAN);
+                    var w1b = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + 48 + qOff, ByteOrder.LITTLE_ENDIAN);
+                    var qhb0 = (c == 0) ? qh0r0 : qh1r0;
+                    var qhb1 = (c == 0) ? qh0r1 : qh1r1;
+                    var w0loB = w0b.and((byte) 0xF).or(qhb0.lanewise(VectorOperators.LSHR, bitLo).and((byte) 1).lanewise(VectorOperators.LSHL, 4));
+                    var w0hiB = w0b.lanewise(VectorOperators.LSHR, 4).or(qhb0.lanewise(VectorOperators.LSHR, bitHi).and((byte) 1).lanewise(VectorOperators.LSHL, 4));
+                    var w1loB = w1b.and((byte) 0xF).or(qhb1.lanewise(VectorOperators.LSHR, bitLo).and((byte) 1).lanewise(VectorOperators.LSHL, 4));
+                    var w1hiB = w1b.lanewise(VectorOperators.LSHR, 4).or(qhb1.lanewise(VectorOperators.LSHR, bitHi).and((byte) 1).lanewise(VectorOperators.LSHL, 4));
+                    var w0lo = ((FloatVector) w0loB.castShape(F_SPECIES, 0)).fma(vd0Lo, vm0Lo);
+                    var w0hi = ((FloatVector) w0hiB.castShape(F_SPECIES, 0)).fma(vd0Hi, vm0Hi);
+                    var w1lo = ((FloatVector) w1loB.castShape(F_SPECIES, 0)).fma(vd1Lo, vm1Lo);
+                    var w1hi = ((FloatVector) w1hiB.castShape(F_SPECIES, 0)).fma(vd1Hi, vm1Hi);
+                    long off = c * 16L * 4L;
+                    FloatVector aLo, aHi;
+                    aLo = FloatVector.fromMemorySegment(F_SPECIES, xs, x0 + xLo + off, ByteOrder.LITTLE_ENDIAN);
+                    aHi = FloatVector.fromMemorySegment(F_SPECIES, xs, x0 + xHi + off, ByteOrder.LITTLE_ENDIAN);
+                    c00 = c00.add(w0hi.fma(aHi, w0lo.mul(aLo)));
+                    c10 = c10.add(w1hi.fma(aHi, w1lo.mul(aLo)));
+                    aLo = FloatVector.fromMemorySegment(F_SPECIES, xs, x1 + xLo + off, ByteOrder.LITTLE_ENDIAN);
+                    aHi = FloatVector.fromMemorySegment(F_SPECIES, xs, x1 + xHi + off, ByteOrder.LITTLE_ENDIAN);
+                    c01 = c01.add(w0hi.fma(aHi, w0lo.mul(aLo)));
+                    c11 = c11.add(w1hi.fma(aHi, w1lo.mul(aLo)));
+                    aLo = FloatVector.fromMemorySegment(F_SPECIES, xs, x2 + xLo + off, ByteOrder.LITTLE_ENDIAN);
+                    aHi = FloatVector.fromMemorySegment(F_SPECIES, xs, x2 + xHi + off, ByteOrder.LITTLE_ENDIAN);
+                    c02 = c02.add(w0hi.fma(aHi, w0lo.mul(aLo)));
+                    c12 = c12.add(w1hi.fma(aHi, w1lo.mul(aLo)));
+                    aLo = FloatVector.fromMemorySegment(F_SPECIES, xs, x3 + xLo + off, ByteOrder.LITTLE_ENDIAN);
+                    aHi = FloatVector.fromMemorySegment(F_SPECIES, xs, x3 + xHi + off, ByteOrder.LITTLE_ENDIAN);
+                    c03 = c03.add(w0hi.fma(aHi, w0lo.mul(aLo)));
+                    c13 = c13.add(w1hi.fma(aHi, w1lo.mul(aLo)));
+                }
+            }
+        }
+        int o0 = s * outStride + row;
+        out.setFloat(o0, c00.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o0 + 1, c10.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o0 + outStride, c01.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o0 + outStride + 1, c11.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o0 + 2 * outStride, c02.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o0 + 2 * outStride + 1, c12.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o0 + 3 * outStride, c03.reduceLanes(VectorOperators.ADD));
+        out.setFloat(o0 + 3 * outStride + 1, c13.reduceLanes(VectorOperators.ADD));
+    }
 }
 
 final class Q6_KFloatTensor extends SegmentFloatTensor {
