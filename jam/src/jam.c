@@ -269,7 +269,7 @@ void jam_ctx_destroy(jam_ctx* ctx) {
     if (ctx->metal) jam_metal_destroy(ctx->metal);
 #endif
     if (ctx->ipool) jam_pool_destroy(ctx->ipool);
-    free(ctx->q_aq); free(ctx->q_ad);
+    free(ctx->q_aq); free(ctx->q_ad); free(ctx->q_asum);
     free(ctx->kq_xq); free(ctx->kq_dx); free(ctx->kq_xsum);
     for (int i = 0; i < ctx->kq_repack_n; i++) { free(ctx->kq_repack[i].qs); free(ctx->kq_repack[i].dw); free(ctx->kq_repack[i].mw); }
     free(ctx->kq_repack);
@@ -284,11 +284,11 @@ static int ensure_qscratch(jam_ctx* c, int n, int k) {
         free(c->q_aq); c->q_aq = malloc(need_aq); c->q_aq_cap = c->q_aq ? need_aq : 0;
     }
     if (need_d > c->q_d_cap) {
-        free(c->q_ad);
-        c->q_ad   = malloc(need_d * sizeof(float));
-        c->q_d_cap = c->q_ad ? need_d : 0;
+        free(c->q_ad);   c->q_ad   = malloc(need_d * sizeof(float));
+        free(c->q_asum); c->q_asum = malloc(need_d * sizeof(float));
+        c->q_d_cap = (c->q_ad && c->q_asum) ? need_d : 0;
     }
-    return c->q_aq && c->q_ad;
+    return c->q_aq && c->q_ad && c->q_asum;
 }
 
 /* Grow the K-quant scratch: s8 activations (seq×kblocks×32) + per-32 scales + per-16 sums, and one
@@ -367,7 +367,7 @@ static void jam_run(jam_ctx* c, int n, jam_task_fn fn, void* arg) {
 static jam_status run_quant(jam_ctx* ctx, jam_q8_job* q, int m, jam_task_fn simd, jam_task_fn floor_) {
     if (simd) {
         if (!ensure_qscratch(ctx, q->n, q->k)) return JAM_EINVAL;
-        q->aq = (int8_t*) ctx->q_aq; q->ad = (float*) ctx->q_ad;
+        q->aq = (int8_t*) ctx->q_aq; q->ad = (float*) ctx->q_ad; q->asum = (float*) ctx->q_asum;
         jam_run(ctx, q->n, jam_q8_0_requant, q);   /* phase 1: activations A -> int8 (shared) */
         jam_run(ctx, m, simd, q);                  /* phase 2: decode-W + int8 dot (over m weight rows) */
     } else {

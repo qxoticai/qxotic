@@ -79,12 +79,14 @@ void jam_q8_0_requant(void* arg, int rb, int re, int tid) {
             float amax = 0.0f;
             for (int e = 0; e < 32; ++e) { float a = fabsf(b[e]); if (a > amax) amax = a; }
             float d = amax / 127.0f, id = d > 0.0f ? 1.0f / d : 0.0f;
+            int sum = 0;
             for (int e = 0; e < 32; ++e) {
                 int v = (int) lrintf(b[e] * id);
                 if (v > 127) v = 127; else if (v < -128) v = -128;
-                q[(size_t) blk * 32 + e] = (int8_t) v;
+                q[(size_t) blk * 32 + e] = (int8_t) v; sum += v;
             }
             J->ad[(size_t) j * nb + blk] = d;
+            if (J->asum) J->asum[(size_t) j * nb + blk] = (float) sum;   /* Σaq, reused for the K-quant min term */
         }
     }
 }
