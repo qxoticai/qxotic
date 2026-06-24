@@ -217,7 +217,8 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
 #ifdef JAM_HAVE_AVX2
     if (cpu >= JAM_ISA_AVX2) { c->f32_kernel = jam_mm_f32_avx2;
         c->q8_kernel = jam_mm_q8_0_avx2; c->mxfp4_kernel = jam_mm_mxfp4_avx2;
-        c->q4_0_kernel = jam_mm_q4_0_avx2; }
+        c->q4_0_kernel = jam_mm_q4_0_avx2;
+        c->q4k_kernel = jam_mm_q4k_avx2; c->q5k_kernel = jam_mm_q5k_avx2; c->q6k_kernel = jam_mm_q6k_avx2; }
 #endif
 #ifdef JAM_HAVE_AVXVNNI
     /* AVX-VNNI is orthogonal to the ladder: cpu>=AVX_VNNI is necessary (it respects max_isa) but NOT
