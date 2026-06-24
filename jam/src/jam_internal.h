@@ -39,7 +39,8 @@ struct jam_ctx {
      * serially (the global ctx by jinfer's forward thread); concurrent jam_mm on ONE ctx would race
      * this — TODO for a concurrent-safe variant. The generic path needs none of it. */
     void*  q_aq;   size_t q_aq_cap;   /* int8 [n*k] requantized activations */
-    void*  q_ad;   size_t q_d_cap;   /* float [n*nb] per-block scales */
+    void*  q_ad;   size_t q_d_cap;   /* float [n*nb] per-block scales (q_asum shares this cap) */
+    void*  q_asum;                    /* float [n*nb] per-block Σ int8 acts (K-quant min term) */
 
     void*  metal;                    /* jam_metal* GPU backend, or NULL (Apple, opt-in). Routes before CPU. */
 
@@ -86,6 +87,7 @@ typedef struct {
     int n, k, nb;               /* nb = k/32 */
     int8_t*  aq;                /* [n*k]  requantized activations (VNNI) */
     float*   ad;                /* [n*nb] per-block activation scales */
+    float*   asum;              /* [n*nb] per-block Σ(int8 activations) — K-quant dmin·min term (or NULL) */
 } jam_q8_job;
 
 void jam_mm_q8_0_f32_generic(void* job, int row_begin, int row_end, int tid);  /* portable floor */

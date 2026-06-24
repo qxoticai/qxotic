@@ -23,11 +23,12 @@ void jam_mm_q4k_avx2(void* arg, int rb, int re, int tid) {
     const int ldc = J->ldc, n = J->n, k = J->k, nb = J->nb;
     const int sblocks = k / JAM_QKK;
     const size_t w_stride = (size_t) sblocks * JAM_Q4K_BYTES;
-    const __m256i m4 = _mm256_set1_epi8(0x0F), ones = _mm256_set1_epi8(1);
+    const __m256i m4 = _mm256_set1_epi8(0x0F);
     for (int i = rb; i < re; ++i) {
         const uint8_t* wrow = (const uint8_t*) (W + (size_t) i * w_stride);
         for (int j = 0; j < n; ++j) {
             const int8_t* aq = AQ + (size_t) j * k; const float* ad = AD + (size_t) j * nb;
+            const float* as = J->asum + (size_t) j * nb;   /* Σaq precomputed in requant */
             const uint8_t* w = wrow; float acc = 0.0f;
             for (int B = 0; B < sblocks; ++B, w += JAM_Q4K_BYTES) {
                 float d = _cvtsh_ss(*(const uint16_t*) w), dmin = _cvtsh_ss(*(const uint16_t*) (w + 2));
@@ -40,8 +41,7 @@ void jam_mm_q4k_avx2(void* arg, int rb, int re, int tid) {
                     int blk = B*8 + s;
                     __m256i av = _mm256_loadu_si256((const __m256i*) (aq + (size_t) blk*32));
                     float dot = jam_hsum8_256(KDOT(wq, av));
-                    float sum = jam_hsum8_256(KDOT(ones, av));
-                    acc += ad[blk] * (d*sc[s]*dot - dmin*mn[s]*sum);
+                    acc += ad[blk] * (d*sc[s]*dot - dmin*mn[s]*as[blk]);
                 }
             }
             C[(size_t) j*ldc + i] = acc;
@@ -58,11 +58,12 @@ void jam_mm_q5k_avx2(void* arg, int rb, int re, int tid) {
     const int ldc = J->ldc, n = J->n, k = J->k, nb = J->nb;
     const int sblocks = k / JAM_QKK;
     const size_t w_stride = (size_t) sblocks * JAM_Q5K_BYTES;
-    const __m256i m4 = _mm256_set1_epi8(0x0F), one = _mm256_set1_epi8(1), ones = _mm256_set1_epi8(1);
+    const __m256i m4 = _mm256_set1_epi8(0x0F), one = _mm256_set1_epi8(1);
     for (int i = rb; i < re; ++i) {
         const uint8_t* wrow = (const uint8_t*) (W + (size_t) i * w_stride);
         for (int j = 0; j < n; ++j) {
             const int8_t* aq = AQ + (size_t) j * k; const float* ad = AD + (size_t) j * nb;
+            const float* as = J->asum + (size_t) j * nb;
             const uint8_t* w = wrow; float acc = 0.0f;
             for (int B = 0; B < sblocks; ++B, w += JAM_Q5K_BYTES) {
                 float d = _cvtsh_ss(*(const uint16_t*) w), dmin = _cvtsh_ss(*(const uint16_t*) (w + 2));
@@ -79,8 +80,7 @@ void jam_mm_q5k_avx2(void* arg, int rb, int re, int tid) {
                     int blk = B*8 + s;
                     __m256i av = _mm256_loadu_si256((const __m256i*) (aq + (size_t) blk*32));
                     float dot = jam_hsum8_256(KDOT(wq, av));
-                    float sum = jam_hsum8_256(KDOT(ones, av));
-                    acc += ad[blk] * (d*sc[s]*dot - dmin*mn[s]*sum);
+                    acc += ad[blk] * (d*sc[s]*dot - dmin*mn[s]*as[blk]);
                 }
             }
             C[(size_t) j*ldc + i] = acc;

@@ -5,8 +5,8 @@
 #include "jam_kquant.h"
 #include <arm_neon.h>
 
-/* 32-wide signed int8 dot of weight bytes w0u|w1u and int8 activations a, plus Σa (for the min term). */
-static inline int jam_kdot32_neon(uint8x16_t w0u, uint8x16_t w1u, const int8_t* a, int* sum_a) {
+/* 32-wide signed int8 dot of weight bytes w0u|w1u and int8 activations a (Σa is precomputed in requant). */
+static inline int jam_kdot32_neon(uint8x16_t w0u, uint8x16_t w1u, const int8_t* a) {
     int8x16_t w0 = vreinterpretq_s8_u8(w0u), w1 = vreinterpretq_s8_u8(w1u);
     int8x16_t a0 = vld1q_s8(a), a1 = vld1q_s8(a + 16);
     int32x4_t d = vdupq_n_s32(0);
@@ -14,7 +14,6 @@ static inline int jam_kdot32_neon(uint8x16_t w0u, uint8x16_t w1u, const int8_t* 
     d = vpadalq_s16(d, vmull_s8(vget_high_s8(w0), vget_high_s8(a0)));
     d = vpadalq_s16(d, vmull_s8(vget_low_s8(w1),  vget_low_s8(a1)));
     d = vpadalq_s16(d, vmull_s8(vget_high_s8(w1), vget_high_s8(a1)));
-    *sum_a = (int) vaddlvq_s8(a0) + (int) vaddlvq_s8(a1);
     return (int) vaddvq_s32(d);
 }
 

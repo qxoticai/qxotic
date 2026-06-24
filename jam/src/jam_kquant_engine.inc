@@ -41,10 +41,10 @@ void JAM_Q4K_NAME(void* arg, int rb, int re, int tid) {
                     float dl=d*sc[2*g], ml=dmin*mn[2*g], dh=d*sc[2*g+1], mh=dmin*mn[2*g+1];
                     for (int c = 0; c < JAM_KTN; ++c) { int j = j0+c; if (j >= n) break;
                         const int8_t* aq = AQ + (size_t) j * k; const float* ad = AD + (size_t) j * nb;
-                        int sl, sh;
-                        int dlo = JAM_KDOT32(wl0, wl1, aq + (size_t) bl*32, &sl);
-                        int dhi = JAM_KDOT32(wh0, wh1, aq + (size_t) bh*32, &sh);
-                        acc[c] += ad[bl] * (dl*dlo - ml*sl) + ad[bh] * (dh*dhi - mh*sh);
+                        const float* as = J->asum + (size_t) j * nb;   /* Σaq precomputed in requant */
+                        int dlo = JAM_KDOT32(wl0, wl1, aq + (size_t) bl*32);
+                        int dhi = JAM_KDOT32(wh0, wh1, aq + (size_t) bh*32);
+                        acc[c] += ad[bl] * (dl*dlo - ml*as[bl]) + ad[bh] * (dh*dhi - mh*as[bh]);
                     }
                 }
             }
@@ -85,10 +85,10 @@ void JAM_Q5K_NAME(void* arg, int rb, int re, int tid) {
                     float dl=d*sc[2*g], ml=dmin*mn[2*g], dh=d*sc[2*g+1], mh=dmin*mn[2*g+1];
                     for (int c = 0; c < JAM_KTN; ++c) { int j = j0+c; if (j >= n) break;
                         const int8_t* aq = AQ + (size_t) j * k; const float* ad = AD + (size_t) j * nb;
-                        int sl, sh;
-                        int dlo = JAM_KDOT32(wl0, wl1, aq + (size_t) bl*32, &sl);
-                        int dhi = JAM_KDOT32(wh0, wh1, aq + (size_t) bh*32, &sh);
-                        acc[c] += ad[bl] * (dl*dlo - ml*sl) + ad[bh] * (dh*dhi - mh*sh);
+                        const float* as = J->asum + (size_t) j * nb;   /* Σaq precomputed in requant */
+                        int dlo = JAM_KDOT32(wl0, wl1, aq + (size_t) bl*32);
+                        int dhi = JAM_KDOT32(wh0, wh1, aq + (size_t) bh*32);
+                        acc[c] += ad[bl] * (dl*dlo - ml*as[bl]) + ad[bh] * (dh*dhi - mh*as[bh]);
                     }
                 }
             }
