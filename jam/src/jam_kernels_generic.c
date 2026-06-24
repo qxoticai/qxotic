@@ -125,36 +125,38 @@ void jam_mm_mxfp4_f32_generic(void* arg, int rb, int re, int tid) {
     }
 }
 
-/* NVFP4 weight @ F32 activation -> F32, portable reference/floor. 16-element blocks with an E4M3 per-block
- * scale; the per-tensor FP32 global scale G is a 4-byte header at the weight-buffer start, applied once per
- * output. value = G · e4m3(e) · fp4 (codes ×2, ×½ in dhalf). See jam_nvfp4.h for the prototype-layout caveats. */
+/* NVFP4 weight @ F32 activation -> F32, portable reference/floor. PLANAR layout: FP4 data plane (J->a) +
+ * E4M3 scale plane (J->wscale); per-tensor global scale G is applied by the caller (not here). Processed in
+ * 32-element spans (= 2 NVFP4 blocks), MXFP4-style: a 16-byte span -> low nibbles = elements 0..15 (scale
+ * s0), high nibbles = 16..31 (scale s1). value = e4m3(block_scale) · fp4 (codes ×2, ×½ in dhalf). nb = k/32. */
 void jam_mm_nvfp4_f32_generic(void* arg, int rb, int re, int tid) {
     (void) tid;
     static const int8_t kv[16] = { JAM_MXFP4_CODES };
     const jam_q8_job* J = (const jam_q8_job*) arg;
-    const char*  W = (const char*)  J->a;     /* [float G][blocks] */
-    const float* A = (const float*) J->b;     /* F32 activations */
+    const uint8_t* DATA  = (const uint8_t*) J->a;       /* FP4 data plane */
+    const uint8_t* SCALE = (const uint8_t*) J->wscale;  /* E4M3 scale plane */
+    const float* A = (const float*) J->b;
     float* C = (float*) J->c;
-    const int ldc = J->ldc, ldb = J->ldb, n = J->n, nb = J->nb;   /* nb = k/16 */
-    float G; memcpy(&G, W, 4);                                    /* per-tensor global FP32 scale */
-    const jam_nvfp4_blk* base = (const jam_nvfp4_blk*) (W + 4);
+    const int ldc = J->ldc, ldb = J->ldb, n = J->n, nb = J->nb;   /* nb = k/32 (32-element spans) */
+    const size_t drow = (size_t) nb * 16, srow = (size_t) nb * 2;
     for (int i = rb; i < re; ++i) {
-        const jam_nvfp4_blk* wr = base + (size_t) i * nb;
+        const uint8_t* dr = DATA + (size_t) i * drow;
+        const uint8_t* sr = SCALE + (size_t) i * srow;
         for (int j = 0; j < n; ++j) {
             const float* arow = A + (size_t) j * ldb;
             float acc = 0.0f;
             for (int b = 0; b < nb; ++b) {
-                const jam_nvfp4_blk* w = &wr[b];
-                float dW = jam_nvfp4_dhalf(w->e);
-                const float* aa = arow + (size_t) b * JAM_NVFP4_BLK;
-                float s = 0.0f;
-                for (int t = 0; t < 8; ++t) {
-                    s += (float) kv[w->qs[t] & 0x0F] * aa[t];
-                    s += (float) kv[w->qs[t] >> 4]   * aa[t + 8];
+                const uint8_t* q = dr + (size_t) b * 16;
+                float s0 = jam_nvfp4_dhalf(sr[2*b]), s1 = jam_nvfp4_dhalf(sr[2*b + 1]);
+                const float* aa = arow + (size_t) b * 32;
+                float lo = 0.0f, hi = 0.0f;
+                for (int t = 0; t < 16; ++t) {
+                    lo += (float) kv[q[t] & 0x0F] * aa[t];        /* low nibble  -> element t      */
+                    hi += (float) kv[q[t] >> 4]   * aa[t + 16];   /* high nibble -> element t + 16 */
                 }
-                acc += dW * s;
+                acc += s0 * lo + s1 * hi;
             }
-            C[(size_t) j*ldc+i] = G * acc;
+            C[(size_t) j*ldc+i] = acc;
         }
     }
 }

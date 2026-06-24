@@ -218,7 +218,8 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
     if (cpu >= JAM_ISA_AVX2) { c->f32_kernel = jam_mm_f32_avx2;
         c->q8_kernel = jam_mm_q8_0_avx2; c->mxfp4_kernel = jam_mm_mxfp4_avx2;
         c->q4_0_kernel = jam_mm_q4_0_avx2;
-        c->q4k_kernel = jam_mm_q4k_avx2; c->q5k_kernel = jam_mm_q5k_avx2; c->q6k_kernel = jam_mm_q6k_avx2; }
+        c->q4k_kernel = jam_mm_q4k_avx2; c->q5k_kernel = jam_mm_q5k_avx2; c->q6k_kernel = jam_mm_q6k_avx2;
+        c->nvfp4_kernel = jam_mm_nvfp4_avx2; }
 #endif
 #ifdef JAM_HAVE_AVXVNNI
     /* AVX-VNNI is orthogonal to the ladder: cpu>=AVX_VNNI is necessary (it respects max_isa) but NOT
@@ -241,7 +242,8 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
     if (cpu >= JAM_ISA_NEON)  { c->q8_kernel = jam_mm_q8_0_neon;
                                 c->q4_0_kernel = jam_mm_q4_0_neon; c->mxfp4_kernel = jam_mm_mxfp4_neon;
                                 c->q4k_kernel = jam_mm_q4k_neon;
-                                c->q5k_kernel = jam_mm_q5k_neon; c->q6k_kernel = jam_mm_q6k_neon; }
+                                c->q5k_kernel = jam_mm_q5k_neon; c->q6k_kernel = jam_mm_q6k_neon;
+                                c->nvfp4_kernel = jam_mm_nvfp4_neon; }
 #endif
 #ifdef JAM_HAVE_DOTPROD
     if (cpu >= JAM_ISA_DOTPROD) { c->q8_kernel = jam_mm_q8_0_dotprod;   /* i8mm cores inherit these (sdot) */
@@ -434,11 +436,12 @@ static jam_status jam_mm_run(jam_ctx* ctx,
         return JAM_OK;
     }
 
-    /* NVFP4 (NVIDIA FP4) @ F32 -> F32: 16-elem E2M1 blocks + an E4M3 block scale + an FP32 per-tensor global
-     * scale (a 4-byte header at the weight-buffer start). Generic float floor only for now (no SIMD bound).
-     * Its own branch (k on a 16 boundary, header-prefixed buffer) — not the 32-block simple-quant path. */
-    if (wt == JAM_NVFP4 && at == JAM_F32 && ct == JAM_F32 && (k % 16 == 0)) {
-        jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, k / 16, NULL, NULL };
+    /* NVFP4 (NVIDIA FP4) @ F32 -> F32: E2M1 nibbles + a per-16 E4M3 scale, PLANAR — the weight buffer is
+     * [ FP4 data | E4M3 scales ], so the scale plane starts at w + m·(k/2). The per-tensor FP32 global scale
+     * is the CALLER's (a post-scale on the output). Processed in 32-elem spans, so k on a 32 boundary. */
+    if (wt == JAM_NVFP4 && at == JAM_F32 && ct == JAM_F32 && (k % 32 == 0)) {
+        jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, k / 32, NULL, NULL };
+        q.wscale = (const char*) w + (size_t) m * (k / 2);   /* E4M3 scale plane follows the FP4 data */
         return run_quant(ctx, &q, m, ctx->nvfp4_kernel, jam_mm_nvfp4_f32_generic);
     }
 

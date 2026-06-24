@@ -1,28 +1,27 @@
-/* NVFP4 (NVIDIA FP4) shared decode bits. PROTOTYPE layout (self-contained, deliberately simple for bring-up):
- *   per-tensor:  float32 global scale G   — a 4-byte header at the START of the weight buffer
- *   per block (16 elements): { uint8_t e;  uint8_t qs[8]; } = 9 bytes
- *       e  = E4M3 (OCP FP8) per-block scale
- *       qs = 16 E2M1 FP4 nibbles; qs[t] low nibble = element t, high nibble = element t+8
- *   decode(element) = G · e4m3(e) · fp4_value
+/* NVFP4 (NVIDIA FP4) shared decode bits. LOCKED layout: PLANAR scales, global scale applied by the CALLER.
  *
- * Like MXFP4 (identical E2M1 element codes) but: a 16-element block (vs 32), an E4M3 block scale (vs E8M0),
- * and a second-level per-tensor FP32 scale. The codes are stored ×2 (JAM_MXFP4_CODES) so the int8 dot stays
- * exact; the ×½ folds into jam_nvfp4_dhalf, and G is applied once per output element.
+ *   weight buffer = [ FP4 data plane | E4M3 scale plane ]   (two contiguous planes, one jam_mm pointer)
+ *     FP4 data plane : row-major, k/2 bytes/row. Packed in 32-element spans MXFP4-style — for span s, byte
+ *                      (s*16+t) holds element (s*32+t) in its LOW nibble and element (s*32+16+t) in its HIGH
+ *                      nibble. So each 16-byte span decodes to two contiguous 16-element halves.
+ *     E4M3 scale plane: row-major, k/16 bytes/row — ONE E4M3 (FP8) scale per 16-element block, i.e. two per
+ *                      32-span (scale[2s] = low half, scale[2s+1] = high half).
+ *   per-tensor FP32 global scale G: NOT handled here — jam returns the un-G result; the caller multiplies
+ *                      its output by G (G factors out exactly, so this is a single post-scale per element).
  *
- * NOTE (layout is NOT final): real NVFP4 checkpoints (TensorRT-LLM / compressed-tensors) store the FP4 data,
- * the FP8 block scales, and the FP32 global scale as THREE SEPARATE (planar) tensors, and may pack the two
- * nibbles of a byte consecutively (2t, 2t+1) rather than (t, t+8). This interleaved+header form is for
- * decode/kernel bring-up only — the decode MATH is identical; only the addressing differs. */
+ * decode(element) = e4m3(block_scale) · fp4_value   (× G at the caller). Same E2M1 element codes as MXFP4,
+ * stored ×2 (JAM_MXFP4_CODES) so the int8 dot stays exact; the ×½ folds into jam_nvfp4_dhalf.
+ *
+ * NOTE: real NVFP4 checkpoints may pack the two nibbles of a byte consecutively (2t, 2t+1) rather than the
+ * MXFP4 (t, t+16) order used here; that is a decode-time relabel, the scale/global handling is unchanged. */
 #ifndef JAM_NVFP4_H
 #define JAM_NVFP4_H
 
 #include <stdint.h>
-#include <string.h>
 #include <math.h>
 #include "jam_mxfp4.h"   /* JAM_MXFP4_CODES — NVFP4 shares the E2M1 element codes */
 
-#define JAM_NVFP4_BLK 16
-typedef struct __attribute__((packed)) { uint8_t e; uint8_t qs[8]; } jam_nvfp4_blk;   /* 9 bytes / 16 elems */
+#define JAM_NVFP4_BLK 16   /* elements per E4M3 scale (two per 32-element span) */
 
 /* OCP FP8 E4M3 -> float. 4-bit exponent (bias 7), 3-bit mantissa, no infinities; 0x7F/0xFF are NaN
  * (never produced for a scale). (1 + m/8)·2^(e-7) = (8+m)·2^(e-10); subnormal (e==0): (m/8)·2^-6 = m·2^-9. */
