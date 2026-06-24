@@ -106,20 +106,19 @@ int main(int argc, char** argv) {
     printf("  GMAC/s = m·n·k/t (int8 vs f32 arithmetic)   GB/s = (weights+act+out)/t (DRAM traffic)\n");
     if (K % 256) printf("  (K-quants skipped: k=%d is not a multiple of 256)\n", K);
     printf("  %-10s %-6s %12s %9s\n", "isa", "quant", "GMAC/s", "GB/s");
-    jam_isa levels[] = { JAM_ISA_GENERIC, JAM_ISA_SSE3, JAM_ISA_AVX2, JAM_ISA_AVX_VNNI, JAM_ISA_AVX512, JAM_ISA_AVX512_VNNI,
-                         JAM_ISA_NEON, JAM_ISA_DOTPROD, JAM_ISA_I8MM, JAM_ISA_SVE, JAM_ISA_METAL };
-    for (unsigned L=0; L<sizeof levels/sizeof*levels; ++L) {
-        if (want && *want && strcmp(want, jam_isa_name(levels[L]))) continue;     /* isolate one isa */
-        jam_config cfg; memset(&cfg,0,sizeof cfg); cfg.max_isa=levels[L]; cfg.nthreads=nt;
-        cfg.name = jam_isa_name(levels[L]);   /* labels the JAM_DEBUG output */
+    for (unsigned L=0; L<JAM_ISA_LEVELS_N; ++L) {
+        jam_isa lvl = jam_isa_levels[L];
+        if (want && *want && strcmp(want, jam_isa_name(lvl))) continue;           /* isolate one isa */
+        jam_config cfg; memset(&cfg,0,sizeof cfg); cfg.max_isa=lvl; cfg.nthreads=nt;
+        cfg.name = jam_isa_name(lvl);   /* labels the JAM_DEBUG output */
         jam_ctx* c = jam_ctx_create(&cfg);
         if (!c) continue;
-        if (jam_active_isa(c) != levels[L]) { jam_ctx_destroy(c); continue; }     /* hw lacks this level */
+        if (jam_active_isa(c) != lvl) { jam_ctx_destroy(c); continue; }           /* hw lacks this level */
         for (unsigned Q=0; Q<sizeof QS/sizeof*QS; ++Q) {
             if (!QS[Q].W) continue;                                              /* K-quant skipped (k%256) */
             usleep(300000);   /* cooldown so back-to-back kernels aren't thermally coupled */
             perf p = bench(c, QS[Q].W, QS[Q].at, B, C, M, N, K, iters);
-            printf("  %-10s %-6s %12.1f %9.1f\n", jam_isa_name(levels[L]), QS[Q].nm, p.gmac, p.gbs);
+            printf("  %-10s %-6s %12.1f %9.1f\n", jam_isa_name(lvl), QS[Q].nm, p.gmac, p.gbs);
         }
         jam_ctx_destroy(c);
     }
