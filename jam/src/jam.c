@@ -376,6 +376,34 @@ static jam_status run_quant(jam_ctx* ctx, jam_q8_job* q, int m, jam_task_fn simd
     return JAM_OK;
 }
 
+/* K-quant (256-element super-block) dispatch, shared by Q4_K/Q5_K/Q6_K — they differ only in the byte
+ * size, the phase-2 VNNI band kernel, the bound int8 kernel, and the float floor. Above AVX-512-VNNI:
+ * the 2-phase repack (shared quant + per-quant band). Else: run_quant routes to the int8 kernel (ARM /
+ * avx2) or the float floor. JAM_BAND resolves to NULL off AVX-512 (where the band symbols don't exist). */
+#ifdef JAM_HAVE_AVX512
+#define JAM_BAND(fn) (fn)
+#else
+#define JAM_BAND(fn) ((jam_task_fn) 0)
+#endif
+static jam_status dispatch_kquant(jam_ctx* ctx, const void* w, int ldw, const void* a, int lda,
+                                  void* c, int ldc, int m, int n, int k, size_t kbytes,
+                                  jam_task_fn band, jam_task_fn simd, jam_task_fn floor_) {
+    int kblocks = k / JAM_QK;
+    (void) band;
+#ifdef JAM_HAVE_AVX512
+    if (ctx->q4k_avail && n >= JAM_VNNI_MIN_SEQ && ensure_kquant(ctx, n, kblocks)) {
+        jam_q4k_job job = { (const uint8_t*) w, (int64_t)(k / JAM_QKK) * (int64_t) kbytes,
+                            (const float*) a, lda, ctx->kq_xq, ctx->kq_dx, ctx->kq_xsum,
+                            (float*) c, ldc, m, k, n, kblocks, ctx->kq_repack };
+        jam_run(ctx, n, jam_q4k_quant, &job);                                   /* phase 1 (shared) */
+        jam_run(ctx, (m + JAM_VNNI_BAND - 1) / JAM_VNNI_BAND, band, &job);       /* phase 2 (per-quant) */
+        return JAM_OK;
+    }
+#endif
+    jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, kblocks, NULL, NULL };
+    return run_quant(ctx, &q, m, simd, floor_);   /* int8 (ARM / avx2) or float floor */
+}
+
 /* C = W @ Aᵀ : W weights (may be quantized; selects the kernel), A activations (float), C output. */
 /* The dispatch body — runs UNDER the per-context busy lock (see jam_mm); ctx is resolved + validated. */
 static jam_status jam_mm_run(jam_ctx* ctx,
@@ -461,56 +489,16 @@ static jam_status jam_mm_run(jam_ctx* ctx,
         }
     }
 
-    /* Q4_K weight @ F32 -> F32 (256-element super-blocks). VNNI path (jinferjni.c port) or float floor. */
-    if (wt == JAM_Q4_K && at == JAM_F32 && ct == JAM_F32 && (k % JAM_QKK == 0)) {
-        int kblocks = k / JAM_QK;
-#ifdef JAM_HAVE_AVX512
-        if (ctx->q4k_avail && n >= JAM_VNNI_MIN_SEQ && ensure_kquant(ctx, n, kblocks)) {
-            jam_q4k_job job = { (const uint8_t*) w, (int64_t)(k / JAM_QKK) * JAM_Q4K_BYTES,
-                                (const float*) a, lda, ctx->kq_xq, ctx->kq_dx, ctx->kq_xsum,
-                                (float*) c, ldc, m, k, n, kblocks, ctx->kq_repack };
-            jam_run(ctx, n, jam_q4k_quant, &job);                                  /* phase 1 */
-            jam_run(ctx, (m + JAM_VNNI_BAND - 1) / JAM_VNNI_BAND, jam_q4k_band, &job); /* phase 2 */
-            return JAM_OK;
-        }
-#endif
-        jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, kblocks, NULL, NULL };
-        return run_quant(ctx, &q, m, ctx->q4k_kernel, jam_mm_q4k_f32_generic);   /* int8 (ARM) or float floor */
-    }
-
-    /* Q6_K weight @ F32 -> F32 — same two-phase shape, 6-bit decode (jinferjni.c port). */
-    if (wt == JAM_Q6_K && at == JAM_F32 && ct == JAM_F32 && (k % JAM_QKK == 0)) {
-        int kblocks = k / JAM_QK;
-#ifdef JAM_HAVE_AVX512
-        if (ctx->q4k_avail && n >= JAM_VNNI_MIN_SEQ && ensure_kquant(ctx, n, kblocks)) {
-            jam_q4k_job job = { (const uint8_t*) w, (int64_t)(k / JAM_QKK) * JAM_Q6K_BYTES,
-                                (const float*) a, lda, ctx->kq_xq, ctx->kq_dx, ctx->kq_xsum,
-                                (float*) c, ldc, m, k, n, kblocks, ctx->kq_repack };
-            jam_run(ctx, n, jam_q4k_quant, &job);                                  /* shared phase 1 */
-            jam_run(ctx, (m + JAM_VNNI_BAND - 1) / JAM_VNNI_BAND, jam_q6k_band, &job);
-            return JAM_OK;
-        }
-#endif
-        jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, kblocks, NULL, NULL };
-        return run_quant(ctx, &q, m, ctx->q6k_kernel, jam_mm_q6k_f32_generic);   /* int8 (ARM) or float floor */
-    }
-
-    /* Q5_K weight @ F32 -> F32. 16-row VNNI repack (prefill, AVX-512-VNNI) or the float floor. */
-    if (wt == JAM_Q5_K && at == JAM_F32 && ct == JAM_F32 && (k % JAM_QKK == 0)) {
-#ifdef JAM_HAVE_AVX512
-        int kblocks = k / JAM_QK;
-        if (ctx->q4k_avail && n >= JAM_VNNI_MIN_SEQ && ensure_kquant(ctx, n, kblocks)) {
-            jam_q4k_job job = { (const uint8_t*) w, (int64_t)(k / JAM_QKK) * JAM_Q5K_BYTES,
-                                (const float*) a, lda, ctx->kq_xq, ctx->kq_dx, ctx->kq_xsum,
-                                (float*) c, ldc, m, k, n, kblocks, ctx->kq_repack };
-            jam_run(ctx, n, jam_q4k_quant, &job);
-            jam_run(ctx, (m + JAM_VNNI_BAND - 1) / JAM_VNNI_BAND, jam_q5k_repack_band, &job);
-            return JAM_OK;
-        }
-#endif
-        jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, k / JAM_QK, NULL, NULL };
-        return run_quant(ctx, &q, m, ctx->q5k_kernel, jam_mm_q5k_f32_generic);   /* int8 (ARM) or float floor */
-    }
+    /* Q4_K/Q5_K/Q6_K weight @ F32 -> F32 (256-element super-blocks): VNNI repack fast path, else int8/floor. */
+    if (wt == JAM_Q4_K && at == JAM_F32 && ct == JAM_F32 && (k % JAM_QKK == 0))
+        return dispatch_kquant(ctx, w, ldw, a, lda, c, ldc, m, n, k, JAM_Q4K_BYTES,
+                               JAM_BAND(jam_q4k_band), ctx->q4k_kernel, jam_mm_q4k_f32_generic);
+    if (wt == JAM_Q6_K && at == JAM_F32 && ct == JAM_F32 && (k % JAM_QKK == 0))
+        return dispatch_kquant(ctx, w, ldw, a, lda, c, ldc, m, n, k, JAM_Q6K_BYTES,
+                               JAM_BAND(jam_q6k_band), ctx->q6k_kernel, jam_mm_q6k_f32_generic);
+    if (wt == JAM_Q5_K && at == JAM_F32 && ct == JAM_F32 && (k % JAM_QKK == 0))
+        return dispatch_kquant(ctx, w, ldw, a, lda, c, ldc, m, n, k, JAM_Q5K_BYTES,
+                               JAM_BAND(jam_q5k_repack_band), ctx->q5k_kernel, jam_mm_q5k_f32_generic);
 
     if (jam_debug())
         fprintf(stderr, "[jam] EUNSUPPORTED dtype combo: W=%d A=%d C=%d (built: F32, F16, BF16, Q8_0, Q4_0, "
