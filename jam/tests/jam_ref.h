@@ -90,6 +90,46 @@ static inline jam_ref_mxfp4_blk* jam_ref_quant_mxfp4(const float* X, int rows, i
     return o;
 }
 
+/* ---- NVFP4 (NVIDIA FP4): 16-elem blocks { e4m3 scale; 16 FP4 nibbles } + a per-tensor FP32 global scale G.
+ * Buffer = [float G][rows × (k/16) blocks]; value = G · e4m3(e) · fp4 (reuses the MXFP4 nibble decode). ---- */
+typedef struct { uint8_t e; uint8_t qs[8]; } jam_ref_nvfp4_blk;
+static inline float jam_ref_e4m3_to_float(uint8_t x) {   /* matches jam_e4m3_to_float */
+    int s = (x >> 7) & 1, e = (x >> 3) & 0xF, m = x & 0x7;
+    float v = e ? ldexpf((float) (8 + m), e - 10) : ldexpf((float) m, -9);
+    return s ? -v : v;
+}
+static inline uint8_t jam_ref_e4m3_code(float v) {       /* nearest non-negative E4M3 (scales are >= 0) */
+    uint8_t best = 0; float bd = 1e30f;
+    for (int c = 0; c < 128; ++c) {
+        if (c == 0x7F) continue;                         /* NaN */
+        float d = fabsf(v - jam_ref_e4m3_to_float((uint8_t) c));
+        if (d < bd) { bd = d; best = (uint8_t) c; }
+    }
+    return best;
+}
+/* Quantize [rows×k] to NVFP4 into a malloc'd buffer [float G][blocks]. Two-level: G is per-tensor, the E4M3
+ * byte is the block scale relative to G, each nibble an FP4 code. Caller frees the returned buffer. */
+static inline void* jam_ref_quant_nvfp4(const float* X, int rows, int k) {
+    int nb = k / 16;
+    float amax = 0;
+    for (size_t i = 0; i < (size_t) rows * k; ++i) { float a = fabsf(X[i]); if (a > amax) amax = a; }
+    float G = amax > 0 ? amax / (6.0f * 448.0f) : 1.0f;  /* so block scales (~block_amax/6) land in E4M3 range */
+    char* buf = (char*) malloc(4 + (size_t) rows * nb * sizeof(jam_ref_nvfp4_blk));
+    memcpy(buf, &G, 4);
+    jam_ref_nvfp4_blk* o = (jam_ref_nvfp4_blk*) (buf + 4);
+    for (int i = 0; i < rows; ++i) for (int b = 0; b < nb; ++b) {
+        const float* x = X + (size_t) i * k + b * 16;
+        float bmax = 0; for (int e = 0; e < 16; ++e) { float a = fabsf(x[e]); if (a > bmax) bmax = a; }
+        jam_ref_nvfp4_blk* p = &o[(size_t) i * nb + b];
+        if (bmax == 0) { p->e = 0; for (int t = 0; t < 8; ++t) p->qs[t] = 0; continue; }
+        p->e = jam_ref_e4m3_code((bmax / 6.0f) / G);
+        float scale = G * jam_ref_e4m3_to_float(p->e); if (scale <= 0) scale = 1e-30f;
+        for (int t = 0; t < 8; ++t)
+            p->qs[t] = (uint8_t) (jam_ref_fp4_code(x[t] / scale) | (jam_ref_fp4_code(x[t + 8] / scale) << 4));
+    }
+    return buf;
+}
+
 /* ---- Q4_K: build random VALID super-blocks [rows×k] + the matching dequantized f32 weight (reference).
  * Block = { d(f16) dmin(f16) scales[12] qs[128] } = 144 bytes; value = d·sc·nibble - dmin·min. ---- */
 /* wdq = full dequant (scale·nibble - min); wmin = just the `min` term per element (applied with EXACT

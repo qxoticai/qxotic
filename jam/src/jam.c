@@ -434,6 +434,14 @@ static jam_status jam_mm_run(jam_ctx* ctx,
         return JAM_OK;
     }
 
+    /* NVFP4 (NVIDIA FP4) @ F32 -> F32: 16-elem E2M1 blocks + an E4M3 block scale + an FP32 per-tensor global
+     * scale (a 4-byte header at the weight-buffer start). Generic float floor only for now (no SIMD bound).
+     * Its own branch (k on a 16 boundary, header-prefixed buffer) — not the 32-block simple-quant path. */
+    if (wt == JAM_NVFP4 && at == JAM_F32 && ct == JAM_F32 && (k % 16 == 0)) {
+        jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, k / 16, NULL, NULL };
+        return run_quant(ctx, &q, m, ctx->nvfp4_kernel, jam_mm_nvfp4_f32_generic);
+    }
+
     /* Quantized weight @ F32 activation -> F32. The weight block needs k (and ldw) on a 32 boundary. */
     if (at == JAM_F32 && ct == JAM_F32 && (k % 32 == 0) && (ldw % 32 == 0)) {
         jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, k / 32, NULL, NULL };

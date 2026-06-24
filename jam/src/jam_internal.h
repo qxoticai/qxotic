@@ -28,6 +28,7 @@ struct jam_ctx {
     jam_task_fn      q8_kernel;      /* best Q8_0 matmul (phase 2); NULL -> generic. Resolved at create
                                       * by explicit feature check — AVX-VNNI is orthogonal to the ladder. */
     jam_task_fn      mxfp4_kernel;   /* best MXFP4 matmul; NULL -> generic (float). Same int8 pipeline. */
+    jam_task_fn      nvfp4_kernel;   /* best NVFP4 matmul; NULL -> generic (float). No SIMD kernel yet. */
     jam_task_fn      q4_0_kernel;    /* best Q4_0 matmul; NULL -> generic. Same int8 pipeline. */
     jam_task_fn      q4k_kernel;     /* best Q4_K matmul; NULL -> generic (float). int8 dot via aq/ad. */
     jam_task_fn      q5k_kernel;     /* best Q5_K matmul; NULL -> generic (float). */
@@ -92,6 +93,7 @@ typedef struct {
 
 void jam_mm_q8_0_f32_generic(void* job, int row_begin, int row_end, int tid);  /* portable floor */
 void jam_mm_mxfp4_f32_generic(void* job, int row_begin, int row_end, int tid); /* portable floor */
+void jam_mm_nvfp4_f32_generic(void* job, int row_begin, int row_end, int tid); /* portable floor (NVFP4) */
 void jam_mm_q4k_f32_generic(void* job, int row_begin, int row_end, int tid);   /* portable floor (q8_job) */
 
 /* ---- Q4_K @ F32 (AVX-512-VNNI; ported from jinferjni.c). repack scratch is PER WORKER (jam tid). ---- */
