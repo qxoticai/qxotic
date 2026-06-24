@@ -119,6 +119,45 @@ static void suite_mxfp4(int m, int n, int k) {     /* k a multiple of 32 */
     free(W);free(A);free(C);free(RE);free(RR);free(WQ);
 }
 
+static void suite_nvfp4(int m, int n, int k) {     /* k a multiple of 16; weight buffer is [float G][blocks] */
+    int nb = k/16;
+    float* W = malloc(4*(size_t)m*k); float* A = malloc(4*(size_t)n*k); float* C = malloc(4*(size_t)m*n);
+    double* RE = malloc(8*(size_t)m*n); double* RR = malloc(8*(size_t)m*n);
+    jam_ref_fill(W,(size_t)m*k,5); jam_ref_fill(A,(size_t)n*k,6);
+    char* WQ = (char*) jam_ref_quant_nvfp4(W,m,k);
+    float G; memcpy(&G,WQ,4);
+    jam_ref_nvfp4_blk* B = (jam_ref_nvfp4_blk*)(WQ+4);
+    for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
+        double se=0, sr=0;
+        for (int b=0;b<nb;b++) {
+            jam_ref_nvfp4_blk* w=&B[(size_t)i*nb+b]; float dh=0.5f*jam_ref_e4m3_to_float(w->e);
+            const float* aa=A+(size_t)j*k+b*16;
+            float amax=0; for (int e=0;e<16;e++){ float v=fabsf(aa[e]); if(v>amax)amax=v; }
+            float dA=amax/127.f, id=dA>0?1.f/dA:0.f;
+            for (int t=0;t<16;t++) {
+                uint8_t nib = (t<8) ? (w->qs[t]&0x0F) : (w->qs[t-8]>>4);
+                float wv = G * jam_ref_mxfp4_decode(nib, dh);                /* G · e4m3(e) · fp4 */
+                se += (double)wv * aa[t];                                    /* exact A (the generic floor) */
+                int qa=(int)lrintf(aa[t]*id); if(qa>127)qa=127; else if(qa<-128)qa=-128;
+                sr += (double)wv * ((float)qa*dA);                          /* requant A (for a future int8 path) */
+            }
+        }
+        RE[(size_t)i*n+j]=se; RR[(size_t)i*n+j]=sr;
+    }
+    for (int c=0;c<NCTX;c++) {
+        ++g_checks; memset(C,0,4*(size_t)m*n);
+        int st = jam_mm(CTX[c].c, WQ, JAM_NVFP4, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k);
+        int bad=0;
+        for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
+            double kr=C[(size_t)j*m+i], de=fabs(kr-RE[(size_t)i*n+j]), dr=fabs(kr-RR[(size_t)i*n+j]);
+            double best=de<dr?de:dr, ref=de<dr?RE[(size_t)i*n+j]:RR[(size_t)i*n+j];
+            if (best > 1e-2 + 1e-3*fabs(ref)) ++bad;
+        }
+        if (st||bad){ printf("  [FAIL] NVFP4 %-15s %4dx%4dx%4d  bad=%d st=%d\n",CTX[c].lbl,m,n,k,bad,st); ++g_fail; }
+    }
+    free(W);free(A);free(C);free(RE);free(RR);free(WQ);
+}
+
 typedef uint8_t* (*kq_build)(int, int, unsigned, float*, float*);
 static void suite_kquant(kq_build build, int dtype, const char* name, int m, int n, int k) {  /* k%256 */
     float* Wdq = malloc(4*(size_t)m*k); float* Wmin = malloc(4*(size_t)m*k);
@@ -200,6 +239,7 @@ int main(void) {
     for (unsigned s=0;s<sizeof F/sizeof*F;++s) suite_f32(F[s][0],F[s][1],F[s][2]);
     for (unsigned s=0;s<sizeof Q/sizeof*Q;++s) suite_q8(Q[s][0],Q[s][1],Q[s][2]);
     for (unsigned s=0;s<sizeof Q/sizeof*Q;++s) suite_mxfp4(Q[s][0],Q[s][1],Q[s][2]);   /* same shapes */
+    for (unsigned s=0;s<sizeof Q/sizeof*Q;++s) suite_nvfp4(Q[s][0],Q[s][1],Q[s][2]);   /* NVFP4 (generic floor) */
     int KQ[][3] = {{16,8,256},{32,16,512},{64,33,256},{17,5,256},{128,64,768},{257,40,256}};  /* k%256, n</≥8, m tail */
     for (unsigned s=0;s<sizeof KQ/sizeof*KQ;++s) suite_kquant(jam_ref_make_q4k, JAM_Q4_K, "Q4_K", KQ[s][0],KQ[s][1],KQ[s][2]);
     for (unsigned s=0;s<sizeof KQ/sizeof*KQ;++s) suite_kquant(jam_ref_make_q6k, JAM_Q6_K, "Q6_K", KQ[s][0],KQ[s][1],KQ[s][2]);

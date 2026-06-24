@@ -6,8 +6,10 @@
 #include <stdint.h>
 #include <math.h>     /* fabsf, lrintf */
 #include "jam_mxfp4.h"
+#include "jam_nvfp4.h"
 #include "jam_kquant.h"
 #include "jam_fp16.h"   /* jam_half2float (shared software fp16->fp32) */
+#include <string.h>     /* memcpy (NVFP4 global-scale header) */
 
 /* C[i, :] = A[i, :] @ Bᵀ  for i in [row_begin, row_end).  C[i,j] = dot(A row i, B row j). */
 void jam_mm_f32_generic(void* arg, int row_begin, int row_end, int tid) {
@@ -119,6 +121,40 @@ void jam_mm_mxfp4_f32_generic(void* arg, int rb, int re, int tid) {
                 acc += dW * s;
             }
             C[(size_t) j*ldc+i] = acc;
+        }
+    }
+}
+
+/* NVFP4 weight @ F32 activation -> F32, portable reference/floor. 16-element blocks with an E4M3 per-block
+ * scale; the per-tensor FP32 global scale G is a 4-byte header at the weight-buffer start, applied once per
+ * output. value = G · e4m3(e) · fp4 (codes ×2, ×½ in dhalf). See jam_nvfp4.h for the prototype-layout caveats. */
+void jam_mm_nvfp4_f32_generic(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    static const int8_t kv[16] = { JAM_MXFP4_CODES };
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const char*  W = (const char*)  J->a;     /* [float G][blocks] */
+    const float* A = (const float*) J->b;     /* F32 activations */
+    float* C = (float*) J->c;
+    const int ldc = J->ldc, ldb = J->ldb, n = J->n, nb = J->nb;   /* nb = k/16 */
+    float G; memcpy(&G, W, 4);                                    /* per-tensor global FP32 scale */
+    const jam_nvfp4_blk* base = (const jam_nvfp4_blk*) (W + 4);
+    for (int i = rb; i < re; ++i) {
+        const jam_nvfp4_blk* wr = base + (size_t) i * nb;
+        for (int j = 0; j < n; ++j) {
+            const float* arow = A + (size_t) j * ldb;
+            float acc = 0.0f;
+            for (int b = 0; b < nb; ++b) {
+                const jam_nvfp4_blk* w = &wr[b];
+                float dW = jam_nvfp4_dhalf(w->e);
+                const float* aa = arow + (size_t) b * JAM_NVFP4_BLK;
+                float s = 0.0f;
+                for (int t = 0; t < 8; ++t) {
+                    s += (float) kv[w->qs[t] & 0x0F] * aa[t];
+                    s += (float) kv[w->qs[t] >> 4]   * aa[t + 8];
+                }
+                acc += dW * s;
+            }
+            C[(size_t) j*ldc+i] = G * acc;
         }
     }
 }
