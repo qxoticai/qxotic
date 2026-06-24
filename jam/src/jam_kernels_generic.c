@@ -7,6 +7,7 @@
 #include <math.h>     /* fabsf, lrintf */
 #include "jam_mxfp4.h"
 #include "jam_kquant.h"
+#include "jam_fp16.h"   /* jam_half2float (shared software fp16->fp32) */
 
 /* C[i, :] = A[i, :] @ Bᵀ  for i in [row_begin, row_end).  C[i,j] = dot(A row i, B row j). */
 void jam_mm_f32_generic(void* arg, int row_begin, int row_end, int tid) {
@@ -35,27 +36,6 @@ void jam_mm_f32_generic(void* arg, int row_begin, int row_end, int tid) {
 
 typedef struct { uint16_t d; int8_t qs[32]; } jam_blk_q8_0;   /* 34 bytes (matches GGML block_q8_0) */
 
-/* portable IEEE half -> float (no F16C dependency) */
-static inline float jam_half2float(uint16_t h) {
-    uint32_t sign = (uint32_t)(h & 0x8000u) << 16;
-    uint32_t exp  = (h >> 10) & 0x1Fu;
-    uint32_t mant = h & 0x3FFu;
-    uint32_t f;
-    if (exp == 0) {
-        if (mant == 0) { f = sign; }                            /* zero */
-        else {                                                  /* subnormal */
-            exp = 127 - 15 + 1;
-            while (!(mant & 0x400u)) { mant <<= 1; --exp; }
-            mant &= 0x3FFu;
-            f = sign | (exp << 23) | (mant << 13);
-        }
-    } else if (exp == 0x1Fu) {                                  /* inf / nan */
-        f = sign | 0x7F800000u | (mant << 13);
-    } else {                                                    /* normal */
-        f = sign | ((exp - 15 + 127) << 23) | (mant << 13);
-    }
-    float r; __builtin_memcpy(&r, &f, sizeof r); return r;
-}
 
 void jam_mm_q8_0_f32_generic(void* arg, int row_begin, int row_end, int tid) {
     (void) tid;

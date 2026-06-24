@@ -189,9 +189,7 @@ static void suite_dense(int dtype, const char* name, int m, int n, int k) {
 
 int main(void) {
     /* one context per ISA level (capped), at 1 and 3 threads — covers every kernel the CPU supports. */
-    jam_isa levels[] = { JAM_ISA_GENERIC, JAM_ISA_SSE3, JAM_ISA_AVX2, JAM_ISA_AVX_VNNI, JAM_ISA_AVX512, JAM_ISA_AVX512_VNNI,
-                         JAM_ISA_NEON, JAM_ISA_DOTPROD, JAM_ISA_I8MM, JAM_ISA_SVE, JAM_ISA_METAL };
-    for (unsigned L=0; L<sizeof levels/sizeof*levels; ++L) { add_ctx(levels[L],1); add_ctx(levels[L],3); }
+    for (unsigned L=0; L<JAM_ISA_LEVELS_N; ++L) { add_ctx(jam_isa_levels[L],1); add_ctx(jam_isa_levels[L],3); }
     CTX[NCTX].c=NULL; snprintf(CTX[NCTX].lbl,sizeof CTX[NCTX].lbl,"global"); ++NCTX;   /* the NULL/default path */
 
     printf("jam comprehensive correctness — %d kernel contexts:\n   ", NCTX);

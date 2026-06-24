@@ -13,13 +13,12 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define JAM_MTN 8   /* output columns per GPU thread — MUST equal `TN` in JAM_MSL below */
+#define JAM_MTN 8   /* output columns per GPU thread — the one tunable; injected into the MSL as TN */
 
 static const char* JAM_MSL = R"MSL(
 #include <metal_stdlib>
 using namespace metal;
 
-#define TN 8        /* output columns per thread (== JAM_MTN host-side) */
 constant float MXFP4_LUT[16] = { 0,1,2,3,4,6,8,12, 0,-1,-2,-3,-4,-6,-8,-12 };  /* ggml kvalues_mxfp4 */
 
 /* thread (gid.x, gid.y) owns weight row i = gid.y and the TN columns [j0, j0+TN), j0 = gid.x*TN. */
@@ -259,8 +258,9 @@ extern "C" jam_metal* jam_metal_create(void) {
         id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
         if (!dev) return NULL;
         NSError* err = nil;
-        id<MTLLibrary> lib = [dev newLibraryWithSource:[NSString stringWithUTF8String:JAM_MSL]
-                                               options:nil error:&err];
+        /* inject TN from the single host-side JAM_MTN so the tile width can't drift between C and MSL. */
+        NSString* src = [NSString stringWithFormat:@"#define TN %d\n%s", JAM_MTN, JAM_MSL];
+        id<MTLLibrary> lib = [dev newLibraryWithSource:src options:nil error:&err];
         if (!lib) { [dev release]; return NULL; }
         jam_metal* m = (jam_metal*) calloc(1, sizeof(jam_metal));
         m->dev   = dev;                                  /* +1 from Create, owned */
@@ -332,9 +332,10 @@ extern "C" jam_status jam_metal_mm(jam_metal* m, const void* a, jam_dtype at, in
         [cb commit];
         [cb waitUntilCompleted];
 
-        const float* src = (const float*)[bc contents];
+        const float* res = (const float*)[bc contents];
         float* dst = (float*) c;
-        for (int j=0;j<N;j++) memcpy(dst + (size_t)j*ldc, src + (size_t)j*M, (size_t)M*sizeof(float));
+        if (ldc == M) memcpy(dst, res, (size_t)M*N*sizeof(float));    /* contiguous: one shot */
+        else for (int j=0;j<N;j++) memcpy(dst + (size_t)j*ldc, res + (size_t)j*M, (size_t)M*sizeof(float));
 
         [ba release]; [bb release]; [bc release];
     }

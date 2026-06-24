@@ -6,6 +6,14 @@
 #include <string.h>
 #include <math.h>
 #include <stdlib.h>
+#include "jam.h"
+
+/* ISA ladder benched/tested, in order — shared by jam_bench.c and jam_test.c so adding a tier is one edit.
+ * Levels the hardware lacks are auto-skipped (jam_active_isa != the requested cap). */
+__attribute__((unused)) static const jam_isa jam_isa_levels[] = {
+    JAM_ISA_GENERIC, JAM_ISA_SSE3, JAM_ISA_AVX2, JAM_ISA_AVX_VNNI, JAM_ISA_AVX512, JAM_ISA_AVX512_VNNI,
+    JAM_ISA_NEON, JAM_ISA_DOTPROD, JAM_ISA_I8MM, JAM_ISA_SVE, JAM_ISA_METAL };
+#define JAM_ISA_LEVELS_N (sizeof jam_isa_levels / sizeof *jam_isa_levels)
 
 typedef struct { uint16_t d; int8_t qs[32]; } jam_ref_blk;   /* == GGML block_q8_0 (34 bytes) */
 
