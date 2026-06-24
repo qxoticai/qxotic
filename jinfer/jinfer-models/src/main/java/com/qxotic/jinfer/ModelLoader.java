@@ -62,6 +62,7 @@ final class ModelLoader {
         return loadTensors(fileChannel, gguf.getTensorDataOffset(), gguf.getTensors());
     }
 
+
     static Map<String, GGMLTensorEntry> loadTensors(FileChannel fileChannel, long tensorDataOffset,
                                                     Collection<TensorEntry> tensors) throws IOException {
         MemorySegment tensorData = fileChannel.map(FileChannel.MapMode.READ_ONLY, tensorDataOffset,

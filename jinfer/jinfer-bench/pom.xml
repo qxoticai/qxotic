@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jinfer-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>jinfer-bench</artifactId>
+    <packaging>jar</packaging>
+
+    <name>jinfer-bench</name>
+    <description>llama-bench-style pp/tg benchmark (apples-to-apples)</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.qxotic</groupId>
+            <artifactId>jinfer-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.qxotic</groupId>
+            <artifactId>jinfer-models</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.qxotic</groupId>
+            <artifactId>gguf</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>jinfer-bench</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals><goal>shade</goal></goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>com.qxotic.jinfer.JinferBench</mainClass>
+                                </transformer>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

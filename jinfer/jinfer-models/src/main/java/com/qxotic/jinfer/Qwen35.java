@@ -7,6 +7,9 @@ package com.qxotic.jinfer;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.jinja.JinjaRenderer;
+import jdk.incubator.vector.FloatVector;
+import jdk.incubator.vector.VectorOperators;
+import jdk.incubator.vector.VectorSpecies;
 
 import static com.qxotic.jinfer.Norms.rmsnorm;
 
@@ -259,39 +262,27 @@ final class Qwen35 implements Model {
 
         // 7. delta-net recurrence per head; state element (i,j,h) at h*HV^2 + j*HV + i
         float[] output = state.ssmOutput;
-        FloatTensor ssmState = state.ssmState[layer];
+        float[] S = state.ssmState[layer];          // raw heap state (no segment accessor)
         float[] sk = state.ssmSk, d = state.ssmD;   // per-head scratch (sized dtRank*headVDim)
         Parallel.parallelFor(0, dtRank, h -> {
             float expGate = (float) Math.exp(gate[h]);
             float betaH = beta[h];
             int stateBase = h * headVDim * headVDim;
             int headOff = h * headVDim;
-            for (int idx = 0; idx < headVDim * headVDim; idx++) {
-                int si = stateBase + idx;
-                ssmState.setFloat(si, ssmState.getFloat(si) * expGate);
-            }
-            for (int j = 0; j < headVDim; j++) {
-                float sum = 0;
-                for (int i = 0; i < headVDim; i++) {
-                    sum += ssmState.getFloat(stateBase + j * headVDim + i) * kArr[headOff + i];
-                }
+            for (int idx = stateBase; idx < stateBase + headVDim * headVDim; idx++) S[idx] *= expGate;
+            for (int j = 0; j < headVDim; j++) {                 // sk = S k  (contiguous dot)
+                float sum = 0; int row = stateBase + j * headVDim;
+                for (int i = 0; i < headVDim; i++) sum += S[row + i] * kArr[headOff + i];
                 sk[headOff + j] = sum;
             }
-            for (int i = 0; i < headVDim; i++) {
-                d[headOff + i] = (vArr[headOff + i] - sk[headOff + i]) * betaH;
+            for (int i = 0; i < headVDim; i++) d[headOff + i] = (vArr[headOff + i] - sk[headOff + i]) * betaH;
+            for (int j = 0; j < headVDim; j++) {                 // S row j += d[j]*k  (contiguous, autovec)
+                float dj = d[headOff + j]; int row = stateBase + j * headVDim;
+                for (int i = 0; i < headVDim; i++) S[row + i] += dj * kArr[headOff + i];
             }
-            for (int i = 0; i < headVDim; i++) {
-                float ki = kArr[headOff + i];
-                for (int j = 0; j < headVDim; j++) {
-                    int si = stateBase + j * headVDim + i;
-                    ssmState.setFloat(si, ssmState.getFloat(si) + ki * d[headOff + j]);
-                }
-            }
-            for (int j = 0; j < headVDim; j++) {
-                float sum = 0;
-                for (int i = 0; i < headVDim; i++) {
-                    sum += ssmState.getFloat(stateBase + j * headVDim + i) * qArr[headOff + i];
-                }
+            for (int j = 0; j < headVDim; j++) {                 // out = S q  (contiguous dot)
+                float sum = 0; int row = stateBase + j * headVDim;
+                for (int i = 0; i < headVDim; i++) sum += S[row + i] * qArr[headOff + i];
                 output[headOff + j] = sum;
             }
         });
@@ -520,9 +511,114 @@ final class Qwen35 implements Model {
         w.attnOutput[layer].gemm(state.attnOut, queryDim, state.xb, dim, seqLen, dim, queryDim);
     }
 
-    /** Batched gated delta-net: GEMM projections + batched causal conv, then a SEQUENTIAL recurrence
-     *  over rows (state carries forward), parallel over heads within each row. Token-exact vs the
-     *  single-token {@link #ssmForward}. */
+    /** Chunk size for the parallel delta-net scan (intra-chunk dependency -> matmuls; carry across chunks). */
+    static final int DELTANET_CHUNK = 64;
+
+    // Vector primitives over the contiguous headVDim dimension (scalar fallback when no Vector API).
+    private static float vdot(float[] A, int ao, float[] B, int bo, int n) {
+        if (FloatTensor.USE_VECTOR_API) {
+            VectorSpecies<Float> sp = FloatTensor.F_SPECIES; int u = sp.length(), i = 0;
+            var acc = FloatVector.zero(sp);
+            for (; i + u <= n; i += u) acc = FloatVector.fromArray(sp, A, ao+i).fma(FloatVector.fromArray(sp, B, bo+i), acc);
+            float s = acc.reduceLanes(VectorOperators.ADD);
+            for (; i < n; i++) s += A[ao+i] * B[bo+i];
+            return s;
+        }
+        float s = 0; for (int i = 0; i < n; i++) s += A[ao+i] * B[bo+i]; return s;
+    }
+    private static void vaxpy(float[] Y, int yo, float s, float[] X, int xo, int n) {   // Y += s*X
+        if (FloatTensor.USE_VECTOR_API) {
+            VectorSpecies<Float> sp = FloatTensor.F_SPECIES; int u = sp.length(), i = 0;
+            var sv = FloatVector.broadcast(sp, s);
+            for (; i + u <= n; i += u) FloatVector.fromArray(sp, X, xo+i).fma(sv, FloatVector.fromArray(sp, Y, yo+i)).intoArray(Y, yo+i);
+            for (; i < n; i++) Y[yo+i] += s * X[xo+i];
+            return;
+        }
+        for (int i = 0; i < n; i++) Y[yo+i] += s * X[xo+i];
+    }
+    private static void vscale(float[] Y, int yo, float s, int n) {
+        if (FloatTensor.USE_VECTOR_API) {
+            VectorSpecies<Float> sp = FloatTensor.F_SPECIES; int u = sp.length(), i = 0;
+            var sv = FloatVector.broadcast(sp, s);
+            for (; i + u <= n; i += u) FloatVector.fromArray(sp, Y, yo+i).mul(sv).intoArray(Y, yo+i);
+            for (; i < n; i++) Y[yo+i] *= s;
+            return;
+        }
+        for (int i = 0; i < n; i++) Y[yo+i] *= s;
+    }
+
+    /** Blocked transpose: Bt[btB + k*J + j] = B[bB + j*ldb + k], for j in [0,J), k in [0,K). */
+    private static void transpose(float[] B, int bB, int ldb, int J, int K, float[] Bt, int btB) {
+        final int BL = 16;
+        for (int j0 = 0; j0 < J; j0 += BL) for (int k0 = 0; k0 < K; k0 += BL) {
+            int jE = Math.min(j0+BL, J), kE = Math.min(k0+BL, K);
+            for (int j = j0; j < jE; j++) for (int k = k0; k < kE; k++) Bt[btB + k*J + j] = B[bB + j*ldb + k];
+        }
+    }
+
+    /** Broadcast/outer-product GEMM C[i,j] = sum_k A[aB+i*lda+k]*Bt[btB+k*ldbt+j]; 4x4 register tile, no reduces. */
+    private static void abMul(float[] A, int aB, int lda, float[] Bt, int btB, int ldbt, float[] C, int cB, int ldc, int I, int J, int K) {
+        if (!FloatTensor.USE_VECTOR_API) {
+            for (int i=0;i<I;i++) for (int j=0;j<J;j++){ float s=0; for(int k=0;k<K;k++) s+=A[aB+i*lda+k]*Bt[btB+k*ldbt+j]; C[cB+i*ldc+j]=s; }
+            return;
+        }
+        VectorSpecies<Float> sp = FloatTensor.F_SPECIES; int U = sp.length(), JV = 4*U, i = 0;
+        for (; i + 4 <= I; i += 4) {
+            int a0=aB+i*lda,a1=a0+lda,a2=a1+lda,a3=a2+lda, r0=cB+i*ldc,r1=r0+ldc,r2=r1+ldc,r3=r2+ldc, j = 0;
+            for (; j + JV <= J; j += JV) {
+                var x00=FloatVector.zero(sp);var x01=x00;var x02=x00;var x03=x00;var x10=x00;var x11=x00;var x12=x00;var x13=x00;
+                var x20=x00;var x21=x00;var x22=x00;var x23=x00;var x30=x00;var x31=x00;var x32=x00;var x33=x00;
+                for (int k = 0; k < K; k++) {
+                    int bk = btB + k*ldbt + j;
+                    var b0=FloatVector.fromArray(sp,Bt,bk);var b1=FloatVector.fromArray(sp,Bt,bk+U);var b2=FloatVector.fromArray(sp,Bt,bk+2*U);var b3=FloatVector.fromArray(sp,Bt,bk+3*U);
+                    var v=FloatVector.broadcast(sp,A[a0+k]);x00=v.fma(b0,x00);x01=v.fma(b1,x01);x02=v.fma(b2,x02);x03=v.fma(b3,x03);
+                    v=FloatVector.broadcast(sp,A[a1+k]);x10=v.fma(b0,x10);x11=v.fma(b1,x11);x12=v.fma(b2,x12);x13=v.fma(b3,x13);
+                    v=FloatVector.broadcast(sp,A[a2+k]);x20=v.fma(b0,x20);x21=v.fma(b1,x21);x22=v.fma(b2,x22);x23=v.fma(b3,x23);
+                    v=FloatVector.broadcast(sp,A[a3+k]);x30=v.fma(b0,x30);x31=v.fma(b1,x31);x32=v.fma(b2,x32);x33=v.fma(b3,x33);
+                }
+                x00.intoArray(C,r0+j);x01.intoArray(C,r0+j+U);x02.intoArray(C,r0+j+2*U);x03.intoArray(C,r0+j+3*U);
+                x10.intoArray(C,r1+j);x11.intoArray(C,r1+j+U);x12.intoArray(C,r1+j+2*U);x13.intoArray(C,r1+j+3*U);
+                x20.intoArray(C,r2+j);x21.intoArray(C,r2+j+U);x22.intoArray(C,r2+j+2*U);x23.intoArray(C,r2+j+3*U);
+                x30.intoArray(C,r3+j);x31.intoArray(C,r3+j+U);x32.intoArray(C,r3+j+2*U);x33.intoArray(C,r3+j+3*U);
+            }
+            for (; j < J; j++) for (int ii=0;ii<4;ii++){ float s=0; for(int k=0;k<K;k++) s+=A[aB+(i+ii)*lda+k]*Bt[btB+k*ldbt+j]; C[cB+(i+ii)*ldc+j]=s; }
+        }
+        for (; i < I; i++) for (int j=0;j<J;j++){ float s=0; for(int k=0;k<K;k++) s+=A[aB+i*lda+k]*Bt[btB+k*ldbt+j]; C[cB+i*ldc+j]=s; }
+    }
+
+    /** Contract-over-rows GEMM C[j,i] = sum_t U[uB+t*d+j]*K[kB+t*kld+i] (vectorize i, broadcast U[t,j]); 4x4 tile. */
+    private static void utk(float[] U, int uB, int n, int d, float[] K, int kB, int kld, float[] C, int cB, int cld) {
+        if (!FloatTensor.USE_VECTOR_API) {
+            for (int j=0;j<d;j++) for (int i=0;i<d;i++){ float s=0; for(int t=0;t<n;t++) s+=U[uB+t*d+j]*K[kB+t*kld+i]; C[cB+j*cld+i]=s; }
+            return;
+        }
+        VectorSpecies<Float> sp = FloatTensor.F_SPECIES; int U_=sp.length(), IV=4*U_, j = 0;
+        for (; j + 4 <= d; j += 4) {
+            int i = 0;
+            for (; i + IV <= d; i += IV) {
+                var c00=FloatVector.zero(sp);var c01=c00;var c02=c00;var c03=c00;var c10=c00;var c11=c00;var c12=c00;var c13=c00;
+                var c20=c00;var c21=c00;var c22=c00;var c23=c00;var c30=c00;var c31=c00;var c32=c00;var c33=c00;
+                for (int t = 0; t < n; t++) {
+                    int kt=kB+t*kld+i, ut=uB+t*d+j;
+                    var k0=FloatVector.fromArray(sp,K,kt);var k1=FloatVector.fromArray(sp,K,kt+U_);var k2=FloatVector.fromArray(sp,K,kt+2*U_);var k3=FloatVector.fromArray(sp,K,kt+3*U_);
+                    var u=FloatVector.broadcast(sp,U[ut]);c00=u.fma(k0,c00);c01=u.fma(k1,c01);c02=u.fma(k2,c02);c03=u.fma(k3,c03);
+                    u=FloatVector.broadcast(sp,U[ut+1]);c10=u.fma(k0,c10);c11=u.fma(k1,c11);c12=u.fma(k2,c12);c13=u.fma(k3,c13);
+                    u=FloatVector.broadcast(sp,U[ut+2]);c20=u.fma(k0,c20);c21=u.fma(k1,c21);c22=u.fma(k2,c22);c23=u.fma(k3,c23);
+                    u=FloatVector.broadcast(sp,U[ut+3]);c30=u.fma(k0,c30);c31=u.fma(k1,c31);c32=u.fma(k2,c32);c33=u.fma(k3,c33);
+                }
+                int r0=cB+j*cld+i,r1=r0+cld,r2=r1+cld,r3=r2+cld;
+                c00.intoArray(C,r0);c01.intoArray(C,r0+U_);c02.intoArray(C,r0+2*U_);c03.intoArray(C,r0+3*U_);
+                c10.intoArray(C,r1);c11.intoArray(C,r1+U_);c12.intoArray(C,r1+2*U_);c13.intoArray(C,r1+3*U_);
+                c20.intoArray(C,r2);c21.intoArray(C,r2+U_);c22.intoArray(C,r2+2*U_);c23.intoArray(C,r2+3*U_);
+                c30.intoArray(C,r3);c31.intoArray(C,r3+U_);c32.intoArray(C,r3+2*U_);c33.intoArray(C,r3+3*U_);
+            }
+            for (; i < d; i++) for (int jj=0;jj<4;jj++){ float s=0; for(int t=0;t<n;t++) s+=U[uB+t*d+j+jj]*K[kB+t*kld+i]; C[cB+(j+jj)*cld+i]=s; }
+        }
+    }
+
+    /** Batched gated delta-net: GEMM projections + batched causal conv, then the CHUNKED parallel scan
+     *  (intra-chunk recurrence collapsed into matmuls + a triangular solve; carry across chunks). Parallel
+     *  over heads. Token-exact vs the sequential {@link #ssmForward}; math validated in bench/DeltaNetParity. */
     private void ssmForwardBatch(State state, int layer, int seqLen) {
         Configuration config = configuration;
         Weights w = weights;
@@ -620,50 +716,61 @@ final class Qwen35 implements Model {
             }
         }
 
-        // 7. delta-net recurrence: SEQUENTIAL over rows (state carries forward), parallel over heads.
-        // Per-head sk/d scratch reuses the preallocated state.ssmSk/ssmD sliced by head (distinct
-        // [h*headVDim] regions -> race-free, no per-row allocation).
+        // 7. delta-net recurrence — Lever 3: CHUNKED gated DeltaNet. Within a chunk the per-row sequential
+        // dependency collapses into matmuls + a triangular solve over the chunk; the carry state S flows
+        // across chunks. This reuses the cache-resident S0 within a chunk (vs streaming the evolving state
+        // every row), turning the bandwidth-bound scan into compute-dense, vectorized matmuls. Parallel over
+        // heads (state per head independent). NUMERICALLY-STABLE factoring (matches llama.cpp): substitute
+        // W_t = gamma_t U_t so the unstable V/gamma never appears (1/gamma overflows when gamma underflows,
+        // which large gates from special tokens trigger -> NaN). All decays are gamma_t = prod_{s<=t} a (<=1)
+        // or ratios gamma_t/gamma_r = prod_{s=r+1..t} a (<=1, r<=t), built as direct running products:
+        //   W = beta(V - gamma KS0); solve W_t -= beta(k_t.k_r)(gamma_t/gamma_r)W_r;
+        //   O = gamma QS0 + sum_{r<=t}(q_t.k_r)(gamma_t/gamma_r)W_r; S = gamma_L S0 + sum_t (gamma_L/gamma_t)W_t k_t^T.
+        // Tiled: KS0^T, QS0^T via abMul(+S0T transpose); U^T K via utk; n^2 parts vdot/vaxpy. Validated float-exact.
         float[] output = state.ssmOutput;
-        float[] skArr = state.ssmSk, dArr = state.ssmD;
-        FloatTensor ssmState = state.ssmState[layer];
-        for (int s = 0; s < seqLen; s++) {
-            int dBase = s * fDtRank * fHV, gBase = s * fDtRank;
-            Parallel.parallelFor(0, fDtRank, h -> {
-                int sd = h * fHV;
-                float expGate = (float) Math.exp(gate[gBase + h]);
-                float betaH = beta[gBase + h];
-                int stateBase = h * fHV * fHV;
-                int headOff = dBase + h * fHV;
-                for (int idx = 0; idx < fHV * fHV; idx++) {
-                    int si = stateBase + idx;
-                    ssmState.setFloat(si, ssmState.getFloat(si) * expGate);
+        float[] S = state.ssmState[layer];
+        float[] chunkM = state.ssmChunkM, chunkG = state.ssmChunkG, decay = state.ssmDecay,
+                qs0 = state.ssmQS0, s0t = state.ssmS0T, utkC = state.ssmUtK;
+        final int HV = fHV, NH = fDtRank, CH = DELTANET_CHUNK, LDA = NH * HV;
+        Parallel.parallelFor(0, NH, h -> {
+            int sBase = h*HV*HV, mBase = h*CH*HV, gBase = h*CH, dBase = h*CH*CH, qBase = h*CH*HV, tBase = h*HV*HV;
+            for (int c0 = 0; c0 < seqLen; c0 += CH) {
+                int n = Math.min(CH, seqLen - c0);
+                int row0 = (c0*NH + h) * HV;                                  // chunk row 0 for head h (kArr/qArr/output)
+                float acc = 1f;                                              // gamma_t = prod_{s<=t} a (<=1) and
+                for (int t = 0; t < n; t++) {                                 // D[t,r] = prod_{s=r+1..t} a = a_t D[t-1,r]
+                    float at = (float) Math.exp(gate[(c0+t)*NH + h]);
+                    acc *= at; chunkG[gBase + t] = acc;
+                    int dt = dBase + t*CH;
+                    if (t > 0) { System.arraycopy(decay, dBase + (t-1)*CH, decay, dt, t); vscale(decay, dt, at, t); }
+                    decay[dt + t] = 1f;
                 }
-                for (int j = 0; j < fHV; j++) {
-                    float sum = 0;
-                    for (int i = 0; i < fHV; i++) {
-                        sum += ssmState.getFloat(stateBase + j * fHV + i) * kArr[headOff + i];
-                    }
-                    skArr[sd + j] = sum;
+                transpose(S, sBase, HV, HV, HV, s0t, tBase);                  // s0t[i,j] = S0[j,i]
+                abMul(kArr, row0, LDA, s0t, tBase, HV, chunkM, mBase, HV, n, HV, HV);   // KS0[t,j] -> chunkM
+                for (int t = 0; t < n; t++) {                                 // W = beta (V - gamma KS0)
+                    int vRow = ((c0+t)*NH + h) * HV, mt = mBase + t*HV; float bt = beta[(c0+t)*NH + h], gt = chunkG[gBase + t];
+                    for (int j = 0; j < HV; j++) chunkM[mt + j] = bt * (vArr[vRow + j] - gt*chunkM[mt + j]);
                 }
-                for (int i = 0; i < fHV; i++) {
-                    dArr[sd + i] = (vArr[headOff + i] - skArr[sd + i]) * betaH;
+                for (int t = 0; t < n; t++) {                                 // solve (decayed) in place
+                    int kRow = ((c0+t)*NH + h) * HV, mt = mBase + t*HV, dt = dBase + t*CH; float bt = beta[(c0+t)*NH + h];
+                    for (int r = 0; r < t; r++)
+                        vaxpy(chunkM, mt, -bt * vdot(kArr, kRow, kArr, ((c0+r)*NH + h)*HV, HV) * decay[dt + r], chunkM, mBase + r*HV, HV);
                 }
-                for (int i = 0; i < fHV; i++) {
-                    float ki = kArr[headOff + i];
-                    for (int j = 0; j < fHV; j++) {
-                        int si = stateBase + j * fHV + i;
-                        ssmState.setFloat(si, ssmState.getFloat(si) + ki * dArr[sd + j]);
-                    }
+                abMul(qArr, row0, LDA, s0t, tBase, HV, qs0, qBase, HV, n, HV, HV);      // QS0[t,j] -> qs0
+                for (int t = 0; t < n; t++) {                                 // O = gamma QS0 + tril decayed
+                    int qRow = ((c0+t)*NH + h) * HV, oRow = qRow, qt = qBase + t*HV, dt = dBase + t*CH; float gt = chunkG[gBase + t];
+                    for (int j = 0; j < HV; j++) output[oRow + j] = gt * qs0[qt + j];
+                    for (int r = 0; r <= t; r++)
+                        vaxpy(output, oRow, vdot(qArr, qRow, kArr, ((c0+r)*NH + h)*HV, HV) * decay[dt + r], chunkM, mBase + r*HV, HV);
                 }
-                for (int j = 0; j < fHV; j++) {
-                    float sum = 0;
-                    for (int i = 0; i < fHV; i++) {
-                        sum += ssmState.getFloat(stateBase + j * fHV + i) * qArr[headOff + i];
-                    }
-                    output[headOff + j] = sum;
-                }
-            });
-        }
+                int dEnd = dBase + (n-1)*CH;                                  // W_t -> (gamma_L/gamma_t) W_t
+                for (int t = 0; t < n; t++) vscale(chunkM, mBase + t*HV, decay[dEnd + t], HV);
+                utk(chunkM, mBase, n, HV, kArr, row0, LDA, utkC, tBase, HV);   // sum_t Wd[t,j] k_t[i] -> utkC[j,i]
+                float gL = chunkG[gBase + n - 1];                             // S_L = gamma_L S0 + Wd^T K
+                for (int j = 0; j < HV; j++) { int sr = sBase + j*HV, ur = tBase + j*HV;
+                    for (int i = 0; i < HV; i++) S[sr + i] = gL * S[sr + i] + utkC[ur + i]; }
+            }
+        });
 
         // 8. SiLU(z)-gated RMSNorm per head; 9. output projection (per row)
         float[] z = state.ssmZ;
@@ -920,9 +1027,11 @@ final class Qwen35 implements Model {
         final FloatTensor x, xb, xb2, q, k, v, logits, ffnUp, ffnGate, ssmQkv, ssmTmp;
         final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch();
         final float[] attnGateArr, ssmZ, ssmConvOut, ssmQ, ssmK, ssmV, ssmQGroup, ssmKGroup, ssmGate, ssmBeta, ssmOutput, ssmSk, ssmD;
+        final float[] ssmChunkM, ssmChunkG, ssmDecay, ssmQS0, ssmS0T, ssmUtK;   // per-head chunked-scan scratch (sliced by head)
         // Batched-attention scratch (chunk rows): queries deinterleaved from q, attention output.
         final FloatTensor attnQ, attnOut;
-        final FloatTensor[] keyCache, valueCache, ssmConvState, ssmState;
+        final FloatTensor[] keyCache, valueCache, ssmConvState;
+        final float[][] ssmState;   // delta-net state, raw heap array (hot scan; no segment accessor)
         // Single-token MoE scratch (used by the seqLen==1 path / reference forward).
         final FloatTensor moeRouterLogits, moeOutput, moeExpertOut, moeGateResult, moeUpResult,
                 moeSharedGate, moeSharedUp, moeSharedOut, moeSharedInputGate;
@@ -979,6 +1088,12 @@ final class Qwen35 implements Model {
             this.ssmOutput = new float[c * dtRank * headVDim];
             this.ssmSk = new float[dtRank * headVDim];   // per-row recurrence scratch (sequential)
             this.ssmD = new float[dtRank * headVDim];
+            this.ssmChunkM = new float[dtRank * DELTANET_CHUNK * headVDim];
+            this.ssmChunkG = new float[dtRank * DELTANET_CHUNK];
+            this.ssmDecay = new float[dtRank * DELTANET_CHUNK * DELTANET_CHUNK];   // per-head CxC decay ratios
+            this.ssmQS0 = new float[dtRank * DELTANET_CHUNK * headVDim];
+            this.ssmS0T = new float[dtRank * headVDim * headVDim];
+            this.ssmUtK = new float[dtRank * headVDim * headVDim];
 
             if (config.isMoE()) {
                 int e = config.expertCount, eff = config.expertFeedForwardLength;
@@ -1031,14 +1146,14 @@ final class Qwen35 implements Model {
             this.keyCache = new FloatTensor[config.numberOfLayers];
             this.valueCache = new FloatTensor[config.numberOfLayers];
             this.ssmConvState = new FloatTensor[config.numberOfLayers];
-            this.ssmState = new FloatTensor[config.numberOfLayers];
+            this.ssmState = new float[config.numberOfLayers][];
             for (int l = 0; l < config.numberOfLayers; l++) {
                 if (config.isFullAttention[l]) {
                     keyCache[l] = F16FloatTensor.allocate(config.contextLength * kvDim);
                     valueCache[l] = F16FloatTensor.allocate(config.contextLength * kvDim);
                 } else {
                     ssmConvState[l] = F32FloatTensor.allocate((config.ssmConvKernel - 1) * convChannels);
-                    ssmState[l] = F32FloatTensor.allocate(headVDim * headVDim * dtRank);
+                    ssmState[l] = new float[headVDim * headVDim * dtRank];
                 }
             }
         }

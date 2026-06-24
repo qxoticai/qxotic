@@ -17,7 +17,6 @@ import static com.qxotic.jinfer.Norms.rmsnorm;
 import static com.qxotic.jinfer.Norms.rmsnormNoWeight;
 
 import jdk.incubator.vector.FloatVector;
-import jdk.incubator.vector.VectorOperators;
 
 import java.io.IOException;
 import java.nio.ByteOrder;
@@ -413,10 +412,6 @@ final class Gemma4 implements Model {
         return 0.5f * x * (1.0f + (float) Math.tanh(inner));
     }
 
-    // SIMD GELU (VectorOperators.TANH): a big win ONLY where the JIT intrinsifies the SIMD
-    // transcendental to SVML (HotSpot C2: ~20x; GraalVM JIT: ~2x SLOWER — no intrinsic). Off by
-    // default (the engine's recommended runtime is GraalVM); enable on C2 with -Dgemma.vectorGelu.
-    private static final boolean VECTOR_GELU = Boolean.getBoolean("jinfer.vectorGelu");
 
     /**
      * Fused {@code gate[gateOff+i] = gelu(gate[gateOff+i]) * up[upOff+i]} over {@code n} elements.
@@ -424,7 +419,7 @@ final class Gemma4 implements Model {
      * callers parallelize across rows.
      */
     static void geluMultiply(FloatTensor gate, int gateOff, FloatTensor up, int upOff, int n) {
-        if (VECTOR_GELU && gate instanceof F32FloatTensor g && up instanceof F32FloatTensor u) {
+        if (FloatTensor.USE_VECTOR_API && gate instanceof F32FloatTensor g && up instanceof F32FloatTensor u) {
             var sp = FloatTensor.F_SPECIES;
             int bound = sp.loopBound(n);
             for (int i = 0; i < bound; i += sp.length()) {
@@ -433,7 +428,7 @@ final class Gemma4 implements Model {
                 FloatVector x = FloatVector.fromMemorySegment(sp, g.vseg, g.vbase + gb, ByteOrder.LITTLE_ENDIAN);
                 FloatVector uv = FloatVector.fromMemorySegment(sp, u.vseg, u.vbase + ub, ByteOrder.LITTLE_ENDIAN);
                 FloatVector inner = x.mul(x).mul(x).mul(0.044715f).add(x).mul(GELU_C);
-                FloatVector t = inner.lanewise(VectorOperators.TANH);
+                FloatVector t = F32FloatTensor.tanhVec(inner);   // minimax rational tanh (was lanewise TANH: scalar on Graal)
                 x.mul(0.5f).mul(t.add(1.0f)).mul(uv)
                         .intoMemorySegment(g.vseg, g.vbase + gb, ByteOrder.LITTLE_ENDIAN);
             }

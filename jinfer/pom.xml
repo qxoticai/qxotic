@@ -17,6 +17,7 @@
         <module>jinfer-jinja</module>
         <module>jinfer-models</module>
         <module>jinfer-server</module>
+        <module>jinfer-bench</module>
     </modules>
 
     <properties>
