@@ -90,9 +90,11 @@ final class SpinPool {
             return;
         }
         if (n == 1 || participants == 1) {     // not worth waking the pool
+            if (TRACE) trInline++;
             for (int i = start; i < end; i++) act.accept(i);
             return;
         }
+        long t0 = TRACE ? System.nanoTime() : 0;
         action = act;
         rangeStart = start;
         rangeEnd = end;
@@ -106,14 +108,26 @@ final class SpinPool {
         } catch (Throwable t) {
             failure = t;
         }
+        long tSlice = TRACE ? System.nanoTime() : 0;
         while (arrived.get() < participants - 1) {
             Thread.onSpinWait();
         }
+        if (TRACE) { long e = System.nanoTime(); trCalls++; trDispatchNs += e - t0; trBarrierNs += e - tSlice; }
         Throwable f = failure;
         if (f != null) {                       // a participant threw — propagate like ForkJoinPool would
             failure = null;
             sneakyThrow(f);
         }
+    }
+
+    // --- dispatch overhead trace (-Djinfer.spinTrace) ---
+    static final boolean TRACE = System.getProperty("jinfer.spinTrace") != null;
+    private static long trCalls, trInline, trDispatchNs, trBarrierNs;
+    static void traceReport(String tag, long tokens) {
+        if (!TRACE || tokens <= 0) return;
+        System.err.printf("[spin %s] %d tok: parallelFor=%.1f/tok inline=%.1f/tok  inDispatch=%.3fms/tok  barrierWait=%.3fms/tok (%.0f%% of dispatch)%n",
+                tag, tokens, (double) trCalls / tokens, (double) trInline / tokens,
+                trDispatchNs / 1e6 / tokens, trBarrierNs / 1e6 / tokens, 100.0 * trBarrierNs / Math.max(1, trDispatchNs));
     }
 
     @SuppressWarnings("unchecked")

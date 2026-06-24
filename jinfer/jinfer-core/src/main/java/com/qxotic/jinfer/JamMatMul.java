@@ -12,8 +12,13 @@ import java.lang.foreign.MemorySegment;
  */
 final class JamMatMul implements MatMul {
 
+    private final MatMul fallback;   // scalar floor, for a runtime decline (EBUSY contention / unsupported)
+
+    JamMatMul(MatMul fallback) { this.fallback = fallback; }
+
     static boolean tryLoad() {
-        try { Class.forName("com.qxotic.jam.JAM"); return true; }   // triggers libjam load
+        if (Boolean.getBoolean("jinfer.disableJam")) return false;   // force the Java backends (testing)
+        try { Class.forName("com.qxotic.jam.JAM"); return true; }    // triggers libjam load
         catch (Throwable t) {
             System.err.println("jam native library unavailable (" + t + "); using the Java backends.");
             return false;
@@ -21,10 +26,10 @@ final class JamMatMul implements MatMul {
     }
 
     @Override
-    public boolean mm(FloatTensor w, long wOff, int wStride,
-                      FloatTensor a, long aOff, int aStride,
-                      FloatTensor c, long cOff, int cStride,
-                      int m, int n, int k) {
+    public void mm(FloatTensor w, long wOff, int wStride,
+                   FloatTensor a, long aOff, int aStride,
+                   FloatTensor c, long cOff, int cStride,
+                   int m, int n, int k) {
         GGMLType t = w.type();
         long wBase = ((SegmentFloatTensor) w).baseAddress;
         long aBase = ((SegmentFloatTensor) a).baseAddress;
@@ -34,7 +39,9 @@ final class JamMatMul implements MatMul {
                         aBase + aOff * Float.BYTES, JAM.F32, aStride,
                         cBase + cOff * Float.BYTES, JAM.F32, cStride,
                         m, n, k);
-        return st == JAM.OK;   // EBUSY / EUNSUPPORTED -> Dispatch falls through to a Java backend
+        if (st != JAM.OK) {   // EBUSY (concurrent same-context) / unsupported shape -> the floor finishes it
+            fallback.mm(w, wOff, wStride, a, aOff, aStride, c, cOff, cStride, m, n, k);
+        }
     }
 
     /** GGMLType -> jam dtype tag (== ggml_type value, but mapped explicitly to stay honest). */

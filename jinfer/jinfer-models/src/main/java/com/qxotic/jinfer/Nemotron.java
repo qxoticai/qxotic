@@ -164,7 +164,7 @@ final class Nemotron implements Model {
         for (int ch = 0; ch < convCh; ch++) convState.setFloat((dConv - 2) * convCh + ch, xbc[ch]);
 
         // 3. selective scan: per head h, state h_new = h*exp(dt*A) + B*(x*dt); y = C.h + D*x; gate SiLU(z)
-        FloatTensor ssmState = state.ssmState[l];
+        float[] S = state.ssmState[l];   // raw heap state (no segment accessor)
         for (int h = 0; h < nHead; h++) {
             int g = h / (nHead / nGroup);
             float dA = (float) Math.exp(dt[h] * w.ssmA[l].getFloat(h));
@@ -172,13 +172,12 @@ final class Nemotron implements Model {
             for (int ii = 0; ii < headDim; ii++) {
                 int idx = h * headDim + ii;
                 float xdt = convOut[idx] * dt[h];
+                int stBase = idx * dState, bOff = dInner + g * dState, cOff = dInner + qSize + g * dState;
                 float sum = 0f;
-                for (int i0 = 0; i0 < dState; i0++) {
-                    int st = i0 + idx * dState;
-                    int ig = i0 + g * dState;
-                    float next = ssmState.getFloat(st) * dA + convOut[dInner + ig] * xdt;
-                    ssmState.setFloat(st, next);
-                    sum += next * convOut[dInner + qSize + ig];
+                for (int i0 = 0; i0 < dState; i0++) {   // contiguous over state dim
+                    float next = S[stBase + i0] * dA + convOut[bOff + i0] * xdt;
+                    S[stBase + i0] = next;
+                    sum += next * convOut[cOff + i0];
                 }
                 y[idx] = (sum + convOut[idx] * dScale) * Activations.silu(z[idx]);
             }
@@ -405,32 +404,32 @@ final class Nemotron implements Model {
             }
         });
 
-        // 3. selective scan: SEQUENTIAL over rows (state carries forward), parallel over heads.
-        FloatTensor ssmState = state.ssmState[l];
+        // 3. selective scan. Lever 1+2: parallel over heads (state per head independent), SEQUENTIAL rows
+        // INSIDE -> one barrier (was seqLen); raw float[] state, contiguous over the state dim (autovec).
+        float[] S = state.ssmState[l];
         int fHeadDim = headDim, fDState = dState, fNGroup = nGroup, fQSize = qSize;
         F32FloatTensor ssmA = w.ssmA[l], ssmD = w.ssmD[l];
-        for (int s = 0; s < seqLen; s++) {
-            int cBase = s * fConvCh, base = s * fDInner, dtBase = s * fNHead;
-            Parallel.parallelFor(0, fNHead, h -> {
-                int g = h / (fNHead / fNGroup);
+        Parallel.parallelFor(0, fNHead, h -> {
+            int g = h / (fNHead / fNGroup);
+            float A_h = ssmA.getFloat(h), D_h = ssmD.getFloat(h);
+            for (int s = 0; s < seqLen; s++) {
+                int cBase = s * fConvCh, base = s * fDInner, dtBase = s * fNHead;
                 float dtH = dt[dtBase + h];
-                float dA = (float) Math.exp(dtH * ssmA.getFloat(h));
-                float dScale = ssmD.getFloat(h);
+                float dA = (float) Math.exp(dtH * A_h);
                 for (int ii = 0; ii < fHeadDim; ii++) {
                     int idx = h * fHeadDim + ii;
                     float xdt = convOut[cBase + idx] * dtH;
+                    int stBase = idx * fDState, bOff = cBase + fDInner + g * fDState, cOff = cBase + fDInner + fQSize + g * fDState;
                     float sum = 0f;
-                    for (int i0 = 0; i0 < fDState; i0++) {
-                        int st = i0 + idx * fDState;
-                        int ig = i0 + g * fDState;
-                        float next = ssmState.getFloat(st) * dA + convOut[cBase + fDInner + ig] * xdt;
-                        ssmState.setFloat(st, next);
-                        sum += next * convOut[cBase + fDInner + fQSize + ig];
+                    for (int i0 = 0; i0 < fDState; i0++) {     // contiguous over state dim
+                        float next = S[stBase + i0] * dA + convOut[bOff + i0] * xdt;
+                        S[stBase + i0] = next;
+                        sum += next * convOut[cOff + i0];
                     }
-                    y[base + idx] = (sum + convOut[cBase + idx] * dScale) * Activations.silu(z[base + idx]);
+                    y[base + idx] = (sum + convOut[cBase + idx] * D_h) * Activations.silu(z[base + idx]);
                 }
-            });
-        }
+            }
+        });
 
         // 4. per-group gated RMSNorm (gate already folded into y) then out-projection GEMM.
         int groupDim = dInner / nGroup;
@@ -562,7 +561,8 @@ final class Nemotron implements Model {
         final int[] moeExpertCounts, moeExpertOffsets, moeCursor, moeRowByExpert, moeRowTopE;
         final float[] moeProbByExpert, moeRowTopP;
         final Moe.Routing moeRouting;
-        final FloatTensor[] keyCache, valueCache, ssmConvState, ssmState;
+        final FloatTensor[] keyCache, valueCache, ssmConvState;
+        final float[][] ssmState;   // Mamba2 state, raw heap array (hot scan; no segment accessor)
         int latestToken;
         boolean logitsValid;
         int lastRowOffset;
@@ -623,7 +623,7 @@ final class Nemotron implements Model {
             this.keyCache = new FloatTensor[config.numberOfLayers];
             this.valueCache = new FloatTensor[config.numberOfLayers];
             this.ssmConvState = new FloatTensor[config.numberOfLayers];
-            this.ssmState = new FloatTensor[config.numberOfLayers];
+            this.ssmState = new float[config.numberOfLayers][];
             for (int l = 0; l < config.numberOfLayers; l++) {
                 switch (config.layerTypes[l]) {
                     case ATTENTION -> {
@@ -632,7 +632,7 @@ final class Nemotron implements Model {
                     }
                     case SSM -> {
                         ssmConvState[l] = F32FloatTensor.allocate((config.ssmConvKernel - 1) * convCh);
-                        ssmState[l] = F32FloatTensor.allocate(dInner * config.ssmStateSize);
+                        ssmState[l] = new float[dInner * config.ssmStateSize];
                     }
                     case MOE -> { }
                 }
