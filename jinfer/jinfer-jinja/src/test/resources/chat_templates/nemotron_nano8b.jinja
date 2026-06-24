@@ -1,0 +1,21 @@
+{#
+  Model:  Llama-3.1-Nemotron-Nano-8B-v1
+  Source: https://huggingface.co/nvidia/Llama-3.1-Nemotron-Nano-8B-v1/blob/main/tokenizer_config.json
+  Verbatim tokenizer.chat_template, bundled for JinjaRenderer compatibility tests.
+#}{%- if messages[0]['role'] == 'system' -%}{%- set system_message = messages[0]['content'] | trim -%}{%- set messages = messages[1:] -%}{%- else -%}{%- set system_message = '' -%}{%- endif -%}{%- if tools is not none -%}{{- '<|begin_of_text|><|start_header_id|>system<|end_header_id|>' + '
+
+' + system_message -}} {{- '
+
+' if system_message else '' -}} {{- '<AVAILABLE_TOOLS>[' -}} {% for t in tools %}{{- (t.function if t.function is defined else t) | tojson() -}}{{- ', ' if not loop.last else '' -}}{%- endfor -%} {{- ']</AVAILABLE_TOOLS>' -}} {{- '<|eot_id|>' -}}{%- else -%}{{- '<|begin_of_text|><|start_header_id|>system<|end_header_id|>' + '
+
+' + system_message + '<|eot_id|>' -}}{%- endif -%}{%- for message in messages -%}{%- if (message['role'] in ['user', 'tool']) != (loop.index0 % 2 == 0) -%}{{- raise_exception('Conversation roles must alternate between user/tool and assistant') -}}{%- elif message['role'] == 'user' -%}{{- '<|start_header_id|>user<|end_header_id|>' + '
+
+' + message['content'] | trim + '<|eot_id|>' -}}{%- elif message['role'] == 'tool' -%}{%- set tool_response = '<TOOL_RESPONSE>[' + message['content'] | trim + ']</TOOL_RESPONSE>' -%}{{- '<|start_header_id|>user<|end_header_id|>' + '
+
+' + tool_response + '<|eot_id|>' -}}{%- elif message['role'] == 'assistant' and message.get('tool_calls') is not none -%}{%- set tool_calls = message['tool_calls'] -%}{{- '<|start_header_id|>assistant<|end_header_id|>' + '
+
+' + '<TOOLCALL>[' -}}{%- for tool_call in tool_calls -%}{{ '{' + '"name": "' + tool_call.function.name + '", "arguments": ' + tool_call.function.arguments | tojson + '}' }}{%- if not loop.last -%}{{ ', ' }}{%- else -%}{{ ']</TOOLCALL>' + '<|eot_id|>' }}{%- endif -%}{%- endfor -%}{%- elif message['role'] == 'assistant' -%}{{- '<|start_header_id|>assistant<|end_header_id|>' + '
+
+' + message['content'] | trim + '<|eot_id|>' -}}{%- endif -%}{%- endfor -%}{%- if add_generation_prompt -%}{{ '<|start_header_id|>assistant<|end_header_id|>' + '
+
+' }}{%- endif -%}

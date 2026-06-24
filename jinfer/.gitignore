@@ -1,0 +1,23 @@
+# Build output
+target/
+*.class
+
+# Fat jar
+jinfer.jar
+
+# Native images and PGO artifacts
+./jinfer
+jinfer.pgo
+*.debug
+default.iprof
+*.iprof
+
+# Native GEMM library build artifacts (built from jinferjni.c via make libnative / libjinferjni.a)
+*.o
+*.so
+*.a
+
+# Profiling / scratch
+perf.data*
+hs_err_pid*.log
+libs/

@@ -1,0 +1,19 @@
+{#
+  Model:  Zephyr-7B-beta
+  Source: https://huggingface.co/HuggingFaceH4/zephyr-7b-beta/blob/main/tokenizer_config.json
+  Verbatim tokenizer.chat_template, bundled for JinjaRenderer compatibility tests.
+#}{% for message in messages %}
+{% if message['role'] == 'user' %}
+{{ '<|user|>
+' + message['content'] + eos_token }}
+{% elif message['role'] == 'system' %}
+{{ '<|system|>
+' + message['content'] + eos_token }}
+{% elif message['role'] == 'assistant' %}
+{{ '<|assistant|>
+'  + message['content'] + eos_token }}
+{% endif %}
+{% if loop.last and add_generation_prompt %}
+{{ '<|assistant|>' }}
+{% endif %}
+{% endfor %}
