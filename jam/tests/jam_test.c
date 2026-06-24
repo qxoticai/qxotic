@@ -119,27 +119,30 @@ static void suite_mxfp4(int m, int n, int k) {     /* k a multiple of 32 */
     free(W);free(A);free(C);free(RE);free(RR);free(WQ);
 }
 
-static void suite_nvfp4(int m, int n, int k) {     /* k a multiple of 16; weight buffer is [float G][blocks] */
-    int nb = k/16;
+static void suite_nvfp4(int m, int n, int k) {     /* k a multiple of 32; weight buffer is planar [data|scales] */
+    int spans = k/32, s16 = k/16;
     float* W = malloc(4*(size_t)m*k); float* A = malloc(4*(size_t)n*k); float* C = malloc(4*(size_t)m*n);
     double* RE = malloc(8*(size_t)m*n); double* RR = malloc(8*(size_t)m*n);
     jam_ref_fill(W,(size_t)m*k,5); jam_ref_fill(A,(size_t)n*k,6);
-    char* WQ = (char*) jam_ref_quant_nvfp4(W,m,k);
-    float G; memcpy(&G,WQ,4);
-    jam_ref_nvfp4_blk* B = (jam_ref_nvfp4_blk*)(WQ+4);
+    uint8_t* WQ = (uint8_t*) jam_ref_quant_nvfp4(W,m,k);
+    const uint8_t* DATA = WQ;                          /* FP4 data plane */
+    const uint8_t* SCALE = WQ + (size_t)m*(k/2);       /* E4M3 scale plane (the caller knows m, k) */
     for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
         double se=0, sr=0;
-        for (int b=0;b<nb;b++) {
-            jam_ref_nvfp4_blk* w=&B[(size_t)i*nb+b]; float dh=0.5f*jam_ref_e4m3_to_float(w->e);
-            const float* aa=A+(size_t)j*k+b*16;
-            float amax=0; for (int e=0;e<16;e++){ float v=fabsf(aa[e]); if(v>amax)amax=v; }
+        for (int s=0;s<spans;s++) {                    /* 32-elem span = low half + high half */
+            const uint8_t* db = DATA + (size_t)i*(k/2) + s*16;
+            float s0dh = 0.5f*jam_ref_e4m3_to_float(SCALE[(size_t)i*s16 + s*2]);
+            float s1dh = 0.5f*jam_ref_e4m3_to_float(SCALE[(size_t)i*s16 + s*2 + 1]);
+            const float* aa=A+(size_t)j*k+s*32;
+            float amax=0; for (int e=0;e<32;e++){ float v=fabsf(aa[e]); if(v>amax)amax=v; }
             float dA=amax/127.f, id=dA>0?1.f/dA:0.f;
             for (int t=0;t<16;t++) {
-                uint8_t nib = (t<8) ? (w->qs[t]&0x0F) : (w->qs[t-8]>>4);
-                float wv = G * jam_ref_mxfp4_decode(nib, dh);                /* G · e4m3(e) · fp4 */
-                se += (double)wv * aa[t];                                    /* exact A (the generic floor) */
-                int qa=(int)lrintf(aa[t]*id); if(qa>127)qa=127; else if(qa<-128)qa=-128;
-                sr += (double)wv * ((float)qa*dA);                          /* requant A (for a future int8 path) */
+                float vlo = jam_ref_mxfp4_decode(db[t]&0x0F, s0dh);          /* elem t   (no G — caller's) */
+                float vhi = jam_ref_mxfp4_decode(db[t]>>4,   s1dh);          /* elem t+16 */
+                se += (double)vlo*aa[t] + (double)vhi*aa[t+16];              /* exact A (the generic floor) */
+                int ql=(int)lrintf(aa[t]*id);    if(ql>127)ql=127; else if(ql<-128)ql=-128;
+                int qh=(int)lrintf(aa[t+16]*id); if(qh>127)qh=127; else if(qh<-128)qh=-128;
+                sr += (double)vlo*((float)ql*dA) + (double)vhi*((float)qh*dA);  /* requant A (the int8 SIMD path) */
             }
         }
         RE[(size_t)i*n+j]=se; RR[(size_t)i*n+j]=sr;

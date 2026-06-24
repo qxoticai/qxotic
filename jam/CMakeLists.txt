@@ -32,7 +32,7 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     target_compile_definitions(jam PRIVATE JAM_HAVE_SSE3=1)
 
     # AVX2 (Haswell 2013+): F32 + Q8_0 via maddubs (no VNNI). Covers consumer/older CPUs.
-    add_library(jam_avx2 OBJECT src/jam_kernels_avx2.c src/jam_kernels_kquant_avx2.c)
+    add_library(jam_avx2 OBJECT src/jam_kernels_avx2.c src/jam_kernels_kquant_avx2.c src/jam_kernels_nvfp4_avx2.c)
     target_include_directories(jam_avx2 PRIVATE include)
     target_compile_options(jam_avx2 PRIVATE -mavx2 -mfma -mf16c)
     target_compile_definitions(jam_avx2 PRIVATE JAM_HAVE_AVX2=1)
@@ -78,7 +78,7 @@ endif()
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
     # ARM Q8_0 + K-quant kernels: NEON baseline (vmull+vpadal), DOTPROD (sdot), I8MM (smmla). Each its own -march.
-    add_library(jam_neon OBJECT src/jam_kernels_neon.c src/jam_kernels_kquant_neon.c)
+    add_library(jam_neon OBJECT src/jam_kernels_neon.c src/jam_kernels_kquant_neon.c src/jam_kernels_nvfp4_neon.c)
     target_include_directories(jam_neon PRIVATE include)
     target_compile_options(jam_neon PRIVATE -march=armv8-a)
     target_compile_definitions(jam_neon PRIVATE JAM_HAVE_NEON=1)

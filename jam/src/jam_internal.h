@@ -89,6 +89,7 @@ typedef struct {
     int8_t*  aq;                /* [n*k]  requantized activations (VNNI) */
     float*   ad;                /* [n*nb] per-block activation scales */
     float*   asum;              /* [n*nb] per-block Σ(int8 activations) — K-quant dmin·min term (or NULL) */
+    const void* wscale;         /* NVFP4 E4M3 scale plane (planar layout); NULL for other dtypes */
 } jam_q8_job;
 
 void jam_mm_q8_0_f32_generic(void* job, int row_begin, int row_end, int tid);  /* portable floor */
@@ -127,6 +128,7 @@ void jam_mm_q4_0_avx2(void* job, int a_begin, int a_end, int tid);         /* ma
 void jam_mm_q4k_avx2(void* job, int rb, int re, int tid);                  /* K-quant int8 (below VNNI) */
 void jam_mm_q5k_avx2(void* job, int rb, int re, int tid);
 void jam_mm_q6k_avx2(void* job, int rb, int re, int tid);
+void jam_mm_nvfp4_avx2(void* job, int rb, int re, int tid);                /* NVFP4: FP4 LUT + per-16 E4M3 */
 #endif
 #ifdef JAM_HAVE_AVXVNNI
 void jam_mm_mxfp4_avxvnni(void* job, int a_begin, int a_end, int tid);     /* vpdpbusd + FP4 decode */
@@ -158,6 +160,7 @@ void jam_mm_mxfp4_neon(void* job, int rb, int re, int tid);                /* + 
 void jam_mm_q4k_neon(void* job, int rb, int re, int tid);                 /* K-quant int8 dot (vmull+vpadal) */
 void jam_mm_q5k_neon(void* job, int rb, int re, int tid);
 void jam_mm_q6k_neon(void* job, int rb, int re, int tid);
+void jam_mm_nvfp4_neon(void* job, int rb, int re, int tid);               /* NVFP4: FP4 LUT + per-16 E4M3 */
 #endif
 #ifdef JAM_HAVE_DOTPROD
 void jam_mm_q8_0_dotprod(void* job, int a_begin, int a_end, int tid);      /* vdotq_s32 (sdot) */
