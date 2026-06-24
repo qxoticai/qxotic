@@ -7,6 +7,7 @@
 #include <pmmintrin.h>   /* SSE3 (_mm_hadd_ps); pulls in SSE/SSE2 */
 #include <stdint.h>
 #include "jam_mxfp4.h"   /* jam_mxfp4_blk, jam_mxfp4_dhalf, JAM_MXFP4_CODES (pure C) */
+#include "jam_fp16.h"    /* jam_half2float (shared software fp16->fp32; SSE3 has no F16C) */
 
 #ifndef JAM_Q8_BLK_DEFINED
 #define JAM_Q8_BLK_DEFINED
@@ -14,34 +15,12 @@ typedef struct __attribute__((packed)) { uint16_t d; int8_t qs[32]; } jam_q8_blk
 typedef struct __attribute__((packed)) { uint16_t d; uint8_t qs[16]; } jam_q4_0_blk; /* Q4_0: 18 bytes */
 #endif
 
-/* fp16 -> fp32 in software (SSE3 has no F16C). Same result as the generic floor's jam_half2float. */
-static inline float jam_half2float_sse3(uint16_t h) {
-    uint32_t sign = (uint32_t)(h & 0x8000u) << 16;
-    uint32_t exp  = (h >> 10) & 0x1Fu;
-    uint32_t mant = h & 0x3FFu;
-    uint32_t f;
-    if (exp == 0) {
-        if (mant == 0) { f = sign; }                            /* zero */
-        else {                                                  /* subnormal */
-            exp = 127 - 15 + 1;
-            while (!(mant & 0x400u)) { mant <<= 1; --exp; }
-            mant &= 0x3FFu;
-            f = sign | (exp << 23) | (mant << 13);
-        }
-    } else if (exp == 0x1Fu) {                                  /* inf / nan */
-        f = sign | 0x7F800000u | (mant << 13);
-    } else {                                                    /* normal */
-        f = sign | ((exp - 15 + 127) << 23) | (mant << 13);
-    }
-    float r; __builtin_memcpy(&r, &f, sizeof r); return r;
-}
-
 /* Q8_0: weights are already int8 (two 16-byte halves); scale is the fp16 block delta. */
 static inline void jam_decode_q8_0_128(const void* blk, __m128i* wlo, __m128i* whi, float* dW) {
     const jam_q8_blk* w = (const jam_q8_blk*) blk;
     *wlo = _mm_loadu_si128((const __m128i*) w->qs);
     *whi = _mm_loadu_si128((const __m128i*) (w->qs + 16));
-    *dW  = jam_half2float_sse3(w->d);
+    *dW  = jam_half2float(w->d);
 }
 
 /* Q4_0: value = d·(nibble-8). Nibble decode is pure arithmetic (and/shift/sub) — no SSSE3 pshufb needed:
@@ -52,7 +31,7 @@ static inline void jam_decode_q4_0_128(const void* blk, __m128i* wlo, __m128i* w
     __m128i qs = _mm_loadu_si128((const __m128i*) w->qs);
     *wlo = _mm_sub_epi8(_mm_and_si128(qs, m4), e8);                          /* elements 0..15 */
     *whi = _mm_sub_epi8(_mm_and_si128(_mm_srli_epi16(qs, 4), m4), e8);       /* elements 16..31 */
-    *dW  = jam_half2float_sse3(w->d);
+    *dW  = jam_half2float(w->d);
 }
 
 /* MXFP4: nibble -> int8 code (FP4 value ×2); the ×½ folds into the scale (jam_mxfp4_dhalf). The LUT lookup
