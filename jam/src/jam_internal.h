@@ -120,6 +120,9 @@ void jam_mm_q4_0_f32_generic(void* job, int row_begin, int row_end, int tid);  /
 #ifdef JAM_HAVE_AVX2
 void jam_mm_mxfp4_avx2(void* job, int a_begin, int a_end, int tid);        /* maddubs + FP4 decode */
 void jam_mm_q4_0_avx2(void* job, int a_begin, int a_end, int tid);         /* maddubs + nibble-8 decode */
+void jam_mm_q4k_avx2(void* job, int rb, int re, int tid);                  /* K-quant int8 (below VNNI) */
+void jam_mm_q5k_avx2(void* job, int rb, int re, int tid);
+void jam_mm_q6k_avx2(void* job, int rb, int re, int tid);
 #endif
 #ifdef JAM_HAVE_AVXVNNI
 void jam_mm_mxfp4_avxvnni(void* job, int a_begin, int a_end, int tid);     /* vpdpbusd + FP4 decode */
