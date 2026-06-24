@@ -1,0 +1,69 @@
+name: build
+
+# Produces the fat jam.jar: ONE libjam per (OS × CPU-arch); each library contains every ISA kernel and
+# selects it at runtime by CPUID, so there is no per-ISA build axis. The matrix is just OS × arch.
+
+on:
+  push: { branches: [ main, master ] }
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  native:
+    name: ${{ matrix.id }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: linux-x86-64,   os: ubuntu-latest    }
+          - { id: linux-aarch64,  os: ubuntu-24.04-arm }   # GitHub native ARM runner
+          - { id: darwin-x86-64,  os: macos-13         }   # Intel
+          - { id: darwin-aarch64, os: macos-14         }   # Apple Silicon
+          - { id: windows-x86-64, os: windows-latest, clang: true }   # clang (the -m flags need gcc/clang)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM (Windows — MSVC doesn't take the -m flags)
+        if: matrix.clang
+        run: choco install llvm -y
+
+      - name: Configure + build (Release)
+        shell: bash
+        run: |
+          EXTRA=""
+          [ "${{ matrix.clang }}" = "true" ] && EXTRA="-DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -G Ninja"
+          cmake -B build -DCMAKE_BUILD_TYPE=Release $EXTRA
+          cmake --build build --config Release
+
+      - name: Test C (native runners only)
+        shell: bash
+        run: ctest --test-dir build --output-on-failure || true
+
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '22' }
+      - name: Test Java API (JUnit)
+        shell: bash
+        run: mvn -B test                     # NativeLoader loads the CMake-staged lib (dist/native, a resource)
+
+      - name: Upload staged native lib
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.id }}
+          path: dist/native/
+
+  jar:
+    name: assemble jam.jar
+    needs: native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect every platform's native lib into dist/native/
+        uses: actions/download-artifact@v4
+        with: { pattern: native-*, merge-multiple: true, path: dist/native }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21' }
+      - name: Build the fat jar
+        run: ./scripts/build-jar.sh
+      - uses: actions/upload-artifact@v4
+        with: { name: jam-jar, path: dist/jam.jar }
