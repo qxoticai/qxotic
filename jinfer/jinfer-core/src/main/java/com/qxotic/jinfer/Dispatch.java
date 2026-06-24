@@ -67,13 +67,13 @@ final class Dispatch implements MatMul {
         if (MM_TRACE) mmRecord(t, m, n, k);
         boolean f32io = a instanceof F32FloatTensor && c instanceof F32FloatTensor && a != c;
 
-        // Pick the backend, then issue one matmul. Decode (n==1): Vector matvec when vectors are present
-        // (the scalar floor's dot() still vectorizes for what Vector skips), jam when there are none.
-        // Prefill: jam, else the Java Vector tile, else the floor.
+        // Pick the backend, then issue one matmul. Decode (n==1): the scalar floor's parallel one-row dot()
+        // (it vectorizes) when there's a Vector API, jam when there isn't. Prefill: jam, else Vector tile, else floor.
         MatMul chosen;
         if (n == 1) {
-            chosen = FloatTensor.USE_VECTOR_API
-                    ? (f32io && VectorMatMul.gemvApplies(t, m, k, wOff) ? vector : scalar)
+            // decode matvec: the scalar floor's dot() vectorizes per row in parallel — measured identical to
+            // the old specialized Vector gemv on this memory-bound kernel. jam only when there's no Vector API.
+            chosen = FloatTensor.USE_VECTOR_API ? scalar
                     : (jam != null && f32io && jamSupports(t, k) ? jam : scalar);
         } else {
             chosen = jam != null && f32io && jamSupports(t, k) ? jam
