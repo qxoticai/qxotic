@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.qxotic</groupId>
+  <artifactId>jam</artifactId>
+  <version>0.1.0</version>
+  <packaging>jar</packaging>
+
+  <properties>
+    <maven.compiler.release>22</maven.compiler.release>   <!-- FFM (java.lang.foreign) is stable in 22 -->
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.10.2</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <sourceDirectory>java</sourceDirectory>
+    <testSourceDirectory>src/test/java</testSourceDirectory>
+    <!-- CMake stages the per-platform lib here (com/qxotic/jam/native/<os>-<arch>/...). As a resource it
+         lands on the classpath, so NativeLoader finds + loads it the SAME way it would from the fat jar —
+         no per-OS paths, and the test exercises the real loader. (`mvn package` -> fat jar from the same.) -->
+    <resources>
+      <resource><directory>dist/native</directory></resource>
+    </resources>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <argLine>--enable-native-access=ALL-UNNAMED</argLine>   <!-- System.load is "restricted" on JDK 24+ -->
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
