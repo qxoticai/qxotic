@@ -34,12 +34,16 @@
   </developers>
 
   <modules>
-    <!-- Core modules (order by dependency) -->
+    <!-- Core modules (order by dependency; the reactor topologically sorts by dependency anyway) -->
     <module>gguf</module>
     <module>json</module>
     <module>safetensors</module>
     <module>toknroll</module>
     <module>jota</module>
+    <!-- jam: native (CMake) int8 GEMM backend, standalone Java 22 (FFM). jinfer: LLM inference engine
+         (multi-module), standalone Java 25, depends on jam. Both diverge from this parent's Java 11. -->
+    <module>jam</module>
+    <module>jinfer</module>
     <module>examples</module>
   </modules>
 
@@ -217,6 +221,11 @@
       <dependency>
         <groupId>com.qxotic</groupId>
         <artifactId>span</artifactId>
+        <version>${qxotic.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.qxotic</groupId>
+        <artifactId>jam</artifactId>
         <version>${qxotic.version}</version>
       </dependency>
     </dependencies>

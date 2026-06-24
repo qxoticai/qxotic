@@ -12,6 +12,8 @@
   <properties>
     <maven.compiler.release>22</maven.compiler.release>   <!-- FFM (java.lang.foreign) is stable in 22 -->
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <native.cmake.executable>cmake</native.cmake.executable>
+    <jam.native.skip>false</jam.native.skip>   <!-- -Djam.native.skip=true to reuse a pre-staged dist/native (cross-platform CI) -->
   </properties>
 
   <dependencies>
@@ -33,6 +35,43 @@
       <resource><directory>dist/native</directory></resource>
     </resources>
     <plugins>
+      <!-- Build the native libjam via CMake before resources are processed; CMake's POST_BUILD stages the
+           lib into dist/native (bundled by the <resource> above). Skip with -Djam.native.skip=true to reuse
+           a pre-built/staged lib (e.g. the cross-platform CI that merges per-OS artifacts). -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.4.1</version>
+        <executions>
+          <execution>
+            <id>cmake-configure</id>
+            <phase>generate-sources</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <skip>${jam.native.skip}</skip>
+              <executable>${native.cmake.executable}</executable>
+              <arguments>
+                <argument>-S</argument><argument>${project.basedir}</argument>
+                <argument>-B</argument><argument>${project.basedir}/build</argument>
+                <argument>-DCMAKE_BUILD_TYPE=Release</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>cmake-build</id>
+            <phase>generate-resources</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <skip>${jam.native.skip}</skip>
+              <executable>${native.cmake.executable}</executable>
+              <arguments>
+                <argument>--build</argument><argument>${project.basedir}/build</argument>
+                <argument>--target</argument><argument>jam</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
