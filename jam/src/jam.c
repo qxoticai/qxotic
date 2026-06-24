@@ -237,11 +237,14 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
 #endif
     /* ARM: NEON/DOTPROD/I8MM are a clean superset chain (detect returns the highest fully present). */
 #ifdef JAM_HAVE_NEON
-    if (cpu >= JAM_ISA_NEON)  { c->q8_kernel = jam_mm_q8_0_neon; c->q4k_kernel = jam_mm_q4k_neon;
+    if (cpu >= JAM_ISA_NEON)  { c->q8_kernel = jam_mm_q8_0_neon;
+                                c->q4_0_kernel = jam_mm_q4_0_neon; c->mxfp4_kernel = jam_mm_mxfp4_neon;
+                                c->q4k_kernel = jam_mm_q4k_neon;
                                 c->q5k_kernel = jam_mm_q5k_neon; c->q6k_kernel = jam_mm_q6k_neon; }
 #endif
 #ifdef JAM_HAVE_DOTPROD
     if (cpu >= JAM_ISA_DOTPROD) { c->q8_kernel = jam_mm_q8_0_dotprod;   /* i8mm cores inherit these (sdot) */
+        c->q4_0_kernel = jam_mm_q4_0_dotprod; c->mxfp4_kernel = jam_mm_mxfp4_dotprod;
         c->q4k_kernel = jam_mm_q4k_dotprod; c->q5k_kernel = jam_mm_q5k_dotprod; c->q6k_kernel = jam_mm_q6k_dotprod; }
 #endif
 #ifdef JAM_HAVE_I8MM

@@ -146,12 +146,16 @@ void jam_mm_q8_0_gemv_avx512(void* job, int row_begin, int row_end, int tid);   
 #endif
 #ifdef JAM_HAVE_NEON
 void jam_mm_q8_0_neon(void* job, int a_begin, int a_end, int tid);         /* vmull+vpadal (ARMv8 floor) */
+void jam_mm_q4_0_neon(void* job, int rb, int re, int tid);                 /* + nibble decode */
+void jam_mm_mxfp4_neon(void* job, int rb, int re, int tid);                /* + FP4 table-lookup decode */
 void jam_mm_q4k_neon(void* job, int rb, int re, int tid);                 /* K-quant int8 dot (vmull+vpadal) */
 void jam_mm_q5k_neon(void* job, int rb, int re, int tid);
 void jam_mm_q6k_neon(void* job, int rb, int re, int tid);
 #endif
 #ifdef JAM_HAVE_DOTPROD
 void jam_mm_q8_0_dotprod(void* job, int a_begin, int a_end, int tid);      /* vdotq_s32 (sdot) */
+void jam_mm_q4_0_dotprod(void* job, int rb, int re, int tid);
+void jam_mm_mxfp4_dotprod(void* job, int rb, int re, int tid);
 void jam_mm_q4k_dotprod(void* job, int rb, int re, int tid);              /* K-quant sdot */
 void jam_mm_q5k_dotprod(void* job, int rb, int re, int tid);
 void jam_mm_q6k_dotprod(void* job, int rb, int re, int tid);
