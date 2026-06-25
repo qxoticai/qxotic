@@ -87,7 +87,7 @@ final class Dispatch implements MatMul {
      *  the alignment is the dtype's own block size (1 for the dense float types). */
     private static boolean jamSupports(GGMLType t, int k) {
         return switch (t) {
-            case Q8_0, Q4_0, Q4_K, Q5_K, Q6_K, MXFP4, F16, BF16, F32 -> k % t.getElementsPerBlock() == 0;
+            case Q8_0, Q4_0, Q4_K, Q5_K, Q6_K, MXFP4, NVFP4, F16, BF16, F32 -> k % t.getElementsPerBlock() == 0;
             default -> false;
         };
     }

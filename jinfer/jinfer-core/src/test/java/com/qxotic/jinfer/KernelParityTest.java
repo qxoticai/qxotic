@@ -25,14 +25,14 @@ public final class KernelParityTest {
 
     public static void main(String[] args) {
         GGMLType[] quants = {GGMLType.Q4_0, GGMLType.Q4_1, GGMLType.Q5_1, GGMLType.Q8_0,
-                             GGMLType.Q4_K, GGMLType.Q5_K, GGMLType.Q6_K, GGMLType.MXFP4,
+                             GGMLType.Q4_K, GGMLType.Q5_K, GGMLType.Q6_K, GGMLType.MXFP4, GGMLType.NVFP4,
                              GGMLType.F16, GGMLType.BF16, GGMLType.F32};
         for (GGMLType type : quants) {
             testDot(type);
         }
         testGemv(GGMLType.Q8_0);
         for (GGMLType type : new GGMLType[]{GGMLType.Q4_0, GGMLType.Q4_K, GGMLType.Q5_K, GGMLType.Q6_K, GGMLType.Q8_0, GGMLType.Q4_1,
-                                            GGMLType.MXFP4, GGMLType.BF16, GGMLType.F16, GGMLType.F32}) {
+                                            GGMLType.MXFP4, GGMLType.NVFP4, GGMLType.BF16, GGMLType.F16, GGMLType.F32}) {
             testGemm(type);
         }
         testRmsnorm();
@@ -88,6 +88,8 @@ public final class KernelParityTest {
                 case Q4_1, Q5_1, Q4_K, Q5_K -> { putScaleF16(seg, off, rng); putScaleF16(seg, off + 2, rng); } // d, m/dmin
                 case Q6_K -> putScaleF16(seg, off + 208, rng);                                   // ql|qh|scales|d
                 case MXFP4 -> seg.set(ValueLayout.JAVA_BYTE, off, (byte) (120 + rng.nextInt(10))); // e8m0 ~ 2^-4..2^1
+                case NVFP4 -> { for (int s = 0; s < 4; s++)                                          // 4 UE4M3 scales ~0.5..0.9
+                    seg.set(ValueLayout.JAVA_BYTE, off + s, (byte) (0x30 | (rng.nextInt() & 7))); }
                 default -> throw new UnsupportedOperationException(type.toString());
             }
         }
@@ -100,6 +102,7 @@ public final class KernelParityTest {
             case Q5_K -> new Q5_KFloatTensor(numElements, seg);
             case Q6_K -> new Q6_KFloatTensor(numElements, seg);
             case MXFP4 -> new MXFP4FloatTensor(numElements, seg);
+            case NVFP4 -> new NVFP4FloatTensor(numElements, seg);
             default -> throw new UnsupportedOperationException(type.toString());
         };
     }

@@ -3408,6 +3408,54 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
     }
 }
 
+/**
+ * NVFP4 (NVIDIA FP4), GGUF block_nvfp4 = { uint8_t d[4] (UE4M3 per-16 sub-block); uint8_t qs[32] } = 36
+ * bytes, 64 elements (4 sub-blocks of 16). value = kvalues_mxfp4[nibble] · ue4m3(d[s]); no global scale.
+ * Within sub-block s, byte (s*8+j): low nibble = element s*16+j, high nibble = element s*16+8+j. Matches
+ * jam (the int8 path, used for prefill/decode when the native lib is present) and ggml's dequant. The dot
+ * here is the scalar floor (correct fallback); jam carries the vectorized weight when loaded.
+ */
+final class NVFP4FloatTensor extends SegmentFloatTensor {
+
+    private static final int[] NVFP4_VALUES = {0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12};
+    static final int QK_NVFP4 = 64;
+
+    final MemorySegment memorySegment;
+
+    NVFP4FloatTensor(long size, MemorySegment memorySegment) {
+        super(size, memorySegment);
+        this.memorySegment = memorySegment;
+    }
+    @Override public void setFloat(long index, float value) { throw new UnsupportedOperationException("setFloat"); }
+    @Override FloatVector getFloatVector(VectorSpecies<Float> species, long index) { throw new UnsupportedOperationException("getFloatVector"); }
+    @Override public GGMLType type() { return GGMLType.NVFP4; }
+
+    /** UE4M3 (unsigned FP8 E4M3) -> float; matches jam_ue4m3_to_float / ggml_ue4m3_to_fp32 (bit 7 ignored). */
+    private static float ue4m3ToFp32(int x) {
+        if (x == 0 || x == 0x7F) return 0f;
+        int e = (x >>> 3) & 0xF, m = x & 0x7;
+        return e != 0 ? (1f + m / 8f) * (float) Math.scalb(1.0, e - 7) : m * (float) Math.scalb(1.0, -9);
+    }
+
+    @Override
+    public float getFloat(long index) {
+        assert 0 <= index && index < size;
+        long blockOffset = (index / QK_NVFP4) * GGMLType.NVFP4.getBlockByteSize();
+        int withinBlock = (int) (index % QK_NVFP4);
+        int sub = withinBlock / 16, local = withinBlock % 16;      // sub-block + element within it
+        float d = ue4m3ToFp32(Byte.toUnsignedInt(readByte(memorySegment, blockOffset + sub)));   // d[sub]
+        long qsOffset = blockOffset + 4 + sub * 8 + (local & 7);    // byte s*8 + (j mod 8)
+        int packed = Byte.toUnsignedInt(readByte(memorySegment, qsOffset));
+        int nibble = local < 8 ? (packed & 0x0F) : ((packed >>> 4) & 0x0F);
+        return NVFP4_VALUES[nibble] * d;
+    }
+
+    @Override
+    public float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
+        return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
+    }
+}
+
 final class BF16FloatTensor extends SegmentFloatTensor {
 
     final MemorySegment memorySegment;
