@@ -1,7 +1,8 @@
-/* AVX2 NVFP4 kernel (E2M1 nibbles + a per-16 E4M3 scale, PLANAR layout). Decode = MXFP4's pshufb LUT into
- * two contiguous 16-element halves (low/high nibbles); the per-half E4M3 scale is the Q6_K trick — scale the
- * two halves of the 8-lane int8 dot by [s0,s1] before the hsum. Activations are int8-requantized (J->aq/ad);
- * the per-tensor FP32 global scale G is the caller's (a post-scale). Built -mavx2 -mfma -mf16c. */
+/* AVX2 NVFP4 kernel — GGUF block_nvfp4 ({d[4] UE4M3; qs[32]}, 64 elems = 4 sub-blocks of 16, no global
+ * scale). Decode = MXFP4's pshufb LUT; the sub-block nibble order (byte s*8+j: low=elem j, high=elem j+8)
+ * means a 32-element span (2 sub-blocks, 16 bytes) decodes interleaved, so an unpacklo/hi_epi64 reorders it
+ * to two contiguous 16-element halves. Per-16 UE4M3 scale via the Q6_K trick ([s0,s1] on the 8-lane dot).
+ * Activations are int8-requantized (J->aq/ad). Built -mavx2 -mfma -mf16c. */
 #include <immintrin.h>
 #include "jam_internal.h"
 #include "jam_nvfp4.h"
@@ -12,31 +13,36 @@
 void jam_mm_nvfp4_avx2(void* arg, int rb, int re, int tid) {
     (void) tid;
     const jam_q8_job* J = (const jam_q8_job*) arg;
-    const uint8_t* DATA  = (const uint8_t*) J->a;
-    const uint8_t* SCALE = (const uint8_t*) J->wscale;
+    const char* W = (const char*) J->a;
     const int8_t* AQ = J->aq; const float* AD = J->ad;
     float* C = (float*) J->c;
-    const int ldc = J->ldc, n = J->n, k = J->k, nb = J->nb;   /* nb = k/32 */
-    const size_t drow = (size_t) nb * 16, srow = (size_t) nb * 2;
+    const int ldc = J->ldc, n = J->n, k = J->k;
+    const int nblk = k / JAM_NVFP4_QK;                       /* 64-element blocks */
+    const size_t wrow = (size_t) nblk * sizeof(jam_nvfp4_blk);
     const __m128i lut = _mm_setr_epi8(JAM_MXFP4_CODES);
     const __m128i m4  = _mm_set1_epi8(0x0F);
     for (int i = rb; i < re; ++i) {
-        const uint8_t* dr = DATA + (size_t) i * drow;
-        const uint8_t* sr = SCALE + (size_t) i * srow;
+        const jam_nvfp4_blk* wr = (const jam_nvfp4_blk*) (W + (size_t) i * wrow);
         for (int j = 0; j < n; ++j) {
             const int8_t* aq = AQ + (size_t) j * k;
-            const float* ad = AD + (size_t) j * nb;
+            const float* ad = AD + (size_t) j * (k / 32);     /* per-32 activation scales */
             float acc = 0.0f;
-            for (int b = 0; b < nb; ++b) {
-                __m128i qs = _mm_loadu_si128((const __m128i*) (dr + (size_t) b * 16));
-                __m128i lo = _mm_shuffle_epi8(lut, _mm_and_si128(qs, m4));
-                __m128i hi = _mm_shuffle_epi8(lut, _mm_and_si128(_mm_srli_epi16(qs, 4), m4));
-                __m256i wq = _mm256_set_m128i(hi, lo);     /* 32 int8: lo = elems 0-15, hi = 16-31 */
-                __m256i av = _mm256_loadu_si256((const __m256i*) (aq + (size_t) b * 32));
-                __m256 prod = KDOT(_mm256_abs_epi8(wq), _mm256_sign_epi8(av, wq));   /* signed dot */
-                float s0 = jam_nvfp4_dhalf(sr[2*b]), s1 = jam_nvfp4_dhalf(sr[2*b + 1]);
-                __m256 scv = _mm256_setr_ps(s0,s0,s0,s0, s1,s1,s1,s1);   /* lanes 0-3 -> s0, 4-7 -> s1 */
-                acc += ad[b] * jam_hsum8_256(_mm256_mul_ps(prod, scv));
+            for (int bb = 0; bb < nblk; ++bb) {
+                const jam_nvfp4_blk* w = &wr[bb];
+                for (int sp = 0; sp < 2; ++sp) {               /* 2 spans of 32 = sub-blocks (2sp, 2sp+1) */
+                    __m128i qs = _mm_loadu_si128((const __m128i*) (w->qs + sp * 16));
+                    __m128i lo = _mm_shuffle_epi8(lut, _mm_and_si128(qs, m4));            /* [e0-7, e16-23] */
+                    __m128i hi = _mm_shuffle_epi8(lut, _mm_and_si128(_mm_srli_epi16(qs, 4), m4)); /* [e8-15,e24-31] */
+                    __m128i wl = _mm_unpacklo_epi64(lo, hi);   /* elems 0-15  (sub-block 2sp)   */
+                    __m128i wh = _mm_unpackhi_epi64(lo, hi);   /* elems 16-31 (sub-block 2sp+1) */
+                    __m256i wq = _mm256_set_m128i(wh, wl);
+                    int blk32 = bb * 2 + sp;
+                    __m256i av = _mm256_loadu_si256((const __m256i*) (aq + (size_t) blk32 * 32));
+                    __m256 prod = KDOT(_mm256_abs_epi8(wq), _mm256_sign_epi8(av, wq));
+                    float s0 = jam_ue4m3_to_float(w->d[2*sp]), s1 = jam_ue4m3_to_float(w->d[2*sp + 1]);
+                    __m256 scv = _mm256_setr_ps(s0,s0,s0,s0, s1,s1,s1,s1);
+                    acc += ad[blk32] * jam_hsum8_256(_mm256_mul_ps(prod, scv));
+                }
             }
             C[(size_t) j*ldc + i] = acc;
         }

@@ -62,7 +62,7 @@ typedef enum {
     JAM_Q8_K  = 15,
     JAM_BF16  = 30,
     JAM_MXFP4 = 39,   /* == GGML_TYPE_MXFP4 — verify the value against the ggml.h you target */
-    JAM_NVFP4 = 256,  /* NVIDIA FP4 (E2M1 + E4M3 block scale + FP32 global) — jam-private id, no GGML type yet */
+    JAM_NVFP4 = 40,   /* == GGML_TYPE_NVFP4 (llama.cpp): {d[4] UE4M3; qs[32]} interleaved, 64-elem, no global */
 } jam_dtype;
 
 typedef enum {
