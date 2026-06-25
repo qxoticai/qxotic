@@ -30,6 +30,7 @@ final class VectorMatMul implements MatMul {
             case Q5_K -> Q5_KFloatTensor.vectorGemm512((Q5_KFloatTensor) w, x, out, aStride, cStride, n, m, k, wOff);
             case Q6_K -> Q6_KFloatTensor.vectorGemm512((Q6_KFloatTensor) w, x, out, aStride, cStride, n, m, k, wOff);
             case MXFP4 -> MXFP4FloatTensor.vectorGemmMxfp4((MXFP4FloatTensor) w, x, out, aStride, cStride, n, m, k, wOff);
+            case NVFP4 -> NVFP4FloatTensor.vectorGemm512((NVFP4FloatTensor) w, x, out, aStride, cStride, n, m, k, wOff);
             default -> throw new IllegalStateException("VectorMatMul has no gemm tile for " + w.type());
         }
     }
@@ -40,7 +41,7 @@ final class VectorMatMul implements MatMul {
     /** dtypes with a 512-bit prefill tile (the rest fall to the scalar floor). */
     private static boolean hasGemmTile(GGMLType t) {
         return switch (t) {
-            case Q8_0, Q4_0, Q4_K, Q5_K, Q6_K, MXFP4 -> true;
+            case Q8_0, Q4_0, Q4_K, Q5_K, Q6_K, MXFP4, NVFP4 -> true;
             default -> false;   // F16, BF16, F32 -> dot floor
         };
     }

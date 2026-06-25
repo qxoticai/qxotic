@@ -3289,7 +3289,8 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
     /** Per-worker F32 scratch holding the row group's dequantized weights; grown on demand, reused. */
     private static final ThreadLocal<float[]> DEQUANT_BAND = new ThreadLocal<>();
 
-    private static float[] bandScratch(int need) {
+    /* package-shared: generic F32 dequant-band machinery, reused by NVFP4FloatTensor (operates on float[]). */
+    static float[] bandScratch(int need) {
         float[] w = DEQUANT_BAND.get();
         if (w == null || w.length < need) {
             w = new float[need];
@@ -3310,7 +3311,7 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
             }
             int s = 0;
             for (; s + MXFP4_NR <= sequenceLength; s += MXFP4_NR) {
-                gemm512Mxfp4Band3x3(w, dim1, x, of, thatStride, outStride, row0, s);
+                gemm512Band3x3(w, dim1, x, of, thatStride, outStride, row0, s);
             }
             for (; s < sequenceLength; s++) {
                 for (int i = 0; i < MXFP4_MR; i++) {
@@ -3346,7 +3347,7 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
 
     /** MR=3 rows × NR=3 cols: 9 accumulators + 3 weight + 3 activation vectors (15 zmm). Balanced reuse —
      *  each activation feeds 3 rows and each weight feeds 3 columns. */
-    private static void gemm512Mxfp4Band3x3(float[] w, int dim1, F32FloatTensor x, F32FloatTensor out,
+    static void gemm512Band3x3(float[] w, int dim1, F32FloatTensor x, F32FloatTensor out,
                                             int thatStride, int outStride, int row0, int s0) {
         int row1 = row0 + 1, row2 = row0 + 2;
         int b0 = s0 * thatStride, b1 = b0 + thatStride, b2 = b1 + thatStride;
@@ -3377,7 +3378,7 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
     }
 
     /** Flat F32 dot of a dequantized weight row (at {@code w[wOffset..]}) against one activation column. */
-    private static float dotDeq(float[] w, int wOffset, int dim1, F32FloatTensor x, int xbase) {
+    static float dotDeq(float[] w, int wOffset, int dim1, F32FloatTensor x, int xbase) {
         FloatVector acc = FloatVector.zero(F_SPECIES);
         int len = F_SPECIES.length();
         for (int k = 0; k < dim1; k += len) {
@@ -3452,7 +3453,58 @@ final class NVFP4FloatTensor extends SegmentFloatTensor {
 
     @Override
     public float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
+        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor x
+                && (thisOffset % QK_NVFP4) == 0 && (size % QK_NVFP4) == 0) {
+            float[] w = MXFP4FloatTensor.bandScratch(size);   // decode the row, then a vectorized F32 dot
+            dequantizeRow(this, thisOffset, size, w, 0);
+            return MXFP4FloatTensor.dotDeq(w, 0, size, x, (int) thatOffset);
+        }
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
+    }
+
+    /** Dequantize one weight row (dim1 % 64 == 0) into dst[dstOffset..] in element order. Scalar decode —
+     *  the GGUF t|t+8 sub-block packing doesn't vectorize cleanly; in the gemm it is amortized over the band. */
+    private static void dequantizeRow(NVFP4FloatTensor thiz, long rowElemOffset, int dim1, float[] dst, int dstOffset) {
+        int kblocks = dim1 / QK_NVFP4;
+        long firstBlock = rowElemOffset / QK_NVFP4;
+        long blockByteSize = GGMLType.NVFP4.getBlockByteSize();
+        for (int blk = 0; blk < kblocks; blk++) {
+            long bo = (firstBlock + blk) * blockByteSize;
+            int base = dstOffset + blk * QK_NVFP4;
+            for (int s = 0; s < 4; s++) {
+                float d = ue4m3ToFp32(Byte.toUnsignedInt(readByte(thiz.memorySegment, bo + s)));
+                for (int j = 0; j < 8; j++) {
+                    int packed = Byte.toUnsignedInt(readByte(thiz.memorySegment, bo + 4 + s * 8 + j));
+                    dst[base + s * 16 + j]     = NVFP4_VALUES[packed & 0x0F] * d;   // low  -> elem j
+                    dst[base + s * 16 + 8 + j] = NVFP4_VALUES[packed >>> 4] * d;    // high -> elem j + 8
+                }
+            }
+        }
+    }
+
+    /** Register-tiled NVFP4 prefill (512-bit): dequantize a 3-row band to F32 scratch, then the shared
+     *  decode-free 3x3 F32 band sweeps the sequence (same machinery as MXFP4). */
+    static void vectorGemm512(NVFP4FloatTensor thiz, F32FloatTensor x, F32FloatTensor of,
+                              int thatStride, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
+        final int MR = 3, NR = 3;
+        int groups = dim0 / MR;
+        Parallel.parallelFor(0, groups, g -> {
+            int row0 = g * MR;
+            float[] w = MXFP4FloatTensor.bandScratch(MR * dim1);
+            for (int i = 0; i < MR; i++) dequantizeRow(thiz, thisOffset + (long) (row0 + i) * dim1, dim1, w, i * dim1);
+            int s = 0;
+            for (; s + NR <= sequenceLength; s += NR)
+                MXFP4FloatTensor.gemm512Band3x3(w, dim1, x, of, thatStride, outStride, row0, s);
+            for (; s < sequenceLength; s++)
+                for (int i = 0; i < MR; i++)
+                    of.setFloat(s * outStride + row0 + i, MXFP4FloatTensor.dotDeq(w, i * dim1, dim1, x, s * thatStride));
+        });
+        for (int row = groups * MR; row < dim0; row++) {           // trailing rows: per-column dots
+            float[] w = MXFP4FloatTensor.bandScratch(dim1);
+            dequantizeRow(thiz, thisOffset + (long) row * dim1, dim1, w, 0);
+            float[] wf = w; int rr = row;
+            Parallel.parallelFor(0, sequenceLength, s -> of.setFloat(s * outStride + rr, MXFP4FloatTensor.dotDeq(wf, 0, dim1, x, s * thatStride)));
+        }
     }
 }
 
