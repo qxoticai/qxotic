@@ -348,6 +348,7 @@ final class ModelLoader {
             case F16 -> new F16FloatTensor(numElements, entry.memorySegment());
             case BF16 -> new BF16FloatTensor(numElements, entry.memorySegment());
             case MXFP4 -> new MXFP4FloatTensor(numElements, entry.memorySegment());
+            case NVFP4 -> new NVFP4FloatTensor(numElements, entry.memorySegment());
             default -> throw new UnsupportedOperationException("Quantization format " + ggmlType);
         };
     }
