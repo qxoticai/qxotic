@@ -119,30 +119,34 @@ static void suite_mxfp4(int m, int n, int k) {     /* k a multiple of 32 */
     free(W);free(A);free(C);free(RE);free(RR);free(WQ);
 }
 
-static void suite_nvfp4(int m, int n, int k) {     /* k a multiple of 32; weight buffer is planar [data|scales] */
-    int spans = k/32, s16 = k/16;
+static void suite_nvfp4(int m, int n, int k) {     /* k a multiple of 64; GGUF block_nvfp4 {d[4];qs[32]} */
+    int nblk = k/64;
+    static const int8_t kv[16] = { 0,1,2,3,4,6,8,12, 0,-1,-2,-3,-4,-6,-8,-12 };
     float* W = malloc(4*(size_t)m*k); float* A = malloc(4*(size_t)n*k); float* C = malloc(4*(size_t)m*n);
     double* RE = malloc(8*(size_t)m*n); double* RR = malloc(8*(size_t)m*n);
     jam_ref_fill(W,(size_t)m*k,5); jam_ref_fill(A,(size_t)n*k,6);
-    uint8_t* WQ = (uint8_t*) jam_ref_quant_nvfp4(W,m,k);
-    const uint8_t* DATA = WQ;                          /* FP4 data plane */
-    const uint8_t* SCALE = WQ + (size_t)m*(k/2);       /* E4M3 scale plane (the caller knows m, k) */
+    jam_ref_nvfp4_blk* WQ = (jam_ref_nvfp4_blk*) jam_ref_quant_nvfp4(W,m,k);
     for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
         double se=0, sr=0;
-        for (int s=0;s<spans;s++) {                    /* 32-elem span = low half + high half */
-            const uint8_t* db = DATA + (size_t)i*(k/2) + s*16;
-            float s0dh = 0.5f*jam_ref_e4m3_to_float(SCALE[(size_t)i*s16 + s*2]);
-            float s1dh = 0.5f*jam_ref_e4m3_to_float(SCALE[(size_t)i*s16 + s*2 + 1]);
-            const float* aa=A+(size_t)j*k+s*32;
-            float amax=0; for (int e=0;e<32;e++){ float v=fabsf(aa[e]); if(v>amax)amax=v; }
+        for (int blk32=0; blk32<k/32; blk32++) {       /* per-32 activation block = 2 NVFP4 sub-blocks */
+            int bb = blk32/2, sp = blk32%2;
+            jam_ref_nvfp4_blk* w = &WQ[(size_t)i*nblk + bb];
+            const float* aa32 = A + (size_t)j*k + (size_t)blk32*32;
+            float amax=0; for (int e=0;e<32;e++){ float v=fabsf(aa32[e]); if(v>amax)amax=v; }
             float dA=amax/127.f, id=dA>0?1.f/dA:0.f;
-            for (int t=0;t<16;t++) {
-                float vlo = jam_ref_mxfp4_decode(db[t]&0x0F, s0dh);          /* elem t   (no G — caller's) */
-                float vhi = jam_ref_mxfp4_decode(db[t]>>4,   s1dh);          /* elem t+16 */
-                se += (double)vlo*aa[t] + (double)vhi*aa[t+16];              /* exact A (the generic floor) */
-                int ql=(int)lrintf(aa[t]*id);    if(ql>127)ql=127; else if(ql<-128)ql=-128;
-                int qh=(int)lrintf(aa[t+16]*id); if(qh>127)qh=127; else if(qh<-128)qh=-128;
-                sr += (double)vlo*((float)ql*dA) + (double)vhi*((float)qh*dA);  /* requant A (the int8 SIMD path) */
+            for (int half=0; half<2; half++) {         /* 2 sub-blocks of 16 */
+                int s = 2*sp + half;
+                float d = jam_ref_ue4m3_to_float(w->d[s]);
+                const uint8_t* q = w->qs + s*8;
+                const float* aa = aa32 + half*16;
+                for (int jj=0;jj<8;jj++) {
+                    float vlo = (float)kv[q[jj]&0x0F] * d;     /* elem jj     */
+                    float vhi = (float)kv[q[jj]>>4]   * d;     /* elem jj + 8 */
+                    se += (double)vlo*aa[jj] + (double)vhi*aa[jj+8];
+                    int ql=(int)lrintf(aa[jj]*id);   if(ql>127)ql=127; else if(ql<-128)ql=-128;
+                    int qh=(int)lrintf(aa[jj+8]*id); if(qh>127)qh=127; else if(qh<-128)qh=-128;
+                    sr += (double)vlo*((float)ql*dA) + (double)vhi*((float)qh*dA);
+                }
             }
         }
         RE[(size_t)i*n+j]=se; RR[(size_t)i*n+j]=sr;
@@ -242,7 +246,8 @@ int main(void) {
     for (unsigned s=0;s<sizeof F/sizeof*F;++s) suite_f32(F[s][0],F[s][1],F[s][2]);
     for (unsigned s=0;s<sizeof Q/sizeof*Q;++s) suite_q8(Q[s][0],Q[s][1],Q[s][2]);
     for (unsigned s=0;s<sizeof Q/sizeof*Q;++s) suite_mxfp4(Q[s][0],Q[s][1],Q[s][2]);   /* same shapes */
-    for (unsigned s=0;s<sizeof Q/sizeof*Q;++s) suite_nvfp4(Q[s][0],Q[s][1],Q[s][2]);   /* NVFP4 (generic floor) */
+    int NV[][3] = {{1,1,64},{4,4,128},{7,5,64},{5,7,192},{13,9,256},{64,64,256},{100,99,128},{257,33,64},{129,127,512},{512,512,512}};
+    for (unsigned s=0;s<sizeof NV/sizeof*NV;++s) suite_nvfp4(NV[s][0],NV[s][1],NV[s][2]);   /* NVFP4 GGUF (k%64) */
     int KQ[][3] = {{16,8,256},{32,16,512},{64,33,256},{17,5,256},{128,64,768},{257,40,256}};  /* k%256, n</≥8, m tail */
     for (unsigned s=0;s<sizeof KQ/sizeof*KQ;++s) suite_kquant(jam_ref_make_q4k, JAM_Q4_K, "Q4_K", KQ[s][0],KQ[s][1],KQ[s][2]);
     for (unsigned s=0;s<sizeof KQ/sizeof*KQ;++s) suite_kquant(jam_ref_make_q6k, JAM_Q6_K, "Q6_K", KQ[s][0],KQ[s][1],KQ[s][2]);

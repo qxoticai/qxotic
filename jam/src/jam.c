@@ -436,12 +436,10 @@ static jam_status jam_mm_run(jam_ctx* ctx,
         return JAM_OK;
     }
 
-    /* NVFP4 (NVIDIA FP4) @ F32 -> F32: E2M1 nibbles + a per-16 E4M3 scale, PLANAR — the weight buffer is
-     * [ FP4 data | E4M3 scales ], so the scale plane starts at w + m·(k/2). The per-tensor FP32 global scale
-     * is the CALLER's (a post-scale on the output). Processed in 32-elem spans, so k on a 32 boundary. */
-    if (wt == JAM_NVFP4 && at == JAM_F32 && ct == JAM_F32 && (k % 32 == 0)) {
+    /* NVFP4 (NVIDIA FP4) @ F32 -> F32: GGUF block_nvfp4 ({d[4] UE4M3; qs[32]}, 64-elem, interleaved, no
+     * global scale). Self-contained per-block like MXFP4; activations requant per-32. k on a 64 boundary. */
+    if (wt == JAM_NVFP4 && at == JAM_F32 && ct == JAM_F32 && (k % 64 == 0)) {
         jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, k / 32, NULL, NULL };
-        q.wscale = (const char*) w + (size_t) m * (k / 2);   /* E4M3 scale plane follows the FP4 data */
         return run_quant(ctx, &q, m, ctx->nvfp4_kernel, jam_mm_nvfp4_f32_generic);
     }
 

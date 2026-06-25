@@ -90,52 +90,48 @@ static inline jam_ref_mxfp4_blk* jam_ref_quant_mxfp4(const float* X, int rows, i
     return o;
 }
 
-/* ---- NVFP4 (NVIDIA FP4) PLANAR: weight buffer = [ FP4 data: rows·k/2 | E4M3 scales: rows·k/16 ]; a per-
- * tensor FP32 global scale G is the CALLER's (not stored). value = e4m3(block_scale)·fp4 (× G at the caller).
- * Data packed MXFP4-style per 32-span (byte s*16+t: low nibble = elem s*32+t, high = elem s*32+16+t). ---- */
-static inline float jam_ref_e4m3_to_float(uint8_t x) {   /* matches jam_e4m3_to_float */
-    int s = (x >> 7) & 1, e = (x >> 3) & 0xF, m = x & 0x7;
-    float v = e ? ldexpf((float) (8 + m), e - 10) : ldexpf((float) m, -9);
-    return s ? -v : v;
+/* ---- NVFP4 (NVIDIA FP4) — GGUF block_nvfp4 { uint8_t d[4] (UE4M3 per-16); uint8_t qs[32] } = 36 bytes,
+ * 64 elements. value = kvalues_mxfp4[nibble] · ue4m3(d[s]); no global scale. Mirrors ggml's quant/dequant. */
+typedef struct { uint8_t d[4]; uint8_t qs[32]; } jam_ref_nvfp4_blk;
+static inline float jam_ref_ue4m3_to_float(uint8_t x) {   /* matches ggml_ue4m3_to_fp32 (bit 7 ignored) */
+    if (x == 0 || x == 0x7F) return 0.0f;
+    int e = (x >> 3) & 0xF, m = x & 0x7;
+    return e ? ldexpf(1.0f + (float) m / 8.0f, e - 7) : ldexpf((float) m, -9);
 }
-static inline uint8_t jam_ref_e4m3_code(float v) {       /* nearest non-negative E4M3 (scales are >= 0) */
+static inline uint8_t jam_ref_fp32_to_ue4m3(float v) {    /* nearest UE4M3 code (scales are >= 0) */
     uint8_t best = 0; float bd = 1e30f;
-    for (int c = 0; c < 128; ++c) {
-        if (c == 0x7F) continue;                         /* NaN */
-        float d = fabsf(v - jam_ref_e4m3_to_float((uint8_t) c));
+    for (int c = 0; c < 127; ++c) {                       /* skip 0x7F (== 0) */
+        float d = fabsf(v - jam_ref_ue4m3_to_float((uint8_t) c));
         if (d < bd) { bd = d; best = (uint8_t) c; }
     }
     return best;
 }
-/* Quantize [rows×k] to NVFP4 PLANAR: malloc'd [FP4 data | E4M3 scales], no stored G. Two-level (G per-tensor,
- * each E4M3 = block scale relative to G). 32-span MXFP4 packing. Caller frees the returned buffer. */
+static inline uint8_t jam_ref_best_mxfp4(float x, float d) {   /* argmin |kvalues[i]·d - x| (== ggml) */
+    static const int8_t kv[16] = { 0,1,2,3,4,6,8,12, 0,-1,-2,-3,-4,-6,-8,-12 };
+    int best = 0; float bd = fabsf(kv[0] * d - x);
+    for (int i = 1; i < 16; ++i) { float e = fabsf(kv[i] * d - x); if (e < bd) { bd = e; best = i; } }
+    return (uint8_t) best;
+}
+/* Quantize [rows×k] to GGUF NVFP4 blocks (mirrors quantize_row_nvfp4_ref). Caller frees the returned buffer. */
 static inline void* jam_ref_quant_nvfp4(const float* X, int rows, int k) {
-    int spans = k / 32, s16 = k / 16;
-    float amax = 0;
-    for (size_t i = 0; i < (size_t) rows * k; ++i) { float a = fabsf(X[i]); if (a > amax) amax = a; }
-    float G = amax > 0 ? amax / (6.0f * 448.0f) : 1.0f;  /* so block scales (~block_amax/6) land in E4M3 range */
-    size_t dbytes = (size_t) rows * (k / 2);
-    char* buf = (char*) malloc(dbytes + (size_t) rows * s16);
-    uint8_t* data = (uint8_t*) buf;
-    uint8_t* scale = (uint8_t*) (buf + dbytes);
-    for (int i = 0; i < rows; ++i) for (int s = 0; s < spans; ++s) {
-        const float* x = X + (size_t) i * k + s * 32;
-        uint8_t* db = data + (size_t) i * (k / 2) + s * 16;
-        for (int half = 0; half < 2; ++half) {            /* half 0 = low nibbles, half 1 = high nibbles */
-            const float* xb = x + half * 16;
-            float bmax = 0; for (int e = 0; e < 16; ++e) { float a = fabsf(xb[e]); if (a > bmax) bmax = a; }
-            uint8_t e8; float sc;
-            if (bmax == 0) { e8 = 0; sc = 1e-30f; }
-            else { e8 = jam_ref_e4m3_code((bmax / 6.0f) / G); sc = G * jam_ref_e4m3_to_float(e8); if (sc <= 0) sc = 1e-30f; }
-            scale[(size_t) i * s16 + s * 2 + half] = e8;
-            for (int t = 0; t < 16; ++t) {
-                uint8_t code = jam_ref_fp4_code(xb[t] / sc);
-                if (half == 0) db[t] = (uint8_t) (code & 0x0F);
-                else           db[t] = (uint8_t) (db[t] | (code << 4));
+    int nblk = k / 64;
+    jam_ref_nvfp4_blk* o = (jam_ref_nvfp4_blk*) malloc((size_t) rows * nblk * sizeof(jam_ref_nvfp4_blk));
+    for (int i = 0; i < rows; ++i) for (int bb = 0; bb < nblk; ++bb) {
+        jam_ref_nvfp4_blk* p = &o[(size_t) i * nblk + bb];
+        for (int s = 0; s < 4; ++s) {                     /* 4 sub-blocks of 16 */
+            const float* xb = X + (size_t) i * k + bb * 64 + s * 16;
+            float amax = 0; for (int e = 0; e < 16; ++e) { float a = fabsf(xb[e]); if (a > amax) amax = a; }
+            uint8_t ue = jam_ref_fp32_to_ue4m3(amax / 6.0f);
+            p->d[s] = ue;
+            float d = jam_ref_ue4m3_to_float(ue); if (d <= 0) d = 1e-30f;
+            for (int j = 0; j < 8; ++j) {
+                uint8_t x0 = jam_ref_best_mxfp4(xb[j],     d);    /* low  -> elem j     */
+                uint8_t x1 = jam_ref_best_mxfp4(xb[8 + j], d);    /* high -> elem j + 8 */
+                p->qs[s * 8 + j] = (uint8_t) (x0 | (x1 << 4));
             }
         }
     }
-    return buf;
+    return o;
 }
 
 /* ---- Q4_K: build random VALID super-blocks [rows×k] + the matching dequantized f32 weight (reference).

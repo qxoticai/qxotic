@@ -89,7 +89,6 @@ typedef struct {
     int8_t*  aq;                /* [n*k]  requantized activations (VNNI) */
     float*   ad;                /* [n*nb] per-block activation scales */
     float*   asum;              /* [n*nb] per-block Σ(int8 activations) — K-quant dmin·min term (or NULL) */
-    const void* wscale;         /* NVFP4 E4M3 scale plane (planar layout); NULL for other dtypes */
 } jam_q8_job;
 
 void jam_mm_q8_0_f32_generic(void* job, int row_begin, int row_end, int tid);  /* portable floor */
