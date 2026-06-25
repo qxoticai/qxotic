@@ -229,7 +229,8 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
         c->q4_0_kernel = jam_mm_q4_0_avxvnni; }
 #endif
 #ifdef JAM_HAVE_AVX512BW
-    if (cpu >= JAM_ISA_AVX512)      c->q8_kernel  = jam_mm_q8_0_avx512bw;  /* 512-bit maddubs, no VNNI */
+    if (cpu >= JAM_ISA_AVX512)    { c->q8_kernel  = jam_mm_q8_0_avx512bw;  /* 512-bit maddubs, no VNNI */
+                                    c->nvfp4_kernel = jam_mm_nvfp4_avx512; }
 #endif
 #ifdef JAM_HAVE_AVX512
     if (cpu >= JAM_ISA_AVX512) {    c->f32_kernel = jam_mm_f32_avx512;
@@ -248,7 +249,8 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
 #ifdef JAM_HAVE_DOTPROD
     if (cpu >= JAM_ISA_DOTPROD) { c->q8_kernel = jam_mm_q8_0_dotprod;   /* i8mm cores inherit these (sdot) */
         c->q4_0_kernel = jam_mm_q4_0_dotprod; c->mxfp4_kernel = jam_mm_mxfp4_dotprod;
-        c->q4k_kernel = jam_mm_q4k_dotprod; c->q5k_kernel = jam_mm_q5k_dotprod; c->q6k_kernel = jam_mm_q6k_dotprod; }
+        c->q4k_kernel = jam_mm_q4k_dotprod; c->q5k_kernel = jam_mm_q5k_dotprod; c->q6k_kernel = jam_mm_q6k_dotprod;
+        c->nvfp4_kernel = jam_mm_nvfp4_dotprod; }
 #endif
 #ifdef JAM_HAVE_I8MM
     if (cpu >= JAM_ISA_I8MM)    c->q8_kernel = jam_mm_q8_0_i8mm;

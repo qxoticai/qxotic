@@ -147,6 +147,7 @@ void jam_mm_q8_0_avxvnni(void* job, int a_begin, int a_end, int tid);      /* ph
 #endif
 #ifdef JAM_HAVE_AVX512BW
 void jam_mm_q8_0_avx512bw(void* job, int a_begin, int a_end, int tid);     /* phase 2: 512-bit maddubs (no VNNI) */
+void jam_mm_nvfp4_avx512(void* job, int rb, int re, int tid);              /* NVFP4 512-bit (in the avx512bw TU) */
 #endif
 #ifdef JAM_HAVE_AVX512
 void jam_mm_q8_0_avx512(void* job, int a_begin, int a_end, int tid);       /* phase 2: 512-bit VNNI matmul */
@@ -164,6 +165,7 @@ void jam_mm_nvfp4_neon(void* job, int rb, int re, int tid);               /* NVF
 #ifdef JAM_HAVE_DOTPROD
 void jam_mm_q8_0_dotprod(void* job, int a_begin, int a_end, int tid);      /* vdotq_s32 (sdot) */
 void jam_mm_q4_0_dotprod(void* job, int rb, int re, int tid);
+void jam_mm_nvfp4_dotprod(void* job, int rb, int re, int tid);            /* NVFP4 sdot */
 void jam_mm_mxfp4_dotprod(void* job, int rb, int re, int tid);
 void jam_mm_q4k_dotprod(void* job, int rb, int re, int tid);              /* K-quant sdot */
 void jam_mm_q5k_dotprod(void* job, int rb, int re, int tid);
