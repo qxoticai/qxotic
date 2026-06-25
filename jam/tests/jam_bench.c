@@ -54,12 +54,12 @@ static double wbytes_per_val(int at) {
 }
 
 static perf bench(jam_ctx* ctx, const void* A, int at, const float* B, float* C, int m, int n, int k, int iters) {
-    jam_mm(ctx, A, at, k, B, JAM_F32, k, C, JAM_F32, n, m, n, k);                 /* warm (alloc/JIT paths) */
+    jam_mm(ctx, A, at, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k);                 /* warm (alloc/JIT paths) */
     double dt = 0;
     for (int i=0;i<iters;i++) {
         scrub_caches();                                                          /* evict A/B/C -> cold DRAM read */
         double t0 = now();
-        jam_mm(ctx, A, at, k, B, JAM_F32, k, C, JAM_F32, n, m, n, k);
+        jam_mm(ctx, A, at, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k);   /* ldc = m (token-major output) */
         dt += now() - t0;
     }
     dt /= iters;
