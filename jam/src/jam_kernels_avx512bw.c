@@ -9,6 +9,7 @@
  *   2. AVX-512 has no vpsignb. The abs/sign identity (dpbusd(|qa|, sign(qb,qa)) = Σ qa·qb) is kept by
  *      negating qb where qa<0 via movepi8_mask + mask_sub; qa==0 is nulled by |qa|=0. */
 #include "jam_internal.h"
+#include "jam_nvfp4.h"   /* jam_nvfp4_blk, jam_ue4m3_to_float, JAM_MXFP4_CODES (for the NVFP4 kernel below) */
 #include <stddef.h>
 #include <stdint.h>
 #include <immintrin.h>
@@ -92,6 +93,50 @@ void jam_mm_q8_0_avx512bw(void* arg, int rb, int re, int tid) {
                         dotpair(aqa, sign_fold(_mm512_zextsi256_si512(_mm256_loadu_si256((const __m256i*)(qj+(size_t)blk*32))), qa)), f);
             }
             C[(size_t)j*ldc+i] = _mm512_reduce_add_ps(f);
+        }
+    }
+}
+
+/* ---- NVFP4 (GGUF block_nvfp4): 512-bit, one 64-element block per iteration. Decode a span (16 bytes ->
+ * 32 contiguous int8 via pshufb + unpacklo/hi_epi64) twice, join into a 512-bit register; the maddubs dot
+ * (dotpair, signed via sign_fold) yields 16 lanes = 4 sub-blocks × 4. Scale by [ue4m3(d[s])·ad ×4] per
+ * sub-block (sub 0,1 -> ad[2bb], sub 2,3 -> ad[2bb+1]) and FMA-accumulate; reduce once per output. ---- */
+static inline __m256i nvfp4_span(const uint8_t* qs16, __m128i lut, __m128i m4) {
+    __m128i qs = _mm_loadu_si128((const __m128i*) qs16);
+    __m128i lo = _mm_shuffle_epi8(lut, _mm_and_si128(qs, m4));
+    __m128i hi = _mm_shuffle_epi8(lut, _mm_and_si128(_mm_srli_epi16(qs, 4), m4));
+    return _mm256_set_m128i(_mm_unpackhi_epi64(lo, hi), _mm_unpacklo_epi64(lo, hi));   /* elems 0..31 */
+}
+
+void jam_mm_nvfp4_avx512(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const char* W = (const char*) J->a;
+    const int8_t* AQ = J->aq; const float* AD = J->ad;
+    float* C = (float*) J->c;
+    const int ldc = J->ldc, n = J->n, k = J->k, nblk = k / JAM_NVFP4_QK;
+    const size_t wrow = (size_t) nblk * sizeof(jam_nvfp4_blk);
+    const __m128i lut = _mm_setr_epi8(JAM_MXFP4_CODES);
+    const __m128i m4  = _mm_set1_epi8(0x0F);
+    for (int i = rb; i < re; ++i) {
+        const jam_nvfp4_blk* wr = (const jam_nvfp4_blk*) (W + (size_t) i * wrow);
+        for (int j = 0; j < n; ++j) {
+            const int8_t* aq = AQ + (size_t) j * k;
+            const float* ad = AD + (size_t) j * (k / 32);
+            __m512 acc = _mm512_setzero_ps();
+            for (int bb = 0; bb < nblk; ++bb) {
+                const jam_nvfp4_blk* w = &wr[bb];
+                __m512i wq = _mm512_inserti64x4(_mm512_castsi256_si512(nvfp4_span(w->qs, lut, m4)),
+                                                nvfp4_span(w->qs + 16, lut, m4), 1);   /* elems 0..63 */
+                __m512i av = _mm512_loadu_si512((const __m512i*) (aq + (size_t) bb * 64));
+                __m512 prod = dotpair(_mm512_abs_epi8(wq), sign_fold(av, wq));          /* 16 lanes (4×4) */
+                float a0 = ad[2*bb], a1 = ad[2*bb + 1];
+                float s0 = jam_ue4m3_to_float(w->d[0]) * a0, s1 = jam_ue4m3_to_float(w->d[1]) * a0;
+                float s2 = jam_ue4m3_to_float(w->d[2]) * a1, s3 = jam_ue4m3_to_float(w->d[3]) * a1;
+                __m512 scv = _mm512_setr_ps(s0,s0,s0,s0, s1,s1,s1,s1, s2,s2,s2,s2, s3,s3,s3,s3);
+                acc = _mm512_fmadd_ps(prod, scv, acc);
+            }
+            C[(size_t) j*ldc + i] = _mm512_reduce_add_ps(acc);
         }
     }
 }

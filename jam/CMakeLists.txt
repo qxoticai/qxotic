@@ -85,7 +85,7 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
     target_sources(jam PRIVATE $<TARGET_OBJECTS:jam_neon>)
     target_compile_definitions(jam PRIVATE JAM_HAVE_NEON=1)
 
-    add_library(jam_dotprod OBJECT src/jam_kernels_dotprod.c src/jam_kernels_kquant_dotprod.c)
+    add_library(jam_dotprod OBJECT src/jam_kernels_dotprod.c src/jam_kernels_kquant_dotprod.c src/jam_kernels_nvfp4_dotprod.c)
     target_include_directories(jam_dotprod PRIVATE include)
     target_compile_options(jam_dotprod PRIVATE -march=armv8.2-a+dotprod)
     target_compile_definitions(jam_dotprod PRIVATE JAM_HAVE_DOTPROD=1)
