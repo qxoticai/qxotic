@@ -372,8 +372,9 @@ static jam_status run_quant(jam_ctx* ctx, jam_q8_job* q, int m, jam_task_fn simd
     if (simd) {
         if (!ensure_qscratch(ctx, q->n, q->k)) return JAM_EINVAL;
         q->aq = (int8_t*) ctx->q_aq; q->ad = (float*) ctx->q_ad; q->asum = (float*) ctx->q_asum;
-        jam_run(ctx, q->n, jam_q8_0_requant, q);   /* phase 1: activations A -> int8 (shared) */
-        jam_run(ctx, m, simd, q);                  /* phase 2: decode-W + int8 dot (over m weight rows) */
+        if (q->n == 1) jam_q8_0_requant(q, 0, 1, 0);          /* gemv (n==1): requant the lone column inline */
+        else           jam_run(ctx, q->n, jam_q8_0_requant, q);  /* phase 1: activations A -> int8 (shared) */
+        jam_run(ctx, m, simd, q);                  /* phase 2: decode-W + int8 dot, fanned over m weight rows */
     } else {
         jam_run(ctx, m, floor_, q);                /* portable float floor */
     }
