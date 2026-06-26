@@ -106,3 +106,54 @@ void jam_mm_f32_avx2(void* arg, int rb, int re, int tid) {
 #undef JAM_DECODE
 #undef JAM_MM_NAME
 #undef JAM_DOT
+
+/* F16/BF16 dense weight @ F32 -> F32, avx2: a 2-weight-row × 4-activation-col dot tile, so each row's
+ * vcvtph2ps converts amortize across 4 columns (matches the avx512 4x4's 1:4 convert:FMA ratio). 8 ymm
+ * accumulators (+ 2 wv + 4 xv) fit the 16 registers. k stepped by 8 (dispatch gates on k%16==0). */
+static inline __m256 loadw_f16_256(const uint16_t* p)  { return _mm256_cvtph_ps(_mm_loadu_si128((const __m128i*) p)); }
+static inline __m256 loadw_bf16_256(const uint16_t* p) { return _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(_mm_loadu_si128((const __m128i*) p)), 16)); }
+
+#define JAM_DENSE_AVX2(NAME, LOADW)                                                                       \
+void NAME(void* arg, int rb, int re, int tid) {                                                           \
+    (void) tid;                                                                                           \
+    const jam_mm_job* J = (const jam_mm_job*) arg;                                                        \
+    const uint16_t* W = (const uint16_t*) J->a;                                                           \
+    const float* X = (const float*) J->b;                                                                 \
+    float* C = (float*) J->c;                                                                             \
+    const int ldw = J->lda, ldx = J->ldb, ldc = J->ldc, n = J->n, k = J->k;                              \
+    int r = rb;                                                                                           \
+    for (; r + 2 <= re; r += 2) {                                                                         \
+        const uint16_t *w0=W+(int64_t)r*ldw,*w1=w0+ldw;                                                   \
+        int s = 0;                                                                                        \
+        for (; s + 4 <= n; s += 4) {                                                                      \
+            const float *x0=X+(int64_t)s*ldx,*x1=x0+ldx,*x2=x1+ldx,*x3=x2+ldx;                            \
+            __m256 a00=_mm256_setzero_ps(),a01=a00,a02=a00,a03=a00, a10=a00,a11=a00,a12=a00,a13=a00;      \
+            for (int t = 0; t < k; t += 8) {                                                              \
+                __m256 wv0=LOADW(w0+t),wv1=LOADW(w1+t);                                                   \
+                __m256 xv0=_mm256_loadu_ps(x0+t),xv1=_mm256_loadu_ps(x1+t),xv2=_mm256_loadu_ps(x2+t),xv3=_mm256_loadu_ps(x3+t); \
+                a00=_mm256_fmadd_ps(wv0,xv0,a00);a01=_mm256_fmadd_ps(wv0,xv1,a01);a02=_mm256_fmadd_ps(wv0,xv2,a02);a03=_mm256_fmadd_ps(wv0,xv3,a03); \
+                a10=_mm256_fmadd_ps(wv1,xv0,a10);a11=_mm256_fmadd_ps(wv1,xv1,a11);a12=_mm256_fmadd_ps(wv1,xv2,a12);a13=_mm256_fmadd_ps(wv1,xv3,a13); \
+            }                                                                                             \
+            float *o0=C+(int64_t)s*ldc+r,*o1=o0+ldc,*o2=o1+ldc,*o3=o2+ldc;                                \
+            o0[0]=hsum8(a00);o0[1]=hsum8(a10); o1[0]=hsum8(a01);o1[1]=hsum8(a11);                          \
+            o2[0]=hsum8(a02);o2[1]=hsum8(a12); o3[0]=hsum8(a03);o3[1]=hsum8(a13);                          \
+        }                                                                                                 \
+        for (; s < n; s++) {                                                                              \
+            const float* xs = X+(int64_t)s*ldx;                                                           \
+            __m256 b0=_mm256_setzero_ps(),b1=b0;                                                          \
+            for (int t=0;t<k;t+=8){ __m256 xv=_mm256_loadu_ps(xs+t); b0=_mm256_fmadd_ps(LOADW(w0+t),xv,b0);b1=_mm256_fmadd_ps(LOADW(w1+t),xv,b1); } \
+            float* o=C+(int64_t)s*ldc+r; o[0]=hsum8(b0);o[1]=hsum8(b1);                                    \
+        }                                                                                                 \
+    }                                                                                                     \
+    for (; r < re; r++) {                                                                                 \
+        const uint16_t* w = W+(int64_t)r*ldw;                                                             \
+        for (int s = 0; s < n; s++) {                                                                     \
+            const float* xs = X+(int64_t)s*ldx;                                                           \
+            __m256 acc=_mm256_setzero_ps();                                                               \
+            for (int t=0;t<k;t+=8) acc=_mm256_fmadd_ps(LOADW(w+t), _mm256_loadu_ps(xs+t), acc);           \
+            C[(int64_t)s*ldc+r]=hsum8(acc);                                                               \
+        }                                                                                                 \
+    }                                                                                                     \
+}
+JAM_DENSE_AVX2(jam_mm_f16_avx2,  loadw_f16_256)
+JAM_DENSE_AVX2(jam_mm_bf16_avx2, loadw_bf16_256)

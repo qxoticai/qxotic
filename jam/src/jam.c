@@ -221,7 +221,8 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
         c->q4k_kernel = jam_mm_q4k_rp_avx2; c->q4k_requant = jam_q8k_requant; c->q4k_repack = jam_q4k_repack8;   /* 8-feat-wide cached repack */
         c->q5k_kernel = jam_mm_q5k_rp_avx2; c->q5k_requant = jam_q8k_requant; c->q5k_repack = jam_q5k_repack8;   /* 8-feat-wide cached repack */
         c->q6k_kernel = jam_mm_q6k_rp_avx2; c->q6k_requant = jam_q6k_requant; c->q6k_repack = jam_q6k_repack8;   /* 8-feat-wide cached repack */
-        c->nvfp4_kernel = jam_mm_nvfp4_avx2; }
+        c->nvfp4_kernel = jam_mm_nvfp4_avx2;
+        c->dense_f16_kernel = jam_mm_f16_avx2; c->dense_bf16_kernel = jam_mm_bf16_avx2; }
 #endif
 #ifdef JAM_HAVE_AVXVNNI
     /* AVX-VNNI is orthogonal to the ladder: cpu>=AVX_VNNI is necessary (it respects max_isa) but NOT
