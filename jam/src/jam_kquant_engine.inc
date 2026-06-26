@@ -22,7 +22,7 @@ void JAM_Q4K_NAME(void* arg, int rb, int re, int tid) {
     float* C = (float*) J->c;
     const int ldc = J->ldc, n = J->n, k = J->k, nb = J->nb;
     const int sblocks = k / JAM_QKK;
-    const size_t w_stride = (size_t) sblocks * JAM_Q4K_BYTES;
+    const size_t w_stride = (size_t)(J->lda / JAM_QKK) * JAM_Q4K_BYTES;
     const uint8x16_t m4 = vdupq_n_u8(0x0F);
     for (int i = rb; i < re; ++i) {
         const uint8_t* wrow = (const uint8_t*) (W + (size_t) i * w_stride);
@@ -62,7 +62,7 @@ void JAM_Q5K_NAME(void* arg, int rb, int re, int tid) {
     float* C = (float*) J->c;
     const int ldc = J->ldc, n = J->n, k = J->k, nb = J->nb;
     const int sblocks = k / JAM_QKK;
-    const size_t w_stride = (size_t) sblocks * JAM_Q5K_BYTES;
+    const size_t w_stride = (size_t)(J->lda / JAM_QKK) * JAM_Q5K_BYTES;
     const uint8x16_t m4 = vdupq_n_u8(0x0F), one = vdupq_n_u8(1);
     for (int i = rb; i < re; ++i) {
         const uint8_t* wrow = (const uint8_t*) (W + (size_t) i * w_stride);
@@ -107,7 +107,7 @@ void JAM_Q6K_NAME(void* arg, int rb, int re, int tid) {
     float* C = (float*) J->c;
     const int ldc = J->ldc, n = J->n, k = J->k, nb = J->nb;
     const int sblocks = k / JAM_QKK;
-    const size_t w_stride = (size_t) sblocks * JAM_Q6K_BYTES;
+    const size_t w_stride = (size_t)(J->lda / JAM_QKK) * JAM_Q6K_BYTES;
     const uint8x16_t m4 = vdupq_n_u8(0x0F), m2 = vdupq_n_u8(3);
     const int8x16_t bias = vdupq_n_s8(32);
     for (int i = rb; i < re; ++i) {

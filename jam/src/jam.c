@@ -545,7 +545,7 @@ static jam_status jam_mm_run(jam_ctx* ctx,
             }
             /* prefill (seq>=8) on AVX-512-VNNI: the 16-row repack (one vpdpbusd -> 16 rows, no hsums) */
             if (ctx->q4k_avail && n >= JAM_VNNI_MIN_SEQ && ensure_kquant(ctx, n, kblocks)) {
-                jam_q4k_job job = { (const uint8_t*) w, (int64_t)(k / JAM_QK) * 34,
+                jam_q4k_job job = { (const uint8_t*) w, (int64_t)(ldw / JAM_QK) * 34,   /* row stride honors ldw */
                                     (const float*) a, lda, ctx->kq_xq, ctx->kq_dx, ctx->kq_xsum,
                                     (float*) c, ldc, m, k, n, kblocks, ctx->kq_repack };
                 jam_run(ctx, n, jam_q4k_quant, &job);                                          /* phase 1 */
@@ -566,7 +566,7 @@ static jam_status jam_mm_run(jam_ctx* ctx,
 #ifdef JAM_HAVE_AVX512
             int kblocks = k / JAM_QK;
             if (ctx->q4k_avail && n >= JAM_VNNI_MIN_SEQ && ensure_kquant(ctx, n, kblocks)) {
-                jam_q4k_job job = { (const uint8_t*) w, (int64_t)(k / JAM_QK) * 17,
+                jam_q4k_job job = { (const uint8_t*) w, (int64_t)(ldw / JAM_QK) * 17,   /* row stride honors ldw */
                                     (const float*) a, lda, ctx->kq_xq, ctx->kq_dx, ctx->kq_xsum,
                                     (float*) c, ldc, m, k, n, kblocks, ctx->kq_repack };
                 jam_run(ctx, n, jam_q4k_quant, &job);
@@ -580,7 +580,7 @@ static jam_status jam_mm_run(jam_ctx* ctx,
 #ifdef JAM_HAVE_AVX512
             int kblocks = k / JAM_QK;
             if (ctx->q4k_avail && n >= JAM_VNNI_MIN_SEQ && ensure_kquant(ctx, n, kblocks)) {
-                jam_q4k_job job = { (const uint8_t*) w, (int64_t)(k / JAM_QK) * 18,
+                jam_q4k_job job = { (const uint8_t*) w, (int64_t)(ldw / JAM_QK) * 18,   /* row stride honors ldw */
                                     (const float*) a, lda, ctx->kq_xq, ctx->kq_dx, ctx->kq_xsum,
                                     (float*) c, ldc, m, k, n, kblocks, ctx->kq_repack };
                 jam_run(ctx, n, jam_q4k_quant, &job);

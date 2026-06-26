@@ -244,6 +244,89 @@ static void suite_dense(int dtype, const char* name, int m, int n, int k) {
     free(W); free(X); free(C); free(R); free(tmp);
 }
 
+/* ---- layout contract: ldw > k (strided/padded weight view) and ldc > m (padded output) ----
+ * The numeric suites above ALWAYS pass ldw==k and ldc==m, so they can't see a kernel that derives the
+ * weight row stride from k instead of ldw, or one that overwrites the [m,ldc) output gap (the two bugs
+ * that drifted in: K-quant ignored ldw while Q8_0 honored it; the rp kernels used ldc as the row count).
+ * These are metamorphic checks — strided/padded MUST equal the tight call bit-for-bit, on the same ctx. */
+
+/* Build the contiguous weight for a dtype + report its block geometry (elems, bytes) for the strided copy. */
+static void* build_weight(int dtype, int m, int k, int* be, int* bb) {
+    float* W = malloc(4llu*(size_t)m*k); jam_ref_fill(W,(size_t)m*k,7);
+    void* WQ = NULL;
+    switch (dtype) {
+        case JAM_F32:   *be=1;  *bb=4; WQ=malloc(4llu*(size_t)m*k); memcpy(WQ,W,4llu*(size_t)m*k); break;
+        case JAM_F16:   *be=1;  *bb=2; { uint16_t* H=malloc(2llu*(size_t)m*k); for(size_t i=0;i<(size_t)m*k;i++) H[i]=jam_ref_f2h(W[i]); WQ=H; } break;
+        case JAM_BF16:  *be=1;  *bb=2; { uint16_t* H=malloc(2llu*(size_t)m*k); for(size_t i=0;i<(size_t)m*k;i++) H[i]=f2bf16(W[i]);    WQ=H; } break;
+        case JAM_Q8_0:  *be=32; *bb=(int)sizeof(jam_ref_blk);       WQ=jam_ref_quant_q8_0(W,m,k);  break;
+        case JAM_MXFP4: *be=32; *bb=(int)sizeof(jam_ref_mxfp4_blk); WQ=jam_ref_quant_mxfp4(W,m,k); break;
+        case JAM_NVFP4: *be=64; *bb=(int)sizeof(jam_ref_nvfp4_blk); WQ=jam_ref_quant_nvfp4(W,m,k); break;
+        default: {   /* GGUF block builders: Q4_K/Q5_K/Q6_K (k%256, 256-elem) and Q4_0 (k%32) */
+            float* dq=malloc(4llu*(size_t)m*k); float* mn=malloc(4llu*(size_t)m*k);
+            if      (dtype==JAM_Q4_K) { *be=256; *bb=144; WQ=jam_ref_make_q4k(m,k,7,dq,mn); }
+            else if (dtype==JAM_Q5_K) { *be=256; *bb=176; WQ=jam_ref_make_q5k(m,k,7,dq,mn); }
+            else if (dtype==JAM_Q6_K) { *be=256; *bb=210; WQ=jam_ref_make_q6k(m,k,7,dq,mn); }
+            else                      { *be=32;  *bb=18;  WQ=jam_ref_make_q4_0(m,k,7,dq,mn); }
+            free(dq); free(mn);
+        }
+    }
+    free(W); return WQ;
+}
+
+/* Copy a row-major block weight into a wider row stride (ldw = k+pad), with 0xA5 garbage in the padding —
+ * which the kernel MUST ignore (it only reads the first k/be blocks per row). */
+static void* stride_weight(const void* W, int m, int k, int pad, int be, int bb) {
+    size_t real=(size_t)(k/be)*bb, str=(size_t)((k+pad)/be)*bb;
+    uint8_t* S = malloc((size_t)m*str);
+    for (int r=0;r<m;r++) {
+        memcpy(S+(size_t)r*str, (const uint8_t*)W+(size_t)r*real, real);
+        memset(S+(size_t)r*str+real, 0xA5, str-real);
+    }
+    return S;
+}
+
+static void suite_layout(int dtype, const char* name, int m, int n, int k) {
+    int be, bb;
+    void* WQ = build_weight(dtype, m, k, &be, &bb);
+    int pad = be;                                  /* one extra (garbage) block per row -> ldw = k+pad */
+    void* WS = stride_weight(WQ, m, k, pad, be, bb);
+    int ldc2 = m + 3;                              /* padded output: 3 gap columns per token */
+    float* B  = malloc(4llu*(size_t)n*k); jam_ref_fill(B,(size_t)n*k,9);
+    float* Cc = malloc(4llu*(size_t)m*n);          /* tight reference (per context) */
+    float* Cs = malloc(4llu*(size_t)m*n);
+    float* Cp = malloc(4llu*(size_t)ldc2*n);
+    for (int c=0;c<NCTX;c++) {
+        memset(Cc,0,4llu*(size_t)m*n);
+        jam_mm(CTX[c].c, WQ, dtype, k, B, JAM_F32, k, Cc, JAM_F32, m, m, n, k);
+
+        /* (1) strided weight (ldw>k) must reproduce the tight result bit-for-bit */
+        ++g_checks; memset(Cs,0,4llu*(size_t)m*n);
+        int st1 = jam_mm(CTX[c].c, WS, dtype, k+pad, B, JAM_F32, k, Cs, JAM_F32, m, m, n, k);
+        int bad1=0; for (size_t i=0;i<(size_t)m*n;i++) if (Cc[i]!=Cs[i]) ++bad1;
+        if (st1||bad1){ printf("  [FAIL] %-5s ldw>k  %-15s %dx%dx%d bad=%d st=%d\n",name,CTX[c].lbl,m,n,k,bad1,st1); ++g_fail; }
+
+        /* (2) padded output (ldc>m): features match the tight result AND the gap [m,ldc) stays untouched */
+        ++g_checks;
+        for (size_t i=0;i<(size_t)ldc2*n;i++) Cp[i] = -123456.0f;     /* sentinel */
+        int st2 = jam_mm(CTX[c].c, WQ, dtype, k, B, JAM_F32, k, Cp, JAM_F32, ldc2, m, n, k);
+        int bad2=0;
+        for (int t=0;t<n;t++) {
+            for (int f=0;f<m;f++)    if (Cp[(size_t)t*ldc2+f] != Cc[(size_t)t*m+f])  ++bad2;   /* result */
+            for (int f=m;f<ldc2;f++) if (Cp[(size_t)t*ldc2+f] != -123456.0f)          ++bad2;   /* gap untouched */
+        }
+        if (st2||bad2){ printf("  [FAIL] %-5s ldc>m  %-15s %dx%dx%d bad=%d st=%d\n",name,CTX[c].lbl,m,n,k,bad2,st2); ++g_fail; }
+
+        /* (3) jam_forget_weight drops the cached repack; the re-run must still match */
+        ++g_checks;
+        jam_forget_weight(CTX[c].c, WQ);
+        memset(Cs,0,4llu*(size_t)m*n);
+        int st3 = jam_mm(CTX[c].c, WQ, dtype, k, B, JAM_F32, k, Cs, JAM_F32, m, m, n, k);
+        int bad3=0; for (size_t i=0;i<(size_t)m*n;i++) if (Cc[i]!=Cs[i]) ++bad3;
+        if (st3||bad3){ printf("  [FAIL] %-5s forget %-15s %dx%dx%d bad=%d st=%d\n",name,CTX[c].lbl,m,n,k,bad3,st3); ++g_fail; }
+    }
+    free(WQ); free(WS); free(B); free(Cc); free(Cs); free(Cp);
+}
+
 int main(void) {
     /* one context per ISA level (capped), at 1 and 3 threads — covers every kernel the CPU supports. */
     for (unsigned L=0; L<JAM_ISA_LEVELS_N; ++L) { add_ctx(jam_isa_levels[L],1); add_ctx(jam_isa_levels[L],3); }
@@ -268,6 +351,22 @@ int main(void) {
     int DN[][3] = {{16,8,64},{32,16,128},{64,33,256},{17,5,48},{128,64,512},{40,7,80},{16,8,40},{33,9,24}};  /* k%16==0 (fast) + %16!=0 (floor) */
     for (unsigned s=0;s<sizeof DN/sizeof*DN;++s) suite_dense(JAM_F16,  "F16",  DN[s][0],DN[s][1],DN[s][2]);
     for (unsigned s=0;s<sizeof DN/sizeof*DN;++s) suite_dense(JAM_BF16, "BF16", DN[s][0],DN[s][1],DN[s][2]);
+
+    /* Layout contract (strided ldw>k · padded ldc>m · forget) for every dtype, with a partial m=37 (last
+     * 8-feature group nf<8, last 16-row band partial) at n=16 (prefill: rp kernels + avx512 VNNI band) and
+     * n=1 (the float floor on the generic context). This is the coverage whose absence let the drift in. */
+    for (int ni=0; ni<2; ni++) { int nn = ni ? 1 : 16;
+        suite_layout(JAM_Q8_0,  "Q8_0",  37, nn, 64);
+        suite_layout(JAM_Q4_0,  "Q4_0",  37, nn, 64);
+        suite_layout(JAM_MXFP4, "MXFP4", 37, nn, 64);
+        suite_layout(JAM_NVFP4, "NVFP4", 37, nn, 128);
+        suite_layout(JAM_Q4_K,  "Q4_K",  37, nn, 256);
+        suite_layout(JAM_Q5_K,  "Q5_K",  37, nn, 256);
+        suite_layout(JAM_Q6_K,  "Q6_K",  37, nn, 256);
+        suite_layout(JAM_F16,   "F16",   37, nn, 80);
+        suite_layout(JAM_BF16,  "BF16",  37, nn, 80);
+        suite_layout(JAM_F32,   "F32",   37, nn, 80);
+    }
 
     for (int c=0;c<NCTX;c++) if (CTX[c].c) jam_ctx_destroy(CTX[c].c);
     printf("\n%d/%d checks passed across %d kernel contexts\n", g_checks-g_fail, g_checks, NCTX);
