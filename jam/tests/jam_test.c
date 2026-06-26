@@ -14,6 +14,20 @@
 
 static int g_fail = 0, g_checks = 0;
 
+/* Per-dtype precision tracker: the pass/fail tolerance is a loose floor, so we ALSO record the actual worst
+ * abs/rel error vs the nearest reference (max over every context + size). Reported at the end so a precision
+ * regression — a kernel that drifts but stays under the gate — shows up as the number creeping. */
+static struct { const char* nm; double maxrel, maxabs; } g_prec[24];
+static int g_prec_n = 0;
+static void track_prec(const char* nm, double abserr, double ref) {
+    int i; for (i = 0; i < g_prec_n; i++) if (!strcmp(g_prec[i].nm, nm)) break;
+    if (i == g_prec_n) { g_prec[i].nm = nm; g_prec[i].maxrel = g_prec[i].maxabs = 0; ++g_prec_n; }
+    if (abserr > g_prec[i].maxabs) g_prec[i].maxabs = abserr;
+    /* rel only for outputs of meaningful magnitude — near-zero refs (catastrophic cancellation) make rel
+     * explode (e.g. a 3e-6 abs error on a ~0 dot) without indicating any real precision loss. */
+    if (fabs(ref) > 1.0) { double rel = abserr / fabs(ref); if (rel > g_prec[i].maxrel) g_prec[i].maxrel = rel; }
+}
+
 typedef struct { jam_ctx* c; char lbl[40]; } jctx;   /* c == NULL means the global context */
 static jctx CTX[48];
 static int  NCTX = 0;
@@ -43,6 +57,7 @@ static void suite_f32(int m, int n, int k) {
         int bad=0;
         for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
             double e = fabs(R[(size_t)i*n+j]-C[(size_t)j*m+i]);
+            track_prec("F32", e, R[(size_t)i*n+j]);
             if (e > 1e-3 + 1e-2*fabs(R[(size_t)i*n+j])) ++bad;
         }
         if (st||bad){ printf("  [FAIL] F32  %-16s %4dx%4dx%4d  bad=%d st=%d\n",CTX[c].lbl,m,n,k,bad,st); ++g_fail; }
@@ -75,6 +90,7 @@ static void suite_q8(int m, int n, int k) {        /* k a multiple of 32 */
         for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
             double kr=C[(size_t)j*m+i], de=fabs(kr-RE[(size_t)i*n+j]), dr=fabs(kr-RR[(size_t)i*n+j]);
             double best=de<dr?de:dr, ref=de<dr?RE[(size_t)i*n+j]:RR[(size_t)i*n+j];
+            track_prec("Q8_0", best, ref);
             if (best > 1e-2 + 1e-3*fabs(ref)) ++bad;
         }
         if (st||bad){ printf("  [FAIL] Q8_0 %-16s %4dx%4dx%4d  bad=%d st=%d\n",CTX[c].lbl,m,n,k,bad,st); ++g_fail; }
@@ -112,6 +128,7 @@ static void suite_mxfp4(int m, int n, int k) {     /* k a multiple of 32 */
         for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
             double kr=C[(size_t)j*m+i], de=fabs(kr-RE[(size_t)i*n+j]), dr=fabs(kr-RR[(size_t)i*n+j]);
             double best=de<dr?de:dr, ref=de<dr?RE[(size_t)i*n+j]:RR[(size_t)i*n+j];
+            track_prec("MXFP4", best, ref);
             if (best > 1e-2 + 1e-3*fabs(ref)) ++bad;
         }
         if (st||bad){ printf("  [FAIL] MXFP4 %-15s %4dx%4dx%4d  bad=%d st=%d\n",CTX[c].lbl,m,n,k,bad,st); ++g_fail; }
@@ -158,6 +175,7 @@ static void suite_nvfp4(int m, int n, int k) {     /* k a multiple of 64; GGUF b
         for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
             double kr=C[(size_t)j*m+i], de=fabs(kr-RE[(size_t)i*n+j]), dr=fabs(kr-RR[(size_t)i*n+j]);
             double best=de<dr?de:dr, ref=de<dr?RE[(size_t)i*n+j]:RR[(size_t)i*n+j];
+            track_prec("NVFP4", best, ref);
             if (best > 1e-2 + 1e-3*fabs(ref)) ++bad;
         }
         if (st||bad){ printf("  [FAIL] NVFP4 %-15s %4dx%4dx%4d  bad=%d st=%d\n",CTX[c].lbl,m,n,k,bad,st); ++g_fail; }
@@ -209,6 +227,7 @@ static void suite_kquant(kq_build build, int dtype, const char* name, int m, int
             double de=fabs(kr-RE[ri]), dr=fabs(kr-RR[ri]), df=fabs(kr-RF[ri]), dp=fabs(kr-RP[ri]);
             double best=de, ref=RE[ri];
             if (dr<best){best=dr;ref=RR[ri];} if (df<best){best=df;ref=RF[ri];} if (dp<best){best=dp;ref=RP[ri];}
+            track_prec(name, best, ref);
             if (best > 2e-2 + 2e-2*fabs(ref)) ++bad;
         }
         if (st||bad){ printf("  [FAIL] %-5s %-15s %4dx%4dx%4d  bad=%d st=%d\n",name,CTX[c].lbl,m,n,k,bad,st); ++g_fail; }
@@ -237,6 +256,7 @@ static void suite_dense(int dtype, const char* name, int m, int n, int k) {
         int bad=0;
         for (int r=0;r<m;r++) for (int s=0;s<n;s++) {
             double e=fabs(R[(size_t)r*n+s]-C[(size_t)s*m+r]);
+            track_prec(name, e, R[(size_t)r*n+s]);
             if (e > 1e-3 + 1e-2*fabs(R[(size_t)r*n+s])) ++bad;
         }
         if (st||bad){ printf("  [FAIL] %-5s %-15s %4dx%4dx%4d  bad=%d st=%d\n",name,CTX[c].lbl,m,n,k,bad,st); ++g_fail; }
@@ -369,6 +389,25 @@ int main(void) {
     }
 
     for (int c=0;c<NCTX;c++) if (CTX[c].c) jam_ctx_destroy(CTX[c].c);
+
+    /* Precision REGRESSION gate: the per-element pass/fail above is a loose floor (gross-error catch); these
+     * bounds are ~10x the actually-observed error, so a kernel that quietly loses precision (worse scale
+     * handling, f16 instead of f32 accumulation, a wrong rounding) fails here long before it'd trip the floor.
+     * Observed on a 9950X (deterministic int math + IEEE f16; ~2-3x slack for FMA contraction differences). */
+    static const struct { const char* nm; double abs, rel; } PREC_MAX[] = {
+        {"F32",3e-3,2e-4}, {"Q8_0",5e-4,5e-5}, {"MXFP4",5e-4,5e-5}, {"NVFP4",5e-4,5e-5},
+        {"Q4_K",4e-3,1.5e-3}, {"Q5_K",5e-3,2e-3}, {"Q6_K",6e-3,1.5e-3}, {"Q4_0",5e-4,5e-5},
+        {"F16",1e-3,1e-4}, {"BF16",1e-3,1e-4},
+    };
+    printf("\nprecision — worst error vs nearest reference (max over all contexts + sizes; bound = ~10x observed):\n");
+    for (int i=0;i<g_prec_n;i++) {
+        double ab=1e9, rb=1e9;
+        for (unsigned p=0;p<sizeof PREC_MAX/sizeof*PREC_MAX;p++) if (!strcmp(PREC_MAX[p].nm,g_prec[i].nm)) { ab=PREC_MAX[p].abs; rb=PREC_MAX[p].rel; }
+        int over = g_prec[i].maxabs>ab || g_prec[i].maxrel>rb;
+        printf("   %-6s  abs=%.2e (<%.0e)  rel=%.2e (<%.0e)%s\n",
+               g_prec[i].nm, g_prec[i].maxabs, ab, g_prec[i].maxrel, rb, over?"   [FAIL: precision regression]":"");
+        if (over) { ++g_checks; ++g_fail; }
+    }
     printf("\n%d/%d checks passed across %d kernel contexts\n", g_checks-g_fail, g_checks, NCTX);
     return g_fail ? 1 : 0;
 }
