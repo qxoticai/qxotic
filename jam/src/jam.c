@@ -231,7 +231,9 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
     if (cpu >= JAM_ISA_AVX_VNNI && __builtin_cpu_supports("avxvnni")) {
         c->q8_kernel = jam_mm_q8_0_avxvnni; c->mxfp4_kernel = jam_mm_mxfp4_avxvnni;
         c->q4_0_kernel = jam_mm_q4_0_avxvnni;
-        c->q8_0_rp_kernel = NULL; c->q8_0_repack = NULL; }   /* VNNI Q8_0 beats the avx2 maddubs repack */
+        /* cached-repack with vpdpbusd instead of maddubs (repacks/requants inherited from the avx2 rung) */
+        c->q4k_kernel = jam_mm_q4k_rp_avxvnni; c->q5k_kernel = jam_mm_q5k_rp_avxvnni; c->q6k_kernel = jam_mm_q6k_rp_avxvnni;
+        c->q8_0_rp_kernel = jam_mm_q8_0_rp_avxvnni; }
 #endif
 #ifdef JAM_HAVE_AVX512BW
     if (cpu >= JAM_ISA_AVX512)    { c->q8_kernel  = jam_mm_q8_0_avx512bw;  /* 512-bit maddubs, no VNNI */
