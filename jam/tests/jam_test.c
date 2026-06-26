@@ -11,6 +11,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(__GLIBC__)
+#include <malloc.h>   /* mallinfo2: sanitizer-free heap-in-use accounting for the leak gate */
+#endif
 
 static int g_fail = 0, g_checks = 0;
 
@@ -509,6 +512,54 @@ static void suite_contract(void) {
     #undef WANT
 }
 
+/* Leak gate: create -> USE (so every lazy per-context buffer allocates: pool, requant scratch, K-quant
+ * band scratch + per-worker repack, the rp_cache) -> destroy, in a loop. Under LeakSanitizer (the ASan
+ * build) any byte destroy forgets becomes unreachable at exit and is reported, amplified 64x by the loop.
+ * In the normal build we ALSO gate on mallinfo2: heap-in-use must return to its pre-loop value (a per-cycle
+ * leak grows it linearly). Two ISA caps per cycle so BOTH the avx512 band scratch AND the avx2 rp_cache run. */
+static size_t heap_inuse(void) {
+#if defined(__GLIBC__)
+    struct mallinfo2 mi = mallinfo2();
+    return mi.uordblks;
+#else
+    return 0;
+#endif
+}
+static void suite_leak(void) {
+    int m=64, n=8, k=256, be, bb;
+    void* w8  = build_weight(JAM_Q8_0, m, k, &be, &bb);
+    void* w4k = build_weight(JAM_Q4_K, m, k, &be, &bb);
+    void* w6k = build_weight(JAM_Q6_K, m, k, &be, &bb);   /* per-16 asum path */
+    float* B = malloc(4llu*(size_t)n*k); jam_ref_fill(B,(size_t)n*k,5);
+    float* C = malloc(4llu*(size_t)m*n);
+    #define USE(ctx) do { \
+        jam_mm((ctx), w8,  JAM_Q8_0, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k); \
+        jam_mm((ctx), w4k, JAM_Q4_K, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k); \
+        jam_mm((ctx), w6k, JAM_Q6_K, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k); \
+        jam_forget_weight((ctx), w8); \
+    } while (0)
+    jam_config av2; memset(&av2,0,sizeof av2); av2.max_isa = JAM_ISA_AVX2;
+    for (int warm=0; warm<2; warm++) {   /* settle one-time allocations before measuring */
+        jam_ctx* c=jam_ctx_create(NULL); USE(c); jam_ctx_destroy(c);
+        jam_ctx* a=jam_ctx_create(&av2); USE(a); jam_ctx_destroy(a);
+    }
+    size_t before = heap_inuse();
+    for (int it=0; it<64; it++) {
+        jam_ctx* c=jam_ctx_create(NULL);  USE(c); jam_ctx_destroy(c);   /* avx512: band scratch + kq_repack */
+        jam_ctx* a=jam_ctx_create(&av2);  USE(a); jam_ctx_destroy(a);   /* avx2: rp_cache + qscratch        */
+    }
+    long growth = (long)heap_inuse() - (long)before;
+    #undef USE
+    free(w8); free(w4k); free(w6k); free(B); free(C);
+#if !defined(__SANITIZE_ADDRESS__)   /* under ASan, LeakSanitizer is authoritative; mallinfo2 reflects its allocator */
+    ++g_checks;
+    if (growth > 256*1024) { printf("  [FAIL] leak: heap +%ld B over 64 create/use/destroy cycles\n", growth); ++g_fail; }
+    else printf("  leak: heap stable over 128 create/use/destroy cycles (Δ=%+ld B)\n", growth);
+#else
+    (void) growth; printf("  leak: 128 create/use/destroy cycles done (LeakSanitizer checks at exit)\n");
+#endif
+}
+
 int main(void) {
     /* one context per ISA level (capped), at 1 and 3 threads — covers every kernel the CPU supports. */
     for (unsigned L=0; L<JAM_ISA_LEVELS_N; ++L) { add_ctx(jam_isa_levels[L],1); add_ctx(jam_isa_levels[L],3); }
@@ -564,6 +615,7 @@ int main(void) {
     suite_adversarial(JAM_Q6_K,"Q6_K",37,8,256);  suite_adversarial(JAM_F16,"F16",37,8,80);
     suite_adversarial(JAM_BF16,"BF16",37,8,80);   suite_adversarial(JAM_F32,"F32",37,8,80);
 
+    suite_leak();       /* create/use/destroy cycles must not leak (mallinfo2 gate + LeakSanitizer) */
     suite_api();        /* context lifecycle (global + explicit), config, EUNSUPPORTED/EBUSY, forget */
     suite_contract();   /* invalid-input error returns (context-independent) */
 
