@@ -124,6 +124,36 @@ void jam_q8k_requant(void* arg, int rb, int re, int tid) {
     }
 }
 
+/* Like jam_q8k_requant but with PER-16 Σaq (16/super-block) for the Q6_K cached-repack 32·Σa bias.
+ * Same aq (element order) and per-256 scale; asum stride is sblocks*16 (= k/16). */
+void jam_q6k_requant(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const float* B = (const float*) J->b;
+    const int ldb = J->ldb, k = J->k, nb = J->nb;
+    const int sblocks = k / 256, astride = sblocks * 16;
+    for (int j = rb; j < re; ++j) {
+        const float* brow = B + (size_t) j * ldb;
+        int8_t* q = J->aq + (size_t) j * k;
+        for (int sb = 0; sb < sblocks; ++sb) {
+            const float* b = brow + (size_t) sb * 256;
+            float amax = 0.0f;
+            for (int e = 0; e < 256; ++e) { float a = fabsf(b[e]); if (a > amax) amax = a; }
+            float d = amax / 127.0f, id = d > 0.0f ? 1.0f / d : 0.0f;
+            J->ad[(size_t) j * nb + sb] = d;                          /* one scale per super-block */
+            for (int s16 = 0; s16 < 16; ++s16) {
+                int sum = 0;
+                for (int e = 0; e < 16; ++e) {
+                    int v = (int) lrintf(b[s16*16 + e] * id);
+                    if (v > 127) v = 127; else if (v < -128) v = -128;
+                    q[(size_t) sb*256 + s16*16 + e] = (int8_t) v; sum += v;
+                }
+                J->asum[(size_t) j * astride + sb*16 + s16] = (float) sum;   /* per-16 Σaq */
+            }
+        }
+    }
+}
+
 /* MXFP4 weight @ F32 activation -> F32, portable reference. Decodes each FP4 nibble to value×2 and folds
  * the ×½ into the block scale (jam_mxfp4_dhalf); dots the EXACT float activation (no requant). */
 void jam_mm_mxfp4_f32_generic(void* arg, int rb, int re, int tid) {
