@@ -7,6 +7,16 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)   # compile_commands.json for clangd
 
 option(JAM_JNI "Build the JNI binding into libjam" ON)
 
+# AddressSanitizer + UBSan for the test build: instruments the whole lib (all ISA TUs) + the tests, so
+# OOB / use-after-free / misalignment / int-overflow in any kernel aborts loudly. Applied globally and
+# BEFORE the targets so every object inherits it. Build: cmake -B build-asan -DJAM_SANITIZE=ON -DJAM_JNI=OFF
+option(JAM_SANITIZE "Build lib + tests with AddressSanitizer and UBSan" OFF)
+if (JAM_SANITIZE)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)   # ASan relocations in the OBJECT libs -> need -fPIC for the .so
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
 # Core engine + thread pool + the portable-C kernel floor (always built, no -m flags).
 add_library(jam SHARED
     src/jam.c
