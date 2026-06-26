@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.Locale;
 
 /**
  * Loads the bundled native {@code libjam} for the current OS/arch.
@@ -28,8 +29,8 @@ final class NativeLoader {
     static synchronized void load() {
         if (loaded) return;
 
-        String override = prop("jam.library.path", "JAM_LIBRARY_PATH");
-        if (override != null && !override.isEmpty()) { System.load(override); loaded = true; return; }
+        String override = config("jam.library.path", "");
+        if (!override.isEmpty()) { System.load(override); loaded = true; return; }
 
         String os = os(), arch = arch(), lib = System.mapLibraryName("jam");   // jam.dll / libjam.dylib / libjam.so
         String res = "/com/qxotic/jam/native/" + os + "-" + arch + "/" + lib;
@@ -54,10 +55,12 @@ final class NativeLoader {
         }
     }
 
-    private static String prop(String sysProp, String env) {
-        String v = System.getProperty(sysProp);
-        if (v == null || v.isEmpty()) v = System.getenv(env);   // -Dprop, else env, else null
-        return v;
+    /** Resolve {@code -Dprop}, else its env form ({@code jam.x.y} → {@code JAM_X_Y}: upper-case, dots→underscores),
+     *  else {@code def}. The env form matches the native {@code JAM_*} vars; shared by NativeJAM's binding selector. */
+    static String config(String prop, String def) {
+        String v = System.getProperty(prop);
+        if (v == null || v.isEmpty()) v = System.getenv(prop.toUpperCase(Locale.ROOT).replace('.', '_'));
+        return (v == null || v.isEmpty()) ? def : v;
     }
 
     static String os() {

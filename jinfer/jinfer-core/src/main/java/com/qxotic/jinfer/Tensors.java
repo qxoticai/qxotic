@@ -433,13 +433,9 @@ abstract class SegmentFloatTensor extends FloatTensor {
      *  are safe to share: with GLOBAL_SEGMENT bound they are the same constant for everyone. */
     final MemorySegment vseg;
     final long vbase;
-    /** Raw native base address — a long, so (like vbase) safe to share without merging segment types.
-     *  For native backends (jam) that need the real address regardless of the GLOBAL_SEGMENT binding. */
-    final long baseAddress;
 
     SegmentFloatTensor(long size, MemorySegment memorySegment) {
         this.size = size;
-        this.baseAddress = memorySegment.address();
         this.vseg = vectorSegment(memorySegment);
         this.vbase = vectorBase(memorySegment);
     }
