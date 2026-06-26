@@ -53,7 +53,7 @@ void jam_mm_q4k_rp_avxvnni(void* arg, int rb, int re, int tid) {
     const int ldc = J->ldc, n = J->n, k = J->k, nb = J->nb;
     const int sblocks = k / JAM_QKK;
     const size_t grp_bytes = (size_t) sblocks * sizeof(jam_q4k_rpblock);
-    const int mrows = ldc;
+    const int mrows = J->m;
     const __m128i m4 = _mm_set1_epi8(0x0F);
     for (int grp = rb; grp < re; ++grp) {
         int i0 = grp * 8, nf = mrows - i0 < 8 ? mrows - i0 : 8;
@@ -101,7 +101,7 @@ void jam_mm_q5k_rp_avxvnni(void* arg, int rb, int re, int tid) {
     const int ldc = J->ldc, n = J->n, k = J->k, nb = J->nb;
     const int sblocks = k / JAM_QKK;
     const size_t grp_bytes = (size_t) sblocks * sizeof(jam_q5k_rpblock);
-    const int mrows = ldc;
+    const int mrows = J->m;
     for (int grp = rb; grp < re; ++grp) {
         int i0 = grp * 8, nf = mrows - i0 < 8 ? mrows - i0 : 8;
         const uint8_t* gbase = RP + (size_t) grp * grp_bytes;
@@ -147,7 +147,7 @@ void jam_mm_q6k_rp_avxvnni(void* arg, int rb, int re, int tid) {
     const int ldc = J->ldc, n = J->n, k = J->k, nb = J->nb;
     const int sblocks = k / JAM_QKK;
     const size_t grp_bytes = (size_t) sblocks * sizeof(jam_q6k_rpblock);
-    const int mrows = ldc;
+    const int mrows = J->m;
     for (int grp = rb; grp < re; ++grp) {
         int i0 = grp * 8, nf = mrows - i0 < 8 ? mrows - i0 : 8;
         const uint8_t* gbase = RP + (size_t) grp * grp_bytes;
@@ -193,7 +193,7 @@ void jam_mm_q8_0_rp_avxvnni(void* arg, int rb, int re, int tid) {
     float* C = (float*) J->c;
     const int ldc = J->ldc, n = J->n, k = J->k, nb = J->nb;
     const size_t grp_bytes = (size_t) nb * sizeof(jam_q8_0_rpblock);
-    const int mrows = ldc;
+    const int mrows = J->m;
     for (int grp = rb; grp < re; ++grp) {
         int i0 = grp * 8, nf = mrows - i0 < 8 ? mrows - i0 : 8;
         const uint8_t* gbase = RP + (size_t) grp * grp_bytes;

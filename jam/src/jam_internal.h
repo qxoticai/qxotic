@@ -102,6 +102,8 @@ typedef struct {
     int8_t*  aq;                /* [n*k]  requantized activations (VNNI) */
     float*   ad;                /* [n*nb] per-block activation scales */
     float*   asum;              /* [n*nb] per-block Σ(int8 activations) — K-quant dmin·min term (or NULL) */
+    int      m;                 /* #output rows (features); the group-indexed rp kernels read this, NOT ldc
+                                 * (the API permits ldc > m, so ldc must not be reused as the row count) */
 } jam_q8_job;
 
 void jam_mm_q8_0_f32_generic(void* job, int row_begin, int row_end, int tid);  /* portable floor */

@@ -392,7 +392,13 @@ static jam_status run_quant(jam_ctx* ctx, jam_q8_job* q, int m, jam_task_fn simd
 }
 
 /* Repacked-weight cache for the avx2 Q4_K 8x8 gemm: repack each weight ONCE (keyed on its pointer+shape),
- * reuse forever. Accessed under the per-context busy lock (jam_mm), so no extra locking. */
+ * reuse forever. Accessed under the per-context busy lock (jam_mm), so no extra locking.
+ * TWO preconditions, both satisfied by jinfer's mmap'd model weights (the only consumer):
+ *   1. PINNED: the cache never invalidates, so the bytes at `w` must stay live + unchanged for the ctx
+ *      lifetime. Freeing `w` and reallocating a different same-(m,k) weight at the same address returns
+ *      the STALE repack. Model weights are pinned for the model's life, so this holds.
+ *   2. CONTIGUOUS: the repack8 fns walk rows at the natural block stride (sblocks*block_bytes) and ignore
+ *      ldw — a row-strided weight view (ldw past the block stride) would repack the wrong rows. */
 static void* rpcache_get(jam_ctx* ctx, const void* w, int m, int k, int block_elems, size_t block_bytes,
                          void (*repack)(const void*, int, int, int, void*)) {
     for (int i = 0; i < ctx->rp_cache_n; ++i)
@@ -456,12 +462,15 @@ static jam_status dispatch_kquant(jam_ctx* ctx, const void* w, int ldw, const vo
         return JAM_OK;
     }
 #endif
-    jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, kblocks, NULL, NULL };
+    jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, kblocks, NULL, NULL }; q.m = m;
     if (requant && simd) {                         /* per-256 (Q8_K) requant + int-scale kernel (avx2) */
         if (!ensure_qscratch(ctx, n, k)) return JAM_EINVAL;
         q.aq = (int8_t*) ctx->q_aq; q.ad = (float*) ctx->q_ad; q.asum = (float*) ctx->q_asum;
         if (n == 1) requant(&q, 0, 1, 0); else jam_run(ctx, n, requant, &q);
-        if (repack && try_repack_run(ctx, &q, w, m, k, JAM_QKK, rp_sbbytes, repack, simd)) return JAM_OK;
+        if (repack) {
+            if (try_repack_run(ctx, &q, w, m, k, JAM_QKK, rp_sbbytes, repack, simd)) return JAM_OK;
+            return run_quant(ctx, &q, m, NULL, floor_);   /* repack alloc failed -> float floor (simd is the group-indexed rp kernel, can't run on the raw weight) */
+        }
         jam_run(ctx, m, simd, &q);
         return JAM_OK;
     }
@@ -501,13 +510,13 @@ static jam_status jam_mm_run(jam_ctx* ctx,
     /* NVFP4 (NVIDIA FP4) @ F32 -> F32: GGUF block_nvfp4 ({d[4] UE4M3; qs[32]}, 64-elem, interleaved, no
      * global scale). Self-contained per-block like MXFP4; activations requant per-32. k on a 64 boundary. */
     if (wt == JAM_NVFP4 && at == JAM_F32 && ct == JAM_F32 && (k % 64 == 0)) {
-        jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, k / 32, NULL, NULL };
+        jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, k / 32, NULL, NULL }; q.m = m;
         return run_quant(ctx, &q, m, ctx->nvfp4_kernel, jam_mm_nvfp4_f32_generic);
     }
 
     /* Quantized weight @ F32 activation -> F32. The weight block needs k (and ldw) on a 32 boundary. */
     if (at == JAM_F32 && ct == JAM_F32 && (k % 32 == 0) && (ldw % 32 == 0)) {
-        jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, k / 32, NULL, NULL };
+        jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, k / 32, NULL, NULL }; q.m = m;
         if (wt == JAM_Q8_0) {
 #ifdef JAM_HAVE_AVX512
             int kblocks = k / JAM_QK;
