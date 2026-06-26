@@ -1,1 +1,0 @@
-/usr/bin/cc -g -fsanitize=address,undefined -Wl,--dependency-file=CMakeFiles/jam_test.dir/link.d CMakeFiles/jam_test.dir/tests/jam_test.c.o -o jam_test  -Wl,-rpath,/home/mukel/Desktop/playground/qxotic/jam/build-asan libjam.so.1.0.0 -lm
