@@ -16,6 +16,16 @@ int       jam_pool_spin_budget(const jam_pool* pool);    /* pauses before a spin
 /* Per-worker K-quant weight-repack scratch (VNNI layout). One per pool worker, indexed by jam tid. */
 typedef struct { uint8_t* qs; float* dw; float* mw; int cap_blocks; } jam_repack;
 
+/* A weight-repack kernel: packs feature rows [rows0,re) of a quantized weight (block stride `w_stride`
+ * bytes) into the 8-feature-wide VNNI rpblock layout at `out`. One per quant family (Q4_K/Q5_K/Q6_K/Q8_0). */
+typedef void (*jam_repack_fn)(const void* w, int rows0, int re, int blocks, size_t w_stride, void* out);
+
+/* The 256-element K-quants share one dispatch path (dispatch_kquant); they differ only in a few values.
+ * The ISA-bound ones (kernel/requant/repack, set per ISA at create) live in ctx->kq[], indexed by jam_kq;
+ * the compile-time ones (band kernel, block bytes, rpblock size, float floor) are jam.c's kquant_info[]. */
+enum jam_kq { JAM_KQ_Q4K, JAM_KQ_Q5K, JAM_KQ_Q6K, JAM_KQ_N };
+typedef struct { jam_task_fn kernel, requant; jam_repack_fn repack; } jam_kquant;
+
 struct jam_ctx {
     jam_parallel_for parallel_for;   /* host executor; if set, takes precedence over ipool */
     void*            pool;           /* opaque handle for parallel_for */
@@ -30,20 +40,12 @@ struct jam_ctx {
     jam_task_fn      mxfp4_kernel;   /* best MXFP4 matmul; NULL -> generic (float). Same int8 pipeline. */
     jam_task_fn      nvfp4_kernel;   /* best NVFP4 matmul; NULL -> generic (float). No SIMD kernel yet. */
     jam_task_fn      q4_0_kernel;    /* best Q4_0 matmul; NULL -> generic. Same int8 pipeline. */
-    jam_task_fn      q4k_kernel;     /* best Q4_K matmul; NULL -> generic (float). int8 dot via aq/ad. */
-    jam_task_fn      q4k_requant;    /* non-NULL -> per-256 (Q8_K) activation requant for q4k_kernel (avx2 int-scale) */
-    void (*q4k_repack)(const void*, int, int, int, size_t, void*);   /* non-NULL -> cached weight-repack for q4k_kernel (avx2 8x8) */
-    struct jam_rpentry { const void* w; int m, k; void (*repack)(const void*,int,int,int,size_t,void*); void* buf; } *rp_cache;
+    jam_kquant       kq[JAM_KQ_N];   /* Q4_K/Q5_K/Q6_K ISA-bound {kernel,requant,repack}; consts in kquant_info[] */
+    struct jam_rpentry { const void* w; int m, k; jam_repack_fn repack; void* buf; } *rp_cache;
                                           /* repacked-weight cache, keyed on (weight ptr, shape, repack fn) */
     int rp_cache_n, rp_cache_cap;
-    jam_task_fn      q5k_kernel;     /* best Q5_K matmul; NULL -> generic (float). */
-    jam_task_fn      q5k_requant;    /* non-NULL -> per-256 requant for the q5k cached-repack kernel */
-    void (*q5k_repack)(const void*, int, int, int, size_t, void*);   /* non-NULL -> cached weight-repack for q5k_kernel */
-    jam_task_fn      q6k_kernel;     /* best Q6_K matmul; NULL -> generic (float). */
-    jam_task_fn      q6k_requant;    /* non-NULL -> per-256 requant for the q6k cached-repack kernel */
-    void (*q6k_repack)(const void*, int, int, int, size_t, void*);   /* non-NULL -> cached weight-repack for q6k_kernel */
     jam_task_fn      q8_0_rp_kernel; /* avx2 cached-repack Q8_0 (sign-trick maddubs 8-wide); NULL -> q8_kernel */
-    void (*q8_0_repack)(const void*, int, int, int, size_t, void*);  /* non-NULL -> cached weight-repack for q8_0_rp_kernel */
+    jam_repack_fn    q8_0_repack;    /* non-NULL -> cached weight-repack for q8_0_rp_kernel */
     jam_task_fn      dense_f16_kernel;   /* AVX-512 F16 dense (k%16==0); NULL -> generic floor */
     jam_task_fn      dense_bf16_kernel;  /* AVX-512 BF16 dense (k%16==0); NULL -> generic floor */
 
