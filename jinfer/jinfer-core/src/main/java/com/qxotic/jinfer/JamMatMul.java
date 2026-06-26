@@ -2,13 +2,16 @@ package com.qxotic.jinfer;
 
 import com.qxotic.format.gguf.GGMLType;
 import com.qxotic.jam.JAM;
+import com.qxotic.jam.NativeJAM;
 
 import java.lang.foreign.MemorySegment;
 
 /**
- * Native backend: passes the operands straight to {@code JAM.mmUnsafe}. jam carries the (dtype × ISA) dispatch
- * itself and writes token-major output (jinfer's layout), so this is just address + tag plumbing.
- * Offsets are handled in {@code long} — the weight byte address can exceed 2³¹ on large models.
+ * Native backend: passes the operands to {@code NativeJAM.global().mm}. jam carries the (dtype × ISA) dispatch
+ * itself and writes token-major output (jinfer's layout), so this is just segment + offset + tag plumbing.
+ * Each operand goes in as {@code (vseg, vbase + relativeByteOffset)} — {@code vseg.address() + vbase} is the
+ * tensor's base, so jam reads it zero-copy and bounds-checks against {@code vseg}. Offsets are {@code long}
+ * (a weight byte offset can exceed 2³¹ on large models).
  */
 final class JamMatMul implements MatMul {
 
@@ -17,8 +20,8 @@ final class JamMatMul implements MatMul {
     JamMatMul(MatMul fallback) { this.fallback = fallback; }
 
     static boolean tryLoad() {
-        if (Boolean.getBoolean("jinfer.disableJam")) return false;   // force the Java backends (testing)
-        try { Class.forName("com.qxotic.jam.JAM"); return true; }    // triggers libjam load
+        if (Boolean.getBoolean("jinfer.disableJam")) return false;       // force the Java backends (testing)
+        try { Class.forName("com.qxotic.jam.NativeJAM"); return true; }  // triggers libjam load (NativeJAM static init)
         catch (Throwable t) {
             System.err.println("jam native library unavailable (" + t + "); using the Java backends.");
             return false;
@@ -31,14 +34,14 @@ final class JamMatMul implements MatMul {
                    FloatTensor c, long cOff, int cStride,
                    int m, int n, int k) {
         GGMLType t = w.type();
-        long wBase = ((SegmentFloatTensor) w).baseAddress;
-        long aBase = ((SegmentFloatTensor) a).baseAddress;
-        long cBase = ((SegmentFloatTensor) c).baseAddress;
-        long wa = wBase + (wOff / t.getElementsPerBlock()) * t.getBlockByteSize();
-        int st = JAM.mmUnsafe(wa, jamTag(t), wStride,
-                        aBase + aOff * Float.BYTES, JAM.F32, aStride,
-                        cBase + cOff * Float.BYTES, JAM.F32, cStride,
-                        m, n, k);
+        SegmentFloatTensor sw = (SegmentFloatTensor) w, sa = (SegmentFloatTensor) a, sc = (SegmentFloatTensor) c;
+        long wByteOff = sw.vbase + (wOff / t.getElementsPerBlock()) * t.getBlockByteSize();   // block-aware weight offset
+        long aByteOff = sa.vbase + aOff * Float.BYTES;
+        long cByteOff = sc.vbase + cOff * Float.BYTES;
+        int st = NativeJAM.global().mm(sw.vseg, wByteOff, jamTag(t), wStride,
+                                       sa.vseg, aByteOff, JAM.F32, aStride,
+                                       sc.vseg, cByteOff, JAM.F32, cStride,
+                                       m, n, k);
         if (st != JAM.OK) {   // EBUSY (concurrent same-context) / unsupported shape -> the floor finishes it
             fallback.mm(w, wOff, wStride, a, aOff, aStride, c, cOff, cStride, m, n, k);
         }
