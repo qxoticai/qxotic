@@ -2,8 +2,10 @@
  * JAM_ISA_AVX2 <= ctx->active < JAM_ISA_AVX512 (consumer / older CPUs, Haswell 2013+).
  *
  * Same structure as the AVX-512 TU but 8-wide (__m256) with only 16 ymm registers, so tiles cap at
- * 4×2. Q8_0 has NO VNNI here: the int8 dot uses maddubs(|qa|, sign(qb,qa)) -> int16 pairs, then
- * madd_epi16 -> int32 — the standard ggml AVX2 path, same deferred-float accumulation as VNNI. */
+ * 4×2 (F32 mnpack; the F16/BF16 dense gemm at the bottom uses a 2×4 dot tile). Q8_0 has NO VNNI here:
+ * the int8 dot uses maddubs(|qa|, sign(qb,qa)) -> int16 pairs, then madd_epi16 -> int32 — the standard
+ * ggml AVX2 path, same deferred-float accumulation as VNNI. (The 8-feature-wide cached-repack K-quant +
+ * Q8_0 rp kernels live in jam_kernels_kquant_avx2.c.) */
 #include "jam_internal.h"
 #include <stddef.h>
 #include <stdint.h>

@@ -142,10 +142,6 @@ typedef struct { float d[8]; int8_t qs[256]; } jam_q8_0_rpblock;
 #ifdef JAM_HAVE_AVX2
 void jam_mm_mxfp4_avx2(void* job, int a_begin, int a_end, int tid);        /* maddubs + FP4 decode */
 void jam_mm_q4_0_avx2(void* job, int a_begin, int a_end, int tid);         /* maddubs + nibble-8 decode */
-void jam_mm_q4k_avx2(void* job, int rb, int re, int tid);                  /* K-quant int8 (below VNNI) */
-void jam_mm_q5k_avx2(void* job, int rb, int re, int tid);
-void jam_mm_q6k_avx2(void* job, int rb, int re, int tid);
-void jam_mm_q4k_avx2_is(void* job, int rb, int re, int tid);              /* Q4_K int-scale (needs jam_q8k_requant) */
 void jam_q4k_repack8(const void* w, int rows0, int re, int sblocks, void* out);  /* repack 8 features (Q4_K) */
 void jam_mm_q4k_rp_avx2(void* job, int rb, int re, int tid);             /* cached-repack Q4_K gemm (rb..re = groups) */
 void jam_q5k_repack8(const void* w, int rows0, int re, int sblocks, void* out);  /* repack 8 features (Q5_K) */
