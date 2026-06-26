@@ -171,6 +171,7 @@ static void suite_kquant(kq_build build, int dtype, const char* name, int m, int
     uint8_t* WQ = build(m, k, 7, Wdq, Wmin);
     float* A = malloc(4*(size_t)n*k); float* C = malloc(4*(size_t)m*n);
     double* RE = malloc(8*(size_t)m*n); double* RR = malloc(8*(size_t)m*n); double* RF = malloc(8*(size_t)m*n);
+    double* RP = malloc(8*(size_t)m*n);   /* per-256 (Q8_K) requant reference for the avx2 int-scale path */
     jam_ref_fill(A,(size_t)n*k,8);
     for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
         double se=0, sr=0, sf=0;
@@ -187,7 +188,17 @@ static void suite_kquant(kq_build build, int dtype, const char* name, int m, int
                 sf += (double)wv*((float)qa*dA);                 /* fully-requant (Q4_0 256-bit engine) */
             }
         }
-        RE[(size_t)i*n+j]=se; RR[(size_t)i*n+j]=sr; RF[(size_t)i*n+j]=sf;
+        double sp=0;                                       /* per-256 requant: value × (qa256·dA256) */
+        for (int sb=0; sb<k/256; sb++) {
+            const float* a256 = A+(size_t)j*k+sb*256;
+            float amax=0; for (int e=0;e<256;e++){ float v=fabsf(a256[e]); if(v>amax)amax=v; }
+            float dA=amax/127.f, id=dA>0?1.f/dA:0.f;
+            for (int e=0;e<256;e++) {
+                int qa=(int)lrintf(a256[e]*id); if(qa>127)qa=127; else if(qa<-128)qa=-128;
+                sp += (double)Wdq[(size_t)i*k+sb*256+e]*((float)qa*dA);
+            }
+        }
+        RE[(size_t)i*n+j]=se; RR[(size_t)i*n+j]=sr; RF[(size_t)i*n+j]=sf; RP[(size_t)i*n+j]=sp;
     }
     for (int c=0;c<NCTX;c++) {
         ++g_checks; memset(C,0,4*(size_t)m*n);
@@ -195,14 +206,14 @@ static void suite_kquant(kq_build build, int dtype, const char* name, int m, int
         int bad=0;
         for (int f=0;f<m;f++) for (int t=0;t<n;t++) {
             double kr=C[(size_t)t*m+f]; size_t ri=(size_t)f*n+t;   /* C token-major, refs feature-major */
-            double de=fabs(kr-RE[ri]), dr=fabs(kr-RR[ri]), df=fabs(kr-RF[ri]);  /* exact / repack-hybrid / requant */
+            double de=fabs(kr-RE[ri]), dr=fabs(kr-RR[ri]), df=fabs(kr-RF[ri]), dp=fabs(kr-RP[ri]);
             double best=de, ref=RE[ri];
-            if (dr<best){best=dr;ref=RR[ri];} if (df<best){best=df;ref=RF[ri];}
+            if (dr<best){best=dr;ref=RR[ri];} if (df<best){best=df;ref=RF[ri];} if (dp<best){best=dp;ref=RP[ri];}
             if (best > 2e-2 + 2e-2*fabs(ref)) ++bad;
         }
         if (st||bad){ printf("  [FAIL] %-5s %-15s %4dx%4dx%4d  bad=%d st=%d\n",name,CTX[c].lbl,m,n,k,bad,st); ++g_fail; }
     }
-    free(Wdq); free(Wmin); free(WQ); free(A); free(C); free(RE); free(RR); free(RF);
+    free(Wdq); free(Wmin); free(WQ); free(A); free(C); free(RE); free(RR); free(RF); free(RP);
 }
 
 /* F16 / BF16 DENSE weight @ F32. Build random half/bf16 weights, dot vs a reference that decodes the

@@ -46,6 +46,7 @@ typedef struct { double gmac, gbs; } perf;   /* MAC rate and effective DRAM-traf
 static double wbytes_per_val(int at) {
     switch (at) {
         case JAM_Q8_0: return 34.0  / 32.0;    /* 1.0625 */
+        case JAM_Q4_0: return 18.0  / 32.0;    /* 0.5625 */
         case JAM_Q4_K: return 144.0 / 256.0;   /* 0.5625 */
         case JAM_Q5_K: return 176.0 / 256.0;   /* 0.6875 */
         case JAM_Q6_K: return 210.0 / 256.0;   /* 0.8203 */
@@ -85,6 +86,8 @@ int main(int argc, char** argv) {
     float* Wf = malloc(4*(size_t)M*K); float* B = malloc(4*(size_t)N*K); float* C = malloc(4*(size_t)M*N);
     jam_ref_fill(Wf,(size_t)M*K,1); jam_ref_fill(B,(size_t)N*K,2);
     jam_ref_blk* Wq = jam_ref_quant_q8_0(Wf,M,K);
+    float* dq1 = malloc(4*(size_t)M*K); float* dq2 = malloc(4*(size_t)M*K);
+    uint8_t* Wq40 = jam_ref_make_q4_0(M,K,1,dq1,dq2); free(dq1); free(dq2);
 
     /* K-quants are 256-element super-blocks (only when k%256==0). The makers also emit dequant scratch
      * (wdq/wmin) the bench doesn't need — one reused pair, freed after. */
@@ -97,7 +100,7 @@ int main(int argc, char** argv) {
         free(wdq); free(wmin);
     }
     struct { int at; const void* W; const char* nm; } QS[] = {
-        { JAM_F32, Wf, "F32" }, { JAM_Q8_0, Wq, "Q8_0" },
+        { JAM_F32, Wf, "F32" }, { JAM_Q8_0, Wq, "Q8_0" }, { JAM_Q4_0, Wq40, "Q4_0" },
         { JAM_Q4_K, Wq4k, "Q4_K" }, { JAM_Q5_K, Wq5k, "Q5_K" }, { JAM_Q6_K, Wq6k, "Q6_K" },
     };
 

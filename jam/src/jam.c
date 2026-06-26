@@ -218,7 +218,8 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
     if (cpu >= JAM_ISA_AVX2) { c->f32_kernel = jam_mm_f32_avx2;
         c->q8_kernel = jam_mm_q8_0_avx2; c->mxfp4_kernel = jam_mm_mxfp4_avx2;
         c->q4_0_kernel = jam_mm_q4_0_avx2;
-        c->q4k_kernel = jam_mm_q4k_avx2; c->q5k_kernel = jam_mm_q5k_avx2; c->q6k_kernel = jam_mm_q6k_avx2;
+        c->q4k_kernel = jam_mm_q4k_avx2_is; c->q4k_requant = jam_q8k_requant;   /* int-scale + per-256 requant */
+        c->q5k_kernel = jam_mm_q5k_avx2; c->q6k_kernel = jam_mm_q6k_avx2;
         c->nvfp4_kernel = jam_mm_nvfp4_avx2; }
 #endif
 #ifdef JAM_HAVE_AVXVNNI
@@ -392,7 +393,7 @@ static jam_status run_quant(jam_ctx* ctx, jam_q8_job* q, int m, jam_task_fn simd
 #endif
 static jam_status dispatch_kquant(jam_ctx* ctx, const void* w, int ldw, const void* a, int lda,
                                   void* c, int ldc, int m, int n, int k, size_t kbytes,
-                                  jam_task_fn band, jam_task_fn simd, jam_task_fn floor_) {
+                                  jam_task_fn band, jam_task_fn requant, jam_task_fn simd, jam_task_fn floor_) {
     int kblocks = k / JAM_QK;
     (void) band;
 #ifdef JAM_HAVE_AVX512
@@ -406,6 +407,13 @@ static jam_status dispatch_kquant(jam_ctx* ctx, const void* w, int ldw, const vo
     }
 #endif
     jam_q8_job q = { w, ldw, a, lda, c, ldc, n, k, kblocks, NULL, NULL };
+    if (requant && simd) {                         /* per-256 (Q8_K) requant + int-scale kernel (avx2) */
+        if (!ensure_qscratch(ctx, n, k)) return JAM_EINVAL;
+        q.aq = (int8_t*) ctx->q_aq; q.ad = (float*) ctx->q_ad; q.asum = (float*) ctx->q_asum;
+        if (n == 1) requant(&q, 0, 1, 0); else jam_run(ctx, n, requant, &q);
+        jam_run(ctx, m, simd, &q);
+        return JAM_OK;
+    }
     return run_quant(ctx, &q, m, simd, floor_);   /* int8 (ARM / avx2) or float floor */
 }
 
@@ -504,13 +512,13 @@ static jam_status jam_mm_run(jam_ctx* ctx,
     /* Q4_K/Q5_K/Q6_K weight @ F32 -> F32 (256-element super-blocks): VNNI repack fast path, else int8/floor. */
     if (wt == JAM_Q4_K && at == JAM_F32 && ct == JAM_F32 && (k % JAM_QKK == 0))
         return dispatch_kquant(ctx, w, ldw, a, lda, c, ldc, m, n, k, JAM_Q4K_BYTES,
-                               JAM_BAND(jam_q4k_band), ctx->q4k_kernel, jam_mm_q4k_f32_generic);
+                               JAM_BAND(jam_q4k_band), ctx->q4k_requant, ctx->q4k_kernel, jam_mm_q4k_f32_generic);
     if (wt == JAM_Q6_K && at == JAM_F32 && ct == JAM_F32 && (k % JAM_QKK == 0))
         return dispatch_kquant(ctx, w, ldw, a, lda, c, ldc, m, n, k, JAM_Q6K_BYTES,
-                               JAM_BAND(jam_q6k_band), ctx->q6k_kernel, jam_mm_q6k_f32_generic);
+                               JAM_BAND(jam_q6k_band), 0, ctx->q6k_kernel, jam_mm_q6k_f32_generic);
     if (wt == JAM_Q5_K && at == JAM_F32 && ct == JAM_F32 && (k % JAM_QKK == 0))
         return dispatch_kquant(ctx, w, ldw, a, lda, c, ldc, m, n, k, JAM_Q5K_BYTES,
-                               JAM_BAND(jam_q5k_repack_band), ctx->q5k_kernel, jam_mm_q5k_f32_generic);
+                               JAM_BAND(jam_q5k_repack_band), 0, ctx->q5k_kernel, jam_mm_q5k_f32_generic);
 
     if (jam_debug())
         fprintf(stderr, "[jam] EUNSUPPORTED dtype combo: W=%d A=%d C=%d (built: F32, F16, BF16, Q8_0, Q4_0, "
