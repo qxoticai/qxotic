@@ -78,12 +78,13 @@ void jam_mm_q4k_rp_avxvnni(void* arg, int rb, int re, int tid) {
                     for (int t = 0; t < nt; ++t) sumi[t] = _mm256_add_epi32(sumi[t], _mm256_mullo_epi32(sb[t], sc_v));
                 }
                 __m256 d_v = _mm256_loadu_ps(d), dmin_v = _mm256_loadu_ps(dmin);
+                __m256 minsum[4]; for (int t = 0; t < nt; ++t) minsum[t] = _mm256_setzero_ps();
+                for (int s = 0; s < 8; ++s) {       /* load each min once, fan out over tokens */
+                    __m256 mnf = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i*)(mn + s*8))));
+                    for (int t = 0; t < nt; ++t) minsum[t] = _mm256_fmadd_ps(mnf, _mm256_set1_ps(J->asum[(size_t)(j0+t)*nb + B*8 + s]), minsum[t]);
+                }
                 for (int t = 0; t < nt; ++t) {
-                    __m256 minsum = _mm256_setzero_ps();
-                    for (int s = 0; s < 8; ++s)
-                        minsum = _mm256_fmadd_ps(_mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i*)(mn + s*8)))),
-                                                 _mm256_set1_ps(J->asum[(size_t)(j0+t)*nb + B*8 + s]), minsum);
-                    __m256 contrib = _mm256_sub_ps(_mm256_mul_ps(d_v, _mm256_cvtepi32_ps(sumi[t])), _mm256_mul_ps(dmin_v, minsum));
+                    __m256 contrib = _mm256_sub_ps(_mm256_mul_ps(d_v, _mm256_cvtepi32_ps(sumi[t])), _mm256_mul_ps(dmin_v, minsum[t]));
                     acc[t] = _mm256_fmadd_ps(contrib, _mm256_set1_ps(AD[(size_t)(j0+t)*nb + B]), acc[t]);
                 }
             }
@@ -123,12 +124,13 @@ void jam_mm_q5k_rp_avxvnni(void* arg, int rb, int re, int tid) {
                     for (int t = 0; t < nt; ++t) sumi[t] = _mm256_add_epi32(sumi[t], _mm256_mullo_epi32(sb[t], sc_v));
                 }
                 __m256 d_v = _mm256_loadu_ps(d), dmin_v = _mm256_loadu_ps(dmin);
+                __m256 minsum[4]; for (int t = 0; t < nt; ++t) minsum[t] = _mm256_setzero_ps();
+                for (int s = 0; s < 8; ++s) {       /* load each min once, fan out over tokens */
+                    __m256 mnf = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i*)(mn + s*8))));
+                    for (int t = 0; t < nt; ++t) minsum[t] = _mm256_fmadd_ps(mnf, _mm256_set1_ps(J->asum[(size_t)(j0+t)*nb + B*8 + s]), minsum[t]);
+                }
                 for (int t = 0; t < nt; ++t) {
-                    __m256 minsum = _mm256_setzero_ps();
-                    for (int s = 0; s < 8; ++s)
-                        minsum = _mm256_fmadd_ps(_mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i*)(mn + s*8)))),
-                                                 _mm256_set1_ps(J->asum[(size_t)(j0+t)*nb + B*8 + s]), minsum);
-                    __m256 contrib = _mm256_sub_ps(_mm256_mul_ps(d_v, _mm256_cvtepi32_ps(sumi[t])), _mm256_mul_ps(dmin_v, minsum));
+                    __m256 contrib = _mm256_sub_ps(_mm256_mul_ps(d_v, _mm256_cvtepi32_ps(sumi[t])), _mm256_mul_ps(dmin_v, minsum[t]));
                     acc[t] = _mm256_fmadd_ps(contrib, _mm256_set1_ps(AD[(size_t)(j0+t)*nb + B]), acc[t]);
                 }
             }
