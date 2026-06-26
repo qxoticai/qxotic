@@ -233,7 +233,7 @@ void jam_mm_q4k_f32_generic(void* arg, int rb, int re, int tid) {
     float* C = (float*) J->c;
     const int ldc = J->ldc, ldb = J->ldb, n = J->n, k = J->k;
     const int sblocks = k / JAM_QKK;
-    const size_t w_stride = (size_t) sblocks * JAM_Q4K_BYTES;
+    const size_t w_stride = (size_t)(J->lda / JAM_QKK) * JAM_Q4K_BYTES;   /* weight row stride honors lda (ldw) */
     for (int i = rb; i < re; ++i) {
         const uint8_t* wrow = (const uint8_t*) (W + (size_t) i * w_stride);
         for (int j = 0; j < n; ++j) {
@@ -266,7 +266,7 @@ void jam_mm_q6k_f32_generic(void* arg, int rb, int re, int tid) {
     float* C = (float*) J->c;
     const int ldc = J->ldc, ldb = J->ldb, n = J->n, k = J->k;
     const int sblocks = k / JAM_QKK;
-    const size_t w_stride = (size_t) sblocks * JAM_Q6K_BYTES;
+    const size_t w_stride = (size_t)(J->lda / JAM_QKK) * JAM_Q6K_BYTES;   /* weight row stride honors lda (ldw) */
     for (int i = rb; i < re; ++i) {
         const uint8_t* wrow = (const uint8_t*) (W + (size_t) i * w_stride);
         for (int j = 0; j < n; ++j) {
@@ -304,7 +304,7 @@ void jam_mm_q5k_f32_generic(void* arg, int rb, int re, int tid) {
     float* C = (float*) J->c;
     const int ldc = J->ldc, ldb = J->ldb, n = J->n, k = J->k;
     const int sblocks = k / JAM_QKK;
-    const size_t w_stride = (size_t) sblocks * JAM_Q5K_BYTES;
+    const size_t w_stride = (size_t)(J->lda / JAM_QKK) * JAM_Q5K_BYTES;   /* weight row stride honors lda (ldw) */
     for (int i = rb; i < re; ++i) {
         const uint8_t* wrow = (const uint8_t*) (W + (size_t) i * w_stride);
         for (int j = 0; j < n; ++j) {

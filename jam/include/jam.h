@@ -131,6 +131,12 @@ jam_status jam_mm(jam_ctx* ctx,
 jam_isa     jam_active_isa(const jam_ctx* ctx);   /* the live kernel level; ctx==NULL -> global */
 const char* jam_ctx_name(const jam_ctx* ctx);    /* the context's label ("" if unnamed); ctx==NULL -> global */
 
+/* Drop the internal repacked-weight cache entry for `w` (ctx==NULL -> global). The quant fast path repacks
+ * each weight once and caches it keyed on the pointer, reused for the ctx lifetime. Call this BEFORE freeing
+ * or overwriting a weight whose address may be reused, else a new weight at that address hits the stale
+ * repack. No-op if `w` was never cached. Not safe to call concurrently with jam_mm on the same context. */
+void jam_forget_weight(jam_ctx* ctx, const void* w);
+
 #ifdef __cplusplus
 }
 #endif

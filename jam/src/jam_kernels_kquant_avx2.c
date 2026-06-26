@@ -14,9 +14,8 @@
  * across 4 tokens. Needs the per-256 jam_q8k_requant. ---- Repacked per super-block (1216 B): f32 d[8],
  * f32 dmin[8], u8 sc[8sub][8feat], u8 mn[8sub][8feat], u8 qs[8sub][8group][16]: each 16-byte group packs
  * 8 rows × 4 elements as [lo16=rows0..3 | hi16=rows4..7], byte b = nib(row b>>2, elem g*4+(b&3)). */
-void jam_q4k_repack8(const void* Wv, int rows0, int re, int sblocks, void* outv) {
+void jam_q4k_repack8(const void* Wv, int rows0, int re, int sblocks, size_t w_stride, void* outv) {
     const uint8_t* W = (const uint8_t*) Wv; uint8_t* out = (uint8_t*) outv;
-    const size_t w_stride = (size_t) sblocks * JAM_Q4K_BYTES;
     int nf = re - rows0 < 8 ? re - rows0 : 8;
     for (int B = 0; B < sblocks; ++B) {
         jam_q4k_rpblock* blk = (jam_q4k_rpblock*) out + B;
@@ -108,9 +107,8 @@ void jam_mm_q4k_rp_avx2(void* arg, int rb, int re, int tid) {
 /* ---- Q5_K cached-repack (8-feature-wide). Same as the Q4_K rp kernel, but the repack stores the FULL 5-bit
  * value (nibble | qh-bit<<4, 0..31) one byte per element, so the gemm loads w directly — no in-register decode
  * (qs is 2x Q4_K). All scale/min handling is identical to Q4_K. ---- */
-void jam_q5k_repack8(const void* Wv, int rows0, int re, int sblocks, void* outv) {
+void jam_q5k_repack8(const void* Wv, int rows0, int re, int sblocks, size_t w_stride, void* outv) {
     const uint8_t* W = (const uint8_t*) Wv; jam_q5k_rpblock* out = (jam_q5k_rpblock*) outv;
-    const size_t w_stride = (size_t) sblocks * JAM_Q5K_BYTES;
     int nf = re - rows0 < 8 ? re - rows0 : 8;
     for (int B = 0; B < sblocks; ++B) {
         jam_q5k_rpblock* blk = out + B;
@@ -200,9 +198,8 @@ void jam_mm_q5k_rp_avx2(void* arg, int rb, int re, int tid) {
  * (qv-32) and NO min. Store qv UNSIGNED (0..63, one byte/elem, group-interleaved) and fold the -32 as a
  * 32·Σaq bias (per-16 sums computed in-kernel), mirroring Q4_K's min term. ---- Repacked per super-block:
  * f32 d[8], i8 sc[16sub][8feat], u8 qs[16sub][4grp][32] (qv); sub16 s -> chunk (s/8)*4+(s%8)/2, half s&1. */
-void jam_q6k_repack8(const void* Wv, int rows0, int re, int sblocks, void* outv) {
+void jam_q6k_repack8(const void* Wv, int rows0, int re, int sblocks, size_t w_stride, void* outv) {
     const uint8_t* W = (const uint8_t*) Wv; jam_q6k_rpblock* out = (jam_q6k_rpblock*) outv;
-    const size_t w_stride = (size_t) sblocks * JAM_Q6K_BYTES;
     int nf = re - rows0 < 8 ? re - rows0 : 8;
     for (int B = 0; B < sblocks; ++B) {
         jam_q6k_rpblock* blk = out + B;
@@ -293,9 +290,8 @@ void jam_mm_q6k_rp_avx2(void* arg, int rb, int re, int tid) {
 /* ---- Q8_0 cached-repack (8-feature-wide, sign-trick maddubs). Q8_0 weight is int8 (signed), f16 per-32-block
  * scale, no min. maddubs needs a u8 operand, so put |a| (<=127, no int16 overflow) there and the sign on the
  * weight via sign_epi8(w,a): maddubs(|a|, w*sign(a)) = Σ a*w. Repacked per 32-block: f32 d[8], int8 qs[8grp][8feat*4]. */
-void jam_q8_0_repack8(const void* Wv, int rows0, int re, int nblocks, void* outv) {
+void jam_q8_0_repack8(const void* Wv, int rows0, int re, int nblocks, size_t w_stride, void* outv) {
     const uint8_t* W = (const uint8_t*) Wv; jam_q8_0_rpblock* out = (jam_q8_0_rpblock*) outv;
-    const size_t w_stride = (size_t) nblocks * 34;   /* Q8_0: 34 bytes/block (f16 d + 32 int8) */
     int nf = re - rows0 < 8 ? re - rows0 : 8;
     for (int blk = 0; blk < nblocks; ++blk) {
         jam_q8_0_rpblock* rp = out + blk;
