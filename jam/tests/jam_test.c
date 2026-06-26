@@ -384,6 +384,36 @@ static void suite_extreme(int m, int n, int k, int mode) {
     free(W);free(B);free(C);free(R);free(WQ);
 }
 
+/* Adversarial activations: degenerate scales + rounding edges the RUNTIME requant must survive. Token 0 is
+ * all-zero (amax=0 -> the 1/dA divide cliff: an unguarded kernel yields Inf/NaN), token 1 all-equal (every
+ * requant pinned to ±127), token 2 a tiny but nonzero scale, the rest a mix of large / negative / half-integer
+ * values (round-to-nearest ties). The output must be FINITE everywhere, and the all-zero token must give a
+ * zero output column on every kernel (Sum w*0 == 0). Metamorphic — no per-dtype reference needed. */
+static void suite_adversarial(int dtype, const char* name, int m, int n, int k) {
+    int be, bb; void* WQ = build_weight(dtype, m, k, &be, &bb);
+    float* B = malloc(4llu*(size_t)n*k); float* C = malloc(4llu*(size_t)m*n);
+    for (int j=0;j<n;j++) for (int e=0;e<k;e++) {
+        float v;
+        if      (j==0) v = 0.0f;                                         /* amax=0 -> divide guard */
+        else if (j==1) v = 3.0f;                                         /* all equal -> requant ±127 */
+        else if (j==2) v = 1e-6f;                                        /* tiny but nonzero scale */
+        else v = (e%32==0) ? 127.0f : (float)(((e+j)%32)-16) + 0.5f;     /* pinned dA=1 -> exact .5 ties */
+        B[(size_t)j*k+e] = v;
+    }
+    for (int c=0;c<NCTX;c++) {
+        ++g_checks; memset(C,0,4llu*(size_t)m*n);
+        jam_mm(CTX[c].c, WQ, dtype, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k);
+        int nan=0, zc=0;
+        for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
+            float v = C[(size_t)j*m+i];
+            if (!isfinite(v)) ++nan;
+            if (j==0 && v != 0.0f) ++zc;
+        }
+        if (nan||zc){ printf("  [FAIL] %-5s adversarial %-14s nan=%d zerocol=%d\n",name,CTX[c].lbl,nan,zc); ++g_fail; }
+    }
+    free(WQ); free(B); free(C);
+}
+
 /* API contract: invalid inputs must be rejected with JAM_EINVAL — not silently mis-computed or crashed.
  * Zero coverage before; the validation in jam_mm (null ptrs, non-positive dims, ldw/lda<k, ldc<m) is exactly
  * the kind of guard that rots silently. Runs on the global context; the checks fire before any dispatch. */
@@ -454,6 +484,13 @@ int main(void) {
         suite_extreme(33,  1, 512, mode);   /* gemv: the dot kernels + the generic floor */
         suite_extreme(64,  4, 128, mode);
     }
+    /* adversarial activations: degenerate scales (zero / all-equal / tiny) + rounding ties, every dtype */
+    suite_adversarial(JAM_Q8_0,"Q8_0",37,8,64);  suite_adversarial(JAM_Q4_0,"Q4_0",37,8,64);
+    suite_adversarial(JAM_MXFP4,"MXFP4",37,8,64); suite_adversarial(JAM_NVFP4,"NVFP4",37,8,128);
+    suite_adversarial(JAM_Q4_K,"Q4_K",37,8,256);  suite_adversarial(JAM_Q5_K,"Q5_K",37,8,256);
+    suite_adversarial(JAM_Q6_K,"Q6_K",37,8,256);  suite_adversarial(JAM_F16,"F16",37,8,80);
+    suite_adversarial(JAM_BF16,"BF16",37,8,80);   suite_adversarial(JAM_F32,"F32",37,8,80);
+
     suite_contract();   /* invalid-input error returns (context-independent) */
 
     for (int c=0;c<NCTX;c++) if (CTX[c].c) jam_ctx_destroy(CTX[c].c);
