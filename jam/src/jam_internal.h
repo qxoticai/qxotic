@@ -134,6 +134,11 @@ void jam_mm_bf16_f32_generic(void* job, int row_begin, int row_end, int tid);   
 void jam_q8_0_requant(void* job, int b_begin, int b_end, int tid);             /* phase 1: A -> int8 (shared) */
 
 void jam_mm_q4_0_f32_generic(void* job, int row_begin, int row_end, int tid);  /* portable floor (q8_job) */
+/* Cached-repack rpblock layouts — shared by the avx2 + avx-vnni 8-feature-wide gemms and jam.c dispatch. */
+typedef struct { float d[8], dmin[8]; uint8_t sc[64], mn[64], qs[1024]; } jam_q4k_rpblock;
+typedef struct { float d[8], dmin[8]; uint8_t sc[64], mn[64], qs[2048]; } jam_q5k_rpblock;
+typedef struct { float d[8]; int8_t sc[128]; uint8_t qs[2048]; } jam_q6k_rpblock;
+typedef struct { float d[8]; int8_t qs[256]; } jam_q8_0_rpblock;
 #ifdef JAM_HAVE_AVX2
 void jam_mm_mxfp4_avx2(void* job, int a_begin, int a_end, int tid);        /* maddubs + FP4 decode */
 void jam_mm_q4_0_avx2(void* job, int a_begin, int a_end, int tid);         /* maddubs + nibble-8 decode */
@@ -141,19 +146,13 @@ void jam_mm_q4k_avx2(void* job, int rb, int re, int tid);                  /* K-
 void jam_mm_q5k_avx2(void* job, int rb, int re, int tid);
 void jam_mm_q6k_avx2(void* job, int rb, int re, int tid);
 void jam_mm_q4k_avx2_is(void* job, int rb, int re, int tid);              /* Q4_K int-scale (needs jam_q8k_requant) */
-/* Cached-repack Q4_K: one super-block (8 features) laid out for the 8-feature-wide avx2 gemm. The producer
- * (jam_q4k_repack8) and consumer (jam_mm_q4k_rp_avx2) share this struct so the layout lives in one place. */
-typedef struct { float d[8], dmin[8]; uint8_t sc[64], mn[64], qs[1024]; } jam_q4k_rpblock;  /* qs=[8sub][8grp][16] nibbles */
-typedef struct { float d[8], dmin[8]; uint8_t sc[64], mn[64], qs[2048]; } jam_q5k_rpblock;  /* qs=[8sub][8grp][32] 5-bit vals */
-void jam_q4k_repack8(const void* w, int rows0, int re, int sblocks, void* out);  /* repack 8 features (Q4_K) for cached gemm */
+void jam_q4k_repack8(const void* w, int rows0, int re, int sblocks, void* out);  /* repack 8 features (Q4_K) */
 void jam_mm_q4k_rp_avx2(void* job, int rb, int re, int tid);             /* cached-repack Q4_K gemm (rb..re = groups) */
-void jam_q5k_repack8(const void* w, int rows0, int re, int sblocks, void* out);  /* repack 8 features (Q5_K) for cached gemm */
-void jam_mm_q5k_rp_avx2(void* job, int rb, int re, int tid);             /* cached-repack Q5_K gemm (rb..re = groups) */
-typedef struct { float d[8]; int8_t sc[128]; uint8_t qs[2048]; } jam_q6k_rpblock;  /* sc=[16sub][8feat], qs=[16sub][4grp][32] qv */
-void jam_q6k_repack8(const void* w, int rows0, int re, int sblocks, void* out);  /* repack 8 features (Q6_K) for cached gemm */
-void jam_mm_q6k_rp_avx2(void* job, int rb, int re, int tid);             /* cached-repack Q6_K gemm (rb..re = groups) */
-typedef struct { float d[8]; int8_t qs[256]; } jam_q8_0_rpblock;         /* per-32 block: d[8], qs=[8grp][8feat×4] int8 */
-void jam_q8_0_repack8(const void* w, int rows0, int re, int nblocks, void* out); /* repack 8 features (Q8_0) for cached gemm */
+void jam_q5k_repack8(const void* w, int rows0, int re, int sblocks, void* out);  /* repack 8 features (Q5_K) */
+void jam_mm_q5k_rp_avx2(void* job, int rb, int re, int tid);
+void jam_q6k_repack8(const void* w, int rows0, int re, int sblocks, void* out);  /* repack 8 features (Q6_K) */
+void jam_mm_q6k_rp_avx2(void* job, int rb, int re, int tid);
+void jam_q8_0_repack8(const void* w, int rows0, int re, int nblocks, void* out); /* repack 8 features (Q8_0) */
 void jam_mm_q8_0_rp_avx2(void* job, int rb, int re, int tid);            /* cached-repack Q8_0 gemm (sign-trick maddubs) */
 void jam_q8k_requant(void* job, int rb, int re, int tid);                 /* per-256 (Q8_K) activation requant, per-32 sums */
 void jam_q6k_requant(void* job, int rb, int re, int tid);                 /* per-256 requant with per-16 sums (Q6_K bias) */
@@ -174,6 +173,10 @@ void jam_mm_q8_0_avx2(void* job, int a_begin, int a_end, int tid);         /* ph
 #endif
 #ifdef JAM_HAVE_AVXVNNI
 void jam_mm_q8_0_avxvnni(void* job, int a_begin, int a_end, int tid);      /* phase 2: 256-bit vpdpbusd */
+void jam_mm_q4k_rp_avxvnni(void* job, int rb, int re, int tid);            /* cached-repack rp kernels, vpdpbusd dot */
+void jam_mm_q5k_rp_avxvnni(void* job, int rb, int re, int tid);
+void jam_mm_q6k_rp_avxvnni(void* job, int rb, int re, int tid);
+void jam_mm_q8_0_rp_avxvnni(void* job, int rb, int re, int tid);
 #endif
 #ifdef JAM_HAVE_AVX512BW
 void jam_mm_q8_0_avx512bw(void* job, int a_begin, int a_end, int tid);     /* phase 2: 512-bit maddubs (no VNNI) */
