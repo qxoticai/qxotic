@@ -23,9 +23,9 @@ endif()
 add_library(jam SHARED
     src/jam.c
     src/jam_pool.c
-    src/jam_kernels_generic.c
+    src/kernels/jam_kernels_generic.c
 )
-target_include_directories(jam PUBLIC include)
+target_include_directories(jam PUBLIC include PRIVATE src)
 set_target_properties(jam PROPERTIES VERSION 1.0.0 SOVERSION 1)   # libjam.so.1 -> ABI guard via soname
 
 find_package(Threads REQUIRED)
@@ -36,24 +36,24 @@ target_link_libraries(jam PRIVATE Threads::Threads m)   # libm: lrintf/fabsf in 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     # SSE3 (Prescott 2004+, true SSE3 — no SSSE3 maddubs, no F16C): 128-bit int8 Q8_0 via sign-extend+madd
     # with a software fp16 scale. The pre-AVX2 x86 floor, replacing the generic dequant-to-float path.
-    add_library(jam_sse3 OBJECT src/jam_kernels_sse3.c)
-    target_include_directories(jam_sse3 PRIVATE include)
+    add_library(jam_sse3 OBJECT src/kernels/jam_kernels_sse3.c)
+    target_include_directories(jam_sse3 PRIVATE include src)
     target_compile_options(jam_sse3 PRIVATE -msse3)
     target_compile_definitions(jam_sse3 PRIVATE JAM_HAVE_SSE3=1)
     target_sources(jam PRIVATE $<TARGET_OBJECTS:jam_sse3>)
     target_compile_definitions(jam PRIVATE JAM_HAVE_SSE3=1)
 
     # AVX2 (Haswell 2013+): F32 + Q8_0 via maddubs (no VNNI). Covers consumer/older CPUs.
-    add_library(jam_avx2 OBJECT src/jam_kernels_avx2.c src/jam_kernels_kquant_avx2.c src/jam_kernels_nvfp4_avx2.c)
-    target_include_directories(jam_avx2 PRIVATE include)
+    add_library(jam_avx2 OBJECT src/kernels/jam_kernels_avx2.c src/kernels/jam_kernels_kquant_avx2.c src/kernels/jam_kernels_nvfp4_avx2.c)
+    target_include_directories(jam_avx2 PRIVATE include src)
     target_compile_options(jam_avx2 PRIVATE -mavx2 -mfma -mf16c)
     target_compile_definitions(jam_avx2 PRIVATE JAM_HAVE_AVX2=1)
     target_sources(jam PRIVATE $<TARGET_OBJECTS:jam_avx2>)
     target_compile_definitions(jam PRIVATE JAM_HAVE_AVX2=1)
 
     # AVX-VNNI (Alder/Raptor Lake): 256-bit vpdpbusd without AVX-512. Q8_0 only (F32 reuses AVX2).
-    add_library(jam_avxvnni OBJECT src/jam_kernels_avxvnni.c)
-    target_include_directories(jam_avxvnni PRIVATE include)
+    add_library(jam_avxvnni OBJECT src/kernels/jam_kernels_avxvnni.c)
+    target_include_directories(jam_avxvnni PRIVATE include src)
     target_compile_options(jam_avxvnni PRIVATE -mavxvnni -mavx2 -mfma -mf16c)
     target_compile_definitions(jam_avxvnni PRIVATE JAM_HAVE_AVXVNNI=1)
     target_sources(jam PRIVATE $<TARGET_OBJECTS:jam_avxvnni>)
@@ -61,16 +61,16 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
 
     # AVX-512BW without VNNI (Skylake-SP/X): 512-bit maddubs Q8_0. Built WITHOUT -mavx512vnni so it
     # provably emits no VNNI instructions, hence safe to bind on AVX-512 CPUs that lack VNNI.
-    add_library(jam_avx512bw OBJECT src/jam_kernels_avx512bw.c)
-    target_include_directories(jam_avx512bw PRIVATE include)
+    add_library(jam_avx512bw OBJECT src/kernels/jam_kernels_avx512bw.c)
+    target_include_directories(jam_avx512bw PRIVATE include src)
     target_compile_options(jam_avx512bw PRIVATE -mavx512f -mavx512bw -mavx512dq -mavx512vl -mfma -mf16c)
     target_compile_definitions(jam_avx512bw PRIVATE JAM_HAVE_AVX512BW=1)
     target_sources(jam PRIVATE $<TARGET_OBJECTS:jam_avx512bw>)
     target_compile_definitions(jam PRIVATE JAM_HAVE_AVX512BW=1)
 
     # AVX-512: F32 (avx512f/bw/dq) + Q8_0 VNNI (avx512vnni + avx512vl 256-bit dpbusd + f16c).
-    add_library(jam_avx512 OBJECT src/jam_kernels_avx512.c)
-    target_include_directories(jam_avx512 PRIVATE include)
+    add_library(jam_avx512 OBJECT src/kernels/jam_kernels_avx512.c)
+    target_include_directories(jam_avx512 PRIVATE include src)
     target_compile_options(jam_avx512 PRIVATE
         -mavx512f -mavx512bw -mavx512dq -mavx512vl -mavx512vnni -mfma -mf16c)
     target_compile_definitions(jam_avx512 PRIVATE JAM_HAVE_AVX512=1
@@ -80,8 +80,8 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     target_compile_definitions(jam PRIVATE JAM_HAVE_AVX512=1)   # so the dispatcher binds the symbols
 
     # Q4_K (and future K-quants) — AVX-512-VNNI, ported from jinferjni.c (16-row repack scheme).
-    add_library(jam_q4k OBJECT src/jam_kernels_q4k_avx512.c)
-    target_include_directories(jam_q4k PRIVATE include)
+    add_library(jam_q4k OBJECT src/kernels/jam_kernels_q4k_avx512.c)
+    target_include_directories(jam_q4k PRIVATE include src)
     target_compile_options(jam_q4k PRIVATE
         -mavx512f -mavx512bw -mavx512dq -mavx512vl -mavx512vnni -mfma -mf16c)
     target_compile_definitions(jam_q4k PRIVATE JAM_HAVE_AVX512=1)
@@ -90,22 +90,22 @@ endif()
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
     # ARM Q8_0 + K-quant kernels: NEON baseline (vmull+vpadal), DOTPROD (sdot), I8MM (smmla). Each its own -march.
-    add_library(jam_neon OBJECT src/jam_kernels_neon.c src/jam_kernels_kquant_neon.c src/jam_kernels_nvfp4_neon.c)
-    target_include_directories(jam_neon PRIVATE include)
+    add_library(jam_neon OBJECT src/kernels/jam_kernels_neon.c src/kernels/jam_kernels_kquant_neon.c src/kernels/jam_kernels_nvfp4_neon.c)
+    target_include_directories(jam_neon PRIVATE include src)
     target_compile_options(jam_neon PRIVATE -march=armv8-a)
     target_compile_definitions(jam_neon PRIVATE JAM_HAVE_NEON=1)
     target_sources(jam PRIVATE $<TARGET_OBJECTS:jam_neon>)
     target_compile_definitions(jam PRIVATE JAM_HAVE_NEON=1)
 
-    add_library(jam_dotprod OBJECT src/jam_kernels_dotprod.c src/jam_kernels_kquant_dotprod.c src/jam_kernels_nvfp4_dotprod.c)
-    target_include_directories(jam_dotprod PRIVATE include)
+    add_library(jam_dotprod OBJECT src/kernels/jam_kernels_dotprod.c src/kernels/jam_kernels_kquant_dotprod.c src/kernels/jam_kernels_nvfp4_dotprod.c)
+    target_include_directories(jam_dotprod PRIVATE include src)
     target_compile_options(jam_dotprod PRIVATE -march=armv8.2-a+dotprod)
     target_compile_definitions(jam_dotprod PRIVATE JAM_HAVE_DOTPROD=1)
     target_sources(jam PRIVATE $<TARGET_OBJECTS:jam_dotprod>)
     target_compile_definitions(jam PRIVATE JAM_HAVE_DOTPROD=1)
 
-    add_library(jam_i8mm OBJECT src/jam_kernels_i8mm.c)
-    target_include_directories(jam_i8mm PRIVATE include)
+    add_library(jam_i8mm OBJECT src/kernels/jam_kernels_i8mm.c)
+    target_include_directories(jam_i8mm PRIVATE include src)
     target_compile_options(jam_i8mm PRIVATE -march=armv8.6-a+i8mm)
     target_compile_definitions(jam_i8mm PRIVATE JAM_HAVE_I8MM=1)
     target_sources(jam PRIVATE $<TARGET_OBJECTS:jam_i8mm>)

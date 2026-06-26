@@ -46,8 +46,8 @@ int st = JAM.mm(wAddr, JAM.Q8_0, in,        // single native method
                 out, tokens, in);            // R = W @ A^T
 ```
 
-Supported dtypes: `JAM_F32` / `JAM_F32 / JAM_F32` and `JAM_Q8_0` / `JAM_F32` / `JAM_F32`.
-Q4_K, Q6_K, MXFP4 planned.
+Supported weight dtypes: `F32`, `F16`, `BF16`, `Q4_0`, `Q8_0`, `Q4_K`, `Q5_K`, `Q6_K`, `MXFP4`, `NVFP4`.
+Activations and output are always `F32`.
 
 ---
 
@@ -58,7 +58,7 @@ Cap with `JAM_ISA` or `cfg.max_isa`.
 
 | arch | ISA ladder | Q8_0 dot instruction |
 |---|---|---|
-| x86 | `avx2` -> `avx_vnni` -> `avx512` -> `avx512_vnni` | `vpdpbusd` (256/512-bit) |
+| x86 | `sse3` -> `avx2` -> `avx_vnni` -> `avx512` -> `avx512_vnni` | `vpdpbusd` (256/512-bit) |
 | ARM | `neon` -> `dotprod` -> `i8mm` | `sdot` / `smmla` |
 | GPU | `metal` (Apple, opt-in) | MSL compute |
 
@@ -97,9 +97,10 @@ A `jam_ctx` is a serial stream -- one `mm` at a time. For concurrent matmuls, cr
 | CMake >= 3.16 | `sudo apt install cmake` | `sudo dnf install cmake` | `sudo pacman -S cmake` | `xcode-select --install` | `choco install cmake` |
 | C11 compiler (clang) | `sudo apt install clang` | `sudo dnf install clang` | `sudo pacman -S clang` | `xcode-select --install` | `choco install llvm` |
 | JDK >= 22 | `sudo apt install openjdk-22-jdk` | `sudo dnf install java-22-openjdk-devel` | `sudo pacman -S jdk-openjdk` | `brew install openjdk@22` | `choco install temurin22` |
-| Ninja | `sudo apt install ninja-build` | `sudo dnf install ninja-build` | `sudo pacman -S ninja` | `xcode-select --install` | `choco install ninja` |
+| Ninja | `sudo apt install ninja-build` | `sudo dnf install ninja-build` | `sudo pacman -S ninja` | `brew install ninja` | `choco install ninja` |
 
-macOS: `xcode-select --install` installs clang + cmake + ninja + Metal/Foundation frameworks in one command.
+macOS: `xcode-select --install` installs clang + cmake + Metal/Foundation frameworks in one command.
+Ninja is optional; install separately with `brew install ninja`.
 Windows: clang is mandatory -- MSVC does not support GCC-style `-m` flags (`-mavx2`, `-mavx512f`, etc.).
 Linux: gcc also works, but clang is recommended for consistency across platforms.
 
@@ -110,7 +111,6 @@ Linux: gcc also works, but clang is recommended for consistency across platforms
 ```sh
 mvn package             # -> dist/jam.jar (native lib auto-built via exec-maven-plugin)
 mvn test                # configure + build + JUnit tests
-mvn package -Djam.native.skip=true   # skip native build (reuse pre-staged dist/native/)
 ```
 
 **Manual** cmake:
@@ -125,10 +125,10 @@ cmake --build build                     # -> build/libjam.so, staged to dist/nat
 
 ```sh
 cmake -B build -DJAM_METAL=OFF    # disable Metal GPU backend (macOS only)
-cmake -B build -DJAM_JNI=OFF      # disable JNI binding (C-only library)
+cmake -B build -DJAM_JNI=OFF      # C-only library, no JNI binding
 cmake -B build -DJAM_TESTS=OFF    # skip test/benchmark executables
-cmake -B build -DJAM_STRIP=ON     # strip debug symbols (distribution builds)
-mvn package -Djam.native.skip=true       # skip native build (reuse pre-staged dist/native/)
+cmake -B build -DJAM_STRIP=ON     # strip debug symbols
+mvn package -Djam.native.skip=true       # skip cmake (reuse pre-staged dist/native/)
 ```
 
 ### Build resilience
@@ -137,9 +137,8 @@ Per-ISA kernels live in their own translation units and compile with their own `
 The dispatcher and scalar floor stay at baseline, so the library runs on any CPU.
 
 ISA-specific TUs are guarded by `CMAKE_SYSTEM_PROCESSOR` -- x86 TUs only build on x86-64 hosts,
-ARM TUs only build on aarch64 hosts, Metal only builds on Apple. The build never attempts to
-cross-compile kernels the host machine cannot produce. One build yields one `libjam` containing
-all ISA levels for the host architecture; runtime CPUID selects the best kernel.
+ARM TUs only build on aarch64 hosts, Metal only builds on Apple (skip with `-DJAM_METAL=OFF`).
+The build never attempts to cross-compile kernels the host cannot produce.
 
 **Cross-platform JAR assembly** is done by CI (`.github/workflows/build.yml`): 5 OS/arch matrix
 jobs each build natively, upload `dist/native/`, and a final merge job runs `build-jar.sh` to
