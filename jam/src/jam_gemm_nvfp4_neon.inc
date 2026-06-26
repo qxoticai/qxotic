@@ -12,7 +12,7 @@ void JAM_MM_NAME(void* arg, int rb, int re, int tid) {
     float* C = (float*) J->c;
     const int ldc = J->ldc, n = J->n, k = J->k;
     const int nblk = k / JAM_NVFP4_QK;
-    const size_t wrow = (size_t) nblk * sizeof(jam_nvfp4_blk);
+    const size_t wrow = (size_t)(J->lda / JAM_NVFP4_QK) * sizeof(jam_nvfp4_blk);
     static const int8_t codes[16] = { JAM_MXFP4_CODES };
     const int8x16_t lut = vld1q_s8(codes);
     const uint8x16_t m4 = vdupq_n_u8(0x0F);

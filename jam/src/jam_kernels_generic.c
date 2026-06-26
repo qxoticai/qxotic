@@ -198,7 +198,7 @@ void jam_mm_nvfp4_f32_generic(void* arg, int rb, int re, int tid) {
     float* C = (float*) J->c;
     const int ldc = J->ldc, ldb = J->ldb, n = J->n, k = J->k;
     const int nblk = k / JAM_NVFP4_QK;
-    const size_t wrow = (size_t) nblk * sizeof(jam_nvfp4_blk);
+    const size_t wrow = (size_t)(J->lda / JAM_NVFP4_QK) * sizeof(jam_nvfp4_blk);   /* row stride honors lda (ldw) */
     for (int i = rb; i < re; ++i) {
         const jam_nvfp4_blk* wr = (const jam_nvfp4_blk*) (W + (size_t) i * wrow);
         for (int j = 0; j < n; ++j) {

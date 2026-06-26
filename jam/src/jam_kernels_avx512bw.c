@@ -115,7 +115,7 @@ void jam_mm_nvfp4_avx512(void* arg, int rb, int re, int tid) {
     const int8_t* AQ = J->aq; const float* AD = J->ad;
     float* C = (float*) J->c;
     const int ldc = J->ldc, n = J->n, k = J->k, nblk = k / JAM_NVFP4_QK;
-    const size_t wrow = (size_t) nblk * sizeof(jam_nvfp4_blk);
+    const size_t wrow = (size_t)(J->lda / JAM_NVFP4_QK) * sizeof(jam_nvfp4_blk);   /* row stride honors lda (ldw) */
     const __m128i lut = _mm_setr_epi8(JAM_MXFP4_CODES);
     const __m128i m4  = _mm_set1_epi8(0x0F);
     for (int i = rb; i < re; ++i) {
