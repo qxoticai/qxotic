@@ -79,6 +79,20 @@
         <configuration>
           <argLine>--enable-native-access=ALL-UNNAMED</argLine>   <!-- System.load is "restricted" on JDK 24+ -->
         </configuration>
+        <executions>
+          <!-- default-test runs the suite through the JNI backend (the default jam.binding); this second
+               pass re-runs the SAME suite through the FFM/Panama backend, so both bindings + the jam.binding
+               selector are exercised end-to-end (not just the direct mmFfm call in jniAndFfmBackendsAgree). -->
+          <execution>
+            <id>test-ffm</id>
+            <phase>test</phase>
+            <goals><goal>test</goal></goals>
+            <configuration>
+              <argLine>--enable-native-access=ALL-UNNAMED -Djam.binding=ffm</argLine>
+              <reportsDirectory>${project.build.directory}/surefire-reports-ffm</reportsDirectory>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>
