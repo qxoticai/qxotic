@@ -6,6 +6,8 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)   # compile_commands.json for clangd
 
 option(JAM_JNI "Build the JNI binding into libjam" ON)
+option(JAM_METAL "Build the Apple Metal GPU backend (macOS only)" ON)
+option(JAM_STRIP "Strip debug symbols from the shared library (Release builds)" OFF)
 
 # AddressSanitizer + UBSan for the test build: instruments the whole lib (all ISA TUs) + the tests, so
 # OOB / use-after-free / misalignment / int-overflow in any kernel aborts loudly. Applied globally and
@@ -119,13 +121,30 @@ endif()
 # Apple GPU backend (hand-tuned MSL GEMM for prefill, zero-copy over unified memory). Distinct from
 # jota-metal, which GENERATES/fuses kernels — jam-metal is the single absolute-fastest matmul. Wraps
 # host pointers via newBufferWithBytesNoCopy (needs 16 KB page-aligned buffers), big-GEMM-gated.
-if (APPLE)
+if (APPLE AND JAM_METAL)
     # Metal GPU backend (opt-in via JAM_ISA=metal). MSL compiled at runtime; no .metallib step.
     enable_language(OBJCXX)
     target_sources(jam PRIVATE src/jam_metal.mm)
     set_source_files_properties(src/jam_metal.mm PROPERTIES COMPILE_OPTIONS "-fno-objc-arc")
     target_link_libraries(jam PRIVATE "-framework Metal" "-framework Foundation")
     target_compile_definitions(jam PRIVATE JAM_HAVE_METAL=1)
+endif()
+
+# ---- strip debug symbols (opt-in, for distribution builds) ----
+if(JAM_STRIP)
+    if(APPLE)
+        add_custom_command(TARGET jam POST_BUILD
+            COMMAND strip -x "$<TARGET_FILE:jam>"
+            COMMENT "jam: stripped debug symbols")
+    elseif(WIN32)
+        add_custom_command(TARGET jam POST_BUILD
+            COMMAND ${CMAKE_STRIP} "$<TARGET_FILE:jam>"
+            COMMENT "jam: stripped debug symbols")
+    else()
+        add_custom_command(TARGET jam POST_BUILD
+            COMMAND ${CMAKE_STRIP} --strip-unneeded "$<TARGET_FILE:jam>"
+            COMMENT "jam: stripped debug symbols")
+    endif()
 endif()
 
 # ---- stage the native lib into the fat-jar layout: dist/native/com/qxotic/jam/native/<os>-<arch>/<lib> ----

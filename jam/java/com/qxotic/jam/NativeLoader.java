@@ -56,7 +56,8 @@ final class NativeLoader {
 
     private static String prop(String sysProp, String env) {
         String v = System.getProperty(sysProp);
-        return (v != null) ? v : System.getenv(env);
+        if (v == null || v.isEmpty()) v = System.getenv(env);   // -Dprop, else env, else null
+        return v;
     }
 
     static String os() {
