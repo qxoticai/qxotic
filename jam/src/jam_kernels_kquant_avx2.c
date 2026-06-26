@@ -510,6 +510,67 @@ void jam_mm_q6k_rp_avx2(void* arg, int rb, int re, int tid) {
     }
 }
 
+/* ---- Q8_0 cached-repack (8-feature-wide, sign-trick maddubs). Q8_0 weight is int8 (signed), f16 per-32-block
+ * scale, no min. maddubs needs a u8 operand, so put |a| (<=127, no int16 overflow) there and the sign on the
+ * weight via sign_epi8(w,a): maddubs(|a|, w*sign(a)) = Σ a*w. Repacked per 32-block: f32 d[8], int8 qs[8grp][8feat*4]. */
+void jam_q8_0_repack8(const void* Wv, int rows0, int re, int nblocks, void* outv) {
+    const uint8_t* W = (const uint8_t*) Wv; jam_q8_0_rpblock* out = (jam_q8_0_rpblock*) outv;
+    const size_t w_stride = (size_t) nblocks * 34;   /* Q8_0: 34 bytes/block (f16 d + 32 int8) */
+    int nf = re - rows0 < 8 ? re - rows0 : 8;
+    for (int blk = 0; blk < nblocks; ++blk) {
+        jam_q8_0_rpblock* rp = out + blk;
+        for (int f = 0; f < 8; ++f) {
+            if (f >= nf) { rp->d[f] = 0.0f; for (int g = 0; g < 8; ++g) for (int e = 0; e < 4; ++e) rp->qs[g*32 + f*4 + e] = 0; continue; }
+            const uint8_t* wb = W + (size_t)(rows0+f)*w_stride + (size_t) blk*34;
+            rp->d[f] = _cvtsh_ss(*(const uint16_t*) wb);
+            const int8_t* q = (const int8_t*)(wb + 2);
+            for (int g = 0; g < 8; ++g) for (int e = 0; e < 4; ++e) rp->qs[g*32 + f*4 + e] = q[g*4 + e];
+        }
+    }
+}
+
+void jam_mm_q8_0_rp_avx2(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const uint8_t* RP = (const uint8_t*) J->a;
+    const int8_t* AQ = J->aq; const float* AD = J->ad;
+    float* C = (float*) J->c;
+    const int ldc = J->ldc, n = J->n, k = J->k, nb = J->nb;   /* nb = k/32 */
+    const size_t grp_bytes = (size_t) nb * sizeof(jam_q8_0_rpblock);
+    const int mrows = ldc;
+    const __m256i ones = _mm256_set1_epi16(1);
+    for (int grp = rb; grp < re; ++grp) {
+        int i0 = grp * 8;
+        int nf = mrows - i0 < 8 ? mrows - i0 : 8;
+        const uint8_t* gbase = RP + (size_t) grp * grp_bytes;
+        for (int j0 = 0; j0 < n; j0 += 4) {
+            int nt = n - j0 < 4 ? n - j0 : 4;
+            __m256 acc[4]; for (int t = 0; t < 4; ++t) acc[t] = _mm256_setzero_ps();
+            for (int blk = 0; blk < nb; ++blk) {
+                const jam_q8_0_rpblock* rpb = (const jam_q8_0_rpblock*) gbase + blk;
+                __m256 d8 = _mm256_loadu_ps(rpb->d);
+                __m256i sb[4]; for (int t = 0; t < nt; ++t) sb[t] = _mm256_setzero_si256();
+                for (int g = 0; g < 8; ++g) {
+                    __m256i w = _mm256_loadu_si256((const __m256i*)(rpb->qs + g*32));   /* 8 feat × 4 elem, signed */
+                    for (int t = 0; t < nt; ++t) {
+                        __m256i a4 = _mm256_set1_epi32(*(const int*)(AQ + (size_t)(j0+t)*k + (size_t) blk*32 + g*4));
+                        __m256i prod = _mm256_maddubs_epi16(_mm256_abs_epi8(a4), _mm256_sign_epi8(w, a4));
+                        sb[t] = _mm256_add_epi32(sb[t], _mm256_madd_epi16(prod, ones));
+                    }
+                }
+                for (int t = 0; t < nt; ++t) {
+                    __m256 dad = _mm256_mul_ps(d8, _mm256_set1_ps(AD[(size_t)(j0+t)*nb + blk]));
+                    acc[t] = _mm256_fmadd_ps(dad, _mm256_cvtepi32_ps(sb[t]), acc[t]);
+                }
+            }
+            for (int t = 0; t < nt; ++t) {
+                float tmp[8]; _mm256_storeu_ps(tmp, acc[t]);
+                for (int f = 0; f < nf; ++f) C[(size_t)(j0+t)*ldc + (i0+f)] = tmp[f];
+            }
+        }
+    }
+}
+
 /* Q6_K: value = d·sc·(qv-32), qv 6-bit (ql nibble | qh 2-bit << 4). -32 folds into a signed weight (so
  * KDOT needs abs/sign); int8 scale per 16 elems -> scale the 8-lane dot by [sc0×4, sc1×4] before hsum. */
 void jam_mm_q6k_avx2(void* arg, int rb, int re, int tid) {
