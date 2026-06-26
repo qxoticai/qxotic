@@ -32,18 +32,18 @@ struct jam_ctx {
     jam_task_fn      q4_0_kernel;    /* best Q4_0 matmul; NULL -> generic. Same int8 pipeline. */
     jam_task_fn      q4k_kernel;     /* best Q4_K matmul; NULL -> generic (float). int8 dot via aq/ad. */
     jam_task_fn      q4k_requant;    /* non-NULL -> per-256 (Q8_K) activation requant for q4k_kernel (avx2 int-scale) */
-    void (*q4k_repack)(const void*, int, int, int, void*);   /* non-NULL -> cached weight-repack for q4k_kernel (avx2 8x8) */
-    struct jam_rpentry { const void* w; int m, k; void (*repack)(const void*,int,int,int,void*); void* buf; } *rp_cache;
+    void (*q4k_repack)(const void*, int, int, int, size_t, void*);   /* non-NULL -> cached weight-repack for q4k_kernel (avx2 8x8) */
+    struct jam_rpentry { const void* w; int m, k; void (*repack)(const void*,int,int,int,size_t,void*); void* buf; } *rp_cache;
                                           /* repacked-weight cache, keyed on (weight ptr, shape, repack fn) */
     int rp_cache_n, rp_cache_cap;
     jam_task_fn      q5k_kernel;     /* best Q5_K matmul; NULL -> generic (float). */
     jam_task_fn      q5k_requant;    /* non-NULL -> per-256 requant for the q5k cached-repack kernel */
-    void (*q5k_repack)(const void*, int, int, int, void*);   /* non-NULL -> cached weight-repack for q5k_kernel */
+    void (*q5k_repack)(const void*, int, int, int, size_t, void*);   /* non-NULL -> cached weight-repack for q5k_kernel */
     jam_task_fn      q6k_kernel;     /* best Q6_K matmul; NULL -> generic (float). */
     jam_task_fn      q6k_requant;    /* non-NULL -> per-256 requant for the q6k cached-repack kernel */
-    void (*q6k_repack)(const void*, int, int, int, void*);   /* non-NULL -> cached weight-repack for q6k_kernel */
+    void (*q6k_repack)(const void*, int, int, int, size_t, void*);   /* non-NULL -> cached weight-repack for q6k_kernel */
     jam_task_fn      q8_0_rp_kernel; /* avx2 cached-repack Q8_0 (sign-trick maddubs 8-wide); NULL -> q8_kernel */
-    void (*q8_0_repack)(const void*, int, int, int, void*);  /* non-NULL -> cached weight-repack for q8_0_rp_kernel */
+    void (*q8_0_repack)(const void*, int, int, int, size_t, void*);  /* non-NULL -> cached weight-repack for q8_0_rp_kernel */
     jam_task_fn      dense_f16_kernel;   /* AVX-512 F16 dense (k%16==0); NULL -> generic floor */
     jam_task_fn      dense_bf16_kernel;  /* AVX-512 BF16 dense (k%16==0); NULL -> generic floor */
 
@@ -144,13 +144,13 @@ typedef struct { float d[8]; int8_t qs[256]; } jam_q8_0_rpblock;
 #ifdef JAM_HAVE_AVX2
 void jam_mm_mxfp4_avx2(void* job, int a_begin, int a_end, int tid);        /* maddubs + FP4 decode */
 void jam_mm_q4_0_avx2(void* job, int a_begin, int a_end, int tid);         /* maddubs + nibble-8 decode */
-void jam_q4k_repack8(const void* w, int rows0, int re, int sblocks, void* out);  /* repack 8 features (Q4_K) */
+void jam_q4k_repack8(const void* w, int rows0, int re, int sblocks, size_t w_stride, void* out);  /* repack 8 features (Q4_K) */
 void jam_mm_q4k_rp_avx2(void* job, int rb, int re, int tid);             /* cached-repack Q4_K gemm (rb..re = groups) */
-void jam_q5k_repack8(const void* w, int rows0, int re, int sblocks, void* out);  /* repack 8 features (Q5_K) */
+void jam_q5k_repack8(const void* w, int rows0, int re, int sblocks, size_t w_stride, void* out);  /* repack 8 features (Q5_K) */
 void jam_mm_q5k_rp_avx2(void* job, int rb, int re, int tid);
-void jam_q6k_repack8(const void* w, int rows0, int re, int sblocks, void* out);  /* repack 8 features (Q6_K) */
+void jam_q6k_repack8(const void* w, int rows0, int re, int sblocks, size_t w_stride, void* out);  /* repack 8 features (Q6_K) */
 void jam_mm_q6k_rp_avx2(void* job, int rb, int re, int tid);
-void jam_q8_0_repack8(const void* w, int rows0, int re, int nblocks, void* out); /* repack 8 features (Q8_0) */
+void jam_q8_0_repack8(const void* w, int rows0, int re, int nblocks, size_t w_stride, void* out); /* repack 8 features (Q8_0) */
 void jam_mm_q8_0_rp_avx2(void* job, int rb, int re, int tid);            /* cached-repack Q8_0 gemm (sign-trick maddubs) */
 void jam_q8k_requant(void* job, int rb, int re, int tid);                 /* per-256 (Q8_K) activation requant, per-32 sums */
 void jam_q6k_requant(void* job, int rb, int re, int tid);                 /* per-256 requant with per-16 sums (Q6_K bias) */

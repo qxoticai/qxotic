@@ -394,13 +394,13 @@ static jam_status run_quant(jam_ctx* ctx, jam_q8_job* q, int m, jam_task_fn simd
 /* Repacked-weight cache for the avx2 Q4_K 8x8 gemm: repack each weight ONCE (keyed on its pointer+shape),
  * reuse forever. Accessed under the per-context busy lock (jam_mm), so no extra locking.
  * TWO preconditions, both satisfied by jinfer's mmap'd model weights (the only consumer):
- *   1. PINNED: the cache never invalidates, so the bytes at `w` must stay live + unchanged for the ctx
- *      lifetime. Freeing `w` and reallocating a different same-(m,k) weight at the same address returns
- *      the STALE repack. Model weights are pinned for the model's life, so this holds.
- *   2. CONTIGUOUS: the repack8 fns walk rows at the natural block stride (sblocks*block_bytes) and ignore
- *      ldw — a row-strided weight view (ldw past the block stride) would repack the wrong rows. */
+ *   1. PINNED: the cache auto-invalidates nothing, so the bytes at `w` must stay live + unchanged for the
+ *      ctx lifetime, OR the caller must jam_forget_weight(ctx, w) before freeing/replacing it — else a new
+ *      weight reusing the address returns the STALE repack. Model weights are pinned for the model's life.
+ * The repack honors the weight's row stride (the caller passes w_stride derived from ldw), so a strided /
+ * padded quant weight view repacks correctly — same as the non-repacked quant kernels (wrow = lda/blk). */
 static void* rpcache_get(jam_ctx* ctx, const void* w, int m, int k, int block_elems, size_t block_bytes,
-                         void (*repack)(const void*, int, int, int, void*)) {
+                         size_t w_stride, void (*repack)(const void*, int, int, int, size_t, void*)) {
     for (int i = 0; i < ctx->rp_cache_n; ++i)
         if (ctx->rp_cache[i].w == w && ctx->rp_cache[i].m == m && ctx->rp_cache[i].k == k && ctx->rp_cache[i].repack == repack)
             return ctx->rp_cache[i].buf;
@@ -408,8 +408,8 @@ static void* rpcache_get(jam_ctx* ctx, const void* w, int m, int k, int block_el
     size_t grp_bytes = (size_t) nblocks * block_bytes;
     void* buf = malloc((size_t)((m + 7) / 8) * grp_bytes);
     if (!buf) return NULL;
-    for (int i0 = 0; i0 < m; i0 += 8)
-        repack(w, i0, i0 + 8 < m ? i0 + 8 : m, nblocks, (uint8_t*) buf + (size_t)(i0/8) * grp_bytes);
+    for (int i0 = 0; i0 < m; i0 += 8)   /* w_stride = the raw weight's per-row byte stride (honors ldw) */
+        repack(w, i0, i0 + 8 < m ? i0 + 8 : m, nblocks, w_stride, (uint8_t*) buf + (size_t)(i0/8) * grp_bytes);
     if (ctx->rp_cache_n == ctx->rp_cache_cap) {
         int nc = ctx->rp_cache_cap ? ctx->rp_cache_cap * 2 : 16;
         struct jam_rpentry* nn = realloc(ctx->rp_cache, (size_t) nc * sizeof *ctx->rp_cache);
@@ -427,13 +427,28 @@ static void* rpcache_get(jam_ctx* ctx, const void* w, int m, int k, int block_el
  * kernel. Its [rb,re) are 8-feature GROUP indices (hence jam_run over (m+7)/8), and it recovers the row
  * count from q->ldc (== m; C is token-major). q->aq/ad/asum must already be set. Returns 1 if it ran. */
 static int try_repack_run(jam_ctx* ctx, jam_q8_job* q, const void* w, int m, int k,
-                          int block_elems, size_t block_bytes,
-                          void (*repack)(const void*, int, int, int, void*), jam_task_fn kernel) {
-    void* rp = rpcache_get(ctx, w, m, k, block_elems, block_bytes, repack);
+                          int block_elems, size_t block_bytes, size_t w_stride,
+                          void (*repack)(const void*, int, int, int, size_t, void*), jam_task_fn kernel) {
+    void* rp = rpcache_get(ctx, w, m, k, block_elems, block_bytes, w_stride, repack);
     if (!rp) return 0;
     q->a = rp;
     jam_run(ctx, (m + 7) / 8, kernel, q);
     return 1;
+}
+
+/* Drop any cached repacked-weight buffer(s) for weight pointer `w` (ctx==NULL -> global). Call this BEFORE
+ * freeing or overwriting a weight whose address might be reused: the repack cache keys on the pointer and
+ * never auto-invalidates, so a different weight reallocated at the same address would otherwise hit the
+ * stale repack. Serial with jam_mm on the same context (the same single-stream contract as the scratch). */
+void jam_forget_weight(jam_ctx* ctx, const void* w) {
+    if (!ctx) ctx = jam_global();
+    if (!ctx) return;
+    for (int i = 0; i < ctx->rp_cache_n; ) {
+        if (ctx->rp_cache[i].w == w) {
+            free(ctx->rp_cache[i].buf);
+            ctx->rp_cache[i] = ctx->rp_cache[--ctx->rp_cache_n];   /* swap-remove, then re-check this slot */
+        } else ++i;
+    }
 }
 
 /* K-quant (256-element super-block) dispatch, shared by Q4_K/Q5_K/Q6_K — they differ only in the byte
@@ -448,13 +463,13 @@ static int try_repack_run(jam_ctx* ctx, jam_q8_job* q, const void* w, int m, int
 static jam_status dispatch_kquant(jam_ctx* ctx, const void* w, int ldw, const void* a, int lda,
                                   void* c, int ldc, int m, int n, int k, size_t kbytes,
                                   jam_task_fn band, jam_task_fn requant,
-                                  void (*repack)(const void*,int,int,int,void*), size_t rp_sbbytes,
+                                  void (*repack)(const void*,int,int,int,size_t,void*), size_t rp_sbbytes,
                                   jam_task_fn simd, jam_task_fn floor_) {
     int kblocks = k / JAM_QK;
     (void) band;
 #ifdef JAM_HAVE_AVX512
     if (ctx->q4k_avail && n >= JAM_VNNI_MIN_SEQ && ensure_kquant(ctx, n, kblocks)) {
-        jam_q4k_job job = { (const uint8_t*) w, (int64_t)(k / JAM_QKK) * (int64_t) kbytes,
+        jam_q4k_job job = { (const uint8_t*) w, (int64_t)(ldw / JAM_QKK) * (int64_t) kbytes,   /* row stride honors ldw */
                             (const float*) a, lda, ctx->kq_xq, ctx->kq_dx, ctx->kq_xsum,
                             (float*) c, ldc, m, k, n, kblocks, ctx->kq_repack };
         jam_run(ctx, n, jam_q4k_quant, &job);                                   /* phase 1 (shared) */
@@ -468,7 +483,8 @@ static jam_status dispatch_kquant(jam_ctx* ctx, const void* w, int ldw, const vo
         q.aq = (int8_t*) ctx->q_aq; q.ad = (float*) ctx->q_ad; q.asum = (float*) ctx->q_asum;
         if (n == 1) requant(&q, 0, 1, 0); else jam_run(ctx, n, requant, &q);
         if (repack) {
-            if (try_repack_run(ctx, &q, w, m, k, JAM_QKK, rp_sbbytes, repack, simd)) return JAM_OK;
+            if (try_repack_run(ctx, &q, w, m, k, JAM_QKK, rp_sbbytes,
+                               (size_t)(ldw / JAM_QKK) * kbytes, repack, simd)) return JAM_OK;
             return run_quant(ctx, &q, m, NULL, floor_);   /* repack alloc failed -> float floor (simd is the group-indexed rp kernel, can't run on the raw weight) */
         }
         jam_run(ctx, m, simd, &q);
@@ -541,7 +557,8 @@ static jam_status jam_mm_run(jam_ctx* ctx,
             if (ctx->q8_0_repack && ctx->q8_0_rp_kernel && n > 1 && ensure_qscratch(ctx, n, k)) {
                 q.aq = (int8_t*) ctx->q_aq; q.ad = (float*) ctx->q_ad; q.asum = NULL;   /* no min term */
                 jam_run(ctx, n, jam_q8_0_requant, &q);
-                if (try_repack_run(ctx, &q, w, m, k, JAM_QK, sizeof(jam_q8_0_rpblock), ctx->q8_0_repack, ctx->q8_0_rp_kernel)) return JAM_OK;
+                if (try_repack_run(ctx, &q, w, m, k, JAM_QK, sizeof(jam_q8_0_rpblock),
+                                   (size_t)(ldw / JAM_QK) * 34, ctx->q8_0_repack, ctx->q8_0_rp_kernel)) return JAM_OK;
             }
             return run_quant(ctx, &q, m, ctx->q8_kernel, jam_mm_q8_0_f32_generic);   /* decode / non-VNNI */
         }
