@@ -93,6 +93,37 @@ void jam_q8_0_requant(void* arg, int rb, int re, int tid) {
     }
 }
 
+/* Per-256 (Q8_K-style) activation requant for the avx2 int-scale K-quant path: ONE float scale per
+ * 256-element super-block (J->ad[j*nb + sb]) so the only per-sub-block scale left is the integer 6-bit
+ * weight scale (kernel applies it via madd_epi16). Per-32 int8 sums in J->asum for the min term. */
+void jam_q8k_requant(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const float* B = (const float*) J->b;
+    const int ldb = J->ldb, k = J->k, nb = J->nb;
+    const int sblocks = k / 256;
+    for (int j = rb; j < re; ++j) {
+        const float* brow = B + (size_t) j * ldb;
+        int8_t* q = J->aq + (size_t) j * k;
+        for (int sb = 0; sb < sblocks; ++sb) {
+            const float* b = brow + (size_t) sb * 256;
+            float amax = 0.0f;
+            for (int e = 0; e < 256; ++e) { float a = fabsf(b[e]); if (a > amax) amax = a; }
+            float d = amax / 127.0f, id = d > 0.0f ? 1.0f / d : 0.0f;
+            J->ad[(size_t) j * nb + sb] = d;                          /* one scale per super-block */
+            for (int s = 0; s < 8; ++s) {
+                int sum = 0;
+                for (int e = 0; e < 32; ++e) {
+                    int v = (int) lrintf(b[s*32 + e] * id);
+                    if (v > 127) v = 127; else if (v < -128) v = -128;
+                    q[(size_t) sb*256 + s*32 + e] = (int8_t) v; sum += v;
+                }
+                J->asum[(size_t) j * nb + sb*8 + s] = (float) sum;   /* per-32 Σaq for the min term */
+            }
+        }
+    }
+}
+
 /* MXFP4 weight @ F32 activation -> F32, portable reference. Decodes each FP4 nibble to value×2 and folds
  * the ×½ into the block scale (jam_mxfp4_dhalf); dots the EXACT float activation (no requant). */
 void jam_mm_mxfp4_f32_generic(void* arg, int rb, int re, int tid) {

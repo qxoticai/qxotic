@@ -31,6 +31,7 @@ struct jam_ctx {
     jam_task_fn      nvfp4_kernel;   /* best NVFP4 matmul; NULL -> generic (float). No SIMD kernel yet. */
     jam_task_fn      q4_0_kernel;    /* best Q4_0 matmul; NULL -> generic. Same int8 pipeline. */
     jam_task_fn      q4k_kernel;     /* best Q4_K matmul; NULL -> generic (float). int8 dot via aq/ad. */
+    jam_task_fn      q4k_requant;    /* non-NULL -> per-256 (Q8_K) activation requant for q4k_kernel (avx2 int-scale) */
     jam_task_fn      q5k_kernel;     /* best Q5_K matmul; NULL -> generic (float). */
     jam_task_fn      q6k_kernel;     /* best Q6_K matmul; NULL -> generic (float). */
     jam_task_fn      dense_f16_kernel;   /* AVX-512 F16 dense (k%16==0); NULL -> generic floor */
@@ -127,6 +128,8 @@ void jam_mm_q4_0_avx2(void* job, int a_begin, int a_end, int tid);         /* ma
 void jam_mm_q4k_avx2(void* job, int rb, int re, int tid);                  /* K-quant int8 (below VNNI) */
 void jam_mm_q5k_avx2(void* job, int rb, int re, int tid);
 void jam_mm_q6k_avx2(void* job, int rb, int re, int tid);
+void jam_mm_q4k_avx2_is(void* job, int rb, int re, int tid);              /* Q4_K int-scale (needs jam_q8k_requant) */
+void jam_q8k_requant(void* job, int rb, int re, int tid);                 /* per-256 (Q8_K) activation requant */
 void jam_mm_nvfp4_avx2(void* job, int rb, int re, int tid);                /* NVFP4: FP4 LUT + per-16 E4M3 */
 #endif
 #ifdef JAM_HAVE_AVXVNNI
