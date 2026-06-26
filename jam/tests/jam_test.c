@@ -347,6 +347,28 @@ static void suite_layout(int dtype, const char* name, int m, int n, int k) {
     free(WQ); free(WS); free(B); free(Cc); free(Cs); free(Cp);
 }
 
+/* API contract: invalid inputs must be rejected with JAM_EINVAL — not silently mis-computed or crashed.
+ * Zero coverage before; the validation in jam_mm (null ptrs, non-positive dims, ldw/lda<k, ldc<m) is exactly
+ * the kind of guard that rots silently. Runs on the global context; the checks fire before any dispatch. */
+static void suite_contract(void) {
+    int m=2, n=2, k=32;                          /* k%32==0 so a valid call actually runs */
+    float W[64], A[64], C[8];
+    jam_ref_fill(W,(size_t)m*k,1); jam_ref_fill(A,(size_t)n*k,2);
+    #define WANT(label, call, exp) do { ++g_checks; int st_=(call); \
+        if (st_!=(exp)) { printf("  [FAIL] contract %-22s got=%d want=%d\n", label, st_, exp); ++g_fail; } } while(0)
+    WANT("valid baseline",  jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k), JAM_OK);
+    WANT("null weight",     jam_mm(NULL, NULL, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k), JAM_EINVAL);
+    WANT("null activation", jam_mm(NULL, W, JAM_F32, k, NULL, JAM_F32, k, C, JAM_F32, m, m, n, k), JAM_EINVAL);
+    WANT("null output",     jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, NULL, JAM_F32, m, m, n, k), JAM_EINVAL);
+    WANT("k<=0",            jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, 0), JAM_EINVAL);
+    WANT("m<=0",            jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, 0, n, k), JAM_EINVAL);
+    WANT("n<=0",            jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, 0, k), JAM_EINVAL);
+    WANT("ldw<k",           jam_mm(NULL, W, JAM_F32, k-1, A, JAM_F32, k, C, JAM_F32, m, m, n, k), JAM_EINVAL);
+    WANT("lda<k",           jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k-1, C, JAM_F32, m, m, n, k), JAM_EINVAL);
+    WANT("ldc<m",           jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m-1, m, n, k), JAM_EINVAL);
+    #undef WANT
+}
+
 int main(void) {
     /* one context per ISA level (capped), at 1 and 3 threads — covers every kernel the CPU supports. */
     for (unsigned L=0; L<JAM_ISA_LEVELS_N; ++L) { add_ctx(jam_isa_levels[L],1); add_ctx(jam_isa_levels[L],3); }
@@ -387,6 +409,8 @@ int main(void) {
         suite_layout(JAM_BF16,  "BF16",  37, nn, 80);
         suite_layout(JAM_F32,   "F32",   37, nn, 80);
     }
+
+    suite_contract();   /* invalid-input error returns (context-independent) */
 
     for (int c=0;c<NCTX;c++) if (CTX[c].c) jam_ctx_destroy(CTX[c].c);
 
