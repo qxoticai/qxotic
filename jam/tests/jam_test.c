@@ -486,6 +486,14 @@ static void suite_api(void) {
     jam_forget_weight(NULL, W); jam_forget_weight(d, (const void*)0x1234);
     OK("forget no-op survived", 1);
 
+    /* jam_global_destroy: frees the global; a later jam_mm(NULL) lazily re-creates it; idempotent */
+    OK("global mm pre-destroy",   jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k) == JAM_OK);
+    jam_global_destroy();
+    OK("global re-create",        jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k) == JAM_OK);
+    OK("global usable post-recreate", jam_active_isa(NULL) >= JAM_ISA_GENERIC && !strcmp(jam_ctx_name(NULL), "global"));
+    jam_global_destroy(); jam_global_destroy();   /* double-destroy + destroy-when-absent -> no-op, no crash */
+    OK("global_destroy idempotent", 1);
+
     jam_ctx_destroy(d); jam_ctx_destroy(g); jam_ctx_destroy(r);
     #undef OK
 }

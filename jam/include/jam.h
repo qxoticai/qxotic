@@ -137,6 +137,14 @@ const char* jam_ctx_name(const jam_ctx* ctx);    /* the context's label ("" if u
  * repack. No-op if `w` was never cached. Not safe to call concurrently with jam_mm on the same context. */
 void jam_forget_weight(jam_ctx* ctx, const void* w);
 
+/* Destroy the process-global context (the one jam_mm(NULL,...) uses) and free its pool + scratch. A no-op
+ * if it was never created; a later jam_mm(NULL,...) lazily re-creates it (idempotent). Most callers never
+ * need this — the global is a reachable singleton, not a leak. Call it for a clean teardown: a plugin host
+ * BEFORE dlclose (else each load/unload accumulates one), or a JVM host from a shutdown hook. It is NOT run
+ * automatically (joining the pool threads from a library destructor is unsafe during VM teardown). NOT safe
+ * to call concurrently with any jam_mm(NULL,...). */
+void jam_global_destroy(void);
+
 #ifdef __cplusplus
 }
 #endif
