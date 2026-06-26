@@ -32,8 +32,16 @@ struct jam_ctx {
     jam_task_fn      q4_0_kernel;    /* best Q4_0 matmul; NULL -> generic. Same int8 pipeline. */
     jam_task_fn      q4k_kernel;     /* best Q4_K matmul; NULL -> generic (float). int8 dot via aq/ad. */
     jam_task_fn      q4k_requant;    /* non-NULL -> per-256 (Q8_K) activation requant for q4k_kernel (avx2 int-scale) */
+    void (*q4k_repack)(const void*, int, int, int, void*);   /* non-NULL -> cached weight-repack for q4k_kernel (avx2 8x8) */
+    struct jam_rpentry { const void* w; int m, k; void (*repack)(const void*,int,int,int,void*); void* buf; } *rp_cache;
+                                          /* repacked-weight cache, keyed on (weight ptr, shape, repack fn) */
+    int rp_cache_n, rp_cache_cap;
     jam_task_fn      q5k_kernel;     /* best Q5_K matmul; NULL -> generic (float). */
+    jam_task_fn      q5k_requant;    /* non-NULL -> per-256 requant for the q5k cached-repack kernel */
+    void (*q5k_repack)(const void*, int, int, int, void*);   /* non-NULL -> cached weight-repack for q5k_kernel */
     jam_task_fn      q6k_kernel;     /* best Q6_K matmul; NULL -> generic (float). */
+    jam_task_fn      q6k_requant;    /* non-NULL -> per-256 requant for the q6k cached-repack kernel */
+    void (*q6k_repack)(const void*, int, int, int, void*);   /* non-NULL -> cached weight-repack for q6k_kernel */
     jam_task_fn      dense_f16_kernel;   /* AVX-512 F16 dense (k%16==0); NULL -> generic floor */
     jam_task_fn      dense_bf16_kernel;  /* AVX-512 BF16 dense (k%16==0); NULL -> generic floor */
 
@@ -129,7 +137,19 @@ void jam_mm_q4k_avx2(void* job, int rb, int re, int tid);                  /* K-
 void jam_mm_q5k_avx2(void* job, int rb, int re, int tid);
 void jam_mm_q6k_avx2(void* job, int rb, int re, int tid);
 void jam_mm_q4k_avx2_is(void* job, int rb, int re, int tid);              /* Q4_K int-scale (needs jam_q8k_requant) */
-void jam_q8k_requant(void* job, int rb, int re, int tid);                 /* per-256 (Q8_K) activation requant */
+/* Cached-repack Q4_K: one super-block (8 features) laid out for the 8-feature-wide avx2 gemm. The producer
+ * (jam_q4k_repack8) and consumer (jam_mm_q4k_rp_avx2) share this struct so the layout lives in one place. */
+typedef struct { float d[8], dmin[8]; uint8_t sc[64], mn[64], qs[1024]; } jam_q4k_rpblock;  /* qs=[8sub][8grp][16] nibbles */
+typedef struct { float d[8], dmin[8]; uint8_t sc[64], mn[64], qs[2048]; } jam_q5k_rpblock;  /* qs=[8sub][8grp][32] 5-bit vals */
+void jam_q4k_repack8(const void* w, int rows0, int re, int sblocks, void* out);  /* repack 8 features (Q4_K) for cached gemm */
+void jam_mm_q4k_rp_avx2(void* job, int rb, int re, int tid);             /* cached-repack Q4_K gemm (rb..re = groups) */
+void jam_q5k_repack8(const void* w, int rows0, int re, int sblocks, void* out);  /* repack 8 features (Q5_K) for cached gemm */
+void jam_mm_q5k_rp_avx2(void* job, int rb, int re, int tid);             /* cached-repack Q5_K gemm (rb..re = groups) */
+typedef struct { float d[8]; int8_t sc[128]; uint8_t qs[2048]; } jam_q6k_rpblock;  /* sc=[16sub][8feat], qs=[16sub][4grp][32] qv */
+void jam_q6k_repack8(const void* w, int rows0, int re, int sblocks, void* out);  /* repack 8 features (Q6_K) for cached gemm */
+void jam_mm_q6k_rp_avx2(void* job, int rb, int re, int tid);             /* cached-repack Q6_K gemm (rb..re = groups) */
+void jam_q8k_requant(void* job, int rb, int re, int tid);                 /* per-256 (Q8_K) activation requant, per-32 sums */
+void jam_q6k_requant(void* job, int rb, int re, int tid);                 /* per-256 requant with per-16 sums (Q6_K bias) */
 void jam_mm_nvfp4_avx2(void* job, int rb, int re, int tid);                /* NVFP4: FP4 LUT + per-16 E4M3 */
 #endif
 #ifdef JAM_HAVE_AVXVNNI
