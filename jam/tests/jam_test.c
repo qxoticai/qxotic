@@ -347,6 +347,43 @@ static void suite_layout(int dtype, const char* name, int m, int n, int k) {
     free(WQ); free(WS); free(B); free(Cc); free(Cs); free(Cp);
 }
 
+/* Saturation / extreme inputs for the Q8_0 int8 dot — the one place a real accumulator cliff lives. Weights
+ * AND activations at constant magnitude so EVERY value quantizes to ±127: this maximizes the maddubs int16
+ * intermediate to 127·127·2 = 32258 (just under 32767 — the exact margin the sign-trick |a|·sign(w) buys vs
+ * the naive (a+128) path, which would overflow to 64770), and maxes the vpdpbusd int32 accumulation. mode 1
+ * is a huge-dynamic-range block (one ±max, rest ~0) that drives the requant clamp. Random data never sits
+ * here. Reference = the requant-B dot (== exact for these inputs); an int16 wrap shows as a huge error or NaN. */
+static void suite_extreme(int m, int n, int k, int mode) {
+    int nb=k/32;
+    float* W=malloc(4llu*(size_t)m*k); float* B=malloc(4llu*(size_t)n*k); float* C=malloc(4llu*(size_t)m*n);
+    double* R=malloc(8llu*(size_t)m*n);
+    for (size_t i=0;i<(size_t)m*k;i++) W[i] = (((i ^ (i>>3)) & 1) ? -8.0f : 8.0f);            /* |W|=8 -> qs=±127 */
+    if (mode==0) for (size_t i=0;i<(size_t)n*k;i++) B[i] = (((i ^ (i>>2)) & 1) ? -8.0f : 8.0f); /* qa=±127 */
+    else         for (size_t i=0;i<(size_t)n*k;i++) B[i] = (i%32==0) ? 1.0e4f : 1.0e-3f;        /* dyn range */
+    jam_ref_blk* WQ = jam_ref_quant_q8_0(W,m,k);
+    for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
+        double s=0;
+        for (int b=0;b<nb;b++) {
+            jam_ref_blk* w=&WQ[(size_t)i*nb+b]; float d=jam_ref_h2f(w->d); const float* bb=B+(size_t)j*k+b*32;
+            float amax=0; for (int e=0;e<32;e++){ float a=fabsf(bb[e]); if(a>amax)amax=a; }
+            float dB=amax/127.f, id=dB>0?1.f/dB:0.f;
+            for (int e=0;e<32;e++){ int qb=(int)lrintf(bb[e]*id); if(qb>127)qb=127; else if(qb<-128)qb=-128; s += (double)d*dB*w->qs[e]*qb; }
+        }
+        R[(size_t)i*n+j]=s;
+    }
+    for (int c=0;c<NCTX;c++) {
+        ++g_checks; memset(C,0,4llu*(size_t)m*n);
+        int st=jam_mm(CTX[c].c, WQ, JAM_Q8_0, k, B, JAM_F32, k, C, JAM_F32, m, m, n, k);
+        int bad=0;
+        for (int i=0;i<m;i++) for (int j=0;j<n;j++) {
+            double kr=C[(size_t)j*m+i], ref=R[(size_t)i*n+j];
+            if (!(kr==kr) || fabs(kr-ref) > 1e-2 + 1e-3*fabs(ref)) ++bad;   /* NaN or int16-wrap -> huge error */
+        }
+        if (st||bad){ printf("  [FAIL] Q8x%d  %-15s %dx%dx%d bad=%d st=%d\n",mode,CTX[c].lbl,m,n,k,bad,st); ++g_fail; }
+    }
+    free(W);free(B);free(C);free(R);free(WQ);
+}
+
 /* API contract: invalid inputs must be rejected with JAM_EINVAL — not silently mis-computed or crashed.
  * Zero coverage before; the validation in jam_mm (null ptrs, non-positive dims, ldw/lda<k, ldc<m) is exactly
  * the kind of guard that rots silently. Runs on the global context; the checks fire before any dispatch. */
@@ -410,6 +447,13 @@ int main(void) {
         suite_layout(JAM_F32,   "F32",   37, nn, 80);
     }
 
+    /* extreme/saturation: drive the Q8_0 int8 dot to its ±127 accumulator edges + the requant clamp,
+     * partial m, prefill (rp/band) + gemv (floor/dot). */
+    for (int mode=0; mode<2; mode++) {
+        suite_extreme(37, 16, 256, mode);   /* prefill: maddubs/vpdpbusd 8-wide + the avx512 band */
+        suite_extreme(33,  1, 512, mode);   /* gemv: the dot kernels + the generic floor */
+        suite_extreme(64,  4, 128, mode);
+    }
     suite_contract();   /* invalid-input error returns (context-independent) */
 
     for (int c=0;c<NCTX;c++) if (CTX[c].c) jam_ctx_destroy(CTX[c].c);
