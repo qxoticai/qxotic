@@ -414,6 +414,79 @@ static void suite_adversarial(int dtype, const char* name, int m, int n, int k) 
     free(WQ); free(B); free(C);
 }
 
+/* ---- API surface: context lifecycle (global + explicit), config, dispatch errors, concurrency guard ----
+ * A host parallel_for that, the first time jam calls it (so we're INSIDE a jam_mm, busy=1), re-enters jam_mm
+ * on the SAME context — which must return JAM_EBUSY (the serial-stream guard) — then runs the real work. */
+static jam_ctx* g_reentry_ctx; static int g_reentry_status;
+static void reentry_pfor(void* pool, int n, jam_task_fn fn, void* arg) {
+    (void) pool;
+    if (g_reentry_status == 99) {
+        float w[32], a[32], c[1];
+        g_reentry_status = jam_mm(g_reentry_ctx, w, JAM_F32, 32, a, JAM_F32, 32, c, JAM_F32, 1, 1, 1, 32);
+    }
+    for (int i = 0; i < n; i++) fn(arg, i, i+1, 0);
+}
+
+static void suite_api(void) {
+    #define OK(label, cond) do { ++g_checks; if (!(cond)) { printf("  [FAIL] api  %s\n", label); ++g_fail; } } while(0)
+    float W[256], A[256], C[64], Cd[64], Cg[64]; for (int i=0;i<256;i++){ W[i]=0.1f*i; A[i]=0.2f*i; }
+    int m=4, n=2, k=64;
+
+    /* jam_isa_name: known + out-of-range -> "unknown" */
+    OK("isa_name generic", !strcmp(jam_isa_name(JAM_ISA_GENERIC), "generic"));
+    OK("isa_name avx2",    !strcmp(jam_isa_name(JAM_ISA_AVX2), "avx2"));
+    OK("isa_name unknown", !strcmp(jam_isa_name((jam_isa)9999), "unknown"));
+
+    /* context creation: NULL cfg -> defaults (best ISA, unnamed); explicit cap + name; destroy(NULL) safe */
+    jam_ctx* d = jam_ctx_create(NULL);
+    OK("create(NULL) non-null",   d != NULL);
+    OK("create(NULL) best ISA",   jam_active_isa(d) >= JAM_ISA_GENERIC);
+    OK("create(NULL) unnamed",    !strcmp(jam_ctx_name(d), ""));
+    jam_config cfg; memset(&cfg,0,sizeof cfg); cfg.max_isa = JAM_ISA_GENERIC; cfg.name = "apitest";
+    jam_ctx* g = jam_ctx_create(&cfg);
+    OK("create explicit non-null", g != NULL);
+    OK("max_isa caps active",      jam_active_isa(g) == JAM_ISA_GENERIC);
+    OK("name stored",              !strcmp(jam_ctx_name(g), "apitest"));
+    jam_ctx_destroy(NULL);   /* must not crash */
+    OK("destroy(NULL) survived", 1);
+
+    /* global (NULL) context: lazily built, named "global", singleton, usable, independent of explicit ctxs */
+    OK("global name",        !strcmp(jam_ctx_name(NULL), "global"));
+    jam_isa gi = jam_active_isa(NULL);
+    OK("global active valid", gi >= JAM_ISA_GENERIC);
+    OK("global singleton",    jam_active_isa(NULL) == gi);
+    OK("global mm ok",        jam_mm(NULL, W, JAM_F32, k, A, JAM_F32, k, C,  JAM_F32, m, m, n, k) == JAM_OK);
+    OK("explicit-d mm ok",    jam_mm(d,    W, JAM_F32, k, A, JAM_F32, k, Cd, JAM_F32, m, m, n, k) == JAM_OK);
+    OK("explicit-g mm ok",    jam_mm(g,    W, JAM_F32, k, A, JAM_F32, k, Cg, JAM_F32, m, m, n, k) == JAM_OK);
+    int agree=1; for (int i=0;i<m*n;i++) {   /* same result, every ctx (g is the scalar floor -> ULP slack) */
+        double tol = 1e-2 + 1e-4*fabs((double)C[i]);
+        if (fabs((double)(C[i]-Cd[i])) > tol || fabs((double)(C[i]-Cg[i])) > tol) agree=0;
+    }
+    OK("contexts agree", agree);
+
+    /* dispatch errors -> JAM_EUNSUPPORTED (distinct from the EINVAL input-validation in suite_contract) */
+    OK("unknown wt",  jam_mm(d, W, JAM_Q2_K, k,  A, JAM_F32, k,  C, JAM_F32, m, m, n, k)  == JAM_EUNSUPPORTED);
+    OK("at != F32",   jam_mm(d, W, JAM_F32,  k,  A, JAM_F16, k,  C, JAM_F32, m, m, n, k)  == JAM_EUNSUPPORTED);
+    OK("ct != F32",   jam_mm(d, W, JAM_F32,  k,  A, JAM_F32, k,  C, JAM_F16, m, m, n, k)  == JAM_EUNSUPPORTED);
+    OK("Q8_0 k%32!=0", jam_mm(d, W, JAM_Q8_0, 48, A, JAM_F32, 48, C, JAM_F32, m, m, n, 48) == JAM_EUNSUPPORTED);
+
+    /* concurrency: a re-entrant jam_mm on a context already in flight must get JAM_EBUSY (serial stream) */
+    memset(&cfg,0,sizeof cfg); cfg.parallel_for = reentry_pfor; cfg.name = "reentry";
+    jam_ctx* r = jam_ctx_create(&cfg);
+    OK("host-pool ctx non-null", r != NULL);
+    g_reentry_ctx = r; g_reentry_status = 99;
+    int outer = jam_mm(r, W, JAM_F32, k, A, JAM_F32, k, C, JAM_F32, m, m, n, k);
+    OK("outer mm ok",        outer == JAM_OK);
+    OK("re-entrant -> EBUSY", g_reentry_status == JAM_EBUSY);
+
+    /* jam_forget_weight: global ctx + never-cached pointer must be safe no-ops */
+    jam_forget_weight(NULL, W); jam_forget_weight(d, (const void*)0x1234);
+    OK("forget no-op survived", 1);
+
+    jam_ctx_destroy(d); jam_ctx_destroy(g); jam_ctx_destroy(r);
+    #undef OK
+}
+
 /* API contract: invalid inputs must be rejected with JAM_EINVAL — not silently mis-computed or crashed.
  * Zero coverage before; the validation in jam_mm (null ptrs, non-positive dims, ldw/lda<k, ldc<m) is exactly
  * the kind of guard that rots silently. Runs on the global context; the checks fire before any dispatch. */
@@ -491,6 +564,7 @@ int main(void) {
     suite_adversarial(JAM_Q6_K,"Q6_K",37,8,256);  suite_adversarial(JAM_F16,"F16",37,8,80);
     suite_adversarial(JAM_BF16,"BF16",37,8,80);   suite_adversarial(JAM_F32,"F32",37,8,80);
 
+    suite_api();        /* context lifecycle (global + explicit), config, EUNSUPPORTED/EBUSY, forget */
     suite_contract();   /* invalid-input error returns (context-independent) */
 
     for (int c=0;c<NCTX;c++) if (CTX[c].c) jam_ctx_destroy(CTX[c].c);
