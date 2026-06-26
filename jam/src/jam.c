@@ -357,6 +357,21 @@ static jam_ctx* jam_global(void) {
     return g_global;
 }
 
+/* Destroy the lazy global context (no-op if never created). A later jam_mm(NULL,...) re-creates it — we
+ * reset the once-control so global_init can run again. Intended for shutdown / before dlclose; the caller
+ * must ensure no jam_mm(NULL,...) is in flight (same single-stream contract as the global itself).
+ *
+ * NOT wired to an __attribute__((destructor)): jam_ctx_destroy JOINS the pool's worker threads, and joining
+ * threads from a library destructor during process / JVM teardown is unsafe (it crashed the JNI test's VM on
+ * exit). So this is explicit-only — a C plugin host calls it before dlclose; a JVM host from a shutdown hook
+ * while threads are still healthy. The global is otherwise a reachable singleton (not a leak) for the
+ * process lifetime. */
+void jam_global_destroy(void) {
+    if (g_global) { jam_ctx_destroy(g_global); g_global = NULL; }
+    static const pthread_once_t once_init = PTHREAD_ONCE_INIT;
+    g_once = once_init;
+}
+
 jam_isa jam_active_isa(const jam_ctx* ctx) {
     if (!ctx) ctx = jam_global();
     return ctx ? ctx->active : JAM_ISA_GENERIC;
