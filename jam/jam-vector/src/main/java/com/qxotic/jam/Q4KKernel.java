@@ -79,7 +79,7 @@ public final class Q4KKernel {
             float[] band = BandGemm.bandScratch(BandGemm.MR * k);
             for (int i = 0; i < BandGemm.MR; i++) dequantizeRow(w, wOff + (long) (row0 + i) * k, k, band, i * k);
             int s = 0;
-            for (; s + BandGemm.NR <= n; s += BandGemm.NR) BandGemm.gemm512Band3x3(band, k, a, aBase, o, oBase, aStride, oStride, row0, s);
+            for (; s + BandGemm.NR <= n; s += BandGemm.NR) BandGemm.band(band, k, a, aBase, o, oBase, aStride, oStride, row0, s);
             for (; s < n; s++) for (int i = 0; i < BandGemm.MR; i++)
                 BandGemm.store(o, oBase, (long) s * oStride + row0 + i, BandGemm.dotDeq(band, i * k, k, a, aBase, (long) s * aStride));
         });

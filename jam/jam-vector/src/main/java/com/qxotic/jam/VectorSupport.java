@@ -48,6 +48,10 @@ final class VectorSupport {
         default -> 1; // 3x4
     };
 
+    /** True when the JIT keeps wide vector tiles (>=16 live vectors) spill-free — gates both the Q8_0 4x4
+     *  tile and the {@link BandGemm} 4x4 default (see {@link #jitHandlesWideTile}). */
+    static final boolean WIDE_TILE = jitHandlesWideTile();
+
     private static int autoTileCode() {
         String arch = System.getProperty("os.arch", "").toLowerCase();
         if (arch.contains("aarch64") || arch.startsWith("arm")) return 10;   // ARM NEON 4x4
