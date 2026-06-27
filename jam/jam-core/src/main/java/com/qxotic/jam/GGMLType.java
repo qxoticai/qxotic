@@ -1,16 +1,14 @@
 package com.qxotic.jam;
 
 /**
- * INTERNAL implementation convenience — package-private, NOT part of jam's public API. The public surface is
- * the {@code int} dtype tags on {@link JAM} (which mirror GGML's {@code ggml_type}); this enum just gathers
- * their block geometry in one place, used only by the Java-side bounds check in {@link JAM#mm}. It is never
- * exposed in a public signature.
+ * INTERNAL dtype geometry — elements-per-block + bytes-per-block of jam's supported weight dtypes. NOT public
+ * API: package-private, but shared across the jam-* modules — they all live in the {@code com.qxotic.jam}
+ * package, so same-package access works on the classpath (jam-native's bounds check, jam-scalar/jam-vector's
+ * decode). The public dtype surface is the {@code int} tags on {@link JAM} (mirroring GGML's {@code ggml_type}).
  *
- * <p>Only the dtypes jam actually runs are listed — a one-to-one mirror of {@link JAM}'s public tags (a test
- * keeps them in sync). Any other code (an unsupported GGUF tag, or garbage) isn't here, so {@link #byCode}
- * returns {@code null} and the bounds check skips it: {@code jam_mm} then returns {@code EUNSUPPORTED}
- * without ever reading the weight. The codes are numerically identical to GGML / GGUF (hence
- * {@code com.qxotic.gguf}), but jam keeps its OWN copy here and carries <b>no dependency</b> on that module.
+ * <p>Only the dtypes jam runs are listed — a one-to-one mirror of {@link JAM}'s tags (a test keeps them in
+ * sync). An unrecognized code -> {@link #byCode} returns {@code null}. Codes match GGML/GGUF, but jam keeps
+ * its OWN copy here and carries <b>no dependency</b> on {@code com.qxotic.gguf}.
  */
 enum GGMLType {
     //    ggml  blockElems  blockBytes

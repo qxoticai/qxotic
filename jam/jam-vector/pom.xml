@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jam</artifactId>
+    <version>0.1.0</version>
+  </parent>
+
+  <artifactId>jam-vector</artifactId>
+  <packaging>jar</packaging>
+
+  <!-- Java Vector API backend: VectorJAM + the per-dtype register-tiled SIMD kernels (relocated from
+       jinfer, segment-based). Picks the tile shape from the CPU + JIT (-Djam.vector.tile). -->
+  <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-core</artifactId>
+      <version>0.1.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.10.2</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- The Vector API (jdk.incubator.vector) must be added at compile + test time. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <compilerArgs><arg>--add-modules</arg><arg>jdk.incubator.vector</arg></compilerArgs>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <argLine>--add-modules jdk.incubator.vector -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0</argLine>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

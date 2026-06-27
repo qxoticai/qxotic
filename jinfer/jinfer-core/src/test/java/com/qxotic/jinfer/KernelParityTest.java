@@ -114,7 +114,7 @@ public final class KernelParityTest {
     // ---- reference + comparison -------------------------------------------------------------
 
     /** Double-precision dot through the scalar decode; also returns sum|a_i*b_i| for tolerance. */
-    private static double[] refDot(FloatTensor a, int aOffset, FloatTensor b, int bOffset, int size) {
+    static double[] refDot(FloatTensor a, int aOffset, FloatTensor b, int bOffset, int size) {
         double sum = 0, sumAbs = 0;
         for (int i = 0; i < size; i++) {
             double p = (double) a.getFloat(aOffset + i) * b.getFloat(bOffset + i);
