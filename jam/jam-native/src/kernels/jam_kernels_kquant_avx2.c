@@ -300,7 +300,13 @@ void jam_q8_0_repack8(const void* Wv, int rows0, int re, int nblocks, size_t w_s
             const uint8_t* wb = W + (size_t)(rows0+f)*w_stride + (size_t) blk*34;
             rp->d[f] = _cvtsh_ss(*(const uint16_t*) wb);
             const int8_t* q = (const int8_t*)(wb + 2);
-            for (int g = 0; g < 8; ++g) for (int e = 0; e < 4; ++e) rp->qs[g*32 + f*4 + e] = q[g*4 + e];
+            /* The downstream sign-trick (abs(a)·sign(w,a) via maddubs/vpdpbusd) needs weights in [-127,127]:
+             * _mm256_sign_epi8(-128, a<0) computes -(-128)=+128 which overflows int8 back to -128, flipping
+             * that term's sign. Real GGUF Q8_0 quantizes into [-127,127]; clamp here to stay correct on any
+             * input (1 LSB on the rare -128). */
+            for (int g = 0; g < 8; ++g) for (int e = 0; e < 4; ++e) {
+                int8_t v = q[g*4 + e]; rp->qs[g*32 + f*4 + e] = v < -127 ? -127 : v;
+            }
         }
     }
 }
