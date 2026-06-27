@@ -12,8 +12,8 @@
   <!-- jam — fast quantized CPU matmul. Split into the API and its backends:
          jam-core    the JAM interface + dtype geometry (pure Java, no native)
          jam-native  the libjam (C) implementation, NativeJAM + JNI/FFM
-         jam-scalar  a pure-Java reference implementation (the dot floor)
-       (jam-vector — the Vector API backend — is a planned sibling.) -->
+         jam-scalar  a pure-Java reference implementation (the dot floor, every dtype)
+         jam-vector  the Java Vector API backend — register-tiled SIMD gemm per dtype -->
   <properties>
     <maven.compiler.release>22</maven.compiler.release>   <!-- FFM (java.lang.foreign) is stable in 22 -->
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
