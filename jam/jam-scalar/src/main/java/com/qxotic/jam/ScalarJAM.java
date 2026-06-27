@@ -55,17 +55,17 @@ public final class ScalarJAM implements JAM {
             case F32:
                 return w.get(JAVA_FLOAT_UNALIGNED, rowBase + (long) l * Float.BYTES);
             case F16:
-                return f16ToFloat(w.get(JAVA_SHORT_UNALIGNED, rowBase + (long) l * 2));
+                return Float.float16ToFloat(w.get(JAVA_SHORT_UNALIGNED, rowBase + (long) l * 2));
             case BF16:
                 return Float.intBitsToFloat((w.get(JAVA_SHORT_UNALIGNED, rowBase + (long) l * 2) & 0xFFFF) << 16);
             case Q8_0: {                                              // block: f16 d, int8 qs[32]
                 long blk = rowBase + (long) (l >> 5) * 34;
-                float d = f16ToFloat(w.get(JAVA_SHORT_UNALIGNED, blk));
+                float d = Float.float16ToFloat(w.get(JAVA_SHORT_UNALIGNED, blk));
                 return d * w.get(JAVA_BYTE, blk + 2 + (l & 31));
             }
             case Q4_0: {                                              // block: f16 d, nibble qs[16]; v = d·(q-8)
                 long blk = rowBase + (long) (l >> 5) * 18;
-                float d = f16ToFloat(w.get(JAVA_SHORT_UNALIGNED, blk));
+                float d = Float.float16ToFloat(w.get(JAVA_SHORT_UNALIGNED, blk));
                 int within = l & 31;
                 int b = w.get(JAVA_BYTE, blk + 2 + (within & 15)) & 0xFF;
                 int q = within < 16 ? (b & 0xF) : (b >> 4);
@@ -74,8 +74,8 @@ public final class ScalarJAM implements JAM {
             case Q4_K: {                                             // 144B: f16 d, f16 dmin, scales[12], qs[128]
                 long blk = rowBase + (long) (l / 256) * 144;
                 int within = l % 256;
-                float d = f16ToFloat(w.get(JAVA_SHORT_UNALIGNED, blk));
-                float dmin = f16ToFloat(w.get(JAVA_SHORT_UNALIGNED, blk + 2));
+                float d = Float.float16ToFloat(w.get(JAVA_SHORT_UNALIGNED, blk));
+                float dmin = Float.float16ToFloat(w.get(JAVA_SHORT_UNALIGNED, blk + 2));
                 int g = within / 64, half = (within % 64) / 32, e = within % 32, scIdx = g * 2 + half;
                 long sm = scaleMinK4(w, blk + 4, scIdx);
                 int qb = w.get(JAVA_BYTE, blk + 16 + (long) g * 32 + e) & 0xFF;
@@ -85,8 +85,8 @@ public final class ScalarJAM implements JAM {
             case Q5_K: {                                             // 176B: d, dmin, scales[12], qh[32], qs[128]
                 long blk = rowBase + (long) (l / 256) * 176;
                 int within = l % 256;
-                float d = f16ToFloat(w.get(JAVA_SHORT_UNALIGNED, blk));
-                float dmin = f16ToFloat(w.get(JAVA_SHORT_UNALIGNED, blk + 2));
+                float d = Float.float16ToFloat(w.get(JAVA_SHORT_UNALIGNED, blk));
+                float dmin = Float.float16ToFloat(w.get(JAVA_SHORT_UNALIGNED, blk + 2));
                 int g = within / 64, half = (within % 64) / 32, e = within % 32, scIdx = g * 2 + half;
                 long sm = scaleMinK4(w, blk + 4, scIdx);
                 int qs = w.get(JAVA_BYTE, blk + 48 + (long) g * 32 + e) & 0xFF;
@@ -99,7 +99,7 @@ public final class ScalarJAM implements JAM {
                 long blk = rowBase + (long) (l / 256) * 210;
                 int within = l % 256;
                 int h = within / 128, w128 = within % 128, j = w128 / 32, ll = w128 % 32;
-                float d = f16ToFloat(w.get(JAVA_SHORT_UNALIGNED, blk + 208));
+                float d = Float.float16ToFloat(w.get(JAVA_SHORT_UNALIGNED, blk + 208));
                 int qlIdx = h * 64 + ((j == 1 || j == 3) ? 32 + ll : ll);
                 int qlByte = w.get(JAVA_BYTE, blk + qlIdx) & 0xFF;
                 int qlnib = j < 2 ? (qlByte & 0xF) : (qlByte >> 4);
@@ -158,20 +158,5 @@ public final class ScalarJAM implements JAM {
         if (x == 0 || x == 0x7F) return 0f;
         int e = (x >> 3) & 0xF, m = x & 0x7;
         return e != 0 ? Math.scalb(1f + m / 8f, e - 7) : Math.scalb((float) m, -9);
-    }
-
-    /** IEEE half -> float. */
-    static float f16ToFloat(short h) {
-        int x = h & 0xFFFF, sign = (x & 0x8000) << 16, exp = (x >> 10) & 0x1F, man = x & 0x3FF;
-        int bits;
-        if (exp == 0) {
-            if (man == 0) bits = sign;                               // +/- 0
-            else { int e = 113; while ((man & 0x400) == 0) { man <<= 1; e--; } man &= 0x3FF; bits = sign | (e << 23) | (man << 13); }
-        } else if (exp == 0x1F) {
-            bits = sign | 0x7F800000 | (man << 13);                  // inf / nan
-        } else {
-            bits = sign | ((exp - 15 + 127) << 23) | (man << 13);
-        }
-        return Float.intBitsToFloat(bits);
     }
 }

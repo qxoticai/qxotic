@@ -35,8 +35,8 @@ abstract class FloatTensor {
     static final int VECTOR_BIT_SIZE = Integer.getInteger("jinfer.VectorBitSize", VectorShape.preferredShape().vectorBitSize());
     static final boolean USE_VECTOR_API = VECTOR_BIT_SIZE != 0;
 
-    // ---- Java tiled-gemm register-tile selection now lives on VectorJAM (the Vector backend owns its own
-    //      JVM/CPU-aware kernel pick, -Djam.vector.tile). The gemm kernels below read VectorJAM.TILE_CODE. ----
+    // ---- The Vector gemm kernels and their JVM/CPU-aware register-tile selection now live in jam-vector
+    //      (VectorSupport.TILE_CODE, -Djam.vector.tile); jinfer's FloatTensor gemm entry points delegate there. ----
 
     static final VectorSpecies<Float> F_SPECIES;
     static final VectorSpecies<Integer> I_SPECIES;
