@@ -82,10 +82,9 @@ public final class JamBackendTest {
     static void gemm(String name, JAM backend, GGMLType t, boolean expectOk) {
         Random rng = new Random(SEED ^ t.ordinal() ^ name.hashCode());
         int m = 104, k = 1024;                     // k multiple of 256 (k-quant super-block) and 32
-        // n in {8,13,16}: tile remainders + a full tile. NOTE n=7 is deliberately omitted — Q8_0 gemm at
-        // seq=7 (below the VNNI threshold) is mis-computed by BOTH jam and FloatTensor.gemm; a pre-existing
-        // bug, independent of the JAM backends (see KernelParityTest's seq=7 failures).
-        for (int n : new int[]{8, 13, 16}) {
+        // n in {7,8,13,16}: n=7 exercises the sign-trick cached-repack path (below the VNNI band threshold),
+        // which mis-handled weight=-128 until the jam-native repack clamp; the rest cover tile remainders + a full tile.
+        for (int n : new int[]{7, 8, 13, 16}) {
             FloatTensor w = KernelParityTest.makeQuant(t, m * k, rng);
             F32FloatTensor x = KernelParityTest.makeF32(n * k, rng);
             F32FloatTensor out = F32FloatTensor.allocate(n * m);
