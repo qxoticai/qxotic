@@ -35,7 +35,7 @@ public final class Mxfp4Kernel {
             }
             int s = 0;
             for (; s + BandGemm.NR <= n; s += BandGemm.NR) {
-                BandGemm.gemm512Band3x3(band, k, a, aBase, o, oBase, aStride, oStride, row0, s);
+                BandGemm.band(band, k, a, aBase, o, oBase, aStride, oStride, row0, s);
             }
             for (; s < n; s++) {
                 for (int i = 0; i < BandGemm.MR; i++) {

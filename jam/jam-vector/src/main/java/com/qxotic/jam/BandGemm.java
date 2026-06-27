@@ -19,8 +19,44 @@ final class BandGemm {
 
     private BandGemm() {}
 
-    /** Register-tile of the band: MR weight rows x NR activation columns (9 F32 accumulators on 512-bit). */
-    static final int MR = 3, NR = 3;
+    /** Band register-tile shape: 4x4 (16 F32 accumulators, ~+22% prefill) on JITs that keep it spill-free,
+     *  else 3x3 (9 accumulators) — the same wide-tile gate as the Q8_0 4x4 tile. Override with
+     *  {@code -Djam.vector.band=3x3|4x4}. The dtype kernel dequantizes MR rows per band; the column sweep
+     *  then holds MR*NR F32 accumulators with no per-element decode. */
+    static final String BAND = System.getProperty("jam.vector.band", VectorSupport.WIDE_TILE ? "4x4" : "3x3");
+    static final int MR = BAND.equals("3x3") ? 3 : 4;
+    static final int NR = BAND.equals("3x3") ? 3 : 4;
+
+    /** Sweep one MR x NR band; constant-folds to the selected shape ({@link #BAND} is static final). */
+    static void band(float[] w, int dim1, MemorySegment a, long aBase, MemorySegment o, long oBase,
+                     int aStride, int oStride, int row0, int s0) {
+        if (BAND.equals("3x3")) gemm512Band3x3(w, dim1, a, aBase, o, oBase, aStride, oStride, row0, s0);
+        else gemm512Band4x4(w, dim1, a, aBase, o, oBase, aStride, oStride, row0, s0);
+    }
+
+    static void gemm512Band4x4(float[] w, int dim1, MemorySegment a, long aBase, MemorySegment o, long oBase,
+                               int aStride, int oStride, int row0, int s0) {
+        long b0 = (long) s0 * aStride, b1 = b0 + aStride, b2 = b1 + aStride, b3 = b2 + aStride;
+        FloatVector c00 = FloatVector.zero(F_SPECIES), c01 = FloatVector.zero(F_SPECIES), c02 = FloatVector.zero(F_SPECIES), c03 = FloatVector.zero(F_SPECIES);
+        FloatVector c10 = FloatVector.zero(F_SPECIES), c11 = FloatVector.zero(F_SPECIES), c12 = FloatVector.zero(F_SPECIES), c13 = FloatVector.zero(F_SPECIES);
+        FloatVector c20 = FloatVector.zero(F_SPECIES), c21 = FloatVector.zero(F_SPECIES), c22 = FloatVector.zero(F_SPECIES), c23 = FloatVector.zero(F_SPECIES);
+        FloatVector c30 = FloatVector.zero(F_SPECIES), c31 = FloatVector.zero(F_SPECIES), c32 = FloatVector.zero(F_SPECIES), c33 = FloatVector.zero(F_SPECIES);
+        int len = F_SPECIES.length();
+        for (int kk = 0; kk < dim1; kk += len) {
+            FloatVector w0 = FloatVector.fromArray(F_SPECIES, w, kk), w1 = FloatVector.fromArray(F_SPECIES, w, dim1 + kk);
+            FloatVector w2 = FloatVector.fromArray(F_SPECIES, w, 2 * dim1 + kk), w3 = FloatVector.fromArray(F_SPECIES, w, 3 * dim1 + kk);
+            FloatVector x0 = av(a, aBase, b0 + kk), x1 = av(a, aBase, b1 + kk), x2 = av(a, aBase, b2 + kk), x3 = av(a, aBase, b3 + kk);
+            c00 = w0.fma(x0, c00); c01 = w0.fma(x1, c01); c02 = w0.fma(x2, c02); c03 = w0.fma(x3, c03);
+            c10 = w1.fma(x0, c10); c11 = w1.fma(x1, c11); c12 = w1.fma(x2, c12); c13 = w1.fma(x3, c13);
+            c20 = w2.fma(x0, c20); c21 = w2.fma(x1, c21); c22 = w2.fma(x2, c22); c23 = w2.fma(x3, c23);
+            c30 = w3.fma(x0, c30); c31 = w3.fma(x1, c31); c32 = w3.fma(x2, c32); c33 = w3.fma(x3, c33);
+        }
+        long o0 = (long) s0 * oStride + row0;
+        store(o, oBase, o0, c00.reduceLanes(VectorOperators.ADD)); store(o, oBase, o0 + oStride, c01.reduceLanes(VectorOperators.ADD)); store(o, oBase, o0 + 2L * oStride, c02.reduceLanes(VectorOperators.ADD)); store(o, oBase, o0 + 3L * oStride, c03.reduceLanes(VectorOperators.ADD));
+        store(o, oBase, o0 + 1, c10.reduceLanes(VectorOperators.ADD)); store(o, oBase, o0 + oStride + 1, c11.reduceLanes(VectorOperators.ADD)); store(o, oBase, o0 + 2L * oStride + 1, c12.reduceLanes(VectorOperators.ADD)); store(o, oBase, o0 + 3L * oStride + 1, c13.reduceLanes(VectorOperators.ADD));
+        store(o, oBase, o0 + 2, c20.reduceLanes(VectorOperators.ADD)); store(o, oBase, o0 + oStride + 2, c21.reduceLanes(VectorOperators.ADD)); store(o, oBase, o0 + 2L * oStride + 2, c22.reduceLanes(VectorOperators.ADD)); store(o, oBase, o0 + 3L * oStride + 2, c23.reduceLanes(VectorOperators.ADD));
+        store(o, oBase, o0 + 3, c30.reduceLanes(VectorOperators.ADD)); store(o, oBase, o0 + oStride + 3, c31.reduceLanes(VectorOperators.ADD)); store(o, oBase, o0 + 2L * oStride + 3, c32.reduceLanes(VectorOperators.ADD)); store(o, oBase, o0 + 3L * oStride + 3, c33.reduceLanes(VectorOperators.ADD));
+    }
 
     /** Per-worker F32 scratch holding the row group's dequantized weights; grown on demand, reused. */
     private static final ThreadLocal<float[]> DEQUANT_BAND = new ThreadLocal<>();
