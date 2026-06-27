@@ -463,42 +463,10 @@ final class Q4_0FloatTensor extends SegmentFloatTensor {
 
     static void vectorGemm512(Q4_0FloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
                                        int thatStride, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
-        final int seqTile = Math.max(4, RuntimeFlags.GEMM_SEQ_TILE);
-        final int rowTile = Math.max(2, RuntimeFlags.GEMM_ROW_TILE);
-        final int threads = RuntimeFlags.GEMM_THREADS;
-        final int seqTileCount = (sequenceLength + seqTile - 1) / seqTile;
-        final int rowTileCount = (dim0 + rowTile - 1) / rowTile;
-        int tileCount = rowTileCount * seqTileCount;
-        if (tileCount == 0) {
-            return;
-        }
-        int workers = Math.min(tileCount, Math.max(1, threads));
-        Parallel.parallelFor(0, workers, worker -> {
-            int tileStart = (int) ((long) tileCount * worker / workers);
-            int tileEnd = (int) ((long) tileCount * (worker + 1) / workers);
-            for (int tileIndex = tileStart; tileIndex < tileEnd; tileIndex++) {
-                int rowStart = (tileIndex / seqTileCount) * rowTile;
-                int s0 = (tileIndex % seqTileCount) * seqTile;
-                int rowEnd = Math.min(dim0, rowStart + rowTile);
-                int seqEnd = Math.min(sequenceLength, s0 + seqTile);
-                int row = rowStart;
-                for (; row + 1 < rowEnd; row += 2) {
-                    int s = s0;
-                    for (; s + 3 < seqEnd; s += 4) {
-                        gemm512Tile2x4(thiz, that, out, thatStride, outStride, dim1, thisOffset, row, s);
-                    }
-                    for (; s < seqEnd; s++) {
-                        out.setFloat(s * outStride + row, vectorDot(thiz, thisOffset + row * dim1, that, s * thatStride, dim1));
-                        out.setFloat(s * outStride + row + 1, vectorDot(thiz, thisOffset + (row + 1) * dim1, that, s * thatStride, dim1));
-                    }
-                }
-                for (; row < rowEnd; row++) {
-                    for (int s = s0; s < seqEnd; s++) {
-                        out.setFloat(s * outStride + row, vectorDot(thiz, thisOffset + row * dim1, that, s * thatStride, dim1));
-                    }
-                }
-            }
-        });
+        // Relocated to jam-vector (Q4Kernel). Weight via the raw segment; activation + output via the
+        // GLOBAL_SEGMENT-routed (vseg, vbase). Identical computation — the kernel now lives in jam-vector.
+        com.qxotic.jam.Q4Kernel.gemm(thiz.memorySegment, that.vseg, that.vbase, out.vseg, out.vbase,
+                thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 
     // 2 weight rows x 4 activation columns; nibbles are decoded once per block and shared by
