@@ -10,6 +10,8 @@ import java.util.stream.IntStream;
 
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED;
+import static java.lang.foreign.ValueLayout.JAVA_INT_UNALIGNED;
+import static java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED;
 import static java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED;
 
 /**
@@ -29,6 +31,7 @@ final class VectorSupport {
 
     /** Register-tiling knobs (same defaults as jinfer's GEMM_* tunables). */
     static final int SEQ_TILE = Integer.getInteger("jam.vector.seqTile", 32);
+    static final int SEQ_TILE_QK = Integer.getInteger("jam.vector.seqTileQk", 8);   // k-quants tile narrower
     static final int ROW_TILE = Integer.getInteger("jam.vector.rowTile", 128);
     static final int THREADS  = Integer.getInteger("jam.vector.threads", Runtime.getRuntime().availableProcessors() * 4);
 
@@ -94,6 +97,16 @@ final class VectorSupport {
     /** Read the raw IEEE half (16-bit) at byte offset {@code off} in {@code seg} (the block scale). */
     static short readShort(MemorySegment seg, long off) {
         return seg.get(JAVA_SHORT_UNALIGNED, off);
+    }
+
+    /** Read the little-endian int32 at byte offset {@code off} (k-quant packed scales). */
+    static int readInt(MemorySegment seg, long off) {
+        return seg.get(JAVA_INT_UNALIGNED, off);
+    }
+
+    /** Read the little-endian int64 at byte offset {@code off} (k-quant packed scales). */
+    static long readLong(MemorySegment seg, long off) {
+        return seg.get(JAVA_LONG_UNALIGNED, off);
     }
 
     /** Prefill fan-out: vanilla parallel IntStream (measured-best for the compute-bound gemm). */

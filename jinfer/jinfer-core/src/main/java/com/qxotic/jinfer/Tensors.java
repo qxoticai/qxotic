@@ -904,41 +904,9 @@ final class Q4_KFloatTensor extends SegmentFloatTensor {
 
     static void vectorGemm512(Q4_KFloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
                                       int thatStride, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
-        final int seqTile = Math.max(4, RuntimeFlags.GEMM_SEQ_TILE_QK);
-        final int rowTile = Math.max(2, RuntimeFlags.GEMM_ROW_TILE);
-        final int seqTileCount = (sequenceLength + seqTile - 1) / seqTile;
-        final int rowTileCount = (dim0 + rowTile - 1) / rowTile;
-        int tileCount = rowTileCount * seqTileCount;
-        if (tileCount == 0) {
-            return;
-        }
-        int workers = Math.min(tileCount, Math.max(1, RuntimeFlags.GEMM_THREADS));
-        Parallel.parallelFor(0, workers, worker -> {
-            int tileStart = (int) ((long) tileCount * worker / workers);
-            int tileEnd = (int) ((long) tileCount * (worker + 1) / workers);
-            for (int tileIndex = tileStart; tileIndex < tileEnd; tileIndex++) {
-                int rowStart = (tileIndex / seqTileCount) * rowTile;
-                int s0 = (tileIndex % seqTileCount) * seqTile;
-                int rowEnd = Math.min(dim0, rowStart + rowTile);
-                int seqEnd = Math.min(sequenceLength, s0 + seqTile);
-                int row = rowStart;
-                for (; row + 1 < rowEnd; row += 2) {
-                    int s = s0;
-                    for (; s + 3 < seqEnd; s += 4) {
-                        gemm512Tile2x4(thiz, that, out, thatStride, outStride, dim1, thisOffset, row, s);
-                    }
-                    for (; s < seqEnd; s++) {
-                        out.setFloat(s * outStride + row, vectorDot(thiz, thisOffset + row * dim1, that, s * thatStride, dim1));
-                        out.setFloat(s * outStride + row + 1, vectorDot(thiz, thisOffset + (row + 1) * dim1, that, s * thatStride, dim1));
-                    }
-                }
-                for (; row < rowEnd; row++) {
-                    for (int s = s0; s < seqEnd; s++) {
-                        out.setFloat(s * outStride + row, vectorDot(thiz, thisOffset + row * dim1, that, s * thatStride, dim1));
-                    }
-                }
-            }
-        });
+        // relocated to jam-vector (Q4KKernel)
+        com.qxotic.jam.Q4KKernel.gemm(thiz.memorySegment, that.vseg, that.vbase, out.vseg, out.vbase,
+                thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 
     // 2 weight rows x 4 activation columns: the (scalar, branchy) sub-scale decode and the
@@ -1262,41 +1230,9 @@ final class Q5_KFloatTensor extends SegmentFloatTensor {
 
     static void vectorGemm512(Q5_KFloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
                               int thatStride, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
-        final int seqTile = Math.max(4, RuntimeFlags.GEMM_SEQ_TILE_QK);
-        final int rowTile = Math.max(2, RuntimeFlags.GEMM_ROW_TILE);
-        final int seqTileCount = (sequenceLength + seqTile - 1) / seqTile;
-        final int rowTileCount = (dim0 + rowTile - 1) / rowTile;
-        int tileCount = rowTileCount * seqTileCount;
-        if (tileCount == 0) {
-            return;
-        }
-        int workers = Math.min(tileCount, Math.max(1, RuntimeFlags.GEMM_THREADS));
-        Parallel.parallelFor(0, workers, worker -> {
-            int tileStart = (int) ((long) tileCount * worker / workers);
-            int tileEnd = (int) ((long) tileCount * (worker + 1) / workers);
-            for (int tileIndex = tileStart; tileIndex < tileEnd; tileIndex++) {
-                int rowStart = (tileIndex / seqTileCount) * rowTile;
-                int s0 = (tileIndex % seqTileCount) * seqTile;
-                int rowEnd = Math.min(dim0, rowStart + rowTile);
-                int seqEnd = Math.min(sequenceLength, s0 + seqTile);
-                int row = rowStart;
-                for (; row + 1 < rowEnd; row += 2) {
-                    int s = s0;
-                    for (; s + 3 < seqEnd; s += 4) {
-                        gemm512Tile2x4(thiz, that, out, thatStride, outStride, dim1, thisOffset, row, s);
-                    }
-                    for (; s < seqEnd; s++) {
-                        out.setFloat(s * outStride + row, vectorDot(thiz, thisOffset + row * dim1, that, s * thatStride, dim1));
-                        out.setFloat(s * outStride + row + 1, vectorDot(thiz, thisOffset + (row + 1) * dim1, that, s * thatStride, dim1));
-                    }
-                }
-                for (; row < rowEnd; row++) {
-                    for (int s = s0; s < seqEnd; s++) {
-                        out.setFloat(s * outStride + row, vectorDot(thiz, thisOffset + row * dim1, that, s * thatStride, dim1));
-                    }
-                }
-            }
-        });
+        // relocated to jam-vector (Q5KKernel)
+        com.qxotic.jam.Q5KKernel.gemm(thiz.memorySegment, that.vseg, that.vbase, out.vseg, out.vbase,
+                thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 
     // 2 weight rows x 4 activation columns: identical to Q4_K's tile, plus the 5th bit from qh (per
@@ -1455,35 +1391,9 @@ final class Q6_KFloatTensor extends SegmentFloatTensor {
 
     static void vectorGemm512(Q6_KFloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
                                       int thatStride, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
-        final int seqTile = Math.max(4, RuntimeFlags.GEMM_SEQ_TILE_QK);
-        final int rowTile = Math.max(1, RuntimeFlags.GEMM_ROW_TILE);
-        final int threads = RuntimeFlags.GEMM_THREADS;
-        final int seqTileCount = (sequenceLength + seqTile - 1) / seqTile;
-        final int rowTileCount = (dim0 + rowTile - 1) / rowTile;
-        int tileCount = rowTileCount * seqTileCount;
-        if (tileCount == 0) {
-            return;
-        }
-        int workers = Math.min(tileCount, Math.max(1, threads));
-        Parallel.parallelFor(0, workers, worker -> {
-            int tileStart = (int) ((long) tileCount * worker / workers);
-            int tileEnd = (int) ((long) tileCount * (worker + 1) / workers);
-            for (int tileIndex = tileStart; tileIndex < tileEnd; tileIndex++) {
-                int rowStart = (tileIndex / seqTileCount) * rowTile;
-                int s0 = (tileIndex % seqTileCount) * seqTile;
-                int rowEnd = Math.min(dim0, rowStart + rowTile);
-                int seqEnd = Math.min(sequenceLength, s0 + seqTile);
-                for (int row = rowStart; row < rowEnd; row++) {
-                    int s = s0;
-                    for (; s + 3 < seqEnd; s += 4) {
-                        gemm512Tile1x4(thiz, that, out, thatStride, outStride, dim1, thisOffset, row, s);
-                    }
-                    for (; s < seqEnd; s++) {
-                        out.setFloat(s * outStride + row, vectorDot(thiz, thisOffset + row * dim1, that, s * thatStride, dim1));
-                    }
-                }
-            }
-        });
+        // relocated to jam-vector (Q6KKernel)
+        com.qxotic.jam.Q6KKernel.gemm(thiz.memorySegment, that.vseg, that.vbase, out.vseg, out.vbase,
+                thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 
     // 1 weight row x 4 activation columns: the (expensive) 6-bit unpack + scale multiply is
@@ -3008,30 +2918,9 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
     /** Register-tiled MXFP4 prefill (relocated from the gemm override into VectorMatMul's dispatch). */
     static void vectorGemmMxfp4(MXFP4FloatTensor thiz, F32FloatTensor x, F32FloatTensor of,
                                 int thatStride, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
-        int groups = dim0 / MXFP4_MR;
-        Parallel.parallelFor(0, groups, g -> {
-            int row0 = g * MXFP4_MR;
-            float[] w = bandScratch(MXFP4_MR * dim1);
-            for (int i = 0; i < MXFP4_MR; i++) {
-                dequantizeRow(thiz, thisOffset + (long) (row0 + i) * dim1, dim1, w, i * dim1);
-            }
-            int s = 0;
-            for (; s + MXFP4_NR <= sequenceLength; s += MXFP4_NR) {
-                gemm512Band3x3(w, dim1, x, of, thatStride, outStride, row0, s);
-            }
-            for (; s < sequenceLength; s++) {
-                for (int i = 0; i < MXFP4_MR; i++) {
-                    of.setFloat(s * outStride + row0 + i, dotDeq(w, i * dim1, dim1, x, s * thatStride));
-                }
-            }
-        });
-        for (int row = groups * MXFP4_MR; row < dim0; row++) {  // trailing rows: cheap per-column dots
-            float[] w = bandScratch(dim1);
-            dequantizeRow(thiz, thisOffset + (long) row * dim1, dim1, w, 0);
-            float[] wf = w;
-            int rr = row;
-            Parallel.parallelFor(0, sequenceLength, s -> of.setFloat(s * outStride + rr, dotDeq(wf, 0, dim1, x, s * thatStride)));
-        }
+        // relocated to jam-vector (Mxfp4Kernel)
+        com.qxotic.jam.Mxfp4Kernel.gemm(thiz.memorySegment, x.vseg, x.vbase, of.vseg, of.vbase,
+                thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 
     /** Dequantize one weight row (dim1 elements, dim1 % 32 == 0) into {@code dst} at {@code dstOffset}. */
@@ -3192,25 +3081,9 @@ final class NVFP4FloatTensor extends SegmentFloatTensor {
      *  decode-free 3x3 F32 band sweeps the sequence (same machinery as MXFP4). */
     static void vectorGemm512(NVFP4FloatTensor thiz, F32FloatTensor x, F32FloatTensor of,
                               int thatStride, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
-        final int MR = 3, NR = 3;
-        int groups = dim0 / MR;
-        Parallel.parallelFor(0, groups, g -> {
-            int row0 = g * MR;
-            float[] w = MXFP4FloatTensor.bandScratch(MR * dim1);
-            for (int i = 0; i < MR; i++) dequantizeRow(thiz, thisOffset + (long) (row0 + i) * dim1, dim1, w, i * dim1);
-            int s = 0;
-            for (; s + NR <= sequenceLength; s += NR)
-                MXFP4FloatTensor.gemm512Band3x3(w, dim1, x, of, thatStride, outStride, row0, s);
-            for (; s < sequenceLength; s++)
-                for (int i = 0; i < MR; i++)
-                    of.setFloat(s * outStride + row0 + i, MXFP4FloatTensor.dotDeq(w, i * dim1, dim1, x, s * thatStride));
-        });
-        for (int row = groups * MR; row < dim0; row++) {           // trailing rows: per-column dots
-            float[] w = MXFP4FloatTensor.bandScratch(dim1);
-            dequantizeRow(thiz, thisOffset + (long) row * dim1, dim1, w, 0);
-            float[] wf = w; int rr = row;
-            Parallel.parallelFor(0, sequenceLength, s -> of.setFloat(s * outStride + rr, MXFP4FloatTensor.dotDeq(wf, 0, dim1, x, s * thatStride)));
-        }
+        // relocated to jam-vector (Nvfp4Kernel)
+        com.qxotic.jam.Nvfp4Kernel.gemm(thiz.memorySegment, x.vseg, x.vbase, of.vseg, of.vbase,
+                thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 }
 
