@@ -22,43 +22,8 @@ import java.lang.foreign.MemorySegment;
  */
 final class VectorJAM implements JAM {
 
-    // ---- specialization: register-tile selection, resolved once from -Djam.vector.tile + CPU width + JIT.
-    //      The 7 tensor-class gemm kernels read VectorJAM.TILE_CODE (moved here from FloatTensor). ----
-    static final String TILE = System.getProperty("jam.vector.tile",
-            System.getProperty("jinfer.Q8_0GemmTile", "auto"));   // legacy name still honored
-    /** Constant-foldable codes: 0=3x2,1=3x4,2=4x4,3=2x8,4=8x2,5=1x1,6..9=avx256,10/11=neon,12=scalar. */
-    static final int TILE_CODE = switch (TILE) {
-        case "auto" -> autoTileCode();
-        case "3x2" -> 0; case "4x4" -> 2; case "2x8" -> 3; case "8x2" -> 4; case "1x1" -> 5;
-        case "avx256", "avx256-2x4" -> 6; case "avx256-2x3" -> 7; case "avx256-3x4" -> 8; case "avx256-4x3" -> 9;
-        case "neon", "neon-4x4" -> 10; case "neon-2x4" -> 11; case "scalar", "java" -> 12;
-        default -> 1; // 3x4
-    };
-
-    private static int autoTileCode() {
-        String arch = System.getProperty("os.arch", "").toLowerCase();
-        if (arch.contains("aarch64") || arch.startsWith("arm")) return 10;   // ARM NEON 4x4
-        int width = FloatTensor.USE_VECTOR_API ? FloatTensor.VECTOR_BIT_SIZE : 0;
-        if (width >= 512) return jitHandlesWideTile() ? 2 /* 4x4 */ : 0 /* 3x2 */;
-        if (width >= 256) return 6;   // AVX2 2x4
-        return 12;                    // scalar
-    }
-
-    // 4x4 needs 16 accumulators in registers: Graal spill-free only from jvmci-25.1; HotSpot C2 spills but
-    // they're bandwidth-hidden so 4x4 still wins; unknown VM -> safe 3x2.
-    private static boolean jitHandlesWideTile() {
-        String version = System.getProperty("java.vm.version", "");
-        if (version.contains("jvmci")) {
-            var v = java.util.regex.Pattern.compile("jvmci-(\\d+)\\.(\\d+)").matcher(version);
-            if (v.find()) {
-                int major = Integer.parseInt(v.group(1)), minor = Integer.parseInt(v.group(2));
-                return major > 25 || (major == 25 && minor >= 1);
-            }
-            return false;   // "jvmci-bNN" (25.0-era Graal) caps at zmm0-15
-        }
-        String name = System.getProperty("java.vm.name", "");
-        return name.contains("HotSpot") || name.contains("OpenJDK");
-    }
+    // ---- specialization: the register-tile selection (resolved once from -Djam.vector.tile + CPU width +
+    //      JIT) now lives in jam-vector's VectorSupport.TILE_CODE, which the relocated Q8Kernel reads. ----
 
     /** 512-bit prefill tile present — the precondition for every fast path here (JIT-folded constant). */
     static final boolean IS_512 = FloatTensor.USE_VECTOR_API && FloatTensor.F_SPECIES.vectorBitSize() == 512;

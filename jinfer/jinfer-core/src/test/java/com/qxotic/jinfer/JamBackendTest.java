@@ -37,7 +37,7 @@ public final class JamBackendTest {
         JAM vector = new VectorJAM();
         JAM jam = JamMatMul.tryLoad() ? NativeJAM.global() : null;
         System.out.printf("backends: ScalarJAM, VectorJAM (tile=%s code=%d is512=%b), NativeJAM=%s%n",
-                VectorJAM.TILE, VectorJAM.TILE_CODE, VectorJAM.IS_512, jam != null ? "loaded" : "unavailable");
+                com.qxotic.jam.Q8Kernel.tile(), com.qxotic.jam.Q8Kernel.tileCode(), VectorJAM.IS_512, jam != null ? "loaded" : "unavailable");
 
         // 1. gemm (n>1) correctness — all dtypes through the floor and native; tileable ones through Vector.
         for (GGMLType t : ALL) {
@@ -59,8 +59,8 @@ public final class JamBackendTest {
         crossImpl(scalar, vector, jam);
 
         // 5. tile selection is a valid code and consistent with the vector width.
-        check("TILE_CODE in [0,12]", VectorJAM.TILE_CODE >= 0 && VectorJAM.TILE_CODE <= 12 ? 1 : 0, 1, 0);
-        check("IS_512 => not a scalar/avx256 tile", !VectorJAM.IS_512 || VectorJAM.TILE_CODE <= 5 ? 1 : 0, 1, 0);
+        check("TILE_CODE in [0,12]", com.qxotic.jam.Q8Kernel.tileCode() >= 0 && com.qxotic.jam.Q8Kernel.tileCode() <= 12 ? 1 : 0, 1, 0);
+        check("IS_512 => not a scalar/avx256 tile", !VectorJAM.IS_512 || com.qxotic.jam.Q8Kernel.tileCode() <= 5 ? 1 : 0, 1, 0);
 
         System.out.printf("%d checks, %d failures%n", checks, failures);
         if (failures > 0) System.exit(1);
