@@ -43,5 +43,10 @@
             <artifactId>jam-native</artifactId>   <!-- NativeJAM + the bundled libjam -->
             <version>0.1.0</version>
         </dependency>
+        <dependency>
+            <groupId>com.qxotic</groupId>
+            <artifactId>jam-vector</artifactId>   <!-- VectorJAM + the relocated SIMD kernels -->
+            <version>0.1.0</version>
+        </dependency>
     </dependencies>
 </project>
