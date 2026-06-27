@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jam</artifactId>
+    <version>0.1.0</version>
+  </parent>
+
+  <artifactId>jam-native</artifactId>
+  <packaging>jar</packaging>
+
+  <!-- The libjam (C) backend: NativeJAM + NativeLoader, the CMake-built native library bundled per
+       os.arch, reached via JNI (default) or Panama (-Djam.native.binding=ffm). -->
+  <properties>
+    <native.cmake.executable>cmake</native.cmake.executable>
+    <jam.native.skip>false</jam.native.skip>   <!-- -Djam.native.skip=true to reuse a pre-staged dist/native (cross-platform CI) -->
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-core</artifactId>
+      <version>0.1.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.10.2</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <!-- CMake stages the per-platform lib into dist/native (com/qxotic/jam/native/<os>-<arch>/...); as a
+         resource it lands on the classpath, so NativeLoader finds + loads it exactly as from the fat jar. -->
+    <resources>
+      <resource><directory>dist/native</directory></resource>
+    </resources>
+    <plugins>
+      <!-- Build the native libjam via CMake before resources are processed. Skip with -Djam.native.skip=true. -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.4.1</version>
+        <executions>
+          <execution>
+            <id>cmake-configure</id>
+            <phase>generate-sources</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <skip>${jam.native.skip}</skip>
+              <executable>${native.cmake.executable}</executable>
+              <arguments>
+                <argument>-S</argument><argument>${project.basedir}</argument>
+                <argument>-B</argument><argument>${project.basedir}/build</argument>
+                <argument>-DCMAKE_BUILD_TYPE=Release</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>cmake-build</id>
+            <phase>generate-resources</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <skip>${jam.native.skip}</skip>
+              <executable>${native.cmake.executable}</executable>
+              <arguments>
+                <argument>--build</argument><argument>${project.basedir}/build</argument>
+                <argument>--target</argument><argument>jam</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <argLine>--enable-native-access=ALL-UNNAMED</argLine>   <!-- System.load is "restricted" on JDK 24+ -->
+        </configuration>
+        <executions>
+          <!-- default-test runs the suite through the JNI backend (the default jam.native.binding); this
+               second pass re-runs the SAME suite through the FFM/Panama backend, so both bindings and the
+               jam.native.binding selector are exercised end-to-end. -->
+          <execution>
+            <id>test-ffm</id>
+            <phase>test</phase>
+            <goals><goal>test</goal></goals>
+            <configuration>
+              <argLine>--enable-native-access=ALL-UNNAMED -Djam.native.binding=ffm</argLine>
+              <reportsDirectory>${project.build.directory}/surefire-reports-ffm</reportsDirectory>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

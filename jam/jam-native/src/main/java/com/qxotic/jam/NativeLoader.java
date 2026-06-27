@@ -17,7 +17,7 @@ import java.util.Locale;
  *
  * <p>Overrides, in order:
  * <ol>
- *   <li>{@code -Djam.library.path=/abs/path/to/libjam.so} (or {@code JAM_LIBRARY_PATH}) — load that file directly;</li>
+ *   <li>{@code -Djam.native.library.path=/abs/path/to/libjam.so} (or {@code JAM_NATIVE_LIBRARY_PATH}) — load that file directly;</li>
  *   <li>a bundled resource for {@code <os>-<arch>} — extract &amp; load (the normal path);</li>
  *   <li>fallback {@code System.loadLibrary("jam")} — for dev runs with the lib on {@code java.library.path}.</li>
  * </ol>
@@ -29,7 +29,7 @@ final class NativeLoader {
     static synchronized void load() {
         if (loaded) return;
 
-        String override = config("jam.library.path", "");
+        String override = config("jam.native.library.path", "");
         if (!override.isEmpty()) { System.load(override); loaded = true; return; }
 
         String os = os(), arch = arch(), lib = System.mapLibraryName("jam");   // jam.dll / libjam.dylib / libjam.so

@@ -35,43 +35,8 @@ abstract class FloatTensor {
     static final int VECTOR_BIT_SIZE = Integer.getInteger("jinfer.VectorBitSize", VectorShape.preferredShape().vectorBitSize());
     static final boolean USE_VECTOR_API = VECTOR_BIT_SIZE != 0;
 
-    // ---- Java tiled-gemm (super.gemm) tile selection, picked once at class init from CPU width + JIT.
-    //      4x4 (16 accumulators) wins on AVX-512 under a JIT that keeps them in registers; else narrower.
-    //      (Relocated from JavaKernels when the Kernels interface was replaced by MatMul.) ----
-    static final String GEMM_TILE = System.getProperty("jinfer.Q8_0GemmTile", "auto");
-    // Constant-foldable codes: 0=3x2,1=3x4,2=4x4,3=2x8,4=8x2,5=1x1,6..9=avx256,10/11=neon,12=scalar.
-    static final int GEMM_TILE_CODE = switch (GEMM_TILE) {
-        case "auto" -> autoTileCode();
-        case "3x2" -> 0; case "4x4" -> 2; case "2x8" -> 3; case "8x2" -> 4; case "1x1" -> 5;
-        case "avx256", "avx256-2x4" -> 6; case "avx256-2x3" -> 7; case "avx256-3x4" -> 8; case "avx256-4x3" -> 9;
-        case "neon", "neon-4x4" -> 10; case "neon-2x4" -> 11; case "scalar", "java" -> 12;
-        default -> 1; // 3x4
-    };
-
-    private static int autoTileCode() {
-        String arch = System.getProperty("os.arch", "").toLowerCase();
-        if (arch.contains("aarch64") || arch.startsWith("arm")) return 10;   // ARM NEON 4x4
-        int width = USE_VECTOR_API ? VECTOR_BIT_SIZE : 0;
-        if (width >= 512) return jitHandlesWideTile() ? 2 /* 4x4 */ : 0 /* 3x2 */;
-        if (width >= 256) return 6;   // AVX2 2x4
-        return 12;                    // scalar
-    }
-
-    // 4x4 needs 16 accumulators in registers: Graal spill-free only from jvmci-25.1; HotSpot C2 spills but
-    // they're bandwidth-hidden so 4x4 still wins; unknown VM -> safe 3x2.
-    private static boolean jitHandlesWideTile() {
-        String version = System.getProperty("java.vm.version", "");
-        if (version.contains("jvmci")) {
-            var m = java.util.regex.Pattern.compile("jvmci-(\\d+)\\.(\\d+)").matcher(version);
-            if (m.find()) {
-                int major = Integer.parseInt(m.group(1)), minor = Integer.parseInt(m.group(2));
-                return major > 25 || (major == 25 && minor >= 1);
-            }
-            return false;   // "jvmci-bNN" (25.0-era Graal) caps at zmm0-15
-        }
-        String name = System.getProperty("java.vm.name", "");
-        return name.contains("HotSpot") || name.contains("OpenJDK");
-    }
+    // ---- Java tiled-gemm register-tile selection now lives on VectorJAM (the Vector backend owns its own
+    //      JVM/CPU-aware kernel pick, -Djam.vector.tile). The gemm kernels below read VectorJAM.TILE_CODE. ----
 
     static final VectorSpecies<Float> F_SPECIES;
     static final VectorSpecies<Integer> I_SPECIES;
@@ -2754,7 +2719,7 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
                 int rowEnd = Math.min(dim0, rowStart + rowTile);
                 int seqEnd = Math.min(sequenceLength, s0 + seqTile);
                 int row = rowStart;
-                switch (GEMM_TILE_CODE) {
+                switch (VectorJAM.TILE_CODE) {
                     case 1 -> { // 3x4
                         for (; row + 2 < rowEnd; row += 3) {
                             int s = s0;

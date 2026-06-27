@@ -35,7 +35,12 @@
         </dependency>
         <dependency>
             <groupId>com.qxotic</groupId>
-            <artifactId>jam</artifactId>
+            <artifactId>jam-core</artifactId>     <!-- the JAM interface + dtype tags -->
+            <version>0.1.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.qxotic</groupId>
+            <artifactId>jam-native</artifactId>   <!-- NativeJAM + the bundled libjam -->
             <version>0.1.0</version>
         </dependency>
     </dependencies>

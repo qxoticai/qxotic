@@ -8,7 +8,7 @@
 
 /* int NativeJAM.mmJni(long ctx, long a,int at,int lda, long b,int bt,int ldb, long c,int ct,int ldc, int m,int n,int k)
  *   -> jam_status (0 = OK).  C = A @ Bᵀ.  ctx is a jam_ctx* (0 = global). (The Panama backend calls jam_mm
- *   directly; this JNI shim is the alternative binding, -Djam.binding=jni.) */
+ *   directly; this JNI shim is the alternative binding, -Djam.native.binding=jni.) */
 JNIEXPORT jint JNICALL
 Java_com_qxotic_jam_NativeJAM_mmJni(JNIEnv* env, jclass cls, jlong ctx,
                               jlong a, jint at, jint lda,

@@ -18,10 +18,10 @@ import static java.lang.foreign.ValueLayout.JAVA_SHORT;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests the jam Java API end to end: the native library loads (via NativeLoader), and {@code JAM.global().mm}
+ * Tests the jam Java API end to end: the native library loads (via NativeLoader), and {@code NativeJAM.global().mm}
  * computes R = W @ Aᵀ correctly for F32/F16/Q8_0 weights, bounds-checks its native MemorySegments, and reports
- * the right status for bad/unsupported calls. Operands are off-heap. The native lib is supplied by
- * -Djam.library.path (see pom.xml); the suite runs once per binding (jni + ffm) via two surefire executions.
+ * the right status for bad/unsupported calls. Operands are off-heap. The suite runs once per binding
+ * (jni + ffm) via two surefire passes; the ffm one sets -Djam.native.binding=ffm (see pom.xml).
  */
 class JamTest {
 
@@ -292,7 +292,7 @@ class JamTest {
     }
 
     @Test
-    void configResolvesPropertyThenDefault() {       // -Dprop, else env (JAM_BINDING form), else default
+    void configResolvesPropertyThenDefault() {       // -Dprop, else env (jam.x.y -> JAM_X_Y), else default
         System.setProperty("jam.unit.test.knob", "fromProp");
         try {
             assertEquals("fromProp", NativeLoader.config("jam.unit.test.knob", "def"), "system property wins");

@@ -18,7 +18,7 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
  *
  * <p>{@link #mm} rejects heap segments, bounds-checks each native {@link MemorySegment} against what the
  * kernel touches, and keeps them reachable across the native call. One native {@code jam_mm} is reached via
- * the JNI shim (default) or a Panama downcall, selected once via {@code -Djam.binding} (or {@code JAM_BINDING}).
+ * the JNI shim (default) or a Panama downcall, selected once via {@code -Djam.native.binding} (or {@code JAM_NATIVE_BINDING}).
  *
  * <p><b>Concurrency:</b> a context is a single serial stream — concurrent calls return {@code EBUSY}.
  */
@@ -99,8 +99,8 @@ public final class NativeJAM implements JAM {
         }
     }
 
-    /** {@code -Djam.binding} (or {@code JAM_BINDING}): {@code jni} (default, proven) or {@code ffm} (Panama). */
-    private static final boolean FFM = "ffm".equalsIgnoreCase(NativeLoader.config("jam.binding", "jni"));
+    /** {@code -Djam.native.binding} (or {@code JAM_NATIVE_BINDING}): {@code jni} (default, proven) or {@code ffm} (Panama). */
+    private static final boolean FFM = "ffm".equalsIgnoreCase(NativeLoader.config("jam.native.binding", "jni"));
 
     /** Panama downcall to {@code jam_mm} — built only when the FFM backend is selected; {@code null} under JNI. */
     private static final MethodHandle MM_FFM;

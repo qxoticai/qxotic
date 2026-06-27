@@ -1,25 +1,30 @@
 # jam
 
-[![Java 22+](https://img.shields.io/badge/Java-22%2B-007396?logo=java&logoColor=white)](https://openjdk.org/projects/jdk/22/)
+[![Java 25+](https://img.shields.io/badge/Java-25%2B-007396?logo=java&logoColor=white)](https://openjdk.org/projects/jdk/25/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg?logo=apache)](../LICENSE)
 [![GraalVM](https://img.shields.io/badge/GraalVM-Native_Image-F29111?labelColor=00758F)](https://www.graalvm.org/latest/reference-manual/native-image/)
 ![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
 
-**Java Accelerated Math** -- FAST quantized matrix multiplication for CPUs.
+**JVM Accelerated Math** (or, jokingly, *just a matmul*). Fast quantized matrix multiplication for CPUs,
+from Java or C.
 
-**x86 SSE3/AVX2/AVX-VNNI/AVX-512 · ARM NEON/dotprod/i8mm · Apple Metal · GGUF-native dtypes**
+jam supports Linux, Windows, and macOS, across many instruction sets including AVX256, AVX512, VNNI, NEON,
+and even Metal.
 
 ---
 
 ## Why jam?
 
-- **One op, one job.** `jam_mm` computes `R = W @ A^T`. Decode is just `n == 1`.
-- **Picks the fastest kernel.** Detects CPU features once, binds a kernel pointer. No dispatch overhead.
-- **Always parallel.** Every kernel fans out across threads within a single call.
-- **No conversion.** Block decode and activation requant happen inside the kernel. Weights are
-  byte-compatible with llama.cpp (GGUF `mul_mat` layout).
-- **Fat JAR, zero install.** `NativeLoader` extracts the right `libjam` by `os.arch` at runtime.
-  Override with `-Djam.library.path` or `JAM_LIBRARY_PATH`.
+- **A single op.** `jam_mm` computes `R = W @ Aᵀ`. Matrix-vector products (gemv) are supported implicitly
+  at `n == 1`.
+- **Picks the fastest kernel.** jam detects the supported CPU features/capabilities once and selects the
+  best kernels, with no further per-call dispatch.
+- **Parallel.** Every call runs across multiple threads.
+- **No conversions.** Weights stay in their quantized format, byte-compatible with llama.cpp's `mul_mat`,
+  so a `.gguf` tensor can be passed directly.
+- **Single JAR, no Java dependencies.** It auto-extracts and loads the `jam` native library for the current
+  OS/arch at runtime (override with `-Djam.native.library.path` or `JAM_NATIVE_LIBRARY_PATH`). Which OS/arch builds ship
+  depends on the available native toolchains.
 
 ---
 
@@ -30,52 +35,62 @@
 ```c
 #include <jam.h>
 
-jam_status st = jam_mm(NULL,                // NULL -> global context
-                       W, JAM_Q8_0, in,     // weights      [m x k]
-                       X, JAM_F32,  in,     // activations  [n x k]
-                       Y, JAM_F32,  tokens, // result       [m x n]
-                       out, tokens, in);    // m, n, k
+jam_status st = jam_mm(NULL,             // NULL = the global context
+                       W, JAM_Q8_0, k,   // weights     [m x k]  (row stride k)
+                       X, JAM_F32,  k,   // activations [n x k]
+                       Y, JAM_F32,  m,   // result      [m x n]  (token-major, stride m)
+                       m, n, k);         // R = W @ Aᵀ
 ```
 
 ### Java
 
+`NativeJAM.global()` returns the native context (a `JAM`). Matmul is a bounds-checked call on native
+`MemorySegment`s.
+
 ```java
-int st = JAM.mm(wAddr, JAM.Q8_0, in,        // single native method
-                xAddr, JAM.F32,  in,
-                yAddr, JAM.F32,  tokens,
-                out, tokens, in);            // R = W @ A^T
+JAM jam = NativeJAM.global();
+int st = jam.mm(w, a, r, JAM.Q8_0, m, n, k);                 // contiguous: F32 activations + result
+
+// strided, with byte offsets (zero allocation over one large mmap'd buffer):
+int s2 = jam.mm(w, wOff, JAM.Q8_0, k,   // weight: segment, byte offset, dtype, row stride
+                a, aOff, JAM.F32,  k,   // activations
+                r, rOff, JAM.F32,  m,   // result   ->  R = W @ Aᵀ
+                m, n, k);
 ```
 
-Supported weight dtypes: `F32`, `F16`, `BF16`, `Q4_0`, `Q8_0`, `Q4_K`, `Q5_K`, `Q6_K`, `MXFP4`, `NVFP4`.
-Activations and output are always `F32`.
+`JAM` is a minimal interface; `NativeJAM` is the libjam backend. Implement `JAM` to add another backend,
+such as a Vector API one.
+
+Supported quantizations include `Q4_0`, `Q8_0`, `Q4_K`, `Q5_K`, `Q6_K`, `MXFP4`, and `NVFP4`, plus dense
+`F32`/`F16`/`BF16`. Activations and result are always `F32`. The operands must be **native** segments, not
+heap arrays.
 
 ---
 
 ## Backends
 
-`jam` detects the CPU at context creation and binds the best kernel per path.
-Cap with `JAM_ISA` or `cfg.max_isa`.
+jam detects the CPU and uses the best available kernel. Cap it with `JAM_ISA` or `cfg.max_isa`.
 
-| arch | ISA ladder | Q8_0 dot instruction |
+| arch | ISA ladder | Q8_0 dot |
 |---|---|---|
-| x86 | `sse3` -> `avx2` -> `avx_vnni` -> `avx512` -> `avx512_vnni` | `vpdpbusd` (256/512-bit) |
-| ARM | `neon` -> `dotprod` -> `i8mm` | `sdot` / `smmla` |
+| x86 | `sse3` → `avx2` → `avx_vnni` → `avx512` → `avx512_vnni` | `vpdpbusd` (256/512-bit) |
+| ARM | `neon` → `dotprod` → `i8mm` | `sdot` / `smmla` |
 | GPU | `metal` (Apple, opt-in) | MSL compute |
 
-`JAM_ISA=auto` (default) picks the best. `JAM_ISA=metal` runs on Apple GPU.
-`sve` / `amx` / SME reserved.
+`JAM_ISA=auto` (the default) picks the best; `JAM_ISA=metal` runs on the Apple GPU. SVE, AMX, and SME are
+not yet implemented.
 
 ---
 
 ## Configuration
 
 ```sh
-JAM_NUM_THREADS=16 JAM_ISA=avx2  ./app    # 16 threads, cap at AVX2
-JAM_ISA=metal                    ./app    # Apple GPU
-JAM_DEBUG=1                      ./app    # print CPU features + bound kernels
+JAM_NUM_THREADS=16 JAM_ISA=avx2  ./app   # 16 threads, capped at AVX2
+JAM_ISA=metal                    ./app   # Apple GPU
+JAM_DEBUG=1                      ./app   # print detected features + bound kernels
 ```
 
-Explicit context for per-pool control:
+For per-pool control, create a context explicitly:
 
 ```c
 jam_config cfg = {.nthreads = 8, .max_isa = JAM_ISA_AVX2};
@@ -84,82 +99,45 @@ jam_mm(ctx, /* ... */);
 jam_ctx_destroy(ctx);
 ```
 
-A `jam_ctx` is a serial stream -- one `mm` at a time. For concurrent matmuls, create multiple contexts.
+A `jam_ctx` is a serial stream: one `mm` at a time. For concurrent matmuls, use one context per thread.
 
 ---
 
 ## Build
 
-### Dependencies
+You need **CMake ≥ 3.16**, a **C11 compiler** (clang preferred), and a **JDK ≥ 25** (the current LTS).
+On macOS, `xcode-select --install` covers clang, cmake, and the Metal frameworks. On Windows, clang is
+required (MSVC can't build the SIMD kernels).
 
-| Dep | Debian/Ubuntu | Fedora | Arch | macOS | Windows |
-|---|---|---|---|---|---|---|
-| CMake >= 3.16 | `sudo apt install cmake` | `sudo dnf install cmake` | `sudo pacman -S cmake` | `xcode-select --install` | `choco install cmake` |
-| C11 compiler (clang) | `sudo apt install clang` | `sudo dnf install clang` | `sudo pacman -S clang` | `xcode-select --install` | `choco install llvm` |
-| JDK >= 22 | `sudo apt install openjdk-22-jdk` | `sudo dnf install java-22-openjdk-devel` | `sudo pacman -S jdk-openjdk` | `brew install openjdk@22` | `choco install temurin22` |
-| Ninja | `sudo apt install ninja-build` | `sudo dnf install ninja-build` | `sudo pacman -S ninja` | `brew install ninja` | `choco install ninja` |
-
-macOS: `xcode-select --install` installs clang + cmake + Metal/Foundation frameworks in one command.
-Ninja is optional; install separately with `brew install ninja`.
-Windows: clang is mandatory -- MSVC does not support GCC-style `-m` flags (`-mavx2`, `-mavx512f`, etc.).
-Linux: gcc also works, but clang is recommended for consistency across platforms.
-
-### Build commands
-
-**Maven** (recommended) -- runs cmake configure + build + javac + tests in one shot:
+**Maven** runs cmake, javac, and the tests in one step:
 
 ```sh
-mvn package             # -> dist/jam.jar (native lib auto-built via exec-maven-plugin)
-mvn test                # configure + build + JUnit tests
+mvn package      # -> dist/jam.jar  (native lib built for you)
+mvn test         # configure + build + JUnit
 ```
 
-**Manual** cmake:
+**Or run cmake directly:**
 
 ```sh
 cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build                     # -> build/libjam.so, staged to dist/native/
-./scripts/build-jar.sh                  # -> dist/jam.jar
+cmake --build build           # -> build/libjam.so, staged into dist/native/
+./scripts/build-jar.sh        # -> dist/jam.jar
 ```
 
-**Build options:**
+Flags: `-DJAM_METAL=OFF` (no Metal), `-DJAM_JNI=OFF` (C only), `-DJAM_TESTS=OFF`, `-DJAM_STRIP=ON`.
+`mvn package -Djam.native.skip=true` reuses a pre-staged `dist/native/`.
 
-```sh
-cmake -B build -DJAM_METAL=OFF    # disable Metal GPU backend (macOS only)
-cmake -B build -DJAM_JNI=OFF      # C-only library, no JNI binding
-cmake -B build -DJAM_TESTS=OFF    # skip test/benchmark executables
-cmake -B build -DJAM_STRIP=ON     # strip debug symbols
-mvn package -Djam.native.skip=true       # skip cmake (reuse pre-staged dist/native/)
-```
-
-### Build resilience
-
-Per-ISA kernels live in their own translation units and compile with their own `-m` flags.
-The dispatcher and scalar floor stay at baseline, so the library runs on any CPU.
-
-ISA-specific TUs are guarded by `CMAKE_SYSTEM_PROCESSOR` -- x86 TUs only build on x86-64 hosts,
-ARM TUs only build on aarch64 hosts, Metal only builds on Apple (skip with `-DJAM_METAL=OFF`).
-The build never attempts to cross-compile kernels the host cannot produce.
-
-**Cross-platform JAR assembly** is done by CI (`.github/workflows/build.yml`): 5 OS/arch matrix
-jobs each build natively, upload `dist/native/`, and a final merge job runs `build-jar.sh` to
-produce a single `jam.jar` with libraries for every platform.
+Each host builds only the kernels it can run, and the library picks the best at runtime, so it works on
+any CPU. CI builds each platform natively and merges them into one fat `jam.jar`.
 
 ---
 
 ## Tests
 
 ```sh
-cd build && ctest --output-on-failure    # every kernel, 1 and 3 threads, vs double-precision ref
-./jam_bench [M N K] [iters]              # GMAC/s (compute-bound) and GB/s (bandwidth-bound)
+cd build && ctest --output-on-failure   # every kernel, 1 & 3 threads, vs a double-precision reference
+./jam_bench [M N K] [iters]             # GMAC/s (compute) and GB/s (bandwidth)
 ```
-
----
-
-## What jam does NOT do
-
-- **No tensor allocation.** You provide the buffers.
-- **No quantization.** You quantize weights; jam multiplies them.
-- **No model I/O.** Raw pointers only. GGUF loading is [`gguf`](../gguf)'s job.
 
 ---
 

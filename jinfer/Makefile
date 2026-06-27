@@ -36,17 +36,20 @@ JAVA_MAIN_CLASS = com.qxotic.jinfer.LFM25
 JAR_FILE = jinfer.jar
 
 # External dependencies (fetched from Maven Central into libs/)
-DEPS = libs/gguf-0.1.0.jar libs/toknroll-core-0.1.0.jar libs/toknroll-gguf-0.1.0.jar libs/json-0.1.0.jar libs/jam-0.1.0.jar
-DEPS_CLASSPATH = libs/gguf-0.1.0.jar:libs/toknroll-core-0.1.0.jar:libs/toknroll-gguf-0.1.0.jar:libs/json-0.1.0.jar:libs/jam-0.1.0.jar
+DEPS = libs/gguf-0.1.0.jar libs/toknroll-core-0.1.0.jar libs/toknroll-gguf-0.1.0.jar libs/json-0.1.0.jar libs/jam-core-0.1.0.jar libs/jam-native-0.1.0.jar
+DEPS_CLASSPATH = libs/gguf-0.1.0.jar:libs/toknroll-core-0.1.0.jar:libs/toknroll-gguf-0.1.0.jar:libs/json-0.1.0.jar:libs/jam-core-0.1.0.jar:libs/jam-native-0.1.0.jar
 
 # Multi-module classpath (Maven-compiled)
 MM_CP = jinfer-core/target/classes:jinfer-jinja/target/classes:jinfer-models/target/classes:jinfer-server/target/classes
 
 # jam is the native matmul backend (../jam, sibling in this monorepo) — built+installed locally:
-#   cd ../jam && cmake --build build && mvn -q install -DskipTests
-libs/jam-0.1.0.jar:
+#   cd ../jam && mvn -q install   (jam-core: the JAM API; jam-native: NativeJAM + libjam)
+libs/jam-core-0.1.0.jar:
 	mkdir -p libs
-	cp $(HOME)/.m2/repository/com/qxotic/jam/0.1.0/jam-0.1.0.jar $@
+	cp $(HOME)/.m2/repository/com/qxotic/jam-core/0.1.0/jam-core-0.1.0.jar $@
+libs/jam-native-0.1.0.jar:
+	mkdir -p libs
+	cp $(HOME)/.m2/repository/com/qxotic/jam-native/0.1.0/jam-native-0.1.0.jar $@
 
 libs/%.jar:
 	mkdir -p libs
@@ -80,6 +83,8 @@ MODEL ?= ../models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf
 test: test-compile
 	$(JAVA) $(JAVA_RUNTIME_OPTIONS) -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0 \
 		-cp $(MM_CP):jinfer-core/target/test-classes:$(DEPS_CLASSPATH) com.qxotic.jinfer.KernelParityTest
+	$(JAVA) $(JAVA_RUNTIME_OPTIONS) --enable-native-access=ALL-UNNAMED -Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0 \
+		-cp $(MM_CP):jinfer-core/target/test-classes:$(DEPS_CLASSPATH) com.qxotic.jinfer.JamBackendTest
 	$(JAVA) $(JAVA_RUNTIME_OPTIONS) \
 		-cp $(MM_CP):jinfer-core/target/test-classes:$(DEPS_CLASSPATH) com.qxotic.jinfer.GrammarTest
 	$(JAVA) $(JAVA_RUNTIME_OPTIONS) \
