@@ -118,18 +118,4 @@ final class VectorSupport {
     static float readFloat16(MemorySegment seg, long off) {
         return Float.float16ToFloat(seg.get(JAVA_SHORT_UNALIGNED, off));
     }
-
-    static float f16ToFloat(short h) {
-        int x = h & 0xFFFF, sign = (x & 0x8000) << 16, exp = (x >> 10) & 0x1F, man = x & 0x3FF;
-        int bits;
-        if (exp == 0) {
-            if (man == 0) bits = sign;
-            else { int e = 113; while ((man & 0x400) == 0) { man <<= 1; e--; } man &= 0x3FF; bits = sign | (e << 23) | (man << 13); }
-        } else if (exp == 0x1F) {
-            bits = sign | 0x7F800000 | (man << 13);
-        } else {
-            bits = sign | ((exp - 15 + 127) << 23) | (man << 13);
-        }
-        return Float.intBitsToFloat(bits);
-    }
 }

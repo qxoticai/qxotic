@@ -44,7 +44,7 @@ class ScalarJamTest {
         for (int i = 0; i < v.length; i++) {
             short h = floatToF16((float) RNG.nextGaussian());
             s.set(JAVA_SHORT_UNALIGNED, i * 2L, h);
-            v[i] = ScalarJAM.f16ToFloat(h);                 // the exact value f16 holds
+            v[i] = Float.float16ToFloat(h);                 // the exact value f16 holds (== ScalarJAM's decode)
         }
         return new Weight(JAM.F16, s, v);
     }
