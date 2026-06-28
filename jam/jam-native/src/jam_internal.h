@@ -5,6 +5,21 @@
 #include "jam_cpu.h"  /* jam_cpu_plan (core selection, stored on the ctx for the log) */
 #include <stddef.h>   /* size_t */
 #include <stdint.h>   /* int8_t / int32_t */
+#include <stdlib.h>
+
+/* Portable 64-byte-aligned alloc/free. POSIX uses C11 aligned_alloc (size rounded up to a multiple of the
+ * alignment, as C11 requires) freed with free(); Windows uses _aligned_malloc, which MUST pair with
+ * _aligned_free (never free()). Only the VNNI repack scratch (qs/dw/mw) needs alignment. */
+#if defined(_WIN32)
+#  include <malloc.h>
+static inline void* jam_aligned_alloc(size_t align, size_t size) { return _aligned_malloc(size, align); }
+static inline void  jam_aligned_free(void* p) { _aligned_free(p); }
+#else
+static inline void* jam_aligned_alloc(size_t align, size_t size) {
+    return aligned_alloc(align, (size + align - 1) & ~(align - 1));
+}
+static inline void  jam_aligned_free(void* p) { free(p); }
+#endif
 
 /* ---- internal thread pool (used when no host parallel_for is supplied, e.g. the global ctx) ---- */
 typedef struct jam_pool jam_pool;
