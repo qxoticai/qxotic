@@ -314,10 +314,12 @@ void jam_q8_0_repack8(const void* Wv, int rows0, int re, int nblocks, size_t w_s
     }
 }
 
-/* ---- Q4_0 cached-repack (8-feature-wide). Q4_0 weight is a 4-bit nibble (0..15) with a fixed -8 offset and
- * an f16 per-32-block scale (18-byte block, no min). Dequant each nibble to the SIGNED value (q-8) ∈ [-8,7]
- * here, so the downstream kernel is the bias-free Q8_0 sign-trick maddubs gemm verbatim (-8 folded into the
- * weight, no separate min/bias term). Standard ggml nibble order: low nibble of byte j = elem j, high = j+16. */
+/* ---- Q4_0 cached-repack (8-feature-wide, UNSIGNED nibble + deferred madd). Q4_0 weight is a 4-bit nibble
+ * (0..15) with a fixed -8 offset and an f16 per-32-block scale (18-byte block, no min). Storing the RAW nibble
+ * lets the gemm run maddubs with no sign-trick (abs/sign) — the nibble IS the u8 operand — and because it is
+ * 4-bit the per-group int16 products can be accumulated across the 8 groups (|Σ| <= 8·2·15·128 = 30720 <
+ * 32767) so madd_epi16 runs ONCE per block, not per group. The -8 offset is corrected in float per block via
+ * Σ(q-8)·a = Σq·a - 8·Σa. Standard ggml nibble order: low nibble of byte j = elem j, high = elem j+16. */
 void jam_q4_0_repack8(const void* Wv, int rows0, int re, int nblocks, size_t w_stride, void* outv) {
     const uint8_t* W = (const uint8_t*) Wv; jam_q8_0_rpblock* out = (jam_q8_0_rpblock*) outv;
     int nf = re - rows0 < 8 ? re - rows0 : 8;
@@ -331,7 +333,53 @@ void jam_q4_0_repack8(const void* Wv, int rows0, int re, int nblocks, size_t w_s
             for (int g = 0; g < 8; ++g) for (int e = 0; e < 4; ++e) {
                 int idx = g*4 + e;                                    /* natural element index 0..31 within the block */
                 int v = idx < 16 ? (q[idx] & 0x0F) : (q[idx-16] >> 4);
-                rp->qs[g*32 + f*4 + e] = (int8_t)(v - 8);             /* fold the -8 offset: range [-8,7] */
+                rp->qs[g*32 + f*4 + e] = (int8_t) v;                  /* raw nibble 0..15 (u8 operand); -8 handled in float */
+            }
+        }
+    }
+}
+
+/* The Q4_0 repacked GEMM: rb..re = 8-feature GROUP indices; J->a = cached repacked weight; J->asum = per-block
+ * Σaq (from jam_q8_0_requant). Like the Q8_0 rp kernel but the weight is the raw unsigned nibble, so no
+ * abs/sign: one maddubs/group, accumulate int16 across the 8 groups, one madd_epi16 + -8·Σa correction/block. */
+void jam_mm_q4_0_rp_avx2(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const uint8_t* RP = (const uint8_t*) J->a;
+    const int8_t* AQ = J->aq; const float* AD = J->ad; const float* AS = J->asum;
+    float* C = (float*) J->c;
+    const int ldc = J->ldc, n = J->n, k = J->k, nb = J->nb;   /* nb = k/32 */
+    const size_t grp_bytes = (size_t) nb * sizeof(jam_q8_0_rpblock);
+    const int mrows = J->m;
+    const __m256i ones = _mm256_set1_epi16(1);
+    for (int grp = rb; grp < re; ++grp) {
+        int i0 = grp * 8;
+        int nf = mrows - i0 < 8 ? mrows - i0 : 8;
+        const uint8_t* gbase = RP + (size_t) grp * grp_bytes;
+        for (int j0 = 0; j0 < n; j0 += 4) {
+            int nt = n - j0 < 4 ? n - j0 : 4;
+            __m256 acc[4]; for (int t = 0; t < 4; ++t) acc[t] = _mm256_setzero_ps();
+            for (int blk = 0; blk < nb; ++blk) {
+                const jam_q8_0_rpblock* rpb = (const jam_q8_0_rpblock*) gbase + blk;
+                __m256 d8 = _mm256_loadu_ps(rpb->d);
+                __m256i sb16[4]; for (int t = 0; t < nt; ++t) sb16[t] = _mm256_setzero_si256();
+                for (int g = 0; g < 8; ++g) {
+                    __m256i w = _mm256_loadu_si256((const __m256i*)(rpb->qs + g*32));   /* 8 feat × 4 elem, raw nibble (u8) */
+                    for (int t = 0; t < nt; ++t) {
+                        __m256i a4 = _mm256_set1_epi32(*(const int*)(AQ + (size_t)(j0+t)*k + (size_t) blk*32 + g*4));
+                        sb16[t] = _mm256_add_epi16(sb16[t], _mm256_maddubs_epi16(w, a4));
+                    }
+                }
+                for (int t = 0; t < nt; ++t) {
+                    __m256 sb  = _mm256_cvtepi32_ps(_mm256_madd_epi16(sb16[t], ones));              /* Σ q·a per feature */
+                    __m256 cc  = _mm256_sub_ps(sb, _mm256_set1_ps(8.0f * AS[(size_t)(j0+t)*nb + blk]));  /* - 8·Σa (per block) */
+                    __m256 dad = _mm256_mul_ps(d8, _mm256_set1_ps(AD[(size_t)(j0+t)*nb + blk]));
+                    acc[t] = _mm256_fmadd_ps(dad, cc, acc[t]);
+                }
+            }
+            for (int t = 0; t < nt; ++t) {
+                float tmp[8]; _mm256_storeu_ps(tmp, acc[t]);
+                for (int f = 0; f < nf; ++f) C[(size_t)(j0+t)*ldc + (i0+f)] = tmp[f];
             }
         }
     }
