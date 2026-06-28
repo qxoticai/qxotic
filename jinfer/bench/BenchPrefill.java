@@ -1,6 +1,8 @@
 package com.qxotic.jinfer;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 
@@ -19,7 +21,7 @@ public final class BenchPrefill {
         int measure = args.length > 3 ? Integer.parseInt(args[3]) : 12;
         int gen     = args.length > 4 ? Integer.parseInt(args[4]) : 0;   // >0 -> measure DECODE tok/s
 
-        Model model = ModelLoader.loadModel(java.nio.file.Path.of(path), 4096);
+        Model model = ModelLoader.loadModel(Path.of(path), 4096);
         Sampler sampler = Engine.configuredSampler(model, false, 0.0f, 1.0f, 42);
 
         // EXACTLY `target` raw tokens (no chat wrapping) — matches llama.cpp's pp<N> token count.
@@ -47,8 +49,8 @@ public final class BenchPrefill {
             System.err.printf("  [%-7s %2d] %s %7.2f tok/s%n", i < warmup ? "warmup" : "measure", i, what, tps[i]);
         }
 
-        double[] m = java.util.Arrays.copyOfRange(tps, warmup, warmup + measure);
-        java.util.Arrays.sort(m);
+        double[] m = Arrays.copyOfRange(tps, warmup, warmup + measure);
+        Arrays.sort(m);
         double sum = 0; for (double v : m) sum += v;
         System.err.printf("%n=== %s (warmed) over %d iters: mean %.2f  median %.2f  min %.2f  max %.2f tok/s ===%n",
                 what, measure, sum / measure, m[measure / 2], m[0], m[measure - 1]);

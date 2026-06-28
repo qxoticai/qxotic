@@ -1,5 +1,7 @@
 package com.qxotic.jinfer;
 
+import com.sun.management.ThreadMXBean;
+
 import java.lang.management.ManagementFactory;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -15,7 +17,7 @@ import java.util.List;
  */
 public final class PrefillAllocBench {
     static long totalAllocated() {
-        var tb = (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
+        var tb = (ThreadMXBean) ManagementFactory.getThreadMXBean();
         long s = 0;
         for (long id : tb.getAllThreadIds()) { long b = tb.getThreadAllocatedBytes(id); if (b > 0) s += b; }
         return s;

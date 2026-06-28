@@ -29,6 +29,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.IntStream;
 
 final class Gemma4 implements Model {
 
@@ -341,7 +342,7 @@ final class Gemma4 implements Model {
             this.capacity = c;
             int dim = config.embeddingLength;
             int maxQueryDim = config.numberOfHeads * config.headSizeFull;
-            int maxKVDim = java.util.stream.IntStream.range(0, config.numberOfLayers).map(config::kvDim).max().orElse(0);
+            int maxKVDim = IntStream.range(0, config.numberOfLayers).map(config::kvDim).max().orElse(0);
             int maxHiddenDim = config.maxHiddenDim();
             this.x = F32FloatTensor.allocate(c * dim);
             this.xb = F32FloatTensor.allocate(c * dim);

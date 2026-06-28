@@ -1,8 +1,14 @@
 package com.qxotic.jinfer;
 
+import com.sun.management.ThreadMXBean;
+
 import java.lang.management.ManagementFactory;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.IntUnaryOperator;
+
+import jdk.jfr.Recording;
 
 /**
  * Measures decode-phase throughput (tok/s) and heap-allocation rate, isolated from model load and
@@ -14,7 +20,7 @@ import java.util.List;
 public final class DecodeAllocBench {
 
     static long totalAllocated() {
-        var tb = (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
+        var tb = (ThreadMXBean) ManagementFactory.getThreadMXBean();
         long s = 0;
         for (long id : tb.getAllThreadIds()) {
             long b = tb.getThreadAllocatedBytes(id);
@@ -55,8 +61,8 @@ public final class DecodeAllocBench {
         final Model fmodel = model;
         final int[] fone = one;
         final int fvocab = vocab;
-        final java.util.concurrent.atomic.AtomicInteger stepPos = new java.util.concurrent.atomic.AtomicInteger(pos);
-        java.util.function.IntUnaryOperator run = prevTok -> Parallel.onDecodePool(() -> {
+        final AtomicInteger stepPos = new AtomicInteger(pos);
+        IntUnaryOperator run = prevTok -> Parallel.onDecodePool(() -> {
             int p = stepPos.getAndIncrement();
             fone[0] = prevTok; fmodel.ingest(fstate, fone, 0, p, 1);
             return argmax(fmodel.computeLogits(fstate), fvocab);
@@ -64,7 +70,7 @@ public final class DecodeAllocBench {
         // warmup: let the JIT compile the decode path before measuring.
         for (int i = 0; i < warmup; i++) tok = run.applyAsInt(tok);
 
-        jdk.jfr.Recording rec = new jdk.jfr.Recording();
+        Recording rec = new Recording();
         rec.enable("jdk.ObjectAllocationSample").with("throttle", "100000/s");
         rec.enable("jdk.ObjectAllocationInNewTLAB");   // carries the actual object size
         rec.start();

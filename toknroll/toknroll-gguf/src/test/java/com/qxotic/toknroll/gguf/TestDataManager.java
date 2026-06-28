@@ -13,6 +13,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -218,8 +219,8 @@ public class TestDataManager {
     }
 
     private GGUF loadFromCache(Path cachedFile) throws IOException {
-        try (java.nio.channels.FileChannel channel =
-                java.nio.channels.FileChannel.open(cachedFile, StandardOpenOption.READ)) {
+        try (FileChannel channel =
+                FileChannel.open(cachedFile, StandardOpenOption.READ)) {
             return GGUF.read(channel);
         }
     }

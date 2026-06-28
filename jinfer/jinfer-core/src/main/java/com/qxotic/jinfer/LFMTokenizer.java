@@ -13,8 +13,10 @@ import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
@@ -85,9 +87,9 @@ class LFMTokenizer {
      *  longest-match is only reachable as a substring of the longer one — rendered control-token
      *  streams never emit it standalone, so this is loss-free in practice. No-op for models with no
      *  prefix-conflicting specials (all others). */
-    private java.util.Set<String> specialMatchSet() {
-        java.util.Set<String> keys = specialTokens.keySet();
-        java.util.Set<String> kept = new java.util.HashSet<>(keys);
+    private Set<String> specialMatchSet() {
+        Set<String> keys = specialTokens.keySet();
+        Set<String> kept = new HashSet<>(keys);
         for (String s : keys) {
             for (String o : keys) {
                 if (!s.equals(o) && o.startsWith(s)) { kept.remove(s); break; }

@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.qxotic.toknroll.MergeRule;
 import com.qxotic.toknroll.Vocabulary;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -264,7 +265,7 @@ class TiktokenReconstructionTest {
     @Test
     void packSentencePieceMergesNullMergeRuleThrows() {
         VocabularyImpl vocab = new VocabularyImpl(new String[] {"a", "b", "ab"}, normalTypes(3));
-        List<MergeRule> merges = new java.util.ArrayList<>();
+        List<MergeRule> merges = new ArrayList<>();
         merges.add(null);
         assertThrows(
                 NullPointerException.class,

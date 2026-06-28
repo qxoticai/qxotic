@@ -25,7 +25,7 @@ final class ScalarJAM implements JAM {
         GGMLType t = GGMLType.fromId(wt);
         if (t == null) return EUNSUPPORTED;
 
-        FloatTensor weight = VectorJAM.wrap(t, w.asSlice(wOff), (long) m * ldw);
+        FloatTensor weight = wrap(t, w.asSlice(wOff), (long) m * ldw);
         F32FloatTensor x   = new F32FloatTensor((long) n * lda, a.asSlice(aOff));
         F32FloatTensor out = new F32FloatTensor((long) n * ldr, r.asSlice(rOff));
 
@@ -38,5 +38,22 @@ final class ScalarJAM implements JAM {
             });
         }
         return OK;
+    }
+
+    /** Wrap a native segment as the typed tensor for {@code t} (every JAM weight dtype). */
+    static SegmentFloatTensor wrap(GGMLType t, MemorySegment seg, long size) {
+        return switch (t) {
+            case Q8_0 -> new Q8_0FloatTensor(size, seg);
+            case Q4_0 -> new Q4_0FloatTensor(size, seg);
+            case Q4_K -> new Q4_KFloatTensor(size, seg);
+            case Q5_K -> new Q5_KFloatTensor(size, seg);
+            case Q6_K -> new Q6_KFloatTensor(size, seg);
+            case MXFP4 -> new MXFP4FloatTensor(size, seg);
+            case NVFP4 -> new NVFP4FloatTensor(size, seg);
+            case F16 -> new F16FloatTensor(size, seg);
+            case BF16 -> new BF16FloatTensor(size, seg);
+            case F32 -> new F32FloatTensor(size, seg);
+            default -> throw new IllegalArgumentException("ScalarJAM: no tensor for " + t);
+        };
     }
 }

@@ -11,7 +11,9 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 /**
@@ -383,7 +385,7 @@ public final class ServerIntegrationTest {
 
     @SuppressWarnings("unchecked")
     private static void toolCallParser() {
-        java.util.Set<String> tools = java.util.Set.of("get_weather", "get_time", "book_hotel", "noop");
+        Set<String> tools = Set.of("get_weather", "get_time", "book_hotel", "noop");
         // multi-call Pythonic list in one block
         List<Map<String, Object>> calls = ToolCalls.parseToolCalls(
                 "<|tool_call_start|>[get_weather(city=\"Paris\", unit=\"c\"), get_time(timezone='UTC')]<|tool_call_end|>", tools);
@@ -455,7 +457,7 @@ public final class ServerIntegrationTest {
         check(calls.size() == 2 && "get_weather".equals(fn(calls, 0).get("name"))
                 && "get_time".equals(fn(calls, 1).get("name")), "multi bare-list calls (got " + calls.size() + ")");
         // dotted function name (qualified, e.g. Calendar.create_event)
-        java.util.Set<String> dotted = java.util.Set.of("Calendar.create_event");
+        Set<String> dotted = Set.of("Calendar.create_event");
         calls = ToolCalls.parseToolCalls("[Calendar.create_event(title=\"Sync\")]", dotted);
         check(calls.size() == 1 && "Calendar.create_event".equals(fn(calls, 0).get("name")),
                 "dotted function name (got " + calls.size() + ")");
@@ -599,8 +601,8 @@ public final class ServerIntegrationTest {
     private static void generationDeadline(Llama model) {
         List<Integer> prompt = model.tokenizer().encode("Write a very long, detailed story.");
         Engine.Params params = new Engine.Params(Sampler.ARGMAX, 100_000,
-                java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(300),
-                new Engine.StopSpec(java.util.Set.of(), List.of()), false);
+                TimeUnit.MILLISECONDS.toNanos(300),
+                new Engine.StopSpec(Set.of(), List.of()), false);
         long start = System.nanoTime();
         Engine.GenerationResult result = Engine.generate(model, model.createNewState(), 0, prompt, params,
                 new Engine.Listener(null, null, null, null), GenerationHooks.NONE);
