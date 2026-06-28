@@ -311,6 +311,29 @@ void jam_q8_0_repack8(const void* Wv, int rows0, int re, int nblocks, size_t w_s
     }
 }
 
+/* ---- Q4_0 cached-repack (8-feature-wide). Q4_0 weight is a 4-bit nibble (0..15) with a fixed -8 offset and
+ * an f16 per-32-block scale (18-byte block, no min). Dequant each nibble to the SIGNED value (q-8) ∈ [-8,7]
+ * here, so the downstream kernel is the bias-free Q8_0 sign-trick maddubs gemm verbatim (-8 folded into the
+ * weight, no separate min/bias term). Standard ggml nibble order: low nibble of byte j = elem j, high = j+16. */
+void jam_q4_0_repack8(const void* Wv, int rows0, int re, int nblocks, size_t w_stride, void* outv) {
+    const uint8_t* W = (const uint8_t*) Wv; jam_q8_0_rpblock* out = (jam_q8_0_rpblock*) outv;
+    int nf = re - rows0 < 8 ? re - rows0 : 8;
+    for (int blk = 0; blk < nblocks; ++blk) {
+        jam_q8_0_rpblock* rp = out + blk;
+        for (int f = 0; f < 8; ++f) {
+            if (f >= nf) { rp->d[f] = 0.0f; for (int g = 0; g < 8; ++g) for (int e = 0; e < 4; ++e) rp->qs[g*32 + f*4 + e] = 0; continue; }
+            const uint8_t* wb = W + (size_t)(rows0+f)*w_stride + (size_t) blk*18;
+            rp->d[f] = _cvtsh_ss(*(const uint16_t*) wb);
+            const uint8_t* q = wb + 2;
+            for (int g = 0; g < 8; ++g) for (int e = 0; e < 4; ++e) {
+                int idx = g*4 + e;                                    /* natural element index 0..31 within the block */
+                int v = idx < 16 ? (q[idx] & 0x0F) : (q[idx-16] >> 4);
+                rp->qs[g*32 + f*4 + e] = (int8_t)(v - 8);             /* fold the -8 offset: range [-8,7] */
+            }
+        }
+    }
+}
+
 void jam_mm_q8_0_rp_avx2(void* arg, int rb, int re, int tid) {
     (void) tid;
     const jam_q8_job* J = (const jam_q8_job*) arg;
