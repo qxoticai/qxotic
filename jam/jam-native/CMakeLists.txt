@@ -35,9 +35,9 @@ target_link_libraries(jam PRIVATE Threads::Threads m)   # libm: lrintf/fabsf in 
 # Per-ISA kernel TUs: each compiled with its OWN flags and bound at create. The dispatcher (src/jam.c)
 # stays at BASELINE flags — never -mavx512 — so it can't emit AVX-512 before the CPU check.
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
-    # SSE3 (Prescott 2004+, true SSE3 — no SSSE3 maddubs, no F16C): 128-bit int8 Q8_0 via sign-extend+madd
-    # with a software fp16 scale. The pre-AVX2 x86 floor, replacing the generic dequant-to-float path.
-    add_library(jam_sse3 OBJECT src/kernels/jam_kernels_sse3.c)
+    # SSE3 (Prescott 2004+, true SSE3 — no SSSE3 maddubs, no F16C): 128-bit int8 Q8_0/Q4_0 + K-quants via
+    # sign-extend+madd with a software fp16 scale. The pre-AVX2 x86 floor, replacing the dequant-to-float path.
+    add_library(jam_sse3 OBJECT src/kernels/jam_kernels_sse3.c src/kernels/jam_kernels_kquant_sse3.c)
     target_include_directories(jam_sse3 PRIVATE include src)
     target_compile_options(jam_sse3 PRIVATE -msse3)
     target_compile_definitions(jam_sse3 PRIVATE JAM_HAVE_SSE3=1)

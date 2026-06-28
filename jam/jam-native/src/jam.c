@@ -228,7 +228,9 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
     c->q4_0_kernel  = NULL;   /* K-quant ctx->kq[] is zero from calloc (NULL kernel -> float floor) */
 #ifdef JAM_HAVE_SSE3
     if (cpu >= JAM_ISA_SSE3) { c->q8_kernel = jam_mm_q8_0_sse3;   /* pre-AVX2 floor; higher tiers override below */
-        c->mxfp4_kernel = jam_mm_mxfp4_sse3; c->q4_0_kernel = jam_mm_q4_0_sse3; }
+        c->mxfp4_kernel = jam_mm_mxfp4_sse3; c->q4_0_kernel = jam_mm_q4_0_sse3;
+        c->kq[JAM_KQ_Q4K].kernel = jam_mm_q4k_sse3;   /* K-quant int8 floor (run_quant supplies per-32 requant) */
+        c->kq[JAM_KQ_Q5K].kernel = jam_mm_q5k_sse3; c->kq[JAM_KQ_Q6K].kernel = jam_mm_q6k_sse3; }
 #endif
 #ifdef JAM_HAVE_AVX2
     if (cpu >= JAM_ISA_AVX2) { c->f32_kernel = jam_mm_f32_avx2;
