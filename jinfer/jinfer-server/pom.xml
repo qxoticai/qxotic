@@ -48,7 +48,7 @@
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.qxotic.jinfer.LFM25</mainClass>
+                                    <mainClass>com.qxotic.jinfer.Main</mainClass>
                                 </transformer>
                             </transformers>
                             <filters>
@@ -89,7 +89,7 @@
                         </executions>
                         <configuration>
                             <imageName>jinfer</imageName>
-                            <mainClass>com.qxotic.jinfer.LFM25</mainClass>
+                            <mainClass>com.qxotic.jinfer.Main</mainClass>
                             <buildArgs>
                                 <buildArg>-O3</buildArg>
                                 <buildArg>-march=native</buildArg>

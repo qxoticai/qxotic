@@ -59,10 +59,32 @@ interface Sampler {
     /** Grammar-constrained sampling: masks logits with the current grammar state before
      *  delegating, then advances the grammar with the chosen token. When no valid token
      *  remains, forces {@code eosToken} so generation terminates cleanly instead of
-     *  feeding a garbage token into the forward pass. */
-    static Sampler withGrammar(Sampler inner, Grammar.Cursor cursor, int eosToken) {
+     *  feeding a garbage token into the forward pass.
+     *
+     *  <p>For reasoning models the constraint must not apply during the think span — masking from
+     *  token 0 prevents the model from emitting {@code <think>} and so suppresses the reasoning
+     *  that drives answer quality. When {@code thinkCloseToken >= 0} the grammar stays dormant
+     *  (pure pass-through) until that token is produced; then a short skip phase lets the model
+     *  emit the boilerplate newline between {@code </think>} and the answer ({@code skipTokens} =
+     *  newline token ids) <i>without</i> consuming it in the grammar, before the first real token
+     *  starts the (still-fresh) constraint. Pass {@code thinkCloseToken < 0} to constrain
+     *  immediately. */
+    static Sampler withGrammar(Sampler inner, Grammar.Cursor cursor, int eosToken, int thinkCloseToken, int[] skipTokens) {
         if (cursor == null || !RuntimeFlags.GRAMMAR) return inner;
+        java.util.Set<Integer> skip = new java.util.HashSet<>();
+        if (skipTokens != null) for (int t : skipTokens) skip.add(t);
+        int[] phase = { thinkCloseToken < 0 ? 2 : 0 };         // 0 think span, 1 skip ws, 2 constrain
         return logits -> {
+            if (phase[0] == 0) {                               // reasoning: pass through, watch for </think>
+                int tok = inner.sampleToken(logits);
+                if (tok == thinkCloseToken) phase[0] = 1;
+                return tok;
+            }
+            if (phase[0] == 1) {                               // skip the newline(s) between </think> and the answer
+                int tok = inner.sampleToken(logits);           // peek the next token, unconstrained
+                if (skip.contains(tok)) return tok;            // newline: emit as-is, grammar untouched
+                phase[0] = 2;                                  // first answer token — re-decide it under the grammar
+            }
             if (!cursor.maskLogits(logits)) {
                 cursor.advanceWith(eosToken);
                 return eosToken;

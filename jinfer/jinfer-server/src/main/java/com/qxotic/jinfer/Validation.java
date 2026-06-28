@@ -2,7 +2,6 @@
 // Runs on the HTTP handler thread (before queueing) so malformed requests fail fast with a 400.
 package com.qxotic.jinfer;
 
-
 import java.util.List;
 import java.util.Map;
 
