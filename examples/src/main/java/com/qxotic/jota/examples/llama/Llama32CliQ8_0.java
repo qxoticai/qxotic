@@ -22,14 +22,19 @@ import com.qxotic.toknroll.gguf.GGUFTokenizerLoader;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Scanner;
+import java.util.Set;
+
+import jdk.incubator.vector.VectorOperators;
 
 /**
  * Llama 3.2 CLI with Q8_0 quantization support.
@@ -415,7 +420,7 @@ public final class Llama32CliQ8_0 {
 
     private static LlamaWeights loadWeights(
             GGUF gguf, LlamaConfig cfg, long tensorBase, FileChannel channel, Arena arena) {
-        java.util.Set<Tensor> q8_0Tensors = new java.util.HashSet<>();
+        Set<Tensor> q8_0Tensors = new HashSet<>();
 
         // Token embeddings - dequantize for element access
         Tensor tokenTable = mapTensorAsF32(gguf, "token_embd.weight", tensorBase, channel, arena);
@@ -562,11 +567,11 @@ public final class Llama32CliQ8_0 {
                 long blockOffset = blockIndex * blockBytes;
 
                 short scaleShort =
-                        seg.get(java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED, blockOffset);
+                        seg.get(ValueLayout.JAVA_SHORT_UNALIGNED, blockOffset);
                 float scale = Float.float16ToFloat(scaleShort);
                 byte quantVal =
                         seg.get(
-                                java.lang.foreign.ValueLayout.JAVA_BYTE,
+                                ValueLayout.JAVA_BYTE,
                                 blockOffset + 2 + withinBlockIndex);
 
                 out[i] = quantVal * scale;
@@ -945,14 +950,14 @@ public final class Llama32CliQ8_0 {
                                 // Process 2 blocks at once
                                 for (; j < unrollBound; j += 2 * Q8_0_BLOCK_SIZE, blockOffset += 2 * Q8_0_BLOCK_BYTES) {
                                     // Block 0
-                                    short scale0 = aSegment.get(java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED, blockOffset);
+                                    short scale0 = aSegment.get(ValueLayout.JAVA_SHORT_UNALIGNED, blockOffset);
                                     float wScale0 = Float.float16ToFloat(scale0);
                                     var wBytes0 = ByteVector.fromMemorySegment(
                                             ByteVector.SPECIES_256, aSegment,
                                             blockOffset + FLOAT16_BYTES, ByteOrder.LITTLE_ENDIAN);
 
                                     // Block 1
-                                    short scale1 = aSegment.get(java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED, blockOffset + Q8_0_BLOCK_BYTES);
+                                    short scale1 = aSegment.get(ValueLayout.JAVA_SHORT_UNALIGNED, blockOffset + Q8_0_BLOCK_BYTES);
                                     float wScale1 = Float.float16ToFloat(scale1);
                                     var wBytes1 = ByteVector.fromMemorySegment(
                                             ByteVector.SPECIES_256, aSegment,
@@ -977,14 +982,14 @@ public final class Llama32CliQ8_0 {
                                 // Process 2 blocks at once
                                 for (; j < unrollBound; j += 2 * Q8_0_BLOCK_SIZE, blockOffset += 2 * Q8_0_BLOCK_BYTES) {
                                     // Block 0
-                                    short scale0 = aSegment.get(java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED, blockOffset);
+                                    short scale0 = aSegment.get(ValueLayout.JAVA_SHORT_UNALIGNED, blockOffset);
                                     float wScale0 = Float.float16ToFloat(scale0);
                                     var wBytes0 = ByteVector.fromMemorySegment(
                                             ByteVector.SPECIES_256, aSegment,
                                             blockOffset + FLOAT16_BYTES, ByteOrder.LITTLE_ENDIAN);
 
                                     // Block 1
-                                    short scale1 = aSegment.get(java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED, blockOffset + Q8_0_BLOCK_BYTES);
+                                    short scale1 = aSegment.get(ValueLayout.JAVA_SHORT_UNALIGNED, blockOffset + Q8_0_BLOCK_BYTES);
                                     float wScale1 = Float.float16ToFloat(scale1);
                                     var wBytes1 = ByteVector.fromMemorySegment(
                                             ByteVector.SPECIES_256, aSegment,
@@ -1019,7 +1024,7 @@ public final class Llama32CliQ8_0 {
                                 VectorSpecies<Byte> B_128 = ByteVector.SPECIES_128;
                                 // Keep original for 128-bit
                                 for (; j < upperBound; j += Q8_0_BLOCK_SIZE, blockOffset += Q8_0_BLOCK_BYTES) {
-                                    short scaleShort = aSegment.get(java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED, blockOffset);
+                                    short scaleShort = aSegment.get(ValueLayout.JAVA_SHORT_UNALIGNED, blockOffset);
                                     float wScaleValue = Float.float16ToFloat(scaleShort);
                                     var wScale = FloatVector.broadcast(F_SPECIES, wScaleValue);
                                     for (int i = 0; i < 2; ++i) {
@@ -1056,7 +1061,7 @@ public final class Llama32CliQ8_0 {
 
                         // Handle remaining blocks (single at a time)
                         for (; j < upperBound; j += Q8_0_BLOCK_SIZE, blockOffset += Q8_0_BLOCK_BYTES) {
-                            short scaleShort = aSegment.get(java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED, blockOffset);
+                            short scaleShort = aSegment.get(ValueLayout.JAVA_SHORT_UNALIGNED, blockOffset);
                             float wScaleValue = Float.float16ToFloat(scaleShort);
                             var wScale = FloatVector.broadcast(F_SPECIES, wScaleValue);
 
@@ -1113,10 +1118,10 @@ public final class Llama32CliQ8_0 {
                             int blockIndex = j / Q8_0_BLOCK_SIZE;
                             int withinBlockIndex = j % Q8_0_BLOCK_SIZE;
                             long currentBlockOffset = aOffset + (long)blockIndex * Q8_0_BLOCK_BYTES;
-                            short scaleShort = aSegment.get(java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED, currentBlockOffset);
+                            short scaleShort = aSegment.get(ValueLayout.JAVA_SHORT_UNALIGNED, currentBlockOffset);
                             float scale = Float.float16ToFloat(scaleShort);
-                            byte quant = aSegment.get(java.lang.foreign.ValueLayout.JAVA_BYTE, currentBlockOffset + FLOAT16_BYTES + withinBlockIndex);
-                            float xval = xSegment.get(java.lang.foreign.ValueLayout.JAVA_FLOAT_UNALIGNED, xBase + (long)j * Float.BYTES);
+                            byte quant = aSegment.get(ValueLayout.JAVA_BYTE, currentBlockOffset + FLOAT16_BYTES + withinBlockIndex);
+                            float xval = xSegment.get(ValueLayout.JAVA_FLOAT_UNALIGNED, xBase + (long)j * Float.BYTES);
                             result += quant * scale * xval;
                         }
 
@@ -1740,7 +1745,7 @@ public final class Llama32CliQ8_0 {
                                         FloatVector.fromMemorySegment(
                                                 SPECIES, upSegment, upOff, ByteOrder.nativeOrder());
                                 FloatVector one = FloatVector.broadcast(SPECIES, 1f);
-                                FloatVector silu = gateV.div(gateV.neg().lanewise(jdk.incubator.vector.VectorOperators.EXP).add(one));
+                                FloatVector silu = gateV.div(gateV.neg().lanewise(VectorOperators.EXP).add(one));
                                 silu.mul(upV)
                                         .intoMemorySegment(
                                                 outSegment,
@@ -3468,12 +3473,12 @@ public final class Llama32CliQ8_0 {
 
                         short scaleShort =
                                 aSeg.get(
-                                        java.lang.foreign.ValueLayout.JAVA_SHORT_UNALIGNED,
+                                        ValueLayout.JAVA_SHORT_UNALIGNED,
                                         blockOffset);
                         float scale = Float.float16ToFloat(scaleShort);
                         byte quantVal =
                                 aSeg.get(
-                                        java.lang.foreign.ValueLayout.JAVA_BYTE,
+                                        ValueLayout.JAVA_BYTE,
                                         blockOffset + 2 + withinBlockIndex);
 
                         float av = quantVal * scale;

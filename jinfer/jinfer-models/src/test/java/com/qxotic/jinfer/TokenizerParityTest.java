@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -108,7 +109,7 @@ public final class TokenizerParityTest {
         // encodeWithSpecialTokens (--raw-prompt): specials map to their ids, ordinary text
         // between them encodes exactly as plain encode would
         List<Integer> raw = tokenizer.encodeWithSpecialTokens("<|im_start|>Hello, world!<|im_end|>");
-        List<Integer> expectedRaw = new java.util.ArrayList<>(List.of(imStart));
+        List<Integer> expectedRaw = new ArrayList<>(List.of(imStart));
         expectedRaw.addAll(tokenizer.encode("Hello, world!"));
         expectedRaw.add(specials.get("<|im_end|>"));
         if (!raw.equals(expectedRaw)) {

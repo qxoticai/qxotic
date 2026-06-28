@@ -1,5 +1,6 @@
 package com.qxotic.jinfer;
 
+import java.io.PrintStream;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -109,7 +110,7 @@ public final class JinferBench {
         return f.endsWith(".gguf") ? f.substring(0, f.length() - 5) : f;
     }
 
-    private static void usage(java.io.PrintStream out) {
+    private static void usage(PrintStream out) {
         out.println("""
             jinfer-bench — pp/tg throughput benchmark (llama-bench compatible)
 

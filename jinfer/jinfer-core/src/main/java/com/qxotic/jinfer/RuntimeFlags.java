@@ -1,6 +1,11 @@
 // All jinfer.* properties read at run time (works with -D on the JVM and on a native binary).
 package com.qxotic.jinfer;
 
+import com.sun.management.HotSpotDiagnosticMXBean;
+
+import java.lang.management.ManagementFactory;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -89,7 +94,7 @@ final class RuntimeFlags {
         if (override != null) return Boolean.parseBoolean(override);
         if (System.getProperty("org.graalvm.nativeimage.imagecode") != null) return true; // SubstrateVM AOT
         try {
-            var bean = java.lang.management.ManagementFactory.getPlatformMXBean(com.sun.management.HotSpotDiagnosticMXBean.class);
+            var bean = ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean.class);
             return bean != null && "true".equals(bean.getVMOption("UseJVMCICompiler").getValue());
         } catch (RuntimeException noSuchOptionOrBean) {
             return false; // conservative: assume C2, use the non-boxing decode path
@@ -104,8 +109,8 @@ final class RuntimeFlags {
     private static int physicalCoreCount() {
         int logical = Runtime.getRuntime().availableProcessors();
         try {
-            boolean smtOn = !"0".equals(java.nio.file.Files.readString(
-                    java.nio.file.Path.of("/sys/devices/system/cpu/smt/active")).trim());
+            boolean smtOn = !"0".equals(Files.readString(
+                    Path.of("/sys/devices/system/cpu/smt/active")).trim());
             return smtOn ? Math.max(1, logical / 2) : logical;
         } catch (Exception notLinux) {
             String arch = System.getProperty("os.arch", "");

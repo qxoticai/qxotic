@@ -31,6 +31,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Scanner;
 
+import jdk.incubator.vector.VectorOperators;
+
 public final class Llama32HipCli {
     private static final int TIMING_WARMUP_TOKENS = 2;
     private static final int PAGE_BYTES = 4096;
@@ -1324,7 +1326,7 @@ public final class Llama32HipCli {
                                         FloatVector.fromMemorySegment(
                                                 SPECIES, upSegment, upOff, ByteOrder.nativeOrder());
                                 FloatVector one = FloatVector.broadcast(SPECIES, 1f);
-                                FloatVector silu = gateV.div(gateV.neg().lanewise(jdk.incubator.vector.VectorOperators.EXP).add(one));
+                                FloatVector silu = gateV.div(gateV.neg().lanewise(VectorOperators.EXP).add(one));
                                 silu.mul(upV)
                                         .intoMemorySegment(
                                                 outSegment,
@@ -1833,13 +1835,13 @@ public final class Llama32HipCli {
                             "[KV Cache] keyCache[0] shape="
                                     + this.keyCache[0].shape()
                                     + " stride="
-                                    + java.util.Arrays.toString(
+                                    + Arrays.toString(
                                             this.keyCache[0].layout().stride().toArray()));
                     System.err.println(
                             "[KV Cache] valueCache[0] shape="
                                     + this.valueCache[0].shape()
                                     + " stride="
-                                    + java.util.Arrays.toString(
+                                    + Arrays.toString(
                                             this.valueCache[0].layout().stride().toArray()));
                     System.err.println(
                             "[KV Cache] valueCache[0] allocated bytes="
