@@ -435,7 +435,17 @@ void jam_q8_0_repack_band(void* arg, int t0, int t1, int tid) {
 /* ================= Q4_0 16-row VNNI repack — reuses q4k_block16/q4k_store16/jam_q4k_quant ===========
  * Q4_0 = { fp16 d; nibble qs[16] } = 18B, value = d·(nibble-8). The nibble (0..15) is the UNSIGNED
  * vpdpbusd operand (like Q4_K, unlike Q8_0); the -8 offset is the Q4_K "min" with (dw,mw)=(d,8·d),
- * corrected in float via the exact activation sums. Only the nibble unpack is Q4_0-specific. */
+ * corrected in float via the exact activation sums. Only the nibble unpack is Q4_0-specific.
+ *
+ * PERF NOTE — this kernel is at the compute ceiling; do NOT expect a "Q4_0-specialized" speedup.
+ * Q4_0 and Q8_0 dot the SAME K, so they issue the SAME 8 vpdpbusd/block (m·n·k int8 MACs either way);
+ * 4-bit can only ADD the nibble unpack, never remove MACs. We hide the unpack (one and + one srli/and
+ * straight into vpdpbusd, -8 folded into the mw bias, no vpshufb LUT), so Q4_0 ≈ Q8_0 at the GEMM level
+ * (~2.6 GMAC/s @ m4096·n512·k2048, ~3x llama.cpp's tinyBLAS) — the most you can ask of a compute-bound
+ * prefill. At MATCHED threads the full model TIES llama.cpp: Llama-1B Q4_0 pp512 ~2234 t/s vs llama.cpp
+ * ~2262 (both 32 threads), and Q8_0 wins outright (~1.4x). jinfer just needs all logical CPUs — both
+ * JAM_NUM_THREADS and the jinfer FJP pool. Capping either to 16 starves the GEMM + the Java non-GEMM and
+ * is what makes Q4_0 *look* ~10% slow; it is the thread budget, NOT this band. */
 #define JAM_Q40_BYTES 18
 
 /* PACKED repack: keep 2 nibbles/byte (256 B/block/16rows, HALF of Q8_0) so the band stays L1-resident
