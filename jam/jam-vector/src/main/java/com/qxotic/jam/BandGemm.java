@@ -28,6 +28,48 @@ final class BandGemm {
     static final int MR = BAND.equals("3x3") ? 3 : 4;
     static final int NR = BAND.equals("3x3") ? 3 : 4;
 
+    /** Decode one weight row ({@code dim1} elements at element offset {@code rowElemOffset}) into {@code dst}
+     *  at {@code dstOffset} — the ONLY part that differs between the dequant-to-scratch dtypes. */
+    @FunctionalInterface
+    interface RowDequant {
+        void dequantize(MemorySegment w, long rowElemOffset, int dim1, float[] dst, int dstOffset);
+    }
+
+    /** The dequant-to-scratch band gemm, shared by every such dtype (k-quants + FP4). Tiles {@code m} into
+     *  {@link #MR}-row groups (parallel), dequantizes each group's rows ONCE via {@code deq}, sweeps the
+     *  columns with {@link #band}, and finishes the n/m remainders with per-column {@link #dotDeq} dots. A
+     *  dtype kernel is exactly this driver bound to its own {@code dequantizeRow}. The {@code deq} call is
+     *  per-row (m total) so its dispatch is free against the row's decode work. */
+    static void gemm(MemorySegment w, MemorySegment a, long aBase, MemorySegment o, long oBase,
+                     int aStride, int oStride, int n, int m, int k, long wOff, Scratch scratch, RowDequant deq) {
+        int groups = m / MR;
+        VectorSupport.parallelChunks(groups, (gLo, gHi) -> {
+            float[] band = scratch.acquire(MR * k);   // one per worker; reused across mm, freed with the context
+            try {
+                for (int g = gLo; g < gHi; g++) {
+                    int row0 = g * MR;
+                    for (int i = 0; i < MR; i++) deq.dequantize(w, wOff + (long) (row0 + i) * k, k, band, i * k);
+                    int s = 0;
+                    for (; s + NR <= n; s += NR) band(band, k, a, aBase, o, oBase, aStride, oStride, row0, s);
+                    for (; s < n; s++) for (int i = 0; i < MR; i++)
+                        store(o, oBase, (long) s * oStride + row0 + i, dotDeq(band, i * k, k, a, aBase, (long) s * aStride));
+                }
+            } finally {
+                scratch.release(band);
+            }
+        });
+        int rem0 = groups * MR;
+        if (rem0 < m) {                                // trailing rows (m % MR): cheap per-column dots
+            float[] band = scratch.acquire(k);
+            for (int row = rem0; row < m; row++) {
+                deq.dequantize(w, wOff + (long) row * k, k, band, 0);
+                int rr = row;
+                VectorSupport.parallelFor(0, n, s -> store(o, oBase, (long) s * oStride + rr, dotDeq(band, 0, k, a, aBase, (long) s * aStride)));
+            }
+            scratch.release(band);
+        }
+    }
+
     /** Sweep one MR x NR band; constant-folds to the selected shape ({@link #BAND} is static final). */
     static void band(float[] w, int dim1, MemorySegment a, long aBase, MemorySegment o, long oBase,
                      int aStride, int oStride, int row0, int s0) {
