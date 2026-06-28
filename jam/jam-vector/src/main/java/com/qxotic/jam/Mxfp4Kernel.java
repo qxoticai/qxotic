@@ -25,30 +25,39 @@ public final class Mxfp4Kernel {
     private static final byte[] MXFP4_LUT = {0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12};
 
     public static void gemm(MemorySegment w, MemorySegment a, long aBase, MemorySegment o, long oBase,
-                            int aStride, int oStride, int n, int m, int k, long wOff) {
+                            int aStride, int oStride, int n, int m, int k, long wOff, Scratch scratch) {
         int groups = m / BandGemm.MR;
-        VectorSupport.parallelFor(0, groups, g -> {
-            int row0 = g * BandGemm.MR;
-            float[] band = BandGemm.bandScratch(BandGemm.MR * k);
-            for (int i = 0; i < BandGemm.MR; i++) {
-                dequantizeRow(w, wOff + (long) (row0 + i) * k, k, band, i * k);
-            }
-            int s = 0;
-            for (; s + BandGemm.NR <= n; s += BandGemm.NR) {
-                BandGemm.band(band, k, a, aBase, o, oBase, aStride, oStride, row0, s);
-            }
-            for (; s < n; s++) {
-                for (int i = 0; i < BandGemm.MR; i++) {
-                    BandGemm.store(o, oBase, (long) s * oStride + row0 + i, BandGemm.dotDeq(band, i * k, k, a, aBase, (long) s * aStride));
+        VectorSupport.parallelChunks(groups, (gLo, gHi) -> {
+            float[] band = scratch.acquire(BandGemm.MR * k);   // one per worker; reused across mm, freed with the context
+            try {
+                for (int g = gLo; g < gHi; g++) {
+                    int row0 = g * BandGemm.MR;
+                    for (int i = 0; i < BandGemm.MR; i++) {
+                        dequantizeRow(w, wOff + (long) (row0 + i) * k, k, band, i * k);
+                    }
+                    int s = 0;
+                    for (; s + BandGemm.NR <= n; s += BandGemm.NR) {
+                        BandGemm.band(band, k, a, aBase, o, oBase, aStride, oStride, row0, s);
+                    }
+                    for (; s < n; s++) {
+                        for (int i = 0; i < BandGemm.MR; i++) {
+                            BandGemm.store(o, oBase, (long) s * oStride + row0 + i, BandGemm.dotDeq(band, i * k, k, a, aBase, (long) s * aStride));
+                        }
+                    }
                 }
+            } finally {
+                scratch.release(band);
             }
         });
-        for (int row = groups * BandGemm.MR; row < m; row++) {  // trailing rows: cheap per-column dots
-            float[] band = BandGemm.bandScratch(k);
-            dequantizeRow(w, wOff + (long) row * k, k, band, 0);
-            float[] bf = band;
-            int rr = row;
-            VectorSupport.parallelFor(0, n, s -> BandGemm.store(o, oBase, (long) s * oStride + rr, BandGemm.dotDeq(bf, 0, k, a, aBase, (long) s * aStride)));
+        int rem0 = groups * BandGemm.MR;
+        if (rem0 < m) {                                         // trailing rows: cheap per-column dots
+            float[] band = scratch.acquire(k);
+            for (int row = rem0; row < m; row++) {
+                dequantizeRow(w, wOff + (long) row * k, k, band, 0);
+                int rr = row;
+                VectorSupport.parallelFor(0, n, s -> BandGemm.store(o, oBase, (long) s * oStride + rr, BandGemm.dotDeq(band, 0, k, a, aBase, (long) s * aStride)));
+            }
+            scratch.release(band);
         }
     }
 
@@ -60,11 +69,10 @@ public final class Mxfp4Kernel {
             long blockOffset = (firstBlock + blk) * BYTES;
             float d = e8m0ToFp32Half(Byte.toUnsignedInt(readByte(w, blockOffset)));
             ByteVector packed = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, blockOffset + 1, ByteOrder.LITTLE_ENDIAN);
-            FloatVector loC = ((FloatVector) mxfp4Decode(packed.and((byte) 0x0F)).castShape(F_SPECIES, 0)).mul(d);
-            FloatVector hiC = ((FloatVector) mxfp4Decode(packed.lanewise(VectorOperators.LSHR, 4)).castShape(F_SPECIES, 0)).mul(d);
             int base = dstOffset + blk * QK;
-            loC.intoArray(dst, base);                  // block elems 0..15 (low nibbles)
-            hiC.intoArray(dst, base + QK / 2);         // block elems 16..31 (high nibbles)
+            FloatVector vd = FloatVector.broadcast(F_SPECIES, d);
+            VectorSupport.storeScaled(mxfp4Decode(packed.and((byte) 0x0F)), vd, dst, base);                          // elems 0..15
+            VectorSupport.storeScaled(mxfp4Decode(packed.lanewise(VectorOperators.LSHR, 4)), vd, dst, base + QK / 2); // 16..31
         }
     }
 

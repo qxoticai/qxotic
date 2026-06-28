@@ -2,6 +2,10 @@ package com.qxotic.jinfer;
 
 import com.qxotic.format.gguf.GGMLType;
 
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 /**
  * Routes each matmul to the fastest applicable backend, with {@link ScalarMatMul} as the universal floor —
  * so {@code mm} is total ({@code void}). The policy is the measured one:
@@ -27,14 +31,14 @@ final class Dispatch implements MatMul {
 
     static Dispatch create() {
         MatMul scalar = new ScalarMatMul();
-        MatMul vector = new VectorMatMul();
+        MatMul vector = new VectorMatMul(scalar);
         MatMul jam = JamMatMul.tryLoad() ? new JamMatMul(scalar) : null;   // jam falls back to the floor
         return new Dispatch(jam, vector, scalar);
     }
 
     // --- per-shape matmul byte attribution (-Djinfer.mmTrace) ---
     static final boolean MM_TRACE = System.getProperty("jinfer.mmTrace") != null;
-    private static final java.util.Map<String, long[]> MM_HIST = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Map<String, long[]> MM_HIST = new ConcurrentHashMap<>();
     static {
         if (MM_TRACE) Runtime.getRuntime().addShutdownHook(new Thread(Dispatch::mmDump));
     }
@@ -47,7 +51,7 @@ final class Dispatch implements MatMul {
     static void mmDump() {
         long tot = 0, totN1 = 0;
         System.err.println("=== matmul byte attribution (count, total weight bytes) ===");
-        var sorted = new java.util.ArrayList<>(MM_HIST.entrySet());
+        var sorted = new ArrayList<>(MM_HIST.entrySet());
         sorted.sort((a, b) -> Long.compare(b.getValue()[1], a.getValue()[1]));
         for (var e : sorted) {
             long[] v = e.getValue();
