@@ -542,9 +542,12 @@ static int try_vnni_band(jam_ctx* ctx, const void* w, int ldw, const void* a, in
     return 1;
 }
 
-/* 256-bit AVX-VNNI sibling: same q4k_job + repack scratch + activation requant, but no q4k_avail gate (it
- * runs the 8-row ymm band). NOTE: phase-1 jam_q4k_quant is AVX-512 here, so this is benchmark-wiring on an
- * AVX-512-capable host; a true no-AVX-512 build needs an AVX-VNNI requant before this can ship. */
+#endif  /* JAM_HAVE_AVX512 (try_vnni_band) */
+
+#ifdef JAM_HAVE_AVXVNNI
+/* 256-bit AVX-VNNI sibling of try_vnni_band: same q4k_job + per-worker repack scratch, but fed by the pure
+ * (no-AVX-512) jam_q8_0_requant_256, so the whole Q8_0/Q4_0 path is AVX-512-free — the default avx_vnni
+ * prefill path on client CPUs without AVX-512. */
 static int try_vnni_band_256(jam_ctx* ctx, const void* w, int ldw, const void* a, int lda, void* c, int ldc,
                              int m, int n, int k, int block_bytes, jam_task_fn band) {
     int kblocks = k / JAM_QK;
@@ -609,8 +612,10 @@ static jam_status jam_mm_run(jam_ctx* ctx,
             }
             /* prefill (seq>=8) on AVX-512-VNNI: the 16-row repack (one vpdpbusd -> 16 rows, no hsums) */
             if (try_vnni_band(ctx, w, ldw, a, lda, c, ldc, m, n, k, 34, jam_q8_0_repack_band)) return JAM_OK;
-            /* A/B: JAM_Q8_BAND256 routes the no-AVX-512 (avx_vnni) path through the new 8-row ymm band */
-            if (ctx->active == JAM_ISA_AVX_VNNI && getenv("JAM_Q8_BAND256") &&
+#endif
+#ifdef JAM_HAVE_AVXVNNI
+            /* no-AVX-512 client default: the 8-row ymm VNNI repack band (prefill seq>=8) */
+            if (ctx->active == JAM_ISA_AVX_VNNI &&
                 try_vnni_band_256(ctx, w, ldw, a, lda, c, ldc, m, n, k, 34, jam_q8_0_repack_band_avxvnni)) return JAM_OK;
 #endif
             /* avx2: cached-repack sign-trick maddubs 8-wide (prefill n>1; gemv keeps the dot kernel) */
@@ -631,7 +636,9 @@ static jam_status jam_mm_run(jam_ctx* ctx,
         if (wt == JAM_Q4_0) {
 #ifdef JAM_HAVE_AVX512
             if (try_vnni_band(ctx, w, ldw, a, lda, c, ldc, m, n, k, 18, jam_q4_0_repack_band)) return JAM_OK;
-            if (ctx->active == JAM_ISA_AVX_VNNI && getenv("JAM_Q8_BAND256") &&
+#endif
+#ifdef JAM_HAVE_AVXVNNI
+            if (ctx->active == JAM_ISA_AVX_VNNI &&
                 try_vnni_band_256(ctx, w, ldw, a, lda, c, ldc, m, n, k, 18, jam_q4_0_repack_band_avxvnni)) return JAM_OK;
 #endif
             return run_quant(ctx, &q, m, ctx->q4_0_kernel, jam_mm_q4_0_f32_generic);
