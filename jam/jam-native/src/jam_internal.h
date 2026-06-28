@@ -247,11 +247,17 @@ void jam_mm_q8_0_i8mm(void* job, int a_begin, int a_end, int tid);         /* vm
  * kernel: jam_mm routes supported dtypes to it before the pool path. Implemented in jam_metal.mm. ---- */
 #ifdef JAM_HAVE_METAL
 typedef struct jam_metal jam_metal;
+#ifdef __cplusplus
+extern "C" {              /* jam_metal.mm is Objective-C++: match the extern "C" on its definitions */
+#endif
 jam_metal* jam_metal_create(void);
 void       jam_metal_destroy(jam_metal* m);
 jam_status jam_metal_mm(jam_metal* m, const void* a, jam_dtype at, int lda,
                         const void* b, jam_dtype bt, int ldb, void* c, jam_dtype ct, int ldc,
                         int M, int N, int K);
+#ifdef __cplusplus
+}
+#endif
 #endif
 
 #endif /* JAM_INTERNAL_H */

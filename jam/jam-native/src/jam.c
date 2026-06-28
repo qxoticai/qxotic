@@ -202,6 +202,13 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
         cap             = cfg->max_isa;
         if (cfg->name) snprintf(c->name, sizeof c->name, "%s", cfg->name);   /* copied (bounded) */
     }
+    /* JAM_ISA is a hard CEILING on EVERY context, not just the global one: an operator can force a lower ISA
+     * (e.g. to dodge a virtualized AVX-512 that CPUID advertises but faults on). Only lowers — never raises a
+     * caller's cfg cap; METAL/unknown is ignored (it's a GPU backend, not a CPU rung). */
+    {   jam_isa env_cap = parse_isa(getenv("JAM_ISA"));
+        if (env_cap != JAM_ISA_AUTO && env_cap != JAM_ISA_METAL && (cap == JAM_ISA_AUTO || env_cap < cap))
+            cap = env_cap;
+    }
     /* Core selection: physical P-cores (no E-cores, no SMT), capped by any cgroup quota — see jam_cpu.c.
      * AUTO (nthreads<=0) uses the selected count and pins to it. An explicit/env count that still FITS the
      * selection is pinned too; a larger explicit count (e.g. opting into SMT) runs unpinned. */
