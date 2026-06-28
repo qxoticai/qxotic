@@ -199,6 +199,10 @@ void jam_mm_q4k_sse3(void* job, int rb, int re, int tid);                 /* K-q
 void jam_mm_q5k_sse3(void* job, int rb, int re, int tid);
 void jam_mm_q6k_sse3(void* job, int rb, int re, int tid);
 #endif
+#ifdef JAM_HAVE_SSSE3
+void jam_mm_q8_0_ssse3(void* job, int rb, int re, int tid);               /* 128-bit maddubs sign-trick (Core 2 floor) */
+void jam_mm_q4_0_ssse3(void* job, int rb, int re, int tid);              /* + arithmetic nibble decode */
+#endif
 #ifdef JAM_HAVE_AVX2
 void jam_mm_q8_0_avx2(void* job, int a_begin, int a_end, int tid);         /* phase 2: maddubs matmul */
 #endif

@@ -62,6 +62,7 @@ static jam_isa detect_best(void) {
     if (avx512_core)                      return JAM_ISA_AVX512;
     if (avx2_core && HAS("avxvnni"))                     return JAM_ISA_AVX_VNNI;  /* 256-bit VNNI, no AVX-512 */
     if (avx2_core)                                       return JAM_ISA_AVX2;
+    if (HAS("ssse3"))                                    return JAM_ISA_SSSE3;  /* 128-bit maddubs sign-trick (Q8_0/Q4_0) */
     if (HAS("sse3"))                                     return JAM_ISA_SSE3;   /* 128-bit int8 floor (madd + haddps) */
     if (HAS("sse2"))                                     return JAM_ISA_SSE2;
     #undef HAS
@@ -82,6 +83,7 @@ const char* jam_isa_name(jam_isa isa) {
         case JAM_ISA_GENERIC:     return "generic";
         case JAM_ISA_SSE2:        return "sse2";
         case JAM_ISA_SSE3:        return "sse3";
+        case JAM_ISA_SSSE3:       return "ssse3";
         case JAM_ISA_AVX2:        return "avx2";
         case JAM_ISA_AVX_VNNI:    return "avx_vnni";
         case JAM_ISA_AVX512:      return "avx512";
@@ -231,6 +233,10 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
         c->mxfp4_kernel = jam_mm_mxfp4_sse3; c->q4_0_kernel = jam_mm_q4_0_sse3;
         c->kq[JAM_KQ_Q4K].kernel = jam_mm_q4k_sse3;   /* K-quant int8 floor (run_quant supplies per-32 requant) */
         c->kq[JAM_KQ_Q5K].kernel = jam_mm_q5k_sse3; c->kq[JAM_KQ_Q6K].kernel = jam_mm_q6k_sse3; }
+#endif
+#ifdef JAM_HAVE_SSSE3
+    if (cpu >= JAM_ISA_SSSE3) { c->q8_kernel = jam_mm_q8_0_ssse3;   /* maddubs sign-trick: faster Q8_0/Q4_0 (K-quants keep the SSE3 path) */
+        c->q4_0_kernel = jam_mm_q4_0_ssse3; }
 #endif
 #ifdef JAM_HAVE_AVX2
     if (cpu >= JAM_ISA_AVX2) { c->f32_kernel = jam_mm_f32_avx2;

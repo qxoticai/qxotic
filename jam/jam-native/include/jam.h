@@ -78,7 +78,8 @@ typedef enum {
     JAM_ISA_AUTO = 0,          /* config only: pick the best available */
     JAM_ISA_GENERIC,           /* portable scalar floor */
     JAM_ISA_SSE2,
-    JAM_ISA_SSE3,              /* 128-bit int8 (sign-extend + madd, software fp16); pre-AVX2 x86 floor */
+    JAM_ISA_SSE3,              /* 128-bit int8 (sign-extend + madd, software fp16); true-SSE3 floor (Prescott) */
+    JAM_ISA_SSSE3,             /* + SSSE3 maddubs (sign-trick) for Q8_0/Q4_0 — Core 2 era, still pre-AVX2 */
     JAM_ISA_AVX2,
     JAM_ISA_AVX_VNNI,          /* 256-bit VNNI without AVX-512 (client: Alder/Raptor Lake) */
     JAM_ISA_AVX512,
