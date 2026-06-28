@@ -239,6 +239,7 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
         c->kq[JAM_KQ_Q6K] = (jam_kquant){ jam_mm_q6k_rp_avx2, jam_q6k_requant, jam_q6k_repack8 };
         c->nvfp4_kernel = jam_mm_nvfp4_avx2;
         c->q8_0_rp_kernel = jam_mm_q8_0_rp_avx2; c->q8_0_repack = jam_q8_0_repack8;   /* 8-feat-wide cached repack */
+        c->q4_0_repack = jam_q4_0_repack8;   /* Q4_0 -> signed q-8, then the same bias-free maddubs kernel */
         c->dense_f16_kernel = jam_mm_f16_avx2; c->dense_bf16_kernel = jam_mm_bf16_avx2; }
 #endif
 #ifdef JAM_HAVE_AVXVNNI
@@ -640,6 +641,15 @@ static jam_status jam_mm_run(jam_ctx* ctx,
 #ifdef JAM_HAVE_AVXVNNI
             if (ctx->active == JAM_ISA_AVX_VNNI &&
                 try_vnni_band_256(ctx, w, ldw, a, lda, c, ldc, m, n, k, 18, jam_q4_0_repack_band_avxvnni)) return JAM_OK;
+#endif
+#ifdef JAM_HAVE_AVX2
+            /* avx2: cached-repack (nibble -> signed q-8), then the bias-free sign-trick maddubs 8-wide (prefill n>1) */
+            if (ctx->q4_0_repack && n > 1 && ensure_qscratch(ctx, n, k)) {
+                q.aq = (int8_t*) ctx->q_aq; q.ad = (float*) ctx->q_ad; q.asum = NULL;
+                jam_run(ctx, n, jam_q8_0_requant, &q);
+                if (try_repack_run(ctx, &q, w, m, k, JAM_QK, sizeof(jam_q8_0_rpblock),
+                                   (size_t)(ldw / JAM_QK) * 18, ctx->q4_0_repack, jam_mm_q8_0_rp_avx2)) return JAM_OK;
+            }
 #endif
             return run_quant(ctx, &q, m, ctx->q4_0_kernel, jam_mm_q4_0_f32_generic);
         }

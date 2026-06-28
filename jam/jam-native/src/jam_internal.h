@@ -65,6 +65,7 @@ struct jam_ctx {
     int rp_cache_n, rp_cache_cap;
     jam_task_fn      q8_0_rp_kernel; /* avx2 cached-repack Q8_0 (sign-trick maddubs 8-wide); NULL -> q8_kernel */
     jam_repack_fn    q8_0_repack;    /* non-NULL -> cached weight-repack for q8_0_rp_kernel */
+    jam_repack_fn    q4_0_repack;    /* non-NULL -> cached weight-repack (Q4_0 -> signed q-8) for the bias-free maddubs kernel */
     jam_task_fn      dense_f16_kernel;   /* AVX-512 F16 dense (k%16==0); NULL -> generic floor */
     jam_task_fn      dense_bf16_kernel;  /* AVX-512 BF16 dense (k%16==0); NULL -> generic floor */
 
@@ -178,7 +179,8 @@ void jam_mm_q5k_rp_avx2(void* job, int rb, int re, int tid);
 void jam_q6k_repack8(const void* w, int rows0, int re, int sblocks, size_t w_stride, void* out);  /* repack 8 features (Q6_K) */
 void jam_mm_q6k_rp_avx2(void* job, int rb, int re, int tid);
 void jam_q8_0_repack8(const void* w, int rows0, int re, int nblocks, size_t w_stride, void* out); /* repack 8 features (Q8_0) */
-void jam_mm_q8_0_rp_avx2(void* job, int rb, int re, int tid);            /* cached-repack Q8_0 gemm (sign-trick maddubs) */
+void jam_q4_0_repack8(const void* w, int rows0, int re, int nblocks, size_t w_stride, void* out); /* repack 8 features (Q4_0 -> signed q-8) */
+void jam_mm_q8_0_rp_avx2(void* job, int rb, int re, int tid);            /* cached-repack Q8_0 gemm (sign-trick maddubs); also Q4_0 (q-8 signed) */
 void jam_q8k_requant(void* job, int rb, int re, int tid);                 /* per-256 (Q8_K) activation requant, per-32 sums */
 void jam_q6k_requant(void* job, int rb, int re, int tid);                 /* per-256 requant with per-16 sums (Q6_K bias) */
 void jam_mm_nvfp4_avx2(void* job, int rb, int re, int tid);                /* NVFP4: FP4 LUT + per-16 E4M3 */
