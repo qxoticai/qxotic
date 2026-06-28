@@ -70,20 +70,23 @@ void jam_mm_q4k_rp_avx2(void* arg, int rb, int re, int tid) {
                 const uint8_t* sc = blk->sc; const uint8_t* mn = blk->mn; const uint8_t* qs = blk->qs;
                 __m256i sumi[4]; for (int t = 0; t < 4; ++t) sumi[t] = _mm256_setzero_si256();
                 for (int s = 0; s < 8; ++s) {
-                    /* sc16 = [sc0,sc0,sc1,sc1,...,sc7,sc7] so madd_epi16 folds the per-sub-block scale into the dot (no vpmulld) */
+                    /* sc16 = [sc0,sc0,sc1,sc1,...,sc7,sc7] so one madd_epi16/sub-block folds the per-sub-block scale (no vpmulld) */
                     __m128i sc8b = _mm_cvtepu8_epi16(_mm_loadl_epi64((const __m128i*)(sc + s*8)));
                     __m256i sc16 = _mm256_set_m128i(_mm_unpackhi_epi16(sc8b, sc8b), _mm_unpacklo_epi16(sc8b, sc8b));
-                    __m256i sb[4]; for (int t = 0; t < nt; ++t) sb[t] = _mm256_setzero_si256();
+                    /* Scale is constant over the 8 groups, so accumulate the raw maddubs int16 across groups and
+                     * scale ONCE per sub-block. Worst-case lane |Σ| = 8·(2·15·128) = 30720 < 32767 -> no int16 overflow. */
+                    __m256i sb16[4]; for (int t = 0; t < nt; ++t) sb16[t] = _mm256_setzero_si256();
                     for (int gp = 0; gp < 8; ++gp) {
                         __m128i x = _mm_loadu_si128((const __m128i*)(qs + (size_t)(s*8 + gp)*16));
                         __m256i w = _mm256_set_m128i(_mm_and_si128(_mm_srli_epi16(x, 4), m4), _mm_and_si128(x, m4));
                         for (int t = 0; t < nt; ++t) {
                             const int8_t* a = AQ + (size_t)(j0+t)*k + (size_t) B*JAM_QKK + s*32 + gp*4;
                             __m256i aw = _mm256_set1_epi32(*(const int*) a);
-                            sb[t] = _mm256_add_epi32(sb[t], _mm256_madd_epi16(_mm256_maddubs_epi16(w, aw), sc16));
+                            sb16[t] = _mm256_add_epi16(sb16[t], _mm256_maddubs_epi16(w, aw));
                         }
                     }
-                    for (int t = 0; t < nt; ++t) sumi[t] = _mm256_add_epi32(sumi[t], sb[t]);
+                    for (int t = 0; t < nt; ++t)
+                        sumi[t] = _mm256_add_epi32(sumi[t], _mm256_madd_epi16(sb16[t], sc16));
                 }
                 __m256 d_v = _mm256_loadu_ps(d), dmin_v = _mm256_loadu_ps(dmin);
                 __m256 minsum[4]; for (int t = 0; t < nt; ++t) minsum[t] = _mm256_setzero_ps();
