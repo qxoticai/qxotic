@@ -23,6 +23,7 @@ endif()
 add_library(jam SHARED
     src/jam.c
     src/jam_pool.c
+    src/jam_cpu.c
     src/kernels/jam_kernels_generic.c
 )
 target_include_directories(jam PUBLIC include PRIVATE src)

@@ -2,12 +2,15 @@
 #define JAM_INTERNAL_H
 
 #include "jam.h"
+#include "jam_cpu.h"  /* jam_cpu_plan (core selection, stored on the ctx for the log) */
 #include <stddef.h>   /* size_t */
 #include <stdint.h>   /* int8_t / int32_t */
 
 /* ---- internal thread pool (used when no host parallel_for is supplied, e.g. the global ctx) ---- */
 typedef struct jam_pool jam_pool;
-jam_pool* jam_pool_create(int nthreads);                 /* nthreads participants incl. the submitter */
+jam_pool* jam_pool_create(int nthreads, const int* cpu); /* nthreads participants incl. the submitter;
+                                                          * cpu[] (len nthreads, or NULL) pins worker k to
+                                                          * cpu[k+1] best-effort (cpu[0] = unpinned submitter) */
 void      jam_pool_destroy(jam_pool* pool);
 void      jam_pool_parallel_for(jam_pool* pool, int n, jam_task_fn fn, void* arg);  /* blocks till done */
 int       jam_pool_is_spin(const jam_pool* pool);        /* 1 if JAM_POOL=spin (spin-then-park barrier) */
@@ -31,6 +34,7 @@ struct jam_ctx {
     void*            pool;           /* opaque handle for parallel_for */
     jam_pool*        ipool;          /* jam-owned pool (NULL if a host executor was supplied) */
     int              nthreads;
+    jam_cpu_plan     cpu;            /* the core-selection plan used to size + pin the pool (for the log) */
     jam_isa          active;         /* the bound ISA level (reported by jam_active_isa) */
     char             name[48];       /* optional label for JAM_DEBUG ("" if unnamed) */
     _Atomic int      busy;           /* serial-stream guard: jam_mm try-acquires (1 exchange); else EBUSY */

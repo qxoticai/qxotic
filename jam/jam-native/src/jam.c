@@ -12,9 +12,16 @@
 
 /* ---- helpers ---- */
 
-static int online_cpus(void) {
-    long n = sysconf(_SC_NPROCESSORS_ONLN);
-    return n > 0 ? (int) n : 1;   /* TODO: physical cores (bandwidth-bound work prefers 1/core) */
+/* Essential, always-on: one line so the user can SEE the auto-selected cores/ISA/pinning without JAM_DEBUG. */
+static void cpu_report(const jam_ctx* c) {
+    const jam_cpu_plan* p = &c->cpu;
+    int ecore = p->n_logical - p->n_toptier;
+    int smt   = p->n > 0 ? p->n_toptier / p->n : 1;
+    char cg[24];
+    if (p->quota > 0) snprintf(cg, sizeof cg, "%d cores", p->quota); else snprintf(cg, sizeof cg, "none");
+    fprintf(stderr, "[jam] cpu: %d threads (of %d logical: P=%d E=%d smt=%dx)  isa=%s  cgroup=%s  pinned=%s\n",
+            c->nthreads, p->n_logical, p->n_toptier, ecore, smt,
+            jam_isa_name(c->active), cg, p->pinned ? "yes" : "no");
 }
 
 /* ---- ISA detection + names ---- */
@@ -174,6 +181,9 @@ static void debug_report(const jam_ctx* c, jam_isa cap) {
             c->q4k_avail ? "16-row VNNI repack (seq>=8) + " : "", q8_kernel_name(c->q8_kernel));
     fprintf(stderr, "[jam]   MXFP4 kernel: %s\n",
             c->mxfp4_kernel ? "simd (FP4 decode + int8 dot, requant A)" : "generic (float)");
+    fprintf(stderr, "[jam]   cpu set [%d]:", c->cpu.n);   /* the actual logical CPUs the pool runs on */
+    for (int i = 0; i < c->cpu.n; i++) fprintf(stderr, " %d", c->cpu.cpu[i]);
+    fprintf(stderr, "\n");
 }
 
 /* ---- context lifecycle ---- */
@@ -190,11 +200,18 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
         cap             = cfg->max_isa;
         if (cfg->name) snprintf(c->name, sizeof c->name, "%s", cfg->name);   /* copied (bounded) */
     }
-    if (c->nthreads <= 0) c->nthreads = online_cpus();
+    /* Core selection: physical P-cores (no E-cores, no SMT), capped by any cgroup quota — see jam_cpu.c.
+     * AUTO (nthreads<=0) uses the selected count and pins to it. An explicit/env count that still FITS the
+     * selection is pinned too; a larger explicit count (e.g. opting into SMT) runs unpinned. */
+    c->cpu = jam_cpu_plan_make();
+    const int* pin = NULL;
+    if (c->nthreads <= 0) { c->nthreads = c->cpu.n; pin = c->cpu.cpu; }
+    else if (c->nthreads <= c->cpu.n)              pin = c->cpu.cpu;
+    c->cpu.pinned = (pin != NULL) && jam_cpu_can_pin();
 
     /* If the caller did not supply an executor, own an internal pool. */
     if (!c->parallel_for) {
-        c->ipool = jam_pool_create(c->nthreads);
+        c->ipool = jam_pool_create(c->nthreads, pin);
         if (!c->ipool) { free(c); return NULL; }
     }
 
@@ -269,6 +286,7 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
         if (c->metal) c->active = JAM_ISA_METAL;
     }
 #endif
+    cpu_report(c);                            /* essential config, always logged */
     if (jam_debug()) debug_report(c, cap);
     return c;
 }
