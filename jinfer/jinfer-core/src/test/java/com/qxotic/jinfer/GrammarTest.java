@@ -86,6 +86,11 @@ public final class GrammarTest {
     static boolean anyValid(Grammar.Cursor cur, Grammar.Vocab v) {
         return !allowedSet(cur, v).isEmpty();
     }
+    // After a complete top-level JSON value, RFC 8259 allows only trailing whitespace/EOS — no
+    // further content. (Grammar.json is "ws value ws", so whitespace tokens stay valid.)
+    static boolean jsonDone(Grammar.Cursor cur, Grammar.Vocab v) {
+        return rejects(cur, v, ",") && rejects(cur, v, "{") && rejects(cur, v, "1") && rejects(cur, v, "\"");
+    }
     static void advance(Grammar.Cursor cur, Grammar.Vocab v, String s) {
         int t = tidx(v, s); if (t >= 0) cur.advanceWith(t);
     }
@@ -218,7 +223,7 @@ public final class GrammarTest {
         advance(c, v, ":");
         advance(c, v, "1");
         advance(c, v, "}");
-        check("complete object", anyValid(c, v));
+        check("complete object", jsonDone(c, v));
 
         c = json.cursor();
         advance(c, v, "{");
@@ -232,7 +237,7 @@ public final class GrammarTest {
         advance(c, v, "2");
         advance(c, v, "]");
         advance(c, v, "}");
-        check("nested array", anyValid(c, v));
+        check("nested array", jsonDone(c, v));
 
         c = json.cursor();
         advance(c, v, "[");
@@ -252,7 +257,7 @@ public final class GrammarTest {
         advance(c, v, "l");
         advance(c, v, "l");
         advance(c, v, "]");
-        check("literal array", anyValid(c, v));
+        check("literal array", jsonDone(c, v));
 
         c = json.cursor();
         advance(c, v, "1");
@@ -391,7 +396,7 @@ public final class GrammarTest {
         c = s.cursor();
         check("opt zero 'a' valid", allows(c, v, "a"));
         advance(c, v, "a");
-        check("opt one done", anyValid(c, v));
+        check("opt one done", !anyValid(c, v)); // optional consumed -> complete
 
         s = Grammar.of("root ::= (\"a\"|\"b\")*", v);
         c = s.cursor();
@@ -476,7 +481,8 @@ public final class GrammarTest {
         check("left-rec 'b'", allows(c, v, "b"));
         check("left-rec 'b' at start", allows(c, v, "b"));
         advance(c, v, "b");
-        check("left-rec 'b' done", !anyValid(c, v));
+        // language is b·a* — after 'b' the recursive "a" tail is reachable (best-effort left rec)
+        check("left-rec 'b' then 'a'", allows(c, v, "a"));
     }
 
     // ========================================================================
@@ -503,7 +509,7 @@ public final class GrammarTest {
         advance(gc, v, ":");
         advance(gc, v, "1");
         advance(gc, v, "}");
-        check("gbnf json object walk", !anyValid(gc, v));
+        check("gbnf json object walk", jsonDone(gc, v));
     }
 
     // ========================================================================
@@ -568,7 +574,7 @@ public final class GrammarTest {
         // empty object via multi-byte tokens
         advance(c, v, "{");
         advance(c, v, "}");
-        check("mb empty {}", anyValid(c, v));
+        check("mb empty {}", jsonDone(c, v));
 
         // object with literal true
         c.reset();
@@ -577,7 +583,7 @@ public final class GrammarTest {
         advance(c, v, ":");
         advance(c, v, "true");
         advance(c, v, "}");
-        check("mb {\"key\":true}", anyValid(c, v));
+        check("mb {\"key\":true}", jsonDone(c, v));
 
         // object with literal false
         c.reset();
@@ -586,7 +592,7 @@ public final class GrammarTest {
         advance(c, v, ":");
         advance(c, v, "false");
         advance(c, v, "}");
-        check("mb {\"key\":false}", anyValid(c, v));
+        check("mb {\"key\":false}", jsonDone(c, v));
 
         // object with literal null
         c.reset();
@@ -595,7 +601,7 @@ public final class GrammarTest {
         advance(c, v, ":");
         advance(c, v, "null");
         advance(c, v, "}");
-        check("mb {\"key\":null}", anyValid(c, v));
+        check("mb {\"key\":null}", jsonDone(c, v));
 
         // array with composite token [1]
         c.reset();
@@ -604,7 +610,7 @@ public final class GrammarTest {
         advance(c, v, ",");
         advance(c, v, "123");
         advance(c, v, "]");
-        check("mb array composite", anyValid(c, v));
+        check("mb array composite", jsonDone(c, v));
 
         // whitespace handling
         c.reset();
@@ -617,7 +623,7 @@ public final class GrammarTest {
         advance(c, v, "0");
         advance(c, v, "\r");
         advance(c, v, "}");
-        check("mb whitespace", anyValid(c, v));
+        check("mb whitespace", jsonDone(c, v));
 
         // negative number
         c.reset();
@@ -625,7 +631,7 @@ public final class GrammarTest {
         advance(c, v, "-");
         advance(c, v, "1");
         advance(c, v, "]");
-        check("mb [-1]", anyValid(c, v));
+        check("mb [-1]", jsonDone(c, v));
 
         // reject invalid tokens
         c.reset();
@@ -695,10 +701,12 @@ public final class GrammarTest {
         advance(c, v, "1");
         advance(c, v, "a");  // anything after 4 hex digits → back to string
         advance(c, v, "\"");
-        check("str unicode escape", anyValid(c, v));
+        check("str unicode escape", jsonDone(c, v));
 
-        // JSON DFA allows newlines in strings (only " and \ are special)
-        check("str allows raw newline", allows(c, v, "\n"));
+        // RFC 8259: raw control chars (incl. newline) are NOT allowed unescaped inside strings
+        c.reset();
+        advance(c, v, "\"");
+        check("str rejects raw newline (RFC 8259)", rejects(c, v, "\n"));
     }
 
     // ========================================================================
@@ -906,7 +914,7 @@ public final class GrammarTest {
         c = s.cursor();
         check("cc-opt '1' valid", allows(c, v, "1"));
         advance(c, v, "1");
-        check("cc-opt done", anyValid(c, v));
+        check("cc-opt done", !anyValid(c, v)); // optional consumed -> complete
 
         // dot star: .*  (any byte, zero or more)
         s = Grammar.of("root ::= .*", v);
@@ -929,7 +937,7 @@ public final class GrammarTest {
         c = s.cursor();
         check("dot-opt zero ok", anyValid(c, v));
         advance(c, v, "!");
-        check("dot-opt after one", anyValid(c, v));
+        check("dot-opt after one", !anyValid(c, v)); // optional consumed -> complete
     }
 
     // ========================================================================
@@ -937,39 +945,29 @@ public final class GrammarTest {
     // ========================================================================
 
     static void testDfaStateCounts() {
-        System.out.println("-- dfa state counts --");
+        System.out.println("-- compile sanity --");
         MockV v = new MockV();
 
-        // Simple literal: 1 state (or small)
+        // The engine is a pushdown matcher (no DFA table); assert each grammar compiles and
+        // constrains the start token correctly rather than checking internal state counts.
         Grammar.Spec s = Grammar.of("root ::= \"a\"", v);
-        int ns = s.transitions() != null ? s.transitions().length / 256 : 0;
-        check("lit states", ns >= 1 && ns <= 4);
+        check("lit compiles", s.isValid() && allows(s.cursor(), v, "a"));
 
-        // Alternation: should be compact
         s = Grammar.of("root ::= \"a\" | \"b\" | \"c\"", v);
-        ns = s.transitions() != null ? s.transitions().length / 256 : 0;
-        check("alt states", ns >= 2 && ns <= 8);
+        check("alt compiles", s.isValid() && allows(s.cursor(), v, "a") && allows(s.cursor(), v, "c"));
 
-        // Recursive grammar: 2-10 states
         s = Grammar.of("root ::= \"a\" root | \"b\"", v);
-        ns = s.transitions() != null ? s.transitions().length / 256 : 0;
-        check("rec states", ns >= 2 && ns <= 12);
+        check("rec compiles", s.isValid() && allows(s.cursor(), v, "a") && allows(s.cursor(), v, "b"));
 
-        // JSON (hardcoded): exactly 10 states
         s = Grammar.json(v);
-        ns = s.transitions() != null ? s.transitions().length / 256 : 0;
-        check("json dfa states = 10", ns == 10);
+        check("json compiles", s.isValid() && allows(s.cursor(), v, "{") && rejects(s.cursor(), v, "}"));
 
-        // JSON (GBNF): should compile to reasonable size
         s = Grammar.of(Grammar.JSON_GRAMMAR, v);
-        ns = s.transitions() != null ? s.transitions().length / 256 : 0;
-        check("json gbnf compiles to DFA", ns > 0);
+        check("json gbnf compiles", s.isValid() && allows(s.cursor(), v, "["));
 
-        // Medium alternation (8 choices)
         String many = String.join(" | ", java.util.Collections.nCopies(8, "\"a\""));
         s = Grammar.of("root ::= " + many, v);
-        ns = s.transitions() != null ? s.transitions().length / 256 : 0;
-        check("many-alt states < 2048", ns < 2048);
+        check("many-alt compiles", s.isValid() && allows(s.cursor(), v, "a"));
     }
 
     // ========================================================================
@@ -1015,14 +1013,14 @@ public final class GrammarTest {
         Grammar.Cursor c = json.cursor();
         for (int i = 0; i < 50; i++) advance(c, v, "[");
         for (int i = 0; i < 50; i++) advance(c, v, "]");
-        check("deep array 50", anyValid(c, v));
+        check("deep array 50", jsonDone(c, v));
 
         // 50 levels of nested objects
         c = json.cursor();
         for (int i = 0; i < 50; i++) { advance(c, v, "{"); advance(c, v, "\""); advance(c, v, "a"); advance(c, v, "\""); advance(c, v, ":"); }
         advance(c, v, "1");
         for (int i = 0; i < 50; i++) advance(c, v, "}");
-        check("deep object 50", anyValid(c, v));
+        check("deep object 50", jsonDone(c, v));
     }
 
     // ========================================================================
@@ -1198,9 +1196,10 @@ public final class GrammarTest {
         }
         Grammar.Spec s = Grammar.of(sb.toString(), v);
         check("large-alt compiles", s.isValid());
-        int ns = s.transitions() != null ? s.transitions().length / 256 : 0;
-        // Should compile without crash, may hit state limit
-        check("large-alt states within limit", ns <= 2048);
+        // Should compile without crash and still constrain to the alternatives
+        Grammar.Cursor c = s.cursor();
+        check("large-alt allows 'a'", allows(c, v, "a"));
+        check("large-alt rejects '1'", rejects(c, v, "1"));
     }
 
     // ========================================================================
@@ -1247,7 +1246,7 @@ public final class GrammarTest {
         advance(c2, v2, "{");
         advance(c1, v1, "}");
         advance(c2, v2, "}");
-        check("mb-consistency {} both ok", anyValid(c1, v1) && anyValid(c2, v2));
+        check("mb-consistency {} both ok", jsonDone(c1, v1) && jsonDone(c2, v2));
     }
 
     // ========================================================================
