@@ -358,7 +358,7 @@ void jam_q8_0_requant_256(void* arg, int s0, int s1, int tid) {
                 xq[e] = (int8_t)(v > 127 ? 127 : v < -128 ? -128 : v);
             }
             dx[b] = d;
-            if (xs) { int h0=0,h1=0; for (int e=0;e<16;e++) h0+=xq[e]; for (int e=16;e<JAM_QK;e++) h1+=xq[e]; xs[2*b]=(float)h0; xs[2*b+1]=(float)h1; }
+            if (xs) { int h0=0,h1=0; for (int e=0;e<16;e++) h0+=xq[e]; for (int e=16;e<JAM_QK;e++) h1+=xq[e]; xs[2*b]=(float)h0*d; xs[2*b+1]=(float)h1*d; }   /* SCALED sum (dx·Σxq): Q4_0 -8 term is in activation units */
         }
     }
 }
