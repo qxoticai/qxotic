@@ -4,18 +4,39 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.BitSet;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Queue;
+import java.util.Set;
 import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Grammar-constrained decoding.
+ *
+ * <p>A GBNF grammar is parsed into a {@link Rule} IR, then compiled into a {@link CFG} — a
+ * byte-level <b>pushdown</b> grammar (a context-free matcher with an explicit stack). A
+ * {@link Cursor} walks it token-by-token: {@link Cursor#maskLogits} restricts the logits to the
+ * tokens the grammar can accept next, and {@link Cursor#advanceWith} consumes the chosen token's
+ * bytes. Because the matcher carries a stack it represents arbitrarily nested / recursive grammars
+ * (real JSON, balanced parens, …) correctly — a finite DFA cannot.
+ *
+ * <p>Masks are computed once per distinct matcher state and cached on the {@link Spec} (shared
+ * across cursors), so the per-token cost amortises to a lookup — the same mask-caching idea modern
+ * constrained-decoding engines (Outlines / XGrammar) rely on.
+ */
 public final class Grammar {
 
-    static final int MAX_DFA_STATES = 2048;
+    /** Cap on parallel stacks in a matcher state — a backstop against pathological grammars. */
+    static final int MAX_STACKS = 1 << 14;
+    /** Cap on epsilon-closure size per step — bounds left-recursive grammars (best-effort) while
+     *  staying far above any non-left-recursive closure, which is tiny. */
+    static final int CLOSURE_CAP = 1 << 13;
+    /** Cap on cached masks per Spec, bounding memory for long-lived / deeply nested grammars. */
+    static final int MASK_CACHE_CAP = 1 << 13;
 
     private static final Map<LFMTokenizer, Vocab> WRAPPERS = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<Vocab, Map<String, Spec>> CACHES = Collections.synchronizedMap(new WeakHashMap<>());
@@ -44,386 +65,590 @@ public final class Grammar {
     public static Spec json(LFMTokenizer t) { return json(vocab(t)); }
     public static Spec json(Vocab v) {
         if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
-        return cache(v).computeIfAbsent("__json__", k -> JsonDFA.build(v));
+        return cache(v).computeIfAbsent("__json__", k -> build(JSON_GRAMMAR, v));
+    }
+
+    /** Minified JSON: the same language as {@link #json} but with no whitespace permitted anywhere
+     *  (no spaces/newlines between tokens, none at top level) — forces compact, token-efficient output. */
+    public static Spec jsonCompact(LFMTokenizer t) { return jsonCompact(vocab(t)); }
+    public static Spec jsonCompact(Vocab v) {
+        if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
+        return cache(v).computeIfAbsent("__json_compact__", k -> build(JSON_COMPACT_GRAMMAR, v));
     }
 
     public static Spec of(String g, LFMTokenizer t) { return of(g, vocab(t)); }
     public static Spec of(String g, Vocab v) {
         if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
-        return cache(v).computeIfAbsent(g, k -> Spec.compile(k, v));
+        return cache(v).computeIfAbsent(g, k -> build(k, v));
     }
 
-    static final class JsonDFA {
-        static Spec build(Vocab v) {
-            int vs = v.size();
-            byte[][] allBytes = new byte[vs][];
-            byte[] firsts = new byte[vs];
-            for (int t = 0; t < vs; t++) { allBytes[t] = v.bytes(t); firsts[t] = allBytes[t].length > 0 ? allBytes[t][0] : 0; }
-            int states = 10;
-            int[] trans = new int[states * 256];
-            Arrays.fill(trans, -1);
+    static Spec build(String gbnf, Vocab v) {
+        List<Rule> rules = parse(gbnf);
+        if (rules.isEmpty()) return Spec.DISABLED;
+        int vs = v.size();
+        byte[][] tokenBytes = new byte[vs][];
+        for (int t = 0; t < vs; t++) tokenBytes[t] = v.bytes(t);
+        return new Spec(CFG.compile(rules), tokenBytes);
+    }
 
-            byte[] digits = "0123456789".getBytes(StandardCharsets.UTF_8);
+    // ---- Compiled CFG (byte-level pushdown grammar) ------------------------
+    //
+    // The grammar is flattened into "slots". A slot is one of:
+    //   TERM  — a 256-bit byte set + a continuation slot (the next slot after a matching byte)
+    //   REF   — a rule id + a return slot (where to continue once that rule completes)
+    //   END   — marks the end of a rule alternative (pop a frame)
+    // A rule is a set of alternative entry slots. Groups and repetitions are desugared into
+    // anonymous rules so every leaf is a TERM/REF/END — no nesting survives into the matcher.
 
-            for (int w : WS_BYTES) trans[9 * 256 + w] = 9;
-            trans[9 * 256 + '{'] = 1; trans[9 * 256 + '['] = 4; trans[9 * 256 + '"'] = 5;
-            trans[9 * 256 + 't'] = 8; trans[9 * 256 + 'f'] = 8; trans[9 * 256 + 'n'] = 8; trans[9 * 256 + '-'] = 8;
-            for (byte db : digits) trans[9 * 256 + (db & 0xFF)] = 8;
+    static final byte T_TERM = 0, T_REF = 1, T_END = 2;
 
-            System.arraycopy(trans, 9 * 256, trans, 0, 256);
+    static final class CFG {
+        final byte[] kind;     // T_TERM | T_REF | T_END
+        final int[]  data;     // TERM: terminal index;  REF: rule id;  END: unused
+        final int[]  next;     // TERM/REF: continuation slot (>=0);    END: unused
+        final long[][] terms;  // terminal byte sets (256-bit, long[4]), indexed by TERM.data
+        final int[][] alts;    // alts[ruleId] = entry slots, one per alternative
+        final int root;        // root rule id
 
-            for (int w : WS_BYTES) trans[1 * 256 + w] = 1;
-            trans[1 * 256 + '}'] = 0; trans[1 * 256 + '"'] = 5;
-            System.arraycopy(trans, 1 * 256, trans, 2 * 256, 256);
-            System.arraycopy(trans, 0, trans, 3 * 256, 256);
-
-            for (int w : WS_BYTES) trans[4 * 256 + w] = 4;
-            System.arraycopy(trans, 9 * 256, trans, 4 * 256, 256);
-            trans[4 * 256 + ']'] = 0;
-
-            for (int b = 0; b < 256; b++) if (b != '"' && b != '\\') trans[5 * 256 + b] = 5;
-            trans[5 * 256 + '\\'] = 6; trans[5 * 256 + '"'] = 0;
-
-            for (int b = 0; b < 256; b++) trans[6 * 256 + b] = 5;
-            trans[6 * 256 + 'u'] = 7;
-
-            byte[] hex = "0123456789abcdefABCDEF".getBytes(StandardCharsets.UTF_8);
-            for (byte hb : hex) trans[7 * 256 + (hb & 0xFF)] = 7;
-            for (int b = 0; b < 256; b++) if (trans[7 * 256 + b] == -1) trans[7 * 256 + b] = 5;
-
-            for (int b = 0; b < 256; b++) trans[8 * 256 + b] = 0;
-            for (byte db : digits) trans[8 * 256 + (db & 0xFF)] = 8;
-            trans[8 * 256 + 't'] = 8; trans[8 * 256 + 'r'] = 8; trans[8 * 256 + 'u'] = 8; trans[8 * 256 + 'e'] = 8;
-            trans[8 * 256 + 'f'] = 8; trans[8 * 256 + 'a'] = 8; trans[8 * 256 + 'l'] = 8; trans[8 * 256 + 's'] = 8;
-            trans[8 * 256 + 'n'] = 8; trans[8 * 256 + 'u'] = 8; trans[8 * 256 + 'l'] = 8;
-            trans[8 * 256 + '-'] = 8; trans[8 * 256 + '.'] = 8; trans[8 * 256 + 'e'] = 8; trans[8 * 256 + 'E'] = 8; trans[8 * 256 + '+'] = 8;
-
-            boolean[] acc = new boolean[states];
-            acc[0] = true;
-            return new Spec(new long[states][], allBytes, firsts, trans, acc, 9);
+        CFG(byte[] kind, int[] data, int[] next, long[][] terms, int[][] alts, int root) {
+            this.kind = kind; this.data = data; this.next = next; this.terms = terms; this.alts = alts; this.root = root;
         }
-        static final int[] WS_BYTES = {' ', '\t', '\n', '\r'};
+
+        boolean termHas(int ti, int b) { return (terms[ti][b >>> 6] & (1L << (b & 63))) != 0; }
+
+        static CFG compile(List<Rule> rules) { return new Builder().run(rules); }
+
+        // -- compiler ---------------------------------------------------------
+
+        static final class Builder {
+            byte[] kind = new byte[64];
+            int[]  data = new int[64];
+            int[]  next = new int[64];
+            int n;
+            final List<long[]> terms = new ArrayList<>();
+            final List<int[]>  alts  = new ArrayList<>();   // index = rule id
+
+            CFG run(List<Rule> rules) {
+                for (int i = 0; i < rules.size(); i++) alts.add(null);   // reserve named-rule ids
+                for (Rule r : rules) alts.set(r.id, compileBody(r.body));
+                return new CFG(Arrays.copyOf(kind, n), Arrays.copyOf(data, n), Arrays.copyOf(next, n),
+                        terms.toArray(new long[0][]), alts.toArray(new int[0][]), 0);
+            }
+
+            int slot(byte k, int d, int nx) {
+                if (n == kind.length) {
+                    int g = n * 2;
+                    kind = Arrays.copyOf(kind, g); data = Arrays.copyOf(data, g); next = Arrays.copyOf(next, g);
+                }
+                kind[n] = k; data[n] = d; next[n] = nx; return n++;
+            }
+            int term(long[] set, int cont) { int ti = terms.size(); terms.add(set); return slot(T_TERM, ti, cont); }
+            int ref(int rid, int cont)     { return slot(T_REF, rid, cont); }
+            int end()                      { return slot(T_END, -1, -1); }
+            int newRule()                  { int id = alts.size(); alts.add(null); return id; }
+
+            /** Compile a rule body (which may contain top-level {@code |}) into alternative entry slots. */
+            int[] compileBody(List<Rule.Element> body) {
+                List<List<Rule.Element>> parts = splitAlts(body);
+                int endSlot = end();
+                int[] entries = new int[parts.size()];
+                for (int i = 0; i < parts.size(); i++) entries[i] = compileSeq(parts.get(i), endSlot);
+                return entries;
+            }
+
+            int compileSeq(List<Rule.Element> elems, int cont) {
+                int c = cont;
+                for (int i = elems.size() - 1; i >= 0; i--) c = compileElem(elems.get(i), c);
+                return c;
+            }
+
+            int compileElem(Rule.Element e, int cont) {
+                return switch (e) {
+                    case Rule.Element.Value(byte b) -> term(singleton(b), cont);
+                    case Rule.Element.Dot ignored   -> term(all(), cont);
+                    case Rule.Element.CharClass(List<Byte> chars, boolean neg) -> term(classSet(chars, neg), cont);
+                    case Rule.Element.Ref(int rid)  -> ref(rid, cont);
+                    case Rule.Element.Group(List<Rule.Element> kids) -> {
+                        boolean hasPipe = kids.stream().anyMatch(k -> k instanceof Rule.Element.Pipe);
+                        if (!hasPipe) yield compileSeq(kids, cont);
+                        int rid = newRule();
+                        alts.set(rid, compileBody(kids));
+                        yield ref(rid, cont);
+                    }
+                    case Rule.Element.Repetition(Rule.Element child, int min, int max) -> compileRep(child, min, max, cont);
+                    case Rule.Element.Pipe ignored  -> cont;   // handled by splitAlts
+                };
+            }
+
+            int compileRep(Rule.Element child, int min, int max, int cont) {
+                if (min == 0 && max == 1) {                 // E?  :  R ::= E | ε
+                    int rid = newRule(), endR = end();
+                    int e1 = compileElem(child, endR);
+                    alts.set(rid, new int[]{e1, endR});
+                    return ref(rid, cont);
+                }
+                if (min == 0 && max < 0) {                  // E*  :  R ::= E R | ε
+                    int rid = newRule(), endR = end();
+                    int self = ref(rid, endR);
+                    int e1 = compileElem(child, self);
+                    alts.set(rid, new int[]{e1, endR});
+                    return ref(rid, cont);
+                }
+                if (min == 1 && max < 0) {                  // E+  :  R ::= E R | E
+                    int rid = newRule(), endR = end();
+                    int self = ref(rid, endR);
+                    int e1 = compileElem(child, self);
+                    int e2 = compileElem(child, endR);
+                    alts.set(rid, new int[]{e1, e2});
+                    return ref(rid, cont);
+                }
+                // general E{min,max}: min mandatory copies, then a star (max<0) or optional copies
+                int c = cont;
+                if (max < 0) {
+                    c = compileRep(child, 0, -1, c);
+                    for (int i = 0; i < min; i++) c = compileElem(child, c);
+                } else {
+                    for (int i = min; i < max; i++) c = compileRep(child, 0, 1, c);
+                    for (int i = 0; i < min; i++) c = compileElem(child, c);
+                }
+                return c;
+            }
+
+            static List<List<Rule.Element>> splitAlts(List<Rule.Element> body) {
+                List<List<Rule.Element>> parts = new ArrayList<>();
+                List<Rule.Element> cur = new ArrayList<>();
+                for (Rule.Element e : body) {
+                    if (e instanceof Rule.Element.Pipe) { parts.add(cur); cur = new ArrayList<>(); }
+                    else cur.add(e);
+                }
+                parts.add(cur);
+                return parts;
+            }
+
+            static long[] singleton(byte b) { long[] m = new long[4]; int x = b & 0xFF; m[x >>> 6] |= 1L << (x & 63); return m; }
+            static long[] all()             { return new long[]{-1L, -1L, -1L, -1L}; }
+            static long[] classSet(List<Byte> chars, boolean neg) {
+                long[] m = new long[4];
+                for (byte ch : chars) { int x = ch & 0xFF; m[x >>> 6] |= 1L << (x & 63); }
+                if (neg) for (int i = 0; i < 4; i++) m[i] = ~m[i];
+                return m;
+            }
+        }
     }
 
-    // ---- Spec --------------------------------------------------------------
+    // ---- Spec (compiled grammar + matcher) ---------------------------------
 
-    public record Spec(long[][] stateMasks, byte[][] tokenBytes, byte[] firstBytes,
-                       int[] transitions, boolean[] accepting, int startState) {
-        static final Spec DISABLED = new Spec(null, null, null, null, null, -1);
+    /** A compiled grammar plus its decoded token table; the matcher engine lives here so the
+     *  per-state mask cache can be shared across all cursors. */
+    public static final class Spec {
+        static final Spec DISABLED = new Spec(null, null);
+
+        final CFG cfg;
+        final byte[][] tokenBytes;
+        final State start;
+        final Map<StateKey, long[]> maskCache = new ConcurrentHashMap<>();
+
+        Spec(CFG cfg, byte[][] tokenBytes) {
+            this.cfg = cfg; this.tokenBytes = tokenBytes;
+            if (cfg == null) { start = null; return; }
+            List<int[]> raws = new ArrayList<>();
+            for (int e : cfg.alts[cfg.root]) raws.add(new int[]{e});
+            start = expandSet(raws);
+        }
+
         public Cursor cursor() { return new Cursor(this); }
-        public boolean isValid() { return this != DISABLED && transitions != null; }
+        public boolean isValid() { return cfg != null; }
 
-        static Spec compile(String gbnf, Vocab v) {
-            int vs = v.size();
-            byte[][] allBytes = new byte[vs][];
-            byte[] firsts = new byte[vs];
-            for (int t = 0; t < vs; t++) { allBytes[t] = v.bytes(t); firsts[t] = allBytes[t].length > 0 ? allBytes[t][0] : 0; }
-            List<Rule> rules = parse(gbnf);
-            FlatNFA nfa = NfaBuilder.build(rules);
-            int[][] dfaRows = DfaBuilder.build(nfa);
-            int ns = dfaRows.length;
-            int[] trans = new int[ns * 256]; Arrays.fill(trans, -1);
-            boolean[] acc = new boolean[ns];
-            for (int i = 0; i < ns; i++) { acc[i] = (dfaRows[i][0] & 1) != 0; System.arraycopy(dfaRows[i], 1, trans, i * 256, 256); }
-            return new Spec(new long[ns][], allBytes, firsts, trans, acc, 0);
+        // -- pushdown matcher -------------------------------------------------
+
+        /** Epsilon-closure of a set of raw stacks: follow REF/END epsilon moves (branching on rule
+         *  alternatives) until every surviving stack has a TERM on top, collecting those "ready"
+         *  stacks and whether any stack empties (accept). Iterative with an explicit worklist so
+         *  depth is heap- not call-stack-bound. {@code seen} (keyed on the whole stack) dedups the
+         *  closure: sequential refs to one rule yield distinct stacks and are both explored, while
+         *  left recursion yields ever-growing stacks, bounded by {@link #CLOSURE_CAP}. */
+        private State expandSet(List<int[]> raws) {
+            List<int[]> ready = new ArrayList<>();
+            Set<StackKey> seen = new HashSet<>();
+            boolean[] acc = {false};
+            ArrayDeque<int[]> work = new ArrayDeque<>(raws);
+            while (!work.isEmpty() && seen.size() <= CLOSURE_CAP) {
+                int[] stack = work.poll();
+                if (!seen.add(new StackKey(stack))) continue;
+                if (stack.length == 0) { acc[0] = true; continue; }
+                int top = stack[stack.length - 1];
+                switch (cfg.kind[top]) {
+                    case T_TERM -> { if (ready.size() < MAX_STACKS) ready.add(stack); }
+                    case T_END  -> work.add(Arrays.copyOf(stack, stack.length - 1));
+                    default -> {                               // T_REF
+                        int rid = cfg.data[top], ret = cfg.next[top];
+                        int[] base = ret >= 0 ? replaceLast(stack, ret) : Arrays.copyOf(stack, stack.length - 1);
+                        for (int e : cfg.alts[rid]) work.add(append(base, e));
+                    }
+                }
+            }
+            return new State(ready, acc[0]);
         }
+
+        /** One byte against the ready set → the raw (unexpanded) stacks that survive. */
+        private List<int[]> step(List<int[]> ready, int b) {
+            List<int[]> raws = new ArrayList<>();
+            for (int[] s : ready) {
+                int top = s[s.length - 1];
+                if (cfg.termHas(cfg.data[top], b)) raws.add(replaceLast(s, cfg.next[top]));
+            }
+            return raws;
+        }
+
+        /** Walk {@code len} bytes from a ready set; returns the resulting state, or null if the
+         *  bytes cannot be consumed (the grammar rejects them). */
+        State walk(List<int[]> ready, byte[] bytes, int len) {
+            List<int[]> cur = ready;
+            State st = null;
+            for (int i = 0; i < len; i++) {
+                List<int[]> raws = step(cur, bytes[i] & 0xFF);
+                if (raws.isEmpty()) return null;
+                st = expandSet(raws);
+                cur = st.ready;
+            }
+            return st;
+        }
+
+        long[] maskFor(List<int[]> ready, boolean accepting) {
+            StateKey key = stateKey(ready, accepting);
+            long[] m = maskCache.get(key);
+            if (m != null) return m;
+            m = computeMask(ready, accepting);
+            if (maskCache.size() < MASK_CACHE_CAP) maskCache.putIfAbsent(key, m);
+            return m;
+        }
+
+        private long[] computeMask(List<int[]> ready, boolean accepting) {
+            int vocab = tokenBytes.length;
+            long[] m = new long[(vocab + 63) >> 6];
+            // First-byte filter: the union of all ready terminals. A token whose first byte is not
+            // in it cannot match — reject in O(1) without a full walk (most of the vocab, in practice).
+            long[] firsts = new long[4];
+            for (int[] s : ready) {
+                long[] tm = cfg.terms[cfg.data[s[s.length - 1]]];
+                for (int i = 0; i < 4; i++) firsts[i] |= tm[i];
+            }
+            for (int t = 0; t < vocab; t++) {
+                byte[] bs = tokenBytes[t];
+                boolean ok;
+                if (bs.length == 0) ok = accepting;
+                else {
+                    int f = bs[0] & 0xFF;
+                    ok = (firsts[f >>> 6] & (1L << (f & 63))) != 0 && walk(ready, bs, bs.length) != null;
+                }
+                if (ok) m[t >> 6] |= 1L << (t & 63);
+            }
+            return m;
+        }
+
+        private static StateKey stateKey(List<int[]> ready, boolean accepting) {
+            int[][] arr = ready.toArray(new int[0][]);
+            Arrays.sort(arr, Grammar::cmpIntArr);
+            int total = 1;
+            for (int[] s : arr) total += s.length + 1;
+            int[] flat = new int[total];
+            int p = 0; flat[p++] = accepting ? 1 : 0;
+            for (int[] s : arr) { for (int x : s) flat[p++] = x; flat[p++] = -1; }
+            return new StateKey(flat);
+        }
+
+        private static int[] replaceLast(int[] s, int v) { int[] c = s.clone(); c[c.length - 1] = v; return c; }
+        private static int[] append(int[] s, int v) { int[] c = Arrays.copyOf(s, s.length + 1); c[s.length] = v; return c; }
+    }
+
+    record State(List<int[]> ready, boolean accept) {}
+
+    static final class StackKey {
+        final int[] s; final int h;
+        StackKey(int[] s) { this.s = s; this.h = Arrays.hashCode(s); }
+        @Override public int hashCode() { return h; }
+        @Override public boolean equals(Object o) { return o instanceof StackKey k && Arrays.equals(s, k.s); }
+    }
+
+    static final class StateKey {
+        final int[] flat; final int h;
+        StateKey(int[] flat) { this.flat = flat; this.h = Arrays.hashCode(flat); }
+        @Override public int hashCode() { return h; }
+        @Override public boolean equals(Object o) { return o instanceof StateKey k && Arrays.equals(flat, k.flat); }
+    }
+
+    static int cmpIntArr(int[] a, int[] b) {
+        int n = Math.min(a.length, b.length);
+        for (int i = 0; i < n; i++) if (a[i] != b[i]) return Integer.compare(a[i], b[i]);
+        return Integer.compare(a.length, b.length);
     }
 
     // ---- Cursor ------------------------------------------------------------
 
     public static final class Cursor {
         private final Spec spec;
-        private final long[] scratch;
-        private int state, cachedState = -1;
+        private List<int[]> ready;
+        private boolean accepting;
+
         Cursor(Spec spec) {
-            this.spec = spec; this.state = spec.startState;
-            int vs = spec.tokenBytes != null ? spec.tokenBytes.length : 0;
-            this.scratch = spec.stateMasks != null && state >= 0 ? new long[(vs + 63) / 64] : null;
+            this.spec = spec;
+            if (spec.cfg != null) { ready = spec.start.ready(); accepting = spec.start.accept(); }
         }
-        public void reset() { state = spec.startState; cachedState = -1; }
+
+        public void reset() {
+            if (spec.cfg == null) return;
+            ready = spec.start.ready(); accepting = spec.start.accept();
+        }
+
+        /** Masks {@code logits} to grammar-allowed tokens; returns whether any token remains. A
+         *  DISABLED spec is a pass-through (no masking, always true). */
         public boolean maskLogits(FloatTensor logits) {
-            if (spec == Spec.DISABLED) return true;
+            if (spec.cfg == null) return true;
             int vocab = spec.tokenBytes.length;
-            if (state < 0) { for (int i = 0; i < vocab; i++) logits.setFloat(i, Float.NEGATIVE_INFINITY); return false; }
-            long[] mask = maskForState(); if (mask == null) { for (int i = 0; i < vocab; i++) logits.setFloat(i, Float.NEGATIVE_INFINITY); return false; }
+            if (vocab == 0) return false;
+            long[] mask = spec.maskFor(ready, accepting);
             boolean any = false;
             for (int i = 0; i < vocab; i++) {
-                int w = i >> 6;
-                if (w < mask.length && (mask[w] & (1L << (i & 63))) != 0) any = true;
+                if ((mask[i >> 6] & (1L << (i & 63))) != 0) any = true;
                 else logits.setFloat(i, Float.NEGATIVE_INFINITY);
             }
             return any;
         }
+
+        /** Consume a chosen token's bytes, advancing the grammar. Empty-byte tokens (EOS/control)
+         *  do not advance. An impossible token drives the cursor to a dead state. */
         public void advanceWith(int token) {
-            if (state < 0 || token < 0 || token >= spec.tokenBytes.length) return;
-            if (spec.accepting != null && state < spec.accepting.length && spec.accepting[state]) return;
-            for (byte b : spec.tokenBytes[token]) {
-                if (state < 0) return;
-                int off = state * 256 + (b & 0xFF);
-                state = (off < 0 || off >= spec.transitions.length) ? -1 : spec.transitions[off];
-            }
-        }
-        private long[] maskForState() {
-            if (state < 0) return null;
-            if (state == cachedState) return scratch;
-            long[] m = spec.stateMasks[state];
-            if (m != null) { System.arraycopy(m, 0, scratch, 0, Math.min(m.length, scratch.length)); cachedState = state; return m; }
-            m = computeMask(); spec.stateMasks[state] = m; cachedState = state;
-            System.arraycopy(m, 0, scratch, 0, Math.min(m.length, scratch.length)); return m;
-        }
-        private long[] computeMask() {
-            int vocab = spec.tokenBytes.length;
-            long[] m = new long[(vocab + 63) / 64];
-            for (int t = 0; t < vocab; t++) {
-                int cur = state; boolean ok = true;
-                byte[] bytes = spec.tokenBytes[t];
-                for (byte b : bytes) {
-                    if (cur < 0) { ok = false; break; }
-                    int off = cur * 256 + (b & 0xFF);
-                    cur = (off < 0 || off >= spec.transitions.length) ? -1 : spec.transitions[off];
-                    if (cur < 0) { ok = false; break; }
-                }
-                if (ok && cur >= 0) m[t >> 6] |= 1L << (t & 63);
-            }
-            return m;
+            if (spec.cfg == null || token < 0 || token >= spec.tokenBytes.length) return;
+            byte[] bs = spec.tokenBytes[token];
+            if (bs.length == 0) return;
+            State st = spec.walk(ready, bs, bs.length);
+            if (st == null) { ready = List.of(); accepting = false; }
+            else { ready = st.ready(); accepting = st.accept(); }
         }
     }
 
-    // ---- Flat NFA ----------------------------------------------------------
+    // ---- JSON grammar ------------------------------------------------------
+    //
+    // Full, recursive JSON. Whitespace is optional (ws*) so compact output like {"a":1} is
+    // accepted; nesting is handled by the pushdown matcher. root is a single value (objects,
+    // arrays, and top-level scalars all allowed).
 
-    static final class FlatNFA {
-        static final int K_LIT = 0, K_CHARS = 1, K_EPS = 2;
-        static final int ACCEPT_MARKER = -2; // data value marking an accept EPS node
-        final byte[] kind, lit;
-        final int[] next, data, altData;
-        final BitSet[] charSets;
-        final int rule0Entry;
-        FlatNFA(byte[] k, byte[] l, int[] n, int[] d, int[] a, BitSet[] c, int r) { kind = k; lit = l; next = n; data = d; altData = a; charSets = c; rule0Entry = r; }
+    // RFC 8259 / ECMA-404 compliant: surrounding whitespace at top level (ws value ws), and string
+    // bodies exclude unescaped control chars (0x00-0x1F), which strict JSON forbids.
+    static final String JSON_GRAMMAR = """
+            root ::= ws value ws
+            value ::= object | array | string | number | "true" | "false" | "null"
+            object ::= "{" ws "}" | "{" ws string ws ":" ws value (ws "," ws string ws ":" ws value)* ws "}"
+            array  ::= "[" ws "]" | "[" ws value (ws "," ws value)* ws "]"
+            string ::= "\\"" ([^"\\\\\\x00-\\x1F] | "\\\\" (["\\\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]))* "\\""
+            number ::= "-"? ([0-9] | [1-9] [0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?
+            ws     ::= [ \\t\\n\\r]*
+            """;
+
+    // Minified JSON: same structure as JSON_GRAMMAR with every `ws` removed, so no whitespace is
+    // accepted anywhere (compact output only).
+    static final String JSON_COMPACT_GRAMMAR = """
+            root ::= value
+            value ::= object | array | string | number | "true" | "false" | "null"
+            object ::= "{" "}" | "{" string ":" value ("," string ":" value)* "}"
+            array  ::= "[" "]" | "[" value ("," value)* "]"
+            string ::= "\\"" ([^"\\\\\\x00-\\x1F] | "\\\\" (["\\\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]))* "\\""
+            number ::= "-"? ([0-9] | [1-9] [0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?
+            """;
+
+    // ---- enum / choice -----------------------------------------------------
+
+    /** A grammar accepting exactly one of {@code options}, emitted as raw (unquoted) literals —
+     *  e.g. {@code choice(v, "yes", "no")} forces the model to answer yes or no. */
+    public static Spec choice(Vocab v, String... options) {
+        if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
+        StringBuilder sb = new StringBuilder("root ::= ");
+        for (int i = 0; i < options.length; i++) { if (i > 0) sb.append(" | "); sb.append(gbnfLiteral(options[i])); }
+        return of(sb.toString(), v);
     }
+    public static Spec choice(LFMTokenizer t, String... options) { return choice(vocab(t), options); }
 
-    static final class NfaBuilder {
-        byte[] kind = new byte[256];
-        byte[] lit = new byte[256];
-        int[] next = new int[256];
-        int[] data = new int[256];
-        int[] altData = new int[256];
-        final List<BitSet> charSets = new ArrayList<>();
-        final Map<Integer, Integer> ruleEntry = new LinkedHashMap<>();
-        final Map<Integer, Integer> tailCache = new HashMap<>();
-        int rule0Entry, count;
+    // ---- JSON Schema -> grammar -------------------------------------------
 
-        { Arrays.fill(next, -1); Arrays.fill(data, -1); Arrays.fill(altData, -1); }
-
-        private void ensureCap(int extra) {
-            int needed = count + extra;
-            if (needed <= kind.length) return;
-            int newLen = Math.max(kind.length * 2, needed + 64);
-            kind = Arrays.copyOf(kind, newLen);
-            lit = Arrays.copyOf(lit, newLen);
-            next = Arrays.copyOf(next, newLen);
-            data = Arrays.copyOf(data, newLen);
-            altData = Arrays.copyOf(altData, newLen);
-        }
-
-        static FlatNFA build(List<Rule> rules) {
-            if (rules.isEmpty()) {
-                NfaBuilder b = new NfaBuilder();
-                b.rule0Entry = b.addAccept(0);
-                return new FlatNFA(new byte[]{FlatNFA.K_EPS}, new byte[1], new int[]{-1}, new int[]{FlatNFA.ACCEPT_MARKER}, new int[]{-1}, new BitSet[0], 0);
-            }
-            NfaBuilder b = new NfaBuilder();
-            int[] entries = new int[rules.size()];
-            for (Rule r : rules) { entries[r.id] = b.addEps(-2); b.ruleEntry.put(r.id, entries[r.id]); }
-            for (Rule r : rules) { int body = b.buildAlt(r.body, r.id); b.data[entries[r.id]] = body; }
-            b.rule0Entry = entries[0];
-            return new FlatNFA(Arrays.copyOf(b.kind, b.count), Arrays.copyOf(b.lit, b.count),
-                    Arrays.copyOf(b.next, b.count), Arrays.copyOf(b.data, b.count),
-                    Arrays.copyOf(b.altData, b.count),
-                    b.charSets.toArray(new BitSet[0]), b.rule0Entry);
-        }
-
-        int buildAlt(List<Rule.Element> body, int acceptRule) {
-            List<List<Rule.Element>> alts = new ArrayList<>();
-            List<Rule.Element> cur = new ArrayList<>();
-            for (Rule.Element e : body) { if (e instanceof Rule.Element.Pipe) { if (!cur.isEmpty()) alts.add(cur); cur = new ArrayList<>(); } else cur.add(e); }
-            if (!cur.isEmpty()) alts.add(cur);
-            if (alts.isEmpty()) return addAccept(acceptRule);
-            int acceptNode = addAccept(acceptRule);
-            int result = buildSeq(alts.get(0));
-            linkDirect(result, acceptNode);
-            for (int i = 1; i < alts.size(); i++) {
-                int n = buildSeq(alts.get(i));
-                linkDirect(n, acceptNode);
-                result = addEpsSplit(result, n);
-            }
-            tailCache.put(result, acceptNode);
-            return result;
-        }
-
-        int buildSeq(List<Rule.Element> elems) {
-            if (elems.isEmpty()) return -1;
-            int head = buildElem(elems.get(0));
-            int last = tailOf(head);
-            for (int i = 1; i < elems.size(); i++) {
-                int n = buildElem(elems.get(i));
-                last = linkDirect(last, n);
-            }
-            tailCache.put(head, last);
-            return head;
-        }
-
-        int buildElem(Rule.Element e) { return switch (e) {
-            case Rule.Element.Value(byte b) -> addLit(b);
-            case Rule.Element.Dot ignored -> {
-                BitSet bs = new BitSet(); bs.set(0, 256);
-                yield addCharSet(bs);
-            }
-            case Rule.Element.CharClass(List<Byte> chars, boolean neg) -> {
-                BitSet bs = new BitSet();
-                for (byte b : chars) bs.set(b & 0xFF);
-                if (neg) bs.flip(0, 256);
-                yield addCharSet(bs);
-            }
-            case Rule.Element.Ref(int rid) -> {
-                Integer en = ruleEntry.get(rid);
-                yield en != null ? addEps(en) : addAccept(-1);
-            }
-            case Rule.Element.Group(List<Rule.Element> kids) -> {
-                boolean hasPipe = kids.stream().anyMatch(k -> k instanceof Rule.Element.Pipe);
-                yield hasPipe ? buildAlt(kids, -1) : buildSeq(kids);
-            }
-            case Rule.Element.Repetition(Rule.Element child, int min, int max) -> {
-                int inner = buildElem(child);
-                if (min == 0 && max == 1) { // optional: E?
-                    int after = addAccept(-1);
-                    linkDirect(inner, after);
-                    int skip = addAccept(-1);
-                    yield addEpsSplit(inner, skip);
-                } else if (min == 0 && max < 0) { // Kleene star: E*
-                    int skip = addAccept(-1);
-                    int alt = addEpsSplit(inner, skip);
-                    linkDirect(inner, addEps(alt));
-                    yield alt;
-                } else if (min == 1 && max < 0) { // plus: E+
-                    int skip = addAccept(-1);
-                    int alt = addEpsSplit(inner, skip);
-                    linkDirect(inner, addEps(alt));
-                    yield inner;
-                } else { // exact repetition: E{min}
-                    int head = inner;
-                    int prev = inner;
-                    for (int i = 1; i < min; i++) {
-                        int c = buildElem(child);
-                        prev = linkDirect(prev, c);
-                    }
-                    yield head;
-                }
-            }
-            case Rule.Element.Pipe ignored -> -1;
-        };}
-
-        int tailOf(int head) { return tailCache.getOrDefault(head, head); }
-        int linkDirect(int prev, int nxt) {
-            if (prev < 0 || nxt < 0) return prev;
-            int pTail = tailOf(prev);
-            NfaBuilder.this.next[pTail] = nxt;
-            int nTail = tailOf(nxt);
-            tailCache.put(prev, nTail);
-            return nTail;
-        }
-        int addLit(byte b) { ensureCap(1); int n = count++; kind[n] = FlatNFA.K_LIT; lit[n] = b; return n; }
-        int addCharSet(BitSet bs) { ensureCap(1); int n = count++; kind[n] = FlatNFA.K_CHARS; data[n] = charSets.size(); charSets.add(bs); return n; }
-        int addAccept(int rid) { ensureCap(1); int n = count++; kind[n] = FlatNFA.K_EPS; data[n] = FlatNFA.ACCEPT_MARKER; return n; }
-        int addEps(int target) { ensureCap(1); int n = count++; kind[n] = FlatNFA.K_EPS; data[n] = target; return n; }
-        int addEpsSplit(int a, int b) { ensureCap(1); int n = count++; kind[n] = FlatNFA.K_EPS; data[n] = a; altData[n] = b; return n; }
+    /**
+     * Compiles a (common subset of) JSON Schema into a JSON-constrained grammar — typed structured
+     * output, the way OpenAI's {@code json_schema} response-format and llama.cpp both work.
+     *
+     * <p>Supported: {@code type} (object, array, string, number, integer, boolean, null, or an
+     * array of those), {@code properties} + {@code required}, {@code items}, {@code enum},
+     * {@code const}, and {@code anyOf}/{@code oneOf}. Object properties are emitted in the order of
+     * {@code required} (or, when {@code required} is absent, all declared properties); other
+     * keywords ({@code patternProperties}, {@code $ref}, numeric/length bounds, …) are ignored —
+     * the result is always valid JSON satisfying the supported constraints, never a broken grammar.
+     */
+    public static Spec fromSchema(Map<String, Object> schema, Vocab v) {
+        if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
+        return of(Schema.toGbnf(schema), v);
     }
+    public static Spec fromSchema(Map<String, Object> schema, LFMTokenizer t) { return fromSchema(schema, vocab(t)); }
 
-    // ---- DFA construction --------------------------------------------------
+    /** Translates a JSON Schema node tree into a GBNF grammar string. */
+    static final class Schema {
+        private final StringBuilder rules = new StringBuilder();
+        private int counter;
 
-    static final class DfaBuilder {
-
-        static final class BSKey {
-            final long[] words;
-            BSKey(BitSet bs) { words = bs.toLongArray(); }
-            @Override public int hashCode() { return Arrays.hashCode(words); }
-            @Override public boolean equals(Object o) {
-                return o instanceof BSKey k && Arrays.equals(words, k.words);
-            }
-            static BSKey of(BitSet bs) { return new BSKey(bs); }
+        static String toGbnf(Map<String, Object> schema) {
+            Schema s = new Schema();
+            // shared leaf rules (any-JSON fallbacks + scalars)
+            s.rules.append("ws ::= [ \\t\\n\\r]*\n");
+            s.rules.append("string ::= \"\\\"\" ([^\"\\\\\\x00-\\x1F] | \"\\\\\" ([\"\\\\/bfnrt] | \"u\" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]))* \"\\\"\"\n");
+            s.rules.append("integer ::= \"-\"? (\"0\" | [1-9] [0-9]*)\n");
+            s.rules.append("number ::= \"-\"? (\"0\" | [1-9] [0-9]*) (\".\" [0-9]+)? ([eE] [+-]? [0-9]+)?\n");
+            s.rules.append("value ::= jobject | jarray | string | number | \"true\" | \"false\" | \"null\"\n");
+            s.rules.append("jobject ::= \"{\" ws (string ws \":\" ws value (ws \",\" ws string ws \":\" ws value)*)? ws \"}\"\n");
+            s.rules.append("jarray ::= \"[\" ws (value (ws \",\" ws value)*)? ws \"]\"\n");
+            String root = s.body(schema);
+            return "root ::= ws (" + root + ") ws\n" + s.rules;
         }
 
-        static int[][] build(FlatNFA nfa) {
-            BitSet startBS = epsClos(nfa, BitSet.valueOf(new long[]{1L << nfa.rule0Entry}));
-            List<BitSet> states = new ArrayList<>();
-            List<int[]> rows = new ArrayList<>();
-            Map<BSKey, Integer> idx = new LinkedHashMap<>();
-            Queue<Integer> wl = new ArrayDeque<>();
-            idx.put(BSKey.of(startBS), 0); states.add(startBS); rows.add(null); wl.add(0);
-
-            while (!wl.isEmpty() && states.size() < MAX_DFA_STATES) {
-                int si = wl.poll();
-                BitSet bs = states.get(si);
-                int[] row = new int[257];
-                row[0] = hasAccept(nfa, bs) ? 1 : 0;
-                for (int b = 0; b < 256; b++) {
-                    BitSet nxt = stepAndClose(nfa, bs, (byte) b);
-                    if (nxt.isEmpty()) { row[1 + b] = -1; continue; }
-                    BSKey key = BSKey.of(nxt);
-                    Integer nsi = idx.get(key);
-                    if (nsi == null) {
-                        nsi = states.size();
-                        idx.put(key, nsi);
-                        states.add(nxt);
-                        rows.add(null);
-                        wl.add(nsi);
-                    }
-                    row[1 + b] = nsi;
-                }
-                while (rows.size() <= si) rows.add(null);
-                rows.set(si, row);
-            }
-            for (int i = 0; i < rows.size(); i++)
-                if (rows.get(i) == null) { int[] r = new int[257]; Arrays.fill(r, 1, 257, -1); rows.set(i, r); }
-            return rows.toArray(new int[0][]);
+        /** Allocate a named rule for {@code node} and return its name (for refs / recursion). */
+        private String rule(Object node) {
+            String name = "r" + (counter++);
+            String b = body(node);
+            rules.append(name).append(" ::= ").append(b).append("\n");
+            return name;
         }
 
-        static BitSet stepAndClose(FlatNFA nfa, BitSet bs, byte b) {
-            BitSet res = new BitSet();
-            for (int i = bs.nextSetBit(0); i >= 0; i = bs.nextSetBit(i + 1)) {
-                if (i >= nfa.kind.length) continue;
-                if (nfa.kind[i] == FlatNFA.K_LIT && nfa.lit[i] == b) { if (nfa.next[i] >= 0) res.set(nfa.next[i]); }
-                else if (nfa.kind[i] == FlatNFA.K_CHARS && nfa.charSets[nfa.data[i]].get(b & 0xFF)) { if (nfa.next[i] >= 0) res.set(nfa.next[i]); }
+        @SuppressWarnings("unchecked")
+        private String body(Object node) {
+            if (!(node instanceof Map)) return "value";
+            Map<String, Object> m = (Map<String, Object>) node;
+            if (m.containsKey("const")) return gbnfLiteral(jsonEncode(m.get("const")));
+            if (m.get("enum") instanceof List<?> en) return joinLiterals(en);
+            Object union = m.containsKey("anyOf") ? m.get("anyOf") : m.get("oneOf");
+            if (union instanceof List<?> subs) {
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < subs.size(); i++) { if (i > 0) sb.append(" | "); sb.append(rule(subs.get(i))); }
+                return sb.length() == 0 ? "value" : sb.toString();
             }
-            return epsClos(nfa, res);
+            Object type = m.get("type");
+            if (type instanceof List<?> types) {
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < types.size(); i++) { if (i > 0) sb.append(" | "); sb.append(typeBody(String.valueOf(types.get(i)), m)); }
+                return sb.length() == 0 ? "value" : sb.toString();
+            }
+            if (type instanceof String t) return typeBody(t, m);
+            return "value";
         }
 
-        static BitSet epsClos(FlatNFA nfa, BitSet states) {
-            BitSet c = (BitSet) states.clone();
-            int capacity = nfa.kind.length * 2 + 64;
-            int[] q = new int[Math.min(capacity, 65536)];
-            int h = 0, t = 0;
-            for (int i = c.nextSetBit(0); i >= 0; i = c.nextSetBit(i + 1))
-                if (t < q.length) q[t++] = i;
-            while (h < t) {
-                int s = q[h++];
-                if (s >= nfa.kind.length) continue;
-                if (nfa.kind[s] == FlatNFA.K_EPS) {
-                    if (nfa.data[s] >= 0 && !c.get(nfa.data[s]) && t < q.length) { c.set(nfa.data[s]); q[t++] = nfa.data[s]; }
-                    if (nfa.altData[s] >= 0 && !c.get(nfa.altData[s]) && t < q.length) { c.set(nfa.altData[s]); q[t++] = nfa.altData[s]; }
-                    if (nfa.data[s] == FlatNFA.ACCEPT_MARKER && nfa.next[s] >= 0 && !c.get(nfa.next[s]) && t < q.length) { c.set(nfa.next[s]); q[t++] = nfa.next[s]; }
-                }
-            }
-            return c;
+        private String typeBody(String type, Map<String, Object> m) {
+            return switch (type) {
+                case "object" -> objectBody(m);
+                case "array" -> arrayBody(m);
+                case "integer" -> "integer";
+                case "number" -> "number";
+                case "boolean" -> "(\"true\" | \"false\")";
+                case "null" -> "\"null\"";
+                case "string" -> "string";
+                default -> "value";
+            };
         }
 
-        static boolean hasAccept(FlatNFA nfa, BitSet bs) {
-            for (int i = bs.nextSetBit(0); i >= 0; i = bs.nextSetBit(i + 1))
-                if (i < nfa.kind.length && nfa.kind[i] == FlatNFA.K_EPS && nfa.data[i] == FlatNFA.ACCEPT_MARKER) return true;
-            return false;
+        @SuppressWarnings("unchecked")
+        private String objectBody(Map<String, Object> m) {
+            Object propsObj = m.get("properties");
+            if (!(propsObj instanceof Map) || ((Map<?, ?>) propsObj).isEmpty()) return "\"{\" ws \"}\"";
+            Map<String, Object> props = (Map<String, Object>) propsObj;
+            List<String> keys = new ArrayList<>();
+            if (m.get("required") instanceof List<?> req) {
+                for (Object k : req) if (props.containsKey(String.valueOf(k))) keys.add(String.valueOf(k));
+            } else {
+                keys.addAll(props.keySet());
+            }
+            if (keys.isEmpty()) return "\"{\" ws \"}\"";
+            StringBuilder sb = new StringBuilder("\"{\" ws ");
+            for (int i = 0; i < keys.size(); i++) {
+                if (i > 0) sb.append(" ws \",\" ws ");
+                String k = keys.get(i);
+                sb.append(gbnfLiteral("\"" + jsonEsc(k) + "\"")).append(" ws \":\" ws ").append(rule(props.get(k)));
+            }
+            return sb.append(" ws \"}\"").toString();
+        }
+
+        private String arrayBody(Map<String, Object> m) {
+            String item = m.containsKey("items") ? rule(m.get("items")) : "value";
+            return "\"[\" ws (" + item + " (ws \",\" ws " + item + ")*)? ws \"]\"";
+        }
+
+        private String joinLiterals(List<?> values) {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < values.size(); i++) { if (i > 0) sb.append(" | "); sb.append(gbnfLiteral(jsonEncode(values.get(i)))); }
+            return sb.length() == 0 ? "value" : sb.toString();
         }
     }
 
-    // ---- Parser ------------------------------------------------------------
+    /** JSON-encode a scalar/array/object value to its on-the-wire form. */
+    @SuppressWarnings("unchecked")
+    static String jsonEncode(Object v) {
+        if (v == null) return "null";
+        if (v instanceof String s) return "\"" + jsonEsc(s) + "\"";
+        if (v instanceof Boolean b) return b ? "true" : "false";
+        if (v instanceof Number n) {
+            if ((n instanceof Double || n instanceof Float)) {
+                double d = n.doubleValue();
+                if (!Double.isInfinite(d) && !Double.isNaN(d) && d == Math.rint(d)) return Long.toString((long) d);
+                return Double.toString(d);
+            }
+            return n.toString();
+        }
+        if (v instanceof Map<?, ?> m) {
+            StringBuilder sb = new StringBuilder("{");
+            int i = 0;
+            for (Map.Entry<?, ?> e : m.entrySet()) {
+                if (i++ > 0) sb.append(",");
+                sb.append("\"").append(jsonEsc(String.valueOf(e.getKey()))).append("\":").append(jsonEncode(e.getValue()));
+            }
+            return sb.append("}").toString();
+        }
+        if (v instanceof List<?> l) {
+            StringBuilder sb = new StringBuilder("[");
+            for (int i = 0; i < l.size(); i++) { if (i > 0) sb.append(","); sb.append(jsonEncode(l.get(i))); }
+            return sb.append("]").toString();
+        }
+        return "\"" + jsonEsc(String.valueOf(v)) + "\"";
+    }
+
+    static String jsonEsc(String s) {
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"' -> b.append("\\\"");
+                case '\\' -> b.append("\\\\");
+                case '\n' -> b.append("\\n");
+                case '\r' -> b.append("\\r");
+                case '\t' -> b.append("\\t");
+                default -> { if (c < 0x20) b.append(String.format("\\u%04x", (int) c)); else b.append(c); }
+            }
+        }
+        return b.toString();
+    }
+
+    /** Wrap raw bytes as a GBNF double-quoted literal that matches exactly those bytes. */
+    static String gbnfLiteral(String raw) {
+        StringBuilder b = new StringBuilder("\"");
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            switch (c) {
+                case '"' -> b.append("\\\"");
+                case '\\' -> b.append("\\\\");
+                case '\n' -> b.append("\\n");
+                case '\r' -> b.append("\\r");
+                case '\t' -> b.append("\\t");
+                default -> { if (c < 0x20) b.append("\\x").append(String.format("%02x", (int) c)); else b.append(c); }
+            }
+        }
+        return b.append("\"").toString();
+    }
+
+    // ========================================================================
+    // GBNF parser  (grammar text -> Rule IR)
+    // ========================================================================
 
     static List<Rule> parse(String gbnf) {
         Map<String, Integer> nameToId = new LinkedHashMap<>();
@@ -471,6 +696,12 @@ public final class Grammar {
             if (c == ' ' || c == '\t') { i++; continue; }
             if (c == '"') {
                 int end = body.indexOf('"', i + 1);
+                while (end > 0 && body.charAt(end - 1) == '\\') {
+                    int slashes = 0, j = end - 1;
+                    while (j >= 0 && body.charAt(j) == '\\') { slashes++; j--; }
+                    if (slashes % 2 == 0) break;
+                    end = body.indexOf('"', end + 1);
+                }
                 if (end < 0) { i++; continue; }
                 String s = unescape(body.substring(i + 1, end));
                 for (byte b : s.getBytes(StandardCharsets.UTF_8))
@@ -508,17 +739,20 @@ public final class Grammar {
                     if (jj + 2 < inner.length() && inner.charAt(jj + 1) == '-') {
                         int endIdx = jj + 2;
                         byte endCh;
+                        // advance jj to the LAST char of the range-end token; the for-loop's jj++
+                        // then lands just past it (a relative jj += N here is off-by-one and would
+                        // re-read the end token's final char as a spurious extra member).
                         if (inner.charAt(endIdx) == '\\' && endIdx + 1 < inner.length()) {
                             if (inner.charAt(endIdx + 1) == 'x' && endIdx + 3 < inner.length()) {
                                 endCh = (byte) Integer.parseInt(inner.substring(endIdx + 2, endIdx + 4), 16);
-                                jj += 4;
+                                jj = endIdx + 3;
                             } else {
                                 endCh = (byte) unescChar(inner.charAt(endIdx + 1));
-                                jj += 2;
+                                jj = endIdx + 1;
                             }
                         } else {
                             endCh = (byte) inner.charAt(endIdx);
-                            jj += 1;
+                            jj = endIdx;
                         }
                         for (int x = Byte.toUnsignedInt(ch); x <= Byte.toUnsignedInt(endCh); x++)
                             chars.add((byte) x);
@@ -641,16 +875,4 @@ public final class Grammar {
             record Pipe() implements Element {}
         }
     }
-
-    // ---- JSON grammar (GBNF reference, not used at runtime) ----------------
-
-    static final String JSON_GRAMMAR = """
-            root ::= object | array
-            object ::= "{" ws "}" | "{" ws string ws ":" ws value (ws "," ws string ws ":" ws value)* ws "}"
-            array  ::= "[" ws "]" | "[" ws value (ws "," ws value)* ws "]"
-            value  ::= object | array | string | number | "true" | "false" | "null"
-            string ::= "\\"" ([^"\\\\] | "\\\\" (["\\\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]))* "\\""
-            number ::= "-"? ([0-9] | [1-9] [0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?
-            ws     ::= [ \\t\\n\\r]
-            """;
 }
