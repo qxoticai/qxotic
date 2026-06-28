@@ -54,7 +54,7 @@ public final class ServerIntegrationTest {
         LLMOptions options = new LLMOptions(model, null, null, null, false, true, "127.0.0.1", 0,
                 1f, 0.95f, 42L, 2048, true, false, true, false, false, false, false,
                 List.of(warmFile.toString()), false);
-        HttpServer server = Server.run(llama, options);
+        HttpServer server = Server.start(llama, options);
         base = "http://127.0.0.1:" + server.getAddress().getPort();
         client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 

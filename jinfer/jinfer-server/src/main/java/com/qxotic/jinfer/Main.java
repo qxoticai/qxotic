@@ -35,7 +35,7 @@ import java.util.Set;
 import java.util.HexFormat;
 import java.util.function.IntConsumer;
 
-public class LFM25 {
+public class Main {
 
     private static final String ANSI_GREY  = "\033[90m";
     private static final String ANSI_CYAN  = "\033[36m";
@@ -58,8 +58,6 @@ public class LFM25 {
         }
         thoughtOut.println();
     }
-
-
 
     private static IntConsumer streamingPrinter(LFMTokenizer tokenizer, LLMOptions options) {
         if (!options.stream()) {
@@ -404,7 +402,7 @@ public class LFM25 {
             model = ModelLoader.loadModel(options.modelPath(), options.maxTokens());
         }
         if (options.server()) {
-            Server.run(model, options);
+            Server.start(model, options);
             return;
         }
         Sampler sampler = Engine.configuredSampler(model, options.think(), options.temperature(), options.topp(), options.seed());
@@ -487,7 +485,7 @@ final class AOT {
             }
             try (FileChannel fileChannel = FileChannel.open(path, StandardOpenOption.READ)) {
                 GGUF gguf = ModelLoader.readGguf(fileChannel, path.toString());
-                Llama base = ModelLoader.loadModel(null, gguf, LFM25.DEFAULT_MAX_TOKENS, false);
+                Llama base = ModelLoader.loadModel(null, gguf, Main.DEFAULT_MAX_TOKENS, false);
                 // Precompute RoPE frequencies at build time (pure Java arrays, survives native-image)
                 Llama.Configuration config = base.configuration();
                 Pair<float[], float[]> ropeFreqsSWA = RoPE.precomputeFreqsCis(
