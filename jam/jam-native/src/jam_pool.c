@@ -7,6 +7,7 @@
  *    gap between fan-outs collapses.
  * The submitting thread participates as worker 0, so `nthreads` participants share each parallel_for. */
 #include "jam_internal.h"
+#include "jam_cpu.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -21,7 +22,7 @@
 #  define JAM_PAUSE() ((void) 0)
 #endif
 
-typedef struct { jam_pool* pool; int idx; } jam_worker;
+typedef struct { jam_pool* pool; int idx; int cpu; } jam_worker;  /* cpu = pin target, -1 = float */
 
 struct jam_pool {
     int             nworkers;     /* worker THREADS; total participants = nworkers + 1 (incl. submitter) */
@@ -52,6 +53,7 @@ static void run_range(jam_task_fn fn, void* arg, int n, int idx, int total, int 
 static void* worker_main(void* p) {
     jam_worker* w   = (jam_worker*) p;
     jam_pool*   pool = w->pool;
+    if (w->cpu >= 0) jam_cpu_pin(w->cpu);   /* best-effort: bind this worker to its selected core */
     int my_seq = 0;
     for (;;) {
         if (pool->spin) {
@@ -89,7 +91,7 @@ static void* worker_main(void* p) {
     return NULL;
 }
 
-jam_pool* jam_pool_create(int nthreads) {
+jam_pool* jam_pool_create(int nthreads, const int* cpu) {
     if (nthreads < 1) nthreads = 1;
     jam_pool* pool = (jam_pool*) calloc(1, sizeof *pool);
     if (!pool) return NULL;
@@ -108,6 +110,7 @@ jam_pool* jam_pool_create(int nthreads) {
         for (int i = 0; i < pool->nworkers; ++i) {
             pool->wargs[i].pool = pool;
             pool->wargs[i].idx  = i + 1;   /* participants 1..nworkers; submitter is 0 */
+            pool->wargs[i].cpu  = cpu ? cpu[i + 1] : -1;   /* cpu[0] is the (unpinned) submitter */
             pthread_create(&pool->threads[i], NULL, worker_main, &pool->wargs[i]);
         }
     }
