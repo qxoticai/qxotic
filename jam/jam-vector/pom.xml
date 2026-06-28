@@ -28,9 +28,14 @@
       <scope>test</scope>
     </dependency>
     <dependency>
+      <groupId>com.qxotic</groupId>
+      <artifactId>jam-native</artifactId>   <!-- cross-backend parity also checks NativeJAM, when libjam loads -->
+      <version>0.1.0</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
-      <version>5.10.2</version>
       <scope>test</scope>
     </dependency>
   </dependencies>

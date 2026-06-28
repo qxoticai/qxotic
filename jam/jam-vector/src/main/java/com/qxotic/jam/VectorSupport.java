@@ -1,11 +1,14 @@
 package com.qxotic.jam;
 
+import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorShape;
 import jdk.incubator.vector.VectorSpecies;
 
 import java.lang.foreign.MemorySegment;
+import java.util.Locale;
 import java.util.function.IntConsumer;
+import java.util.regex.Pattern;
 import java.util.stream.IntStream;
 
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
@@ -23,22 +26,55 @@ final class VectorSupport {
 
     private VectorSupport() {}
 
-    /** Float vector species; width is the JVM's preferred unless pinned with {@code -Djam.vector.width}. */
+    /** A {@code jam.vector.*} knob, read uniformly: {@code -Djam.vector.NAME} wins, else env
+     *  {@code JAM_VECTOR_NAME} (dots→underscores, upper-cased), else {@code def}. So every tunable below
+     *  works as a system property OR an environment variable. */
+    static String jamProp(String name, String def) {
+        String v = System.getProperty(name);
+        if (v == null) v = System.getenv(name.toUpperCase(Locale.ROOT).replace('.', '_'));
+        return v != null ? v : def;
+    }
+
+    /** Integer {@link #jamProp}. */
+    static int jamPropInt(String name, int def) {
+        String v = jamProp(name, null);
+        return v != null ? Integer.parseInt(v.trim()) : def;
+    }
+
+    /** Float vector species; the JVM's preferred width unless pinned with {@code -Djam.vector.width} /
+     *  {@code JAM_VECTOR_WIDTH}. */
     static final VectorSpecies<Float> F_SPECIES =
-            VectorShape.forBitSize(Integer.getInteger("jam.vector.width", FloatVector.SPECIES_PREFERRED.vectorBitSize()))
+            VectorShape.forBitSize(jamPropInt("jam.vector.width", FloatVector.SPECIES_PREFERRED.vectorBitSize()))
                        .withLanes(float.class);
     static final boolean IS_512 = F_SPECIES.vectorBitSize() == 512;
 
+    // ---- width-generic k-quant/FP4 decode: a 16-byte SPECIES_128 chunk fans out into 16/F_LEN F32 stores
+    //      (1 at 512-bit, 2 at 256, 4 at 128). castShape part p maps input byte-lanes [p*F_LEN, (p+1)*F_LEN). ----
+    static final int F_LEN = F_SPECIES.length();
+    static final int DECODE_PARTS = ByteVector.SPECIES_128.length() / F_LEN;   // constant-folded: 1 | 2 | 4
+
+    /** Affine decode of a 16-quant byte chunk into {@code dst[off..]}: value = q*scale + neg, any vector width. */
+    static void storeAffine(ByteVector q, FloatVector scale, FloatVector neg, float[] dst, int off) {
+        for (int p = 0; p < DECODE_PARTS; p++)
+            ((FloatVector) q.castShape(F_SPECIES, p)).fma(scale, neg).intoArray(dst, off + p * F_LEN);
+    }
+
+    /** Scaled decode of a 16-quant byte chunk into {@code dst[off..]}: value = q*scale, any vector width. */
+    static void storeScaled(ByteVector q, FloatVector scale, float[] dst, int off) {
+        for (int p = 0; p < DECODE_PARTS; p++)
+            ((FloatVector) q.castShape(F_SPECIES, p)).mul(scale).intoArray(dst, off + p * F_LEN);
+    }
+
     /** Register-tiling knobs (same defaults as jinfer's GEMM_* tunables). */
-    static final int SEQ_TILE = Integer.getInteger("jam.vector.seqTile", 32);
-    static final int SEQ_TILE_QK = Integer.getInteger("jam.vector.seqTileQk", 8);   // k-quants tile narrower
-    static final int ROW_TILE = Integer.getInteger("jam.vector.rowTile", 128);
-    static final int THREADS  = Integer.getInteger("jam.vector.threads", Runtime.getRuntime().availableProcessors() * 4);
+    static final int SEQ_TILE = jamPropInt("jam.vector.seqTile", 32);
+    static final int SEQ_TILE_QK = jamPropInt("jam.vector.seqTileQk", 8);   // k-quants tile narrower
+    static final int ROW_TILE = jamPropInt("jam.vector.rowTile", 128);
+    static final int THREADS  = jamPropInt("jam.vector.threads", Runtime.getRuntime().availableProcessors() * 4);
 
     // ---- Register-tile selection, resolved once from -Djam.vector.tile + CPU width + JIT (relocated from
     //      jinfer's VectorJAM). The Q8_0 kernel reads TILE_CODE; wide tiles need spill-free zmm16-zmm31. ----
-    static final String TILE = System.getProperty("jam.vector.tile",
-            System.getProperty("jinfer.Q8_0GemmTile", "auto"));   // legacy name still honored
+    static final String TILE = jamProp("jam.vector.tile",
+            System.getProperty("jinfer.Q8_0GemmTile", "auto"));   // legacy -D name still honored as the default
     /** Constant-foldable codes: 0=3x2,1=3x4,2=4x4,3=2x8,4=8x2,5=1x1,6..9=avx256,10/11=neon,12=scalar. */
     static final int TILE_CODE = switch (TILE) {
         case "auto" -> autoTileCode();
@@ -66,7 +102,7 @@ final class VectorSupport {
     private static boolean jitHandlesWideTile() {
         String version = System.getProperty("java.vm.version", "");
         if (version.contains("jvmci")) {
-            var v = java.util.regex.Pattern.compile("jvmci-(\\d+)\\.(\\d+)").matcher(version);
+            var v = Pattern.compile("jvmci-(\\d+)\\.(\\d+)").matcher(version);
             if (v.find()) {
                 int major = Integer.parseInt(v.group(1)), minor = Integer.parseInt(v.group(2));
                 return major > 25 || (major == 25 && minor >= 1);
@@ -116,6 +152,29 @@ final class VectorSupport {
     /** Prefill fan-out: vanilla parallel IntStream (measured-best for the compute-bound gemm). */
     static void parallelFor(int from, int to, IntConsumer body) {
         IntStream.range(from, to).parallel().forEach(body);
+    }
+
+    /** A contiguous {@code [lo, hi)} slice of work handed to one parallel worker. */
+    @FunctionalInterface
+    interface ChunkConsumer {
+        void accept(int lo, int hi);
+    }
+
+    /**
+     * Split {@code [0, count)} into {@code min(count, THREADS)} contiguous slices and run each as one parallel
+     * task. Unlike {@link #parallelFor}, the body owns a whole slice — so a band kernel can {@link Scratch#acquire}
+     * one dequant buffer per worker (not per group) and reuse it across the slice's rows. With {@link Scratch}'s
+     * context-owned pool this means no per-{@code mm} allocation, while the buffers stay reachable only through
+     * the context (freed when it is GC'd) rather than the old commonPool-rooted, JVM-lifetime ThreadLocal.
+     */
+    static void parallelChunks(int count, ChunkConsumer body) {
+        if (count <= 0) return;
+        int chunks = Math.min(count, Math.max(1, THREADS));
+        IntStream.range(0, chunks).parallel().forEach(c -> {
+            int lo = (int) ((long) count * c / chunks);
+            int hi = (int) ((long) count * (c + 1) / chunks);
+            if (lo < hi) body.accept(lo, hi);
+        });
     }
 
     /** Decode the IEEE half at byte offset {@code off} in {@code seg} to float (JDK-exact, as jinfer). */

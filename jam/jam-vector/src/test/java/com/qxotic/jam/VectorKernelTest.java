@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * does — weight as a raw segment, activation + output through the GLOBAL segment at their absolute
  * addresses — which is uniform whether a kernel stores via {@code o.set} or absolute {@code putFloat}.
  *
- * <p>The kernels need a 512-bit FloatVector; the suite is skipped (not failed) where that's absent.
+ * <p>The kernels need a 128/256/512-bit FloatVector; the suite is skipped (not failed) where that's absent.
  */
 class VectorKernelTest {
 
@@ -29,24 +29,38 @@ class VectorKernelTest {
     private static final Arena A = Arena.ofAuto();
     private static final Random RNG = new Random(11);
 
-    /** A vector kernel's public gemm entry; all 7 share this signature. */
+    /** A vector kernel's public gemm entry (register-tiled dtypes; the band kernels add a trailing Scratch). */
     @FunctionalInterface
     interface Gemm {
         void run(MemorySegment w, MemorySegment a, long aBase, MemorySegment o, long oBase,
                  int aStride, int oStride, int n, int m, int k, long wOff);
     }
 
+    /** A band kernel's gemm entry (k-quants, FP4): same as {@link Gemm} plus the context-owned dequant pool. */
+    @FunctionalInterface
+    interface BandGemm {
+        void run(MemorySegment w, MemorySegment a, long aBase, MemorySegment o, long oBase,
+                 int aStride, int oStride, int n, int m, int k, long wOff, Scratch scratch);
+    }
+
+    /** Adapt a band kernel to {@link Gemm} by binding a fresh per-test {@link Scratch} (as a real context would). */
+    private static Gemm withScratch(BandGemm g) {
+        Scratch s = new Scratch();
+        return (w, a, aBase, o, oBase, aStride, oStride, n, m, k, wOff)
+                -> g.run(w, a, aBase, o, oBase, aStride, oStride, n, m, k, wOff, s);
+    }
+
     @Test void q8_0()  { eachShape("Q8_0",  VectorKernelTest::q8_0,  Q8Kernel::gemm); }
     @Test void q4_0()  { eachShape("Q4_0",  VectorKernelTest::q4_0,  Q4Kernel::gemm); }
-    @Test void q4_k()  { eachShape("Q4_K",  VectorKernelTest::q4_k,  Q4KKernel::gemm); }
-    @Test void q5_k()  { eachShape("Q5_K",  VectorKernelTest::q5_k,  Q5KKernel::gemm); }
-    @Test void q6_k()  { eachShape("Q6_K",  VectorKernelTest::q6_k,  Q6KKernel::gemm); }
-    @Test void mxfp4() { eachShape("MXFP4", VectorKernelTest::mxfp4, Mxfp4Kernel::gemm); }
-    @Test void nvfp4() { eachShape("NVFP4", VectorKernelTest::nvfp4, Nvfp4Kernel::gemm); }
+    @Test void q4_k()  { eachShape("Q4_K",  VectorKernelTest::q4_k,  withScratch(Q4KKernel::gemm)); }
+    @Test void q5_k()  { eachShape("Q5_K",  VectorKernelTest::q5_k,  withScratch(Q5KKernel::gemm)); }
+    @Test void q6_k()  { eachShape("Q6_K",  VectorKernelTest::q6_k,  withScratch(Q6KKernel::gemm)); }
+    @Test void mxfp4() { eachShape("MXFP4", VectorKernelTest::mxfp4, withScratch(Mxfp4Kernel::gemm)); }
+    @Test void nvfp4() { eachShape("NVFP4", VectorKernelTest::nvfp4, withScratch(Nvfp4Kernel::gemm)); }
 
     /** Check one dtype's kernel against ScalarJAM at n in {8,13,16} (full tile + both remainders). */
     private static void eachShape(String name, java.util.function.BiFunction<Integer, Integer, Weight> encode, Gemm kernel) {
-        Assumptions.assumeTrue(VectorSupport.IS_512, "vector kernels require a 512-bit FloatVector");
+        Assumptions.assumeTrue(VectorSupport.F_SPECIES.vectorBitSize() >= 128, "vector kernels require a >=128-bit FloatVector");
         int m = 104, k = 256;                       // k = one k-quant super-block (also a multiple of 64/32)
         for (int n : new int[]{8, 13, 16}) check(name + " n=" + n, encode.apply(m, k), kernel, m, n, k);
     }

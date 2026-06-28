@@ -454,23 +454,15 @@ final class Q4_0FloatTensor extends SegmentFloatTensor {
 
     @Override
     public float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
-        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor) {
-            return vectorDot(this, thisOffset, that, thatOffset, size);
+        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor f32) {
+            return vectorDot(this, thisOffset, f32, thatOffset, size);
         } else {
             return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
         }
     }
 
-    static void vectorGemm512(Q4_0FloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
-                                       int thatStride, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
-        // Relocated to jam-vector (Q4Kernel). Weight via the raw segment; activation + output via the
-        // GLOBAL_SEGMENT-routed (vseg, vbase). Identical computation — the kernel now lives in jam-vector.
-        com.qxotic.jam.Q4Kernel.gemm(thiz.memorySegment, that.vseg, that.vbase, out.vseg, out.vbase,
-                thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
-    }
 
-
-    private static float vectorDot(Q4_0FloatTensor thiz, long thisOffset, FloatTensor that, long thatOffset, int size) {
+    private static float vectorDot(Q4_0FloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
         float result = 0f;
         int j = 0;
 
@@ -559,13 +551,13 @@ final class Q4_1FloatTensor extends SegmentFloatTensor {
 
     @Override
     public float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
-        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor) {
-            return vectorDot(this, thisOffset, that, thatOffset, size);
+        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor f32) {
+            return vectorDot(this, thisOffset, f32, thatOffset, size);
         }
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
 
-    private static float vectorDot(Q4_1FloatTensor thiz, long thisOffset, FloatTensor that, long thatOffset, int size) {
+    private static float vectorDot(Q4_1FloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
         float result = 0f;
         int j = 0;
 
@@ -681,13 +673,13 @@ final class Q5_1FloatTensor extends SegmentFloatTensor {
 
     @Override
     public float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
-        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor) {
-            return vectorDot(this, thisOffset, that, thatOffset, size);
+        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor f32) {
+            return vectorDot(this, thisOffset, f32, thatOffset, size);
         }
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
 
-    private static float vectorDot(Q5_1FloatTensor thiz, long thisOffset, FloatTensor that, long thatOffset, int size) {
+    private static float vectorDot(Q5_1FloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
         assert Integer.bitCount(GGMLType.Q5_1.getElementsPerBlock()) == 1 : "power of 2";
         int j = 0;
         float result = 0f;
@@ -841,21 +833,14 @@ final class Q4_KFloatTensor extends SegmentFloatTensor {
 
     @Override
     public float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
-        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor) {
-            return vectorDot(this, thisOffset, that, thatOffset, size);
+        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor f32) {
+            return vectorDot(this, thisOffset, f32, thatOffset, size);
         }
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
 
-    static void vectorGemm512(Q4_KFloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
-                                      int thatStride, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
-        // relocated to jam-vector (Q4KKernel)
-        com.qxotic.jam.Q4KKernel.gemm(thiz.memorySegment, that.vseg, that.vbase, out.vseg, out.vbase,
-                thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
-    }
 
-
-    private static float vectorDot(Q4_KFloatTensor thiz, long thisOffset, FloatTensor that, long thatOffset, int size) {
+    private static float vectorDot(Q4_KFloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
         float result = 0f;
         int j = 0;
 
@@ -1094,13 +1079,6 @@ final class Q5_KFloatTensor extends SegmentFloatTensor {
         return result;
     }
 
-    static void vectorGemm512(Q5_KFloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
-                              int thatStride, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
-        // relocated to jam-vector (Q5KKernel)
-        com.qxotic.jam.Q5KKernel.gemm(thiz.memorySegment, that.vseg, that.vbase, out.vseg, out.vbase,
-                thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
-    }
-
 }
 
 final class Q6_KFloatTensor extends SegmentFloatTensor {
@@ -1157,22 +1135,15 @@ final class Q6_KFloatTensor extends SegmentFloatTensor {
 
     @Override
     public float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
-        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor) {
-            return vectorDot(this, thisOffset, that, thatOffset, size);
+        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor f32) {
+            return vectorDot(this, thisOffset, f32, thatOffset, size);
         } else {
             return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
         }
     }
 
-    static void vectorGemm512(Q6_KFloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
-                                      int thatStride, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
-        // relocated to jam-vector (Q6KKernel)
-        com.qxotic.jam.Q6KKernel.gemm(thiz.memorySegment, that.vseg, that.vbase, out.vseg, out.vbase,
-                thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
-    }
 
-
-    private static float vectorDot(Q6_KFloatTensor thiz, long thisOffset, FloatTensor that, long thatOffset, int size) {
+    private static float vectorDot(Q6_KFloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
         float result = 0f;
         int j = 0;
 
@@ -1336,25 +1307,10 @@ final class Q8_0FloatTensor extends SegmentFloatTensor {
     }
 
     /**
-     * AVX-512 GEMM tuned for the Graal JIT, which only allocates zmm0-zmm15: the register tile is
-     * 3 weight rows x 2 activation columns (6 accumulators + 6 pre-scaled weight vectors + temps).
-     * Weights are decoded once per block (sign-extend + scale) and shared by both columns; the two
-     * half-block products are combined in a mul/fma tree so each accumulator only carries one
-     * 3-cycle ADD per block instead of a chain of two 4-cycle FMAs.
+     * 512-bit Q8_0·F32 dot (the decode/gemv path behind {@link #dot}): two blocks per iteration with a pair
+     * of accumulators, weights decoded once (sign-extend + scale) and combined in a mul/fma tree. The
+     * register-tiled prefill GEMM that used to sit here was relocated to {@code com.qxotic.jam.Q8Kernel}.
      */
-
-
-    static void vectorGemm512F32(Q8_0FloatTensor thiz, F32FloatTensor that, F32FloatTensor out,
-                                      int thatStride, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
-        // Relocated to jam-vector: the Q8_0 register-tiled gemm + its ~19 tile shapes + TILE_CODE pick now
-        // live in com.qxotic.jam.Q8Kernel (segment-based). Weight via thiz.memorySegment; activation/output
-        // via the vector (segment, base) pair. The dead tile helpers above are kept until full unification.
-        com.qxotic.jam.Q8Kernel.gemm(thiz.memorySegment, that.vseg, that.vbase, out.vseg, out.vbase,
-                thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
-    }
-
-
-
     static float vectorDot512F32(Q8_0FloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
         final int blockSize = GGMLType.Q8_0.getElementsPerBlock();
         final int typeSize = GGMLType.Q8_0.getBlockByteSize();
@@ -1501,13 +1457,13 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
 
     @Override
     public float dot(long thisOffset, FloatTensor that, long thatOffset, int size) {
-        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor) {
-            return vectorDot(this, thisOffset, that, thatOffset, size);
+        if (FloatTensor.USE_VECTOR_API && that instanceof F32FloatTensor f32) {
+            return vectorDot(this, thisOffset, f32, thatOffset, size);
         }
         return FloatTensor.scalarDot(this, thisOffset, that, thatOffset, size);
     }
 
-    private static float vectorDot(MXFP4FloatTensor thiz, long thisOffset, FloatTensor that, long thatOffset, int size) {
+    private static float vectorDot(MXFP4FloatTensor thiz, long thisOffset, F32FloatTensor that, long thatOffset, int size) {
         assert Integer.bitCount(QK_MXFP4) == 1 : "power of 2";
         int j = 0;
         float result = 0f;
@@ -1597,14 +1553,6 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
             DEQUANT_BAND.set(w);
         }
         return w;
-    }
-
-    /** Register-tiled MXFP4 prefill (relocated from the gemm override into VectorMatMul's dispatch). */
-    static void vectorGemmMxfp4(MXFP4FloatTensor thiz, F32FloatTensor x, F32FloatTensor of,
-                                int thatStride, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
-        // relocated to jam-vector (Mxfp4Kernel)
-        com.qxotic.jam.Mxfp4Kernel.gemm(thiz.memorySegment, x.vseg, x.vbase, of.vseg, of.vbase,
-                thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
     }
 
     /** Flat F32 dot of a dequantized weight row (at {@code w[wOffset..]}) against one activation column. */
@@ -1712,14 +1660,6 @@ final class NVFP4FloatTensor extends SegmentFloatTensor {
         }
     }
 
-    /** Register-tiled NVFP4 prefill (512-bit): dequantize a 3-row band to F32 scratch, then the shared
-     *  decode-free 3x3 F32 band sweeps the sequence (same machinery as MXFP4). */
-    static void vectorGemm512(NVFP4FloatTensor thiz, F32FloatTensor x, F32FloatTensor of,
-                              int thatStride, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
-        // relocated to jam-vector (Nvfp4Kernel)
-        com.qxotic.jam.Nvfp4Kernel.gemm(thiz.memorySegment, x.vseg, x.vbase, of.vseg, of.vbase,
-                thatStride, outStride, sequenceLength, dim0, dim1, thisOffset);
-    }
 }
 
 final class BF16FloatTensor extends SegmentFloatTensor {
@@ -1976,7 +1916,18 @@ final class F32FloatTensor extends SegmentFloatTensor {
                 long thisByte = vbase + (long) (thisOffset + i) * Float.BYTES;
                 var g = FloatVector.fromMemorySegment(F_SPECIES, vseg, thisByte, ByteOrder.LITTLE_ENDIAN);
                 var u = FloatVector.fromMemorySegment(F_SPECIES, f32.vseg, f32.vbase + (long) (thatOffset + i) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
-                siluVec(g).mul(u).intoMemorySegment(vseg, thisByte, ByteOrder.LITTLE_ENDIAN);
+                // silu(g)*u with siluVec/tanhVec INLINED by hand: the FloatVector temporaries never cross a
+                // method boundary, so they scalar-replace into SIMD registers on any JIT — not only those that
+                // inline the helpers (a weaker inliner otherwise boxes the escaping return value). Identical
+                // math to siluVec(g).mul(u); the helpers stay for GELU / the scalar tail. Keep in sync with tanhVec.
+                FloatVector y = g.mul(0.5f).max(-TANH_CUTOFF).min(TANH_CUTOFF);     // tanh input = g/2, clamped
+                FloatVector y2 = y.mul(y);
+                FloatVector num = FloatVector.broadcast(F_SPECIES, TANH_N0)
+                                    .fma(y2, FloatVector.broadcast(F_SPECIES, TANH_N1))
+                                    .fma(y2, FloatVector.broadcast(F_SPECIES, TANH_N2)).mul(y2);
+                FloatVector den = y2.add(TANH_D0).fma(y2, FloatVector.broadcast(F_SPECIES, TANH_D1));
+                FloatVector tanh = num.div(den).fma(y, y);                          // tanh(g/2)
+                g.mul(tanh.mul(0.5f).add(0.5f)).mul(u).intoMemorySegment(vseg, thisByte, ByteOrder.LITTLE_ENDIAN);
             }
             for (; i < size; i++) {
                 float g = getFloat(thisOffset + i);
@@ -1998,18 +1949,23 @@ final class F32FloatTensor extends SegmentFloatTensor {
         return g.mul(tanh.mul(0.5f).add(0.5f));                      // g * sigmoid(g)
     }
 
+    // njuffa minimax-rational tanh coefficients (the "cutoff" variant). One source of truth, shared by
+    // tanhVec and the manually-inlined SiLU loop in siluMultiplyInPlace below — keep them in sync.
+    static final float TANH_CUTOFF = 5.76110792f;                   // clamp |x| here (tanh ~ ±1 beyond)
+    static final float TANH_N0 = -1.60153955e-4f, TANH_N1 = -9.34448242e-1f, TANH_N2 = -2.19176636e+1f;
+    static final float TANH_D0 = 29.0915985f,     TANH_D1 = 65.7667847f;
+
     /** Vectorized tanh(x) via njuffa's minimax rational (the "cutoff" variant): x clamped to +/-CUTOFF
      *  (tanh saturated to ~1 there, so no output clamp), tanh = x + x*num(x^2)/den(x^2). Only mul/add/div/fma,
      *  so it runs fast on GraalVM/jvmci (which does NOT intrinsify lanewise TANH/EXP). Source: njuffa,
      *  StackOverflow "fast tanhf". |error| <= ~1.9e-5 over all float32. Shared by SiLU and Gemma's GELU. */
     static FloatVector tanhVec(FloatVector x) {
-        final float CUTOFF = 5.76110792f;
-        FloatVector y  = x.max(-CUTOFF).min(CUTOFF);
+        FloatVector y  = x.max(-TANH_CUTOFF).min(TANH_CUTOFF);
         FloatVector y2 = y.mul(y);
-        FloatVector num = FloatVector.broadcast(F_SPECIES, -1.60153955e-4f)
-                            .fma(y2, FloatVector.broadcast(F_SPECIES, -9.34448242e-1f))
-                            .fma(y2, FloatVector.broadcast(F_SPECIES, -2.19176636e+1f)).mul(y2);
-        FloatVector den = y2.add(29.0915985f).fma(y2, FloatVector.broadcast(F_SPECIES, 65.7667847f));
+        FloatVector num = FloatVector.broadcast(F_SPECIES, TANH_N0)
+                            .fma(y2, FloatVector.broadcast(F_SPECIES, TANH_N1))
+                            .fma(y2, FloatVector.broadcast(F_SPECIES, TANH_N2)).mul(y2);
+        FloatVector den = y2.add(TANH_D0).fma(y2, FloatVector.broadcast(F_SPECIES, TANH_D1));
         return num.div(den).fma(y, y);                              // y + y*num/den
     }
 

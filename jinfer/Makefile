@@ -17,10 +17,13 @@ JAVA_MAJOR_VERSION := $(shell $(JAVA) -version 2>&1 | head -n 1 | cut -d'"' -f2 
 # (~15x slower). The rolling/decode attention uses Llama::f16DecodeVector; the block-tiled flash
 # prefill (FlashAttention.qkTile/pvTile) reads the f16 KV cache through loadF16->f16ToF32Vector and
 # needs the same guarantee, or it boxes and falls behind the rolling fallback.
-INLINE_HINTS = -XX:CompileCommand=inline,com.qxotic.jinfer.Llama::f16DecodeVector \
-	-XX:CompileCommand=inline,com.qxotic.jinfer.F16FloatTensor::f16ToF32Vector \
-	-XX:CompileCommand=inline,com.qxotic.jinfer.FlashAttention::loadF16 \
-	-XX:CompileCommand=inline,com.qxotic.jinfer.FlashAttention::loadF32
+# Force-inline the hot Vector API helpers (see ./hotspot_compiler). Without the hint a weaker inliner
+# (GraalVM CE / plain C2 under budget) leaves a FloatVector-returning helper out-of-line, so the vector
+# escapes the call and is boxed (heap-allocated) instead of scalar-replaced into a SIMD register — measured
+# ~45% slower prefill on GraalVM CE. A strong inliner (Oracle GraalVM) does it anyway. The file form keeps
+# the (growing) list in one place; F32FloatTensor.siluMultiplyInPlace is inline-by-construction in source.
+HOTSPOT_COMPILER_FILE := $(dir $(lastword $(MAKEFILE_LIST)))hotspot_compiler
+INLINE_HINTS = -XX:CompileCommandFile=$(HOTSPOT_COMPILER_FILE)
 GEMM_INLINE_HINT = $(INLINE_HINTS)
 JAVA_RUNTIME_OPTIONS = --enable-preview --add-modules jdk.incubator.vector,jdk.httpserver \
 	--enable-native-access=ALL-UNNAMED $(INLINE_HINTS)

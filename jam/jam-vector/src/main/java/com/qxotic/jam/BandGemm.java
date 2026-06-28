@@ -23,7 +23,8 @@ final class BandGemm {
      *  else 3x3 (9 accumulators) — the same wide-tile gate as the Q8_0 4x4 tile. Override with
      *  {@code -Djam.vector.band=3x3|4x4}. The dtype kernel dequantizes MR rows per band; the column sweep
      *  then holds MR*NR F32 accumulators with no per-element decode. */
-    static final String BAND = System.getProperty("jam.vector.band", VectorSupport.WIDE_TILE ? "4x4" : "3x3");
+    static final String BAND = VectorSupport.jamProp("jam.vector.band",
+            VectorSupport.WIDE_TILE && VectorSupport.IS_512 ? "4x4" : "3x3");   // 4x4's 24 live vectors need 32 zmm
     static final int MR = BAND.equals("3x3") ? 3 : 4;
     static final int NR = BAND.equals("3x3") ? 3 : 4;
 
@@ -56,18 +57,6 @@ final class BandGemm {
         store(o, oBase, o0 + 1, c10.reduceLanes(VectorOperators.ADD)); store(o, oBase, o0 + oStride + 1, c11.reduceLanes(VectorOperators.ADD)); store(o, oBase, o0 + 2L * oStride + 1, c12.reduceLanes(VectorOperators.ADD)); store(o, oBase, o0 + 3L * oStride + 1, c13.reduceLanes(VectorOperators.ADD));
         store(o, oBase, o0 + 2, c20.reduceLanes(VectorOperators.ADD)); store(o, oBase, o0 + oStride + 2, c21.reduceLanes(VectorOperators.ADD)); store(o, oBase, o0 + 2L * oStride + 2, c22.reduceLanes(VectorOperators.ADD)); store(o, oBase, o0 + 3L * oStride + 2, c23.reduceLanes(VectorOperators.ADD));
         store(o, oBase, o0 + 3, c30.reduceLanes(VectorOperators.ADD)); store(o, oBase, o0 + oStride + 3, c31.reduceLanes(VectorOperators.ADD)); store(o, oBase, o0 + 2L * oStride + 3, c32.reduceLanes(VectorOperators.ADD)); store(o, oBase, o0 + 3L * oStride + 3, c33.reduceLanes(VectorOperators.ADD));
-    }
-
-    /** Per-worker F32 scratch holding the row group's dequantized weights; grown on demand, reused. */
-    private static final ThreadLocal<float[]> DEQUANT_BAND = new ThreadLocal<>();
-
-    static float[] bandScratch(int need) {
-        float[] w = DEQUANT_BAND.get();
-        if (w == null || w.length < need) {
-            w = new float[need];
-            DEQUANT_BAND.set(w);
-        }
-        return w;
     }
 
     /** MR=3 rows x NR=3 cols decode-free F32 band: 9 accumulators + 3 weight + 3 activation vectors. */

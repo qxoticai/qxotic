@@ -72,22 +72,32 @@ public final class Q4KKernel {
     // ---- gemm: dequantize the row-band once, then the shared decode-free F32 band ----
 
     public static void gemm(MemorySegment w, MemorySegment a, long aBase, MemorySegment o, long oBase,
-                            int aStride, int oStride, int n, int m, int k, long wOff) {
+                            int aStride, int oStride, int n, int m, int k, long wOff, Scratch scratch) {
         int groups = m / BandGemm.MR;
-        VectorSupport.parallelFor(0, groups, g -> {
-            int row0 = g * BandGemm.MR;
-            float[] band = BandGemm.bandScratch(BandGemm.MR * k);
-            for (int i = 0; i < BandGemm.MR; i++) dequantizeRow(w, wOff + (long) (row0 + i) * k, k, band, i * k);
-            int s = 0;
-            for (; s + BandGemm.NR <= n; s += BandGemm.NR) BandGemm.band(band, k, a, aBase, o, oBase, aStride, oStride, row0, s);
-            for (; s < n; s++) for (int i = 0; i < BandGemm.MR; i++)
-                BandGemm.store(o, oBase, (long) s * oStride + row0 + i, BandGemm.dotDeq(band, i * k, k, a, aBase, (long) s * aStride));
+        VectorSupport.parallelChunks(groups, (gLo, gHi) -> {
+            float[] band = scratch.acquire(BandGemm.MR * k);   // one per worker; reused across mm, freed with the context
+            try {
+                for (int g = gLo; g < gHi; g++) {
+                    int row0 = g * BandGemm.MR;
+                    for (int i = 0; i < BandGemm.MR; i++) dequantizeRow(w, wOff + (long) (row0 + i) * k, k, band, i * k);
+                    int s = 0;
+                    for (; s + BandGemm.NR <= n; s += BandGemm.NR) BandGemm.band(band, k, a, aBase, o, oBase, aStride, oStride, row0, s);
+                    for (; s < n; s++) for (int i = 0; i < BandGemm.MR; i++)
+                        BandGemm.store(o, oBase, (long) s * oStride + row0 + i, BandGemm.dotDeq(band, i * k, k, a, aBase, (long) s * aStride));
+                }
+            } finally {
+                scratch.release(band);
+            }
         });
-        for (int row = groups * BandGemm.MR; row < m; row++) {
-            float[] band = BandGemm.bandScratch(k);
-            dequantizeRow(w, wOff + (long) row * k, k, band, 0);
-            float[] bf = band; int rr = row;
-            VectorSupport.parallelFor(0, n, s -> BandGemm.store(o, oBase, (long) s * oStride + rr, BandGemm.dotDeq(bf, 0, k, a, aBase, (long) s * aStride)));
+        int rem0 = groups * BandGemm.MR;
+        if (rem0 < m) {
+            float[] band = scratch.acquire(k);
+            for (int row = rem0; row < m; row++) {
+                dequantizeRow(w, wOff + (long) row * k, k, band, 0);
+                int rr = row;
+                VectorSupport.parallelFor(0, n, s -> BandGemm.store(o, oBase, (long) s * oStride + rr, BandGemm.dotDeq(band, 0, k, a, aBase, (long) s * aStride)));
+            }
+            scratch.release(band);
         }
     }
 
@@ -109,8 +119,8 @@ public final class Q4KKernel {
                 var vnegm1 = FloatVector.broadcast(F_SPECIES, -(dmin * (int) ((packedMn >>> (16 * g + 8)) & 0xFF)));
                 for (int c = 0; c < 2; c++) {
                     var wb = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b + 16 + (long) g * 32 + c * 16, ByteOrder.LITTLE_ENDIAN);
-                    ((FloatVector) wb.and((byte) 0xF).castShape(F_SPECIES, 0)).fma(vdsc0, vnegm0).intoArray(dst, blockBase + g * 64 + c * 16);
-                    ((FloatVector) wb.lanewise(VectorOperators.LSHR, 4).castShape(F_SPECIES, 0)).fma(vdsc1, vnegm1).intoArray(dst, blockBase + g * 64 + 32 + c * 16);
+                    VectorSupport.storeAffine(wb.and((byte) 0xF), vdsc0, vnegm0, dst, blockBase + g * 64 + c * 16);
+                    VectorSupport.storeAffine(wb.lanewise(VectorOperators.LSHR, 4), vdsc1, vnegm1, dst, blockBase + g * 64 + 32 + c * 16);
                 }
             }
         }

@@ -1,0 +1,25 @@
+#
+# JIT inline directives for jinfer's hot Vector API helpers.
+#
+# These small methods return / consume jdk.incubator.vector FloatVector values. When the JIT does NOT inline
+# them into their hot loop, the vector escapes the method boundary and is boxed (a FloatVector object + its
+# backing float[] are allocated per call) instead of scalar-replaced into a SIMD register. On a strong inliner
+# (Oracle GraalVM) this happens automatically; weaker inliners (GraalVM CE, plain C2 under budget pressure)
+# need the hint. Forcing the inline makes the whole loop allocation-free — measured +~45% prefill on GraalVM CE.
+#
+# Use with:  -XX:CompileCommandFile=<path>/hotspot_compiler
+# Format:    one "inline <class-with-slashes>.<method>" per line; '#' starts a comment.
+#
+# NOTE: F32FloatTensor.siluMultiplyInPlace is already inline-by-construction in source (siluVec/tanhVec are
+# hand-inlined into its loop), so it is intentionally NOT listed here.
+
+inline com/qxotic/jinfer/F32FloatTensor.siluVec
+inline com/qxotic/jinfer/F32FloatTensor.tanhVec
+inline com/qxotic/jinfer/F16FloatTensor.f16ToF32Vector
+inline com/qxotic/jinfer/Llama.f16DecodeVector
+inline com/qxotic/jinfer/FlashAttention.loadF32
+inline com/qxotic/jinfer/FlashAttention.loadF16
+inline com/qxotic/jinfer/FlashAttention.accumulate
+inline com/qxotic/jinfer/FlashAttention.qkTile
+inline com/qxotic/jinfer/FlashAttention.pvTile
+inline com/qxotic/jinfer/FlashAttention.normalize
