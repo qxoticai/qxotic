@@ -643,12 +643,13 @@ static jam_status jam_mm_run(jam_ctx* ctx,
                 try_vnni_band_256(ctx, w, ldw, a, lda, c, ldc, m, n, k, 18, jam_q4_0_repack_band_avxvnni)) return JAM_OK;
 #endif
 #ifdef JAM_HAVE_AVX2
-            /* avx2: cached-repack (nibble -> signed q-8), then the bias-free sign-trick maddubs 8-wide (prefill n>1) */
+            /* avx2: cached-repack (raw u8 nibble), then the no-sign-trick deferred-madd 8-wide kernel (prefill n>1).
+             * Needs asum (per-block Σaq) for the -8 offset correction Σ(q-8)·a = Σq·a - 8·Σa. */
             if (ctx->q4_0_repack && n > 1 && ensure_qscratch(ctx, n, k)) {
-                q.aq = (int8_t*) ctx->q_aq; q.ad = (float*) ctx->q_ad; q.asum = NULL;
+                q.aq = (int8_t*) ctx->q_aq; q.ad = (float*) ctx->q_ad; q.asum = (float*) ctx->q_asum;
                 jam_run(ctx, n, jam_q8_0_requant, &q);
                 if (try_repack_run(ctx, &q, w, m, k, JAM_QK, sizeof(jam_q8_0_rpblock),
-                                   (size_t)(ldw / JAM_QK) * 18, ctx->q4_0_repack, jam_mm_q8_0_rp_avx2)) return JAM_OK;
+                                   (size_t)(ldw / JAM_QK) * 18, ctx->q4_0_repack, jam_mm_q4_0_rp_avx2)) return JAM_OK;
             }
 #endif
             return run_quant(ctx, &q, m, ctx->q4_0_kernel, jam_mm_q4_0_f32_generic);
