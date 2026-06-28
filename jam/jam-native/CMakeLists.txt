@@ -44,6 +44,15 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     target_sources(jam PRIVATE $<TARGET_OBJECTS:jam_sse3>)
     target_compile_definitions(jam PRIVATE JAM_HAVE_SSE3=1)
 
+    # SSSE3 (Core 2 2006+, still pre-AVX2): Q8_0/Q4_0 via the 128-bit maddubs sign-trick (faster than the
+    # true-SSE3 sign-extend floor). Software fp16 (no F16C). K-quants stay on the SSE3 path (already winning).
+    add_library(jam_ssse3 OBJECT src/kernels/jam_kernels_ssse3.c)
+    target_include_directories(jam_ssse3 PRIVATE include src)
+    target_compile_options(jam_ssse3 PRIVATE -mssse3)
+    target_compile_definitions(jam_ssse3 PRIVATE JAM_HAVE_SSSE3=1)
+    target_sources(jam PRIVATE $<TARGET_OBJECTS:jam_ssse3>)
+    target_compile_definitions(jam PRIVATE JAM_HAVE_SSSE3=1)
+
     # AVX2 (Haswell 2013+): F32 + Q8_0 via maddubs (no VNNI). Covers consumer/older CPUs.
     add_library(jam_avx2 OBJECT src/kernels/jam_kernels_avx2.c src/kernels/jam_kernels_kquant_avx2.c src/kernels/jam_kernels_nvfp4_avx2.c)
     target_include_directories(jam_avx2 PRIVATE include src)
