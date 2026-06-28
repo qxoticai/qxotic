@@ -1,0 +1,17 @@
+{
+  "comment": "FFM downcall stub for libjam's jam_mm, used by NativeJAM when -Djam.native.binding=ffm. Mirrors NativeJAM's FunctionDescriptor: int jam_mm(jlong ctx, jlong w,jint wt,jint ldw, jlong a,jint at,jint lda, jlong r,jint rt,jint ldr, jint m,jint n,jint k). GraalVM Native Image needs downcalls registered (no auto-detection); -H:+ForeignAPISupport is default-on in 25.",
+  "foreign": {
+    "downcalls": [
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jlong",
+          "jlong", "jint", "jint",
+          "jlong", "jint", "jint",
+          "jlong", "jint", "jint",
+          "jint", "jint", "jint"
+        ]
+      }
+    ]
+  }
+}

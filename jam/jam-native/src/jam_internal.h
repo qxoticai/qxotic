@@ -150,6 +150,12 @@ void jam_q4_0_repack_band(void* job, int t0, int t1, int tid); /* phase 2: Q4_0 
 void jam_mxfp4_repack_band(void* job, int t0, int t1, int tid); /* phase 2: MXFP4 16-row VNNI repack matmul */
 void jam_q5k_repack_band(void* job, int t0, int t1, int tid);  /* phase 2: Q5_K 16-row VNNI repack matmul */
 #endif
+/* 256-bit AVX-VNNI Q8_0 band (8-row groups) — the no-AVX-512 client path. Defined in the avxvnni TU;
+ * shares the jam_q4k_job + per-worker repack scratch with the AVX-512 band. Dispatch wiring (activation
+ * requant + try-band for active==AVX_VNNI) is the next step. */
+void jam_q8_0_repack_band_avxvnni(void* job, int t0, int t1, int tid);
+void jam_q8_0_requant_256(void* job, int s0, int s1, int tid);   /* pure-256 phase-1 requant for the band */
+void jam_q4_0_repack_band_avxvnni(void* job, int t0, int t1, int tid);
 void jam_mm_q6k_f32_generic(void* job, int row_begin, int row_end, int tid);    /* portable floor (q8_job) */
 void jam_mm_q5k_f32_generic(void* job, int row_begin, int row_end, int tid);    /* portable floor (no VNNI) */
 void jam_mm_f16_f32_generic(void* job, int row_begin, int row_end, int tid);    /* F16 dense portable floor */
