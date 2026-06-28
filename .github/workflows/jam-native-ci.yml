@@ -1,0 +1,53 @@
+name: jam-native CI
+
+# Compile-coverage for the native jam library across all three OS branches of the CPU-selection /
+# pinning code (jam_cpu.c): Linux is built + tested natively and the Windows branch is cross-compiled
+# with MinGW-w64 on the same runner; macOS is built natively (Apple Silicon) so its QoS/perflevel path
+# is real-compiler-checked. Keeps the otherwise-untestable-from-Linux branches honest on every push.
+
+on:
+  push:
+    paths: ['jam/jam-native/**', '.github/workflows/jam-native-ci.yml']
+  pull_request:
+    paths: ['jam/jam-native/**', '.github/workflows/jam-native-ci.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-and-windows:
+    name: Linux build/test + Windows cross-compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: jam/jam-native
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install MinGW-w64 (Windows cross toolchain)
+        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
+      - name: Build (Linux, native)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
+      - name: "Smoke test (prints the [jam] cpu: selection line)"
+        run: LD_LIBRARY_PATH=build ./build/jam_test
+      - name: Cross-compile the Windows branch (real Win32 headers)
+        run: |
+          set -e
+          x86_64-w64-mingw32-gcc -c -O2 -Wall -Wextra -I include -I src src/jam_cpu.c  -o /dev/null
+          x86_64-w64-mingw32-gcc -c -O2 -Wall          -I include -I src src/jam_pool.c -o /dev/null
+          x86_64-w64-mingw32-gcc -fsyntax-only -O2 -Wall -I include -I src src/jam.c
+
+  macos:
+    name: macOS build (Apple Silicon — QoS/perflevel branch)
+    runs-on: macos-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: jam/jam-native
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build (macOS, native)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
+      - name: "Smoke test (prints the [jam] cpu: selection line)"
+        run: DYLD_LIBRARY_PATH=build ./build/jam_test

@@ -299,7 +299,7 @@ void jam_ctx_destroy(jam_ctx* ctx) {
     if (ctx->ipool) jam_pool_destroy(ctx->ipool);
     free(ctx->q_aq); free(ctx->q_ad); free(ctx->q_asum);
     free(ctx->kq_xq); free(ctx->kq_dx); free(ctx->kq_xsum);
-    for (int i = 0; i < ctx->kq_repack_n; i++) { free(ctx->kq_repack[i].qs); free(ctx->kq_repack[i].dw); free(ctx->kq_repack[i].mw); }
+    for (int i = 0; i < ctx->kq_repack_n; i++) { jam_aligned_free(ctx->kq_repack[i].qs); jam_aligned_free(ctx->kq_repack[i].dw); jam_aligned_free(ctx->kq_repack[i].mw); }
     free(ctx->kq_repack);
     for (int i = 0; i < ctx->rp_cache_n; i++) free(ctx->rp_cache[i].buf);
     free(ctx->rp_cache);
@@ -343,10 +343,10 @@ static int ensure_kquant(jam_ctx* c, int seq, int kblocks) {
     for (int i = 0; i < c->kq_repack_n; i++) {
         jam_repack* rp = &c->kq_repack[i];
         if (rp->cap_blocks < kblocks) {
-            free(rp->qs); free(rp->dw); free(rp->mw);
-            rp->qs = (uint8_t*) aligned_alloc(64, (size_t)(JAM_VNNI_BAND / 16) * kblocks * 512);
-            rp->dw = (float*)   aligned_alloc(64, (size_t)(JAM_VNNI_BAND / 16) * kblocks * 2 * 16 * sizeof(float));
-            rp->mw = (float*)   aligned_alloc(64, (size_t)(JAM_VNNI_BAND / 16) * kblocks * 2 * 16 * sizeof(float));
+            jam_aligned_free(rp->qs); jam_aligned_free(rp->dw); jam_aligned_free(rp->mw);
+            rp->qs = (uint8_t*) jam_aligned_alloc(64, (size_t)(JAM_VNNI_BAND / 16) * kblocks * 512);
+            rp->dw = (float*)   jam_aligned_alloc(64, (size_t)(JAM_VNNI_BAND / 16) * kblocks * 2 * 16 * sizeof(float));
+            rp->mw = (float*)   jam_aligned_alloc(64, (size_t)(JAM_VNNI_BAND / 16) * kblocks * 2 * 16 * sizeof(float));
             rp->cap_blocks = (rp->qs && rp->dw && rp->mw) ? kblocks : 0;
         }
         ok = ok && rp->cap_blocks >= kblocks;
