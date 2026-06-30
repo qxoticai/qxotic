@@ -20,7 +20,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
-class LFMTokenizer {
+public class LFMTokenizer {
 
     private static final String LFM2_PRE_PATTERN =
             "(?i:'s|'t|'re|'ve|'m|'ll|'d)" +
@@ -35,6 +35,12 @@ class LFMTokenizer {
     private final Map<String, Integer> specialTokens;
     private Specials specialsEncoder;
     private final ChatTemplate chatTemplate;
+
+    /** Tokenizer without a chat template — for callers (e.g. the jinfer-gemma4 port) that build
+     *  prompts directly and don't need {@link ChatTemplate} (which is package-private). */
+    public LFMTokenizer(GGUF gguf) {
+        this(gguf, s -> null);
+    }
 
     LFMTokenizer(GGUF gguf, Function<String, ChatTemplate> templateCompiler) {
         this.tokenizer = GGUFTokenizerLoader.createBuilderWithBuiltins()
@@ -52,11 +58,11 @@ class LFMTokenizer {
         }
     }
 
-    int vocabularySize() {
+    public int vocabularySize() {
         return tokenizer.vocabulary().size();
     }
 
-    Map<String, Integer> getSpecialTokens() {
+    public Map<String, Integer> getSpecialTokens() {
         return specialTokens;
     }
 
@@ -69,13 +75,13 @@ class LFMTokenizer {
                 && !tokenizer.vocabulary().isTokenOfType(token, StandardTokenType.NORMAL);
     }
 
-    List<Integer> encode(String text) {
+    public List<Integer> encode(String text) {
         return tokenizer.encode(text).toList();
     }
 
     /** Encode mapping special-token strings in the text to their ids (plain {@link #encode}
      *  never maps them); the --raw-prompt path uses this to author templated streams as text. */
-    List<Integer> encodeWithSpecialTokens(String text) {
+    public List<Integer> encodeWithSpecialTokens(String text) {
         if (specialsEncoder == null) {
             specialsEncoder = Specials.compile(tokenizer.vocabulary(), specialMatchSet());
         }
@@ -103,11 +109,11 @@ class LFMTokenizer {
         return tokenizer.decodeBytes(new int[]{token});
     }
 
-    String decode(int token) {
+    public String decode(int token) {
         return new String(decodeTokenBytes(token), StandardCharsets.UTF_8);
     }
 
-    String decode(List<Integer> tokens) {
+    public String decode(List<Integer> tokens) {
         var buf = new ByteArrayOutputStream();
         for (int token : tokens) {
             buf.writeBytes(tokenizer.decodeBytes(new int[]{token}));

@@ -10,7 +10,7 @@ import jdk.incubator.vector.VectorOperators;
 
 import java.nio.ByteOrder;
 
-final class FlashAttention {
+public final class FlashAttention {
 
     /** Q/K tile sizes for block-tiled prefill (cache-friendly inner loops). */
     static final int Br = 64;
@@ -347,7 +347,7 @@ final class FlashAttention {
      * {@code scale} is the QK score scale. Used by LFM2.5 (full or ring-SWA, no sinks) and gpt-oss
      * (ring-SWA/full + sinks); the plain-causal single-source models keep {@link #causalPrefill}.
      */
-    static void slidingWindowPrefill(FloatTensor q, FloatTensor out, FloatTensor cK, FloatTensor cV,
+    public static void slidingWindowPrefill(FloatTensor q, FloatTensor out, FloatTensor cK, FloatTensor cV,
                                      FloatTensor bK, FloatTensor bV, int nHeads, int startPos, int seqLen,
                                      int headSize, int kvDim, int queryStride, int batchKvStride, int kvMul,
                                      float scale, int window, int ringMask, FloatTensor sinks) {
@@ -540,7 +540,7 @@ final class FlashAttention {
     }
 
     /** Reusable per-sequence scratch for {@link #flashDecode} partials (one per {@code State}). */
-    static final class DecodeScratch {
+    public static final class DecodeScratch {
         F32FloatTensor o;
         float[] m;
         double[] l;
@@ -562,7 +562,7 @@ final class FlashAttention {
      * keys there is nothing to gain, so it falls through to {@link #rollingDecode}. All other arguments
      * (cache ± batch buffer, {@code ringMask}, {@code scale}, {@code sinks}) match {@code rollingDecode}.
      */
-    static void flashDecode(F32FloatTensor q, F32FloatTensor out, FloatTensor cK, FloatTensor cV,
+    public static void flashDecode(F32FloatTensor q, F32FloatTensor out, FloatTensor cK, FloatTensor cV,
                             FloatTensor bK, FloatTensor bV, int nHeads, int position, int attStart,
                             int headSize, int kvDim, int kvMul, float scale, int ringMask,
                             FloatTensor sinks, DecodeScratch scratch) {

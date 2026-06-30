@@ -173,7 +173,7 @@ public final class Server {
             if (Values.booleanValue(request.get("stream"), false)) {
                 streamChatCompletion(exchange, request, messages, modelId, id);
             } else {
-                GenerationResult result = GENERATION.chat(request, messages, null, null, null, null); // non-streaming, no tools
+                GenerationResult result = GENERATION.chat(request, messages, Sinks.NONE); // non-streaming, no tools
                 respond(exchange, result, OpenAiSchema.chatCompletionResponse(id, modelId, result));
             }
         });
@@ -189,7 +189,7 @@ public final class Server {
             if (Values.booleanValue(request.get("stream"), false)) {
                 streamCompletion(exchange, request, prompt, modelId, id);
             } else {
-                GenerationResult result = GENERATION.completion(request, prompt, null, null, null, null); // non-streaming
+                GenerationResult result = GENERATION.completion(request, prompt, Sinks.NONE); // non-streaming
                 respond(exchange, result, OpenAiSchema.completionResponse(id, modelId, result));
             }
         });
@@ -206,7 +206,7 @@ public final class Server {
             if (Values.booleanValue(request.get("stream"), false)) {
                 streamResponse(exchange, request, messages, modelId, id);
             } else {
-                GenerationResult result = GENERATION.chat(request, messages, null, null, null, null); // non-streaming, no tools
+                GenerationResult result = GENERATION.chat(request, messages, Sinks.NONE); // non-streaming, no tools
                 respond(exchange, result, OpenAiSchema.responseResponse(id, modelId, result));
             }
         });
@@ -229,7 +229,7 @@ public final class Server {
                 Consumer<String> reasoningSink = forcedTool ? null
                         : deltaSink(sse, usage, t -> OpenAiSchema.chatCompletionChunk(id, modelId, Map.of("reasoning_content", t), null));
                 Consumer<String> toolCallSink = hasTools || forcedTool ? DISCARD : null;
-                GenerationResult result = GENERATION.chat(request, messages, contentSink, reasoningSink, toolCallSink, usage);
+                GenerationResult result = GENERATION.chat(request, messages, new Sinks(contentSink, reasoningSink, toolCallSink, usage));
                 if (!result.toolCalls().isEmpty()) {
                     sse.emit(OpenAiSchema.chatCompletionChunk(id, modelId, Map.of("tool_calls", ToolCalls.toolCallDeltas(result.toolCalls())), null));
                 }
@@ -267,7 +267,7 @@ public final class Server {
             Sse.guarded(sse, () -> {
                 OpenAiSchema.Usage usage = new OpenAiSchema.Usage();
                 Consumer<String> sink = deltaSink(sse, usage, t -> OpenAiSchema.completionChunk(id, modelId, t, null));
-                GenerationResult result = GENERATION.completion(request, prompt, sink, null, null, usage);
+                GenerationResult result = GENERATION.completion(request, prompt, Sinks.text(sink, usage));
                 endStream(sse, request, result,
                         OpenAiSchema.completionChunk(id, modelId, "", result.finishReason()),
                         OpenAiSchema.completionChunk(id, modelId, "", null));
@@ -290,7 +290,7 @@ public final class Server {
                 OpenAiSchema.Usage usage = new OpenAiSchema.Usage();
                 Consumer<String> sink = deltaSink(sse, usage, "response.output_text.delta",
                         t -> OpenAiSchema.responseTextDelta(itemId, t));
-                GenerationResult result = GENERATION.chat(request, messages, sink, null, null, usage);
+                GenerationResult result = GENERATION.chat(request, messages, Sinks.text(sink, usage));
                 sse.emit("response.output_text.done", Map.of(
                         "type", "response.output_text.done",
                         "item_id", itemId,

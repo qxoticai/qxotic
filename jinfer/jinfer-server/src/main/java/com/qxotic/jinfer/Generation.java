@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
-import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 
 /**
@@ -67,9 +66,7 @@ final class Generation {
     // ---- chat / completion -------------------------------------------------
 
     @SuppressWarnings("unchecked")
-    GenerationResult chat(Map<String, Object> request, List<Object> messages,
-                          Consumer<String> onText, Consumer<String> onReasoning, Consumer<String> onToolCall,
-                          OpenAiSchema.Usage usageCounts) {
+    GenerationResult chat(Map<String, Object> request, List<Object> messages, Sinks sinks) {
         LFMTokenizer tokenizer = model.tokenizer();
         ChatContext chatContext = new ChatContext(
                 messages,
@@ -90,26 +87,23 @@ final class Generation {
         Ingestion resumed = sessionResume
                 ? matchChatSession(request, messages, new LFMChatFormat(tokenizer), tokenizer) : null;
         Ingestion ingestion = resumed != null ? resumed : Ingestion.of(model.createNewState(), 0, promptTokens);
-        GenerationResult result = generate(request, promptTokens, ingestion, model.stopTokens(), onText, onReasoning, onToolCall, usageCounts);
+        GenerationResult result = generate(request, promptTokens, ingestion, model.stopTokens(), sinks);
         if (sessionResume) saveChatSession(request, messages, ingestion, result);
         return ToolUse.offered(request) ? ToolUse.parse(model, result, request) : result;
     }
 
-    GenerationResult completion(Map<String, Object> request, String prompt,
-                                Consumer<String> onText, Consumer<String> onReasoning, Consumer<String> onToolCall,
-                                OpenAiSchema.Usage usageCounts) {
+    GenerationResult completion(Map<String, Object> request, String prompt, Sinks sinks) {
         List<Integer> promptTokens = options.rawPrompt() ? model.tokenizer().encodeWithSpecialTokens(prompt) : new ArrayList<>(model.tokenizer().encode(prompt));
         Ingestion ingestion = Ingestion.of(model.createNewState(), 0, promptTokens);
-        return generate(request, promptTokens, ingestion, model.stopTokens(), onText, onReasoning, onToolCall, usageCounts);
+        return generate(request, promptTokens, ingestion, model.stopTokens(), sinks);
     }
 
     /** Request fields to {@link Engine.Params}/{@link Engine.Listener}, then one engine pass through
      *  {@link #runServerGeneration}. Streaming counters mirror Engine's final usage: generated tokens
      *  are counted unless they are the trailing stop token removed from the result. */
     private GenerationResult generate(Map<String, Object> request, List<Integer> promptTokens,
-                                      Ingestion ingestion, Set<Integer> baseStopTokens, Consumer<String> onText,
-                                      Consumer<String> onReasoning, Consumer<String> onToolCall,
-                                      OpenAiSchema.Usage usageCounts) {
+                                      Ingestion ingestion, Set<Integer> baseStopTokens, Sinks sinks) {
+        OpenAiSchema.Usage usageCounts = sinks.usage();
         float temperature = Values.floatValue(request.get("temperature"), options.temperature());
         float topp = Values.floatValue(request.get("top_p"), options.topp());
         long seed = Values.longValue(request.get("seed"), options.seed());
@@ -153,7 +147,7 @@ final class Generation {
         };
         if (usageCounts != null) usageCounts.promptTokens = consumedPromptTokens;
         Engine.Params params = new Engine.Params(sampler, maxTokens, RuntimeFlags.SERVER_REQUEST_TIMEOUT_NANOS, stops, inlineReasoning(request));
-        Engine.Listener listener = new Engine.Listener(onToken, onText, onReasoning, onToolCall);
+        Engine.Listener listener = new Engine.Listener(onToken, sinks.onText(), sinks.onReasoning(), sinks.onToolCall());
         GenerationResult result = runServerGeneration(ingestion, params, listener, cachedOut, false);
         Metrics.record(result);
         return result;
