@@ -734,6 +734,8 @@ final class Gemma4 implements Model {
         }
         int embeddingLength = gguf.getValue(int.class, "gemma4.embedding_length");
         int numberOfHeads = gguf.getValue(int.class, "gemma4.attention.head_count");
+        // head_count_kv is a scalar on some checkpoints (E2B) and a per-layer int[] on others (A4B).
+        Object numberOfKeyValueHeadsRaw = gguf.getValueOrDefault(Object.class, "gemma4.attention.head_count_kv", numberOfHeads);
         int numberOfLayers = gguf.getValue(int.class, "gemma4.block_count");
         int headSizeFull = gguf.getValue(int.class, "gemma4.attention.key_length");
         int headSizeSWA = gguf.getValue(int.class, "gemma4.attention.key_length_swa");
@@ -777,7 +779,11 @@ final class Gemma4 implements Model {
         for (int i = 0; i < numberOfLayers; i++) {
             TensorEntry kWeight = gguf.getTensor("blk." + i + ".attn_k.weight");
             int headSize = isSWA[i] ? headSizeSWA : headSizeFull;
-            numberOfKeyValueHeadsPerLayer[i] = kWeight != null ? Math.toIntExact(kWeight.shape()[1]) / headSize : numberOfHeads;
+            // Prefer the tensor shape; fall back to head_count_kv only when attn_k.weight is absent, so a
+            // (malformed) short per-layer array is never indexed for a layer that doesn't need it.
+            numberOfKeyValueHeadsPerLayer[i] = kWeight != null
+                    ? Math.toIntExact(kWeight.shape()[1]) / headSize
+                    : (numberOfKeyValueHeadsRaw instanceof int[] arr ? arr[i] : ((Number) numberOfKeyValueHeadsRaw).intValue());
         }
 
         Configuration config = new Configuration(embeddingLength, feedForwardLength, numberOfLayers, numberOfHeads,

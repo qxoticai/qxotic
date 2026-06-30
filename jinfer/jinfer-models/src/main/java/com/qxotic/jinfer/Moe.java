@@ -5,20 +5,20 @@
 // closure — called once per expert (never per element), so the vector kernels inside stay monomorphic.
 package com.qxotic.jinfer;
 
-final class Moe {
+public final class Moe {
     private Moe() {}
 
     /** Per-route routing produced by a model's gating + top-k + normalize. Wraps the State's existing
      *  CSR scratch arrays — no new buffers. {@code rowTopE[s*topK+k]}/{@code rowTopP[...]} are the
      *  selected expert and its combine weight for route k of row s; {@code counts[e]} is how many
      *  routes landed on expert e (the rest are filled by {@link #dispatch}). */
-    static final class Routing {
+    public static final class Routing {
         final int[] rowTopE, counts, offsets, cursor, rowByExpert;
         final float[] rowTopP, probByExpert;
-        int seqLen, topK, numExperts;   // per-call scalars; the scratch arrays are wired once
+        public int seqLen, topK, numExperts;   // per-call scalars; the scratch arrays are wired once
 
         /** Wraps a State's per-call CSR scratch so {@link #dispatch} needs no per-call allocation. */
-        Routing(int[] rowTopE, float[] rowTopP, int[] counts, int[] offsets,
+        public Routing(int[] rowTopE, float[] rowTopP, int[] counts, int[] offsets,
                 int[] cursor, int[] rowByExpert, float[] probByExpert) {
             this.rowTopE = rowTopE; this.rowTopP = rowTopP; this.counts = counts;
             this.offsets = offsets; this.cursor = cursor; this.rowByExpert = rowByExpert;
@@ -28,7 +28,7 @@ final class Moe {
 
     /** Expert {@code e}'s FFN over {@code n} gathered rows ({@code gather}, stride dim) → {@code n} rows
      *  in {@code out} (stride dim). Gated/ungated, activation, biases and weight layout live here. */
-    interface ExpertKernel {
+    public interface ExpertKernel {
         void apply(int e, int n, FloatTensor gather, FloatTensor out);
     }
 
@@ -39,7 +39,7 @@ final class Moe {
      * scale into the combine weight at build time (e.g. Gemma's per-expert down scale) — byte-identical
      * to applying it at the scatter. {@code expertOut} is the kernel's per-group output scratch.
      */
-    static void dispatch(Routing r, int dim, FloatTensor input, FloatTensor gather,
+    public static void dispatch(Routing r, int dim, FloatTensor input, FloatTensor gather,
                          FloatTensor expertOut, FloatTensor out, FloatTensor expertScale, ExpertKernel kernel) {
         int[] off = r.offsets;
         off[0] = 0;

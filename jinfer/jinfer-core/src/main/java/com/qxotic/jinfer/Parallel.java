@@ -9,7 +9,7 @@ import java.util.function.IntConsumer;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
 
-final class Parallel {
+public final class Parallel {
     public static void parallelFor(int startInclusive, int endExclusive, IntConsumer action) {
         if (SPIN_OWNER.get() == Thread.currentThread()) {   // inside the active decode step: spin-barrier pool
             DECODE_SPIN.parallelFor(startInclusive, endExclusive, action);

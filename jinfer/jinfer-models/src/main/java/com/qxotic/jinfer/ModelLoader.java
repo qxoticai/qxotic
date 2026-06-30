@@ -46,10 +46,10 @@ interface Timer extends AutoCloseable {
     }
 }
 
-final class ModelLoader {
+public final class ModelLoader {
 
     /** Parses the GGUF metadata (com.qxotic:gguf) from the channel, leaving its position past the header. */
-    static GGUF readGguf(FileChannel fileChannel, String modelLabel) throws IOException {
+    public static GGUF readGguf(FileChannel fileChannel, String modelLabel) throws IOException {
         try (var ignored = Timer.log("Parse " + modelLabel)) {
             fileChannel.position(0L);
             return GGUF.read(Channels.newChannel(
@@ -58,12 +58,12 @@ final class ModelLoader {
     }
 
     /** Memory-maps the tensor data (whole-file mapping outlives the process: Arena.global). */
-    static Map<String, GGMLTensorEntry> loadTensors(FileChannel fileChannel, GGUF gguf) throws IOException {
+    public static Map<String, GGMLTensorEntry> loadTensors(FileChannel fileChannel, GGUF gguf) throws IOException {
         return loadTensors(fileChannel, gguf.getTensorDataOffset(), gguf.getTensors());
     }
 
 
-    static Map<String, GGMLTensorEntry> loadTensors(FileChannel fileChannel, long tensorDataOffset,
+    public static Map<String, GGMLTensorEntry> loadTensors(FileChannel fileChannel, long tensorDataOffset,
                                                     Collection<TensorEntry> tensors) throws IOException {
         MemorySegment tensorData = fileChannel.map(FileChannel.MapMode.READ_ONLY, tensorDataOffset,
                 fileChannel.size() - tensorDataOffset, Arena.global());
@@ -220,7 +220,7 @@ final class ModelLoader {
     /** The optional "llama3" RoPE frequency-scaling factors ({@code rope_freqs.weight}), or null if
      *  the model uses plain RoPE. These are per-frequency divisors (1.0 for high frequencies, up to
      *  the long-context factor for low frequencies); see {@link RoPE#precomputeFreqsCisFromFreqs}. */
-    static float[] ropeFreqFactors(Map<String, GGMLTensorEntry> tensorEntries) {
+    public static float[] ropeFreqFactors(Map<String, GGMLTensorEntry> tensorEntries) {
         GGMLTensorEntry e = tensorEntries.get("rope_freqs.weight");
         return e == null ? null : e.memorySegment().toArray(ValueLayout.JAVA_FLOAT);
     }
@@ -292,19 +292,19 @@ final class ModelLoader {
     // Shared GGUF tensor-loading plumbing used by every Model loader (Llama/Gemma4/Qwen35).
 
     /** Quantized tensor by name, or null if absent. */
-    static FloatTensor quantOrNull(Map<String, GGMLTensorEntry> entries, String name) {
+    public static FloatTensor quantOrNull(Map<String, GGMLTensorEntry> entries, String name) {
         GGMLTensorEntry entry = entries.get(name);
         return entry != null ? loadQuantized(entry) : null;
     }
 
     /** F32 tensor by name, or null if absent. */
-    static F32FloatTensor f32OrNull(Map<String, GGMLTensorEntry> entries, String name) {
+    public static F32FloatTensor f32OrNull(Map<String, GGMLTensorEntry> entries, String name) {
         GGMLTensorEntry entry = entries.get(name);
         return entry != null ? toF32Tensor(entry) : null;
     }
 
     /** First present entry among alternate tensor names (GGUF converter naming drift), or null. */
-    static GGMLTensorEntry firstPresent(Map<String, GGMLTensorEntry> entries, String... names) {
+    public static GGMLTensorEntry firstPresent(Map<String, GGMLTensorEntry> entries, String... names) {
         for (String name : names) {
             GGMLTensorEntry entry = entries.get(name);
             if (entry != null) return entry;
@@ -313,7 +313,7 @@ final class ModelLoader {
     }
 
     /** Per-layer array of quantized tensors; a slot is null when its tensor is absent. */
-    static FloatTensor[] quantArray(int n, IntFunction<GGMLTensorEntry> get) {
+    public static FloatTensor[] quantArray(int n, IntFunction<GGMLTensorEntry> get) {
         FloatTensor[] a = new FloatTensor[n];
         for (int i = 0; i < n; i++) {
             GGMLTensorEntry e = get.apply(i);
@@ -323,7 +323,7 @@ final class ModelLoader {
     }
 
     /** Per-layer array of F32 tensors; a slot is null when its tensor is absent. */
-    static F32FloatTensor[] f32Array(int n, IntFunction<GGMLTensorEntry> get) {
+    public static F32FloatTensor[] f32Array(int n, IntFunction<GGMLTensorEntry> get) {
         F32FloatTensor[] a = new F32FloatTensor[n];
         for (int i = 0; i < n; i++) {
             GGMLTensorEntry e = get.apply(i);
@@ -363,6 +363,3 @@ final class ModelLoader {
     }
 }
 
-record GGMLTensorEntry(String name, GGMLType ggmlType, int[] shape,
-                       MemorySegment memorySegment) {
-}

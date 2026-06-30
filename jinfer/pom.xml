@@ -16,6 +16,7 @@
         <module>jinfer-core</module>
         <module>jinfer-jinja</module>
         <module>jinfer-models</module>
+        <module>jinfer-gemma4</module>
         <module>jinfer-server</module>
         <module>jinfer-bench</module>
     </modules>
