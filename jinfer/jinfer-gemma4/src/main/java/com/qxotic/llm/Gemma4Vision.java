@@ -76,13 +76,8 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
         sink.accept(rows);
     }
 
-    static final boolean PROF = System.getProperty("vis.prof") != null;
-    static long tRope, tFlash, tGelu, tNorm, tProj;
-
     /** Encode one image → projected rows (nTokens × modelDim), all patches batched through the tower. */
     public FloatTensor encode(Media.Image image) {
-        long tEnc = PROF ? System.nanoTime() : 0;
-        if (PROF) { tRope = tFlash = tGelu = tNorm = tProj = 0; }
         // 1. preprocess + patch-embed (+ 2D position) → patches: [nPatch, visionDim]
         Patches p = patchify(image);
         int n = p.count;
@@ -105,16 +100,7 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
         }
 
         // 3. pool (merge x merge avg * sqrt(visionDim)) then project + final RMSNorm
-        long tp = PROF ? System.nanoTime() : 0;
-        FloatTensor rows = projectPooled(cur, p.px, p.py);
-        if (PROF) {
-            tProj += System.nanoTime() - tp;
-            long tot = System.nanoTime() - tEnc;
-            long rest = tot - tRope - tFlash - tGelu - tNorm - tProj;
-            System.err.printf("[vis.prof] total=%.0f  qkv/o+ffn-gemm+rest=%.0f  flash=%.0f  gelu=%.0f  headRms+rope=%.0f  layernorms=%.0f  project=%.0f (ms)%n",
-                    tot/1e6, rest/1e6, tFlash/1e6, tGelu/1e6, tRope/1e6, tNorm/1e6, tProj/1e6);
-        }
-        return rows;
+        return projectPooled(cur, p.px, p.py);
     }
 
     // === batched tower steps ===
@@ -125,7 +111,6 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
         clampedGemm(x, k, n, visionDim, visionDim, l.wk(), l.wkClamp());
         clampedGemm(x, v, n, visionDim, visionDim, l.wv(), l.wvClamp());
         // per-head RMS norms (q,k with weight; v no weight) + 2D RoPE on q,k
-        long tr = PROF ? System.nanoTime() : 0;
         Parallel.forRows(n, t -> {
             for (int h = 0; h < nHead; h++) {
                 int off = t * visionDim + h * headDim;
@@ -142,12 +127,9 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
         });
         // K/V → F16, then rolling BIDIRECTIONAL flash attention: online softmax, no materialized [n,n] score
         // matrix (the memory-bound bottleneck), no 1/√d scale (scale=1, matches the gemma4v reference).
-        if (PROF) tRope += System.nanoTime() - tr;
-        long tf = PROF ? System.nanoTime() : 0;
         k.copyTo(0, kF16, 0, n * visionDim);
         v.copyTo(0, vF16, 0, n * visionDim);
         FlashAttention.bidirectionalPrefill(q, out, kF16, vF16, nHead, n, headDim, visionDim, visionDim, 1, 1.0f);
-        if (PROF) tFlash += System.nanoTime() - tf;
         // output projection in place: x <- Wo @ out  (reuse x as scratch is unsafe; write to q)
         clampedGemm(out, q, n, visionDim, visionDim, l.wo(), l.woClamp());
         q.copyTo(0, out, 0, n * visionDim);
@@ -172,7 +154,6 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
     private void feedForward(FloatTensor x, FloatTensor g, FloatTensor u, FloatTensor out, Layer l, int n) {
         clampedGemm(x, g, n, visionDim, ffnDim, l.ffnGate(), l.ffnGateClamp());
         clampedGemm(x, u, n, visionDim, ffnDim, l.ffnUp(), l.ffnUpClamp());
-        long tg = PROF ? System.nanoTime() : 0;
         Parallel.forRows(n, t -> {                      // gelu_quick(gate)*up
             int base = t * ffnDim;
             for (int d = 0; d < ffnDim; d++) {
@@ -181,7 +162,6 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
                 g.setFloat(base + d, gq * u.getFloat(base + d));
             }
         });
-        if (PROF) tGelu += System.nanoTime() - tg;
         clampedGemm(g, out, n, ffnDim, visionDim, l.ffnDown(), l.ffnDownClamp());
     }
 
@@ -254,50 +234,21 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
         }
     }
 
-    // === preprocess + patch embed: aspect-preserving smartResize (like llama.cpp); -Dvis.squareResize for the fixed-square reference path ===
-
-    /** Default ON. Aspect-preserving like llama.cpp (fewer patches → faster). Off = fixed imageSize² square (gemma4.java-reference parity). */
-    static final boolean SMART_RESIZE = !Boolean.getBoolean("vis.squareResize");
+    // === preprocess + patch embed (resize/im2col live in VisionPreprocess) ===
 
     private record Patches(FloatTensor tokens, int count, int px, int py) {}
 
-    /** llama.cpp / Qwen2-VL smart_resize: snap each dim to a multiple of {@code factor}=patch·merge, preserving
-     *  aspect ratio, bounded by [minPixels, maxPixels]. (640×480, factor 48 → 624×480, matching llama.cpp.) */
-    static int[] smartResize(int w, int h, int factor, int minPixels, int maxPixels) {
-        int wb = Math.max(factor, Math.round((float) w / factor) * factor);
-        int hb = Math.max(factor, Math.round((float) h / factor) * factor);
-        long area = (long) wb * hb;
-        if (area > maxPixels) {
-            double beta = Math.sqrt((double) w * h / maxPixels);
-            wb = Math.max(factor, (int) (Math.floor(w / beta / factor) * factor));
-            hb = Math.max(factor, (int) (Math.floor(h / beta / factor) * factor));
-        } else if (area < minPixels) {
-            double beta = Math.sqrt((double) minPixels / ((double) w * h));
-            wb = (int) (Math.ceil(w * beta / factor) * factor);
-            hb = (int) (Math.ceil(h * beta / factor) * factor);
-        }
-        return new int[]{wb, hb};
-    }
-
     private Patches patchify(Media.Image image) {
         int ps = patchSize, factor = ps * Math.max(1, merge), tw, th;
-        if (SMART_RESIZE) {
+        if (VisionPreprocess.SMART_RESIZE) {
             int maxPixels = 280 * factor * factor, minPixels = factor * factor;
-            int[] wh = smartResize(image.width(), image.height(), factor, minPixels, maxPixels);
+            int[] wh = VisionPreprocess.smartResize(image.width(), image.height(), factor, minPixels, maxPixels);
             tw = wh[0]; th = wh[1];
         } else {
             tw = th = imageSize;   // fixed procSize square (gemma4.java-reference parity)
         }
-        int px = tw / ps, py = th / ps, n = px * py, patchVec = 3 * ps * ps, plane = th * tw;
-        float[] chw = toCHW(image, tw, th);                  // [3, th, tw], values [0,1]
-        FloatTensor flat = FloatTensor.allocateF32(n * patchVec);
-        for (int gy = 0; gy < py; gy++) for (int gx = 0; gx < px; gx++) {
-            int row = (gy * px + gx) * patchVec, w = 0;
-            for (int c = 0; c < 3; c++) for (int ky = 0; ky < ps; ky++) for (int kx = 0; kx < ps; kx++) {
-                float pix = chw[c * plane + (gy * ps + ky) * tw + (gx * ps + kx)] * 2f - 1f;   // scale_bias
-                flat.setFloat(row + w++, pix);
-            }
-        }
+        int px = tw / ps, py = th / ps, n = px * py, patchVec = 3 * ps * ps;
+        FloatTensor flat = VisionPreprocess.im2col(image, tw, th, ps);
         FloatTensor tokens = FloatTensor.allocateF32(n * visionDim);
         patchEmbd.gemm(flat, patchVec, tokens, visionDim, n, visionDim, patchVec);   // conv as matmul
         for (int gy = 0; gy < py; gy++) for (int gx = 0; gx < px; gx++) {            // + factorized 2D position
@@ -305,26 +256,6 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
             for (int d = 0; d < visionDim; d++) tokens.setFloat(tok + d, tokens.getFloat(tok + d) + posEmbd.getFloat(xb + d) + posEmbd.getFloat(yb + d));
         }
         return new Patches(tokens, n, px, py);
-    }
-
-    static float[] toCHW(Media.Image im, int tw, int th) {
-        int plane = th * tw;
-        float[] out = new float[3 * plane];
-        int H = im.height(), W = im.width(), C = im.channels();
-        float[] v = im.values();   // HWC interleaved
-        for (int y = 0; y < th; y++) for (int x = 0; x < tw; x++) {
-            float fy = (y + 0.5f) * H / th - 0.5f, fx = (x + 0.5f) * W / tw - 0.5f;   // bilinear (half-pixel centers)
-            int y0 = Math.max(0, Math.min(H - 1, (int) Math.floor(fy))), y1 = Math.min(H - 1, y0 + 1);
-            int x0 = Math.max(0, Math.min(W - 1, (int) Math.floor(fx))), x1 = Math.min(W - 1, x0 + 1);
-            float wy = Math.max(0f, fy - y0), wx = Math.max(0f, fx - x0);
-            for (int c = 0; c < 3; c++) {
-                int cc = Math.min(c, C - 1);
-                float a = v[(y0 * W + x0) * C + cc], b = v[(y0 * W + x1) * C + cc],
-                      d0 = v[(y1 * W + x0) * C + cc], d1 = v[(y1 * W + x1) * C + cc];
-                out[c * plane + y * tw + x] = a * (1 - wx) * (1 - wy) + b * wx * (1 - wy) + d0 * (1 - wx) * wy + d1 * wx * wy;
-            }
-        }
-        return out;
     }
 
     // === loader ===
@@ -380,10 +311,4 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
         return new ClampInfo(inMin.getFloat(0), inMax.getFloat(0), outMin.getFloat(0), outMax.getFloat(0));
     }
 
-    private static int gi(Map<String, Object> m, String k, int d) {
-        Object v = m.get(k); return v instanceof Integer i ? i : v instanceof Long l ? (int) (long) l : d;
-    }
-    private static float gf(Map<String, Object> m, String k, float d) {
-        Object v = m.get(k); return v instanceof Float f ? f : v instanceof Double db ? (float) (double) db : d;
-    }
 }

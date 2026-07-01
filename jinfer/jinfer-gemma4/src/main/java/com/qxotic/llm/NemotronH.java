@@ -9,8 +9,8 @@
 // MoE router/experts) batch into GEMMs over the chunk, while only the Mamba2 recurrence stays sequential
 // (one parallelFor over heads, rows sequential inside, conv-ring + SSM state carried in State). Decode
 // (seqLen==1) takes the single-token cores. Token-exact vs the production. Uses public kernels (gemm,
-// gemm-with-offset, causalPrefill/flashDecode, Moe.dispatch) plus the small scalars (silu/sigmoid/
-// softplus/reluSqr) inlined verbatim, since com.qxotic.llm cannot reach the package-private Activations.
+// gemm-with-offset, causalPrefill/flashDecode, Moe.dispatch) plus the shared scalars (silu/sigmoid/
+// softplus/reluSqr) from LLM.
 package com.qxotic.llm;
 
 import com.qxotic.format.gguf.GGUF;
@@ -18,6 +18,10 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
 
 import static com.qxotic.jinfer.Norms.rmsnorm;
+import static com.qxotic.llm.LLM.reluSqr;
+import static com.qxotic.llm.LLM.sigmoid;
+import static com.qxotic.llm.LLM.silu;
+import static com.qxotic.llm.LLM.softplus;
 
 import java.io.IOException;
 import java.nio.channels.FileChannel;
@@ -43,17 +47,6 @@ public final class NemotronH implements LanguageModel<NemotronH.Configuration, N
     @Override public Weights weights()       { return weights; }
     public LFMTokenizer tokenizer()          { return tokenizer; }
 
-    // Scalars copied verbatim from the package-private com.qxotic.jinfer.Activations (token-exactness).
-    private static float sigmoid(float x) { return 1.0f / (1.0f + (float) Math.exp(-x)); }
-    private static float silu(float x) { return x * sigmoid(x); }
-    private static float softplus(float x) {
-        if (x > 20f) return x;
-        if (x < -20f) return (float) Math.exp(x);
-        return (float) Math.log1p(Math.exp(x));
-    }
-    private static void reluSqr(FloatTensor t, int off, int n) {
-        for (int i = 0; i < n; i++) { float r = t.getFloat(off + i); r = r > 0f ? r : 0f; t.setFloat(off + i, r * r); }
-    }
 
     @Override
     public State newState(int contextCapacity, int batchCapacity) {

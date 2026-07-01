@@ -6,7 +6,6 @@ import com.qxotic.llm.Granite;
 import com.qxotic.llm.GptOss;
 import com.qxotic.llm.Lfm2;
 import com.qxotic.llm.Llama;
-import com.qxotic.llm.Mistral3;
 import com.qxotic.llm.NemotronH;
 import com.qxotic.llm.Qwen35;
 
@@ -69,8 +68,7 @@ public final class LlmBench {
             case "gpt-oss" -> GptOss.loadModel(path, ctx);
             case "qwen35", "qwen35moe" -> Qwen35.loadModel(path, ctx);
             case "nemotron_h", "nemotron_h_moe" -> NemotronH.loadModel(path, ctx);
-            case "llama", "minicpm" -> Llama.loadModel(path, ctx);
-            case "mistral3" -> Mistral3.loadModel(path, ctx);
+            case "llama", "minicpm", "mistral3" -> Llama.loadModel(path, ctx);   // mistral3 is a same-graph Llama variant
             case "granite" -> Granite.loadModel(path, ctx);
             default -> {
                 if (arch.startsWith("lfm")) yield Lfm2.loadModel(path, ctx);
