@@ -71,24 +71,15 @@ public final class Gemma4VisionUnified implements Embedder<Media.Image> {
 
     /** Encode one image -> projected rows (nTokens x modelDim). */
     public FloatTensor encode(Media.Image image) {
-        int ps = patchSize;
-        int factor = ps;                                 // merge already baked into the conv patch
+        int ps = patchSize, factor = ps;                 // merge already baked into the conv patch
         int maxPixels = 280 * factor * factor, minPixels = 40 * factor * factor;
-        int[] wh = Gemma4Vision.SMART_RESIZE
-                ? Gemma4Vision.smartResize(image.width(), image.height(), factor, minPixels, maxPixels)
+        int[] wh = VisionPreprocess.SMART_RESIZE
+                ? VisionPreprocess.smartResize(image.width(), image.height(), factor, minPixels, maxPixels)
                 : new int[]{ 16 * factor, 16 * factor };  // fixed-square fallback (256 tokens)
-        int tw = wh[0], th = wh[1], px = tw / ps, py = th / ps, n = px * py, plane = th * tw;
+        int tw = wh[0], th = wh[1], px = tw / ps, n = px * (th / ps);
 
-        // 1. im2col (48x48, channel-outer), pixels scaled to [-1, 1]
-        float[] chw = Gemma4Vision.toCHW(image, tw, th);
-        FloatTensor flat = FloatTensor.allocateF32(n * patchVec);
-        Parallel.forRows(n, gi -> {
-            int gy = gi / px, gx = gi % px, row = gi * patchVec, w = 0;
-            for (int c = 0; c < 3; c++) for (int ky = 0; ky < ps; ky++) for (int kx = 0; kx < ps; kx++) {
-                float pix = chw[c * plane + (gy * ps + ky) * tw + (gx * ps + kx)] * 2f - 1f;
-                flat.setFloat((long) row + w++, pix);
-            }
-        });
+        // 1. im2col (48x48, channel-outer, [-1,1]) -> patch_norm.1 (LayerNorm)
+        FloatTensor flat = VisionPreprocess.im2col(image, tw, th, ps);
         layerNorm(flat, n, patchVec, ln1w, ln1b);
 
         // 2. conv patch-embed + bias, LayerNorm

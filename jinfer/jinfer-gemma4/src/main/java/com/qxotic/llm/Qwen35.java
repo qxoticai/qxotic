@@ -8,8 +8,8 @@
 // path. The new-API ingest therefore processes a prompt token-by-token (seqLen==1 per step); the gated
 // delta-net recurrence + conv ring carry forward in the State exactly as in a streaming decode. This
 // keeps the port to public jinfer kernels only (matmul / flashDecode / gemm-with-offset /
-// Activations.siluMultiply / RoPE.precomputeFreqsCis) and inlines the few package-private scalar
-// helpers (sigmoid/silu/softplus, interleaved-RoPE). Text-only -> implements only LanguageModel.
+// Activations.siluMultiply / RoPE.precomputeFreqsCis) and the shared LLM scalar helpers
+// (sigmoid/silu/softplus) + LLM.ropeInterleaved. Text-only -> implements only LanguageModel.
 package com.qxotic.llm;
 
 import com.qxotic.format.gguf.GGUF;
@@ -17,6 +17,9 @@ import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.*;
 
 import static com.qxotic.jinfer.Norms.rmsnorm;
+import static com.qxotic.llm.LLM.sigmoid;
+import static com.qxotic.llm.LLM.silu;
+import static com.qxotic.llm.LLM.softplus;
 
 import java.io.IOException;
 import java.nio.channels.FileChannel;
@@ -114,26 +117,6 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
         return stops;
     }
 
-    // === Inlined scalar activations (package-private in Activations) ===
-    private static float sigmoid(float x) { return 1.0f / (1.0f + (float) Math.exp(-x)); }
-    private static float silu(float x) { return x * sigmoid(x); }
-    private static float softplus(float x) {
-        if (x > 20f) return x;
-        if (x < -20f) return (float) Math.exp(x);
-        return (float) Math.log1p(Math.exp(x));
-    }
-
-    /** Interleaved RoPE over one head (package-private in RoPE): rotates pairs (2i, 2i+1). */
-    private static void applyInterleaved(FloatTensor q, int headOffset, int position, float[] cr, float[] ci, int ropeHalf) {
-        int base = position * ropeHalf;
-        for (int i = 0; i < ropeHalf; i++) {
-            float fcr = cr[base + i], fci = ci[base + i];
-            int idx = headOffset + 2 * i;
-            float v0 = q.getFloat(idx), v1 = q.getFloat(idx + 1);
-            q.setFloat(idx, v0 * fcr - v1 * fci);
-            q.setFloat(idx + 1, v0 * fci + v1 * fcr);
-        }
-    }
 
 
     // === Forward (single-token reference; ingest streams the prompt one token at a time) ===
@@ -205,8 +188,8 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
             int kBase = s * fKvDim;
             for (int h = 0; h < fKvHeads; h++) rmsnorm(state.k, kBase + h * fHeadSz, state.k, kBase + h * fHeadSz, kNormW, fHeadSz, eps);
             if (w.ropeHalf > 0) {
-                for (int h = 0; h < fHeads; h++) applyInterleaved(state.attnQ, qDst + h * fHeadSz, fStart + s, w.ropeCr, w.ropeCi, w.ropeHalf);
-                for (int h = 0; h < fKvHeads; h++) applyInterleaved(state.k, kBase + h * fHeadSz, fStart + s, w.ropeCr, w.ropeCi, w.ropeHalf);
+                for (int h = 0; h < fHeads; h++) LLM.ropeInterleaved(state.attnQ, qDst + h * fHeadSz, fStart + s, w.ropeCr, w.ropeCi, w.ropeHalf);
+                for (int h = 0; h < fKvHeads; h++) LLM.ropeInterleaved(state.k, kBase + h * fHeadSz, fStart + s, w.ropeCr, w.ropeCi, w.ropeHalf);
             }
         });
 
@@ -367,8 +350,8 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
             rmsnorm(state.k, h * headSize, state.k, h * headSize, w.attnKNorm[layer], headSize, eps);
         }
         if (w.ropeHalf > 0) {
-            for (int h = 0; h < heads; h++) applyInterleaved(state.q, h * headSize, position, w.ropeCr, w.ropeCi, w.ropeHalf);
-            for (int h = 0; h < kvHeads; h++) applyInterleaved(state.k, h * headSize, position, w.ropeCr, w.ropeCi, w.ropeHalf);
+            for (int h = 0; h < heads; h++) LLM.ropeInterleaved(state.q, h * headSize, position, w.ropeCr, w.ropeCi, w.ropeHalf);
+            for (int h = 0; h < kvHeads; h++) LLM.ropeInterleaved(state.k, h * headSize, position, w.ropeCr, w.ropeCi, w.ropeHalf);
         }
         state.k.copyTo(0, state.keyCache[layer], position * kvDim, kvDim);
         state.v.copyTo(0, state.valueCache[layer], position * kvDim, kvDim);

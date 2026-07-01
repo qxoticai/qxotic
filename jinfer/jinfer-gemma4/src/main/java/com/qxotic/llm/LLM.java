@@ -42,4 +42,25 @@ final class LLM {
         for (int i = 1; i < n; i++) if (t.getFloat(i) > t.getFloat(best)) best = i;
         return best;
     }
+
+    // Scalar activations, mirroring the package-private com.qxotic.jinfer.Activations so the ports (in a
+    // different package) share one token-exact copy instead of each inlining their own.
+
+    /** Logistic sigmoid {@code 1/(1+e^-x)}. */
+    static float sigmoid(float x) { return 1.0f / (1.0f + (float) Math.exp(-x)); }
+
+    /** SiLU / swish {@code x·sigmoid(x)}. */
+    static float silu(float x) { return x * sigmoid(x); }
+
+    /** Numerically-stable softplus {@code log(1+e^x)}. */
+    static float softplus(float x) {
+        if (x > 20f) return x;
+        if (x < -20f) return (float) Math.exp(x);
+        return (float) Math.log1p(Math.exp(x));
+    }
+
+    /** In-place ReLU-squared over {@code n} elements: {@code max(0,x)^2}. */
+    static void reluSqr(FloatTensor t, int off, int n) {
+        for (int i = 0; i < n; i++) { float r = t.getFloat(off + i); r = r > 0f ? r : 0f; t.setFloat(off + i, r * r); }
+    }
 }
