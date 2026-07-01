@@ -60,6 +60,8 @@ public final class GptOss implements LanguageModel<GptOss.Configuration, GptOss.
                 if (n == 1) Parallel.onDecodePool(() -> { forward(s, ids, 0, from, n); return null; });
                 else forward(s, ids, 0, from, n);
             }
+            case com.qxotic.jinfer.Batch.Input.Sequences seq ->
+                throw new UnsupportedOperationException("gpt-oss is generative: packed sequences (batched embedding) not supported");
             case com.qxotic.jinfer.Batch.Input.Embeddings e ->
                 throw new UnsupportedOperationException("gpt-oss is text-only: embedding input is not supported");
         }

@@ -49,6 +49,7 @@ public final class Qwen3 implements EmbeddingModel<Qwen3.Configuration, Qwen3.We
         }
         switch (batch.input()) {
             case com.qxotic.jinfer.Batch.Input.Tokens t -> forward(s, t.ids(), 0, from, n);
+            case com.qxotic.jinfer.Batch.Input.Sequences seq -> forwardSegmented(s, seq.tokens().ids(), seq.seqLen(), from, n);
             case com.qxotic.jinfer.Batch.Input.Embeddings e ->
                 throw new UnsupportedOperationException("Qwen3 embedding is text-only: embedding input is not supported");
         }
@@ -57,13 +58,14 @@ public final class Qwen3 implements EmbeddingModel<Qwen3.Configuration, Qwen3.We
         s.position = from + n;
     }
 
-    /** The sentence embedding: last token's hidden state after the final RMSNorm, L2-normalized. */
+    /** The sentence embedding: pool the {@code index}-th retained row (last-token pooling per sequence),
+     *  L2-normalized. {@code index} addresses the retained rows exactly as {@code logits}' output does. */
     @Override
-    public FloatTensor embedding(State s) {
+    public FloatTensor embedding(State s, int index) {
         int dim = configuration.embeddingLength;
-        int lastRow = s.lastChunkLen - 1;   // last-token pooling (the final ingested position)
+        int row = s.lastChunkLen - s.outputCount + index;   // retained-output index -> chunk row (mirrors logits)
         FloatTensor out = FloatTensor.allocateF32(dim);
-        rmsnorm(out, 0, s.x, (long) lastRow * dim, weights.outputNorm, dim, configuration.rmsNormEps);
+        rmsnorm(out, 0, s.x, (long) row * dim, weights.outputNorm, dim, configuration.rmsNormEps);
         double ss = 0;
         for (int i = 0; i < dim; i++) { float v = out.getFloat(i); ss += (double) v * v; }
         float inv = ss > 0 ? (float) (1.0 / Math.sqrt(ss)) : 0f;
@@ -161,6 +163,105 @@ public final class Qwen3 implements EmbeddingModel<Qwen3.Configuration, Qwen3.We
         w.w2[l].gemm(state.hb, hiddenDim, state.xb, dim, seqLen, dim, hiddenDim);     // down
     }
 
+    // === Segmented (packed batched-embedding) forward ===
+    // Same GEMM-batched backbone as forward(), but RoPE positions restart per sequence and each token
+    // attends only to its own sequence's KV slice (causally). The chunk's tokens sit at global positions
+    // [cs, cs+seqLen); seqLen[] is the FULL per-sequence lengths. Projection/FFN GEMMs stay batched over the
+    // whole chunk (the throughput win); only positions + the attention are segmented.
+
+    void forwardSegmented(State state, int[] tokens, int[] fullSeqLen, int cs, int seqLen) {
+        Configuration config = configuration;
+        Weights w = weights;
+        int dim = config.embeddingLength;
+        float eps = config.rmsNormEps;
+
+        // Per chunk-row: within-sequence RoPE position (restarts per sequence). Then group consecutive rows of
+        // the same sequence into segments {row0, len, kvStart (global cache row), prior (tokens before this chunk)}.
+        int[] posOf = new int[seqLen];
+        int[] segRow0 = new int[seqLen], segLen = new int[seqLen], segKv = new int[seqLen], segPrior = new int[seqLen];
+        int nSeg = 0, gStart = 0, j = 0;
+        while (j < fullSeqLen.length && gStart + fullSeqLen[j] <= cs) { gStart += fullSeqLen[j]; j++; }
+        for (int s = 0; s < seqLen; ) {
+            while (j < fullSeqLen.length && cs + s >= gStart + fullSeqLen[j]) { gStart += fullSeqLen[j]; j++; }
+            int segStart = s, prior = (cs + s) - gStart, kvStart = gStart, segEnd = gStart + fullSeqLen[j];
+            for (; s < seqLen && cs + s < segEnd; s++) posOf[s] = (cs + s) - gStart;
+            segRow0[nSeg] = segStart; segLen[nSeg] = s - segStart; segKv[nSeg] = kvStart; segPrior[nSeg] = prior;
+            nSeg++;
+        }
+
+        for (int s = 0; s < seqLen; s++) {
+            w.tokenEmbeddingTable.copyTo((long) tokens[s] * dim, state.x, (long) s * dim, dim);
+        }
+        for (int l = 0; l < config.numberOfLayers; l++) {
+            int fDim = dim;
+            F32FloatTensor attNormW = w.attnNorm[l], ffnNormW = w.ffnNorm[l];
+            Parallel.forRows(seqLen, s -> rmsnorm(state.xb, (long) s * fDim, state.x, (long) s * fDim, attNormW, fDim, eps));
+            attentionSegmented(state, l, cs, seqLen, posOf, segRow0, segLen, segKv, segPrior, nSeg);
+            state.x.addInPlace(0, state.xb, 0, seqLen * dim);
+            Parallel.forRows(seqLen, s -> rmsnorm(state.xb, (long) s * fDim, state.x, (long) s * fDim, ffnNormW, fDim, eps));
+            feedForward(state, l, seqLen);
+            state.x.addInPlace(0, state.xb, 0, seqLen * dim);
+        }
+    }
+
+    /** GQA attention with per-sequence isolation: Q/K/V projections batched over the chunk, per-head QK-norm +
+     *  NeoX RoPE at each token's within-sequence position, K/V written to the cache at global positions, then
+     *  each sequence runs the SAME flash {@link FlashAttention#causalPrefill} the single-sequence path uses -
+     *  its Q + full KV slice (prior chunks from the cache, this chunk from the F32 batch) gathered to scratch. */
+    private void attentionSegmented(State state, int layer, int cs, int seqLen, int[] posOf,
+                                    int[] segRow0, int[] segLen, int[] segKv, int[] segPrior, int nSeg) {
+        Configuration config = configuration;
+        Weights w = weights;
+        int dim = config.embeddingLength;
+        int headSize = config.headSize, heads = config.numberOfHeads, kvHeads = config.numberOfKeyValueHeads;
+        int kvDim = config.kvDim(), queryDim = config.queryDim(), kvMul = heads / kvHeads, ropeHalf = config.ropeHalf();
+        float eps = config.rmsNormEps, attScale = 1.0f / (float) Math.sqrt(headSize);
+
+        w.wq[layer].gemm(state.xb, dim, state.attnQ, queryDim, seqLen, queryDim, dim);
+        w.wk[layer].gemm(state.xb, dim, state.k, kvDim, seqLen, kvDim, dim);
+        w.wv[layer].gemm(state.xb, dim, state.v, kvDim, seqLen, kvDim, dim);
+
+        int fHeadSz = headSize, fHeads = heads, fKvHeads = kvHeads, fQDim = queryDim, fKvDim = kvDim, fHalf = ropeHalf;
+        F32FloatTensor qNorm = w.qNorm[layer], kNorm = w.kNorm[layer];
+        Parallel.forRows(seqLen, s -> {
+            int pos = posOf[s];   // within-sequence position for RoPE (restarts per sequence)
+            for (int h = 0; h < fHeads; h++) {
+                long off = (long) s * fQDim + (long) h * fHeadSz;
+                rmsnorm(state.attnQ, off, state.attnQ, off, qNorm, fHeadSz, eps);
+                RoPE.applyNeox(state.attnQ, off, pos, w.ropeCr, w.ropeCi, fHalf);
+            }
+            for (int h = 0; h < fKvHeads; h++) {
+                long off = (long) s * fKvDim + (long) h * fHeadSz;
+                rmsnorm(state.k, off, state.k, off, kNorm, fHeadSz, eps);
+                RoPE.applyNeox(state.k, off, pos, w.ropeCr, w.ropeCi, fHalf);
+            }
+        });
+
+        FloatTensor keyCache = state.keyCache[layer], valueCache = state.valueCache[layer];
+        for (int s = 0; s < seqLen; s++) {   // K/V into the cache at global positions (for later chunks)
+            state.k.copyTo((long) s * kvDim, keyCache, (long) (cs + s) * kvDim, kvDim);
+            state.v.copyTo((long) s * kvDim, valueCache, (long) (cs + s) * kvDim, kvDim);
+        }
+        for (int g = 0; g < nSeg; g++) {   // one flash prefill per sequence over its own KV slice
+            int r0 = segRow0[g], sl = segLen[g], kvg = segKv[g], prior = segPrior[g];
+            state.attnQ.copyTo((long) r0 * queryDim, state.segQ, 0, sl * queryDim);
+            if (prior > 0) {   // sequence's earlier tokens live in the F16 cache (prior chunks)
+                keyCache.copyTo((long) kvg * kvDim, state.segK, 0, prior * kvDim);
+                valueCache.copyTo((long) kvg * kvDim, state.segV, 0, prior * kvDim);
+            }
+            state.k.copyTo((long) r0 * kvDim, state.segK, (long) prior * kvDim, sl * kvDim);   // this chunk (F32)
+            state.v.copyTo((long) r0 * kvDim, state.segV, (long) prior * kvDim, sl * kvDim);
+            if (prior == 0)   // sequence wholly in this chunk: the exact single-sequence kernel (bit-for-bit)
+                FlashAttention.slidingWindowPrefill(state.segQ, state.segOut, keyCache, valueCache, state.segK, state.segV,
+                        heads, 0, sl, headSize, kvDim, queryDim, kvDim, kvMul, attScale, 0, 0, null);
+            else              // spanning: prior tokens gathered from the cache, so drive from one F32 KV slice
+                FlashAttention.causalPrefill((F32FloatTensor) state.segQ, (F32FloatTensor) state.segOut,
+                        state.segK, state.segV, heads, prior, sl, headSize, kvDim, queryDim, kvMul);
+            state.segOut.copyTo(0, state.attnOut, (long) r0 * queryDim, sl * queryDim);
+        }
+        w.wo[layer].gemm(state.attnOut, queryDim, state.xb, dim, seqLen, dim, queryDim);
+    }
+
     // === Configuration ===
 
     public record Configuration(int embeddingLength, int numberOfLayers, int numberOfHeads, int numberOfKeyValueHeads,
@@ -186,6 +287,7 @@ public final class Qwen3 implements EmbeddingModel<Qwen3.Configuration, Qwen3.We
         final int contextCapacity, batchCapacity;
         int position, outputCount, lastChunkLen;
         final FloatTensor x, xb, k, v, attnQ, attnOut, hb, hb2;
+        final FloatTensor segQ, segOut, segK, segV;   // per-sequence attention scratch (packed path)
         final FloatTensor[] keyCache, valueCache;
 
         State(Configuration config, int contextCapacity, int batchCapacity) {
@@ -205,6 +307,11 @@ public final class Qwen3 implements EmbeddingModel<Qwen3.Configuration, Qwen3.We
             this.attnOut = FloatTensor.allocateF32(c * queryDim);
             this.hb = FloatTensor.allocateF32(c * hidden);
             this.hb2 = FloatTensor.allocateF32(c * hidden);
+            // per-sequence attention scratch: q/out over a chunk's rows, K/V over a sequence's full extent
+            this.segQ = FloatTensor.allocateF32(c * queryDim);
+            this.segOut = FloatTensor.allocateF32(c * queryDim);
+            this.segK = FloatTensor.allocateF32(contextCapacity * kvDim);
+            this.segV = FloatTensor.allocateF32(contextCapacity * kvDim);
             this.keyCache = new FloatTensor[config.numberOfLayers];
             this.valueCache = new FloatTensor[config.numberOfLayers];
             for (int l = 0; l < config.numberOfLayers; l++) {
@@ -217,6 +324,7 @@ public final class Qwen3 implements EmbeddingModel<Qwen3.Configuration, Qwen3.We
         @Override public int batchCapacity()   { return batchCapacity; }
         @Override public int position()         { return position; }
         @Override public int outputCount()      { return outputCount; }
+        @Override public void reset()           { position = 0; }
     }
 
     // === Loading ===

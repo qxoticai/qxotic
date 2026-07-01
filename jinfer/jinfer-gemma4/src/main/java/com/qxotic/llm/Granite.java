@@ -56,6 +56,8 @@ public final class Granite implements LanguageModel<Granite.Configuration, Grani
                 if (n == 1) Parallel.onDecodePool(() -> { forward(s, ids, 0, from, n); return null; });
                 else forward(s, ids, 0, from, n);
             }
+            case com.qxotic.jinfer.Batch.Input.Sequences seq ->
+                throw new UnsupportedOperationException("Granite is generative: packed sequences (batched embedding) not supported");
             case com.qxotic.jinfer.Batch.Input.Embeddings e ->
                 throw new UnsupportedOperationException("Granite is text-only: embedding input is not supported");
         }

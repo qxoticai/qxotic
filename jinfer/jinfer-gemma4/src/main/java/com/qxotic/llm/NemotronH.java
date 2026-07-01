@@ -64,6 +64,8 @@ public final class NemotronH implements LanguageModel<NemotronH.Configuration, N
         }
         switch (batch.input()) {
             case Batch.Input.Tokens t -> forward(s, t.ids(), 0, from, n);   // one batched pass (decode cores at n==1)
+            case Batch.Input.Sequences seq ->
+                throw new UnsupportedOperationException("Nemotron-H is generative: packed sequences (batched embedding) not supported");
             case Batch.Input.Embeddings e ->
                 throw new UnsupportedOperationException("Nemotron-H is text-only: embedding input is not supported");
         }

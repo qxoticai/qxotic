@@ -70,6 +70,8 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
                 else if (configuration.isMoE()) for (int i = 0; i < n; i++) forward(s, ids, i, from + i, 1);
                 else forward(s, ids, 0, from, n);
             }
+            case Batch.Input.Sequences seq ->
+                throw new UnsupportedOperationException("Qwen3.5 is generative: packed sequences (batched embedding) not supported");
             case Batch.Input.Embeddings e ->
                 throw new UnsupportedOperationException("Qwen3.5 is text-only: embedding input is not supported");
         }
