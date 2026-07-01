@@ -105,7 +105,7 @@ final class QuantWeights {
             long blk = (long) (r * nb + b) * 34;
             s.set(JAVA_SHORT_UNALIGNED, blk, floatToF16(1f));
             for (int e = 0; e < 32; e++) {
-                byte q = (byte) (rng.nextInt(255) - 127);
+                byte q = (byte) (rng.nextInt(256) - 128);   // full int8 range INCLUDING -128 (sign-trick edge)
                 s.set(JAVA_BYTE, blk + 2 + e, q);
                 v[r * k + b * 32 + e] = q;
             }
