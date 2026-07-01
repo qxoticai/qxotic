@@ -21,7 +21,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-final class Qwen35 implements Model {
+final class Qwen35 implements ModelLegacy {
 
     private final Configuration configuration;
     private final LFMTokenizer tokenizer;

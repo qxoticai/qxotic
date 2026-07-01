@@ -18,7 +18,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-final class GptOss implements Model {
+final class GptOss implements ModelLegacy {
 
     private final Configuration configuration;
     private final LFMTokenizer tokenizer;

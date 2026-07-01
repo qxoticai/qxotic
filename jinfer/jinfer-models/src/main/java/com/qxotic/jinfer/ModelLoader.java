@@ -82,7 +82,7 @@ public final class ModelLoader {
      *  {@code nemotron_h}/{@code nemotron_h_moe} -> {@link Nemotron},
      *  {@code llama}/{@code minicpm}/{@code mistral3}/{@code granite} -> {@link Llama3},
      *  {@code lfm*} (LFM2.5) -> {@link Llama}. */
-    public static Model loadModel(Path ggufPath, int contextLength) throws IOException {
+    public static ModelLegacy loadModel(Path ggufPath, int contextLength) throws IOException {
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
             GGUF gguf = readGguf(fileChannel, ggufPath.toString());
             String arch = gguf.getString("general.architecture");

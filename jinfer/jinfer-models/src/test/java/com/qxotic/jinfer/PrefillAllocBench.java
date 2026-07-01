@@ -29,7 +29,7 @@ public final class PrefillAllocBench {
         int warmup = args.length > 2 ? Integer.parseInt(args[2]) : 12;
         int measure = args.length > 3 ? Integer.parseInt(args[3]) : 14;
 
-        Model model = ModelLoader.loadModel(path, Math.max(4096, chunk + 16));
+        ModelLegacy model = ModelLoader.loadModel(path, Math.max(4096, chunk + 16));
         String para = "The history of the Roman empire is long and complex, spanning many centuries of "
                 + "conquest, civil strife, cultural achievement and eventual decline across three continents. ";
         StringBuilder sb = new StringBuilder();

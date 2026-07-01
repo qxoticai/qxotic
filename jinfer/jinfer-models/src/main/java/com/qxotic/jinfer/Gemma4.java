@@ -31,7 +31,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.IntStream;
 
-final class Gemma4 implements Model {
+final class Gemma4 implements ModelLegacy {
 
     private final Configuration configuration;
     private final LFMTokenizer tokenizer;

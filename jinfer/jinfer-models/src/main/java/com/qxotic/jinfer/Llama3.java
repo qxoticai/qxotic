@@ -26,7 +26,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-final class Llama3 implements Model {
+final class Llama3 implements ModelLegacy {
 
     private final Configuration configuration;
     private final LFMTokenizer tokenizer;
