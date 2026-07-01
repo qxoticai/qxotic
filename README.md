@@ -7,13 +7,15 @@
 
 **AI sovereignty for the JVM.**
 
-The JVM powers global finance, big data, and mission-critical infrastructure. Quixotic provides core building blocks for running LLM inference natively on the JVM, model loading, tokenization, and tensor operations, with native-performance CPU/GPU backends where needed. No external services, no Python interop, no ONNX bridges.
+The JVM powers global finance, big data, and mission-critical infrastructure. Quixotic provides core building blocks for running LLM inference natively on the JVM -- model loading, tokenization, tensor operations, a native quantized matmul engine, and an LLM inference server -- with native-performance CPU/GPU backends where needed. No external services, no Python interop, no ONNX bridges.
 
 ---
 
 ## Capabilities
 
 - **Write Once, Accelerate Everywhere** - A single Tensor API across Panama, C, CUDA, HIP, Metal, OpenCL, and Mojo. Switch backends with one line.
+- **LLM Inference Engine** - Run 9+ model families with Vector API-accelerated kernels and an OpenAI-compatible server.
+- **Native Quantized Matmul** - Hand-tuned SIMD kernels (x86 SSE3 through AVX-512, ARM NEON through i8mm, Apple Metal) in a single fat JAR.
 - **GraalVM Native Image** - First-class support for small footprint and fast startup.
 - **JVM-Native Architecture** - Built from first principles for the JVM. No Python dependencies, no external runtimes.
 - **On-Device LLM Inference** - Run large language models locally with quantization and efficient memory management.
