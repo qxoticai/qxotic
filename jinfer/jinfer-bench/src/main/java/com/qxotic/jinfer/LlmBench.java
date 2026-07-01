@@ -68,7 +68,7 @@ public final class LlmBench {
             case "gpt-oss" -> GptOss.loadModel(path, ctx);
             case "qwen35", "qwen35moe" -> Qwen35.loadModel(path, ctx);
             case "nemotron_h", "nemotron_h_moe" -> NemotronH.loadModel(path, ctx);
-            case "llama", "minicpm", "mistral3" -> Llama.loadModel(path, ctx);   // mistral3 is a same-graph Llama variant
+            case "llama", "minicpm", "mistral3", "smollm3" -> Llama.loadModel(path, ctx);   // same-graph Llama variants (metadata-driven)
             case "granite" -> Granite.loadModel(path, ctx);
             default -> {
                 if (arch.startsWith("lfm")) yield Lfm2.loadModel(path, ctx);

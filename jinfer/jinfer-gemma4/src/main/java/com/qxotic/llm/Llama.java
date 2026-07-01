@@ -4,6 +4,7 @@
 //   - Llama 3.x: "llama3" RoPE frequency scaling (rope_freqs.weight).
 //   - MiniCPM:   embedding_scale / residual_scale / logit_scale (default 1.0 → plain Llama).
 //   - Mistral-3: YaRN RoPE scaling + Llama-4-style attention temperature tuning.
+//   - SmolLM3:   NoPE - RoPE is skipped on every 4th layer (noRopeLayerStep); otherwise plain Llama.
 //   - Granite (dense): the MiniCPM scalars plus a custom QK attention scale.
 // Interleaved RoPE (the GGUF "llama" pair convention), KV written to the cache before a causalPrefill /
 // flashDecode read, and a scalar residual scale on each sublayer output. Text-only, dense FFN.
@@ -59,10 +60,10 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                 if (n == 1) Parallel.onDecodePool(() -> { forward(s, ids, 0, from, n); return null; });
                 else forward(s, ids, 0, from, n);
             }
-            case com.qxotic.jinfer.Batch.Input.Embeddings e ->
-                throw new UnsupportedOperationException("Llama is text-only: embedding input is not supported");
             case com.qxotic.jinfer.Batch.Input.Sequences seq ->
                 throw new UnsupportedOperationException("Llama is generative: packed sequences (batched embedding) not supported");
+            case com.qxotic.jinfer.Batch.Input.Embeddings e ->
+                throw new UnsupportedOperationException("Llama is text-only: embedding input is not supported");
         }
         s.lastChunkLen = n;
         s.outputCount = batch.outputs() == com.qxotic.jinfer.Batch.Outputs.ALL ? n : 1;
@@ -152,9 +153,12 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         w.wk[layer].gemm(state.xb, dim, state.k, kvDim, seqLen, kvDim, dim);
         w.wv[layer].gemm(state.xb, dim, state.v, kvDim, seqLen, kvDim, dim);
         int fHeadSz = headSize, fHeads = heads, fKvHeads = kvHeads, fQDim = queryDim, fKvDim = kvDim, fStart = startPos, fHalf = ropeHalf;
+        boolean useRope = config.useRope(layer);   // SmolLM3 NoPE: some layers skip RoPE entirely
         Parallel.forRows(seqLen, s -> {
-            for (int h = 0; h < fHeads; h++) LLM.ropeInterleaved(state.attnQ, s * fQDim + h * fHeadSz, fStart + s, w.ropeCr, w.ropeCi, fHalf);
-            for (int h = 0; h < fKvHeads; h++) LLM.ropeInterleaved(state.k, s * fKvDim + h * fHeadSz, fStart + s, w.ropeCr, w.ropeCi, fHalf);
+            if (useRope) {
+                for (int h = 0; h < fHeads; h++) LLM.ropeInterleaved(state.attnQ, s * fQDim + h * fHeadSz, fStart + s, w.ropeCr, w.ropeCi, fHalf);
+                for (int h = 0; h < fKvHeads; h++) LLM.ropeInterleaved(state.k, s * fKvDim + h * fHeadSz, fStart + s, w.ropeCr, w.ropeCi, fHalf);
+            }
             float aScale = config.attnTemp(fStart + s);
             if (aScale != 1.0f) state.attnQ.mapInPlace((long) s * fQDim, fQDim, v -> v * aScale);
         });
@@ -195,7 +199,8 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
                                 float ropeTheta, int ropeDimensionCount, int hiddenDim,
                                 float embeddingScale, float residualScale, float logitScale,
                                 int bosTokenId, int eosTokenId, boolean addBos,
-                                float attnTempScale, int attnTempFloorScale, float attentionScaleValue)
+                                float attnTempScale, int attnTempFloorScale, float attentionScaleValue,
+                                int noRopeLayerStep)
             implements Config {
         public int queryDim() { return numberOfHeads * headSize; }
         public int kvDim() { return numberOfKeyValueHeads * headSize; }
@@ -207,6 +212,10 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         public float attnTemp(int position) {
             if (attnTempScale == 0f || attnTempFloorScale <= 0) return 1.0f;
             return (float) (Math.log(Math.floor((double) position / attnTempFloorScale) + 1.0) * attnTempScale + 1.0);
+        }
+        /** SmolLM3 NoPE: RoPE is skipped on every {@code noRopeLayerStep}-th layer (1-indexed); 0 = always RoPE. */
+        public boolean useRope(int layer) {
+            return noRopeLayerStep <= 0 || (layer + 1) % noRopeLayerStep != 0;
         }
     }
 
@@ -297,6 +306,7 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         float attnTempScale = gguf.getValueOrDefault(float.class, arch + ".attention.temperature_scale", 0f);
         int attnTempFloorScale = gguf.getValueOrDefault(int.class, arch + ".rope.scaling.original_context_length", 0);
         float attentionScale = gguf.getValueOrDefault(float.class, arch + ".attention.scale", 0f);
+        int noRopeLayerStep = arch.equals("smollm3") ? 4 : 0;   // SmolLM3 NoPE: skip RoPE on every 4th layer (llama.cpp hardcodes 4)
 
         int bosTokenId = gguf.getValueOrDefault(int.class, "tokenizer.ggml.bos_token_id", 1);
         int eosTokenId = gguf.getValueOrDefault(int.class, "tokenizer.ggml.eos_token_id", -1);
@@ -304,7 +314,8 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
 
         Configuration config = new Configuration(embeddingLength, numberOfLayers, numberOfHeads, numberOfKeyValueHeads,
                 headSize, tokenizer.vocabularySize(), contextLength, rmsNormEps, ropeTheta, ropeDimensionCount, hiddenDim,
-                embeddingScale, residualScale, logitScale, bosTokenId, eosTokenId, addBos, attnTempScale, attnTempFloorScale, attentionScale);
+                embeddingScale, residualScale, logitScale, bosTokenId, eosTokenId, addBos, attnTempScale, attnTempFloorScale, attentionScale,
+                noRopeLayerStep);
 
         if (!loadWeightsFlag) return new Llama(config, tokenizer, null);
         Map<String, GGMLTensorEntry> tensors = ModelLoader.loadTensors(fileChannel, gguf);
