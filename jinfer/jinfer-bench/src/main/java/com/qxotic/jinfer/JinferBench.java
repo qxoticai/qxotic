@@ -43,7 +43,7 @@ public final class JinferBench {
         List<Row> rows = new ArrayList<>();
         for (String path : models) {
             System.err.printf("loading %s (ctx=%d) ...%n", path, ctx);
-            Model model = ModelLoader.loadModel(Path.of(path), ctx);
+            ModelLegacy model = ModelLoader.loadModel(Path.of(path), ctx);
             String name = name(path);
             if (p > 0) rows.add(measure(model, name, threads, "pp" + p, p, true, warmup, reps));
             if (n > 0) rows.add(measure(model, name, threads, "tg" + n, n, false, warmup, reps));
@@ -52,7 +52,7 @@ public final class JinferBench {
     }
 
     /** One pp/tg test: warmup then {@code reps} timed passes; returns throughput mean ± stddev. */
-    private static Row measure(Model model, String name, int threads, String test, int count, boolean prefill,
+    private static Row measure(ModelLegacy model, String name, int threads, String test, int count, boolean prefill,
                                int warmup, int reps) {
         Sampler sampler = Engine.configuredSampler(model, false, 0.0f, 1.0f, 42);
         List<Integer> prompt = prefill ? fillerTokens(model, count) : fillerTokens(model, 1);
@@ -73,7 +73,7 @@ public final class JinferBench {
     }
 
     /** Exactly {@code count} tokens of neutral filler (no chat template) — matches llama-bench's raw token count. */
-    private static List<Integer> fillerTokens(Model model, int count) {
+    private static List<Integer> fillerTokens(ModelLegacy model, int count) {
         StringBuilder sb = new StringBuilder();
         List<Integer> all;
         do {
