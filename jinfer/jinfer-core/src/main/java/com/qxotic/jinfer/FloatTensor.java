@@ -377,8 +377,17 @@ public abstract class FloatTensor {
         return mapInPlace(thisOffset, size, f -> f / value);
     }
 
-    FloatTensor fillInPlace(long thisOffset, int size, float value) {
+    public FloatTensor fillInPlace(long thisOffset, int size, float value) {
         return mapInPlace(thisOffset, size, unused -> value);
+    }
+
+    /** Clamp {@code [thisOffset, thisOffset+size)} to {@code [lo, hi]} in place. Scalar floor; F32 overrides with SIMD. */
+    public FloatTensor clampInPlace(long thisOffset, int size, float lo, float hi) {
+        for (int i = 0; i < size; i++) {
+            float v = getFloat(thisOffset + i);
+            setFloat(thisOffset + i, v < lo ? lo : v > hi ? hi : v);
+        }
+        return this;
     }
 
     public FloatTensor softmaxInPlace(long thisOffset, int size) {
@@ -388,7 +397,7 @@ public abstract class FloatTensor {
         return divideInPlace(thisOffset, size, sum);
     }
 
-    FloatTensor saxpyInPlace(long thisOffset, FloatTensor that, long thatOffset, int size, float a) {
+    public FloatTensor saxpyInPlace(long thisOffset, FloatTensor that, long thatOffset, int size, float a) {
         for (int i = 0; i < size; ++i) {
             setFloat(thisOffset + i, a * that.getFloat(thatOffset + i) + this.getFloat(thisOffset + i));
         }

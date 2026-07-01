@@ -1,4 +1,4 @@
-package com.qxotic.llm;
+package com.qxotic.jinfer;
 
 /**
  * The universal decoded-signal formats for non-text input. Each is the canonical raw a decoder produces —

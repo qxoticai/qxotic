@@ -1,6 +1,4 @@
-package com.qxotic.llm;
-
-import com.qxotic.jinfer.FloatTensor;
+package com.qxotic.jinfer;
 
 import java.util.OptionalInt;
 

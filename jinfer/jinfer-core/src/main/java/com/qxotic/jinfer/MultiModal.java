@@ -1,4 +1,4 @@
-package com.qxotic.llm;
+package com.qxotic.jinfer;
 
 import java.util.Optional;
 import java.util.Set;

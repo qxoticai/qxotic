@@ -1,43 +1,33 @@
-// The model abstraction: each supported architecture (LFM2.5, Gemma4, ...) is one Model
-// implementation. The engine drives generation purely through this seam and never sees an
-// architecture's config, weights or state. Tensors, kernels, samplers, the GGUF tokenizer and
-// chat formatting are shared infrastructure underneath.
+// The jinfer LLM model API, in its own package so it depends only on the public FloatTensor kernels
+// from com.qxotic.jinfer — never on that package's internals. See Gemma4 for a LanguageModel impl.
 package com.qxotic.jinfer;
 
-import java.util.Set;
+/** The headless backbone: ingest input into a runtime state and advance it. It has no opinion on the
+ *  output — a {@link com.qxotic.jinfer.LanguageModel} adds a vocab-logits head, an {@code EmbeddingModel} a pooled head.
+ *  Weight-bearing (the role HuggingFace calls {@code XxxModel}); weights are captured so {@link #ingest}
+ *  never threads them, and exposed so a model can be cheaply cloned over shared weights
+ *  ({@code new Impl(config(), weights())}). State is caller-owned, forkable, and many run at once. */
+public interface Model<C extends Config, W, S extends RuntimeState> {
 
-/** A loadable language model behind a uniform inference seam. {@link Engine} prefills and decodes
- *  through these methods alone; architecture specifics (sliding-window attention, MoE, per-layer
- *  embeddings, short convolutions, ...) live entirely inside the implementation and its
- *  {@link InferenceState}. */
-public interface Model {
+    C config();
 
-    /** GGUF-loaded tokenizer: vocabulary, special tokens and the (optional) chat template. */
-    LFMTokenizer tokenizer();
+    W weights();
 
-    /** Maximum number of context positions a state can hold. */
-    int contextLength();
+    /** Allocate a state: a KV ring sized to {@code contextCapacity} and scratch for batches up to
+     *  {@code batchCapacity} rows. {@code contextCapacity} must not exceed {@code config.maxContextLength()}. */
+    S newState(int contextCapacity, int batchCapacity);
 
-    int vocabularySize();
+    /** Scratch width {@link #newState(int)} allocates when the caller doesn't pick one: a prefill of up
+     *  to this many tokens ingests in a single batch; longer prompts are re-chunked by the caller. */
+    int DEFAULT_BATCH_CAPACITY = 512;
 
-    /** Largest token chunk a single {@link #ingest} call accepts (>= 1). Batched models prefill
-     *  in chunks of this size; single-token models return 1. */
-    int batchCapacity();
+    default S newState(int contextCapacity) { return newState(contextCapacity, DEFAULT_BATCH_CAPACITY); }
 
-    /** A fresh inference state (KV cache + scratch), positioned before the first token. */
-    InferenceState createNewState();
+    /** Ingest one batch at the state's cursor ({@link RuntimeState#position()}), advancing it, and
+     *  retain the final hidden states selected by {@link Batch#outputs()}. The {@link Batch.Input}
+     *  union is the multi-modal seam. */
+    void ingest(S state, Batch batch);
 
-    /** Ingest {@code tokens[tokenOffset, tokenOffset+sequenceLength)} at context positions
-     *  {@code [startPosition, startPosition+sequenceLength)}, extending the KV cache. */
-    void ingest(InferenceState state, int[] tokens, int tokenOffset, int startPosition, int sequenceLength);
-
-    /** Logits for the last ingested token. Idempotent between ingests. */
-    FloatTensor computeLogits(InferenceState state);
-
-    /** Tokens that terminate generation for this model's chat format (end-of-turn / eos / ...). */
-    Set<Integer> stopTokens();
-
-    /** Builds prompt tokens for a chat request in this model's format (Jinja template, ChatML or a
-     *  hand-written format). Internal — never exposed by the OpenAI layer. */
-    ChatFormat chatFormat();
+    /** A resumable snapshot of the state — the basis of prompt caching. */
+    S fork(S state);
 }

@@ -1,8 +1,8 @@
-package com.qxotic.llm;
+package com.qxotic.jinfer;
 
-import com.qxotic.jinfer.FloatTensor;
+import com.qxotic.jinfer.Model;
 
-/** An LLM: a {@link Model} backbone whose head projects retained hidden states to a vocabulary
+/** An LLM: a {@link com.qxotic.jinfer.Model} backbone whose head projects retained hidden states to a vocabulary
  *  distribution (of width {@code config().vocabularySize()}). */
 public interface LanguageModel<C extends Config, W, S extends RuntimeState> extends Model<C, W, S> {
 

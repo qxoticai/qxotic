@@ -1,4 +1,4 @@
-package com.qxotic.llm;
+package com.qxotic.jinfer;
 
 /** The live, mutable per-run state of a model — the dynamic third of the Config/Weights/State triple.
  *  A model owns none and produces many (concurrent runs, forked snapshots); it is caller-owned. */
