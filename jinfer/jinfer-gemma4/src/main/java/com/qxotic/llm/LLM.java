@@ -36,6 +36,12 @@ final class LLM {
         x.addInPlace(0, xb, 0, n);
     }
 
+    /** {@code out[0..n] = base[baseOff..] + scale * add[0..n]}; base and add are left unchanged.
+     *  Lets a running residual be born directly from a read-only source row (no seed copy). */
+    static void addScaledInto(FloatTensor out, FloatTensor base, long baseOff, FloatTensor add, int n, float scale) {
+        for (int i = 0; i < n; i++) out.setFloat(i, base.getFloat(baseOff + i) + scale * add.getFloat(i));
+    }
+
     /** Greedy argmax over the first {@code n} logits. */
     static int argmax(FloatTensor t, int n) {
         int best = 0;
