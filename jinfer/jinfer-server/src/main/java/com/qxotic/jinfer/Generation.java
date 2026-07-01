@@ -23,14 +23,14 @@ import java.util.function.IntConsumer;
  */
 final class Generation {
 
-    private final Model model;
+    private final ModelLegacy model;
     private final LLMOptions options;
     private final Worker worker;
     private final PromptCache promptCache;   // null when caching is disabled / unsupported by the model
     private final Map<LFMTokenizer, int[]> newlineCache = Collections.synchronizedMap(new WeakHashMap<>());
     private ChatSession chatSession;         // single generation worker, so a plain field suffices
 
-    Generation(Model model, LLMOptions options, Worker worker) throws IOException {
+    Generation(ModelLegacy model, LLMOptions options, Worker worker) throws IOException {
         this.model = model;
         this.options = options;
         this.worker = worker;
@@ -44,7 +44,7 @@ final class Generation {
 
     /** The prompt cache is an opt-in model capability (only models whose KV/conv layout the cache
      *  understands provide it — today LFM2.5); other models run the plain, un-cached path. */
-    private static PromptCache createPromptCache(Model model) throws IOException {
+    private static PromptCache createPromptCache(ModelLegacy model) throws IOException {
         PromptCacheSupport cacheSupport = RuntimeFlags.PROMPT_CACHE && model instanceof Llama llama ? llama.promptCacheSupport().orElse(null) : null;
         if (cacheSupport == null) return null;
         CacheStore store;
