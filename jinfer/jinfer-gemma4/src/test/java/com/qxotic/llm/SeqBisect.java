@@ -24,11 +24,11 @@ public final class SeqBisect {
             int[] toks = Arrays.copyOf(filler, seqLen);
 
             Gemma4.State sb = model.newState(256, Math.max(16, seqLen));
-            model.ingest(sb, Batch.prefill(toks));
+            model.ingest(sb, com.qxotic.jinfer.Batch.prefill(toks));
             float[] batched = snapshot(model.logits(sb), vocab);
 
             Gemma4.State ss = model.newState(256, 16);
-            for (int t : toks) model.ingest(ss, Batch.step(t));
+            for (int t : toks) model.ingest(ss, com.qxotic.jinfer.Batch.step(t));
             float[] step = snapshot(model.logits(ss), vocab);
 
             double maxAbs = 0;
