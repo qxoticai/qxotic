@@ -205,7 +205,7 @@ public class Main {
     /** One engine pass plus CLI presentation: prompt echo, token streaming through the printer,
      *  and the stderr timing summary line. --max-tokens is a TOTAL context cap in the CLI, so it
      *  is converted to the engine's completion budget here. */
-    private static Engine.GenerationResult generateCli(Model model, InferenceState state, int startPosition,
+    private static Engine.GenerationResult generateCli(ModelLegacy model, InferenceState state, int startPosition,
                                                        List<Integer> promptTokens, Set<Integer> stopTokens,
                                                        Sampler sampler, LLMOptions options) {
         LFMTokenizer tokenizer = model.tokenizer();
@@ -397,7 +397,7 @@ public class Main {
             System.exit(-1);
             return;
         }
-        Model model = AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
+        ModelLegacy model = AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
         if (model == null) {
             model = ModelLoader.loadModel(options.modelPath(), options.maxTokens());
         }
@@ -419,10 +419,10 @@ public class Main {
         }
     }
 
-    /** CLI driver for any {@link Model} via its {@link ChatFormat}: a one-shot {@code --prompt} or
+    /** CLI driver for any {@link ModelLegacy} via its {@link ChatFormat}: a one-shot {@code --prompt} or
      *  an interactive {@code --chat} loop, rebuilding the full prompt each turn (no incremental
      *  resume). Used for non-LFM architectures (e.g. Gemma4). */
-    static void runGeneric(Model model, Sampler sampler, LLMOptions options) throws IOException {
+    static void runGeneric(ModelLegacy model, Sampler sampler, LLMOptions options) throws IOException {
         ChatFormat chatFormat = model.chatFormat();
         Set<Integer> stops = model.stopTokens();
         if (!options.interactive()) {

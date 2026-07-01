@@ -35,7 +35,7 @@ public final class Server {
      * warming, if configured, completes before this returns. This is the only public API of the
      * module — load a model (jinfer-core), then hand it here to serve it.
      */
-    public static HttpServer start(Model model, LLMOptions options) throws IOException {
+    public static HttpServer start(ModelLegacy model, LLMOptions options) throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress(options.host(), options.port()), 0);
         String servedId = options.modelPath().getFileName().toString();
         Map<String, Object> modelCard = Map.of(
