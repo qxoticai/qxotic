@@ -65,6 +65,43 @@ public final class Activations {
         for (int i = 0; i < n; i++) gate.setFloat(gateOff + i, gelu(gate.getFloat(gateOff + i)) * up.getFloat(upOff + i));
     }
 
+    /** Exact gpt-oss clamped-SwiGLU scalar: {@code quickgelu(min(gate,7)) * (clamp(up,±7) + 1)}, where
+     *  {@code quickgelu(x) = x*sigmoid(1.702x)}. The full-scalar oracle for {@link #clampedSwigluMultiply}. */
+    public static float clampedSwiglu(float gate, float up) {
+        float x = Math.min(gate, 7.0f);
+        float y = Math.clamp(up, -7.0f, 7.0f);
+        return (float) (x / (1.0 + Math.exp(1.702f * -x)) * (y + 1.0));
+    }
+
+    /** Scalar twin of {@link #clampedSwigluMultiply}'s vector body (tanhApprox sigmoid), so the vector
+     *  loop's scalar tail applies the identical approximation as the lanes. */
+    private static float clampedSwigluApprox(float gate, float up) {
+        float x = Math.min(gate, 7.0f);
+        float y = Math.clamp(up, -7.0f, 7.0f);
+        return x * 0.5f * (1.0f + F32FloatTensor.tanhApprox(0.851f * x)) * (y + 1.0f);
+    }
+
+    /** Fused gpt-oss clamped-SwiGLU {@code gate[i] = clampedSwiglu(gate[i], up[i])} over {@code n} elements,
+     *  in place on {@code gate} - vectorized for F32 (sigmoid via {@code sigmoid(1.702x) = 0.5(1 + tanh(0.851x))}
+     *  on the minimax-rational {@code tanhVec}), scalar otherwise. Callers parallelize across rows. */
+    public static void clampedSwigluMultiply(FloatTensor gate, int gateOff, FloatTensor up, int upOff, int n) {
+        if (FloatTensor.USE_VECTOR_API && gate instanceof F32FloatTensor g && up instanceof F32FloatTensor u) {
+            VectorSpecies<Float> sp = FloatTensor.F_SPECIES;
+            int bound = sp.loopBound(n);
+            for (int i = 0; i < bound; i += sp.length()) {
+                long gb = (long) (gateOff + i) * Float.BYTES;
+                long ub = (long) (upOff + i) * Float.BYTES;
+                FloatVector x = FloatVector.fromMemorySegment(sp, g.vseg, g.vbase + gb, ByteOrder.LITTLE_ENDIAN).min(7.0f);
+                FloatVector y = FloatVector.fromMemorySegment(sp, u.vseg, u.vbase + ub, ByteOrder.LITTLE_ENDIAN).max(-7.0f).min(7.0f);
+                FloatVector t = F32FloatTensor.tanhVec(x.mul(0.851f));   // sigmoid(1.702x) = 0.5(1 + tanh(0.851x))
+                x.mul(0.5f).mul(t.add(1.0f)).mul(y.add(1.0f)).intoMemorySegment(g.vseg, g.vbase + gb, ByteOrder.LITTLE_ENDIAN);
+            }
+            for (int i = bound; i < n; i++) gate.setFloat(gateOff + i, clampedSwigluApprox(gate.getFloat(gateOff + i), up.getFloat(upOff + i)));
+            return;
+        }
+        for (int i = 0; i < n; i++) gate.setFloat(gateOff + i, clampedSwiglu(gate.getFloat(gateOff + i), up.getFloat(upOff + i)));
+    }
+
     /** Fused {@code gate[i] = silu(gate[i]) * up[i]} over {@code n} elements (SwiGLU), the SiLU-gated
      *  counterpart of {@link #geluMultiply} — delegates to the vectorized {@code siluMultiplyInPlace}.
      *  Public so {@code com.qxotic.llm} ports (e.g. LFM2.5) can use it without the package-private method. */

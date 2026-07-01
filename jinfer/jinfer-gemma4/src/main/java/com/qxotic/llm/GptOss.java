@@ -75,7 +75,8 @@ public final class GptOss implements LanguageModel<GptOss.Configuration, GptOss.
         int dim = configuration.embeddingLength();
         int row = s.lastChunkLen - s.outputCount + output;
         return Parallel.onDecodePool(() -> {
-            rmsnorm(s.xb, 0, s.residual, (long) row * dim, weights.outputNorm(), dim, configuration.rmsNormEps());
+            tailAt(s, row);   // finish the deferred last-layer tail for this row -> s.th (s.residual stays read-only)
+            rmsnorm(s.xb, 0, s.th, 0, weights.outputNorm(), dim, configuration.rmsNormEps());
             weights.outputWeight().matmul(s.xb, s.logits, configuration.vocabularySize(), dim);
             return s.logits;
         });
@@ -107,15 +108,7 @@ public final class GptOss implements LanguageModel<GptOss.Configuration, GptOss.
 
     /** out[outOffset, +size] += bias[biasOffset, +size]. */
     static void addBias(FloatTensor out, long outOffset, F32FloatTensor bias, long biasOffset, int size) {
-        for (int i = 0; i < size; i++) out.setFloat(outOffset + i, out.getFloat(outOffset + i) + bias.getFloat(biasOffset + i));
-    }
-
-    /** gpt-oss clamped gated activation: gate clamped above at 7 with swish(alpha=1.702); up clamped
-     *  to [-7,7] then (up+1) as the multiplicand. */
-    static float clampedSwiglu(float gate, float up) {
-        float x = Math.min(gate, 7.0f);
-        float y = Math.clamp(up, -7.0f, 7.0f);
-        return (float) (x / (1.0 + Math.exp(1.702f * -x)) * (y + 1.0));
+        out.addInPlace(outOffset, bias, biasOffset, size);   // SIMD via F32FloatTensor.addInPlace (bit-identical to the scalar add)
     }
 
     /** YaRN-scaled RoPE tables (cos/sin), attention mscale baked in; canonical params (betaFast=32,
@@ -131,7 +124,12 @@ public final class GptOss implements LanguageModel<GptOss.Configuration, GptOss.
 
     void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
         embed(state, tokens, tokenOffset, seqLen);
-        for (int l = 0; l < configuration.numberOfLayers(); l++) layer(state, l, startPos, seqLen);
+        int lastLayer = configuration.numberOfLayers() - 1;
+        for (int l = 0; l < lastLayer; l++) layer(state, l, startPos, seqLen);
+        // Lazy last-layer split: write every row's K/V to the cache but DEFER the attention + MoE FFN tail.
+        // state.residual is left as the last-layer INPUT; a query finishes exactly the rows it asks for via
+        // tailAt() in logits(). Prefill skips the last layer's (expensive MoE) attention+FFN for un-queried rows.
+        writeKv(state, lastLayer, startPos, seqLen);
     }
 
     /** Token-embedding lookup into the residual stream (no scaling). */
@@ -146,7 +144,7 @@ public final class GptOss implements LanguageModel<GptOss.Configuration, GptOss.
     /** One block: attention (with sinks), then the MoE FFN, in place on the residual. */
     private void layer(State state, int l, int startPos, int seqLen) {
         attention(state, l, startPos, seqLen);
-        moeFeedForward(state, l, seqLen);
+        moeFeedForward(state, l, state.residual, seqLen);
         if (LLM.TRACE) LLM.traceSum("l_out-" + l, state.residual, seqLen * configuration.embeddingLength());
     }
 
@@ -224,7 +222,7 @@ public final class GptOss implements LanguageModel<GptOss.Configuration, GptOss.
     /** Pre-norm (post_attention_norm) → router (+bias) → top-k by RAW logit → softmax over the selected
      *  (×expertWeightsScale) → per-expert SEPARATE gate/up (+bias) → clampedSwiglu → down (+bias), routed
      *  via the shared CSR {@link Moe#dispatch} and added to the residual. */
-    private void moeFeedForward(State state, int l, int seqLen) {
+    private void moeFeedForward(State state, int l, FloatTensor resid, int seqLen) {
         Configuration config = configuration;
         int dim = config.embeddingLength(), expertFF = config.expertFeedForwardLength();
         int numExperts = config.expertCount(), topK = Math.min(config.expertUsedCount(), numExperts);
@@ -233,7 +231,7 @@ public final class GptOss implements LanguageModel<GptOss.Configuration, GptOss.
         F32FloatTensor postW = weights.layers()[l].postAttnNorm();
 
         // post-attention norm into xb, route on it.
-        Parallel.forRows(seqLen, s -> rmsnorm(state.xb, (long) s * dim, state.residual, (long) s * dim, postW, dim, eps));
+        Parallel.forRows(seqLen, s -> rmsnorm(state.xb, (long) s * dim, resid, (long) s * dim, postW, dim, eps));
         moe.router().gemm(state.xb, dim, state.moeRouterB, numExperts, seqLen, numExperts, dim);
         Parallel.forRows(seqLen, s -> addBias(state.moeRouterB, (long) s * numExperts, moe.routerBias(), 0, numExperts));
 
@@ -272,16 +270,76 @@ public final class GptOss implements LanguageModel<GptOss.Configuration, GptOss.
                     Parallel.forRows(n, j -> {
                         addBias(state.hb, (long) j * expertFF, moe.gateBias(), (long) e * expertFF, expertFF);
                         addBias(state.hb2, (long) j * expertFF, moe.upBias(), (long) e * expertFF, expertFF);
-                        for (int i = 0; i < expertFF; i++) {
-                            state.hb.setFloat((long) j * expertFF + i,
-                                    clampedSwiglu(state.hb.getFloat((long) j * expertFF + i), state.hb2.getFloat((long) j * expertFF + i)));
-                        }
+                        Activations.clampedSwigluMultiply(state.hb, j * expertFF, state.hb2, j * expertFF, expertFF);
                     });
                     moe.downExps().gemm(state.hb, expertFF, out, dim, n, dim, expertFF, downOffset);
                     Parallel.forRows(n, j -> addBias(out, (long) j * dim, moe.downBias(), (long) e * dim, dim));
                 });
 
-        Parallel.forRows(seqLen, s -> state.residual.addInPlace((long) s * dim, state.moeOutB, (long) s * dim, dim));
+        Parallel.forRows(seqLen, s -> resid.addInPlace((long) s * dim, state.moeOutB, (long) s * dim, dim));
+    }
+
+    // === Lazy last-layer split (writeKv + tailAt) ===
+
+    /** Last-layer K/V half: pre-norm all rows, biased K/V projection + NeoX RoPE(K), commit to the cache
+     *  (ring on SWA, linear on full). No Q, no attention, no O, no MoE - state.residual left untouched. */
+    private void writeKv(State state, int l, int startPos, int seqLen) {
+        Configuration config = configuration;
+        int dim = config.embeddingLength();
+        int headSize = config.headSize(), halfHead = headSize / 2;
+        int kvHeads = config.numberOfKeyValueHeads(), kvDim = config.kvDim();
+        float eps = config.rmsNormEps();
+        AttentionWeights attn = weights.layers()[l].attention();
+        float[] cos = weights.ropeCos(), sin = weights.ropeSin();
+        FloatTensor bK = state.batchK[l], bV = state.batchV[l];
+        F32FloatTensor attNormW = weights.layers()[l].attnNorm();
+        Parallel.forRows(seqLen, s -> rmsnorm(state.xb, (long) s * dim, state.residual, (long) s * dim, attNormW, dim, eps));
+        attn.wk().gemm(state.xb, dim, bK, kvDim, seqLen, kvDim, dim);
+        attn.wv().gemm(state.xb, dim, bV, kvDim, seqLen, kvDim, dim);
+        Parallel.forRows(seqLen, s -> {
+            addBias(bK, (long) s * kvDim, attn.kBias(), 0, kvDim);
+            addBias(bV, (long) s * kvDim, attn.vBias(), 0, kvDim);
+            for (int h = 0; h < kvHeads; h++) RoPE.applyNeox(bK, (long) s * kvDim + (long) h * headSize, startPos + s, cos, sin, halfHead);
+        });
+        for (int s = 0; s < seqLen; s++) {
+            int kvPos = config.kvCacheIndex(l, startPos + s);
+            bK.copyTo((long) s * kvDim, state.keyCache[l], (long) kvPos * kvDim, kvDim);
+            bV.copyTo((long) s * kvDim, state.valueCache[l], (long) kvPos * kvDim, kvDim);
+        }
+    }
+
+    /** Lazy tail: finish the last layer for retained chunk-row {@code i} into state.th, reading its input from
+     *  state.residual[i] and attending cache[attStart..pos] inclusive (its own K/V already committed by writeKv;
+     *  bK/bV = null, sink-aware, SWA-windowed), then the MoE FFN on state.th. state.residual is never written. */
+    private void tailAt(State state, int i) {
+        Configuration config = configuration;
+        int L = config.numberOfLayers() - 1;
+        int dim = config.embeddingLength();
+        int headSize = config.headSize(), halfHead = headSize / 2;
+        int heads = config.numberOfHeads(), kvHeads = config.numberOfKeyValueHeads();
+        int queryDim = config.queryDim(), kvDim = config.kvDim(), kvMul = heads / kvHeads;
+        float eps = config.rmsNormEps();
+        boolean isSWA = config.isSWA(L);
+        AttentionWeights attn = weights.layers()[L].attention();
+        float[] cos = weights.ropeCos(), sin = weights.ropeSin();
+        int startPos = state.position - state.lastChunkLen;
+        int pos = startPos + i;
+
+        // attention: biased Q + NeoX RoPE + sink/SWA single-query flash over the cache + biased O -> tscratch
+        rmsnorm(state.tscratch, 0, state.residual, (long) i * dim, weights.layers()[L].attnNorm(), dim, eps);
+        attn.wq().gemm(state.tscratch, dim, state.q, queryDim, 1, queryDim, dim);
+        addBias(state.q, 0, attn.qBias(), 0, queryDim);
+        for (int h = 0; h < heads; h++) RoPE.applyNeox(state.q, (long) h * headSize, pos, cos, sin, halfHead);
+        float scale = 1.0f / (float) Math.sqrt(headSize);
+        int attStart = config.attentionStart(L, pos);
+        int ringMask = isSWA ? config.slidingWindow() - 1 : 0;
+        FlashAttention.flashDecode((F32FloatTensor) state.q, (F32FloatTensor) state.xbK,
+                state.keyCache[L], state.valueCache[L], null, null,
+                heads, pos, attStart, headSize, kvDim, kvMul, scale, ringMask, attn.sinks(), state.decodeScratch);
+        attn.wo().gemm(state.xbK, queryDim, state.tscratch, dim, 1, dim, queryDim);
+        addBias(state.tscratch, 0, attn.oBias(), 0, dim);
+        LLM.addScaledInto(state.th, state.residual, (long) i * dim, state.tscratch, dim, 1.0f);   // th = residual[i] + O
+        moeFeedForward(state, L, state.th, 1);   // MoE FFN for this one row, in place on state.th
     }
 
     // === Configuration ===
@@ -319,7 +377,7 @@ public final class GptOss implements LanguageModel<GptOss.Configuration, GptOss.
     public static final class State implements RuntimeState {
         final int contextCapacity, batchCapacity;
         int position, outputCount, lastChunkLen;
-        final FloatTensor residual, xb, xb2, xbK, q, logits;
+        final FloatTensor residual, xb, xb2, xbK, q, logits, th, tscratch;
         final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch();
         final FloatTensor[] keyCache, valueCache, batchK, batchV;
         // MoE scratch (chunk-wide CSR routing); gpt-oss is all-MoE so always allocated.
@@ -346,6 +404,8 @@ public final class GptOss implements LanguageModel<GptOss.Configuration, GptOss.
             this.xbK = FloatTensor.allocateF32(c * queryDim);
             this.q = FloatTensor.allocateF32(c * queryDim);
             this.logits = FloatTensor.allocateF32(config.vocabularySize());
+            this.th = FloatTensor.allocateF32(dim);
+            this.tscratch = FloatTensor.allocateF32(dim);
             this.hb = FloatTensor.allocateF32(c * expertFF);
             this.hb2 = FloatTensor.allocateF32(c * expertFF);
             this.moeRouterB = FloatTensor.allocateF32(c * numExperts);
