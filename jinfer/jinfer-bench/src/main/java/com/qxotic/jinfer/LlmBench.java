@@ -1,11 +1,19 @@
 package com.qxotic.jinfer;
 
-import com.qxotic.jinfer.FloatTensor;
-import com.qxotic.llm.Batch;
+import com.qxotic.format.gguf.GGUF;
 import com.qxotic.llm.Gemma4;
+import com.qxotic.llm.Granite;
+import com.qxotic.llm.GptOss;
+import com.qxotic.llm.Lfm2;
+import com.qxotic.llm.Llama;
+import com.qxotic.llm.Mistral3;
+import com.qxotic.llm.NemotronH;
+import com.qxotic.llm.Qwen35;
 
 import java.io.PrintStream;
+import java.nio.channels.FileChannel;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ForkJoinPool;
@@ -42,7 +50,7 @@ public final class LlmBench {
         List<Row> rows = new ArrayList<>();
         for (String path : models) {
             System.err.printf("loading %s (ctx=%d) via com.qxotic.llm ...%n", path, ctx);
-            Gemma4 model = Gemma4.loadModel(Path.of(path), ctx);
+            LanguageModel<?, ?, ?> model = loadAny(Path.of(path), ctx);
             String name = name(path);
             if (p > 0) rows.add(measure(model, name, threads, "pp" + p, p, true, warmup, reps));
             if (n > 0) rows.add(measure(model, name, threads, "tg" + n, n, false, warmup, reps));
@@ -50,16 +58,37 @@ public final class LlmBench {
         printTable(rows);
     }
 
+    /** Dispatch on general.architecture to the matching new-API port (all implement LanguageModel). */
+    private static LanguageModel<?, ?, ?> loadAny(Path path, int ctx) throws Exception {
+        String arch;
+        try (FileChannel fc = FileChannel.open(path, StandardOpenOption.READ)) {
+            arch = ModelLoader.readGguf(fc, path.toString()).getString("general.architecture");
+        }
+        return switch (arch) {
+            case "gemma4" -> Gemma4.loadModel(path, ctx);
+            case "gpt-oss" -> GptOss.loadModel(path, ctx);
+            case "qwen35", "qwen35moe" -> Qwen35.loadModel(path, ctx);
+            case "nemotron_h", "nemotron_h_moe" -> NemotronH.loadModel(path, ctx);
+            case "llama", "minicpm" -> Llama.loadModel(path, ctx);
+            case "mistral3" -> Mistral3.loadModel(path, ctx);
+            case "granite" -> Granite.loadModel(path, ctx);
+            default -> {
+                if (arch.startsWith("lfm")) yield Lfm2.loadModel(path, ctx);
+                throw new IllegalArgumentException("LlmBench: unsupported architecture '" + arch + "'");
+            }
+        };
+    }
+
     /** One pp/tg test on the new seam: warmup then {@code reps} timed passes; throughput mean ± stddev. */
-    private static Row measure(Gemma4 model, String name, int threads, String test, int count, boolean prefill,
+    private static <S extends RuntimeState> Row measure(LanguageModel<?, ?, S> model, String name, int threads, String test, int count, boolean prefill,
                                int warmup, int reps) {
-        int ctx = model.config().maxContextLength();
+        int ctx = model.config().contextLength();
         int vocab = model.config().vocabularySize();
-        int[] prompt = fillerTokens(model, prefill ? count : 1);
+        int[] prompt = fillerTokens(vocab, prefill ? count : 1);
 
         double[] tps = new double[reps];
         for (int i = 0; i < warmup + reps; i++) {
-            Gemma4.State s = model.newState(ctx, Math.max(prompt.length, 16));
+            S s = model.newState(ctx, Math.max(prompt.length, 16));
             double t;
             if (prefill) {
                 // pp: one batched prefill of `count` tokens
@@ -83,15 +112,10 @@ public final class LlmBench {
         return new Row(name, threads, test, mean(tps), stddev(tps));
     }
 
-    private static int[] fillerTokens(Gemma4 model, int count) {
-        StringBuilder sb = new StringBuilder();
-        List<Integer> all;
-        do {
-            sb.append("The quick brown fox jumps over the lazy dog. ");
-            all = model.tokenizer().encodeWithSpecialTokens(sb.toString());
-        } while (all.size() < count);
+    /** Synthetic in-range token ids — throughput is content-independent, and tokenizer() isn't on the interface. */
+    private static int[] fillerTokens(int vocab, int count) {
         int[] ids = new int[count];
-        for (int i = 0; i < count; i++) ids[i] = all.get(i);
+        for (int i = 0; i < count; i++) ids[i] = (i * 17 + 1) % vocab;
         return ids;
     }
 
