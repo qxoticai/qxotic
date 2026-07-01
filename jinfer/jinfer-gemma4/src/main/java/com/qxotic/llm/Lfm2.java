@@ -58,6 +58,8 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
                 if (n == 1) Parallel.onDecodePool(() -> { forward(s, ids, 0, from, n); return null; });
                 else forward(s, ids, 0, from, n);
             }
+            case com.qxotic.jinfer.Batch.Input.Sequences seq ->
+                throw new UnsupportedOperationException("LFM2.5 is generative: packed sequences (batched embedding) not supported");
             case com.qxotic.jinfer.Batch.Input.Embeddings e ->
                 throw new UnsupportedOperationException("LFM2.5 is text-only: embedding input is not supported");
         }

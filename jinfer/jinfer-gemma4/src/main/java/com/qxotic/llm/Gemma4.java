@@ -80,6 +80,8 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
                 int pad = tokenizer.getSpecialTokens().getOrDefault("<pad>", 0);
                 forwardEmbeddings(s, e.rows(), pad, from, n, e.bidirectional());
             }
+            case com.qxotic.jinfer.Batch.Input.Sequences seq ->
+                throw new UnsupportedOperationException("Gemma4 is generative: packed sequences (batched embedding) not supported");
         }
         s.lastChunkLen = n;
         s.outputCount = batch.outputs() == com.qxotic.jinfer.Batch.Outputs.ALL ? n : 1;

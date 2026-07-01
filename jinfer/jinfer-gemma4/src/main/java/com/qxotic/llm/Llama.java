@@ -61,6 +61,8 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
             }
             case com.qxotic.jinfer.Batch.Input.Embeddings e ->
                 throw new UnsupportedOperationException("Llama is text-only: embedding input is not supported");
+            case com.qxotic.jinfer.Batch.Input.Sequences seq ->
+                throw new UnsupportedOperationException("Llama is generative: packed sequences (batched embedding) not supported");
         }
         s.lastChunkLen = n;
         s.outputCount = batch.outputs() == com.qxotic.jinfer.Batch.Outputs.ALL ? n : 1;
