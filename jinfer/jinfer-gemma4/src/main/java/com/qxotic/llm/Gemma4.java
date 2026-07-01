@@ -12,17 +12,7 @@ package com.qxotic.llm;
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.format.gguf.TensorEntry;
 
-import com.qxotic.jinfer.Activations;
-import com.qxotic.jinfer.F32FloatTensor;
-import com.qxotic.jinfer.FlashAttention;
-import com.qxotic.jinfer.FloatTensor;
-import com.qxotic.jinfer.GGMLTensorEntry;
-import com.qxotic.jinfer.LFMTokenizer;
-import com.qxotic.jinfer.ModelLoader;
-import com.qxotic.jinfer.Moe;
-import com.qxotic.jinfer.Pair;
-import com.qxotic.jinfer.Parallel;
-import com.qxotic.jinfer.RoPE;
+import com.qxotic.jinfer.*;
 
 import static com.qxotic.jinfer.Norms.rmsnorm;
 import static com.qxotic.jinfer.Norms.rmsnormNoWeight;
@@ -38,8 +28,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
-import java.util.function.Consumer;
-import java.util.stream.IntStream;
 
 public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.Weights, Gemma4.State>,
         MultiModal, MultiToken<Gemma4.State> {
@@ -47,6 +35,8 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
     private final Configuration configuration;
     private final LFMTokenizer tokenizer;
     private final Weights weights;
+    private Embedder<Media.Image> vision;   // image encoder; null on text-only loads (set by loadModel(text, mmproj, ctx))
+    private Embedder<Media.Audio> audio;    // audio encoder; null unless the mmproj carries a gemma4ua adapter
 
     Gemma4(Configuration configuration, LFMTokenizer tokenizer, Weights weights) {
         this.configuration = configuration;
@@ -63,13 +53,11 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
     @Override
     public State newState(int contextCapacity, int batchCapacity) {
         State state = new State(configuration, contextCapacity, batchCapacity);
-        Integer bos = tokenizer.getSpecialTokens().get("<bos>");
-        state.latestToken = bos != null ? bos : 2;
         return state;
     }
 
     @Override
-    public void ingest(State s, Batch batch) {
+    public void ingest(State s, com.qxotic.jinfer.Batch batch) {
         int n = batch.count();
         if (n > s.batchCapacity) {
             throw new IllegalArgumentException("batch " + n + " exceeds batchCapacity " + s.batchCapacity);
@@ -80,20 +68,22 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
                     "ingest of " + n + " at position " + from + " exceeds contextCapacity " + s.contextCapacity);
         }
         switch (batch.input()) {
-            case Batch.Input.Tokens t -> {
+            case com.qxotic.jinfer.Batch.Input.Tokens t -> {
                 int[] ids = t.ids();
                 // decode step (one token): bandwidth-bound, so run at physical-core width on the decode
                 // pool (no SMT contention); prefill (n>1) stays compute-bound on the common pool.
                 if (n == 1) Parallel.onDecodePool(() -> { forward(s, ids, 0, from, n); return null; });
                 else forward(s, ids, 0, from, n);
             }
-            case Batch.Input.Embeddings e ->
-                throw new UnsupportedOperationException("text checkpoint: image/audio embedding input needs the encoders (not wired)");
+            case com.qxotic.jinfer.Batch.Input.Embeddings e -> {
+                if (vision == null && audio == null) throw new UnsupportedOperationException("no media encoder loaded — use loadModel(text, mmproj, ctx)");
+                int pad = tokenizer.getSpecialTokens().getOrDefault("<pad>", 0);
+                forwardEmbeddings(s, e.rows(), pad, from, n, e.bidirectional());
+            }
         }
         s.lastChunkLen = n;
-        s.outputCount = batch.outputs() == Batch.Outputs.ALL ? n : 1;
+        s.outputCount = batch.outputs() == com.qxotic.jinfer.Batch.Outputs.ALL ? n : 1;
         s.position = from + n;
-        s.latestToken = ((Batch.Input.Tokens) batch.input()).ids()[n - 1];
     }
 
     /** Logits for the {@code output}-th retained row: the layer loop leaves every row's final
@@ -123,7 +113,6 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
             s.valueCache[l].copyTo(0, f.valueCache[l], 0, len);
         }
         f.position = s.position;
-        f.latestToken = s.latestToken;
         return f;
     }
 
@@ -136,8 +125,18 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
         throw new IllegalStateException("MTP not loaded (depth() is empty) — no draft head " + head);
     }
 
-    @Override public Set<Class<? extends Media>> modalities() { return Set.of(); }   // no media adapters loaded
-    @Override public <R extends Media> Optional<Embedder<R>> embedder(Class<R> modality) { return Optional.empty(); }
+    @Override public Set<Class<? extends Media>> modalities() {
+        Set<Class<? extends Media>> m = new java.util.HashSet<>();   // adapters loaded iff an mmproj carried them
+        if (vision != null) m.add(Media.Image.class);
+        if (audio != null) m.add(Media.Audio.class);
+        return m;
+    }
+    @Override @SuppressWarnings("unchecked")
+    public <R extends Media> Optional<Embedder<R>> embedder(Class<R> modality) {
+        if (vision != null && modality == Media.Image.class) return Optional.of((Embedder<R>) vision);
+        if (audio != null && modality == Media.Audio.class) return Optional.of((Embedder<R>) audio);
+        return Optional.empty();
+    }
 
     /** Convenience for callers/tests: the turn-delimiter / eos ids that terminate generation. */
     public java.util.Set<Integer> stopTokens() {
@@ -150,13 +149,6 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
     }
 
     // -Dgemma.trace: per-layer residual checkpoints matching llama.cpp's eval-callback node names.
-    static final boolean TRACE = System.getProperty("jinfer.trace") != null;
-    static void traceSum(String name, FloatTensor t, int n) {
-        if (!TRACE) return;
-        double s = 0;
-        for (int i = 0; i < n; i++) s += t.getFloat(i);
-        System.err.printf("[trace] %s sum=%.6f v0=%.4f,%.4f,%.4f%n", name, s, t.getFloat(0), t.getFloat(1), t.getFloat(2));
-    }
 
     // === Configuration ===
 
@@ -167,7 +159,7 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
             int numberOfHeads,
             int[] numberOfKeyValueHeadsPerLayer,       // per-layer KV head count
             int vocabularySize,
-            int maxContextLength,                      // model ceiling (gemma4.context_length)
+            int contextLength,                      // model ceiling (gemma4.context_length)
             float rmsNormEps,
             float ropeThetaFull,                       // full-attention RoPE theta
             float ropeThetaSWA,                        // sliding-window RoPE theta
@@ -322,12 +314,11 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
         final int[] moeExpertCounts, moeExpertOffsets, moeCursor, moeRowByExpert, moeRowTopE;
         final float[] moeProbByExpert, moeRowTopP;
         final Moe.Routing moeRouting;
-        int latestToken;
 
         State(Configuration config, int contextCapacity, int batchCapacity) {
-            if (contextCapacity > config.maxContextLength()) {
+            if (contextCapacity > config.contextLength()) {
                 throw new IllegalArgumentException(
-                        "contextCapacity " + contextCapacity + " exceeds model maxContextLength " + config.maxContextLength());
+                        "contextCapacity " + contextCapacity + " exceeds model maxContextLength " + config.contextLength());
             }
             this.contextCapacity = contextCapacity;
             int c = Math.max(1, batchCapacity);
@@ -404,8 +395,25 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
         embed(state, tokens, tokenOffset, seqLen);
         buildPerLayerInputs(state, tokens, tokenOffset, seqLen);
         for (int l = 0; l < configuration.numberOfLayers(); l++) {
-            layer(state, l, startPos, seqLen);
+            layer(state, l, startPos, seqLen, false);
         }
+        commitKv(state, startPos, seqLen);
+    }
+
+    /** Forward an externally-produced embedding chunk (projected vision rows) at {@code startPos}. The rows go
+     *  into the residual UNSCALED — the vision projector already sets the magnitude, unlike token embeddings
+     *  which are ×sqrt(dim) — and the per-layer-embedding (PLE) path is keyed on the image {@code <pad>} token
+     *  (gemma fills the per-layer-token-embedding for image positions from the pad id). Same batched stack. */
+    void forwardEmbeddings(State state, FloatTensor rows, int pleToken, int startPos, int seqLen, boolean bidirectional) {
+        int dim = configuration.embeddingLength();
+        rows.copyTo(0, state.residual, 0, seqLen * dim);
+        int[] ple = new int[seqLen];
+        java.util.Arrays.fill(ple, pleToken);
+        buildPerLayerInputs(state, ple, 0, seqLen);
+        // Image soft tokens attend bidirectionally (mtmd_decode_use_non_causal is true for GEMMA4V/GEMMA4UV):
+        // every image token sees every other, so the LLM sees the whole image at once. Audio (GEMMA4UA) is
+        // causal, so the caller passes bidirectional=false for it.
+        for (int l = 0; l < configuration.numberOfLayers(); l++) layer(state, l, startPos, seqLen, bidirectional);
         commitKv(state, startPos, seqLen);
     }
 
@@ -415,10 +423,10 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
         float sqrtDim = (float) Math.sqrt(dim);
         for (int s = 0; s < seqLen; s++) {
             int token = tokens[tokenOffset + s];
-            weights.tokenEmbeddings.copyTo(token * dim, state.residual, s * dim, dim);
+            weights.tokenEmbeddings.copyTo((long) token * dim, state.residual, s * dim, dim);
         }
         state.residual.mapInPlace(0, seqLen * dim, v -> v * sqrtDim);
-        traceSum("inp_scaled", state.residual, seqLen * dim);
+        LLM.traceSum("inp_scaled", state.residual, seqLen * dim);
     }
 
     /** Per-layer embeddings (Gemma-3n PLE): project the scaled residual to the per-layer width, RMS-norm
@@ -449,22 +457,22 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
 
     /** One decoder block, in place on {@code state.residual}: attention, FFN, the optional PLE
      *  projection, then the per-layer output scale. */
-    private void layer(State state, int l, int startPos, int seqLen) {
-        attention(state, l, startPos, seqLen);
+    private void layer(State state, int l, int startPos, int seqLen, boolean nonCausal) {
+        attention(state, l, startPos, seqLen, nonCausal);
         feedForward(state, l, seqLen);
         mergePerLayerInput(state, l, seqLen);
         float scale = weights.layerOutputScales[l];
         if (scale != 1.0f) {
             state.residual.mapInPlace(0, seqLen * configuration.embeddingLength(), v -> v * scale);
         }
-        if (TRACE) traceSum("l_out-" + l, state.residual, seqLen * configuration.embeddingLength());
+        if (LLM.TRACE) LLM.traceSum("l_out-" + l, state.residual, seqLen * configuration.embeddingLength());
     }
 
     /** Pre-norm attention: per-head Q/K RMS-norm + RoPE, ring-SWA or full causal attention (the QK scale
      *  is folded into the Q-norm), output projection, post-norm, added back to the residual. K/V land in
      *  the chunk buffer (committed to the ring by {@link #commitKv}); shared-KV tail layers reuse an
      *  earlier layer's cache, so they project Q only. */
-    private void attention(State state, int l, int startPos, int seqLen) {
+    private void attention(State state, int l, int startPos, int seqLen, boolean nonCausal) {
         Configuration config = configuration;
         int dim = config.embeddingLength();
         float eps = config.rmsNormEps();
@@ -505,7 +513,7 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
         // Batched causal attention (scale = 1.0): flash/tiled for prefill, simple 2-pass for decode
         // (a single query doesn't amortize the flash tiling/rescales).
         if (seqLen > 1) {
-            flashAttention(state, l, startPos, seqLen, headSize, kvDim, queryDim, kvLayer, kvMul, swa);
+            flashAttention(state, l, startPos, seqLen, headSize, kvDim, queryDim, kvLayer, kvMul, swa, nonCausal);
         } else {
             decodeAttention(state, l, startPos, headSize, kvDim, queryDim, kvLayer, kvMul, swa);
         }
@@ -591,13 +599,13 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
      * store linearly. The batch K/V buffer is stride {@code kvDim}.
      */
     private void flashAttention(State state, int layer, int startPos, int seqLen,
-                               int headSize, int kvDim, int queryDim, int kvLayer, int kvMul, boolean isSWA) {
+                               int headSize, int kvDim, int queryDim, int kvLayer, int kvMul, boolean isSWA, boolean nonCausal) {
         int window = isSWA ? configuration.slidingWindow() : 0;
         int ringMask = isSWA ? configuration.slidingWindow() - 1 : 0;
         FlashAttention.slidingWindowPrefill(state.query, state.xbK,
                 state.keyCache[kvLayer], state.valueCache[kvLayer], state.batchK[kvLayer], state.batchV[kvLayer],
                 configuration.numberOfHeads(), startPos, seqLen, headSize, kvDim, queryDim, kvDim, kvMul,
-                1.0f, window, ringMask, null);
+                1.0f, window, ringMask, null, nonCausal);
     }
 
     /** Rolling (online-softmax) causal/windowed attention for one query (decode), scale = 1.0:
@@ -695,6 +703,36 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
         }
     }
 
+    /** Multimodal load: the text model plus the paired vision encoder from an mmproj GGUF, which enables the
+     *  image {@link Embedder} ({@link #modalities()} then contains {@link Media.Image}). */
+    public static Gemma4 loadModel(Path textGguf, Path mmprojGguf, int maxContextLength) throws IOException {
+        Gemma4 model = loadModel(textGguf, maxContextLength);
+        model.vision = loadVision(mmprojGguf);
+        model.audio = loadAudio(mmprojGguf);
+        return model;
+    }
+
+    /** Pick the image encoder that matches the mmproj's projector_type: {@code gemma4uv} -> the minimal
+     *  {@link Gemma4VisionUnified} (12b), otherwise the full-ViT {@link Gemma4Vision} (E2B/gemma4v). */
+    private static Embedder<Media.Image> loadVision(Path mmprojGguf) throws IOException {
+        String type;
+        try (FileChannel fc = FileChannel.open(mmprojGguf, StandardOpenOption.READ)) {
+            type = ModelLoader.readGguf(fc, mmprojGguf.toString()).getStringOrDefault("clip.vision.projector_type", "");
+        }
+        if (type.isEmpty()) return null;   // audio-only mmproj: no vision adapter
+        return "gemma4uv".equals(type) ? Gemma4VisionUnified.loadModel(mmprojGguf) : Gemma4Vision.loadModel(mmprojGguf);
+    }
+
+    /** Load the audio encoder if the mmproj carries a {@code gemma4ua} adapter ({@link Gemma4Audio}); else null.
+     *  (The E2B {@code gemma4a} conformer is a different, unimplemented projector, so only gemma4ua matches.) */
+    private static Embedder<Media.Audio> loadAudio(Path mmprojGguf) throws IOException {
+        String type;
+        try (FileChannel fc = FileChannel.open(mmprojGguf, StandardOpenOption.READ)) {
+            type = ModelLoader.readGguf(fc, mmprojGguf.toString()).getStringOrDefault("clip.audio.projector_type", "");
+        }
+        return "gemma4ua".equals(type) ? Gemma4Audio.loadModel(mmprojGguf) : null;
+    }
+
     static Gemma4 loadModel(FileChannel fileChannel, GGUF gguf, int maxContextLength, boolean loadWeightsFlag) throws IOException {
         LFMTokenizer tokenizer = new LFMTokenizer(gguf);
 
@@ -780,11 +818,11 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
 
     static Weights loadWeights(Map<String, GGMLTensorEntry> tensors, Configuration config) {
         int n = config.numberOfLayers();
-        Pair<float[], float[]> ropeSwa = RoPE.precomputeFreqsCis(config.maxContextLength(), config.headSizeSWA(), config.ropeThetaSWA());
+        Pair<float[], float[]> ropeSwa = RoPE.precomputeFreqsCis(config.contextLength(), config.headSizeSWA(), config.ropeThetaSWA());
         float[] freqs = ModelLoader.ropeFreqFactors(tensors);
         Pair<float[], float[]> ropeFull = freqs != null
-                ? RoPE.precomputeFreqsCisFromFreqs(config.maxContextLength(), config.headSizeFull(), config.ropeThetaFull(), freqs)
-                : RoPE.precomputeFreqsCis(config.maxContextLength(), config.headSizeFull(), config.ropeThetaFull());
+                ? RoPE.precomputeFreqsCisFromFreqs(config.contextLength(), config.headSizeFull(), config.ropeThetaFull(), freqs)
+                : RoPE.precomputeFreqsCis(config.contextLength(), config.headSizeFull(), config.ropeThetaFull());
 
         FloatTensor tokenEmbeddings = ModelLoader.loadQuantized(tensors.get("token_embd.weight"));
 

@@ -42,8 +42,8 @@ public final class PrefillDeterminism {
         float[] ref = null;
         double maxAbs = 0; int argIdx = -1;
         for (int r = 0; r < reps; r++) {
-            Gemma4.State s = model.newState(c.maxContextLength(), Math.max(16, ids.length));
-            model.ingest(s, Batch.prefill(ids));
+            Gemma4.State s = model.newState(c.contextLength(), Math.max(16, ids.length));
+            model.ingest(s, com.qxotic.jinfer.Batch.prefill(ids));
             FloatTensor logits = model.logits(s);
             float[] snap = new float[vocab];
             for (int i = 0; i < vocab; i++) snap[i] = logits.getFloat(i);

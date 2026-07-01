@@ -21,7 +21,7 @@ public final class GemmaRun {
         Gemma4 model = Gemma4.loadModel(Path.of(path), 4096);
         var c = model.config();
         System.err.printf("config: dim=%d layers=%d heads=%d vocab=%d ctx=%d ownKv=%d plDim=%d%n",
-                c.embeddingLength(), c.numberOfLayers(), c.numberOfHeads(), c.vocabularySize(), c.maxContextLength(),
+                c.embeddingLength(), c.numberOfLayers(), c.numberOfHeads(), c.vocabularySize(), c.contextLength(),
                 c.ownKvLayers(), c.embeddingLengthPerLayer());
 
         var tk = model.tokenizer();
@@ -32,24 +32,24 @@ public final class GemmaRun {
         int[] ids = promptTokens.stream().mapToInt(Integer::intValue).toArray();
         System.err.println("prompt tokens: " + promptTokens);
 
-        int cap = contextCapacity > 0 ? contextCapacity : c.maxContextLength();
+        int cap = contextCapacity > 0 ? contextCapacity : c.contextLength();
         Gemma4.State s = model.newState(cap, Math.max(16, ids.length));
         System.err.println("contextCapacity=" + cap);
         long t0 = System.nanoTime();
         if (System.getenv("STEP_PREFILL") != null) {            // ingest the prompt one token at a time
-            for (int id : ids) model.ingest(s, Batch.step(id));
+            for (int id : ids) model.ingest(s, com.qxotic.jinfer.Batch.step(id));
         } else {
-            model.ingest(s, Batch.prefill(ids));
+            model.ingest(s, com.qxotic.jinfer.Batch.prefill(ids));
         }
 
         Set<Integer> stops = model.stopTokens();
         StringBuilder out = new StringBuilder();
-        int tok = argmax(model.logits(s), c.vocabularySize());
+        int tok = LLM.argmax(model.logits(s), c.vocabularySize());
         int n = 0;
         for (; n < nTokens && !stops.contains(tok); n++) {
             out.append(tk.decode(tok));
-            model.ingest(s, Batch.step(tok));
-            tok = argmax(model.logits(s), c.vocabularySize());
+            model.ingest(s, com.qxotic.jinfer.Batch.step(tok));
+            tok = LLM.argmax(model.logits(s), c.vocabularySize());
         }
         double secs = (System.nanoTime() - t0) / 1e9;
 
@@ -58,9 +58,4 @@ public final class GemmaRun {
         System.err.printf("%n%.2f tok/s (%d tokens)%n", n / secs, n);
     }
 
-    static int argmax(FloatTensor t, int n) {
-        int best = 0;
-        for (int i = 1; i < n; i++) if (t.getFloat(i) > t.getFloat(best)) best = i;
-        return best;
-    }
 }
