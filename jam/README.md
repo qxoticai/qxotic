@@ -8,8 +8,8 @@
 **JVM Accelerated Math** (or, jokingly, *just a matmul*). Fast quantized matrix multiplication for CPUs,
 from Java or C.
 
-jam supports Linux, Windows, and macOS, across many instruction sets including AVX256, AVX512, VNNI, NEON,
-and even Metal.
+jam supports Linux, Windows, and macOS, across many instruction sets — SSE3 through AVX-512-VNNI on x86,
+NEON / DotProd / I8MM on ARM, and even Metal on Apple GPUs.
 
 ---
 
@@ -23,8 +23,8 @@ and even Metal.
 - **No conversions.** Weights stay in their quantized format, byte-compatible with llama.cpp's `mul_mat`,
   so a `.gguf` tensor can be passed directly.
 - **Single JAR, no Java dependencies.** It auto-extracts and loads the `jam` native library for the current
-  OS/arch at runtime (override with `-Djam.native.library.path` or `JAM_NATIVE_LIBRARY_PATH`). Which OS/arch builds ship
-  depends on the available native toolchains.
+  OS/arch at runtime (override with `-Djam.native.library.path` / `JAM_NATIVE_LIBRARY_PATH`); which OS/arch
+  builds ship depends on the available native toolchains.
 
 ---
 
@@ -58,8 +58,10 @@ int s2 = jam.mm(w, wOff, JAM.Q8_0, k,   // weight: segment, byte offset, dtype, 
                 m, n, k);
 ```
 
-`JAM` is a minimal interface; `NativeJAM` is the libjam backend. Implement `JAM` to add another backend,
-such as a Vector API one.
+`JAM` is a minimal interface with three implementations that ship in their own modules: **`NativeJAM`**
+(`jam-native`, the libjam backend — the default), **`VectorJAM`** (`jam-vector`, a pure-Java SIMD backend
+on the Java Vector API), and **`ScalarJAM`** (`jam-scalar`, a portable Java reference). Implement `JAM` to
+add your own.
 
 Supported quantizations include `Q4_0`, `Q8_0`, `Q4_K`, `Q5_K`, `Q6_K`, `MXFP4`, and `NVFP4`, plus dense
 `F32`/`F16`/`BF16`. Activations and result are always `F32`. The operands must be **native** segments, not
@@ -73,12 +75,31 @@ jam detects the CPU and uses the best available kernel. Cap it with `JAM_ISA` or
 
 | arch | ISA ladder | Q8_0 dot |
 |---|---|---|
-| x86 | `sse3` → `avx2` → `avx_vnni` → `avx512` → `avx512_vnni` | `vpdpbusd` (256/512-bit) |
+| x86 | `sse3` → `ssse3` → `avx2` → `avx_vnni` → `avx512` → `avx512_vnni` | `vpdpbusd` (256/512-bit) |
 | ARM | `neon` → `dotprod` → `i8mm` | `sdot` / `smmla` |
 | GPU | `metal` (Apple, opt-in) | MSL compute |
 
 `JAM_ISA=auto` (the default) picks the best; `JAM_ISA=metal` runs on the Apple GPU. SVE, AMX, and SME are
 not yet implemented.
+
+---
+
+## Performance
+
+jam holds its own against — and on its native AVX-512-VNNI path often **beats** — llama.cpp's hand-tuned CPU
+kernels, at matched ISA. Prefill throughput (`pp512`, `R = W @ Aᵀ`), Llama-3.2-1B, 16 threads, Ryzen 9
+9950X3D (Zen 5):
+
+![jam vs llama.cpp prefill on AVX-512-VNNI](docs/bench-avx512.png)
+
+On its flagship VNNI tier jam wins four of five weight types — Q5_K by **2.2×**, Q6_K by **1.4×** — and the
+*same* int8 kernels span the whole x86 ladder, from the pre-AVX2 floor up to AVX-512:
+
+![jam ÷ llama.cpp across ISA tiers](docs/bench-ratio.png)
+
+The sub-parity bars are the pre-VNNI Q4_0/Q8_0, where the int8 dot has no `vpdpbusd` to lean on; on the
+k-quants jam is at or above parity at every tier. Numbers are one machine / one model — run `jam_bench` and
+your own `pp512` to measure your hardware.
 
 ---
 
@@ -116,12 +137,12 @@ mvn package      # -> dist/jam.jar  (native lib built for you)
 mvn test         # configure + build + JUnit
 ```
 
-**Or run cmake directly:**
+**Or build just the native library with cmake** (no JVM — for the C API, or to pre-stage `dist/native/`
+for a `-Djam.native.skip=true` jar build):
 
 ```sh
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build           # -> build/libjam.so, staged into dist/native/
-./scripts/build-jar.sh        # -> dist/jam.jar
 ```
 
 Flags: `-DJAM_METAL=OFF` (no Metal), `-DJAM_JNI=OFF` (C only), `-DJAM_TESTS=OFF`, `-DJAM_STRIP=ON`.
