@@ -16,8 +16,13 @@ public final class Qwen3EmbedRun {
         var tk = model.tokenizer();
 
         int[] ids;
+        int synth = Integer.getInteger("synth", 0);
         String tokprop = System.getProperty("tokens");
-        if (tokprop != null && !tokprop.isBlank()) {
+        if (synth > 0) {                                  // -Dsynth=N synthetic tokens, for prefill benchmarking
+            int vocab = model.config().vocabularySize();
+            ids = new int[synth];
+            for (int i = 0; i < synth; i++) ids[i] = (i * 17 + 1) % vocab;
+        } else if (tokprop != null && !tokprop.isBlank()) {
             ids = Arrays.stream(tokprop.split(",")).map(String::trim).mapToInt(Integer::parseInt).toArray();
         } else {
             String text = args.length > 1 ? args[1] : "The quick brown fox jumps over the lazy dog.";
@@ -29,12 +34,30 @@ public final class Qwen3EmbedRun {
 
         int warm = Integer.getInteger("warm", 0);
         for (int i = 0; i < warm; i++) {
-            var w = model.newState(ctx, Math.max(16, ids.length));
+            var w = model.newState(Math.max(16, ids.length), Math.max(16, ids.length));
             model.ingest(w, Batch.prefill(ids));
             model.embedding(w);
         }
 
-        var s = model.newState(ctx, Math.max(16, ids.length));
+        int bench = Integer.getInteger("bench", 0);
+        if (bench > 0) {                                  // -Dbench=N: time N warm passes, report prefill throughput
+            int scap = Math.max(16, ids.length);
+            boolean reuse = Boolean.getBoolean("reuse");  // -Dreuse: reuse one state (reset position) vs alloc per embed
+            var rs = reuse ? model.newState(scap, scap) : null;
+            long t0 = System.nanoTime();
+            for (int i = 0; i < bench; i++) {
+                var b = reuse ? rs : model.newState(scap, scap);
+                if (reuse) b.position = 0;                 // reset the cursor; the prefill overwrites the KV ring
+                model.ingest(b, Batch.prefill(ids));
+                model.embedding(b);
+            }
+            double msPer = (System.nanoTime() - t0) / 1e6 / bench;
+            System.err.printf("bench: %d tokens  %.3f ms/embed  %.1f tok/s  (warm=%d reps=%d reuse=%b)%n",
+                    ids.length, msPer, ids.length * 1000.0 / msPer, warm, bench, reuse);
+            return;
+        }
+
+        var s = model.newState(Math.max(16, ids.length), Math.max(16, ids.length));
         model.ingest(s, Batch.prefill(ids));
         FloatTensor emb = model.embedding(s);
         int dim = model.config().embeddingLength();
