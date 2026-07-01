@@ -16,7 +16,7 @@ public final class Norms {
     /** RMS normalization: {@code out = weight * x / sqrt(mean(x^2) + eps)} over {@code size}
      *  contiguous lanes. F32 tensors take an explicit Vector API path (scalar segment loops do not
      *  auto-vectorize); everything else falls through to the scalar loop. */
-    public static void rmsnorm(FloatTensor out, int outOffset, FloatTensor x, int xOffset, F32FloatTensor weight, int size, float rmsNormEps) {
+    public static void rmsnorm(FloatTensor out, long outOffset, FloatTensor x, long xOffset, F32FloatTensor weight, int size, float rmsNormEps) {
         if (out instanceof F32FloatTensor outF32 && x instanceof F32FloatTensor xF32 && FloatTensor.USE_VECTOR_API) {
             // All lanes load via (vseg, vbase): with GLOBAL_SEGMENT every fromMemorySegment call
             // site sees a single segment implementation type, which native-image AOT requires.
@@ -68,7 +68,7 @@ public final class Norms {
     /** Sum of squares of {@code size} contiguous lanes from {@code xOffset}. Vectorized for F32 (same
      *  fma accumulation + scalar tail as {@link #rmsnorm}, so a caller can derive the rms scale once and
      *  share it across several normalizations of the same row instead of recomputing the reduction). */
-    public static float sumOfSquares(FloatTensor x, int xOffset, int size) {
+    public static float sumOfSquares(FloatTensor x, long xOffset, int size) {
         if (x instanceof F32FloatTensor xF32 && FloatTensor.USE_VECTOR_API) {
             var species = FloatTensor.F_SPECIES;
             int upperBound = species.loopBound(size);
@@ -89,7 +89,7 @@ public final class Norms {
 
     /** {@code out = weight * scale * x} over {@code size} lanes — the apply half of {@link #rmsnorm}
      *  with a caller-supplied {@code scale} (e.g. a shared {@code 1/rms}). Vectorized for F32. */
-    public static void scaleByWeight(FloatTensor out, int outOffset, FloatTensor x, int xOffset, F32FloatTensor weight, int size, float scale) {
+    public static void scaleByWeight(FloatTensor out, long outOffset, FloatTensor x, long xOffset, F32FloatTensor weight, int size, float scale) {
         if (out instanceof F32FloatTensor outF32 && x instanceof F32FloatTensor xF32 && FloatTensor.USE_VECTOR_API) {
             var species = FloatTensor.F_SPECIES;
             int upperBound = species.loopBound(size);
@@ -107,7 +107,7 @@ public final class Norms {
     }
 
     /** Bare RMS norm (normalize to unit RMS, no learned weights) — e.g. Gemma's V norm. */
-    public static void rmsnormNoWeight(FloatTensor out, int outOffset, FloatTensor x, int xOffset, int size, float eps) {
+    public static void rmsnormNoWeight(FloatTensor out, long outOffset, FloatTensor x, long xOffset, int size, float eps) {
         float ss = 0f;
         for (int i = 0; i < size; i++) {
             float xi = x.getFloat(xOffset + i);

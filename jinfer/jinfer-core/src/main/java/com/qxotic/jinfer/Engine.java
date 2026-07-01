@@ -81,7 +81,7 @@ final class Engine {
      * completion budget. Timing uses the prefill/decode boundary reported by the loop
      * ({@code afterPrefill}); cached-prefix counts are captured from the hooks' resume position.
      */
-    static GenerationResult generate(Model model, InferenceState state, int startPosition, List<Integer> promptTokens,
+    static GenerationResult generate(ModelLegacy model, InferenceState state, int startPosition, List<Integer> promptTokens,
                                      Params params, Listener listener, GenerationHooks hooks) {
         LFMTokenizer tokenizer = model.tokenizer();
         int contextLength = model.contextLength();
@@ -209,12 +209,12 @@ final class Engine {
 
     /**
      * The generation loop — prefill and decode are one operation: ingest the pending span of the
-     * token stream. The prompt is pending up front (chunked by {@link Model#batchCapacity()});
+     * token stream. The prompt is pending up front (chunked by {@link ModelLegacy#batchCapacity()});
      * decode appends one sampled token at a time and ingests it through the identical path.
      * {@code maxTokens} is a total-position limit; stop tokens are recorded but never ingested; an
      * empty prompt samples directly from the current logits (multi-turn continuation).
      */
-    static List<Integer> decodeLoop(Model model, InferenceState state, int startPosition, List<Integer> promptTokens,
+    static List<Integer> decodeLoop(ModelLegacy model, InferenceState state, int startPosition, List<Integer> promptTokens,
                                     Set<Integer> stopTokens, int maxTokens, Sampler sampler,
                                     IntPredicate onTokenGenerated, GenerationHooks hooks) {
         int contextLength = model.contextLength();
@@ -285,7 +285,7 @@ final class Engine {
     }
 
     /** {@link Sampler#select} plus the think-token ban when thinking is disabled. */
-    static Sampler configuredSampler(Model model, boolean think, float temperature, float topp, long seed) {
+    static Sampler configuredSampler(ModelLegacy model, boolean think, float temperature, float topp, long seed) {
         require(Float.isFinite(temperature) && 0 <= temperature, "Invalid argument: temperature must be a finite non-negative number");
         require(Float.isFinite(topp) && 0 <= topp && topp <= 1, "Invalid argument: top_p must be within [0, 1]");
         Sampler sampler = Sampler.select(model.vocabularySize(), temperature, topp, seed);

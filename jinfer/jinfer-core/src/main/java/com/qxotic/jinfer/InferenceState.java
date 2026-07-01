@@ -3,7 +3,7 @@
 // advance the most recently ingested token.
 package com.qxotic.jinfer;
 
-/** Mutable per-sequence state produced by {@link Model#createNewState()}. */
+/** Mutable per-sequence state produced by {@link ModelLegacy#createNewState()}. */
 interface InferenceState {
 
     /** The most recently ingested token (BOS on a fresh state). */

@@ -93,6 +93,26 @@ public final class F32FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
+    public FloatTensor clampInPlace(long thisOffset, int size, float lo, float hi) {
+        if (USE_VECTOR_API) {
+            FloatVector vlo = FloatVector.broadcast(F_SPECIES, lo), vhi = FloatVector.broadcast(F_SPECIES, hi);
+            int upperBound = F_SPECIES.loopBound(size);
+            int i = 0;
+            for (; i < upperBound; i += F_SPECIES.length()) {
+                long b = vbase + (long) (thisOffset + i) * Float.BYTES;
+                var v = FloatVector.fromMemorySegment(F_SPECIES, vseg, b, ByteOrder.LITTLE_ENDIAN);
+                v.max(vlo).min(vhi).intoMemorySegment(vseg, b, ByteOrder.LITTLE_ENDIAN);
+            }
+            for (; i < size; i++) {
+                float v = getFloat(thisOffset + i);
+                setFloat(thisOffset + i, v < lo ? lo : v > hi ? hi : v);
+            }
+            return this;
+        }
+        return super.clampInPlace(thisOffset, size, lo, hi);
+    }
+
+    @Override
     public FloatTensor addInPlace(long thisOffset, FloatTensor that, long thatOffset, int size) {
         if (that instanceof F32FloatTensor f32 && USE_VECTOR_API) {
             int upperBound = F_SPECIES.loopBound(size);
@@ -111,7 +131,7 @@ public final class F32FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
-    FloatTensor saxpyInPlace(long thisOffset, FloatTensor that, long thatOffset, int size, float a) {
+    public FloatTensor saxpyInPlace(long thisOffset, FloatTensor that, long thatOffset, int size, float a) {
         if (that instanceof F16FloatTensor f16 && USE_VECTOR_API) {
             FloatVector va = FloatVector.broadcast(F_SPECIES, a);
             int upperBound = F_SPECIES.loopBound(size);

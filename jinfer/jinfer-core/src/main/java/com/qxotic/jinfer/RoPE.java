@@ -26,7 +26,7 @@ public final class RoPE {
     /** Rotate-half (NEOX) RoPE over one head: pairs dim {@code i} with {@code i+ropeHalf} (the
      *  {@code (i, i+ropeHalf)} layout HF/gpt-oss apply directly, no conversion-time permutation).
      *  Same cos/sin table layout as {@link #applyInterleaved} (stride {@code ropeHalf}). */
-    public static void applyNeox(FloatTensor q, int headOffset, int position, float[] cr, float[] ci, int ropeHalf) {
+    public static void applyNeox(FloatTensor q, long headOffset, int position, float[] cr, float[] ci, int ropeHalf) {
         int base = position * ropeHalf;
         for (int i = 0; i < ropeHalf; i++) {
             float fcr = cr[base + i];
@@ -41,10 +41,10 @@ public final class RoPE {
     /** Rotate-half (NEOX) RoPE over {@code nHeads} consecutive heads of {@code headSize} each, with
      *  the cos/sin table held in native F32 tensors (the layout Llama/Gemma keep). Bit-identical to
      *  {@link #applyNeox(FloatTensor, int, int, float[], float[], int)} per head. */
-    public static void applyNeox(FloatTensor tensor, int offset, int nHeads, int headSize, int halfHead, int position,
+    public static void applyNeox(FloatTensor tensor, long offset, int nHeads, int headSize, int halfHead, int position,
                           F32FloatTensor cr, F32FloatTensor ci) {
         for (int h = 0; h < nHeads; h++) {
-            int poffset = offset + h * headSize;
+            long poffset = offset + (long) h * headSize;
             for (int i = 0; i < halfHead; i++) {
                 float fcr = cr.getFloat(position * halfHead + i);
                 float fci = ci.getFloat(position * halfHead + i);

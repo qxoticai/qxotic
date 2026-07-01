@@ -65,6 +65,13 @@ public final class Activations {
         for (int i = 0; i < n; i++) gate.setFloat(gateOff + i, gelu(gate.getFloat(gateOff + i)) * up.getFloat(upOff + i));
     }
 
+    /** Fused {@code gate[i] = silu(gate[i]) * up[i]} over {@code n} elements (SwiGLU), the SiLU-gated
+     *  counterpart of {@link #geluMultiply} — delegates to the vectorized {@code siluMultiplyInPlace}.
+     *  Public so {@code com.qxotic.llm} ports (e.g. LFM2.5) can use it without the package-private method. */
+    public static void siluMultiply(FloatTensor gate, int gateOff, FloatTensor up, int upOff, int n) {
+        gate.siluMultiplyInPlace(gateOff, up, upOff, n);
+    }
+
     /** In-place logit soft-cap {@code x = cap * tanh(x / cap)} over {@code n} elements (no-op when
      *  {@code cap <= 0}) — vectorized for F32 tensors. */
     public static void softcap(FloatTensor t, int off, int n, float cap) {
