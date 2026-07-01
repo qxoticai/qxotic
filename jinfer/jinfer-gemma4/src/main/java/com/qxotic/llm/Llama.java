@@ -75,7 +75,8 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         int dim = configuration.embeddingLength;
         int row = s.lastChunkLen - s.outputCount + output;
         return Parallel.onDecodePool(() -> {
-            rmsnorm(s.xb, 0, s.x, (long) row * dim, weights.outputNorm, dim, configuration.rmsNormEps);
+            tailAt(s, row);   // finish the deferred last-layer tail for this row -> s.th (s.x stays read-only)
+            rmsnorm(s.xb, 0, s.th, 0, weights.outputNorm, dim, configuration.rmsNormEps);
             weights.outputWeight.matmul(s.xb, s.logits, configuration.vocabularySize, dim);
             float ls = configuration.logitScale;
             if (ls != 1.0f) s.logits.mapInPlace(0, configuration.vocabularySize, v -> v / ls);
@@ -121,17 +122,84 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         }
         if (embScale != 1.0f) state.x.mapInPlace(0, seqLen * dim, v -> v * embScale);
 
-        for (int l = 0; l < config.numberOfLayers; l++) {
-            int fDim = dim;
+        int lastLayer = config.numberOfLayers - 1;
+        for (int l = 0; l < lastLayer; l++) {
             F32FloatTensor attNormW = w.attnNorm[l], ffnNormW = w.ffnNorm[l];
-            Parallel.forRows(seqLen, s -> rmsnorm(state.xb, (long) s * fDim, state.x, (long) s * fDim, attNormW, fDim, eps));
+            Parallel.forRows(seqLen, s -> rmsnorm(state.xb, (long) s * dim, state.x, (long) s * dim, attNormW, dim, eps));
             attention(state, l, startPos, seqLen);
             LLM.addScaled(state.x, state.xb, seqLen * dim, residScale);
-            Parallel.forRows(seqLen, s -> rmsnorm(state.xb, (long) s * fDim, state.x, (long) s * fDim, ffnNormW, fDim, eps));
-            feedForward(state, l, seqLen);
+            Parallel.forRows(seqLen, s -> rmsnorm(state.xb, (long) s * dim, state.x, (long) s * dim, ffnNormW, dim, eps));
+            feedForward(state, l, state.xb, seqLen);
             LLM.addScaled(state.x, state.xb, seqLen * dim, residScale);
             if (LLM.TRACE) LLM.traceSum("l_out-" + l, state.x, seqLen * dim);
         }
+        // Lazy last-layer split: write every row's K/V into the cache (so any row can attend later), but
+        // DEFER the attention + FFN tail. state.x is left as the last-layer INPUT residual; a query
+        // finishes exactly the rows it asks for via tailAt() in logits(). Prefill pays nothing
+        // for the tail here; the saving is the last layer's attention+FFN skipped for every un-queried row.
+        writeKv(state, lastLayer, startPos, seqLen);
+    }
+
+    /** Commit this chunk's F32 K/V (state.k/v) into the F16 cache at [startPos, startPos+seqLen). */
+    private void commitKv(State state, int l, int startPos, int seqLen) {
+        int kvDim = configuration.kvDim();
+        FloatTensor keyCache = state.keyCache[l], valueCache = state.valueCache[l];
+        for (int s = 0; s < seqLen; s++) {
+            state.k.copyTo((long) s * kvDim, keyCache, (long) (startPos + s) * kvDim, kvDim);
+            state.v.copyTo((long) s * kvDim, valueCache, (long) (startPos + s) * kvDim, kvDim);
+        }
+    }
+
+    /** Last-layer K/V half: pre-norm all rows, project + RoPE (NoPE-aware) K, and commit K/V to the cache.
+     *  No Q, no attention, no O, no FFN - and state.x is left untouched (the last-layer input residual). */
+    private void writeKv(State state, int l, int startPos, int seqLen) {
+        Configuration config = configuration;
+        Weights w = weights;
+        int dim = config.embeddingLength, kvDim = config.kvDim(), headSize = config.headSize;
+        int kvHeads = config.numberOfKeyValueHeads, ropeHalf = config.ropeHalf();
+        float eps = config.rmsNormEps;
+        F32FloatTensor attNormW = w.attnNorm[l];
+        Parallel.forRows(seqLen, s -> rmsnorm(state.xb, (long) s * dim, state.x, (long) s * dim, attNormW, dim, eps));
+        w.wk[l].gemm(state.xb, dim, state.k, kvDim, seqLen, kvDim, dim);
+        w.wv[l].gemm(state.xb, dim, state.v, kvDim, seqLen, kvDim, dim);
+        if (config.useRope(l)) {
+            Parallel.forRows(seqLen, s -> {
+                for (int h = 0; h < kvHeads; h++) LLM.ropeInterleaved(state.k, s * kvDim + h * headSize, startPos + s, w.ropeCr, w.ropeCi, ropeHalf);
+            });
+        }
+        commitKv(state, l, startPos, seqLen);   // the tail reads every row (incl. its own) from the F16 cache
+    }
+
+    /** Lazy tail: finish the last layer for retained chunk-row {@code i} into state.th, reading its input
+     *  from state.x[i] and attending cache[0..pos] inclusive - a single causal query aimed at row i (its own
+     *  K/V is already in the F16 cache from writeKv, read like any other position). state.x is never written. */
+    private void tailAt(State state, int i) {
+        Configuration config = configuration;
+        Weights w = weights;
+        int L = config.numberOfLayers - 1;
+        int dim = config.embeddingLength, kvDim = config.kvDim(), queryDim = config.queryDim();
+        int heads = config.numberOfHeads, headSize = config.headSize, kvMul = heads / config.numberOfKeyValueHeads;
+        int ropeHalf = config.ropeHalf();
+        float eps = config.rmsNormEps, residScale = config.residualScale, attScale = config.attentionScale();
+        int startPos = state.position - state.lastChunkLen;   // global position of chunk row 0
+        int pos = startPos + i;                                // global position of row i
+
+        rmsnorm(state.tscratch, 0, state.x, (long) i * dim, w.attnNorm[L], dim, eps);   // pre-norm reads s.x[i] directly (read-only)
+        w.wq[L].gemm(state.tscratch, dim, state.attnQ, queryDim, 1, queryDim, dim);   // Q for this row (attnQ is free scratch)
+        if (config.useRope(L)) {
+            for (int h = 0; h < heads; h++) LLM.ropeInterleaved(state.attnQ, h * headSize, pos, w.ropeCr, w.ropeCi, ropeHalf);
+        }
+        float aScale = config.attnTemp(pos);
+        if (aScale != 1.0f) state.attnQ.mapInPlace(0, queryDim, v -> v * aScale);
+        // Single causal query over cache[0..pos] INCLUSIVE (bK/bV = null): row i's own K/V is already in the
+        // F16 cache from writeKv, read like every other position - no separate current-token buffer.
+        FlashAttention.flashDecode((F32FloatTensor) state.attnQ, (F32FloatTensor) state.attnOut,
+                state.keyCache[L], state.valueCache[L], null, null, heads, pos, 0, headSize, kvDim, kvMul, attScale, 0, null, state.decodeScratch);
+        w.wo[L].gemm(state.attnOut, queryDim, state.tscratch, dim, 1, dim, queryDim);   // O -> tscratch
+        LLM.addScaledInto(state.th, state.x, (long) i * dim, state.tscratch, dim, residScale);   // th = s.x[i] + residScale*O (born, no seed copy)
+        rmsnorm(state.tscratch, 0, state.th, 0, w.ffnNorm[L], dim, eps);
+        feedForward(state, L, state.tscratch, 1);                                        // SwiGLU (one row, in place on tscratch)
+        LLM.addScaled(state.th, state.tscratch, dim, residScale);                        // FFN residual -> state.th finished
     }
 
     /** Standard RoPE GQA attention: Q/K/V projections, per-row interleaved RoPE (+ optional attn-temp),
@@ -173,23 +241,20 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
             FlashAttention.slidingWindowPrefill(state.attnQ, state.attnOut,
                     keyCache, valueCache, state.k, state.v, heads, startPos, seqLen, headSize, kvDim, queryDim, kvDim, kvMul, attScale, 0, 0, null);
         }
-        for (int s = 0; s < seqLen; s++) {   // commit this chunk's K/V to the cache for later positions
-            state.k.copyTo((long) s * kvDim, keyCache, (long) (startPos + s) * kvDim, kvDim);
-            state.v.copyTo((long) s * kvDim, valueCache, (long) (startPos + s) * kvDim, kvDim);
-        }
+        commitKv(state, layer, startPos, seqLen);   // commit this chunk's K/V to the cache for later positions
         w.wo[layer].gemm(state.attnOut, queryDim, state.xb, dim, seqLen, dim, queryDim);
     }
 
 
 
-    /** Dense SwiGLU FFN over the pre-normed rows in {@code state.xb}, written back to {@code state.xb}. */
-    private void feedForward(State state, int l, int seqLen) {
+    /** Dense SwiGLU FFN over the pre-normed rows in {@code io}, written back to {@code io} in place. */
+    private void feedForward(State state, int l, FloatTensor io, int seqLen) {
         int dim = configuration.embeddingLength, hiddenDim = configuration.hiddenDim;
         Weights w = weights;
-        w.w1[l].gemm(state.xb, dim, state.hb, hiddenDim, seqLen, hiddenDim, dim);     // gate
-        w.w3[l].gemm(state.xb, dim, state.hb2, hiddenDim, seqLen, hiddenDim, dim);    // up
+        w.w1[l].gemm(io, dim, state.hb, hiddenDim, seqLen, hiddenDim, dim);     // gate
+        w.w3[l].gemm(io, dim, state.hb2, hiddenDim, seqLen, hiddenDim, dim);    // up
         Parallel.forRows(seqLen, s -> Activations.siluMultiply(state.hb, s * hiddenDim, state.hb2, s * hiddenDim, hiddenDim));
-        w.w2[l].gemm(state.hb, hiddenDim, state.xb, dim, seqLen, dim, hiddenDim);     // down
+        w.w2[l].gemm(state.hb, hiddenDim, io, dim, seqLen, dim, hiddenDim);     // down
     }
 
     // === Configuration ===
@@ -232,6 +297,9 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         final int contextCapacity, batchCapacity;
         int position, outputCount, lastChunkLen;
         final FloatTensor x, xb, k, v, attnQ, attnOut, hb, hb2, logits;
+        // Lazy last-layer tail: single-row scratch, kept DISTINCT from the batch buffers so x/k/v stay
+        // read-only across queries (any retained row can be finished, in any order, repeatedly).
+        final FloatTensor th, tscratch;
         final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch();
         final FloatTensor[] keyCache, valueCache;
 
@@ -256,6 +324,8 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
             this.hb = FloatTensor.allocateF32(c * hidden);
             this.hb2 = FloatTensor.allocateF32(c * hidden);
             this.logits = FloatTensor.allocateF32(config.vocabularySize);
+            this.th = FloatTensor.allocateF32(dim);
+            this.tscratch = FloatTensor.allocateF32(dim);
             this.keyCache = new FloatTensor[config.numberOfLayers];
             this.valueCache = new FloatTensor[config.numberOfLayers];
             for (int l = 0; l < config.numberOfLayers; l++) {
