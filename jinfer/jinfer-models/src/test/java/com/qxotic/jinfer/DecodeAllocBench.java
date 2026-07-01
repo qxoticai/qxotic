@@ -44,7 +44,7 @@ public final class DecodeAllocBench {
         int warmup = args.length > 1 ? Integer.parseInt(args[1]) : 64;
         int measure = args.length > 2 ? Integer.parseInt(args[2]) : 256;
 
-        Model model = ModelLoader.loadModel(path, 4096);
+        ModelLegacy model = ModelLoader.loadModel(path, 4096);
         int vocab = model.vocabularySize();
         InferenceState state = model.createNewState();
 
@@ -58,7 +58,7 @@ public final class DecodeAllocBench {
         // Mirror production: each decode step runs on Parallel.onDecodePool (the physical-core-width pool
         // Engine.decodeLoop uses), so this measures real decode throughput.
         final InferenceState fstate = state;
-        final Model fmodel = model;
+        final ModelLegacy fmodel = model;
         final int[] fone = one;
         final int fvocab = vocab;
         final AtomicInteger stepPos = new AtomicInteger(pos);

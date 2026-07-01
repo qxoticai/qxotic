@@ -19,7 +19,7 @@ import java.util.Arrays;
 import java.util.Optional;
 import java.util.Set;
 
-record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weights) implements Model {
+record Llama(Configuration configuration, LFMTokenizer tokenizer, Weights weights) implements ModelLegacy {
 
     private static void rollingAttentionAccumulate(FloatTensor out, int outOffset, FloatTensor valueCache, int valueOffset,
                                                    int headSize, float oldScale, float scoreScale) {

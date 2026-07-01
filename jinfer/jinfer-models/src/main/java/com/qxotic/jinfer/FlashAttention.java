@@ -211,7 +211,7 @@ public final class FlashAttention {
      * (head, query block). Writes the attention output into {@code out}. Shared by the plain-causal
      * models (Llama3/Nemotron/Qwen3.5); GptOss keeps its own variant for attention sinks + SWA.
      */
-    static void causalPrefill(F32FloatTensor q, F32FloatTensor out, FloatTensor cK, FloatTensor cV,
+    public static void causalPrefill(F32FloatTensor q, F32FloatTensor out, FloatTensor cK, FloatTensor cV,
                               int nHeads, int startPos, int seqLen, int headSize, int kvDim, int queryDim, int kvMul) {
         causalPrefill(q, out, cK, cV, nHeads, startPos, seqLen, headSize, kvDim, queryDim, kvMul,
                 1.0f / (float) Math.sqrt(headSize));
@@ -351,6 +351,33 @@ public final class FlashAttention {
                                      FloatTensor bK, FloatTensor bV, int nHeads, int startPos, int seqLen,
                                      int headSize, int kvDim, int queryStride, int batchKvStride, int kvMul,
                                      float scale, int window, int ringMask, FloatTensor sinks) {
+        prefill(q, out, cK, cV, bK, bV, nHeads, startPos, seqLen, headSize, kvDim, queryStride, batchKvStride,
+                kvMul, scale, window, ringMask, sinks, false);
+    }
+
+    /** Prefix-LM prefill: the chunk attends causally to the cached prefix ({@code startPos} keys) but
+     *  bidirectionally within itself (every chunk row sees every chunk row). Used for gemma multimodal
+     *  image blocks, which the decoder attends to non-causally (mtmd_decode_use_non_causal). */
+    public static void slidingWindowPrefill(FloatTensor q, FloatTensor out, FloatTensor cK, FloatTensor cV,
+                                     FloatTensor bK, FloatTensor bV, int nHeads, int startPos, int seqLen,
+                                     int headSize, int kvDim, int queryStride, int batchKvStride, int kvMul,
+                                     float scale, int window, int ringMask, FloatTensor sinks, boolean bidir) {
+        prefill(q, out, cK, cV, bK, bV, nHeads, startPos, seqLen, headSize, kvDim, queryStride, batchKvStride,
+                kvMul, scale, window, ringMask, sinks, bidir);
+    }
+
+    /** Bidirectional (non-causal) full attention over a single K/V source (e.g. a ViT): every query attends
+     *  to every key. Online-softmax, no materialized score matrix; K/V may be F16. {@code bK}/{@code bV} are
+     *  the keys/values ([seqLen, kvDim]); {@code stride} is the per-row stride of q/out. */
+    public static void bidirectionalPrefill(FloatTensor q, FloatTensor out, FloatTensor bK, FloatTensor bV,
+                                     int nHeads, int seqLen, int headSize, int kvDim, int stride, int kvMul, float scale) {
+        prefill(q, out, bK, bV, bK, bV, nHeads, 0, seqLen, headSize, kvDim, stride, kvDim, kvMul, scale, 0, 0, null, true);
+    }
+
+    private static void prefill(FloatTensor q, FloatTensor out, FloatTensor cK, FloatTensor cV,
+                                     FloatTensor bK, FloatTensor bV, int nHeads, int startPos, int seqLen,
+                                     int headSize, int kvDim, int queryStride, int batchKvStride, int kvMul,
+                                     float scale, int window, int ringMask, FloatTensor sinks, boolean bidir) {
         // ringMask must be all-ones (ringLen a power of two) for `pos & ringMask` to equal `pos % ringLen`;
         // the authoritative fail-fast is the per-model config check (e.g. Llama.Configuration), at model
         // creation time. This guards future ring adopters against a silently-wrong addressing mask.
@@ -380,7 +407,7 @@ public final class FlashAttention {
                 out.fillInPlace((qStart + i) * queryStride + hHead, headSize, 0f);
             }
 
-            int blockMaxQ = startPos + qEnd - 1;
+            int blockMaxQ = bidir ? startPos + seqLen - 1 : startPos + qEnd - 1;   // bidir: every query sees all keys
             for (int kvStart = attStart; kvStart <= blockMaxQ; kvStart += Bc) {
                 int kvEnd = Math.min(seqLen + startPos, kvStart + Bc);
                 int BcRows = kvEnd - kvStart;
@@ -417,7 +444,7 @@ public final class FlashAttention {
                     int rowBase = i * BcRows;
                     for (int j = 0; j < BcRows; j++) {
                         int kvPos = kvStart + j;
-                        if (kvPos > globalQ || kvPos < qAttStart) S[rowBase + j] = Float.NEGATIVE_INFINITY;
+                        if ((!bidir && kvPos > globalQ) || kvPos < qAttStart) S[rowBase + j] = Float.NEGATIVE_INFINITY;
                     }
                 }
 

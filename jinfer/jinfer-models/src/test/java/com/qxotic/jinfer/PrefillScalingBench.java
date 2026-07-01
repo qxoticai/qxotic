@@ -17,7 +17,7 @@ public final class PrefillScalingBench {
         int warmupChunks = args.length > 3 ? Integer.parseInt(args[3]) : 2;
         int ctx = chunk * (nChunks + 1) + 64;
 
-        Model model = ModelLoader.loadModel(path, Math.max(8192, ctx));
+        ModelLegacy model = ModelLoader.loadModel(path, Math.max(8192, ctx));
         if (model instanceof Llama llama) { // LFM-only layer breakdown; other archs just print basics
             Llama.Configuration c = llama.configuration();
             int nConv = 0, nAttn = 0;

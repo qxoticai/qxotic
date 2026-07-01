@@ -24,7 +24,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-final class Nemotron implements Model {
+final class Nemotron implements ModelLegacy {
 
     private final Configuration configuration;
     private final LFMTokenizer tokenizer;
