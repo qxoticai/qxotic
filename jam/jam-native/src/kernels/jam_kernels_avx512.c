@@ -9,6 +9,7 @@
  * thread mnpacks [row_begin,row_end) × [0,n). */
 #include "jam_internal.h"
 #include <stddef.h>
+#include <stdlib.h>
 #include <immintrin.h>
 
 /* Generate gemm_<RM>x<RN>: process every full RM×RN tile in [i0,iend) × [j0,jend). */
@@ -71,12 +72,28 @@ static void mnpack(const float* A, long lda, const float* B, long ldb, float* C,
     mnpack(A,lda,B,ldb,C,ldc, i0, iend, np, jend, k);  /* remainder cols × all rows */
 }
 
-/* Row-range kernel (jam_task_fn): the engine pool hands each thread output rows [row_begin,row_end). */
+/* Row-range kernel (jam_task_fn): the engine pool hands each thread output rows [row_begin,row_end).
+ * We block the N (activation-column) loop into panels whose k-vectors fit ~half of L2, so each B-panel
+ * stays resident and is reused across every M-tile in the band instead of the whole B (which exceeds L2)
+ * being re-streamed from L3 per M-tile. A is re-read once per panel — a small cost against the large drop
+ * in B traffic. Panel width is kept a multiple of the 4-wide register tile. */
 void jam_mm_f32_avx512(void* arg, int row_begin, int row_end, int tid) {
     (void) tid;
     const jam_mm_job* J = (const jam_mm_job*) arg;
-    mnpack((const float*) J->a, J->lda, (const float*) J->b, J->ldb, (float*) J->c, J->ldc,
-           row_begin, row_end, 0, J->n, J->k);
+    long k = J->k;
+    static long panel_bytes = 0;                           /* one-time read; benign race (idempotent) */
+    if (!panel_bytes) {
+        const char* pk = getenv("JAM_F32_PANEL_KB");       /* tunable per-uarch; ~half of L2 works well */
+        panel_bytes = (pk ? atoi(pk) : 384) * 1024L;
+    }
+    long nc = panel_bytes / (k * (long) sizeof(float));    /* cols whose k-vectors fill the panel */
+    nc &= ~3L;                                             /* align to the register-tile width */
+    if (nc < 4) nc = 4;
+    for (long jc = 0; jc < J->n; jc += nc) {
+        long jend = jc + nc < J->n ? jc + nc : J->n;
+        mnpack((const float*) J->a, J->lda, (const float*) J->b, J->ldb, (float*) J->c, J->ldc,
+               row_begin, row_end, jc, jend, k);
+    }
 }
 
 /* ======================= Q8_0 (weight) × F32 (activation) via AVX-512-VNNI =======================
