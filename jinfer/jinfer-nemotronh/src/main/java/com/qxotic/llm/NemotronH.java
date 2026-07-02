@@ -63,7 +63,12 @@ public final class NemotronH implements LanguageModel<NemotronH.Configuration, N
             throw new IllegalArgumentException("ingest of " + n + " at position " + from + " exceeds contextCapacity " + s.contextCapacity);
         }
         switch (batch.input()) {
-            case Batch.Input.Tokens t -> forward(s, t.ids(), 0, from, n);   // one batched pass (decode cores at n==1)
+            case Batch.Input.Tokens t -> {
+                // decode (n==1): run on the physical-core spin pool so the SSM scan/conv parallelize over
+                // the decode cores; prefill (n>1) stays on the SMT-wide common pool.
+                if (n == 1) Parallel.onDecodePool(() -> { forward(s, t.ids(), 0, from, n); return null; });
+                else forward(s, t.ids(), 0, from, n);
+            }
             case Batch.Input.Sequences seq ->
                 throw new UnsupportedOperationException("Nemotron-H is generative: packed sequences (batched embedding) not supported");
             case Batch.Input.Embeddings e ->
@@ -158,26 +163,27 @@ public final class NemotronH implements LanguageModel<NemotronH.Configuration, N
         int dtOff = 2 * dInner + 2 * nGroup * dState;
         for (int h = 0; h < nHead; h++) dt[h] = softplus(state.ssmInProj.getFloat(dtOff + h) + w.dtBias().getFloat(h));
 
-        // 2. depthwise causal conv1d over the dConv window (ring state + current), bias, SiLU
+        // 2. depthwise causal conv1d over the dConv window (ring state + current), bias, SiLU — parallel over channels
         FloatTensor convState = state.ssmConvState[l];
         F32FloatTensor convW = w.conv1d(), convB = w.conv1dBias();
-        for (int ch = 0; ch < convCh; ch++) {
+        Parallel.parallelFor(0, convCh, ch -> {
             float sum = convB == null ? 0f : convB.getFloat(ch);
             int wOff = ch * dConv;
             for (int k = 0; k < dConv - 1; k++) sum += convW.getFloat(wOff + k) * convState.getFloat(k * convCh + ch);
             sum += convW.getFloat(wOff + dConv - 1) * xbc[ch];
             convOut[ch] = silu(sum);
-        }
+        });
         for (int k = 0; k < dConv - 2; k++)
             for (int ch = 0; ch < convCh; ch++) convState.setFloat(k * convCh + ch, convState.getFloat((k + 1) * convCh + ch));
         for (int ch = 0; ch < convCh; ch++) convState.setFloat((dConv - 2) * convCh + ch, xbc[ch]);
 
-        // 3. selective scan: per head h_new = h*exp(dt*A) + B*(x*dt); y = C.h + D*x; gate SiLU(z)
+        // 3. selective scan: parallel over heads (independent state); h_new = h*exp(dt*A) + B*(x*dt); y = C.h + D*x; gate SiLU(z)
         float[] S = state.ssmState[l];
-        for (int h = 0; h < nHead; h++) {
+        F32FloatTensor ssmA = w.a(), ssmD = w.d();
+        Parallel.parallelFor(0, nHead, h -> {
             int g = h / (nHead / nGroup);
-            float dA = (float) Math.exp(dt[h] * w.a().getFloat(h));
-            float dScale = w.d().getFloat(h);
+            float dA = (float) Math.exp(dt[h] * ssmA.getFloat(h));
+            float dScale = ssmD.getFloat(h);
             for (int ii = 0; ii < headDim; ii++) {
                 int idx = h * headDim + ii;
                 float xdt = convOut[idx] * dt[h];
@@ -190,7 +196,7 @@ public final class NemotronH implements LanguageModel<NemotronH.Configuration, N
                 }
                 y[idx] = (sum + convOut[idx] * dScale) * silu(z[idx]);
             }
-        }
+        });
 
         // 4. per-group gated RMSNorm (gate already folded into y) then out-projection
         int groupDim = dInner / nGroup;
