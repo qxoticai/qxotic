@@ -12,7 +12,7 @@ import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-import com.qxotic.jinfer.Engine.GenerationResult;
+import com.qxotic.jinfer.Generator.GenerationResult;
 
 /**
  * The OpenAI-compatible HTTP server, and the module's sole public entry point: {@link #start}.
@@ -63,7 +63,7 @@ public final class Server {
                 "n_ctx", model.config().contextLength(),
                 "n_batch", RuntimeFlags.MAX_PROMPT_SEQUENCE_LENGTH,
                 "n_vocab", model.config().vocabularySize(),
-                "prompt_cache", GENERATION.cache() == null ? Map.of("enabled", false) : GENERATION.cache().stats()));
+                "prompt_cache", Map.of("enabled", false)));
         Function<Map<String, Object>, Object> tokenize = request ->
                 Map.of("tokens", model.tokenizer().encode(String.valueOf(request.getOrDefault("content", ""))));
         Function<Map<String, Object>, Object> detokenize = request -> {
@@ -342,7 +342,7 @@ public final class Server {
             return;
         }
         if (Http.requireMethod(exchange, "GET")) return;
-        Http.sendText(exchange, 200, Metrics.CONTENT_TYPE, Metrics.exposition(WORKER, GENERATION.cache()));
+        Http.sendText(exchange, 200, Metrics.CONTENT_TYPE, Metrics.exposition(WORKER));
     }
 
     private static void setTimingHeader(HttpExchange exchange, GenerationResult result) {

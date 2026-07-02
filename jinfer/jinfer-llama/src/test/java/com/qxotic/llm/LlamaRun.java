@@ -22,7 +22,9 @@ public final class LlamaRun {
                 c.embeddingLength(), c.numberOfLayers(), c.numberOfHeads(), c.numberOfKeyValueHeads(), c.vocabularySize(), c.contextLength());
 
         var tk = model.tokenizer();
-        int bos = LlamaCompare.bos(tk);
+        var specials = tk.getSpecialTokens();
+        int bos = specials.getOrDefault("<bos>",
+                specials.getOrDefault("<|begin_of_text|>", specials.getOrDefault("<|startoftext|>", 1)));
         List<Integer> promptTokens = new ArrayList<>();
         if (model.config().addBos()) promptTokens.add(bos);
         if (System.getenv("CHAT") != null) {   // Llama-3: <|start_header_id|>user<|end_header_id|>\n\n{p}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n

@@ -1,7 +1,7 @@
 package com.qxotic.jinfer;
 
-import com.qxotic.jinfer.Engine.GenerationResult;
-import com.qxotic.jinfer.Engine.StopSpec;
+import com.qxotic.jinfer.Generator.GenerationResult;
+import com.qxotic.jinfer.Generator.StopSpec;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -33,11 +33,6 @@ final class Generation {
         this.worker = worker;
     }
 
-    /** The prompt cache is not available on the new-API path; /props and /metrics report it disabled. */
-    PromptCache cache() {
-        return null;
-    }
-
     // ---- chat / completion -------------------------------------------------
 
     @SuppressWarnings("unchecked")
@@ -67,7 +62,7 @@ final class Generation {
         return generate(request, promptTokens, model.stopTokens(), sinks);
     }
 
-    /** Request fields to {@link Engine.Params}/{@link Engine.Listener}, then one pass through the
+    /** Request fields to {@link Generator.Params}/{@link Generator.Listener}, then one pass through the
      *  new-API {@link Generator}. Streaming counters mirror the final usage: generated tokens are
      *  counted unless they are the trailing stop token removed from the result. */
     private GenerationResult generate(Map<String, Object> request, List<Integer> promptTokens,
@@ -94,7 +89,7 @@ final class Generation {
             // at half the completion budget (request reasoning_max_tokens overrides; -1 = uncapped)
             int reasoningBudget = Values.intValue(request.get("reasoning_max_tokens"),
                     maxTokens >= 0 ? Math.max(1, maxTokens / 2) : -1);
-            sampler = Engine.withThinkBudget(sampler, tokenizer, reasoningBudget);
+            sampler = Generator.withThinkBudget(sampler, tokenizer, reasoningBudget);
         }
         Grammar.Cursor grammarCursor = buildGrammarCursor(tokenizer, request);
         if (grammarCursor != null) {
@@ -109,14 +104,14 @@ final class Generation {
             int[] skipNl = grammarGate >= 0 ? newlineTokens(tokenizer) : null;
             sampler = Sampler.withGrammar(sampler, grammarCursor, eosToken, grammarGate, skipNl);
         }
-        int consumedPromptTokens = Engine.consumedPromptTokens(tokenizer, promptTokens); // client-facing usage counts
+        int consumedPromptTokens = Generator.consumedPromptTokens(tokenizer, promptTokens); // client-facing usage counts
         IntConsumer onToken = usageCounts == null ? null : token -> {
             usageCounts.cachedTokens = 0; // no prompt cache on this path
             if (!stops.tokenStops().contains(token)) usageCounts.completionTokens++;
         };
         if (usageCounts != null) usageCounts.promptTokens = consumedPromptTokens;
-        Engine.Params params = new Engine.Params(sampler, maxTokens, RuntimeFlags.SERVER_REQUEST_TIMEOUT_NANOS, stops, inlineReasoning(request));
-        Engine.Listener listener = new Engine.Listener(onToken, sinks.onText(), sinks.onReasoning(), sinks.onToolCall());
+        Generator.Params params = new Generator.Params(sampler, maxTokens, RuntimeFlags.SERVER_REQUEST_TIMEOUT_NANOS, stops, inlineReasoning(request));
+        Generator.Listener listener = new Generator.Listener(onToken, sinks.onText(), sinks.onReasoning(), sinks.onToolCall());
         GenerationResult result = runGen(model, promptTokens, params, listener);
         Metrics.record(result);
         return result;
@@ -124,7 +119,7 @@ final class Generation {
 
     /** One new-API generation pass on a fresh state (captures the model's state type S). */
     private <S extends RuntimeState> GenerationResult runGen(LanguageModel<?, ?, S> m, List<Integer> promptTokens,
-                                                             Engine.Params params, Engine.Listener listener) {
+                                                             Generator.Params params, Generator.Listener listener) {
         S state = m.newState(m.config().contextLength(), Math.max(promptTokens.size(), 16));
         return Generator.generate(m, state, promptTokens, params, listener);
     }

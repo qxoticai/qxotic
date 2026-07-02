@@ -600,13 +600,13 @@ public final class ServerIntegrationTest {
      *  abort path, reporting finish_reason "length". Engine-level so it needs no global flag. */
     private static <S extends RuntimeState> void generationDeadline(LanguageModel<?, ?, S> model) {
         List<Integer> prompt = model.tokenizer().encode("Write a very long, detailed story.");
-        Engine.Params params = new Engine.Params(Sampler.ARGMAX, 100_000,
+        Generator.Params params = new Generator.Params(Sampler.ARGMAX, 100_000,
                 TimeUnit.MILLISECONDS.toNanos(300),
-                new Engine.StopSpec(Set.of(), List.of()), false);
+                new Generator.StopSpec(Set.of(), List.of()), false);
         long start = System.nanoTime();
         S state = model.newState(model.config().contextLength(), Math.max(prompt.size(), 16));
-        Engine.GenerationResult result = Generator.generate(model, state, prompt, params,
-                new Engine.Listener(null, null, null, null));
+        Generator.GenerationResult result = Generator.generate(model, state, prompt, params,
+                new Generator.Listener(null, null, null, null));
         long elapsedMs = (System.nanoTime() - start) / 1_000_000;
         check("length".equals(result.finishReason()), "deadline -> finish_reason length (" + result.finishReason() + ")");
         check(result.completionTokens() > 0 && result.completionTokens() < 100_000,

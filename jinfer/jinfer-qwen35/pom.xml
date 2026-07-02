@@ -33,11 +33,5 @@
             <groupId>com.qxotic</groupId>
             <artifactId>gguf</artifactId>
         </dependency>
-        <!-- test-only: the *Compare parity tests validate against the legacy engine (removed in a later phase) -->
-        <dependency>
-            <groupId>com.qxotic</groupId>
-            <artifactId>jinfer-models</artifactId>
-            <scope>test</scope>
-        </dependency>
     </dependencies>
 </project>
