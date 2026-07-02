@@ -5,6 +5,7 @@ package com.qxotic.llm;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.FloatTensor;
+import com.qxotic.jinfer.ImageCodec;
 import com.qxotic.jinfer.Media;
 
 import javax.imageio.ImageIO;
@@ -22,6 +23,7 @@ public final class Gemma4VisionRun {
             return;
         }
         if (args.length > 0 && args[0].equals("bench")) { bench(args); return; }
+        if (args.length > 0 && args[0].equals("parity")) { parity(args[1]); return; }
         if (args.length > 0 && args[0].equals("uenc")) { uenc(args[1], args.length > 2 ? loadImage(args[2]) : null); return; }
         Gemma4Vision enc = Gemma4Vision.loadModel(Path.of(args[0]));
         Media.Image img = args.length > 1 ? loadImage(args[1]) : synthetic(enc.imageSize);
@@ -117,7 +119,13 @@ public final class Gemma4VisionRun {
 
     static int[] arr(List<Integer> l) { int[] a = new int[l.size()]; for (int i = 0; i < a.length; i++) a[i] = l.get(i); return a; }
 
+    /** Decode via ffmpeg (native-image-safe, no javax.imageio). RGB, values in [0,1], HWC. */
     static Media.Image loadImage(String path) throws Exception {
+        return ImageCodec.load(Path.of(path));
+    }
+
+    /** Former javax.imageio loader, kept only for the ffmpeg-vs-ImageIO parity check below. */
+    static Media.Image loadImageIO(String path) throws Exception {
         BufferedImage bi = ImageIO.read(new File(path));
         int H = bi.getHeight(), W = bi.getWidth();
         float[] v = new float[H * W * 3];
@@ -126,6 +134,26 @@ public final class Gemma4VisionRun {
             v[idx] = ((rgb >> 16) & 0xff) / 255f; v[idx + 1] = ((rgb >> 8) & 0xff) / 255f; v[idx + 2] = (rgb & 0xff) / 255f;
         }
         return new Media.Image(v, H, W, 3);
+    }
+
+    /** Decode the same image via ffmpeg (loadImage) and javax.imageio (loadImageIO), report the max abs
+     *  pixel difference - proves the ffmpeg codec produces identical Media.Image values. */
+    static void parity(String path) throws Exception {
+        Media.Image a = loadImage(path);      // ffmpeg
+        Media.Image b = loadImageIO(path);    // javax.imageio
+        System.out.printf("ffmpeg: %dx%d c%d (%d values) | imageio: %dx%d c%d (%d values)%n",
+                a.width(), a.height(), a.channels(), a.values().length,
+                b.width(), b.height(), b.channels(), b.values().length);
+        if (a.width() != b.width() || a.height() != b.height() || a.channels() != b.channels()) {
+            System.out.println("DIMENSION MISMATCH"); return;
+        }
+        float maxAbs = 0; long ndiff = 0;
+        for (int i = 0; i < a.values().length; i++) {
+            float d = Math.abs(a.values()[i] - b.values()[i]);
+            if (d > 0) ndiff++;
+            if (d > maxAbs) maxAbs = d;
+        }
+        System.out.printf("max abs pixel diff = %.6f  (differing values: %d / %d)%n", maxAbs, ndiff, a.values().length);
     }
 
     static Media.Image synthetic(int S) {
