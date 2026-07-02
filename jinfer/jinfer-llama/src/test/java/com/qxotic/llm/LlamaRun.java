@@ -24,7 +24,7 @@ public final class LlamaRun {
         var tk = model.tokenizer();
         int bos = LlamaCompare.bos(tk);
         List<Integer> promptTokens = new ArrayList<>();
-        promptTokens.add(bos);
+        if (model.config().addBos()) promptTokens.add(bos);
         if (System.getenv("CHAT") != null) {   // Llama-3: <|start_header_id|>user<|end_header_id|>\n\n{p}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n
             int sh = tk.getSpecialTokens().getOrDefault("<|start_header_id|>", -1);
             int eh = tk.getSpecialTokens().getOrDefault("<|end_header_id|>", -1);
