@@ -25,5 +25,11 @@
             <groupId>com.qxotic</groupId>
             <artifactId>gguf</artifactId>
         </dependency>
+        <!-- test-only: TokenizerParityTest builds an LFMTokenizer with the Jinja chat template -->
+        <dependency>
+            <groupId>com.qxotic</groupId>
+            <artifactId>jinfer-jinja</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>

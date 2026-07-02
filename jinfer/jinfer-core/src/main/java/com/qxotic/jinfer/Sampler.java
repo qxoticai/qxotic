@@ -10,7 +10,7 @@ import java.util.random.RandomGeneratorFactory;
  * {@link CategoricalSampler}, {@link ToppSampler}, the {@link #withTemperature} softmax wrapper
  * and the {@link #banning} token filter. {@link #select} assembles the standard stack from
  * (temperature, top-p, seed); model-aware policy (think-token bans) lives in
- * {@link Engine#configuredSampler}.
+ * {@link Generator#configuredSampler}.
  */
 @FunctionalInterface
 interface Sampler {

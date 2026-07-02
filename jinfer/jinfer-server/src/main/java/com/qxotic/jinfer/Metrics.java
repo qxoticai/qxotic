@@ -1,6 +1,6 @@
 package com.qxotic.jinfer;
 
-import com.qxotic.jinfer.Engine.GenerationResult;
+import com.qxotic.jinfer.Generator.GenerationResult;
 
 import java.util.Map;
 
@@ -25,8 +25,8 @@ final class Metrics {
         completionTokens += result.completionTokens();
     }
 
-    /** Prometheus exposition: request/token totals, queue + worker gauges, prompt-cache stats. */
-    static String exposition(Worker worker, PromptCache cache) {
+    /** Prometheus exposition: request/token totals, queue + worker gauges. */
+    static String exposition(Worker worker) {
         StringBuilder sb = new StringBuilder();
         metric(sb, "jinfer_uptime_seconds", "gauge", (System.nanoTime() - START_NANOS) / 1e9);
         metric(sb, "jinfer_requests_total", "counter", requests);
@@ -34,14 +34,6 @@ final class Metrics {
         metric(sb, "jinfer_completion_tokens_total", "counter", completionTokens);
         metric(sb, "jinfer_queue_depth", "gauge", worker.queueDepth());
         metric(sb, "jinfer_worker_busy", "gauge", worker.busy() ? 1 : 0);
-        if (cache != null) {
-            for (Map.Entry<String, Object> entry : cache.stats().entrySet()) {
-                if (entry.getValue() instanceof Number n) {
-                    String kind = entry.getKey().endsWith("bytes") || entry.getKey().equals("nodes") ? "gauge" : "counter";
-                    metric(sb, "jinfer_prompt_cache_" + entry.getKey(), kind, n);
-                }
-            }
-        }
         return sb.toString();
     }
 

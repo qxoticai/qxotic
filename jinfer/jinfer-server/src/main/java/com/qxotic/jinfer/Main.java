@@ -113,7 +113,7 @@ public class Main {
     /** One generation pass plus CLI presentation: prompt echo, token streaming through the printer,
      *  and the stderr timing summary line. --max-tokens is a TOTAL context cap in the CLI, so it
      *  is converted to the generator's completion budget here. */
-    private static <S extends RuntimeState> Engine.GenerationResult generateCli(LanguageModel<?, ?, S> model, S state,
+    private static <S extends RuntimeState> Generator.GenerationResult generateCli(LanguageModel<?, ?, S> model, S state,
                                                        List<Integer> promptTokens, Set<Integer> stopTokens,
                                                        Sampler sampler, LLMOptions options) {
         LFMTokenizer tokenizer = model.tokenizer();
@@ -130,10 +130,10 @@ public class Main {
         int startPosition = state.position();
         int budget = options.maxTokens() < 0 ? -1
                 : options.maxTokens() - (startPosition + promptTokens.size());
-        Engine.Params params = new Engine.Params(sampler, budget, 0, // CLI: no generation deadline
-                new Engine.StopSpec(stopTokens, List.of()), options.think());
-        Engine.GenerationResult result = Generator.generate(model, state, promptTokens, params,
-                new Engine.Listener(onToken, null, null, null));
+        Generator.Params params = new Generator.Params(sampler, budget, 0, // CLI: no generation deadline
+                new Generator.StopSpec(stopTokens, List.of()), options.think());
+        Generator.GenerationResult result = Generator.generate(model, state, promptTokens, params,
+                new Generator.Listener(onToken, null, null, null));
         int generated = result.tokens().size() + (result.stopToken() >= 0 ? 1 : 0);
         String timingPrefix = options.colors() ? ANSI_CYAN : "";
         String timingSuffix = options.colors() ? ANSI_RESET : "";
@@ -332,7 +332,7 @@ public class Main {
             List<Integer> promptTokens = options.rawPrompt()
                     ? new ArrayList<>(model.tokenizer().encodeWithSpecialTokens(options.prompt()))
                     : chatFormat.encode(new ChatContext(messages, null, null, true, options.think(), Map.of()));
-            Engine.GenerationResult result = generateCli(model,
+            Generator.GenerationResult result = generateCli(model,
                     model.newState(model.config().contextLength(), Math.max(promptTokens.size(), 16)),
                     promptTokens, stops, sampler, options);
             if (!options.stream()) {
@@ -354,7 +354,7 @@ public class Main {
                 history.add(Map.of("role", "user", "content", userText));
                 List<Integer> promptTokens = chatFormat.encode(new ChatContext(history, null, null, true, options.think(), Map.of()));
                 // fresh state each turn: the generic path re-encodes the whole conversation
-                Engine.GenerationResult result = generateCli(model,
+                Generator.GenerationResult result = generateCli(model,
                         model.newState(model.config().contextLength(), Math.max(promptTokens.size(), 16)),
                         promptTokens, stops, sampler, options);
                 if (!options.stream()) {

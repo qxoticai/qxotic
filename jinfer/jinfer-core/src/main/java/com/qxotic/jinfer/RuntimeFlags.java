@@ -49,7 +49,6 @@ final class RuntimeFlags {
     static final boolean GRAAL_VECTOR_JIT = detectGraalVectorJit();
     static final int DECODE_BLOCK_SIZE = Integer.getInteger("jinfer.decodeBlockSize", 512);
     static final int DECODE_BLOCK_PARALLEL_MIN_RANGE = Integer.getInteger("jinfer.decodeBlockParallelMinRange", 1024);
-    static final boolean LAST_ROW_LOGITS = !"false".equals(System.getProperty("jinfer.lastRowLogits"));
 
     // decode runs at physical-core width on a spin-barrier pool (Parallel.onDecodePool / SpinPool): decode is
     // memory-bandwidth bound, so one thread per PHYSICAL core saturates DRAM while a 2nd SMT sibling only

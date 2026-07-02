@@ -3,7 +3,7 @@
 // or running Usage counters — no transport, no generation logic.
 package com.qxotic.jinfer;
 
-import com.qxotic.jinfer.Engine.GenerationResult;
+import com.qxotic.jinfer.Generator.GenerationResult;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;

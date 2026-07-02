@@ -1,6 +1,6 @@
 package com.qxotic.jinfer;
 
-import com.qxotic.jinfer.Engine.GenerationResult;
+import com.qxotic.jinfer.Generator.GenerationResult;
 
 import java.util.HashSet;
 import java.util.List;
