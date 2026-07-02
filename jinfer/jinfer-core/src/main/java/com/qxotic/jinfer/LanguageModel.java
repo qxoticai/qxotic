@@ -10,6 +10,9 @@ public interface LanguageModel<C extends Config, W, S extends RuntimeState> exte
      *  the generation driver to detokenize the stream, match text stops, and detect stop tokens. */
     LFMTokenizer tokenizer();
 
+    /** The end-of-turn / eos ids that terminate generation (the model's default stop tokens). */
+    java.util.Set<Integer> stopTokens();
+
     /** Vocabulary logits for the {@code output}-th retained hidden state (0 .. outputCount()-1). */
     FloatTensor logits(S state, int output);
 

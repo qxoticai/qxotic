@@ -111,101 +111,10 @@ public class Main {
         };
     }
 
-    static void runInteractive(Llama model, Sampler sampler, LLMOptions options) throws IOException {
-        Llama.State state = null;
-        LFMChatFormat chatFormat = new LFMChatFormat(model.tokenizer());
-        List<Integer> conversationTokens = new ArrayList<>();
-        conversationTokens.add(chatFormat.beginOfSentence);
-        if (options.systemPrompt() != null) {
-            conversationTokens.addAll(chatFormat.encodeSystemThinkingTurn(options.systemPrompt()));
-        }
-        int startPosition = 0;
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
-            while (true) {
-                System.out.print("> ");
-                System.out.flush();
-                String userText = reader.readLine();
-                if (userText == null) break;
-                switch (userText) {
-                    case "/quit", "/exit" -> { return; }
-                    case "/context" -> {
-                        System.out.printf("%d out of %d context tokens used (%d tokens remaining)%n",
-                                conversationTokens.size(),
-                                options.maxTokens(),
-                                options.maxTokens() - conversationTokens.size());
-                        continue;
-                    }
-                }
-            if (state == null) {
-                state = model.createNewState();
-            }
-            conversationTokens.addAll(chatFormat.encodeMessage(new LFMChatFormat.Message(LFMChatFormat.Role.USER, userText)));
-            conversationTokens.addAll(chatFormat.encodeGenerationPrompt());
-            if (!options.think()) {
-                chatFormat.appendThinkSurrogate(conversationTokens);
-            }
-
-            List<Integer> promptDelta = conversationTokens.subList(startPosition, conversationTokens.size());
-            Engine.GenerationResult result;
-            try {
-                result = generateCli(model, state, startPosition, promptDelta, chatFormat.getStopTokens(), sampler, options);
-            } catch (IllegalArgumentException e) { // the next turn no longer fits the context
-                System.err.println("Ran out of context length...");
-                break;
-            }
-            Integer stopToken = result.stopToken() >= 0 ? result.stopToken() : null;
-            List<Integer> visibleResponseTokens = Engine.visibleTokens(model.tokenizer(), result.tokens(), options.think());
-            conversationTokens.addAll(options.keepPastThinking() ? result.tokens() : visibleResponseTokens);
-            if (stopToken != null) {
-                conversationTokens.add(stopToken);
-                if (stopToken == chatFormat.endOfTurn) {
-                    conversationTokens.addAll(model.tokenizer().encode("\n"));
-                }
-            }
-            startPosition = conversationTokens.size();
-            if (!options.stream()) {
-                System.out.println(result.text());
-            }
-            if (stopToken == null) {
-                System.err.println("Ran out of context length...");
-                break;
-            }
-            }
-        }
-    }
-
-    static void runInstructOnce(Llama model, Sampler sampler, LLMOptions options) {
-        Llama.State state = model.createNewState();
-        LFMChatFormat chatFormat = new LFMChatFormat(model.tokenizer());
-        List<Integer> promptTokens = new ArrayList<>();
-        if (options.rawPrompt()) {
-            promptTokens.addAll(model.tokenizer().encodeWithSpecialTokens(options.prompt()));
-        } else {
-            promptTokens.add(chatFormat.beginOfSentence);
-            if (options.suffix() != null) {
-                promptTokens.addAll(chatFormat.encodeFillInTheMiddle(options.prompt(), options.suffix()));
-            } else {
-                if (options.systemPrompt() != null) {
-                    promptTokens.addAll(chatFormat.encodeSystemThinkingTurn(options.systemPrompt()));
-                }
-                promptTokens.addAll(chatFormat.encodeMessage(new LFMChatFormat.Message(LFMChatFormat.Role.USER, options.prompt())));
-                promptTokens.addAll(chatFormat.encodeGenerationPrompt());
-                if (!options.think()) {
-                    chatFormat.appendThinkSurrogate(promptTokens);
-                }
-            }
-        }
-
-        Engine.GenerationResult result = generateCli(model, state, 0, promptTokens, chatFormat.getStopTokens(), sampler, options);
-        if (!options.stream()) {
-            System.out.println(result.text());
-        }
-    }
-
-    /** One engine pass plus CLI presentation: prompt echo, token streaming through the printer,
+    /** One generation pass plus CLI presentation: prompt echo, token streaming through the printer,
      *  and the stderr timing summary line. --max-tokens is a TOTAL context cap in the CLI, so it
-     *  is converted to the engine's completion budget here. */
-    private static Engine.GenerationResult generateCli(ModelLegacy model, InferenceState state, int startPosition,
+     *  is converted to the generator's completion budget here. */
+    private static <S extends RuntimeState> Engine.GenerationResult generateCli(LanguageModel<?, ?, S> model, S state,
                                                        List<Integer> promptTokens, Set<Integer> stopTokens,
                                                        Sampler sampler, LLMOptions options) {
         LFMTokenizer tokenizer = model.tokenizer();
@@ -219,18 +128,19 @@ public class Main {
             System.err.print(replaceControlCharacters(tokenizer.decode(token)));
             printer.accept(token);
         };
+        int startPosition = state.position();
         int budget = options.maxTokens() < 0 ? -1
-                : options.maxTokens() - Engine.prefillPositions(state, startPosition, promptTokens);
+                : options.maxTokens() - (startPosition + promptTokens.size());
         Engine.Params params = new Engine.Params(sampler, budget, 0, // CLI: no generation deadline
                 new Engine.StopSpec(stopTokens, List.of()), options.think());
-        Engine.GenerationResult result = Engine.generate(model, state, startPosition, promptTokens, params,
-                new Engine.Listener(onToken, null, null, null), GenerationHooks.NONE);
+        Engine.GenerationResult result = Generator.generate(model, state, promptTokens, params,
+                new Engine.Listener(onToken, null, null, null));
         int generated = result.tokens().size() + (result.stopToken() >= 0 ? 1 : 0);
         String timingPrefix = options.colors() ? ANSI_CYAN : "";
         String timingSuffix = options.colors() ? ANSI_RESET : "";
         System.err.printf("%n%scontext: %d/%d prompt: %.2f tokens/s (%d) generation: %.2f tokens/s (%d)%s%n",
                 timingPrefix,
-                startPosition + promptTokens.size() + generated, model.contextLength(),
+                startPosition + promptTokens.size() + generated, model.config().contextLength(),
                 promptTokens.size() / (result.promptMillis() / 1000.0), promptTokens.size(),
                 generated / (result.predictedMillis() / 1000.0), generated,
                 timingSuffix);
@@ -397,33 +307,19 @@ public class Main {
             System.exit(-1);
             return;
         }
-        ModelLegacy model = AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
-        if (model == null) {
-            model = LegacyModelLoader.loadModel(options.modelPath(), options.maxTokens());
-        }
+        LanguageModel<?, ?, ?> model = Models.load(options.modelPath(), options.maxTokens());
         if (options.server()) {
             Server.start(model, options);
             return;
         }
-        Sampler sampler = Engine.configuredSampler(model, options.think(), options.temperature(), options.topp(), options.seed());
-        // LFM2.5 keeps its specialized CLI (FIM, raw-prompt, incremental ChatML, think surrogate);
-        // every other architecture runs through the generic chat-format path.
-        if (model instanceof Llama llama) {
-            if (options.interactive()) {
-                runInteractive(llama, sampler, options);
-            } else {
-                runInstructOnce(llama, sampler, options);
-            }
-        } else {
-            runGeneric(model, sampler, options);
-        }
+        Sampler sampler = Generator.configuredSampler(model, options.think(), options.temperature(), options.topp(), options.seed());
+        runGeneric(model, sampler, options);
     }
 
-    /** CLI driver for any {@link ModelLegacy} via its {@link ChatFormat}: a one-shot {@code --prompt} or
-     *  an interactive {@code --chat} loop, rebuilding the full prompt each turn (no incremental
-     *  resume). Used for non-LFM architectures (e.g. Gemma4). */
-    static void runGeneric(ModelLegacy model, Sampler sampler, LLMOptions options) throws IOException {
-        ChatFormat chatFormat = model.chatFormat();
+    /** CLI driver for any model via its chat template: a one-shot {@code --prompt} or an interactive
+     *  {@code --chat} loop, rebuilding the full prompt each turn (fresh state, no incremental resume). */
+    static <S extends RuntimeState> void runGeneric(LanguageModel<?, ?, S> model, Sampler sampler, LLMOptions options) throws IOException {
+        ChatFormat chatFormat = ChatFormats.forModel(model.tokenizer());
         Set<Integer> stops = model.stopTokens();
         if (!options.interactive()) {
             List<Object> messages = new ArrayList<>();
@@ -434,7 +330,9 @@ public class Main {
             List<Integer> promptTokens = options.rawPrompt()
                     ? new ArrayList<>(model.tokenizer().encodeWithSpecialTokens(options.prompt()))
                     : chatFormat.encode(new ChatContext(messages, null, null, true, options.think(), Map.of()));
-            Engine.GenerationResult result = generateCli(model, model.createNewState(), 0, promptTokens, stops, sampler, options);
+            Engine.GenerationResult result = generateCli(model,
+                    model.newState(model.config().contextLength(), Math.max(promptTokens.size(), 16)),
+                    promptTokens, stops, sampler, options);
             if (!options.stream()) {
                 System.out.println(result.text());
             }
@@ -454,7 +352,9 @@ public class Main {
                 history.add(Map.of("role", "user", "content", userText));
                 List<Integer> promptTokens = chatFormat.encode(new ChatContext(history, null, null, true, options.think(), Map.of()));
                 // fresh state each turn: the generic path re-encodes the whole conversation
-                Engine.GenerationResult result = generateCli(model, model.createNewState(), 0, promptTokens, stops, sampler, options);
+                Engine.GenerationResult result = generateCli(model,
+                        model.newState(model.config().contextLength(), Math.max(promptTokens.size(), 16)),
+                        promptTokens, stops, sampler, options);
                 if (!options.stream()) {
                     System.out.println(result.text());
                 }
