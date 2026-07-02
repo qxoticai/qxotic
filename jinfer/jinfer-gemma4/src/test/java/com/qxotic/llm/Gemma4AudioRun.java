@@ -20,6 +20,10 @@ public final class Gemma4AudioRun {
             e2e(args[1], args[2], args[3], args.length > 4 ? args[4] : "Describe this audio.");
             return;
         }
+        if (args.length > 0 && args[0].equals("aingest")) {
+            aingest(args[1], args[2], args[3], args.length > 4 ? Integer.parseInt(args[4]) : 10);
+            return;
+        }
         // encode: <mmproj> <audio.wav>
         Gemma4Audio enc = Gemma4Audio.loadModel(Path.of(args[1]));
         Media.Audio audio = loadWav(args[2]);
@@ -35,6 +39,30 @@ public final class Gemma4AudioRun {
                 n, dim, ms, mean, abs / (n * dim), Math.sqrt(var / (n * dim)), min, max);
         System.out.printf("row0[0..7]= %.5f %.5f %.5f %.5f %.5f %.5f %.5f %.5f%n",
                 rows.getFloat(0), rows.getFloat(1), rows.getFloat(2), rows.getFloat(3), rows.getFloat(4), rows.getFloat(5), rows.getFloat(6), rows.getFloat(7));
+    }
+
+    /** Times ONLY the model ingest of the audio embeddings (encode + resample excluded): warmup, then
+     *  timed reps of {@code ingest(Batch.embeddings)} with the state reset each rep. This is the audio
+     *  prefill throughput. Usage: aingest &lt;text.gguf&gt; &lt;mmproj.gguf&gt; &lt;audio.wav&gt; [reps] */
+    static void aingest(String textGguf, String mmproj, String audioPath, int reps) throws Exception {
+        Gemma4 model = Gemma4.loadModel(Path.of(textGguf), Path.of(mmproj), 4096);
+        @SuppressWarnings("unchecked")
+        var embedder = (com.qxotic.jinfer.Embedder<Media.Audio>) model.embedder(Media.Audio.class).orElseThrow();
+        Media.Audio audio = loadWav(audioPath);
+        FloatTensor rows = ((Gemma4Audio) embedder).encode(audio);   // encode + resample NOT timed
+        int dim = model.config().embeddingLength(), n = (int) (rows.size() / dim);
+        int cap = n + 8;   // fresh small-context state per rep (reset() is unsupported); alloc is outside the timed region
+        for (int w = 0; w < 3; w++) model.ingest(model.newState(cap, cap), Batch.embeddings(rows, n, false));   // warmup
+        double best = Double.MAX_VALUE, sum = 0;
+        for (int r = 0; r < reps; r++) {
+            Gemma4.State s = model.newState(cap, cap);   // allocation NOT timed
+            long t0 = System.nanoTime();
+            model.ingest(s, Batch.embeddings(rows, n, false));
+            double ms = (System.nanoTime() - t0) / 1e6;
+            best = Math.min(best, ms); sum += ms;
+        }
+        System.out.printf("audio ingest: %d tokens (dim=%d)  best=%.1f ms (%.1f tok/s)  mean=%.1f ms (%.1f tok/s)%n",
+                n, dim, best, n / (best / 1000.0), sum / reps, n / ((sum / reps) / 1000.0));
     }
 
     /** audio -> Gemma4Audio -> rows -> ingest between <|audio>/<audio|> (CAUSAL) -> generate. */
