@@ -24,9 +24,9 @@ public final class Gemma4AudioRun {
             aingest(args[1], args[2], args[3], args.length > 4 ? Integer.parseInt(args[4]) : 10);
             return;
         }
-        // encode: <mmproj> <audio.wav>
+        // encode: <mmproj> <audio.*>
         Gemma4Audio enc = Gemma4Audio.loadModel(Path.of(args[1]));
-        Media.Audio audio = loadWav(args[2]);
+        Media.Audio audio = com.qxotic.jinfer.AudioCodec.load(Path.of(args[2]));   // ffmpeg -> 16k mono, any format
         long t0 = System.nanoTime();
         FloatTensor rows = enc.encode(audio);
         double ms = (System.nanoTime() - t0) / 1e6;
@@ -76,7 +76,7 @@ public final class Gemma4AudioRun {
 
         @SuppressWarnings("unchecked")
         var embedder = (com.qxotic.jinfer.Embedder<Media.Audio>) model.embedder(Media.Audio.class).orElseThrow();
-        Media.Audio audio = loadWav(audioPath);
+        Media.Audio audio = com.qxotic.jinfer.AudioCodec.load(Path.of(audioPath));   // ffmpeg decodes + resamples to 16k mono
         FloatTensor rows = (embedder instanceof Gemma4Audio ga) ? ga.encode(audio) : null;
         int dim = model.config().embeddingLength(), n = (int) (rows.size() / dim);
         System.err.printf("audio %.2fs @%dHz -> %d audio tokens (dim=%d)%n", audio.pcm().length / (float) audio.sampleRate(), audio.sampleRate(), n, dim);
