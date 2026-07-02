@@ -586,7 +586,7 @@ public final class NemotronH implements LanguageModel<NemotronH.Configuration, N
         }
     }
 
-    static NemotronH loadModel(FileChannel fileChannel, GGUF gguf, int contextLength) throws IOException {
+    public static NemotronH loadModel(FileChannel fileChannel, GGUF gguf, int contextLength) throws IOException {
         LFMTokenizer tokenizer = new LFMTokenizer(gguf);
         String arch = gguf.getString("general.architecture");
 

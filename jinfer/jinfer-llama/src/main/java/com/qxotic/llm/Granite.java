@@ -256,7 +256,7 @@ public final class Granite implements LanguageModel<Granite.Configuration, Grani
         }
     }
 
-    static Granite loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeightsFlag) throws IOException {
+    public static Granite loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeightsFlag) throws IOException {
         LFMTokenizer tokenizer = new LFMTokenizer(gguf);
         String arch = gguf.getString("general.architecture");   // "granite"
 

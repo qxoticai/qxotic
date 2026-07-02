@@ -832,7 +832,7 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
         }
     }
 
-    static Qwen35 loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeightsFlag) throws IOException {
+    public static Qwen35 loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeightsFlag) throws IOException {
         LFMTokenizer tokenizer = new LFMTokenizer(gguf);
         String arch = gguf.getString("general.architecture");
 

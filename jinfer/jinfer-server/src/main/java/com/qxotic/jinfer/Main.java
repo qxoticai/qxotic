@@ -12,7 +12,6 @@
 package com.qxotic.jinfer;
 
 import com.qxotic.format.gguf.GGUF;
-import com.qxotic.format.gguf.TensorEntry;
 
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
@@ -307,7 +306,10 @@ public class Main {
             System.exit(-1);
             return;
         }
-        LanguageModel<?, ?, ?> model = Models.load(options.modelPath(), options.maxTokens());
+        LanguageModel<?, ?, ?> model = AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
+        if (model == null) {
+            model = Models.load(options.modelPath(), options.maxTokens());
+        }
         if (options.server()) {
             Server.start(model, options);
             return;
@@ -365,12 +367,17 @@ public class Main {
 }
 
 final class AOT {
-    // Holds tensor entries + data offset rather than the parsed GGUF: the GGUF object retains the
-    // raw vocab/merges metadata strings (~25MiB of image heap) that the tokenizer has already
-    // materialized into its own structures.
-    record PartialModel(String modelFileName, Llama model, long tensorDataOffset,
-                        List<TensorEntry> tensors,
-                        Pair<float[], float[]> ropeFreqsSWA, Pair<float[], float[]> ropeFreqsFull) {}
+    // The preloaded model's parsed GGUF (metadata + tensor descriptors), baked at class-init. In a
+    // native image (AOT class initialized-at-build-time) this skips re-reading and re-parsing the
+    // header at startup; the tensor data is still mmap'd at runtime. Arch-agnostic: any new-API port
+    // loads from it via Models.load(fileChannel, gguf, ctx).
+    //
+    // Tradeoff vs the old per-model AOT: that one baked the fully materialized tokenizer + config and
+    // only mmap'd weights at runtime. This generic version bakes the parsed GGUF and rebuilds the
+    // tokenizer at runtime (Models.load re-materializes it), so the win is skipping the header parse,
+    // not the tokenizer build. A fuller bake would need a per-port "attach weights to a preloaded
+    // config-only model" method across all ports; deferred.
+    record PartialModel(String modelFileName, GGUF gguf) {}
 
     private static final PartialModel PRELOADED_GGUF = preLoadGGUF(System.getProperty("jinfer.PreloadGGUF"));
 
@@ -385,48 +392,26 @@ final class AOT {
             }
             try (FileChannel fileChannel = FileChannel.open(path, StandardOpenOption.READ)) {
                 GGUF gguf = ModelLoader.readGguf(fileChannel, path.toString());
-                Llama base = LegacyModelLoader.loadModel(null, gguf, Main.DEFAULT_MAX_TOKENS, false);
-                // Precompute RoPE frequencies at build time (pure Java arrays, survives native-image)
-                Llama.Configuration config = base.configuration();
-                Pair<float[], float[]> ropeFreqsSWA = RoPE.precomputeFreqsCis(
-                        config.contextLength, config.headSizeSWA, config.ropeThetaSWA);
-                Pair<float[], float[]> ropeFreqsFull;
-                Map<String, GGMLTensorEntry> tmpEntries = ModelLoader.loadTensors(fileChannel, gguf);
-                float[] modelRopeFreqs = ModelLoader.ropeFreqFactors(tmpEntries);
-                if (modelRopeFreqs != null) {
-                    ropeFreqsFull = RoPE.precomputeFreqsCisFromFreqs(
-                            config.contextLength, config.headSizeFull, config.ropeTheta, modelRopeFreqs);
-                } else {
-                    ropeFreqsFull = RoPE.precomputeFreqsCis(
-                            config.contextLength, config.headSizeFull, config.ropeTheta);
-                }
-                return new PartialModel(
-                        path.getFileName().toString(), base,
-                        gguf.getTensorDataOffset(), List.copyOf(gguf.getTensors()),
-                        ropeFreqsSWA, ropeFreqsFull);
+                return new PartialModel(path.getFileName().toString(), gguf);
             }
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
 
-    public static Llama tryUsePreLoaded(Path modelPath, int contextLength) throws IOException {
-        AOT.PartialModel preLoaded = AOT.PRELOADED_GGUF;
+    /** The preloaded model when {@code modelPath} matches the baked one, else null (the caller falls
+     *  back to {@link Models#load(Path, int)}). Reuses the baked GGUF, so only the tensor data is read. */
+    static LanguageModel<?, ?, ?> tryUsePreLoaded(Path modelPath, int contextLength) throws IOException {
+        PartialModel preLoaded = PRELOADED_GGUF;
         if (preLoaded == null) {
             return null;
         }
-        String optionsModel = modelPath.getFileName().toString();
-        String preLoadedModel = preLoaded.modelFileName();
-        if (!Objects.equals(optionsModel, preLoadedModel)) {
+        if (!Objects.equals(modelPath.getFileName().toString(), preLoaded.modelFileName())) {
             return null;
         }
-        Llama baseModel = preLoaded.model();
         try (var timer = Timer.log("Load tensors from pre-loaded model");
-             var fileChannel = FileChannel.open(modelPath, StandardOpenOption.READ)) {
-            Map<String, GGMLTensorEntry> tensorEntries = ModelLoader.loadTensors(fileChannel, preLoaded.tensorDataOffset(), preLoaded.tensors());
-            Llama.Weights weights = LegacyModelLoader.loadWeightsWithRoPE(tensorEntries, baseModel.configuration(),
-                    preLoaded.ropeFreqsSWA(), preLoaded.ropeFreqsFull());
-            return new Llama(baseModel.configuration().withContextLength(contextLength), baseModel.tokenizer(), weights);
+             FileChannel fileChannel = FileChannel.open(modelPath, StandardOpenOption.READ)) {
+            return Models.load(fileChannel, preLoaded.gguf(), contextLength);
         }
     }
 }
