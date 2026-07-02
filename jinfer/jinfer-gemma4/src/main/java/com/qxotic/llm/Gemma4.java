@@ -735,7 +735,7 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
         return "gemma4ua".equals(type) ? Gemma4Audio.loadModel(mmprojGguf) : null;
     }
 
-    static Gemma4 loadModel(FileChannel fileChannel, GGUF gguf, int maxContextLength, boolean loadWeightsFlag) throws IOException {
+    public static Gemma4 loadModel(FileChannel fileChannel, GGUF gguf, int maxContextLength, boolean loadWeightsFlag) throws IOException {
         LFMTokenizer tokenizer = new LFMTokenizer(gguf);
 
         int modelContextLength = gguf.getValue(int.class, "gemma4.context_length");
