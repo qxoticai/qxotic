@@ -4,13 +4,12 @@
 package com.qxotic.llm;
 
 import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.FfmpegImageDecoder;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.ImageCodec;
+import com.qxotic.jinfer.ImageIoDecoder;
 import com.qxotic.jinfer.Media;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
-import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -119,28 +118,17 @@ public final class Gemma4VisionRun {
 
     static int[] arr(List<Integer> l) { int[] a = new int[l.size()]; for (int i = 0; i < a.length; i++) a[i] = l.get(i); return a; }
 
-    /** Decode via ffmpeg (native-image-safe, no javax.imageio). RGB, values in [0,1], HWC. */
+    /** Decode via the configured backend (ImageCodec: ffmpeg or imageio). RGB, values in [0,1], HWC. */
     static Media.Image loadImage(String path) throws Exception {
         return ImageCodec.load(Path.of(path));
     }
 
-    /** Former javax.imageio loader, kept only for the ffmpeg-vs-ImageIO parity check below. */
-    static Media.Image loadImageIO(String path) throws Exception {
-        BufferedImage bi = ImageIO.read(new File(path));
-        int H = bi.getHeight(), W = bi.getWidth();
-        float[] v = new float[H * W * 3];
-        for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) {
-            int rgb = bi.getRGB(x, y), idx = (y * W + x) * 3;
-            v[idx] = ((rgb >> 16) & 0xff) / 255f; v[idx + 1] = ((rgb >> 8) & 0xff) / 255f; v[idx + 2] = (rgb & 0xff) / 255f;
-        }
-        return new Media.Image(v, H, W, 3);
-    }
-
-    /** Decode the same image via ffmpeg (loadImage) and javax.imageio (loadImageIO), report the max abs
-     *  pixel difference - proves the ffmpeg codec produces identical Media.Image values. */
+    /** Decode the same image with both backends (ffmpeg + javax.imageio) and report the max abs pixel
+     *  difference - proves the two decoders produce identical Media.Image values. */
     static void parity(String path) throws Exception {
-        Media.Image a = loadImage(path);      // ffmpeg
-        Media.Image b = loadImageIO(path);    // javax.imageio
+        System.out.println("ImageCodec selected backend: " + ImageCodec.decoder().name());
+        Media.Image a = new FfmpegImageDecoder().load(Path.of(path));   // ffmpeg
+        Media.Image b = new ImageIoDecoder().load(Path.of(path));       // javax.imageio
         System.out.printf("ffmpeg: %dx%d c%d (%d values) | imageio: %dx%d c%d (%d values)%n",
                 a.width(), a.height(), a.channels(), a.values().length,
                 b.width(), b.height(), b.channels(), b.values().length);
