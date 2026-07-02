@@ -336,7 +336,7 @@ final class Engine {
      *  Think markers flip the think flag (inline mode emits them literally). Tool-call
      *  spans are buffered separately so an in-progress call never leaks into the text
      *  stream. Other specials are dropped. Everything else is UTF-8 decoded incrementally. */
-    private static IntConsumer streamingDemux(LFMTokenizer tokenizer, Consumer<String> onText,
+    static IntConsumer streamingDemux(LFMTokenizer tokenizer, Consumer<String> onText,
                                                Consumer<String> onReasoning, Consumer<String> onToolCall,
                                                boolean inlineThink) {
         Integer thinkOpen = tokenizer.getSpecialTokens().get("<think>");
@@ -548,7 +548,7 @@ final class Engine {
         }
     }
 
-    private static void require(boolean condition, String messageFormat, Object... args) {
+    static void require(boolean condition, String messageFormat, Object... args) {
         if (!condition) {
             throw new IllegalArgumentException(messageFormat.formatted(args));
         }
