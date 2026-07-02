@@ -10,17 +10,16 @@
         <version>0.1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>jinfer-gemma4</artifactId>
+    <artifactId>jinfer-lfm2</artifactId>
     <packaging>jar</packaging>
 
-    <name>jinfer-gemma4</name>
-    <description>Gemma 4 against the com.qxotic.llm model API (multi-modal + MTP), reusing the jinfer kernels</description>
+    <name>jinfer-lfm2</name>
+    <description>LFM2 / lfm2moe model port (new com.qxotic.llm API)</description>
 
     <dependencies>
         <dependency>
             <groupId>com.qxotic</groupId>
             <artifactId>jinfer-core</artifactId>
-
         </dependency>
         <dependency>
             <groupId>com.qxotic</groupId>
@@ -33,6 +32,12 @@
         <dependency>
             <groupId>com.qxotic</groupId>
             <artifactId>gguf</artifactId>
+        </dependency>
+        <!-- test-only: the *Compare parity tests validate against the legacy engine (removed in a later phase) -->
+        <dependency>
+            <groupId>com.qxotic</groupId>
+            <artifactId>jinfer-models</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 </project>

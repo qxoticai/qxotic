@@ -18,6 +18,11 @@
         <module>jinfer-kernels</module>
         <module>jinfer-models</module>
         <module>jinfer-gemma4</module>
+        <module>jinfer-llama</module>
+        <module>jinfer-qwen35</module>
+        <module>jinfer-gptoss</module>
+        <module>jinfer-nemotronh</module>
+        <module>jinfer-lfm2</module>
         <module>jinfer-server</module>
         <module>jinfer-bench</module>
     </modules>
@@ -48,6 +53,36 @@
                 <dependency>
                     <groupId>com.qxotic</groupId>
                     <artifactId>jinfer-models</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
+                <dependency>
+                    <groupId>com.qxotic</groupId>
+                    <artifactId>jinfer-gemma4</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
+                <dependency>
+                    <groupId>com.qxotic</groupId>
+                    <artifactId>jinfer-llama</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
+                <dependency>
+                    <groupId>com.qxotic</groupId>
+                    <artifactId>jinfer-qwen35</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
+                <dependency>
+                    <groupId>com.qxotic</groupId>
+                    <artifactId>jinfer-gptoss</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
+                <dependency>
+                    <groupId>com.qxotic</groupId>
+                    <artifactId>jinfer-nemotronh</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
+                <dependency>
+                    <groupId>com.qxotic</groupId>
+                    <artifactId>jinfer-lfm2</artifactId>
                     <version>${project.version}</version>
                 </dependency>
                 <dependency>

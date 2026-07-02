@@ -28,7 +28,26 @@
         <dependency>
             <groupId>com.qxotic</groupId>
             <artifactId>jinfer-gemma4</artifactId>
-            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.qxotic</groupId>
+            <artifactId>jinfer-llama</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.qxotic</groupId>
+            <artifactId>jinfer-qwen35</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.qxotic</groupId>
+            <artifactId>jinfer-gptoss</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.qxotic</groupId>
+            <artifactId>jinfer-nemotronh</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.qxotic</groupId>
+            <artifactId>jinfer-lfm2</artifactId>
         </dependency>
         <dependency>
             <groupId>com.qxotic</groupId>
