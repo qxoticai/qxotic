@@ -6,6 +6,10 @@ import com.qxotic.jinfer.Model;
  *  distribution (of width {@code config().vocabularySize()}). */
 public interface LanguageModel<C extends Config, W, S extends RuntimeState> extends Model<C, W, S> {
 
+    /** GGUF-loaded tokenizer: vocabulary, special tokens and the (optional) chat template. Needed by
+     *  the generation driver to detokenize the stream, match text stops, and detect stop tokens. */
+    LFMTokenizer tokenizer();
+
     /** Vocabulary logits for the {@code output}-th retained hidden state (0 .. outputCount()-1). */
     FloatTensor logits(S state, int output);
 
