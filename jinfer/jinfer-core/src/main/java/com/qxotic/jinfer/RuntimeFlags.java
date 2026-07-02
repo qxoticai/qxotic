@@ -54,16 +54,6 @@ final class RuntimeFlags {
     static final int DECODE_THREADS = Integer.getInteger("jinfer.decodeThreads", physicalCoreCount());
     static final boolean DECODE_SPIN = !"false".equals(System.getProperty("jinfer.decodeSpin"));
 
-    // gemm tiling: the values feed loop bounds, not compiled code shapes — safe to tune at run time
-    static final int GEMM_SEQ_TILE = Integer.getInteger("jinfer.Q8_0GemmSeqTile", 32);
-    // K-quant gemms (Q4_K/Q6_K) want much smaller seq tiles than Q8_0: the in-register nibble
-    // decode is the expensive stream, and narrow tiles keep its activation slices L1-resident
-    // (E2E sweep on the 8B Q4_K_M: 8 -> 170.9 prefill tok/s vs 152.4 at the Q8 default of 32)
-    static final int GEMM_SEQ_TILE_QK = Integer.getInteger("jinfer.QKGemmSeqTile", 8);
-    static final int GEMM_ROW_TILE = Integer.getInteger("jinfer.Q8_0GemmRowTile", 128);
-    static final int GEMM_THREADS = Integer.getInteger("jinfer.Q8_0GemmThreads",
-            Integer.getInteger("jinfer.Q8_0GemmWorkers", Runtime.getRuntime().availableProcessors() * 4));
-
     // grammar-constrained decoding (GBNF / response_format json_object)
     static final boolean GRAMMAR = !"false".equals(System.getProperty("jinfer.grammar"));
 
