@@ -1,22 +1,16 @@
-// ffmpeg-based audio codec: decodes any container/codec (mp3, wav, flac, ogg, m4a, ...) to raw PCM,
-// resampled to 16 kHz MONO float32 - the universal speech-encoder input. Native-image safe: no
-// javax.sound.sampled (its ServiceLoader/SPI plugin discovery + reflection need build-time config, and
-// compressed-format support depends on optional providers). Mirrors ImageCodec; the difference is that
-// the audio codec also resamples/downmixes, because 16 kHz mono is universal across speech encoders (not
-// a per-model choice like the image resize, which stays in the model's preprocessing). Requires ffmpeg
-// on PATH; ffmpeg's swresample is far higher quality than a hand-rolled linear resampler.
+// Facade over the pluggable AudioDecoder. Selects the backend at runtime and caches it:
+//   -Djinfer.audioDecoder=ffmpeg|javasound   (explicit override)
+//   default: ffmpeg under GraalVM native-image (where javax.sound.sampled is impractical), javasound on a
+//   normal JVM (no process spawn for WAV/AIFF; ffmpeg fallback for mp3/compressed).
+// ffmpeg is referenced directly (native-image-safe, always present). javasound is loaded REFLECTIVELY via a
+// non-constant class name so native-image does not fold the Class.forName and pull javax.sound.sampled into
+// the image; if requested but unavailable (e.g. inside a native image), it falls back to ffmpeg. Output is
+// always 16 kHz mono float PCM.
 package com.qxotic.jinfer;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.UncheckedIOException;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.util.List;
+import java.util.Locale;
 
 public final class AudioCodec {
 
@@ -24,76 +18,57 @@ public final class AudioCodec {
     }
 
     /** gemma4ua and every other speech encoder fix the input at 16 kHz mono. */
-    public static final int SAMPLE_RATE = 16000;
+    public static final int SAMPLE_RATE = FfmpegAudioDecoder.SAMPLE_RATE;
 
-    /** Decode {@code path} to 16 kHz mono float PCM via ffmpeg. */
-    public static Media.Audio load(Path path) {
-        return toAudio(runFfmpeg(ffmpegArgs(path.toString()), null));
+    private static volatile AudioDecoder decoder;
+
+    /** Decode an audio file into 16 kHz mono float PCM via the selected backend. */
+    public static Media.Audio load(Path path) throws IOException {
+        return decoder().load(path);
     }
 
-    /** Decode {@code data} (any supported container, e.g. an uploaded file) to 16 kHz mono float PCM. */
-    public static Media.Audio decode(byte[] data) {
-        return toAudio(runFfmpeg(ffmpegArgs("pipe:0"), data));
+    /** Decode encoded audio bytes into 16 kHz mono float PCM via the selected backend. */
+    public static Media.Audio decode(byte[] data) throws IOException {
+        return decoder().decode(data);
     }
 
-    private static List<String> ffmpegArgs(String input) {
-        // -ar 16000 (resample) + -ac 1 (downmix to mono) + -f f32le (raw 32-bit LE float PCM, no int16
-        // quantization, no header). ffmpeg owns decode + resample + downmix in one pass.
-        return List.of("ffmpeg", "-hide_banner", "-loglevel", "error",
-                "-i", input, "-ar", Integer.toString(SAMPLE_RATE), "-ac", "1", "-f", "f32le", "-");
-    }
-
-    private static Media.Audio toAudio(byte[] raw) {
-        int n = raw.length / 4;                       // 4 bytes per float32 sample
-        float[] pcm = new float[n];
-        ByteBuffer.wrap(raw).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer().get(pcm);
-        return new Media.Audio(pcm, SAMPLE_RATE, 1);
-    }
-
-    /** Run ffmpeg, streaming any {@code stdin} on a daemon thread and draining stderr concurrently so the
-     *  child never blocks on a full pipe. Returns the raw stdout bytes (the f32le PCM). */
-    private static byte[] runFfmpeg(List<String> cmd, byte[] stdin) {
-        try {
-            Process p = new ProcessBuilder(cmd).start();
-            if (stdin != null) {
-                Thread feeder = new Thread(() -> {
-                    try (OutputStream os = p.getOutputStream()) {
-                        os.write(stdin);
-                    } catch (IOException ignored) {
-                        // broken pipe if ffmpeg rejects the input and exits early; the exit code reports it
-                    }
-                }, "ffmpeg-stdin");
-                feeder.setDaemon(true);
-                feeder.start();
-            } else {
-                p.getOutputStream().close();
-            }
-            ByteArrayOutputStream err = new ByteArrayOutputStream();
-            Thread errDrain = new Thread(() -> {
-                try (InputStream es = p.getErrorStream()) {
-                    es.transferTo(err);
-                } catch (IOException ignored) {
+    /** The active decoder, lazily selected and cached. */
+    public static AudioDecoder decoder() {
+        AudioDecoder d = decoder;
+        if (d == null) {
+            synchronized (AudioCodec.class) {
+                d = decoder;
+                if (d == null) {
+                    decoder = d = select();
                 }
-            }, "ffmpeg-stderr");
-            errDrain.setDaemon(true);
-            errDrain.start();
+            }
+        }
+        return d;
+    }
 
-            byte[] out;
-            try (InputStream is = p.getInputStream()) {
-                out = is.readAllBytes();
-            }
-            int code = p.waitFor();
-            errDrain.join(1000);
-            if (code != 0) {
-                throw new IOException("ffmpeg exited " + code + ": "
-                        + err.toString(StandardCharsets.UTF_8).strip());
-            }
-            return out;
-        } catch (IOException e) {
-            throw new UncheckedIOException("ffmpeg audio decode failed", e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException("ffmpeg audio decode interrupted", e);
+    private static AudioDecoder select() {
+        String choice = System.getProperty("jinfer.audioDecoder");
+        if (choice == null || choice.isBlank()) {
+            boolean nativeImage = System.getProperty("org.graalvm.nativeimage.imagecode") != null;
+            choice = nativeImage ? "ffmpeg" : "javasound";
+        }
+        return switch (choice.toLowerCase(Locale.ROOT)) {
+            case "ffmpeg" -> new FfmpegAudioDecoder();
+            case "javasound" -> loadReflectively("com.qxotic.jinfer.JavaSoundAudioDecoder");
+            default -> throw new IllegalArgumentException(
+                    "unknown -Djinfer.audioDecoder='" + choice + "' (expected 'ffmpeg' or 'javasound')");
+        };
+    }
+
+    /** Instantiate a decoder by name via reflection. Passing the name as an argument (not a literal at the
+     *  Class.forName site) keeps native-image from constant-folding it, so the javax.sound.sampled backend
+     *  stays out of native images. Falls back to ffmpeg if the backend can't load. */
+    private static AudioDecoder loadReflectively(String className) {
+        try {
+            return (AudioDecoder) Class.forName(className).getDeclaredConstructor().newInstance();
+        } catch (ReflectiveOperationException | LinkageError e) {
+            System.err.println("audio decoder '" + className + "' unavailable (" + e + "); falling back to ffmpeg");
+            return new FfmpegAudioDecoder();
         }
     }
 }
