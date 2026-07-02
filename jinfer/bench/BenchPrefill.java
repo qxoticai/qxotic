@@ -21,7 +21,7 @@ public final class BenchPrefill {
         int measure = args.length > 3 ? Integer.parseInt(args[3]) : 12;
         int gen     = args.length > 4 ? Integer.parseInt(args[4]) : 0;   // >0 -> measure DECODE tok/s
 
-        Model model = ModelLoader.loadModel(Path.of(path), 4096);
+        Model model = LegacyModelLoader.loadModel(Path.of(path), 4096);
         Sampler sampler = Engine.configuredSampler(model, false, 0.0f, 1.0f, 42);
 
         // EXACTLY `target` raw tokens (no chat wrapping) — matches llama.cpp's pp<N> token count.

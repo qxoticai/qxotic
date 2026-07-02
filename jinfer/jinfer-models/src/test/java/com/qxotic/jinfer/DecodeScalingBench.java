@@ -19,7 +19,7 @@ public final class DecodeScalingBench {
         int maxDepth = 0; for (int d : depths) maxDepth = Math.max(maxDepth, d);
         int ctx = maxDepth + warmup + measure + 256;
 
-        ModelLegacy model = ModelLoader.loadModel(path, Math.max(8192, ctx));
+        ModelLegacy model = LegacyModelLoader.loadModel(path, Math.max(8192, ctx));
         int vocab = model.vocabularySize();
 
         // filler token stream for prefill

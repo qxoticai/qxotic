@@ -43,7 +43,7 @@ public final class LegacyBench {
         List<Row> rows = new ArrayList<>();
         for (String path : models) {
             System.err.printf("loading %s (ctx=%d) ...%n", path, ctx);
-            ModelLegacy model = ModelLoader.loadModel(Path.of(path), ctx);
+            ModelLegacy model = LegacyModelLoader.loadModel(Path.of(path), ctx);
             String name = name(path);
             if (p > 0) rows.add(measure(model, name, threads, "pp" + p, p, true, warmup, reps));
             if (n > 0) rows.add(measure(model, name, threads, "tg" + n, n, false, warmup, reps));

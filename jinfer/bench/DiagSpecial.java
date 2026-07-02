@@ -24,7 +24,7 @@ public final class DiagSpecial {
     }
 
     public static void main(String[] args) throws Exception {
-        Model model = ModelLoader.loadModel(Path.of(args[0]), 4096);
+        Model model = LegacyModelLoader.loadModel(Path.of(args[0]), 4096);
         var tok = model.tokenizer();
         List<Integer> chatml = tok.encodeWithSpecialTokens(
                 "<|im_start|>user\nWhat is the capital of France?<|im_end|>\n<|im_start|>assistant\n");

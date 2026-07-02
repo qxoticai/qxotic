@@ -399,7 +399,7 @@ public class Main {
         }
         ModelLegacy model = AOT.tryUsePreLoaded(options.modelPath(), options.maxTokens());
         if (model == null) {
-            model = ModelLoader.loadModel(options.modelPath(), options.maxTokens());
+            model = LegacyModelLoader.loadModel(options.modelPath(), options.maxTokens());
         }
         if (options.server()) {
             Server.start(model, options);
@@ -485,7 +485,7 @@ final class AOT {
             }
             try (FileChannel fileChannel = FileChannel.open(path, StandardOpenOption.READ)) {
                 GGUF gguf = ModelLoader.readGguf(fileChannel, path.toString());
-                Llama base = ModelLoader.loadModel(null, gguf, Main.DEFAULT_MAX_TOKENS, false);
+                Llama base = LegacyModelLoader.loadModel(null, gguf, Main.DEFAULT_MAX_TOKENS, false);
                 // Precompute RoPE frequencies at build time (pure Java arrays, survives native-image)
                 Llama.Configuration config = base.configuration();
                 Pair<float[], float[]> ropeFreqsSWA = RoPE.precomputeFreqsCis(
@@ -524,7 +524,7 @@ final class AOT {
         try (var timer = Timer.log("Load tensors from pre-loaded model");
              var fileChannel = FileChannel.open(modelPath, StandardOpenOption.READ)) {
             Map<String, GGMLTensorEntry> tensorEntries = ModelLoader.loadTensors(fileChannel, preLoaded.tensorDataOffset(), preLoaded.tensors());
-            Llama.Weights weights = ModelLoader.loadWeightsWithRoPE(tensorEntries, baseModel.configuration(),
+            Llama.Weights weights = LegacyModelLoader.loadWeightsWithRoPE(tensorEntries, baseModel.configuration(),
                     preLoaded.ropeFreqsSWA(), preLoaded.ropeFreqsFull());
             return new Llama(baseModel.configuration().withContextLength(contextLength), baseModel.tokenizer(), weights);
         }

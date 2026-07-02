@@ -26,7 +26,7 @@ public final class BenchDecode {
         int warmup = args.length > 3 ? Integer.parseInt(args[3]) : Math.min(600, total / 3);
         int window = args.length > 4 ? Integer.parseInt(args[4]) : 200;
 
-        Model model = ModelLoader.loadModel(Path.of(path), depth + total + 16);
+        Model model = LegacyModelLoader.loadModel(Path.of(path), depth + total + 16);
         Sampler sampler = Engine.configuredSampler(model, false, 0.0f, 1.0f, 42);   // greedy: deterministic timing
 
         StringBuilder sb = new StringBuilder();
