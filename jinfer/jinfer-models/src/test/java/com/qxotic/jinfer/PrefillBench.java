@@ -19,7 +19,7 @@ public final class PrefillBench {
         int warmup = args.length > 2 ? Integer.parseInt(args[2]) : 3;
         int measure = args.length > 3 ? Integer.parseInt(args[3]) : 8;
 
-        ModelLegacy model = ModelLoader.loadModel(path, Math.max(4096, promptLen + 16));
+        ModelLegacy model = LegacyModelLoader.loadModel(path, Math.max(4096, promptLen + 16));
 
         // Build a prompt of ~promptLen tokens by tokenizing repeated prose and trimming.
         String para = "The history of the Roman empire is long and complex, spanning many centuries of "

@@ -41,7 +41,7 @@ public final class ServerIntegrationTest {
             System.exit(failures > 0 ? 1 : 0);
             return;
         }
-        Llama llama = (Llama) ModelLoader.loadModel(model, 2048);
+        Llama llama = (Llama) LegacyModelLoader.loadModel(model, 2048);
         StringBuilder manual = new StringBuilder("Agent operating manual.");
         for (int i = 1; i <= 50; i++) {
             manual.append(" Directive ").append(i).append(": when handling case ").append(i)

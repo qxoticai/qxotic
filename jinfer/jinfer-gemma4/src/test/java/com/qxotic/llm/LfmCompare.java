@@ -3,6 +3,7 @@
 //   java ... com.qxotic.llm.LfmCompare <model.gguf> [prompt]
 package com.qxotic.llm;
 
+import com.qxotic.jinfer.LegacyModelLoader;
 import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.ModelLegacy;
 import com.qxotic.jinfer.ModelLoader;
@@ -25,7 +26,7 @@ public final class LfmCompare {
         int[] ids = pt.stream().mapToInt(Integer::intValue).toArray();
         int vocab = nw.config().vocabularySize();
 
-        ModelLegacy old = ModelLoader.loadModel(Path.of(path), 4096);
+        ModelLegacy old = LegacyModelLoader.loadModel(Path.of(path), 4096);
         var os = old.createNewState();
         old.ingest(os, ids, 0, 0, ids.length);
         FloatTensor ol = old.computeLogits(os);

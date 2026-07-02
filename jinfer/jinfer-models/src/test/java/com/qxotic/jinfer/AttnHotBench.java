@@ -11,7 +11,7 @@ public final class AttnHotBench {
         int chunk = args.length > 2 ? Integer.parseInt(args[2]) : 256;
         int iters = args.length > 3 ? Integer.parseInt(args[3]) : 60;
 
-        ModelLegacy model = ModelLoader.loadModel(path, depth + chunk + 256);
+        ModelLegacy model = LegacyModelLoader.loadModel(path, depth + chunk + 256);
         String para = "The history of the Roman empire is long and complex, spanning many centuries of "
                 + "conquest, civil strife, cultural achievement and eventual decline across three continents. ";
         // Encode the prose block once and tile it (re-encoding a growing string would be O(n^2)).

@@ -24,6 +24,10 @@
         </dependency>
         <dependency>
             <groupId>com.qxotic</groupId>
+            <artifactId>jinfer-kernels</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.qxotic</groupId>
             <artifactId>jinfer-models</artifactId>
         </dependency>
         <dependency>

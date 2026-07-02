@@ -44,7 +44,7 @@ public final class DecodeAllocBench {
         int warmup = args.length > 1 ? Integer.parseInt(args[1]) : 64;
         int measure = args.length > 2 ? Integer.parseInt(args[2]) : 256;
 
-        ModelLegacy model = ModelLoader.loadModel(path, 4096);
+        ModelLegacy model = LegacyModelLoader.loadModel(path, 4096);
         int vocab = model.vocabularySize();
         InferenceState state = model.createNewState();
 
