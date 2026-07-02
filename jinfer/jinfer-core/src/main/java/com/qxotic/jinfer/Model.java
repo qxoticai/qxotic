@@ -18,10 +18,9 @@ public interface Model<C extends Config, W, S extends RuntimeState> {
     S newState(int contextCapacity, int batchCapacity);
 
     /** Scratch width {@link #newState(int)} allocates when the caller doesn't pick one: a prefill of up
-     *  to this many tokens ingests in a single batch; longer prompts are re-chunked by the caller. */
-    int DEFAULT_BATCH_CAPACITY = 512;
-
-    default S newState(int contextCapacity) { return newState(contextCapacity, DEFAULT_BATCH_CAPACITY); }
+     *  to this many tokens ingests in a single batch; longer prompts are re-chunked by the caller.
+     *  Defaults to 512; override with {@code -Djinfer.batchCapacity} (read at run time, JVM or native). */
+    default S newState(int contextCapacity) { return newState(contextCapacity, RuntimeFlags.BATCH_CAPACITY); }
 
     /** Ingest one batch at the state's cursor ({@link RuntimeState#position()}), advancing it, and
      *  retain the final hidden states selected by {@link Batch#outputs()}. The {@link Batch.Input}

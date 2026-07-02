@@ -27,6 +27,9 @@ final class RuntimeFlags {
 
     // generation / engine
     static final int MAX_PROMPT_SEQUENCE_LENGTH = Integer.getInteger("jinfer.maxPromptSequenceLength", 1024);
+    // Default scratch/batch width when a caller creates a state without picking one (Model.newState(ctx)):
+    // a prefill of up to this many tokens ingests in a single batch; longer prompts re-chunk by the caller.
+    static final int BATCH_CAPACITY = Integer.getInteger("jinfer.batchCapacity", 512);
     static final boolean ROLLING_ATTENTION = !"false".equals(System.getProperty("jinfer.rollingAttention"));
     // Block-tiled flash prefill (FlashAttention.qkTile/pvTile): each f16 KV vector is decoded once and
     // reused across QT query rows, ~1.7x faster than the per-position rolling path at multi-thousand-
