@@ -63,7 +63,7 @@ final class ToolUse {
 
     /** Parses tool calls out of a finished reply, returning the result re-tagged with them (or the
      *  original result when none parsed). */
-    static GenerationResult parse(ModelLegacy model, GenerationResult result, Map<String, Object> request) {
+    static GenerationResult parse(LanguageModel<?, ?, ?> model, GenerationResult result, Map<String, Object> request) {
         // Parse from the FULL generated text (think span included). result.text() is the
         // think-STRIPPED content, so a call the model emits before it closes </think> (or in an
         // unterminated think span) would be deleted before we ever see it. Decoding the raw
