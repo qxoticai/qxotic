@@ -3,10 +3,10 @@
 // + periodic full-attention transformer, dense or MoE: layers are SSM (gated delta-net) by default,
 // every full_attention_interval-th layer is full softmax attention with QK-norm + a query/output gate.
 //
-// This port reuses the production's SINGLE-TOKEN reference forward (the path behind
-// -Djinfer.singleTokenPrefill), which the production validates token-exact against its batched/chunked
-// path. The new-API ingest therefore processes a prompt token-by-token (seqLen==1 per step); the gated
-// delta-net recurrence + conv ring carry forward in the State exactly as in a streaming decode. This
+// This port batches prompt prefill: dense FFN via ffnForwardBatch, MoE via moeForwardBatch (CSR
+// gather-by-expert GEMMs), token-exact vs the single-token reference forward (behind
+// -Djinfer.singleTokenPrefill). Only the gated delta-net recurrence + conv ring stay sequential over
+// the chunk's rows, carried forward in the State exactly as in a streaming decode. This
 // keeps the port to public jinfer kernels only (matmul / flashDecode / gemm-with-offset /
 // Activations.siluMultiply / RoPE.precomputeFreqsCis) and the shared LLM scalar helpers
 // (sigmoid/silu/softplus) + LLM.ropeInterleaved. Text-only -> implements only LanguageModel.
@@ -64,10 +64,9 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
         switch (batch.input()) {
             case Batch.Input.Tokens t -> {
                 int[] ids = t.ids();
-                // Dense prefill batches the projection GEMMs over the chunk (delta-net recurrence + conv
-                // stay sequential over rows). MoE models keep streaming token-by-token (no batched MoE yet).
+                // Prefill batches the projection GEMMs over the chunk (dense FFN via ffnForwardBatch, MoE
+                // via moeForwardBatch); only the delta-net recurrence + conv ring stay sequential over rows.
                 if (n == 1) Parallel.onDecodePool(() -> { forward(s, ids, 0, from, 1); return null; });
-                else if (configuration.isMoE()) for (int i = 0; i < n; i++) forward(s, ids, i, from + i, 1);
                 else forward(s, ids, 0, from, n);
             }
             case Batch.Input.Sequences seq ->
@@ -149,7 +148,7 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
             state.xb.copyTo(0, state.x, 0, seqLen * dim);
             Parallel.forRows(seqLen, s -> rmsnorm(state.xb, (long) s * fDim, state.xb, (long) s * fDim, postW, fDim, eps));
 
-            if (config.isMoE()) moeForward(state, l);   // MoE models are streamed (seqLen==1) by ingest
+            if (config.isMoE()) { if (seqLen == 1) moeForward(state, l); else moeForwardBatch(state, l, seqLen); }
             else { if (seqLen == 1) ffnForward(state, l); else ffnForwardBatch(state, l, seqLen); }
             state.x.addInPlace(0, state.xb, 0, seqLen * dim);
             if (LLM.TRACE) LLM.traceSum("l_out-" + l, state.x, seqLen * dim);
@@ -586,6 +585,76 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
         moeOutput.copyTo(0, state.xb, 0, dim);
     }
 
+    /** Batched top-k MoE + shared expert (prompt prefill): router GEMM, per-row softmax+top-k+renorm,
+     *  CSR gather-by-expert GEMMs, plus the batched shared expert with its sigmoid input gate. Sums
+     *  experts + shared*sharedScale into {@code xb}. Token-exact vs the single-token {@link #moeForward}. */
+    private void moeForwardBatch(State state, int layer, int seqLen) {
+        Configuration config = configuration;
+        Weights w = weights;
+        int dim = config.embeddingLength;
+        int expertFFN = config.expertFeedForwardLength;
+        int numExperts = config.expertCount;
+        int topK = Math.min(config.expertUsedCount, numExperts);
+        int gateUpStride = expertFFN * dim;
+        int downStride = dim * expertFFN;
+
+        // The pre-FFN normed input is already in state.xb; snapshot it as the per-row router/expert/shared
+        // input (the CSR gather scrambles row order).
+        state.xb.copyTo(0, state.moeInputB, 0, seqLen * dim);
+
+        // router: softmax over all experts, top-k, renormalize top-k (per row)
+        w.moeRouter[layer].gemm(state.moeInputB, dim, state.moeRouterB, numExperts, seqLen, numExperts, dim);
+        int[] counts = state.moeExpertCounts;
+        java.util.Arrays.fill(counts, 0);
+        for (int s = 0; s < seqLen; s++) {
+            state.moeRouterB.softmaxInPlace(s * numExperts, numExperts);
+            int[] topE = state.moeTopExperts;
+            float[] topP = state.moeTopWeights;
+            selectTopK(state.moeRouterB, s * numExperts, numExperts, topK, topE, topP);
+            float topKSum = 0f;
+            for (int i = 0; i < topK; i++) topKSum += topP[i];
+            float invTopK = topKSum == 0f ? 0f : 1f / topKSum;
+            for (int ki = 0; ki < topK; ki++) {
+                int e = topE[ki];
+                state.moeRowTopE[s * topK + ki] = e;
+                state.moeRowTopP[s * topK + ki] = (e < 0 ? 0f : topP[ki] * invTopK);
+                if (e >= 0) counts[e]++;
+            }
+        }
+
+        // CSR grouping + gather + scatter is the shared kernel; the per-expert gated SiLU is here.
+        Moe.Routing r = state.moeRouting;
+        r.seqLen = seqLen; r.topK = topK; r.numExperts = numExperts;
+        Moe.dispatch(r, dim, state.moeInputB, state.moeGather, state.moeDownB, state.moeOutB, null,
+                (e, n, gather, out) -> {
+                    int gateUpOffset = e * gateUpStride;
+                    w.moeExpertGate[layer].gemm(gather, dim, state.moeGateUpB, expertFFN, n, expertFFN, dim, gateUpOffset);
+                    w.moeExpertUp[layer].gemm(gather, dim, state.moeUpB, expertFFN, n, expertFFN, dim, gateUpOffset);
+                    Parallel.forRows(n, j -> Activations.siluMultiply(state.moeGateUpB, j * expertFFN, state.moeUpB, j * expertFFN, expertFFN));
+                    w.moeExpertDown[layer].gemm(state.moeGateUpB, expertFFN, out, dim, n, dim, expertFFN, e * downStride);
+                });
+
+        // shared expert (batched) + sigmoid input gate, added per row
+        if (config.expertSharedFeedForwardLength > 0 && w.moeSharedGate[layer] != null) {
+            int sharedFFN = config.expertSharedFeedForwardLength;
+            w.moeSharedGate[layer].gemm(state.moeInputB, dim, state.moeSharedGateB, sharedFFN, seqLen, sharedFFN, dim);
+            w.moeSharedUp[layer].gemm(state.moeInputB, dim, state.moeSharedUpB, sharedFFN, seqLen, sharedFFN, dim);
+            Parallel.forRows(seqLen, s -> Activations.siluMultiply(state.moeSharedGateB, s * sharedFFN, state.moeSharedUpB, s * sharedFFN, sharedFFN));
+            w.moeSharedDown[layer].gemm(state.moeSharedGateB, sharedFFN, state.moeSharedOutB, dim, seqLen, dim, sharedFFN);
+            if (w.moeSharedInputGate[layer] != null) {
+                w.moeSharedInputGate[layer].gemm(state.moeInputB, dim, state.moeSharedInputGateB, 1, seqLen, 1, dim);
+                Parallel.forRows(seqLen, s -> {
+                    float sharedScale = sigmoid(state.moeSharedInputGateB.getFloat(s));
+                    state.moeOutB.saxpyInPlace(s * dim, state.moeSharedOutB, s * dim, dim, sharedScale);
+                });
+            } else {
+                state.moeOutB.addInPlace(0, state.moeSharedOutB, 0, seqLen * dim);
+            }
+        }
+
+        state.moeOutB.copyTo(0, state.xb, 0, seqLen * dim);
+    }
+
     // === Configuration ===
 
     public static final class Configuration implements Config {
@@ -730,6 +799,12 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
                 moeSharedGate, moeSharedUp, moeSharedOut, moeSharedInputGate;
         final int[] moeTopExperts;
         final float[] moeTopWeights;
+        // batched grouped-MoE prefill scratch (CSR gather-by-expert; sized to batchCapacity rows)
+        final FloatTensor moeInputB, moeRouterB, moeOutB, moeGather, moeGateUpB, moeUpB, moeDownB,
+                moeSharedGateB, moeSharedUpB, moeSharedOutB, moeSharedInputGateB;
+        final int[] moeExpertCounts, moeExpertOffsets, moeCursor, moeRowByExpert, moeRowTopE;
+        final float[] moeProbByExpert, moeRowTopP;
+        final Moe.Routing moeRouting;
 
         State(Configuration config, int contextCapacity, int batchCapacity) {
             if (contextCapacity > config.contextLength) {
@@ -795,11 +870,37 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
                 this.moeSharedInputGate = FloatTensor.allocateF32(1);
                 this.moeTopExperts = new int[tk];
                 this.moeTopWeights = new float[tk];
+                int c = this.batchCapacity;
+                this.moeInputB = FloatTensor.allocateF32(c * dim);
+                this.moeRouterB = FloatTensor.allocateF32(c * e);
+                this.moeOutB = FloatTensor.allocateF32(c * dim);
+                this.moeGather = FloatTensor.allocateF32(c * dim);
+                this.moeGateUpB = FloatTensor.allocateF32(c * eff);
+                this.moeUpB = FloatTensor.allocateF32(c * eff);
+                this.moeDownB = FloatTensor.allocateF32(c * dim);
+                this.moeSharedGateB = FloatTensor.allocateF32(c * sff);
+                this.moeSharedUpB = FloatTensor.allocateF32(c * sff);
+                this.moeSharedOutB = FloatTensor.allocateF32(c * dim);
+                this.moeSharedInputGateB = FloatTensor.allocateF32(c);
+                this.moeExpertCounts = new int[e];
+                this.moeExpertOffsets = new int[e + 1];
+                this.moeCursor = new int[e];
+                this.moeRowByExpert = new int[c * tk];
+                this.moeRowTopE = new int[c * tk];
+                this.moeProbByExpert = new float[c * tk];
+                this.moeRowTopP = new float[c * tk];
+                this.moeRouting = new Moe.Routing(moeRowTopE, moeRowTopP, moeExpertCounts, moeExpertOffsets,
+                        moeCursor, moeRowByExpert, moeProbByExpert);
             } else {
                 this.moeRouterLogits = this.moeOutput = this.moeExpertOut = this.moeGateResult = this.moeUpResult = null;
                 this.moeSharedGate = this.moeSharedUp = this.moeSharedOut = this.moeSharedInputGate = null;
                 this.moeTopExperts = null;
                 this.moeTopWeights = null;
+                this.moeInputB = this.moeRouterB = this.moeOutB = this.moeGather = this.moeGateUpB = this.moeUpB = null;
+                this.moeDownB = this.moeSharedGateB = this.moeSharedUpB = this.moeSharedOutB = this.moeSharedInputGateB = null;
+                this.moeExpertCounts = this.moeExpertOffsets = this.moeCursor = this.moeRowByExpert = this.moeRowTopE = null;
+                this.moeProbByExpert = this.moeRowTopP = null;
+                this.moeRouting = null;
             }
 
             this.keyCache = new FloatTensor[config.numberOfLayers];
