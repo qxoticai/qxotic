@@ -1,0 +1,140 @@
+package com.qxotic.llm;
+
+import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.LFMTokenizer;
+import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.Part;
+import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.chat.TurnTemplate;
+
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+/** Hand-written gpt-oss (Harmony) chat framing, matching the GGUF chat_template's
+ *  plain-conversation shape.
+ *
+ *  <p>Layout: a fixed system preamble once
+ *  ({@code <|start|>system<|message|>{identity, cutoff, date, reasoning, channels}<|end|>}), the
+ *  conversation's system message as a developer block
+ *  ({@code <|start|>developer<|message|># Instructions\n\n{content}<|end|>}), then per turn
+ *  {@code <|start|>user<|message|>{content}<|end|>} and, for assistant history,
+ *  {@code <|start|>assistant<|channel|>final<|message|>{content}<|end|>} (the template drops CoT
+ *  from history - only the final channel is re-rendered). Generation prompt is
+ *  {@code <|start|>assistant}; the model then emits its own channel tokens
+ *  ({@code <|channel|>analysis<|message|>...}), so {@code thinking} is a no-op here - Harmony
+ *  always reasons, and the effort knob lives in the system preamble ({@code Reasoning: medium}).
+ *
+ *  <p>Each text run between specials is ONE contiguous plain {@link LFMTokenizer#encode} (that is
+ *  how a rendered template tokenizes; specials force the only splits), and conversation content
+ *  never goes through special-aware encoding, so text cannot mint control tokens.
+ *
+ *  <p>The preamble embeds the current date ({@code strftime_now("%Y-%m-%d")} in the template);
+ *  it is a constructor argument so tests are deterministic - the convenience constructor pins
+ *  today, matching what the template renders. */
+public final class GptOssTurnTemplate implements TurnTemplate {
+
+    static final String DEFAULT_IDENTITY = "You are ChatGPT, a large language model trained by OpenAI.";
+    static final String DEFAULT_EFFORT = "medium";
+
+    private final LFMTokenizer tokenizer;
+    private final String systemText;
+    private final int start;     // <|start|>
+    private final int message;   // <|message|>
+    private final int channel;   // <|channel|>
+    private final int end;       // <|end|>
+
+    public GptOssTurnTemplate(LFMTokenizer tokenizer) {
+        this(tokenizer, LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
+    }
+
+    public GptOssTurnTemplate(LFMTokenizer tokenizer, String currentDate) {
+        this.tokenizer = tokenizer;
+        Map<String, Integer> special = tokenizer.getSpecialTokens();
+        this.start = required(special, "<|start|>");
+        this.message = required(special, "<|message|>");
+        this.channel = required(special, "<|channel|>");
+        this.end = required(special, "<|end|>");
+        this.systemText = DEFAULT_IDENTITY + "\n"
+                + "Knowledge cutoff: 2024-06\n"
+                + "Current date: " + currentDate + "\n\n"
+                + "Reasoning: " + DEFAULT_EFFORT + "\n\n"
+                + "# Valid channels: analysis, commentary, final. Channel must be included for every message.";
+    }
+
+    private static int required(Map<String, Integer> special, String name) {
+        Integer id = special.get(name);
+        if (id == null) throw new IllegalArgumentException("tokenizer lacks " + name);
+        return id;
+    }
+
+    /** The fixed Harmony system preamble: {@code <|start|>system<|message|>{...}<|end|>}. */
+    @Override
+    public List<Batch> conversationStart() {
+        List<Integer> ids = new ArrayList<>();
+        ids.add(start);
+        ids.addAll(tokenizer.encode("system"));
+        ids.add(message);
+        ids.addAll(tokenizer.encode(systemText));
+        ids.add(end);
+        return List.of(Batch.prefill(arr(ids)));
+    }
+
+    @Override
+    public List<Batch> encodeTurn(Message m) {
+        List<Integer> ids = new ArrayList<>();
+        ids.add(start);
+        if (m.role().equals(Role.SYSTEM)) {                 // conversation system -> developer block
+            ids.addAll(tokenizer.encode("developer"));
+            ids.add(message);
+            ids.addAll(tokenizer.encode("# Instructions\n\n" + text(m)));
+        } else if (m.role().equals(Role.ASSISTANT)) {       // history keeps only the final channel
+            ids.addAll(tokenizer.encode("assistant"));
+            ids.add(channel);
+            ids.addAll(tokenizer.encode("final"));
+            ids.add(message);
+            ids.addAll(tokenizer.encode(text(m)));
+        } else {
+            ids.addAll(tokenizer.encode(m.role().name()));
+            ids.add(message);
+            ids.addAll(tokenizer.encode(text(m)));
+        }
+        ids.add(end);
+        return List.of(Batch.prefill(arr(ids)));
+    }
+
+    /** {@code <|start|>assistant} - the model emits its own channel tokens from here. */
+    @Override
+    public List<Batch> generationPrompt(boolean thinking) {
+        List<Integer> ids = new ArrayList<>();
+        ids.add(start);
+        ids.addAll(tokenizer.encode("assistant"));
+        return List.of(Batch.prefill(arr(ids)));
+    }
+
+    /** Closes the open message: {@code <|end|>} (the {@code <|return|>} stop is never ingested). */
+    @Override
+    public List<Batch> closeTurn() {
+        return List.of(Batch.prefill(new int[]{end}));
+    }
+
+    private static String text(Message m) {
+        StringBuilder sb = new StringBuilder();
+        for (Part p : m.content()) {
+            if (p instanceof Part.Text t) {
+                sb.append(t.text());
+            } else {
+                throw new IllegalArgumentException("GptOssTurnTemplate is text-only for now: " + p.getClass().getSimpleName());
+            }
+        }
+        return sb.toString();
+    }
+
+    private static int[] arr(List<Integer> l) {
+        int[] a = new int[l.size()];
+        for (int i = 0; i < a.length; i++) a[i] = l.get(i);
+        return a;
+    }
+}

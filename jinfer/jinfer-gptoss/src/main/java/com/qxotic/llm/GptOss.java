@@ -438,6 +438,7 @@ public final class GptOss implements LanguageModel<GptOss.Configuration, GptOss.
         @Override public int batchCapacity()   { return batchCapacity; }
         @Override public int position()         { return position; }
         @Override public int outputCount()      { return outputCount; }
+        @Override public void resumeAt(int p)   { position = p; lastChunkLen = 0; outputCount = 0; }
     }
 
     // === Loading ===
