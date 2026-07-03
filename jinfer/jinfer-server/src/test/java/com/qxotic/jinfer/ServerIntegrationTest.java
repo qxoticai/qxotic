@@ -234,7 +234,7 @@ public final class ServerIntegrationTest {
         // prefix (bos + that first user turn) must resume from turn 1's committed blocks
         String turn2 = "{\"messages\":["
                 + userTurn + ","
-                + "{\"role\":\"assistant\",\"content\":\"" + escape(a1) + "\"},"
+                + "{\"role\":\"assistant\",\"content\":" + JsonCodec.stringify(a1) + "},"
                 + "{\"role\":\"user\",\"content\":\"What was the codeword? One word.\"}"
                 + "]" + noThink;
         Map<String, Object> r2 = json(post("/v1/chat/completions", turn2));
@@ -250,10 +250,6 @@ public final class ServerIntegrationTest {
         Object details = usage.get("prompt_tokens_details");
         if (details instanceof Map<?, ?> d && d.get("cached_tokens") instanceof Number n) return n.longValue();
         return 0;
-    }
-
-    private static String escape(String s) {
-        return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
     }
 
     private static void chatStreaming() throws Exception {

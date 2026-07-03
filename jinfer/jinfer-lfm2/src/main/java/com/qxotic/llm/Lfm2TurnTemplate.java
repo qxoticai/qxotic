@@ -34,6 +34,9 @@ public final class Lfm2TurnTemplate implements TurnTemplate {
     private final int bos;      // <|startoftext|>
     private final int imStart;  // <|im_start|>
     private final int imEnd;    // <|im_end|>
+    private final int[] newline;                 // encode("\n"), constant
+    private final List<Batch> generationPrompt;  // <|im_start|>assistant\n, constant
+    private final List<Batch> closeTurn;         // <|im_end|>\n, constant
 
     public Lfm2TurnTemplate(GgufTokenizer tokenizer) {
         this.tokenizer = tokenizer;
@@ -41,6 +44,19 @@ public final class Lfm2TurnTemplate implements TurnTemplate {
         this.bos = required(special, "<|startoftext|>");
         this.imStart = required(special, "<|im_start|>");
         this.imEnd = required(special, "<|im_end|>");
+        this.newline = ids(tokenizer.encode("\n"));
+        List<Integer> gen = new java.util.ArrayList<>(List.of(imStart));
+        gen.addAll(tokenizer.encode("assistant\n"));
+        this.generationPrompt = List.of(Batch.prefill(ids(gen)));
+        List<Integer> close = new java.util.ArrayList<>(List.of(imEnd));
+        close.addAll(tokenizer.encode("\n"));
+        this.closeTurn = List.of(Batch.prefill(ids(close)));
+    }
+
+    private static int[] ids(List<Integer> l) {
+        int[] a = new int[l.size()];
+        for (int i = 0; i < a.length; i++) a[i] = l.get(i);
+        return a;
     }
 
     private static int required(Map<String, Integer> special, String name) {
@@ -60,8 +76,7 @@ public final class Lfm2TurnTemplate implements TurnTemplate {
         if (message.role().equals(Role.ASSISTANT)) content = stripThinking(content);
         // <|im_start|> {role}\n{content} <|im_end|> \n   — one contiguous plain run per text span
         List<Integer> body = tokenizer.encode(message.role().name() + "\n" + content);
-        List<Integer> newline = tokenizer.encode("\n");
-        int[] ids = new int[1 + body.size() + 1 + newline.size()];
+        int[] ids = new int[1 + body.size() + 1 + newline.length];
         int i = 0;
         ids[i++] = imStart;
         for (int id : body) ids[i++] = id;
@@ -72,22 +87,12 @@ public final class Lfm2TurnTemplate implements TurnTemplate {
 
     @Override
     public List<Batch> generationPrompt(boolean thinking) {
-        List<Integer> body = tokenizer.encode("assistant\n");
-        int[] ids = new int[1 + body.size()];
-        int i = 0;
-        ids[i++] = imStart;
-        for (int id : body) ids[i++] = id;
-        return List.of(Batch.prefill(ids));
+        return generationPrompt;
     }
 
     @Override
     public List<Batch> closeTurn() {
-        List<Integer> newline = tokenizer.encode("\n");
-        int[] ids = new int[1 + newline.size()];
-        int i = 0;
-        ids[i++] = imEnd;
-        for (int id : newline) ids[i++] = id;
-        return List.of(Batch.prefill(ids));
+        return closeTurn;
     }
 
     private static String text(Message message) {

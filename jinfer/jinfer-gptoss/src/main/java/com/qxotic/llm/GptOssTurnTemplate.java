@@ -41,6 +41,7 @@ public final class GptOssTurnTemplate implements TurnTemplate {
 
     private final GgufTokenizer tokenizer;
     private final String systemText;
+    private final List<Batch> conversationStart;   // fixed preamble, encoded once
     private final int start;     // <|start|>
     private final int message;   // <|message|>
     private final int channel;   // <|channel|>
@@ -62,6 +63,13 @@ public final class GptOssTurnTemplate implements TurnTemplate {
                 + "Current date: " + currentDate + "\n\n"
                 + "Reasoning: " + DEFAULT_EFFORT + "\n\n"
                 + "# Valid channels: analysis, commentary, final. Channel must be included for every message.";
+        List<Integer> ids = new ArrayList<>();
+        ids.add(start);
+        ids.addAll(tokenizer.encode("system"));
+        ids.add(message);
+        ids.addAll(tokenizer.encode(systemText));
+        ids.add(end);
+        this.conversationStart = List.of(Batch.prefill(arr(ids)));
     }
 
     private static int required(Map<String, Integer> special, String name) {
@@ -73,13 +81,7 @@ public final class GptOssTurnTemplate implements TurnTemplate {
     /** The fixed Harmony system preamble: {@code <|start|>system<|message|>{...}<|end|>}. */
     @Override
     public List<Batch> conversationStart() {
-        List<Integer> ids = new ArrayList<>();
-        ids.add(start);
-        ids.addAll(tokenizer.encode("system"));
-        ids.add(message);
-        ids.addAll(tokenizer.encode(systemText));
-        ids.add(end);
-        return List.of(Batch.prefill(arr(ids)));
+        return conversationStart;
     }
 
     @Override

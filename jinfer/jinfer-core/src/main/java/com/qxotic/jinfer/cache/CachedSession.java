@@ -36,7 +36,15 @@ public final class CachedSession<S extends RuntimeState> {
      *  (empty for a brand-new conversation). */
     public static <S extends RuntimeState> CachedSession<S> resume(
             Model<?, ?, S> model, PromptCache<S> cache, S state, long[] expected) {
-        PromptCache<S>.Cursor cursor = cache.resume(expected, expected.length, state);
+        return resume(model, cache, state, expected, expected.length);
+    }
+
+    /** Like {@link #resume(Model, PromptCache, Object, long[])} but restoring at most
+     *  {@code maxPositions} — e.g. the prompt length minus its final block, so a whole-prompt hit
+     *  still re-ingests that block and leaves fresh logits at the cursor. */
+    public static <S extends RuntimeState> CachedSession<S> resume(
+            Model<?, ?, S> model, PromptCache<S> cache, S state, long[] expected, int maxPositions) {
+        PromptCache<S>.Cursor cursor = cache.resume(expected, Math.min(expected.length, maxPositions), state);
         long[] fp = Arrays.copyOf(expected, Math.max(256, expected.length));
         return new CachedSession<>(model, state, cursor, fp, cursor.position());
     }
