@@ -48,6 +48,18 @@ public final class NemotronH implements LanguageModel<NemotronH.Configuration, N
     @Override public Weights weights()       { return weights; }
     public GgufTokenizer tokenizer()          { return tokenizer; }
 
+    private com.qxotic.jinfer.chat.TurnTemplate turnTemplate;   // memoized: stateless, model-lifetime
+
+    @Override
+    public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
+        if (turnTemplate == null) turnTemplate = new NemotronHTurnTemplate(tokenizer());
+        return java.util.Optional.of(turnTemplate);
+    }
+
+    @Override
+    public java.util.Optional<com.qxotic.jinfer.cache.KvCodec<State>> kvCodec() {
+        return java.util.Optional.of(new NemotronHKvCodec(config()));
+    }
 
     @Override
     public State newState(int contextCapacity, int batchCapacity) {
