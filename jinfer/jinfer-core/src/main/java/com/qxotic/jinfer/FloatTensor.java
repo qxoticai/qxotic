@@ -309,7 +309,7 @@ public abstract class FloatTensor {
         that.mapWithIndexInPlace(thatOffset, size, (value, index) -> this.getFloat(index - thatOffset + thisOffset));
     }
 
-    int argmax(long thisOffset, int size) {
+    public int argmax(long thisOffset, int size) {
         assert size > 0;
         long maxIndex = thisOffset;
         float maxValue = this.getFloat(maxIndex);
@@ -324,7 +324,7 @@ public abstract class FloatTensor {
         return Math.toIntExact(maxIndex);   // argmax over logits: index fits int (vocab < 2^31)
     }
 
-    int argmax() {
+    public int argmax() {
         return argmax(0, Math.toIntExact(size()));
     }
 

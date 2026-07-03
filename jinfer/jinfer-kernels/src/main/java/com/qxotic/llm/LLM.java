@@ -42,11 +42,11 @@ final class LLM {
         for (int i = 0; i < n; i++) out.setFloat(i, base.getFloat(baseOff + i) + scale * add.getFloat(i));
     }
 
-    /** Greedy argmax over the first {@code n} logits. */
+    /** Greedy argmax over the first {@code n} logits.
+     *  @deprecated use {@link FloatTensor#argmax(long, int)} - the impl lives in core. */
+    @Deprecated
     static int argmax(FloatTensor t, int n) {
-        int best = 0;
-        for (int i = 1; i < n; i++) if (t.getFloat(i) > t.getFloat(best)) best = i;
-        return best;
+        return t.argmax(0, n);
     }
 
     // Scalar activations, mirroring the package-private com.qxotic.jinfer.Activations so the ports (in a

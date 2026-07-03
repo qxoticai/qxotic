@@ -12,6 +12,7 @@ import com.qxotic.jinfer.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.TurnTemplate;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -21,7 +22,7 @@ public final class GptOssCacheRun {
 
     static int failures;
     static GptOss model;
-    static GptOssTurnTemplate template;
+    static TurnTemplate template;
     static Set<Integer> stops;
     static PromptCache<GptOss.State> cache;
     static long budget;
@@ -30,11 +31,11 @@ public final class GptOssCacheRun {
     public static void main(String[] args) throws Exception {
         Path path = Path.of(args.length > 0 ? args[0] : "/home/mukel/Desktop/playground/models/unsloth/gpt-oss-20b-Q8_0.gguf");
         model = GptOss.loadModel(path, 8192);
-        template = new GptOssTurnTemplate(model.tokenizer());
+        template = model.turnTemplate().orElseThrow();
         stops = model.stopTokens();
         budget = Long.getLong("jinfer.promptCacheMB", 8192L) << 20;
         seed = PromptCache.modelSeed(path);
-        cache = new PromptCache<>(new GptOssKvCodec(model.config()), CacheStore.inMemory(), budget, seed);
+        cache = new PromptCache<>(model.kvCodec().orElseThrow(), CacheStore.inMemory(), budget, seed);
 
         // ================= short conversation (well past the 128 window already) =================
         CachedSession<GptOss.State> a = CachedSession.resume(model, cache, model.newState(8192, 512), new long[0]);
@@ -99,7 +100,7 @@ public final class GptOssCacheRun {
         String cachedReply = decode(cached, 200);
         double decodeSec = (System.nanoTime() - t1) / 1e9;
 
-        PromptCache<GptOss.State> scratch = new PromptCache<>(new GptOssKvCodec(model.config()), CacheStore.inMemory(), budget, seed);
+        PromptCache<GptOss.State> scratch = new PromptCache<>(model.kvCodec().orElseThrow(), CacheStore.inMemory(), budget, seed);
         CachedSession<GptOss.State> plain = CachedSession.resume(model, scratch, model.newState(8192, 512), new long[0]);
         long t2 = System.nanoTime();
         int[] ids = new int[history.length];

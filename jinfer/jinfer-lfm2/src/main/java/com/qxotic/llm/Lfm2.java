@@ -108,6 +108,16 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
         return stops;
     }
 
+    @Override
+    public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
+        return java.util.Optional.of(new Lfm2TurnTemplate(tokenizer()));
+    }
+
+    @Override
+    public java.util.Optional<com.qxotic.jinfer.cache.KvCodec<Lfm2.State>> kvCodec() {
+        return java.util.Optional.of(new Lfm2KvCodec(config()));
+    }
+
     // === Forward ===
 
     void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {

@@ -6,9 +6,11 @@
 package com.qxotic.llm;
 
 import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.cache.KvCodec;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.cache.SealedPrompt;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.TurnTemplate;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,15 +22,15 @@ public final class Gemma4SealedPromptRun {
 
     static int failures;
     static Gemma4 model;
-    static Gemma4TurnTemplate template;
+    static TurnTemplate template;
     static Set<Integer> stops;
 
     public static void main(String[] args) throws Exception {
         Path path = Path.of(args.length > 0 ? args[0] : "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
         model = Gemma4.loadModel(path, 8192);
-        template = new Gemma4TurnTemplate(model.tokenizer());
+        template = model.turnTemplate().orElseThrow();
         stops = model.stopTokens();
-        Gemma4KvCodec codec = new Gemma4KvCodec(model.config());
+        KvCodec<Gemma4.State> codec = model.kvCodec().orElseThrow();
         byte[] seed = PromptCache.modelSeed(path);
         Path sealed = Files.createTempFile("gemma4-prompt", ".jkvs");
 

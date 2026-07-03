@@ -107,6 +107,16 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         return stops;
     }
 
+    @Override
+    public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
+        return java.util.Optional.of(new LlamaTurnTemplate(tokenizer()));
+    }
+
+    @Override
+    public java.util.Optional<com.qxotic.jinfer.cache.KvCodec<Llama.State>> kvCodec() {
+        return java.util.Optional.of(new LlamaKvCodec(config()));
+    }
+
     // === Forward ===
 
 
