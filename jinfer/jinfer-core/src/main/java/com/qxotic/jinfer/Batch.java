@@ -25,6 +25,14 @@ public record Batch(Input input, Outputs outputs) {
     /** Prefill a prompt span, projecting only the last row (the next-token distribution). */
     public static Batch prefill(int[] ids) { return new Batch(new Input.Tokens(ids), Outputs.LAST); }
 
+    /** Prefill from a boxed id list — the prompt-construction convenience (templates build turns
+     *  as lists of special ids and encoded runs). */
+    public static Batch prefill(java.util.List<Integer> ids) {
+        int[] a = new int[ids.size()];
+        for (int i = 0; i < a.length; i++) a[i] = ids.get(i);
+        return prefill(a);
+    }
+
     /** Decode one sampled token. */
     public static Batch step(int id) { return new Batch(new Input.Tokens(new int[]{id}), Outputs.LAST); }
 

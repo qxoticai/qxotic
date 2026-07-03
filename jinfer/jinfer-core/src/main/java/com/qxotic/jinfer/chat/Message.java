@@ -33,6 +33,21 @@ public record Message(Role role, List<Part> content) {
         return new Message(Role.ASSISTANT, text);
     }
 
+    /** The concatenated text parts, requiring every part to BE text — the strict variant of
+     *  {@link #text()} for text-only templates (throws naming the unsupported part instead of
+     *  silently dropping it). */
+    public String textOnly() {
+        StringBuilder sb = new StringBuilder();
+        for (Part p : content) {
+            if (p instanceof Part.Text t) {
+                sb.append(t.text());
+            } else {
+                throw new IllegalArgumentException("text-only template: unsupported part " + p.getClass().getSimpleName());
+            }
+        }
+        return sb.toString();
+    }
+
     /** The concatenated text parts — the display/projection view (media excluded). */
     public String text() {
         StringBuilder sb = new StringBuilder();

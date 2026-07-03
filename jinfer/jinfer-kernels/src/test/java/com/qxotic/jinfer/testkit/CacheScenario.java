@@ -19,20 +19,21 @@ import java.util.List;
 
 public final class CacheScenario<S extends RuntimeState> {
 
-    /** The wrapped-window long-history case: a story long enough that SWA rings wrap, a recall
-     *  probe, and the minimum history length to assert. */
+    /** The long-history case: a story long past the model's window or checkpoint horizon (for
+     *  windowed models: long enough that the SWA rings wrap), a recall probe, and the minimum
+     *  history length to assert. */
     public record LongCase(String story, String probe, int minLen) {}
 
     /** Per-model knobs. Reply-text strictness is NOT here - it is the model's
      *  {@link Harness#deterministicDecode} property, declared once with the harness. */
     public record Config(String systemPrompt, int maxTokens, LongCase longCase, boolean logTail) {
 
-        /** A short-conversation-only config (no wrapped-window case). */
+        /** A short-conversation-only config (no long-history case). */
         public static Config of(String systemPrompt, int maxTokens) {
             return new Config(systemPrompt, maxTokens, null, false);
         }
 
-        /** With the wrapped-window long-history case. */
+        /** With a long-history case. */
         public static Config of(String systemPrompt, int maxTokens, LongCase longCase) {
             return new Config(systemPrompt, maxTokens, longCase, false);
         }
@@ -87,7 +88,7 @@ public final class CacheScenario<S extends RuntimeState> {
             longHist = b.fingerprints();
             h.check(longHist.length > cfg.longCase().minLen(),
                     "long history exceeds the window (" + longHist.length + " > " + cfg.longCase().minLen() + ")");
-            longBench = validate(longCache, "long (" + longHist.length + " pos, wrapped rings)", longHist,
+            longBench = validate(longCache, "long (" + longHist.length + " pos)", longHist,
                     b.state(), Message.user(cfg.longCase().probe()));
         }
 
