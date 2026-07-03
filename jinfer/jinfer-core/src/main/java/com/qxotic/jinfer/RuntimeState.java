@@ -11,5 +11,10 @@ public interface RuntimeState {
     /** Rewind the cursor to 0 so the state can be reused for a fresh sequence/batch; the next ingest
      *  overwrites the KV from position 0. Optional - only states used with {@link EmbeddingModel#embed}
      *  need it; generative states leave the default. */
+    /** Makes the state resumable at {@code position} after its KV/recurrent contents were restored
+     *  externally (prompt cache): sets the cursor and resets per-batch scratch invariants. Transient
+     *  output state (logits) is NOT restored - ingest before reading logits. */
+    default void resumeAt(int position) { throw new UnsupportedOperationException("resumeAt() not supported by " + getClass().getName()); }
+
     default void reset() { throw new UnsupportedOperationException("reset() not supported by " + getClass().getName()); }
 }

@@ -33,6 +33,11 @@ public interface TurnTemplate extends ChatTemplate {
      *  template's {@code enable_thinking}); models without one ignore it. */
     List<Batch> generationPrompt(boolean thinking);
 
+    /** The assistant turn-close suffix, ingested after a generated reply so the KV ends exactly
+     *  where {@link #encodeTurn} of the finished assistant turn would: {@code generationPrompt +
+     *  reply tokens + closeTurn} frames identically to {@code encodeTurn(assistant(reply))}. */
+    List<Batch> closeTurn();
+
     /** A whole conversation is its turns, concatenated after the conversation start. */
     @Override
     default List<Batch> encode(List<Message> conversation) {

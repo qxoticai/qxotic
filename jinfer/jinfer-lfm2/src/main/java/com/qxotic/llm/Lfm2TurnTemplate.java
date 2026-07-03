@@ -80,6 +80,16 @@ public final class Lfm2TurnTemplate implements TurnTemplate {
         return List.of(Batch.prefill(ids));
     }
 
+    @Override
+    public List<Batch> closeTurn() {
+        List<Integer> newline = tokenizer.encode("\n");
+        int[] ids = new int[1 + newline.size()];
+        int i = 0;
+        ids[i++] = imEnd;
+        for (int id : newline) ids[i++] = id;
+        return List.of(Batch.prefill(ids));
+    }
+
     private static String text(Message message) {
         StringBuilder sb = new StringBuilder();
         for (Part p : message.content()) {

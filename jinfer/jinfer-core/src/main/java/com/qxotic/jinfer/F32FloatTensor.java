@@ -44,6 +44,18 @@ public final class F32FloatTensor extends SegmentFloatTensor {
     }
 
     @Override
+    public long copyRawTo(long elemOffset, MemorySegment dst, long dstByteOffset, long elemCount) {
+        MemorySegment.copy(memorySegment, elemOffset * 4, dst, dstByteOffset, elemCount * 4);
+        return elemCount * 4;
+    }
+
+    @Override
+    public long copyRawFrom(MemorySegment src, long srcByteOffset, long elemOffset, long elemCount) {
+        MemorySegment.copy(src, srcByteOffset, memorySegment, elemOffset * 4, elemCount * 4);
+        return elemCount * 4;
+    }
+
+    @Override
     public float getFloat(long index) {
         // through GLOBAL_SEGMENT (readFloat) so the access inlines on native image (see FloatTensor)
         return readFloat(memorySegment, index * Float.BYTES);
