@@ -75,6 +75,7 @@ public final class ServerIntegrationTest {
                 completionsAndStops();
                 responsesEndpoint();
                 promptCacheReuse();
+                sessionPoolReuse();
                 toolChoiceForced();
                 reasoningBudget();
                 stopStringsIgnoreReasoning();
@@ -243,6 +244,64 @@ public final class ServerIntegrationTest {
         // turn 2 must reuse turn 1's whole prompt (bos + the first user turn), well beyond turn 1's hit
         check(cached2 > cached1 + 8, "turn 2 reused turn 1's KV (cached " + cached2 + " vs turn-1 " + cached1 + ")");
         check(a2 != null && a2.toUpperCase().contains("PELICAN"), "turn 2 recalled the codeword from restored KV: " + a2);
+    }
+
+    /** Tier-1 session pool: a 3-turn conversation must continue APPEND-ONLY on the pooled live
+     *  session for turns 2 and 3 (jinfer_session_pool_hits_total increments and cached_tokens
+     *  covers the whole prior stream incl. the previous reply); an interleaved second conversation
+     *  coexists in the pool; and an identical repeat request (no delta) falls to the tier-2 block
+     *  restore yet answers identically - the pool-vs-restore identity check. */
+    private static void sessionPoolReuse() throws Exception {
+        String noThink = ",\"temperature\":0,\"max_tokens\":48,\"chat_template_kwargs\":{\"enable_thinking\":false}}";
+        String u1 = "{\"role\":\"user\",\"content\":\"The secret color is CRIMSON. Reply with just OK.\"}";
+        Map<String, Object> r1 = json(post("/v1/chat/completions", "{\"messages\":[" + u1 + "]" + noThink));
+        String a1 = (String) ((Map<?, ?>) path(r1, "choices", 0).get("message")).get("content");
+        long hits0 = metricValue("jinfer_session_pool_hits_total");
+
+        // Turn 2: echo turn 1 + the reply verbatim -> the pooled session's whole stream (prompt +
+        // adopted decode tokens) strictly prefixes the request -> tier-1 append-only.
+        String turn2 = "{\"messages\":[" + u1 + ","
+                + "{\"role\":\"assistant\",\"content\":" + JsonCodec.stringify(a1) + "},"
+                + "{\"role\":\"user\",\"content\":\"What is the secret color? One word.\"}"
+                + "]" + noThink;
+        Map<String, Object> r2 = json(post("/v1/chat/completions", turn2));
+        String a2 = (String) ((Map<?, ?>) path(r2, "choices", 0).get("message")).get("content");
+        long hits2 = metricValue("jinfer_session_pool_hits_total");
+        check(hits2 == hits0 + 1, "turn 2 continued append-only on the pooled session (hits " + hits0 + " -> " + hits2 + ")");
+        check(cachedTokens(r2) > cachedTokens(r1), "turn 2 reused the whole live stream (cached " + cachedTokens(r2) + ")");
+        check(a2 != null && a2.toUpperCase().contains("CRIMSON"), "turn 2 recalled from the live KV: " + a2);
+
+        // An interleaved, unrelated conversation coexists in the pool (capacity > 1)...
+        json(post("/v1/chat/completions", "{\"messages\":[{\"role\":\"user\",\"content\":\"Say BLUE.\"}]" + noThink));
+
+        // ...so turn 3 still finds conversation A's session and appends again.
+        String turn3 = "{\"messages\":[" + u1 + ","
+                + "{\"role\":\"assistant\",\"content\":" + JsonCodec.stringify(a1) + "},"
+                + "{\"role\":\"user\",\"content\":\"What is the secret color? One word.\"},"
+                + "{\"role\":\"assistant\",\"content\":" + JsonCodec.stringify(a2) + "},"
+                + "{\"role\":\"user\",\"content\":\"Repeat the secret color once more. One word.\"}"
+                + "]" + noThink;
+        Map<String, Object> r3 = json(post("/v1/chat/completions", turn3));
+        String a3 = (String) ((Map<?, ?>) path(r3, "choices", 0).get("message")).get("content");
+        long hits3 = metricValue("jinfer_session_pool_hits_total");
+        check(hits3 == hits2 + 1, "turn 3 hit tier 1 despite the interleaved conversation (hits " + hits3 + ")");
+        check(a3 != null && a3.toUpperCase().contains("CRIMSON"), "turn 3 recalled from the live KV: " + a3);
+
+        // Identity: the SAME turn-3 request repeated has no delta (not a strict prefix), so it must
+        // fall to the tier-2 block restore on a fresh state - and produce the identical reply.
+        Map<String, Object> r4 = json(post("/v1/chat/completions", turn3));
+        String a4 = (String) ((Map<?, ?>) path(r4, "choices", 0).get("message")).get("content");
+        long hits4 = metricValue("jinfer_session_pool_hits_total");
+        check(hits4 == hits3, "identical repeat is not append-only (falls to tier-2 restore)");
+        check(a4 != null && a4.equals(a3), "tier-2 restore reply identical to the tier-1 reply: " + a4);
+    }
+
+    /** Reads one counter from the Prometheus /metrics exposition. */
+    private static long metricValue(String name) throws Exception {
+        for (String line : get("/metrics").body().split("\n")) {
+            if (line.startsWith(name + " ")) return (long) Double.parseDouble(line.substring(name.length() + 1));
+        }
+        return -1;
     }
 
     private static long cachedTokens(Map<String, Object> chat) {

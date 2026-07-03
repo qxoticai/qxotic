@@ -3,6 +3,7 @@ package com.qxotic.jinfer;
 import com.qxotic.jinfer.Generator.GenerationResult;
 import com.qxotic.jinfer.Generator.StopSpec;
 import com.qxotic.jinfer.cache.CachedSession;
+import com.qxotic.jinfer.cache.SessionPool;
 import com.qxotic.jinfer.cache.KvCodec;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Message;
@@ -38,6 +39,7 @@ final class Generation {
     private final TurnTemplate template;         // memoized model framing, null when the model has none
     private final Set<Integer> stopTokens;       // memoized model stops
     private final PromptCache<?> promptCache;    // per-model cache; null without a KvCodec or when disabled
+    private final SessionPool<?> sessionPool;    // tier 1: last-N live conversations (append-only reuse)
 
     Generation(LanguageModel<?, ?, ?> model, LLMOptions options, Worker worker) {
         this.model = model;
@@ -46,6 +48,7 @@ final class Generation {
         this.template = model.turnTemplate().orElse(null);
         this.stopTokens = model.stopTokens();
         this.promptCache = RuntimeFlags.PROMPT_CACHE ? buildCache(model, options.modelPath()) : null;
+        this.sessionPool = promptCache != null ? new SessionPool<>(RuntimeFlags.SESSIONS) : null;
     }
 
     private static <S extends RuntimeState> PromptCache<S> buildCache(LanguageModel<?, ?, S> m, java.nio.file.Path modelPath) {
@@ -137,31 +140,49 @@ final class Generation {
             groupLen[g] = groups.get(g).stream().mapToInt(Batch::count).sum();
             total += groupLen[g];
         }
-        S state = m.newState(m.config().contextLength());
-        int restored = 0;
         @SuppressWarnings("unchecked")
         PromptCache<S> cache = (PromptCache<S>) promptCache;
-        if (cache != null) {
-            long[] fingerprints = new long[total];
-            int i = 0;
-            for (List<Batch> group : groups) for (int id : Batch.tokenIds(group)) fingerprints[i++] = id;
-            // Resume at most up to the final block (the generation prompt): a whole-prompt hit then
-            // still re-ingests that block, leaving fresh logits at the cursor - no special case.
-            CachedSession<S> session = CachedSession.resume(m, cache, state, fingerprints, total - groupLen[groupLen.length - 1]);
-            restored = session.position();                       // cache hit length (0 = cold): a BLOCK
-            session.ingestGroups(groups);                        // boundary, not necessarily a group one -
-                                                                 // the session slices the partial group
-            if (System.getProperty("jinfer.debugPrompt") != null) {
-                System.err.printf("[prompt-cache] %d/%d positions restored (%s)%n", restored, total, cache.stats());
-            }
-        } else {
+        if (cache == null) {
+            S state = m.newState(m.config().contextLength());
             List<Batch> all = new ArrayList<>();                 // uncached: plain ingest, framing unchanged
             for (List<Batch> group : groups) all.addAll(group);
             for (Batch b : Batch.prepare(all, state.batchCapacity())) m.ingest(state, b);
+            return generateFrom(m, state, request, sinks, 0).withUsage(total, 0);
+        }
+        long[] fingerprints = new long[total];
+        int i = 0;
+        for (List<Batch> group : groups) for (int id : Batch.tokenIds(group)) fingerprints[i++] = id;
+        // Tier 1: a live pooled session whose whole stream strictly prefixes this conversation
+        // continues append-only (no restore at all). Otherwise tier 2: resume the longest block
+        // prefix into a fresh state - at most up to the final block (the generation prompt), so a
+        // whole-prompt hit still re-ingests that block, leaving fresh logits at the cursor.
+        @SuppressWarnings("unchecked")
+        SessionPool<S> pool = (SessionPool<S>) sessionPool;
+        CachedSession<S> session = pool.acquire(fingerprints, total);
+        boolean tier1 = session != null;
+        if (!tier1) {
+            session = CachedSession.resume(m, cache, m.newState(m.config().contextLength()),
+                    fingerprints, total - groupLen[groupLen.length - 1]);
+        }
+        int restored = session.position();                       // reused positions: a BLOCK boundary
+        session.ingestGroups(groups);                            // (or the pooled stream end), not
+                                                                 // necessarily a group one - the
+                                                                 // session slices the partial group
+        Metrics.recordPromptCache(tier1, restored);
+        if (System.getProperty("jinfer.debugPrompt") != null) {
+            System.err.printf("[prompt-cache] %s %d/%d positions reused (%s)%n",
+                    tier1 ? "tier1-append" : "tier2-restore", restored, total, cache.stats());
         }
         // decode from the retained logits (empty prompt continues at the cursor); the whole prompt
         // was billed, of which `restored` came from the cache.
-        return generateFrom(m, state, request, sinks, restored).withUsage(total, restored);
+        GenerationResult result = generateFrom(m, session.state(), request, sinks, restored).withUsage(total, restored);
+        // Bring the decode back into the session (the generator stepped the state directly): the
+        // reply extends the stream and commits as a block, and the live session returns to the
+        // pool ready for the next echo to continue append-only.
+        int ingested = session.state().position() - total;
+        if (ingested > 0) session.adopt(result.tokens().subList(0, ingested));
+        pool.release(session);
+        return result;
     }
 
     GenerationResult completion(Map<String, Object> request, String prompt, Sinks sinks) {
