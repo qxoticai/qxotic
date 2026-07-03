@@ -37,6 +37,7 @@ public final class JinjaRendererTest {
         setAndNamespace();
         macros();
         whitespaceAndComments();
+        blockTrimDefaults();
         sequencesAndSlicing();
         objectAccess();
         templateFunctions();
@@ -565,6 +566,43 @@ public final class JinjaRendererTest {
     }
 
     // ── object / dict access & methods ───────────────────────────
+
+    // ── trim_blocks / lstrip_blocks (HF apply_chat_template defaults) ───────
+
+    static void blockTrimDefaults() {
+        System.out.println("-- trim_blocks / lstrip_blocks defaults --");
+        // trim_blocks: a bare %} swallows exactly one following newline
+        eq("{% if true %}\nA{% endif %}\n", map(), "A");
+        eq("{% if true %}\r\nA{% endif %}", map(), "A");                    // and \r\n as one
+        eq("{% if true %}\n\nA{% endif %}", map(), "\nA");                 // only ONE newline
+        // comments trim the same way
+        eq("{# note #}\nA", map(), "A");
+        // lstrip_blocks: whitespace from line start up to a block tag is stripped
+        eq("A\n    {% if true %}B{% endif %}", map(), "A\nB");
+        eq("A\n\t{% if true %}B{% endif %}", map(), "A\nB");
+        // ...but NOT when non-whitespace precedes the tag on the line
+        eq("abc {% if true %}B{% endif %}", map(), "abc B");
+        // ...and NOT for output tags
+        eq("A\n    {{ 'B' }}", map(), "A\n    B");
+        // explicit markers still win over the defaults
+        eq("{% if true -%}\n   A{% endif %}", map(), "A");                   // -%} strips ALL leading ws
+        eq("A   {%- if true %}B{% endif %}", map(), "AB");                    // {%- strips preceding ws
+        // keep_trailing_newline=false: exactly one trailing newline is dropped - at the
+        // template() entry point (what GgufTokenizer renders through), not the raw render()
+        eqTemplate("A\n", "A");
+        eqTemplate("A\n\n", "A\n");
+    }
+
+    /** eq via the public template() entry point (keep_trailing_newline applies there). */
+    static void eqTemplate(String tpl, String expected) {
+        String got = JinjaRenderer.template(tpl).render(map());
+        if (expected.equals(got)) {
+            System.out.println("ok: template(" + show(tpl) + ") => " + show(got));
+        } else {
+            failures++;
+            System.err.println("FAIL: template(" + show(tpl) + ")\n  expected [" + show(expected) + "]\n  got      [" + show(got) + "]");
+        }
+    }
 
     static void objectAccess() {
         System.out.println("-- object access --");

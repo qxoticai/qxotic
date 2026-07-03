@@ -569,7 +569,8 @@ public final class JinjaRenderer {
 
         /** lstrip_blocks: if the last TEXT token's final line (after its last newline) is only
          *  spaces/tabs, strip them - whitespace from the line start up to a block tag. Leaves the
-         *  newline and any non-whitespace intact (so {@code abc {%} keeps its space). */
+         *  newline and any non-whitespace intact (so {@code abc} followed by a block tag keeps
+         *  its space). */
         void lstripLineToTag() {
             for (int j = toks.size() - 1; j >= 0; j--) {
                 Tok pt = toks.get(j);
@@ -662,7 +663,7 @@ public final class JinjaRenderer {
                 adv(); // skip the { that triggered the stop
             }
             String val = cs.subSequence(s, i).toString();
-            if (stripNextText) {                        // explicit -%} / -#}: strip all leading whitespace
+            if (stripNextText) {                        // explicit -%} / -#} / -}}: strip all leading whitespace
                 val = val.stripLeading();
                 stripNextText = false;
                 trimNextNewline = false;
