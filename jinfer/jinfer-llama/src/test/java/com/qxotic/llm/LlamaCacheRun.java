@@ -30,7 +30,7 @@ public final class LlamaCacheRun {
         template = new LlamaTurnTemplate(model.tokenizer());
         stops = model.stopTokens();
         long budget = Long.getLong("jinfer.promptCacheMB", 2048L) << 20;
-        PromptCache<Llama.State> cache = new PromptCache<>(new LlamaKvCodec(model.config()), CacheStore.inMemory(), budget);
+        PromptCache<Llama.State> cache = new PromptCache<>(new LlamaKvCodec(model.config()), CacheStore.inMemory(), budget, PromptCache.modelSeed(path));
 
         // ---- conversation A: two turns, committed as it goes ----
         CachedSession<Llama.State> a = CachedSession.resume(model, cache, model.newState(8192, 512), new long[0]);
@@ -54,7 +54,7 @@ public final class LlamaCacheRun {
         b.ingest(turn3);
         String cachedReply = decode(b, 60);
 
-        PromptCache<Llama.State> scratch = new PromptCache<>(new LlamaKvCodec(model.config()), CacheStore.inMemory(), budget);
+        PromptCache<Llama.State> scratch = new PromptCache<>(new LlamaKvCodec(model.config()), CacheStore.inMemory(), budget, PromptCache.modelSeed(path));
         CachedSession<Llama.State> c = CachedSession.resume(model, scratch, model.newState(8192, 512), new long[0]);
         long t2 = System.nanoTime();
         c.ingest(List.of(Batch.prefill(toInts(history))));

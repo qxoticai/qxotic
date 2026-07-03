@@ -117,22 +117,66 @@ public final class PromptCache<S extends RuntimeState> {
     private final long budgetBytes;
     private final Map<BlockKey, Block> blocks = new HashMap<>();
     private final Set<Block> leaves = new HashSet<>();
-    private final Block sentinel = new Block(ROOT, null, 0, 0, null);
-    private final Block DETACHED = new Block(ROOT, null, 0, 0, null);
+    private final Block sentinel;
+    private final Block DETACHED;
     private final MessageDigest sha;
     private ByteBuffer scratch = ByteBuffer.allocate(4096).order(ByteOrder.LITTLE_ENDIAN);
     private long clock;
     private long hits, misses, evictions;
 
     public PromptCache(KvCodec<S> codec, CacheStore store, long budgetBytes) {
+        this(codec, store, budgetBytes, new byte[0]);
+    }
+
+    /** {@code modelSeed} folds the model's identity (and implicitly the codec's blob layout) into
+     *  the ROOT of the key chain, so two models — even sharing a tokenizer, where fingerprint
+     *  streams collide — can never match each other's blocks. A codec layout change ships with a
+     *  seed change and auto-invalidates persisted blocks (miss → recompute, no migration). One
+     *  cache instance/file per model is the deployment shape; see {@link #modelSeed}. */
+    public PromptCache(KvCodec<S> codec, CacheStore store, long budgetBytes, byte[] modelSeed) {
         this.codec = codec;
         this.store = store;
         this.budgetBytes = budgetBytes;
-        this.DETACHED.live = false;
         try {
             this.sha = MessageDigest.getInstance("SHA-256");
         } catch (NoSuchAlgorithmException e) {
             throw new AssertionError(e);
+        }
+        BlockKey root = ROOT;
+        if (modelSeed.length > 0) {
+            sha.reset();
+            sha.update(modelSeed);
+            ByteBuffer out = ByteBuffer.wrap(sha.digest()).order(ByteOrder.LITTLE_ENDIAN);
+            root = new BlockKey(out.getLong(), out.getLong(), out.getLong(), out.getLong());
+        }
+        this.sentinel = new Block(root, null, 0, 0, null);
+        this.DETACHED = new Block(root, null, 0, 0, null);
+        this.DETACHED.live = false;
+    }
+
+    /** A fast, stable model identity for {@link #PromptCache(KvCodec, CacheStore, long, byte[])}
+     *  and for naming a persisted cache file: file length + SHA-256 of the first and last MiB of
+     *  the GGUF (full-content hashing of multi-GB weights is not worth it — length + head/tail
+     *  covers metadata, tensor table and data edges). */
+    public static byte[] modelSeed(java.nio.file.Path gguf) {
+        try (var ch = java.nio.channels.FileChannel.open(gguf, java.nio.file.StandardOpenOption.READ)) {
+            MessageDigest d = MessageDigest.getInstance("SHA-256");
+            long size = ch.size();
+            ByteBuffer len = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(0, size);
+            d.update(len);
+            ByteBuffer buf = ByteBuffer.allocate((int) Math.min(1 << 20, size));
+            ch.read(buf, 0);
+            buf.flip();
+            d.update(buf);
+            if (size > (1 << 20)) {
+                buf.clear();
+                ch.read(buf, size - buf.capacity());
+                buf.flip();
+                d.update(buf);
+            }
+            return d.digest();
+        } catch (java.io.IOException | NoSuchAlgorithmException e) {
+            throw new IllegalStateException("modelSeed(" + gguf + ")", e);
         }
     }
 
