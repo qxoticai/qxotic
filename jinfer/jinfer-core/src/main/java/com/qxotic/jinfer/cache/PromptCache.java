@@ -3,6 +3,7 @@ package com.qxotic.jinfer.cache;
 import com.qxotic.jinfer.CacheStore;
 import com.qxotic.jinfer.RuntimeState;
 
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -82,7 +83,7 @@ public final class PromptCache<S extends RuntimeState> {
 
         /** Commit the span {@code spanFp[off..off+len)} just ingested. */
         public void commit(long[] spanFp, int off, int len, S state) {
-            if (!tip.live || len == 0) return;
+            if (frozen || !tip.live || len == 0) return;
             if (state.position() != tip.to + len) {
                 throw new IllegalStateException("commit of " + len + " at chain position " + tip.to
                         + " but state is at " + state.position());
@@ -115,6 +116,8 @@ public final class PromptCache<S extends RuntimeState> {
     private final KvCodec<S> codec;
     private final CacheStore store;
     private final long budgetBytes;
+    private final byte[] modelSeed;
+    private final boolean frozen;
     private final Map<BlockKey, Block> blocks = new HashMap<>();
     private final Set<Block> leaves = new HashSet<>();
     private final Block sentinel;
@@ -134,9 +137,15 @@ public final class PromptCache<S extends RuntimeState> {
      *  seed change and auto-invalidates persisted blocks (miss → recompute, no migration). One
      *  cache instance/file per model is the deployment shape; see {@link #modelSeed}. */
     public PromptCache(KvCodec<S> codec, CacheStore store, long budgetBytes, byte[] modelSeed) {
+        this(codec, store, budgetBytes, modelSeed, false);
+    }
+
+    private PromptCache(KvCodec<S> codec, CacheStore store, long budgetBytes, byte[] modelSeed, boolean frozen) {
         this.codec = codec;
         this.store = store;
         this.budgetBytes = budgetBytes;
+        this.modelSeed = modelSeed.clone();
+        this.frozen = frozen;
         try {
             this.sha = MessageDigest.getInstance("SHA-256");
         } catch (NoSuchAlgorithmException e) {
@@ -250,6 +259,128 @@ public final class PromptCache<S extends RuntimeState> {
         sha.update(scratch.array(), 0, bytes);
         ByteBuffer out = ByteBuffer.wrap(sha.digest()).order(ByteOrder.LITTLE_ENDIAN);
         return new BlockKey(out.getLong(), out.getLong(), out.getLong(), out.getLong());
+    }
+
+    // ═══ freeze / open: the frozen multi-prompt cache file (use case B) ═══
+    //   JKVF, formatVersion, modelSeed[32], blockCount, indexOffset | KV blobs (64-aligned) |
+    //   index: per block {key[4], parentKey[4], from, to, byteOffset, byteLen} in BFS order
+    //   (parents precede children, so the tree rebuilds in one pass).
+
+    private static final int MAGIC_FROZEN = 0x46564B4A;    // "JKVF"
+    private static final int FORMAT_VERSION = 1;
+    private static final int HEADER_BYTES = 64;             // 4+4+32+4+8, padded
+    private static final int INDEX_ENTRY_BYTES = 88;        // 32+32+4+4+8+8
+    private static final int ALIGN = 64;
+
+    /** Serializes every block into {@code out} — a read-only, shareable artifact holding any
+     *  number of prompts, shared prefixes stored once (content addressing). Open it with
+     *  {@link #open}. */
+    public void freeze(java.nio.file.Path out) throws java.io.IOException {
+        if (frozen) throw new IllegalStateException("already frozen");
+        List<Block> order = new ArrayList<>(blocks.size());
+        java.util.ArrayDeque<Block> queue = new java.util.ArrayDeque<>();
+        queue.add(sentinel);
+        while (!queue.isEmpty()) {                          // BFS: parents before children
+            Block b = queue.poll();
+            if (b != sentinel) order.add(b);
+            queue.addAll(b.children);
+        }
+        long[] offsets = new long[order.size()];
+        long off = HEADER_BYTES;
+        for (int i = 0; i < order.size(); i++) {
+            offsets[i] = off;
+            off = align(off + order.get(i).mem.byteSize());
+        }
+        long indexOffset = off;
+        long total = indexOffset + (long) order.size() * INDEX_ENTRY_BYTES;
+        try (java.nio.channels.FileChannel ch = java.nio.channels.FileChannel.open(out,
+                java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING,
+                java.nio.file.StandardOpenOption.READ, java.nio.file.StandardOpenOption.WRITE);
+             Arena arena = Arena.ofConfined()) {
+            MemorySegment map = ch.map(java.nio.channels.FileChannel.MapMode.READ_WRITE, 0, total, arena);
+            ByteBuffer h = map.asSlice(0, HEADER_BYTES).asByteBuffer().order(ByteOrder.LITTLE_ENDIAN);
+            h.putInt(MAGIC_FROZEN).putInt(FORMAT_VERSION).put(seed32(modelSeed)).putInt(order.size()).putLong(indexOffset);
+            ByteBuffer idx = map.asSlice(indexOffset, total - indexOffset).asByteBuffer().order(ByteOrder.LITTLE_ENDIAN);
+            for (int i = 0; i < order.size(); i++) {
+                Block b = order.get(i);
+                MemorySegment.copy(b.mem, 0, map, offsets[i], b.mem.byteSize());
+                putKey(idx, b.key);
+                putKey(idx, b.parent.key);
+                idx.putInt(b.from).putInt(b.to).putLong(offsets[i]).putLong(b.mem.byteSize());
+            }
+            map.force();
+        }
+    }
+
+    /** Maps a frozen cache file lazily (header + index read; KV bytes untouched until a restore)
+     *  and validates it belongs to the model identified by {@code modelSeed} — throws a
+     *  descriptive error when it does not. The returned cache is FROZEN: {@link #resume} serves
+     *  every stored prompt; cursor commits are silent no-ops, so live conversation turns are not
+     *  cached on it (a RAM overlay tier is future work). The mapping lives for the process
+     *  (global arena). */
+    public static <S extends RuntimeState> PromptCache<S> open(
+            java.nio.file.Path file, KvCodec<S> codec, byte[] modelSeed) throws java.io.IOException {
+        MemorySegment map;
+        try (java.nio.channels.FileChannel ch = java.nio.channels.FileChannel.open(file, java.nio.file.StandardOpenOption.READ)) {
+            map = ch.map(java.nio.channels.FileChannel.MapMode.READ_ONLY, 0, ch.size(), Arena.global());
+        }
+        ByteBuffer h = map.asSlice(0, HEADER_BYTES).asByteBuffer().order(ByteOrder.LITTLE_ENDIAN);
+        if (h.getInt() != MAGIC_FROZEN) {
+            throw new IllegalStateException(file + " is not a frozen prompt cache (bad magic)");
+        }
+        int version = h.getInt();
+        if (version != FORMAT_VERSION) {
+            throw new IllegalStateException(file + " has frozen-cache format v" + version
+                    + ", this build reads v" + FORMAT_VERSION + "; rebuild the cache");
+        }
+        byte[] stored = new byte[32];
+        h.get(stored);
+        if (!java.util.Arrays.equals(stored, seed32(modelSeed))) {
+            throw new IllegalStateException("frozen cache " + file + " (model seed "
+                    + java.util.HexFormat.of().formatHex(stored, 0, 8) + "...) was built for a different model than the one loaded (seed "
+                    + java.util.HexFormat.of().formatHex(seed32(modelSeed), 0, 8)
+                    + "...); the cache is model-specific - rebuild it or load the matching GGUF");
+        }
+        int count = h.getInt();
+        long indexOffset = h.getLong();
+        long kvBytes = indexOffset - HEADER_BYTES;
+        CacheStore readOnly = new CacheStore() {
+            @Override public MemorySegment allocate(long bytes) { throw new UnsupportedOperationException("frozen cache"); }
+            @Override public void free(MemorySegment blob) { throw new UnsupportedOperationException("frozen cache"); }
+            @Override public long usedBytes() { return kvBytes; }
+        };
+        PromptCache<S> cache = new PromptCache<>(codec, readOnly, 0, modelSeed, true);
+        ByteBuffer idx = map.asSlice(indexOffset, (long) count * INDEX_ENTRY_BYTES).asByteBuffer().order(ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < count; i++) {
+            BlockKey key = getKey(idx);
+            BlockKey parentKey = getKey(idx);
+            int from = idx.getInt(), to = idx.getInt();
+            long offset = idx.getLong(), len = idx.getLong();
+            PromptCache<S>.Block parent = parentKey.equals(cache.sentinel.key) ? cache.sentinel : cache.blocks.get(parentKey);
+            if (parent == null) {
+                throw new IllegalStateException(file + " index is corrupt: block " + i + " has an unknown parent");
+            }
+            PromptCache<S>.Block b = cache.new Block(key, parent, from, to, map.asSlice(offset, len));
+            cache.blocks.put(key, b);
+            parent.children.add(b);
+        }
+        return cache;
+    }
+
+    private static byte[] seed32(byte[] seed) {
+        return java.util.Arrays.copyOf(seed, 32);
+    }
+
+    private static void putKey(ByteBuffer buf, BlockKey k) {
+        buf.putLong(k.a()).putLong(k.b()).putLong(k.c()).putLong(k.d());
+    }
+
+    private static BlockKey getKey(ByteBuffer buf) {
+        return new BlockKey(buf.getLong(), buf.getLong(), buf.getLong(), buf.getLong());
+    }
+
+    private static long align(long offset) {
+        return (offset + ALIGN - 1) & -ALIGN;
     }
 
     public String stats() {
