@@ -475,8 +475,13 @@ public final class JinjaRenderer {
                         else if (matchTrim(T.OPEN_EXPR, "{{-")) { depth++; }
                         else if (matchStr("{{")) { depth++; toks.add(tok(T.OPEN_EXPR, p)); }
                         else if (matchStr("{#")) {
+                            // Comments participate in whitespace control: {#- strips the trailing
+                            // whitespace of the preceding text, -#} the leading whitespace after.
+                            if (ch() == '-') stripLastText();
                             while (!eof() && !(ch() == '#' && ch(1) == '}')) adv();
+                            boolean right = !eof() && i > 0 && cs.charAt(i - 1) == '-';
                             if (!eof()) adv(2);
+                            if (right) stripNextText = true;
                         } else { adv(); } // stray {
                     } else {
                         toks.add(readText(p));
@@ -546,7 +551,11 @@ public final class JinjaRenderer {
                 if (ch(j) != s.charAt(j)) return false;
             int save = pos();
             adv(s.length());
-            boolean left = s.startsWith("-"), right = s.endsWith("-");
+            // An OPEN marker's dash ({%- / {{-) strips the PRECEDING text; a CLOSE marker's
+            // dash (-%} / -}}) strips the FOLLOWING text.
+            boolean open = s.charAt(0) == '{';
+            boolean left = open && s.endsWith("-");
+            boolean right = !open && s.startsWith("-");
             if (left) stripLastText();
             if (right) stripNextText = true;
             toks.add(new Tok(type, "", save, left, right));
@@ -675,6 +684,10 @@ public final class JinjaRenderer {
      *  parser behind the returned template stay internal — callers only ever see a render-only template. */
     public static ChatTemplate template(String source) {
         try {
+            // jinja2 keep_trailing_newline=False (the default HF renders with): exactly one
+            // trailing newline of the template source is dropped.
+            if (source.endsWith("\r\n")) source = source.substring(0, source.length() - 2);
+            else if (source.endsWith("\n")) source = source.substring(0, source.length() - 1);
             Prog program = parse(source);
             return new ChatTemplate(program, (p, vars) -> render((Prog) p, vars));
         } catch (RuntimeException e) {
