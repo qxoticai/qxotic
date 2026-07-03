@@ -96,7 +96,7 @@ public final class PromptCache<S extends RuntimeState> {
                 return;
             }
             long bytes = codec.bytes(len);
-            if (!ensureBudget(bytes)) {                    // budget refused: detach softly
+            if (!ensureBudget(bytes, tip)) {               // budget refused: detach softly
                 tip = DETACHED;
                 return;
             }
@@ -229,20 +229,25 @@ public final class PromptCache<S extends RuntimeState> {
     }
 
     /** Evicts LRU leaves until {@code needed} fits the budget. Leaf-only eviction keeps every
-     *  remaining chain contiguous. */
-    private boolean ensureBudget(long needed) {
+     *  remaining chain contiguous. {@code keep} (the committing cursor's tip) is never evicted:
+     *  a chain's only leaf is its tip, so without the guard a commit under pressure would evict
+     *  its own chain, then link the new block under the freed corpse (double-free on the next
+     *  eviction pass). When only {@code keep} remains, the commit detaches instead. */
+    private boolean ensureBudget(long needed, Block keep) {
         if (needed > budgetBytes) return false;
         while (store.usedBytes() + needed > budgetBytes) {
             Block lru = null;
             for (Block b : leaves) {
-                if (lru == null || b.lastUsed < lru.lastUsed) lru = b;
+                if (b != keep && (lru == null || b.lastUsed < lru.lastUsed)) lru = b;
             }
             if (lru == null) return false;
             lru.live = false;
             blocks.remove(lru.key);
             leaves.remove(lru);
             lru.parent.children.remove(lru);
-            if (lru.parent != sentinel && lru.parent.children.isEmpty()) leaves.add(lru.parent);
+            if (lru.parent != sentinel && lru.parent.live && lru.parent.children.isEmpty()) {
+                leaves.add(lru.parent);                    // dead parents stay out: their blob is freed
+            }
             store.free(lru.mem);
             evictions++;
         }
