@@ -14,6 +14,8 @@ import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TurnTemplate;
 
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -87,6 +89,21 @@ public final class Harness<S extends RuntimeState> {
             tok = model.logits(state).argmax();
         }
         return out.toString();
+    }
+
+    /** Resume-state equality through the codec (model-agnostic): serialize both states' resume
+     *  state for {@code [0,positions)} and byte-compare - exactly the bytes a cache block holds.
+     *  This is the sound cache-identity gate; reply-text equality is load-sensitive for MoE
+     *  models (threaded reductions are not byte-deterministic, near-tie greedy picks can flip). */
+    public boolean statesEqual(S a, S b, int positions) {
+        long bytes = codec.bytes(positions);
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment sa = arena.allocate(bytes, 64);
+            MemorySegment sb = arena.allocate(bytes, 64);
+            codec.save(a, 0, positions, sa);
+            codec.save(b, 0, positions, sb);
+            return MemorySegment.mismatch(sa, 0, bytes, sb, 0, bytes) == -1;
+        }
     }
 
     public void check(boolean ok, String what) {
