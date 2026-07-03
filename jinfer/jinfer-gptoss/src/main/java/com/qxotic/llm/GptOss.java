@@ -92,9 +92,12 @@ public final class GptOss implements LanguageModel<GptOss.Configuration, GptOss.
         return stops;
     }
 
+    private com.qxotic.jinfer.chat.TurnTemplate turnTemplate;   // memoized: stateless, model-lifetime (pins any construction-time state)
+
     @Override
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
-        return java.util.Optional.of(new GptOssTurnTemplate(tokenizer()));
+        if (turnTemplate == null) turnTemplate = new GptOssTurnTemplate(tokenizer());
+        return java.util.Optional.of(turnTemplate);
     }
 
     @Override

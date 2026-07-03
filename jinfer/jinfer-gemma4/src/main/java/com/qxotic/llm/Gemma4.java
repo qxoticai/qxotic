@@ -138,9 +138,12 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
         return stops;
     }
 
+    private com.qxotic.jinfer.chat.TurnTemplate turnTemplate;   // memoized: stateless, model-lifetime (pins any construction-time state)
+
     @Override
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
-        return java.util.Optional.of(new Gemma4TurnTemplate(tokenizer()));
+        if (turnTemplate == null) turnTemplate = new Gemma4TurnTemplate(tokenizer());
+        return java.util.Optional.of(turnTemplate);
     }
 
     @Override

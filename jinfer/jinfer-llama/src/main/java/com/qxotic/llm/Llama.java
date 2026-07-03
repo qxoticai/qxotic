@@ -95,9 +95,12 @@ public final class Llama implements LanguageModel<Llama.Configuration, Llama.Wei
         return stops;
     }
 
+    private com.qxotic.jinfer.chat.TurnTemplate turnTemplate;   // memoized: stateless, model-lifetime (pins any construction-time state)
+
     @Override
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
-        return java.util.Optional.of(new LlamaTurnTemplate(tokenizer()));
+        if (turnTemplate == null) turnTemplate = new LlamaTurnTemplate(tokenizer());
+        return java.util.Optional.of(turnTemplate);
     }
 
     @Override

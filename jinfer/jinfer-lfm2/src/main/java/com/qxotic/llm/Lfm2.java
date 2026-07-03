@@ -90,9 +90,12 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
         return stops;
     }
 
+    private com.qxotic.jinfer.chat.TurnTemplate turnTemplate;   // memoized: stateless, model-lifetime (pins any construction-time state)
+
     @Override
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
-        return java.util.Optional.of(new Lfm2TurnTemplate(tokenizer()));
+        if (turnTemplate == null) turnTemplate = new Lfm2TurnTemplate(tokenizer());
+        return java.util.Optional.of(turnTemplate);
     }
 
     @Override
