@@ -3,7 +3,6 @@ package com.qxotic.llm;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.GgufTokenizer;
 import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
 
@@ -32,16 +31,11 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
     public Gemma4TurnTemplate(GgufTokenizer tokenizer) {
         this.tokenizer = tokenizer;
         Map<String, Integer> special = tokenizer.getSpecialTokens();
-        this.bos = required(special, "<bos>");
-        this.turnOpen = required(special, "<|turn>");
-        this.turnClose = required(special, "<turn|>");
+        this.bos = tokenizer.requiredSpecial("<bos>");
+        this.turnOpen = tokenizer.requiredSpecial("<|turn>");
+        this.turnClose = tokenizer.requiredSpecial("<turn|>");
     }
 
-    private static int required(Map<String, Integer> special, String name) {
-        Integer id = special.get(name);
-        if (id == null) throw new IllegalArgumentException("tokenizer lacks " + name);
-        return id;
-    }
 
     @Override
     public List<Batch> conversationStart() {
@@ -51,7 +45,7 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
     @Override
     public List<Batch> encodeTurn(Message message) {
         // <|turn> {role}\n{content} <turn|> \n   — one contiguous plain run per text span
-        List<Integer> body = tokenizer.encode(roleName(message.role()) + "\n" + text(message));
+        List<Integer> body = tokenizer.encode(roleName(message.role()) + "\n" + message.textOnly());
         List<Integer> newline = tokenizer.encode("\n");
         int[] ids = new int[1 + body.size() + 1 + newline.size()];
         int i = 0;
@@ -87,15 +81,4 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
         return role.equals(Role.ASSISTANT) ? "model" : role.name();
     }
 
-    private static String text(Message message) {
-        StringBuilder sb = new StringBuilder();
-        for (Part p : message.content()) {
-            if (p instanceof Part.Text t) {
-                sb.append(t.text());
-            } else {
-                throw new IllegalArgumentException("Gemma4TurnTemplate is text-only for now: " + p.getClass().getSimpleName());
-            }
-        }
-        return sb.toString();
-    }
 }

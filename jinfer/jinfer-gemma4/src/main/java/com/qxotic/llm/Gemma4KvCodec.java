@@ -69,8 +69,8 @@ public final class Gemma4KvCodec implements KvCodec<Gemma4.State> {
                 off += (long) (w - n) * kvDim * 2;                       // pad V to W rows
             } else {
                 long n = to - from;
-                off += transfer(state.keyCache[l], from * kvDim, blob, off, n * kvDim, out);
-                off += transfer(state.valueCache[l], from * kvDim, blob, off, n * kvDim, out);
+                off += com.qxotic.jinfer.cache.KvTransfer.transfer(state.keyCache[l], from * kvDim, blob, off, n * kvDim, out);
+                off += com.qxotic.jinfer.cache.KvTransfer.transfer(state.valueCache[l], from * kvDim, blob, off, n * kvDim, out);
             }
         }
     }
@@ -83,15 +83,10 @@ public final class Gemma4KvCodec implements KvCodec<Gemma4.State> {
         while (done < n) {
             int slot = (lo + done) & (w - 1);
             int run = Math.min(n - done, w - slot);                      // stop at the ring edge
-            off += transfer(ring, (long) slot * kvDim, blob, off, (long) run * kvDim, out);
+            off += com.qxotic.jinfer.cache.KvTransfer.transfer(ring, (long) slot * kvDim, blob, off, (long) run * kvDim, out);
             done += run;
         }
         return off;
     }
 
-    private static long transfer(com.qxotic.jinfer.FloatTensor t, long elemOff,
-                                 MemorySegment blob, long byteOff, long elems, boolean out) {
-        return out ? t.copyRawTo(elemOff, blob, byteOff, elems)
-                   : t.copyRawFrom(blob, byteOff, elemOff, elems);
-    }
 }

@@ -3,7 +3,6 @@ package com.qxotic.llm;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.GgufTokenizer;
 import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
 
@@ -51,17 +50,12 @@ public final class LlamaTurnTemplate implements TurnTemplate {
         this.tokenizer = tokenizer;
         this.systemPreamble = "Cutting Knowledge Date: December 2023\nToday Date: " + dateString + "\n\n";
         Map<String, Integer> special = tokenizer.getSpecialTokens();
-        this.bos = required(special, "<|begin_of_text|>");
-        this.startHeader = required(special, "<|start_header_id|>");
-        this.endHeader = required(special, "<|end_header_id|>");
-        this.eot = required(special, "<|eot_id|>");
+        this.bos = tokenizer.requiredSpecial("<|begin_of_text|>");
+        this.startHeader = tokenizer.requiredSpecial("<|start_header_id|>");
+        this.endHeader = tokenizer.requiredSpecial("<|end_header_id|>");
+        this.eot = tokenizer.requiredSpecial("<|eot_id|>");
     }
 
-    private static int required(Map<String, Integer> special, String name) {
-        Integer id = special.get(name);
-        if (id == null) throw new IllegalArgumentException("tokenizer lacks " + name);
-        return id;
-    }
 
     @Override
     public List<Batch> conversationStart() {
@@ -70,7 +64,7 @@ public final class LlamaTurnTemplate implements TurnTemplate {
 
     @Override
     public List<Batch> encodeTurn(Message message) {
-        String content = text(message).strip();
+        String content = message.textOnly().strip();
         if (message.role().equals(Role.SYSTEM)) content = systemPreamble + content;
         // <|start_header_id|> {role} <|end_header_id|> \n\n{content} <|eot_id|>
         List<Integer> role = tokenizer.encode(message.role().name());
@@ -103,15 +97,4 @@ public final class LlamaTurnTemplate implements TurnTemplate {
         return List.of(Batch.prefill(new int[]{eot}));
     }
 
-    private static String text(Message message) {
-        StringBuilder sb = new StringBuilder();
-        for (Part p : message.content()) {
-            if (p instanceof Part.Text t) {
-                sb.append(t.text());
-            } else {
-                throw new IllegalArgumentException("Llama is text-only: unsupported part " + p.getClass().getSimpleName());
-            }
-        }
-        return sb.toString();
-    }
 }

@@ -3,7 +3,6 @@ package com.qxotic.llm;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.GgufTokenizer;
 import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
 
@@ -38,17 +37,17 @@ public final class Qwen35TurnTemplate implements TurnTemplate {
     private final int imEnd;     // <|im_end|>
     private final int think;     // <think>
     private final int endThink;  // </think>
-    private final List<Batch> newline;                      // encode("\n"), constant
+    private final List<Integer> newline;                    // encode("\n"), constant
     private final List<Batch> genThinking, genDirect;       // generation prompts, encoded once
+    private final List<Batch> closeTurn;                    // <|im_end|>\n, constant
 
     public Qwen35TurnTemplate(GgufTokenizer tokenizer) {
         this.tokenizer = tokenizer;
-        Map<String, Integer> special = tokenizer.getSpecialTokens();
-        this.imStart = required(special, "<|im_start|>");
-        this.imEnd = required(special, "<|im_end|>");
-        this.think = required(special, "<think>");
-        this.endThink = required(special, "</think>");
-        this.newline = List.of(Batch.prefill(arr(tokenizer.encode("\n"))));
+        this.imStart = tokenizer.requiredSpecial("<|im_start|>");
+        this.imEnd = tokenizer.requiredSpecial("<|im_end|>");
+        this.think = tokenizer.requiredSpecial("<think>");
+        this.endThink = tokenizer.requiredSpecial("</think>");
+        this.newline = tokenizer.encode("\n");
         // <|im_start|>assistant\n<think>\n            (reasoning)
         // <|im_start|>assistant\n<think>\n\n</think>\n\n   (direct answer)
         List<Integer> head = new ArrayList<>();
@@ -57,20 +56,18 @@ public final class Qwen35TurnTemplate implements TurnTemplate {
         List<Integer> thinking = new ArrayList<>(head);
         thinking.add(think);
         thinking.addAll(tokenizer.encode("\n"));
-        this.genThinking = List.of(Batch.prefill(arr(thinking)));
+        this.genThinking = List.of(Batch.prefill(thinking));
         List<Integer> direct = new ArrayList<>(head);
         direct.add(think);
         direct.addAll(tokenizer.encode("\n\n"));
         direct.add(endThink);
         direct.addAll(tokenizer.encode("\n\n"));
-        this.genDirect = List.of(Batch.prefill(arr(direct)));
+        this.genDirect = List.of(Batch.prefill(direct));
+        List<Integer> close = new ArrayList<>(List.of(imEnd));
+        close.addAll(newline);
+        this.closeTurn = List.of(Batch.prefill(close));
     }
 
-    private static int required(Map<String, Integer> special, String name) {
-        Integer id = special.get(name);
-        if (id == null) throw new IllegalArgumentException("tokenizer lacks " + name);
-        return id;
-    }
 
     /** Qwen3.5 emits no bos and no fixed preamble. */
     @Override
@@ -80,14 +77,14 @@ public final class Qwen35TurnTemplate implements TurnTemplate {
 
     @Override
     public List<Batch> encodeTurn(Message message) {
-        String content = text(message).strip();                        // template: content|trim
+        String content = message.textOnly().strip();                        // template: content|trim
         if (message.role().equals(Role.ASSISTANT)) content = stripThinking(content);
         List<Integer> ids = new ArrayList<>();
         ids.add(imStart);
         ids.addAll(tokenizer.encode(message.role().name() + "\n" + content));   // one contiguous run
         ids.add(imEnd);
-        ids.addAll(tokenizer.encode("\n"));
-        return List.of(Batch.prefill(arr(ids)));
+        ids.addAll(newline);
+        return List.of(Batch.prefill(ids));
     }
 
     @Override
@@ -97,23 +94,9 @@ public final class Qwen35TurnTemplate implements TurnTemplate {
 
     @Override
     public List<Batch> closeTurn() {
-        List<Integer> ids = new ArrayList<>();
-        ids.add(imEnd);
-        for (Batch b : newline) for (int id : ((Batch.Input.Tokens) b.input()).ids()) ids.add(id);
-        return List.of(Batch.prefill(arr(ids)));
+        return closeTurn;
     }
 
-    private static String text(Message message) {
-        StringBuilder sb = new StringBuilder();
-        for (Part p : message.content()) {
-            if (p instanceof Part.Text t) {
-                sb.append(t.text());
-            } else {
-                throw new IllegalArgumentException("Qwen3.5 port is text-only: unsupported part " + p.getClass().getSimpleName());
-            }
-        }
-        return sb.toString();
-    }
 
     /** The template keeps only the text after the last {@code </think>}, leading newlines
      *  stripped: {@code content.split('</think>')[-1].lstrip('\n')}. */
@@ -126,9 +109,4 @@ public final class Qwen35TurnTemplate implements TurnTemplate {
         return tail.substring(i);
     }
 
-    private static int[] arr(List<Integer> ids) {
-        int[] a = new int[ids.size()];
-        for (int i = 0; i < a.length; i++) a[i] = ids.get(i);
-        return a;
-    }
 }

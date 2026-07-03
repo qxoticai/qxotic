@@ -49,15 +49,8 @@ public final class NemotronHTurnTemplateOracle {
                 List.of(Message.user("."), Message.assistant("ok"), Message.user("!")));
 
         // the non-thinking generation prompt: <|im_start|>assistant\n<think></think> (NO newline)
-        var tk = o.tokenizer;
-        List<Integer> off = new java.util.ArrayList<>();
-        for (int id : com.qxotic.jinfer.Batch.tokenIds(new NemotronHTurnTemplate(tk).generationPrompt(false))) off.add(id);
-        List<Integer> expected = new java.util.ArrayList<>();
-        expected.add(o.special("<|im_start|>"));
-        expected.addAll(tk.encode("assistant\n"));
-        expected.add(o.special("<think>"));
-        expected.add(o.special("</think>"));
-        o.check(off.equals(expected), "non-thinking generation prompt is <|im_start|>assistant\\n<think></think>");
+        o.compare("non-thinking generation prompt", true, false, Map.of("enable_thinking", false),
+                List.of(Message.user("What is the capital of France?")));
 
         // INTENTIONAL divergence from the rescan oracle: hand-written framing plain-encodes
         // content, so special-token strings in user text cannot mint control tokens.
