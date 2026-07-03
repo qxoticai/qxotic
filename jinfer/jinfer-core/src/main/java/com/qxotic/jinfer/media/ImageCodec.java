@@ -4,7 +4,9 @@
 // ffmpeg is referenced directly (native-image-safe, always present). imageio is loaded REFLECTIVELY via a
 // non-constant class name so native-image does not fold the Class.forName and pull java.desktop into the
 // image; if it is requested but unavailable (e.g. inside a native image), it falls back to ffmpeg.
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.media;
+
+import com.qxotic.jinfer.Media;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -49,7 +51,7 @@ public final class ImageCodec {
         }
         return switch (choice.toLowerCase(Locale.ROOT)) {
             case "ffmpeg" -> new FfmpegImageDecoder();
-            case "imageio" -> loadReflectively("com.qxotic.jinfer.ImageIoDecoder");
+            case "imageio" -> loadReflectively("com.qxotic.jinfer.media.ImageIoDecoder");
             default -> throw new IllegalArgumentException(
                     "unknown -Djinfer.imageDecoder='" + choice + "' (expected 'ffmpeg' or 'imageio')");
         };

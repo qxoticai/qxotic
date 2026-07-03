@@ -3,7 +3,9 @@
 // javax.imageio, whose IIORegistry ServiceLoader + reflection are fragile under GraalVM native-image) and
 // cross-platform (works wherever ffmpeg is on PATH: Linux/macOS/Windows). Mirrors the audio path
 // (ffmpeg mp3 -> wav). DECODE ONLY: the model-specific smart_resize stays in the vision module.
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.media;
+
+import com.qxotic.jinfer.Media;
 
 import java.io.IOException;
 import java.io.InputStream;

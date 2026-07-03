@@ -64,9 +64,7 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
             case com.qxotic.jinfer.Batch.Input.Embeddings e ->
                 throw new UnsupportedOperationException("LFM2.5 is text-only: embedding input is not supported");
         }
-        s.lastChunkLen = n;
-        s.outputCount = batch.outputs() == com.qxotic.jinfer.Batch.Outputs.ALL ? n : 1;
-        s.position = from + n;
+        s.advance(n, batch.outputs());
     }
 
     @Override
@@ -81,23 +79,6 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
         });
     }
 
-    @Override
-    public State fork(State s) {
-        State f = new State(configuration, s.contextCapacity, s.batchCapacity);
-        for (int l = 0; l < configuration.numberOfLayers; l++) {
-            if (s.keyCache[l] != null) {
-                int len = s.position * configuration.kvDim(l);
-                s.keyCache[l].copyTo(0, f.keyCache[l], 0, len);
-                s.valueCache[l].copyTo(0, f.valueCache[l], 0, len);
-            }
-            if (s.shortConvState[l] != null) {
-                int len = (int) s.shortConvState[l].size();
-                s.shortConvState[l].copyTo(0, f.shortConvState[l], 0, len);
-            }
-        }
-        f.position = s.position;
-        return f;
-    }
 
     /** The turn-delimiter / eos ids that terminate generation (convenience for callers/tests). */
     public Set<Integer> stopTokens() {
@@ -462,6 +443,7 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
         @Override public int batchCapacity()   { return batchCapacity; }
         @Override public int position()         { return position; }
         @Override public int outputCount()      { return outputCount; }
+        @Override public void advance(int rows, com.qxotic.jinfer.Batch.Outputs outputs) { lastChunkLen = rows; outputCount = outputs == com.qxotic.jinfer.Batch.Outputs.ALL ? rows : 1; position += rows; }
         @Override public void resumeAt(int p)   { position = p; lastChunkLen = 0; outputCount = 0; }
     }
 

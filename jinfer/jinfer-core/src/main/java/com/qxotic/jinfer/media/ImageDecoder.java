@@ -5,7 +5,9 @@
 //   - ImageIoDecoder: javax.imageio; JVM-only (its IIORegistry ServiceLoader/reflection is fragile under
 //     GraalVM native-image), no external process.
 // Select via ImageCodec (-Djinfer.imageDecoder=ffmpeg|imageio; default ffmpeg under native-image, imageio on JVM).
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.media;
+
+import com.qxotic.jinfer.Media;
 
 import java.io.IOException;
 import java.nio.file.Path;

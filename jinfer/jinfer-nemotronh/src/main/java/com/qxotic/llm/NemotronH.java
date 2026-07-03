@@ -75,9 +75,7 @@ public final class NemotronH implements LanguageModel<NemotronH.Configuration, N
             case Batch.Input.Embeddings e ->
                 throw new UnsupportedOperationException("Nemotron-H is text-only: embedding input is not supported");
         }
-        s.lastChunkLen = n;
-        s.outputCount = batch.outputs() == Batch.Outputs.ALL ? n : 1;
-        s.position = from + n;
+        s.advance(n, batch.outputs());
     }
 
     @Override
@@ -89,24 +87,6 @@ public final class NemotronH implements LanguageModel<NemotronH.Configuration, N
         return s.logits;
     }
 
-    @Override
-    public State fork(State s) {
-        State f = new State(configuration, s.contextCapacity, s.batchCapacity);
-        for (int l = 0; l < configuration.numberOfLayers; l++) {
-            if (s.keyCache[l] != null) {
-                int len = s.position * configuration.kvDim();
-                s.keyCache[l].copyTo(0, f.keyCache[l], 0, len);
-                s.valueCache[l].copyTo(0, f.valueCache[l], 0, len);
-            }
-            if (s.ssmConvState[l] != null) {
-                int len = (int) s.ssmConvState[l].size();
-                s.ssmConvState[l].copyTo(0, f.ssmConvState[l], 0, len);
-                System.arraycopy(s.ssmState[l], 0, f.ssmState[l], 0, s.ssmState[l].length);
-            }
-        }
-        f.position = s.position;
-        return f;
-    }
 
     /** The eos / turn-delimiter ids that terminate generation (convenience for callers/tests). */
     public Set<Integer> stopTokens() {
@@ -582,6 +562,7 @@ public final class NemotronH implements LanguageModel<NemotronH.Configuration, N
         @Override public int batchCapacity()   { return batchCapacity; }
         @Override public int position()         { return position; }
         @Override public int outputCount()      { return outputCount; }
+        @Override public void advance(int rows, com.qxotic.jinfer.Batch.Outputs outputs) { lastChunkLen = rows; outputCount = outputs == com.qxotic.jinfer.Batch.Outputs.ALL ? rows : 1; position += rows; }
     }
 
     // === Loading ===

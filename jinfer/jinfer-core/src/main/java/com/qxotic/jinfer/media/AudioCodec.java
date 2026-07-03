@@ -6,7 +6,9 @@
 // non-constant class name so native-image does not fold the Class.forName and pull javax.sound.sampled into
 // the image; if requested but unavailable (e.g. inside a native image), it falls back to ffmpeg. Output is
 // always 16 kHz mono float PCM.
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.media;
+
+import com.qxotic.jinfer.Media;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -54,7 +56,7 @@ public final class AudioCodec {
         }
         return switch (choice.toLowerCase(Locale.ROOT)) {
             case "ffmpeg" -> new FfmpegAudioDecoder();
-            case "javasound" -> loadReflectively("com.qxotic.jinfer.JavaSoundAudioDecoder");
+            case "javasound" -> loadReflectively("com.qxotic.jinfer.media.JavaSoundAudioDecoder");
             default -> throw new IllegalArgumentException(
                     "unknown -Djinfer.audioDecoder='" + choice + "' (expected 'ffmpeg' or 'javasound')");
         };

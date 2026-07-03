@@ -4,10 +4,10 @@
 package com.qxotic.llm;
 
 import com.qxotic.jinfer.Batch;
-import com.qxotic.jinfer.FfmpegImageDecoder;
+import com.qxotic.jinfer.media.FfmpegImageDecoder;
 import com.qxotic.jinfer.FloatTensor;
-import com.qxotic.jinfer.ImageCodec;
-import com.qxotic.jinfer.ImageIoDecoder;
+import com.qxotic.jinfer.media.ImageCodec;
+import com.qxotic.jinfer.media.ImageIoDecoder;
 import com.qxotic.jinfer.Media;
 
 import java.nio.file.Path;

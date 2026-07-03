@@ -3,7 +3,9 @@
 // SPI discovery is fragile under GraalVM native-image, so AudioCodec loads this reflectively and never
 // pulls it into a native image. For anything AudioSystem can't handle (mp3/flac/ogg without SPI providers,
 // or an unsupported target conversion) it falls back to ffmpeg, so the facade always yields 16 kHz mono.
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.media;
+
+import com.qxotic.jinfer.Media;
 
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;

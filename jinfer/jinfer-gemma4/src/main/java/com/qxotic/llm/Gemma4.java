@@ -84,9 +84,7 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
             case com.qxotic.jinfer.Batch.Input.Sequences seq ->
                 throw new UnsupportedOperationException("Gemma4 is generative: packed sequences (batched embedding) not supported");
         }
-        s.lastChunkLen = n;
-        s.outputCount = batch.outputs() == com.qxotic.jinfer.Batch.Outputs.ALL ? n : 1;
-        s.position = from + n;
+        s.advance(n, batch.outputs());
     }
 
     /** Logits for the {@code output}-th retained row: the layer loop leaves every row's final
@@ -107,17 +105,6 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
         });
     }
 
-    @Override
-    public State fork(State s) {
-        State f = new State(configuration, s.contextCapacity, s.batchCapacity);
-        for (int l = 0; l < configuration.ownKvLayers(); l++) {     // copy each own-KV ring wholesale
-            int len = configuration.kvCachePositions(l, s.contextCapacity) * configuration.kvDim(l);
-            s.keyCache[l].copyTo(0, f.keyCache[l], 0, len);
-            s.valueCache[l].copyTo(0, f.valueCache[l], 0, len);
-        }
-        f.position = s.position;
-        return f;
-    }
 
     // === Capabilities: gemma-4's architecture supports MTP and media input, so this implements both.
     // Whether either is usable is a runtime fact gated by un-ignorable empties — the current text-only
@@ -393,6 +380,7 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
         @Override public int batchCapacity() { return batchCapacity; }
         @Override public int position()      { return position; }
         @Override public int outputCount()   { return outputCount; }
+        @Override public void advance(int rows, com.qxotic.jinfer.Batch.Outputs outputs) { lastChunkLen = rows; outputCount = outputs == com.qxotic.jinfer.Batch.Outputs.ALL ? rows : 1; position += rows; }
         @Override public void resumeAt(int p) { position = p; lastChunkLen = 0; outputCount = 0; }
     }
 

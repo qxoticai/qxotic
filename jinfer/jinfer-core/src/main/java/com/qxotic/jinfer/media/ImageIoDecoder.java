@@ -3,7 +3,9 @@
 // IIORegistry discovers codec plugins via ServiceLoader + reflection, which is fragile to configure in a
 // native image - so ImageCodec loads this class REFLECTIVELY (never statically references it), which keeps
 // it and java.desktop out of native images, where ffmpeg is the default instead.
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.media;
+
+import com.qxotic.jinfer.Media;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
