@@ -61,6 +61,8 @@ final class RuntimeFlags {
 
     // prompt cache
     static final boolean PROMPT_CACHE = !"false".equals(System.getProperty("jinfer.promptCache"));
+    /** Live conversations kept resident for append-only reuse (tier 1); each holds a full state. */
+    static final int SESSIONS = Integer.getInteger("jinfer.sessions", 4);
     static final long PROMPT_CACHE_BUDGET_BYTES = Long.getLong("jinfer.promptCacheMB", 2048L) * (1L << 20);
 
     // server

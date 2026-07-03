@@ -17,12 +17,20 @@ final class Metrics {
 
     private static final long START_NANOS = System.nanoTime();
     private static volatile long requests, promptTokens, completionTokens;
+    private static volatile long sessionPoolHits, cachedTokens;
 
     /** Record one finished generation (called on the worker thread). */
     static void record(GenerationResult result) {
         requests++;
         promptTokens += result.promptTokens();
         completionTokens += result.completionTokens();
+    }
+
+    /** Record one prompt-cache serve (worker thread): tier 1 = append-only on a pooled live
+     *  session, otherwise a tier-2 block restore; {@code restored} positions were reused. */
+    static void recordPromptCache(boolean tier1, int restored) {
+        if (tier1) sessionPoolHits++;
+        cachedTokens += restored;
     }
 
     /** Prometheus exposition: request/token totals, queue + worker gauges. */
@@ -32,6 +40,8 @@ final class Metrics {
         metric(sb, "jinfer_requests_total", "counter", requests);
         metric(sb, "jinfer_prompt_tokens_total", "counter", promptTokens);
         metric(sb, "jinfer_completion_tokens_total", "counter", completionTokens);
+        metric(sb, "jinfer_session_pool_hits_total", "counter", sessionPoolHits);
+        metric(sb, "jinfer_cached_tokens_total", "counter", cachedTokens);
         metric(sb, "jinfer_queue_depth", "gauge", worker.queueDepth());
         metric(sb, "jinfer_worker_busy", "gauge", worker.busy() ? 1 : 0);
         return sb.toString();

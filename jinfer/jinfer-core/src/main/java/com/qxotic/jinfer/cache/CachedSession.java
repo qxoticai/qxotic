@@ -160,6 +160,35 @@ public final class CachedSession<S extends RuntimeState> {
         cursor.commit(token, state);
     }
 
+    /** Fingerprint stream length. Equals {@link #position()} while every ingestion goes through
+     *  the session (decode-loop steps are brought back in lockstep via {@link #adopt}). */
+    public int length() {
+        return len;
+    }
+
+    /** True when this session's WHOLE stream is a strict prefix of {@code req[0..reqLen)} — the
+     *  append-only reuse test ({@link SessionPool}): the live state can continue with the
+     *  remainder, nothing to rewind, and at least one position is left to ingest. */
+    public boolean streamIsStrictPrefixOf(long[] req, int reqLen) {
+        return len < reqLen && Arrays.equals(fp, 0, len, req, 0, len);
+    }
+
+    /** Adopts decode-loop tokens that were ingested directly on the state (the generator steps
+     *  the state itself, not the session): appends their fingerprints and commits them as one
+     *  block, keeping the stream, the cursor and the block cache in lockstep with the KV. The
+     *  caller passes exactly the ingested tokens ({@code state.position() - length()} of them —
+     *  a trailing stop or budget-final token is sampled but never ingested). */
+    public void adopt(List<Integer> ingested) {
+        if (ingested.isEmpty()) return;
+        if (state.position() != len + ingested.size()) {
+            throw new IllegalStateException("adopt of " + ingested.size() + " tokens at stream "
+                    + len + " but state is at " + state.position());
+        }
+        int off = len;
+        for (int id : ingested) append(id);
+        cursor.commit(fp, off, len - off, state);
+    }
+
     public int position() {
         return state.position();
     }

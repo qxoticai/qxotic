@@ -77,7 +77,16 @@ public final class TtftBench {
         int[] historyIds = new int[history.length];
         for (int i = 0; i < history.length; i++) historyIds[i] = (int) history[i];
 
-        double[] cold = new double[reps], warmMs = new double[reps];
+        // tier 1: live pooled sessions, pre-resumed OUTSIDE the timing (a SessionPool holds them
+        // resident between requests) - the timed leg is pure append-only delta ingest + first token.
+        List<CachedSession<S>> live = new ArrayList<>();
+        for (int r = 0; r < reps; r++) {
+            CachedSession<S> s = CachedSession.resume(model, cache, model.newState(4096, 512), history);
+            if (s.position() != history.length) throw new IllegalStateException("live resume " + s.position());
+            live.add(s);
+        }
+
+        double[] cold = new double[reps], warmMs = new double[reps], tier1 = new double[reps];
         String firstTok = "";
         for (int r = 0; r < reps; r++) {
             // cold: full prefill of history + follow-up
@@ -97,11 +106,20 @@ public final class TtftBench {
             warmMs[r] = (System.nanoTime() - t1) / 1e6;
             if (tok1 != tok2) System.err.println("NOTE: first tokens differ (cold " + tok1 + " vs warm " + tok2 + ")");
             firstTok = model.tokenizer().decode(tok2);
+
+            // tier 1: append-only on the live session (llama.cpp in-place slot equivalent)
+            CachedSession<S> p = live.get(r);
+            long t2 = System.nanoTime();
+            p.ingest(followUp);
+            int tok3 = model.logits(p.state()).argmax();
+            tier1[r] = (System.nanoTime() - t2) / 1e6;
+            if (tok3 != tok2) System.err.println("NOTE: tier-1 first token differs (" + tok3 + " vs " + tok2 + ")");
         }
         int delta = Batch.tokenIds(followUp).length;
         System.out.printf("history=%d deltaTokens=%d firstTok=%s%n", history.length, delta, firstTok.strip());
-        System.out.printf("cold  TTFT: best %.1f ms  mean %.1f ms%n", best(cold), mean(cold));
-        System.out.printf("warm  TTFT: best %.1f ms  mean %.1f ms%n", best(warmMs), mean(warmMs));
+        System.out.printf("cold        TTFT: best %.1f ms  mean %.1f ms%n", best(cold), mean(cold));
+        System.out.printf("tier2 warm  TTFT: best %.1f ms  mean %.1f ms  (block restore + delta)%n", best(warmMs), mean(warmMs));
+        System.out.printf("tier1 pool  TTFT: best %.1f ms  mean %.1f ms  (append-only on the live session)%n", best(tier1), mean(tier1));
     }
 
     /** Seals the STATIC prefix (conversationStart + the story turn - fully deterministic, no
