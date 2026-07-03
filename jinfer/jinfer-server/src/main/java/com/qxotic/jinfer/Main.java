@@ -331,7 +331,7 @@ public class Main {
             messages.add(Map.of("role", "user", "content", options.prompt()));
             List<Integer> promptTokens = options.rawPrompt()
                     ? new ArrayList<>(model.tokenizer().encodeWithSpecialTokens(options.prompt()))
-                    : chatFormat.encode(new ChatContext(messages, null, null, true, options.think(), Map.of()));
+                    : chatFormat.encode(new ChatContext(messages, null, true, options.think(), Map.of()));
             Generator.GenerationResult result = generateCli(model,
                     model.newState(model.config().contextLength(), Math.max(promptTokens.size(), 16)),
                     promptTokens, stops, sampler, options);
@@ -352,7 +352,7 @@ public class Main {
                 String userText = reader.readLine();
                 if (userText == null || "/quit".equals(userText) || "/exit".equals(userText)) break;
                 history.add(Map.of("role", "user", "content", userText));
-                List<Integer> promptTokens = chatFormat.encode(new ChatContext(history, null, null, true, options.think(), Map.of()));
+                List<Integer> promptTokens = chatFormat.encode(new ChatContext(history, null, true, options.think(), Map.of()));
                 // fresh state each turn: the generic path re-encodes the whole conversation
                 Generator.GenerationResult result = generateCli(model,
                         model.newState(model.config().contextLength(), Math.max(promptTokens.size(), 16)),

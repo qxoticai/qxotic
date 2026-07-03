@@ -62,12 +62,6 @@ final class RuntimeFlags {
     // prompt cache
     static final boolean PROMPT_CACHE = !"false".equals(System.getProperty("jinfer.promptCache"));
     static final long PROMPT_CACHE_BUDGET_BYTES = Long.getLong("jinfer.promptCacheMB", 2048L) * (1L << 20);
-    static final String PROMPT_CACHE_FILE = System.getProperty("jinfer.promptCacheFile"); // mmap backing
-    static final int PROMPT_CACHE_BLOCK_TOKENS = Integer.getInteger("jinfer.promptCacheBlockTokens", 512);
-    // bx retention: conv-input rows kept so lookups can resume INSIDE cached spans (0 = off)
-    static final int PROMPT_CACHE_STRIDE = Integer.getInteger("jinfer.promptCacheStride", 64);
-    static final int PROMPT_CACHE_DENSE_TAIL = Integer.getInteger("jinfer.promptCacheDenseTail", 256);
-    static final String PROMPT_CACHE_WARM = System.getProperty("jinfer.promptCacheWarm");
 
     // server
     static final int SERVER_THREADS = Integer.getInteger("jinfer.serverThreads", 16);

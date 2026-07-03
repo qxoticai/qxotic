@@ -62,7 +62,6 @@ final class Generation {
         ChatContext chatContext = new ChatContext(
                 messages,
                 ToolUse.offered(request) ? Values.asArray(request.get("tools"), "tools") : null,
-                request.get("tool_choice"),
                 true,
                 requestThink(request),
                 request.get("chat_template_kwargs") instanceof Map<?, ?> kwargs ? (Map<String, Object>) kwargs : null);
@@ -329,11 +328,6 @@ final class Generation {
     /** Prompt-cache warming is not available on the new-API path; warns if warm prompts were requested. */
     void warm() {
         List<String> files = new ArrayList<>(options.warmPrompts());
-        if (RuntimeFlags.PROMPT_CACHE_WARM != null) {
-            for (String f : RuntimeFlags.PROMPT_CACHE_WARM.split(",")) {
-                if (!f.isBlank()) files.add(f.strip());
-            }
-        }
         if (!files.isEmpty()) {
             System.err.println("warm-prompt ignored: prompt cache is not available on the new-API path");
         }

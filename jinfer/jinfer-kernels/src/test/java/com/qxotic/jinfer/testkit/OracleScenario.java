@@ -7,7 +7,7 @@ package com.qxotic.jinfer.testkit;
 
 import com.qxotic.format.gguf.GGUF;
 import com.qxotic.jinfer.Batch;
-import com.qxotic.jinfer.ChatTemplate;
+import com.qxotic.jinfer.CompiledTemplate;
 import com.qxotic.jinfer.GgufTokenizer;
 import com.qxotic.jinfer.ModelLoader;
 import com.qxotic.jinfer.chat.Message;
@@ -26,7 +26,7 @@ import java.util.Map;
 public final class OracleScenario {
 
     public final GgufTokenizer tokenizer;
-    private final ChatTemplate jinja;
+    private final CompiledTemplate jinja;
     private final TurnTemplate mine;
     private final Map<String, Object> renderVars;
     private int failures;
