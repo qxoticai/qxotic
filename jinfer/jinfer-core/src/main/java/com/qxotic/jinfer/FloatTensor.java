@@ -161,6 +161,19 @@ public abstract class FloatTensor {
 
     public abstract long size();
 
+    /** Bulk raw copy of {@code elemCount} elements (native encoding, no conversion) into {@code dst}
+     *  at {@code dstByteOffset}; returns the bytes copied. Flat layouts (F32/F16) override with one
+     *  segment copy; block-quantized layouts don't support it. */
+    public long copyRawTo(long elemOffset, java.lang.foreign.MemorySegment dst, long dstByteOffset, long elemCount) {
+        throw new UnsupportedOperationException("copyRawTo: " + getClass().getSimpleName());
+    }
+
+    /** Bulk raw copy from {@code src} at {@code srcByteOffset} into elements at {@code elemOffset};
+     *  returns the bytes consumed. */
+    public long copyRawFrom(java.lang.foreign.MemorySegment src, long srcByteOffset, long elemOffset, long elemCount) {
+        throw new UnsupportedOperationException("copyRawFrom: " + getClass().getSimpleName());
+    }
+
     public abstract float getFloat(long index);
 
     public abstract void setFloat(long index, float value);

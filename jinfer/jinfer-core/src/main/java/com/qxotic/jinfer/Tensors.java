@@ -1371,6 +1371,15 @@ final class F16FloatTensor extends SegmentFloatTensor {
 
     @Override FloatVector getFloatVector(VectorSpecies<Float> species, long index) { throw new UnsupportedOperationException("getFloatVector"); }
     @Override public GGMLType type() { return GGMLType.F16; }
+    @Override public long copyRawTo(long elemOffset, MemorySegment dst, long dstByteOffset, long elemCount) {
+        MemorySegment.copy(memorySegment, elemOffset * 2, dst, dstByteOffset, elemCount * 2);
+        return elemCount * 2;
+    }
+    @Override public long copyRawFrom(MemorySegment src, long srcByteOffset, long elemOffset, long elemCount) {
+        MemorySegment.copy(src, srcByteOffset, memorySegment, elemOffset * 2, elemCount * 2);
+        return elemCount * 2;
+    }
+
 
     static FloatVector f16ToF32Vector(MemorySegment memSeg, long byteOffset) {
         ShortVector bits16 = ShortVector.fromMemorySegment(S_SPECIES_HALF, memSeg, byteOffset, ByteOrder.LITTLE_ENDIAN);

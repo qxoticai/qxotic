@@ -91,6 +91,9 @@ public final class ChatApiTest {
         @Override public List<Batch> generationPrompt(boolean thinking) {
             return List.of(Batch.prefill(new int[]{thinking ? 8 : 7}));
         }
+        @Override public List<Batch> closeTurn() {
+            return List.of(Batch.prefill(new int[]{5}));
+        }
     }
 
     static void turnTemplateDefaultEncode() {

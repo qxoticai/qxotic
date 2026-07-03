@@ -1,12 +1,13 @@
-// PromptCache validation on LFM2.5 (hybrid conv+attention+MoE): a cache-aware chat driver that
-// commits blocks at every ingestion boundary, then proves (1) a cold state restores the whole
-// cached conversation and continues with IDENTICAL greedy output vs an uncached replay, and
-// (2) the resume skips the prefill (timed).
+// PromptCache validation on LFM2.5 (hybrid conv+attention+MoE), on the pristine surface:
+// CachedSession (fingerprints + boundary commits) + TurnTemplate framing + Lfm2KvCodec.
+// Proves (1) a cold state resumes the whole cached conversation, (2) cached and uncached greedy
+// continuations are token-identical, (3) a divergent tail resumes only the shared prefix.
 //   java ... com.qxotic.llm.Lfm2CacheRun [model.gguf]
 package com.qxotic.llm;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.CacheStore;
+import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Message;
 
@@ -18,107 +19,62 @@ import java.util.Set;
 public final class Lfm2CacheRun {
 
     static int failures;
-
-    /** The dual representation, minimal: the exact ingested token stream (fingerprints) plus the
-     *  state, with a commit at every ingestion boundary so the cached chain is always contiguous. */
-    static final class Session {
-        final Lfm2 model;
-        final PromptCache<Lfm2.State> cache;
-        final Lfm2.State state;
-        final List<Long> fingerprints = new ArrayList<>();
-
-        Session(Lfm2 model, PromptCache<Lfm2.State> cache, int ctx) {
-            this.model = model;
-            this.cache = cache;
-            this.state = model.newState(ctx, 512);
-        }
-
-        void ingest(int[] ids, boolean commit) {
-            for (int[] chunk : chunks(ids, 512)) {
-                int from = state.position;
-                model.ingest(state, Batch.prefill(chunk));
-                for (int id : chunk) fingerprints.add((long) id);
-                if (commit) cache.commit(fp(), from, state.position, state);
-            }
-        }
-
-        long[] fp() {
-            long[] a = new long[fingerprints.size()];
-            for (int i = 0; i < a.length; i++) a[i] = fingerprints.get(i);
-            return a;
-        }
-
-        static List<int[]> chunks(int[] ids, int cap) {
-            List<int[]> out = new ArrayList<>();
-            for (int from = 0; from < ids.length; from += cap) {
-                out.add(java.util.Arrays.copyOfRange(ids, from, Math.min(from + cap, ids.length)));
-            }
-            return out;
-        }
-    }
+    static Lfm2 model;
+    static Lfm2TurnTemplate template;
+    static Set<Integer> stops;
 
     public static void main(String[] args) throws Exception {
         Path path = Path.of(args.length > 0 ? args[0] : "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
-        Lfm2 model = Lfm2.loadModel(path, 4096);
-        var tk = model.tokenizer();
-        Lfm2TurnTemplate template = new Lfm2TurnTemplate(tk);
-        Set<Integer> stops = model.stopTokens();
-        int imEnd = tk.getSpecialTokens().get("<|im_end|>");
-
-        CacheStore store = CacheStore.inMemory();
-        PromptCache<Lfm2.State> cache = new PromptCache<>(new Lfm2KvCodec(model.config()), store, 1L << 30);
+        model = Lfm2.loadModel(path, 4096);
+        template = new Lfm2TurnTemplate(model.tokenizer());
+        stops = model.stopTokens();
+        long budget = Long.getLong("jinfer.promptCacheMB", 1024L) << 20;
+        PromptCache<Lfm2.State> cache = new PromptCache<>(new Lfm2KvCodec(model.config()), CacheStore.inMemory(), budget);
 
         // ---- conversation A: two turns, committed as it goes ----
-        Session a = new Session(model, cache, 4096);
-        a.ingest(flat(template.conversationStart(),
+        CachedSession<Lfm2.State> a = CachedSession.resume(model, cache, model.newState(4096, 512), new long[0]);
+        a.ingest(concat(template.conversationStart(),
                 template.encodeTurn(Message.system("You are a concise assistant.")),
-                template.encodeTurn(Message.user("Name the largest planet."))), true);
-        List<Integer> reply1 = decode(a, template, tk, stops, imEnd, 120);
-        System.out.println("turn 1: " + tk.decode(reply1).strip());
+                template.encodeTurn(Message.user("Name the largest planet."))));
+        System.out.println("turn 1: " + decode(a, 120).strip());
+        a.ingest(template.encodeTurn(Message.user("And the smallest?")));
+        System.out.println("turn 2: " + decode(a, 120).strip());
+        long[] history = a.fingerprints();
+        System.out.println("cached conversation: " + history.length + " positions, " + cache.stats());
 
-        a.ingest(flat(template.encodeTurn(Message.user("And the smallest?"))), true);
-        List<Integer> reply2 = decode(a, template, tk, stops, imEnd, 120);
-        System.out.println("turn 2: " + tk.decode(reply2).strip());
-        int cachedLen = a.fingerprints.size();
-        System.out.println("cached conversation: " + cachedLen + " positions, " + cache.stats());
-
-        // ---- (1) cold resume: fresh state must restore the WHOLE conversation ----
-        Session b = new Session(model, cache, 4096);
-        b.fingerprints.addAll(a.fingerprints);
+        // ---- (1) cold resume restores the whole conversation ----
         long t0 = System.nanoTime();
-        int resumed = cache.restore(b.fp(), b.state);
+        CachedSession<Lfm2.State> b = CachedSession.resume(model, cache, model.newState(4096, 512), history);
         double resumeMs = (System.nanoTime() - t0) / 1e6;
-        check(resumed == cachedLen, "cold resume restores all " + cachedLen + " positions (got " + resumed + ")");
-        check(b.state.position == cachedLen, "state cursor at " + cachedLen);
+        check(b.position() == history.length, "cold resume restores all " + history.length + " positions (got " + b.position() + ")");
 
-        // ---- (2) identical continuation: cached-restored vs uncached-replayed, same greedy decode ----
-        int[] turn3 = flat(template.encodeTurn(Message.user("Which of those two did you name first? One word.")));
+        // ---- (2) identical continuation: cached vs uncached, same greedy decode ----
+        List<Batch> turn3 = template.encodeTurn(Message.user("Which of those two did you name first? One word."));
         long t1 = System.nanoTime();
-        b.ingest(turn3, true);
-        List<Integer> cachedReply = decode(b, template, tk, stops, imEnd, 120);
+        b.ingest(turn3);
+        String cachedReply = decode(b, 120);
         double cachedMs = (System.nanoTime() - t1) / 1e6;
 
-        Session c = new Session(model, new PromptCache<>(new Lfm2KvCodec(model.config()), CacheStore.inMemory(), 1L << 30), 4096);
+        PromptCache<Lfm2.State> scratch = new PromptCache<>(new Lfm2KvCodec(model.config()), CacheStore.inMemory(), budget);
+        CachedSession<Lfm2.State> c = CachedSession.resume(model, scratch, model.newState(4096, 512), new long[0]);
         long t2 = System.nanoTime();
-        int[] history = new int[cachedLen];
-        for (int i = 0; i < cachedLen; i++) history[i] = (int) (long) a.fingerprints.get(i);
-        c.ingest(history, false);                                // full uncached re-prefill
-        c.ingest(turn3, false);
-        List<Integer> uncachedReply = decode(c, template, tk, stops, imEnd, 120);
+        int[] ids = new int[history.length];
+        for (int i = 0; i < ids.length; i++) ids[i] = (int) history[i];
+        c.ingest(List.of(Batch.prefill(ids)));
+        c.ingest(turn3);
+        String uncachedReply = decode(c, 120);
         double uncachedMs = (System.nanoTime() - t2) / 1e6;
 
         check(cachedReply.equals(uncachedReply), "cached and uncached greedy replies identical");
-        System.out.println("turn 3 (cached path): " + tk.decode(cachedReply).strip());
-        System.out.printf("resume %.1fms + cached turn %.0fms  vs  uncached replay %.0fms  (%.1fx)%n",
-                resumeMs, cachedMs, uncachedMs, uncachedMs / (resumeMs + cachedMs));
+        System.out.println("turn 3 (cached path): " + cachedReply.strip());
+        System.out.printf("resume %.1fms + cached turn %.0fms  vs  uncached replay %.0fms%n", resumeMs, cachedMs, uncachedMs);
 
-        // ---- (3) divergence: a different turn-2 must reuse only the shared prefix ----
-        Session d = new Session(model, cache, 4096);
-        d.fingerprints.addAll(a.fingerprints.subList(0, cachedLen));
-        // mutate the tail: divergent final token stream
-        d.fingerprints.set(cachedLen - 1, -1L);
-        int partial = cache.restore(d.fp(), d.state);
-        check(partial > 0 && partial < cachedLen, "divergent tail resumes a shorter prefix (" + partial + "/" + cachedLen + ")");
+        // ---- (3) divergent tail resumes only the shared prefix ----
+        long[] mutated = history.clone();
+        mutated[mutated.length - 1] = -1;
+        CachedSession<Lfm2.State> d = CachedSession.resume(model, cache, model.newState(4096, 512), mutated);
+        check(d.position() > 0 && d.position() < history.length,
+                "divergent tail resumes a shorter prefix (" + d.position() + "/" + history.length + ")");
 
         System.out.println(cache.stats());
         if (failures > 0) {
@@ -128,36 +84,25 @@ public final class Lfm2CacheRun {
         System.out.println("Lfm2CacheRun: all checks passed");
     }
 
-    /** Greedy-decode a reply, ingesting each step; close the turn; commit the whole reply span
-     *  (conv checkpoint is current at the boundary). Returns the reply token ids. */
-    static List<Integer> decode(Session s, Lfm2TurnTemplate template, com.qxotic.jinfer.LFMTokenizer tk,
-                                Set<Integer> stops, int imEnd, int maxTokens) {
-        s.ingest(flat(template.generationPrompt(true)), true);
-        int replyFrom = s.state.position;
-        List<Integer> reply = new ArrayList<>();
-        int tok = LLM.argmax(s.model.logits(s.state), s.model.config().vocabularySize());
+    /** Open the assistant turn, greedy-decode (each step a single-token block), close the turn. */
+    static String decode(CachedSession<Lfm2.State> s, int maxTokens) {
+        s.ingest(template.generationPrompt(true));
+        StringBuilder out = new StringBuilder();
+        int tok = LLM.argmax(model.logits(s.state()), model.config().vocabularySize());
         for (int n = 0; n < maxTokens && !stops.contains(tok); n++) {
-            reply.add(tok);
-            s.model.ingest(s.state, Batch.step(tok));
-            s.fingerprints.add((long) tok);
-            tok = LLM.argmax(s.model.logits(s.state), s.model.config().vocabularySize());
+            out.append(model.tokenizer().decode(tok));
+            s.step(tok);
+            tok = LLM.argmax(model.logits(s.state()), model.config().vocabularySize());
         }
-        // close the assistant turn exactly as the template frames it, then commit [replyFrom, here)
-        List<Integer> close = new ArrayList<>(List.of(imEnd));
-        close.addAll(tk.encode("\n"));
-        int[] closeIds = close.stream().mapToInt(Integer::intValue).toArray();
-        s.model.ingest(s.state, Batch.prefill(closeIds));
-        for (int id : closeIds) s.fingerprints.add((long) id);
-        s.cache.commit(s.fp(), replyFrom, s.state.position, s.state);
-        return reply;
+        s.ingest(template.closeTurn());
+        return out.toString();
     }
 
-    static int[] flat(List<Batch>... groups) {
-        List<Integer> ids = new ArrayList<>();
-        for (List<Batch> g : groups) {
-            for (Batch b : g) for (int id : ((Batch.Input.Tokens) b.input()).ids()) ids.add(id);
-        }
-        return ids.stream().mapToInt(Integer::intValue).toArray();
+    @SafeVarargs
+    static List<Batch> concat(List<Batch>... groups) {
+        List<Batch> out = new ArrayList<>();
+        for (List<Batch> g : groups) out.addAll(g);
+        return out;
     }
 
     static void check(boolean ok, String what) {
