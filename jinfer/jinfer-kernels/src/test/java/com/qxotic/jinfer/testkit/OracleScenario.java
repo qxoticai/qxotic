@@ -29,7 +29,7 @@ public final class OracleScenario {
     private final CompiledTemplate jinja;
     private final TurnTemplate mine;
     private final Map<String, Object> renderVars;
-    private int failures;
+    private final Checks checks = new Checks();
 
     /** Loads the GGUF's tokenizer + compiled chat template. {@code renderVars} are the extra
      *  template variables (bos/eos/date) that pin the render deterministic. */
@@ -64,16 +64,11 @@ public final class OracleScenario {
         List<Batch> batches = new ArrayList<>(mine.encode(conversation));
         if (generationPrompt) batches.addAll(mine.generationPrompt(true));
         List<Integer> ours = new ArrayList<>();
-        for (Batch b : batches) {
-            for (int id : ((Batch.Input.Tokens) b.input()).ids()) ours.add(id);
-        }
+        for (int id : Batch.tokenIds(batches)) ours.add(id);
 
-        if (oracle.equals(ours)) {
-            System.out.println("ok:   " + name + " (" + ours.size() + " tokens)");
-            return;
-        }
-        failures++;
-        System.out.println("FAIL: " + name);
+        boolean equal = oracle.equals(ours);
+        checks.check(equal, name + " (" + ours.size() + " tokens)");
+        if (equal) return;
         int at = 0;
         while (at < Math.min(oracle.size(), ours.size()) && oracle.get(at).equals(ours.get(at))) at++;
         System.out.println("  diverge at " + at + "/" + oracle.size() + " (ours " + ours.size() + ")");
@@ -87,10 +82,17 @@ public final class OracleScenario {
     /** The hand-written encoding of one turn, flattened to ids. */
     public List<Integer> encodeTurnIds(Message m) {
         List<Integer> ids = new ArrayList<>();
-        for (Batch b : mine.encodeTurn(m)) {
-            for (int id : ((Batch.Input.Tokens) b.input()).ids()) ids.add(id);
-        }
+        for (int id : Batch.tokenIds(mine.encodeTurn(m))) ids.add(id);
         return ids;
+    }
+
+    public void check(boolean ok, String what) {
+        checks.check(ok, what);
+    }
+
+    /** Prints the verdict and exits non-zero on any failed case. */
+    public void finish(String name) {
+        checks.finish(name, "all cases token-exact");
     }
 
     public int special(String name) {
@@ -98,28 +100,11 @@ public final class OracleScenario {
     }
 
     public long count(List<Integer> ids, int id) {
-        return ids.stream().filter(x -> x == id).count();
+        return java.util.Collections.frequency(ids, id);
     }
 
     public String decode(List<Integer> ids) {
         return tokenizer.decode(ids).replace("\n", "\\n");
-    }
-
-    public void check(boolean ok, String what) {
-        if (ok) {
-            System.out.println("ok:   " + what);
-        } else {
-            failures++;
-            System.out.println("FAIL: " + what);
-        }
-    }
-
-    public void finish(String name) {
-        if (failures > 0) {
-            System.out.println(failures + " failure(s)");
-            System.exit(1);
-        }
-        System.out.println(name + ": all cases token-exact");
     }
 
     private static List<Integer> window(List<Integer> ids, int at) {
