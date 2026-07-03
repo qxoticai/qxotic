@@ -14,8 +14,6 @@ import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Message;
 
-import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -79,7 +77,7 @@ public final class FrozenScenario<S extends RuntimeState> {
             // gate: the frozen file reproduces the LIVE cache's resume-state byte-for-byte
             S live = h.newState();
             CachedSession.resume(h.model, build, live, fp);
-            h.check(statesEqual(hot.state(), live, fp.length),
+            h.check(h.statesEqual(hot.state(), live, fp.length),
                     domains[i] + ": frozen-restored state byte-identical to the live cache");
 
             // uncached baseline for the TTFT benchmark; fresh-recompute byte-equality is an engine
@@ -90,7 +88,7 @@ public final class FrozenScenario<S extends RuntimeState> {
             cold.ingest(shared);
             cold.ingest(prompts.get(i));
             double prefillMs = (System.nanoTime() - t2) / 1e6;
-            System.out.println("      (fresh recompute byte-identical: " + statesEqual(hot.state(), cold.state(), fp.length) + ")");
+            System.out.println("      (fresh recompute byte-identical: " + h.statesEqual(hot.state(), cold.state(), fp.length) + ")");
             System.out.printf("%-22s %14.1f %14.0f%n", domains[i] + " (" + fp.length + ")", resumeMs, prefillMs);
 
             if (i == 0) {                        // coherence spot-check on the frozen path
@@ -121,19 +119,6 @@ public final class FrozenScenario<S extends RuntimeState> {
         System.out.printf("open %.1f ms · file %.1f MB · %s%n", openMs, fileBytes / 1048576.0, frozen.stats());
         Files.deleteIfExists(file);
         h.finish(runName);
-    }
-
-    /** Resume-state equality through the codec (model-agnostic): serialize both states' resume
-     *  state for {@code [0,positions)} and byte-compare - exactly the bytes a cache block holds. */
-    private boolean statesEqual(S a, S b, int positions) {
-        long bytes = h.codec.bytes(positions);
-        try (Arena arena = Arena.ofConfined()) {
-            MemorySegment sa = arena.allocate(bytes, 64);
-            MemorySegment sb = arena.allocate(bytes, 64);
-            h.codec.save(a, 0, positions, sa);
-            h.codec.save(b, 0, positions, sb);
-            return MemorySegment.mismatch(sa, 0, bytes, sb, 0, bytes) == -1;
-        }
     }
 
     private static String sharedRules() {

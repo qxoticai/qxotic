@@ -15,7 +15,7 @@ public final class GptOssCacheRun {
         Path path = Path.of(args.length > 0 ? args[0] : "/home/mukel/Desktop/playground/models/unsloth/gpt-oss-20b-Q8_0.gguf");
         Harness<GptOss.State> h = new Harness<>(GptOss.loadModel(path, 8192), path, 8192);
         new CacheScenario<>(h, new CacheScenario.Config(
-                null, Stories.pelican(), "What was the codeword at the start? One word.", 1280, 200, true))
+                null, Stories.pelican(), "What was the codeword at the start? One word.", 1280, 200, true, false))
                 .run("GptOssCacheRun");
     }
 }

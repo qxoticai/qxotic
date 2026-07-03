@@ -19,6 +19,6 @@ public final class LlamaCacheRun {
         }
         new CacheScenario<>(h, new CacheScenario.Config(
                 "You are a concise assistant.", story.toString(),
-                "How many entries were there? One number.", 1500, 60, false)).run("LlamaCacheRun");
+                "How many entries were there? One number.", 1500, 60, false, true)).run("LlamaCacheRun");
     }
 }
