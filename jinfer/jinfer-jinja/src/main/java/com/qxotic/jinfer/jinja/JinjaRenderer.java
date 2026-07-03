@@ -470,6 +470,11 @@ public final class JinjaRenderer {
                 // Text mode: accumulate everything until {{
                 if (depth == 0) {
                     if (c == '{' && (ch(1) == '%' || ch(1) == '{' || ch(1) == '#')) {
+                        // Whitespace-control flags apply only to TEXT directly after the tag that
+                        // set them; another tag starting here means there was no such text, so the
+                        // flags die (jinja2 never trims across an intervening tag).
+                        stripNextText = false;
+                        trimNextNewline = false;
                         // Tag opener. Bare BLOCK tags ({% and {#, not {{) get HF's lstrip_blocks:
                         // whitespace from the line start up to the tag is stripped (explicit {%-/{#-
                         // already strip all preceding whitespace).
@@ -568,7 +573,9 @@ public final class JinjaRenderer {
         }
 
         /** lstrip_blocks: if the last TEXT token's final line (after its last newline) is only
-         *  spaces/tabs, strip them - whitespace from the line start up to a block tag. Leaves the
+         *  spaces/tabs AND that line start is reachable (a newline inside the token, or the token
+         *  opens the template), strip them - whitespace from the line start up to a block tag.
+         *  Whitespace following another tag on the same line is not at a line start. Leaves the
          *  newline and any non-whitespace intact (so {@code abc} followed by a block tag keeps
          *  its space). */
         void lstripLineToTag() {
@@ -582,7 +589,9 @@ public final class JinjaRenderer {
                 int nl = v.lastIndexOf('\n');
                 int k = v.length();
                 while (k > nl + 1 && (v.charAt(k - 1) == ' ' || v.charAt(k - 1) == '\t')) k--;
-                if (k == nl + 1 && k != v.length()) {   // the whole final line was whitespace
+                if (k == nl + 1 && k != v.length() && (nl >= 0 || pt.pos == 0)) {
+                    // the whole final line was whitespace AND its start is a real line start
+                    // (jinja2 keeps the space in "{{ a }} {% if b %}" - not at a line start)
                     toks.set(j, new Tok(T.TEXT, v.substring(0, k), pt.pos));
                 }
                 return;

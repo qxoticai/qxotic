@@ -584,6 +584,15 @@ public final class JinjaRendererTest {
         eq("abc {% if true %}B{% endif %}", map(), "abc B");
         // ...and NOT for output tags
         eq("A\n    {{ 'B' }}", map(), "A\n    B");
+        // flags do NOT leak across an intervening tag (reference jinja2: trim/strip applies only
+        // to text DIRECTLY after the tag that set it)
+        eq("{% if true %}{{ 'A' }}\nB{% endif %}", map(), "A\nB");          // newline after }} kept
+        eq("{% if true -%}{{ 'A' }} B{% endif %}", map(), "A B");            // -%} does not strip past {{ }}
+        eq("{# c #}{{ 'A' }}\nB", map(), "A\nB");                            // comment trim dies at {{
+        // lstrip only strips whitespace that starts at a LINE start
+        eq("{{ 'A' }} {% if true %}B{% endif %}", map(), "A B");             // mid-line space after }} kept
+        eq("{{ 'A' }}\n  {% if true %}B{% endif %}", map(), "A\nB");         // but a real line start strips
+        eq("  {% if true %}B{% endif %}", map(), "B");                       // template-start whitespace strips
         // explicit markers still win over the defaults
         eq("{% if true -%}\n   A{% endif %}", map(), "A");                   // -%} strips ALL leading ws
         eq("A   {%- if true %}B{% endif %}", map(), "AB");                    // {%- strips preceding ws
