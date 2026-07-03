@@ -448,7 +448,8 @@ public final class JinjaRenderer {
         final CharSequence cs;
         int i;
         int depth; // 0=text mode, >0 inside {{ or {%
-        boolean stripNextText; // set when previous close tag had trimRight
+        boolean stripNextText; // set when previous close tag had trimRight (explicit -%} / -}})
+        boolean trimNextNewline; // set after a bare BLOCK close (trim_blocks): drop ONE leading newline
         List<Tok> toks; // set by tokenize()
 
         Lexer(CharSequence cs) { this.cs = cs; }
@@ -469,19 +470,23 @@ public final class JinjaRenderer {
                 // Text mode: accumulate everything until {{
                 if (depth == 0) {
                     if (c == '{' && (ch(1) == '%' || ch(1) == '{' || ch(1) == '#')) {
-                        // Tag opener
+                        // Tag opener. Bare BLOCK tags ({% and {#, not {{) get HF's lstrip_blocks:
+                        // whitespace from the line start up to the tag is stripped (explicit {%-/{#-
+                        // already strip all preceding whitespace).
                         if (matchTrim(T.OPEN_STMT, "{%-")) { depth++; }
-                        else if (matchStr("{%")) { depth++; toks.add(tok(T.OPEN_STMT, p)); }
+                        else if (matchStr("{%")) { lstripLineToTag(); depth++; toks.add(tok(T.OPEN_STMT, p)); }
                         else if (matchTrim(T.OPEN_EXPR, "{{-")) { depth++; }
                         else if (matchStr("{{")) { depth++; toks.add(tok(T.OPEN_EXPR, p)); }
                         else if (matchStr("{#")) {
                             // Comments participate in whitespace control: {#- strips the trailing
-                            // whitespace of the preceding text, -#} the leading whitespace after.
-                            if (ch() == '-') stripLastText();
+                            // whitespace of the preceding text, -#} the leading whitespace after;
+                            // a bare {# still gets lstrip_blocks / trim_blocks like any block tag.
+                            if (ch() == '-') stripLastText(); else lstripLineToTag();
                             while (!eof() && !(ch() == '#' && ch(1) == '}')) adv();
                             boolean right = !eof() && i > 0 && cs.charAt(i - 1) == '-';
                             if (!eof()) adv(2);
                             if (right) stripNextText = true;
+                            else trimNextNewline = true;
                         } else { adv(); } // stray {
                     } else {
                         toks.add(readText(p));
@@ -494,7 +499,7 @@ public final class JinjaRenderer {
 
                 // Close tags (must check before other token types)
                 if (matchTrim(T.CLOSE_STMT, "-%}")) { depth--; continue; }
-                if (matchStr("%}")) { depth--; toks.add(tok(T.CLOSE_STMT, p)); continue; }
+                if (matchStr("%}")) { depth--; toks.add(tok(T.CLOSE_STMT, p)); trimNextNewline = true; continue; }
                 if (matchTrim(T.CLOSE_EXPR, "-}}")) { depth--; continue; }
                 if (matchStr("}}")) { depth--; toks.add(tok(T.CLOSE_EXPR, p)); continue; }
 
@@ -560,6 +565,27 @@ public final class JinjaRenderer {
             if (right) stripNextText = true;
             toks.add(new Tok(type, "", save, left, right));
             return true;
+        }
+
+        /** lstrip_blocks: if the last TEXT token's final line (after its last newline) is only
+         *  spaces/tabs, strip them - whitespace from the line start up to a block tag. Leaves the
+         *  newline and any non-whitespace intact (so {@code abc {%} keeps its space). */
+        void lstripLineToTag() {
+            for (int j = toks.size() - 1; j >= 0; j--) {
+                Tok pt = toks.get(j);
+                if (pt.type != T.TEXT) {
+                    if (pt.type == T.CLOSE_STMT || pt.type == T.CLOSE_EXPR) return; // tag-adjacent, no line text
+                    continue;
+                }
+                String v = pt.val;
+                int nl = v.lastIndexOf('\n');
+                int k = v.length();
+                while (k > nl + 1 && (v.charAt(k - 1) == ' ' || v.charAt(k - 1) == '\t')) k--;
+                if (k == nl + 1 && k != v.length()) {   // the whole final line was whitespace
+                    toks.set(j, new Tok(T.TEXT, v.substring(0, k), pt.pos));
+                }
+                return;
+            }
         }
 
         /** Strip trailing whitespace from the last emitted TEXT token. */
@@ -636,7 +662,15 @@ public final class JinjaRenderer {
                 adv(); // skip the { that triggered the stop
             }
             String val = cs.subSequence(s, i).toString();
-            if (stripNextText) { val = val.stripLeading(); stripNextText = false; }
+            if (stripNextText) {                        // explicit -%} / -#}: strip all leading whitespace
+                val = val.stripLeading();
+                stripNextText = false;
+                trimNextNewline = false;
+            } else if (trimNextNewline) {                // trim_blocks: drop exactly one leading newline
+                if (val.startsWith("\r\n")) val = val.substring(2);
+                else if (val.startsWith("\n")) val = val.substring(1);
+                trimNextNewline = false;
+            }
             return new Tok(T.TEXT, val, p);
         }
     }
