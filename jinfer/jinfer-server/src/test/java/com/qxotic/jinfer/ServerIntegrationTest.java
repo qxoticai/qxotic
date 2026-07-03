@@ -74,12 +74,7 @@ public final class ServerIntegrationTest {
                 chatStreaming();
                 completionsAndStops();
                 responsesEndpoint();
-                // Prompt cache + in-place session resume are not yet ported to the new-API server
-                // path (Phase 3 dropped Generation's prompt cache; Generation.cache() returns null).
-                // These checks stay skipped until the cache is re-ported.
-                //   promptCacheColdWarm(); promptCacheStrictPrefix(); promptCacheBranchPoint();
-                //   warmPromptInstant(); strideAndTailResume(); sessionResume();
-                System.out.println("SKIP: prompt-cache + session-resume checks (not on the new-API path yet)");
+                promptCacheReuse();
                 toolChoiceForced();
                 reasoningBudget();
                 stopStringsIgnoreReasoning();
@@ -220,6 +215,45 @@ public final class ServerIntegrationTest {
                 "usage arithmetic consistent");
         Object finish = path(chat, "choices", 0).get("finish_reason");
         check("stop".equals(finish) || "length".equals(finish), "finish_reason valid");
+    }
+
+    /** Prompt cache on the TurnTemplate path: turn 2 echoes turn 1's history, so the server must
+     *  resume the shared prefix - reported as usage.prompt_tokens_details.cached_tokens > 0 - and
+     *  still answer coherently from the restored KV. */
+    private static void promptCacheReuse() throws Exception {
+        String noThink = ",\"temperature\":0,\"max_tokens\":64,\"chat_template_kwargs\":{\"enable_thinking\":false}}";
+        String userTurn = "{\"role\":\"user\",\"content\":\"Remember the codeword PELICAN. Reply with just OK.\"}";
+        Map<String, Object> r1 = json(post("/v1/chat/completions", "{\"messages\":[" + userTurn + "]" + noThink));
+        String a1 = ((String) ((Map<?, ?>) path(r1, "choices", 0).get("message")).get("content"));
+        long cached1 = cachedTokens(r1);
+        long prompt1 = (long) ((Map<String, Object>) path(r1, "usage")).get("prompt_tokens");
+        // turn 1 may resume only the shared <bos>/preamble cached by earlier requests - a few tokens
+        check(cached1 < prompt1, "turn 1 mostly cold (cached " + cached1 + " of " + prompt1 + ")");
+
+        // turn 2 echoes the full history (SAME first user turn + assistant + new user) - the shared
+        // prefix (bos + that first user turn) must resume from turn 1's committed blocks
+        String turn2 = "{\"messages\":["
+                + userTurn + ","
+                + "{\"role\":\"assistant\",\"content\":\"" + escape(a1) + "\"},"
+                + "{\"role\":\"user\",\"content\":\"What was the codeword? One word.\"}"
+                + "]" + noThink;
+        Map<String, Object> r2 = json(post("/v1/chat/completions", turn2));
+        long cached2 = cachedTokens(r2);
+        String a2 = ((String) ((Map<?, ?>) path(r2, "choices", 0).get("message")).get("content"));
+        // turn 2 must reuse turn 1's whole prompt (bos + the first user turn), well beyond turn 1's hit
+        check(cached2 > cached1 + 8, "turn 2 reused turn 1's KV (cached " + cached2 + " vs turn-1 " + cached1 + ")");
+        check(a2 != null && a2.toUpperCase().contains("PELICAN"), "turn 2 recalled the codeword from restored KV: " + a2);
+    }
+
+    private static long cachedTokens(Map<String, Object> chat) {
+        Map<String, Object> usage = path(chat, "usage");
+        Object details = usage.get("prompt_tokens_details");
+        if (details instanceof Map<?, ?> d && d.get("cached_tokens") instanceof Number n) return n.longValue();
+        return 0;
+    }
+
+    private static String escape(String s) {
+        return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
     }
 
     private static void chatStreaming() throws Exception {

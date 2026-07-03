@@ -2,6 +2,12 @@ package com.qxotic.jinfer;
 
 import com.qxotic.jinfer.Generator.GenerationResult;
 import com.qxotic.jinfer.Generator.StopSpec;
+import com.qxotic.jinfer.cache.CachedSession;
+import com.qxotic.jinfer.cache.KvCodec;
+import com.qxotic.jinfer.cache.PromptCache;
+import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.Role;
+import com.qxotic.jinfer.chat.TurnTemplate;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -17,8 +23,11 @@ import java.util.function.IntConsumer;
  * {@link Generator}: sampler / grammar / think wiring, stop conditions, tool-call seeding/parsing.
  * Transport-agnostic - endpoint handlers and SSE streaming live in {@link Server}.
  *
- * <p>The prompt cache and in-place chat-session resume of the legacy engine are not (yet) ported to
- * this path: every request re-encodes its full prompt and generates from a fresh state.
+ * <p>Prompt caching: when the model exposes a {@link TurnTemplate} and a {@link KvCodec} (the S1
+ * capability seams) and the request is plain chat (no tools), the conversation is lowered through
+ * the hand-written template and served through a per-model {@link PromptCache}, so a follow-up
+ * request that echoes the prior turns resumes their KV instead of re-prefilling. Requests with
+ * tools, and models without those seams, take the legacy whole-render path on a fresh state.
  */
 final class Generation {
 
@@ -26,6 +35,10 @@ final class Generation {
     private final LLMOptions options;
     private final Worker worker;
     private final Map<GgufTokenizer, int[]> newlineCache = Collections.synchronizedMap(new WeakHashMap<>());
+    // Per-model prompt cache for the TurnTemplate path (one model per server); null until first use
+    // or when the model lacks the seams / caching is disabled. Guarded by the model monitor.
+    private PromptCache<?> promptCache;
+    private boolean promptCacheResolved;
 
     Generation(LanguageModel<?, ?, ?> model, LLMOptions options, Worker worker) {
         this.model = model;
@@ -38,6 +51,14 @@ final class Generation {
     @SuppressWarnings("unchecked")
     GenerationResult chat(Map<String, Object> request, List<Object> messages, Sinks sinks) {
         GgufTokenizer tokenizer = model.tokenizer();
+        // Fast path: hand-written TurnTemplate + per-model prompt cache, for plain chat only.
+        if (!ToolUse.offered(request) && RuntimeFlags.PROMPT_CACHE
+                && model.turnTemplate().isPresent() && cache() != null) {
+            List<Message> conversation = toConversation(messages);
+            if (conversation != null) {
+                return chatCached(model, request, conversation, sinks);
+            }
+        }
         ChatContext chatContext = new ChatContext(
                 messages,
                 ToolUse.offered(request) ? Values.asArray(request.get("tools"), "tools") : null,
@@ -54,6 +75,93 @@ final class Generation {
         return ToolUse.offered(request) ? ToolUse.parse(model, result, request) : result;
     }
 
+    /** Maps OpenAI messages to {@link Message}s, or null when a message can't be represented on the
+     *  TurnTemplate path (tool role / tool_calls / non-text content) - the caller falls back. */
+    private List<Message> toConversation(List<Object> messages) {
+        List<Message> out = new ArrayList<>(messages.size());
+        for (Object raw : messages) {
+            if (!(raw instanceof Map<?, ?> m)) return null;
+            String role = Values.stringValue(m.get("role"), "user");
+            if ("tool".equals(role) || m.get("tool_calls") != null || m.get("function_call") != null) return null;
+            String content = Values.messageContent(m.get("content"));
+            out.add(new Message(new Role(role), content));
+        }
+        return out;
+    }
+
+    /** The TurnTemplate + PromptCache chat path: lower the conversation to the model's own framing,
+     *  resume the longest cached prefix into a fresh state (skipping that prefill), ingest only the
+     *  delta (caching it for the next turn), then decode from the retained logits. Assistant history
+     *  is re-tokenized from text - best-effort, but the framing is byte-exact with the model's Jinja
+     *  template (validated by the per-model oracle), so a stable client echo reuses the whole prefix. */
+    private <S extends RuntimeState> GenerationResult chatCached(
+            LanguageModel<?, ?, S> m, Map<String, Object> request, List<Message> conversation, Sinks sinks) {
+        TurnTemplate template = m.turnTemplate().orElseThrow();
+        boolean think = requestThink(request);
+        // Turn-aligned blocks: conversation-start, each turn, and the generation prompt are separate
+        // groups, so a follow-up request that diverges after turn k still reuses turns 0..k-1 (blocks
+        // match completely, so one giant block would be unusable the moment the conversation grows).
+        List<List<Batch>> groups = new ArrayList<>();
+        groups.add(template.conversationStart());
+        for (Message msg : conversation) groups.add(template.encodeTurn(msg));
+        groups.add(template.generationPrompt(think));
+
+        long[] fingerprints = tokenFingerprints(groups.stream().flatMap(List::stream).toList());
+        int total = fingerprints.length;
+        @SuppressWarnings("unchecked")
+        PromptCache<S> cache = (PromptCache<S>) cache();
+        S state = m.newState(m.config().contextLength());
+        CachedSession<S> session = CachedSession.resume(m, cache, state, fingerprints);
+        int restored = session.position();                       // cache hit length (0 = cold), on a group boundary
+
+        int pos = 0;
+        for (List<Batch> group : groups) {                       // ingest+commit each group past the hit
+            int len = tokenFingerprints(group).length;
+            if (pos + len <= restored) { pos += len; continue; } // wholly cached
+            session.ingest(group);
+            pos += len;
+        }
+        if (restored == total) {                                 // whole prompt cached: re-ingest the last
+            state.resumeAt(total - 1);                           // token so the logits are fresh (no commit)
+            m.ingest(state, Batch.prefill(new int[]{(int) fingerprints[total - 1]}));
+        }
+        if (System.getProperty("jinfer.debugPrompt") != null) {
+            System.err.printf("[prompt-cache] %d/%d positions restored (%s)%n", restored, total, cache.stats());
+        }
+        // decode from the retained logits: empty prompt continues at the cursor. Restamp the usage
+        // counts on the result (the non-streaming source of truth): the whole prompt was billed,
+        // of which `restored` came from the cache.
+        GenerationResult r = generateFrom(m, state, request, sinks, restored);
+        return new GenerationResult(r.tokens(), r.stopToken(), r.text(), r.reasoning(), r.toolCalls(),
+                total, r.completionTokens(), restored, r.finishReason(), r.promptMillis(), r.predictedMillis());
+    }
+
+    /** The per-model prompt cache, built once (null if the model lacks a KvCodec). */
+    private synchronized PromptCache<?> cache() {
+        if (!promptCacheResolved) {
+            promptCacheResolved = true;
+            promptCache = buildCache(model, options.modelPath());
+        }
+        return promptCache;
+    }
+
+    private static <S extends RuntimeState> PromptCache<S> buildCache(LanguageModel<?, ?, S> m, java.nio.file.Path modelPath) {
+        KvCodec<S> codec = m.kvCodec().orElse(null);
+        if (codec == null) return null;
+        return new PromptCache<>(codec, com.qxotic.jinfer.CacheStore.inMemory(),
+                RuntimeFlags.PROMPT_CACHE_BUDGET_BYTES, PromptCache.modelSeed(modelPath));
+    }
+
+    /** The token ids a batch list ingests, as fingerprints (token-only; the TurnTemplate path is text). */
+    private static long[] tokenFingerprints(List<Batch> batches) {
+        int n = 0;
+        for (Batch b : batches) n += ((Batch.Input.Tokens) b.input()).ids().length;
+        long[] fp = new long[n];
+        int i = 0;
+        for (Batch b : batches) for (int id : ((Batch.Input.Tokens) b.input()).ids()) fp[i++] = id;
+        return fp;
+    }
+
     GenerationResult completion(Map<String, Object> request, String prompt, Sinks sinks) {
         GgufTokenizer tokenizer = model.tokenizer();
         List<Integer> promptTokens = options.rawPrompt()
@@ -67,6 +175,18 @@ final class Generation {
      *  counted unless they are the trailing stop token removed from the result. */
     private GenerationResult generate(Map<String, Object> request, List<Integer> promptTokens,
                                       Set<Integer> baseStopTokens, Sinks sinks) {
+        return generate(request, promptTokens, baseStopTokens, sinks, null, 0);
+    }
+
+    /** Decode a request onto an already-resumed state (empty prompt, the state continues at its
+     *  cursor); {@code cachedTokens} is the restored prefix length billed to the client. */
+    private <S extends RuntimeState> GenerationResult generateFrom(
+            LanguageModel<?, ?, S> m, S state, Map<String, Object> request, Sinks sinks, int cachedTokens) {
+        return generate(request, List.of(), m.stopTokens(), sinks, state, cachedTokens);
+    }
+
+    private GenerationResult generate(Map<String, Object> request, List<Integer> promptTokens,
+                                      Set<Integer> baseStopTokens, Sinks sinks, RuntimeState resumedState, int cachedTokens) {
         GgufTokenizer tokenizer = model.tokenizer();
         OpenAiSchema.Usage usageCounts = sinks.usage();
         float temperature = Values.floatValue(request.get("temperature"), options.temperature());
@@ -104,23 +224,29 @@ final class Generation {
             int[] skipNl = grammarGate >= 0 ? newlineTokens(tokenizer) : null;
             sampler = Sampler.withGrammar(sampler, grammarCursor, eosToken, grammarGate, skipNl);
         }
-        int consumedPromptTokens = Generator.consumedPromptTokens(tokenizer, promptTokens); // client-facing usage counts
+        // Billed prompt: the whole conversation. On the cached path the state is pre-resumed to the
+        // full prompt (position == total), of which cachedTokens were restored from the cache.
+        int billedPrompt = resumedState != null ? resumedState.position()
+                : Generator.consumedPromptTokens(tokenizer, promptTokens);
         IntConsumer onToken = usageCounts == null ? null : token -> {
-            usageCounts.cachedTokens = 0; // no prompt cache on this path
+            usageCounts.cachedTokens = cachedTokens;
             if (!stops.tokenStops().contains(token)) usageCounts.completionTokens++;
         };
-        if (usageCounts != null) usageCounts.promptTokens = consumedPromptTokens;
+        if (usageCounts != null) usageCounts.promptTokens = billedPrompt;
         Generator.Params params = new Generator.Params(sampler, maxTokens, RuntimeFlags.SERVER_REQUEST_TIMEOUT_NANOS, stops, inlineReasoning(request));
         Generator.Listener listener = new Generator.Listener(onToken, sinks.onText(), sinks.onReasoning(), sinks.onToolCall());
-        GenerationResult result = runGen(model, promptTokens, params, listener);
+        GenerationResult result = runGen(model, promptTokens, params, listener, resumedState);
         Metrics.record(result);
         return result;
     }
 
-    /** One new-API generation pass on a fresh state (captures the model's state type S). */
+    /** One new-API generation pass: a fresh state prefills {@code promptTokens}, or a pre-resumed
+     *  {@code state} (from the prompt cache) continues from its cursor with an empty prompt. */
+    @SuppressWarnings("unchecked")
     private <S extends RuntimeState> GenerationResult runGen(LanguageModel<?, ?, S> m, List<Integer> promptTokens,
-                                                             Generator.Params params, Generator.Listener listener) {
-        S state = m.newState(m.config().contextLength(), Math.max(promptTokens.size(), 16));
+                                                             Generator.Params params, Generator.Listener listener, RuntimeState resumedState) {
+        S state = resumedState != null ? (S) resumedState
+                : m.newState(m.config().contextLength(), Math.max(promptTokens.size(), 16));
         return Generator.generate(m, state, promptTokens, params, listener);
     }
 
