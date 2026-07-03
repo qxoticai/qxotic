@@ -27,7 +27,7 @@ import java.util.HexFormat;
 public final class SealedPrompt {
 
     private static final int MAGIC = 0x53564B4A;          // "JKVS"
-    private static final int FORMAT_VERSION = 1;
+    private static final int FORMAT_VERSION = 2;      // v2: [rows][checkpoint] span layout
     private static final int ALIGN = 64;
 
     private final Path file;
@@ -53,7 +53,7 @@ public final class SealedPrompt {
         byte[] nameUtf8 = name.getBytes(java.nio.charset.StandardCharsets.UTF_8);
         long fpOffset = align(4 + 4 + 32 + 4 + nameUtf8.length + 4);
         long kvOffset = align(fpOffset + (long) n * Long.BYTES);
-        long kvBytes = codec.bytes(n);
+        long kvBytes = codec.rowBytes(n) + codec.checkpointBytes();
         try (FileChannel ch = FileChannel.open(out, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
                 StandardOpenOption.READ, StandardOpenOption.WRITE);
              Arena arena = Arena.ofConfined()) {
@@ -63,7 +63,9 @@ public final class SealedPrompt {
                     .putInt(nameUtf8.length).put(nameUtf8).putInt(n);
             MemorySegment fp = map.asSlice(fpOffset, (long) n * Long.BYTES);
             for (int i = 0; i < n; i++) fp.setAtIndex(java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED, i, fingerprints[i]);
-            codec.save(state, 0, n, map.asSlice(kvOffset, kvBytes));
+            MemorySegment kv = map.asSlice(kvOffset, kvBytes);
+            codec.saveRows(state, 0, n, kv);
+            codec.saveCheckpoint(state, n, kv.asSlice(codec.rowBytes(n)));   // sealed span: always checkpointed
             map.force();
         }
     }
@@ -121,7 +123,8 @@ public final class SealedPrompt {
         for (int i = 0; i < n; i++) {
             if (fingerprints.getAtIndex(java.lang.foreign.ValueLayout.JAVA_LONG_UNALIGNED, i) != requestFp[i]) return 0;
         }
-        codec.restore(state, 0, n, kv);
+        codec.restoreRows(state, 0, n, kv);
+        codec.restoreCheckpoint(state, n, kv.asSlice(codec.rowBytes(n)));
         state.resumeAt(n);
         return n;
     }

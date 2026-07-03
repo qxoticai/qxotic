@@ -47,37 +47,53 @@ public final class NemotronHKvCodec implements KvCodec<NemotronH.State> {
     }
 
     @Override
-    public long bytes(int positions) {
-        return positions * bytesPerPosition + checkpointBytes;
+    public long rowBytes(int positions) {
+        return positions * bytesPerPosition;
     }
 
     @Override
-    public void save(NemotronH.State state, int from, int to, MemorySegment dst) {
-        copy(state, from, to, dst, true);
+    public long checkpointBytes() {
+        return checkpointBytes;
     }
 
     @Override
-    public void restore(NemotronH.State state, int from, int to, MemorySegment src) {
-        copy(state, from, to, src, false);
+    public void saveRows(NemotronH.State state, int from, int to, MemorySegment dst) {
+        rows(state, from, to, dst, true);
     }
 
-    /** One walk drives both directions so the blob layout is single-sourced. */
-    private void copy(NemotronH.State state, int from, int to, MemorySegment blob, boolean out) {
+    @Override
+    public void restoreRows(NemotronH.State state, int from, int to, MemorySegment src) {
+        rows(state, from, to, src, false);
+    }
+
+    @Override
+    public void saveCheckpoint(NemotronH.State state, int to, MemorySegment dst) {
+        checkpoint(state, to, dst, true);
+    }
+
+    @Override
+    public void restoreCheckpoint(NemotronH.State state, int to, MemorySegment src) {
+        checkpoint(state, to, src, false);
+    }
+
+    /** One walk per section drives both directions so each layout is single-sourced. */
+    private void rows(NemotronH.State state, int from, int to, MemorySegment blob, boolean out) {
         long off = 0;
         int n = to - from;
         long kvDim = config.kvDim();
         for (int l = 0; l < config.numberOfLayers(); l++) {
-            switch (config.layerTypes()[l]) {
-                case ATTENTION -> {
-                    off += KvTransfer.transfer(state.keyCache[l], from * kvDim, blob, off, n * kvDim, out);
-                    off += KvTransfer.transfer(state.valueCache[l], from * kvDim, blob, off, n * kvDim, out);
-                }
-                case SSM -> {
-                    off += KvTransfer.transfer(state.ssmConvState[l], 0, blob, off, convFloats, out);
-                    off += KvTransfer.transfer(state.ssmState[l], blob, off, out);
-                }
-                case MOE -> { }
-            }
+            if (config.layerTypes()[l] != NemotronH.LayerType.ATTENTION) continue;
+            off += KvTransfer.transfer(state.keyCache[l], from * kvDim, blob, off, n * kvDim, out);
+            off += KvTransfer.transfer(state.valueCache[l], from * kvDim, blob, off, n * kvDim, out);
+        }
+    }
+
+    private void checkpoint(NemotronH.State state, int to, MemorySegment blob, boolean out) {
+        long off = 0;
+        for (int l = 0; l < config.numberOfLayers(); l++) {
+            if (config.layerTypes()[l] != NemotronH.LayerType.SSM) continue;
+            off += KvTransfer.transfer(state.ssmConvState[l], 0, blob, off, convFloats, out);
+            off += KvTransfer.transfer(state.ssmState[l], blob, off, out);
         }
     }
 }

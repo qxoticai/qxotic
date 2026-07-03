@@ -39,36 +39,57 @@ public final class Gemma4KvCodec implements KvCodec<Gemma4.State> {
     }
 
     @Override
-    public long bytes(int positions) {
-        return positions * bytesPerPosition + checkpointBytes;
+    public long rowBytes(int positions) {
+        return positions * bytesPerPosition;
     }
 
     @Override
-    public void save(Gemma4.State state, int from, int to, MemorySegment dst) {
-        copy(state, from, to, dst, true);
+    public long checkpointBytes() {
+        return checkpointBytes;
     }
 
     @Override
-    public void restore(Gemma4.State state, int from, int to, MemorySegment src) {
-        copy(state, from, to, src, false);
+    public void saveRows(Gemma4.State state, int from, int to, MemorySegment dst) {
+        rows(state, from, to, dst, true);
     }
 
-    /** One walk drives both directions so the blob layout is single-sourced. */
-    private void copy(Gemma4.State state, int from, int to, MemorySegment blob, boolean out) {
+    @Override
+    public void restoreRows(Gemma4.State state, int from, int to, MemorySegment src) {
+        rows(state, from, to, src, false);
+    }
+
+    @Override
+    public void saveCheckpoint(Gemma4.State state, int to, MemorySegment dst) {
+        checkpoint(state, to, dst, true);
+    }
+
+    @Override
+    public void restoreCheckpoint(Gemma4.State state, int to, MemorySegment src) {
+        checkpoint(state, to, src, false);
+    }
+
+    /** One walk per section drives both directions so each layout is single-sourced. */
+    private void rows(Gemma4.State state, int from, int to, MemorySegment blob, boolean out) {
+        long off = 0;
+        long n = to - from;
+        for (int l = 0; l < config.ownKvLayers(); l++) {
+            if (config.isSWA()[l]) continue;
+            long kvDim = config.kvDim(l);
+            off += com.qxotic.jinfer.cache.KvTransfer.transfer(state.keyCache[l], from * kvDim, blob, off, n * kvDim, out);
+            off += com.qxotic.jinfer.cache.KvTransfer.transfer(state.valueCache[l], from * kvDim, blob, off, n * kvDim, out);
+        }
+    }
+
+    private void checkpoint(Gemma4.State state, int to, MemorySegment blob, boolean out) {
         int w = config.slidingWindow();
         long off = 0;
         for (int l = 0; l < config.ownKvLayers(); l++) {
+            if (!config.isSWA()[l]) continue;
             long kvDim = config.kvDim(l);
-            if (config.isSWA()[l]) {
-                // fixed-size window checkpoint: rows at ring slots, padded to W rows (shared
-                // wrap-aware copy - the ring-boundary math lives once, in KvTransfer.window)
-                off += com.qxotic.jinfer.cache.KvTransfer.window(state.keyCache[l], to, w, kvDim, 2, blob, off, out);
-                off += com.qxotic.jinfer.cache.KvTransfer.window(state.valueCache[l], to, w, kvDim, 2, blob, off, out);
-            } else {
-                long n = to - from;
-                off += com.qxotic.jinfer.cache.KvTransfer.transfer(state.keyCache[l], from * kvDim, blob, off, n * kvDim, out);
-                off += com.qxotic.jinfer.cache.KvTransfer.transfer(state.valueCache[l], from * kvDim, blob, off, n * kvDim, out);
-            }
+            // fixed-size window checkpoint: rows at ring slots, padded to W rows (shared
+            // wrap-aware copy - the ring-boundary math lives once, in KvTransfer.window)
+            off += com.qxotic.jinfer.cache.KvTransfer.window(state.keyCache[l], to, w, kvDim, 2, blob, off, out);
+            off += com.qxotic.jinfer.cache.KvTransfer.window(state.valueCache[l], to, w, kvDim, 2, blob, off, out);
         }
     }
 

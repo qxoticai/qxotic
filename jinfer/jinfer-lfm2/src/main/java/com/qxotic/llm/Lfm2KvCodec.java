@@ -1,6 +1,7 @@
 package com.qxotic.llm;
 
 import com.qxotic.jinfer.cache.KvCodec;
+import com.qxotic.jinfer.cache.KvTransfer;
 
 import java.lang.foreign.MemorySegment;
 
@@ -10,10 +11,10 @@ import java.lang.foreign.MemorySegment;
  *  which is exactly why blocks match completely or not at all. MoE routing is per-token and
  *  carries no cross-token state — nothing to checkpoint.
  *
- *  <p>Blob layout, layer-major: attention layer l → K rows {@code [from,to)} then V rows (native
- *  F16); recurrent layer l → the {@code hist × dim} conv history (F32, as of {@code to}). Restore
- *  is a pure copy; the cache chain-applies blocks in order (deepest conv checkpoint wins) and then
- *  resumes the state at the chain end. */
+ *  <p>Rows section, layer-major: attention layer l → K rows {@code [from,to)} then V rows (native
+ *  F16). Checkpoint section: recurrent layer l → the {@code hist × dim} conv history (F32, as of
+ *  the block end). Checkpoints are sparse (cache policy); a resume restores rows along the chain
+ *  and the deepest checkpoint. */
 public final class Lfm2KvCodec implements KvCodec<Lfm2.State> {
 
     private final Lfm2.Configuration config;
@@ -37,37 +38,52 @@ public final class Lfm2KvCodec implements KvCodec<Lfm2.State> {
     }
 
     @Override
-    public long bytes(int positions) {
-        return positions * bytesPerPosition + checkpointBytes;
+    public long rowBytes(int positions) {
+        return positions * bytesPerPosition;
     }
 
     @Override
-    public void save(Lfm2.State state, int from, int to, MemorySegment dst) {
+    public long checkpointBytes() {
+        return checkpointBytes;
+    }
+
+    @Override
+    public void saveRows(Lfm2.State state, int from, int to, MemorySegment dst) {
+        rows(state, from, to, dst, true);
+    }
+
+    @Override
+    public void restoreRows(Lfm2.State state, int from, int to, MemorySegment src) {
+        rows(state, from, to, src, false);
+    }
+
+    @Override
+    public void saveCheckpoint(Lfm2.State state, int to, MemorySegment dst) {
+        checkpoint(state, dst, true);
+    }
+
+    @Override
+    public void restoreCheckpoint(Lfm2.State state, int to, MemorySegment src) {
+        checkpoint(state, src, false);
+    }
+
+    /** One walk per section drives both directions so each layout is single-sourced. */
+    private void rows(Lfm2.State state, int from, int to, MemorySegment blob, boolean out) {
         long off = 0;
         int n = to - from;
         for (int l = 0; l < config.numberOfLayers(); l++) {
-            if (config.isRecurrentLayer(l)) {
-                off += state.shortConvState[l].copyRawTo(0, dst, off, convFloats);
-            } else {
-                long kvDim = config.kvDim(l);
-                off += state.keyCache[l].copyRawTo(from * kvDim, dst, off, n * kvDim);
-                off += state.valueCache[l].copyRawTo(from * kvDim, dst, off, n * kvDim);
-            }
+            if (config.isRecurrentLayer(l)) continue;
+            long kvDim = config.kvDim(l);
+            off += KvTransfer.transfer(state.keyCache[l], from * kvDim, blob, off, n * kvDim, out);
+            off += KvTransfer.transfer(state.valueCache[l], from * kvDim, blob, off, n * kvDim, out);
         }
     }
 
-    @Override
-    public void restore(Lfm2.State state, int from, int to, MemorySegment src) {
+    private void checkpoint(Lfm2.State state, MemorySegment blob, boolean out) {
         long off = 0;
-        int n = to - from;
         for (int l = 0; l < config.numberOfLayers(); l++) {
-            if (config.isRecurrentLayer(l)) {
-                off += state.shortConvState[l].copyRawFrom(src, off, 0, convFloats);
-            } else {
-                long kvDim = config.kvDim(l);
-                off += state.keyCache[l].copyRawFrom(src, off, from * kvDim, n * kvDim);
-                off += state.valueCache[l].copyRawFrom(src, off, from * kvDim, n * kvDim);
-            }
+            if (!config.isRecurrentLayer(l)) continue;
+            off += KvTransfer.transfer(state.shortConvState[l], 0, blob, off, convFloats, out);
         }
     }
 }

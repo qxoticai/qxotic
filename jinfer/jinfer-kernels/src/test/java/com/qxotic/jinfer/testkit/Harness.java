@@ -104,12 +104,15 @@ public final class Harness<S extends RuntimeState> {
      *  This is the sound cache-identity gate; reply-text equality is load-sensitive for MoE
      *  models (threaded reductions are not byte-deterministic, near-tie greedy picks can flip). */
     public boolean statesEqual(S a, S b, int positions) {
-        long bytes = codec.bytes(positions);
+        long rowBytes = codec.rowBytes(positions);
+        long bytes = rowBytes + codec.checkpointBytes();
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment sa = arena.allocate(bytes, 64);
             MemorySegment sb = arena.allocate(bytes, 64);
-            codec.save(a, 0, positions, sa);
-            codec.save(b, 0, positions, sb);
+            codec.saveRows(a, 0, positions, sa);
+            codec.saveCheckpoint(a, positions, sa.asSlice(rowBytes));
+            codec.saveRows(b, 0, positions, sb);
+            codec.saveCheckpoint(b, positions, sb.asSlice(rowBytes));
             return MemorySegment.mismatch(sa, 0, bytes, sb, 0, bytes) == -1;
         }
     }
