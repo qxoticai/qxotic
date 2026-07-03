@@ -24,8 +24,11 @@ import java.util.Set;
  *  storage, no collision handling: git/IPFS regime).
  *
  *  <p>Blocks match COMPLETELY or not at all: recurrent checkpoints exist only at block boundaries
- *  (see {@link KvCodec}), so the longest reusable prefix is a chain of whole blocks. The cache is
- *  a pure optimization — every miss degrades to recompute, never to a wrong answer.
+ *  (see {@link KvCodec}), so the longest reusable prefix is a chain of whole blocks. Checkpoints
+ *  are SPARSE — multi-token blocks always carry one, single-token decode runs one every
+ *  {@code jinfer.checkpointStride} (64) positions — so a decode block costs its rows only and a
+ *  resume lands at the deepest checkpointed block, the caller re-ingesting the short tail. The
+ *  cache is a pure optimization — every miss degrades to recompute, never to a wrong answer.
  *
  *  <p>{@link #resume} matches and restores once per request and returns a {@link Cursor}; the
  *  cursor commits each subsequently ingested span in O(span) — one digest of the span against the
@@ -46,17 +49,23 @@ public final class PromptCache<S extends RuntimeState> {
         final BlockKey key;
         final Block parent;                    // sentinel for depth-0 blocks
         final int from, to;
+        final int ckptTo;                      // deepest checkpoint position at or before this block
         final MemorySegment mem;               // null only on the sentinel
         final List<Block> children = new ArrayList<>(2);
         long lastUsed;
         boolean live = true;
 
-        Block(BlockKey key, Block parent, int from, int to, MemorySegment mem) {
+        Block(BlockKey key, Block parent, int from, int to, int ckptTo, MemorySegment mem) {
             this.key = key;
             this.parent = parent;
             this.from = from;
             this.to = to;
+            this.ckptTo = ckptTo;
             this.mem = mem;
+        }
+
+        boolean checkpointed() {
+            return ckptTo == to;               // children strictly extend, so == means "own checkpoint"
         }
     }
 
@@ -95,15 +104,23 @@ public final class PromptCache<S extends RuntimeState> {
                 tip = existing;
                 return;
             }
-            long bytes = codec.bytes(len);
+            // sparse checkpoints: multi-token blocks (turn/prefill chunks - the resume points that
+            // matter) always carry one; single-token decode runs carry one every `stride`
+            // positions. Models with checkpointBytes()==0 checkpoint every block for free.
+            long ckptBytes = codec.checkpointBytes();
+            int to = tip.to + len;
+            boolean checkpoint = ckptBytes == 0 || len > 1 || to - tip.ckptTo >= stride;
+            long rowBytes = codec.rowBytes(len);
+            long bytes = rowBytes + (checkpoint ? ckptBytes : 0);
             if (!ensureBudget(bytes, tip)) {               // budget refused: detach softly
                 tip = DETACHED;
                 return;
             }
             MemorySegment mem = store.allocate(bytes);
-            codec.save(state, tip.to, tip.to + len, mem);
+            codec.saveRows(state, tip.to, to, mem);
+            if (checkpoint && ckptBytes > 0) codec.saveCheckpoint(state, to, mem.asSlice(rowBytes));
             store.validate(mem);
-            Block block = new Block(key, tip, tip.to, tip.to + len, mem);
+            Block block = new Block(key, tip, tip.to, to, checkpoint ? to : tip.ckptTo, mem);
             blocks.put(key, block);
             leaves.remove(tip);
             leaves.add(block);
@@ -118,6 +135,7 @@ public final class PromptCache<S extends RuntimeState> {
     private final long budgetBytes;
     private final byte[] modelSeed;
     private final boolean frozen;
+    private final int stride = Math.max(1, Integer.getInteger("jinfer.checkpointStride", 64));
     private final Map<BlockKey, Block> blocks = new HashMap<>();
     private final Set<Block> leaves = new HashSet<>();
     private final Block sentinel;
@@ -158,8 +176,8 @@ public final class PromptCache<S extends RuntimeState> {
             ByteBuffer out = ByteBuffer.wrap(sha.digest()).order(ByteOrder.LITTLE_ENDIAN);
             root = new BlockKey(out.getLong(), out.getLong(), out.getLong(), out.getLong());
         }
-        this.sentinel = new Block(root, null, 0, 0, null);
-        this.DETACHED = new Block(root, null, 0, 0, null);
+        this.sentinel = new Block(root, null, 0, 0, 0, null);
+        this.DETACHED = new Block(root, null, 0, 0, 0, null);
         this.DETACHED.live = false;
     }
 
@@ -190,8 +208,11 @@ public final class PromptCache<S extends RuntimeState> {
     }
 
     /** Matches the longest cached complete-block prefix of {@code fingerprints[0..len)}, restores
-     *  it into {@code state} (which resumes at the matched position), and returns the session's
-     *  write cursor sitting at the match — 0 on a cold start. */
+     *  it into {@code state}, and returns the session's write cursor sitting at the resume point
+     *  — the deepest CHECKPOINTED block of the match (== the match itself for models without
+     *  recurrent state); the caller re-ingests everything past {@link Cursor#position()}. 0 on a
+     *  cold start. Rows of matched blocks beyond the resume point are not restored — the
+     *  re-ingest recomputes them. */
     public Cursor resume(long[] fingerprints, int len, S state) {
         Block tip = sentinel;
         while (true) {
@@ -206,18 +227,22 @@ public final class PromptCache<S extends RuntimeState> {
             touch(next);
             tip = next;
         }
+        while (tip != sentinel && !tip.checkpointed()) tip = tip.parent;   // land on a resume point
         if (tip != sentinel) {
             for (Block b = tip; b != sentinel; b = b.parent) chainScratch.add(b);
             for (int i = chainScratch.size() - 1; i >= 0; i--) {
                 Block b = chainScratch.get(i);
                 if (!store.validate(b.mem)) {              // failed verification = a miss, never restored
                     discard(b);                            // the block and everything chained on it
-                    tip = i + 1 <= chainScratch.size() - 1 ? chainScratch.get(i + 1) : sentinel;
-                    break;
+                    chainScratch.clear();
+                    return resume(fingerprints, len, state);   // the tree changed: re-match from scratch
                 }
-                codec.restore(state, b.from, b.to, b.mem);
+                codec.restoreRows(state, b.from, b.to, b.mem);
             }
             chainScratch.clear();
+            if (codec.checkpointBytes() > 0) {
+                codec.restoreCheckpoint(state, tip.to, tip.mem.asSlice(codec.rowBytes(tip.to - tip.from)));
+            }
         }
         if (tip != sentinel) {
             hits++;
@@ -292,7 +317,7 @@ public final class PromptCache<S extends RuntimeState> {
     //   (parents precede children, so the tree rebuilds in one pass).
 
     private static final int MAGIC_FROZEN = 0x46564B4A;    // "JKVF"
-    private static final int FORMAT_VERSION = 1;
+    private static final int FORMAT_VERSION = 2;      // v2: [rows][checkpoint] blobs, sparse checkpoints
     private static final int HEADER_BYTES = 64;             // 4+4+32+4+8, padded
     private static final int INDEX_ENTRY_BYTES = 88;        // 32+32+4+4+8+8
     private static final int ALIGN = 64;
@@ -385,7 +410,9 @@ public final class PromptCache<S extends RuntimeState> {
             if (parent == null) {
                 throw new IllegalStateException(file + " index is corrupt: block " + i + " has an unknown parent");
             }
-            PromptCache<S>.Block b = cache.new Block(key, parent, from, to, map.asSlice(offset, len));
+            boolean checkpointed = codec.checkpointBytes() == 0 || len > codec.rowBytes(to - from);
+            PromptCache<S>.Block b = cache.new Block(key, parent, from, to,
+                    checkpointed ? to : parent.ckptTo, map.asSlice(offset, len));
             cache.blocks.put(key, b);
             parent.children.add(b);
         }
@@ -409,7 +436,8 @@ public final class PromptCache<S extends RuntimeState> {
     }
 
     public String stats() {
-        return "blocks=" + blocks.size() + " bytes=" + store.usedBytes()
+        long checkpoints = blocks.values().stream().filter(Block::checkpointed).count();
+        return "blocks=" + blocks.size() + " checkpoints=" + checkpoints + " bytes=" + store.usedBytes()
                 + " hits=" + hits + " misses=" + misses + " evictions=" + evictions;
     }
 }

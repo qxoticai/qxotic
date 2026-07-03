@@ -41,9 +41,9 @@ public final class CachedSessionPartialGroupTest {
     }
 
     static final class FakeCodec implements KvCodec<FakeState> {
-        @Override public long bytes(int positions) { return positions * 8L; }
-        @Override public void save(FakeState s, int from, int to, MemorySegment dst) { }
-        @Override public void restore(FakeState s, int from, int to, MemorySegment src) { }
+        @Override public long rowBytes(int positions) { return positions * 8L; }
+        @Override public void saveRows(FakeState s, int from, int to, MemorySegment dst) { }
+        @Override public void restoreRows(FakeState s, int from, int to, MemorySegment src) { }
     }
 
     public static void main(String[] args) {

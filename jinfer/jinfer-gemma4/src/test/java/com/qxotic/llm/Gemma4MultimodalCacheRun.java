@@ -49,7 +49,7 @@ public final class Gemma4MultimodalCacheRun {
         stops = model.stopTokens();
         seed = PromptCache.modelSeed(text);
         System.out.println("model=" + text.getFileName() + " modalities=" + model.modalities()
-                + " blockBytes(1)=" + (model.kvCodec().orElseThrow().bytes(1) >> 20) + "MB");
+                + " blockBytes(1)=" + ((codec.rowBytes(1) + codec.checkpointBytes()) >> 20) + "MB");
 
         battery("image", new Part.Blob(solidImage(1f, 0f, 0f)), new Part.Blob(solidImage(0f, 0f, 1f)),
                 "\nWhat is the dominant color in this image? Answer with one word.", "red", big ? null : "blue");
@@ -181,12 +181,15 @@ public final class Gemma4MultimodalCacheRun {
     }
 
     static boolean statesEqual(Gemma4.State x, Gemma4.State y, int positions) {
-        long bytes = codec.bytes(positions);
+        long rowBytes = codec.rowBytes(positions);
+        long bytes = rowBytes + codec.checkpointBytes();
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment sx = arena.allocate(bytes, 64);
             MemorySegment sy = arena.allocate(bytes, 64);
-            codec.save(x, 0, positions, sx);
-            codec.save(y, 0, positions, sy);
+            codec.saveRows(x, 0, positions, sx);
+            codec.saveCheckpoint(x, positions, sx.asSlice(rowBytes));
+            codec.saveRows(y, 0, positions, sy);
+            codec.saveCheckpoint(y, positions, sy.asSlice(rowBytes));
             return MemorySegment.mismatch(sx, 0, bytes, sy, 0, bytes) == -1;
         }
     }
