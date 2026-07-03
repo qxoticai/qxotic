@@ -62,7 +62,7 @@ final class Generation {
         boolean tools = ToolUse.offered(request);
         // TurnTemplate path: the model's own framing, for plain chat - caching is a separate,
         // optional layer on top (the framing does not depend on it).
-        if (!tools && template != null) {
+        if (!tools && template != null && onlyKnownKwargs(request)) {
             List<Message> conversation = toConversation(messages);
             if (conversation != null) {
                 return chatTemplated(model, request, conversation, sinks);
@@ -91,10 +91,26 @@ final class Generation {
             if (!(raw instanceof Map<?, ?> m)) return null;
             String role = Values.stringValue(m.get("role"), "user");
             if ("tool".equals(role) || m.get("tool_calls") != null || m.get("function_call") != null) return null;
-            String content = Values.messageContent(m.get("content"));
+            Object raw2 = m.get("content");
+            if (raw2 instanceof List<?> parts) {                 // multimodal content array: only
+                for (Object part : parts) {                       // pure-text flattens faithfully
+                    if (!(part instanceof Map<?, ?> pm) || !"text".equals(pm.get("type"))) return null;
+                }
+            }
+            String content = Values.messageContent(raw2);
             out.add(new Message(new Role(role), content));
         }
         return out;
+    }
+
+    /** chat_template_kwargs the templated path can represent: only enable_thinking (mapped to the
+     *  generation prompt). Anything else must reach the Jinja render, so the request falls back. */
+    private static boolean onlyKnownKwargs(Map<String, Object> request) {
+        if (!(request.get("chat_template_kwargs") instanceof Map<?, ?> kwargs)) return true;
+        for (Object key : kwargs.keySet()) {
+            if (!"enable_thinking".equals(key)) return false;
+        }
+        return true;
     }
 
     /** The TurnTemplate chat path: lower the conversation to the model's own framing and, when the
@@ -105,6 +121,8 @@ final class Generation {
     private <S extends RuntimeState> GenerationResult chatTemplated(
             LanguageModel<?, ?, S> m, Map<String, Object> request, List<Message> conversation, Sinks sinks) {
         boolean think = requestThink(request);
+        conversation = template.normalize(conversation);     // the template's own framing may inject
+                                                             // a mandatory system turn (NemotronH, Llama)
         // Turn-aligned blocks: conversation-start, each turn, and the generation prompt are separate
         // groups, so a follow-up request that diverges after turn k still reuses turns 0..k-1 (blocks
         // match completely, so one giant block would be unusable the moment the conversation grows).
@@ -130,13 +148,9 @@ final class Generation {
             // Resume at most up to the final block (the generation prompt): a whole-prompt hit then
             // still re-ingests that block, leaving fresh logits at the cursor - no special case.
             CachedSession<S> session = CachedSession.resume(m, cache, state, fingerprints, total - groupLen[groupLen.length - 1]);
-            restored = session.position();                       // cache hit length (0 = cold), on a group boundary
-            int pos = 0;
-            for (int g = 0; g < groups.size(); g++) {            // ingest+commit each group past the hit
-                if (pos + groupLen[g] <= restored) { pos += groupLen[g]; continue; }
-                session.ingest(groups.get(g));
-                pos += groupLen[g];
-            }
+            restored = session.position();                       // cache hit length (0 = cold): a BLOCK
+            session.ingestGroups(groups);                        // boundary, not necessarily a group one -
+                                                                 // the session slices the partial group
             if (System.getProperty("jinfer.debugPrompt") != null) {
                 System.err.printf("[prompt-cache] %d/%d positions restored (%s)%n", restored, total, cache.stats());
             }
@@ -312,6 +326,10 @@ final class Generation {
     void warm() {
         if (!options.warmPrompts().isEmpty()) {
             System.err.println("warm-prompt ignored: startup warming is not implemented yet");
+        }
+        if (System.getProperty("jinfer.promptCacheWarm") != null) {
+            System.err.println("jinfer.promptCacheWarm ignored: the property was removed - the cache "
+                    + "warms itself per request (start-up warming is not implemented)");
         }
     }
 }

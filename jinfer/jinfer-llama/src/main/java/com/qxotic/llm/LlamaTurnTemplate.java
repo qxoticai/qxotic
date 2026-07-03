@@ -62,6 +62,19 @@ public final class LlamaTurnTemplate implements TurnTemplate {
         return List.of(Batch.prefill(new int[]{bos}));
     }
 
+    /** The template renders its system preamble even for conversations with no system message:
+     *  inject an empty system turn when absent, so turn-by-turn callers frame identically. */
+    @Override
+    public List<Message> normalize(List<Message> conversation) {
+        if (!conversation.isEmpty() && conversation.get(0).role().equals(Role.SYSTEM)) {
+            return conversation;
+        }
+        List<Message> out = new java.util.ArrayList<>(conversation.size() + 1);
+        out.add(Message.system(""));
+        out.addAll(conversation);
+        return out;
+    }
+
     @Override
     public List<Batch> encodeTurn(Message message) {
         String content = message.textOnly().strip();
