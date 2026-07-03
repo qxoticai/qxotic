@@ -62,6 +62,13 @@ public class GgufTokenizer {
         return tokenizer.vocabulary().size();
     }
 
+    /** The id of a special token a curated template requires; throws naming it when absent. */
+    public int requiredSpecial(String name) {
+        Integer id = specialTokens.get(name);
+        if (id == null) throw new IllegalArgumentException("tokenizer lacks " + name);
+        return id;
+    }
+
     public Map<String, Integer> getSpecialTokens() {
         return specialTokens;
     }

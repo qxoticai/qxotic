@@ -48,6 +48,14 @@ public final class OracleScenario {
 
     /** Token-exact comparison of the hand-written encode vs the rendered+rescanned template. */
     public void compare(String name, boolean generationPrompt, List<Message> conversation) {
+        compare(name, generationPrompt, true, Map.of(), conversation);
+    }
+
+    /** Comparison with per-case overrides: {@code thinking} selects the hand-written
+     *  generation-prompt scaffold, {@code extraVars} merge over the instance render vars (e.g.
+     *  {@code enable_thinking=false} to pin a template's non-thinking branch). */
+    public void compare(String name, boolean generationPrompt, boolean thinking,
+                        Map<String, Object> extraVars, List<Message> conversation) {
         List<Object> maps = new ArrayList<>();
         for (Message m : conversation) {
             Map<String, Object> map = new LinkedHashMap<>();
@@ -56,13 +64,14 @@ public final class OracleScenario {
             maps.add(map);
         }
         Map<String, Object> vars = new HashMap<>(renderVars);
+        vars.putAll(extraVars);
         vars.put("messages", maps);
         vars.put("add_generation_prompt", generationPrompt);
         String rendered = jinja.render(vars);
         List<Integer> oracle = tokenizer.encodeWithSpecialTokens(rendered);
 
         List<Batch> batches = new ArrayList<>(mine.encode(conversation));
-        if (generationPrompt) batches.addAll(mine.generationPrompt(true));
+        if (generationPrompt) batches.addAll(mine.generationPrompt(thinking));
         List<Integer> ours = new ArrayList<>();
         for (int id : Batch.tokenIds(batches)) ours.add(id);
 
