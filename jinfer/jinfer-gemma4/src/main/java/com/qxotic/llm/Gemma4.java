@@ -382,6 +382,7 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
         @Override public int batchCapacity() { return batchCapacity; }
         @Override public int position()      { return position; }
         @Override public int outputCount()   { return outputCount; }
+        @Override public void resumeAt(int p) { position = p; lastChunkLen = 0; outputCount = 0; }
     }
 
     // === Forward (gated activation + softcap run through the shared vectorized Activations kernels) ===
