@@ -54,6 +54,47 @@ public record Batch(Input input, Outputs outputs) {
         return new Batch(new Input.Sequences(new Input.Tokens(ids), seqLen), Outputs.ALL);
     }
 
+    /** Normalizes a batch list for ingestion at {@code batchCapacity}: adjacent token batches merge
+     *  into the largest legal prefill, oversized token batches split at the capacity, and each
+     *  {@link Input.Embeddings} passes through whole — a bidirectional block is one attention group
+     *  and must never be split (throws if it exceeds the capacity). Only LAST-output token batches
+     *  are fused; anything else passes through unchanged. */
+    public static java.util.List<Batch> prepare(java.util.List<Batch> batches, int batchCapacity) {
+        if (batchCapacity <= 0) throw new IllegalArgumentException("batchCapacity " + batchCapacity);
+        var out = new java.util.ArrayList<Batch>(batches.size());
+        var run = new java.util.ArrayList<int[]>();
+        for (Batch b : batches) {
+            if (b.input instanceof Input.Tokens t && b.outputs == Outputs.LAST) {
+                run.add(t.ids());
+                continue;
+            }
+            flushRun(run, batchCapacity, out);
+            if (b.input instanceof Input.Embeddings e && e.bidirectional() && e.count() > batchCapacity) {
+                throw new IllegalArgumentException(
+                        "bidirectional media block of " + e.count() + " rows exceeds batchCapacity " + batchCapacity);
+            }
+            out.add(b);
+        }
+        flushRun(run, batchCapacity, out);
+        return out;
+    }
+
+    private static void flushRun(java.util.List<int[]> run, int batchCapacity, java.util.List<Batch> out) {
+        if (run.isEmpty()) return;
+        int total = 0;
+        for (int[] part : run) total += part.length;
+        int[] ids = new int[total];
+        int off = 0;
+        for (int[] part : run) {
+            System.arraycopy(part, 0, ids, off, part.length);
+            off += part.length;
+        }
+        run.clear();
+        for (int from = 0; from < ids.length; from += batchCapacity) {
+            out.add(prefill(java.util.Arrays.copyOfRange(ids, from, Math.min(from + batchCapacity, ids.length))));
+        }
+    }
+
     /** Rows this batch ingests, regardless of modality. */
     public int count() {
         return switch (input) {

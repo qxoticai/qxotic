@@ -37,12 +37,15 @@ public class LFMTokenizer {
     private final ChatTemplate chatTemplate;
 
     /** Tokenizer without a chat template — for callers (e.g. the jinfer-gemma4 port) that build
-     *  prompts directly and don't need {@link ChatTemplate} (which is package-private). */
+     *  prompts directly and don't need {@link ChatTemplate}. */
     public LFMTokenizer(GGUF gguf) {
         this(gguf, s -> null);
     }
 
-    LFMTokenizer(GGUF gguf, Function<String, ChatTemplate> templateCompiler) {
+    /** Tokenizer with the GGUF's chat template compiled through {@code templateCompiler}
+     *  (typically {@code JinjaRenderer::template} — injected because jinfer-core doesn't depend
+     *  on jinfer-jinja). */
+    public LFMTokenizer(GGUF gguf, Function<String, ChatTemplate> templateCompiler) {
         this.tokenizer = GGUFTokenizerLoader.createBuilderWithBuiltins()
                 .registerPreTokenizer("lfm2", g -> Splitter.regex(Pattern.compile(LFM2_PRE_PATTERN)))
                 .registerNormalizer("lfm2", g -> Normalizer.identity())
@@ -68,7 +71,7 @@ public class LFMTokenizer {
 
     /** The compiled chat template, or null when the model has none
      *  (the server then falls back to the built-in ChatML format). */
-    ChatTemplate chatTemplate() { return chatTemplate; }
+    public ChatTemplate chatTemplate() { return chatTemplate; }
 
     boolean isSpecialToken(int token) {
         return token >= 0 && token < vocabularySize()
