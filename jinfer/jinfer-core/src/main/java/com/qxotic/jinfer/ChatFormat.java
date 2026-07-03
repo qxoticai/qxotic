@@ -20,8 +20,7 @@ final class ChatFormat {
     static List<Integer> encode(GgufTokenizer tokenizer, ChatContext ctx) {
         CompiledTemplate tpl = tokenizer.chatTemplate();
         if (tpl == null) {
-            throw new IllegalStateException("model has no chat_template (or it failed to compile); "
-                    + "chat requests need one — use a raw prompt instead");
+            return chatMl(tokenizer, ctx);   // no (or uncompilable) template: best-effort ChatML
         }
         var vars = new LinkedHashMap<String, Object>();
         vars.put("messages", preprocessToolCalls(ctx.messages()));
@@ -33,6 +32,46 @@ final class ChatFormat {
         vars.put("preserve_thinking", false);
         if (ctx.kwargs() != null) vars.putAll(ctx.kwargs());
         return tokenizer.encodeWithSpecialTokens(tpl.render(vars));
+    }
+
+    /** Best-effort ChatML fallback for GGUFs without a compilable chat_template (the framing the
+     *  pre-refactor server used): {@code <|im_start|>role\ncontent<|im_end|>\n} per message, tools
+     *  flattened into the system turn, tool results/calls rendered as text. The string is re-scanned
+     *  with special-token awareness, so the turn markers become real ids when the vocab has them. */
+    private static List<Integer> chatMl(GgufTokenizer tokenizer, ChatContext ctx) {
+        StringBuilder sb = new StringBuilder();
+        StringBuilder system = new StringBuilder();
+        if (ctx.tools() != null && !ctx.tools().isEmpty()) {
+            system.append("List of tools: ").append(JsonCodec.stringify(ctx.tools()));
+        }
+        List<Object> body = new ArrayList<>();
+        for (Object raw : ctx.messages()) {
+            if (raw instanceof Map<?, ?> m && "system".equals(m.get("role"))) {
+                String text = Values.messageContent(m.get("content"));
+                if (!text.isEmpty()) system.insert(0, system.isEmpty() ? text : text + "\n");
+                continue;
+            }
+            body.add(raw);
+        }
+        if (!system.isEmpty()) {
+            sb.append("<|im_start|>system\n").append(system).append("<|im_end|>\n");
+        }
+        for (Object raw : body) {
+            if (!(raw instanceof Map<?, ?> m)) continue;
+            String role = Values.stringValue(m.get("role"), "user");
+            String content = Values.messageContent(m.get("content"));
+            if ("tool".equals(role)) {
+                String name = Values.stringValue(m.get("name"), Values.stringValue(m.get("tool_call_id"), "tool"));
+                role = "user";
+                content = "Tool result from " + name + ":\n" + content;
+            } else if (m.get("tool_calls") instanceof List<?> calls && !calls.isEmpty()) {
+                String callsText = "Tool calls made:\n" + JsonCodec.stringify(calls);
+                content = content.isEmpty() ? callsText : content + "\n" + callsText;
+            }
+            sb.append("<|im_start|>").append(role).append('\n').append(content).append("<|im_end|>\n");
+        }
+        if (ctx.addGenerationPrompt()) sb.append("<|im_start|>assistant\n");
+        return tokenizer.encodeWithSpecialTokens(sb.toString());
     }
 
     /**

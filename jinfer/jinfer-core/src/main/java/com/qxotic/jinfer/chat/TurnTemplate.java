@@ -39,11 +39,20 @@ public interface TurnTemplate extends ChatTemplate {
      *  reply tokens + closeTurn} frames identically to {@code encodeTurn(assistant(reply))}. */
     List<Batch> closeTurn();
 
-    /** A whole conversation is its turns, concatenated after the conversation start. */
+    /** The conversation as the model's own template would frame it - e.g. a template that
+     *  unconditionally renders a system turn injects its default here when the conversation
+     *  lacks one. Identity by default. EVERY caller that encodes turn-by-turn (incremental
+     *  drivers, the server) must normalize first, or its framing silently drifts from the
+     *  oracle-validated whole-conversation encoding. */
+    default List<Message> normalize(List<Message> conversation) {
+        return conversation;
+    }
+
+    /** A whole conversation is its normalized turns, concatenated after the conversation start. */
     @Override
     default List<Batch> encode(List<Message> conversation) {
         List<Batch> out = new ArrayList<>(conversationStart());
-        for (Message m : conversation) out.addAll(encodeTurn(m));
+        for (Message m : normalize(conversation)) out.addAll(encodeTurn(m));
         return out;
     }
 }

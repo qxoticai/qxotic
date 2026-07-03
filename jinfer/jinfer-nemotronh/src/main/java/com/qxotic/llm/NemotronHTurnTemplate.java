@@ -67,20 +67,22 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
     }
 
 
-    /** No unconditional tokens (no bos). The default-system injection lives in {@link #encode}. */
+    /** No unconditional tokens (no bos). The default-system injection lives in {@link #normalize}. */
     @Override
     public List<Batch> conversationStart() {
         return List.of();
     }
 
-    /** The whole conversation; injects the template's default system turn when absent. */
+    /** The template unconditionally renders a system turn: inject the default when absent, so
+     *  every caller (whole-render AND turn-by-turn drivers) frames identically. */
     @Override
-    public List<Batch> encode(List<Message> conversation) {
-        List<Batch> out = new ArrayList<>();
-        if (conversation.isEmpty() || !conversation.get(0).role().equals(Role.SYSTEM)) {
-            out.addAll(encodeTurn(Message.system(DEFAULT_SYSTEM)));
+    public List<Message> normalize(List<Message> conversation) {
+        if (!conversation.isEmpty() && conversation.get(0).role().equals(Role.SYSTEM)) {
+            return conversation;
         }
-        for (Message m : conversation) out.addAll(encodeTurn(m));
+        List<Message> out = new ArrayList<>(conversation.size() + 1);
+        out.add(Message.system(DEFAULT_SYSTEM));
+        out.addAll(conversation);
         return out;
     }
 
