@@ -11,6 +11,7 @@ import com.qxotic.jinfer.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.TurnTemplate;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -21,16 +22,16 @@ public final class LlamaCacheRun {
 
     static int failures;
     static Llama model;
-    static LlamaTurnTemplate template;
+    static TurnTemplate template;
     static Set<Integer> stops;
 
     public static void main(String[] args) throws Exception {
         Path path = Path.of(args.length > 0 ? args[0] : "/home/mukel/Desktop/playground/models/unsloth/Llama-3.2-1B-Instruct-Q8_0.gguf");
         model = Llama.loadModel(path, 8192);
-        template = new LlamaTurnTemplate(model.tokenizer());
+        template = model.turnTemplate().orElseThrow();
         stops = model.stopTokens();
         long budget = Long.getLong("jinfer.promptCacheMB", 2048L) << 20;
-        PromptCache<Llama.State> cache = new PromptCache<>(new LlamaKvCodec(model.config()), CacheStore.inMemory(), budget, PromptCache.modelSeed(path));
+        PromptCache<Llama.State> cache = new PromptCache<>(model.kvCodec().orElseThrow(), CacheStore.inMemory(), budget, PromptCache.modelSeed(path));
 
         // ---- conversation A: two turns, committed as it goes ----
         CachedSession<Llama.State> a = CachedSession.resume(model, cache, model.newState(8192, 512), new long[0]);
@@ -54,7 +55,7 @@ public final class LlamaCacheRun {
         b.ingest(turn3);
         String cachedReply = decode(b, 60);
 
-        PromptCache<Llama.State> scratch = new PromptCache<>(new LlamaKvCodec(model.config()), CacheStore.inMemory(), budget, PromptCache.modelSeed(path));
+        PromptCache<Llama.State> scratch = new PromptCache<>(model.kvCodec().orElseThrow(), CacheStore.inMemory(), budget, PromptCache.modelSeed(path));
         CachedSession<Llama.State> c = CachedSession.resume(model, scratch, model.newState(8192, 512), new long[0]);
         long t2 = System.nanoTime();
         c.ingest(List.of(Batch.prefill(toInts(history))));

@@ -9,8 +9,10 @@ package com.qxotic.llm;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
+import com.qxotic.jinfer.cache.KvCodec;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.TurnTemplate;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,16 +24,16 @@ public final class Lfm2FrozenCacheRun {
 
     static int failures;
     static Lfm2 model;
-    static Lfm2TurnTemplate template;
+    static TurnTemplate template;
     static Set<Integer> stops;
 
     public static void main(String[] args) throws Exception {
         Path path = Path.of(args.length > 0 ? args[0] : "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
         model = Lfm2.loadModel(path, 4096);
-        template = new Lfm2TurnTemplate(model.tokenizer());
+        template = model.turnTemplate().orElseThrow();
         stops = model.stopTokens();
         byte[] seed = PromptCache.modelSeed(path);
-        Lfm2KvCodec codec = new Lfm2KvCodec(model.config());
+        KvCodec<Lfm2.State> codec = model.kvCodec().orElseThrow();
         long budget = 4L << 30;
 
         // ---- three prompts sharing a long system prefix; one unseen (shares the prefix too) ----

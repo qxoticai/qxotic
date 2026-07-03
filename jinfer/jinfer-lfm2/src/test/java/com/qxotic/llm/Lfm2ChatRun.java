@@ -6,6 +6,7 @@ package com.qxotic.llm;
 
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.chat.Role;
 
 import java.nio.file.Path;
@@ -20,7 +21,7 @@ public final class Lfm2ChatRun {
         Lfm2 model = Lfm2.loadModel(path, 4096);
         var c = model.config();
         var tk = model.tokenizer();
-        Lfm2TurnTemplate template = new Lfm2TurnTemplate(tk);
+        TurnTemplate template = model.turnTemplate().orElseThrow();
         Set<Integer> stops = model.stopTokens();
 
         Lfm2.State s = model.newState(c.contextLength(), 512);
@@ -49,7 +50,7 @@ public final class Lfm2ChatRun {
 
     /** Ingest the turn batches + generation prompt, greedy-decode a reply, close the turn so the
      *  KV ends exactly where encodeTurn(assistant reply) would have: ... reply <|im_end|> \n. */
-    static String generate(Lfm2 model, Lfm2.State s, Lfm2TurnTemplate template,
+    static String generate(Lfm2 model, Lfm2.State s, TurnTemplate template,
                            List<Batch> turn, com.qxotic.jinfer.LFMTokenizer tk, Set<Integer> stops, int maxTokens) {
         List<Batch> ready = new ArrayList<>(turn);
         ready.addAll(template.generationPrompt(true));

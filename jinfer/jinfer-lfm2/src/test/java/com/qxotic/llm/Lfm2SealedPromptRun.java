@@ -6,9 +6,11 @@
 package com.qxotic.llm;
 
 import com.qxotic.jinfer.Batch;
+import com.qxotic.jinfer.cache.KvCodec;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.cache.SealedPrompt;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.TurnTemplate;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,15 +22,15 @@ public final class Lfm2SealedPromptRun {
 
     static int failures;
     static Lfm2 model;
-    static Lfm2TurnTemplate template;
+    static TurnTemplate template;
     static Set<Integer> stops;
 
     public static void main(String[] args) throws Exception {
         Path path = Path.of(args.length > 0 ? args[0] : "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
         model = Lfm2.loadModel(path, 8192);
-        template = new Lfm2TurnTemplate(model.tokenizer());
+        template = model.turnTemplate().orElseThrow();
         stops = model.stopTokens();
-        Lfm2KvCodec codec = new Lfm2KvCodec(model.config());
+        KvCodec<Lfm2.State> codec = model.kvCodec().orElseThrow();
         byte[] seed = PromptCache.modelSeed(path);
         Path sealed = Files.createTempFile("lfm2-prompt", ".jkvs");
 

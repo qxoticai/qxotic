@@ -104,6 +104,16 @@ public final class GptOss implements LanguageModel<GptOss.Configuration, GptOss.
         return stops;
     }
 
+    @Override
+    public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
+        return java.util.Optional.of(new GptOssTurnTemplate(tokenizer()));
+    }
+
+    @Override
+    public java.util.Optional<com.qxotic.jinfer.cache.KvCodec<GptOss.State>> kvCodec() {
+        return java.util.Optional.of(new GptOssKvCodec(config()));
+    }
+
     // === Math helpers (ported from the production GptOss) ===
 
     /** out[outOffset, +size] += bias[biasOffset, +size]. */

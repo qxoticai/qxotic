@@ -10,6 +10,7 @@ import com.qxotic.jinfer.CacheStore;
 import com.qxotic.jinfer.cache.CachedSession;
 import com.qxotic.jinfer.cache.PromptCache;
 import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.TurnTemplate;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -20,16 +21,16 @@ public final class Lfm2CacheRun {
 
     static int failures;
     static Lfm2 model;
-    static Lfm2TurnTemplate template;
+    static TurnTemplate template;
     static Set<Integer> stops;
 
     public static void main(String[] args) throws Exception {
         Path path = Path.of(args.length > 0 ? args[0] : "/home/mukel/Desktop/playground/models/LiquidAI/LFM2.5-8B-A1B-Q8_0.gguf");
         model = Lfm2.loadModel(path, 4096);
-        template = new Lfm2TurnTemplate(model.tokenizer());
+        template = model.turnTemplate().orElseThrow();
         stops = model.stopTokens();
         long budget = Long.getLong("jinfer.promptCacheMB", 1024L) << 20;
-        PromptCache<Lfm2.State> cache = new PromptCache<>(new Lfm2KvCodec(model.config()), CacheStore.inMemory(), budget, PromptCache.modelSeed(path));
+        PromptCache<Lfm2.State> cache = new PromptCache<>(model.kvCodec().orElseThrow(), CacheStore.inMemory(), budget, PromptCache.modelSeed(path));
 
         // ---- conversation A: two turns, committed as it goes ----
         CachedSession<Lfm2.State> a = CachedSession.resume(model, cache, model.newState(4096, 512), new long[0]);
@@ -55,7 +56,7 @@ public final class Lfm2CacheRun {
         String cachedReply = decode(b, 120);
         double cachedMs = (System.nanoTime() - t1) / 1e6;
 
-        PromptCache<Lfm2.State> scratch = new PromptCache<>(new Lfm2KvCodec(model.config()), CacheStore.inMemory(), budget, PromptCache.modelSeed(path));
+        PromptCache<Lfm2.State> scratch = new PromptCache<>(model.kvCodec().orElseThrow(), CacheStore.inMemory(), budget, PromptCache.modelSeed(path));
         CachedSession<Lfm2.State> c = CachedSession.resume(model, scratch, model.newState(4096, 512), new long[0]);
         long t2 = System.nanoTime();
         int[] ids = new int[history.length];
