@@ -14,8 +14,8 @@ public final class Gemma4CacheRun {
     public static void main(String[] args) throws Exception {
         Path path = Path.of(args.length > 0 ? args[0] : "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
         Harness<Gemma4.State> h = new Harness<>(Gemma4.loadModel(path, 8192), path, 8192);
-        new CacheScenario<>(h, new CacheScenario.Config(
-                null, Stories.pelican(), "What was the codeword at the start? One word.", 1024, 60, false, true))
+        new CacheScenario<>(h, CacheScenario.Config.of(null, 60,
+                new CacheScenario.LongCase(Stories.pelican(), "What was the codeword at the start? One word.", 1024)))
                 .run("Gemma4CacheRun");
     }
 }

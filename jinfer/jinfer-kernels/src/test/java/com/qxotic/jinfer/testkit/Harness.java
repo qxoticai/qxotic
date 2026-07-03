@@ -31,10 +31,18 @@ public final class Harness<S extends RuntimeState> {
     public final Path path;
     public final byte[] seed;
     public final int ctx;
-    public int lastReplyTokens;
-    private int failures;
+    /** Whether this model's greedy decode is byte-deterministic under load (dense models: yes;
+     *  threaded-MoE reductions: no) - declared once per model, scenarios gate reply-text equality
+     *  on it and always gate resume-state byte-identity. */
+    public final boolean deterministicDecode;
+    private final Checks checks = new Checks();
 
     public Harness(LanguageModel<?, ?, S> model, Path path, int ctx) {
+        this(model, path, ctx, true);
+    }
+
+    public Harness(LanguageModel<?, ?, S> model, Path path, int ctx, boolean deterministicDecode) {
+        this.deterministicDecode = deterministicDecode;
         this.model = model;
         this.template = model.turnTemplate().orElseThrow();
         this.codec = model.kvCodec().orElseThrow();
@@ -49,46 +57,46 @@ public final class Harness<S extends RuntimeState> {
         return model.newState(ctx, 512);
     }
 
-    /** Open the assistant turn, greedy-decode (each step a single-token block), close the turn. */
-    public String decode(CachedSession<S> s, int maxTokens) {
-        s.ingest(template.generationPrompt(true));
-        StringBuilder out = new StringBuilder();
-        int tok = model.logits(s.state()).argmax();
-        int n = 0;
-        for (; n < maxTokens && !stops.contains(tok); n++) {
-            out.append(tokenizer.decode(tok));
-            s.step(tok);
-            tok = model.logits(s.state()).argmax();
-        }
-        lastReplyTokens = Math.max(n, 1);
-        s.ingest(template.closeTurn());
-        return out.toString();
-    }
+    /** A decoded reply: the text plus how many tokens produced it (for tok/s). */
+    public record Reply(String text, int tokens) {}
 
-    /** Plain chunked ingest (no cache); returns the ingested fingerprints. */
-    public long[] ingest(S state, List<Batch> batches) {
-        List<Long> fp = new ArrayList<>();
-        for (Batch b : Batch.prepare(batches, state.batchCapacity())) {
-            model.ingest(state, b);
-            for (int id : ((Batch.Input.Tokens) b.input()).ids()) fp.add((long) id);
-        }
-        long[] a = new long[fp.size()];
-        for (int i = 0; i < a.length; i++) a[i] = fp.get(i);
-        return a;
+    /** Open the assistant turn, greedy-decode (each step a single-token block), close the turn. */
+    public Reply decode(CachedSession<S> s, int maxTokens) {
+        s.ingest(template.generationPrompt(true));
+        Reply reply = greedy(s.state(), s::step, maxTokens);
+        s.ingest(template.closeTurn());
+        return reply;
     }
 
     /** Ingest the user turn + generation prompt on a cache-less state, greedy-decode the reply. */
     public String serve(S state, Message user, int maxTokens) {
         ingest(state, template.encodeTurn(user));
         ingest(state, template.generationPrompt(true));
+        return greedy(state, tok -> model.ingest(state, Batch.step(tok)), maxTokens).text();
+    }
+
+    /** The shared greedy loop: argmax, feed each token through {@code step}, stop on the model's
+     *  stop set or the budget. */
+    private Reply greedy(S state, java.util.function.IntConsumer step, int maxTokens) {
         StringBuilder out = new StringBuilder();
         int tok = model.logits(state).argmax();
-        for (int n = 0; n < maxTokens && !stops.contains(tok); n++) {
+        int n = 0;
+        for (; n < maxTokens && !stops.contains(tok); n++) {
             out.append(tokenizer.decode(tok));
-            model.ingest(state, Batch.step(tok));
+            step.accept(tok);
             tok = model.logits(state).argmax();
         }
-        return out.toString();
+        return new Reply(out.toString(), Math.max(n, 1));
+    }
+
+    /** Plain chunked ingest (no cache); returns the ingested fingerprints. */
+    public long[] ingest(S state, List<Batch> batches) {
+        List<Batch> prepared = Batch.prepare(batches, state.batchCapacity());
+        for (Batch b : prepared) model.ingest(state, b);
+        int[] ids = Batch.tokenIds(prepared);
+        long[] fp = new long[ids.length];
+        for (int i = 0; i < fp.length; i++) fp[i] = ids[i];
+        return fp;
     }
 
     /** Resume-state equality through the codec (model-agnostic): serialize both states' resume
@@ -107,21 +115,12 @@ public final class Harness<S extends RuntimeState> {
     }
 
     public void check(boolean ok, String what) {
-        if (ok) {
-            System.out.println("ok:   " + what);
-        } else {
-            failures++;
-            System.out.println("FAIL: " + what);
-        }
+        checks.check(ok, what);
     }
 
     /** Prints the verdict and exits non-zero on any failed check. */
     public void finish(String name) {
-        if (failures > 0) {
-            System.out.println(failures + " failure(s)");
-            System.exit(1);
-        }
-        System.out.println(name + ": all checks passed");
+        checks.finish(name, "all checks passed");
     }
 
     // ---- shared shapes ----
@@ -134,10 +133,9 @@ public final class Harness<S extends RuntimeState> {
     }
 
     public static long[] flatten(List<Batch> batches) {
-        List<Integer> ids = new ArrayList<>();
-        for (Batch b : batches) for (int id : ((Batch.Input.Tokens) b.input()).ids()) ids.add(id);
-        long[] fp = new long[ids.size()];
-        for (int i = 0; i < fp.length; i++) fp[i] = ids.get(i);
+        int[] ids = Batch.tokenIds(batches);
+        long[] fp = new long[ids.length];
+        for (int i = 0; i < fp.length; i++) fp[i] = ids[i];
         return fp;
     }
 

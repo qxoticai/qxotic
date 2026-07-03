@@ -58,13 +58,13 @@ public final class Lfm2ChatRun {
 
         StringBuilder out = new StringBuilder();
         int imEnd = tk.getSpecialTokens().get("<|im_end|>");
-        int tok = LLM.argmax(model.logits(s), model.config().vocabularySize());
+        int tok = model.logits(s).argmax();
         int n = 0;
         long t0 = System.nanoTime();
         for (; n < maxTokens && !stops.contains(tok); n++) {
             out.append(tk.decode(tok));
             model.ingest(s, Batch.step(tok));
-            tok = LLM.argmax(model.logits(s), model.config().vocabularySize());
+            tok = model.logits(s).argmax();
         }
         double secs = (System.nanoTime() - t0) / 1e9;
         // close the assistant turn in the KV: <|im_end|> \n (the turn framing encodeTurn would emit)

@@ -96,11 +96,11 @@ public final class Gemma4AudioRun {
         Set<Integer> stops = model.stopTokens();
         int vocab = model.config().vocabularySize();
         StringBuilder out = new StringBuilder();
-        int tok = LLM.argmax(model.logits(s), vocab);
+        int tok = model.logits(s).argmax();
         for (int i = 0; i < 220 && !stops.contains(tok); i++) {
             out.append(tk.decode(tok));
             model.ingest(s, Batch.step(tok));
-            tok = LLM.argmax(model.logits(s), vocab);
+            tok = model.logits(s).argmax();
         }
         System.out.println("=== Gemma4 (new API) audio description ===");
         System.out.println(out);

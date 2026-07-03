@@ -50,13 +50,13 @@ public final class LlamaRun {
 
         Set<Integer> stops = model.stopTokens();
         StringBuilder out = new StringBuilder();
-        int tok = LLM.argmax(model.logits(s), c.vocabularySize());
+        int tok = model.logits(s).argmax();
         int n = 0;
         long t0 = System.nanoTime();
         for (; n < nTokens && !stops.contains(tok); n++) {
             out.append(tk.decode(tok));
             model.ingest(s, com.qxotic.jinfer.Batch.step(tok));
-            tok = LLM.argmax(model.logits(s), c.vocabularySize());
+            tok = model.logits(s).argmax();
         }
         double secs = (System.nanoTime() - t0) / 1e9;
         System.out.println("=== continuation ===");

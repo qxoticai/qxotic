@@ -17,8 +17,8 @@ public final class LlamaCacheRun {
                  .append("and soil acidity at station ").append(i)
                  .append("; readings were nominal and the weather held clear through the afternoon.\n");
         }
-        new CacheScenario<>(h, new CacheScenario.Config(
-                "You are a concise assistant.", story.toString(),
-                "How many entries were there? One number.", 1500, 60, false, true)).run("LlamaCacheRun");
+        new CacheScenario<>(h, CacheScenario.Config.of("You are a concise assistant.", 60,
+                new CacheScenario.LongCase(story.toString(), "How many entries were there? One number.", 1500)))
+                .run("LlamaCacheRun");
     }
 }

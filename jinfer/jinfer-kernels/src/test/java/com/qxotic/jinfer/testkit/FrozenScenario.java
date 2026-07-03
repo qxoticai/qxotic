@@ -93,7 +93,7 @@ public final class FrozenScenario<S extends RuntimeState> {
 
             if (i == 0) {                        // coherence spot-check on the frozen path
                 hot.ingest(h.template.encodeTurn(Message.user("Answer in one short sentence: is water wet?")));
-                System.out.println("frozen-path reply: " + h.decode(hot, 60).strip().replace("\n", " "));
+                System.out.println("frozen-path reply: " + h.decode(hot, 60).text().strip().replace("\n", " "));
             }
         }
 
