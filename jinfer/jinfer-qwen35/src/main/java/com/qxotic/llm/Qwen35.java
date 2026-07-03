@@ -90,6 +90,19 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
     }
 
 
+    private com.qxotic.jinfer.chat.TurnTemplate turnTemplate;   // memoized: stateless, model-lifetime
+
+    @Override
+    public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
+        if (turnTemplate == null) turnTemplate = new Qwen35TurnTemplate(tokenizer());
+        return java.util.Optional.of(turnTemplate);
+    }
+
+    @Override
+    public java.util.Optional<com.qxotic.jinfer.cache.KvCodec<Qwen35.State>> kvCodec() {
+        return java.util.Optional.of(new Qwen35KvCodec(config()));
+    }
+
     /** The turn-delimiter / eos ids that terminate generation (convenience for callers/tests). */
     public Set<Integer> stopTokens() {
         Set<Integer> stops = new HashSet<>();
