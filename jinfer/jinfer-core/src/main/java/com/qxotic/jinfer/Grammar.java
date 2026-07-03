@@ -38,14 +38,14 @@ public final class Grammar {
     /** Cap on cached masks per Spec, bounding memory for long-lived / deeply nested grammars. */
     static final int MASK_CACHE_CAP = 1 << 13;
 
-    private static final Map<LFMTokenizer, Vocab> WRAPPERS = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<GgufTokenizer, Vocab> WRAPPERS = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<Vocab, Map<String, Spec>> CACHES = Collections.synchronizedMap(new WeakHashMap<>());
 
     private Grammar() {}
 
     public interface Vocab { int size(); byte[] bytes(int tokenId); }
 
-    static Vocab vocab(LFMTokenizer tok) {
+    static Vocab vocab(GgufTokenizer tok) {
         return WRAPPERS.computeIfAbsent(tok, t -> new Vocab() {
             public int size() { return t.vocabularySize(); }
             public byte[] bytes(int id) { return t.decodeTokenBytes(id); }
@@ -62,7 +62,7 @@ public final class Grammar {
         });
     }
 
-    public static Spec json(LFMTokenizer t) { return json(vocab(t)); }
+    public static Spec json(GgufTokenizer t) { return json(vocab(t)); }
     public static Spec json(Vocab v) {
         if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
         return cache(v).computeIfAbsent("__json__", k -> build(JSON_GRAMMAR, v));
@@ -70,13 +70,13 @@ public final class Grammar {
 
     /** Minified JSON: the same language as {@link #json} but with no whitespace permitted anywhere
      *  (no spaces/newlines between tokens, none at top level) — forces compact, token-efficient output. */
-    public static Spec jsonCompact(LFMTokenizer t) { return jsonCompact(vocab(t)); }
+    public static Spec jsonCompact(GgufTokenizer t) { return jsonCompact(vocab(t)); }
     public static Spec jsonCompact(Vocab v) {
         if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
         return cache(v).computeIfAbsent("__json_compact__", k -> build(JSON_COMPACT_GRAMMAR, v));
     }
 
-    public static Spec of(String g, LFMTokenizer t) { return of(g, vocab(t)); }
+    public static Spec of(String g, GgufTokenizer t) { return of(g, vocab(t)); }
     public static Spec of(String g, Vocab v) {
         if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
         return cache(v).computeIfAbsent(g, k -> build(k, v));
@@ -466,7 +466,7 @@ public final class Grammar {
         for (int i = 0; i < options.length; i++) { if (i > 0) sb.append(" | "); sb.append(gbnfLiteral(options[i])); }
         return of(sb.toString(), v);
     }
-    public static Spec choice(LFMTokenizer t, String... options) { return choice(vocab(t), options); }
+    public static Spec choice(GgufTokenizer t, String... options) { return choice(vocab(t), options); }
 
     // ---- JSON Schema -> grammar -------------------------------------------
 
@@ -485,7 +485,7 @@ public final class Grammar {
         if (!RuntimeFlags.GRAMMAR) return Spec.DISABLED;
         return of(Schema.toGbnf(schema), v);
     }
-    public static Spec fromSchema(Map<String, Object> schema, LFMTokenizer t) { return fromSchema(schema, vocab(t)); }
+    public static Spec fromSchema(Map<String, Object> schema, GgufTokenizer t) { return fromSchema(schema, vocab(t)); }
 
     /** Translates a JSON Schema node tree into a GBNF grammar string. */
     static final class Schema {

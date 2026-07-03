@@ -11,7 +11,7 @@ public interface LanguageModel<C extends Config, W, S extends RuntimeState> exte
 
     /** GGUF-loaded tokenizer: vocabulary, special tokens and the (optional) chat template. Needed by
      *  the generation driver to detokenize the stream, match text stops, and detect stop tokens. */
-    LFMTokenizer tokenizer();
+    GgufTokenizer tokenizer();
 
     /** The end-of-turn / eos ids that terminate generation (the model's default stop tokens). */
     java.util.Set<Integer> stopTokens();

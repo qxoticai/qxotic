@@ -1,7 +1,7 @@
 package com.qxotic.llm;
 
 import com.qxotic.jinfer.Batch;
-import com.qxotic.jinfer.LFMTokenizer;
+import com.qxotic.jinfer.GgufTokenizer;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
@@ -27,7 +27,7 @@ import java.util.Map;
  *  ({@code <|channel|>analysis<|message|>...}), so {@code thinking} is a no-op here - Harmony
  *  always reasons, and the effort knob lives in the system preamble ({@code Reasoning: medium}).
  *
- *  <p>Each text run between specials is ONE contiguous plain {@link LFMTokenizer#encode} (that is
+ *  <p>Each text run between specials is ONE contiguous plain {@link GgufTokenizer#encode} (that is
  *  how a rendered template tokenizes; specials force the only splits), and conversation content
  *  never goes through special-aware encoding, so text cannot mint control tokens.
  *
@@ -39,18 +39,18 @@ public final class GptOssTurnTemplate implements TurnTemplate {
     static final String DEFAULT_IDENTITY = "You are ChatGPT, a large language model trained by OpenAI.";
     static final String DEFAULT_EFFORT = "medium";
 
-    private final LFMTokenizer tokenizer;
+    private final GgufTokenizer tokenizer;
     private final String systemText;
     private final int start;     // <|start|>
     private final int message;   // <|message|>
     private final int channel;   // <|channel|>
     private final int end;       // <|end|>
 
-    public GptOssTurnTemplate(LFMTokenizer tokenizer) {
+    public GptOssTurnTemplate(GgufTokenizer tokenizer) {
         this(tokenizer, LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
     }
 
-    public GptOssTurnTemplate(LFMTokenizer tokenizer, String currentDate) {
+    public GptOssTurnTemplate(GgufTokenizer tokenizer, String currentDate) {
         this.tokenizer = tokenizer;
         Map<String, Integer> special = tokenizer.getSpecialTokens();
         this.start = required(special, "<|start|>");

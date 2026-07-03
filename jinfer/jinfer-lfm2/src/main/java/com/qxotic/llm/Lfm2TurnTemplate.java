@@ -1,7 +1,7 @@
 package com.qxotic.llm;
 
 import com.qxotic.jinfer.Batch;
-import com.qxotic.jinfer.LFMTokenizer;
+import com.qxotic.jinfer.GgufTokenizer;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
@@ -21,7 +21,7 @@ import java.util.Map;
  *  would drift.
  *
  *  <p>Two domains: {@code <|startoftext|>}/{@code <|im_start|>}/{@code <|im_end|>} are emitted as
- *  trusted ids; everything else goes through plain {@link LFMTokenizer#encode} so conversation text
+ *  trusted ids; everything else goes through plain {@link GgufTokenizer#encode} so conversation text
  *  can never mint control tokens. Matching the template, a historical assistant turn keeps only the
  *  text after its last {@code </think>} (trimmed).
  *
@@ -30,12 +30,12 @@ import java.util.Map;
  *  still frame). */
 public final class Lfm2TurnTemplate implements TurnTemplate {
 
-    private final LFMTokenizer tokenizer;
+    private final GgufTokenizer tokenizer;
     private final int bos;      // <|startoftext|>
     private final int imStart;  // <|im_start|>
     private final int imEnd;    // <|im_end|>
 
-    public Lfm2TurnTemplate(LFMTokenizer tokenizer) {
+    public Lfm2TurnTemplate(GgufTokenizer tokenizer) {
         this.tokenizer = tokenizer;
         Map<String, Integer> special = tokenizer.getSpecialTokens();
         this.bos = required(special, "<|startoftext|>");

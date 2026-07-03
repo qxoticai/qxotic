@@ -10,6 +10,7 @@ package com.qxotic.llm;
 import com.qxotic.format.gguf.GGUF;
 
 import com.qxotic.jinfer.*;
+import com.qxotic.jinfer.jinja.JinjaRenderer;
 
 import static com.qxotic.jinfer.Norms.rmsnorm;
 
@@ -25,10 +26,10 @@ import java.util.Set;
 public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weights, Lfm2.State> {
 
     private final Configuration configuration;
-    private final LFMTokenizer tokenizer;
+    private final GgufTokenizer tokenizer;
     private final Weights weights;
 
-    Lfm2(Configuration configuration, LFMTokenizer tokenizer, Weights weights) {
+    Lfm2(Configuration configuration, GgufTokenizer tokenizer, Weights weights) {
         this.configuration = configuration;
         this.tokenizer = tokenizer;
         this.weights = weights;
@@ -36,7 +37,7 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
 
     @Override public Configuration config() { return configuration; }
     @Override public Weights weights()       { return weights; }
-    public LFMTokenizer tokenizer()          { return tokenizer; }
+    public GgufTokenizer tokenizer()          { return tokenizer; }
 
     @Override
     public State newState(int contextCapacity, int batchCapacity) {
@@ -474,7 +475,7 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
     }
 
     public static Lfm2 loadModel(FileChannel fileChannel, GGUF gguf, int contextLength, boolean loadWeightsFlag) throws IOException {
-        LFMTokenizer tokenizer = new LFMTokenizer(gguf);
+        GgufTokenizer tokenizer = new GgufTokenizer(gguf, JinjaRenderer::template);
         String arch = gguf.getString("general.architecture");
 
         int modelContextLength = gguf.getValue(int.class, arch + ".context_length");

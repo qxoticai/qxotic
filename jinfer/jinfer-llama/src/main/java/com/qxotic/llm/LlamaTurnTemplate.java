@@ -1,7 +1,7 @@
 package com.qxotic.llm;
 
 import com.qxotic.jinfer.Batch;
-import com.qxotic.jinfer.LFMTokenizer;
+import com.qxotic.jinfer.GgufTokenizer;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
@@ -30,24 +30,24 @@ import java.util.Map;
  *  deterministic across runs.
  *
  *  <p>Two domains: header/turn markers are emitted as trusted ids; everything else goes through
- *  plain {@link LFMTokenizer#encode} so conversation text can never mint control tokens. */
+ *  plain {@link GgufTokenizer#encode} so conversation text can never mint control tokens. */
 public final class LlamaTurnTemplate implements TurnTemplate {
 
     /** The template's own fallback when {@code strftime_now} is undefined — the deterministic default. */
     public static final String DEFAULT_DATE = "26 Jul 2024";
 
-    private final LFMTokenizer tokenizer;
+    private final GgufTokenizer tokenizer;
     private final String systemPreamble;
     private final int bos;          // <|begin_of_text|>
     private final int startHeader;  // <|start_header_id|>
     private final int endHeader;    // <|end_header_id|>
     private final int eot;          // <|eot_id|>
 
-    public LlamaTurnTemplate(LFMTokenizer tokenizer) {
+    public LlamaTurnTemplate(GgufTokenizer tokenizer) {
         this(tokenizer, DEFAULT_DATE);
     }
 
-    public LlamaTurnTemplate(LFMTokenizer tokenizer, String dateString) {
+    public LlamaTurnTemplate(GgufTokenizer tokenizer, String dateString) {
         this.tokenizer = tokenizer;
         this.systemPreamble = "Cutting Knowledge Date: December 2023\nToday Date: " + dateString + "\n\n";
         Map<String, Integer> special = tokenizer.getSpecialTokens();

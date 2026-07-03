@@ -680,7 +680,7 @@ public final class JinjaRenderer {
     /** The module's public entry point: turns a Jinja chat-template source into a {@link ChatTemplate}
      *  prompt generator — parse once, render many times. Returns {@code null} if the source fails to
      *  parse. Suitable as a {@code Function<String, ChatTemplate>} method reference
-     *  ({@code JinjaRenderer::template}, e.g. for {@link com.qxotic.jinfer.LFMTokenizer}). The AST and
+     *  ({@code JinjaRenderer::template}, e.g. for {@link com.qxotic.jinfer.GgufTokenizer}). The AST and
      *  parser behind the returned template stay internal — callers only ever see a render-only template. */
     public static ChatTemplate template(String source) {
         try {

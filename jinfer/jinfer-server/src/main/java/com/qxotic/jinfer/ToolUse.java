@@ -52,7 +52,7 @@ final class ToolUse {
      *  on a tokenization boundary the model never saw (it merges with the first argument in training
      *  data) and greedy decoding stops dead. No-op when the vocabulary lacks the marker (the prompted
      *  fallback keeps its text hint). */
-    static void seedForced(LFMTokenizer tokenizer, Map<String, Object> request, List<Integer> promptTokens) {
+    static void seedForced(GgufTokenizer tokenizer, Map<String, Object> request, List<Integer> promptTokens) {
         String choice = forced(request);
         if (choice == null) return;
         Integer marker = tokenizer.getSpecialTokens().get("<|tool_call_start|>");

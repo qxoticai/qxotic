@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Tokenizer ground-truth test: LFMTokenizer (com.qxotic:toknroll with the lfm2 pre-tokenizer)
+ * Tokenizer ground-truth test: GgufTokenizer (com.qxotic:toknroll with the lfm2 pre-tokenizer)
  * vs token ids captured from {@code llama-tokenize} (llama.cpp) on the LFM2.5-8B GGUF — the
  * reference implementation the model was built against. Also checks round-trip fidelity, that
  * special-token strings embedded in text are NOT mapped by encode, and that decode renders
@@ -57,7 +57,7 @@ public final class TokenizerParityTest {
         try (FileChannel channel = FileChannel.open(model, StandardOpenOption.READ)) {
             gguf = ModelLoader.readGguf(channel, model.toString());
         }
-        LFMTokenizer tokenizer = new LFMTokenizer(gguf, JinjaRenderer::template);
+        GgufTokenizer tokenizer = new GgufTokenizer(gguf, JinjaRenderer::template);
 
         for (Object[] testCase : EXPECTED) {
             String text = (String) testCase[0];

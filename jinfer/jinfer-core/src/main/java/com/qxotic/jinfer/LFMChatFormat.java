@@ -12,7 +12,7 @@ import java.util.Set;
 
 class LFMChatFormat {
 
-    final LFMTokenizer tokenizer;
+    final GgufTokenizer tokenizer;
     final int beginOfSentence;
     final int startOfTurn;
     final int endOfTurn;
@@ -23,7 +23,7 @@ class LFMChatFormat {
     final int fileSeparator;
     private final Set<Integer> stopTokens;
 
-    LFMChatFormat(LFMTokenizer tokenizer) {
+    LFMChatFormat(GgufTokenizer tokenizer) {
         this.tokenizer = tokenizer;
         Map<String, Integer> specialTokens = this.tokenizer.getSpecialTokens();
         this.beginOfSentence = specialTokens.getOrDefault("<bos>", specialTokens.getOrDefault("<|startoftext|>", 1));

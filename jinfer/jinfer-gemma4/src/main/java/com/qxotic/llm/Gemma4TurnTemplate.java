@@ -1,7 +1,7 @@
 package com.qxotic.llm;
 
 import com.qxotic.jinfer.Batch;
-import com.qxotic.jinfer.LFMTokenizer;
+import com.qxotic.jinfer.GgufTokenizer;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
@@ -20,16 +20,16 @@ import java.util.Map;
  *  only splits), and BPE merges across the header/content boundary.
  *
  *  <p>Two domains: {@code <bos>}/{@code <|turn>}/{@code <turn|>} are emitted as trusted ids;
- *  everything else goes through plain {@link LFMTokenizer#encode} so conversation text can never
+ *  everything else goes through plain {@link GgufTokenizer#encode} so conversation text can never
  *  mint control tokens. Text-only for now — media parts land with the multimodal wiring. */
 public final class Gemma4TurnTemplate implements TurnTemplate {
 
-    private final LFMTokenizer tokenizer;
+    private final GgufTokenizer tokenizer;
     private final int bos;        // <bos>
     private final int turnOpen;   // <|turn>
     private final int turnClose;  // <turn|>
 
-    public Gemma4TurnTemplate(LFMTokenizer tokenizer) {
+    public Gemma4TurnTemplate(GgufTokenizer tokenizer) {
         this.tokenizer = tokenizer;
         Map<String, Integer> special = tokenizer.getSpecialTokens();
         this.bos = required(special, "<bos>");
