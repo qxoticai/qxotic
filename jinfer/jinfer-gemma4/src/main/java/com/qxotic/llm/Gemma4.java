@@ -142,7 +142,7 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
 
     @Override
     public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
-        if (turnTemplate == null) turnTemplate = new Gemma4TurnTemplate(tokenizer());
+        if (turnTemplate == null) turnTemplate = new Gemma4TurnTemplate(tokenizer(), this, config().embeddingLength());
         return java.util.Optional.of(turnTemplate);
     }
 

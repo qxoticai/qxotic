@@ -1,0 +1,49 @@
+package com.qxotic.jinfer.cache;
+
+import com.qxotic.jinfer.CacheStore;
+import com.qxotic.jinfer.RuntimeState;
+
+import java.lang.foreign.MemorySegment;
+
+/** Eviction stress for PromptCache: a tiny budget forcing evictions during chain commits,
+ *  dedup onto shared prefixes, detached cursors, and resumes - must never double-free or
+ *  corrupt the tree (repro harness for the 12B multimodal eviction crash). */
+public final class PromptCacheEvictionTest {
+
+    static final class FakeState implements RuntimeState {
+        int position;
+        @Override public int contextCapacity() { return 1 << 20; }
+        @Override public int batchCapacity() { return 512; }
+        @Override public int position() { return position; }
+        @Override public int outputCount() { return 1; }
+        @Override public void resumeAt(int p) { position = p; }
+    }
+
+    static final class FakeCodec implements KvCodec<FakeState> {
+        @Override public long bytes(int positions) { return positions * 1024L + 4096; }   // fixed checkpoint part
+        @Override public void save(FakeState s, int from, int to, MemorySegment dst) { }
+        @Override public void restore(FakeState s, int from, int to, MemorySegment src) { }
+    }
+
+    public static void main(String[] args) {
+        // budget fits ~6 single-token blocks: every conversation evicts its own history
+        PromptCache<FakeState> cache = new PromptCache<>(new FakeCodec(), CacheStore.inMemory(), 32 * 1024, new byte[]{1});
+
+        for (int round = 0; round < 5; round++) {
+            FakeState s = new FakeState();
+            PromptCache<FakeState>.Cursor cur = cache.resume(new long[0], 0, s);
+            long[] fp = new long[64];
+            for (int i = 0; i < 64; i++) {
+                fp[i] = round * 1000L + i;
+                if (i < 8) fp[i] = i;                        // shared prefix across rounds (dedup)
+                s.position = i + 1;
+                cur.commit(fp[i], s);
+            }
+            // resume against what survived (may be nothing - correctness never depends on it)
+            FakeState r = new FakeState();
+            cache.resume(fp, 64, r);
+        }
+        System.out.println(cache.stats());
+        System.out.println("PromptCacheEvictionTest: no crash");
+    }
+}
