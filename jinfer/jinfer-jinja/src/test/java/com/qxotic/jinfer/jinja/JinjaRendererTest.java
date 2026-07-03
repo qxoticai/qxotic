@@ -43,6 +43,7 @@ public final class JinjaRendererTest {
         collectionLiteralsAndConcat();
         tojson();
         realisticChatTemplate();
+        generationTag();
         compileReuse();
         unsupportedFeaturesThrow();
         lenientQuirks();
@@ -273,6 +274,28 @@ public final class JinjaRendererTest {
 
     static List<Object> list(Object... items) {
         return new ArrayList<>(List.of(items));
+    }
+
+    // ── {% generation %} tag (transformers assistant-span extension; SmolLM3 uses it) ──
+
+    static void generationTag() {
+        System.out.println("-- {% generation %} tag --");
+        // transparent: the body renders exactly as if the tags weren't there
+        eq("{% generation %}hello{% endgeneration %}", "hello");
+        eq("A{% generation %}B{{ x }}{% endgeneration %}C", Map.of("x", "!"), "AB!C");
+        // nested inside for / if
+        eq("{% for m in items %}{% generation %}{{ m }}{% endgeneration %}{% endfor %}",
+                Map.of("items", List.of("a", "b")), "ab");
+        eq("{% if flag %}{% generation %}X{% endgeneration %}{% endif %}", Map.of("flag", true), "X");
+        // unclosed -> a clear parse error, like an unterminated for/if
+        throwsErr("unclosed {% generation %}", "{% generation %}oops");
+        // spans: (start,end) char offsets bound exactly the generated substring
+        var r = JinjaRenderer.renderWithSpans("A{% generation %}BC{% endgeneration %}D", Map.of());
+        check("generation span: text == ABCD", r.text().equals("ABCD"));
+        check("generation span: exactly one span", r.generationSpans().size() == 1);
+        int[] sp = r.generationSpans().size() == 1 ? r.generationSpans().get(0) : new int[]{-1, -1};
+        check("generation span: [1,3] bounds 'BC'",
+                sp[0] == 1 && sp[1] == 3 && r.text().substring(Math.max(0, sp[0]), Math.max(0, sp[1])).equals("BC"));
     }
 
     // ── literals & output ────────────────────────────────────────

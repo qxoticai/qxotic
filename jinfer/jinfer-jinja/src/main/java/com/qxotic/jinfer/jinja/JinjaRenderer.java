@@ -645,6 +645,7 @@ public final class JinjaRenderer {
     record IfNode(Node test, List<Node> body, List<Node> alt) implements Node {}
     record CondNode(Node test, Node then, Node orElse) implements Node {} // a if test else b (value-valued)
     record ForNode(String var, String var2, Node iterable, List<Node> body) implements Node {}
+    record GenerationNode(List<Node> body) implements Node {} // {% generation %}…{% endgeneration %}: renders the body transparently, records the assistant span
     record SetNode(Node target, Node value) implements Node {}
     record MacroNode(String name, List<String> params, List<Node> defaults, List<Node> body) implements Node {}
     record FilterNode(Node operand, String name, List<Node> args) implements Node {}
@@ -746,14 +747,9 @@ public final class JinjaRenderer {
                 case "for"   -> result = parseFor();
                 case "set"   -> result = parseSet();
                 case "macro" -> result = parseMacro();
-                case "generation", "endgeneration" -> {
-                    // transformers-specific extension — transparent no-op
-                    result = new TextNode("");
-                    expect(T.CLOSE_STMT);
-                    return result;
-                }
+                case "generation" -> result = parseGeneration();
                 case "break", "continue" -> throw err("{% " + kw + " %} is not supported");
-                case "else", "elif", "endif", "endfor", "endmacro", "end" -> {
+                case "else", "elif", "endif", "endfor", "endmacro", "endgeneration", "end" -> {
                     // These are handled by enclosing parse functions
                     idx--; // back up over the identifier
                     return new TextNode("");
@@ -811,6 +807,15 @@ public final class JinjaRenderer {
             String v1 = loopVars.getFirst();
             String v2 = loopVars.size() > 1 ? loopVars.get(1) : null;
             return new ForNode(v1, v2, iterable, body);
+        }
+
+        // ── generation (transformers assistant-span extension) ──
+
+        Node parseGeneration() {
+            expect(T.CLOSE_STMT);
+            var body = parseBody("endgeneration");
+            expect(T.OPEN_STMT); expectId("endgeneration"); expect(T.CLOSE_STMT); // unclosed -> clear error, like for/if
+            return new GenerationNode(body);
         }
 
         List<String> parseVarList() {
@@ -1131,6 +1136,16 @@ public final class JinjaRenderer {
         return render(parse(template), context);
     }
 
+    /** Render result carrying the {@code {% generation %}} assistant spans as (start,end) char offsets into {@code text}. */
+    public record Rendered(String text, List<int[]> generationSpans) {}
+
+    /** Like {@link #render(String, Map)} but also returns the recorded {@code {% generation %}} assistant spans. */
+    public static Rendered renderWithSpans(String template, Map<String,Object> context) {
+        var ctx = new Frame();
+        for (var e : context.entrySet()) ctx.set(e.getKey(), Val.of(e.getValue()));
+        return new Executor(ctx, new ArrayList<>()).executeWithSpans(parse(template));
+    }
+
     static final class Frame {
         final LinkedHashMap<String,Val> vars = new LinkedHashMap<>();
         // macro definitions live on the (shared) root frame so calls can bind params by name,
@@ -1153,12 +1168,16 @@ public final class JinjaRenderer {
         final Frame frame;
         final List<Frame> stack;
 
+        final List<int[]> generationSpans = new ArrayList<>();   // (start,end) char offsets of {% generation %} bodies
+
         Executor(Frame root, List<Frame> stack) { this.frame = root; this.stack = stack; }
 
-        String execute(Prog prog) {
+        String execute(Prog prog) { return executeWithSpans(prog).text(); }
+
+        Rendered executeWithSpans(Prog prog) {
             var out = new StringBuilder();
             for (Node n : prog.body()) exec(n, out);
-            return out.toString();
+            return new Rendered(out.toString(), generationSpans);
         }
 
         void exec(Node node, StringBuilder out) {
@@ -1228,6 +1247,11 @@ public final class JinjaRenderer {
                     // ... and expose a positional Func value so `macro is defined` / passing it
                     // around still works
                     scope().set(m.name(), new Val.Func(m.name(), args -> invokeMacro(m, args, Map.of())));
+                }
+                case GenerationNode g -> {                       // transparent render + record the assistant span
+                    int start = out.length();
+                    execAll(g.body(), out);
+                    generationSpans.add(new int[]{start, out.length()});
                 }
                 default -> {}
             }
