@@ -20,7 +20,7 @@ import java.util.zip.CRC32C;
  * <p>Blob lifecycle: allocated → filled once → maybe validated → freed. Immutable
  * after fill. Single-threaded by design (only the generation worker).
  */
-interface CacheStore extends AutoCloseable {
+public interface CacheStore extends AutoCloseable {
 
     /** Allocates a zero-filled writable blob of {@code bytes}. */
     MemorySegment allocate(long bytes);
