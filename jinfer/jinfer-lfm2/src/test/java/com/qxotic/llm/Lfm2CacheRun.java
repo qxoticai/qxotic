@@ -29,7 +29,7 @@ public final class Lfm2CacheRun {
         template = new Lfm2TurnTemplate(model.tokenizer());
         stops = model.stopTokens();
         long budget = Long.getLong("jinfer.promptCacheMB", 1024L) << 20;
-        PromptCache<Lfm2.State> cache = new PromptCache<>(new Lfm2KvCodec(model.config()), CacheStore.inMemory(), budget);
+        PromptCache<Lfm2.State> cache = new PromptCache<>(new Lfm2KvCodec(model.config()), CacheStore.inMemory(), budget, PromptCache.modelSeed(path));
 
         // ---- conversation A: two turns, committed as it goes ----
         CachedSession<Lfm2.State> a = CachedSession.resume(model, cache, model.newState(4096, 512), new long[0]);
@@ -55,7 +55,7 @@ public final class Lfm2CacheRun {
         String cachedReply = decode(b, 120);
         double cachedMs = (System.nanoTime() - t1) / 1e6;
 
-        PromptCache<Lfm2.State> scratch = new PromptCache<>(new Lfm2KvCodec(model.config()), CacheStore.inMemory(), budget);
+        PromptCache<Lfm2.State> scratch = new PromptCache<>(new Lfm2KvCodec(model.config()), CacheStore.inMemory(), budget, PromptCache.modelSeed(path));
         CachedSession<Lfm2.State> c = CachedSession.resume(model, scratch, model.newState(4096, 512), new long[0]);
         long t2 = System.nanoTime();
         int[] ids = new int[history.length];

@@ -25,6 +25,7 @@ public final class Gemma4CacheRun {
     static Set<Integer> stops;
     static PromptCache<Gemma4.State> cache;
     static long budget;
+    static byte[] seed;
 
     public static void main(String[] args) throws Exception {
         Path path = Path.of(args.length > 0 ? args[0] : "/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
@@ -32,7 +33,8 @@ public final class Gemma4CacheRun {
         template = new Gemma4TurnTemplate(model.tokenizer());
         stops = model.stopTokens();
         budget = Long.getLong("jinfer.promptCacheMB", 8192L) << 20;
-        cache = new PromptCache<>(new Gemma4KvCodec(model.config()), CacheStore.inMemory(), budget);
+        seed = PromptCache.modelSeed(path);
+        cache = new PromptCache<>(new Gemma4KvCodec(model.config()), CacheStore.inMemory(), budget, seed);
 
         // ================= short conversation (window does NOT wrap) =================
         CachedSession<Gemma4.State> a = CachedSession.resume(model, cache, model.newState(8192, 512), new long[0]);
@@ -97,7 +99,7 @@ public final class Gemma4CacheRun {
         String cachedReply = decode(cached, 60);
         double decodeSec = (System.nanoTime() - t1) / 1e9;
 
-        PromptCache<Gemma4.State> scratch = new PromptCache<>(new Gemma4KvCodec(model.config()), CacheStore.inMemory(), budget);
+        PromptCache<Gemma4.State> scratch = new PromptCache<>(new Gemma4KvCodec(model.config()), CacheStore.inMemory(), budget, seed);
         CachedSession<Gemma4.State> plain = CachedSession.resume(model, scratch, model.newState(8192, 512), new long[0]);
         long t2 = System.nanoTime();
         int[] ids = new int[history.length];
