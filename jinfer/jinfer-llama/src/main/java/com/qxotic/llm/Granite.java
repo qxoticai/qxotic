@@ -90,6 +90,19 @@ public final class Granite implements LanguageModel<Granite.Configuration, Grani
         return stops;
     }
 
+    private com.qxotic.jinfer.chat.TurnTemplate turnTemplate;   // memoized: stateless, model-lifetime
+
+    @Override
+    public java.util.Optional<com.qxotic.jinfer.chat.TurnTemplate> turnTemplate() {
+        if (turnTemplate == null) turnTemplate = new GraniteTurnTemplate(tokenizer());
+        return java.util.Optional.of(turnTemplate);
+    }
+
+    @Override
+    public java.util.Optional<com.qxotic.jinfer.cache.KvCodec<Granite.State>> kvCodec() {
+        return java.util.Optional.of(new GraniteKvCodec(config()));
+    }
+
     // === Forward ===
 
     void forward(State state, int[] tokens, int tokenOffset, int startPos, int seqLen) {
