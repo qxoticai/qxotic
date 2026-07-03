@@ -60,13 +60,10 @@ public final class GptOssKvCodec implements KvCodec<GptOss.State> {
         long off = 0;
         for (int l = 0; l < config.numberOfLayers(); l++) {
             if (config.isSWA(l)) {
-                // fixed-size window checkpoint: rows [lo,to) at ring slots, padded to W rows
-                int lo = Math.max(0, to - w);
-                int n = to - lo;
-                off = ringCopy(state.keyCache[l], lo, n, w, kvDim, blob, off, out);
-                off += (long) (w - n) * kvDim * 2;                       // pad K to W rows
-                off = ringCopy(state.valueCache[l], lo, n, w, kvDim, blob, off, out);
-                off += (long) (w - n) * kvDim * 2;                       // pad V to W rows
+                // fixed-size window checkpoint: rows at ring slots, padded to W rows (shared
+                // wrap-aware copy - the ring-boundary math lives once, in KvTransfer.window)
+                off += com.qxotic.jinfer.cache.KvTransfer.window(state.keyCache[l], to, w, kvDim, 2, blob, off, out);
+                off += com.qxotic.jinfer.cache.KvTransfer.window(state.valueCache[l], to, w, kvDim, 2, blob, off, out);
             } else {
                 long n = to - from;
                 off += com.qxotic.jinfer.cache.KvTransfer.transfer(state.keyCache[l], from * kvDim, blob, off, n * kvDim, out);
@@ -75,23 +72,5 @@ public final class GptOssKvCodec implements KvCodec<GptOss.State> {
         }
     }
 
-    /** Window rows [lo, lo+n) live at ring slots {@code pos & (w-1)}; the span wraps at most once,
-     *  so it is at most two contiguous runs. */
-    private static long ringCopy(FloatTensor ring, int lo, int n, int w,
-                                 long kvDim, MemorySegment blob, long off, boolean out) {
-        int done = 0;
-        while (done < n) {
-            int slot = (lo + done) & (w - 1);
-            int run = Math.min(n - done, w - slot);                      // stop at the ring edge
-            off += com.qxotic.jinfer.cache.KvTransfer.transfer(ring, (long) slot * kvDim, blob, off, (long) run * kvDim, out);
-            done += run;
-        }
-        return off;
-    }
 
-    private static long transfer(FloatTensor t, long elemOff,
-                                 MemorySegment blob, long byteOff, long elems, boolean out) {
-        return out ? t.copyRawTo(elemOff, blob, byteOff, elems)
-                   : t.copyRawFrom(blob, byteOff, elemOff, elems);
-    }
 }

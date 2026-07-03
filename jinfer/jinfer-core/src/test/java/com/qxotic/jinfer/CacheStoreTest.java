@@ -193,9 +193,8 @@ public final class CacheStoreTest {
             blob.set(ValueLayout.JAVA_INT_UNALIGNED, i, i);
         }
 
-        store.validate(blob); // commit
-        store.validate(blob); // verify (should not throw)
-        check("CRC roundtrip silent", true);
+        check("CRC commit stamps", store.validate(blob));
+        check("CRC roundtrip valid", store.validate(blob));
 
         store.free(blob);
         store.close();
@@ -211,18 +210,14 @@ public final class CacheStoreTest {
         for (int i = 0; i < kvBytes; i += 4) {
             blob.set(ValueLayout.JAVA_INT_UNALIGNED, i, i);
         }
-        store.validate(blob); // commit
+        check("CRC commit stamps", store.validate(blob));
 
         // Corrupt a byte inside the first block
         blob.set(ValueLayout.JAVA_BYTE, 100, (byte) 0xFF);
 
-        // validate detects corruption
-        store.validate(blob); // verify
-        check("CRC corruption handled", true);
-
-        // The corrupt block should now be freed. Second validate: remaining blocks ok.
-        store.validate(blob);
-        check("re-verify after poison", true);
+        // validate reports corruption to the caller (who treats it as a miss and frees)
+        check("CRC corruption detected", !store.validate(blob));
+        check("corruption still reported on re-verify (no silent reclaim)", !store.validate(blob));
 
         store.free(blob);
         store.close();
