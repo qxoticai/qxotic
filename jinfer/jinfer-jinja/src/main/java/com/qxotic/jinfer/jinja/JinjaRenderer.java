@@ -1,7 +1,7 @@
 package com.qxotic.jinfer.jinja;
 
 import com.qxotic.format.json.Json;
-import com.qxotic.jinfer.ChatTemplate;
+import com.qxotic.jinfer.CompiledTemplate;
 
 import java.time.LocalDateTime;
 import java.time.format.TextStyle;
@@ -672,24 +672,24 @@ public final class JinjaRenderer {
     // ════════════════════════════════════════════════════════════════
 
     /** Parses the template source into the internal AST (the executable form behind a
-     *  {@link ChatTemplate}; the public entry point is {@link #template(String)}). */
+     *  {@link CompiledTemplate}; the public entry point is {@link #template(String)}). */
     static Prog parse(String source) {
         return new Parser(new Lexer(source).tokenize()).parseProgram();
     }
 
-    /** The module's public entry point: turns a Jinja chat-template source into a {@link ChatTemplate}
+    /** The module's public entry point: turns a Jinja chat-template source into a {@link CompiledTemplate}
      *  prompt generator — parse once, render many times. Returns {@code null} if the source fails to
-     *  parse. Suitable as a {@code Function<String, ChatTemplate>} method reference
+     *  parse. Suitable as a {@code Function<String, CompiledTemplate>} method reference
      *  ({@code JinjaRenderer::template}, e.g. for {@link com.qxotic.jinfer.GgufTokenizer}). The AST and
      *  parser behind the returned template stay internal — callers only ever see a render-only template. */
-    public static ChatTemplate template(String source) {
+    public static CompiledTemplate template(String source) {
         try {
             // jinja2 keep_trailing_newline=False (the default HF renders with): exactly one
             // trailing newline of the template source is dropped.
             if (source.endsWith("\r\n")) source = source.substring(0, source.length() - 2);
             else if (source.endsWith("\n")) source = source.substring(0, source.length() - 1);
             Prog program = parse(source);
-            return new ChatTemplate(program, (p, vars) -> render((Prog) p, vars));
+            return new CompiledTemplate(program, (p, vars) -> render((Prog) p, vars));
         } catch (RuntimeException e) {
             System.err.println("[warn] chat template failed to parse: " + e.getMessage());
             return null;

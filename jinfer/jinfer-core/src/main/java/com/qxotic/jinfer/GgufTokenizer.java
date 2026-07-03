@@ -37,10 +37,10 @@ public class GgufTokenizer {
     private final Tokenizer tokenizer;
     private final Map<String, Integer> specialTokens;
     private Specials specialsEncoder;
-    private final ChatTemplate chatTemplate;
+    private final CompiledTemplate chatTemplate;
 
     /** Tokenizer without a chat template — for callers that build prompts directly and don't
-     *  need {@link ChatTemplate} (model load sites pass {@code JinjaRenderer::template}). */
+     *  need {@link CompiledTemplate} (model load sites pass {@code JinjaRenderer::template}). */
     public GgufTokenizer(GGUF gguf) {
         this(gguf, s -> null);
     }
@@ -48,7 +48,7 @@ public class GgufTokenizer {
     /** Tokenizer with the GGUF's chat template compiled through {@code templateCompiler}
      *  (typically {@code JinjaRenderer::template} — injected because jinfer-core doesn't depend
      *  on jinfer-jinja). */
-    public GgufTokenizer(GGUF gguf, Function<String, ChatTemplate> templateCompiler) {
+    public GgufTokenizer(GGUF gguf, Function<String, CompiledTemplate> templateCompiler) {
         this.tokenizer = GGUFTokenizerLoader.createBuilderWithBuiltins()
                 .registerPreTokenizer("lfm2", g -> Splitter.regex(Pattern.compile(LFM2_PRE_PATTERN)))
                 .registerNormalizer("lfm2", g -> Normalizer.identity())
@@ -74,7 +74,7 @@ public class GgufTokenizer {
 
     /** The compiled chat template, or null when the model has none
      *  (the server then falls back to the built-in ChatML format). */
-    public ChatTemplate chatTemplate() { return chatTemplate; }
+    public CompiledTemplate chatTemplate() { return chatTemplate; }
 
     boolean isSpecialToken(int token) {
         return token >= 0 && token < vocabularySize()
