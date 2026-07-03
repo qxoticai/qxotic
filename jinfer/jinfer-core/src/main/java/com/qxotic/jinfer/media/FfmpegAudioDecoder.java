@@ -3,7 +3,9 @@
 // javax.sound.sampled (its ServiceLoader/SPI plugin discovery + reflection need build-time config, and
 // compressed-format support depends on optional providers). ffmpeg owns decode + resample (swresample,
 // far higher quality than a hand-rolled linear resampler) + downmix in one pass. Requires ffmpeg on PATH.
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.media;
+
+import com.qxotic.jinfer.Media;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;

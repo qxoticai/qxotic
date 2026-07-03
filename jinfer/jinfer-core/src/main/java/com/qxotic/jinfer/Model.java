@@ -27,6 +27,4 @@ public interface Model<C extends Config, W, S extends RuntimeState> {
      *  union is the multi-modal seam. */
     void ingest(S state, Batch batch);
 
-    /** A resumable snapshot of the state — the basis of prompt caching. */
-    S fork(S state);
 }

@@ -11,6 +11,11 @@ public interface RuntimeState {
     /** Rewind the cursor to 0 so the state can be reused for a fresh sequence/batch; the next ingest
      *  overwrites the KV from position 0. Optional - only states used with {@link EmbeddingModel#embed}
      *  need it; generative states leave the default. */
+    /** Advances the cursor past an ingested batch: {@code rows} rows landed, retaining every row's
+     *  hidden state under {@link Batch.Outputs#ALL} or just the last one under LAST. Called by the
+     *  model's ingest tail - the one place the cursor moves forward. */
+    default void advance(int rows, Batch.Outputs outputs) { throw new UnsupportedOperationException("advance() not supported by " + getClass().getName()); }
+
     /** Makes the state resumable at {@code position} after its KV/recurrent contents were restored
      *  externally (prompt cache): sets the cursor and resets per-batch scratch invariants. Transient
      *  output state (logits) is NOT restored - ingest before reading logits. */

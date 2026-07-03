@@ -66,9 +66,7 @@ public final class GptOss implements LanguageModel<GptOss.Configuration, GptOss.
             case com.qxotic.jinfer.Batch.Input.Embeddings e ->
                 throw new UnsupportedOperationException("gpt-oss is text-only: embedding input is not supported");
         }
-        s.lastChunkLen = n;
-        s.outputCount = batch.outputs() == com.qxotic.jinfer.Batch.Outputs.ALL ? n : 1;
-        s.position = from + n;
+        s.advance(n, batch.outputs());
     }
 
     @Override
@@ -83,17 +81,6 @@ public final class GptOss implements LanguageModel<GptOss.Configuration, GptOss.
         });
     }
 
-    @Override
-    public State fork(State s) {
-        State f = new State(configuration, s.contextCapacity, s.batchCapacity);
-        for (int l = 0; l < configuration.numberOfLayers(); l++) {
-            int len = configuration.kvCachePositions(l, s.contextCapacity) * configuration.kvDim();
-            s.keyCache[l].copyTo(0, f.keyCache[l], 0, len);
-            s.valueCache[l].copyTo(0, f.valueCache[l], 0, len);
-        }
-        f.position = s.position;
-        return f;
-    }
 
     /** The turn-delimiter / eos ids that terminate generation (convenience for callers/tests). */
     public Set<Integer> stopTokens() {
@@ -449,6 +436,7 @@ public final class GptOss implements LanguageModel<GptOss.Configuration, GptOss.
         @Override public int batchCapacity()   { return batchCapacity; }
         @Override public int position()         { return position; }
         @Override public int outputCount()      { return outputCount; }
+        @Override public void advance(int rows, com.qxotic.jinfer.Batch.Outputs outputs) { lastChunkLen = rows; outputCount = outputs == com.qxotic.jinfer.Batch.Outputs.ALL ? rows : 1; position += rows; }
         @Override public void resumeAt(int p)   { position = p; lastChunkLen = 0; outputCount = 0; }
     }
 

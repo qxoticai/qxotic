@@ -7,7 +7,9 @@
 // Unlike the image codec (decode only), the audio decoder ALSO resamples to 16 kHz + downmixes to mono,
 // because that target is universal across speech encoders (not a per-model choice like the image resize).
 // Select via AudioCodec (-Djinfer.audioDecoder=ffmpeg|javasound; default ffmpeg under native-image, javasound on JVM).
-package com.qxotic.jinfer;
+package com.qxotic.jinfer.media;
+
+import com.qxotic.jinfer.Media;
 
 import java.io.IOException;
 import java.nio.file.Path;

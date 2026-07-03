@@ -90,24 +90,6 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
         });
     }
 
-    @Override
-    public State fork(State s) {
-        State f = new State(configuration, s.contextCapacity, s.batchCapacity);
-        int kvDim = configuration.kvDim();
-        for (int l = 0; l < configuration.numberOfLayers; l++) {
-            if (configuration.isFullAttention[l]) {
-                int len = s.position * kvDim;
-                s.keyCache[l].copyTo(0, f.keyCache[l], 0, len);
-                s.valueCache[l].copyTo(0, f.valueCache[l], 0, len);
-            } else {
-                int len = (int) s.ssmConvState[l].size();
-                s.ssmConvState[l].copyTo(0, f.ssmConvState[l], 0, len);
-                System.arraycopy(s.ssmState[l], 0, f.ssmState[l], 0, s.ssmState[l].length);
-            }
-        }
-        f.position = s.position;
-        return f;
-    }
 
     /** The turn-delimiter / eos ids that terminate generation (convenience for callers/tests). */
     public Set<Integer> stopTokens() {
