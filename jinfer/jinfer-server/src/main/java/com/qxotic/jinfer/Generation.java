@@ -25,7 +25,7 @@ final class Generation {
     private final LanguageModel<?, ?, ?> model;
     private final LLMOptions options;
     private final Worker worker;
-    private final Map<LFMTokenizer, int[]> newlineCache = Collections.synchronizedMap(new WeakHashMap<>());
+    private final Map<GgufTokenizer, int[]> newlineCache = Collections.synchronizedMap(new WeakHashMap<>());
 
     Generation(LanguageModel<?, ?, ?> model, LLMOptions options, Worker worker) {
         this.model = model;
@@ -37,7 +37,7 @@ final class Generation {
 
     @SuppressWarnings("unchecked")
     GenerationResult chat(Map<String, Object> request, List<Object> messages, Sinks sinks) {
-        LFMTokenizer tokenizer = model.tokenizer();
+        GgufTokenizer tokenizer = model.tokenizer();
         ChatContext chatContext = new ChatContext(
                 messages,
                 ToolUse.offered(request) ? Values.asArray(request.get("tools"), "tools") : null,
@@ -55,7 +55,7 @@ final class Generation {
     }
 
     GenerationResult completion(Map<String, Object> request, String prompt, Sinks sinks) {
-        LFMTokenizer tokenizer = model.tokenizer();
+        GgufTokenizer tokenizer = model.tokenizer();
         List<Integer> promptTokens = options.rawPrompt()
                 ? new ArrayList<>(tokenizer.encodeWithSpecialTokens(prompt))
                 : new ArrayList<>(tokenizer.encode(prompt));
@@ -67,7 +67,7 @@ final class Generation {
      *  counted unless they are the trailing stop token removed from the result. */
     private GenerationResult generate(Map<String, Object> request, List<Integer> promptTokens,
                                       Set<Integer> baseStopTokens, Sinks sinks) {
-        LFMTokenizer tokenizer = model.tokenizer();
+        GgufTokenizer tokenizer = model.tokenizer();
         OpenAiSchema.Usage usageCounts = sinks.usage();
         float temperature = Values.floatValue(request.get("temperature"), options.temperature());
         float topp = Values.floatValue(request.get("top_p"), options.topp());
@@ -128,7 +128,7 @@ final class Generation {
 
     /** Builds a grammar cursor from request params: {@code grammar} (GBNF string) or
      *  {@code response_format: {type: "json_object"}}. Returns null when no constraint. */
-    private static Grammar.Cursor buildGrammarCursor(LFMTokenizer tokenizer, Map<String, Object> request) {
+    private static Grammar.Cursor buildGrammarCursor(GgufTokenizer tokenizer, Map<String, Object> request) {
         if (!RuntimeFlags.GRAMMAR) return null;
         Object gbnf = request.get("grammar");
         if (gbnf instanceof String s && !s.isBlank()) {
@@ -144,7 +144,7 @@ final class Generation {
     /** Token ids that decode to newlines only (LF/CR), per tokenizer (cached). The chat template
      *  emits {@code </think>\n} before the answer; these are passed through untouched so the
      *  boilerplate newline is not consumed by the grammar (no whitespace baked into the language). */
-    private int[] newlineTokens(LFMTokenizer tok) {
+    private int[] newlineTokens(GgufTokenizer tok) {
         return newlineCache.computeIfAbsent(tok, t -> {
             List<Integer> ids = new ArrayList<>();
             for (int i = 0, n = t.vocabularySize(); i < n; i++) {

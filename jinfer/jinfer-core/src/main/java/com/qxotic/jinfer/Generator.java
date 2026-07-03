@@ -75,7 +75,7 @@ public final class Generator {
         require(Float.isFinite(topp) && 0 <= topp && topp <= 1, "Invalid argument: top_p must be within [0, 1]");
         Sampler sampler = Sampler.select(model.config().vocabularySize(), temperature, topp, seed);
         if (!think) {
-            LFMTokenizer tokenizer = model.tokenizer();
+            GgufTokenizer tokenizer = model.tokenizer();
             Integer thinkStart = tokenizer.getSpecialTokens().get("<think>");
             Integer thinkEnd = tokenizer.getSpecialTokens().get("</think>");
             Set<Integer> banned = new HashSet<>();
@@ -96,7 +96,7 @@ public final class Generator {
     public static <S extends RuntimeState> GenerationResult generate(
             LanguageModel<?, ?, S> model, S state, List<Integer> promptTokens,
             Params params, Listener listener) {
-        LFMTokenizer tokenizer = model.tokenizer();
+        GgufTokenizer tokenizer = model.tokenizer();
         int contextLength = model.config().contextLength();
         int consumedPromptTokens = consumedPromptTokens(tokenizer, promptTokens);
         int promptPositions = state.position() + promptTokens.size();   // new API ingests the prompt verbatim
@@ -194,7 +194,7 @@ public final class Generator {
     // ---- tokenizer-based stop / stream / reasoning machinery (model-agnostic) ----
 
     /** Prompt size as billed to the client: a leading BOS is template overhead, not user input. */
-    static int consumedPromptTokens(LFMTokenizer tokenizer, List<Integer> promptTokens) {
+    static int consumedPromptTokens(GgufTokenizer tokenizer, List<Integer> promptTokens) {
         Map<String, Integer> specialTokens = tokenizer.getSpecialTokens();
         int bos = specialTokens.getOrDefault("<bos>", specialTokens.getOrDefault("<|startoftext|>", 1));
         if (!promptTokens.isEmpty() && promptTokens.getFirst() == bos) {
@@ -209,7 +209,7 @@ public final class Generator {
      * starve the answer under tight max_tokens). Cumulative across spans; the forced token consumes no RNG
      * draw. Negative = uncapped.
      */
-    static Sampler withThinkBudget(Sampler inner, LFMTokenizer tokenizer, int budget) {
+    static Sampler withThinkBudget(Sampler inner, GgufTokenizer tokenizer, int budget) {
         Integer open = tokenizer.getSpecialTokens().get("<think>");
         Integer close = tokenizer.getSpecialTokens().get("</think>");
         if (budget < 0 || open == null || close == null) {
@@ -239,7 +239,7 @@ public final class Generator {
      *  think flag (inline mode emits them literally). Tool-call spans are buffered separately so an
      *  in-progress call never leaks into the text stream. Other specials are dropped. Everything else is
      *  UTF-8 decoded incrementally. */
-    static IntConsumer streamingDemux(LFMTokenizer tokenizer, Consumer<String> onText,
+    static IntConsumer streamingDemux(GgufTokenizer tokenizer, Consumer<String> onText,
                                       Consumer<String> onReasoning, Consumer<String> onToolCall,
                                       boolean inlineThink) {
         Integer thinkOpen = tokenizer.getSpecialTokens().get("<think>");
@@ -288,7 +288,7 @@ public final class Generator {
         };
     }
 
-    static List<Integer> visibleTokens(LFMTokenizer tokenizer, List<Integer> tokens, boolean think) {
+    static List<Integer> visibleTokens(GgufTokenizer tokenizer, List<Integer> tokens, boolean think) {
         if (think) {
             return tokens;
         }
@@ -296,7 +296,7 @@ public final class Generator {
     }
 
     /** The think-span text of a response (between <think> markers, terminated or not), or null. */
-    static String reasoningText(LFMTokenizer tokenizer, List<Integer> tokens) {
+    static String reasoningText(GgufTokenizer tokenizer, List<Integer> tokens) {
         Integer thinkOpen = tokenizer.getSpecialTokens().get("<think>");
         Integer thinkClose = tokenizer.getSpecialTokens().get("</think>");
         if (thinkOpen == null || thinkClose == null) return null;
@@ -310,7 +310,7 @@ public final class Generator {
         return thinking.isEmpty() ? null : tokenizer.decode(thinking);
     }
 
-    private static List<Integer> stripThoughtTokens(LFMTokenizer tokenizer, List<Integer> tokens) {
+    private static List<Integer> stripThoughtTokens(GgufTokenizer tokenizer, List<Integer> tokens) {
         Integer thinkOpen = tokenizer.getSpecialTokens().get("<think>");
         Integer thinkClose = tokenizer.getSpecialTokens().get("</think>");
         if (thinkOpen == null || thinkClose == null) {

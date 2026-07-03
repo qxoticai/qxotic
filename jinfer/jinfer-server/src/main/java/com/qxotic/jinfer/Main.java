@@ -58,7 +58,7 @@ public class Main {
         thoughtOut.println();
     }
 
-    private static IntConsumer streamingPrinter(LFMTokenizer tokenizer, LLMOptions options) {
+    private static IntConsumer streamingPrinter(GgufTokenizer tokenizer, LLMOptions options) {
         if (!options.stream()) {
             return token -> {};
         }
@@ -116,7 +116,7 @@ public class Main {
     private static <S extends RuntimeState> Generator.GenerationResult generateCli(LanguageModel<?, ?, S> model, S state,
                                                        List<Integer> promptTokens, Set<Integer> stopTokens,
                                                        Sampler sampler, LLMOptions options) {
-        LFMTokenizer tokenizer = model.tokenizer();
+        GgufTokenizer tokenizer = model.tokenizer();
         if (options.echo()) {
             for (int token : promptTokens) {
                 System.err.print(replaceControlCharacters(tokenizer.decode(token)));

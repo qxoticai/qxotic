@@ -30,7 +30,7 @@ final class ChatFormats {
     private ChatFormats() {
     }
 
-    static ChatFormat forModel(LFMTokenizer tokenizer) {
+    static ChatFormat forModel(GgufTokenizer tokenizer) {
         ChatTemplate tpl = tokenizer.chatTemplate();
         return tpl != null ? new JinjaChatFormat(tokenizer, tpl) : new ChatMLChatFormat(tokenizer);
     }
@@ -153,14 +153,14 @@ final class ChatFormats {
     }
 
     /** The text representation of a special token, or null if absent. */
-    private static String specialTokenString(LFMTokenizer t, String name) {
+    private static String specialTokenString(GgufTokenizer t, String name) {
         Integer id = t.getSpecialTokens().get(name);
         return id != null ? t.decode(id) : null;
     }
 
     /** The text of the first present special token among {@code names} (preferred name first),
      *  or null if none exist — e.g. {@code <bos>} with a {@code <|startoftext|>} fallback. */
-    private static String firstSpecialString(LFMTokenizer t, String... names) {
+    private static String firstSpecialString(GgufTokenizer t, String... names) {
         for (String name : names) {
             String text = specialTokenString(t, name);
             if (text != null) return text;
@@ -170,7 +170,7 @@ final class ChatFormats {
 
     /** Renders the model's Jinja chat_template. The one place a rendered String is re-scanned
      *  into tokens (encodeWithSpecialTokens); every other format emits token ids directly. */
-    private record JinjaChatFormat(LFMTokenizer tokenizer, ChatTemplate tpl) implements ChatFormat {
+    private record JinjaChatFormat(GgufTokenizer tokenizer, ChatTemplate tpl) implements ChatFormat {
         public List<Integer> encode(ChatContext ctx) {
             var vars = new LinkedHashMap<String, Object>();
             vars.put("messages", preprocessToolCalls(ctx.messages()));
@@ -190,7 +190,7 @@ final class ChatFormats {
     private static final class ChatMLChatFormat implements ChatFormat {
         private final LFMChatFormat chatml;
 
-        ChatMLChatFormat(LFMTokenizer tokenizer) {
+        ChatMLChatFormat(GgufTokenizer tokenizer) {
             this.chatml = new LFMChatFormat(tokenizer);
         }
 

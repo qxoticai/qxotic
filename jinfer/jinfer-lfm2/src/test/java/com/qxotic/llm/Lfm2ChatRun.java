@@ -51,7 +51,7 @@ public final class Lfm2ChatRun {
     /** Ingest the turn batches + generation prompt, greedy-decode a reply, close the turn so the
      *  KV ends exactly where encodeTurn(assistant reply) would have: ... reply <|im_end|> \n. */
     static String generate(Lfm2 model, Lfm2.State s, TurnTemplate template,
-                           List<Batch> turn, com.qxotic.jinfer.LFMTokenizer tk, Set<Integer> stops, int maxTokens) {
+                           List<Batch> turn, com.qxotic.jinfer.GgufTokenizer tk, Set<Integer> stops, int maxTokens) {
         List<Batch> ready = new ArrayList<>(turn);
         ready.addAll(template.generationPrompt(true));
         for (Batch b : Batch.prepare(ready, 512)) model.ingest(s, b);

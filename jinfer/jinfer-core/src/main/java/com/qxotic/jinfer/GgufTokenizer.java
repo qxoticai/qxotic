@@ -20,7 +20,10 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
-public class LFMTokenizer {
+/** The universal GGUF tokenizer (toknroll-backed): vocabulary, special tokens, and the optional
+ *  compiled chat template. Model-family pre-tokenizers (e.g. lfm2) are registered internally; the
+ *  template compiler is injected because jinfer-core does not depend on jinfer-jinja. */
+public class GgufTokenizer {
 
     private static final String LFM2_PRE_PATTERN =
             "(?i:'s|'t|'re|'ve|'m|'ll|'d)" +
@@ -36,16 +39,16 @@ public class LFMTokenizer {
     private Specials specialsEncoder;
     private final ChatTemplate chatTemplate;
 
-    /** Tokenizer without a chat template — for callers (e.g. the jinfer-gemma4 port) that build
-     *  prompts directly and don't need {@link ChatTemplate}. */
-    public LFMTokenizer(GGUF gguf) {
+    /** Tokenizer without a chat template — for callers that build prompts directly and don't
+     *  need {@link ChatTemplate} (model load sites pass {@code JinjaRenderer::template}). */
+    public GgufTokenizer(GGUF gguf) {
         this(gguf, s -> null);
     }
 
     /** Tokenizer with the GGUF's chat template compiled through {@code templateCompiler}
      *  (typically {@code JinjaRenderer::template} — injected because jinfer-core doesn't depend
      *  on jinfer-jinja). */
-    public LFMTokenizer(GGUF gguf, Function<String, ChatTemplate> templateCompiler) {
+    public GgufTokenizer(GGUF gguf, Function<String, ChatTemplate> templateCompiler) {
         this.tokenizer = GGUFTokenizerLoader.createBuilderWithBuiltins()
                 .registerPreTokenizer("lfm2", g -> Splitter.regex(Pattern.compile(LFM2_PRE_PATTERN)))
                 .registerNormalizer("lfm2", g -> Normalizer.identity())
