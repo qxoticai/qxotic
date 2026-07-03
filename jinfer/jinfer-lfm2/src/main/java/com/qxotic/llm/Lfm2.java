@@ -364,9 +364,8 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
 
     // === State ===
 
-    public static final class State implements RuntimeState {
+    public static final class State extends com.qxotic.jinfer.BaseState {
         final int contextCapacity, batchCapacity;
-        int position, outputCount, lastChunkLen;
         final FloatTensor residual, xb, xbK, xb2, hb, hb2, query, logits;
         final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch();
         final FloatTensor[] keyCache, valueCache, batchK, batchV;   // per layer; null on recurrent layers
@@ -441,10 +440,6 @@ public final class Lfm2 implements LanguageModel<Lfm2.Configuration, Lfm2.Weight
 
         @Override public int contextCapacity() { return contextCapacity; }
         @Override public int batchCapacity()   { return batchCapacity; }
-        @Override public int position()         { return position; }
-        @Override public int outputCount()      { return outputCount; }
-        @Override public void advance(int rows, com.qxotic.jinfer.Batch.Outputs outputs) { lastChunkLen = rows; outputCount = outputs == com.qxotic.jinfer.Batch.Outputs.ALL ? rows : 1; position += rows; }
-        @Override public void resumeAt(int p)   { position = p; lastChunkLen = 0; outputCount = 0; }
     }
 
     // === Loading ===

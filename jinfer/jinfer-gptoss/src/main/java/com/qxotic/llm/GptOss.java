@@ -372,9 +372,8 @@ public final class GptOss implements LanguageModel<GptOss.Configuration, GptOss.
 
     // === State ===
 
-    public static final class State implements RuntimeState {
+    public static final class State extends com.qxotic.jinfer.BaseState {
         final int contextCapacity, batchCapacity;
-        int position, outputCount, lastChunkLen;
         final FloatTensor residual, xb, xb2, xbK, q, logits, th, tscratch;
         final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch();
         final FloatTensor[] keyCache, valueCache, batchK, batchV;
@@ -434,10 +433,6 @@ public final class GptOss implements LanguageModel<GptOss.Configuration, GptOss.
 
         @Override public int contextCapacity() { return contextCapacity; }
         @Override public int batchCapacity()   { return batchCapacity; }
-        @Override public int position()         { return position; }
-        @Override public int outputCount()      { return outputCount; }
-        @Override public void advance(int rows, com.qxotic.jinfer.Batch.Outputs outputs) { lastChunkLen = rows; outputCount = outputs == com.qxotic.jinfer.Batch.Outputs.ALL ? rows : 1; position += rows; }
-        @Override public void resumeAt(int p)   { position = p; lastChunkLen = 0; outputCount = 0; }
     }
 
     // === Loading ===

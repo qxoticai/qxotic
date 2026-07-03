@@ -60,6 +60,13 @@ public final class Generator {
                             int promptTokens, int completionTokens, int cachedTokens, String finishReason,
                             double promptMillis, double predictedMillis) {
 
+        /** The same result with restamped billing counts (the prompt-cache path bills the whole
+         *  prompt, of which {@code cachedTokens} were restored instead of prefilled). */
+        public GenerationResult withUsage(int promptTokens, int cachedTokens) {
+            return new GenerationResult(tokens, stopToken, text, reasoning, toolCalls,
+                    promptTokens, completionTokens, cachedTokens, finishReason, promptMillis, predictedMillis);
+        }
+
         /** The chat-layer rewrite of a reply that parsed as tool calls; {@code content} is any text the
          *  model produced before the first call marker. */
         GenerationResult asToolCalls(List<Map<String, Object>> calls, String content) {

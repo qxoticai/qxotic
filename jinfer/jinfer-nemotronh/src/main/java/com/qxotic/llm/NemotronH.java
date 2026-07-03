@@ -471,9 +471,8 @@ public final class NemotronH implements LanguageModel<NemotronH.Configuration, N
 
     // === State ===
 
-    public static final class State implements RuntimeState {
+    public static final class State extends com.qxotic.jinfer.BaseState {
         final int contextCapacity, batchCapacity;
-        int position, outputCount, lastChunkLen;
         final FloatTensor x;                                   // batchCapacity rows: residual per token
         final FloatTensor xb, k, v, attnQ, attnOut, logits;    // chunk-wide scratch
         final FloatTensor ssmInProj, ssmTmp;
@@ -560,9 +559,6 @@ public final class NemotronH implements LanguageModel<NemotronH.Configuration, N
 
         @Override public int contextCapacity() { return contextCapacity; }
         @Override public int batchCapacity()   { return batchCapacity; }
-        @Override public int position()         { return position; }
-        @Override public int outputCount()      { return outputCount; }
-        @Override public void advance(int rows, com.qxotic.jinfer.Batch.Outputs outputs) { lastChunkLen = rows; outputCount = outputs == com.qxotic.jinfer.Batch.Outputs.ALL ? rows : 1; position += rows; }
     }
 
     // === Loading ===

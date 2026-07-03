@@ -321,7 +321,6 @@ public class Main {
     /** CLI driver for any model via its chat template: a one-shot {@code --prompt} or an interactive
      *  {@code --chat} loop, rebuilding the full prompt each turn (fresh state, no incremental resume). */
     static <S extends RuntimeState> void runGeneric(LanguageModel<?, ?, S> model, Sampler sampler, LLMOptions options) throws IOException {
-        ChatFormat chatFormat = ChatFormats.forModel(model.tokenizer());
         Set<Integer> stops = model.stopTokens();
         if (!options.interactive()) {
             List<Object> messages = new ArrayList<>();
@@ -331,7 +330,7 @@ public class Main {
             messages.add(Map.of("role", "user", "content", options.prompt()));
             List<Integer> promptTokens = options.rawPrompt()
                     ? new ArrayList<>(model.tokenizer().encodeWithSpecialTokens(options.prompt()))
-                    : chatFormat.encode(new ChatContext(messages, null, true, options.think(), Map.of()));
+                    : ChatFormat.encode(model.tokenizer(), new ChatContext(messages, null, true, options.think(), Map.of()));
             Generator.GenerationResult result = generateCli(model,
                     model.newState(model.config().contextLength(), Math.max(promptTokens.size(), 16)),
                     promptTokens, stops, sampler, options);
@@ -352,7 +351,7 @@ public class Main {
                 String userText = reader.readLine();
                 if (userText == null || "/quit".equals(userText) || "/exit".equals(userText)) break;
                 history.add(Map.of("role", "user", "content", userText));
-                List<Integer> promptTokens = chatFormat.encode(new ChatContext(history, null, true, options.think(), Map.of()));
+                List<Integer> promptTokens = ChatFormat.encode(model.tokenizer(), new ChatContext(history, null, true, options.think(), Map.of()));
                 // fresh state each turn: the generic path re-encodes the whole conversation
                 Generator.GenerationResult result = generateCli(model,
                         model.newState(model.config().contextLength(), Math.max(promptTokens.size(), 16)),
