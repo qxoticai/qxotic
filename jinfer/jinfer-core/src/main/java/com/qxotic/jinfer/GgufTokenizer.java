@@ -39,12 +39,6 @@ public class GgufTokenizer {
     private Specials specialsEncoder;
     private final CompiledTemplate chatTemplate;
 
-    /** Tokenizer without a chat template — for callers that build prompts directly and don't
-     *  need {@link CompiledTemplate} (model load sites pass {@code JinjaRenderer::template}). */
-    public GgufTokenizer(GGUF gguf) {
-        this(gguf, s -> null);
-    }
-
     /** Tokenizer with the GGUF's chat template compiled through {@code templateCompiler}
      *  (typically {@code JinjaRenderer::template} — injected because jinfer-core doesn't depend
      *  on jinfer-jinja). */
@@ -72,8 +66,8 @@ public class GgufTokenizer {
         return specialTokens;
     }
 
-    /** The compiled chat template, or null when the model has none
-     *  (the server then falls back to the built-in ChatML format). */
+    /** The compiled chat template, or null when the GGUF carries none (or it failed to
+     *  compile) — chat requests then fail with a descriptive error; raw prompts still work. */
     public CompiledTemplate chatTemplate() { return chatTemplate; }
 
     boolean isSpecialToken(int token) {

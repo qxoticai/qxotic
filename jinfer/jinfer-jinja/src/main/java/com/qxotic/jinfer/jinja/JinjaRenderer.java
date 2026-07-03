@@ -689,7 +689,7 @@ public final class JinjaRenderer {
             if (source.endsWith("\r\n")) source = source.substring(0, source.length() - 2);
             else if (source.endsWith("\n")) source = source.substring(0, source.length() - 1);
             Prog program = parse(source);
-            return new CompiledTemplate(program, (p, vars) -> render((Prog) p, vars));
+            return vars -> render(program, vars);
         } catch (RuntimeException e) {
             System.err.println("[warn] chat template failed to parse: " + e.getMessage());
             return null;

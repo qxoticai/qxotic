@@ -15,9 +15,10 @@ import java.util.List;
  *  turn and media markers) is emitted as trusted special-token ids; conversation text is tokenized
  *  plainly, so content can never mint control tokens.
  *
- *  <p>{@code instanceof TurnTemplate} is the capability test (same convention as
- *  {@link com.qxotic.jinfer.MultiModal}): templates that implement it get the exact caching path,
- *  plain {@link ChatTemplate}s the best-effort one. */
+ *  <p>Discovery is {@code model.turnTemplate()} — the Optional capability accessor on
+ *  {@code LanguageModel} is THE mechanism for finding a model's template (models without one fall
+ *  back to whole-render). {@code instanceof} is only for refining an already-obtained
+ *  {@link ChatTemplate} to its per-turn form. */
 public interface TurnTemplate extends ChatTemplate {
 
     /** One turn, lowered to batches. Stateless, deterministic, turn-stable. Conversation-start

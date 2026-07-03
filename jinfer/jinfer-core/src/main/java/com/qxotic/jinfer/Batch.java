@@ -95,6 +95,22 @@ public record Batch(Input input, Outputs outputs) {
         }
     }
 
+    /** The token ids a batch list ingests, flattened in order. Token batches only — the shared
+     *  currency between chat encoding, cache fingerprints and the test harnesses, so the server
+     *  and the testkit stay byte-compatible. */
+    public static int[] tokenIds(java.util.List<Batch> batches) {
+        int n = 0;
+        for (Batch b : batches) n += ((Input.Tokens) b.input()).ids().length;
+        int[] ids = new int[n];
+        int i = 0;
+        for (Batch b : batches) {
+            int[] part = ((Input.Tokens) b.input()).ids();
+            System.arraycopy(part, 0, ids, i, part.length);
+            i += part.length;
+        }
+        return ids;
+    }
+
     /** Rows this batch ingests, regardless of modality. */
     public int count() {
         return switch (input) {

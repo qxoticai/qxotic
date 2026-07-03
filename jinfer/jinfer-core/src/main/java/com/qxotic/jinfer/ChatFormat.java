@@ -10,30 +10,29 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Builds prompt tokens for a chat request. Internal — never exposed by the OpenAI layer. */
-interface ChatFormat {
-    List<Integer> encode(ChatContext ctx);
-}
-
-/** The normalized inputs a ChatFormat needs, built once per request. {@code messages} and
- *  {@code tools} stay as raw OpenAI maps because Jinja templates read arbitrary fields. */
-record ChatContext(List<Object> messages, List<Object> tools,
-                   boolean addGenerationPrompt, boolean enableThinking,
-                   Map<String, Object> kwargs) {
-}
-
-/** Selects the chat format for a model. */
-final class ChatFormats {
-    private ChatFormats() {
+/** Renders a chat request to prompt tokens through the model's Jinja chat_template — the one
+ *  place a rendered String is re-scanned into tokens (encodeWithSpecialTokens); the TurnTemplate
+ *  path emits token ids directly. Internal — never exposed by the OpenAI layer. */
+final class ChatFormat {
+    private ChatFormat() {
     }
 
-    static ChatFormat forModel(GgufTokenizer tokenizer) {
+    static List<Integer> encode(GgufTokenizer tokenizer, ChatContext ctx) {
         CompiledTemplate tpl = tokenizer.chatTemplate();
         if (tpl == null) {
             throw new IllegalStateException("model has no chat_template (or it failed to compile); "
                     + "chat requests need one — use a raw prompt instead");
         }
-        return new JinjaChatFormat(tokenizer, tpl);
+        var vars = new LinkedHashMap<String, Object>();
+        vars.put("messages", preprocessToolCalls(ctx.messages()));
+        vars.put("add_generation_prompt", ctx.addGenerationPrompt());
+        vars.put("bos_token", firstSpecialString(tokenizer, "<bos>", "<|startoftext|>"));
+        vars.put("eos_token", firstSpecialString(tokenizer, "<eos>", "<|endoftext|>"));
+        vars.put("tools", ctx.tools());
+        vars.put("enable_thinking", ctx.enableThinking());
+        vars.put("preserve_thinking", false);
+        if (ctx.kwargs() != null) vars.putAll(ctx.kwargs());
+        return tokenizer.encodeWithSpecialTokens(tpl.render(vars));
     }
 
     /**
@@ -96,20 +95,11 @@ final class ChatFormats {
         return null;
     }
 
-    /** Renders the model's Jinja chat_template. The one place a rendered String is re-scanned
-     *  into tokens (encodeWithSpecialTokens); every other format emits token ids directly. */
-    private record JinjaChatFormat(GgufTokenizer tokenizer, CompiledTemplate tpl) implements ChatFormat {
-        public List<Integer> encode(ChatContext ctx) {
-            var vars = new LinkedHashMap<String, Object>();
-            vars.put("messages", preprocessToolCalls(ctx.messages()));
-            vars.put("add_generation_prompt", ctx.addGenerationPrompt());
-            vars.put("bos_token", firstSpecialString(tokenizer, "<bos>", "<|startoftext|>"));
-            vars.put("eos_token", firstSpecialString(tokenizer, "<eos>", "<|endoftext|>"));
-            vars.put("tools", ctx.tools());
-            vars.put("enable_thinking", ctx.enableThinking());
-            vars.put("preserve_thinking", false);
-            if (ctx.kwargs() != null) vars.putAll(ctx.kwargs());
-            return tokenizer.encodeWithSpecialTokens(tpl.render(vars));
-        }
-    }
+}
+
+/** The normalized inputs a chat render needs, built once per request. {@code messages} and
+ *  {@code tools} stay as raw OpenAI maps because Jinja templates read arbitrary fields. */
+record ChatContext(List<Object> messages, List<Object> tools,
+                   boolean addGenerationPrompt, boolean enableThinking,
+                   Map<String, Object> kwargs) {
 }

@@ -75,8 +75,7 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
             case Batch.Input.Embeddings e ->
                 throw new UnsupportedOperationException("Qwen3.5 is text-only: embedding input is not supported");
         }
-        s.outputCount = 1;   // single-token streaming keeps only the last row's residual (LAST semantics)
-        s.position = from + n;
+        s.advance(n, Batch.Outputs.LAST);   // streamed MoE keeps only the last row's residual (LAST semantics)
     }
 
     @Override
@@ -768,9 +767,9 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
 
     // === State (single-token scratch; KV cache + conv ring + delta-net state carry across ingests) ===
 
-    public static final class State implements RuntimeState {
+    public static final class State extends com.qxotic.jinfer.BaseState {
         final int contextCapacity, batchCapacity;
-        int position, outputCount, lastRowOffset;
+        int lastRowOffset;
 
         final FloatTensor x, xb, xb2, q, k, v, logits, ffnUp, ffnGate, ssmQkv, ssmTmp;
         final FloatTensor attnQ, attnOut, gateProj, alphaProj, betaProj;   // batched-prefill scratch (chunk rows)
@@ -903,8 +902,6 @@ public final class Qwen35 implements LanguageModel<Qwen35.Configuration, Qwen35.
 
         @Override public int contextCapacity() { return contextCapacity; }
         @Override public int batchCapacity()   { return batchCapacity; }
-        @Override public int position()         { return position; }
-        @Override public int outputCount()      { return outputCount; }
     }
 
     // === Loading ===

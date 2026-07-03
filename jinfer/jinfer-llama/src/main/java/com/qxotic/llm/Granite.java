@@ -193,9 +193,8 @@ public final class Granite implements LanguageModel<Granite.Configuration, Grani
 
     // === State ===
 
-    public static final class State implements RuntimeState {
+    public static final class State extends com.qxotic.jinfer.BaseState {
         final int contextCapacity, batchCapacity;
-        int position, outputCount, lastChunkLen;
         final FloatTensor x, xb, k, v, attnQ, attnOut, hb, hb2, logits;
         final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch();
         final FloatTensor[] keyCache, valueCache;
@@ -231,9 +230,6 @@ public final class Granite implements LanguageModel<Granite.Configuration, Grani
 
         @Override public int contextCapacity() { return contextCapacity; }
         @Override public int batchCapacity()   { return batchCapacity; }
-        @Override public int position()         { return position; }
-        @Override public int outputCount()      { return outputCount; }
-        @Override public void advance(int rows, com.qxotic.jinfer.Batch.Outputs outputs) { lastChunkLen = rows; outputCount = outputs == com.qxotic.jinfer.Batch.Outputs.ALL ? rows : 1; position += rows; }
     }
 
     // === Loading ===

@@ -65,7 +65,7 @@ final class Generation {
                 true,
                 requestThink(request),
                 request.get("chat_template_kwargs") instanceof Map<?, ?> kwargs ? (Map<String, Object>) kwargs : null);
-        List<Integer> promptTokens = new ArrayList<>(ChatFormats.forModel(tokenizer).encode(chatContext));
+        List<Integer> promptTokens = new ArrayList<>(ChatFormat.encode(tokenizer, chatContext));
         ToolUse.seedForced(tokenizer, request, promptTokens);
         if (System.getProperty("jinfer.debugPrompt") != null) {
             System.err.println("[prompt] " + tokenizer.decode(promptTokens));
