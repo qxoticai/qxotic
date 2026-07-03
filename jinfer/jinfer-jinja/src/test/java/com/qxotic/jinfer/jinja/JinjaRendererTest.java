@@ -715,7 +715,11 @@ public final class JinjaRendererTest {
         System.out.println("-- lenient quirks (no throw) --");
         // expression-level trim markers ({{- ... -}}) do NOT strip surrounding whitespace
         // (only statement-level {%- ... -%} markers do)
-        eq("a {{- 'b' }}", "a b");
-        eq("{{ 'a' -}} b", "a b");
+        // whitespace-control markers, reference jinja2 semantics: {{- strips the
+        // PRECEDING whitespace, -}} the FOLLOWING (was swapped before the fix).
+        eq("a {{- 'b' }}", "ab");
+        eq("{{ 'a' -}} b", "ab");
+        eq("a\n{%- if true %}b{% endif %}", "ab");
+        eq("a\n\n{#- c #}\n{%- if true %}b{% endif %}", "ab");
     }
 }
