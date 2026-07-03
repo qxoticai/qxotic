@@ -207,19 +207,39 @@ public final class PromptCache<S extends RuntimeState> {
             tip = next;
         }
         if (tip != sentinel) {
-            hits++;
             for (Block b = tip; b != sentinel; b = b.parent) chainScratch.add(b);
             for (int i = chainScratch.size() - 1; i >= 0; i--) {
                 Block b = chainScratch.get(i);
-                store.validate(b.mem);
+                if (!store.validate(b.mem)) {              // failed verification = a miss, never restored
+                    discard(b);                            // the block and everything chained on it
+                    tip = i + 1 <= chainScratch.size() - 1 ? chainScratch.get(i + 1) : sentinel;
+                    break;
+                }
                 codec.restore(state, b.from, b.to, b.mem);
             }
             chainScratch.clear();
+        }
+        if (tip != sentinel) {
+            hits++;
             state.resumeAt(tip.to);
         } else {
             misses++;
         }
         return new Cursor(tip);
+    }
+
+    /** Removes a block and its whole subtree from the tree and frees their blobs — used when a
+     *  stored blob fails verification: the cache degrades to a miss, never to a wrong answer. */
+    private void discard(Block b) {
+        for (Block child : List.copyOf(b.children)) discard(child);
+        b.live = false;
+        b.children.clear();
+        blocks.remove(b.key);
+        leaves.remove(b);
+        b.parent.children.remove(b);
+        if (b.parent != sentinel && b.parent.live && b.parent.children.isEmpty()) leaves.add(b.parent);
+        store.free(b.mem);
+        evictions++;
     }
 
     private final List<Block> chainScratch = new ArrayList<>();

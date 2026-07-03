@@ -83,6 +83,52 @@ public final class CachedSession<S extends RuntimeState> {
         }
     }
 
+    /** Ingests turn-aligned groups whose flattened fingerprints formed this session's resume
+     *  stream, skipping what the resume already restored: whole groups before the cursor, and the
+     *  restored HEAD of a partially-covered group. A cache hit ends on a BLOCK boundary, which
+     *  need not be a group boundary (a previous generation prompt is a byte-exact prefix of the
+     *  echoed assistant turn; long turns commit as several blocks) - re-ingesting the whole group
+     *  there would duplicate its restored head in the context and poison the cache. */
+    public void ingestGroups(List<List<Batch>> groups) {
+        int restored = state.position();
+        int pos = 0;
+        for (List<Batch> group : groups) {
+            int glen = 0;
+            for (Batch b : group) glen += b.count();
+            int end = pos + glen;
+            if (end <= restored) {                       // fully restored: skip
+                pos = end;
+                continue;
+            }
+            ingest(pos >= restored ? group : tail(group, restored - pos));
+            pos = end;
+        }
+    }
+
+    /** The group minus its first {@code skip} positions - whole batches drop, a token batch at
+     *  the seam is sliced. A hit strictly inside a media batch cannot happen (a media group is
+     *  one block, and its content-hash fingerprints never collide with token ids). */
+    private static List<Batch> tail(List<Batch> group, int skip) {
+        List<Batch> out = new java.util.ArrayList<>();
+        for (Batch b : group) {
+            int n = b.count();
+            if (skip >= n) {
+                skip -= n;
+                continue;
+            }
+            if (skip == 0) {
+                out.add(b);
+                continue;
+            }
+            if (!(b.input() instanceof Batch.Input.Tokens t)) {
+                throw new IllegalStateException("cache hit inside a non-token batch");
+            }
+            out.add(Batch.prefill(Arrays.copyOfRange(t.ids(), skip, n)));
+            skip = 0;
+        }
+        return out;
+    }
+
     private static final long GOLDEN = 0x9E3779B97F4A7C15L;
 
     /** SHA-256 of the raw row bits, as 4 longs — the media block's content identity. */

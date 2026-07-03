@@ -35,12 +35,13 @@ public interface CacheStore extends AutoCloseable {
     default void close() {}
 
     /**
-     * Opaque integrity hook. Callers invoke this after filling a newly allocated
-     * blob (commit) and before reading a previously stored blob (verify). The
-     * default does nothing; implementations that provide block-level checksums
-     * handle both commit and verify internally (idempotent after first call).
+     * Opaque integrity hook. Callers invoke this after filling a newly allocated blob (commit:
+     * stamps the checksum, returns true) and before reading a previously stored blob (verify).
+     * Returns false when the blob fails verification - the CALLER must then treat it as a miss
+     * (never restore the bytes) and {@link #free} it; the store itself does not reclaim, so a
+     * still-referenced blob can never alias a new allocation.
      */
-    default void validate(MemorySegment blob) {}
+    default boolean validate(MemorySegment blob) { return true; }
 
     /** Default backend: one confined arena per blob. */
     static CacheStore inMemory() {
@@ -170,8 +171,8 @@ final class BlockStore implements CacheStore {
     // ---- integrity ----
 
     @Override
-    public void validate(MemorySegment blob) {
-        if (blob == null || !inPool(blob)) return;
+    public boolean validate(MemorySegment blob) {
+        if (blob == null || !inPool(blob)) return true;
         long off = blob.address() - pool.address();
         int start = Math.toIntExact(off / blockDataSize);
         int blocks = Math.toIntExact((blob.byteSize() + blockDataSize - 1) / blockDataSize);
@@ -184,17 +185,13 @@ final class BlockStore implements CacheStore {
             if (stored == 0) {
                 pool.set(ValueLayout.JAVA_INT_UNALIGNED, crcSlot, actual);
             } else if (stored != actual) {
+                // report only: the caller treats this as a miss and frees the blob - reclaiming
+                // here would let a still-referenced blob alias a new allocation
                 System.err.println("[cache] CRC mismatch on block " + idx + " — discarding");
-                for (int j = b; j < blocks; j++) {
-                    if (usedBlocks.get(start + j)) {
-                        usedBlocks.clear(start + j);
-                        usedBytes -= blockDataSize;
-                    }
-                    pool.set(ValueLayout.JAVA_INT_UNALIGNED, crcOffset + (long) (start + j) * 4, 0);
-                }
-                return;
+                return false;
             }
         }
+        return true;
     }
 
     private int crc32c(long offset, long len) {
