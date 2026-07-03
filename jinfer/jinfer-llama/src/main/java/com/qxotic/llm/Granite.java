@@ -100,7 +100,9 @@ public final class Granite implements LanguageModel<Granite.Configuration, Grani
 
     @Override
     public java.util.Optional<com.qxotic.jinfer.cache.KvCodec<Granite.State>> kvCodec() {
-        return java.util.Optional.of(new GraniteKvCodec(config()));
+        // uniform full attention: the shared dense codec over this State's KV arrays
+        return java.util.Optional.of(new com.qxotic.jinfer.cache.DenseKvCodec<>(
+                config().numberOfLayers(), config().kvDim(), s -> s.keyCache, s -> s.valueCache));
     }
 
     // === Forward ===

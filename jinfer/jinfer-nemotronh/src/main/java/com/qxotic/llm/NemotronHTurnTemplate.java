@@ -3,13 +3,11 @@ package com.qxotic.llm;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.GgufTokenizer;
 import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /** Hand-written Nemotron-H chat framing (ChatML dialect), matching the GGUF chat_template's
  *  plain-conversation shape (no tools, {@code truncate_history_thinking=true} default).
@@ -35,32 +33,39 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
 
     public static final String DEFAULT_SYSTEM =
             "You are a helpful and harmless assistant.\n\nYou are not allowed to use any tools.";
-    private static final String THINK_PAIR = "<think></think>";
 
     private final GgufTokenizer tokenizer;
     private final int imStart;    // <|im_start|>
     private final int imEnd;      // <|im_end|>
     private final int think;      // <think>
     private final int endThink;   // </think>
-    private final List<Integer> newline;        // encode("\n"), constant
-    private final List<Integer> assistantNl;    // encode("assistant\n"), constant
+    private final List<Integer> newline;              // encode("\n"), constant
+    private final List<Integer> assistantNl;          // encode("assistant\n"), constant
+    private final List<Batch> genThinking, genDirect; // generation prompts, encoded once
+    private final List<Batch> closeTurn;              // <|im_end|>\n, constant
 
     public NemotronHTurnTemplate(GgufTokenizer tokenizer) {
         this.tokenizer = tokenizer;
-        Map<String, Integer> special = tokenizer.getSpecialTokens();
-        this.imStart = required(special, "<|im_start|>");
-        this.imEnd = required(special, "<|im_end|>");
-        this.think = required(special, "<think>");
-        this.endThink = required(special, "</think>");
+        this.imStart = tokenizer.requiredSpecial("<|im_start|>");
+        this.imEnd = tokenizer.requiredSpecial("<|im_end|>");
+        this.think = tokenizer.requiredSpecial("<think>");
+        this.endThink = tokenizer.requiredSpecial("</think>");
         this.newline = tokenizer.encode("\n");
         this.assistantNl = tokenizer.encode("assistant\n");
+        List<Integer> head = new ArrayList<>(List.of(imStart));
+        head.addAll(assistantNl);
+        head.add(think);
+        List<Integer> thinking = new ArrayList<>(head);
+        thinking.addAll(newline);                          // <|im_start|>assistant\n<think>\n
+        this.genThinking = List.of(Batch.prefill(thinking));
+        List<Integer> direct = new ArrayList<>(head);
+        direct.add(endThink);                              // <|im_start|>assistant\n<think></think>  (no newline)
+        this.genDirect = List.of(Batch.prefill(direct));
+        List<Integer> close = new ArrayList<>(List.of(imEnd));
+        close.addAll(newline);
+        this.closeTurn = List.of(Batch.prefill(close));
     }
 
-    private static int required(Map<String, Integer> special, String name) {
-        Integer id = special.get(name);
-        if (id == null) throw new IllegalArgumentException("tokenizer lacks " + name);
-        return id;
-    }
 
     /** No unconditional tokens (no bos). The default-system injection lives in {@link #encode}. */
     @Override
@@ -84,68 +89,41 @@ public final class NemotronHTurnTemplate implements TurnTemplate {
         List<Integer> ids = new ArrayList<>();
         ids.add(imStart);
         if (m.role().equals(Role.ASSISTANT)) {
-            String c = text(m);
-            if (!c.contains("<think>") && !c.contains("</think>")) c = THINK_PAIR + c;
-            if (c.contains("<think>") && c.contains("</think>")) {
-                c = THINK_PAIR + c.substring(c.lastIndexOf("</think>") + "</think>".length());
-            }
-            c = c.strip();
+            String c = m.textOnly();
+            int lastClose = c.lastIndexOf("</think>");
             ids.addAll(assistantNl);
-            if (c.startsWith(THINK_PAIR)) {
+            if (c.contains("<think>") == (lastClose >= 0)) {
+                // framed (both markers -> keep the tail after the last </think>) or plain (no
+                // markers -> the whole content): emit the empty pair, then the text with its
+                // trailing whitespace stripped (leading whitespace survives, as in the template)
+                String rest = (lastClose >= 0 ? c.substring(lastClose + "</think>".length()) : c).stripTrailing();
                 ids.add(think);
                 ids.add(endThink);
-                String rest = c.substring(THINK_PAIR.length());
                 if (!rest.isEmpty()) ids.addAll(tokenizer.encode(rest));
-            } else if (!c.isEmpty()) {
-                ids.addAll(tokenizer.encode(c));    // "broken thought" passthrough, plain-encoded
+            } else {
+                // "broken thought" (unpaired marker): plain-encoded passthrough, fully stripped
+                String rest = c.strip();
+                if (!rest.isEmpty()) ids.addAll(tokenizer.encode(rest));
             }
         } else {
             // user/system: role header + content is ONE contiguous run between the specials
-            ids.addAll(tokenizer.encode(m.role().name() + "\n" + text(m)));
+            ids.addAll(tokenizer.encode(m.role().name() + "\n" + m.textOnly()));
         }
         ids.add(imEnd);
         ids.addAll(newline);
-        return List.of(Batch.prefill(arr(ids)));
+        return List.of(Batch.prefill(ids));
     }
 
     @Override
     public List<Batch> generationPrompt(boolean thinking) {
-        List<Integer> ids = new ArrayList<>();
-        ids.add(imStart);
-        ids.addAll(assistantNl);
-        ids.add(think);
-        if (thinking) {
-            ids.addAll(newline);            // <|im_start|>assistant\n<think>\n
-        } else {
-            ids.add(endThink);              // <|im_start|>assistant\n<think></think>  (no newline)
-        }
-        return List.of(Batch.prefill(arr(ids)));
+        return thinking ? genThinking : genDirect;
     }
 
     /** Closes the assistant turn: {@code <|im_end|>\n} (the stop token is never ingested). */
     @Override
     public List<Batch> closeTurn() {
-        List<Integer> ids = new ArrayList<>();
-        ids.add(imEnd);
-        ids.addAll(newline);
-        return List.of(Batch.prefill(arr(ids)));
+        return closeTurn;
     }
 
-    private static String text(Message message) {
-        StringBuilder sb = new StringBuilder();
-        for (Part p : message.content()) {
-            if (p instanceof Part.Text t) {
-                sb.append(t.text());
-            } else {
-                throw new IllegalArgumentException("Nemotron-H is text-only: unsupported part " + p.getClass().getSimpleName());
-            }
-        }
-        return sb.toString();
-    }
 
-    private static int[] arr(List<Integer> ids) {
-        int[] a = new int[ids.size()];
-        for (int i = 0; i < a.length; i++) a[i] = ids.get(i);
-        return a;
-    }
 }

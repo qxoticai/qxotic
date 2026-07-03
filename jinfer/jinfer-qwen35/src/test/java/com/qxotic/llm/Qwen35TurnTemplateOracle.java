@@ -6,7 +6,6 @@
 //   java ... com.qxotic.llm.Qwen35TurnTemplateOracle [model.gguf]
 package com.qxotic.llm;
 
-import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.chat.Message;
 import com.qxotic.jinfer.chat.TurnTemplate;
 import com.qxotic.jinfer.testkit.OracleScenario;
@@ -47,12 +46,10 @@ public final class Qwen35TurnTemplateOracle {
         o.compare("no system, terse content", false,
                 List.of(Message.user("."), Message.assistant("ok"), Message.user("!")));
 
-        // the NON-thinking generation prompt: render with enable_thinking absent (the 2B default
-        // branch emits the pre-closed scaffold) and compare via an adapter whose thinking prompt
-        // IS the direct one. (The 35B template inverts the default; scaffolds are identical.)
-        OracleScenario direct = new OracleScenario(model,
-                tk -> new DirectPromptAdapter(new Qwen35TurnTemplate(tk)), Map.of());
-        direct.compare("gen prompt, thinking off (template default)", true,
+        // the NON-thinking generation prompt: enable_thinking=false selects the 2B template's
+        // pre-closed scaffold (same as its absent-var default; the 35B template inverts the
+        // default but its scaffolds are identical).
+        o.compare("gen prompt, thinking off", true, false, Map.of("enable_thinking", false),
                 List.of(Message.user("What is the capital of France?")));
 
         // INTENTIONAL divergence from the rescan oracle: the hand-written template plain-encodes
@@ -65,16 +62,7 @@ public final class Qwen35TurnTemplateOracle {
                 && o.tokenizer.decode(ids.subList(1, ids.size() - 2)).equals("user\n" + hostile.text().strip());
         o.check(inert, "special-token text is inert (content cannot mint control tokens)");
 
-        direct.finish("Qwen35TurnTemplateOracle (thinking off)");
         o.finish("Qwen35TurnTemplateOracle");
     }
 
-    /** Delegates everything, but its thinking generation prompt is the DIRECT scaffold - so the
-     *  shared compare (which always asks for thinking) exercises generationPrompt(false). */
-    private record DirectPromptAdapter(Qwen35TurnTemplate delegate) implements TurnTemplate {
-        @Override public List<Batch> encodeTurn(Message m) { return delegate.encodeTurn(m); }
-        @Override public List<Batch> conversationStart() { return delegate.conversationStart(); }
-        @Override public List<Batch> generationPrompt(boolean thinking) { return delegate.generationPrompt(false); }
-        @Override public List<Batch> closeTurn() { return delegate.closeTurn(); }
-    }
 }

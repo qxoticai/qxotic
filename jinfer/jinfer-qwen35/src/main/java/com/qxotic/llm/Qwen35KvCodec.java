@@ -1,9 +1,9 @@
 package com.qxotic.llm;
 
 import com.qxotic.jinfer.cache.KvCodec;
+import com.qxotic.jinfer.cache.KvTransfer;
 
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 
 /** Qwen3.5 (dense and MoE) resume-state codec: full-attention layers serialize their per-position
  *  K/V rows for the span (raw F16, bulk segment copies); gated-delta-net (SSM) layers serialize a
@@ -47,36 +47,26 @@ public final class Qwen35KvCodec implements KvCodec<Qwen35.State> {
 
     @Override
     public void save(Qwen35.State state, int from, int to, MemorySegment dst) {
-        long off = 0;
-        int n = to - from;
-        long kvDim = config.kvDim();
-        for (int l = 0; l < config.numberOfLayers; l++) {
-            if (config.isFullAttention[l]) {
-                off += state.keyCache[l].copyRawTo(from * kvDim, dst, off, n * kvDim);
-                off += state.valueCache[l].copyRawTo(from * kvDim, dst, off, n * kvDim);
-            } else {
-                off += state.ssmConvState[l].copyRawTo(0, dst, off, convFloats);
-                MemorySegment.copy(MemorySegment.ofArray(state.ssmState[l]), ValueLayout.JAVA_FLOAT, 0,
-                        dst, ValueLayout.JAVA_FLOAT_UNALIGNED, off, ssmFloats);
-                off += ssmFloats * 4L;
-            }
-        }
+        copy(state, from, to, dst, true);
     }
 
     @Override
     public void restore(Qwen35.State state, int from, int to, MemorySegment src) {
+        copy(state, from, to, src, false);
+    }
+
+    /** One walk drives both directions so the blob layout is single-sourced. */
+    private void copy(Qwen35.State state, int from, int to, MemorySegment blob, boolean out) {
         long off = 0;
         int n = to - from;
         long kvDim = config.kvDim();
         for (int l = 0; l < config.numberOfLayers; l++) {
             if (config.isFullAttention[l]) {
-                off += state.keyCache[l].copyRawFrom(src, off, from * kvDim, n * kvDim);
-                off += state.valueCache[l].copyRawFrom(src, off, from * kvDim, n * kvDim);
+                off += KvTransfer.transfer(state.keyCache[l], from * kvDim, blob, off, n * kvDim, out);
+                off += KvTransfer.transfer(state.valueCache[l], from * kvDim, blob, off, n * kvDim, out);
             } else {
-                off += state.ssmConvState[l].copyRawFrom(src, off, 0, convFloats);
-                MemorySegment.copy(src, ValueLayout.JAVA_FLOAT_UNALIGNED, off,
-                        MemorySegment.ofArray(state.ssmState[l]), ValueLayout.JAVA_FLOAT, 0, ssmFloats);
-                off += ssmFloats * 4L;
+                off += KvTransfer.transfer(state.ssmConvState[l], 0, blob, off, convFloats, out);
+                off += KvTransfer.transfer(state.ssmState[l], blob, off, out);
             }
         }
     }

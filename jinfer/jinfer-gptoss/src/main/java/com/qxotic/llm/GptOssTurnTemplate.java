@@ -3,7 +3,6 @@ package com.qxotic.llm;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.GgufTokenizer;
 import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
 
@@ -54,10 +53,10 @@ public final class GptOssTurnTemplate implements TurnTemplate {
     public GptOssTurnTemplate(GgufTokenizer tokenizer, String currentDate) {
         this.tokenizer = tokenizer;
         Map<String, Integer> special = tokenizer.getSpecialTokens();
-        this.start = required(special, "<|start|>");
-        this.message = required(special, "<|message|>");
-        this.channel = required(special, "<|channel|>");
-        this.end = required(special, "<|end|>");
+        this.start = tokenizer.requiredSpecial("<|start|>");
+        this.message = tokenizer.requiredSpecial("<|message|>");
+        this.channel = tokenizer.requiredSpecial("<|channel|>");
+        this.end = tokenizer.requiredSpecial("<|end|>");
         this.systemText = DEFAULT_IDENTITY + "\n"
                 + "Knowledge cutoff: 2024-06\n"
                 + "Current date: " + currentDate + "\n\n"
@@ -69,14 +68,9 @@ public final class GptOssTurnTemplate implements TurnTemplate {
         ids.add(message);
         ids.addAll(tokenizer.encode(systemText));
         ids.add(end);
-        this.conversationStart = List.of(Batch.prefill(arr(ids)));
+        this.conversationStart = List.of(Batch.prefill(ids));
     }
 
-    private static int required(Map<String, Integer> special, String name) {
-        Integer id = special.get(name);
-        if (id == null) throw new IllegalArgumentException("tokenizer lacks " + name);
-        return id;
-    }
 
     /** The fixed Harmony system preamble: {@code <|start|>system<|message|>{...}<|end|>}. */
     @Override
@@ -91,20 +85,20 @@ public final class GptOssTurnTemplate implements TurnTemplate {
         if (m.role().equals(Role.SYSTEM)) {                 // conversation system -> developer block
             ids.addAll(tokenizer.encode("developer"));
             ids.add(message);
-            ids.addAll(tokenizer.encode("# Instructions\n\n" + text(m)));
+            ids.addAll(tokenizer.encode("# Instructions\n\n" + m.textOnly()));
         } else if (m.role().equals(Role.ASSISTANT)) {       // history keeps only the final channel
             ids.addAll(tokenizer.encode("assistant"));
             ids.add(channel);
             ids.addAll(tokenizer.encode("final"));
             ids.add(message);
-            ids.addAll(tokenizer.encode(text(m)));
+            ids.addAll(tokenizer.encode(m.textOnly()));
         } else {
             ids.addAll(tokenizer.encode(m.role().name()));
             ids.add(message);
-            ids.addAll(tokenizer.encode(text(m)));
+            ids.addAll(tokenizer.encode(m.textOnly()));
         }
         ids.add(end);
-        return List.of(Batch.prefill(arr(ids)));
+        return List.of(Batch.prefill(ids));
     }
 
     /** {@code <|start|>assistant} - the model emits its own channel tokens from here. */
@@ -113,7 +107,7 @@ public final class GptOssTurnTemplate implements TurnTemplate {
         List<Integer> ids = new ArrayList<>();
         ids.add(start);
         ids.addAll(tokenizer.encode("assistant"));
-        return List.of(Batch.prefill(arr(ids)));
+        return List.of(Batch.prefill(ids));
     }
 
     /** Closes the open message: {@code <|end|>} (the {@code <|return|>} stop is never ingested). */
@@ -122,21 +116,5 @@ public final class GptOssTurnTemplate implements TurnTemplate {
         return List.of(Batch.prefill(new int[]{end}));
     }
 
-    private static String text(Message m) {
-        StringBuilder sb = new StringBuilder();
-        for (Part p : m.content()) {
-            if (p instanceof Part.Text t) {
-                sb.append(t.text());
-            } else {
-                throw new IllegalArgumentException("GptOssTurnTemplate is text-only for now: " + p.getClass().getSimpleName());
-            }
-        }
-        return sb.toString();
-    }
 
-    private static int[] arr(List<Integer> l) {
-        int[] a = new int[l.size()];
-        for (int i = 0; i < a.length; i++) a[i] = l.get(i);
-        return a;
-    }
 }

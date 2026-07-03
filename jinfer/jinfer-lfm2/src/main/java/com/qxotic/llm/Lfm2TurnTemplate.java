@@ -3,7 +3,6 @@ package com.qxotic.llm;
 import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.GgufTokenizer;
 import com.qxotic.jinfer.chat.Message;
-import com.qxotic.jinfer.chat.Part;
 import com.qxotic.jinfer.chat.Role;
 import com.qxotic.jinfer.chat.TurnTemplate;
 
@@ -41,16 +40,16 @@ public final class Lfm2TurnTemplate implements TurnTemplate {
     public Lfm2TurnTemplate(GgufTokenizer tokenizer) {
         this.tokenizer = tokenizer;
         Map<String, Integer> special = tokenizer.getSpecialTokens();
-        this.bos = required(special, "<|startoftext|>");
-        this.imStart = required(special, "<|im_start|>");
-        this.imEnd = required(special, "<|im_end|>");
+        this.bos = tokenizer.requiredSpecial("<|startoftext|>");
+        this.imStart = tokenizer.requiredSpecial("<|im_start|>");
+        this.imEnd = tokenizer.requiredSpecial("<|im_end|>");
         this.newline = ids(tokenizer.encode("\n"));
         List<Integer> gen = new java.util.ArrayList<>(List.of(imStart));
         gen.addAll(tokenizer.encode("assistant\n"));
-        this.generationPrompt = List.of(Batch.prefill(ids(gen)));
+        this.generationPrompt = List.of(Batch.prefill(gen));
         List<Integer> close = new java.util.ArrayList<>(List.of(imEnd));
         close.addAll(tokenizer.encode("\n"));
-        this.closeTurn = List.of(Batch.prefill(ids(close)));
+        this.closeTurn = List.of(Batch.prefill(close));
     }
 
     private static int[] ids(List<Integer> l) {
@@ -59,11 +58,6 @@ public final class Lfm2TurnTemplate implements TurnTemplate {
         return a;
     }
 
-    private static int required(Map<String, Integer> special, String name) {
-        Integer id = special.get(name);
-        if (id == null) throw new IllegalArgumentException("tokenizer lacks " + name);
-        return id;
-    }
 
     @Override
     public List<Batch> conversationStart() {
@@ -72,7 +66,7 @@ public final class Lfm2TurnTemplate implements TurnTemplate {
 
     @Override
     public List<Batch> encodeTurn(Message message) {
-        String content = text(message);
+        String content = message.textOnly();
         if (message.role().equals(Role.ASSISTANT)) content = stripThinking(content);
         // <|im_start|> {role}\n{content} <|im_end|> \n   — one contiguous plain run per text span
         List<Integer> body = tokenizer.encode(message.role().name() + "\n" + content);
@@ -95,17 +89,6 @@ public final class Lfm2TurnTemplate implements TurnTemplate {
         return closeTurn;
     }
 
-    private static String text(Message message) {
-        StringBuilder sb = new StringBuilder();
-        for (Part p : message.content()) {
-            if (p instanceof Part.Text t) {
-                sb.append(t.text());
-            } else {
-                throw new IllegalArgumentException("LFM2.5 is text-only: unsupported part " + p.getClass().getSimpleName());
-            }
-        }
-        return sb.toString();
-    }
 
     /** The template keeps only the text after the last {@code </think>} in historical assistant
      *  turns: {@code content.split("</think>")[-1] | trim}. */
