@@ -30,11 +30,11 @@ public final class GemvSeqBench {
 
         for (int it = 0; it < 4; it++)
             for (int g = 0; g < nGemv; g++)
-                MatMul.INSTANCE.mm(w, (long) g * rowsPerGemv * dim1, dim1, x, 0, dim1, out, g * rowsPerGemv, rowsPerGemv, rowsPerGemv, 1, dim1);
+                MatMul.instance().mm(w, (long) g * rowsPerGemv * dim1, dim1, x, 0, dim1, out, g * rowsPerGemv, rowsPerGemv, rowsPerGemv, 1, dim1);
         long t0 = System.nanoTime();
         for (int it = 0; it < iters; it++)
             for (int g = 0; g < nGemv; g++)
-                MatMul.INSTANCE.mm(w, (long) g * rowsPerGemv * dim1, dim1, x, 0, dim1, out, g * rowsPerGemv, rowsPerGemv, rowsPerGemv, 1, dim1);
+                MatMul.instance().mm(w, (long) g * rowsPerGemv * dim1, dim1, x, 0, dim1, out, g * rowsPerGemv, rowsPerGemv, rowsPerGemv, 1, dim1);
         long t1 = System.nanoTime();
 
         double secs = (t1 - t0) / 1e9;

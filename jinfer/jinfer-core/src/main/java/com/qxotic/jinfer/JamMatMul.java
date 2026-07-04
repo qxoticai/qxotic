@@ -21,7 +21,9 @@ final class JamMatMul implements MatMul {
 
     static boolean tryLoad() {
         if (Boolean.getBoolean("jinfer.disableJam")) return false;       // force the Java backends (testing)
-        try { Class.forName("com.qxotic.jam.NativeJAM"); return true; }  // triggers libjam load (NativeJAM static init)
+        // Direct touch triggers NativeJAM's static init (libjam load). Deliberately NOT Class.forName:
+        // reflective lookup needs registration on native image and silently disabled jam there.
+        try { NativeJAM.global(); return true; }
         catch (Throwable t) {
             System.err.println("jam native library unavailable (" + t + "); using the Java backends.");
             return false;

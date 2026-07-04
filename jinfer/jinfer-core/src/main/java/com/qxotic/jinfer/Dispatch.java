@@ -29,6 +29,8 @@ final class Dispatch implements MatMul {
         this.scalar = scalar;
     }
 
+    static final MatMul ACTIVE = create();
+
     static Dispatch create() {
         MatMul scalar = new ScalarMatMul();
         MatMul vector = new VectorMatMul(scalar);
