@@ -115,11 +115,11 @@ void jam_mm_f32_avx2(void* arg, int rb, int re, int tid) {
 static inline __m256 loadw_f16_256(const uint16_t* p)  { return _mm256_cvtph_ps(_mm_loadu_si128((const __m128i*) p)); }
 static inline __m256 loadw_bf16_256(const uint16_t* p) { return _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(_mm_loadu_si128((const __m128i*) p)), 16)); }
 
-#define JAM_DENSE_AVX2(NAME, LOADW)                                                                       \
+#define JAM_DENSE_AVX2(NAME, LOADW, WTYPE)                                                                \
 void NAME(void* arg, int rb, int re, int tid) {                                                           \
     (void) tid;                                                                                           \
     const jam_mm_job* J = (const jam_mm_job*) arg;                                                        \
-    const uint16_t* W = (const uint16_t*) J->a;                                                           \
+    const WTYPE* W = (const WTYPE*) J->a;                                                           \
     const float* X = (const float*) J->b;                                                                 \
     float* C = (float*) J->c;                                                                             \
     const int ldw = J->lda, ldx = J->ldb, ldc = J->ldc, n = J->n, k = J->k;                              \
@@ -127,7 +127,7 @@ void NAME(void* arg, int rb, int re, int tid) {                                 
      * swept across the whole row block (weights ~RB*k*2B, L2-resident), so the activation matrix is     \
      * read from L3 once per BLOCK instead of once per row-pair: L3 activation traffic drops RB/2 x.     \
      * The old nest collapsed at 4096^3 (413 -> 210 GMAC/s) on exactly that traffic. */                  \
-    int RB = (int)(512*1024 / ((size_t) k * 2)); RB &= ~1; if (RB < 8) RB = 8; if (RB > 128) RB = 128;   \
+    int RB = (int)(512*1024 / ((size_t) k * sizeof(WTYPE))); RB &= ~1; if (RB < 8) RB = 8; if (RB > 128) RB = 128;   \
     for (int r0 = rb; r0 < re; r0 += RB) {                                                                \
         const int rbe = r0 + RB < re ? r0 + RB : re;                                                      \
         int s = 0;                                                                                        \
@@ -135,7 +135,7 @@ void NAME(void* arg, int rb, int re, int tid) {                                 
             const float *x0=X+(int64_t)s*ldx,*x1=x0+ldx,*x2=x1+ldx,*x3=x2+ldx;                            \
             int r = r0;                                                                                   \
             for (; r + 3 <= rbe; r += 3) {                                                                \
-                const uint16_t *w0=W+(int64_t)r*ldw,*w1=w0+ldw,*w2=w1+ldw;                                \
+                const WTYPE *w0=W+(int64_t)r*ldw,*w1=w0+ldw,*w2=w1+ldw;                                \
                 __m256 a00=_mm256_setzero_ps(),a01=a00,a02=a00,a03=a00;                                   \
                 __m256 a10=a00,a11=a00,a12=a00,a13=a00, a20=a00,a21=a00,a22=a00,a23=a00;                  \
                 for (int t = 0; t < k; t += 8) {                                                          \
@@ -151,7 +151,7 @@ void NAME(void* arg, int rb, int re, int tid) {                                 
                 o2[0]=hsum8(a02);o2[1]=hsum8(a12);o2[2]=hsum8(a22); o3[0]=hsum8(a03);o3[1]=hsum8(a13);o3[2]=hsum8(a23); \
             }                                                                                             \
             for (; r + 2 <= rbe; r += 2) {                                                                \
-                const uint16_t *w0=W+(int64_t)r*ldw,*w1=w0+ldw;                                           \
+                const WTYPE *w0=W+(int64_t)r*ldw,*w1=w0+ldw;                                           \
                 __m256 a00=_mm256_setzero_ps(),a01=a00,a02=a00,a03=a00, a10=a00,a11=a00,a12=a00,a13=a00;  \
                 for (int t = 0; t < k; t += 8) {                                                          \
                     __m256 wv0=LOADW(w0+t),wv1=LOADW(w1+t);                                               \
@@ -164,7 +164,7 @@ void NAME(void* arg, int rb, int re, int tid) {                                 
                 o2[0]=hsum8(a02);o2[1]=hsum8(a12); o3[0]=hsum8(a03);o3[1]=hsum8(a13);                      \
             }                                                                                             \
             if (r < rbe) {                                                                                \
-                const uint16_t* w = W+(int64_t)r*ldw;                                                     \
+                const WTYPE* w = W+(int64_t)r*ldw;                                                     \
                 __m256 b0=_mm256_setzero_ps(),b1=b0,b2=b0,b3=b0;                                          \
                 for (int t = 0; t < k; t += 8) {                                                          \
                     __m256 wv=LOADW(w+t);                                                                 \
@@ -179,13 +179,13 @@ void NAME(void* arg, int rb, int re, int tid) {                                 
             const float* xs = X+(int64_t)s*ldx;                                                           \
             int r = r0;                                                                                   \
             for (; r + 2 <= rbe; r += 2) {                                                                \
-                const uint16_t *w0=W+(int64_t)r*ldw,*w1=w0+ldw;                                           \
+                const WTYPE *w0=W+(int64_t)r*ldw,*w1=w0+ldw;                                           \
                 __m256 b0=_mm256_setzero_ps(),b1=b0;                                                      \
                 for (int t=0;t<k;t+=8){ __m256 xv=_mm256_loadu_ps(xs+t); b0=_mm256_fmadd_ps(LOADW(w0+t),xv,b0);b1=_mm256_fmadd_ps(LOADW(w1+t),xv,b1); } \
                 float* o=C+(int64_t)s*ldc+r; o[0]=hsum8(b0);o[1]=hsum8(b1);                                \
             }                                                                                             \
             if (r < rbe) {                                                                                \
-                const uint16_t* w = W+(int64_t)r*ldw;                                                     \
+                const WTYPE* w = W+(int64_t)r*ldw;                                                     \
                 __m256 acc=_mm256_setzero_ps();                                                           \
                 for (int t=0;t<k;t+=8) acc=_mm256_fmadd_ps(LOADW(w+t), _mm256_loadu_ps(xs+t), acc);       \
                 C[(int64_t)s*ldc+r]=hsum8(acc);                                                           \
@@ -193,5 +193,7 @@ void NAME(void* arg, int rb, int re, int tid) {                                 
         }                                                                                                 \
     }                                                                                                     \
 }
-JAM_DENSE_AVX2(jam_mm_f16_avx2,  loadw_f16_256)
-JAM_DENSE_AVX2(jam_mm_bf16_avx2, loadw_bf16_256)
+static inline __m256 loadw_f32_256(const float* p) { return _mm256_loadu_ps(p); }
+JAM_DENSE_AVX2(jam_mm_f16_avx2,  loadw_f16_256,  uint16_t)
+JAM_DENSE_AVX2(jam_mm_bf16_avx2, loadw_bf16_256, uint16_t)
+JAM_DENSE_AVX2(jam_mm_f32d_avx2, loadw_f32_256,  float)

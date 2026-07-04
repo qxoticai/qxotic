@@ -257,7 +257,8 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
         c->q8_0_rp_kernel = jam_mm_q8_0_rp_avx2; c->q8_0_repack = jam_q8_0_repack8;   /* 8-feat-wide cached repack */
         c->mxfp4_rp_kernel = jam_mm_mxfp4_rp_avx2; c->mxfp4_repack = jam_mxfp4_repack8;   /* int16-deferred madd */
         c->q4_0_repack = jam_q4_0_repack8;   /* Q4_0 -> signed q-8, then the same bias-free maddubs kernel */
-        c->dense_f16_kernel = jam_mm_f16_avx2; c->dense_bf16_kernel = jam_mm_bf16_avx2; }
+        c->dense_f16_kernel = jam_mm_f16_avx2; c->dense_bf16_kernel = jam_mm_bf16_avx2;
+        c->dense_f32_kernel = jam_mm_f32d_avx2; }
 #endif
 #ifdef JAM_HAVE_AVXVNNI
     /* AVX-VNNI is orthogonal to the ladder: cpu>=AVX_VNNI is necessary (it respects max_isa) but NOT
@@ -275,7 +276,8 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
 #endif
 #ifdef JAM_HAVE_AVX512
     if (cpu >= JAM_ISA_AVX512) {    c->f32_kernel = jam_mm_f32_avx512;
-        c->dense_f16_kernel = jam_mm_f16_avx512; c->dense_bf16_kernel = jam_mm_bf16_avx512; }
+        c->dense_f16_kernel = jam_mm_f16_avx512; c->dense_bf16_kernel = jam_mm_bf16_avx512;
+        c->dense_f32_kernel = 0; /* avx512 mnpack beats the avx2 dense shape */ }
     if (cpu >= JAM_ISA_AVX512_VNNI) c->q8_kernel  = jam_mm_q8_0_avx512;    /* 512-bit VNNI (best) */
     c->q4k_avail = (cpu >= JAM_ISA_AVX512_VNNI);                               /* Q4_K is VNNI-only */
 #endif
@@ -598,7 +600,8 @@ static jam_status jam_mm_run(jam_ctx* ctx,
 
     if (wt == JAM_F32 && at == JAM_F32 && ct == JAM_F32) {
         jam_mm_job job = { w, wt, ldw, a, at, lda, c, ct, ldc, n, k };
-        jam_run(ctx, m, ctx->f32_kernel, &job);   /* pool fans the row-range kernel over m weight rows */
+        jam_task_fn fastd = (ctx->dense_f32_kernel && (k % 8 == 0)) ? ctx->dense_f32_kernel : ctx->f32_kernel;
+        jam_run(ctx, m, fastd, &job);   /* pool fans the row-range kernel over m weight rows */
         return JAM_OK;
     }
 
