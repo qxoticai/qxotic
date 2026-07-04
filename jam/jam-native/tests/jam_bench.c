@@ -50,6 +50,8 @@ static double wbytes_per_val(int at) {
         case JAM_Q4_K: return 144.0 / 256.0;   /* 0.5625 */
         case JAM_Q5_K: return 176.0 / 256.0;   /* 0.6875 */
         case JAM_Q6_K: return 210.0 / 256.0;   /* 0.8203 */
+        case JAM_MXFP4: return 17.0 / 32.0;    /* 0.5313 */
+        case JAM_NVFP4: return 36.0 / 64.0;    /* 0.5625 */
         case JAM_F16: case JAM_BF16: return 2.0;
         default:       return 4.0;             /* F32 */
     }
@@ -78,6 +80,7 @@ int main(int argc, char** argv) {
     if (M<1) M=1; if (N<1) N=1; if (K<32) K=32; if (K%32) K -= K%32;   /* Q8_0 needs k a multiple of 32 */
     const char* nts = getenv("JAM_NUM_THREADS"); int nt = nts?atoi(nts):0;
     const char* want = getenv("JAM_ISA");   /* if set, bench only this isa (isolated -> stable numbers) */
+    const char* wantdt = getenv("JAM_DTYPE"); /* if set, bench only this dtype (perf isolation) */
     /* scrub buffer must exceed the LLC to force DRAM reads — default 256MB covers up to a 128MB V-cache.
      * Override with JAM_BENCH_SCRUB_MB on big-iron (>256MB L3) or to shrink it on small machines. */
     int scrub_mb = getenv("JAM_BENCH_SCRUB_MB") ? atoi(getenv("JAM_BENCH_SCRUB_MB")) : 256;
@@ -103,9 +106,12 @@ int main(int argc, char** argv) {
         Wq6k = jam_ref_make_q6k(M, K, 1, wdq, wmin);
         free(wdq); free(wmin);
     }
+    void* Wmx = (K % 32 == 0) ? jam_ref_quant_mxfp4(Wf, M, K) : NULL;
+    void* Wnv = (K % 64 == 0) ? jam_ref_quant_nvfp4(Wf, M, K) : NULL;
     struct { int at; const void* W; const char* nm; } QS[] = {
         { JAM_F32, Wf, "F32" }, { JAM_F16, Wf16, "F16" }, { JAM_BF16, Wbf16, "BF16" }, { JAM_Q8_0, Wq, "Q8_0" }, { JAM_Q4_0, Wq40, "Q4_0" },
         { JAM_Q4_K, Wq4k, "Q4_K" }, { JAM_Q5_K, Wq5k, "Q5_K" }, { JAM_Q6_K, Wq6k, "Q6_K" },
+        { JAM_MXFP4, Wmx, "MXFP4" }, { JAM_NVFP4, Wnv, "NVFP4" },
     };
 
     printf("jam bench  m=%d n=%d k=%d  threads=%s%s  (scrub %dMB/call)\n",
@@ -123,6 +129,7 @@ int main(int argc, char** argv) {
         if (jam_active_isa(c) != lvl) { jam_ctx_destroy(c); continue; }           /* hw lacks this level */
         for (unsigned Q=0; Q<sizeof QS/sizeof*QS; ++Q) {
             if (!QS[Q].W) continue;                                              /* K-quant skipped (k%256) */
+            if (wantdt && strcmp(wantdt, QS[Q].nm) != 0) continue;                 /* JAM_DTYPE filter */
             usleep(300000);   /* cooldown so back-to-back kernels aren't thermally coupled */
             perf p = bench(c, QS[Q].W, QS[Q].at, B, C, M, N, K, iters);
             printf("  %-10s %-6s %12.1f %9.1f\n", jam_isa_name(lvl), QS[Q].nm, p.gmac, p.gbs);
