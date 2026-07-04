@@ -126,7 +126,8 @@
                                 <buildArg>--enable-native-access=ALL-UNNAMED</buildArg>
                                 <buildArg>-J--enable-native-access=ALL-UNNAMED</buildArg>
                                 <buildArg>--initialize-at-build-time=com.qxotic.</buildArg>
-                                <buildArg>--initialize-at-run-time=com.qxotic.jinfer.RuntimeFlags,com.qxotic.jinfer.Parallel</buildArg>
+                                <buildArg>--initialize-at-run-time=com.qxotic.jinfer.RuntimeFlags,com.qxotic.jinfer.Parallel,com.qxotic.jam.NativeJAM,com.qxotic.jam.NativeLoader</buildArg>
+                                <buildArg>-H:IncludeResources=com/qxotic/jam/native/.*</buildArg>
                                 <buildArg>-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0</buildArg>
                                 <buildArg>-Djinfer.PreloadGGUF=${jinfer.PreloadGGUF}</buildArg>
                             </buildArgs>

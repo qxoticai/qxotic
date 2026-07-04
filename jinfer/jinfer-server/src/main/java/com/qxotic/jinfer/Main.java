@@ -132,6 +132,22 @@ public class Main {
         int startPosition = state.position();
         int budget = options.maxTokens() < 0 ? -1
                 : options.maxTokens() - (startPosition + promptTokens.size());
+        // Chunk long prompts to the state's batch capacity; the final chunk rides through the
+        // Generator (which needs >=1 prompt token for fresh logits).
+        int totalPrompt = promptTokens.size();
+        long chunkNanos = 0;
+        int cap = state.batchCapacity();
+        while (promptTokens.size() > cap) {
+            int[] ids = new int[cap];
+            for (int i = 0; i < cap; i++) ids[i] = promptTokens.get(i);
+            if (options.echo()) {
+                for (int id : ids) System.err.print(replaceControlCharacters(tokenizer.decode(id)));
+            }
+            long t0 = System.nanoTime();
+            model.ingest(state, Batch.prefill(ids));
+            chunkNanos += System.nanoTime() - t0;
+            promptTokens = promptTokens.subList(cap, promptTokens.size());
+        }
         Generator.Params params = new Generator.Params(sampler, budget, 0, // CLI: no generation deadline
                 new Generator.StopSpec(stopTokens, List.of()), options.think());
         Generator.GenerationResult result = Generator.generate(model, state, promptTokens, params,
@@ -141,8 +157,8 @@ public class Main {
         String timingSuffix = options.colors() ? ANSI_RESET : "";
         System.err.printf("%n%scontext: %d/%d prompt: %.2f tokens/s (%d) generation: %.2f tokens/s (%d)%s%n",
                 timingPrefix,
-                startPosition + promptTokens.size() + generated, model.config().contextLength(),
-                promptTokens.size() / (result.promptMillis() / 1000.0), promptTokens.size(),
+                startPosition + totalPrompt + generated, model.config().contextLength(),
+                totalPrompt / (chunkNanos / 1e6 / 1000.0 + result.promptMillis() / 1000.0), totalPrompt,
                 generated / (result.predictedMillis() / 1000.0), generated,
                 timingSuffix);
         return result;
@@ -363,7 +379,8 @@ public class Main {
             messages.add(Map.of("role", "user", "content", options.prompt()));
             promptTokens = ChatFormat.encode(model.tokenizer(), new ChatContext(messages, null, true, options.think(), Map.of()));
         }
-        S state = model.newState(model.config().contextLength(), Math.max(promptTokens.size(), 16));
+        S state = model.newState(model.config().contextLength(),
+                Math.min(Math.max(promptTokens.size(), 16), RuntimeFlags.BATCH_CAPACITY));   // ports chunk long prompts
 
         // --sealed: restore the whole prompt from the sealed file (instant TTFT), or create it on
         // the first run. Any mismatch (different prompt/model) falls back to a plain prefill.
@@ -463,7 +480,8 @@ public class Main {
                 history.add(Map.of("role", "user", "content", userText));
                 List<Integer> promptTokens = ChatFormat.encode(model.tokenizer(), new ChatContext(history, null, true, options.think(), Map.of()));
                 Generator.GenerationResult result = generateCli(model,
-                        model.newState(model.config().contextLength(), Math.max(promptTokens.size(), 16)),
+                        model.newState(model.config().contextLength(),
+                                Math.min(Math.max(promptTokens.size(), 16), RuntimeFlags.BATCH_CAPACITY)),
                         promptTokens, stops, sampler, options);
                 if (!options.stream()) {
                     System.out.println(result.text());
