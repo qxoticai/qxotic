@@ -12,6 +12,8 @@
 package com.qxotic.jinfer;
 
 import com.qxotic.format.gguf.GGUF;
+import com.qxotic.jinfer.chat.Message;
+import com.qxotic.jinfer.chat.TurnTemplate;
 
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
@@ -184,6 +186,8 @@ public class Main {
             out.println("  --think <off|on|inline>       on: show thinking (default), off: hide thinking from output (model still generates it), inline: thoughts to stdout");
             out.println("  --keep-past-thinking <bool>   keep prior assistant thinking in history (default false)");
             out.println("  --raw-prompt                  bypass chat template and tokenize --prompt directly");
+            out.println("  --sealed <file>               instruct: sealed-prompt cache for the (system+prompt) prefix;");
+            out.println("                                created on first run, restored (instant TTFT) after");
             out.println("  --warm-prompt <file>          server: pre-ingest the file into the prompt cache (fully");
             out.println("                                dense - requests diverging anywhere inside it resume");
             out.println("                                token-exact); repeatable");
@@ -220,6 +224,7 @@ public class Main {
             boolean keepPastThinking = false;
             boolean rawPrompt = false;
             boolean noGrammar = false;
+            Path sealedPrompt = null;
             List<String> warmPrompts = new ArrayList<>();
 
             for (int i = 0; i < args.length; i++) {
@@ -262,6 +267,7 @@ public class Main {
                             case "--color" -> colorMode = nextArg.toLowerCase(Locale.ROOT);
                             case "--keep-past-thinking" -> keepPastThinking = LLMOptions.parseBooleanOption(optionName, nextArg);
                             case "--warm-prompt" -> warmPrompts.add(nextArg);
+                            case "--sealed" -> sealedPrompt = Path.of(nextArg);
                             case "--think" -> {
                                 String thinkMode = nextArg.toLowerCase(Locale.ROOT);
                                 thinkInline = List.of("inline", "stdout").contains(thinkMode);
@@ -278,7 +284,7 @@ public class Main {
             }
             LLMOptions.require(List.of("on", "off", "auto").contains(colorMode), "Invalid argument: --color must be one of on|off|auto");
             boolean color = LLMOptions.supportsAnsiColors(colorMode);
-            return new LLMOptions(modelPath, prompt, suffix, systemPrompt, interactive, server, host, port, temperature, topp, seed, maxTokens, stream, echo, think, thinkInline, color, keepPastThinking, rawPrompt, List.copyOf(warmPrompts), noGrammar);
+            return new LLMOptions(modelPath, prompt, suffix, systemPrompt, interactive, server, host, port, temperature, topp, seed, maxTokens, stream, echo, think, thinkInline, color, keepPastThinking, rawPrompt, List.copyOf(warmPrompts), noGrammar, sealedPrompt);
         }
 
     /** Force UTF-8 on the console so multilingual model output/input isn't garbled by a legacy code page
@@ -318,28 +324,132 @@ public class Main {
         runGeneric(model, sampler, options);
     }
 
-    /** CLI driver for any model via its chat template: a one-shot {@code --prompt} or an interactive
-     *  {@code --chat} loop, rebuilding the full prompt each turn (fresh state, no incremental resume). */
+    /** CLI driver: a one-shot {@code --prompt} or an interactive {@code --chat} loop. Models
+     *  exposing a {@link TurnTemplate} run INCREMENTALLY - one persistent state, only each new
+     *  turn ingested (the validated turn-by-turn framing; replies stay in the KV verbatim);
+     *  everything else falls back to the whole-render Jinja path with a fresh state per turn. */
     static <S extends RuntimeState> void runGeneric(LanguageModel<?, ?, S> model, Sampler sampler, LLMOptions options) throws IOException {
-        Set<Integer> stops = model.stopTokens();
+        TurnTemplate template = options.rawPrompt() ? null : model.turnTemplate().orElse(null);
         if (!options.interactive()) {
+            runInstruct(model, template, sampler, options);
+        } else if (template != null) {
+            runChatIncremental(model, template, sampler, options);
+        } else {
+            runChatWholeRender(model, sampler, options);
+        }
+    }
+
+    private static <S extends RuntimeState> void runInstruct(LanguageModel<?, ?, S> model, TurnTemplate template,
+                                                             Sampler sampler, LLMOptions options) throws IOException {
+        Set<Integer> stops = model.stopTokens();
+        List<Integer> promptTokens;
+        if (options.rawPrompt()) {
+            promptTokens = new ArrayList<>(model.tokenizer().encodeWithSpecialTokens(options.prompt()));
+        } else if (template != null) {
+            List<Message> turns = new ArrayList<>();
+            if (options.systemPrompt() != null) {
+                turns.add(Message.system(options.systemPrompt()));
+            }
+            turns.add(Message.user(options.prompt()));
+            List<Batch> batches = new ArrayList<>(template.encode(template.normalize(turns)));
+            batches.addAll(template.generationPrompt(options.think()));
+            promptTokens = new ArrayList<>();
+            for (int id : Batch.tokenIds(batches)) promptTokens.add(id);
+        } else {
             List<Object> messages = new ArrayList<>();
             if (options.systemPrompt() != null) {
                 messages.add(Map.of("role", "system", "content", options.systemPrompt()));
             }
             messages.add(Map.of("role", "user", "content", options.prompt()));
-            List<Integer> promptTokens = options.rawPrompt()
-                    ? new ArrayList<>(model.tokenizer().encodeWithSpecialTokens(options.prompt()))
-                    : ChatFormat.encode(model.tokenizer(), new ChatContext(messages, null, true, options.think(), Map.of()));
-            Generator.GenerationResult result = generateCli(model,
-                    model.newState(model.config().contextLength(), Math.max(promptTokens.size(), 16)),
-                    promptTokens, stops, sampler, options);
-            if (!options.stream()) {
-                System.out.println(result.text());
+            promptTokens = ChatFormat.encode(model.tokenizer(), new ChatContext(messages, null, true, options.think(), Map.of()));
+        }
+        S state = model.newState(model.config().contextLength(), Math.max(promptTokens.size(), 16));
+
+        // --sealed: restore the whole prompt from the sealed file (instant TTFT), or create it on
+        // the first run. Any mismatch (different prompt/model) falls back to a plain prefill.
+        if (options.sealedPrompt() != null && model.kvCodec().isPresent()) {
+            var codec = model.kvCodec().get();
+            long[] fp = new long[promptTokens.size()];
+            for (int i = 0; i < fp.length; i++) fp[i] = promptTokens.get(i);
+            byte[] seed = com.qxotic.jinfer.cache.PromptCache.modelSeed(options.modelPath());
+            if (Files.exists(options.sealedPrompt())) {
+                long t0 = System.nanoTime();
+                int restored = com.qxotic.jinfer.cache.SealedPrompt.open(options.sealedPrompt(), seed)
+                        .tryRestore(state, codec, fp);
+                if (restored == fp.length) {
+                    System.err.printf("sealed prompt restored: %d positions in %.1f ms%n", restored, (System.nanoTime() - t0) / 1e6);
+                    promptTokens = List.of();          // decode straight from the restored state
+                } else {
+                    System.err.println("sealed prompt mismatch: prefilling normally");
+                }
+            } else {
+                model.ingest(state, Batch.prefill(fpToIds(fp)));
+                com.qxotic.jinfer.cache.SealedPrompt.compile(options.sealedPrompt(), "cli", codec, state, fp, seed);
+                System.err.println("sealed prompt compiled: " + options.sealedPrompt() + " (" + fp.length + " positions)");
+                promptTokens = List.of();
             }
-            return;
         }
 
+        Generator.GenerationResult result = generateCli(model, state, promptTokens, stops, sampler, options);
+        if (!options.stream()) {
+            System.out.println(result.text());
+        }
+    }
+
+    private static int[] fpToIds(long[] fp) {
+        int[] ids = new int[fp.length];
+        for (int i = 0; i < fp.length; i++) ids[i] = (int) fp[i];
+        return ids;
+    }
+
+    /** Interactive chat on the model's TurnTemplate: ONE persistent state; per turn only the delta
+     *  is ingested - closeTurn (re-framing the un-ingested stop token) + the user turn + the
+     *  generation prompt. The reply tokens are already in the KV from decoding. */
+    private static <S extends RuntimeState> void runChatIncremental(LanguageModel<?, ?, S> model, TurnTemplate template,
+                                                                    Sampler sampler, LLMOptions options) throws IOException {
+        Set<Integer> stops = model.stopTokens();
+        S state = model.newState(model.config().contextLength(), RuntimeFlags.BATCH_CAPACITY);
+        boolean first = true;
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
+            while (true) {
+                System.out.print("> ");
+                System.out.flush();
+                String userText = reader.readLine();
+                if (userText == null || "/quit".equals(userText) || "/exit".equals(userText)) break;
+                if ("/context".equals(userText)) {
+                    System.out.printf("context: %d/%d tokens%n", state.position(), model.config().contextLength());
+                    continue;
+                }
+                List<Batch> batches = new ArrayList<>();
+                List<Message> turns = new ArrayList<>();
+                if (first) {
+                    batches.addAll(template.conversationStart());
+                    if (options.systemPrompt() != null) {
+                        turns.add(Message.system(options.systemPrompt()));
+                    }
+                } else {
+                    batches.addAll(template.closeTurn());     // close the previous assistant turn
+                }
+                turns.add(Message.user(userText));
+                for (Message m : first ? template.normalize(turns) : turns) {
+                    batches.addAll(template.encodeTurn(m));
+                }
+                batches.addAll(template.generationPrompt(options.think()));
+                List<Integer> delta = new ArrayList<>();
+                for (int id : Batch.tokenIds(batches)) delta.add(id);
+                Generator.GenerationResult result = generateCli(model, state, delta, stops, sampler, options);
+                if (!options.stream()) {
+                    System.out.println(result.text());
+                }
+                first = false;
+            }
+        }
+    }
+
+    /** Whole-render fallback for models without a TurnTemplate: re-encode the full conversation
+     *  through the Jinja template each turn, fresh state. */
+    private static <S extends RuntimeState> void runChatWholeRender(LanguageModel<?, ?, S> model, Sampler sampler, LLMOptions options) throws IOException {
+        Set<Integer> stops = model.stopTokens();
         List<Object> history = new ArrayList<>();
         if (options.systemPrompt() != null) {
             history.add(Map.of("role", "system", "content", options.systemPrompt()));
@@ -352,7 +462,6 @@ public class Main {
                 if (userText == null || "/quit".equals(userText) || "/exit".equals(userText)) break;
                 history.add(Map.of("role", "user", "content", userText));
                 List<Integer> promptTokens = ChatFormat.encode(model.tokenizer(), new ChatContext(history, null, true, options.think(), Map.of()));
-                // fresh state each turn: the generic path re-encodes the whole conversation
                 Generator.GenerationResult result = generateCli(model,
                         model.newState(model.config().contextLength(), Math.max(promptTokens.size(), 16)),
                         promptTokens, stops, sampler, options);
