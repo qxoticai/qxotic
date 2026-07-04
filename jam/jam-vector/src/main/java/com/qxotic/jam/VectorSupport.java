@@ -65,6 +65,12 @@ final class VectorSupport {
             ((FloatVector) q.castShape(F_SPECIES, p)).mul(scale).intoArray(dst, off + p * F_LEN);
     }
 
+    /** True under native image (build- or run-time init both see the property; constant-folds in the
+     *  image). The wide 512-bit tiles (4x4/2x8/8x2) crash Graal's AOT backend: their register pressure
+     *  allocates a VEX-only op to xmm16+ and {@code AMD64Assembler$VexOp.checkVex} fails the build.
+     *  The narrow 3x2 tile compiles and runs correctly, so it is the native-image shape. */
+    static final boolean IN_NATIVE_IMAGE = System.getProperty("org.graalvm.nativeimage.imagecode") != null;
+
     /** Register-tiling knobs (same defaults as jinfer's GEMM_* tunables). */
     static final int SEQ_TILE = jamPropInt("jam.vector.seqTile", 32);
     static final int SEQ_TILE_QK = jamPropInt("jam.vector.seqTileQk", 8);   // k-quants tile narrower
@@ -92,7 +98,10 @@ final class VectorSupport {
         String arch = System.getProperty("os.arch", "").toLowerCase();
         if (arch.contains("aarch64") || arch.startsWith("arm")) return 10;   // ARM NEON 4x4
         int width = F_SPECIES.vectorBitSize();
-        if (width >= 512) return jitHandlesWideTile() ? 2 /* 4x4 */ : 0 /* 3x2 */;
+        if (width >= 512) {
+            if (IN_NATIVE_IMAGE) return 0;   // 3x2: fastest AOT shape (3x4 compiles but spills, 207 vs 289 pp; 4x4/2x8/8x2 fail VEX encoding at xmm16+)
+            return jitHandlesWideTile() ? 2 /* 4x4 */ : 0 /* 3x2 */;
+        }
         if (width >= 256) return 6;   // AVX2 2x4
         return 12;                    // scalar
     }
@@ -100,6 +109,7 @@ final class VectorSupport {
     // 4x4 needs 16 accumulators in registers: Graal spill-free only from jvmci-25.1; HotSpot C2 spills but
     // they're bandwidth-hidden so 4x4 still wins; unknown VM -> safe 3x2.
     private static boolean jitHandlesWideTile() {
+        if (IN_NATIVE_IMAGE) return false;   // Graal AOT: wide tiles fail VEX encoding (see IN_NATIVE_IMAGE)
         String version = System.getProperty("java.vm.version", "");
         if (version.contains("jvmci")) {
             var v = Pattern.compile("jvmci-(\\d+)\\.(\\d+)").matcher(version);
@@ -129,24 +139,39 @@ final class VectorSupport {
         GLOBAL.set(JAVA_FLOAT_UNALIGNED, address, value);
     }
 
+    /** Weight-read routing for the tile kernels: with {@link #GLOBAL}, access
+     *  {@code (vectorSegment(w), vectorBase(w) + byteOffset)} uses ONE compile-time-constant segment with
+     *  absolute addresses, exactly as jinfer's FloatTensor. Besides folding the bounds/liveness checks,
+     *  this is REQUIRED under native image: Graal's Vector API expansion mis-addresses a vector load whose
+     *  segment base object is a runtime value of merged heap/native types (a null native base is decoded as
+     *  the compressed-reference heap base, producing a non-canonical address and a GP fault). The constant
+     *  GLOBAL folds the base to a known null, which compiles to correct absolute addressing. */
+    static MemorySegment vectorSegment(MemorySegment seg) {
+        return GLOBAL != null ? GLOBAL : seg;
+    }
+
+    static long vectorBase(MemorySegment seg) {
+        return GLOBAL != null ? seg.address() : 0L;
+    }
+
     /** Read the signed int8 at byte offset {@code off} in {@code seg} (Q8_0 quant). */
     static byte readByte(MemorySegment seg, long off) {
-        return seg.get(JAVA_BYTE, off);
+        return GLOBAL != null ? GLOBAL.get(JAVA_BYTE, seg.address() + off) : seg.get(JAVA_BYTE, off);
     }
 
     /** Read the raw IEEE half (16-bit) at byte offset {@code off} in {@code seg} (the block scale). */
     static short readShort(MemorySegment seg, long off) {
-        return seg.get(JAVA_SHORT_UNALIGNED, off);
+        return GLOBAL != null ? GLOBAL.get(JAVA_SHORT_UNALIGNED, seg.address() + off) : seg.get(JAVA_SHORT_UNALIGNED, off);
     }
 
     /** Read the little-endian int32 at byte offset {@code off} (k-quant packed scales). */
     static int readInt(MemorySegment seg, long off) {
-        return seg.get(JAVA_INT_UNALIGNED, off);
+        return GLOBAL != null ? GLOBAL.get(JAVA_INT_UNALIGNED, seg.address() + off) : seg.get(JAVA_INT_UNALIGNED, off);
     }
 
     /** Read the little-endian int64 at byte offset {@code off} (k-quant packed scales). */
     static long readLong(MemorySegment seg, long off) {
-        return seg.get(JAVA_LONG_UNALIGNED, off);
+        return GLOBAL != null ? GLOBAL.get(JAVA_LONG_UNALIGNED, seg.address() + off) : seg.get(JAVA_LONG_UNALIGNED, off);
     }
 
     /** Prefill fan-out: vanilla parallel IntStream (measured-best for the compute-bound gemm). */
@@ -179,6 +204,6 @@ final class VectorSupport {
 
     /** Decode the IEEE half at byte offset {@code off} in {@code seg} to float (JDK-exact, as jinfer). */
     static float readFloat16(MemorySegment seg, long off) {
-        return Float.float16ToFloat(seg.get(JAVA_SHORT_UNALIGNED, off));
+        return Float.float16ToFloat(readShort(seg, off));
     }
 }
