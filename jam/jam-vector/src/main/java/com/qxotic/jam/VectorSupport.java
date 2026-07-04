@@ -1,5 +1,7 @@
 package com.qxotic.jam;
 
+import com.oracle.svm.shared.AlwaysInline;
+
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorShape;
@@ -166,21 +168,25 @@ final class VectorSupport {
     }
 
     /** Read the signed int8 at byte offset {@code off} in {@code seg} (Q8_0 quant). */
+    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
     static byte readByte(MemorySegment seg, long off) {
         return GLOBAL != null ? GLOBAL.get(JAVA_BYTE, seg.address() + off) : seg.get(JAVA_BYTE, off);
     }
 
     /** Read the raw IEEE half (16-bit) at byte offset {@code off} in {@code seg} (the block scale). */
+    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
     static short readShort(MemorySegment seg, long off) {
         return GLOBAL != null ? GLOBAL.get(JAVA_SHORT_UNALIGNED, seg.address() + off) : seg.get(JAVA_SHORT_UNALIGNED, off);
     }
 
     /** Read the little-endian int32 at byte offset {@code off} (k-quant packed scales). */
+    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
     static int readInt(MemorySegment seg, long off) {
         return GLOBAL != null ? GLOBAL.get(JAVA_INT_UNALIGNED, seg.address() + off) : seg.get(JAVA_INT_UNALIGNED, off);
     }
 
     /** Read the little-endian int64 at byte offset {@code off} (k-quant packed scales). */
+    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
     static long readLong(MemorySegment seg, long off) {
         return GLOBAL != null ? GLOBAL.get(JAVA_LONG_UNALIGNED, seg.address() + off) : seg.get(JAVA_LONG_UNALIGNED, off);
     }
@@ -214,6 +220,7 @@ final class VectorSupport {
     }
 
     /** Decode the IEEE half at byte offset {@code off} in {@code seg} to float (JDK-exact, as jinfer). */
+    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
     static float readFloat16(MemorySegment seg, long off) {
         return Float.float16ToFloat(readShort(seg, off));
     }
