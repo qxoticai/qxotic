@@ -756,9 +756,10 @@ public final class Q8Kernel {
 
         private static void gemm512Tile4x4F32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
-        // Wide tiles fail Graal's AOT VEX encoding (VCVTPH2PS at xmm16+ under this register pressure);
-        // the folded throw makes the body dead code under native image, where TILE_CODE selects 3x2.
-        if (VectorSupport.IN_NATIVE_IMAGE) throw new AssertionError("wide tile under native image");
+        // Wide tiles fail stock Graal's AOT VEX encoding (VCVTPH2PS at xmm16+ under this register
+        // pressure); the folded throw dead-codes the body under native image unless the builder opts in
+        // with a 32-ZMM Graal (-Djam.vector.wideTiles=true, see VectorSupport.WIDE_TILES_COMPILABLE).
+        if (!VectorSupport.WIDE_TILES_COMPILABLE) throw new AssertionError("wide tile not compilable here");
         final MemorySegment ws = vectorSegment(w);
         final long wb = vectorBase(w);
         final int blockSize = BLOCK;
@@ -847,9 +848,10 @@ public final class Q8Kernel {
         // 2 weight rows kept resident, 8 sequence columns streamed: 16 accumulators + 4 weights + 2 activations = 22 ZMM.
         private static void gemm512Tile2x8F32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                         int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
-        // Wide tiles fail Graal's AOT VEX encoding (VCVTPH2PS at xmm16+ under this register pressure);
-        // the folded throw makes the body dead code under native image, where TILE_CODE selects 3x2.
-        if (VectorSupport.IN_NATIVE_IMAGE) throw new AssertionError("wide tile under native image");
+        // Wide tiles fail stock Graal's AOT VEX encoding (VCVTPH2PS at xmm16+ under this register
+        // pressure); the folded throw dead-codes the body under native image unless the builder opts in
+        // with a 32-ZMM Graal (-Djam.vector.wideTiles=true, see VectorSupport.WIDE_TILES_COMPILABLE).
+        if (!VectorSupport.WIDE_TILES_COMPILABLE) throw new AssertionError("wide tile not compilable here");
         final MemorySegment ws = vectorSegment(w);
         final long wb = vectorBase(w);
             final int blockSize = BLOCK;
@@ -916,9 +918,10 @@ public final class Q8Kernel {
         // 2 sequence columns kept resident, 8 weight rows streamed: 16 accumulators + 4 activations + 2 weights = 22 ZMM.
         private static void gemm512Tile8x2F32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                         int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
-        // Wide tiles fail Graal's AOT VEX encoding (VCVTPH2PS at xmm16+ under this register pressure);
-        // the folded throw makes the body dead code under native image, where TILE_CODE selects 3x2.
-        if (VectorSupport.IN_NATIVE_IMAGE) throw new AssertionError("wide tile under native image");
+        // Wide tiles fail stock Graal's AOT VEX encoding (VCVTPH2PS at xmm16+ under this register
+        // pressure); the folded throw dead-codes the body under native image unless the builder opts in
+        // with a 32-ZMM Graal (-Djam.vector.wideTiles=true, see VectorSupport.WIDE_TILES_COMPILABLE).
+        if (!VectorSupport.WIDE_TILES_COMPILABLE) throw new AssertionError("wide tile not compilable here");
         final MemorySegment ws = vectorSegment(w);
         final long wb = vectorBase(w);
             final int blockSize = BLOCK;

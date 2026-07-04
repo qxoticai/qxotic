@@ -16,6 +16,15 @@
     <name>jinfer-bench</name>
     <description>llama-bench-style pp/tg benchmark (apples-to-apples)</description>
 
+    <properties>
+
+        <!-- native builder opt-in: wide 512-bit register tiles (needs a 32-ZMM Graal, GR-13757) -->
+
+        <jam.wideTiles>false</jam.wideTiles>
+
+    </properties>
+
+
     <dependencies>
         <dependency>
             <groupId>com.qxotic</groupId>
@@ -110,6 +119,7 @@
                             <mainClass>com.qxotic.jinfer.JinferBench</mainClass>
                             <buildArgs>
                                 <buildArg>-O3</buildArg>
+                                <buildArg>-Djam.vector.wideTiles=${jam.wideTiles}</buildArg>
                                 <buildArg>-march=native</buildArg>
                                 <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
                                 <buildArg>-H:+VectorAPISupport</buildArg>

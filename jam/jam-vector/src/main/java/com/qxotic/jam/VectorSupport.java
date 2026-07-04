@@ -71,6 +71,13 @@ final class VectorSupport {
      *  The narrow 3x2 tile compiles and runs correctly, so it is the native-image shape. */
     static final boolean IN_NATIVE_IMAGE = System.getProperty("org.graalvm.nativeimage.imagecode") != null;
 
+    /** Wide 512-bit tiles (16+ live vector accumulators) are compilable by the compiler in play: always
+     *  on the JVM; under native image only with an explicit build-time opt-in
+     *  ({@code -Djam.vector.wideTiles=true} on the image builder), because stock Graal's AOT backend
+     *  fails their VEX encoding at xmm16+ - a Graal with 32-ZMM AVX-512 support (GR-13757) compiles
+     *  them fine. Build-time initialized, so the flag constant-folds into the image. */
+    static final boolean WIDE_TILES_COMPILABLE = !IN_NATIVE_IMAGE || Boolean.getBoolean("jam.vector.wideTiles");
+
     /** Register-tiling knobs (same defaults as jinfer's GEMM_* tunables). */
     static final int SEQ_TILE = jamPropInt("jam.vector.seqTile", 32);
     static final int SEQ_TILE_QK = jamPropInt("jam.vector.seqTileQk", 8);   // k-quants tile narrower
@@ -99,7 +106,11 @@ final class VectorSupport {
         if (arch.contains("aarch64") || arch.startsWith("arm")) return 10;   // ARM NEON 4x4
         int width = F_SPECIES.vectorBitSize();
         if (width >= 512) {
-            if (IN_NATIVE_IMAGE) return 0;   // 3x2: fastest AOT shape (3x4 compiles but spills, 207 vs 289 pp; 4x4/2x8/8x2 fail VEX encoding at xmm16+)
+            if (IN_NATIVE_IMAGE) {
+                // stock AOT: 3x2 (fastest compilable shape; 3x4 spills, 207 vs 289 pp; wide tiles fail
+                // VEX encoding at xmm16+). A 32-ZMM Graal (jam.vector.wideTiles=true) takes 4x4.
+                return WIDE_TILES_COMPILABLE ? 2 : 0;
+            }
             return jitHandlesWideTile() ? 2 /* 4x4 */ : 0 /* 3x2 */;
         }
         if (width >= 256) return 6;   // AVX2 2x4
@@ -109,7 +120,7 @@ final class VectorSupport {
     // 4x4 needs 16 accumulators in registers: Graal spill-free only from jvmci-25.1; HotSpot C2 spills but
     // they're bandwidth-hidden so 4x4 still wins; unknown VM -> safe 3x2.
     private static boolean jitHandlesWideTile() {
-        if (IN_NATIVE_IMAGE) return false;   // Graal AOT: wide tiles fail VEX encoding (see IN_NATIVE_IMAGE)
+        if (IN_NATIVE_IMAGE) return WIDE_TILES_COMPILABLE;   // stock Graal AOT fails wide-tile VEX encoding; 32-ZMM builders opt in
         String version = System.getProperty("java.vm.version", "");
         if (version.contains("jvmci")) {
             var v = Pattern.compile("jvmci-(\\d+)\\.(\\d+)").matcher(version);
