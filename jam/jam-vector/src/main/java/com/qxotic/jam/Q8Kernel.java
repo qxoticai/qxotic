@@ -15,6 +15,8 @@ import static com.qxotic.jam.VectorSupport.putFloat;
 import static com.qxotic.jam.VectorSupport.readByte;
 import static com.qxotic.jam.VectorSupport.readFloat16;
 import static com.qxotic.jam.VectorSupport.readShort;
+import static com.qxotic.jam.VectorSupport.vectorBase;
+import static com.qxotic.jam.VectorSupport.vectorSegment;
 
 /**
  * Q8_0 register-tiled gemm, relocated from jinfer (segment-based). {@code C = W @ Aᵀ}: weights are Q8_0
@@ -38,6 +40,8 @@ public final class Q8Kernel {
 
     private static void gemm512Tile3x2F32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
+        final MemorySegment ws = vectorSegment(w);
+        final long wb = vectorBase(w);
         final int blockSize = BLOCK;
         final int typeSize = TYPE;
         final long rowStride = (long) dim1 / blockSize * typeSize;
@@ -50,15 +54,15 @@ public final class Q8Kernel {
         FloatVector c10 = FloatVector.zero(F_SPECIES), c11 = FloatVector.zero(F_SPECIES);
         FloatVector c20 = FloatVector.zero(F_SPECIES), c21 = FloatVector.zero(F_SPECIES);
         for (int j = 0; j < dim1; j += blockSize, b0 += typeSize, b1 += typeSize, b2 += typeSize) {
-            var vd0 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b0));
-            var vd1 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b1));
-            var vd2 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b2));
-            var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
-            var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
-            var w10 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
-            var w11 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
-            var w20 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b2 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd2);
-            var w21 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b2 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd2);
+            var vd0 = FloatVector.broadcast(F_SPECIES, readFloat16(ws, wb + b0));
+            var vd1 = FloatVector.broadcast(F_SPECIES, readFloat16(ws, wb + b1));
+            var vd2 = FloatVector.broadcast(F_SPECIES, readFloat16(ws, wb + b2));
+            var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b0 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b0 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var w10 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b1 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
+            var w11 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b1 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
+            var w20 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b2 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd2);
+            var w21 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b2 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd2);
             FloatVector a0, a1;
             a0 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j), ByteOrder.LITTLE_ENDIAN);
             a1 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j + 16), ByteOrder.LITTLE_ENDIAN);
@@ -83,6 +87,8 @@ public final class Q8Kernel {
 
     private static void gemm512Tile3x1F32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
+        final MemorySegment ws = vectorSegment(w);
+        final long wb = vectorBase(w);
         final int blockSize = BLOCK;
         final int typeSize = TYPE;
         final long rowStride = (long) dim1 / blockSize * typeSize;
@@ -94,15 +100,15 @@ public final class Q8Kernel {
         FloatVector c1 = FloatVector.zero(F_SPECIES);
         FloatVector c2 = FloatVector.zero(F_SPECIES);
         for (int j = 0; j < dim1; j += blockSize, b0 += typeSize, b1 += typeSize, b2 += typeSize) {
-            var vd0 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b0));
-            var vd1 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b1));
-            var vd2 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b2));
-            var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
-            var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
-            var w10 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
-            var w11 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
-            var w20 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b2 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd2);
-            var w21 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b2 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd2);
+            var vd0 = FloatVector.broadcast(F_SPECIES, readFloat16(ws, wb + b0));
+            var vd1 = FloatVector.broadcast(F_SPECIES, readFloat16(ws, wb + b1));
+            var vd2 = FloatVector.broadcast(F_SPECIES, readFloat16(ws, wb + b2));
+            var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b0 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b0 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var w10 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b1 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
+            var w11 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b1 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
+            var w20 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b2 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd2);
+            var w21 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b2 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd2);
             var a0 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j), ByteOrder.LITTLE_ENDIAN);
             var a1 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j + 16), ByteOrder.LITTLE_ENDIAN);
             c0 = c0.add(w01.fma(a1, w00.mul(a0)));
@@ -117,6 +123,8 @@ public final class Q8Kernel {
 
     private static void gemm512Tile2x2F32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
+        final MemorySegment ws = vectorSegment(w);
+        final long wb = vectorBase(w);
         final int blockSize = BLOCK;
         final int typeSize = TYPE;
         final long rowStride = (long) dim1 / blockSize * typeSize;
@@ -127,12 +135,12 @@ public final class Q8Kernel {
         FloatVector c00 = FloatVector.zero(F_SPECIES), c01 = FloatVector.zero(F_SPECIES);
         FloatVector c10 = FloatVector.zero(F_SPECIES), c11 = FloatVector.zero(F_SPECIES);
         for (int j = 0; j < dim1; j += blockSize, b0 += typeSize, b1 += typeSize) {
-            var vd0 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b0));
-            var vd1 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b1));
-            var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
-            var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
-            var w10 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
-            var w11 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
+            var vd0 = FloatVector.broadcast(F_SPECIES, readFloat16(ws, wb + b0));
+            var vd1 = FloatVector.broadcast(F_SPECIES, readFloat16(ws, wb + b1));
+            var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b0 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b0 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var w10 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b1 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
+            var w11 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b1 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd1);
             FloatVector a0, a1;
             a0 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j), ByteOrder.LITTLE_ENDIAN);
             a1 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j + 16), ByteOrder.LITTLE_ENDIAN);
@@ -153,15 +161,17 @@ public final class Q8Kernel {
 
     private static void gemm512Tile1x1F32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
+        final MemorySegment ws = vectorSegment(w);
+        final long wb = vectorBase(w);
         final int blockSize = BLOCK;
         final int typeSize = TYPE;
         long b0 = (long) (thisOffset + row * dim1) / blockSize * typeSize;
         int x0 = s * thatStride;
         FloatVector c0 = FloatVector.zero(F_SPECIES);
         for (int j = 0; j < dim1; j += blockSize, b0 += typeSize) {
-            var vd0 = FloatVector.broadcast(F_SPECIES, readFloat16(w, b0));
-            var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
-            var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var vd0 = FloatVector.broadcast(F_SPECIES, readFloat16(ws, wb + b0));
+            var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b0 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
+            var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b0 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(vd0);
             var a0 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j), ByteOrder.LITTLE_ENDIAN);
             var a1 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j + 16), ByteOrder.LITTLE_ENDIAN);
             c0 = c0.add(w01.fma(a1, w00.mul(a0)));
@@ -178,15 +188,17 @@ public final class Q8Kernel {
     // it against 3x4/4x4 to see exactly what register tiling buys.
     private static void gemm512Tile1x1EduF32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
+        final MemorySegment ws = vectorSegment(w);
+        final long wb = vectorBase(w);
         final int blockSize = BLOCK;
         final int typeSize = TYPE;
         long b = (long) (thisOffset + row * dim1) / blockSize * typeSize;   // byte offset of this row's blocks
         int x0 = s * thatStride;                                            // element offset of this column
         FloatVector acc = FloatVector.zero(F_SPECIES);
         for (int j = 0; j < dim1; j += blockSize, b += typeSize) {
-            float d = Float.float16ToFloat(readShort(w, b));                // block scale
-            var w0 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
-            var w1 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
+            float d = Float.float16ToFloat(readShort(ws, wb + b));                // block scale
+            var w0 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
+            var w1 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
             var a0 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j), ByteOrder.LITTLE_ENDIAN);
             var a1 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j + 16), ByteOrder.LITTLE_ENDIAN);
             acc = w1.fma(a1, w0.fma(a0, acc));                              // acc += w0*a0 + w1*a1
@@ -201,6 +213,8 @@ public final class Q8Kernel {
     // 2 weight rows x 4 seq = 8 accumulators + 8 weights (2 rows x 4 subvecs) + 4 activations = 20 YMM.
     private static void gemm256Tile2x4F32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
+        final MemorySegment ws = vectorSegment(w);
+        final long wb = vectorBase(w);
         final VectorSpecies<Float> F256 = FloatVector.SPECIES_256;
         final VectorSpecies<Byte> B64 = ByteVector.SPECIES_64;
         final int blockSize = BLOCK;
@@ -212,13 +226,13 @@ public final class Q8Kernel {
         FloatVector c00 = FloatVector.zero(F256), c01 = FloatVector.zero(F256), c02 = FloatVector.zero(F256), c03 = FloatVector.zero(F256);
         FloatVector c10 = FloatVector.zero(F256), c11 = FloatVector.zero(F256), c12 = FloatVector.zero(F256), c13 = FloatVector.zero(F256);
         for (int j = 0; j < dim1; j += blockSize, b0 += typeSize, b1 += typeSize) {
-            float d0 = Float.float16ToFloat(readShort(w, b0));
-            float d1 = Float.float16ToFloat(readShort(w, b1));
+            float d0 = Float.float16ToFloat(readShort(ws, wb + b0));
+            float d1 = Float.float16ToFloat(readShort(ws, wb + b1));
             long q0 = b0 + 2, q1 = b1 + 2;
             for (int i = 0; i < Q8_KSUBVEC; i++) {         // rolled K-subvector walk: 2 weights live
                 long wo = i * 8L, ao = 4L * (i * 8);
-                var w0 = ((FloatVector) ByteVector.fromMemorySegment(B64, w, q0 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d0);
-                var w1 = ((FloatVector) ByteVector.fromMemorySegment(B64, w, q1 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d1);
+                var w0 = ((FloatVector) ByteVector.fromMemorySegment(B64, ws, wb + q0 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d0);
+                var w1 = ((FloatVector) ByteVector.fromMemorySegment(B64, ws, wb + q1 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d1);
                 long xb = xBase + 4L * (x0 + j) + ao;
                 var a = FloatVector.fromMemorySegment(F256, x, xb, ByteOrder.LITTLE_ENDIAN);
                 c00 = w0.fma(a, c00); c10 = w1.fma(a, c10);
@@ -247,6 +261,8 @@ public final class Q8Kernel {
     // 256-bit single-output kernel for the avx256 path's row/seq remainders.
     private static void gemm256Tile1x1F32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
+        final MemorySegment ws = vectorSegment(w);
+        final long wb = vectorBase(w);
         final VectorSpecies<Float> F256 = FloatVector.SPECIES_256;
         final VectorSpecies<Byte> B64 = ByteVector.SPECIES_64;
         final int blockSize = BLOCK;
@@ -255,12 +271,12 @@ public final class Q8Kernel {
         int x0 = s * thatStride;
         FloatVector acc = FloatVector.zero(F256);
         for (int j = 0; j < dim1; j += blockSize, b += typeSize) {
-            float d = Float.float16ToFloat(readShort(w, b));
+            float d = Float.float16ToFloat(readShort(ws, wb + b));
             long q = b + 2;
-            var w0 = ((FloatVector) ByteVector.fromMemorySegment(B64, w, q, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d);
-            var w1 = ((FloatVector) ByteVector.fromMemorySegment(B64, w, q + 8, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d);
-            var w2 = ((FloatVector) ByteVector.fromMemorySegment(B64, w, q + 16, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d);
-            var w3 = ((FloatVector) ByteVector.fromMemorySegment(B64, w, q + 24, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d);
+            var w0 = ((FloatVector) ByteVector.fromMemorySegment(B64, ws, wb + q, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d);
+            var w1 = ((FloatVector) ByteVector.fromMemorySegment(B64, ws, wb + q + 8, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d);
+            var w2 = ((FloatVector) ByteVector.fromMemorySegment(B64, ws, wb + q + 16, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d);
+            var w3 = ((FloatVector) ByteVector.fromMemorySegment(B64, ws, wb + q + 24, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d);
             long xb = xBase + 4L * (x0 + j);
             var a0 = FloatVector.fromMemorySegment(F256, x, xb, ByteOrder.LITTLE_ENDIAN);
             var a1 = FloatVector.fromMemorySegment(F256, x, xb + 32, ByteOrder.LITTLE_ENDIAN);
@@ -286,6 +302,8 @@ public final class Q8Kernel {
     // scheduler keeps only the current subvec's weights live.
     private static void gemm256Tile2x3F32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
+        final MemorySegment ws = vectorSegment(w);
+        final long wb = vectorBase(w);
         final VectorSpecies<Float> F256 = FloatVector.SPECIES_256;
         final VectorSpecies<Byte> B64 = ByteVector.SPECIES_64;
         final int blockSize = BLOCK;
@@ -297,14 +315,14 @@ public final class Q8Kernel {
         FloatVector c00 = FloatVector.zero(F256), c01 = FloatVector.zero(F256), c02 = FloatVector.zero(F256);
         FloatVector c10 = FloatVector.zero(F256), c11 = FloatVector.zero(F256), c12 = FloatVector.zero(F256);
         for (int j = 0; j < dim1; j += blockSize, b0 += typeSize, b1 += typeSize) {
-            float d0 = Float.float16ToFloat(readShort(w, b0));
-            float d1 = Float.float16ToFloat(readShort(w, b1));
+            float d0 = Float.float16ToFloat(readShort(ws, wb + b0));
+            float d1 = Float.float16ToFloat(readShort(ws, wb + b1));
             long q0 = b0 + 2, q1 = b1 + 2;
             for (int i = 0; i < Q8_KSUBVEC; i++) {         // walk the block's four 8-lane K-subvectors (rolled)
                 long wo = i * 8L;                          // weight subvec byte offset
                 long ao = 4L * (i * 8);                    // activation subvec byte offset (8 floats)
-                var w0 = ((FloatVector) ByteVector.fromMemorySegment(B64, w, q0 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d0);
-                var w1 = ((FloatVector) ByteVector.fromMemorySegment(B64, w, q1 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d1);
+                var w0 = ((FloatVector) ByteVector.fromMemorySegment(B64, ws, wb + q0 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d0);
+                var w1 = ((FloatVector) ByteVector.fromMemorySegment(B64, ws, wb + q1 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d1);
                 long xb = xBase + 4L * (x0 + j) + ao;
                 var a = FloatVector.fromMemorySegment(F256, x, xb, ByteOrder.LITTLE_ENDIAN);
                 c00 = w0.fma(a, c00); c10 = w1.fma(a, c10);
@@ -329,6 +347,8 @@ public final class Q8Kernel {
     // exist; on AVX2 prefer 2x4/2x3. Spill-free only because this machine has 32 YMM.
     private static void gemm256Tile3x4F32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
+        final MemorySegment ws = vectorSegment(w);
+        final long wb = vectorBase(w);
         final VectorSpecies<Float> F256 = FloatVector.SPECIES_256;
         final VectorSpecies<Byte> B64 = ByteVector.SPECIES_64;
         final int blockSize = BLOCK;
@@ -341,15 +361,15 @@ public final class Q8Kernel {
         FloatVector c10 = FloatVector.zero(F256), c11 = FloatVector.zero(F256), c12 = FloatVector.zero(F256), c13 = FloatVector.zero(F256);
         FloatVector c20 = FloatVector.zero(F256), c21 = FloatVector.zero(F256), c22 = FloatVector.zero(F256), c23 = FloatVector.zero(F256);
         for (int j = 0; j < dim1; j += blockSize, b0 += typeSize, b1 += typeSize, b2 += typeSize) {
-            float d0 = Float.float16ToFloat(readShort(w, b0));
-            float d1 = Float.float16ToFloat(readShort(w, b1));
-            float d2 = Float.float16ToFloat(readShort(w, b2));
+            float d0 = Float.float16ToFloat(readShort(ws, wb + b0));
+            float d1 = Float.float16ToFloat(readShort(ws, wb + b1));
+            float d2 = Float.float16ToFloat(readShort(ws, wb + b2));
             long q0 = b0 + 2, q1 = b1 + 2, q2 = b2 + 2;
             for (int i = 0; i < Q8_KSUBVEC; i++) {         // rolled K-subvector walk: 3 weights live
                 long wo = i * 8L, ao = 4L * (i * 8);
-                var w0 = ((FloatVector) ByteVector.fromMemorySegment(B64, w, q0 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d0);
-                var w1 = ((FloatVector) ByteVector.fromMemorySegment(B64, w, q1 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d1);
-                var w2 = ((FloatVector) ByteVector.fromMemorySegment(B64, w, q2 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d2);
+                var w0 = ((FloatVector) ByteVector.fromMemorySegment(B64, ws, wb + q0 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d0);
+                var w1 = ((FloatVector) ByteVector.fromMemorySegment(B64, ws, wb + q1 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d1);
+                var w2 = ((FloatVector) ByteVector.fromMemorySegment(B64, ws, wb + q2 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d2);
                 long xb = xBase + 4L * (x0 + j) + ao;
                 var a = FloatVector.fromMemorySegment(F256, x, xb, ByteOrder.LITTLE_ENDIAN);
                 c00 = w0.fma(a, c00); c10 = w1.fma(a, c10); c20 = w2.fma(a, c20);
@@ -381,6 +401,8 @@ public final class Q8Kernel {
     // streaming -- a 32-register shape. On AVX2 prefer 2x4/2x3.
     private static void gemm256Tile4x3F32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
+        final MemorySegment ws = vectorSegment(w);
+        final long wb = vectorBase(w);
         final VectorSpecies<Float> F256 = FloatVector.SPECIES_256;
         final VectorSpecies<Byte> B64 = ByteVector.SPECIES_64;
         final int blockSize = BLOCK;
@@ -394,17 +416,17 @@ public final class Q8Kernel {
         FloatVector c20 = FloatVector.zero(F256), c21 = FloatVector.zero(F256), c22 = FloatVector.zero(F256);
         FloatVector c30 = FloatVector.zero(F256), c31 = FloatVector.zero(F256), c32 = FloatVector.zero(F256);
         for (int j = 0; j < dim1; j += blockSize, b0 += typeSize, b1 += typeSize, b2 += typeSize, b3 += typeSize) {
-            float d0 = Float.float16ToFloat(readShort(w, b0));
-            float d1 = Float.float16ToFloat(readShort(w, b1));
-            float d2 = Float.float16ToFloat(readShort(w, b2));
-            float d3 = Float.float16ToFloat(readShort(w, b3));
+            float d0 = Float.float16ToFloat(readShort(ws, wb + b0));
+            float d1 = Float.float16ToFloat(readShort(ws, wb + b1));
+            float d2 = Float.float16ToFloat(readShort(ws, wb + b2));
+            float d3 = Float.float16ToFloat(readShort(ws, wb + b3));
             long q0 = b0 + 2, q1 = b1 + 2, q2 = b2 + 2, q3 = b3 + 2;
             for (int i = 0; i < Q8_KSUBVEC; i++) {         // rolled K-subvector walk: 4 weights live
                 long wo = i * 8L, ao = 4L * (i * 8);
-                var w0 = ((FloatVector) ByteVector.fromMemorySegment(B64, w, q0 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d0);
-                var w1 = ((FloatVector) ByteVector.fromMemorySegment(B64, w, q1 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d1);
-                var w2 = ((FloatVector) ByteVector.fromMemorySegment(B64, w, q2 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d2);
-                var w3 = ((FloatVector) ByteVector.fromMemorySegment(B64, w, q3 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d3);
+                var w0 = ((FloatVector) ByteVector.fromMemorySegment(B64, ws, wb + q0 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d0);
+                var w1 = ((FloatVector) ByteVector.fromMemorySegment(B64, ws, wb + q1 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d1);
+                var w2 = ((FloatVector) ByteVector.fromMemorySegment(B64, ws, wb + q2 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d2);
+                var w3 = ((FloatVector) ByteVector.fromMemorySegment(B64, ws, wb + q3 + wo, ByteOrder.LITTLE_ENDIAN).castShape(F256, 0)).mul(d3);
                 long xb = xBase + 4L * (x0 + j) + ao;
                 var a = FloatVector.fromMemorySegment(F256, x, xb, ByteOrder.LITTLE_ENDIAN);
                 c00 = w0.fma(a, c00); c10 = w1.fma(a, c10); c20 = w2.fma(a, c20); c30 = w3.fma(a, c30);
@@ -445,6 +467,8 @@ public final class Q8Kernel {
     // kept. SIMD requires the Vector API (the avx512/avx256/neon tiles); this is the portability fallback.
     private static void gemmScalarTile4x1F32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
+        final MemorySegment ws = vectorSegment(w);
+        final long wb = vectorBase(w);
         final int blockSize = BLOCK;
         final int typeSize = TYPE;
         final long rowStride = (long) dim1 / blockSize * typeSize;
@@ -453,19 +477,19 @@ public final class Q8Kernel {
         int x0 = s * thatStride;
         float acc0 = 0f, acc1 = 0f, acc2 = 0f, acc3 = 0f;
         for (int j = 0; j < dim1; j += blockSize, b0 += typeSize, b1 += typeSize, b2 += typeSize, b3 += typeSize) {
-            float d0 = Float.float16ToFloat(readShort(w, b0));
-            float d1 = Float.float16ToFloat(readShort(w, b1));
-            float d2 = Float.float16ToFloat(readShort(w, b2));
-            float d3 = Float.float16ToFloat(readShort(w, b3));
+            float d0 = Float.float16ToFloat(readShort(ws, wb + b0));
+            float d1 = Float.float16ToFloat(readShort(ws, wb + b1));
+            float d2 = Float.float16ToFloat(readShort(ws, wb + b2));
+            float d3 = Float.float16ToFloat(readShort(ws, wb + b3));
             long q0 = b0 + 2, q1 = b1 + 2, q2 = b2 + 2, q3 = b3 + 2;
             long xb = xBase + 4L * (x0 + j);
             float s0 = 0f, s1 = 0f, s2 = 0f, s3 = 0f;     // per-block partials (unscaled)
             for (int k = 0; k < blockSize; k++) {
                 float xv = x.get(ValueLayout.JAVA_FLOAT_UNALIGNED, xb + 4L * k);
-                s0 += readByte(w, q0 + k) * xv;
-                s1 += readByte(w, q1 + k) * xv;
-                s2 += readByte(w, q2 + k) * xv;
-                s3 += readByte(w, q3 + k) * xv;
+                s0 += readByte(ws, wb + q0 + k) * xv;
+                s1 += readByte(ws, wb + q1 + k) * xv;
+                s2 += readByte(ws, wb + q2 + k) * xv;
+                s3 += readByte(ws, wb + q3 + k) * xv;
             }
             acc0 += d0 * s0; acc1 += d1 * s1; acc2 += d2 * s2; acc3 += d3 * s3;
         }
@@ -479,18 +503,20 @@ public final class Q8Kernel {
     // Pure Java single output (scalar remainder).
     private static void gemmScalar1x1F32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
+        final MemorySegment ws = vectorSegment(w);
+        final long wb = vectorBase(w);
         final int blockSize = BLOCK;
         final int typeSize = TYPE;
         long b = (long) (thisOffset + row * dim1) / blockSize * typeSize;
         int x0 = s * thatStride;
         float acc = 0f;
         for (int j = 0; j < dim1; j += blockSize, b += typeSize) {
-            float d = Float.float16ToFloat(readShort(w, b));
+            float d = Float.float16ToFloat(readShort(ws, wb + b));
             long q = b + 2;
             long xb = xBase + 4L * (x0 + j);
             float sblk = 0f;
             for (int k = 0; k < blockSize; k++) {
-                sblk += readByte(w, q + k) * x.get(ValueLayout.JAVA_FLOAT_UNALIGNED, xb + 4L * k);
+                sblk += readByte(ws, wb + q + k) * x.get(ValueLayout.JAVA_FLOAT_UNALIGNED, xb + 4L * k);
             }
             acc += d * sblk;
         }
@@ -508,6 +534,8 @@ public final class Q8Kernel {
     // 128-bit single output (NEON path remainder).
     private static void gemm128Tile1x1F32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
+        final MemorySegment ws = vectorSegment(w);
+        final long wb = vectorBase(w);
         final VectorSpecies<Float> F128 = FloatVector.SPECIES_128;
         final VectorSpecies<Byte> B64 = ByteVector.SPECIES_64;
         final int blockSize = BLOCK;
@@ -516,11 +544,11 @@ public final class Q8Kernel {
         int x0 = s * thatStride;
         FloatVector acc = FloatVector.zero(F128);
         for (int j = 0; j < dim1; j += blockSize, b += typeSize) {
-            float d = Float.float16ToFloat(readShort(w, b));
+            float d = Float.float16ToFloat(readShort(ws, wb + b));
             long q = b + 2;
             for (int ch = 0; ch < Q8_KSUBVEC; ch++) {      // four 8-byte chunks per block (rolled)
                 long bo = ch * 8L, eo = 4L * (ch * 8);
-                var bv = ByteVector.fromMemorySegment(B64, w, q + bo, ByteOrder.LITTLE_ENDIAN);
+                var bv = ByteVector.fromMemorySegment(B64, ws, wb + q + bo, ByteOrder.LITTLE_ENDIAN);
                 var wl = ((FloatVector) bv.castShape(F128, 0)).mul(d);
                 var wh = ((FloatVector) bv.castShape(F128, 1)).mul(d);
                 long xb = xBase + 4L * (x0 + j) + eo;
@@ -535,6 +563,8 @@ public final class Q8Kernel {
     // 128-bit 2 rows x 4 seq: 8 accumulators + (2 rows x lo/hi =) 4 weights + 2 activations.
     private static void gemm128Tile2x4F32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
+        final MemorySegment ws = vectorSegment(w);
+        final long wb = vectorBase(w);
         final VectorSpecies<Float> F128 = FloatVector.SPECIES_128;
         final VectorSpecies<Byte> B64 = ByteVector.SPECIES_64;
         final int blockSize = BLOCK;
@@ -546,15 +576,15 @@ public final class Q8Kernel {
         FloatVector c00 = FloatVector.zero(F128), c01 = FloatVector.zero(F128), c02 = FloatVector.zero(F128), c03 = FloatVector.zero(F128);
         FloatVector c10 = FloatVector.zero(F128), c11 = FloatVector.zero(F128), c12 = FloatVector.zero(F128), c13 = FloatVector.zero(F128);
         for (int j = 0; j < dim1; j += blockSize, b0 += typeSize, b1 += typeSize) {
-            float d0 = Float.float16ToFloat(readShort(w, b0));
-            float d1 = Float.float16ToFloat(readShort(w, b1));
+            float d0 = Float.float16ToFloat(readShort(ws, wb + b0));
+            float d1 = Float.float16ToFloat(readShort(ws, wb + b1));
             long q0 = b0 + 2, q1 = b1 + 2;
             for (int ch = 0; ch < Q8_KSUBVEC; ch++) {
                 long bo = ch * 8L, eo = 4L * (ch * 8);
-                var bv0 = ByteVector.fromMemorySegment(B64, w, q0 + bo, ByteOrder.LITTLE_ENDIAN);
+                var bv0 = ByteVector.fromMemorySegment(B64, ws, wb + q0 + bo, ByteOrder.LITTLE_ENDIAN);
                 var w0l = ((FloatVector) bv0.castShape(F128, 0)).mul(d0);
                 var w0h = ((FloatVector) bv0.castShape(F128, 1)).mul(d0);
-                var bv1 = ByteVector.fromMemorySegment(B64, w, q1 + bo, ByteOrder.LITTLE_ENDIAN);
+                var bv1 = ByteVector.fromMemorySegment(B64, ws, wb + q1 + bo, ByteOrder.LITTLE_ENDIAN);
                 var w1l = ((FloatVector) bv1.castShape(F128, 0)).mul(d1);
                 var w1h = ((FloatVector) bv1.castShape(F128, 1)).mul(d1);
                 long xb0 = xBase + 4L * (x0 + j) + eo;
@@ -587,6 +617,8 @@ public final class Q8Kernel {
     // NEON's 32 registers. Rolled chunk loop keeps the 8 weights to the current chunk only.
     private static void gemm128Tile4x4F32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
+        final MemorySegment ws = vectorSegment(w);
+        final long wb = vectorBase(w);
         final VectorSpecies<Float> F128 = FloatVector.SPECIES_128;
         final VectorSpecies<Byte> B64 = ByteVector.SPECIES_64;
         final int blockSize = BLOCK;
@@ -600,23 +632,23 @@ public final class Q8Kernel {
         FloatVector c20 = FloatVector.zero(F128), c21 = FloatVector.zero(F128), c22 = FloatVector.zero(F128), c23 = FloatVector.zero(F128);
         FloatVector c30 = FloatVector.zero(F128), c31 = FloatVector.zero(F128), c32 = FloatVector.zero(F128), c33 = FloatVector.zero(F128);
         for (int j = 0; j < dim1; j += blockSize, b0 += typeSize, b1 += typeSize, b2 += typeSize, b3 += typeSize) {
-            float d0 = Float.float16ToFloat(readShort(w, b0));
-            float d1 = Float.float16ToFloat(readShort(w, b1));
-            float d2 = Float.float16ToFloat(readShort(w, b2));
-            float d3 = Float.float16ToFloat(readShort(w, b3));
+            float d0 = Float.float16ToFloat(readShort(ws, wb + b0));
+            float d1 = Float.float16ToFloat(readShort(ws, wb + b1));
+            float d2 = Float.float16ToFloat(readShort(ws, wb + b2));
+            float d3 = Float.float16ToFloat(readShort(ws, wb + b3));
             long q0 = b0 + 2, q1 = b1 + 2, q2 = b2 + 2, q3 = b3 + 2;
             for (int ch = 0; ch < Q8_KSUBVEC; ch++) {
                 long bo = ch * 8L, eo = 4L * (ch * 8);
-                var bv0 = ByteVector.fromMemorySegment(B64, w, q0 + bo, ByteOrder.LITTLE_ENDIAN);
+                var bv0 = ByteVector.fromMemorySegment(B64, ws, wb + q0 + bo, ByteOrder.LITTLE_ENDIAN);
                 var w0l = ((FloatVector) bv0.castShape(F128, 0)).mul(d0);
                 var w0h = ((FloatVector) bv0.castShape(F128, 1)).mul(d0);
-                var bv1 = ByteVector.fromMemorySegment(B64, w, q1 + bo, ByteOrder.LITTLE_ENDIAN);
+                var bv1 = ByteVector.fromMemorySegment(B64, ws, wb + q1 + bo, ByteOrder.LITTLE_ENDIAN);
                 var w1l = ((FloatVector) bv1.castShape(F128, 0)).mul(d1);
                 var w1h = ((FloatVector) bv1.castShape(F128, 1)).mul(d1);
-                var bv2 = ByteVector.fromMemorySegment(B64, w, q2 + bo, ByteOrder.LITTLE_ENDIAN);
+                var bv2 = ByteVector.fromMemorySegment(B64, ws, wb + q2 + bo, ByteOrder.LITTLE_ENDIAN);
                 var w2l = ((FloatVector) bv2.castShape(F128, 0)).mul(d2);
                 var w2h = ((FloatVector) bv2.castShape(F128, 1)).mul(d2);
-                var bv3 = ByteVector.fromMemorySegment(B64, w, q3 + bo, ByteOrder.LITTLE_ENDIAN);
+                var bv3 = ByteVector.fromMemorySegment(B64, ws, wb + q3 + bo, ByteOrder.LITTLE_ENDIAN);
                 var w3l = ((FloatVector) bv3.castShape(F128, 0)).mul(d3);
                 var w3h = ((FloatVector) bv3.castShape(F128, 1)).mul(d3);
                 long xb0 = xBase + 4L * (x0 + j) + eo;
@@ -660,6 +692,8 @@ public final class Q8Kernel {
         // 3x4 tile: 3 weight rows × 4 seq positions = 12 accums, 6 weights, 2 activs = 20 ZMM (zero spills)
         private static void gemm512Tile3x4F32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                         int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
+        final MemorySegment ws = vectorSegment(w);
+        final long wb = vectorBase(w);
             final int blockSize = BLOCK;
             final int typeSize = TYPE;
             final long rowStride = (long) dim1 / blockSize * typeSize;
@@ -671,15 +705,15 @@ public final class Q8Kernel {
             FloatVector c10 = FloatVector.zero(F_SPECIES), c11 = FloatVector.zero(F_SPECIES), c12 = FloatVector.zero(F_SPECIES), c13 = FloatVector.zero(F_SPECIES);
             FloatVector c20 = FloatVector.zero(F_SPECIES), c21 = FloatVector.zero(F_SPECIES), c22 = FloatVector.zero(F_SPECIES), c23 = FloatVector.zero(F_SPECIES);
             for (int j = 0; j < dim1; j += blockSize, b0 += typeSize, b1 += typeSize, b2 += typeSize) {
-                float d0 = Float.float16ToFloat(readShort(w, b0));
-                float d1 = Float.float16ToFloat(readShort(w, b1));
-                float d2 = Float.float16ToFloat(readShort(w, b2));
-                var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d0);
-                var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d0);
-                var w10 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d1);
-                var w11 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d1);
-                var w20 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b2 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d2);
-                var w21 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b2 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d2);
+                float d0 = Float.float16ToFloat(readShort(ws, wb + b0));
+                float d1 = Float.float16ToFloat(readShort(ws, wb + b1));
+                float d2 = Float.float16ToFloat(readShort(ws, wb + b2));
+                var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b0 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d0);
+                var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b0 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d0);
+                var w10 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b1 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d1);
+                var w11 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b1 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d1);
+                var w20 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b2 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d2);
+                var w21 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b2 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d2);
                 FloatVector a0, a1;
                 a0 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j), ByteOrder.LITTLE_ENDIAN);
                 a1 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j + 16), ByteOrder.LITTLE_ENDIAN);
@@ -722,6 +756,11 @@ public final class Q8Kernel {
 
         private static void gemm512Tile4x4F32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                        int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
+        // Wide tiles fail Graal's AOT VEX encoding (VCVTPH2PS at xmm16+ under this register pressure);
+        // the folded throw makes the body dead code under native image, where TILE_CODE selects 3x2.
+        if (VectorSupport.IN_NATIVE_IMAGE) throw new AssertionError("wide tile under native image");
+        final MemorySegment ws = vectorSegment(w);
+        final long wb = vectorBase(w);
         final int blockSize = BLOCK;
         final int typeSize = TYPE;
         final long rowStride = (long) dim1 / blockSize * typeSize;
@@ -741,22 +780,22 @@ public final class Q8Kernel {
             // spilled to a stack slot per iteration. This is a Graal CE linear-scan + scheduler limit
             // (the scheduler hoists independent loads, and the phi permutation needs one scratch slot);
             // it cannot be removed from Java without making it far worse (see FIXES.md). 4x4 still wins.
-            float d0 = Float.float16ToFloat(readShort(w, b0));
-            float d1 = Float.float16ToFloat(readShort(w, b1));
-            float d2 = Float.float16ToFloat(readShort(w, b2));
-            float d3 = Float.float16ToFloat(readShort(w, b3));
+            float d0 = Float.float16ToFloat(readShort(ws, wb + b0));
+            float d1 = Float.float16ToFloat(readShort(ws, wb + b1));
+            float d2 = Float.float16ToFloat(readShort(ws, wb + b2));
+            float d3 = Float.float16ToFloat(readShort(ws, wb + b3));
             // Two 128-bit loads/row, each a fused vpmovsxbd zmm,[mem] (load+sign-extend in one instr).
             // A 256-bit load + castShape part 0/1 was tried: it cut the spill (2/3 -> 1/1 transient) but
             // added 8 vextracti128 (port-5) per iteration and ran ~4% slower -- proving the kernel is
             // shuffle-port bound, not spill bound, so the single accumulator-phi spill is harmless.
-            var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d0);
-            var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d0);
-            var w10 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d1);
-            var w11 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d1);
-            var w20 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b2 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d2);
-            var w21 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b2 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d2);
-            var w30 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b3 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d3);
-            var w31 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b3 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d3);
+            var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b0 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d0);
+            var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b0 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d0);
+            var w10 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b1 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d1);
+            var w11 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b1 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d1);
+            var w20 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b2 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d2);
+            var w21 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b2 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d2);
+            var w30 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b3 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d3);
+            var w31 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b3 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d3);
             FloatVector a0, a1;
             a0 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j), ByteOrder.LITTLE_ENDIAN);
             a1 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j + 16), ByteOrder.LITTLE_ENDIAN);
@@ -808,6 +847,11 @@ public final class Q8Kernel {
         // 2 weight rows kept resident, 8 sequence columns streamed: 16 accumulators + 4 weights + 2 activations = 22 ZMM.
         private static void gemm512Tile2x8F32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                         int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
+        // Wide tiles fail Graal's AOT VEX encoding (VCVTPH2PS at xmm16+ under this register pressure);
+        // the folded throw makes the body dead code under native image, where TILE_CODE selects 3x2.
+        if (VectorSupport.IN_NATIVE_IMAGE) throw new AssertionError("wide tile under native image");
+        final MemorySegment ws = vectorSegment(w);
+        final long wb = vectorBase(w);
             final int blockSize = BLOCK;
             final int typeSize = TYPE;
             final long rowStride = (long) dim1 / blockSize * typeSize;
@@ -819,12 +863,12 @@ public final class Q8Kernel {
             FloatVector c10 = FloatVector.zero(F_SPECIES), c11 = FloatVector.zero(F_SPECIES), c12 = FloatVector.zero(F_SPECIES), c13 = FloatVector.zero(F_SPECIES);
             FloatVector c14 = FloatVector.zero(F_SPECIES), c15 = FloatVector.zero(F_SPECIES), c16 = FloatVector.zero(F_SPECIES), c17 = FloatVector.zero(F_SPECIES);
             for (int j = 0; j < dim1; j += blockSize, b0 += typeSize, b1 += typeSize) {
-                float d0 = Float.float16ToFloat(readShort(w, b0));
-                float d1 = Float.float16ToFloat(readShort(w, b1));
-                var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d0);
-                var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d0);
-                var w10 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d1);
-                var w11 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d1);
+                float d0 = Float.float16ToFloat(readShort(ws, wb + b0));
+                float d1 = Float.float16ToFloat(readShort(ws, wb + b1));
+                var w00 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b0 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d0);
+                var w01 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b0 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d0);
+                var w10 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b1 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d1);
+                var w11 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b1 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d1);
                 { var a0 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j), ByteOrder.LITTLE_ENDIAN);
                   var a1 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j + 16), ByteOrder.LITTLE_ENDIAN);
                   c00 = w01.fma(a1, w00.fma(a0, c00)); c10 = w11.fma(a1, w10.fma(a0, c10)); }
@@ -872,6 +916,11 @@ public final class Q8Kernel {
         // 2 sequence columns kept resident, 8 weight rows streamed: 16 accumulators + 4 activations + 2 weights = 22 ZMM.
         private static void gemm512Tile8x2F32(MemorySegment w, MemorySegment x, long xBase, long outAddr,
                                         int thatStride, int outStride, int dim1, long thisOffset, int row, int s) {
+        // Wide tiles fail Graal's AOT VEX encoding (VCVTPH2PS at xmm16+ under this register pressure);
+        // the folded throw makes the body dead code under native image, where TILE_CODE selects 3x2.
+        if (VectorSupport.IN_NATIVE_IMAGE) throw new AssertionError("wide tile under native image");
+        final MemorySegment ws = vectorSegment(w);
+        final long wb = vectorBase(w);
             final int blockSize = BLOCK;
             final int typeSize = TYPE;
             final long rowStride = (long) dim1 / blockSize * typeSize;
@@ -894,37 +943,37 @@ public final class Q8Kernel {
                 var a01 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + j + 16), ByteOrder.LITTLE_ENDIAN);
                 var a10 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + thatStride + j), ByteOrder.LITTLE_ENDIAN);
                 var a11 = FloatVector.fromMemorySegment(F_SPECIES, x, xBase + 4L * (x0 + thatStride + j + 16), ByteOrder.LITTLE_ENDIAN);
-                { float d = Float.float16ToFloat(readShort(w, b0));
-                  var w0 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
-                  var w1 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b0 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
+                { float d = Float.float16ToFloat(readShort(ws, wb + b0));
+                  var w0 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b0 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
+                  var w1 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b0 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
                   c00 = w1.fma(a01, w0.fma(a00, c00)); c01 = w1.fma(a11, w0.fma(a10, c01)); }
-                { float d = Float.float16ToFloat(readShort(w, b1));
-                  var w0 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
-                  var w1 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b1 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
+                { float d = Float.float16ToFloat(readShort(ws, wb + b1));
+                  var w0 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b1 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
+                  var w1 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b1 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
                   c10 = w1.fma(a01, w0.fma(a00, c10)); c11 = w1.fma(a11, w0.fma(a10, c11)); }
-                { float d = Float.float16ToFloat(readShort(w, b2));
-                  var w0 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b2 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
-                  var w1 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b2 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
+                { float d = Float.float16ToFloat(readShort(ws, wb + b2));
+                  var w0 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b2 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
+                  var w1 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b2 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
                   c20 = w1.fma(a01, w0.fma(a00, c20)); c21 = w1.fma(a11, w0.fma(a10, c21)); }
-                { float d = Float.float16ToFloat(readShort(w, b3));
-                  var w0 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b3 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
-                  var w1 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b3 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
+                { float d = Float.float16ToFloat(readShort(ws, wb + b3));
+                  var w0 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b3 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
+                  var w1 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b3 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
                   c30 = w1.fma(a01, w0.fma(a00, c30)); c31 = w1.fma(a11, w0.fma(a10, c31)); }
-                { float d = Float.float16ToFloat(readShort(w, b4));
-                  var w0 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b4 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
-                  var w1 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b4 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
+                { float d = Float.float16ToFloat(readShort(ws, wb + b4));
+                  var w0 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b4 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
+                  var w1 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b4 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
                   c40 = w1.fma(a01, w0.fma(a00, c40)); c41 = w1.fma(a11, w0.fma(a10, c41)); }
-                { float d = Float.float16ToFloat(readShort(w, b5));
-                  var w0 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b5 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
-                  var w1 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b5 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
+                { float d = Float.float16ToFloat(readShort(ws, wb + b5));
+                  var w0 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b5 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
+                  var w1 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b5 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
                   c50 = w1.fma(a01, w0.fma(a00, c50)); c51 = w1.fma(a11, w0.fma(a10, c51)); }
-                { float d = Float.float16ToFloat(readShort(w, b6));
-                  var w0 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b6 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
-                  var w1 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b6 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
+                { float d = Float.float16ToFloat(readShort(ws, wb + b6));
+                  var w0 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b6 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
+                  var w1 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b6 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
                   c60 = w1.fma(a01, w0.fma(a00, c60)); c61 = w1.fma(a11, w0.fma(a10, c61)); }
-                { float d = Float.float16ToFloat(readShort(w, b7));
-                  var w0 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b7 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
-                  var w1 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, w, b7 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
+                { float d = Float.float16ToFloat(readShort(ws, wb + b7));
+                  var w0 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b7 + 2, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
+                  var w1 = ((FloatVector) ByteVector.fromMemorySegment(ByteVector.SPECIES_128, ws, wb + b7 + 2 + 16, ByteOrder.LITTLE_ENDIAN).castShape(F_SPECIES, 0)).mul(d);
                   c70 = w1.fma(a01, w0.fma(a00, c70)); c71 = w1.fma(a11, w0.fma(a10, c71)); }
             }
             int o0 = s * outStride + row;
