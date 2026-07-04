@@ -162,13 +162,24 @@ void jam_mm_q6k_rp_avxvnni(void* arg, int rb, int re, int tid) {
                     int h = s16 / 8, rem = s16 % 8, g = rem / 2, half = rem & 1;
                     int ebase = (h*4 + g)*32 + half*16;
                     __m256i sc_v = _mm256_cvtepi8_epi32(_mm_loadl_epi64((const __m128i*)(sc + s16*8)));   /* signed */
-                    __m256i sb[4]; for (int t = 0; t < nt; ++t) sb[t] = _mm256_setzero_si256();
-                    for (int g4 = 0; g4 < 4; ++g4) {
-                        __m256i w = _mm256_loadu_si256((const __m256i*)(qs + (size_t)(s16*4 + g4)*32));
-                        for (int t = 0; t < nt; ++t)
-                            sb[t] = VDOT(sb[t], w, _mm256_set1_epi32(*(const int*)(AQ + (size_t)(j0+t)*k + (size_t) B*JAM_QKK + ebase + g4*4)));
-                    }
-                    for (int t = 0; t < nt; ++t) sumi[t] = _mm256_add_epi32(sumi[t], _mm256_mullo_epi32(sb[t], sc_v));
+                    /* All 4 weight vectors up front, ONE sb rotating over tokens: live set is
+                     * acc[4]+sumi[4]+w[4]+sb+sc_v+broadcast = 15 ymm. The sb[4]-staging shape spilled
+                     * sumi to the stack (perf: vpaddd (%rsp) 14.7%) - same disease the avx2 kernel had. */
+                    __m256i w0 = _mm256_loadu_si256((const __m256i*)(qs + (size_t)(s16*4    )*32));
+                    __m256i w1 = _mm256_loadu_si256((const __m256i*)(qs + (size_t)(s16*4 + 1)*32));
+                    __m256i w2 = _mm256_loadu_si256((const __m256i*)(qs + (size_t)(s16*4 + 2)*32));
+                    __m256i w3 = _mm256_loadu_si256((const __m256i*)(qs + (size_t)(s16*4 + 3)*32));
+                    #define Q6K_TOK(t) do { \
+                        const int8_t* ap = AQ + (size_t)(j0+(t))*k + (size_t) B*JAM_QKK + ebase; \
+                        __m256i sb = VDOT(_mm256_setzero_si256(), w0, _mm256_set1_epi32(*(const int*)(ap    ))); \
+                        sb = VDOT(sb, w1, _mm256_set1_epi32(*(const int*)(ap +  4))); \
+                        sb = VDOT(sb, w2, _mm256_set1_epi32(*(const int*)(ap +  8))); \
+                        sb = VDOT(sb, w3, _mm256_set1_epi32(*(const int*)(ap + 12))); \
+                        sumi[t] = _mm256_add_epi32(sumi[t], _mm256_mullo_epi32(sb, sc_v)); \
+                    } while (0)
+                    if (nt == 4) { Q6K_TOK(0); Q6K_TOK(1); Q6K_TOK(2); Q6K_TOK(3); }   /* full tile: fixed indices */
+                    else for (int t = 0; t < nt; ++t) Q6K_TOK(t);
+                    #undef Q6K_TOK
                 }
                 __m256 d_v = _mm256_loadu_ps(d);
                 __m256 bias[4]; for (int t = 0; t < nt; ++t) bias[t] = _mm256_setzero_ps();
