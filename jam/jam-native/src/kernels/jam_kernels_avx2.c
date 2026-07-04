@@ -123,37 +123,57 @@ void NAME(void* arg, int rb, int re, int tid) {                                 
     const float* X = (const float*) J->b;                                                                 \
     float* C = (float*) J->c;                                                                             \
     const int ldw = J->lda, ldx = J->ldb, ldc = J->ldc, n = J->n, k = J->k;                              \
-    int r = rb;                                                                                           \
-    for (; r + 2 <= re; r += 2) {                                                                         \
-        const uint16_t *w0=W+(int64_t)r*ldw,*w1=w0+ldw;                                                   \
+    /* Row-blocked, activation-tile-outer nest: the 4-col x tile (4*k*4B, L1/L2) is loaded once and      \
+     * swept across the whole row block (weights ~RB*k*2B, L2-resident), so the activation matrix is     \
+     * read from L3 once per BLOCK instead of once per row-pair: L3 activation traffic drops RB/2 x.     \
+     * The old nest collapsed at 4096^3 (413 -> 210 GMAC/s) on exactly that traffic. */                  \
+    int RB = (int)(512*1024 / ((size_t) k * 2)); RB &= ~1; if (RB < 8) RB = 8; if (RB > 128) RB = 128;   \
+    for (int r0 = rb; r0 < re; r0 += RB) {                                                                \
+        const int rbe = r0 + RB < re ? r0 + RB : re;                                                      \
         int s = 0;                                                                                        \
         for (; s + 4 <= n; s += 4) {                                                                      \
             const float *x0=X+(int64_t)s*ldx,*x1=x0+ldx,*x2=x1+ldx,*x3=x2+ldx;                            \
-            __m256 a00=_mm256_setzero_ps(),a01=a00,a02=a00,a03=a00, a10=a00,a11=a00,a12=a00,a13=a00;      \
-            for (int t = 0; t < k; t += 8) {                                                              \
-                __m256 wv0=LOADW(w0+t),wv1=LOADW(w1+t);                                                   \
-                __m256 xv0=_mm256_loadu_ps(x0+t),xv1=_mm256_loadu_ps(x1+t),xv2=_mm256_loadu_ps(x2+t),xv3=_mm256_loadu_ps(x3+t); \
-                a00=_mm256_fmadd_ps(wv0,xv0,a00);a01=_mm256_fmadd_ps(wv0,xv1,a01);a02=_mm256_fmadd_ps(wv0,xv2,a02);a03=_mm256_fmadd_ps(wv0,xv3,a03); \
-                a10=_mm256_fmadd_ps(wv1,xv0,a10);a11=_mm256_fmadd_ps(wv1,xv1,a11);a12=_mm256_fmadd_ps(wv1,xv2,a12);a13=_mm256_fmadd_ps(wv1,xv3,a13); \
+            int r = r0;                                                                                   \
+            for (; r + 2 <= rbe; r += 2) {                                                                \
+                const uint16_t *w0=W+(int64_t)r*ldw,*w1=w0+ldw;                                           \
+                __m256 a00=_mm256_setzero_ps(),a01=a00,a02=a00,a03=a00, a10=a00,a11=a00,a12=a00,a13=a00;  \
+                for (int t = 0; t < k; t += 8) {                                                          \
+                    __m256 wv0=LOADW(w0+t),wv1=LOADW(w1+t);                                               \
+                    __m256 xv0=_mm256_loadu_ps(x0+t),xv1=_mm256_loadu_ps(x1+t),xv2=_mm256_loadu_ps(x2+t),xv3=_mm256_loadu_ps(x3+t); \
+                    a00=_mm256_fmadd_ps(wv0,xv0,a00);a01=_mm256_fmadd_ps(wv0,xv1,a01);a02=_mm256_fmadd_ps(wv0,xv2,a02);a03=_mm256_fmadd_ps(wv0,xv3,a03); \
+                    a10=_mm256_fmadd_ps(wv1,xv0,a10);a11=_mm256_fmadd_ps(wv1,xv1,a11);a12=_mm256_fmadd_ps(wv1,xv2,a12);a13=_mm256_fmadd_ps(wv1,xv3,a13); \
+                }                                                                                         \
+                float *o0=C+(int64_t)s*ldc+r,*o1=o0+ldc,*o2=o1+ldc,*o3=o2+ldc;                            \
+                o0[0]=hsum8(a00);o0[1]=hsum8(a10); o1[0]=hsum8(a01);o1[1]=hsum8(a11);                      \
+                o2[0]=hsum8(a02);o2[1]=hsum8(a12); o3[0]=hsum8(a03);o3[1]=hsum8(a13);                      \
             }                                                                                             \
-            float *o0=C+(int64_t)s*ldc+r,*o1=o0+ldc,*o2=o1+ldc,*o3=o2+ldc;                                \
-            o0[0]=hsum8(a00);o0[1]=hsum8(a10); o1[0]=hsum8(a01);o1[1]=hsum8(a11);                          \
-            o2[0]=hsum8(a02);o2[1]=hsum8(a12); o3[0]=hsum8(a03);o3[1]=hsum8(a13);                          \
+            if (r < rbe) {                                                                                \
+                const uint16_t* w = W+(int64_t)r*ldw;                                                     \
+                __m256 b0=_mm256_setzero_ps(),b1=b0,b2=b0,b3=b0;                                          \
+                for (int t = 0; t < k; t += 8) {                                                          \
+                    __m256 wv=LOADW(w+t);                                                                 \
+                    b0=_mm256_fmadd_ps(wv,_mm256_loadu_ps(x0+t),b0);b1=_mm256_fmadd_ps(wv,_mm256_loadu_ps(x1+t),b1); \
+                    b2=_mm256_fmadd_ps(wv,_mm256_loadu_ps(x2+t),b2);b3=_mm256_fmadd_ps(wv,_mm256_loadu_ps(x3+t),b3); \
+                }                                                                                         \
+                C[(int64_t)s*ldc+r]=hsum8(b0);C[(int64_t)(s+1)*ldc+r]=hsum8(b1);                          \
+                C[(int64_t)(s+2)*ldc+r]=hsum8(b2);C[(int64_t)(s+3)*ldc+r]=hsum8(b3);                      \
+            }                                                                                             \
         }                                                                                                 \
         for (; s < n; s++) {                                                                              \
             const float* xs = X+(int64_t)s*ldx;                                                           \
-            __m256 b0=_mm256_setzero_ps(),b1=b0;                                                          \
-            for (int t=0;t<k;t+=8){ __m256 xv=_mm256_loadu_ps(xs+t); b0=_mm256_fmadd_ps(LOADW(w0+t),xv,b0);b1=_mm256_fmadd_ps(LOADW(w1+t),xv,b1); } \
-            float* o=C+(int64_t)s*ldc+r; o[0]=hsum8(b0);o[1]=hsum8(b1);                                    \
-        }                                                                                                 \
-    }                                                                                                     \
-    for (; r < re; r++) {                                                                                 \
-        const uint16_t* w = W+(int64_t)r*ldw;                                                             \
-        for (int s = 0; s < n; s++) {                                                                     \
-            const float* xs = X+(int64_t)s*ldx;                                                           \
-            __m256 acc=_mm256_setzero_ps();                                                               \
-            for (int t=0;t<k;t+=8) acc=_mm256_fmadd_ps(LOADW(w+t), _mm256_loadu_ps(xs+t), acc);           \
-            C[(int64_t)s*ldc+r]=hsum8(acc);                                                               \
+            int r = r0;                                                                                   \
+            for (; r + 2 <= rbe; r += 2) {                                                                \
+                const uint16_t *w0=W+(int64_t)r*ldw,*w1=w0+ldw;                                           \
+                __m256 b0=_mm256_setzero_ps(),b1=b0;                                                      \
+                for (int t=0;t<k;t+=8){ __m256 xv=_mm256_loadu_ps(xs+t); b0=_mm256_fmadd_ps(LOADW(w0+t),xv,b0);b1=_mm256_fmadd_ps(LOADW(w1+t),xv,b1); } \
+                float* o=C+(int64_t)s*ldc+r; o[0]=hsum8(b0);o[1]=hsum8(b1);                                \
+            }                                                                                             \
+            if (r < rbe) {                                                                                \
+                const uint16_t* w = W+(int64_t)r*ldw;                                                     \
+                __m256 acc=_mm256_setzero_ps();                                                           \
+                for (int t=0;t<k;t+=8) acc=_mm256_fmadd_ps(LOADW(w+t), _mm256_loadu_ps(xs+t), acc);       \
+                C[(int64_t)s*ldc+r]=hsum8(acc);                                                           \
+            }                                                                                             \
         }                                                                                                 \
     }                                                                                                     \
 }
