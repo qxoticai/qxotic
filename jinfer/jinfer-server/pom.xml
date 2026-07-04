@@ -16,6 +16,15 @@
     <name>jinfer-server</name>
     <description>OpenAI-compatible HTTP server and CLI launcher</description>
 
+    <properties>
+
+        <!-- native builder opt-in: wide 512-bit register tiles (needs a 32-ZMM Graal, GR-13757) -->
+
+        <jam.wideTiles>false</jam.wideTiles>
+
+    </properties>
+
+
     <dependencies>
         <dependency>
             <groupId>com.qxotic</groupId>
@@ -116,6 +125,7 @@
                             <mainClass>com.qxotic.jinfer.Main</mainClass>
                             <buildArgs>
                                 <buildArg>-O3</buildArg>
+                                <buildArg>-Djam.vector.wideTiles=${jam.wideTiles}</buildArg>
                                 <buildArg>-march=native</buildArg>
                                 <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
                                 <buildArg>-H:+VectorAPISupport</buildArg>
