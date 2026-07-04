@@ -10,7 +10,6 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <immintrin.h>
-#include "jam_decode_x86_256.h"
 
 #define JAM_DOT(aqa, sqb) \
     _mm256_cvtepi32_ps(_mm256_dpbusd_avx_epi32(_mm256_setzero_si256(), aqa, sqb))
