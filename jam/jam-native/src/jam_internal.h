@@ -69,6 +69,7 @@ struct jam_ctx {
     jam_repack_fn    mxfp4_repack;    /* non-NULL -> cached weight-repack for mxfp4_rp_kernel */
     jam_repack_fn    q4_0_repack;    /* non-NULL -> cached weight-repack (Q4_0 raw nibble) for deferred -8 correction */
     jam_task_fn      dense_f16_kernel;   /* AVX-512 F16 dense (k%16==0); NULL -> generic floor */
+    jam_task_fn      dense_f32_kernel;   /* row-blocked dense F32 (avx2, k%8==0); NULL where mnpack wins (avx512) */
     jam_task_fn      dense_bf16_kernel;  /* AVX-512 BF16 dense (k%16==0); NULL -> generic floor */
 
     /* Q8_0 VNNI activation-requant scratch (context-owned, grown lazily). Assumes a context is used
@@ -105,6 +106,7 @@ void jam_mm_f32_generic(void* job, int row_begin, int row_end, int tid);
 
 #ifdef JAM_HAVE_AVX2
 void jam_mm_f32_avx2(void* job, int row_begin, int row_end, int tid);
+void jam_mm_f32d_avx2(void* job, int row_begin, int row_end, int tid);       /* F32 dense, row-blocked 3x4 tile */
 #endif
 #ifdef JAM_HAVE_AVX512
 void jam_mm_f32_avx512(void* job, int row_begin, int row_end, int tid);
