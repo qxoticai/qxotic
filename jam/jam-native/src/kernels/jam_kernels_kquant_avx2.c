@@ -197,6 +197,53 @@ void jam_mm_q5k_rp_avx2(void* arg, int rb, int re, int tid) {
     }
 }
 
+void jam_mm_q5k_rp1_avx2(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const uint8_t* RP = (const uint8_t*) J->a;
+    const int8_t* AQ = J->aq;
+    const float* AD = J->ad;
+    float* C = (float*) J->c;
+    const int k = J->k;
+    const int sblocks = k / JAM_QKK;
+    const size_t grp_bytes = (size_t) sblocks * sizeof(jam_q5k_rpblock);
+    const int mrows = J->m;
+    for (int grp = rb; grp < re; ++grp) {
+        int i0 = grp * 8;
+        int nf = mrows - i0 < 8 ? mrows - i0 : 8;
+        const uint8_t* gbase = RP + (size_t) grp * grp_bytes;
+        __m256 acc = _mm256_setzero_ps();
+        for (int B = 0; B < sblocks; ++B) {
+            const jam_q5k_rpblock* blk = (const jam_q5k_rpblock*) gbase + B;
+            const float* d = blk->d; const float* dmin = blk->dmin;
+            const uint8_t* sc = blk->sc; const uint8_t* mn = blk->mn; const uint8_t* qs = blk->qs;
+            __m256i sumi = _mm256_setzero_si256();
+            for (int s = 0; s < 8; ++s) {
+                __m128i sc8b = _mm_cvtepu8_epi16(_mm_loadl_epi64((const __m128i*)(sc + s*8)));
+                __m256i sc16 = _mm256_set_m128i(_mm_unpackhi_epi16(sc8b, sc8b), _mm_unpacklo_epi16(sc8b, sc8b));
+                __m256i sb = _mm256_setzero_si256();
+                for (int gp = 0; gp < 8; ++gp) {
+                    __m256i w = _mm256_loadu_si256((const __m256i*)(qs + (size_t)(s*8 + gp)*32));
+                    const int8_t* a = AQ + (size_t) B*JAM_QKK + s*32 + gp*4;
+                    __m256i aw = _mm256_set1_epi32(*(const int*) a);
+                    sb = _mm256_add_epi32(sb, _mm256_madd_epi16(_mm256_maddubs_epi16(w, aw), sc16));
+                }
+                sumi = _mm256_add_epi32(sumi, sb);
+            }
+            __m256 minsum = _mm256_setzero_ps();
+            for (int s = 0; s < 8; ++s) {
+                __m256 mnf = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i*)(mn + s*8))));
+                minsum = _mm256_fmadd_ps(mnf, _mm256_set1_ps(J->asum[B*8 + s]), minsum);
+            }
+            __m256 contrib = _mm256_sub_ps(_mm256_mul_ps(_mm256_loadu_ps(d), _mm256_cvtepi32_ps(sumi)),
+                                           _mm256_mul_ps(_mm256_loadu_ps(dmin), minsum));
+            acc = _mm256_fmadd_ps(contrib, _mm256_set1_ps(AD[B]), acc);
+        }
+        float tmp[8]; _mm256_storeu_ps(tmp, acc);
+        for (int f = 0; f < nf; ++f) C[i0 + f] = tmp[f];
+    }
+}
+
 /* ---- Q6_K cached-repack (8-feature-wide). Q6_K has 16 per-16 INT8 (signed) scales, a signed 6-bit weight
  * (qv-32) and NO min. Store qv UNSIGNED (0..63, one byte/elem, group-interleaved) and fold the -32 as a
  * 32·Σaq bias (per-16 sums computed in-kernel), mirroring Q4_K's min term. ---- Repacked per super-block:
@@ -287,6 +334,52 @@ void jam_mm_q6k_rp_avx2(void* arg, int rb, int re, int tid) {
                 for (int f = 0; f < nf; ++f) C[(size_t)(j0+t)*ldc + (i0+f)] = tmp[f];
             }
         }
+    }
+}
+
+void jam_mm_q6k_rp1_avx2(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const uint8_t* RP = (const uint8_t*) J->a;
+    const int8_t* AQ = J->aq;
+    const float* AD = J->ad;
+    float* C = (float*) J->c;
+    const int k = J->k;
+    const int sblocks = k / JAM_QKK;
+    const size_t grp_bytes = (size_t) sblocks * sizeof(jam_q6k_rpblock);
+    const int mrows = J->m;
+    for (int grp = rb; grp < re; ++grp) {
+        int i0 = grp * 8;
+        int nf = mrows - i0 < 8 ? mrows - i0 : 8;
+        const uint8_t* gbase = RP + (size_t) grp * grp_bytes;
+        __m256 acc = _mm256_setzero_ps();
+        for (int B = 0; B < sblocks; ++B) {
+            const jam_q6k_rpblock* blk = (const jam_q6k_rpblock*) gbase + B;
+            const float* d = blk->d; const int8_t* sc = blk->sc; const uint8_t* qs = blk->qs;
+            __m256i sumi = _mm256_setzero_si256();
+            for (int s16 = 0; s16 < 16; ++s16) {
+                int h = s16 / 8, rem = s16 % 8, g = rem / 2, half = rem & 1;
+                int ebase = (h*4 + g)*32 + half*16;
+                __m128i scb = _mm_cvtepi8_epi16(_mm_loadl_epi64((const __m128i*)(sc + s16*8)));
+                __m256i sc16 = _mm256_set_m128i(_mm_unpackhi_epi16(scb, scb), _mm_unpacklo_epi16(scb, scb));
+                __m256i sb = _mm256_setzero_si256();
+                for (int g4 = 0; g4 < 4; ++g4) {
+                    __m256i w = _mm256_loadu_si256((const __m256i*)(qs + (size_t)(s16*4 + g4)*32));
+                    int ai = *(const int*)(AQ + (size_t) B*JAM_QKK + ebase + g4*4);
+                    sb = _mm256_add_epi32(sb, _mm256_madd_epi16(_mm256_maddubs_epi16(w, _mm256_set1_epi32(ai)), sc16));
+                }
+                sumi = _mm256_add_epi32(sumi, sb);
+            }
+            __m256 bias = _mm256_setzero_ps();
+            for (int s16 = 0; s16 < 16; ++s16) {
+                __m256 scf = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_loadl_epi64((const __m128i*)(sc + s16*8))));
+                bias = _mm256_fmadd_ps(scf, _mm256_set1_ps(J->asum[B*16 + s16]), bias);
+            }
+            __m256 inner = _mm256_sub_ps(_mm256_cvtepi32_ps(sumi), _mm256_mul_ps(_mm256_set1_ps(32.0f), bias));
+            acc = _mm256_fmadd_ps(_mm256_mul_ps(_mm256_loadu_ps(d), inner), _mm256_set1_ps(AD[B]), acc);
+        }
+        float tmp[8]; _mm256_storeu_ps(tmp, acc);
+        for (int f = 0; f < nf; ++f) C[i0 + f] = tmp[f];
     }
 }
 
@@ -385,6 +478,43 @@ void jam_mm_q4_0_rp_avx2(void* arg, int rb, int re, int tid) {
     }
 }
 
+/* Decode-specialized Q4_0 cached-repack kernel. The raw nibble dot is accumulated in int16 across the 8
+ * four-element groups, then corrected by -8*sum(aq) once per block and scaled. */
+void jam_mm_q4_0_rp1_avx2(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const uint8_t* RP = (const uint8_t*) J->a;
+    const int8_t* AQ = J->aq;
+    const float* AD = J->ad;
+    const float* AS = J->asum;
+    float* C = (float*) J->c;
+    const int nb = J->nb;
+    const size_t grp_bytes = (size_t) nb * sizeof(jam_q8_0_rpblock);
+    const int mrows = J->m;
+    const __m256i ones = _mm256_set1_epi16(1);
+    for (int grp = rb; grp < re; ++grp) {
+        int i0 = grp * 8;
+        int nf = mrows - i0 < 8 ? mrows - i0 : 8;
+        const uint8_t* gbase = RP + (size_t) grp * grp_bytes;
+        __m256 acc = _mm256_setzero_ps();
+        for (int blk = 0; blk < nb; ++blk) {
+            const jam_q8_0_rpblock* rpb = (const jam_q8_0_rpblock*) gbase + blk;
+            __m256i sb16 = _mm256_setzero_si256();
+            for (int g = 0; g < 8; ++g) {
+                __m256i w = _mm256_loadu_si256((const __m256i*)(rpb->qs + g*32));
+                __m256i a4 = _mm256_set1_epi32(*(const int*)(AQ + (size_t) blk*32 + g*4));
+                sb16 = _mm256_add_epi16(sb16, _mm256_maddubs_epi16(w, a4));
+            }
+            __m256 sb = _mm256_cvtepi32_ps(_mm256_madd_epi16(sb16, ones));
+            __m256 cc = _mm256_sub_ps(sb, _mm256_set1_ps(8.0f * AS[blk]));
+            __m256 dad = _mm256_mul_ps(_mm256_loadu_ps(rpb->d), _mm256_set1_ps(AD[blk]));
+            acc = _mm256_fmadd_ps(dad, cc, acc);
+        }
+        float tmp[8]; _mm256_storeu_ps(tmp, acc);
+        for (int f = 0; f < nf; ++f) C[i0 + f] = tmp[f];
+    }
+}
+
 void jam_mm_q8_0_rp_avx2(void* arg, int rb, int re, int tid) {
     (void) tid;
     const jam_q8_job* J = (const jam_q8_job*) arg;
@@ -427,3 +557,37 @@ void jam_mm_q8_0_rp_avx2(void* arg, int rb, int re, int tid) {
     }
 }
 
+/* Decode-specialized sibling of jam_mm_q8_0_rp_avx2: same cached 8-feature repack, but only one activation
+ * row. Avoids the general nt<=4 token loops and stack arrays in the latency-sensitive n==1 path. */
+void jam_mm_q8_0_rp1_avx2(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const uint8_t* RP = (const uint8_t*) J->a;
+    const int8_t* AQ = J->aq;
+    const float* AD = J->ad;
+    float* C = (float*) J->c;
+    const int nb = J->nb;
+    const size_t grp_bytes = (size_t) nb * sizeof(jam_q8_0_rpblock);
+    const int mrows = J->m;
+    const __m256i ones = _mm256_set1_epi16(1);
+    for (int grp = rb; grp < re; ++grp) {
+        int i0 = grp * 8;
+        int nf = mrows - i0 < 8 ? mrows - i0 : 8;
+        const uint8_t* gbase = RP + (size_t) grp * grp_bytes;
+        __m256 acc = _mm256_setzero_ps();
+        for (int blk = 0; blk < nb; ++blk) {
+            const jam_q8_0_rpblock* rpb = (const jam_q8_0_rpblock*) gbase + blk;
+            __m256i sb = _mm256_setzero_si256();
+            for (int g = 0; g < 8; ++g) {
+                __m256i w = _mm256_loadu_si256((const __m256i*)(rpb->qs + g*32));   /* 8 feat × 4 elem, signed */
+                __m256i a4 = _mm256_set1_epi32(*(const int*)(AQ + (size_t) blk*32 + g*4));
+                __m256i prod = _mm256_maddubs_epi16(_mm256_abs_epi8(a4), _mm256_sign_epi8(w, a4));
+                sb = _mm256_add_epi32(sb, _mm256_madd_epi16(prod, ones));
+            }
+            __m256 dad = _mm256_mul_ps(_mm256_loadu_ps(rpb->d), _mm256_set1_ps(AD[blk]));
+            acc = _mm256_fmadd_ps(dad, _mm256_cvtepi32_ps(sb), acc);
+        }
+        float tmp[8]; _mm256_storeu_ps(tmp, acc);
+        for (int f = 0; f < nf; ++f) C[i0 + f] = tmp[f];
+    }
+}

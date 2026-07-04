@@ -531,6 +531,8 @@ static jam_status dispatch_kquant(jam_ctx* ctx, const void* w, int ldw, const vo
         q.aq = (int8_t*) ctx->q_aq; q.ad = (float*) ctx->q_ad; q.asum = (float*) ctx->q_asum;
         if (n == 1) requant(&q, 0, 1, 0); else jam_run(ctx, n, requant, &q);
         if (repack) {
+            if (n == 1 && simd == jam_mm_q5k_rp_avx2) simd = jam_mm_q5k_rp1_avx2;
+            if (n == 1 && simd == jam_mm_q6k_rp_avx2) simd = jam_mm_q6k_rp1_avx2;
             if (try_repack_run(ctx, &q, w, m, k, JAM_QKK, rp_sbbytes,
                                (size_t)(ldw / JAM_QKK) * kbytes, repack, simd)) return JAM_OK;
             return run_quant(ctx, &q, m, NULL, floor_);   /* repack alloc failed -> float floor (simd is the group-indexed rp kernel, can't run on the raw weight) */
@@ -634,12 +636,17 @@ static jam_status jam_mm_run(jam_ctx* ctx,
             if (ctx->active == JAM_ISA_AVX_VNNI &&
                 try_vnni_band_256(ctx, w, ldw, a, lda, c, ldc, m, n, k, 34, jam_q8_0_repack_band_avxvnni)) return JAM_OK;
 #endif
-            /* avx2: cached-repack sign-trick maddubs 8-wide (prefill n>1; gemv keeps the dot kernel) */
-            if (ctx->q8_0_repack && ctx->q8_0_rp_kernel && n > 1 && ensure_qscratch(ctx, n, k)) {
+            /* avx2: cached-repack sign-trick maddubs 8-wide. Decode (n==1) benefits too once the weight is
+             * cached: it keeps 8 feature rows in lanes and avoids the per-row horizontal-sum dot kernel. */
+            if (ctx->q8_0_repack && ctx->q8_0_rp_kernel && ensure_qscratch(ctx, n, k)) {
                 q.aq = (int8_t*) ctx->q_aq; q.ad = (float*) ctx->q_ad; q.asum = NULL;   /* no min term */
                 jam_run(ctx, n, jam_q8_0_requant, &q);
+                jam_task_fn rp_kernel = ctx->q8_0_rp_kernel;
+#ifdef JAM_HAVE_AVX2
+                if (n == 1 && ctx->active == JAM_ISA_AVX2) rp_kernel = jam_mm_q8_0_rp1_avx2;
+#endif
                 if (try_repack_run(ctx, &q, w, m, k, JAM_QK, sizeof(jam_q8_0_rpblock),
-                                   (size_t)(ldw / JAM_QK) * 34, ctx->q8_0_repack, ctx->q8_0_rp_kernel)) return JAM_OK;
+                                   (size_t)(ldw / JAM_QK) * 34, ctx->q8_0_repack, rp_kernel)) return JAM_OK;
             }
             return run_quant(ctx, &q, m, ctx->q8_kernel, jam_mm_q8_0_f32_generic);   /* decode / non-VNNI */
         }
@@ -660,11 +667,12 @@ static jam_status jam_mm_run(jam_ctx* ctx,
 #ifdef JAM_HAVE_AVX2
             /* avx2: cached-repack (raw u8 nibble), then the no-sign-trick deferred-madd 8-wide kernel (prefill n>1).
              * Needs asum (per-block Σaq) for the -8 offset correction Σ(q-8)·a = Σq·a - 8·Σa. */
-            if (ctx->q4_0_repack && n > 1 && ensure_qscratch(ctx, n, k)) {
+            if (ctx->q4_0_repack && (n > 1 || ctx->active == JAM_ISA_AVX2) && ensure_qscratch(ctx, n, k)) {
                 q.aq = (int8_t*) ctx->q_aq; q.ad = (float*) ctx->q_ad; q.asum = (float*) ctx->q_asum;
                 jam_run(ctx, n, jam_q8_0_requant, &q);
+                jam_task_fn rp_kernel = n == 1 ? jam_mm_q4_0_rp1_avx2 : jam_mm_q4_0_rp_avx2;
                 if (try_repack_run(ctx, &q, w, m, k, JAM_QK, sizeof(jam_q8_0_rpblock),
-                                   (size_t)(ldw / JAM_QK) * 18, ctx->q4_0_repack, jam_mm_q4_0_rp_avx2)) return JAM_OK;
+                                   (size_t)(ldw / JAM_QK) * 18, ctx->q4_0_repack, rp_kernel)) return JAM_OK;
             }
 #endif
             return run_quant(ctx, &q, m, ctx->q4_0_kernel, jam_mm_q4_0_f32_generic);
