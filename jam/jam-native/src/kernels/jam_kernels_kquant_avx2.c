@@ -6,6 +6,7 @@
  * dmin·min / Q6_K-(-32) / Q8_0 terms corrected in float via Σx ≈ ad·Σaq. */
 #include <immintrin.h>
 #include "jam_internal.h"
+#include "jam_mxfp4.h"
 #include "jam_kquant.h"
 
 /* ---- Q4_K CACHED-REPACK avx2 (8-feature-WIDE, hand-tuned maddubs). Weight repacked ONCE (cached by ctx,
@@ -404,6 +405,108 @@ void jam_q8_0_repack8(const void* Wv, int rows0, int re, int nblocks, size_t w_s
                 int8_t v = q[g*4 + e]; rp->qs[g*32 + f*4 + e] = v < -127 ? -127 : v;
             }
         }
+    }
+}
+
+/* ---- MXFP4 cached-repack (8-feature-wide, |w|<=12 int16-deferred madd). MXFP4 block = {e8m0 e; qs[16]}
+ * (32 elems, 17 bytes); codes decode to signed FP4x2 integers {0,+-1..+-12} with the x1/2 folded into the
+ * float scale (jam_mxfp4_dhalf). Because |code| <= 12, maddubs(|w|, sign(a,w)) pair-sums stay <= 2*12*127
+ * and the per-group int16 products accumulate across all 8 groups (<= 24384 < 32767): madd_epi16 runs ONCE
+ * per block like Q4_0, not once per group like Q8_0. Same jam_q8_0_rpblock layout (d[8]; qs[8g][8f*4e]). */
+void jam_mxfp4_repack8(const void* Wv, int rows0, int re, int nblocks, size_t w_stride, void* outv) {
+    static const int8_t CODES[16] = { JAM_MXFP4_CODES };
+    const uint8_t* W = (const uint8_t*) Wv; jam_q8_0_rpblock* out = (jam_q8_0_rpblock*) outv;
+    int nf = re - rows0 < 8 ? re - rows0 : 8;
+    for (int blk = 0; blk < nblocks; ++blk) {
+        jam_q8_0_rpblock* rp = out + blk;
+        for (int f = 0; f < 8; ++f) {
+            if (f >= nf) { rp->d[f] = 0.0f; for (int g = 0; g < 8; ++g) for (int e = 0; e < 4; ++e) rp->qs[g*32 + f*4 + e] = 0; continue; }
+            const jam_mxfp4_blk* wb = (const jam_mxfp4_blk*) (W + (size_t)(rows0+f)*w_stride + (size_t) blk*sizeof(jam_mxfp4_blk));
+            rp->d[f] = jam_mxfp4_dhalf(wb->e);
+            for (int g = 0; g < 8; ++g) for (int e = 0; e < 4; ++e) {
+                int el = g*4 + e;   /* element 0..31: qs[el&15] low nibble = el<16, high = el>=16 */
+                uint8_t nib = el < 16 ? (wb->qs[el] & 0x0F) : (wb->qs[el-16] >> 4);
+                rp->qs[g*32 + f*4 + e] = CODES[nib];
+            }
+        }
+    }
+}
+
+/* MXFP4 repacked GEMM: rb..re = 8-feature GROUP indices; J->a = cached repacked weight. abs(w) is hoisted
+ * per group (shared by the 4 activation columns); int16 accumulation across the 8 groups, one madd/block. */
+void jam_mm_mxfp4_rp_avx2(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const uint8_t* RP = (const uint8_t*) J->a;
+    const int8_t* AQ = J->aq; const float* AD = J->ad;
+    float* C = (float*) J->c;
+    const int ldc = J->ldc, n = J->n, k = J->k, nb = J->nb;   /* nb = k/32 */
+    const size_t grp_bytes = (size_t) nb * sizeof(jam_q8_0_rpblock);
+    const int mrows = J->m;
+    const __m256i ones = _mm256_set1_epi16(1);
+    for (int grp = rb; grp < re; ++grp) {
+        int i0 = grp * 8;
+        int nf = mrows - i0 < 8 ? mrows - i0 : 8;
+        const uint8_t* gbase = RP + (size_t) grp * grp_bytes;
+        for (int j0 = 0; j0 < n; j0 += 4) {
+            int nt = n - j0 < 4 ? n - j0 : 4;
+            __m256 acc[4]; for (int t = 0; t < 4; ++t) acc[t] = _mm256_setzero_ps();
+            for (int blk = 0; blk < nb; ++blk) {
+                const jam_q8_0_rpblock* rpb = (const jam_q8_0_rpblock*) gbase + blk;
+                __m256 d8 = _mm256_loadu_ps(rpb->d);
+                __m256i sb16[4]; for (int t = 0; t < nt; ++t) sb16[t] = _mm256_setzero_si256();
+                for (int g = 0; g < 8; ++g) {
+                    __m256i w = _mm256_loadu_si256((const __m256i*)(rpb->qs + g*32));   /* signed codes, |w|<=12 */
+                    __m256i uw = _mm256_abs_epi8(w);
+                    for (int t = 0; t < nt; ++t) {
+                        __m256i a4 = _mm256_set1_epi32(*(const int*)(AQ + (size_t)(j0+t)*k + (size_t) blk*32 + g*4));
+                        sb16[t] = _mm256_add_epi16(sb16[t], _mm256_maddubs_epi16(uw, _mm256_sign_epi8(a4, w)));
+                    }
+                }
+                for (int t = 0; t < nt; ++t) {
+                    __m256 sb  = _mm256_cvtepi32_ps(_mm256_madd_epi16(sb16[t], ones));
+                    __m256 dad = _mm256_mul_ps(d8, _mm256_set1_ps(AD[(size_t)(j0+t)*nb + blk]));
+                    acc[t] = _mm256_fmadd_ps(dad, sb, acc[t]);
+                }
+            }
+            for (int t = 0; t < nt; ++t) {
+                float tmp[8]; _mm256_storeu_ps(tmp, acc[t]);
+                for (int f = 0; f < nf; ++f) C[(size_t)(j0+t)*ldc + (i0+f)] = tmp[f];
+            }
+        }
+    }
+}
+
+/* Decode-specialized (n==1) sibling: single accumulator, no token tile. */
+void jam_mm_mxfp4_rp1_avx2(void* arg, int rb, int re, int tid) {
+    (void) tid;
+    const jam_q8_job* J = (const jam_q8_job*) arg;
+    const uint8_t* RP = (const uint8_t*) J->a;
+    const int8_t* AQ = J->aq; const float* AD = J->ad;
+    float* C = (float*) J->c;
+    const int nb = J->nb;
+    const size_t grp_bytes = (size_t) nb * sizeof(jam_q8_0_rpblock);
+    const int mrows = J->m;
+    const __m256i ones = _mm256_set1_epi16(1);
+    for (int grp = rb; grp < re; ++grp) {
+        int i0 = grp * 8;
+        int nf = mrows - i0 < 8 ? mrows - i0 : 8;
+        const uint8_t* gbase = RP + (size_t) grp * grp_bytes;
+        __m256 acc = _mm256_setzero_ps();
+        for (int blk = 0; blk < nb; ++blk) {
+            const jam_q8_0_rpblock* rpb = (const jam_q8_0_rpblock*) gbase + blk;
+            __m256i sb16 = _mm256_setzero_si256();
+            for (int g = 0; g < 8; ++g) {
+                __m256i w = _mm256_loadu_si256((const __m256i*)(rpb->qs + g*32));
+                __m256i a4 = _mm256_set1_epi32(*(const int*)(AQ + (size_t) blk*32 + g*4));
+                sb16 = _mm256_add_epi16(sb16, _mm256_maddubs_epi16(_mm256_abs_epi8(w), _mm256_sign_epi8(a4, w)));
+            }
+            __m256 sb  = _mm256_cvtepi32_ps(_mm256_madd_epi16(sb16, ones));
+            __m256 dad = _mm256_mul_ps(_mm256_loadu_ps(rpb->d), _mm256_set1_ps(AD[blk]));
+            acc = _mm256_fmadd_ps(dad, sb, acc);
+        }
+        float tmp[8]; _mm256_storeu_ps(tmp, acc);
+        for (int f = 0; f < nf; ++f) C[i0 + f] = tmp[f];
     }
 }
 

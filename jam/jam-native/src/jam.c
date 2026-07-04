@@ -1,6 +1,7 @@
 /* jam engine: context lifecycle, the lazy global context, ISA detection, and jam_mm dispatch.
  * The actual multiply lives in the per-ISA kernel TUs (scalar floor in jam_kernels_generic.c). */
 #include "jam_internal.h"
+#include "kernels/jam_mxfp4.h"
 #include "jam_kquant.h"
 
 #include <stdlib.h>
@@ -233,7 +234,7 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
      * through the bound pointer; each kernel is a row-range worker the pool fans out automatically. */
     c->f32_kernel = jam_mm_f32_generic;
     c->q8_kernel  = NULL;   /* NULL -> generic floor */
-    c->mxfp4_kernel = NULL;
+    c->mxfp4_kernel = NULL; c->mxfp4_rp_kernel = NULL; c->mxfp4_repack = NULL;
     c->q4_0_kernel  = NULL;   /* K-quant ctx->kq[] is zero from calloc (NULL kernel -> float floor) */
 #ifdef JAM_HAVE_SSE3
     if (cpu >= JAM_ISA_SSE3) { c->q8_kernel = jam_mm_q8_0_sse3;   /* pre-AVX2 floor; higher tiers override below */
@@ -254,6 +255,7 @@ jam_ctx* jam_ctx_create(const jam_config* cfg) {
         c->kq[JAM_KQ_Q6K] = (jam_kquant){ jam_mm_q6k_rp_avx2, jam_q6k_requant, jam_q6k_repack8 };
         c->nvfp4_kernel = jam_mm_nvfp4_avx2;
         c->q8_0_rp_kernel = jam_mm_q8_0_rp_avx2; c->q8_0_repack = jam_q8_0_repack8;   /* 8-feat-wide cached repack */
+        c->mxfp4_rp_kernel = jam_mm_mxfp4_rp_avx2; c->mxfp4_repack = jam_mxfp4_repack8;   /* int16-deferred madd */
         c->q4_0_repack = jam_q4_0_repack8;   /* Q4_0 -> signed q-8, then the same bias-free maddubs kernel */
         c->dense_f16_kernel = jam_mm_f16_avx2; c->dense_bf16_kernel = jam_mm_bf16_avx2; }
 #endif
@@ -654,6 +656,18 @@ static jam_status jam_mm_run(jam_ctx* ctx,
 #ifdef JAM_HAVE_AVX512
             if (try_vnni_band(ctx, w, ldw, a, lda, c, ldc, m, n, k, 17, jam_mxfp4_repack_band)) return JAM_OK;
 #endif
+            /* avx2: cached-repack, |code|<=12 lets int16 products accumulate across the 8 groups (one
+             * madd/block, Q4_0-class). Decode (n==1) uses the single-column sibling. */
+            if (ctx->mxfp4_repack && ctx->mxfp4_rp_kernel && ensure_qscratch(ctx, n, k)) {
+                q.aq = (int8_t*) ctx->q_aq; q.ad = (float*) ctx->q_ad; q.asum = NULL;
+                jam_run(ctx, n, jam_q8_0_requant, &q);
+                jam_task_fn rp_kernel = ctx->mxfp4_rp_kernel;
+#ifdef JAM_HAVE_AVX2
+                if (n == 1) rp_kernel = jam_mm_mxfp4_rp1_avx2;
+#endif
+                if (try_repack_run(ctx, &q, w, m, k, JAM_QK, sizeof(jam_q8_0_rpblock),
+                                   (size_t)(ldw / JAM_QK) * sizeof(jam_mxfp4_blk), ctx->mxfp4_repack, rp_kernel)) return JAM_OK;
+            }
             return run_quant(ctx, &q, m, ctx->mxfp4_kernel, jam_mm_mxfp4_f32_generic);
         }
         if (wt == JAM_Q4_0) {

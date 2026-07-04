@@ -65,6 +65,8 @@ struct jam_ctx {
     int rp_cache_n, rp_cache_cap;
     jam_task_fn      q8_0_rp_kernel; /* avx2 cached-repack Q8_0 (sign-trick maddubs 8-wide); NULL -> q8_kernel */
     jam_repack_fn    q8_0_repack;    /* non-NULL -> cached weight-repack for q8_0_rp_kernel */
+    jam_task_fn      mxfp4_rp_kernel; /* avx2 cached-repack MXFP4 (|w|<=12 int16-deferred madd); NULL -> mxfp4_kernel */
+    jam_repack_fn    mxfp4_repack;    /* non-NULL -> cached weight-repack for mxfp4_rp_kernel */
     jam_repack_fn    q4_0_repack;    /* non-NULL -> cached weight-repack (Q4_0 raw nibble) for deferred -8 correction */
     jam_task_fn      dense_f16_kernel;   /* AVX-512 F16 dense (k%16==0); NULL -> generic floor */
     jam_task_fn      dense_bf16_kernel;  /* AVX-512 BF16 dense (k%16==0); NULL -> generic floor */
@@ -182,7 +184,11 @@ void jam_mm_q6k_rp_avx2(void* job, int rb, int re, int tid);
 void jam_mm_q6k_rp1_avx2(void* job, int rb, int re, int tid);
 void jam_q8_0_repack8(const void* w, int rows0, int re, int nblocks, size_t w_stride, void* out); /* repack 8 features (Q8_0) */
 void jam_q4_0_repack8(const void* w, int rows0, int re, int nblocks, size_t w_stride, void* out); /* repack 8 features (Q4_0 -> raw u8 nibble) */
-void jam_mm_q8_0_rp_avx2(void* job, int rb, int re, int tid);            /* cached-repack Q8_0 gemm (sign-trick maddubs) */
+void jam_mm_q8_0_rp_avx2(void* job, int rb, int re, int tid);
+void jam_mm_mxfp4_rp_avx2(void* job, int grp_begin, int grp_end, int tid);   /* cached-repack MXFP4 (int16-deferred) */
+void jam_mm_mxfp4_rp1_avx2(void* job, int grp_begin, int grp_end, int tid);  /* n==1 sibling */
+void jam_mxfp4_repack8(const void* w, int rows0, int re, int blocks, size_t w_stride, void* out);
+            /* cached-repack Q8_0 gemm (sign-trick maddubs) */
 void jam_mm_q8_0_rp1_avx2(void* job, int rb, int re, int tid);           /* cached-repack Q8_0 gemv/decode */
 void jam_mm_q4_0_rp_avx2(void* job, int rb, int re, int tid);            /* cached-repack Q4_0 gemm (unsigned nibble, deferred madd, -8·Σa) */
 void jam_mm_q4_0_rp1_avx2(void* job, int rb, int re, int tid);           /* cached-repack Q4_0 gemv/decode */
