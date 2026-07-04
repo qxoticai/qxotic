@@ -9,7 +9,7 @@ public record LLMOptions(Path modelPath, String prompt, String suffix, String sy
                           float temperature, float topp, long seed, int maxTokens, boolean stream,
                           boolean echo, boolean think, boolean thinkInline, boolean colors,
                           boolean keepPastThinking, boolean rawPrompt, List<String> warmPrompts,
-                          boolean noGrammar) {
+                          boolean noGrammar, Path sealedPrompt) {
 
     public LLMOptions {
         require(modelPath != null, "Missing argument: --model <path> is required");
