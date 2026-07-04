@@ -3,6 +3,8 @@
 // model-API prototype); the concrete quantized subclasses stay package-private in Tensors.java.
 package com.qxotic.jinfer;
 
+import com.oracle.svm.shared.AlwaysInline;
+
 import com.qxotic.format.gguf.GGMLType;
 
 import jdk.incubator.vector.ByteVector;
@@ -100,11 +102,14 @@ public abstract class FloatTensor {
     // call that under native-image blocks Vector API expansion and boxes whole kernels. Callers pass
     // native or mapped segments only (address() must be a real address). Requires GraalVM >= 25.0.3
     // for fast MemorySegment scalar access in native images.
+    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
     static short readShort(MemorySegment memorySegment, long offset) {
         return GLOBAL_SEGMENT != null
                 ? GLOBAL_SEGMENT.get(ValueLayout.JAVA_SHORT_UNALIGNED, memorySegment.address() + offset)
                 : memorySegment.get(ValueLayout.JAVA_SHORT_UNALIGNED, offset);
     }
+
+    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
 
     static void writeShort(MemorySegment memorySegment, long offset, short value) {
         if (GLOBAL_SEGMENT != null) {
@@ -114,9 +119,13 @@ public abstract class FloatTensor {
         }
     }
 
+    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
+
     static float readFloat16(MemorySegment memorySegment, long offset) {
         return Float.float16ToFloat(readShort(memorySegment, offset));
     }
+
+    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
 
     static byte readByte(MemorySegment memorySegment, long offset) {
         return GLOBAL_SEGMENT != null
@@ -124,11 +133,15 @@ public abstract class FloatTensor {
                 : memorySegment.get(ValueLayout.JAVA_BYTE, offset);
     }
 
+    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
+
     static int readInt(MemorySegment memorySegment, long offset) {
         return GLOBAL_SEGMENT != null
                 ? GLOBAL_SEGMENT.get(ValueLayout.JAVA_INT_UNALIGNED, memorySegment.address() + offset)
                 : memorySegment.get(ValueLayout.JAVA_INT_UNALIGNED, offset);
     }
+
+    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
 
     static long readLong(MemorySegment memorySegment, long offset) {
         return GLOBAL_SEGMENT != null
@@ -136,11 +149,15 @@ public abstract class FloatTensor {
                 : memorySegment.get(ValueLayout.JAVA_LONG_UNALIGNED, offset);
     }
 
+    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
+
     static float readFloat(MemorySegment memorySegment, long offset) {
         return GLOBAL_SEGMENT != null
                 ? GLOBAL_SEGMENT.get(ValueLayout.JAVA_FLOAT_UNALIGNED, memorySegment.address() + offset)
                 : memorySegment.get(ValueLayout.JAVA_FLOAT_UNALIGNED, offset);
     }
+
+    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
 
     static void writeFloat(MemorySegment memorySegment, long offset, float value) {
         if (GLOBAL_SEGMENT != null) {
@@ -151,6 +168,7 @@ public abstract class FloatTensor {
     }
 
     /** Float store at an absolute address: GLOBAL_SEGMENT folds to a raw store (no Unsafe warning check). */
+    @AlwaysInline("hot scalar accessor: must inline into kernels (profiled out-of-line on CE native)")
     static void putFloat(long address, float value) {
         if (GLOBAL_SEGMENT != null) {
             GLOBAL_SEGMENT.set(ValueLayout.JAVA_FLOAT_UNALIGNED, address, value);
