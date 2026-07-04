@@ -2,6 +2,8 @@
 // and the vector dot/gemm/gemv kernels. The parallel runner / CPU pinning live in Parallel.
 package com.qxotic.jinfer;
 
+import com.oracle.svm.shared.AlwaysInline;
+
 import com.qxotic.format.gguf.GGMLType;
 
 import jdk.incubator.vector.ByteVector;
@@ -1381,6 +1383,7 @@ final class F16FloatTensor extends SegmentFloatTensor {
     }
 
 
+    @AlwaysInline("hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
     static FloatVector f16ToF32Vector(MemorySegment memSeg, long byteOffset) {
         ShortVector bits16 = ShortVector.fromMemorySegment(S_SPECIES_HALF, memSeg, byteOffset, ByteOrder.LITTLE_ENDIAN);
         var bits32 = bits16.castShape(I_SPECIES, 0).reinterpretAsInts();

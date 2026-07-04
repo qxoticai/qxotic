@@ -4,6 +4,8 @@
 // value source; scalar fallback otherwise.
 package com.qxotic.jinfer;
 
+import com.oracle.svm.shared.AlwaysInline;
+
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
@@ -44,6 +46,7 @@ public final class FlashAttention {
     }
 
     /** out[outOffset, +headSize] *= scale (rescale the running output on a new row max). */
+    @AlwaysInline("hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
     static void normalize(FloatTensor out, int outOffset, int headSize, float scale) {
         if (out instanceof F32FloatTensor outF32 && FloatTensor.USE_VECTOR_API) {
             FloatVector scaleVector = FloatVector.broadcast(FloatTensor.F_SPECIES, scale);
@@ -62,6 +65,7 @@ public final class FlashAttention {
     }
 
     /** out[outOffset, +headSize] += scale * value[valueOffset, +headSize]. */
+    @AlwaysInline("hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
     static void accumulate(FloatTensor out, int outOffset, FloatTensor value, int valueOffset, int headSize, float scale) {
         if (out instanceof F32FloatTensor outF32 && FloatTensor.USE_VECTOR_API
                 && (value instanceof F32FloatTensor || value instanceof F16FloatTensor)) {
@@ -98,6 +102,7 @@ public final class FlashAttention {
         }
     }
 
+    @AlwaysInline("hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
     private static void pvTileF16(F32FloatTensor out, F16FloatTensor value, int[] kvOff, int runStart, int nKeys,
                                  float[] P, jdk.incubator.vector.VectorSpecies<Float> sp, int len, int bound,
                                  int ob0, int ob1, int ob2, int ob3, int p0, int p1, int p2, int p3) {
@@ -130,6 +135,7 @@ public final class FlashAttention {
         }
     }
 
+    @AlwaysInline("hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
     private static void pvTileF32(F32FloatTensor out, F32FloatTensor value, int[] kvOff, int runStart, int nKeys,
                                  float[] P, jdk.incubator.vector.VectorSpecies<Float> sp, int len, int bound,
                                  int ob0, int ob1, int ob2, int ob3, int p0, int p1, int p2, int p3) {
@@ -150,11 +156,13 @@ public final class FlashAttention {
         }
     }
 
+    @AlwaysInline("hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
     private static FloatVector loadF32(F32FloatTensor t, int off) {
         return FloatVector.fromMemorySegment(FloatTensor.F_SPECIES, t.vseg, t.vbase + (long) off * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
     }
 
     /** Decode F_SPECIES.length() consecutive F16 values to an F32 vector (IEEE half -> single). */
+    @AlwaysInline("hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
     private static FloatVector loadF16(F16FloatTensor t, int off) {
         return F16FloatTensor.f16ToF32Vector(t.vseg, t.vbase + (long) off * Float16.BYTES);
     }
@@ -166,6 +174,7 @@ public final class FlashAttention {
      * when the scale is folded into the query norm). Writes {@code S[(t)*BcRows + runStart+k]} for
      * query row {@code t} in [0,QT) and key {@code k} in [0,nKeys). Key offsets come from {@code kvOff}.
      */
+    @AlwaysInline("hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
     static void qkTile(F32FloatTensor q, int qBase, int qStride, FloatTensor key,
                        int[] kvOff, int runStart, int nKeys, int headSize, float scale, float[] S, int sRow0, int BcRows) {
         var sp = FloatTensor.F_SPECIES;
@@ -218,6 +227,7 @@ public final class FlashAttention {
      * QT rows; each row's output is read+written once per chunk. Adds {@code sum_k P[t][k]*V_k} into
      * {@code out} for query row {@code t}; probabilities come from {@code P[(t)*BcRows + runStart+k]}.
      */
+    @AlwaysInline("hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
     static void pvTile(F32FloatTensor out, int oBase, int oStride, FloatTensor value,
                        int[] kvOff, int runStart, int nKeys, int headSize, float[] P, int pRow0, int BcRows) {
         var sp = FloatTensor.F_SPECIES;

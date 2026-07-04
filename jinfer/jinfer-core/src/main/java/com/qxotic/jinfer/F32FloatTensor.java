@@ -3,6 +3,8 @@
 // jinfer-gemma4 model port; the quantized subclasses stay package-private in Tensors.java.
 package com.qxotic.jinfer;
 
+import com.oracle.svm.shared.AlwaysInline;
+
 import com.qxotic.format.gguf.GGMLType;
 
 import jdk.incubator.vector.ByteVector;
@@ -217,6 +219,7 @@ public final class F32FloatTensor extends SegmentFloatTensor {
      *  (unlike a lanewise EXP, which Graal does not intrinsify). Source: njuffa, StackOverflow "fast tanhf".
      *  Precision: |error| <= ~1.9e-5 for tanh over all float32; <= 1.1e-4 abs / 4.5e-3 rel for this SiLU over
      *  g in [-40,40] (worst near g~11.5; near-exact for |g|<2). Well under Q8_0's ~3.9e-3 quantization noise. */
+    @AlwaysInline("hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
     static FloatVector siluVec(FloatVector g) {
         FloatVector tanh = tanhVec(g.mul(0.5f));                     // tanh(g/2)
         return g.mul(tanh.mul(0.5f).add(0.5f));                      // g * sigmoid(g)
@@ -232,6 +235,7 @@ public final class F32FloatTensor extends SegmentFloatTensor {
      *  (tanh saturated to ~1 there, so no output clamp), tanh = x + x*num(x^2)/den(x^2). Only mul/add/div/fma,
      *  so it runs fast on GraalVM/jvmci (which does NOT intrinsify lanewise TANH/EXP). Source: njuffa,
      *  StackOverflow "fast tanhf". |error| <= ~1.9e-5 over all float32. Shared by SiLU and Gemma's GELU. */
+    @AlwaysInline("hot Vector API helper: escaping FloatVector boxes per call (see hotspot_compiler)")
     static FloatVector tanhVec(FloatVector x) {
         FloatVector y  = x.max(-TANH_CUTOFF).min(TANH_CUTOFF);
         FloatVector y2 = y.mul(y);
