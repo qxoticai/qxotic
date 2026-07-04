@@ -257,7 +257,7 @@ public abstract class FloatTensor {
     // gemv/gemm are thin entry points onto MatMul, which dispatches on this.type() (the weight) to the
     // fastest applicable backend and falls to the ScalarMatMul floor. No subclass overrides these.
     void gemv(FloatTensor that, long thatOffset, FloatTensor out, long outOffset, int dim0, int dim1, long thisOffset) {
-        MatMul.INSTANCE.mm(this, thisOffset, dim1, that, thatOffset, dim1, out, outOffset, dim0, dim0, 1, dim1);
+        MatMul.instance().mm(this, thisOffset, dim1, that, thatOffset, dim1, out, outOffset, dim0, dim0, 1, dim1);
     }
 
     void matmulBatch(FloatTensor that, FloatTensor out, int sequenceLength, int dim0, int dim1) {
@@ -281,7 +281,7 @@ public abstract class FloatTensor {
     }
 
     public void gemm(FloatTensor that, int thatStride, FloatTensor out, int outStride, int sequenceLength, int dim0, int dim1, long thisOffset) {
-        MatMul.INSTANCE.mm(this, thisOffset, dim1, that, 0, thatStride, out, 0, outStride, dim0, sequenceLength, dim1);
+        MatMul.instance().mm(this, thisOffset, dim1, that, 0, thatStride, out, 0, outStride, dim0, sequenceLength, dim1);
     }
 
     @FunctionalInterface

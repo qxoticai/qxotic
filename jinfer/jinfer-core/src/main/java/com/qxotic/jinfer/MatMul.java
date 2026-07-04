@@ -22,5 +22,8 @@ interface MatMul {
             FloatTensor c, long cOff, int cStride,
             int m, int n, int k);
 
-    MatMul INSTANCE = Dispatch.create();
+    /** The active backend chain. Lives on {@link Dispatch} (a class, run-time-initialized under
+     *  native image) - an interface field would be constant-folded at image build time, baking the
+     *  builder's jam-less decision into the heap. */
+    static MatMul instance() { return Dispatch.ACTIVE; }
 }
