@@ -309,15 +309,18 @@ void jam_mm_q6k_rp_avx2(void* arg, int rb, int re, int tid) {
                     int ebase = (h*4 + g)*32 + half*16;
                     __m128i scb = _mm_cvtepi8_epi16(_mm_loadl_epi64((const __m128i*)(sc + s16*8)));   /* signed scale */
                     __m256i sc16 = _mm256_set_m128i(_mm_unpackhi_epi16(scb, scb), _mm_unpacklo_epi16(scb, scb));
-                    __m256i sb[4]; for (int t = 0; t < nt; ++t) sb[t] = _mm256_setzero_si256();
-                    for (int g4 = 0; g4 < 4; ++g4) {
-                        __m256i w = _mm256_loadu_si256((const __m256i*)(qs + (size_t)(s16*4 + g4)*32));
+                    /* pair g4 groups in int16 before the scale madd: |maddubs| <= 63*127*2 = 16002, two
+                     * summed = 32004 < 32767 (deterministic, no saturation) -> one madd_epi16 per PAIR. */
+                    for (int g2 = 0; g2 < 2; ++g2) {
+                        __m256i w0 = _mm256_loadu_si256((const __m256i*)(qs + (size_t)(s16*4 + g2*2    )*32));
+                        __m256i w1 = _mm256_loadu_si256((const __m256i*)(qs + (size_t)(s16*4 + g2*2 + 1)*32));
                         for (int t = 0; t < nt; ++t) {
-                            int ai = *(const int*)(AQ + (size_t)(j0+t)*k + (size_t) B*JAM_QKK + ebase + g4*4);
-                            sb[t] = _mm256_add_epi32(sb[t], _mm256_madd_epi16(_mm256_maddubs_epi16(w, _mm256_set1_epi32(ai)), sc16));
+                            const int8_t* ap = AQ + (size_t)(j0+t)*k + (size_t) B*JAM_QKK + ebase + (size_t)(g2*2)*4;
+                            __m256i p = _mm256_add_epi16(_mm256_maddubs_epi16(w0, _mm256_set1_epi32(*(const int*) ap)),
+                                                         _mm256_maddubs_epi16(w1, _mm256_set1_epi32(*(const int*)(ap + 4))));
+                            sumi[t] = _mm256_add_epi32(sumi[t], _mm256_madd_epi16(p, sc16));
                         }
                     }
-                    for (int t = 0; t < nt; ++t) sumi[t] = _mm256_add_epi32(sumi[t], sb[t]);
                 }
                 __m256 d_v = _mm256_loadu_ps(d);
                 __m256 bias[4]; for (int t = 0; t < nt; ++t) bias[t] = _mm256_setzero_ps();
@@ -363,13 +366,15 @@ void jam_mm_q6k_rp1_avx2(void* arg, int rb, int re, int tid) {
                 int ebase = (h*4 + g)*32 + half*16;
                 __m128i scb = _mm_cvtepi8_epi16(_mm_loadl_epi64((const __m128i*)(sc + s16*8)));
                 __m256i sc16 = _mm256_set_m128i(_mm_unpackhi_epi16(scb, scb), _mm_unpacklo_epi16(scb, scb));
-                __m256i sb = _mm256_setzero_si256();
-                for (int g4 = 0; g4 < 4; ++g4) {
-                    __m256i w = _mm256_loadu_si256((const __m256i*)(qs + (size_t)(s16*4 + g4)*32));
-                    int ai = *(const int*)(AQ + (size_t) B*JAM_QKK + ebase + g4*4);
-                    sb = _mm256_add_epi32(sb, _mm256_madd_epi16(_mm256_maddubs_epi16(w, _mm256_set1_epi32(ai)), sc16));
+                /* pair g4 groups in int16 before the scale madd (see rp kernel: 32004 < 32767, safe) */
+                for (int g2 = 0; g2 < 2; ++g2) {
+                    __m256i w0 = _mm256_loadu_si256((const __m256i*)(qs + (size_t)(s16*4 + g2*2    )*32));
+                    __m256i w1 = _mm256_loadu_si256((const __m256i*)(qs + (size_t)(s16*4 + g2*2 + 1)*32));
+                    const int8_t* ap = AQ + (size_t) B*JAM_QKK + ebase + (size_t)(g2*2)*4;
+                    __m256i p = _mm256_add_epi16(_mm256_maddubs_epi16(w0, _mm256_set1_epi32(*(const int*) ap)),
+                                                 _mm256_maddubs_epi16(w1, _mm256_set1_epi32(*(const int*)(ap + 4))));
+                    sumi = _mm256_add_epi32(sumi, _mm256_madd_epi16(p, sc16));
                 }
-                sumi = _mm256_add_epi32(sumi, sb);
             }
             __m256 bias = _mm256_setzero_ps();
             for (int s16 = 0; s16 < 16; ++s16) {
