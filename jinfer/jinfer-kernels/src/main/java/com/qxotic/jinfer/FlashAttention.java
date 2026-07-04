@@ -12,6 +12,10 @@ import java.nio.ByteOrder;
 
 public final class FlashAttention {
 
+    /** True when AOT-compiled into a native image (property is set during the image build; this
+     *  class initializes at build time there, so the flag folds to a constant either way). */
+    static final boolean IN_NATIVE_IMAGE = System.getProperty("org.graalvm.nativeimage.imagecode") != null;
+
     /** Q/K tile sizes for block-tiled prefill (cache-friendly inner loops). */
     static final int Br = 64;
     static final int Bc = 64;
@@ -94,6 +98,58 @@ public final class FlashAttention {
         }
     }
 
+    private static void pvTileF16(F32FloatTensor out, F16FloatTensor value, int[] kvOff, int runStart, int nKeys,
+                                 float[] P, jdk.incubator.vector.VectorSpecies<Float> sp, int len, int bound,
+                                 int ob0, int ob1, int ob2, int ob3, int p0, int p1, int p2, int p3) {
+        // Native image: the f16->f32 conversion chain fused into the fma accumulation defeats the
+        // AOT Vector API expansion for this graph (the whole component stays boxed; the same code
+        // expands fine in isolation). Routing the converted vector through a tiny L1-hot scratch
+        // array splits the dataflow into two independently-expandable components. JVM JIT expands
+        // the fused form fine, so this detour is image-only.
+        float[] conv = IN_NATIVE_IMAGE ? new float[len] : null;
+        for (int d = 0; d < bound; d += len) {
+            FloatVector o0 = loadF32(out, ob0 + d), o1 = loadF32(out, ob1 + d), o2 = loadF32(out, ob2 + d), o3 = loadF32(out, ob3 + d);
+            for (int k = 0; k < nKeys; k++) {
+                int col = runStart + k;
+                FloatVector v;
+                if (IN_NATIVE_IMAGE) {
+                    loadF16(value, kvOff[col] + d).intoArray(conv, 0);
+                    v = FloatVector.fromArray(sp, conv, 0);
+                } else {
+                    v = loadF16(value, kvOff[col] + d);
+                }
+                o0 = v.fma(FloatVector.broadcast(sp, P[p0 + col]), o0);
+                o1 = v.fma(FloatVector.broadcast(sp, P[p1 + col]), o1);
+                o2 = v.fma(FloatVector.broadcast(sp, P[p2 + col]), o2);
+                o3 = v.fma(FloatVector.broadcast(sp, P[p3 + col]), o3);
+            }
+            o0.intoMemorySegment(out.vseg, out.vbase + (long) (ob0 + d) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+            o1.intoMemorySegment(out.vseg, out.vbase + (long) (ob1 + d) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+            o2.intoMemorySegment(out.vseg, out.vbase + (long) (ob2 + d) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+            o3.intoMemorySegment(out.vseg, out.vbase + (long) (ob3 + d) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+        }
+    }
+
+    private static void pvTileF32(F32FloatTensor out, F32FloatTensor value, int[] kvOff, int runStart, int nKeys,
+                                 float[] P, jdk.incubator.vector.VectorSpecies<Float> sp, int len, int bound,
+                                 int ob0, int ob1, int ob2, int ob3, int p0, int p1, int p2, int p3) {
+        for (int d = 0; d < bound; d += len) {
+            FloatVector o0 = loadF32(out, ob0 + d), o1 = loadF32(out, ob1 + d), o2 = loadF32(out, ob2 + d), o3 = loadF32(out, ob3 + d);
+            for (int k = 0; k < nKeys; k++) {
+                int col = runStart + k;
+                FloatVector v = loadF32(value, kvOff[col] + d);
+                o0 = v.fma(FloatVector.broadcast(sp, P[p0 + col]), o0);
+                o1 = v.fma(FloatVector.broadcast(sp, P[p1 + col]), o1);
+                o2 = v.fma(FloatVector.broadcast(sp, P[p2 + col]), o2);
+                o3 = v.fma(FloatVector.broadcast(sp, P[p3 + col]), o3);
+            }
+            o0.intoMemorySegment(out.vseg, out.vbase + (long) (ob0 + d) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+            o1.intoMemorySegment(out.vseg, out.vbase + (long) (ob1 + d) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+            o2.intoMemorySegment(out.vseg, out.vbase + (long) (ob2 + d) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+            o3.intoMemorySegment(out.vseg, out.vbase + (long) (ob3 + d) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+        }
+    }
+
     private static FloatVector loadF32(F32FloatTensor t, int off) {
         return FloatVector.fromMemorySegment(FloatTensor.F_SPECIES, t.vseg, t.vbase + (long) off * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
     }
@@ -169,23 +225,15 @@ public final class FlashAttention {
         int bound = sp.loopBound(headSize);
         int ob0 = oBase, ob1 = oBase + oStride, ob2 = oBase + 2 * oStride, ob3 = oBase + 3 * oStride;
         int p0 = pRow0, p1 = pRow0 + BcRows, p2 = pRow0 + 2 * BcRows, p3 = pRow0 + 3 * BcRows;
-        boolean f16 = value instanceof F16FloatTensor;
-        F32FloatTensor vf32 = f16 ? null : (F32FloatTensor) value;
-        F16FloatTensor vf16 = f16 ? (F16FloatTensor) value : null;
-        for (int d = 0; d < bound; d += len) {
-            FloatVector o0 = loadF32(out, ob0 + d), o1 = loadF32(out, ob1 + d), o2 = loadF32(out, ob2 + d), o3 = loadF32(out, ob3 + d);
-            for (int k = 0; k < nKeys; k++) {
-                int col = runStart + k;
-                FloatVector v = f16 ? loadF16(vf16, kvOff[col] + d) : loadF32(vf32, kvOff[col] + d);
-                o0 = v.fma(FloatVector.broadcast(sp, P[p0 + col]), o0);
-                o1 = v.fma(FloatVector.broadcast(sp, P[p1 + col]), o1);
-                o2 = v.fma(FloatVector.broadcast(sp, P[p2 + col]), o2);
-                o3 = v.fma(FloatVector.broadcast(sp, P[p3 + col]), o3);
-            }
-            o0.intoMemorySegment(out.vseg, out.vbase + (long) (ob0 + d) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
-            o1.intoMemorySegment(out.vseg, out.vbase + (long) (ob1 + d) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
-            o2.intoMemorySegment(out.vseg, out.vbase + (long) (ob2 + d) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
-            o3.intoMemorySegment(out.vseg, out.vbase + (long) (ob3 + d) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+        // The vectorized body is specialized per element type in SEPARATE methods: a per-iteration
+        // f16/f32 select feeding the loop-carried o0..o3 phis defeats native-image Vector API
+        // expansion, and even as two loops in one body the method exceeds what the AOT expansion
+        // phase converts (one loop stayed boxed; measured). One method per element type keeps each
+        // compilation unit small enough to expand fully. HotSpot JIT is indifferent to the split.
+        if (value instanceof F16FloatTensor vf16) {
+            pvTileF16(out, vf16, kvOff, runStart, nKeys, P, sp, len, bound, ob0, ob1, ob2, ob3, p0, p1, p2, p3);
+        } else {
+            pvTileF32(out, (F32FloatTensor) value, kvOff, runStart, nKeys, P, sp, len, bound, ob0, ob1, ob2, ob3, p0, p1, p2, p3);
         }
         for (int d = bound; d < headSize; d++) {
             float r0 = out.getFloat(ob0 + d), r1 = out.getFloat(ob1 + d), r2 = out.getFloat(ob2 + d), r3 = out.getFloat(ob3 + d);
