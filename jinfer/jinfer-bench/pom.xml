@@ -85,4 +85,49 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>native</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.graalvm.buildtools</groupId>
+                        <artifactId>native-maven-plugin</artifactId>
+                        <version>0.10.6</version>
+                        <extensions>true</extensions>
+                        <executions>
+                            <execution>
+                                <id>build-native</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>compile-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <imageName>jinfer-bench</imageName>
+                            <mainClass>com.qxotic.jinfer.JinferBench</mainClass>
+                            <buildArgs>
+                                <buildArg>-O3</buildArg>
+                                <buildArg>-march=native</buildArg>
+                                <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
+                                <buildArg>-H:+VectorAPISupport</buildArg>
+                                <buildArg>-H:+ForeignAPISupport</buildArg>
+                                <buildArg>--enable-preview</buildArg>
+                                <buildArg>--add-modules</buildArg>
+                                <buildArg>jdk.incubator.vector</buildArg>
+                                <buildArg>--enable-native-access=ALL-UNNAMED</buildArg>
+                                <buildArg>-J--enable-native-access=ALL-UNNAMED</buildArg>
+                                <buildArg>--initialize-at-build-time=com.qxotic.</buildArg>
+                                <buildArg>--initialize-at-run-time=com.qxotic.jinfer.RuntimeFlags,com.qxotic.jinfer.Parallel,com.qxotic.jam.NativeJAM,com.qxotic.jam.NativeLoader</buildArg>
+                                <buildArg>-H:IncludeResources=com/qxotic/jam/native/.*</buildArg>
+                                <buildArg>-Djdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK=0</buildArg>
+                            </buildArgs>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
