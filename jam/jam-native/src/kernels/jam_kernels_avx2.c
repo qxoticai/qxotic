@@ -134,6 +134,22 @@ void NAME(void* arg, int rb, int re, int tid) {                                 
         for (; s + 4 <= n; s += 4) {                                                                      \
             const float *x0=X+(int64_t)s*ldx,*x1=x0+ldx,*x2=x1+ldx,*x3=x2+ldx;                            \
             int r = r0;                                                                                   \
+            for (; r + 3 <= rbe; r += 3) {                                                                \
+                const uint16_t *w0=W+(int64_t)r*ldw,*w1=w0+ldw,*w2=w1+ldw;                                \
+                __m256 a00=_mm256_setzero_ps(),a01=a00,a02=a00,a03=a00;                                   \
+                __m256 a10=a00,a11=a00,a12=a00,a13=a00, a20=a00,a21=a00,a22=a00,a23=a00;                  \
+                for (int t = 0; t < k; t += 8) {                                                          \
+                    __m256 wv0=LOADW(w0+t),wv1=LOADW(w1+t),wv2=LOADW(w2+t);                               \
+                    __m256 xv;                                                                            \
+                    xv=_mm256_loadu_ps(x0+t); a00=_mm256_fmadd_ps(wv0,xv,a00);a10=_mm256_fmadd_ps(wv1,xv,a10);a20=_mm256_fmadd_ps(wv2,xv,a20); \
+                    xv=_mm256_loadu_ps(x1+t); a01=_mm256_fmadd_ps(wv0,xv,a01);a11=_mm256_fmadd_ps(wv1,xv,a11);a21=_mm256_fmadd_ps(wv2,xv,a21); \
+                    xv=_mm256_loadu_ps(x2+t); a02=_mm256_fmadd_ps(wv0,xv,a02);a12=_mm256_fmadd_ps(wv1,xv,a12);a22=_mm256_fmadd_ps(wv2,xv,a22); \
+                    xv=_mm256_loadu_ps(x3+t); a03=_mm256_fmadd_ps(wv0,xv,a03);a13=_mm256_fmadd_ps(wv1,xv,a13);a23=_mm256_fmadd_ps(wv2,xv,a23); \
+                }                                                                                         \
+                float *o0=C+(int64_t)s*ldc+r,*o1=o0+ldc,*o2=o1+ldc,*o3=o2+ldc;                            \
+                o0[0]=hsum8(a00);o0[1]=hsum8(a10);o0[2]=hsum8(a20); o1[0]=hsum8(a01);o1[1]=hsum8(a11);o1[2]=hsum8(a21); \
+                o2[0]=hsum8(a02);o2[1]=hsum8(a12);o2[2]=hsum8(a22); o3[0]=hsum8(a03);o3[1]=hsum8(a13);o3[2]=hsum8(a23); \
+            }                                                                                             \
             for (; r + 2 <= rbe; r += 2) {                                                                \
                 const uint16_t *w0=W+(int64_t)r*ldw,*w1=w0+ldw;                                           \
                 __m256 a00=_mm256_setzero_ps(),a01=a00,a02=a00,a03=a00, a10=a00,a11=a00,a12=a00,a13=a00;  \
