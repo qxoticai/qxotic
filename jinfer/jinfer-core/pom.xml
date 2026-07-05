@@ -17,12 +17,6 @@
     <description>LLM inference engine core API</description>
 
     <dependencies>
-        <dependency>
-            <groupId>org.graalvm.nativeimage</groupId>
-            <artifactId>svm-shared</artifactId>
-            <version>25-local</version>
-            <scope>provided</scope>
-        </dependency>
 
         <dependency>
             <groupId>com.qxotic</groupId>

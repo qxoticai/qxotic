@@ -17,12 +17,6 @@
     <description>Shared model kernels and GGUF loading (FlashAttention, Moe, Ffn, ModelLoader)</description>
 
     <dependencies>
-        <dependency>
-            <groupId>org.graalvm.nativeimage</groupId>
-            <artifactId>svm-shared</artifactId>
-            <version>25-local</version>
-            <scope>provided</scope>
-        </dependency>
 
         <dependency>
             <groupId>com.qxotic</groupId>

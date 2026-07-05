@@ -64,7 +64,9 @@ public final class CachedSession<S extends RuntimeState> {
     /** Ingests batches (chunked at the state's batch capacity), committing each chunk: token ids
      *  fingerprint as themselves, embeddings by rows content hash (one block per media group). */
     public void ingest(List<Batch> batches) {
-        for (Batch b : Batch.prepare(batches, state.batchCapacity())) {
+        List<Batch> prepared = Batch.prepare(batches, state.batchCapacity());
+        for (int c = 0; c < prepared.size(); c++) {
+            Batch b = prepared.get(c);
             int off = len;
             switch (b.input()) {
                 case Batch.Input.Tokens t -> {
@@ -79,7 +81,7 @@ public final class CachedSession<S extends RuntimeState> {
                 default -> throw new IllegalArgumentException(
                         "CachedSession cannot fingerprint " + b.input().getClass().getSimpleName());
             }
-            cursor.commit(fp, off, len - off, state);
+            cursor.commit(fp, off, len - off, state, c == prepared.size() - 1);
         }
     }
 
