@@ -212,14 +212,14 @@ final class QuantWeights {
         return new Weight(JAM.MXFP4, s, v);
     }
 
-    private static Weight nvfp4(int m, int k, Arena a, Random rng) {    // 36B/64-elem; ue4m3=1 -> value = kv[nibble]
+    private static Weight nvfp4(int m, int k, Arena a, Random rng) {    // 36B/64-elem; ue4m3(0x40)=1 (ggml x0.5) -> value = kv[nibble]
         int nb = k / 64;
         float[] v = new float[m * k];
         MemorySegment s = a.allocate((long) m * nb * 36, 64);
         for (int r = 0; r < m; r++) for (int b = 0; b < nb; b++) {
             long blk = (long) (r * nb + b) * 36;
             for (int sub = 0; sub < 4; sub++) {
-                s.set(JAVA_BYTE, blk + sub, (byte) 0x38);             // ue4m3 1.0
+                s.set(JAVA_BYTE, blk + sub, (byte) 0x40);             // ue4m3(0x40) = 1.0 under ggml x0.5 semantics
                 for (int j = 0; j < 8; j++) {
                     int lo = rng.nextInt(16), hi = rng.nextInt(16);
                     s.set(JAVA_BYTE, blk + 4 + sub * 8 + j, (byte) (lo | (hi << 4)));
