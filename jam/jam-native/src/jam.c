@@ -535,8 +535,10 @@ static jam_status dispatch_kquant(jam_ctx* ctx, const void* w, int ldw, const vo
         q.aq = (int8_t*) ctx->q_aq; q.ad = (float*) ctx->q_ad; q.asum = (float*) ctx->q_asum;
         if (n == 1) requant(&q, 0, 1, 0); else jam_run(ctx, n, requant, &q);
         if (repack) {
-            if (n == 1 && simd == jam_mm_q5k_rp_avx2) simd = jam_mm_q5k_rp1_avx2;
+#ifdef JAM_HAVE_AVX2
+            if (n == 1 && simd == jam_mm_q5k_rp_avx2) simd = jam_mm_q5k_rp1_avx2;   /* n==1 rp1 swap is AVX2-only (no NEON rp1 kernels) */
             if (n == 1 && simd == jam_mm_q6k_rp_avx2) simd = jam_mm_q6k_rp1_avx2;
+#endif
             if (try_repack_run(ctx, &q, w, m, k, JAM_QKK, rp_sbbytes,
                                (size_t)(ldw / JAM_QKK) * kbytes, repack, simd)) return JAM_OK;
             return run_quant(ctx, &q, m, NULL, floor_);   /* repack alloc failed -> float floor (simd is the group-indexed rp kernel, can't run on the raw weight) */
