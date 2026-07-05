@@ -55,9 +55,8 @@ public final class SparseCheckpointTest {
     }
 
     public static void main(String[] args) {
-        System.setProperty("jinfer.checkpointStride", "16");
         CacheStore store = CacheStore.inMemory();
-        PromptCache<FakeState> cache = new PromptCache<>(new FakeCodec(), store, 1 << 20, new byte[]{1});
+        PromptCache<FakeState> cache = new PromptCache<>(new FakeCodec(), store, 1 << 20, new byte[]{1}, 16);   // stride via ctor
 
         long[] fp = new long[40];
         for (int i = 0; i < fp.length; i++) fp[i] = 100 + i;

@@ -87,11 +87,17 @@ public final class PromptCache<S extends RuntimeState> {
 
         /** Commit one decode step (a single-token block). */
         public void commit(long fingerprint, S state) {
-            commit(new long[]{fingerprint}, 0, 1, state);
+            commit(new long[]{fingerprint}, 0, 1, state, false);
         }
 
-        /** Commit the span {@code spanFp[off..off+len)} just ingested. */
+        /** Commit the span {@code spanFp[off..off+len)} just ingested, as a group end (checkpointed). */
         public void commit(long[] spanFp, int off, int len, S state) {
+            commit(spanFp, off, len, state, true);
+        }
+
+        /** Commit the span; {@code groupEnd} marks the last chunk of the caller's logical ingest
+         *  (a turn, a whole prompt) - the resume points that matter. */
+        public void commit(long[] spanFp, int off, int len, S state, boolean groupEnd) {
             if (frozen || !tip.live || len == 0) return;
             if (state.position() != tip.to + len) {
                 throw new IllegalStateException("commit of " + len + " at chain position " + tip.to
@@ -104,12 +110,18 @@ public final class PromptCache<S extends RuntimeState> {
                 tip = existing;
                 return;
             }
-            // sparse checkpoints: multi-token blocks (turn/prefill chunks - the resume points that
-            // matter) always carry one; single-token decode runs carry one every `stride`
-            // positions. Models with checkpointBytes()==0 checkpoint every block for free.
+            // Sparse checkpoints - the fixed recurrent/window state is the expensive part of a
+            // block (10s of MB on deep models), so it is stored only where a resume will actually
+            // land: at GROUP ends (turn/prompt boundaries), every `stride` positions of a decode
+            // run, and at least every `multiTokenGap` positions across long prefills (bounding the
+            // re-prefill after a mid-prompt divergence). Models with checkpointBytes()==0
+            // checkpoint every block for free. Note Batch.prepare's capacity re-chunking is what
+            // makes a long turn several blocks - only the last of them is the group end.
             long ckptBytes = codec.checkpointBytes();
             int to = tip.to + len;
-            boolean checkpoint = ckptBytes == 0 || len > 1 || to - tip.ckptTo >= stride;
+            boolean checkpoint = ckptBytes == 0
+                    || (len > 1 ? (groupEnd || to - tip.ckptTo >= multiTokenGap)
+                                : to - tip.ckptTo >= stride);
             long rowBytes = codec.rowBytes(len);
             long bytes = rowBytes + (checkpoint ? ckptBytes : 0);
             if (!ensureBudget(bytes, tip)) {               // budget refused: detach softly
@@ -135,7 +147,9 @@ public final class PromptCache<S extends RuntimeState> {
     private final long budgetBytes;
     private final byte[] modelSeed;
     private final boolean frozen;
-    private final int stride = Math.max(1, Integer.getInteger("jinfer.checkpointStride", 64));
+    private final int stride;                      // max un-checkpointed positions in a decode run
+    private final int multiTokenGap;               // ... and across prefill chunks (bounds the
+                                                   // re-prefill after a mid-prompt divergence)
     private final Map<BlockKey, Block> blocks = new HashMap<>();
     private final Set<Block> leaves = new HashSet<>();
     private final Block sentinel;
@@ -149,16 +163,26 @@ public final class PromptCache<S extends RuntimeState> {
         this(codec, store, budgetBytes, new byte[0]);
     }
 
+    /** Full control over checkpoint spacing (see the {@code Cursor.commit} policy); the other
+     *  constructors default {@code stride} from {@code -Djinfer.checkpointStride} (64). */
+    public PromptCache(KvCodec<S> codec, CacheStore store, long budgetBytes, byte[] modelSeed, int stride) {
+        this(codec, store, budgetBytes, modelSeed, false, stride);
+    }
+
     /** {@code modelSeed} folds the model's identity (and implicitly the codec's blob layout) into
      *  the ROOT of the key chain, so two models — even sharing a tokenizer, where fingerprint
      *  streams collide — can never match each other's blocks. A codec layout change ships with a
      *  seed change and auto-invalidates persisted blocks (miss → recompute, no migration). One
      *  cache instance/file per model is the deployment shape; see {@link #modelSeed}. */
     public PromptCache(KvCodec<S> codec, CacheStore store, long budgetBytes, byte[] modelSeed) {
-        this(codec, store, budgetBytes, modelSeed, false);
+        this(codec, store, budgetBytes, modelSeed, false,
+                Math.max(1, Integer.getInteger("jinfer.checkpointStride", 64)));
     }
 
-    private PromptCache(KvCodec<S> codec, CacheStore store, long budgetBytes, byte[] modelSeed, boolean frozen) {
+    private PromptCache(KvCodec<S> codec, CacheStore store, long budgetBytes, byte[] modelSeed, boolean frozen,
+                        int stride) {
+        this.stride = Math.max(1, stride);
+        this.multiTokenGap = Math.max(this.stride, 4096);
         this.codec = codec;
         this.store = store;
         this.budgetBytes = budgetBytes;
@@ -399,7 +423,7 @@ public final class PromptCache<S extends RuntimeState> {
             @Override public void free(MemorySegment blob) { throw new UnsupportedOperationException("frozen cache"); }
             @Override public long usedBytes() { return kvBytes; }
         };
-        PromptCache<S> cache = new PromptCache<>(codec, readOnly, 0, modelSeed, true);
+        PromptCache<S> cache = new PromptCache<>(codec, readOnly, 0, modelSeed, true, 1);   // frozen: never commits
         ByteBuffer idx = map.asSlice(indexOffset, (long) count * INDEX_ENTRY_BYTES).asByteBuffer().order(ByteOrder.LITTLE_ENDIAN);
         for (int i = 0; i < count; i++) {
             BlockKey key = getKey(idx);

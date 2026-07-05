@@ -1,8 +1,10 @@
 package com.qxotic.jinfer.cache;
 
+import com.qxotic.jinfer.Model;
 import com.qxotic.jinfer.RuntimeState;
 
 import java.util.ArrayDeque;
+import java.util.function.Supplier;
 
 /** Tier-1 caching: the last N live conversations, kept as {@link CachedSession}s with their
  *  states resident (the llama.cpp-slot equivalent). A pooled session whose whole fingerprint
@@ -52,5 +54,30 @@ public final class SessionPool<S extends RuntimeState> {
 
     public int size() {
         return pool.size();
+    }
+
+    /** The tier-1/tier-2 arbitration protocol, owned here so callers cannot mis-sequence it:
+     *  acquire a pooled session (tier 1, append-only) or resume a fresh state from the block
+     *  cache (tier 2, at most {@code resumeLimit} positions so the caller re-ingests the final
+     *  block and gets fresh logits), run {@code work}, and return the session to the pool ON
+     *  SUCCESS ONLY. If {@code work} throws, the session is discarded - a possibly-inconsistent
+     *  state must never serve future requests; its committed blocks remain in the shared cache,
+     *  so nothing durable is lost. */
+    public <R> R withSession(Model<?, ?, S> model, PromptCache<S> cache, Supplier<S> freshState,
+                             long[] fingerprints, int len, int resumeLimit, Work<S, R> work) {
+        CachedSession<S> session = acquire(fingerprints, len);
+        boolean tier1 = session != null;
+        if (!tier1) {
+            session = CachedSession.resume(model, cache, freshState.get(), fingerprints, resumeLimit);
+        }
+        R result = work.run(session, tier1);   // a throw skips release: the session is dropped
+        release(session);
+        return result;
+    }
+
+    /** Body run against the acquired-or-resumed session; {@code tier1} = pooled append-only. */
+    @FunctionalInterface
+    public interface Work<S extends RuntimeState, R> {
+        R run(CachedSession<S> session, boolean tier1);
     }
 }

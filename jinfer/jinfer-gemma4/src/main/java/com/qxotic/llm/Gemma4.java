@@ -47,13 +47,6 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
         this.weights = weights;
     }
 
-    /** Test helper: a fresh state with {@code ids} prefilled (context sized to {@code maxTokens}). */
-    public State prefilled(int[] ids, int maxTokens) {
-        State s = newState(4096, Math.max(16, ids.length));
-        ingest(s, com.qxotic.jinfer.Batch.prefill(ids));
-        return s;
-    }
-
     // === com.qxotic.llm.Model seam ===
 
     @Override public Configuration config()  { return configuration; }
@@ -115,34 +108,42 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
         });
     }
 
+    /** Logits for ALL retained rows in one head pass: rmsnorm each row into {@code s.xb}, then ONE
+     *  vocab GEMM - the classifier weight (the heaviest stream in decode) is read once instead of
+     *  once per row. {@code dst} holds {@code outputCount x vocab}, row-major; softcapped in place.
+     *  The speculative verify walk is the consumer (its per-row {@link #logits(State, int)} calls
+     *  re-streamed ~the whole head weight per draft row). */
+    public void logitsAll(State s, FloatTensor dst) {
+        int dim = configuration.embeddingLength();
+        int vocab = configuration.vocabularySize();
+        int n = s.outputCount;
+        int first = s.lastChunkLen - n;
+        Parallel.onDecodePool(() -> {
+            for (int r = 0; r < n; r++) {
+                rmsnorm(s.xb, r * dim, s.residual, (long) (first + r) * dim, weights.rmsFinalWeights, dim, configuration.rmsNormEps());
+            }
+            weights.classifierWeights.gemm(s.xb, dim, dst, vocab, n, vocab, dim);
+            Activations.softcap(dst, 0, n * vocab, configuration.logitSoftcapping());
+            return null;
+        });
+    }
+
 
     // === Capabilities: gemma-4's architecture supports MTP and media input, so this implements both.
     // Whether either is usable is a runtime fact gated by un-ignorable empties — the current text-only
     // GGUFs load no MTP heads and no media adapters, so both report supported-but-not-loaded. ===
 
     @Override public OptionalInt depth() {
-        return mtp == null ? OptionalInt.empty() : OptionalInt.of(Math.max(1, Integer.getInteger("jinfer.mtpDepth", 2)));
+        return mtp == null ? OptionalInt.empty() : OptionalInt.of(2);   // draft depth the loop defaults to
     }
 
-    /** Draft-head logits: head {@code i} is the {@code i}-th CHAINED greedy draft seeded from retained
-     *  row {@code output} — head 0 predicts the token after the exact next token (which the caller reads
-     *  from {@link #logits(State, int)}). The chain recomputes per call (O(head) draft forwards); the
-     *  speculative loop ({@link Gemma4Speculative}) drives the decoder directly instead. */
+    /** NOTE - seam gap, deliberate: {@link com.qxotic.jinfer.MultiToken}'s per-head logits view is too
+     *  weak for an efficient speculative loop (it cannot expose the chained draft hidden), so the loop
+     *  ({@link Gemma4Speculative}) drives {@link Gemma4MtpDecoder} directly and this seam only reports
+     *  {@link #depth()}. Reading per-head logits through the seam would recompute whole draft chains;
+     *  it stays unimplemented until the seam is reshaped drafter-style (draftSeed/draftNext) in core. */
     @Override public FloatTensor logits(State s, int output, int head) {
-        if (mtpDecoder == null) throw new IllegalStateException("MTP not loaded (depth() is empty) — no draft head " + head);
-        int dim = configuration.embeddingLength();
-        int row = s.lastChunkLen - s.outputCount + output;
-        int pos = s.position() - s.lastChunkLen + row;
-        int tok = s.lastTokens[row];
-        // warm-up seeds the chain from (row hidden, its token); then chain greedily
-        mtpDecoder.draft(s, s.residual, (long) row * dim, tok, pos);
-        int chainTok = (int) logits(s, output).argmax(0, configuration.vocabularySize());
-        FloatTensor dl = null;
-        for (int i = 0; i <= head; i++) {
-            dl = mtpDecoder.draft(s, mtpDecoder.chainedHidden(), 0, chainTok, pos);
-            chainTok = (int) dl.argmax(0, configuration.vocabularySize());
-        }
-        return dl;
+        throw new UnsupportedOperationException("drive Gemma4MtpDecoder directly (see Gemma4Speculative)");
     }
 
     @Override public Set<Class<? extends Media>> modalities() {

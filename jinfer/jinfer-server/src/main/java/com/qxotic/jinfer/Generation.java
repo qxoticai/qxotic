@@ -158,31 +158,29 @@ final class Generation {
         // whole-prompt hit still re-ingests that block, leaving fresh logits at the cursor.
         @SuppressWarnings("unchecked")
         SessionPool<S> pool = (SessionPool<S>) sessionPool;
-        CachedSession<S> session = pool.acquire(fingerprints, total);
-        boolean tier1 = session != null;
-        if (!tier1) {
-            session = CachedSession.resume(m, cache, m.newState(m.config().contextLength()),
-                    fingerprints, total - groupLen[groupLen.length - 1]);
-        }
-        int restored = session.position();                       // reused positions: a BLOCK boundary
-        session.ingestGroups(groups);                            // (or the pooled stream end), not
+        int billed = total;
+        return pool.withSession(m, cache, () -> m.newState(m.config().contextLength()),
+                fingerprints, total, total - groupLen[groupLen.length - 1], (session, tier1) -> {
+            int restored = session.position();                   // reused positions: a BLOCK boundary
+            session.ingestGroups(groups);                        // (or the pooled stream end), not
                                                                  // necessarily a group one - the
                                                                  // session slices the partial group
-        Metrics.recordPromptCache(tier1, restored);
-        if (System.getProperty("jinfer.debugPrompt") != null) {
-            System.err.printf("[prompt-cache] %s %d/%d positions reused (%s)%n",
-                    tier1 ? "tier1-append" : "tier2-restore", restored, total, cache.stats());
-        }
-        // decode from the retained logits (empty prompt continues at the cursor); the whole prompt
-        // was billed, of which `restored` came from the cache.
-        GenerationResult result = generateFrom(m, session.state(), request, sinks, restored).withUsage(total, restored);
-        // Bring the decode back into the session (the generator stepped the state directly): the
-        // reply extends the stream and commits as a block, and the live session returns to the
-        // pool ready for the next echo to continue append-only.
-        int ingested = session.state().position() - total;
-        if (ingested > 0) session.adopt(result.tokens().subList(0, ingested));
-        pool.release(session);
-        return result;
+            Metrics.recordPromptCache(tier1, restored);
+            if (System.getProperty("jinfer.debugPrompt") != null) {
+                System.err.printf("[prompt-cache] %s %d/%d positions reused (%s)%n",
+                        tier1 ? "tier1-append" : "tier2-restore", restored, billed, cache.stats());
+            }
+            // decode from the retained logits (empty prompt continues at the cursor); the whole
+            // prompt was billed, of which `restored` came from the cache.
+            GenerationResult result = generateFrom(m, session.state(), request, sinks, restored)
+                    .withUsage(billed, restored);
+            // Bring the decode back into the session (the generator stepped the state directly):
+            // the reply extends the stream and commits as a block, and the live session returns
+            // to the pool ready for the next echo to continue append-only.
+            int ingested = session.state().position() - billed;
+            if (ingested > 0) session.adopt(result.tokens().subList(0, ingested));
+            return result;
+        });
     }
 
     GenerationResult completion(Map<String, Object> request, String prompt, Sinks sinks) {

@@ -38,13 +38,7 @@
       <artifactId>junit-jupiter</artifactId>
       <scope>test</scope>
     </dependency>
-          <dependency>
-            <groupId>org.graalvm.nativeimage</groupId>
-            <artifactId>svm-shared</artifactId>
-            <version>25-local</version>
-            <scope>provided</scope>
-        </dependency>
-</dependencies>
+  </dependencies>
 
   <build>
     <plugins>
