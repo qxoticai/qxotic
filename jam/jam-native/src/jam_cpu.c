@@ -125,6 +125,10 @@ int jam_cpu_can_pin(void) { return 1; }                         /* QoS steering 
 
 #elif defined(_WIN32)
 #include <windows.h>
+/* EfficiencyClass (the P/E-core split, added in Win10) is the 2nd byte of PROCESSOR_RELATIONSHIP,
+ * right after Flags. Older MinGW-w64 headers (Ubuntu CI) omit the named field, but the struct ABI is
+ * fixed, so read it positionally - compiles on every toolchain and the real Windows SDK alike. */
+#define JAM_EFFICIENCY_CLASS(proc) (((const BYTE*)&(proc))[1])
 
 /* One in-affinity logical CPU per physical P-core (max EfficiencyClass), via GetLogicalProcessorInformationEx.
  * Single processor group (<=64 logical) — the common case; >64-CPU machines fall back to group 0 unpinned. */
@@ -141,13 +145,13 @@ static int os_cpus_allowed(int* out) {
     BYTE best = 0;                                              /* pass 1: highest efficiency class = P */
     for (char* p = buf; p < buf + len; p += ((SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*) p)->Size) {
         SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX* e = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*) p;
-        if (e->Relationship == RelationProcessorCore && e->Processor.EfficiencyClass > best)
-            best = e->Processor.EfficiencyClass;
+        if (e->Relationship == RelationProcessorCore && JAM_EFFICIENCY_CLASS(e->Processor) > best)
+            best = JAM_EFFICIENCY_CLASS(e->Processor);
     }
     int n = 0;                                                  /* pass 2: one allowed sibling per P-core */
     for (char* p = buf; p < buf + len && n < JAM_MAX_CPU; p += ((SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*) p)->Size) {
         SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX* e = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*) p;
-        if (e->Relationship != RelationProcessorCore || e->Processor.EfficiencyClass != best) continue;
+        if (e->Relationship != RelationProcessorCore || JAM_EFFICIENCY_CLASS(e->Processor) != best) continue;
         KAFFINITY m = e->Processor.GroupMask[0].Mask;           /* group 0 only */
         for (int b = 0; b < 64; b++)
             if (((m >> b) & 1) && ((procmask >> b) & 1)) { out[n++] = b; break; }
