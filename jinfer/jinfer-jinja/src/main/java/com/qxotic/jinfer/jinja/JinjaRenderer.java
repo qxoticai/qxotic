@@ -436,8 +436,9 @@ public final class JinjaRenderer {
              CMP,
     }
 
-    record Tok(T type, String val, int pos, boolean trimLeft, boolean trimRight) {
-        Tok(T type, String val, int pos) { this(type, val, pos, false, false); }
+    record Tok(T type, String val, int pos, boolean trimLeft, boolean trimRight, boolean lineStart) {
+        Tok(T type, String val, int pos) { this(type, val, pos, false, false, false); }
+        Tok(T type, String val, int pos, boolean trimLeft, boolean trimRight) { this(type, val, pos, trimLeft, trimRight, false); }
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -589,8 +590,11 @@ public final class JinjaRenderer {
                 int nl = v.lastIndexOf('\n');
                 int k = v.length();
                 while (k > nl + 1 && (v.charAt(k - 1) == ' ' || v.charAt(k - 1) == '\t')) k--;
-                if (k == nl + 1 && k != v.length() && (nl >= 0 || pt.pos == 0)) {
-                    // the whole final line was whitespace AND its start is a real line start
+                if (k == nl + 1 && k != v.length() && (nl >= 0 || pt.pos == 0 || pt.lineStart())) {
+                    // the whole final line was whitespace AND its start is a real line start: an
+                    // internal newline, the template start, OR a newline that trim_blocks already
+                    // consumed (lineStart) - jinja2 composes trim_blocks + lstrip_blocks, so the
+                    // whitespace after a trimmed newline is still line-start whitespace.
                     // (jinja2 keeps the space in "{{ a }} {% if b %}" - not at a line start)
                     toks.set(j, new Tok(T.TEXT, v.substring(0, k), pt.pos));
                 }
@@ -672,16 +676,19 @@ public final class JinjaRenderer {
                 adv(); // skip the { that triggered the stop
             }
             String val = cs.subSequence(s, i).toString();
+            boolean lineStart = false;
             if (stripNextText) {                        // explicit -%} / -#} / -}}: strip all leading whitespace
                 val = val.stripLeading();
                 stripNextText = false;
                 trimNextNewline = false;
             } else if (trimNextNewline) {                // trim_blocks: drop exactly one leading newline
-                if (val.startsWith("\r\n")) val = val.substring(2);
-                else if (val.startsWith("\n")) val = val.substring(1);
+                if (val.startsWith("\r\n")) { val = val.substring(2); lineStart = true; }
+                else if (val.startsWith("\n")) { val = val.substring(1); lineStart = true; }
                 trimNextNewline = false;
             }
-            return new Tok(T.TEXT, val, p);
+            // A newline consumed by trim_blocks still begins a new line, so whitespace up to a
+            // following block tag stays line-start whitespace for lstrip_blocks to strip.
+            return new Tok(T.TEXT, val, p, false, false, lineStart);
         }
     }
 
@@ -700,6 +707,7 @@ public final class JinjaRenderer {
     record ForNode(String var, String var2, Node iterable, List<Node> body) implements Node {}
     record GenerationNode(List<Node> body) implements Node {} // {% generation %}…{% endgeneration %}: renders the body transparently, records the assistant span
     record SetNode(Node target, Node value) implements Node {}
+    record BlockExpr(List<Node> body) implements Node {} // {% set x %}…{% endset %}: the body rendered to a string
     record MacroNode(String name, List<String> params, List<Node> defaults, List<Node> body) implements Node {}
     record FilterNode(Node operand, String name, List<Node> args) implements Node {}
     record BinNode(String op, Node left, Node right) implements Node {}
@@ -886,10 +894,16 @@ public final class JinjaRenderer {
 
         Node parseSet() {
             Node target = parseExpr();
-            Node value = null;
-            if (is(T.EQ)) { next(); value = parseExpr(); }
-            expect(T.CLOSE_STMT);
-            return new SetNode(target, value);
+            if (is(T.EQ)) {                              // {% set x = expr %}
+                next();
+                Node value = parseExpr();
+                expect(T.CLOSE_STMT);
+                return new SetNode(target, value);
+            }
+            expect(T.CLOSE_STMT);                        // {% set x %}…{% endset %}: capture the rendered body
+            List<Node> body = parseBody("endset");
+            expect(T.OPEN_STMT); expectId("endset"); expect(T.CLOSE_STMT);
+            return new SetNode(target, new BlockExpr(body));
         }
 
         // ── macro ──
@@ -1349,6 +1363,7 @@ public final class JinjaRenderer {
 
         Val eval(Node expr) {
             return switch (expr) {
+                case BlockExpr b -> evalExprBlock(b.body());   // {% set x %}…{% endset %} body
                 case LitNode l   -> {
                     // list/dict/tuple literals carry element Nodes — evaluate them here
                     if (l.val() instanceof List<?> li) {
