@@ -293,30 +293,41 @@ extern "C" jam_status jam_metal_mm(jam_metal* m, const void* a, jam_dtype at, in
                                    const void* b, jam_dtype bt, int ldb, void* c, jam_dtype ct, int ldc,
                                    int M, int N, int K) {
     if (bt != JAM_F32 || ct != JAM_F32) return JAM_EUNSUPPORTED;
-    if (lda != K || ldb != K)           return JAM_EUNSUPPORTED;   /* kernels assume contiguous A,B -> CPU */
+    if (lda < K || ldb < K)             return JAM_EINVAL;
 
-    /* dtype -> (pipeline, weight bytes, element granularity that K must divide). */
-    id<MTLComputePipelineState> pipe = nil; size_t asz = 0; int blk = 1;
+    /* dtype -> (pipeline, bytes-per-block, element granularity that K + the weight stride must divide). */
+    id<MTLComputePipelineState> pipe = nil; int blk = 1; size_t bpb = 0;
     switch (at) {
-        case JAM_F32:   pipe=m->f32;   asz=(size_t)M*K*4;          blk=1;   break;
-        case JAM_F16:   pipe=m->f16;   asz=(size_t)M*K*2;          blk=1;   break;
-        case JAM_BF16:  pipe=m->bf16;  asz=(size_t)M*K*2;          blk=1;   break;
-        case JAM_Q8_0:  pipe=m->q8;    asz=(size_t)M*(K/32)*34;    blk=32;  break;
-        case JAM_Q4_0:  pipe=m->q4_0;  asz=(size_t)M*(K/32)*18;    blk=32;  break;
-        case JAM_MXFP4: pipe=m->mxfp4; asz=(size_t)M*(K/32)*17;    blk=32;  break;
-        case JAM_Q4_K:  pipe=m->q4k;   asz=(size_t)M*(K/256)*144;  blk=256; break;
-        case JAM_Q5_K:  pipe=m->q5k;   asz=(size_t)M*(K/256)*176;  blk=256; break;
-        case JAM_Q6_K:  pipe=m->q6k;   asz=(size_t)M*(K/256)*210;  blk=256; break;
+        case JAM_F32:   pipe=m->f32;   bpb=4;   blk=1;   break;
+        case JAM_F16:   pipe=m->f16;   bpb=2;   blk=1;   break;
+        case JAM_BF16:  pipe=m->bf16;  bpb=2;   blk=1;   break;
+        case JAM_Q8_0:  pipe=m->q8;    bpb=34;  blk=32;  break;
+        case JAM_Q4_0:  pipe=m->q4_0;  bpb=18;  blk=32;  break;
+        case JAM_MXFP4: pipe=m->mxfp4; bpb=17;  blk=32;  break;
+        case JAM_Q4_K:  pipe=m->q4k;   bpb=144; blk=256; break;
+        case JAM_Q5_K:  pipe=m->q5k;   bpb=176; blk=256; break;
+        case JAM_Q6_K:  pipe=m->q6k;   bpb=210; blk=256; break;
         default: return JAM_EUNSUPPORTED;
     }
-    if (!pipe)        return JAM_EUNSUPPORTED;
-    if (K % blk != 0) return JAM_EINVAL;
+    if (!pipe)                     return JAM_EUNSUPPORTED;
+    if (K % blk || lda % blk)      return JAM_EINVAL;   /* K + weight row stride on a block boundary */
+
+    /* The shaders index the device buffers by K (tight), so a strided weight view (ldw>k, i.e. lda>K) or
+     * strided activation (ldb>K) must be PACKED row-by-row on upload - honoring the stride like the CPU
+     * kernels do, not read as if contiguous. Both operands then stay on the GPU, so a strided call is
+     * bit-identical to the tight one (the layout-contract metamorphic test) instead of falling to CPU. */
+    size_t wrow = (size_t)(K/blk)*bpb, wsrc = (size_t)(lda/blk)*bpb, asz = (size_t)M*wrow;
+    size_t arow = (size_t)K*sizeof(float), asrc = (size_t)ldb*sizeof(float);
 
     @autoreleasepool {
-        size_t bsz = (size_t)N*K*sizeof(float), csz = (size_t)M*N*sizeof(float);
-        id<MTLBuffer> ba = [m->dev newBufferWithBytes:a length:asz options:MTLResourceStorageModeShared];
-        id<MTLBuffer> bb = [m->dev newBufferWithBytes:b length:bsz options:MTLResourceStorageModeShared];
+        size_t bsz = (size_t)N*arow, csz = (size_t)M*N*sizeof(float);
+        id<MTLBuffer> ba = [m->dev newBufferWithLength:asz options:MTLResourceStorageModeShared];
+        id<MTLBuffer> bb = [m->dev newBufferWithLength:bsz options:MTLResourceStorageModeShared];
         id<MTLBuffer> bc = [m->dev newBufferWithLength:csz options:MTLResourceStorageModeShared];
+        if (wsrc == wrow) memcpy([ba contents], a, asz);   /* contiguous weights: one shot */
+        else for (int r=0;r<M;r++) memcpy((uint8_t*)[ba contents] + (size_t)r*wrow, (const uint8_t*)a + (size_t)r*wsrc, wrow);
+        if (asrc == arow) memcpy([bb contents], b, bsz);   /* contiguous activations: one shot */
+        else for (int j=0;j<N;j++) memcpy((uint8_t*)[bb contents] + (size_t)j*arow, (const uint8_t*)b + (size_t)j*asrc, arow);
 
         int dim[4] = { M, N, K, 0 };
         int gx = (N + JAM_MTN - 1) / JAM_MTN;   /* each thread does JAM_MTN columns */
