@@ -93,10 +93,10 @@ static inline jam_ref_mxfp4_blk* jam_ref_quant_mxfp4(const float* X, int rows, i
 /* ---- NVFP4 (NVIDIA FP4) — GGUF block_nvfp4 { uint8_t d[4] (UE4M3 per-16); uint8_t qs[32] } = 36 bytes,
  * 64 elements. value = kvalues_mxfp4[nibble] · ue4m3(d[s]); no global scale. Mirrors ggml's quant/dequant. */
 typedef struct { uint8_t d[4]; uint8_t qs[32]; } jam_ref_nvfp4_blk;
-static inline float jam_ref_ue4m3_to_float(uint8_t x) {   /* matches ggml_ue4m3_to_fp32 (bit 7 ignored) */
+static inline float jam_ref_ue4m3_to_float(uint8_t x) {   /* == ggml_ue4m3_to_fp32 incl. its ×0.5 (kvalues are 2× E2M1) */
     if (x == 0 || x == 0x7F) return 0.0f;
     int e = (x >> 3) & 0xF, m = x & 0x7;
-    return e ? ldexpf(1.0f + (float) m / 8.0f, e - 7) : ldexpf((float) m, -9);
+    return 0.5f * (e ? ldexpf(1.0f + (float) m / 8.0f, e - 7) : ldexpf((float) m, -9));
 }
 static inline uint8_t jam_ref_fp32_to_ue4m3(float v) {    /* nearest UE4M3 code (scales are >= 0) */
     uint8_t best = 0; float bd = 1e30f;

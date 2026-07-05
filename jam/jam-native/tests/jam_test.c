@@ -139,6 +139,28 @@ static void suite_mxfp4(int m, int n, int k) {     /* k a multiple of 32 */
     free(W);free(A);free(C);free(RE);free(RR);free(WQ);
 }
 
+/* Golden ggml-semantics anchor: hand-built block, expected value from NVIDIA/ggml NVFP4 semantics
+ * (value = E2M1 x ue4m3_scale; stored codes are 2x E2M1, so the decode scale must be halved). Catches
+ * any self-consistent convention drift that quant/dequant round-trip parity cannot see. */
+static void suite_nvfp4_golden(void) {
+    jam_ref_nvfp4_blk w; memset(&w, 0, sizeof w);
+    w.d[0] = 0x38; w.qs[0] = (uint8_t)(7 | (15 << 4));   /* raw 1.0 -> scale 0.5; elem0 code 12, elem8 code -12 */
+    w.d[1] = 0x40; w.qs[8] = 5;                          /* raw 2.0 -> scale 1.0; elem16 code 6 */
+    float A[64]; for (int i = 0; i < 64; ++i) A[i] = 0.f;
+    A[0] = 1.f; A[8] = 2.f; A[16] = 1.f;                 /* dot = 12*0.5*1 + (-12)*0.5*2 + 6*1.0*1 = 6 - 12 + 6 = 0? */
+    /* expected per ggml: elem0 = 12*0.5 = 6.0, elem8 = -12*0.5 = -6.0, elem16 = 6*1.0 = 6.0
+     * dot = 6.0*1 + (-6.0)*2 + 6.0*1 = 0.0 is degenerate; use A[8]=1 -> dot = 6.0 */
+    A[8] = 1.f;
+    float C[1] = { 0.f };
+    for (int c = 0; c < NCTX; ++c) {
+        ++g_checks; C[0] = 0.f;
+        int st = jam_mm(CTX[c].c, &w, JAM_NVFP4, 64, A, JAM_F32, 64, C, JAM_F32, 1, 1, 1, 64);
+        if (st || fabs(C[0] - 6.0) > 1e-2) {
+            printf("  [FAIL] NVFP4 golden %-15s: got %.6f want 6.0 st=%d\n", CTX[c].lbl, C[0], st); ++g_fail;
+        }
+    }
+}
+
 static void suite_nvfp4(int m, int n, int k) {     /* k a multiple of 64; GGUF block_nvfp4 {d[4];qs[32]} */
     int nblk = k/64;
     static const int8_t kv[16] = { 0,1,2,3,4,6,8,12, 0,-1,-2,-3,-4,-6,-8,-12 };
@@ -583,6 +605,7 @@ int main(void) {
     for (unsigned s=0;s<sizeof Q/sizeof*Q;++s) suite_q8(Q[s][0],Q[s][1],Q[s][2]);
     for (unsigned s=0;s<sizeof Q/sizeof*Q;++s) suite_mxfp4(Q[s][0],Q[s][1],Q[s][2]);   /* same shapes */
     int NV[][3] = {{1,1,64},{4,4,128},{7,5,64},{5,7,192},{13,9,256},{64,64,256},{100,99,128},{257,33,64},{129,127,512},{512,512,512}};
+    suite_nvfp4_golden();
     for (unsigned s=0;s<sizeof NV/sizeof*NV;++s) suite_nvfp4(NV[s][0],NV[s][1],NV[s][2]);   /* NVFP4 GGUF (k%64) */
     int KQ[][3] = {{16,8,256},{32,16,512},{64,33,256},{17,5,256},{128,64,768},{257,40,256}};  /* k%256, n</≥8, m tail */
     for (unsigned s=0;s<sizeof KQ/sizeof*KQ;++s) suite_kquant(jam_ref_make_q4k, JAM_Q4_K, "Q4_K", KQ[s][0],KQ[s][1],KQ[s][2]);
