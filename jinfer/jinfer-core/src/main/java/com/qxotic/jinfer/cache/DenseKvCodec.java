@@ -9,7 +9,8 @@ import java.util.function.Function;
 /** The degenerate resume-state codec for uniform full-attention models: every layer stores
  *  absolute-position KV rows, so a block is just the span's K/V rows per layer (raw F16,
  *  layer-major: layer l → K rows {@code [from,to)} then V rows) and there is no fixed
- *  checkpoint (checkpointBytes()==0: every block is a resume point). Dense models (Llama, Granite) plug in with their two cache accessors; hybrid
+ *  checkpoint ({@code checkpointBytes()==0}: every block is a resume point). Dense models
+ *  (Llama, Granite) plug in with their two cache accessors; hybrid
  *  models (windows, recurrent checkpoints) write their own codec — their per-layer shapes
  *  genuinely differ and are clearer hand-written. */
 public final class DenseKvCodec<S extends RuntimeState> implements KvCodec<S> {

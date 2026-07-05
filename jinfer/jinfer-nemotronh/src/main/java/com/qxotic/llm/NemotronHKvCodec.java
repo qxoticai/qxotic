@@ -68,12 +68,12 @@ public final class NemotronHKvCodec implements KvCodec<NemotronH.State> {
 
     @Override
     public void saveCheckpoint(NemotronH.State state, int to, MemorySegment dst) {
-        checkpoint(state, to, dst, true);
+        checkpoint(state, dst, true);
     }
 
     @Override
     public void restoreCheckpoint(NemotronH.State state, int to, MemorySegment src) {
-        checkpoint(state, to, src, false);
+        checkpoint(state, src, false);
     }
 
     /** One walk per section drives both directions so each layout is single-sourced. */
@@ -88,7 +88,7 @@ public final class NemotronHKvCodec implements KvCodec<NemotronH.State> {
         }
     }
 
-    private void checkpoint(NemotronH.State state, int to, MemorySegment blob, boolean out) {
+    private void checkpoint(NemotronH.State state, MemorySegment blob, boolean out) {
         long off = 0;
         for (int l = 0; l < config.numberOfLayers(); l++) {
             if (config.layerTypes()[l] != NemotronH.LayerType.SSM) continue;

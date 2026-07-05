@@ -1,6 +1,7 @@
 package com.qxotic.llm;
 
 import com.qxotic.jinfer.cache.KvCodec;
+import com.qxotic.jinfer.cache.KvTransfer;
 
 import java.lang.foreign.MemorySegment;
 
@@ -12,12 +13,12 @@ import java.lang.foreign.MemorySegment;
  *  {@code position == to} — which is exactly why blocks match completely or not at all. RoPE is
  *  baked into K at absolute positions, so restore writes every row back at its true slot.
  *
- *  <p>Blob layout, own-layer-major, native F16: full layer l → K rows {@code [from,to)} then V
- *  rows; SWA layer l → K window then V window, each padded to a fixed {@code W} rows (blob row r
- *  = position {@code max(0,to-W)+r}; the ring span wraps at most once, so each direction is at
- *  most two contiguous segment copies). Restore is a pure copy; the cache chain-applies blocks in
- *  order — later blocks overwrite ring slots with newer positions, so the deepest window wins —
- *  and then resumes the state at the chain end. */
+ *  <p>Rows section (every block), own-layer-major, native F16: full layer l → K rows
+ *  {@code [from,to)} then V rows. Checkpoint section (sparse, cache policy): SWA layer l → K
+ *  window then V window, each padded to a fixed {@code W} rows (blob row r = position
+ *  {@code max(0,to-W)+r}; the ring span wraps at most once, so each direction is at most two
+ *  contiguous segment copies). Restore is a pure copy; rows chain-apply in order and the
+ *  checkpoint is applied once, from the resume block. */
 public final class Gemma4KvCodec implements KvCodec<Gemma4.State> {
 
     private final Gemma4.Configuration config;
@@ -75,8 +76,8 @@ public final class Gemma4KvCodec implements KvCodec<Gemma4.State> {
         for (int l = 0; l < config.ownKvLayers(); l++) {
             if (config.isSWA()[l]) continue;
             long kvDim = config.kvDim(l);
-            off += com.qxotic.jinfer.cache.KvTransfer.transfer(state.keyCache[l], from * kvDim, blob, off, n * kvDim, out);
-            off += com.qxotic.jinfer.cache.KvTransfer.transfer(state.valueCache[l], from * kvDim, blob, off, n * kvDim, out);
+            off += KvTransfer.transfer(state.keyCache[l], from * kvDim, blob, off, n * kvDim, out);
+            off += KvTransfer.transfer(state.valueCache[l], from * kvDim, blob, off, n * kvDim, out);
         }
     }
 
@@ -88,10 +89,8 @@ public final class Gemma4KvCodec implements KvCodec<Gemma4.State> {
             long kvDim = config.kvDim(l);
             // fixed-size window checkpoint: rows at ring slots, padded to W rows (shared
             // wrap-aware copy - the ring-boundary math lives once, in KvTransfer.window)
-            off += com.qxotic.jinfer.cache.KvTransfer.window(state.keyCache[l], to, w, kvDim, 2, blob, off, out);
-            off += com.qxotic.jinfer.cache.KvTransfer.window(state.valueCache[l], to, w, kvDim, 2, blob, off, out);
+            off += KvTransfer.window(state.keyCache[l], to, w, kvDim, 2, blob, off, out);
+            off += KvTransfer.window(state.valueCache[l], to, w, kvDim, 2, blob, off, out);
         }
     }
-
-
 }

@@ -62,12 +62,12 @@ public final class Qwen35KvCodec implements KvCodec<Qwen35.State> {
 
     @Override
     public void saveCheckpoint(Qwen35.State state, int to, MemorySegment dst) {
-        checkpoint(state, to, dst, true);
+        checkpoint(state, dst, true);
     }
 
     @Override
     public void restoreCheckpoint(Qwen35.State state, int to, MemorySegment src) {
-        checkpoint(state, to, src, false);
+        checkpoint(state, src, false);
     }
 
     /** One walk per section drives both directions so each layout is single-sourced. */
@@ -82,7 +82,7 @@ public final class Qwen35KvCodec implements KvCodec<Qwen35.State> {
         }
     }
 
-    private void checkpoint(Qwen35.State state, int to, MemorySegment blob, boolean out) {
+    private void checkpoint(Qwen35.State state, MemorySegment blob, boolean out) {
         long off = 0;
         for (int l = 0; l < config.numberOfLayers; l++) {
             if (config.isFullAttention[l]) continue;
