@@ -501,7 +501,13 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
         if (scale != 1.0f) {
             state.residual.mapInPlace(0, seqLen * configuration.embeddingLength(), v -> v * scale);
         }
-        if (LLM.TRACE) LLM.traceSum("l_out-" + l, state.residual, seqLen * configuration.embeddingLength());
+        if (LLM.TRACE) {
+            int d = configuration.embeddingLength();
+            LLM.traceSum("l_out-" + l, state.residual, seqLen * d);
+            long lo = (long) (seqLen - 1) * d;
+            System.err.printf("[trace] l_out-%d last=%.4f,%.4f,%.4f%n", l,
+                    state.residual.getFloat(lo), state.residual.getFloat(lo + 1), state.residual.getFloat(lo + 2));
+        }
     }
 
     /** Pre-norm attention: per-head Q/K RMS-norm + RoPE, ring-SWA or full causal attention (the QK scale
@@ -709,6 +715,12 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
                 state.moeRouterB.setFloat(s * nExperts + bestIdx, Float.NEGATIVE_INFINITY);
                 counts[bestIdx]++;
             }
+            // norm_w (llama.cpp build_moe_ffn): renormalize the selected top-k weights to sum to 1
+            // (clamped like ggml to the smallest F16 normal to avoid divide-by-zero).
+            float sum = 0f;
+            for (int ki = 0; ki < topK; ki++) sum += state.moeRowTopP[s * topK + ki];
+            float inv = 1f / Math.max(sum, 6.103515625e-5f);
+            for (int ki = 0; ki < topK; ki++) state.moeRowTopP[s * topK + ki] *= inv;
         }
         Moe.Routing r = state.moeRouting;
         r.seqLen = seqLen; r.topK = topK; r.numExperts = nExperts;
