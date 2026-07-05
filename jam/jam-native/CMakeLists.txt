@@ -29,6 +29,11 @@ add_library(jam SHARED
 target_include_directories(jam PUBLIC include PRIVATE src)
 set_target_properties(jam PROPERTIES VERSION 1.0.0 SOVERSION 1)   # libjam.so.1 -> ABI guard via soname
 
+# JAM_BUILD marks this as the library's own compilation so jam.h stamps the public API with
+# __declspec(dllexport) on Windows (PE hides everything else once jam_jni.c's JNIEXPORT appears — that
+# would drop jam_mm/jam_ctx_* from jam.dll and break the Panama binding). No effect on ELF/Mach-O.
+target_compile_definitions(jam PRIVATE JAM_BUILD=1)
+
 find_package(Threads REQUIRED)
 target_link_libraries(jam PRIVATE Threads::Threads m)   # libm: lrintf/fabsf in the requant floor
 
@@ -123,7 +128,12 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
 endif()
 
 if (JAM_JNI)
-    find_package(JNI REQUIRED)
+    # Native build: find_package locates the host JDK. Cross build: find_package(JNI) can't detect a
+    # foreign target JVM, so the caller passes -DJNI_INCLUDE_DIRS (jni.h + the target's jni_md.h) and we
+    # honor it verbatim (the shipped fat-jar lib MUST carry the JNI binding on every platform).
+    if (NOT JNI_INCLUDE_DIRS)
+        find_package(JNI REQUIRED)
+    endif()
     target_sources(jam PRIVATE src/jam_jni.c)
     target_include_directories(jam PRIVATE ${JNI_INCLUDE_DIRS})
 endif()
