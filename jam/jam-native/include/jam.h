@@ -44,6 +44,17 @@ extern "C" {            /* for C++ CALLERS only — the API is pure C11 */
 
 #define JAM_ABI_VERSION 1u   /* feeds the soname (libjam.so.1); the loader enforces ABI match */
 
+/* Public-symbol export. On ELF/Mach-O every non-static symbol is exported by default, so JAM_API is empty
+ * there. On Windows (PE) nothing is exported once ANY symbol is __declspec(dllexport) — and jam_jni.c's
+ * JNIEXPORT is exactly that — so the whole C API must be marked explicitly or the Panama binding can't find
+ * jam_mm/jam_ctx_* in jam.dll. JAM_BUILD is defined only while compiling the library itself (see CMake);
+ * a C consumer that links the DLL sees a plain declaration (the fat-jar loads it via dlopen, not link-time). */
+#if defined(_WIN32) && defined(JAM_BUILD)
+#  define JAM_API __declspec(dllexport)
+#else
+#  define JAM_API
+#endif
+
 /* dtype tags — numerically identical to GGML's ggml_type (drop-in for GGUF). A may be any of these;
  * B and C are float (F32/F16/BF16). */
 typedef enum {
@@ -94,7 +105,7 @@ typedef enum {
     JAM_ISA_METAL,
 } jam_isa;
 
-const char* jam_isa_name(jam_isa isa);   /* user-facing name, e.g. "avx512_vnni"; static, do not free */
+JAM_API const char* jam_isa_name(jam_isa isa);   /* user-facing name, e.g. "avx512_vnni"; static, do not free */
 
 /* ---- threading: drive the caller's executor (e.g. the JVM SpinPool), or let jam own a pool ----
  * jam calls parallel_for(pool, n, fn, arg): run fn over [0,n) split across workers, block till done. */
@@ -111,8 +122,8 @@ typedef struct {
 } jam_config;
 
 typedef struct jam_ctx jam_ctx;
-jam_ctx* jam_ctx_create(const jam_config* cfg);   /* NULL on failure */
-void     jam_ctx_destroy(jam_ctx* ctx);
+JAM_API jam_ctx* jam_ctx_create(const jam_config* cfg);   /* NULL on failure */
+JAM_API void     jam_ctx_destroy(jam_ctx* ctx);
 
 /* ---- the work ----
  * C = W @ Aᵀ   (k is the contiguous last axis of both W and A)
@@ -123,20 +134,20 @@ void     jam_ctx_destroy(jam_ctx* ctx);
  *                                            m-feature vector is contiguous (feature i unit-stride), ldc >= m.
  * Strides in ELEMENTS (k is unit-stride). Pointers borrowed for the call. ctx==NULL -> global.
  * n==1 is the gemv (decode) case. Unhandled dtype combo -> JAM_EUNSUPPORTED; concurrent mm on one ctx -> JAM_EBUSY. */
-jam_status jam_mm(jam_ctx* ctx,
+JAM_API jam_status jam_mm(jam_ctx* ctx,
                   const void* w, jam_dtype wt, int ldw,   /* weights     [m × k] */
                   const void* a, jam_dtype at, int lda,   /* activations [n × k] */
                   void*       c, jam_dtype ct, int ldc,   /* output      [m × n] */
                   int m, int n, int k);
 
-jam_isa     jam_active_isa(const jam_ctx* ctx);   /* the live kernel level; ctx==NULL -> global */
-const char* jam_ctx_name(const jam_ctx* ctx);    /* the context's label ("" if unnamed); ctx==NULL -> global */
+JAM_API jam_isa     jam_active_isa(const jam_ctx* ctx);   /* the live kernel level; ctx==NULL -> global */
+JAM_API const char* jam_ctx_name(const jam_ctx* ctx);    /* the context's label ("" if unnamed); ctx==NULL -> global */
 
 /* Drop the internal repacked-weight cache entry for `w` (ctx==NULL -> global). The quant fast path repacks
  * each weight once and caches it keyed on the pointer, reused for the ctx lifetime. Call this BEFORE freeing
  * or overwriting a weight whose address may be reused, else a new weight at that address hits the stale
  * repack. No-op if `w` was never cached. Not safe to call concurrently with jam_mm on the same context. */
-void jam_forget_weight(jam_ctx* ctx, const void* w);
+JAM_API void jam_forget_weight(jam_ctx* ctx, const void* w);
 
 /* Destroy the process-global context (the one jam_mm(NULL,...) uses) and free its pool + scratch. A no-op
  * if it was never created; a later jam_mm(NULL,...) lazily re-creates it (idempotent). Most callers never
@@ -144,7 +155,7 @@ void jam_forget_weight(jam_ctx* ctx, const void* w);
  * BEFORE dlclose (else each load/unload accumulates one), or a JVM host from a shutdown hook. It is NOT run
  * automatically (joining the pool threads from a library destructor is unsafe during VM teardown). NOT safe
  * to call concurrently with any jam_mm(NULL,...). */
-void jam_global_destroy(void);
+JAM_API void jam_global_destroy(void);
 
 #ifdef __cplusplus
 }

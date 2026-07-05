@@ -107,13 +107,13 @@ void jam_mm_f32_generic(void* job, int row_begin, int row_end, int tid);
 #ifdef JAM_HAVE_AVX2
 void jam_mm_f32_avx2(void* job, int row_begin, int row_end, int tid);
 void jam_mm_f32d_avx2(void* job, int row_begin, int row_end, int tid);       /* F32 dense, row-blocked 3x4 tile */
+void jam_mm_f16_avx2(void* job, int row_begin, int row_end, int tid);       /* F16 dense, avx2 2×4 tile */
+void jam_mm_bf16_avx2(void* job, int row_begin, int row_end, int tid);      /* BF16 dense, avx2 2×4 tile */
 #endif
 #ifdef JAM_HAVE_AVX512
 void jam_mm_f32_avx512(void* job, int row_begin, int row_end, int tid);
 void jam_mm_f16_avx512(void* job, int row_begin, int row_end, int tid);     /* F16 dense, 4×4 tile */
 void jam_mm_bf16_avx512(void* job, int row_begin, int row_end, int tid);    /* BF16 dense, 4×4 tile */
-void jam_mm_f16_avx2(void* job, int row_begin, int row_end, int tid);       /* F16 dense, avx2 2×4 tile */
-void jam_mm_bf16_avx2(void* job, int row_begin, int row_end, int tid);      /* BF16 dense, avx2 2×4 tile */
 #endif
 
 /* ---- Q8_0 (weight) @ F32 (activation) -> F32 ----
