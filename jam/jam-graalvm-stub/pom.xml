@@ -16,8 +16,9 @@
   <!-- Compile-only stub of GraalVM's com.oracle.svm.shared.AlwaysInline (unpublishable upstream).
        Consumers depend on this with <scope>provided</scope>: it satisfies javac everywhere, is NOT
        bundled into their jars, and on a native-image build the real annotation is supplied by the
-       GraalVM builder (name-matched). No runtime dependencies - it is a single annotation. -->
-  <properties>
-    <maven.deploy.skip>true</maven.deploy.skip>
-  </properties>
+       GraalVM builder (name-matched). No runtime dependencies - it is a single annotation.
+
+       NOTE: this MUST deploy/install like the other jam modules. jinfer depends on it at compile
+       time (provided scope), so every build machine and CI must be able to resolve it; skipping
+       deploy leaves it unresolvable off this box (the very problem the module was created to fix). -->
 </project>
