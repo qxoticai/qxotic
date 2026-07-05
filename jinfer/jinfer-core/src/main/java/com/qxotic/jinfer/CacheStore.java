@@ -99,7 +99,6 @@ final class BlockStore implements CacheStore {
     private volatile long usedBytes;
 
     private final CRC32C crc = new CRC32C();
-    private final byte[] scratch = new byte[8192];
 
     BlockStore(Path file, long budgetBytes, int blockTokens, long kvBytesPerToken) throws IOException {
         this.blockDataSize = blockTokens * kvBytesPerToken;
@@ -196,13 +195,7 @@ final class BlockStore implements CacheStore {
 
     private int crc32c(long offset, long len) {
         crc.reset();
-        long end = offset + len;
-        for (long p = offset; p < end; ) {
-            int chunk = (int) Math.min(scratch.length, end - p);
-            MemorySegment.copy(pool, p, MemorySegment.ofArray(scratch), 0, chunk);
-            crc.update(scratch, 0, chunk);
-            p += chunk;
-        }
+        crc.update(pool.asSlice(offset, len).asByteBuffer());   // direct buffer: intrinsified, zero-copy
         return (int) crc.getValue();
     }
 

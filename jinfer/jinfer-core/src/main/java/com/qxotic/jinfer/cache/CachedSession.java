@@ -4,10 +4,11 @@ import com.qxotic.jinfer.Batch;
 import com.qxotic.jinfer.Model;
 import com.qxotic.jinfer.RuntimeState;
 
+import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+
 import java.util.Arrays;
 import java.util.List;
 
@@ -133,26 +134,33 @@ public final class CachedSession<S extends RuntimeState> {
 
     private static final long GOLDEN = 0x9E3779B97F4A7C15L;
 
-    /** SHA-256 of the raw row bits, as 4 longs — the media block's content identity. */
+    /** SHA-256 of the raw row bits, as 4 longs — the media block's content identity. Flat F32
+     *  tensors (the embedder output) hash via bulk raw copies; the per-element path remains the
+     *  encoding-generic fallback (same LE float-bit stream either way). */
     private static long[] rowsDigest(Batch.Input.Embeddings e) {
-        MessageDigest sha;
-        try {
-            sha = MessageDigest.getInstance("SHA-256");
-        } catch (NoSuchAlgorithmException ex) {
-            throw new AssertionError(ex);
-        }
+        MessageDigest sha = Sha256.sha256();
         long size = e.rows().size();
-        ByteBuffer buf = ByteBuffer.allocate(8192).order(ByteOrder.LITTLE_ENDIAN);
-        for (long i = 0; i < size; i++) {
-            if (buf.remaining() < Integer.BYTES) {
-                sha.update(buf.array(), 0, buf.position());
-                buf.clear();
+        ByteBuffer buf = ByteBuffer.allocate(1 << 16).order(ByteOrder.LITTLE_ENDIAN);
+        try {
+            MemorySegment chunk = MemorySegment.ofBuffer(buf);
+            for (long off = 0; off < size; off += buf.capacity() / Float.BYTES) {
+                long n = Math.min(buf.capacity() / Float.BYTES, size - off);
+                long bytes = e.rows().copyRawTo(off, chunk, 0, n);        // bulk: one segment copy
+                sha.update(buf.array(), 0, (int) bytes);
             }
-            buf.putInt(Float.floatToRawIntBits(e.rows().getFloat(i)));
+        } catch (UnsupportedOperationException fallback) {                // non-flat encodings
+            sha.reset();
+            buf.clear();
+            for (long i = 0; i < size; i++) {
+                if (buf.remaining() < Integer.BYTES) {
+                    sha.update(buf.array(), 0, buf.position());
+                    buf.clear();
+                }
+                buf.putInt(Float.floatToRawIntBits(e.rows().getFloat(i)));
+            }
+            sha.update(buf.array(), 0, buf.position());
         }
-        sha.update(buf.array(), 0, buf.position());
-        ByteBuffer out = ByteBuffer.wrap(sha.digest()).order(ByteOrder.LITTLE_ENDIAN);
-        return new long[]{out.getLong(), out.getLong(), out.getLong(), out.getLong()};
+        return Sha256.digestLongs(sha);
     }
 
     /** Ingests one decode step and commits it as a single-token block. */

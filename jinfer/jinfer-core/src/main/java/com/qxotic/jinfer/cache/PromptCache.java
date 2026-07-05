@@ -197,8 +197,8 @@ public final class PromptCache<S extends RuntimeState> {
         if (modelSeed.length > 0) {
             sha.reset();
             sha.update(modelSeed);
-            ByteBuffer out = ByteBuffer.wrap(sha.digest()).order(ByteOrder.LITTLE_ENDIAN);
-            root = new BlockKey(out.getLong(), out.getLong(), out.getLong(), out.getLong());
+            long[] d = Sha256.digestLongs(sha);
+            root = new BlockKey(d[0], d[1], d[2], d[3]);
         }
         this.sentinel = new Block(root, null, 0, 0, 0, null);
         this.DETACHED = new Block(root, null, 0, 0, 0, null);
@@ -267,8 +267,6 @@ public final class PromptCache<S extends RuntimeState> {
             if (codec.checkpointBytes() > 0) {
                 codec.restoreCheckpoint(state, tip.to, tip.mem.asSlice(codec.rowBytes(tip.to - tip.from)));
             }
-        }
-        if (tip != sentinel) {
             hits++;
             state.resumeAt(tip.to);
         } else {
@@ -281,12 +279,19 @@ public final class PromptCache<S extends RuntimeState> {
      *  stored blob fails verification: the cache degrades to a miss, never to a wrong answer. */
     private void discard(Block b) {
         for (Block child : List.copyOf(b.children)) discard(child);
-        b.live = false;
         b.children.clear();
+        unlink(b);
+    }
+
+    /** Detach one block from the tree and free its blob; leaf-promotes a live parent. */
+    private void unlink(Block b) {
+        b.live = false;
         blocks.remove(b.key);
         leaves.remove(b);
         b.parent.children.remove(b);
-        if (b.parent != sentinel && b.parent.live && b.parent.children.isEmpty()) leaves.add(b.parent);
+        if (b.parent != sentinel && b.parent.live && b.parent.children.isEmpty()) {
+            leaves.add(b.parent);                          // dead parents stay out: their blob is freed
+        }
         store.free(b.mem);
         evictions++;
     }
@@ -310,15 +315,7 @@ public final class PromptCache<S extends RuntimeState> {
                 if (b != keep && (lru == null || b.lastUsed < lru.lastUsed)) lru = b;
             }
             if (lru == null) return false;
-            lru.live = false;
-            blocks.remove(lru.key);
-            leaves.remove(lru);
-            lru.parent.children.remove(lru);
-            if (lru.parent != sentinel && lru.parent.live && lru.parent.children.isEmpty()) {
-                leaves.add(lru.parent);                    // dead parents stay out: their blob is freed
-            }
-            store.free(lru.mem);
-            evictions++;
+            unlink(lru);
         }
         return true;
     }
@@ -331,8 +328,8 @@ public final class PromptCache<S extends RuntimeState> {
         for (int i = 0; i < len; i++) scratch.putLong(fp[off + i]);
         sha.reset();
         sha.update(scratch.array(), 0, bytes);
-        ByteBuffer out = ByteBuffer.wrap(sha.digest()).order(ByteOrder.LITTLE_ENDIAN);
-        return new BlockKey(out.getLong(), out.getLong(), out.getLong(), out.getLong());
+        long[] d = Sha256.digestLongs(sha);
+        return new BlockKey(d[0], d[1], d[2], d[3]);
     }
 
     // ═══ freeze / open: the frozen multi-prompt cache file (use case B) ═══

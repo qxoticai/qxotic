@@ -1,7 +1,7 @@
 package com.qxotic.llm;
 
-import com.qxotic.jinfer.FloatTensor;
 import com.qxotic.jinfer.cache.KvCodec;
+import com.qxotic.jinfer.cache.KvTransfer;
 
 import java.lang.foreign.MemorySegment;
 
@@ -13,8 +13,8 @@ import java.lang.foreign.MemorySegment;
  *  so restore writes every row back at its true slot. Attention sinks are per-head learned
  *  weights, not state - nothing to checkpoint; MoE routing is per-token and stateless.
  *
- *  <p>Blob layout, layer-major, native F16: full layer l → K rows {@code [from,to)} then V rows;
- *  SWA layer l → K window then V window, each padded to a fixed {@code W} rows. The ring span
+ *  <p>Rows section (every block), layer-major, native F16: full layer l → K rows {@code [from,to)} then V rows;
+ *  Checkpoint section (sparse, cache policy): SWA layer l → K window then V window, each padded to a fixed {@code W} rows. The ring span
  *  wraps at most once, so each direction is at most two contiguous segment copies. Restore is a
  *  pure copy; the cache chain-applies blocks in order (the deepest window wins) and then resumes
  *  the state at the chain end. */
@@ -75,8 +75,8 @@ public final class GptOssKvCodec implements KvCodec<GptOss.State> {
         long kvDim = config.kvDim();
         for (int l = 0; l < config.numberOfLayers(); l++) {
             if (config.isSWA(l)) continue;
-            off += com.qxotic.jinfer.cache.KvTransfer.transfer(state.keyCache[l], from * kvDim, blob, off, n * kvDim, out);
-            off += com.qxotic.jinfer.cache.KvTransfer.transfer(state.valueCache[l], from * kvDim, blob, off, n * kvDim, out);
+            off += KvTransfer.transfer(state.keyCache[l], from * kvDim, blob, off, n * kvDim, out);
+            off += KvTransfer.transfer(state.valueCache[l], from * kvDim, blob, off, n * kvDim, out);
         }
     }
 
@@ -88,10 +88,8 @@ public final class GptOssKvCodec implements KvCodec<GptOss.State> {
             if (!config.isSWA(l)) continue;
             // fixed-size window checkpoint: rows at ring slots, padded to W rows (shared
             // wrap-aware copy - the ring-boundary math lives once, in KvTransfer.window)
-            off += com.qxotic.jinfer.cache.KvTransfer.window(state.keyCache[l], to, w, kvDim, 2, blob, off, out);
-            off += com.qxotic.jinfer.cache.KvTransfer.window(state.valueCache[l], to, w, kvDim, 2, blob, off, out);
+            off += KvTransfer.window(state.keyCache[l], to, w, kvDim, 2, blob, off, out);
+            off += KvTransfer.window(state.valueCache[l], to, w, kvDim, 2, blob, off, out);
         }
     }
-
-
 }
