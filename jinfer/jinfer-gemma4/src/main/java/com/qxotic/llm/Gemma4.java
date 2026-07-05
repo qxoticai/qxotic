@@ -38,11 +38,20 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
     private final Weights weights;
     private Embedder<Media.Image> vision;   // image encoder; null on text-only loads (set by loadModel(text, mmproj, ctx))
     private Embedder<Media.Audio> audio;    // audio encoder; null unless the mmproj carries a gemma4ua adapter
+    private Gemma4Mtp mtp;                  // MTP draft sidecar; null unless loadModel(..., mtpSidecar) loaded one
+    private Gemma4MtpDecoder mtpDecoder;    // paired draft forward (single-threaded scratch)
 
     Gemma4(Configuration configuration, GgufTokenizer tokenizer, Weights weights) {
         this.configuration = configuration;
         this.tokenizer = tokenizer;
         this.weights = weights;
+    }
+
+    /** Test helper: a fresh state with {@code ids} prefilled (context sized to {@code maxTokens}). */
+    public State prefilled(int[] ids, int maxTokens) {
+        State s = newState(4096, Math.max(16, ids.length));
+        ingest(s, com.qxotic.jinfer.Batch.prefill(ids));
+        return s;
     }
 
     // === com.qxotic.llm.Model seam ===
@@ -71,6 +80,7 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
         switch (batch.input()) {
             case com.qxotic.jinfer.Batch.Input.Tokens t -> {
                 int[] ids = t.ids();
+                s.lastTokens = ids;   // row->token map for the MTP draft seam (logits(s,out,head))
                 // decode step (one token): bandwidth-bound, so run at physical-core width on the decode
                 // pool (no SMT contention); prefill (n>1) stays compute-bound on the common pool.
                 if (n == 1) Parallel.onDecodePool(() -> { forward(s, ids, 0, from, n); return null; });
@@ -110,9 +120,29 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
     // Whether either is usable is a runtime fact gated by un-ignorable empties — the current text-only
     // GGUFs load no MTP heads and no media adapters, so both report supported-but-not-loaded. ===
 
-    @Override public OptionalInt depth() { return OptionalInt.empty(); }   // MTP heads not loaded
+    @Override public OptionalInt depth() {
+        return mtp == null ? OptionalInt.empty() : OptionalInt.of(Math.max(1, Integer.getInteger("jinfer.mtpDepth", 2)));
+    }
+
+    /** Draft-head logits: head {@code i} is the {@code i}-th CHAINED greedy draft seeded from retained
+     *  row {@code output} — head 0 predicts the token after the exact next token (which the caller reads
+     *  from {@link #logits(State, int)}). The chain recomputes per call (O(head) draft forwards); the
+     *  speculative loop ({@link Gemma4Speculative}) drives the decoder directly instead. */
     @Override public FloatTensor logits(State s, int output, int head) {
-        throw new IllegalStateException("MTP not loaded (depth() is empty) — no draft head " + head);
+        if (mtpDecoder == null) throw new IllegalStateException("MTP not loaded (depth() is empty) — no draft head " + head);
+        int dim = configuration.embeddingLength();
+        int row = s.lastChunkLen - s.outputCount + output;
+        int pos = s.position() - s.lastChunkLen + row;
+        int tok = s.lastTokens[row];
+        // warm-up seeds the chain from (row hidden, its token); then chain greedily
+        mtpDecoder.draft(s, s.residual, (long) row * dim, tok, pos);
+        int chainTok = (int) logits(s, output).argmax(0, configuration.vocabularySize());
+        FloatTensor dl = null;
+        for (int i = 0; i <= head; i++) {
+            dl = mtpDecoder.draft(s, mtpDecoder.chainedHidden(), 0, chainTok, pos);
+            chainTok = (int) dl.argmax(0, configuration.vocabularySize());
+        }
+        return dl;
     }
 
     @Override public Set<Class<? extends Media>> modalities() {
@@ -307,6 +337,7 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
         // the single-token reference scratch from the production State are dropped here.)
         final int contextCapacity, batchCapacity;
         final FloatTensor residual, xb, xbK, xb2, hb, hb2, query, logits;
+        int[] lastTokens;   // ids of the last ingested token batch (row->token, for the MTP draft seam)
         final FlashAttention.DecodeScratch decodeScratch = new FlashAttention.DecodeScratch();
         final FloatTensor[] keyCache, valueCache;   // own-KV layers only (ring/linear F16)
         final FloatTensor[] batchK, batchV;         // current chunk's linear K/V, committed at chunk end
@@ -711,6 +742,19 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
         model.audio = loadAudio(mmprojGguf);
         return model;
     }
+
+    /** MTP load: the text model plus the {@code gemma4-assistant} draft sidecar, which enables
+     *  self-speculative decoding ({@link #depth()} becomes present). */
+    public static Gemma4 loadModel(Path textGguf, int maxContextLength, Path mtpSidecar) throws IOException {
+        Gemma4 model = loadModel(textGguf, maxContextLength);
+        model.mtp = Gemma4Mtp.loadSidecar(mtpSidecar, model.config().vocabularySize());
+        model.mtpDecoder = new Gemma4MtpDecoder(model.mtp, model);
+        return model;
+    }
+
+    /** The paired MTP draft forward, or null when no sidecar is loaded. Single-threaded (owns scratch);
+     *  {@link Gemma4Speculative} is the decode loop over it. */
+    Gemma4MtpDecoder mtpDecoder() { return mtpDecoder; }
 
     /** Pick the image encoder that matches the mmproj's projector_type: {@code gemma4uv} -> the minimal
      *  {@link Gemma4VisionUnified} (12b), otherwise the full-ViT {@link Gemma4Vision} (E2B/gemma4v). */
