@@ -33,7 +33,7 @@
 
   <modules>
     <module>jam-core</module>
-    <module>jam-graal-stubs</module>
+    <module>jam-graalvm-stub</module>
     <module>jam-native</module>
     <module>jam-scalar</module>
     <module>jam-vector</module>

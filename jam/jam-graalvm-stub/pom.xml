@@ -10,7 +10,7 @@
     <version>0.1.0</version>
   </parent>
 
-  <artifactId>jam-graal-stubs</artifactId>
+  <artifactId>jam-graalvm-stub</artifactId>
   <packaging>jar</packaging>
 
   <!-- Compile-only stub of GraalVM's com.oracle.svm.shared.AlwaysInline (unpublishable upstream).
