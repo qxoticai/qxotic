@@ -103,6 +103,18 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
                 out.add(Batch.embeddings(rows, (int) (rows.size() / modelDim), false));
                 ids.add(tokenizer.requiredSpecial("<audio|>"));
             }
+            case Media.Video vid -> {
+                // Video decomposes into frames: each frame is a timestamped image block, interleaved
+                // as the docs show ("00:00 <|image>...", "00:01 ..."). Timestamps are plain text (not
+                // special tokens). Per-frame token cost = image budget (~256 at budget 280) - use a low
+                // jinfer.gemma4.imageTokenBudget for video so many frames fit the context.
+                Media.Image[] frames = vid.frames();
+                for (int i = 0; i < frames.length; i++) {
+                    int sec = (int) (i / Math.max(vid.fps(), 1f));
+                    ids.addAll(tokenizer.encode(String.format("%n%02d:%02d%n", sec / 60, sec % 60)));
+                    encodeMedia(frames[i], ids, out);
+                }
+            }
             default -> throw new IllegalArgumentException("Gemma 4: unsupported media " + m.getClass().getSimpleName());
         }
     }
