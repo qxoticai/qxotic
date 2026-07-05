@@ -10,7 +10,9 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <immintrin.h>
-#include "jam_decode_x86_256.h"
+#include "jam_decode_x86_256.h"   /* LOAD-BEARING: defines jam_q8_blk/jam_q4_0_blk/jam_mxfp4_blk + the
+                                     256-bit decode helpers that jam_gemm_q256.inc expands below. Looks
+                                     unused here (no direct refs) but the .inc needs it - do NOT drop. */
 
 #define JAM_DOT(aqa, sqb) \
     _mm256_cvtepi32_ps(_mm256_dpbusd_avx_epi32(_mm256_setzero_si256(), aqa, sqb))
