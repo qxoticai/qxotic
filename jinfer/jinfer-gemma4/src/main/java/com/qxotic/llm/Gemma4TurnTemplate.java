@@ -68,15 +68,23 @@ public final class Gemma4TurnTemplate implements TurnTemplate {
         List<Integer> ids = new ArrayList<>();
         ids.add(turnOpen);
         StringBuilder text = new StringBuilder(roleName(message.role())).append('\n');
-        for (Part p : message.content()) {
-            if (p instanceof Part.Text t) {
-                text.append(t.text());
-            } else if (p instanceof Part.Blob blob) {
-                flushText(text, ids);
-                encodeMedia(blob.media(), ids, out);
+        boolean hasMedia = message.content().stream().anyMatch(p -> p instanceof Part.Blob);
+        if (!hasMedia) {
+            // Gemma's template trims each message's text (| trim for user/system, strip_thinking for
+            // model); a text-only turn's content is stripped to stay token-exact with the render.
+            text.append(message.textOnly().strip());
+            flushText(text, ids);
+        } else {
+            for (Part p : message.content()) {
+                if (p instanceof Part.Text t) {
+                    text.append(t.text());
+                } else if (p instanceof Part.Blob blob) {
+                    flushText(text, ids);
+                    encodeMedia(blob.media(), ids, out);
+                }
             }
+            flushText(text, ids);
         }
-        flushText(text, ids);
         ids.add(turnClose);
         ids.addAll(tokenizer.encode("\n"));
         out.add(Batch.prefill(ids));

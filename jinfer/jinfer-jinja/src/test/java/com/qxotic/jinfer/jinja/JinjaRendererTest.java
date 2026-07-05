@@ -501,6 +501,11 @@ public final class JinjaRendererTest {
         eq("{% set x = 5 %}{{ x }}", "5");
         eq("{% set greeting = 'Hi ' ~ name %}{{ greeting }}", map("name", "Sam"), "Hi Sam");
         eq("{% set total = a + b %}{{ total }}", map("a", 3, "b", 4), "7");
+        // block-set: {% set x %}…{% endset %} captures the rendered body as a string (regression:
+        // the block form used to leave a null value node and NPE - Gemma's template needs it)
+        eq("{% set x %}hello{% endset %}{{ x }}", "hello");
+        eq("{% set x %}{{ a }}-{{ b }}{% endset %}[{{ x }}]", map("a", 1, "b", 2), "[1-2]");
+        eq("{% set x %}{% if f %}Y{% else %}N{% endif %}{% endset %}{{ x }}{{ x }}", map("f", true), "YY");
         // namespace() with a mutable field updated across statements (canonical Jinja pattern)
         eq("{% set ns = namespace(found=False) %}{% set ns.found = True %}{{ ns.found }}", "True");
         eq("{% set ns = namespace(role='guest') %}{% set ns.role = 'admin' %}{{ ns.role }}", "admin");
@@ -596,6 +601,12 @@ public final class JinjaRendererTest {
         // explicit markers still win over the defaults
         eq("{% if true -%}\n   A{% endif %}", map(), "A");                   // -%} strips ALL leading ws
         eq("A   {%- if true %}B{% endif %}", map(), "AB");                    // {%- strips preceding ws
+        // trim_blocks + lstrip_blocks COMPOSE: a newline swallowed by a bare %} still begins a new
+        // line, so lstrip_blocks strips the indentation before the NEXT block tag on it (regression:
+        // a comment or nested block after a bare %} used to keep its leading whitespace)
+        eq("{% if true %}\n    {% if true %}B{% endif %}{% endif %}", map(), "B");
+        eq("{% if true %}\n    {# c #}B{% endif %}", map(), "B");
+        eq("{% if true %}\n    {# c #}\n            {{- 'B' }}{% endif %}", map(), "B"); // comment then dash-out
         // keep_trailing_newline=false: exactly one trailing newline is dropped - at the
         // template() entry point (what GgufTokenizer renders through), not the raw render()
         eqTemplate("A\n", "A");
