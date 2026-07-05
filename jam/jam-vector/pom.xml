@@ -23,6 +23,12 @@
     </dependency>
     <dependency>
       <groupId>com.qxotic</groupId>
+      <artifactId>jam-graal-stubs</artifactId>   <!-- @AlwaysInline: compile-only, not bundled; GraalVM supplies it at native-image build -->
+      <version>0.1.0</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.qxotic</groupId>
       <artifactId>jam-scalar</artifactId>   <!-- the reference floor the SIMD kernels are checked against -->
       <version>0.1.0</version>
       <scope>test</scope>

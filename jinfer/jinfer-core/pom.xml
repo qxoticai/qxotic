@@ -49,5 +49,11 @@
             <artifactId>jam-vector</artifactId>   <!-- VectorJAM + the relocated SIMD kernels -->
             <version>0.1.0</version>
         </dependency>
+        <dependency>
+            <groupId>com.qxotic</groupId>
+            <artifactId>jam-graal-stubs</artifactId>   <!-- @AlwaysInline: compile-only, not bundled; GraalVM supplies it at native-image build -->
+            <version>0.1.0</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 </project>
