@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.qxotic</groupId>
+    <artifactId>jam</artifactId>
+    <version>0.1.0</version>
+  </parent>
+
+  <artifactId>jam-graal-stubs</artifactId>
+  <packaging>jar</packaging>
+
+  <!-- Compile-only stub of GraalVM's com.oracle.svm.shared.AlwaysInline (unpublishable upstream).
+       Consumers depend on this with <scope>provided</scope>: it satisfies javac everywhere, is NOT
+       bundled into their jars, and on a native-image build the real annotation is supplied by the
+       GraalVM builder (name-matched). No runtime dependencies - it is a single annotation. -->
+  <properties>
+    <maven.deploy.skip>true</maven.deploy.skip>
+  </properties>
+</project>

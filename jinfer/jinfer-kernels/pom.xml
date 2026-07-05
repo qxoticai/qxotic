@@ -26,6 +26,12 @@
             <groupId>com.qxotic</groupId>
             <artifactId>gguf</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.qxotic</groupId>
+            <artifactId>jam-graal-stubs</artifactId>   <!-- @AlwaysInline (FlashAttention): compile-only, not bundled -->
+            <version>0.1.0</version>
+            <scope>provided</scope>
+        </dependency>
         <!-- test-only: TokenizerParityTest builds an LFMTokenizer with the Jinja chat template -->
         <dependency>
             <groupId>com.qxotic</groupId>
