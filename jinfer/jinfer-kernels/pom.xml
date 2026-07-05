@@ -28,7 +28,7 @@
         </dependency>
         <dependency>
             <groupId>com.qxotic</groupId>
-            <artifactId>jam-graalvm-stub</artifactId>   <!-- @AlwaysInline (FlashAttention): compile-only, not bundled -->
+            <artifactId>graalvm-annotations</artifactId>   <!-- @AlwaysInline (FlashAttention): compile-only, not bundled -->
             <version>0.1.0</version>
             <scope>provided</scope>
         </dependency>
