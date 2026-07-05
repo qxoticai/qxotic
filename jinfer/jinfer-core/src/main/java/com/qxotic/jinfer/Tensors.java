@@ -1234,7 +1234,8 @@ final class MXFP4FloatTensor extends SegmentFloatTensor {
 
 /**
  * NVFP4 (NVIDIA FP4), GGUF block_nvfp4 = { uint8_t d[4] (UE4M3 per-16 sub-block); uint8_t qs[32] } = 36
- * bytes, 64 elements (4 sub-blocks of 16). value = kvalues_mxfp4[nibble] · ue4m3(d[s]); no global scale.
+ * bytes, 64 elements (4 sub-blocks of 16). value = kvalues_mxfp4[nibble] · ue4m3(d[s]) where ue4m3()
+ * includes ggml's ×0.5 (codes are 2× the E2M1 values); no global scale.
  * Within sub-block s, byte (s*8+j): low nibble = element s*16+j, high nibble = element s*16+8+j. Matches
  * jam (the int8 path, used for prefill/decode when the native lib is present) and ggml's dequant. The dot
  * here is the scalar floor (correct fallback); jam carries the vectorized weight when loaded.
@@ -1254,11 +1255,12 @@ final class NVFP4FloatTensor extends SegmentFloatTensor {
     @Override FloatVector getFloatVector(VectorSpecies<Float> species, long index) { throw new UnsupportedOperationException("getFloatVector"); }
     @Override public GGMLType type() { return GGMLType.NVFP4; }
 
-    /** UE4M3 (unsigned FP8 E4M3) -> float; matches jam_ue4m3_to_float / ggml_ue4m3_to_fp32 (bit 7 ignored). */
+    /** UE4M3 (unsigned FP8 E4M3) -> float; matches jam_ue4m3_to_float / ggml_ue4m3_to_fp32 EXACTLY,
+     *  including their ×0.5 (kvalues_mxfp4 are 2× the E2M1 values; the halved scale compensates). */
     private static float ue4m3ToFp32(int x) {
         if (x == 0 || x == 0x7F) return 0f;
         int e = (x >>> 3) & 0xF, m = x & 0x7;
-        return e != 0 ? (1f + m / 8f) * (float) Math.scalb(1.0, e - 7) : m * (float) Math.scalb(1.0, -9);
+        return 0.5f * (e != 0 ? (1f + m / 8f) * (float) Math.scalb(1.0, e - 7) : m * (float) Math.scalb(1.0, -9));
     }
 
     @Override
