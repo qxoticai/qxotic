@@ -14,6 +14,24 @@ final class VisionPreprocess {
      *  fixed square, for gemma4.java-reference parity. */
     static final boolean SMART_RESIZE = !Boolean.getBoolean("vis.squareResize");
 
+    /** Gemma image token budget: {@code -Djinfer.gemma4.imageTokenBudget=70|140|280|560|1120} — the
+     *  preprocess downscale target that sets how many soft tokens an image becomes (280 -> ~256).
+     *  Unset -> -1, and each encoder keeps its own default (280, or the GGUF's image_max_pixels). */
+    static final int IMAGE_TOKEN_BUDGET = validatedBudget();
+
+    private static int validatedBudget() {
+        String p = System.getProperty("jinfer.gemma4.imageTokenBudget");
+        if (p == null) return -1;
+        int b = Integer.parseInt(p.trim());
+        if (b != 70 && b != 140 && b != 280 && b != 560 && b != 1120) {
+            throw new IllegalArgumentException("jinfer.gemma4.imageTokenBudget must be 70|140|280|560|1120, got " + b);
+        }
+        return b;
+    }
+
+    /** The effective budget: the property override if set, else {@code deflt}. */
+    static int budget(int deflt) { return IMAGE_TOKEN_BUDGET > 0 ? IMAGE_TOKEN_BUDGET : deflt; }
+
     /** llama.cpp / Qwen2-VL smart_resize: snap each dim to a multiple of {@code factor}=patch·merge,
      *  preserving aspect ratio, bounded by [minPixels, maxPixels]. (640×480, factor 48 -> 624×480.) */
     static int[] smartResize(int w, int h, int factor, int minPixels, int maxPixels) {
