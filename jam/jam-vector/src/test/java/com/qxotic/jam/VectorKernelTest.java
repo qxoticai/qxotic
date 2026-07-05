@@ -211,14 +211,14 @@ class VectorKernelTest {
         return new Weight(JAM.MXFP4, s, v);
     }
 
-    private static Weight nvfp4(int m, int k) {      // 36B/64-elem; d=0x38 -> ue4m3=1 -> value = kv[nibble]
+    private static Weight nvfp4(int m, int k) {      // 36B/64-elem; d=0x40 -> ue4m3=1 (ggml x0.5) -> value = kv[nibble]
         int nb = k / 64;
         float[] v = new float[m * k];
         MemorySegment s = A.allocate((long) m * nb * 36, 64);
         for (int r = 0; r < m; r++) for (int b = 0; b < nb; b++) {
             long blk = (long) (r * nb + b) * 36;
             for (int sub = 0; sub < 4; sub++) {
-                s.set(JAVA_BYTE, blk + sub, (byte) 0x38);
+                s.set(JAVA_BYTE, blk + sub, (byte) 0x40);   // ue4m3(0x40) = 1.0 (ggml x0.5 semantics)
                 for (int j = 0; j < 8; j++) {
                     int lo = RNG.nextInt(16), hi = RNG.nextInt(16);
                     s.set(JAVA_BYTE, blk + 4 + sub * 8 + j, (byte) (lo | (hi << 4)));

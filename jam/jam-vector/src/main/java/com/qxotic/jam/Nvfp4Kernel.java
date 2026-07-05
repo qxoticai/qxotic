@@ -41,10 +41,11 @@ public final class Nvfp4Kernel {
         }
     }
 
-    /** UE4M3 (unsigned FP8 E4M3) -> float; matches jam_ue4m3_to_float / ggml_ue4m3_to_fp32 (bit 7 ignored). */
+    /** UE4M3 (unsigned FP8 E4M3) -> float; matches jam_ue4m3_to_float / ggml_ue4m3_to_fp32 EXACTLY,
+     *  including their x0.5 (kvalues_mxfp4 are 2x the E2M1 values; the halved scale compensates). */
     private static float ue4m3ToFp32(int x) {
         if (x == 0 || x == 0x7F) return 0f;
         int e = (x >>> 3) & 0xF, m = x & 0x7;
-        return e != 0 ? (1f + m / 8f) * (float) Math.scalb(1.0, e - 7) : m * (float) Math.scalb(1.0, -9);
+        return 0.5f * (e != 0 ? (1f + m / 8f) * (float) Math.scalb(1.0, e - 7) : m * (float) Math.scalb(1.0, -9));
     }
 }
