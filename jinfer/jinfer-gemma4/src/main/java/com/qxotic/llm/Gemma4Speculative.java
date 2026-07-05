@@ -29,11 +29,22 @@ public final class Gemma4Speculative {
      *  for {@link com.qxotic.jinfer.cache.CachedSession#adopt}), and draft statistics. */
     public record Result(List<Integer> tokens, List<Integer> committed, int drafted, int accepted, int forwards) {}
 
+    /** Diagnostic hook: for every emitted token, the top-2 of the verify row that produced it —
+     *  the spec-side half of a near-tie analysis (the lockstep oracle supplies the other half). */
+    public interface TopRecorder {
+        void onEmit(int token, int top1, float top1Logit, int top2, float top2Logit);
+    }
+
     static boolean DEBUG = Boolean.getBoolean("jinfer.mtpDebug");
 
     private Gemma4Speculative() {}
 
     public static Result generate(Gemma4 model, Gemma4.State s, int maxTokens, Set<Integer> stops, int depth) {
+        return generate(model, s, maxTokens, stops, depth, null);
+    }
+
+    public static Result generate(Gemma4 model, Gemma4.State s, int maxTokens, Set<Integer> stops, int depth,
+                                  TopRecorder recorder) {
         Gemma4MtpDecoder decoder = model.mtpDecoder();
         if (decoder == null) throw new IllegalStateException("MTP sidecar not loaded - use loadModel(gguf, ctx, mtpSidecar)");
         int dim = model.config().embeddingLength();
@@ -48,7 +59,10 @@ public final class Gemma4Speculative {
         int tLast = s.lastTokens[lastRow];
         F32FloatTensor h = F32FloatTensor.allocate(dim);
         s.residual.copyTo((long) lastRow * dim, h, 0, dim);
-        int next = model.logits(s, s.outputCount - 1).argmax(0, vocab);
+        FloatTensor promptLogits = model.logits(s, s.outputCount - 1);
+        int next = promptLogits.argmax(0, vocab);
+        float[] pending = recorder != null ? top2(promptLogits, vocab) : null;   // stats of the row that produced `next`
+        float[][] rowStats = recorder != null ? new float[depth + 1][] : null;
 
         int[] cand = new int[depth + 1];
         while (emitted.size() < maxTokens) {
@@ -71,11 +85,17 @@ public final class Gemma4Speculative {
             int accepted = 0;                 // drafts confirmed beyond cand[0]
             int nextAfter = -1;
             while (accepted < depth) {
-                int trueNext = model.logits(s, accepted).argmax(0, vocab);
+                FloatTensor rl = model.logits(s, accepted);
+                if (rowStats != null) rowStats[accepted] = top2(rl, vocab);
+                int trueNext = rl.argmax(0, vocab);
                 if (cand[accepted + 1] == trueNext) accepted++;
                 else { nextAfter = trueNext; break; }
             }
-            if (nextAfter < 0) nextAfter = model.logits(s, accepted).argmax(0, vocab);
+            if (nextAfter < 0) {
+                FloatTensor rl = model.logits(s, accepted);
+                if (rowStats != null) rowStats[accepted] = top2(rl, vocab);
+                nextAfter = rl.argmax(0, vocab);
+            }
             acceptedTotal += accepted;
             if (DEBUG) {
                 // re-derive each accepted token's predecessor-row argmax from THIS score batch
@@ -103,10 +123,27 @@ public final class Gemma4Speculative {
             for (int i = 0; i < keep; i++) committed.add(cand[i]);
             for (int i = 0; i < keep && (stopIdx < 0 || i < stopIdx); i++) {
                 emitted.add(cand[i]);
+                if (recorder != null) {
+                    float[] st = i == 0 ? pending : rowStats[i - 1];   // row that produced cand[i]
+                    recorder.onEmit(cand[i], (int) st[0], st[1], (int) st[2], st[3]);
+                }
                 if (emitted.size() >= maxTokens) return new Result(emitted, committed, drafted, acceptedTotal, forwards);
             }
+            if (recorder != null) pending = rowStats[accepted];        // the row that produced `next` (= nextAfter)
             if (stopIdx >= 0) return new Result(emitted, committed, drafted, acceptedTotal, forwards);
         }
         return new Result(emitted, committed, drafted, acceptedTotal, forwards);
+    }
+
+    /** argmax + runner-up of a logits row: {top1, top1Logit, top2, top2Logit}. */
+    static float[] top2(FloatTensor logits, int vocab) {
+        int i1 = -1, i2 = -1;
+        float l1 = Float.NEGATIVE_INFINITY, l2 = Float.NEGATIVE_INFINITY;
+        for (int i = 0; i < vocab; i++) {
+            float v = logits.getFloat(i);
+            if (v > l1) { i2 = i1; l2 = l1; i1 = i; l1 = v; }
+            else if (v > l2) { i2 = i; l2 = v; }
+        }
+        return new float[]{i1, l1, i2, l2};
     }
 }

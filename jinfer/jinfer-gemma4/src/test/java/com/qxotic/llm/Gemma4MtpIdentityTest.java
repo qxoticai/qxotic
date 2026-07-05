@@ -1,7 +1,19 @@
-// Stage-3 gate: MTP speculative greedy output must be TOKEN-IDENTICAL to plain greedy - every
-// emitted token is a backbone argmax from a verified row, so any mismatch is a loop bug (rollback,
-// row mapping, seed pairing). Battery: 5 prompts x 120 tokens, depths 1 and 2. Also a
-// CachedSession.adopt smoke: speculative decode on a session state, adopt(committed), lockstep.
+// Stage-3 gate for MTP speculative decode, in two layers:
+//
+//  HARD 1 (structural, any engine config): every emitted token equals the argmax of the verify row
+//  that produced it (asserted via the TopRecorder) - the invariant that DEFINES speculative
+//  correctness and is immune to cross-path numerics.
+//
+//  HARD 2 (exact, shape-invariant engine): under -Djinfer.disableJam=true (set below, before any
+//  model class loads) the Java backends are bit-exact across chunk shapes (proven by
+//  BatchVsStepProbe: batch rows == step rows, maxRel 0.0, including the rollback pattern), so MTP
+//  greedy output must be TOKEN-IDENTICAL to plain greedy. Any mismatch here is a loop bug.
+//
+//  Under jam (production), batch-vs-step numerics are chunk-shape/alignment-dependent (documented:
+//  BatchVsStepProbe shows argmax swaps in PLAIN chunked ingestion, no MTP involved - up to 1.6 rel
+//  at flat positions on capped ISAs), so exact identity is not a valid gate there; the diagnostic
+//  harness is MtpLockstepOracle (all jam-mode divergences must be top1/top2 swaps vs the oracle).
+//
 //   java ... com.qxotic.llm.Gemma4MtpIdentityTest
 package com.qxotic.llm;
 
@@ -29,6 +41,10 @@ public final class Gemma4MtpIdentityTest {
     };
 
     public static void main(String[] args) throws Exception {
+        // shape-invariant engine BEFORE any model class initializes (JamMatMul reads it lazily,
+        // but set it first to be independent of class-init order)
+        System.setProperty("jinfer.disableJam", "true");
+
         Path model = Path.of("/home/mukel/Desktop/playground/models/unsloth/gemma-4-E2B-it-Q8_0.gguf");
         Path sidecar = Path.of("/home/mukel/Desktop/playground/models/unsloth/mtp-gemma-4-E2B-it.gguf");
         if (!Files.exists(model) || !Files.exists(sidecar)) {
@@ -39,39 +55,26 @@ public final class Gemma4MtpIdentityTest {
         var tk = m.tokenizer();
         int bos = tk.getSpecialTokens().getOrDefault("<bos>", 2);
         Set<Integer> stops = m.stopTokens();
-        int vocab = m.config().vocabularySize();
         int maxTokens = 120;
 
         for (String prompt : PROMPTS) {
             int[] ids = withBos(bos, tk.encode(prompt));
-
-            // CORRECTNESS by construction: every emitted token is the backbone's argmax at its own
-            // verify row (checked live in the loop via -Djinfer.mtpDebug; here we assert the property
-            // that guarantees it - see below). Exact token-identity to SINGLE-STEP greedy is NOT
-            // expected: the multi-row verify batch uses a different threaded reduction than single-step
-            // decode, whose order is not bit-deterministic under load (the documented engine property
-            // that made the cache gates byte-identity). Proof it is engine noise not a loop bug:
-            // (a) spec agrees with single-step greedy where the engine is stable; (b) spec is itself
-            // non-reproducible run-to-run exactly like fresh recomputes. We gate on the invariant that
-            // IS deterministic and defines correctness: each emitted token == its verify-row argmax,
-            // asserted by verifyRowInvariant, plus committed/KV/adopt lockstep.
-            List<Integer> plainA = plainGreedy(m, m.prefilled(ids, maxTokens), maxTokens, stops);
+            List<Integer> plain = plainGreedy(m, ids, maxTokens, stops);
 
             for (int depth : new int[]{1, 2}) {
                 Gemma4.State ss = m.newState(4096, Math.max(16, ids.length));
                 m.ingest(ss, Batch.prefill(ids));
-                Gemma4Speculative.Result r = Gemma4Speculative.generate(m, ss, maxTokens, stops, depth);
+                int[] rowViolations = {0};
+                Gemma4Speculative.Result r = Gemma4Speculative.generate(m, ss, maxTokens, stops, depth,
+                        (t, t1, l1, t2, l2) -> { if (t != t1) rowViolations[0]++; });   // HARD 1
                 double acc = r.drafted() == 0 ? 0 : (double) r.accepted() / r.drafted();
 
-                // the correctness invariant: re-verify the emitted stream row-by-row on a fresh state -
-                // every emitted token must be the backbone argmax given its predecessors (a valid greedy
-                // trajectory). This holds regardless of near-tie flips.
-                int badRow = verifyGreedyTrajectory(m, ids, r.tokens(), stops, vocab);
-                check(badRow < 0, String.format(
-                        "d=%d valid greedy trajectory (%d tokens, %d forwards, accept %.0f%%, matches single-step "
-                        + "greedy to %d): \"%s\"%s",
-                        depth, r.tokens().size(), r.forwards(), 100 * acc, firstDiff(plainA, r.tokens()),
-                        head(prompt), badRow < 0 ? "" : " BAD ROW " + badRow));
+                check(rowViolations[0] == 0, "d=" + depth + " verify-row invariant (0 violations)");
+                boolean identical = plain.equals(r.tokens());                            // HARD 2
+                check(identical, String.format(
+                        "d=%d token-identical to plain greedy (%d tokens, %d forwards, accept %.0f%%): \"%s\"",
+                        depth, r.tokens().size(), r.forwards(), 100 * acc, head(prompt)));
+                if (!identical) diff(plain, r.tokens(), tk);
 
                 check(ss.position() == ids.length + r.committed().size(),
                         "d=" + depth + " committed==KV (" + r.committed().size() + ")");
@@ -95,37 +98,12 @@ public final class Gemma4MtpIdentityTest {
             System.out.println(failures + " failure(s)");
             System.exit(1);
         }
-        System.out.println("Gemma4MtpIdentityTest: all identical - speculative greedy == plain greedy");
+        System.out.println("Gemma4MtpIdentityTest: all identical - speculative greedy == plain greedy (shape-invariant engine)");
     }
 
-    static int firstDiff(List<Integer> a, List<Integer> b) {
-        int i = 0;
-        while (i < Math.min(a.size(), b.size()) && a.get(i).equals(b.get(i))) i++;
-        return i;
-    }
-
-    /** Re-decodes {@code emitted} on a fresh state (single-step) and checks each is a legitimate greedy
-     *  choice at its position: the token IS the single-step argmax, OR it is the runner-up within a
-     *  near-tie of the argmax (a reduction-order flip the multi-row verify legitimately made). Returns
-     *  the first offending row, or -1 if every token is a valid greedy choice. */
-    static int verifyGreedyTrajectory(Gemma4 m, int[] promptIds, List<Integer> emitted, Set<Integer> stops, int vocab) {
-        Gemma4.State s = m.newState(4096, Math.max(16, promptIds.length + emitted.size() + 2));
-        m.ingest(s, Batch.prefill(promptIds));
-        for (int i = 0; i < emitted.size(); i++) {
-            var logits = m.logits(s, 0);
-            int am = logits.argmax(0, vocab);
-            int tok = emitted.get(i);
-            if (tok != am) {
-                float lt = logits.getFloat(tok), la = logits.getFloat(am);
-                double rel = Math.abs(la - lt) / Math.max(1e-6, Math.abs(la));
-                if (rel > 5e-3) return i;   // not the argmax and not a near-tie -> invalid
-            }
-            m.ingest(s, Batch.step(tok));
-        }
-        return -1;
-    }
-
-    static List<Integer> plainGreedy(Gemma4 m, Gemma4.State s, int maxTokens, Set<Integer> stops) {
+    static List<Integer> plainGreedy(Gemma4 m, int[] ids, int maxTokens, Set<Integer> stops) {
+        Gemma4.State s = m.newState(4096, Math.max(16, ids.length));
+        m.ingest(s, Batch.prefill(ids));
         int vocab = m.config().vocabularySize();
         List<Integer> out = new ArrayList<>();
         int tok = m.logits(s, 0).argmax(0, vocab);
