@@ -277,8 +277,8 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
         final FloatTensor[] perLayerInputGate, perLayerProjection;
         final F32FloatTensor[] rmsPerLayerPostWeights;
         // MoE (null for dense models)
-        final FloatTensor[] expertRouter, expertGateUp, expertGate, expertUp, expertDown;
-        final F32FloatTensor[] expertRouterScale, expertGateScale, expertUpScale, expertDownScale, rmsExpertPostNorm1, rmsExpertPreNorm2, rmsExpertPostNorm2;
+        final FloatTensor[] expertRouter, expertGateUp, expertDown;
+        final F32FloatTensor[] expertRouterScale, expertDownScale, rmsExpertPostNorm1, rmsExpertPreNorm2, rmsExpertPostNorm2;
 
         Weights(FloatTensor tokenEmbeddings, F32FloatTensor[] rmsAttentionWeights, FloatTensor[] queryWeights, FloatTensor[] keyWeights,
                 FloatTensor[] valueWeights, FloatTensor[] outputWeights, F32FloatTensor[] queryNormWeights, F32FloatTensor[] keyNormWeights,
@@ -288,8 +288,7 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
                 F32FloatTensor ropeImagSWA, FloatTensor classifierWeights, FloatTensor perLayerTokenEmbeddings,
                 FloatTensor perLayerModelProjection, F32FloatTensor rmsPerLayerProjectionWeights, FloatTensor[] perLayerInputGate,
                 FloatTensor[] perLayerProjection, F32FloatTensor[] rmsPerLayerPostWeights, FloatTensor[] expertRouter,
-                F32FloatTensor[] expertRouterScale, FloatTensor[] expertGateUp, FloatTensor[] expertGate, FloatTensor[] expertUp,
-                F32FloatTensor[] expertGateScale, F32FloatTensor[] expertUpScale, FloatTensor[] expertDown,
+                F32FloatTensor[] expertRouterScale, FloatTensor[] expertGateUp, FloatTensor[] expertDown,
                 F32FloatTensor[] expertDownScale, F32FloatTensor[] rmsExpertPostNorm1, F32FloatTensor[] rmsExpertPreNorm2,
                 F32FloatTensor[] rmsExpertPostNorm2) {
             this.tokenEmbeddings = tokenEmbeddings;
@@ -322,10 +321,6 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
             this.expertRouter = expertRouter;
             this.expertRouterScale = expertRouterScale;
             this.expertGateUp = expertGateUp;
-            this.expertGate = expertGate;
-            this.expertUp = expertUp;
-            this.expertGateScale = expertGateScale;
-            this.expertUpScale = expertUpScale;
             this.expertDown = expertDown;
             this.expertDownScale = expertDownScale;
             this.rmsExpertPostNorm1 = rmsExpertPostNorm1;
@@ -714,28 +709,8 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
         r.seqLen = seqLen; r.topK = topK; r.numExperts = nExperts;
         Moe.dispatch(r, dim, state.moeInputB, state.moeGather, state.moeDownB, state.moeOutB, weights.expertDownScale[l],
                 (e, n, gather, out) -> {
-                    if (weights.expertGateUp[l] != null) {
-                        weights.expertGateUp[l].gemm(gather, dim, state.hb, gateUpDim, n, gateUpDim, dim, (long) e * gateUpDim * dim);
-                        Parallel.forRows(n, j -> Activations.geluMultiply(state.hb, j * gateUpDim, state.hb, j * gateUpDim + expertFF, expertFF));
-                    } else {
-                        // Separate gate/up expert tensors (the NVFP4 A4B layout): two GEMMs into the same
-                        // hb geometry the fused path uses (gate at the row base, gelu product lands there,
-                        // expertDown reads it unchanged). Per-expert NVFP4 scales apply to each GEMM's
-                        // output BEFORE gelu - the nonlinearity means they cannot fold downstream.
-                        weights.expertGate[l].gemm(gather, dim, state.hb, gateUpDim, n, expertFF, dim, (long) e * expertFF * dim);
-                        weights.expertUp[l].gemm(gather, dim, state.hb2, expertFF, n, expertFF, dim, (long) e * expertFF * dim);
-                        float gs = weights.expertGateScale[l] != null ? weights.expertGateScale[l].getFloat(e) : 1f;
-                        float us = weights.expertUpScale[l] != null ? weights.expertUpScale[l].getFloat(e) : 1f;
-                        Parallel.forRows(n, j -> {
-                            if (gs != 1f || us != 1f) {
-                                for (int t = 0; t < expertFF; t++) {
-                                    state.hb.setFloat(j * gateUpDim + t, state.hb.getFloat(j * gateUpDim + t) * gs);
-                                    state.hb2.setFloat(j * expertFF + t, state.hb2.getFloat(j * expertFF + t) * us);
-                                }
-                            }
-                            Activations.geluMultiply(state.hb, j * gateUpDim, state.hb2, j * expertFF, expertFF);
-                        });
-                    }
+                    weights.expertGateUp[l].gemm(gather, dim, state.hb, gateUpDim, n, gateUpDim, dim, (long) e * gateUpDim * dim);
+                    Parallel.forRows(n, j -> Activations.geluMultiply(state.hb, j * gateUpDim, state.hb, j * gateUpDim + expertFF, expertFF));
                     weights.expertDown[l].gemm(state.hb, gateUpDim, out, dim, n, dim, expertFF, (long) e * dim * expertFF);
                 });
 
@@ -751,20 +726,6 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
 
 
     // === Loading ===
-
-    /** A required tensor: throws at LOAD time naming the tensor if absent (never a null-field NPE at
-     *  forward time). Mirrors {@link Gemma4Mtp}'s {@code req}. */
-    private static GGMLTensorEntry req(Map<String, GGMLTensorEntry> t, String name) {
-        GGMLTensorEntry e = t.get(name);
-        if (e == null) throw new IllegalStateException("gemma4 loader: required tensor missing from GGUF: " + name);
-        return e;
-    }
-
-    /** An optional tensor: may be legitimately absent (returns null) - e.g. attn_v on wv-absent variants,
-     *  the classifier head, PLE tensors, per-expert NVFP4 scales. Follows llama.cpp's TENSOR_NOT_REQUIRED. */
-    private static GGMLTensorEntry opt(Map<String, GGMLTensorEntry> t, String name) {
-        return t.get(name);
-    }
 
     public static Gemma4 loadModel(Path ggufPath, int maxContextLength) throws IOException {
         try (FileChannel fileChannel = FileChannel.open(ggufPath, StandardOpenOption.READ)) {
@@ -915,12 +876,9 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
             layerOutputScales[i] = scale != null ? ModelLoader.toF32Tensor(scale).getFloat(0) : 1.0f;
         }
 
-        // attn_v is OPTIONAL (wv-absent variants share K/V); opt() returns null and the attention path
-        // handles it, so its absence is not a load-time error.
         FloatTensor[] valueWeights = new FloatTensor[n];
         for (int i = 0; i < n; i++) {
-            GGMLTensorEntry v = opt(tensors, "blk." + i + ".attn_v.weight");
-            valueWeights[i] = v == null ? null : ModelLoader.loadQuantized(v);
+            valueWeights[i] = ModelLoader.quantOrNull(tensors, "blk." + i + ".attn_v.weight");
         }
 
         // Per-layer embeddings (PLE)
@@ -937,51 +895,18 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
             rmsPerLayerPostWeights = ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".post_norm.weight"));
         }
 
-        // MoE (A4B). Expert FFN weights ship either FUSED (ffn_gate_up_exps, one tensor of 2*expertFF
-        // rows per expert) or SEPARATE (ffn_gate_exps + ffn_up_exps, llama.cpp's fallback naming - the
-        // NVFP4 A4B quants use this). NVFP4 checkpoints add per-expert F32 .scale sidecars applied to
-        // each GEMM's output BEFORE the activation (gelu is nonlinear - they cannot fold downstream);
-        // .input_scale sidecars are TRT activation-quant artifacts, ignored (llama.cpp does the same).
-        FloatTensor[] expertRouter = null, expertGateUp = null, expertGate = null, expertUp = null, expertDown = null;
-        F32FloatTensor[] expertRouterScale = null, expertGateScale = null, expertUpScale = null, expertDownScale = null,
-                rmsExpertPostNorm1 = null, rmsExpertPreNorm2 = null, rmsExpertPostNorm2 = null;
+        // MoE (A4B)
+        FloatTensor[] expertRouter = null, expertGateUp = null, expertDown = null;
+        F32FloatTensor[] expertRouterScale = null, expertDownScale = null, rmsExpertPostNorm1 = null, rmsExpertPreNorm2 = null, rmsExpertPostNorm2 = null;
         if (config.isMoE()) {
             expertRouter = ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_gate_inp.weight"));
             expertRouterScale = ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".ffn_gate_inp.scale"));
             expertGateUp = ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_gate_up_exps.weight"));
-            expertGate = ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_gate_exps.weight"));
-            expertUp = ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_up_exps.weight"));
-            expertGateScale = ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".ffn_gate_exps.scale"));
-            expertUpScale = ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".ffn_up_exps.scale"));
             expertDown = ModelLoader.quantArray(n, i -> tensors.get("blk." + i + ".ffn_down_exps.weight"));
             expertDownScale = ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".ffn_down_exps.scale"));
             rmsExpertPostNorm1 = ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".post_ffw_norm_1.weight"));
             rmsExpertPreNorm2 = ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".pre_ffw_norm_2.weight"));
             rmsExpertPostNorm2 = ModelLoader.f32Array(n, i -> tensors.get("blk." + i + ".post_ffw_norm_2.weight"));
-            for (int i = 0; i < n; i++) {
-                if (expertRouter[i] == null) continue;                       // dense layer in a MoE model
-                if (expertGateUp[i] == null && (expertGate[i] == null || expertUp[i] == null)) {
-                    throw new IllegalStateException("gemma4 loader: MoE layer " + i + " is missing expert FFN weights: "
-                            + "need blk." + i + ".ffn_gate_up_exps.weight (fused) or both blk." + i
-                            + ".ffn_gate_exps.weight and blk." + i + ".ffn_up_exps.weight (separate)");
-                }
-                req(tensors, "blk." + i + ".ffn_down_exps.weight");
-                req(tensors, "blk." + i + ".post_ffw_norm_1.weight");
-                req(tensors, "blk." + i + ".pre_ffw_norm_2.weight");
-                req(tensors, "blk." + i + ".post_ffw_norm_2.weight");
-            }
-        }
-
-        // Required per-layer tensors - throw at load naming the tensor, never a forward-time NPE.
-        // Optional (absent OK, handled as null): attn_v (wv-absent variants, loaded via quantOrNull),
-        // classifier head, PLE block, per-expert NVFP4 scales.
-        for (int i = 0; i < n; i++) {
-            for (String suffix : new String[]{"attn_norm.weight", "attn_q.weight", "attn_k.weight",
-                    "attn_output.weight", "attn_q_norm.weight", "attn_k_norm.weight",
-                    "post_attention_norm.weight", "ffn_norm.weight", "ffn_gate.weight",
-                    "ffn_down.weight", "ffn_up.weight", "post_ffw_norm.weight"}) {
-                req(tensors, "blk." + i + "." + suffix);
-            }
         }
 
         return new Weights(
@@ -1005,7 +930,7 @@ public final class Gemma4 implements LanguageModel<Gemma4.Configuration, Gemma4.
                 F32FloatTensor.of(ropeSwa.first()), F32FloatTensor.of(ropeSwa.second()),
                 tensors.containsKey("output.weight") ? ModelLoader.loadQuantized(tensors.get("output.weight")) : tokenEmbeddings,
                 perLayerTokenEmbeddings, perLayerModelProjection, rmsPerLayerProjectionWeights, perLayerInputGate, perLayerProjection, rmsPerLayerPostWeights,
-                expertRouter, expertRouterScale, expertGateUp, expertGate, expertUp, expertGateScale, expertUpScale, expertDown, expertDownScale, rmsExpertPostNorm1, rmsExpertPreNorm2, rmsExpertPostNorm2);
+                expertRouter, expertRouterScale, expertGateUp, expertDown, expertDownScale, rmsExpertPostNorm1, rmsExpertPreNorm2, rmsExpertPostNorm2);
     }
 
 }
