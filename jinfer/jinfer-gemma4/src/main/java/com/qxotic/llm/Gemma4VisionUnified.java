@@ -72,7 +72,7 @@ public final class Gemma4VisionUnified implements Embedder<Media.Image> {
     /** Encode one image -> projected rows (nTokens x modelDim). */
     public FloatTensor encode(Media.Image image) {
         int ps = patchSize, factor = ps;                 // merge already baked into the conv patch
-        int maxPixels = 280 * factor * factor, minPixels = 40 * factor * factor;
+        int maxPixels = VisionPreprocess.budget(280) * factor * factor, minPixels = 40 * factor * factor;
         int[] wh = VisionPreprocess.SMART_RESIZE
                 ? VisionPreprocess.smartResize(image.width(), image.height(), factor, minPixels, maxPixels)
                 : new int[]{ 16 * factor, 16 * factor };  // fixed-square fallback (256 tokens)

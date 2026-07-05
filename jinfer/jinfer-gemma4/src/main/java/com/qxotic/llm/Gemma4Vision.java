@@ -241,7 +241,7 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
     private Patches patchify(Media.Image image) {
         int ps = patchSize, factor = ps * Math.max(1, merge), tw, th;
         if (VisionPreprocess.SMART_RESIZE) {
-            int maxPixels = 280 * factor * factor, minPixels = factor * factor;
+            int maxPixels = VisionPreprocess.budget(280) * factor * factor, minPixels = factor * factor;
             int[] wh = VisionPreprocess.smartResize(image.width(), image.height(), factor, minPixels, maxPixels);
             tw = wh[0]; th = wh[1];
         } else {
@@ -274,7 +274,7 @@ public final class Gemma4Vision implements Embedder<Media.Image> {
             // smartResize canonical processing size: a multiple of (patch*merge) whose area fits image_max_pixels
             // (default 280*(patch*merge)^2). For patch16/merge3 -> 768 -> 48x48 patches -> merge -> 16x16 = 256 tokens.
             int curMerge = Math.max(1, merge), factor = patchSize * curMerge;
-            int maxPixels = gguf.getValueOrDefault(int.class, "clip.vision.image_max_pixels", 280 * factor * factor);
+            int maxPixels = VisionPreprocess.IMAGE_TOKEN_BUDGET > 0 ? VisionPreprocess.IMAGE_TOKEN_BUDGET * factor * factor : gguf.getValueOrDefault(int.class, "clip.vision.image_max_pixels", 280 * factor * factor);
             int procSize = (int) (Math.sqrt(maxPixels) / factor) * factor;
             int modelDim = gguf.getValueOrDefault(int.class, "clip.vision.projection_dim", 1536);
             float eps = gguf.getValueOrDefault(float.class, "clip.vision.attention.layer_norm_epsilon", 1e-6f);
