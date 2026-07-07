@@ -19,13 +19,32 @@ import java.lang.foreign.MemorySegment;
  */
 public final class VectorJAM implements JAM {
 
-    /** Whether a 512-bit float species is in play (informational; the kernels run at 128/256/512). */
-    public static final boolean IS_512 = VectorSupport.IS_512;
-
     /** Context-owned dequant scratch for the band kernels — reused across every {@code mm}, GC'd with this
      *  instance (no static/ThreadLocal retention). Assumes single-threaded {@code mm} per instance, like the
      *  other JAM backends; the pool is concurrency-safe across band workers within one call. */
-    private final Scratch scratch = new Scratch();
+    private final Scratch scratch;
+
+    /** Create the Vector API backend. Throws {@link IllegalStateException} if the {@code jdk.incubator.vector}
+     *  module is not on the module path — every kernel needs it. The check runs before any Vector API type is
+     *  referenced, so the message is actually reached; a bare kernel reference would instead fail class init
+     *  with a cryptic {@code NoClassDefFoundError}. Callers that want a silent fallback probe
+     *  {@link #isAvailable()} first (e.g. to select {@code ScalarJAM} instead). */
+    public VectorJAM() {
+        if (!isAvailable()) {
+            throw new IllegalStateException(
+                "VectorJAM needs the incubator Vector API module 'jdk.incubator.vector', which is not on the "
+              + "module path. Enable it on the java launch (and on javac when compiling): "
+              + "--add-modules jdk.incubator.vector");
+        }
+        this.scratch = new Scratch();
+    }
+
+    /** Whether {@code jdk.incubator.vector} is resolved in the boot module layer — i.e. whether
+     *  {@code --add-modules jdk.incubator.vector} was in effect. Touches no Vector API type, so it is safe to
+     *  call even when the module is absent (unlike constructing the backend or any kernel). */
+    public static boolean isAvailable() {
+        return ModuleLayer.boot().findModule("jdk.incubator.vector").isPresent();
+    }
 
     private static boolean tileable(int wt) {
         return wt == Q8_0 || wt == Q4_0 || wt == Q4_K || wt == Q5_K || wt == Q6_K || wt == MXFP4 || wt == NVFP4;
