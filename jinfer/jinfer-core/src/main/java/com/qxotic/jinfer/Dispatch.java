@@ -1,6 +1,9 @@
 package com.qxotic.jinfer;
 
 import com.qxotic.format.gguf.GGMLType;
+import com.qxotic.jam.JAM;
+import com.qxotic.jam.NativeJAM;
+import com.qxotic.jam.VectorJAM;
 
 import java.util.ArrayList;
 import java.util.Map;
@@ -19,9 +22,9 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 final class Dispatch implements MatMul {
 
-    private final MatMul jam;       // null if jam couldn't load
-    private final MatMul vector;
-    private final MatMul scalar;
+    private final MatMul jam;       // native jam,     or null if libjam couldn't load
+    private final MatMul vector;    // Vector API jam,  or null if jdk.incubator.vector is absent
+    private final MatMul scalar;    // universal floor (jinfer-native dot)
 
     private Dispatch(MatMul jam, MatMul vector, MatMul scalar) {
         this.jam = jam;
@@ -33,9 +36,23 @@ final class Dispatch implements MatMul {
 
     static Dispatch create() {
         MatMul scalar = new ScalarMatMul();
-        MatMul vector = new VectorMatMul(scalar);
-        MatMul jam = JamMatMul.tryLoad() ? new JamMatMul(scalar) : null;   // jam falls back to the floor
+        // Both fast backends are the same JamMatMul adapter over a different JAM; each declines to the floor.
+        MatMul vector = VectorJAM.isAvailable() ? new JamMatMul(new VectorJAM(), scalar) : null;
+        JAM nativeJam = loadNative();
+        MatMul jam = nativeJam != null ? new JamMatMul(nativeJam, scalar) : null;
         return new Dispatch(jam, vector, scalar);
+    }
+
+    /** The native jam backend, or {@code null} if unavailable / disabled. Direct touch triggers NativeJAM's
+     *  static init (libjam load) — deliberately NOT Class.forName, whose reflective lookup needs registration
+     *  on native image and would silently disable jam there. */
+    private static JAM loadNative() {
+        if (Boolean.getBoolean("jinfer.disableJam")) return null;   // force the Java backends (testing)
+        try { return NativeJAM.global(); }
+        catch (Throwable t) {
+            System.err.println("jam native library unavailable (" + t + "); using the Java backends.");
+            return null;
+        }
     }
 
     // --- per-shape matmul byte attribution (-Djinfer.mmTrace) ---
@@ -83,7 +100,7 @@ final class Dispatch implements MatMul {
                     : (jam != null && f32io && jamSupports(t, k) ? jam : scalar);
         } else {
             chosen = jam != null && f32io && jamSupports(t, k) ? jam
-                   : f32io && VectorMatMul.gemmApplies(t, k, wOff) ? vector
+                   : vector != null && f32io && gemmApplies(t, k, wOff) ? vector
                    : scalar;
         }
         chosen.mm(w, wOff, wStride, a, aOff, aStride, c, cOff, cStride, m, n, k);
@@ -96,5 +113,23 @@ final class Dispatch implements MatMul {
             case Q8_0, Q4_0, Q4_K, Q5_K, Q6_K, MXFP4, NVFP4, F16, BF16, F32 -> k % t.getElementsPerBlock() == 0;
             default -> false;
         };
+    }
+
+    /** "vectors present AND 512-bit" — the precondition for the Vector prefill tile (constant, JIT-folded). */
+    private static final boolean IS_512 = FloatTensor.USE_VECTOR_API && FloatTensor.F_SPECIES.vectorBitSize() == 512;
+
+    /** dtypes with a register-tiled Vector prefill kernel (the rest fall to the scalar floor). */
+    private static boolean hasGemmTile(GGMLType t) {
+        return switch (t) {
+            case Q8_0, Q4_0, Q4_K, Q5_K, Q6_K, MXFP4, NVFP4 -> true;
+            default -> false;   // F16, BF16, F32 -> dot floor
+        };
+    }
+
+    /** Whether the Vector prefill tile applies: 512-bit vectors, a tileable dtype, block-aligned k + weight offset. */
+    private static boolean gemmApplies(GGMLType t, int k, long wOff) {
+        if (!IS_512 || !hasGemmTile(t)) return false;
+        int blk = t.getElementsPerBlock();
+        return (k % blk == 0) && (wOff % blk == 0);
     }
 }

@@ -5,7 +5,7 @@ package com.qxotic.jinfer;
  * (including non-F32 activations and the in-place {@code a == c} case). {@code dot()} itself vectorizes
  * when the Vector API is present, so this is "scalar" only in structure (row-at-a-time), not necessarily
  * in execution. It never declines — that is what makes {@link MatMul#mm} a total {@code void} operation:
- * the fast backends ({@link JamMatMul}, {@link VectorMatMul}) handle what they can, this catches the rest.
+ * the fast backend ({@link JamMatMul}, over native or Vector API jam) handles what it can, this catches the rest.
  *
  * <p>Relocated from the old base {@code FloatTensor.gemm/gemv} (tiny-serial / in-place-temp / parallel).
  */

@@ -9,12 +9,12 @@ package com.qxotic.jinfer;
  * <p>For a quantized weight, {@code wStride} must be block-aligned ({@code wStride % elemsPerBlock == 0}).
  *
  * <p>{@code mm} is total — it always performs the matmul. {@link Dispatch} routes to the fastest
- * applicable backend ({@link JamMatMul}, {@link VectorMatMul}) and falls to the {@link ScalarMatMul}
+ * applicable backend ({@link JamMatMul} over native or Vector API jam) and falls to the {@link ScalarMatMul}
  * floor, which handles any dtype/operand. There is nothing to signal back, hence {@code void}.
  */
 interface MatMul {
     /** Matvec (n==1) at or below this many weight elements stays serial/scalar; above it, the parallel
-     *  vector path. The single boundary between ScalarMatMul's tiny path and VectorMatMul's gemv. */
+     *  vector path. The single boundary between ScalarMatMul's tiny serial path and its parallel vector gemv. */
     int TINY_MATVEC_ELEMS = 1 << 18;
 
     void mm(FloatTensor w, long wOff, int wStride,
